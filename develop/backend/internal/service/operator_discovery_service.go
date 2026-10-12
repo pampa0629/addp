@@ -6,7 +6,9 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
+	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -83,7 +85,7 @@ func (s *OperatorDiscoveryService) getOperatorsByWorkflowEngineID(
 	if err := validateWorkflowOperatorContracts(engine.EngineType, workflowOperators); err != nil {
 		return nil, err
 	}
-	return publicWorkflowOperators(engine.EngineType, workflowOperators), nil
+	return publicWorkflowOperators(engine, workflowOperators), nil
 }
 
 func (s *OperatorDiscoveryService) ValidateWorkflowForTenant(
@@ -229,19 +231,19 @@ func validateWorkflowOperatorContracts(engineType string, operators []commonMode
 	return nil
 }
 
-func publicWorkflowOperators(engineType string, operators []commonModels.OperatorDescriptor) []PublicOperatorDescriptor {
+func publicWorkflowOperators(engine *commonModels.Engine, operators []commonModels.OperatorDescriptor) []PublicOperatorDescriptor {
 	result := make([]PublicOperatorDescriptor, 0, len(operators))
 	for _, operator := range operators {
 		result = append(result, PublicOperatorDescriptor{
 			OperatorDescriptor: operator,
-			PublicParameters:   publicOperatorParameters(engineType, operator),
+			PublicParameters:   publicOperatorParameters(engine, operator),
 		})
 	}
 	return result
 }
 
-func publicOperatorParameters(engineType string, operator commonModels.OperatorDescriptor) []commonModels.ParameterDescriptor {
-	adapterSpec, _ := workflowOperatorAdapterSpecFor(engineType, operator.ID)
+func publicOperatorParameters(engine *commonModels.Engine, operator commonModels.OperatorDescriptor) []commonModels.ParameterDescriptor {
+	adapterSpec, _ := workflowOperatorAdapterSpecFor(engine.EngineType, operator.ID)
 	runtimeParams := workflowAdapterRuntimeParams(adapterSpec)
 	result := make([]commonModels.ParameterDescriptor, 0, len(operator.Parameters)+len(adapterSpec.PublicParameters))
 	for _, parameter := range operator.Parameters {
@@ -250,7 +252,32 @@ func publicOperatorParameters(engineType string, operator commonModels.OperatorD
 		}
 		result = append(result, parameter)
 	}
-	result = append(result, adapterSpec.PublicParameters...)
+	for _, parameter := range adapterSpec.PublicParameters {
+		if parameter.UIType == "resource_tree_picker" {
+			// Adapter maps operations; the runtime instance alone supplies connector facts.
+			config := make(map[string]interface{}, len(parameter.UIConfig)+2)
+			for key, value := range parameter.UIConfig {
+				config[key] = value
+			}
+			binding, _ := config["resource_binding"].(map[string]interface{})
+			operation := "read"
+			if binding["mode"] == "target" {
+				operation = "write"
+			}
+			if adapterSpec.AccessPlan == nil {
+				config["engine_types"] = workflowStorageAccess(engine).EngineTypes(operation)
+			} else {
+				methods := []string{workflowaccess.MethodMountedPath, workflowaccess.MethodObjectStore}
+				if operation == "read" && adapterSpec.AccessPlan.SourceAccessMethods != nil {
+					methods = adapterSpec.AccessPlan.SourceAccessMethods
+				}
+				config["engine_types"] = workflowaccess.EngineTypesForAccessMethods(methods)
+			}
+			config["storage_operation"] = operation
+			parameter.UIConfig = config
+		}
+		result = append(result, parameter)
+	}
 	return result
 }
 
@@ -271,4 +298,15 @@ func operatorSupportsExecutionMode(operator commonModels.OperatorDescriptor, mod
 		}
 	}
 	return false
+}
+
+func workflowStorageAccess(engine *commonModels.Engine) *plugin.WorkflowStorageAccessCapability {
+	if engine == nil {
+		return nil
+	}
+	caps, err := engineselection.ParseCapabilities(engine.Capabilities)
+	if err != nil || caps == nil || caps.Compute == nil || caps.Compute.Workflow == nil {
+		return nil
+	}
+	return caps.Compute.Workflow.StorageAccess
 }

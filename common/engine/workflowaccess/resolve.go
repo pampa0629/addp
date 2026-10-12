@@ -3,6 +3,7 @@ package workflowaccess
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
@@ -102,8 +103,8 @@ func resolveAccess(engine *commonModels.Engine, locator *resourcetree.ResourceLo
 		fullName = joinPath(fullName, name)
 	}
 	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
-	switch strings.ToLower(strings.TrimSpace(engine.EngineType)) {
-	case "nfs", "nas", "localfs", "filesystem":
+	switch accessMethodForEngineType(engine.EngineType) {
+	case MethodMountedPath:
 		basePath := firstNonEmpty(
 			plugin.GetString(connInfo, "mount_path"),
 			plugin.GetString(connInfo, "export_path"),
@@ -119,7 +120,7 @@ func resolveAccess(engine *commonModels.Engine, locator *resourcetree.ResourceLo
 			access.NFSVersion = firstNonEmpty(plugin.GetString(connInfo, "nfs_version"), plugin.GetString(connInfo, "version"))
 		}
 		return access, nil
-	case "minio", "s3":
+	case MethodObjectStore:
 		bucket, objectOrPrefix := objectstore.SplitBucketPrefix(fullName)
 		if bucket == "" || objectOrPrefix == "" {
 			return Access{}, fmt.Errorf("object store resource requires bucket and object or prefix")
@@ -149,4 +150,25 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+var engineAccessMethods = map[string]string{
+	"nfs": MethodMountedPath, "nas": MethodMountedPath, "localfs": MethodMountedPath, "filesystem": MethodMountedPath,
+	"minio": MethodObjectStore, "s3": MethodObjectStore,
+}
+
+func accessMethodForEngineType(engineType string) string {
+	return engineAccessMethods[strings.ToLower(strings.TrimSpace(engineType))]
+}
+
+// EngineTypesForAccessMethods projects the same dispatch facts used by ResolveSource/Target.
+func EngineTypesForAccessMethods(methods []string) []string {
+	result := []string{}
+	for engineType, method := range engineAccessMethods {
+		if slices.Contains(methods, method) {
+			result = append(result, engineType)
+		}
+	}
+	slices.Sort(result)
+	return result
 }

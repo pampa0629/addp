@@ -1627,6 +1627,8 @@
           "queryPlan": "Query plan",
           "cancel": "Cancelable",
           "queryParameters": "Query parameters",
+          "storageRead": "Direct read connectors",
+          "storageWrite": "Direct write connectors",
           "dynamicOperators": "Dynamic operators",
           "reader": "Reader",
           "writer": "Writer",

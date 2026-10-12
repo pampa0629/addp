@@ -1627,6 +1627,8 @@
           "queryPlan": "查询计划",
           "cancel": "可取消",
           "queryParameters": "查询参数",
+          "storageRead": "直接读取接入",
+          "storageWrite": "直接写入接入",
           "dynamicOperators": "动态算子",
           "reader": "读取连接器",
           "writer": "写入连接器",

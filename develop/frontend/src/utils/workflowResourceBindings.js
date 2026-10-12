@@ -1,3 +1,5 @@
+import { parseEngineCapabilities } from '../../../../common-frontend/basic/src/utils/engineCapabilities.mjs'
+
 export function getResourceBinding(parameter) {
   return parameter?.ui_config?.resource_binding || null
 }
@@ -107,5 +109,11 @@ export function collectResourceBindingParams(parameters, formData) {
 
 export function isResourceEngineSupported(parameter, engine) {
   const engineTypes = parameter?.ui_config?.engine_types
-  return !Array.isArray(engineTypes) || engineTypes.includes(engine?.engine_type)
+  if (Array.isArray(engineTypes) && !engineTypes.includes(engine?.engine_type)) return false
+  const operation = parameter?.ui_config?.storage_operation
+  if (!operation) return true
+  const store = parseEngineCapabilities(engine)?.storage?.store
+  if (operation === 'read') return store?.stream_read === true || store?.batch_read === true || store?.table_read_session === true || store?.record_read_session === true
+  if (operation === 'write') return store?.stream_write === true || store?.batch_write === true || store?.table_write_session === true
+  return false
 }

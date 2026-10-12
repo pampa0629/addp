@@ -125,7 +125,9 @@ engines/<engine-name>/
 
 Develop Backend 不得仅因任意算子的参数中出现 `locator`、`target_parent_locator` 等固定名称就触发派生。每个需要资源适配的算子都必须存在显式 Develop Adapter Spec；未声明的算子携带公开资源参数时必须拒绝执行，不得回退到隐式派生路径。
 
-资源选择器同时遵守 Public Operator Spec 的 `ui_config.engine_families` 与 `ui_config.engine_types`，两者取交集；未声明 `engine_types` 时不额外限制引擎类型，不能由前端按引擎家族推断某个算子具备写入支持。Spark 保存算子的目标引擎类型由 Develop Adapter 的输出约束声明，同一声明用于生成选择器配置与派发前校验；现存任务或直接提交的目标不能绕过该约束。目标数据项同时必须通过该引擎的原生目录模型校验，不能通过更改 locator 节点类型切换写入路径。Spark `save` 当前只支持 PostgreSQL、MySQL、Doris、NFS 和 MinIO；HDFS、ES、MongoDB 及其他尚未实现的目标不作为保存候选，其中 MinIO 仍遵守普通 Parquet `create` 成果契约。
+资源选择器按存储实例能力、计算引擎接入能力和算子操作要求取交集。直接连接路径的读写范围唯一来自当前 Runtime Engine 的 `compute.workflow.storage_access`；Develop Adapter 只声明资源输入输出及节点形态，不维护引擎类型名单。Develop 按输入读取范围或输出写入范围生成 `ui_config.engine_types`，该字段只是引擎声明的 UI 投影，不是算子定义中的事实源。执行前必须重新读取当前 Runtime 实例声明并校验源、目标；已有任务和直接提交的资源不能绕过。目标还必须通过真实存储引擎原生目录模型校验，不得通过伪造 locator 类型切换访问方式。单个直接连接适配只能绑定一处资源；同时提交源和目标必须拒绝，不能让后一个资源覆盖共享连接。分别读写两端资源的操作必须使用已声明的 access-plan 契约。
+
+Spark `save` 当前只支持 PostgreSQL、MySQL、Doris、MinIO。NFS 尚未消费真实服务器与导出路径，不作为候选；MinIO 继续遵守普通 Parquet `create` 成果契约。受控 access-plan 算子按对应 Provider 能力校验，不消费直接连接器范围；选择器类型范围由 Common 访问计划解析器的实际访问方法映射派生。算子可约束所需访问方法，例如 SuperMap OSGB Scene 输入必须是 `mounted_path`，不能在适配器中重复写 NFS 类型名单。
 
 Develop 的算子发现 API 必须为前端提供独立的 `public_parameters`。前端工作流编辑器、参数面板、输入连线和任务保存只允许消费 `public_parameters`，不得读取 Workflow Runtime 返回的 `parameters`。`parameters` 保留为 Runtime Operator Spec；在 Runtime 元数据完成净化前，即使其中仍存在历史 UI 或公开资源字段，也不得再作为前端契约使用。
 
@@ -808,7 +810,7 @@ Develop Backend 在调用 `WorkflowRuntimeProvider.ExecuteWorkflow()` 前负责�
 
 算子 `source_type` / `target_type` 表达访问形态，统一使用 `table`、`file`、`geojson` 等值；不得使用 `nfs`、`minio`、`s3` 等存储引擎类型作为算子数据源类型。具体存储引擎类型只来自 locator 对应的 System engine 及派生后的 `connection_info.engine_type`。
 
-Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui_config`。过滤资源来源必须使用 `engine_families` / 能力族，例如表格资源使用 `tabular`、`dynamic_schema`，文件或对象资源使用 `file`、`object`。不得使用 `engine_types`，也不得把 `postgresql`、`mysql`、`nfs`、`minio` 等具体 `engine_type` 写成白名单，否则用户动态注册的同能力引擎无法被工作流画布发现和选择。Workflow Runtime 的 `parameters[]` 不得包含 `ui_config` 或任何资源树 UI 参数。
+Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui_config`。适配器只按操作所需的资源形态声明 `engine_families`、节点类型、格式与其他操作约束，不得内嵌具体 `engine_types` 白名单。直接连接路径的 `ui_config.engine_types` 必须由当前计算引擎实例的 `compute.workflow.storage_access` 生成，并与存储实例能力、`engine_families` 取交集；未声明接入范围时生成空列表，不允许选中任何直接连接资源。不同实例可以声明不同范围，Develop 不按 `spark_workflow` 等固定类型生成名单。Workflow Runtime 的 `parameters[]` 不得包含 `ui_config` 或任何资源树 UI 参数。
 
 #### 持久化转换访问计划
 

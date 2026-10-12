@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 
-const source = await readFile(resolve('src/utils/workflowResourceBindings.js'), 'utf8')
-const mod = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`)
+const mod = await import('../src/utils/workflowResourceBindings.js')
 const { geometryColumnFactsFromSelection } = await import('../../../common-frontend/basic/src/utils/resourceSelection.js')
 
 const sourcePicker = {
@@ -134,3 +131,9 @@ assert.equal(mod.isResourceEngineSupported(nfsPicker, { engine_type: 'nfs' }), t
 assert.equal(mod.isResourceEngineSupported(nfsPicker, { engine_type: 'minio' }), false)
 
 console.log('workflowResourceBindings tests passed')
+
+const writePicker = { ui_config: { engine_types: ['postgresql'], storage_operation: 'write' } }
+assert.equal(mod.isResourceEngineSupported(writePicker, { engine_type: 'postgresql', capabilities: { storage: { store: { batch_read: true } } } }), false)
+assert.equal(mod.isResourceEngineSupported(writePicker, { engine_type: 'postgresql', capabilities: { storage: { store: { table_write_session: true } } } }), true)
+assert.equal(mod.isResourceEngineSupported(writePicker, { engine_type: 'postgresql' }), false)
+assert.equal(mod.isResourceEngineSupported({ ui_config: { engine_types: [], storage_operation: 'write' } }, { engine_type: 'postgresql', capabilities: { storage: { store: { batch_write: true } } } }), false)

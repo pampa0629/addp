@@ -4815,9 +4815,22 @@ definitions:
         type: boolean
       runtime_api:
         type: string
+      storage_access:
+        $ref: '#/definitions/plugin.WorkflowStorageAccessCapability'
       supported:
         type: boolean
       supported_operator_mode:
+        items:
+          type: string
+        type: array
+    type: object
+  plugin.WorkflowStorageAccessCapability:
+    properties:
+      read_engine_types:
+        items:
+          type: string
+        type: array
+      write_engine_types:
         items:
           type: string
         type: array

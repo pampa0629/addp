@@ -8,6 +8,7 @@ import base64
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from operators.io_operators import STORAGE_ACCESS
 import logging
 import uuid
 from datetime import datetime
@@ -520,7 +521,8 @@ def register_to_system():
                 "workflow": {
                     "supported": True,
                     "runtime_api": "addp.workflow/v1",
-                    "dynamic_operators": True
+                    "dynamic_operators": True,
+                    "storage_access": STORAGE_ACCESS
                 }
             }
         },

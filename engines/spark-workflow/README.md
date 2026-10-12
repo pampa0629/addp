@@ -438,3 +438,7 @@ make test-common-hdfs
 - [Apache Sedona 文档](https://sedona.apache.org/)
 - [ADDP 开发指南](../../docs/spec/addp开发原则.md)
 - [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)
+
+### 存储接入声明
+
+`storage_adapters.STORAGE_ACCESS` 是 Spark Runtime 自注册 `compute.workflow.storage_access` 与直接接入校验的同一事实源。当前读取 PostgreSQL、MySQL、Doris、Elasticsearch、HDFS、MinIO；写入 PostgreSQL、MySQL、Doris、MinIO。NFS 服务器与导出路径尚未接入，不声明支持；本地文件辅助函数不代表已注册 NFS Engine 接入。MinIO 写入继续仅普通 Parquet + create。最小确定性验证为 `make test-spark-workflow`；前后端选择与执行校验由 `make test-module MODULE=develop` 验证。

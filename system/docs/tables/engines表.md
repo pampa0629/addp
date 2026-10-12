@@ -143,6 +143,8 @@
 }
 ```
 
+Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_engine_types / write_engine_types` 统一声明，详见引擎能力声明规范。System 保存实例声明并通过 Runtime Descriptor 投影；Develop 不在算子适配器中重复维护名单。受控 access-plan 路径保持 Provider 能力校验，未声明直接接入不表示支持任意存储。
+
 **运行时调用规则**：上层模块不直接读取或拼接工作流引擎 HTTP 端点。Develop 等调用方通过 `common/engine` 获取 `WorkflowRuntimeProvider`，由 provider 按 `addp.workflow/v1` HTTP 协议调用 `GET /api/operators`、`POST /api/workflow`、`GET /api/executions/{id}` 等运行时入口。连接测试统一由插件调用 `/health`。
 
 ---

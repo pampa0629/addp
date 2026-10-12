@@ -6,6 +6,7 @@ Spark 工作流引擎 Flask API Server
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
+from storage_adapters import STORAGE_ACCESS
 import logging
 import uuid
 from datetime import datetime
@@ -504,7 +505,8 @@ def register_to_system():
                 "workflow": {
                     "supported": True,
                     "runtime_api": "addp.workflow/v1",
-                    "dynamic_operators": True
+                    "dynamic_operators": True,
+                    "storage_access": STORAGE_ACCESS
                 }
             }
         },

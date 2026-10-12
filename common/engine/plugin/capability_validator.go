@@ -13,6 +13,9 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 		return fmt.Errorf("plugin cannot be nil")
 	}
 	caps := p.Capabilities()
+	if err := validateWorkflowStorageAccess(caps.Compute); err != nil {
+		return err
+	}
 	if caps.SchemaVersion != CapabilitiesSchemaVersion {
 		return fmt.Errorf("%s has invalid schema_version %q", p.Type(), caps.SchemaVersion)
 	}

@@ -171,7 +171,7 @@ func TestRasterTileAdapterScopeAndContract(t *testing.T) {
 		t.Fatalf("plan=%#v", plan)
 	}
 	operator := commonModels.OperatorDescriptor{ID: "raster_save_tiles", EngineType: "geopython_workflow", DisplayName: "栅格切片批量保存"}
-	public := publicWorkflowOperators("geopython_workflow", []commonModels.OperatorDescriptor{operator})
+	public := publicWorkflowOperators(testWorkflowRuntimeEngine("geopython_workflow"), []commonModels.OperatorDescriptor{operator})
 	for _, param := range public[0].PublicParameters {
 		if param.Name == "target_resource" && param.UIConfig["target_name_kind"] != "directory" {
 			t.Fatalf("param=%#v", param)

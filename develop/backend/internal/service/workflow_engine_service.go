@@ -195,7 +195,7 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	// 3. 预处理数据源参数：将 locator / target_parent_locator 派生为 connection_info 和运行时路径。
 	// Spark Workflow 的顶层 engine_id 与嵌套 runtime 授权上下文分别组装。
 	preprocessedWorkflowDef, producedTargets, err := s.preprocessWorkflowParamsWithTargets(
-		ctx, tenantID, engine.EngineType, workflowDef, resolver,
+		ctx, tenantID, engine, workflowDef, resolver,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
@@ -499,24 +499,28 @@ func workflowRuntimeResultMap(values map[string]interface{}) map[string]string {
 func (s *WorkflowEngineService) preprocessWorkflowParams(
 	ctx context.Context,
 	tenantID uint,
-	workflowEngineType string,
+	workflowEngine *commonModels.Engine,
 	workflowDef map[string]interface{},
 	resolver *workflowEngineAccessResolver,
 ) (map[string]interface{}, error) {
-	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef, resolver)
+	result, _, err := s.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngine, workflowDef, resolver)
 	return result, err
 }
 
 func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	ctx context.Context,
 	tenantID uint,
-	workflowEngineType string,
+	workflowEngine *commonModels.Engine,
 	workflowDef map[string]interface{},
 	resolver *workflowEngineAccessResolver,
 ) (map[string]interface{}, []WorkflowProducedTarget, error) {
 	if resolver == nil {
 		return nil, nil, fmt.Errorf("工作流执行期引擎访问解析器不可用")
 	}
+	if workflowEngine == nil {
+		return nil, nil, fmt.Errorf("工作流引擎实例不可用")
+	}
+	workflowEngineType := workflowEngine.EngineType
 	// 深拷贝 workflowDef，避免派生运行时参数时修改已保存的公开工作流定义。
 	encodedWorkflow, err := json.Marshal(workflowDef)
 	if err != nil {
@@ -584,6 +588,12 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
 			continue
 		}
+		hasResourceInput := false
+		for _, input := range adapterSpec.ResourceInputs {
+			if stringParam(params, input.PublicParam) != "" {
+				hasResourceInput = true
+			}
+		}
 		targets, err := deriveWorkflowResourceParams(params, adapterSpec)
 		if err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源参数派生失败: %w", i, err)
@@ -629,6 +639,38 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		if err := requireTenantBusinessEngine(engine, tenantID, "工作流资源引擎"); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源访问失败: %w", i, err)
 		}
+		for _, access := range []struct {
+			operation string
+			required  bool
+		}{{"read", hasResourceInput}, {"write", len(targets) > 0}} {
+			if !access.required {
+				continue
+			}
+			if !workflowStorageAccess(workflowEngine).Supports(engine.EngineType, access.operation) {
+				return nil, nil, fmt.Errorf("%s: %s (%s)", commoni18n.ForLanguage("", developi18n.MsgWorkflowStorageAccessUnsupported), engine.EngineType, access.operation)
+			}
+			if err := requireWorkflowStorageOperation(engine, access.operation); err != nil {
+				return nil, nil, err
+			}
+		}
+		registered, lookupErr := plugin.Get(engine.EngineType)
+		if lookupErr != nil {
+			return nil, nil, lookupErr
+		}
+		catalog, hasCatalog := registered.(plugin.EngineCatalogModelProvider)
+		if !hasCatalog {
+			return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid))
+		}
+		for _, target := range targets {
+			locator, err := resourcetree.ParseURI(target.Locator)
+			if err == nil {
+				_, err = resourcetree.EngineCatalogPathFromLocator(catalog.EngineCatalogModel(), locator)
+			}
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid), err)
+			}
+		}
+
 		if workflowEngineType == "spark_workflow" {
 			if len(adapterSpec.ResourceInputs) > 0 && (stringParam(params, "__workflow_resource_kind") == "file" || stringParam(params, "__workflow_resource_kind") == "object") {
 				if err := s.deriveSparkFileFacts(tenantID, engineID, params); err != nil {
@@ -656,37 +698,6 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 		}
 		producedTargets = append(producedTargets, workflowTargetsForTask(taskID, targets)...)
 
-		if len(adapterSpec.ResourceOutputs) > 0 {
-			registered, lookupErr := plugin.Get(engine.EngineType)
-			if lookupErr != nil {
-				return nil, nil, lookupErr
-			}
-			capabilities := registered.Capabilities()
-			if capabilities.EngineFamily == "file" && (capabilities.Storage == nil || capabilities.Storage.Store == nil || !capabilities.Storage.Store.StreamWrite) {
-				return nil, nil, fmt.Errorf("任务 %d 目标引擎不支持文件写入", i)
-			}
-			for _, output := range adapterSpec.ResourceOutputs {
-				if output.EngineTypes == nil {
-					continue
-				}
-				if !slices.Contains(output.EngineTypes, engine.EngineType) {
-					return nil, nil, fmt.Errorf("%s: %s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetEngineUnsupported), engine.EngineType)
-				}
-				catalog, ok := registered.(plugin.EngineCatalogModelProvider)
-				if !ok {
-					return nil, nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid))
-				}
-				for _, target := range targets {
-					locator, err := resourcetree.ParseURI(target.Locator)
-					if err == nil {
-						_, err = resourcetree.EngineCatalogPathFromLocator(catalog.EngineCatalogModel(), locator)
-					}
-					if err != nil {
-						return nil, nil, fmt.Errorf("%s: %w", commoni18n.ForLanguage("", developi18n.MsgWorkflowTargetLocatorInvalid), err)
-					}
-				}
-			}
-		}
 		if err := normalizeDerivedWorkflowPath(params, engine.EngineType, plugin.ConnectionInfo(engine.ConnectionInfo)); err != nil {
 			return nil, nil, fmt.Errorf("任务 %d 资源路径规范化失败: %w", i, err)
 		}
@@ -823,6 +834,9 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		if err := requireTenantBusinessEngine(engine, tenantID, "source engine"); err != nil {
 			return nil, err
 		}
+		if err := requireWorkflowStorageOperation(engine, "read"); err != nil {
+			return nil, err
+		}
 		resolved := locator.Clone()
 		entrypoint := ""
 		if spec.SourceScope == "parent" {
@@ -859,6 +873,9 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		if err != nil {
 			return nil, fmt.Errorf("resolve source: %w", err)
 		}
+		if spec.SourceAccessMethods != nil && !slices.Contains(spec.SourceAccessMethods, source.Access.Method) {
+			return nil, fmt.Errorf("source access method %s is not supported by this operation", source.Access.Method)
+		}
 	}
 	if spec.TargetKind != "" {
 		parentURI, name := strings.TrimSpace(stringParam(params, "target_parent_locator")), strings.TrimSpace(stringParam(params, "target_name"))
@@ -886,6 +903,9 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 			return nil, fmt.Errorf("target engine is unavailable")
 		}
 		if err := requireTenantBusinessEngine(engine, tenantID, "target engine"); err != nil {
+			return nil, err
+		}
+		if err := requireWorkflowStorageOperation(engine, "write"); err != nil {
 			return nil, err
 		}
 		target, targetLocator, err = workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
@@ -961,6 +981,20 @@ func requireTenantBusinessEngine(engine *commonModels.Engine, tenantID uint, lab
 }
 
 func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOperatorAdapterSpec) ([]WorkflowProducedTarget, error) {
+	activeBindings := 0
+	for _, input := range spec.ResourceInputs {
+		if strings.TrimSpace(stringParam(params, input.PublicParam)) != "" {
+			activeBindings++
+		}
+	}
+	for _, output := range spec.ResourceOutputs {
+		if strings.TrimSpace(stringParam(params, output.ParentParam)) != "" {
+			activeBindings++
+		}
+	}
+	if activeBindings > 1 {
+		return nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowResourceBindingConflict))
+	}
 	producedTargets := make([]WorkflowProducedTarget, 0)
 	writeMode := workflowLineageWriteMode(params)
 	for _, inputSpec := range spec.ResourceInputs {
@@ -1242,4 +1276,15 @@ func stringParam(params map[string]interface{}, key string) string {
 	default:
 		return ""
 	}
+}
+
+func requireWorkflowStorageOperation(engine *commonModels.Engine, operation string) error {
+	if engine == nil {
+		return fmt.Errorf("存储引擎实例不可用")
+	}
+	caps, err := engineselection.ParseCapabilities(engine.Capabilities)
+	if err != nil || !caps.SupportsStorageOperation(operation) {
+		return fmt.Errorf("%s: %s", commoni18n.ForLanguage("", developi18n.MsgWorkflowStorageOperationUnsupported), operation)
+	}
+	return nil
 }

@@ -282,8 +282,11 @@ other = "Spark data item facts differ from the resource locator"
 [develop.workflow.spark_table_item_required]
 other = "Spark file loading requires a recognized table data item"
 
-[develop.workflow.target_engine_unsupported]
-other = "The operator does not support the target engine type"
+[develop.workflow.storage_access_unsupported]
+other = "Compute runtime does not declare access to this storage engine"
+
+[develop.workflow.storage_operation_unsupported]
+other = "Storage engine instance does not support this operation"
 
 [develop.workflow.target_locator_invalid]
 other = "The target locator does not match the engine catalog structure"
@@ -295,3 +298,6 @@ other = "The raster tile batch output scope overlaps another output"
 
 [develop.workflow.raster_tile_target_name_invalid]
 other = "The raster tile target directory name must be one path segment"
+
+[develop.workflow.resource_binding_conflict]
+other = "This operation accepts one directly accessed resource; source and target cannot be supplied together"

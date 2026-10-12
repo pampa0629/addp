@@ -17,11 +17,23 @@ except ModuleNotFoundError:
     SparkSession = Any
     DataFrame = Any
 
+STORAGE_ACCESS = {
+    "read_engine_types": ['postgresql', 'mysql', 'doris', 'elasticsearch', 'hdfs', 'minio'],
+    "write_engine_types": ['postgresql', 'mysql', 'doris', 'minio'],
+}
+
 logger = logging.getLogger(__name__)
 
 
 class StorageAdapter:
     """统一存储访问适配器"""
+
+    @staticmethod
+    def _require_access(params: Dict[str, Any], operation: str):
+        conn = params.get('connection_info')
+        engine_type = conn.get('engine_type') if isinstance(conn, dict) else None
+        if engine_type not in STORAGE_ACCESS[f'{operation}_engine_types']:
+            raise ValueError(f"Spark runtime does not declare {operation} access to engine: {engine_type}")
 
     @staticmethod
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
@@ -36,6 +48,8 @@ class StorageAdapter:
             Spark DataFrame
         """
         source_type = params.get('source_type')
+        if source_type in {'table', 'index', 'file'}:
+            StorageAdapter._require_access(params, 'read')
 
         if source_type == 'table':
             return DatabaseAdapter.load(spark, params)
@@ -61,6 +75,8 @@ class StorageAdapter:
             params: 保存参数
         """
         target_type = params.get('target_type')
+        if target_type in {'table', 'file'}:
+            StorageAdapter._require_access(params, 'write')
 
         if target_type == 'table':
             return DatabaseAdapter.save(df, params)

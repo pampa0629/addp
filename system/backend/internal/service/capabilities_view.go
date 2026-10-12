@@ -276,6 +276,12 @@ func buildComputeSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		workflow := caps.Compute.Workflow
 		item := capabilityItem("workflow", "system.engine.capabilityView.items.workflow", capabilityStatusAvailable)
 		item.Tags = append(item.Tags, valueTags("operator_mode", workflow.SupportedOperatorMode)...)
+		if access := workflow.StorageAccess; access != nil {
+			item.Tags = append(item.Tags,
+				models.CapabilityViewTag{ID: "storage_read", LabelKey: "system.engine.capabilityView.values.storageRead", Value: strings.Join(access.ReadEngineTypes, ", ")},
+				models.CapabilityViewTag{ID: "storage_write", LabelKey: "system.engine.capabilityView.values.storageWrite", Value: strings.Join(access.WriteEngineTypes, ", ")},
+			)
+		}
 		if workflow.DynamicOperators {
 			item.Tags = append(item.Tags, capabilityValueTag("dynamic_operators", "system.engine.capabilityView.values.dynamicOperators"))
 		}

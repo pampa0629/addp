@@ -288,7 +288,7 @@ func TestPreprocessWorkflowParamsDerivesFileTargetFromParentLocator(t *testing.T
 		},
 	}
 
-	for _, workflowEngineType := range []string{"geopython_workflow", "spark_workflow"} {
+	for _, workflowEngineType := range []string{"geopython_workflow"} {
 		t.Run(workflowEngineType, func(t *testing.T) {
 			got, err := svc.preprocessWorkflowParams(context.Background(), 7, workflowEngineType, workflow)
 			if err != nil {
@@ -1058,7 +1058,7 @@ func (h *workflowEngineServiceTestHarness) preprocessWorkflowParams(
 	workflowEngineType string,
 	workflowDef map[string]interface{},
 ) (map[string]interface{}, error) {
-	return h.service.preprocessWorkflowParams(ctx, tenantID, workflowEngineType, workflowDef, h.resolver)
+	return h.service.preprocessWorkflowParams(ctx, tenantID, testWorkflowRuntimeEngine(workflowEngineType), workflowDef, h.resolver)
 }
 
 func (h *workflowEngineServiceTestHarness) preprocessWorkflowParamsWithTargets(
@@ -1067,7 +1067,7 @@ func (h *workflowEngineServiceTestHarness) preprocessWorkflowParamsWithTargets(
 	workflowEngineType string,
 	workflowDef map[string]interface{},
 ) (map[string]interface{}, []WorkflowProducedTarget, error) {
-	return h.service.preprocessWorkflowParamsWithTargets(ctx, tenantID, workflowEngineType, workflowDef, h.resolver)
+	return h.service.preprocessWorkflowParamsWithTargets(ctx, tenantID, testWorkflowRuntimeEngine(workflowEngineType), workflowDef, h.resolver)
 }
 
 func (h *workflowEngineServiceTestHarness) workflowRuntimeEngineID(
@@ -1132,6 +1132,18 @@ func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uin
 	for id, engine := range engines {
 		if engine.ConnectionStatus == "" {
 			engine.ConnectionStatus = commonModels.EngineConnectionOnline
+		}
+		if engine.Capabilities == nil {
+			if registered, err := plugin.Get(engine.EngineType); err == nil {
+				value, err := plugin.MarshalEngineCapabilities(registered.Capabilities())
+				if err != nil {
+					t.Fatal(err)
+				}
+				jsonValue := commonModels.JSONString(value)
+				engine.Capabilities = &jsonValue
+			} else if strings.HasSuffix(engine.EngineType, "_workflow") {
+				engine.Capabilities = testWorkflowRuntimeEngine(engine.EngineType).Capabilities
+			}
 		}
 		copy := engine
 		cached[id] = &copy
@@ -1378,7 +1390,7 @@ func TestPreprocessWorkflowHDFSReadOnly(t *testing.T) {
 		})
 	}
 	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "save_hdfs", "operator": "save", "params": map[string]interface{}{"target_type": "file", "target_parent_locator": "addp://engine/3/path/samples?type=directory&node_id=18", "target_name": "result.parquet"}, "depends_on": []interface{}{}}}}
-	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow); err == nil || !strings.Contains(err.Error(), "不支持文件写入") {
+	if _, err := svc.preprocessWorkflowParams(context.Background(), 7, "spark_workflow", workflow); err == nil || !strings.Contains(err.Error(), "接入能力") {
 		t.Fatalf("read-only target accepted: %v", err)
 	}
 }
@@ -1409,26 +1421,22 @@ func TestPreprocessWorkflowElasticsearchIndexLocator(t *testing.T) {
 	}
 }
 
-func TestSparkSaveTargetEngineConstraintMatchesPublicPicker(t *testing.T) {
-	spec := workflowSaveAdapterSpec("save")
-	expected := []string{"postgresql", "mysql", "doris", "nfs", "minio"}
-	if len(spec.ResourceOutputs) != 1 || !slices.Equal(spec.ResourceOutputs[0].EngineTypes, expected) {
-		t.Fatalf("output constraints = %#v", spec.ResourceOutputs)
+func TestSparkSaveTargetEngineConstraintMatchesRuntimeInstance(t *testing.T) {
+	runtime := testWorkflowRuntimeEngine("spark_workflow")
+	parameters := publicOperatorParameters(runtime, commonModels.OperatorDescriptor{ID: "save"})
+	picker := parameterByName(t, parameters, "target_resource")
+	if !slices.Equal(picker.UIConfig["engine_types"].([]string), workflowStorageAccess(runtime).WriteEngineTypes) {
+		t.Fatal("picker does not project runtime storage access")
 	}
-	for _, parameter := range spec.PublicParameters {
-		if parameter.Name == "target_resource" {
-			types, ok := parameter.UIConfig["engine_types"].([]string)
-			if !ok || !slices.Equal(types, spec.ResourceOutputs[0].EngineTypes) {
-				t.Fatalf("public picker types = %#v, want output constraint", parameter.UIConfig["engine_types"])
-			}
-			return
+	for _, parameter := range workflowSaveAdapterSpec("save").PublicParameters {
+		if _, exists := parameter.UIConfig["engine_types"]; exists {
+			t.Fatal("adapter owns a connector whitelist")
 		}
 	}
-	t.Fatal("missing target picker")
 }
 
 func TestSparkSaveRejectsUnsupportedTargetBeforeRuntimeDispatch(t *testing.T) {
-	for _, engineType := range []string{"oracle", "mongodb", "elasticsearch"} {
+	for _, engineType := range []string{"oracle", "mongodb", "elasticsearch", "nfs", "hdfs"} {
 		t.Run(engineType, func(t *testing.T) {
 			svc := newWorkflowEngineServiceForTest(t, 7, engineType)
 			workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{
@@ -1438,7 +1446,7 @@ func TestSparkSaveRejectsUnsupportedTargetBeforeRuntimeDispatch(t *testing.T) {
 				},
 			}}}
 			_, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "spark_workflow", workflow)
-			if err == nil || !strings.Contains(err.Error(), "该算子不支持目标引擎类型: "+engineType) {
+			if err == nil || !strings.Contains(err.Error(), "计算引擎未声明该存储引擎的接入能力: "+engineType) {
 				t.Fatalf("unsupported target error = %v", err)
 			}
 			if len(targets) != 0 {
@@ -1477,7 +1485,7 @@ func TestSparkSaveAcceptsSupportedTableTargets(t *testing.T) {
 func TestSparkSaveRejectsTargetOutsideNativeCatalogModel(t *testing.T) {
 	for _, tc := range []struct{ engineType, parent, targetType string }{
 		{"postgresql", "addp://engine/7/path/output?type=directory", "file"},
-		{"nfs", "addp://engine/7/path/output?type=database", "table"},
+		{"minio", "addp://engine/7/path/bucket?type=database", "table"},
 	} {
 		t.Run(tc.engineType, func(t *testing.T) {
 			svc := newWorkflowEngineServiceForTest(t, 7, tc.engineType)
@@ -1494,5 +1502,86 @@ func TestSparkSaveRejectsTargetOutsideNativeCatalogModel(t *testing.T) {
 				t.Fatalf("invalid target produced outputs: %#v", targets)
 			}
 		})
+	}
+}
+
+func testWorkflowRuntimeEngine(engineType string) *commonModels.Engine {
+	caps := plugin.NewWorkflowCapabilities(engineType, "addp.workflow/v1")
+	access := &plugin.WorkflowStorageAccessCapability{ReadEngineTypes: []string{}, WriteEngineTypes: []string{}}
+	switch engineType {
+	case "spark_workflow":
+		access.ReadEngineTypes = []string{"postgresql", "mysql", "doris", "elasticsearch", "hdfs", "minio"}
+		access.WriteEngineTypes = []string{"postgresql", "mysql", "doris", "minio"}
+	case "geopython_workflow":
+		access.ReadEngineTypes = []string{"postgresql", "mysql", "doris", "mongodb", "nfs"}
+		access.WriteEngineTypes = []string{"postgresql", "mysql", "doris", "nfs"}
+	case "supermap_workflow":
+		access.ReadEngineTypes = []string{"postgresql", "nfs"}
+		access.WriteEngineTypes = []string{"postgresql", "nfs"}
+	}
+	caps.Compute.Workflow.StorageAccess = access
+	encoded, err := plugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		panic(err)
+	}
+	jsonCaps := commonModels.JSONString(encoded)
+	return &commonModels.Engine{EngineType: engineType, Capabilities: &jsonCaps}
+}
+
+func TestWorkflowExecutionChecksCurrentRuntimeAndStorageInstance(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 7, "postgresql")
+	runtime := testWorkflowRuntimeEngine("spark_workflow")
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "save", "operator": "save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/7/path/public?type=schema", "target_name": "result", "target_type": "table"}}}}
+	// A saved target does not authorize using a connector removed from the runtime declaration.
+	emptyCaps := plugin.NewWorkflowCapabilities("spark_workflow", "addp.workflow/v1")
+	value, _ := plugin.MarshalEngineCapabilities(emptyCaps)
+	raw := commonModels.JSONString(value)
+	runtime.Capabilities = &raw
+	if _, _, err := svc.service.preprocessWorkflowParamsWithTargets(context.Background(), 7, runtime, workflow, svc.resolver); err == nil || !strings.Contains(err.Error(), "接入能力") {
+		t.Fatalf("undeclared connector dispatched: %v", err)
+	}
+	runtime = testWorkflowRuntimeEngine("spark_workflow")
+	storage := svc.resolver.engines[7]
+	caps, err := plugin.ParseEngineCapabilities(string(*storage.Capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps.Storage.Store.BatchWrite, caps.Storage.Store.TableWriteSession, caps.Storage.Store.StreamWrite = false, false, false
+	value, _ = plugin.MarshalEngineCapabilities(*caps)
+	raw = commonModels.JSONString(value)
+	storage.Capabilities = &raw
+	if _, _, err := svc.service.preprocessWorkflowParamsWithTargets(context.Background(), 7, runtime, workflow, svc.resolver); err == nil || !strings.Contains(err.Error(), "不支持该读写操作") {
+		t.Fatalf("read-only instance dispatched: %v", err)
+	}
+}
+
+func TestReadonlyDatasourceRequiresOnlyActualReadAccess(t *testing.T) {
+	svc := newWorkflowEngineServiceForTest(t, 7, "postgresql")
+	runtime := testWorkflowRuntimeEngine("supermap_workflow")
+	caps, _ := plugin.ParseEngineCapabilities(string(*runtime.Capabilities))
+	caps.Compute.Workflow.StorageAccess.WriteEngineTypes = []string{}
+	encoded, _ := plugin.MarshalEngineCapabilities(*caps)
+	raw := commonModels.JSONString(encoded)
+	runtime.Capabilities = &raw
+	storage := svc.resolver.engines[7]
+	storeCaps, _ := plugin.ParseEngineCapabilities(string(*storage.Capabilities))
+	storeCaps.Storage.Store.BatchWrite, storeCaps.Storage.Store.TableWriteSession = false, false
+	encoded, _ = plugin.MarshalEngineCapabilities(*storeCaps)
+	storageRaw := commonModels.JSONString(encoded)
+	storage.Capabilities = &storageRaw
+	workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "open", "operator": "datasource.open_postgis", "params": map[string]interface{}{"locator": "addp://engine/7/path/public/roads?type=table&item_id=99", "read_only": true}}}}
+	if _, _, err := svc.service.preprocessWorkflowParamsWithTargets(context.Background(), 7, runtime, workflow, svc.resolver); err != nil {
+		t.Fatalf("readonly source required a write connector: %v", err)
+	}
+}
+
+func TestDirectResourceBindingRejectsAmbiguousSourceAndTarget(t *testing.T) {
+	spec := workflowSuperMapOpenPostgisAdapterSpec()
+	params := map[string]interface{}{"locator": "addp://engine/7/path/public/roads?type=table", "target_parent_locator": "addp://engine/8/path/results?type=schema", "target_name": "result"}
+	if _, err := deriveWorkflowResourceParams(params, spec); err == nil || !strings.Contains(err.Error(), "不能同时提交源和目标") {
+		t.Fatalf("shared connection silently overwrote source: %v", err)
+	}
+	if params["engine_id"] != nil || params["connection_info"] != nil {
+		t.Fatal("ambiguous bindings mutated runtime parameters")
 	}
 }

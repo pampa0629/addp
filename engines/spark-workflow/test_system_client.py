@@ -29,6 +29,20 @@ class FakeTokenSource:
         self.invalidations.append((tenant_id, token))
 
 
+class RuntimeRegistrationTest(unittest.TestCase):
+    def test_registration_publishes_runtime_owned_storage_access(self):
+        from api_server import register_to_system
+        from storage_adapters import STORAGE_ACCESS
+        with patch("addp_common.client.register_runtime_engine", return_value=(202, {})) as register:
+            self.assertTrue(register_to_system())
+        payload = register.call_args.args[3]
+        self.assertEqual(payload["capabilities"]["compute"]["workflow"]["storage_access"], STORAGE_ACCESS)
+        self.assertEqual(set(STORAGE_ACCESS["write_engine_types"]), {"postgresql", "mysql", "doris", "minio"})
+        self.assertTrue({"elasticsearch", "hdfs"}.issubset(STORAGE_ACCESS["read_engine_types"]))
+        self.assertNotIn("nfs", STORAGE_ACCESS["read_engine_types"])
+        self.assertNotIn("redis", STORAGE_ACCESS["read_engine_types"])
+
+
 class SystemClientTest(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("SYSTEM_URL", None)

@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -12,7 +13,6 @@ type workflowResourceInputSpec struct {
 }
 
 type workflowResourceOutputSpec struct {
-	EngineTypes   []string
 	ParentParam   string
 	NameParam     string
 	RuntimeParams []string
@@ -28,17 +28,18 @@ type workflowOperatorAdapterSpec struct {
 }
 
 type workflowAccessPlanSpec struct {
-	SourceFormat      string
-	SourceFormats     []string
-	SourceKind        string
-	SourceScope       string
-	SourceDataTypes   []string
-	TargetFormat      string
-	TargetKind        string
-	TargetExtension   string
-	TargetContentType string
-	BatchOutput       bool
-	OptionParams      []string
+	SourceAccessMethods []string
+	SourceFormat        string
+	SourceFormats       []string
+	SourceKind          string
+	SourceScope         string
+	SourceDataTypes     []string
+	TargetFormat        string
+	TargetKind          string
+	TargetExtension     string
+	TargetContentType   string
+	BatchOutput         bool
+	OptionParams        []string
 }
 
 var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapterSpec{
@@ -115,16 +116,15 @@ func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {
 		"s3m", "directory", "", "", nil,
 	)
 	spec.RuntimeParams = []string{"access_plan"}
+	spec.AccessPlan.SourceAccessMethods = []string{workflowaccess.MethodMountedPath}
 	for index := range spec.PublicParameters {
 		parameter := &spec.PublicParameters[index]
 		if parameter.UIType == "resource_tree_picker" {
 			binding, _ := parameter.UIConfig["resource_binding"].(map[string]interface{})
 			if binding["mode"] == "existing" {
 				parameter.UIConfig["engine_families"] = []string{"file"}
-				parameter.UIConfig["engine_types"] = []string{"nfs"}
 			} else {
 				parameter.UIConfig["engine_families"] = []string{"file", "object"}
-				delete(parameter.UIConfig, "engine_types")
 			}
 		}
 	}
@@ -300,7 +300,6 @@ func workflowSuperMapCreateUdbxAdapterSpec() workflowOperatorAdapterSpec {
 				map[string]interface{}{
 					"api_base_url":                 "/api/v1/meta",
 					"engine_families":              []string{"file"},
-					"engine_types":                 []string{"nfs"},
 					"selectable_parent_node_types": []string{"root", "directory", "dir"},
 					"resource_binding": map[string]interface{}{
 						"mode":                 "target",
@@ -419,7 +418,6 @@ func workflowLoadAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 }
 
 func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
-	engineTypes := []string{"postgresql", "mysql", "doris", "nfs", "minio"}
 	return workflowOperatorAdapterSpec{
 		OperatorID: operatorID,
 		PublicParameters: []commonModels.ParameterDescriptor{
@@ -433,7 +431,6 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 					"engine_families":              []string{"tabular", "dynamic_schema", "file", "object"},
 					"selectable_parent_node_types": []string{"schema", "database", "root", "directory", "dir", "bucket", "prefix"},
 					"allow_create_table":           true,
-					"engine_types":                 engineTypes,
 					"resource_binding": map[string]interface{}{
 						"mode":                 "target",
 						"parent_locator_param": "target_parent_locator",
@@ -449,7 +446,6 @@ func workflowSaveAdapterSpec(operatorID string) workflowOperatorAdapterSpec {
 			resourceIdentityParameter("target_name", "目标名称"),
 		},
 		ResourceOutputs: []workflowResourceOutputSpec{{
-			EngineTypes:   engineTypes,
 			ParentParam:   "target_parent_locator",
 			NameParam:     "target_name",
 			RuntimeParams: []string{"engine_id", "connection_info", "schema", "table", "path"},

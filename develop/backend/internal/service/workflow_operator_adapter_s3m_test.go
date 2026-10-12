@@ -4,6 +4,9 @@ import "testing"
 
 func TestWorkflowSuperMapS3MAdapterKeepsNFSSourceAndAllowsObjectTarget(t *testing.T) {
 	spec := workflowSuperMapS3MAdapterSpec()
+	if len(spec.AccessPlan.SourceAccessMethods) != 1 || spec.AccessPlan.SourceAccessMethods[0] != "mounted_path" {
+		t.Fatal("S3M source requires a mounted scene directory")
+	}
 	var sourceFamilies, sourceTypes, targetFamilies []string
 	for _, parameter := range spec.PublicParameters {
 		if parameter.UIType != "resource_tree_picker" {
@@ -21,7 +24,7 @@ func TestWorkflowSuperMapS3MAdapterKeepsNFSSourceAndAllowsObjectTarget(t *testin
 			}
 		}
 	}
-	if len(sourceFamilies) != 1 || sourceFamilies[0] != "file" || len(sourceTypes) != 1 || sourceTypes[0] != "nfs" {
+	if len(sourceFamilies) != 1 || sourceFamilies[0] != "file" || len(sourceTypes) != 0 {
 		t.Fatalf("source families/types = %#v/%#v", sourceFamilies, sourceTypes)
 	}
 	if len(targetFamilies) != 2 || targetFamilies[0] != "file" || targetFamilies[1] != "object" {

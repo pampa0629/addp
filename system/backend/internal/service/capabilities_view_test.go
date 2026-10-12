@@ -293,3 +293,27 @@ func assertCapabilityTag(t *testing.T, item commonModels.CapabilityViewItem, tag
 	}
 	t.Fatalf("tag %q not found in item %#v", tagID, item)
 }
+
+func TestBuildCapabilitiesViewShowsWorkflowStorageAccess(t *testing.T) {
+	caps := engineplugin.NewWorkflowCapabilities("custom_runtime", "addp.workflow/v1")
+	caps.Compute.Workflow.StorageAccess = &engineplugin.WorkflowStorageAccessCapability{ReadEngineTypes: []string{"hdfs", "minio"}, WriteEngineTypes: []string{"minio"}}
+	encoded, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := commonModels.JSONString(encoded)
+	view := BuildCapabilitiesView(&value, "custom_runtime")
+	found := map[string]string{}
+	for _, section := range view.Sections {
+		for _, item := range section.Items {
+			if item.ID == "workflow" {
+				for _, tag := range item.Tags {
+					found[tag.ID] = tag.Value
+				}
+			}
+		}
+	}
+	if found["storage_read"] != "hdfs, minio" || found["storage_write"] != "minio" {
+		t.Fatalf("missing runtime storage facts: %#v", found)
+	}
+}

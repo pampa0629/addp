@@ -532,3 +532,59 @@ func TestTableResultCapabilityRequiresMatchingProviderDeclaration(t *testing.T) 
 		t.Fatal("table_result without query support accepted")
 	}
 }
+
+func TestWorkflowStorageAccessSerializationAndValidation(t *testing.T) {
+	caps := NewWorkflowCapabilities("custom_runtime", "addp.workflow/v1")
+	caps.Compute.Workflow.StorageAccess = &WorkflowStorageAccessCapability{ReadEngineTypes: []string{"custom_store"}, WriteEngineTypes: []string{}}
+	encoded, err := MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseEngineCapabilities(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := parsed.Compute.Workflow.StorageAccess
+	if !access.Supports("custom_store", "read") || access.Supports("custom_store", "write") || access.Supports("postgresql", "read") {
+		t.Fatalf("invalid access: %+v", access)
+	}
+	projected := access.EngineTypes("read")
+	projected[0] = "mutated"
+	if !access.Supports("custom_store", "read") {
+		t.Fatal("caller mutated capability")
+	}
+	var missing *WorkflowStorageAccessCapability
+	if len(missing.EngineTypes("read")) != 0 || missing.Supports("custom_store", "write") {
+		t.Fatal("undeclared access was unrestricted")
+	}
+	for _, invalid := range []*WorkflowStorageAccessCapability{
+		{ReadEngineTypes: nil, WriteEngineTypes: []string{}},
+		{ReadEngineTypes: []string{}, WriteEngineTypes: nil},
+		{ReadEngineTypes: []string{"*"}, WriteEngineTypes: []string{}},
+		{ReadEngineTypes: []string{"postgresql", "postgresql"}, WriteEngineTypes: []string{}},
+		{ReadEngineTypes: []string{"PostgreSQL"}, WriteEngineTypes: []string{}},
+	} {
+		caps.Compute.Workflow.StorageAccess = invalid
+		if _, err := MarshalEngineCapabilities(caps); err == nil {
+			t.Fatalf("invalid storage access accepted: %+v", invalid)
+		}
+	}
+	if _, err := ParseEngineCapabilities(`{"compute":{"workflow":{"supported":true,"storage_access":{"read_engine_types":[]}}}}`); err == nil {
+		t.Fatal("missing write array accepted")
+	}
+}
+
+func TestStorageOperationRequiresInstanceStoreFacts(t *testing.T) {
+	var missing *EngineCapabilities
+	if missing.SupportsStorageOperation("read") {
+		t.Fatal("nil capabilities accepted")
+	}
+	caps := &EngineCapabilities{Storage: &StorageCapabilities{Store: &StoreCapability{StreamRead: true}}}
+	if !caps.SupportsStorageOperation("read") || caps.SupportsStorageOperation("write") {
+		t.Fatal("read-only store offered as writable")
+	}
+	caps.Storage.Store.TableWriteSession = true
+	if !caps.SupportsStorageOperation("write") {
+		t.Fatal("table session writer rejected")
+	}
+}

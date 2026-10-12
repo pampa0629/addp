@@ -252,7 +252,7 @@ func floatPointer(value float64) *float64 {
 }
 
 func TestRasterExecutionContractPublishesOnlySavedResource(t *testing.T) {
-	operators := publicWorkflowOperators("geopython_workflow", []commonModels.OperatorDescriptor{
+	operators := publicWorkflowOperators(testWorkflowRuntimeEngine("geopython_workflow"), []commonModels.OperatorDescriptor{
 		{ID: "raster_load", Name: "raster_load", Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}, {Name: "source_crs", Type: "string"}}},
 		{ID: "raster_save", Name: "raster_save", Parameters: []commonModels.ParameterDescriptor{{Name: "input_raster", Type: "raster", ParamType: "input"}, {Name: "access_plan", Type: "object"}, {Name: "profile", Type: "string"}}},
 	})

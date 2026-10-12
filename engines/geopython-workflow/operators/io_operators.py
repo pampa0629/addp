@@ -18,6 +18,11 @@ from .base import (
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
+STORAGE_ACCESS = {
+    "read_engine_types": ['postgresql', 'mysql', 'doris', 'mongodb', 'nfs'],
+    "write_engine_types": ['postgresql', 'mysql', 'doris', 'nfs'],
+}
+
 logger = logging.getLogger(__name__)
 
 

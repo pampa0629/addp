@@ -1,11 +1,26 @@
 import unittest
 from unittest.mock import patch
 
-from storage_adapters import DatabaseAdapter, FileAdapter
+from storage_adapters import DatabaseAdapter, FileAdapter, StorageAdapter
 from unittest.mock import MagicMock
 
 
 class StorageAdapterTest(unittest.TestCase):
+    def test_native_access_rejects_undeclared_connectors_before_spark_actions(self):
+        for engine_type in ('nfs', 'hdfs', 'elasticsearch', 'oracle', None):
+            with self.subTest(engine_type=engine_type):
+                frame = MagicMock()
+                params = {'target_type': 'file', 'path': '/result', 'connection_info': {'engine_type': engine_type}}
+                with self.assertRaisesRegex(ValueError, 'does not declare write access'):
+                    StorageAdapter.save(frame, params)
+                frame.count.assert_not_called()
+                frame.write.format.assert_not_called()
+        for engine_type in ('nfs', 'redis', None):
+            spark = MagicMock()
+            with self.assertRaisesRegex(ValueError, 'does not declare read access'):
+                StorageAdapter.load(spark, {'source_type': 'file', 'connection_info': {'engine_type': engine_type}})
+            spark.read.format.assert_not_called()
+
     def test_unsupported_file_write_rejected_before_source_action(self):
         frame = MagicMock()
         with self.assertRaisesRegex(ValueError, 'Unsupported file format'):

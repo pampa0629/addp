@@ -135,7 +135,7 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 		},
 	}}
 
-	publicOperators := publicWorkflowOperators("geopython_workflow", operators)
+	publicOperators := publicWorkflowOperators(testWorkflowRuntimeEngine("geopython_workflow"), operators)
 	if len(publicOperators) != 1 {
 		t.Fatalf("operators len = %d, want 1", len(publicOperators))
 	}
@@ -156,7 +156,7 @@ func TestOperatorDiscoveryPublishesTargetResourceBinding(t *testing.T) {
 }
 
 func TestSparkSaveResourceBindingDoesNotForceDatabaseModeOntoObjectResults(t *testing.T) {
-	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{
+	operators := publicWorkflowOperators(testWorkflowRuntimeEngine("spark_workflow"), []commonModels.OperatorDescriptor{{
 		ID: "save",
 		Parameters: []commonModels.ParameterDescriptor{
 			{Name: "mode", Type: "string"},
@@ -178,7 +178,7 @@ func TestSparkSaveResourceBindingDoesNotForceDatabaseModeOntoObjectResults(t *te
 }
 
 func TestSparkLoadFormatIsDerivedRuntimeParameter(t *testing.T) {
-	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{
+	operators := publicWorkflowOperators(testWorkflowRuntimeEngine("spark_workflow"), []commonModels.OperatorDescriptor{{
 		ID:         "load",
 		Parameters: []commonModels.ParameterDescriptor{{Name: "format", Type: "string"}},
 	}})
@@ -194,7 +194,7 @@ func TestSparkLoadFormatIsDerivedRuntimeParameter(t *testing.T) {
 }
 
 func TestSparkLoadIndexIsDerivedAndSelectableOnlyForRead(t *testing.T) {
-	operators := publicWorkflowOperators("spark_workflow", []commonModels.OperatorDescriptor{{ID: "load", Parameters: []commonModels.ParameterDescriptor{{Name: "index", Type: "string"}, {Name: "array_fields", Type: "array"}}}})
+	operators := publicWorkflowOperators(testWorkflowRuntimeEngine("spark_workflow"), []commonModels.OperatorDescriptor{{ID: "load", Parameters: []commonModels.ParameterDescriptor{{Name: "index", Type: "string"}, {Name: "array_fields", Type: "array"}}}})
 	picker := parameterByName(t, operators[0].PublicParameters, "source_resource")
 	if values := picker.UIConfig["resource_binding"].(map[string]interface{})["type_values"].(map[string]interface{}); values["index"] != "index" {
 		t.Fatalf("missing index binding: %#v", values)
@@ -220,7 +220,7 @@ func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 		},
 	}}
 
-	publicOperators := publicWorkflowOperators("supermap_workflow", operators)
+	publicOperators := publicWorkflowOperators(testWorkflowRuntimeEngine("supermap_workflow"), operators)
 	if len(publicOperators) != 1 {
 		t.Fatalf("operators len = %d, want 1", len(publicOperators))
 	}
@@ -233,8 +233,8 @@ func TestOperatorDiscoveryPublishesSuperMapUdbxNFSTargetOnly(t *testing.T) {
 		t.Fatalf("engine_families = %#v, want file only", picker.UIConfig["engine_families"])
 	}
 	engineTypes, ok := picker.UIConfig["engine_types"].([]string)
-	if !ok || len(engineTypes) != 1 || engineTypes[0] != "nfs" {
-		t.Fatalf("engine_types = %#v, want nfs only", picker.UIConfig["engine_types"])
+	if !ok || len(engineTypes) != 2 || engineTypes[0] != "postgresql" || engineTypes[1] != "nfs" {
+		t.Fatalf("engine_types = %#v, want runtime write range intersected with file family", picker.UIConfig["engine_types"])
 	}
 	parentTypes, ok := picker.UIConfig["selectable_parent_node_types"].([]string)
 	if !ok {
@@ -508,5 +508,31 @@ func TestValidateWorkflowRequiresRasterPortReference(t *testing.T) {
 				t.Fatalf("result = %+v, err = %v", result, err)
 			}
 		})
+	}
+}
+
+func TestResourcePickerUsesRuntimeInstanceAccessNotOperatorWhitelist(t *testing.T) {
+	first := testWorkflowRuntimeEngine("spark_workflow")
+	caps := plugin.NewWorkflowCapabilities("spark_workflow", "addp.workflow/v1")
+	caps.Compute.Workflow.StorageAccess = &plugin.WorkflowStorageAccessCapability{ReadEngineTypes: []string{"custom_store"}, WriteEngineTypes: []string{}}
+	raw, err := plugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := commonModels.JSONString(raw)
+	second := &commonModels.Engine{EngineType: "spark_workflow", Capabilities: &value}
+	save := commonModels.OperatorDescriptor{ID: "save"}
+	firstPicker := parameterByName(t, publicOperatorParameters(first, save), "target_resource")
+	secondPicker := parameterByName(t, publicOperatorParameters(second, save), "target_resource")
+	if len(firstPicker.UIConfig["engine_types"].([]string)) == 0 || len(secondPicker.UIConfig["engine_types"].([]string)) != 0 {
+		t.Fatal("same runtime type ignored instance access")
+	}
+	loadPicker := parameterByName(t, publicOperatorParameters(second, commonModels.OperatorDescriptor{ID: "load"}), "source_resource")
+	if types := loadPicker.UIConfig["engine_types"].([]string); len(types) != 1 || types[0] != "custom_store" {
+		t.Fatalf("dynamic connector discarded: %#v", types)
+	}
+	missing := parameterByName(t, publicOperatorParameters(&commonModels.Engine{EngineType: "spark_workflow"}, save), "target_resource")
+	if types := missing.UIConfig["engine_types"].([]string); types == nil || len(types) != 0 {
+		t.Fatalf("missing access must publish empty array: %#v", types)
 	}
 }

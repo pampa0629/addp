@@ -1336,7 +1336,13 @@ const fillSuperMapWorkflowExample = () => {
     name: t('system.engine.extensionForm.superMapExampleName'),
     description: t('system.engine.extensionForm.superMapExampleDescription')
   }
-  extensionCapabilitiesText.value = ''
+  extensionCapabilitiesText.value = JSON.stringify({
+    ...buildDefaultWorkflowCapabilities('supermap_workflow'),
+    compute: { workflow: {
+      ...buildDefaultWorkflowCapabilities('supermap_workflow').compute.workflow,
+      storage_access: { read_engine_types: ['postgresql', 'nfs'], write_engine_types: ['postgresql', 'nfs'] }
+    } }
+  }, null, 2)
   extensionProbeResult.value = ''
   resetExtensionRuntimeStatus()
 }

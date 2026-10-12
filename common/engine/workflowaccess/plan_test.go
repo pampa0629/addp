@@ -111,3 +111,23 @@ func TestTargetPlanSupportsIncrementalDirectWriter(t *testing.T) {
 		t.Fatalf("target audit leaked secret: %#v", access)
 	}
 }
+
+func TestAccessMethodSelectionUsesResolverDispatchFacts(t *testing.T) {
+	for _, method := range []string{MethodMountedPath, MethodObjectStore} {
+		types := EngineTypesForAccessMethods([]string{method})
+		if len(types) == 0 {
+			t.Fatalf("no types for method %s", method)
+		}
+		for _, engineType := range types {
+			if got := accessMethodForEngineType(engineType); got != method {
+				t.Fatalf("selection and resolver disagree: %s => %s", engineType, got)
+			}
+		}
+	}
+	if types := EngineTypesForAccessMethods([]string{}); types == nil || len(types) != 0 {
+		t.Fatalf("empty methods produced candidates: %#v", types)
+	}
+	if accessMethodForEngineType("hdfs") != "" {
+		t.Fatal("HDFS was presented as a mounted export")
+	}
+}

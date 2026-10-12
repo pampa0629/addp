@@ -20395,10 +20395,30 @@ const docTemplate = `{
                 "runtime_api": {
                     "type": "string"
                 },
+                "storage_access": {
+                    "$ref": "#/definitions/plugin.WorkflowStorageAccessCapability"
+                },
                 "supported": {
                     "type": "boolean"
                 },
                 "supported_operator_mode": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.WorkflowStorageAccessCapability": {
+            "type": "object",
+            "properties": {
+                "read_engine_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "write_engine_types": {
                     "type": "array",
                     "items": {
                         "type": "string"

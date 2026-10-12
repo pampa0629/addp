@@ -38,6 +38,10 @@ def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
                         "supported": True,
                         "runtime_api": "addp.workflow/v1",
                         "dynamic_operators": True,
+                        "storage_access": {
+                            "read_engine_types": ["postgresql", "mysql", "doris", "mongodb", "nfs"],
+                            "write_engine_types": ["postgresql", "mysql", "doris", "nfs"],
+                        },
                     }
                 },
             },

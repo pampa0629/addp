@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "a55056b020fe3c22f15b2311fef801e79fbb470e7dbb5c0802bce55a4a303018",
+      "commit": "a049fc71dd51118f44f53306cea066f0ae3bad97",
+      "sha256": "9902b45401f85c0ff0509b5307cf127aad0bb4af987f13c262828a6d5e6640e5",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集、Runtime 两次预检和三态限制",
-        "en": "Formal task, execution, configuration and apply policy semantics, including the precheck permission intersection, two Runtime checks and tri-state limitations"
+        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集、Runtime 两次预检和三态限制；复核可选查询定义分析仅用已保存快照、源未知仍检查显式目标约束及常量，unsupported 优先于 unknown",
+        "en": "Formal task, execution, configuration and apply policy semantics, the precheck permission intersection, two Runtime checks and tri-state limits; reviewed optional query definition analysis from saved snapshots only and explicit target constraints and constants with unknown sources, with unsupported taking precedence over unknown"
       }
     },
     {
@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "738e115b67c1fe0b77a81e059710ced5992ad6a5b253f8b810e272f7134232af",
+      "commit": "a049fc71dd51118f44f53306cea066f0ae3bad97",
+      "sha256": "9060c2450965e3c88de769d26fe94c1580ac61ac01c8596738b36aa9719609fa",
       "use": {
-        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；已复核 execution 响应投影调整，创建约束不变",
-        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed execution response projection without changing creation constraints"
+        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检注释中的纯查询定义分析和源未知时的显式目标约束，创建条件与权限不变",
+        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed read-only precheck annotations for pure query definition analysis and explicit target constraints with unknown sources, without changing creation conditions or permissions"
       }
     },
     {

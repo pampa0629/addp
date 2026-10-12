@@ -56,6 +56,8 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 前端工作流编辑器只消费 `public_parameters`，保存的 workflow definition 只包含公开参数。执行前由 Develop Adapter 派生运行时参数，再把纯 Runtime Operator Spec 参数发送给运行时。
 
+直接连接资源的选择范围与执行校验唯一来自当前 Runtime Instance 的 `compute.workflow.storage_access`，不按计算引擎类型生成名单，不在算子 Adapter 保存名单。缺少声明时没有直接连接候选。输入读取与输出写入分别与存储实例的 `storage.store` 能力取交集。受控 access-plan 选择范围复用 Common 解析器的方法映射；操作只声明挂载目录等所需访问方法。标准验证使用 `make test-module MODULE=develop`，Common 契约变更另运行 `make test-go`。
+
 Spark 保存表结果时，Develop 根据目标 schema/database locator 和算子的 ddl 声明，将 write + ddl 授权绑定到目标引擎，源引擎与 Spark 集群仍只读。保存摘要的行数由 Runtime 发布事务返回；命名 outputs、Meta 异步扫描与 lineage_facts 继续复用既有工作流结果主线。
 
 Spark MinIO 保存固定普通 Parquet + create，由执行 UUID 和节点身份派生独占目录，目标引擎需要 read + write 以核验实际成果。稳定输出定位 whole scope item，Meta 扫描使用同范围 prefix；后续 Spark 文件加载从正式 Meta item facts 取得 format/layout，不从扩展名推断。失败与可见性边界见工作流计算引擎接口规范。

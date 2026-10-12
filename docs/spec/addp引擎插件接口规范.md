@@ -888,6 +888,8 @@ type InferenceRuntimeProvider interface {
 
 ## 四、接口组合
 
+Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_engine_types / write_engine_types` 统一声明，详见引擎能力声明规范。System 保存实例声明并通过 Runtime Descriptor 投影；Develop 不在算子适配器中重复维护名单。受控 access-plan 路径保持 Provider 能力校验，未声明直接接入不表示支持任意存储。
+
 | 引擎 | 推荐接口组合 |
 | --- | --- |
 | PostgreSQL | 通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |

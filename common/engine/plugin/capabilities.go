@@ -1,6 +1,11 @@
 package plugin
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+)
 
 const (
 	CapabilitiesSchemaVersion = "engine.capabilities/v1"
@@ -279,11 +284,77 @@ type QueryFederationCapability struct {
 	ObjectFormats     []string `json:"object_formats,omitempty"`
 }
 
+// WorkflowStorageAccessCapability is owned by the compute runtime, not its operators.
+type WorkflowStorageAccessCapability struct {
+	ReadEngineTypes  []string `json:"read_engine_types"`
+	WriteEngineTypes []string `json:"write_engine_types"`
+}
+
+// EngineTypes returns a copy; an undeclared direction never means unrestricted access.
+func (a *WorkflowStorageAccessCapability) EngineTypes(operation string) []string {
+	result := []string{}
+	if a == nil {
+		return result
+	}
+	switch operation {
+	case "read":
+		return append(result, a.ReadEngineTypes...)
+	case "write":
+		return append(result, a.WriteEngineTypes...)
+	default:
+		return result
+	}
+}
+
+func (a *WorkflowStorageAccessCapability) Supports(engineType, operation string) bool {
+	return slices.Contains(a.EngineTypes(operation), engineType)
+}
+
+func validateWorkflowStorageAccess(compute *ComputeCapabilities) error {
+	if compute == nil || compute.Workflow == nil || compute.Workflow.StorageAccess == nil {
+		return nil
+	}
+	workflow := compute.Workflow
+	if !workflow.Supported {
+		return fmt.Errorf("storage_access requires a supported workflow runtime")
+	}
+	for name, types := range map[string][]string{"read_engine_types": workflow.StorageAccess.ReadEngineTypes, "write_engine_types": workflow.StorageAccess.WriteEngineTypes} {
+		if types == nil {
+			return fmt.Errorf("storage_access.%s must be an array", name)
+		}
+		seen := map[string]bool{}
+		for _, engineType := range types {
+			if engineType == "" || strings.TrimSpace(engineType) != engineType || strings.ToLower(engineType) != engineType || strings.ContainsAny(engineType, "*? \t\r\n") || seen[engineType] {
+				return fmt.Errorf("storage_access.%s has invalid or duplicate engine type %q", name, engineType)
+			}
+			seen[engineType] = true
+		}
+	}
+	return nil
+}
+
+// SupportsStorageOperation checks instance Store facts independently of runtime connectors.
+func (c *EngineCapabilities) SupportsStorageOperation(operation string) bool {
+	if c == nil || c.Storage == nil || c.Storage.Store == nil {
+		return false
+	}
+	store := c.Storage.Store
+	switch operation {
+	case "read":
+		return store.StreamRead || store.BatchRead || store.TableReadSession || store.RecordReadSession
+	case "write":
+		return store.StreamWrite || store.BatchWrite || store.TableWriteSession
+	default:
+		return false
+	}
+}
+
 type WorkflowCapability struct {
-	Supported             bool     `json:"supported"`
-	RuntimeAPI            string   `json:"runtime_api"`
-	DynamicOperators      bool     `json:"dynamic_operators"`
-	SupportedOperatorMode []string `json:"supported_operator_mode,omitempty"`
+	StorageAccess         *WorkflowStorageAccessCapability `json:"storage_access,omitempty"`
+	Supported             bool                             `json:"supported"`
+	RuntimeAPI            string                           `json:"runtime_api"`
+	DynamicOperators      bool                             `json:"dynamic_operators"`
+	SupportedOperatorMode []string                         `json:"supported_operator_mode,omitempty"`
 }
 
 type ScriptCapability struct {
@@ -302,6 +373,9 @@ type InferenceCapability struct {
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {
+	if err := validateWorkflowStorageAccess(capabilities.Compute); err != nil {
+		return "", err
+	}
 	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {
 		return "", err
 	}
@@ -322,6 +396,9 @@ func ParseEngineCapabilities(capabilitiesJSON string) (*EngineCapabilities, erro
 
 	var capabilities EngineCapabilities
 	if err := json.Unmarshal([]byte(capabilitiesJSON), &capabilities); err != nil {
+		return nil, err
+	}
+	if err := validateWorkflowStorageAccess(capabilities.Compute); err != nil {
 		return nil, err
 	}
 	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {

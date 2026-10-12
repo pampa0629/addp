@@ -146,12 +146,13 @@ test('batch raster target uses a subdirectory name and preserves the public targ
   expect(backend.updates[0].payload.content.workflow_definition.tasks[0].params.target_name).toBe('tiles-basic')
 })
 
-test('target picker excludes unsupported engines even within an allowed family', async ({ page }) => {
+test('target picker intersects runtime connector range and instance write capability', async ({ page }) => {
   const resourceEngines = [
-    RESOURCE_ENGINE,
+    { ...RESOURCE_ENGINE, capabilities: { ...RESOURCE_ENGINE.capabilities, storage: { store: { table_write_session: true } } } },
+    { id: 30, name: 'Fixture readonly PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online', capabilities: { engine_family: 'tabular', storage: { store: { batch_read: true } } } },
     ...[['nfs', 'file'], ['minio', 'object'], ['hdfs', 'file'], ['oracle', 'tabular'], ['mongodb', 'dynamic_schema'], ['elasticsearch', 'dynamic_schema']].map(([engine_type, engine_family], index) => ({
       id: 20 + index, name: `Fixture ${engine_type}`, engine_type,
-      capabilities: { engine_family, storage: {} },
+      capabilities: { engine_family, storage: { store: { stream_write: true, table_write_session: true } } },
       lifecycle_state: 'active', connection_status: 'online'
     }))
   ]
@@ -160,7 +161,8 @@ test('target picker excludes unsupported engines even within an allowed family',
     resourceEngines,
     resourcePickerConfig: {
       engine_families: ['tabular', 'dynamic_schema', 'file', 'object'],
-      engine_types: ['postgresql', 'mysql', 'doris', 'nfs', 'minio'],
+      engine_types: ['postgresql', 'mysql', 'doris', 'minio'],
+      storage_operation: 'write',
       selectable_parent_node_types: ['schema', 'database', 'directory', 'bucket', 'prefix'],
       resource_binding: { mode: 'target', parent_locator_param: 'target_parent_locator', name_param: 'target_name' }
     }
@@ -174,15 +176,15 @@ test('target picker excludes unsupported engines even within an allowed family',
   await page.locator('.resource-selection-card').getByRole('button').click()
   const dialog = page.locator('.workflow-resource-picker-dialog:visible')
   await dialog.locator('.el-select__wrapper').click()
-  for (const name of [RESOURCE_ENGINE.name, 'Fixture nfs', 'Fixture minio']) {
+  for (const name of [RESOURCE_ENGINE.name, 'Fixture minio']) {
     await expect(page.getByRole('option', { name: new RegExp(name) })).toBeVisible()
   }
-  for (const name of ['Fixture hdfs', 'Fixture oracle', 'Fixture mongodb', 'Fixture elasticsearch']) {
+  for (const name of ['Fixture readonly PostgreSQL', 'Fixture nfs', 'Fixture hdfs', 'Fixture oracle', 'Fixture mongodb', 'Fixture elasticsearch']) {
     await expect(page.getByRole('option', { name: new RegExp(name) })).toHaveCount(0)
   }
 })
 
-test('restoring a saved locator cannot select an engine excluded by the operator', async ({ page }) => {
+test('restoring a saved locator cannot select an engine excluded by runtime access', async ({ page }) => {
   const validationError = {
     code: 'REQUIRED_PARAMETER', path: 'tasks[0].params.source_locator', message: 'Source locator is required'
   }
