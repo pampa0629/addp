@@ -323,6 +323,8 @@ def validate_footprint(execution, case_name):
         areas = [abs(sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(ring, ring[1:]))) / 2 for ring in rings]
         area += areas[0] - sum(areas[1:])
         polygons.append(rings)
+    if case_name == 'footprint-holes' and (len(polygons) != 2 or sum(len(rings)-1 for rings in polygons) != 1):
+        raise SuiteError('footprint hole/island topology differs from the independent source pattern')
     def inside(x, y, ring):
         covered = False
         for a, b in zip(ring, ring[1:]):
@@ -922,9 +924,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'physical': native, 'browser': browsers[0] if single else browsers})
         preserved[name] = native['sha256']
     footprint_cases = []
-    footprint_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')
-    footprint_locator = support.build_item_locator(source_engine, footprint_source)
+    footprint_sources = {
+        'multiband.tif': (source_engine, support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'footprint source')),
+        'clip-outside.cog.tif': (target_engine, support.find_fixture_item(client, target_engine, 'raster-target/clip-outside.cog.tif', 'footprint holes source')),
+    }
     for case_name in fixture.FOOTPRINT_CASES:
+        source_name = fixture.footprint_source_name(case_name)
+        footprint_engine, footprint_source = footprint_sources[source_name]
+        footprint_locator = support.build_item_locator(footprint_engine, footprint_source)
         identifier = submit(client, engine_id, footprint_workflow(footprint_locator, case_name))
         execution = wait_execution(client, 'develop', identifier, timeout)
         result = validate_footprint(execution, case_name)
@@ -941,7 +948,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'principal_id': identity['principal_id'],
             'tenant_id': identity['tenant_id'], 'execution_id': identifier,
             'source_item_id': footprint_source['id'], 'source_locator': footprint_locator,
-            'source_name': 'multiband.tif', 'case_name': case_name, 'result_kind': 'json', 'expected_result': result,
+            'source_name': source_name, 'case_name': case_name, 'result_kind': 'json', 'expected_result': result,
         })
         footprint_cases.append({'case_name': case_name, 'execution_id': identifier,
             'json_result': result, 'physical': native, 'browser': report})

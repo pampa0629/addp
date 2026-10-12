@@ -249,7 +249,7 @@ def source_access_plan(path):
 def single_source_execution(tmp_path, scene, api_server, case_name):
     source_name = (fixture.NON_COG_SOURCE if case_name == 'validate-cog-invalid' else
                    'build-overviews.cog.tif' if case_name == 'info-overviews' else
-                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else 'multiband.tif' if case_name in fixture.FOOTPRINT_CASES else 'source.tif')
+                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else fixture.footprint_source_name(case_name) if case_name in fixture.FOOTPRINT_CASES else 'source.tif')
     role = 'target' if source_name.endswith('.cog.tif') else 'source'
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
@@ -1124,8 +1124,11 @@ def verify_native_footprints(physical,tmp_path,last_case):
         result, _ = single_source_execution(tmp_path, scene, api_server, case)
         execution = {'metadata': {'result': {'summary': {'has_result': True}, 'final_result': result}}}
         assert scene.validate_footprint(execution, case) == result
-        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528}[case]
+        assert sum(fixture.footprint_pixels(case)) == {'footprint-any':65532, 'footprint-all':65524, 'footprint-band-2':65528, 'footprint-holes':53247}[case]
         assert fixture.worker('verify-'+last_case, physical)['valid_pixels'] == fixture.computed_expectation(last_case)['valid_pixels']
+        if case == 'footprint-holes':
+            polygons = result['features'][0]['geometry']['coordinates']
+            assert len(polygons) == 2 and sum(len(polygon)-1 for polygon in polygons) == 1
         assert LocalMinio.objects == baseline
 
 

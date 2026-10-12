@@ -40,7 +40,7 @@ RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
 AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
-FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2')
+FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2', 'footprint-holes')
 TILE_WINDOWS = {'r0_c0': (0, 0, 160, 160), 'r0_c160': (160, 0, 96, 160),
                 'r160_c0': (0, 160, 160, 96), 'r160_c160': (160, 160, 96, 96)}
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
@@ -336,10 +336,20 @@ def aggregate_pixels(case_name, band=1, level=1):
             yield total/len(values) if method == 'mean' else total if method == 'sum' else min(values) if method == 'min' else max(values)
 
 
+def footprint_source_name(case_name):
+    if case_name not in FOOTPRINT_CASES:
+        raise FixtureError('unknown footprint case')
+    return 'clip-outside.cog.tif' if case_name == 'footprint-holes' else 'multiband.tif'
+
+
 def footprint_pixels(case_name):
     """Independent source cell indices: separate missing bands and transparent cell."""
     if case_name not in FOOTPRINT_CASES:
         raise FixtureError('unknown footprint case')
+    if case_name == 'footprint-holes':
+        # The accepted outside-clip COG contains a hole and its valid central island.
+        yield from (value is not None for value in outside_pixels('clip-outside'))
+        return
     invalid_cells = {'footprint-any': (2,), 'footprint-all': (0, 1, 2), 'footprint-band-2': (1, 2)}[case_name]
     for row in range(SIZE):
         for column in range(SIZE):
