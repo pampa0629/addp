@@ -81,6 +81,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	if err != nil {
 		t.Fatal(err)
 	}
+	staleProtectors := []*dataprotection.PreparedTableProtection{}
 	for _, query := range []bool{false, true} {
 		prepare := func(at time.Time) (*dataprotection.PreparedTableProtection, error) {
 			if query {
@@ -92,6 +93,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 		if err != nil {
 			t.Fatalf("prepare query=%t before expiry: %v", query, err)
 		}
+		staleProtectors = append(staleProtectors, protect)
 		if _, err := prepare(projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) {
 			t.Fatalf("prepare query=%t at expiry: %v", query, err)
 		}
@@ -156,6 +158,87 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	}
 	if joinedResult.Rows[0]["phone"] != "13661384499" || joinedResult.Rows[0]["neighbor_phone"] != "13501206490" {
 		t.Fatal("all projections must be checked before changing the first source's output")
+	}
+	staleProtectors = append(staleProtectors, joinedProtect)
+
+	// Another process may retain the expired local index. A formal newer
+	// revision must restore only newly prepared reads, never the old closures.
+	reader, err := Open(store.db, store.schema, owner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gate := reader.Gate(7, projection.Target, time.Now().UTC()); !gate.Managed || gate.Err == nil {
+		t.Fatal("reopened store must retain the expired managed projection")
+	}
+	replacement := activeTableProjection(t, owner, action, model, path, fields)
+	replacement.Revision = "00000000000000000002"
+	replacement.ExpiresAt = replacement.ValidFrom.Add(365 * 24 * time.Hour)
+	replacement.Rules[0].Decision = dataprotection.Decision{
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmConstantV1,
+		Parameters: map[string]interface{}{"value": "renewed-protected"}, InvalidValueEffect: dataprotection.EffectSuppress,
+	}
+	if err := replacement.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "neighbor-"+owner, &dataprotection.ProjectionChangesResponse{
+		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes:       []dataprotection.ProjectionChange{{ChangeID: "renewal-" + owner, Operation: dataprotection.ChangeOperationUpsert, Projection: &replacement}},
+		NextCursor:    "renewal-" + owner,
+	}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range staleProtectors {
+		for _, empty := range []bool{false, true} {
+			result := &plugin.QueryResult{Columns: []string{"phone", "neighbor_phone"}}
+			if !empty {
+				result.Rows = []map[string]interface{}{{"phone": "13661384499", "neighbor_phone": "13501206490"}}
+			}
+			before := &plugin.QueryResult{Columns: []string{"phone", "neighbor_phone"}}
+			if !empty {
+				before.Rows = []map[string]interface{}{{"phone": "13661384499", "neighbor_phone": "13501206490"}}
+			}
+			if err := stale.Apply(result); !errors.Is(err, dataprotection.ErrDenied) || !reflect.DeepEqual(result, before) {
+				t.Fatalf("replacement revived an old output protector: empty=%t, error=%v, result=%#v", empty, err, result)
+			}
+		}
+	}
+	for _, restarted := range []bool{false, true} {
+		if restarted {
+			reader, err = Open(store.db, store.schema, owner, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, query := range []bool{false, true} {
+			var protect *dataprotection.PreparedTableProtection
+			if query {
+				protect, err = reader.PrepareQueryProtection(t.Context(), 7, model, prepared, action, dataprotection.SubjectReference{}, time.Now().UTC())
+			} else {
+				protect, err = reader.PrepareTableProtection(t.Context(), 7, model, path, fields, action, time.Now().UTC())
+			}
+			if err != nil {
+				t.Fatalf("prepare renewed output restarted=%t query=%t: %v", restarted, query, err)
+			}
+			for _, empty := range []bool{false, true} {
+				result := &plugin.QueryResult{Columns: []string{"phone"}}
+				if !empty {
+					result.Rows = []map[string]interface{}{{"phone": "13661384499"}, {"phone": nil}}
+				}
+				if err := protect.Apply(result); err != nil {
+					t.Fatalf("apply renewed output restarted=%t query=%t empty=%t: %v", restarted, query, empty, err)
+				}
+				if !reflect.DeepEqual(result.Columns, []string{"phone"}) || empty && len(result.Rows) != 0 || !empty && (len(result.Rows) != 2 || result.Rows[0]["phone"] != "renewed-protected" || result.Rows[1]["phone"] != nil) {
+					t.Fatalf("renewed output must use the new decision and preserve null/empty results: %#v", result)
+				}
+			}
+		}
+		gate := reader.Gate(7, projection.Target, time.Now().UTC())
+		if !gate.Managed || gate.Err != nil || len(gate.Projections) != 1 || gate.Projections[0].Revision != replacement.Revision {
+			t.Fatalf("renewed gate restarted=%t: %#v", restarted, gate)
+		}
+		if cursor, err := reader.CurrentCursor(t.Context(), 7); err != nil || cursor != "renewal-"+owner {
+			t.Fatalf("renewed cursor restarted=%t: %q, %v", restarted, cursor, err)
+		}
 	}
 }
 
