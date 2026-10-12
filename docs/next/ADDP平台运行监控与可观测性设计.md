@@ -1709,7 +1709,7 @@ Safari 沿用户既有平台管理员会话刷新服务页，09:30 时的当前�
 
 包含本轮实现的 `3bba7b5ea` 在 Platform CI（run 38192829540）中的 Monitor 与 Console 前端 Job 均 completed/success；后续 main 提交的完整工作流当时仍在排队或运行，未将整套 CI 写成通过。
 
-### 10.55 当前服务进程 CPU 与内存趋势（已实现，个人运行已验收）
+### 10.55 当前服务进程 CPU 与内存趋势（个人运行及 Hosted T4 已验收）
 
 2026-10-12 用户明确选择“只看当前运行实例”：只查询当前有效租约、明确声明采集的运行实例，在本次启动之后读取 CPU 和 RSS 趋势。重启后的实例 ID 独立，不能拼接旧进程；离线、声明失效及完成时租约到期继续返回空值，不查询退出实例历史。System 身份、普通用户授权、私有身份投影与来源准入沿 10.49 原链路；不增加身份权限、历史存储或后台续租。
 
@@ -1757,3 +1757,13 @@ Swagger 同步生成与 Monitor 六十八个公开路由覆盖校验通过；mak
 失败处确实是一次成功 HTTP 200 的进程摘要读取，但现有 process_query_ready 在 collection 或任一指标不满足就绪时只返回 False，报告没有保存该次响应，不能判断是 CPU 完整窗口缺点、陈旧采样还是采集状态异常，也不能据错误文字直接断定主机源影响了进程。下一步只增加该故障检查时的安全摘要证据：沿同一个已批准 User 请求，将经过原协议校验的 subject、评估/采样时间、collection 和固定三项指标值/状态写入已有报告，排除未知字段和任何凭据；保持原即时断言、不增加重试或超时、不放宽生产采样 guard。既有 make test-node-metrics-online-runner 覆盖成功、窗口不足、失败采集及未知敏感字段排除，原 CI 登记已覆盖，不新建 suite、依赖或部署路线。修复原因仍待下一次有证据的实际复现，不先改生产查询或将整体 T4 计为通过。
 
 诊断记录已沿原 process_query_ready 实施，故障阶段将同一次读取的安全事实保存为 `source_outage_process_summaries`，不额外发请求、不改变就绪判定。`make test-node-metrics-online-runner` 返回 0，42 项回归及正式 System Metrics 身份夹具检查通过（`/tmp/addp-process-trend-hosted-diagnostics-runner.log`）；新增用例确认成功、CPU 窗口不足和失败采集的结果分别保留，只读取一次，输入未修改，未知凭据字段未进入报告。归档共 47 个文件，未检出凭据文件、私钥或标准令牌敏感值模式。最终 `git diff --check` 通过；默认 `make test-changed` 因混合工作区外部数据库输入缺失在预检返回 2（`/tmp/addp-process-trend-hosted-diagnostics-changed.log`），不计业务门禁通过。该诊断实现仍须推送后沿同一 Hosted suite 复验，本轮未更改生产 API、IAM、查询预算或采样规则。
+
+2026-10-12 用户确认已推送后，GitHub API 核对远端 main 为 `6b9ca2c1809acb0720ec1427fdf1e78f093f7d22`，本地祖先检查证明已包含限定授权记录 `2431625c3` 和安全诊断 `a2e4dd71e`。沿原 `platform-node-metrics` 手动入口执行 [Hosted T4（Run 38227755626）](https://github.com/pampa0629/addp/actions/runs/38227755626)，实际 checkout 为该提交，正式门禁、证据上传与退出步骤均 completed/success；本轮没有修改生产 API、IAM、预算、采样 guard、重试或故障判定。
+
+下载本轮证据至 `/tmp/addp-process-trend-hosted-38227755626/`，业务报告与浏览器报告均为 `passed / complete`；独立重跑现有 validate_resource_browser、validate_process_browser 均通过。25 项主机指标目录、真实密码/MFA、同一平台身份、负身份无业务请求、URL/iframe 恢复与自动刷新继续闭合。进程趋势两次实际响应均绑定当前 System 实例记录 1 / `d2548c17-6eca-4e1f-b7c4-6d8330c48f6d`，窗口分别为 `09:19:35–09:24:35` 和 `09:19:36–09:24:36 UTC`；步长 15 秒，两条 CPU/RSS 序列每次各 21 个有效点。人工检查实际 CPU 与内存截图，核占用、MiB 坐标、两图顺序和真实曲线正确，没有容器重叠。
+
+新增故障现场记录确认：主机源停止阶段的进程摘要于 `09:26:32 UTC` 评估，System 记录 1 和 Monitor 当前记录 8 均为 collecting；固定 CPU/RSS/运行时长六项均 valid，System 采样为 `09:26:17.425`、Monitor 为 `09:26:25.331 UTC`，不借用主机资源。进程停止/重启身份隔离、可选来源失败时业务 Ready 与对端继续、中心故障后的新样本、主机源恢复、控制源故障恢复、节点停用/重新启用后新证据和目标删除均完成。最终 summary 为 `result=passed / cleanup=passed / infra_cleanup=zero_residuals`，销毁前报告里的 awaiting-hosted-deployment-destruction 不作最终清理结果。归档 47 个文件，未检出凭据文件、私钥或标准令牌敏感值模式。
+
+同一提交 [Platform CI（Run 38227044030）](https://github.com/pampa0629/addp/actions/runs/38227044030) completed/success，已核对平台一致性、Go 工作区、Monitor/Console 前端与产品构建 Job 成功。此次完整 T4 通过不改写上一轮失败：原失败未复现且旧报告缺少该次摘要，具体原因仍未确证，不宣称安全诊断修复了生产故障。保留故障现场记录供后续复现使用；生产 T5、Python 来源、多副本启动与已退出实例历史仍不在本轮完成范围。
+
+本轮收尾只更新现有设计与 Monitor 文档入口，`git diff --check` 返回 0；默认 `make test-changed` 在当前混合工作区因多个 Owner 缺少 PostgreSQL、MySQL/OceanBase 等测试连接输入而在预检返回 2（`/tmp/addp-process-trend-hosted-acceptance-changed-38227755626.log`），后续本地业务门禁未执行，不计通过。未变化的安全诊断仍沿用上述 42 项 runner 及正式身份夹具证据；实际执行提交的 Platform CI 和完整 Hosted T4 分别已有通过证据。本次文档提交的 CI 尚未执行，将由既有 Platform consistency 与文档自动发现覆盖；推送由用户操作。
