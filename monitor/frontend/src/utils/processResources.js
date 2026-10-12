@@ -4,6 +4,12 @@ export const processMetrics = [
   { key: 'process.uptime_seconds', name: 'uptime', unit: 'seconds', windowSeconds: 0 }
 ]
 export const processRoles = ['backend', 'worker', 'scheduler', 'ingress']
+export function processRoleLabelKey(instance) {
+  const runtime = instance.metadata?.runtime_name
+  return instance.role === 'worker' && ['scan', 'sync', 'continuous_sync'].includes(runtime)
+    ? `monitor.process.workerTypes.${runtime}`
+    : `monitor.process.roles.${instance.role}`
+}
 export function resolveProcessRoute(input = {}) {
   const page = typeof input.page === 'string' && /^[1-9]\d{0,6}$/.test(input.page) ? Number(input.page) : 1
   const module = typeof input.module_name === 'string' && /^[a-z][a-z0-9_-]{0,49}$/.test(input.module_name) ? input.module_name : ''

@@ -793,6 +793,11 @@
         "scheduler": "Scheduler",
         "ingress": "Gateway"
       },
+      "workerTypes": {
+        "scan": "Scan worker",
+        "sync": "One-shot sync worker",
+        "continuous_sync": "Continuous sync worker"
+      },
       "instance": "Runtime instance",
       "online": "Online status",
       "allStatuses": "All online statuses",

@@ -2,6 +2,25 @@ import { expect, test } from '@playwright/test'
 import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
+test('Console language switching updates worker purposes in the active service iframe without fetching new instances', async ({ page }) => {
+  const state = await backend(page, { workerTypes: true })
+  await page.goto('/monitor/service-resources')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]'), list = monitor.getByTestId('process-list')
+  for (const label of ['扫描任务进程', '单次同步任务进程', '持续同步任务进程']) await expect(list).toContainText(label)
+  const documentID = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  const before = state.listCalls.length
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  for (const label of ['Scan worker', 'One-shot sync worker', 'Continuous sync worker']) await expect(list).toContainText(label)
+  await expect(list).not.toContainText('单次同步任务进程')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(documentID)
+  expect(state.listCalls).toHaveLength(before)
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.getByRole('menuitem', { name: '中文', exact: true }).click()
+  await expect(list).toContainText('单次同步任务进程')
+  await expect(list).not.toContainText('One-shot sync worker')
+})
+
 test('Console service monitoring uses one iframe and restores System filters after paging and reload', async ({ page }) => {
   const state = await backend(page)
   await page.goto('/monitor/service-resources?module_name=monitor&role=worker')

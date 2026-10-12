@@ -4,6 +4,10 @@ export const permissions = ['platform.module.read', 'monitor.resource_observatio
 const stamp = '2026-10-10T00:00:00Z'
 export async function backend(page, options = {}) {
   const rows = [1, 2].map(id => ({ id, module_name: 'monitor', instance_id: `native-${id}`, role: 'worker', node_id: '', host_node_name: '', runtime_hostname: `mac-process-${id}`, status: 'up', process_metrics_declared: true }))
+  if (options.workerTypes) rows.splice(0, rows.length, ...[
+    ['meta', 'worker', 'scan'], ['transfer', 'worker', 'sync'], ['transfer', 'worker', 'continuous_sync'],
+    ['transfer', 'worker', undefined], ['meta', 'worker', 'future_worker'], ['transfer', 'backend', 'continuous_sync']
+  ].map(([module, role, runtime], index) => ({ ...rows[0], id: index + 1, module_name: module, role, instance_id: `typed-${index + 1}`, runtime_hostname: 'shared-host', metadata: runtime === undefined ? {} : { runtime_name: runtime } })))
   if (options.scopes) rows.unshift(...Array.from({ length: 24 }, (_, i) => ({ ...rows[0], id: i + 3, instance_id: `history-${i}`, runtime_hostname: `history-${i}`, status: 'down' })), { ...rows[0], id: 27, instance_id: 'not-connected', runtime_hostname: 'not-connected', process_metrics_declared: false })
   let mode = 'valid', resolve, calls = [], listCalls = []
   const held = options.held ? new Promise(yes => { resolve = yes }) : null
@@ -19,7 +23,7 @@ export async function backend(page, options = {}) {
       listCalls.push(Object.fromEntries(url.searchParams))
       const pageNumber = Number(url.searchParams.get('page'))
       const filtered = rows.filter(row => (!url.searchParams.has('status') || row.status === url.searchParams.get('status')) && (!url.searchParams.has('process_metrics_declared') || String(row.process_metrics_declared) === url.searchParams.get('process_metrics_declared')))
-      body = { data: options.scopes ? filtered.slice((pageNumber - 1) * 20, pageNumber * 20) : pageNumber === 1 ? filtered : [], page: pageNumber, page_size: 20, total: options.scopes ? filtered.length : 21 }
+      body = { data: options.scopes ? filtered.slice((pageNumber - 1) * 20, pageNumber * 20) : pageNumber === 1 ? filtered : [], page: pageNumber, page_size: 20, total: options.scopes || options.workerTypes ? filtered.length : 21 }
     } else if (path === '/api/v1/monitor/platform/process_resource_summaries') {
       calls.push(url.searchParams.get('instance_ids'))
       const requested = new Set(url.searchParams.get('instance_ids').split(',').map(Number))
@@ -39,5 +43,5 @@ export async function backend(page, options = {}) {
     } else throw new Error(`unexpected process fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return { calls, listCalls, setMode: value => { mode = value }, release: () => resolve?.() }
+  return { calls, listCalls, setMode: value => { mode = value }, setRuntimeName: (id, value) => { rows.find(row => row.id === id).metadata = { runtime_name: value } }, release: () => resolve?.() }
 }

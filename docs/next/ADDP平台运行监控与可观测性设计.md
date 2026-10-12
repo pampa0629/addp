@@ -1694,3 +1694,15 @@ Safari 使用用户已登录的平台管理员会话实际查看 `/monitor/servi
 Safari 沿用户原平台管理员会话刷新 `/monitor/service-resources`，默认在线且已声明采集范围共八条，三个 Worker 均显示“任务进程”；09:11:59 刷新后八者均为“正在采集”，CPU、MiB 内存和自然经过时长都有有效值。已查看完整实际截图，各行 ID 与来源一致，仍明确显示未关联主机。首次看到的 09:01 页面为此前未刷新的数据；09:09 刷新时部分 CPU 仍显示窗口等待。只读历史查询证实该窗口边界存在 Transfer bounded 来源 up=0，以及 System/Monitor 旧样本距评估时刻约 85 秒、不满足原 76 秒边界；中心日志记录 09:08:48 启动与 WAL 恢复。随后完整窗口已恢复，八者均有效。未放宽窗口、补零或修改实现，也不据本次快照宣称长期稳定性；首次失败样本的具体原因未单独确证。当前两类 Transfer Worker 都显示“任务进程”，更明确的任务类型标识是后续易用性优化点。
 
 本轮收尾仅更新本节及 Monitor 文档入口，`git diff --check` 通过。默认 `make test-changed` 再次因当前混合工作区缺少多个 Owner 的 PostgreSQL/MySQL/OceanBase 等测试输入，在预检返回 2（`/tmp/addp-worker-runtime-changed.log`），后续业务门禁未执行、不计通过；不重跑未变更实现对应的上述四项已完成标准门禁。远端 `22e48a2` 的 Release/T2 工作流已完成成功，但其中 Monitor metrics 与 Monitor PostgreSQL Job 按路径跳过，不能计为本批重跑；该提交的 Platform CI 在本次查询时仍运行中。个人运行复验与远端编排状态分别记录，没有把跳过或未完成项计作通过。
+
+### 10.54 服务实例行内 Worker 用途标识
+
+沿 System 普通实例 DTO 已提供的 `metadata.runtime_name`，在服务监控的对应实例行直接显示用途：正式 role 为 `worker` 且值为 `scan`、`sync`、`continuous_sync` 时，分别显示“扫描任务进程”“单次同步任务进程”“持续同步任务进程”。这是现有 Worker 用途的展示，不增加 role、任务类型、API 字段或采集来源。用途缺失、未知或类型错误时仅显示正式角色“任务进程”；其他 role 保持其角色文本，不从模块名、主机名、UUID 或部署单元名称猜用途。不把该用途解释为此刻正在执行的任务，仍由采集状态和资源值独立表达运行观测。
+
+既有 `/service-resources` 页面、筛选参数和身份范围保持原契约。中文与英文用途文本在实例行就地显示，保留实例 ID 提示，刷新与语言切换使用最新实例事实及现有国际化能力。实施前确认门禁为 `make test-monitor-frontend` 和 `make test-console-frontend`，分别覆盖类型边界、真实页面中英文、刷新及 Console iframe 集成；窄屏可读性沿现有浏览器门禁检查。现有测试自动发现、Platform CI 前端 owner 登记和 Monitor → Console 影响扩散已覆盖，不新增门禁、依赖或 workflow。默认 `make test-changed` 单独记录混合工作区结果；Safari 只复核用户已登录页面，不读取 Token、不操作内置浏览器，也无需重启后端。
+
+2026-10-12 实现已沿原角色显示位置替换为唯一用途映射，未另建标识路径。`make test-monitor-frontend` 返回 0（`/tmp/addp-worker-label-monitor-1.log`）：54 项单测、101 项浏览器测试及构建通过；新增用例覆盖三类用途、缺失/未知/错误类型、其他正式角色不被覆盖、同主机独立实例、刷新清除旧用途和中英文。人工检查 1280/375 像素截图，用途文字完整可见，窄屏页面无整体水平溢出，其他指标列仍沿表格内部横向滚动查看。`make test-frontend-ci-registration` 返回 0（`/tmp/addp-worker-label-registration-1.log`），21 个前端 owner 登记通过。
+
+Safari 沿用户既有平台管理员会话刷新服务页，09:30 时的当前八条实例中，Meta Worker 显示“扫描任务进程”，两个 Transfer Worker 分别显示“单次同步任务进程”和“持续同步任务进程”，五个 Backend 保持“后端服务”。实例 ID 提示保留，八者均正在采集且 CPU/RSS/经过时长有值；已检查实际截图，三类用途位于各自行内。没有重启后端或变更个人语言偏好。默认 `make test-changed` 因当前混合工作区缺少多个 Owner 的数据库测试连接输入在预检返回 2（`/tmp/addp-worker-label-changed-1.log`），后续门禁未执行、不计通过。本次前端展示验收不计新的 Hosted T4、进程趋势或生产 T5 完成。
+
+最终 `make test-console-frontend` 返回 0（`/tmp/addp-worker-label-console-1.log`），168 项单测、128 项浏览器测试及构建通过。新增用例通过 Console 正式语言控件在当前 iframe 内切换中英文，三类用途同步更新，未重建 iframe、未重取实例列表；原筛选、分页、刷新及范围恢复继续通过。交付前 `git diff --check` 通过，本批只提交上述前端展示及相关文档，不夹带其他 Owner 的工作区改动。

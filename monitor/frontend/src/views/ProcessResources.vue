@@ -29,7 +29,7 @@
       <el-table :data="instances" v-loading="loading" :empty-text="t('monitor.process.empty')" data-testid="process-list">
         <el-table-column :label="t('monitor.process.module')" prop="module_name" min-width="120" />
         <el-table-column :label="t('monitor.process.instance')" min-width="170" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(`monitor.process.roles.${row.role}`) }}</p></template>
+          <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(processRoleLabelKey(row)) }}</p></template>
         </el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="100"><template #default="{ row }">{{ t(`monitor.process.status.${row.status}`) }}</template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
@@ -53,7 +53,7 @@ import { formatBytes, formatDurationSeconds } from '../../../../common-frontend/
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { processResourcesAPI as api } from '../api/processResources'
-import { processMetrics, processRoles, resolveProcessRoute, validateProcessInstances, validateProcessSummaries } from '../utils/processResources'
+import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 

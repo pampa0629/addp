@@ -3,6 +3,34 @@ import { identity, setIdentity } from './monitoring-targets.fixture'
 
 import { backend } from './process-resources.fixture'
 
+for (const locale of ['zh-cn', 'en']) test(`worker purposes are visible on their own rows and refresh removes outdated labels (${locale})`, async ({ page }, testInfo) => {
+  const state = await backend(page, { workerTypes: true, locale })
+  await page.goto('/service-resources')
+  const list = page.getByTestId('process-list'), rows = list.locator('tbody tr')
+  const labels = locale === 'en'
+    ? ['Scan worker', 'One-shot sync worker', 'Continuous sync worker', 'Worker', 'Worker', 'Backend']
+    : ['扫描任务进程', '单次同步任务进程', '持续同步任务进程', '任务进程', '任务进程', '后端服务']
+  await expect(rows).toHaveCount(6)
+  for (const [index, label] of labels.entries()) {
+    const purpose = rows.nth(index).locator('td').nth(1).locator('p')
+    await expect(purpose).toHaveText(label)
+    await expect(purpose).toHaveAttribute('title', `typed-${index + 1}`)
+  }
+  await expect(list).toContainText(locale === 'en' ? '1.50 cores' : '1.50 核')
+  await page.screenshot({ path: testInfo.outputPath(`worker-types-${locale}-desktop.png`), fullPage: true })
+  await page.setViewportSize({ width: 375, height: 800 })
+  await expect(rows.nth(2).locator('td').nth(1)).toContainText(labels[2])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`worker-types-${locale}-narrow.png`), fullPage: true })
+  state.setRuntimeName(2, null)
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(rows.nth(1).locator('td').nth(1).locator('p')).toHaveText(labels[3])
+  await expect(list).not.toContainText(labels[1])
+  await expect(rows.nth(2).locator('td').nth(1).locator('p')).toHaveText(labels[2])
+  await page.reload()
+  await expect(rows.nth(1).locator('td').nth(1).locator('p')).toHaveText(labels[3])
+})
+
 test('service resources use current System instances, local explanations and correct process units', async ({ page }) => {
   const state = await backend(page)
   await page.goto('/service-resources')
