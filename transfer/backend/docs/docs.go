@@ -4377,7 +4377,12 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.LocalTime"
                 },
                 "error_details": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                    "description": "Safe diagnostics; code=query_output_lineage_unresolved identifies unprovable query lineage without private text. | 安全诊断；血缘不可证明使用稳定 code，不返回私有文本。",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                        }
+                    ]
                 },
                 "execution_id": {
                     "type": "string"
@@ -4415,7 +4420,12 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.LocalTime"
                 },
                 "error_details": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                    "description": "Safe diagnostics; code=query_output_lineage_unresolved identifies unprovable query lineage without private text. | 安全诊断；血缘不可证明使用稳定 code，不返回私有文本。",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
+                        }
+                    ]
                 },
                 "execution_id": {
                     "type": "string"

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	commonPlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
@@ -276,14 +277,14 @@ func TestGetOwnedExecutionByExecutionIDRequiresMatchingAdHocSource(t *testing.T)
 }
 
 func TestFinishErrorDetailsClearsPriorMessageOnSuccess(t *testing.T) {
-	details, changed := finishErrorDetails(commonModels.JSONMap{"message": "old error"}, models.ExecutionStatusSuccess, "")
+	details, changed := finishErrorDetails(commonModels.JSONMap{"message": "old error"}, models.ExecutionStatusSuccess, nil)
 	if !changed || len(details) != 0 {
 		t.Fatalf("details=%#v changed=%t", details, changed)
 	}
 }
 
 func TestFinishErrorDetailsPreservesFailureCode(t *testing.T) {
-	details, changed := finishErrorDetails(commonModels.JSONMap{"code": "TARGET_WRITE_FAILED"}, models.ExecutionStatusFailed, "failed to write target")
+	details, changed := finishErrorDetails(commonModels.JSONMap{"code": "TARGET_WRITE_FAILED"}, models.ExecutionStatusFailed, errors.New("failed to write target"))
 	if !changed || details["code"] != "TARGET_WRITE_FAILED" || details["message"] != "failed to write target" {
 		t.Fatalf("details=%#v changed=%t", details, changed)
 	}
@@ -619,7 +620,7 @@ func TestFinishExecutionCommitsFactsOnlyWithCurrentLease(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err := service.FinishExecution(context.Background(), uint(item.ID), models.ExecutionStatusSuccess, "", commonModels.JSONMap{"lineage_facts": map[string]interface{}{"schema_version": "v1"}})
+			err := service.FinishExecution(context.Background(), uint(item.ID), models.ExecutionStatusSuccess, nil, commonModels.JSONMap{"lineage_facts": map[string]interface{}{"schema_version": "v1"}})
 			if (err != nil) != loseLease {
 				t.Fatalf("finish error=%v loseLease=%v", err, loseLease)
 			}
@@ -636,6 +637,45 @@ func TestFinishExecutionCommitsFactsOnlyWithCurrentLease(t *testing.T) {
 				}
 			} else if stored.Status != commonExecution.ExecutionStatusSuccess || stored.Metadata["lineage_facts"] == nil {
 				t.Fatal("completion did not atomically persist facts")
+			}
+		})
+	}
+}
+
+func TestBoundedCompletionRetainsTypedLineageFailureWithoutPrivateText(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cause error
+		code  string
+	}{
+		{"typed", commonPlugin.ErrQueryOutputLineageUnresolved, "query_output_lineage_unresolved"},
+		{"wrapped", fmt.Errorf("prepare query source protection: %w", commonPlugin.ErrQueryOutputLineageUnresolved), "query_output_lineage_unresolved"},
+		{"same text is not evidence", errors.New(commonPlugin.ErrQueryOutputLineageUnresolved.Error()), ""},
+		{"connection failure", errors.New("private-sentinel password=credential"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newExecutionServiceTestDB(t)
+			task := createExecutionServiceTestTask(t, db)
+			item := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+			item.SourceTaskID = nil
+			svc := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+			bindExecutionServiceTestLease(t, db, svc, &item)
+			if err := svc.FinishIfRunning(context.Background(), uint(item.ID), tc.cause); err != nil {
+				t.Fatal(err)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.First(&stored, item.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.Status != commonExecution.ExecutionStatusFailed || stored.ErrorDetails["message"] != tc.cause.Error() {
+				t.Fatalf("missing private completion facts: %#v", stored.ErrorDetails)
+			}
+			observed := commonExecution.Observe(&stored)
+			if got, _ := observed.ErrorDetails["code"].(string); got != tc.code {
+				t.Fatalf("diagnostic code=%q want %q", got, tc.code)
+			}
+			if _, exists := observed.ErrorDetails["message"]; exists {
+				t.Fatal("private text leaked")
 			}
 		})
 	}

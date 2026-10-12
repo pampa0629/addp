@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonPlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -434,7 +436,7 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 }
 
 // FinishExecution 完成执行（设置结束时间和状态）
-func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, errorMsg string, resultMetadata commonModels.JSONMap) error {
+func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":       string(status),
@@ -457,7 +459,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		}
 		updates["metadata"] = metadata
 	}
-	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, errorMsg); changed {
+	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, execErr); changed {
 		updates["error_details"] = errorDetails
 	}
 
@@ -519,12 +521,12 @@ func (s *ExecutionService) FinishIfRunning(ctx context.Context, id uint, execErr
 		return fmt.Errorf("bounded execution %s is not running", execution.ExecutionID)
 	}
 	if execErr != nil {
-		return s.FinishExecution(ctx, id, models.ExecutionStatusFailed, execErr.Error(), nil)
+		return s.FinishExecution(ctx, id, models.ExecutionStatusFailed, execErr, nil)
 	}
-	return s.FinishExecution(ctx, id, models.ExecutionStatusSuccess, "", nil)
+	return s.FinishExecution(ctx, id, models.ExecutionStatusSuccess, nil, nil)
 }
 
-func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionStatus, errorMsg string) (commonModels.JSONMap, bool) {
+func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionStatus, execErr error) (commonModels.JSONMap, bool) {
 	if existing == nil {
 		existing = commonModels.JSONMap{}
 	}
@@ -532,8 +534,11 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 	for key, value := range existing {
 		next[key] = value
 	}
-	if errorMsg != "" {
-		next["message"] = errorMsg
+	if execErr != nil {
+		next["message"] = execErr.Error()
+		if errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
+			next["code"] = "query_output_lineage_unresolved"
+		}
 		return next, true
 	}
 	if status == models.ExecutionStatusSuccess {

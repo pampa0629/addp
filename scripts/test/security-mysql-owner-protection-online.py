@@ -1372,10 +1372,11 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             raise SuiteError("MongoDB query execution identity or terminal status differs")
         written = nonnegative_int(execution.get("records_written"), "query records written")
         if denied:
-            failure_message = execution.get("error_msg")
+            diagnostics = _object(execution.get("error_details"), "query failure diagnostics")
             if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
-                    or not isinstance(failure_message, str)
-                    or "prepare query source protection: query output lineage unresolved:" not in failure_message):
+                    or diagnostics.get("category") != "execution_failed"
+                    or diagnostics.get("code") != "query_output_lineage_unresolved"
+                    or "error_msg" in execution or "message" in diagnostics or "details" in diagnostics):
                 raise SuiteError("MongoDB derived query must fail at the protection lineage gate with zero writes")
             columns, rows = preview_rows(client, target_locator)
             if columns != list(MONGODB_TRANSFER_FIELDS) or rows:

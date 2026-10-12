@@ -308,7 +308,7 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -452,7 +452,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -632,7 +632,7 @@ func (s *ExecutionEngineService) executeTargetOverrideTableTransferTask(
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, targetLocator, "", "", metrics.RecordsWritten); err != nil {
 		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -925,7 +925,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -974,7 +974,7 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -1141,7 +1141,7 @@ func (s *ExecutionEngineService) updateExecutionError(ctx context.Context, task 
 		return
 	}
 
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr.Error(), nil); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr, nil); err != nil {
 		s.logger.Error("CRITICAL: failed to mark execution as failed - status inconsistency may occur",
 			"error", err,
 			"execution_id", executionID,

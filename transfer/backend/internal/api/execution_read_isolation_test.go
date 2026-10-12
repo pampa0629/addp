@@ -134,6 +134,10 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 			row.Source = "transfer"
 		}
 		row.Status, row.TriggerType = "success", "manual"
+		if name == "own" {
+			row.Status = "failed"
+			row.ErrorDetails = models.JSONMap{"message": "private-sentinel", "code": "query_output_lineage_unresolved"}
+		}
 		row.StartedAt, row.CompletedAt = &now, &now
 		row.CreatedAt, row.UpdatedAt = now, now
 		row.Metadata = models.JSONMap{"private": "private-sentinel", "checkpoint_state": map[string]interface{}{"cursor": "private-sentinel"}, "fencing_token": "private-sentinel", "target_refs": []interface{}{map[string]interface{}{"path": "tenant/export/result.csv", "primary": true, "private": "private-sentinel"}}}
@@ -209,6 +213,16 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 		body := request(token, "/executions?page_size=1", 200)
 		if body["total"] != float64(2) || len(body["data"].([]interface{})) != 1 {
 			t.Fatalf("list total or page leaks rows: %#v", body)
+		}
+		for _, suffix := range []string{"", "/progress"} {
+			if token == "peer" {
+				continue
+			}
+			body := request(token, "/executions/"+ids["own"]+suffix, 200)
+			details, ok := body["error_details"].(map[string]interface{})
+			if !ok || details["category"] != "execution_failed" || details["code"] != "query_output_lineage_unresolved" {
+				t.Fatalf("safe lineage diagnostic missing: %#v", body)
+			}
 		}
 		for _, path := range []string{"/executions?task_id=1", "/task-definitions/1/executions"} {
 			if body := request(token, path, 200); body["total"] != float64(1) {

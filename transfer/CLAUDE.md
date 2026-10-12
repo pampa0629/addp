@@ -173,3 +173,5 @@ curl http://localhost:8083/health/ready
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
 正式只读配置预检为 `POST /api/v1/transfer/task-config-checks`：完整创建请求、三项当前租户用户权限交集（`transfer.task.create`、`meta.catalog.read`、`system.engine.read`），精确委托 Scope `transfer.task.config.check`。只读取 System 引擎事实及 Meta 已落库快照，先授权后用 Tenant Service 读取；不得调用业务行、查询执行／描述、实时 Catalog Facts、Prepare、任务保存或执行。支持边界、摘要及 unknown 语义见 `docs/transfer-基本概念及配置说明.md`。T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺失／采样／依赖错误；已有 `make test-transfer-postgres` 覆盖非法数组在 replace 删除前拒绝。
+
+Transfer bounded 执行失败的诊断沿既有 `error_details.code` 输出：不可证明查询输出血缘的类型化 `plugin.ErrQueryOutputLineageUnresolved`（含逐层 `%w` 包装）在唯一完成事务中保存 `query_output_lineage_unresolved`。执行完成内部接口传递 error，不先转字符串再猜测原因；私有 message 仍仅用于内部诊断，专业响应继续通过 Common Observation 隐藏原始文本。Hosted 派生查询拒绝验收只匹配该稳定 code、failed 终态、本次执行身份、零写入与空目标前后事实，不消费已删除的 error_msg，也不把连接错误或同文案字符串当作保护拒绝。T1 覆盖类型化／包装／无关错误、当前租约下完成与专业响应隐藏文本；现有 Transfer PostgreSQL 读取隔离门禁复验诊断字段及权限，已有门禁登记承接，不新增数据库或测试入口。

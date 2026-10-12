@@ -708,7 +708,7 @@ def validate_security_mysql_owner_protection_profile(
                      'verify_mysql_outage_transfer(', 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)',
                      'SUPPORT.run_security_lifecycle(repository, "start", deadline)', 'finally:',
                      'SUPPORT.security_listener_refused()', 'owner_processes_unchanged', 'target_empty_before',
-                     'same_user_verified', 'target_output_verified'):
+                     'same_user_verified', 'target_output_verified', 'diagnostics.get("code") != "query_output_lineage_unresolved"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

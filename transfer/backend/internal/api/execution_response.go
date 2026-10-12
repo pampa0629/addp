@@ -26,10 +26,11 @@ type ExecutionResponse struct {
 	RecordsWritten int64                  `json:"records_written"`
 	BytesRead      int64                  `json:"bytes_read"`
 	BytesWritten   int64                  `json:"bytes_written"`
-	ErrorDetails   models.JSONMap         `json:"error_details,omitempty"`
-	Metadata       ExecutionMetadata      `json:"metadata"`
-	TriggerType    string                 `json:"trigger_type"`
-	TriggerBy      *uint                  `json:"trigger_by,omitempty"`
+	// Safe diagnostics; code=query_output_lineage_unresolved identifies unprovable query lineage without private text. | 安全诊断；血缘不可证明使用稳定 code，不返回私有文本。
+	ErrorDetails models.JSONMap    `json:"error_details,omitempty"`
+	Metadata     ExecutionMetadata `json:"metadata"`
+	TriggerType  string            `json:"trigger_type"`
+	TriggerBy    *uint             `json:"trigger_by,omitempty"`
 }
 
 type ExecutionListResponse struct {
@@ -50,9 +51,10 @@ type ExecutionProgressResponse struct {
 	RecordsWritten int64                  `json:"records_written"`
 	BytesRead      int64                  `json:"bytes_read"`
 	BytesWritten   int64                  `json:"bytes_written"`
-	ErrorDetails   models.JSONMap         `json:"error_details,omitempty"`
-	Duration       float64                `json:"duration"`
-	QPS            float64                `json:"qps"`
+	// Safe diagnostics; code=query_output_lineage_unresolved identifies unprovable query lineage without private text. | 安全诊断；血缘不可证明使用稳定 code，不返回私有文本。
+	ErrorDetails models.JSONMap `json:"error_details,omitempty"`
+	Duration     float64        `json:"duration"`
+	QPS          float64        `json:"qps"`
 }
 
 type ExecutionMetadata struct {
