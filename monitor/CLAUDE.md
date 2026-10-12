@@ -159,7 +159,7 @@ Common Go SDK 支持 macOS/Linux 自身进程，部署显式启用独立 mTLS �
 
 ## 主机接入与采集状态（2026-10-08）
 
-服务进程趋势沿设计 10.55：`GET /platform/process_resource_trends` 只接受当前实例记录 ID 和整秒起止时间，固定 CPU 核占用/RSS 两条序列；复用原用户授权、身份/启动时间、来源准入、预算与租约检查，开始裁剪到本次启动之后，离线或声明失效不读取历史。前端沿服务监控行内“查看趋势”对话框，`instance_id/range` 可恢复，使用共享 ChartRenderer，缺样本保留断点。趋势 API、Go T1/真实 metrics T2、Monitor/Console T3、Swagger 和同一 Hosted suite 的 runner 同次覆盖；分层通过状态见 10.55，不把未执行的个人重启、Hosted T4 或生产 T5 计为完成。
+服务进程趋势沿设计 10.55：`GET /platform/process_resource_trends` 只接受当前实例记录 ID 和整秒起止时间，固定 CPU 核占用/RSS 两条序列；复用原用户授权、身份/启动时间、来源准入、预算与租约检查，开始裁剪到本次启动之后，离线或声明失效不读取历史。前端沿服务监控行内“查看趋势”对话框，`instance_id/range` 可恢复，使用共享 ChartRenderer，缺样本保留断点；容器由共享图表实际高度撑开，桌面与窄屏均验证画布完整、不与下一张图重叠。趋势 API、Go T1/真实 metrics T2、Monitor/Console T3、Swagger 和同一 Hosted suite 的 runner 同次覆盖；个人 Safari 两张真实曲线、URL 范围恢复、启动裁剪、旧实例重新选择及来源身份已复验，分层通过状态见 10.55，新的 Hosted T4 和生产 T5 未执行。
 
 用户入口统一为 System「平台主机管理」、Monitor「运行监控 → 主机监控」与「高级设置 → 采集配置」。内部 HostNode、MonitoringTarget 和既有路由保持唯一职责。采集配置从当前用户有权读取的 System 主机列表选择名称，不复制主机身份；资源详情直接携带该主机进入采集配置。System 的允许服务模块绑定名单放在高级设置，从已有模块定义中选择，不代表实际部署关联。
 

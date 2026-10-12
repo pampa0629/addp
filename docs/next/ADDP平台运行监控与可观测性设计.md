@@ -1709,7 +1709,7 @@ Safari 沿用户既有平台管理员会话刷新服务页，09:30 时的当前�
 
 包含本轮实现的 `3bba7b5ea` 在 Platform CI（run 38192829540）中的 Monitor 与 Console 前端 Job 均 completed/success；后续 main 提交的完整工作流当时仍在排队或运行，未将整套 CI 写成通过。
 
-### 10.55 当前服务进程 CPU 与内存趋势（已实现，实际运行待验收）
+### 10.55 当前服务进程 CPU 与内存趋势（已实现，个人运行已验收）
 
 2026-10-12 用户明确选择“只看当前运行实例”：只查询当前有效租约、明确声明采集的运行实例，在本次启动之后读取 CPU 和 RSS 趋势。重启后的实例 ID 独立，不能拼接旧进程；离线、声明失效及完成时租约到期继续返回空值，不查询退出实例历史。System 身份、普通用户授权、私有身份投影与来源准入沿 10.49 原链路；不增加身份权限、历史存储或后台续租。
 
@@ -1733,3 +1733,13 @@ Swagger 同步生成与 Monitor 六十八个公开路由覆盖校验通过；mak
 本轮未自行重启或接管个人服务。现有 SDK、个人采集部署、System、Common 和权限实现无需变更；由用户执行 ./scripts/dev/restart.sh -monitor 应用新趋势接口后，再进行 Safari 当前实例实际曲线与完整窗口复验。未重启、未执行的个人验收和生产 T5 不计为通过。按用户要求只提交本批文件，推送交给用户。
 
 独立 `make test-monitor-postgres` 返回 0（`/tmp/addp-process-trend-postgres-1.log`），沿标准入口验证实际 `addp-postgres:25432/addp_test` 的 Monitor Repository/Service 与资源预算 CAS/热生效等既有集成；没有创建其他 database，没有借用 System IAM 库。该结果不改写被平台 T0 阻断的完整模块入口状态。最终源码与本批文件的 `git diff --check` 通过。
+
+个人运行复验发现趋势图组合的布局缺陷：业务容器固定 280 像素，共享 ChartRenderer 最小高度为 420 像素，CPU 画布越过自己的容器，与后面的 RSS 标题和图表重叠。修复只调整 Monitor 组合容器，由共享组件的实际高度撑开文档流，不修改共享组件、API、采样口径或权限。先增加桌面与窄屏画布必须被容器完整容纳、两图不重叠的真实浏览器断言，再修复布局；门禁使用现有 `make test-monitor-frontend`，Console 对同一页面的集成沿已有前端门禁复验，CI 自动发现和 owner 登记已覆盖，不增加测试入口或工作流。
+
+布局修复前，中英文两个趋势用例均因画布越出容器失败（`/tmp/addp-process-trend-layout-red.log`）；修复后 `make test-monitor-frontend` 返回 0，55 项单测、106 项浏览器测试及构建通过（`/tmp/addp-process-trend-layout-monitor.log`）。`make test-console-frontend` 返回 0，170 项单测、129 项浏览器测试及构建通过（`/tmp/addp-process-trend-layout-console.log`）。沿同一标准浏览器入口的截图复验两项通过（`/tmp/addp-process-trend-layout-green.log`）；人工检查修正后中英文窄屏内存截图，CPU 坐标与图例结束后才开始 RSS 标题，内存曲线、坐标和图例均完整，截图保留在 `/tmp/addp-process-trend-layout-screenshots/`。API、后端和共享图表实现未改，不重复原后端门禁；本批前端门禁仍由原 Platform CI owner Job 覆盖。
+
+2026-10-12 用户重启后先完成 12 时段个人只读复验：Monitor Ready 的构建提交 `027c6e13c` 已包含趋势实现 `0a3f51658`，Safari 当前授权列表八条均有即时资源值；Meta Worker 的 5m/1h 趋势、刷新后的实例及范围恢复成功，一小时实际起点裁剪到本次启动后的首个整秒。中心独立 mTLS 范围查询核对八个当前 SDK 身份，各自 CPU/RSS 有历史点，网格从各自启动边界开始，不选择旧 UUID（`/tmp/addp-process-trend-runtime-ranges.log`）。这些来源查询用于交叉核实数据，不替代 Monitor 用户 API 的授权验收。
+
+用户要求重新操作 Safari 后，在新标签页复验再次重启后的 Monitor 实例 `dbe17b14-eae8-4e31-be2d-0a5b1a0c5300`（System 记录 4991），不覆盖原本体页面。实际截图已看到 CPU 曲线，并滚动看到完整 RSS 曲线及 `2026/10/12 14:54:57 · 50.75 MiB` 提示框；同一时刻中心独立查询精确匹配该值。选择 1h 并载入公开 URL 后保留当前实例和范围，实际起点为 `14:53:57`，与 Ready 的 `14:53:56.762098` 向上取整一致，CPU 首段窗口不足保留空白。打开上一轮实例记录 4925 只显示重新选择提示、不显示曲线，没有自动匹配到新实例。06:56:26 UTC 的来源复验确认九来源全部 up、八进程当前 CPU 窗口各有四个样本且无重置、三个 Worker 的 PID/监听/正式状态/身份一致、匿名 TLS 被拒绝（`/tmp/addp-process-trend-runtime-repeat.log`）。此前页面结构与截图不一致未确证根因；本次重新操作已取得可见弹窗和两张真实曲线，不把此前截图当作通过证据。个人运行验收不计新的 Hosted T4 或生产 T5 完成。
+
+最终 `git diff --check` 通过。默认 `make test-changed` 返回 2（`/tmp/addp-process-trend-layout-changed-final.log`），因混合工作区多个 Owner 的 PostgreSQL、MySQL、OceanBase 等测试连接输入缺失而在预检退出，后续门禁未执行、不计通过。本批只提交 Monitor 前端容器、其布局回归和上述运行记录，推送仍由用户操作；没有重启、读取浏览器 Token、修改 IAM 或执行新 Hosted 临时身份验收。

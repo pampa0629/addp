@@ -184,6 +184,6 @@ onBeforeUnmount(() => requests.dispose())
 .collection-filter { max-width: 100%; }
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
 .el-pagination { margin-top: 16px; }
-.process-trend-chart { height: 280px; min-width: 0; }
+.process-trend-chart { display: flex; min-width: 0; }
 .process-trend-subject { overflow-wrap: anywhere; color: var(--addp-text-primary); }
 </style>

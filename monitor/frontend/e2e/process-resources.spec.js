@@ -3,6 +3,20 @@ import { identity, setIdentity } from './monitoring-targets.fixture'
 
 import { backend } from './process-resources.fixture'
 
+async function expectTrendChartLayout(page) {
+  for (const metric of ['cpu', 'memory']) {
+    const container = page.getByTestId(`process-trend-${metric}`)
+    await expect(container.locator('canvas')).toBeVisible()
+    await expect.poll(async () => container.evaluate(element => {
+      const bounds = element.getBoundingClientRect(), canvas = element.querySelector('canvas').getBoundingClientRect()
+      return canvas.top >= bounds.top - 1 && canvas.bottom <= bounds.bottom + 1 && canvas.left >= bounds.left - 1 && canvas.right <= bounds.right + 1
+    })).toBe(true)
+  }
+  const cpu = await page.getByTestId('process-trend-cpu').locator('canvas').boundingBox()
+  const memoryHeading = await page.getByTestId('process-trend-memory').locator('..').locator('h3').boundingBox()
+  expect(cpu.y + cpu.height).toBeLessThanOrEqual(memoryHeading.y)
+}
+
 for (const locale of ['zh-cn', 'en']) test(`current process trends restore their scope, draw two charts and keep gaps (${locale})`, async ({ page }, testInfo) => {
   const state = await backend(page, { locale })
   await page.goto('/service-resources')
@@ -12,6 +26,7 @@ for (const locale of ['zh-cn', 'en']) test(`current process trends restore their
   const dialog = page.getByTestId('process-trend')
   await expect(dialog).toContainText('native-1')
   for (const metric of ['cpu', 'memory']) await expect(page.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
+  await expectTrendChartLayout(page)
   await expect(dialog).toContainText(locale === 'en' ? 'missing valid samples remain gaps' : '曲线保留断点')
   expect(state.trendCalls.at(-1)).toMatchObject({ instance_id: '1', start: '2026-10-09T23:55:00Z', end: '2026-10-10T00:00:00Z' })
   const range = dialog.locator('.el-select')
@@ -24,6 +39,7 @@ for (const locale of ['zh-cn', 'en']) test(`current process trends restore their
   await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
   expect(state.trendCalls.at(-1).start).toBe('2026-10-09T23:00:00Z')
   await page.setViewportSize({ width: 375, height: 800 })
+  await expectTrendChartLayout(page)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath(`process-trend-${locale}-narrow.png`), fullPage: true, animations: 'disabled' })
   const memory = page.getByTestId('process-trend-memory').locator('canvas')
