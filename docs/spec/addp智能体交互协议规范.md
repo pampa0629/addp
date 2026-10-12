@@ -155,6 +155,10 @@ Presentation 描述 ResultRef 或 Interaction 如何显示，是可重建投影�
 
 Presentation 字符串字段最大 2000 字符。A2UI Surface 不写回 LLM 上下文，不能承载业务结果或审批决定。
 
+正式配置预检可以生成只读报告 Presentation。Runtime 只从 `transfer.task.config.check` 已经通过 Manifest 校验的有效响应投影状态、检查时间、三个范围数组和诊断，不接收模型生成的报告。投影不是新的 owner 结果实体或 ResultRef，不复制业务行、主体身份、结构绑定摘要或授权信息；报告中字段路径的长度沿用正式诊断的 4096 字符上限。它只表示该次检查的历史快照，不证明当前配置、权限或执行仍有效。
+
+显式草稿检查和创建流程中的自动检查使用同一展示路径，每次有效检查产生一个无 action 的固定卡片；unsupported 仍阻止创建，unknown 仍不是通过。服务、权限或无效响应失败不生成报告卡片，也不改成 unknown。LLM 可以解释或提出修改，但不得替代固定报告或自行填充其状态、范围和诊断。消息历史与安全事件回放恢复同一受限投影，不重新调用预检。最终创建复核仍使用原 Interaction 与参数绑定；报告卡片不是批准。
+
 ## 七、A2UI Catalog
 
 ### 7.1 协议与安全
@@ -173,8 +177,11 @@ Catalog props 只允许声明式 JSON、稳定引用和受限展示参数。禁�
 | `TablePreview` | 展示受限表格投影。 | 最多 50 列、100 行，单元格只允许 JSON 标量。 |
 | `MapView` | 展示受限 WGS84 GeoJSON。 | 最多 200 Feature、5000 个坐标值，不接受 URL。 |
 | `ResourcePicker` | 从持久化候选中选择 locator。 | 最多 50 个候选，只能提交当前 Interaction 中已有值。 |
+| `TransferConfigCheckReport` | 展示 Runtime 投影的正式只读配置预检快照。 | 每个范围数组最多 128 项、诊断最多 512 项、报告投影最多 128 KiB；不接受主体、绑定摘要、URL 或 action。Agent wrapper 与 Transfer 向导复用唯一共享报告组件。 |
 
 `GraphView` 不在当前 Catalog 中。新增组件必须由评测场景证明需求，并同步升级 Catalog 契约和安全测试。
+
+`TransferConfigCheckReport` 是当前 Catalog 的非破坏性扩充：既有组件 props、消息 parts 和事件类型不变，只有一个当前 Catalog/Renderer，无旧解析分支。需求依据是平台 Transfer 场景的只读草稿检查及实际会话 26；受控 Harness、消息恢复和浏览器回归验证固定报告来自 owner、三态准确、无创建副作用及未知字段拒绝，实际对话不计为正式 Hosted T4。
 
 ### 7.3 能力协商与降级
 

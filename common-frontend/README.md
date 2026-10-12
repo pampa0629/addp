@@ -342,11 +342,13 @@ Manager 表格预览、容器内表格预览、Develop 查询结果、Workbench 
 
 ### Agent UI 协议组件
 
+`basic/src/components/TransferConfigCheckReport.vue` 是正式 Transfer 配置预检报告的唯一展示实现，接收受限报告投影，只读展示原始三态、检查时间、检查范围和完整字段诊断。`projectTransferConfigCheckReport()` 排除主体、哈希和结构绑定事实，不重算 Provider 结论。Transfer 向导只负责发起检查、失效清理和参数绑定；Agent 的 `TransferConfigCheckReport` A2UI wrapper 只负责订阅 props，不发请求或 action。公共词条、主题和窄屏行为统一维护于共享库；原向导的私有报告模板删除。公共契约与唯一所有权走 `make test-common-frontend`，实际组件/协议回归走 Agent 和 Transfer 既有前端门禁，CI 自动发现，不新增依赖或 Job。
+
 `agent-ui/` 提供 ADDP Agent 界面的共享协议适配层，完整协议、安全上限和降级规则见 `docs/spec/addp智能体交互协议规范.md`：
 
 - 使用官方 `@a2ui/web_core/v0_9` 处理 A2UI Surface；
 - 使用 `addp.catalog/v1` 注册受信任 Vue 组件；
-- 当前包含 `WorkflowDag`、`ClarificationChoice`、`ApprovalRequest`、`MapView`、`TablePreview` 和 `ResourcePicker`；
+- 当前包含 `WorkflowDag`、`ClarificationChoice`、`ApprovalRequest`、`MapView`、`TablePreview`、`ResourcePicker` 和 `TransferConfigCheckReport`；
 - 未注册组件会被拒绝，不执行 Agent 生成的任意前端代码；
 - A2UI wrapper 只映射声明式 props 和 action，业务事实仍通过 ResultRef / Interaction 访问 owner API。
 

@@ -17,6 +17,30 @@ from services.interactions import normalize_options
 
 
 class AGUIProtocolTests(unittest.TestCase):
+    def test_formal_config_check_surface_is_an_exact_bounded_readonly_projection(self):
+        from protocol.a2ui import transfer_config_check_presentation, transfer_config_check_surface
+
+        report = {
+            "status": "unknown", "observed_at": "2026-10-12T00:00:00Z",
+            "checked": ["request_shape"], "not_checked": ["business_rows"],
+            "runtime_checks_required": ["per_value_encoding"],
+            "diagnostics": [{"status": "unknown", "code": "source_type_unknown", "check": "source_assignment", "config_path": "/config/transforms/0/fields/0", "source_field": "members"}],
+            "principal_id": "private-principal", "tenant_id": 1,
+            "binding_hash": "private-binding", "config_hash": "private-config", "facts": [{"snapshot_hash": "private-snapshot"}],
+        }
+        presentation = transfer_config_check_presentation(report)
+        operations = transfer_config_check_surface("surface:check", presentation)
+        root = operations[1]["updateComponents"]["components"][0]
+        self.assertEqual(root["component"], "TransferConfigCheckReport")
+        self.assertEqual(set(root["report"]), {"status", "observed_at", "checked", "not_checked", "runtime_checks_required", "diagnostics"})
+        self.assertEqual(root["report"]["diagnostics"], report["diagnostics"])
+        self.assertNotIn("private-", json.dumps(operations))
+        report["diagnostics"][0]["code"] = "changed"
+        self.assertEqual(root["report"]["diagnostics"][0]["code"], "source_type_unknown")
+        self.assertNotIn("interactionId", root)
+        with self.assertRaisesRegex(ValueError, "config check report exceeds"):
+            transfer_config_check_presentation({**report, "diagnostics": [{"code": "x" * (128 * 1024)}]})
+
     def test_workflow_run_step_projection_does_not_persist_workflow_payload(self):
         from api.chat import _tool_input_projection
 

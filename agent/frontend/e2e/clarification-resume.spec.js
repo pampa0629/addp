@@ -10,6 +10,19 @@ const goal = '把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，先建任�
 const answer = '一文档一行，只投影标量字段。'
 const reviewOptions = [{ label: '知悉未核验项，仅创建任务', value: 'review-fingerprint' }, { label: '取消', value: 'cancel' }]
 const unknownWarning = '预检结果为无法确定（unknown），并非通过。请核对未检查项和运行时核验要求；确认表示知情接受这些限制，仅保存未运行任务。'
+const draftGoal = '把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，检查配置，只给草稿，不创建、不运行。'
+
+function checkReport(status) {
+  const report = { status, observed_at: '2026-10-12T00:00:00Z', checked: ['request_shape'], not_checked: ['business_rows'],
+    runtime_checks_required: ['per_value_encoding'], diagnostics: [{ status, code: 'source_type_unknown', check: 'source_assignment',
+      config_path: '/config/transforms/0/fields/0', source_field: 'members', target_field: 'members', physical_type: 'TEXT[]' }] }
+  const surface = `surface:check-${status}`
+  return { role: 'assistant', id: surface, parts: [{ type: 'presentation_ref', protocol: 'a2ui', catalog_id: 'addp.catalog/v1', surface_id: surface,
+    content: { operations: [
+      { version: 'v0.9', createSurface: { surfaceId: surface, catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: surface, components: [{ id: 'root', component: 'TransferConfigCheckReport', report }] } }
+    ] } }] }
+}
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => { throw error })
@@ -32,9 +45,10 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
-  const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"status":"unknown","not_checked":["business_rows"],"runtime_checks_required":["per_value_encoding"]}\n\`\`\`\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
+  const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
+  review.parts.splice(1, 0, checkReport('unknown').parts[0])
   const messages = multiple ? [question, clarification(reviewId, '请选择目标', reviewOptions)] : []
   const requests = []
   const unexpected = []
@@ -61,9 +75,10 @@ async function installBackend(page, { multiple = false, rejectResume = false } =
       if (requests.length === 1) {
         expect(input.resume || []).toEqual([])
         expect(input.messages).toHaveLength(1)
-        expect(input.messages[0]).toMatchObject({ role: 'user', content: goal })
-        messages.push({ id: 'goal', role: 'user', parts: [{ type: 'text', text: goal }] }, question)
-        current = question
+        const expectedGoal = draftReportStatus ? draftGoal : goal
+        expect(input.messages[0]).toMatchObject({ role: 'user', content: expectedGoal })
+        current = draftReportStatus ? checkReport(draftReportStatus) : question
+        messages.push({ id: 'goal', role: 'user', parts: [{ type: 'text', text: expectedGoal }] }, current)
       } else if (requests.length === 2) {
         expect(input.messages).toEqual([])
         expect(input.resume).toEqual([{ interruptId: questionId, status: 'resolved', payload: { text: answer } }])
@@ -78,12 +93,15 @@ async function installBackend(page, { multiple = false, rejectResume = false } =
         completed(review)
         messages.push({ id: 'cancelled', role: 'assistant', parts: [{ type: 'text', text: '已取消，不创建任务，不运行。' }] })
       }
+      const waiting = current?.parts.some(part => part.type === 'interaction_ref')
       const events = [
         { type: 'RUN_STARTED', threadId: input.threadId, runId: input.runId },
-        { type: 'STATE_SNAPSHOT', snapshot: { agentRunId: runId, sessionId, status: current ? 'waiting' : 'completed' } },
-        ...(current ? [{ type: 'ACTIVITY_SNAPSHOT', messageId: `surface:${current.id}`, activityType: 'a2ui-surface', content: current.parts[1].content }] : []),
+        { type: 'STATE_SNAPSHOT', snapshot: { agentRunId: runId, sessionId, status: waiting ? 'waiting' : 'completed' } },
+        ...(current ? current.parts.filter(part => part.type === 'presentation_ref').map((part, index) => (
+          { type: 'ACTIVITY_SNAPSHOT', messageId: `activity:${current.id}:${index}`, activityType: 'a2ui-surface', content: part.content }
+        )) : []),
         { type: 'RUN_FINISHED', threadId: input.threadId, runId: input.runId,
-          outcome: current ? { type: 'interrupt', interrupts: [{ id: current.id, reason: 'missing_input' }] } : { type: 'success' } }
+          outcome: waiting ? { type: 'interrupt', interrupts: [{ id: current.id, reason: 'missing_input' }] } : { type: 'success' } }
       ]
       return route.fulfill({ contentType: 'text/event-stream', body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('') })
     } else {
@@ -110,14 +128,13 @@ test('short goal → reloaded text resume → reloaded review → cancel, with t
   await expect(page.getByText(unknownWarning)).toBeVisible()
   await expect(page.getByRole('button', { name: '展开数组', exact: true })).toHaveCount(0)
   await page.reload()
-  const details = page.locator('details')
-  await expect(details).toHaveCount(2)
+  const details = page.locator('.clarification-details')
+  await expect(details).toHaveCount(1)
   for (const detail of await details.all()) await expect(detail).not.toHaveAttribute('open', '')
   await expect(page.getByText(unknownWarning)).toBeVisible()
-  await page.getByText('查看配置详情', { exact: true }).nth(0).click()
-  await expect(details.nth(0).locator('pre')).toContainText('business_rows')
-  await page.getByText('查看配置详情', { exact: true }).nth(1).click()
-  await expect(details.nth(1).locator('pre')).toContainText('outdoor_copy')
+  await expect(page.getByTestId('task-config-check-report')).toContainText('业务行数据')
+  await page.getByText('查看配置详情', { exact: true }).click()
+  await expect(details.locator('pre')).toContainText('outdoor_copy')
   await page.setViewportSize({ width: 620, height: 800 })
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.getByText('已取消，不创建任务，不运行。', { exact: true })).toBeVisible()
@@ -128,6 +145,29 @@ test('short goal → reloaded text resume → reloaded review → cancel, with t
   expect(new Set(backend.requests.map(input => input.runId)).size).toBe(3) // protocol IDs, not business Run IDs
   expect(backend.unexpected).toEqual([])
 })
+
+for (const [status, title] of [['supported', '已检查定义受支持'], ['unsupported', '发现不支持的定义'], ['unknown', '尚无法确定（不是通过）']]) {
+  test(`readonly ${status} report streams and reloads without review, owner request or write`, async ({ page }) => {
+    const backend = await installBackend(page, { draftReportStatus: status })
+    await page.setViewportSize({ width: 620, height: 900 })
+    await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+    await page.getByRole('textbox').fill(draftGoal)
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    const panel = page.getByTestId('task-config-check-report')
+    await expect(panel).toContainText(title)
+    await expect(panel).toContainText('不代表执行成功或当前运行授权')
+    await panel.locator('.diagnostics > summary').click()
+    await expect(panel).toContainText('/config/transforms/0/fields/0')
+    await expect(panel.getByText('members', { exact: true }).first()).toBeVisible()
+    expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    await expect(panel.locator('button')).toHaveCount(0)
+    await page.reload()
+    await expect(panel).toContainText(title)
+    await expect(panel.locator('button')).toHaveCount(0)
+    expect(backend.requests).toHaveLength(1)
+    expect(backend.unexpected).toEqual([])
+  })
+}
 
 test('multiple pending questions do not guess a resume target or lose text', async ({ page }) => {
   const backend = await installBackend(page, { multiple: true })

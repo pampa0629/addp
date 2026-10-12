@@ -7,6 +7,8 @@ import MapView from './components/MapView.vue'
 import ResourcePicker from './components/ResourcePicker.vue'
 import TablePreview from './components/TablePreview.vue'
 import WorkflowDag from './components/WorkflowDag.vue'
+import TransferConfigCheckReport from './components/TransferConfigCheckReport.vue'
+import { isTransferConfigCheckReport } from '../../../basic/src/utils/transferConfigCheckReport.mjs'
 
 export const ADDP_A2UI_CATALOG_ID = 'addp.catalog/v1'
 const A2UI_COMPONENT_MAX_BYTES = 500 * 1024
@@ -18,6 +20,14 @@ const WorkflowDagApi = {
     height: z.number().int().min(240).max(800).optional()
   }),
   render: WorkflowDag
+}
+
+const TransferConfigCheckReportApi = {
+  name: 'TransferConfigCheckReport',
+  schema: z.object({ report: z.record(z.string(), z.unknown()).refine(isTransferConfigCheckReport, {
+    message: 'configuration check report must be a bounded readonly projection'
+  }) }).strict(),
+  render: TransferConfigCheckReport
 }
 
 const ClarificationChoiceApi = {
@@ -149,6 +159,7 @@ export function createAddpCatalog() {
     ApprovalRequestApi,
     MapViewApi,
     TablePreviewApi,
-    ResourcePickerApi
+    ResourcePickerApi,
+    TransferConfigCheckReportApi
   ])
 }

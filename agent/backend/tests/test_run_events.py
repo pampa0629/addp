@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from ag_ui.core import StateSnapshotEvent
 
-from protocol.a2ui import table_preview_surface
+from protocol.a2ui import table_preview_surface, transfer_config_check_presentation, transfer_config_check_surface
 from services.messages import bounded_message_parts
 from services.run_events import RUN_EVENT_MAX_BYTES, append_run_event, encode_replayed_event, replay_payload
 
@@ -325,6 +325,63 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(message_db.added[0].parts[0]["content"], event.payload["content"])
         self.assertIsNot(message_db.added[0].parts, message_parts)
+
+    async def test_formal_report_snapshot_persists_and_replays_without_owner_identity(self):
+        from api.chat import _save_assistant_message
+
+        report = {"status": "unknown", "observed_at": "2026-10-12T00:00:00Z", "checked": ["request_shape"],
+                  "not_checked": ["business_rows"], "runtime_checks_required": ["per_value_encoding"], "diagnostics": [],
+                  "principal_id": "private-user", "binding_hash": "private-binding"}
+        content = {"operations": transfer_config_check_surface("surface:check", transfer_config_check_presentation(report))}
+        parts = [{"type": "presentation_ref", "protocol": "a2ui", "catalog_id": "addp.catalog/v1",
+                  "surface_id": "surface:check", "activity_type": "a2ui-surface", "content": content}]
+        message_db = _MessageDB()
+        with (patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(message_db)),
+              patch("api.chat.maybe_update_summary", new=AsyncMock())):
+            await _save_assistant_message(session_id=12, message_id="check-message", content="草稿检查完成", parts=parts)
+        event = await append_run_event(_DB(), agent_run_id=uuid.uuid4(), protocol_invocation_id="check-protocol",
+            event_payload={"type": "ACTIVITY_SNAPSHOT", "messageId": "check-activity", "activityType": "a2ui-surface", "content": content})
+        self.assertEqual(message_db.added[0].parts[0]["content"], event.payload["content"])
+        self.assertEqual(json.loads(encode_replayed_event(event).split("data: ", 1)[1])["content"], content)
+        self.assertNotIn("private-", json.dumps(message_db.added[0].parts))
+
+    async def test_chat_projects_runtime_report_into_sse_and_saved_message(self):
+        from ag_ui.core import RunAgentInput
+        from agents.events import AgentEvent
+        from api.chat import chat
+
+        db = _MessageDB()
+        run_id = uuid.uuid4()
+        request = SimpleNamespace(state=SimpleNamespace(principal_id=1, tenant_id=1, token="fixture"),
+                                  headers={}, is_disconnected=AsyncMock(return_value=False))
+        body = RunAgentInput.model_validate({"threadId": "12", "runId": "check-protocol", "state": {}, "tools": [],
+            "context": [], "forwardedProps": {}, "messages": [{"id": "check-user", "role": "user", "content": "只检查草稿"}]})
+        presentation = transfer_config_check_presentation({"status": "unknown", "observed_at": "2026-10-12T00:00:00Z",
+            "checked": [], "not_checked": ["business_rows"], "runtime_checks_required": [], "diagnostics": []})
+
+        async def stream(*_args, **_kwargs):
+            yield AgentEvent(kind="presentation", payload=presentation)
+            yield AgentEvent(kind="text", payload={"delta": "只展示草稿，不创建"})
+
+        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+              patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
+              patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
+              patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "只检查草稿"}], 1))),
+              patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(db)),
+              patch("api.chat.set_run_context_metrics", new=AsyncMock()),
+              patch("api.chat.set_run_status", new=AsyncMock()) as status,
+              patch("api.chat.append_run_event", new=AsyncMock(return_value=None)),
+              patch("api.chat.refresh_run_metrics", new=AsyncMock()),
+              patch("api.chat.maybe_update_summary", new=AsyncMock()),
+              patch("api.chat.stream_agent_response", new=stream)):
+            response = await chat(request, body, db=SimpleNamespace(commit=AsyncMock()))
+            chunks = [chunk async for chunk in response.body_iterator]
+        events = [json.loads(line[6:]) for chunk in chunks for line in chunk.splitlines() if line.startswith("data: ")]
+        activity = next(event for event in events if event["type"] == "ACTIVITY_SNAPSHOT")
+        part = next(part for part in db.added[0].parts if part["type"] == "presentation_ref")
+        self.assertEqual(part["content"], activity["content"])
+        self.assertEqual(part["content"]["operations"][1]["updateComponents"]["components"][0]["report"]["status"], "unknown")
+        self.assertEqual(status.await_args.kwargs["status"], "completed")
 
     def test_replay_event_rejects_payload_over_total_byte_limit(self):
         with self.assertRaisesRegex(ValueError, "run event exceeds"):

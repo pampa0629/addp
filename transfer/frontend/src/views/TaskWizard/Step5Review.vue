@@ -34,34 +34,7 @@
         :title="t('transfer.taskWizard.configCheck.permissions')" />
       <el-alert v-if="configCheck.error.value" data-testid="task-config-check-error" type="error" :closable="false"
         :title="t(`transfer.taskWizard.configCheck.${configCheck.error.value}`)" />
-      <el-card v-if="configCheck.report.value" data-testid="task-config-check-report">
-        <template #header>
-          <el-tag :type="checkStatusType(configCheck.report.value.status)">
-            {{ t(`transfer.taskWizard.configCheck.status.${configCheck.report.value.status}`) }}
-          </el-tag>
-          <span class="check-observed">{{ t('transfer.taskWizard.configCheck.observedAt') }} {{ configCheck.report.value.observed_at }}</span>
-        </template>
-        <el-table v-if="configCheck.report.value.diagnostics.length" :data="configCheck.report.value.diagnostics">
-          <el-table-column :label="t('transfer.taskWizard.configCheck.conclusion')" min-width="210">
-            <template #default="{ row }">
-              <el-tag size="small" :type="checkStatusType(row.status)">{{ t(`transfer.taskWizard.configCheck.status.${row.status}`) }}</el-tag>
-              <div>{{ checkLabel('codes', row.code) }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('transfer.taskWizard.configCheck.location')" min-width="240">
-            <template #default="{ row }"><code>{{ row.config_path }}</code></template>
-          </el-table-column>
-          <el-table-column prop="source_field" :label="t('transfer.taskWizard.configCheck.sourceField')" min-width="120" />
-          <el-table-column prop="target_field" :label="t('transfer.taskWizard.configCheck.targetField')" min-width="120" />
-          <el-table-column prop="physical_type" :label="t('transfer.taskWizard.configCheck.physicalType')" min-width="120" />
-        </el-table>
-        <div class="check-scope-grid">
-          <div v-for="[key, label] in checkSections" :key="key">
-            <h4>{{ t(`transfer.taskWizard.configCheck.${label}`) }}</h4>
-            <ul><li v-for="item in configCheck.report.value[key]" :key="item">{{ checkLabel('checks', item) }}</li></ul>
-          </div>
-        </div>
-      </el-card>
+      <TransferConfigCheckReport v-if="configCheck.report.value" :report="configCheck.report.value" />
     </section>
 
     <div class="review-grid review-grid--summary">
@@ -293,8 +266,9 @@ import { engineNameForID } from '@/utils/engineDisplay.mjs'
 import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
 import { useAuthStore } from '@/store/auth'
 import { useTaskConfigCheck } from './useTaskConfigCheck'
+import { TransferConfigCheckReport } from '@common-ui'
 
-const { t, te } = useI18n()
+const { t } = useI18n()
 const engines = ref([])
 const showSourceQuery = ref(false)
 const showFullConfig = ref(false)
@@ -317,14 +291,6 @@ const props = defineProps({
 defineEmits(['prev', 'submit', 'cancel'])
 
 const configCheck = useTaskConfigCheck(() => props.wizardState.taskConfig.value, useAuthStore())
-const checkSections = [['checked', 'checked'], ['not_checked', 'notChecked'], ['runtime_checks_required', 'runtimeRequired']]
-function checkStatusType(status) {
-  return { supported: 'success', unsupported: 'danger', unknown: 'warning' }[status] || 'info'
-}
-function checkLabel(group, code) {
-  const key = `transfer.taskWizard.configCheck.${group}.${code}`
-  return te(key) ? t(key) : code
-}
 
 const warnings = computed(() => {
   const warns = []
@@ -467,20 +433,6 @@ function fallbackCopyToClipboard(text) {
 }
 .config-check .el-alert {
   margin-top: 12px;
-}
-.check-observed {
-  margin-left: 12px;
-  color: var(--addp-text-secondary);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.check-scope-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-.check-scope-grid li, .config-check code {
-  overflow-wrap: anywhere;
 }
 .step5-review {
   width: min(100%, 1280px);

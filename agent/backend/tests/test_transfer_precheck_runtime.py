@@ -8,6 +8,8 @@ import asyncio
 import copy
 import json
 import unittest
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -18,6 +20,10 @@ from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, p
 from graph.factory import AgentFactory
 from tests.test_deerflow_runtime import _InferenceFixture, _call, _model
 from tests.test_platform_conditions import platform_fixture, precheck_fixture
+
+EVAL_ROOT = Path(__file__).resolve().parents[3] / "evals" / "agent-scenarios"
+sys.path.insert(0, str(EVAL_ROOT))
+from evaluator import evaluate_trace, load_scenario, phase_from_events
 
 
 class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
@@ -94,8 +100,10 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         events, client = await self.run_factory([self.review_call()])
         interaction = next(e.payload for e in events if e.kind == "interaction_required")
         self.assertIn("unknown", interaction["prompt"])
-        self.assertIn("business_rows", interaction["prompt"])
-        self.assertIn("per_value_encoding", interaction["prompt"])
+        presentation = next(e.payload for e in events if e.kind == "presentation")
+        self.assertIn("business_rows", presentation["report"]["not_checked"])
+        self.assertIn("per_value_encoding", presentation["report"]["runtime_checks_required"])
+        self.assertNotIn("business_rows", interaction["prompt"])
         self.assertEqual(interaction["candidates"][0]["label"], "知悉未核验项，仅创建任务")
         self.assertEqual(len(client.calls), 1)
         self.assertEqual(self.writes(), [])
@@ -211,7 +219,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "aggregate": "events", "pipeline": [{"$project": {"id": "$_id", "status": 1, "members": 1, "_id": 0}}],
         })
         arguments["config"]["transforms"][0]["fields"].append({"source": "members", "target": "members", "target_type": "json"})
-        for status in ("unknown", "unsupported"):
+        for status in ("supported", "unknown", "unsupported"):
             self.requests.clear()
             self.check_result = {**self.report, "status": status}
             events, client = await self.run_factory([
@@ -228,6 +236,15 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(feedback["status"], status)
                 self.assertEqual(self.writes(), [])
                 self.assertFalse(any(e.kind == "interaction_required" for e in events))
+                presentations = [e.payload for e in events if e.kind == "presentation"]
+                self.assertEqual(len(presentations), 1)
+                self.assertEqual(presentations[0]["kind"], "transfer_config_check")
+                self.assertEqual(presentations[0]["report"]["status"], status)
+                self.assertNotIn("principal_id", presentations[0]["report"])
+                self.assertNotIn("binding_hash", presentations[0]["report"])
+                phase = phase_from_events("draft_check", "fixture-draft-run", "completed", events,
+                    owner_effects={"tasks_created": 0, "approvals_created": 0, "executions_created": 0, "business_rows_written": 0}, persisted_state={})
+                evaluate_trace(load_scenario(EVAL_ROOT / "platform-transfer-draft-check"), {"skill": "transfer-generation", "phases": [phase]})
 
     async def test_formal_check_failure_clears_old_report_and_stops_sibling_create(self):
         self.confirm()
@@ -246,6 +263,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         saved = [e.payload["checkpoint"] for e in events if e.kind == "checkpoint"][-1]
         self.assertEqual(saved["observed"]["config_checks"], {})
+        self.assertFalse(any(e.kind == "presentation" for e in events))
 
     async def test_malformed_owner_report_stops_and_does_not_downgrade_to_unknown(self):
         self.check_result = {"status": "supported"}
@@ -253,6 +271,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.writes(), [])
         self.assertFalse(any(e.kind == "interaction_required" for e in events))
         self.assertTrue(any(e.kind == "run_failed" for e in events))
+        self.assertFalse(any(e.kind == "presentation" for e in events))
 
     async def test_cancel_during_fresh_check_never_creates(self):
         from langgraph.errors import NodeCancelledError

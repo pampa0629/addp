@@ -21,7 +21,8 @@ expectations:
         - read
         - write
       interactions: []
-      presentations: []
+      presentations:
+        - TransferConfigCheckReport
       result_refs:
         count: 0
         kinds: []

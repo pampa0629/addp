@@ -3,12 +3,14 @@
 <body><div id="app"></div><script type="module">
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { createI18n } from 'vue-i18n'
+import { createAddpI18n } from '@common-ui/composables/useAddpI18n'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import '../../../../common-frontend/basic/src/styles/theme.css'
 import zh from '../../src/i18n/zh-cn.json'
 import en from '../../src/i18n/en.json'
 import Fixture from './ConfigCheckFixture.vue'
-createApp(Fixture).use(createPinia()).use(createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': zh, en } })).use(ElementPlus).mount('#app')
+const { i18n, init } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en }, listenToConsole: false })
+init()
+createApp(Fixture).use(createPinia()).use(i18n).use(ElementPlus).mount('#app')
 </script></body></html>

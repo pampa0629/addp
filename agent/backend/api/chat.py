@@ -56,6 +56,7 @@ from protocol.a2ui import (
     map_view_surface,
     resource_picker_surface,
     table_preview_surface,
+    transfer_config_check_surface,
     workflow_dag_surface,
 )
 from services.interactions import (
@@ -647,6 +648,8 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                         operations = table_preview_surface(surface_id, event.payload)
                     elif presentation_kind == "map_view":
                         operations = map_view_surface(surface_id, event.payload)
+                    elif presentation_kind == "transfer_config_check":
+                        operations = transfer_config_check_surface(surface_id, event.payload)
                     else:
                         continue
                     content = {"operations": operations}

@@ -133,7 +133,7 @@ def _validate_expectations(expectations: Any, location: str) -> None:
             phase["presentations"],
             f"{location}.expectations.phases.{name}.presentations",
         )
-        if any(component not in {"WorkflowDag", "MapView", "TablePreview", "ResourcePicker"} for component in presentations):
+        if any(component not in {"WorkflowDag", "MapView", "TablePreview", "ResourcePicker", "TransferConfigCheckReport"} for component in presentations):
             raise ScenarioContractError(f"{location}.expectations.phases.{name}.presentations: 未知组件")
         result_refs = phase["result_refs"]
         if not isinstance(result_refs, dict):
@@ -259,6 +259,7 @@ def phase_from_events(
                 "workflow_dag": "WorkflowDag",
                 "map_view": "MapView",
                 "table_preview": "TablePreview",
+                "transfer_config_check": "TransferConfigCheckReport",
             }.get(payload.get("kind"))
             if component:
                 presentations.append(component)

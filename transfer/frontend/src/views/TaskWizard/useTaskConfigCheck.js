@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { taskAPI } from '@/api/tasks'
+import { projectTransferConfigCheckReport } from '@common-ui'
 
 export const taskConfigCheckPermissions = ['transfer.task.create', 'meta.catalog.read', 'system.engine.read']
 
@@ -35,13 +36,12 @@ export function useTaskConfigCheck(request, authStore) {
     try {
       const result = await taskAPI.checkConfig(submitted)
       if (current !== generation) return
-      if (result?.schema_version !== 'addp.transfer_task_config_check/v1' ||
-          !['supported', 'unsupported', 'unknown'].includes(result.status) ||
-          !['checked', 'not_checked', 'runtime_checks_required', 'diagnostics'].every(key => Array.isArray(result[key]))) {
+      const projection = projectTransferConfigCheckReport(result)
+      if (!projection) {
         error.value = 'invalidResponse'
         return
       }
-      report.value = result
+      report.value = projection
     } catch (failure) {
       if (current !== generation) return
       const status = failure.response?.status

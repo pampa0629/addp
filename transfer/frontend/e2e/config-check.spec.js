@@ -16,6 +16,7 @@ function report(status = 'supported') {
 
 async function setup(page, handler = route => route.fulfill({ json: report() }), metadata = {}) {
   const writes = []
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const requestURL = new URL(request.url())

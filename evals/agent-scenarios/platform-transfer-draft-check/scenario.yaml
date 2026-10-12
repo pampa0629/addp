@@ -1,0 +1,34 @@
+schema: addp.agent-scenario/v1
+name: platform-transfer-draft-check
+category: business_capability
+skill: transfer-generation
+prompt: 用户已确认源、目标、每个文档一行及保留数组字段。检查配置，只给草稿，不创建、不运行。
+expectations:
+  phases:
+    draft_check:
+      status: completed
+      required_tools:
+        - platform.capability.context
+        - transfer.task.config.check
+      forbidden_tools:
+        - transfer.task.create
+        - workflow.run
+        - data.preview
+      required_errors: []
+      allowed_tool_risks:
+        - read
+      interactions: []
+      presentations:
+        - TransferConfigCheckReport
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        tasks_created: 0
+        approvals_created: 0
+        executions_created: 0
+        business_rows_written: 0
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows

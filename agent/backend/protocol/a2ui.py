@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 from typing import Any
@@ -11,6 +12,7 @@ MAP_MAX_FEATURES = 200
 MAP_MAX_COORDINATE_VALUES = 5000
 PRESENTATION_STRING_MAX_LENGTH = 2000
 A2UI_SURFACE_MAX_BYTES = 500 * 1024
+CONFIG_CHECK_REPORT_MAX_BYTES = 128 * 1024
 _GEOJSON_GEOMETRY_TYPES = {
     "Point",
     "MultiPoint",
@@ -43,6 +45,20 @@ def _surface(surface_id: str, component: dict[str, Any]) -> list[dict[str, Any]]
 
 def workflow_dag_surface(surface_id: str, workflow: dict[str, Any]) -> list[dict[str, Any]]:
     return _surface(surface_id, {"component": "WorkflowDag", "workflow": workflow, "height": 400})
+
+
+def transfer_config_check_presentation(report: dict[str, Any]) -> dict[str, Any]:
+    """Project an already Manifest-validated owner report, never model output."""
+    projected = {key: copy.deepcopy(report[key]) for key in (
+        "status", "observed_at", "checked", "not_checked", "runtime_checks_required", "diagnostics",
+    )}
+    if len(json.dumps(projected, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > CONFIG_CHECK_REPORT_MAX_BYTES:
+        raise ValueError(f"config check report exceeds {CONFIG_CHECK_REPORT_MAX_BYTES} bytes")
+    return {"kind": "transfer_config_check", "report": projected}
+
+
+def transfer_config_check_surface(surface_id: str, presentation: dict[str, Any]) -> list[dict[str, Any]]:
+    return _surface(surface_id, {"component": "TransferConfigCheckReport", "report": presentation["report"]})
 
 
 def clarification_surface(
