@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,15 +10,32 @@ import (
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/engine/plugin"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 )
 
-// All dependency clients are nil: query output is unknown without opening a
-// source, and authentication failures must not reach any service-side fact read.
+type configCheckRouteFacts struct{ calls int }
+
+func (f *configCheckRouteFacts) GetEngineForTenant(_ context.Context, tenant, id uint) (*commonmodels.Engine, error) {
+	f.calls++
+	pg, _ := plugin.Get("postgresql")
+	caps, _ := plugin.MarshalEngineCapabilities(pg.Capabilities())
+	declared := commonmodels.JSONString(caps)
+	return &commonmodels.Engine{ID: id, TenantID: &tenant, EngineType: "postgresql", Version: 1, LifecycleState: "active", Capabilities: &declared}, nil
+}
+func (f *configCheckRouteFacts) GetItemSnapshot(context.Context, uint, uint, uint, string) (*commonmodels.MetaItem, error) {
+	f.calls++
+	return nil, commonapi.ErrNotFound
+}
+
+// Only control-plane snapshots are available; no business connection is used.
+// Authentication failures must not reach any service-side fact read.
 func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 	for _, name := range []string{"console", "delegated", "missing_meta", "missing_system", "missing_create", "project_scope", "service", "wrong_audience", "extra_scope", "create_scope", "check_cannot_create", "expired", "dependency_failure", "invalid_request"} {
 		t.Run(name, func(t *testing.T) {
@@ -88,7 +106,12 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 			}))
 			defer system.Close()
 			svc := service.NewTaskService(db, nil, nil)
-			svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(nil, nil))
+			facts := &configCheckRouteFacts{}
+			if name == "dependency_failure" {
+				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(nil, nil))
+			} else {
+				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(facts, facts))
+			}
 			router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			config := validTransferTaskHandlerConfig()
 			config["source"].(map[string]interface{})["locator"] = "addp://engine/1/path/synthetic/source?type=table"
@@ -112,6 +135,9 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, want, response.Body)
 			}
 			if response.Code == 200 {
+				if facts.calls != 4 {
+					t.Fatalf("facts reads=%d", facts.calls)
+				}
 				var result service.TaskConfigCheckReport
 				if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 					t.Fatal(err)
@@ -122,6 +148,9 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 				if strings.Contains(response.Body.String(), "private_expression") {
 					t.Fatal("query echoed")
 				}
+			}
+			if response.Code != 200 && facts.calls != 0 {
+				t.Fatal("rejected request read facts")
 			}
 			var tasks, executions int64
 			if err := db.Model(&models.TransferTask{}).Count(&tasks).Error; err != nil {

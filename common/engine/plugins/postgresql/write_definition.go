@@ -96,6 +96,10 @@ func (p *PostgreSQLPlugin) CheckTableWriteDefinition(definition plugin.TableWrit
 			add(field.Name, "source_assignment", status, code, physical)
 		}
 		if definition.Existing != nil {
+			if field.Type == "" || field.Type == datatype.FieldTypeUnknown || field.Type == datatype.FieldTypeMixed {
+				add(field.Name, "existing_target", plugin.DefinitionUnknown, "existing_column_type_not_proven", physical)
+				continue
+			}
 			existing := definition.Existing.GetField(field.Name)
 			if existing == nil {
 				status, code := plugin.DefinitionSupported, "nullable_column_addition_supported"

@@ -205,7 +205,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 			if err != nil || report.Status != plugin.DefinitionUnknown {
 				t.Fatalf("report=%+v err=%v", report, err)
 			}
-			if name == "query" || name == "upsert" {
+			if name == "upsert" {
 				if f.calls != 0 {
 					t.Fatal("outside scope accessed dependencies")
 				}
@@ -233,6 +233,141 @@ func TestConfigCheckRejectsArrayDefinitionWithFieldLocation(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("field diagnostics missing: %+v", report.Diagnostics)
+	}
+}
+
+func TestConfigCheckUnknownSourceStillChecksExplicitTarget(t *testing.T) {
+	for _, source := range []string{"query", "missing", "sampled"} {
+		for _, target := range []string{"valid", "json_default", "decimal", "known_null"} {
+			// Query mapping structurally requires a source; explicit constants are native-source cases.
+			if source == "query" && target == "known_null" {
+				continue
+			}
+			t.Run(source+"/"+target, func(t *testing.T) {
+				svc, f, a, body := configCheckFixture(t)
+				var request map[string]interface{}
+				if err := json.Unmarshal(body, &request); err != nil {
+					t.Fatal(err)
+				}
+				config := request["config"].(map[string]interface{})
+				switch source {
+				case "query":
+					config["source"].(map[string]interface{})["query"] = map[string]interface{}{"language": "sql", "statement": "SELECT secret_alias FROM source"}
+				case "missing":
+					delete(f.items, 1)
+				case "sampled":
+					f.engines[1].EngineType = "mongodb"
+				}
+				field := map[string]interface{}{"source": "not_observed", "target": "result", "target_type": "json", "nullable": false}
+				switch target {
+				case "json_default":
+					field["default"] = "invalid-json"
+				case "decimal":
+					field["target_type"] = "decimal"
+					field["precision"] = 1001
+					field["scale"] = 0
+				case "known_null":
+					delete(field, "source")
+				}
+				config["transforms"] = []interface{}{map[string]interface{}{"type": "field_mapping", "version": "v1", "mode": "project", "fields": []interface{}{field}}}
+				body, _ = json.Marshal(request)
+				report := checkFixtureReport(t, svc, a, body)
+				want := plugin.DefinitionUnsupported
+				if target == "valid" {
+					want = plugin.DefinitionUnknown
+				}
+				if report.Status != want || f.calls != 4 || len(report.Facts) != 2 {
+					t.Fatalf("report=%+v calls=%d", report, f.calls)
+				}
+				if !slicesContains(report.Checked, "provider_write_definition") {
+					t.Fatal("target skipped")
+				}
+				for _, d := range report.Diagnostics {
+					if target == "valid" && d.Code == "null_constant_not_nullable" {
+						t.Fatal("unobserved source invented NULL")
+					}
+					if d.Status == plugin.DefinitionUnsupported && d.ConfigPath != "/config/transforms/0/fields/0" {
+						t.Fatalf("missing location: %+v", d)
+					}
+				}
+				encoded, _ := json.Marshal(report)
+				if strings.Contains(string(encoded), "secret_alias") {
+					t.Fatal("query leaked")
+				}
+			})
+		}
+	}
+}
+
+func slicesContains(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}
+
+func TestConfigCheckMongoProjectionUsesBoundSnapshotAndKeepsUnknown(t *testing.T) {
+	svc, f, a, body := configCheckFixture(t)
+	mongo, _ := plugin.Get("mongodb")
+	caps, _ := plugin.MarshalEngineCapabilities(mongo.Capabilities())
+	declared := commonmodels.JSONString(caps)
+	f.engines[1].EngineType = "mongodb"
+	f.engines[1].Capabilities = &declared
+	f.items[1].ItemType = "collection"
+	f.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "observed", Type: datatype.FieldTypeString, Nullable: true}}})
+	var request map[string]interface{}
+	_ = json.Unmarshal(body, &request)
+	config := request["config"].(map[string]interface{})
+	source := config["source"].(map[string]interface{})
+	source["locator"] = "addp://engine/1/path/synthetic/source?type=collection"
+	source["query"] = map[string]interface{}{"language": "mql", "statement": `{"aggregate":"source","pipeline":[{"$project":{"alias":"$observed","unseen":"$not_observed","_id":0}}]}`}
+	config["transforms"] = []interface{}{map[string]interface{}{"type": "field_mapping", "version": "v1", "mode": "project", "fields": []interface{}{map[string]interface{}{"source": "unseen", "target": "result", "target_type": "json", "nullable": false}}}}
+	body, _ = json.Marshal(request)
+	report := checkFixtureReport(t, svc, a, body)
+	if report.Status != plugin.DefinitionUnknown || len(report.Facts) != 2 || report.Facts[0].Coverage != "sampled" || f.calls != 4 || !slicesContains(report.Checked, "provider_query_definition") {
+		t.Fatalf("report=%+v", report)
+	}
+	found := false
+	for _, d := range report.Diagnostics {
+		if d.Code == "query_source_field_not_observed" {
+			found = true
+		}
+		if d.Status == plugin.DefinitionUnsupported {
+			t.Fatalf("sample proves absence: %+v", d)
+		}
+	}
+	if !found {
+		t.Fatal("query analysis not consumed")
+	}
+	before := report.BindingHash
+	config["source"].(map[string]interface{})["query"].(map[string]interface{})["statement"] = `{"aggregate":"source","pipeline":[{"$group":{"_id":null}}]}`
+	body, _ = json.Marshal(request)
+	changed := checkFixtureReport(t, svc, a, body)
+	if changed.BindingHash == before || changed.ConfigHash == report.ConfigHash {
+		t.Fatal("query not bound")
+	}
+	for _, d := range changed.Diagnostics {
+		if d.Code == "query_projection_definition_checked" {
+			t.Fatal("complex query reused old output")
+		}
+	}
+	// Ordinary table access cannot substitute for the query read-session route.
+	declaredCaps, err := plugin.ParseEngineCapabilities(string(declared))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declaredCaps.Compute.Query.ReadSession = false
+	disabled, err := plugin.MarshalEngineCapabilities(*declaredCaps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledDeclaration := commonmodels.JSONString(disabled)
+	f.engines[1].Capabilities = &disabledDeclaration
+	rejected := checkFixtureReport(t, svc, a, body)
+	if rejected.Status != plugin.DefinitionUnsupported || rejected.Facts[0].NativeAccess != plugin.DefinitionUnsupported {
+		t.Fatalf("missing query capability accepted: %+v", rejected)
 	}
 }
 func TestConfigCheckStrictRequestAndLosslessConfigHash(t *testing.T) {

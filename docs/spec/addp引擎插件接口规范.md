@@ -521,6 +521,10 @@ type QueryOutputBinding struct {
 
 `QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
 
+`QueryDefinitionChecker.CheckQueryDefinition(QueryDefinition)` 是可选的纯定义检查接口，与 PreparedQuery 的运行时分析职责分开：输入固定 `QueryRequest`、服务端已保存快照的 `SourcePath / Source / SchemaCoverage`，不接收连接或 Context；返回 `QueryDefinitionReport` 的部分 `Output`、`SchemaCoverage` 与逐项 `supported / unsupported / unknown` 稳定代码。不得执行 I/O、PrepareQuery、实时 Catalog、采样或查询；不形成 QueryReadSet、QueryOutputLineage 或授权证明，不增加执行入口或 capability 开关。Owner 必须绑定本次请求、快照身份、覆盖度和内容摘要，不能把查询前表结构当作查询输出。
+
+MongoDB 首期只分析单集合、单个简单 `$project`（包含、排除、字段别名），复用既有纯 MQL 参数绑定、解析及投影分析。输出保持 sampled／unknown，不将未观察路径断言为缺失；复杂阶段／表达式返回 unknown，不生成推测输出。Transfer 即使源输出未知，仍检查显式目标类型、精度、可空性和已声明常量；未观察源不能变成确定 NULL／默认值，物理写入规则仍唯一归目标 TableWriteDefinitionChecker，unsupported 优先于 unknown。
+
 `SchemaCoverage` 的含义固定如下：
 
 - `complete`：Provider 已证明当前分析范围内的全部可见字段，允许返回“字段不存在”等 schema 结论；

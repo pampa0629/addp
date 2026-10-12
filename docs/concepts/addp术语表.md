@@ -108,6 +108,7 @@
 | analytical plan package | 分析计算计划包 | 冻结逻辑计划、物理来源绑定、目标引擎、编译器身份及指纹的可序列化发布契约，schema 为 `addp.analytical_plan/v1`。 | 不包含请求参数值、凭据或运行时句柄，不是一次性的 PreparedQuery；Model 修订身份保留在 owner 外壳。 |
 | QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
 | schema coverage | 模式覆盖度 | 表达一次 QueryAnalysis 用于字段结论的 schema 事实完整度，固定为 `complete`、`sampled` 或 `unknown`。 | 只有 `complete` 才允许断言字段不存在；`sampled` 和 `unknown` 只能给出覆盖不足提示，不能把未观察到的字段报成错误。 |
+| QueryDefinitionChecker | 查询定义检查器 | Provider 对固定查询请求和服务端已保存结构快照进行连接无关分析的可选纯接口，返回部分输出字段、覆盖度及稳定诊断。 | 不接收连接或 Context，不准备或执行查询，不访问实时目录或采样；不提供实时血缘、读取集合或授权证明。sampled／unknown 不证明字段缺失，不能把未观察字段当作确定 NULL 或默认值。 |
 | QueryReadSet | 查询读取集合 | PreparedQuery 在执行前产生的、完整且去重的 Engine Catalog leaf 路径集合，回答“这次查询可能读取哪些资源”。 | 它不是查询语句或查询结果；不是调用方自报的授权范围，不包含数据行、Meta ID、DataItem 指纹、Security 策略或 Catalog 身份。 |
 | query read session | 查询读取会话 | Engine Provider 为一次只读原生查询打开的连续批次读取会话。 | 与返回有界 `QueryResult` 的交互查询不同；生产搬运不得施加隐式行数上限。MongoDB MQL 可在源端用 `$project`、`$unwind`、`$group` 等把嵌套 BSON 整形为扁平行，但禁止 `$out`、`$merge`。 |
 | raw record export | 原始记录导出 | 将动态 schema collection 中的原生记录按引擎声明的类型保真交换编码流式写出。 | 它不赋予 collection 表语义，也不是物理备份。MongoDB 第一版固定使用 Canonical Extended JSON v2、每行一个文档；表格化导出属于独立转换语义。 |

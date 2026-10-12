@@ -149,10 +149,6 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 		return nil, ErrInvalidTaskConfig
 	}
 	report.Checked = append(report.Checked, "task_config_shape")
-	if spec.Source.Query != nil {
-		add(plugin.DefinitionUnknown, "query_output_not_checked", "source_definition", "/config/source/query")
-		return finishConfigCheck(report), nil
-	}
 	sourceLocator, err := spec.Source.ResourceLocator()
 	if err != nil {
 		return nil, ErrInvalidTaskConfig
@@ -162,12 +158,12 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 		return nil, ErrInvalidTaskConfig
 	}
 	targetLocator := &resourcetree.ResourceLocator{EngineID: parent.EngineID, Type: resourcetree.TypeTable, Path: append(append([]string{}, parent.Path...), spec.Target.Name)}
-	sourceInfo, sourceSpatial, sourceFact, _, err := s.facts(ctx, uint(tenant), "source", sourceLocator)
+	sourceInfo, sourceSpatial, sourceFact, sourcePlugin, err := s.facts(ctx, uint(tenant), "source", sourceLocator, spec.Source.Query != nil)
 	if err != nil {
 		return nil, err
 	}
 	report.Facts = append(report.Facts, sourceFact)
-	targetInfo, _, targetFact, targetPlugin, err := s.facts(ctx, uint(tenant), "target", targetLocator)
+	targetInfo, _, targetFact, targetPlugin, err := s.facts(ctx, uint(tenant), "target", targetLocator, false)
 	if err != nil {
 		return nil, err
 	}
@@ -178,11 +174,41 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 			add(fact.NativeAccess, "registered_native_access_not_supported", "engine_capability", "/config/"+fact.Role)
 		}
 	}
-	if sourceInfo == nil || sourceFact.Coverage != "complete" {
-		add(plugin.DefinitionUnknown, "source_schema_not_complete", "source_definition", "/config/source/locator")
-		return finishConfigCheck(report), nil
+	sourceComplete := sourceInfo != nil && sourceFact.Coverage == plugin.QuerySchemaCoverageComplete
+	if spec.Source.Query != nil {
+		// A saved source table is not query output. Only the pure Provider contract
+		// may supply partial output, never PreparedQuery runtime catalog methods.
+		var output *datatype.TableInfo
+		snapshotComplete := sourceComplete
+		sourceComplete = false
+		sourceSpatial = nil
+		checker, available := sourcePlugin.(plugin.QueryDefinitionChecker)
+		model, hasModel := sourcePlugin.(plugin.EngineCatalogModelProvider)
+		if available && hasModel && len(spec.Source.Query.Inputs) == 0 {
+			path, pathErr := resourcetree.EngineCatalogPathFromLocator(model.EngineCatalogModel(), sourceLocator)
+			if pathErr == nil {
+				result := checker.CheckQueryDefinition(plugin.QueryDefinition{
+					Request: plugin.QueryRequest{EngineID: sourceLocator.EngineID, Language: spec.Source.Query.Language, Query: spec.Source.Query.Statement, TargetPath: &path,
+						Options: plugin.QueryOptions{ReadOnly: true, Parameters: spec.Source.Query.Parameters}},
+					SourcePath: path, Source: sourceInfo, SchemaCoverage: sourceFact.Coverage,
+				})
+				output = result.Output
+				sourceComplete = output != nil && result.SchemaCoverage == plugin.QuerySchemaCoverageComplete && snapshotComplete
+				for _, check := range result.Checks {
+					report.add(TaskConfigCheckDiagnostic{Status: check.Status, Code: check.Code, Check: "source_query_definition", SourceField: check.Field, ConfigPath: "/config/source/query"})
+				}
+				report.Checked = append(report.Checked, "provider_query_definition")
+			}
+		}
+		sourceInfo = output
+		if output == nil {
+			add(plugin.DefinitionUnknown, "query_output_not_checked", "source_definition", "/config/source/query")
+		}
 	}
-	definition, err := planner.CheckableTableDefinition(spec, sourceInfo, sourceSpatial)
+	if !sourceComplete {
+		add(plugin.DefinitionUnknown, "source_schema_not_complete", "source_definition", "/config/source/locator")
+	}
+	definition, err := planner.CheckableTableDefinition(spec, sourceInfo, sourceSpatial, sourceComplete)
 	if err != nil {
 		add(plugin.DefinitionUnknown, "transform_definition_not_checked", "transform", "/config/transforms")
 		return finishConfigCheck(report), nil
@@ -208,6 +234,9 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 	checker, ok := targetPlugin.(plugin.TableWriteDefinitionChecker)
 	if !ok {
 		add(plugin.DefinitionUnknown, "provider_definition_check_not_available", "target_definition", "/config/target")
+		return finishConfigCheck(report), nil
+	}
+	if len(definition.Fields) == 0 && !sourceComplete {
 		return finishConfigCheck(report), nil
 	}
 	for _, check := range checker.CheckTableWriteDefinition(definition).Checks {
@@ -281,7 +310,7 @@ func containsConfigNumber(value interface{}) bool {
 	return false
 }
 
-func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role string, locator *resourcetree.ResourceLocator) (*datatype.TableInfo, *datatype.SpatialInfo, TaskConfigCheckFact, plugin.EnginePlugin, error) {
+func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role string, locator *resourcetree.ResourceLocator, querySource bool) (*datatype.TableInfo, *datatype.SpatialInfo, TaskConfigCheckFact, plugin.EnginePlugin, error) {
 	fact := TaskConfigCheckFact{Role: role, EngineID: locator.EngineID, Coverage: "unknown", NativeAccess: plugin.DefinitionUnknown}
 	if s == nil || s.engines == nil || s.metadata == nil {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
@@ -298,7 +327,12 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 			return nil, nil, fact, nil, ErrConfigCheckDependency
 		}
 	}
-	if declared != nil && declared.Storage != nil && declared.Storage.Store != nil {
+	if role == "source" && querySource && declared != nil {
+		fact.NativeAccess = plugin.DefinitionUnsupported
+		if declared.Compute != nil && declared.Compute.Query != nil && declared.Compute.Query.Supported && declared.Compute.Query.ReadSession {
+			fact.NativeAccess = plugin.DefinitionSupported
+		}
+	} else if declared != nil && declared.Storage != nil && declared.Storage.Store != nil {
 		store := declared.Storage.Store
 		fact.NativeAccess = plugin.DefinitionUnsupported
 		if (role == "source" && (store.TableReadSession || store.BatchRead)) || (role == "target" && (store.TableWriteSession || store.BatchWrite)) {

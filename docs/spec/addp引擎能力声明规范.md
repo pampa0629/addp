@@ -612,6 +612,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的普通查询插件必须实现以 `PrepareQuery()` 为唯一执行入口的 `QueryRuntimeProvider`，并从 PreparedQuery 提供受 `schema_coverage` 约束的 `QueryAnalysis`；联邦运行时必须实现 `FederatedQueryRuntimeProvider`。声明 `compute.query.table_result=true` 时必须实现 TableResultProvider，且实现该 Provider 必须反向声明该能力；查询不支持时不得声明 table_result。声明 `compute.query.read_session=true` 时必须实现从同一 PreparedQuery 打开会话的 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
+- `QueryDefinitionChecker` 与 `TableWriteDefinitionChecker` 是可选的连接无关定义检查接口，不增加 capability 开关，不证明实例或执行能力；调用方按接口发现，缺少实现报告 unknown。查询定义检查只能使用已保存结构快照，不调用 PreparedQuery、实时 Catalog 或采样。
 - 声明 `compute.query.parameters.supported=true` 的插件必须对 `parameters.languages` 中每种语言实现类型化参数绑定，并拒绝缺失、未知或未使用参数；不得只声明 UI 能力而把参数插值交给调用方。
 - 声明 `compute.workflow.supported=true` 的编译期插件必须实现 `WorkflowRuntimeProvider`。通过 System 注册的 `addp.workflow/v1` 外部运行时不要求独立编译期插件，由 Common 唯一的 `HTTPWorkflowRuntimeProvider` 消费；System 必须在注册时校验 capabilities 并完成协议探测。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
