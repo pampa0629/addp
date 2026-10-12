@@ -81,10 +81,26 @@ for (const { language, initiallyFailed } of [
     await expect.poll(() => requests.length).toBe(2)
     await expect(selector).toContainText('GBK')
     await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
-    await page.setViewportSize({ width: 1000, height: 800 })
-    await expect(button).toBeVisible()
-    const box = await button.boundingBox()
-    expect(box.x + box.width).toBeLessThanOrEqual(1000)
+    for (const width of [1000, 900]) {
+      await page.setViewportSize({ width, height: 800 })
+      await expect(button).toBeVisible()
+      const box = await button.boundingBox()
+      expect(box.x + box.width).toBeLessThanOrEqual(width)
+      const layout = await page.locator('.preview-panel .panel-header').evaluate(header => {
+        const rect = selector => header.querySelector(selector).getBoundingClientRect().toJSON()
+        return {
+          title: rect('.header-title'),
+          left: rect('.header-left'),
+          actions: rect('.panel-actions'),
+          encoding: rect('.csv-encoding-select'),
+          header: header.getBoundingClientRect().toJSON()
+        }
+      })
+      expect(layout.title.width).toBeGreaterThan(80)
+      expect(layout.encoding.width).toBeGreaterThan(100)
+      expect(layout.actions.right).toBeLessThanOrEqual(layout.header.right + 1)
+      expect(layout.left.right <= layout.actions.left + 1 || layout.left.bottom <= layout.actions.top + 1).toBe(true)
+    }
     expect(browserErrors).toEqual([])
   })
 }

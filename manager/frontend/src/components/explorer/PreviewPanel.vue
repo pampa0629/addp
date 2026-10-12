@@ -3008,6 +3008,7 @@ const handleNavigate = (path) => {
 
 .panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
@@ -3016,9 +3017,10 @@ const handleNavigate = (path) => {
 
 .header-left {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 18rem;
   min-width: 0;
 }
 
@@ -3058,10 +3060,12 @@ const handleNavigate = (path) => {
 
 .csv-encoding-select {
   width: 125px;
+  flex-shrink: 0;
 }
 
 .panel-actions {
   display: flex;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
