@@ -1,10 +1,10 @@
 """Read a concrete ES index through the official distributed Spark connector."""
 import base64
 import json
-import os
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from storage_adapters import resolve_storage_host
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -31,14 +31,7 @@ class ElasticsearchAdapter:
         port = parsed.port if parsed.port is not None else 80
         if not 1 <= port <= 65535:
             raise ValueError('Elasticsearch endpoint port is invalid')
-        host = parsed.hostname
-        if host.lower() in {'localhost', '127.0.0.1', '::1'}:
-            host = os.environ.get('SPARK_WORKFLOW_SHARED_HOST', '').strip()
-            if not host or any(c in host for c in '/\\@?#, ') or any(ord(c) < 32 for c in host):
-                raise ValueError('SPARK_WORKFLOW_SHARED_HOST is required for loopback Elasticsearch')
-            rewritten = urlsplit('http://' + ('[' + host + ']' if ':' in host else host) + ':' + str(port))
-            if rewritten.hostname != host or rewritten.port != port:
-                raise ValueError('SPARK_WORKFLOW_SHARED_HOST must be a hostname or IP address')
+        host = resolve_storage_host(parsed.hostname)
         user, password = connection.get('user'), connection.get('password')
         if not isinstance(user, str) or not user or ':' in user or not isinstance(password, str) or not password:
             raise ValueError('Elasticsearch Basic credentials are required')

@@ -70,9 +70,43 @@ class StorageAdapterTest(unittest.TestCase):
                         {'path': 's3a://result/a/../b'}, {'path': 's3a://result/a%2F..%2Fb'},
                         {'path': 's3a://result/output*'}, {'path': 's3a://result/'},
                         {'connection_info': dict(connection, secret_key='')},
-                        {'connection_info': dict(connection, endpoint='https://store:9000')}):
+                        {'connection_info': dict(connection, endpoint='https://store:9000')},
+                        {'connection_info': dict(connection, endpoint='http://@store:9000')},
+                        {'connection_info': dict(connection, endpoint='http://:secret@store:9000')}):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 FileAdapter._s3_access(dict(params, **changed))
+
+    def test_minio_loopback_uses_one_shared_endpoint_without_mutating_connection(self):
+        for endpoint, secure in (('127.0.0.1:19002', False), ('http://localhost:19002', False),
+                                 ('https://[::1]:9443', True), ('http://localhost', False)):
+            connection = {'engine_type': 'minio', 'endpoint': endpoint, 'use_ssl': secure,
+                          'access_key': 'owned-access', 'secret_key': 'owned-secret'}
+            params = {'path': 's3a://result/output', 'connection_info': connection}
+            port = ':9443' if secure else (':19002' if '19002' in endpoint else '')
+            expected = ('https' if secure else 'http') + '://host.docker.internal' + port
+            with self.subTest(endpoint=endpoint), patch.dict('os.environ', SPARK_WORKFLOW_SHARED_HOST='host.docker.internal'):
+                _, options = FileAdapter._s3_access(params)
+                self.assertEqual(options['fs.s3a.endpoint'], expected)
+                self.assertEqual(options['fs.s3a.bucket.result.endpoint'], expected)
+                self.assertEqual(options['fs.s3a.connection.ssl.enabled'], str(secure).lower())
+                self.assertEqual(connection['endpoint'], endpoint)
+        with patch.dict('os.environ', SPARK_WORKFLOW_SHARED_HOST='2001:db8::1'):
+            _, options = FileAdapter._s3_access(dict(params, connection_info=dict(connection, endpoint='http://localhost:19002')))
+            self.assertEqual(options['fs.s3a.endpoint'], 'http://[2001:db8::1]:19002')
+
+    def test_minio_invalid_shared_host_rejected_before_spark_reads(self):
+        params = {'path': 's3a://result/output', 'format': 'parquet',
+                  'connection_info': {'engine_type': 'minio', 'endpoint': '127.0.0.1:19002',
+                                      'access_key': 'owned-access', 'secret_key': 'owned-secret'}}
+        for host in ('', 'store:9000', 'user@store', 'store/path', 'store?x=1', 'store#x', 'store,other', 'store\nother'):
+            with self.subTest(host=host), patch.dict('os.environ', SPARK_WORKFLOW_SHARED_HOST=host):
+                spark = MagicMock()
+                with self.assertRaises(ValueError):
+                    FileAdapter.load(spark, params)
+                spark.read.options.assert_not_called()
+        with patch.dict('os.environ', SPARK_WORKFLOW_SHARED_HOST='invalid/host'):
+            _, options = FileAdapter._s3_access(dict(params, connection_info=dict(params['connection_info'], endpoint='remote:9000')))
+            self.assertEqual(options['fs.s3a.endpoint'], 'http://remote:9000')
 
     def test_minio_publication_reports_verified_count_without_source_count(self):
         frame, filesystem = MagicMock(), MagicMock()

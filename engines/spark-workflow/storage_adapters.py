@@ -22,6 +22,25 @@ STORAGE_ACCESS = {
     "write_engine_types": ['postgresql', 'mysql', 'doris', 'minio'],
 }
 
+
+def resolve_storage_host(host: str) -> str:
+    """Use the deployment's shared host only for loopback storage addresses."""
+    if host.strip().lower() not in {'localhost', '127.0.0.1', '::1'}:
+        return host
+    shared = os.getenv('SPARK_WORKFLOW_SHARED_HOST', '').strip()
+    if not shared:
+        raise ValueError('SPARK_WORKFLOW_SHARED_HOST_REQUIRED')
+    if any(c in shared for c in '/\\@?#, ') or any(ord(c) < 32 for c in shared):
+        raise ValueError('SPARK_WORKFLOW_SHARED_HOST_INVALID')
+    authority = '[' + shared + ']' if ':' in shared else shared
+    try:
+        parsed = urlsplit('//' + authority)
+        if parsed.hostname != shared.lower() or parsed.port is not None:
+            raise ValueError('SPARK_WORKFLOW_SHARED_HOST_INVALID')
+    except ValueError:
+        raise ValueError('SPARK_WORKFLOW_SHARED_HOST_INVALID') from None
+    return shared
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,14 +119,7 @@ class DatabaseAdapter:
         if not engine_type:
             raise ValueError("connection_info.engine_type is required")
 
-        shared_host = os.getenv("SPARK_WORKFLOW_SHARED_HOST", "").strip()
-        host = str(conn_info.get("host", "")).strip().lower()
-        if host in {"localhost", "127.0.0.1", "::1"}:
-            if not shared_host:
-                raise ValueError(
-                    "SPARK_WORKFLOW_SHARED_HOST is required for loopback database connections"
-                )
-            conn_info["host"] = shared_host
+        conn_info['host'] = resolve_storage_host(str(conn_info['host']))
 
         return engine_type, conn_info
 
@@ -650,12 +662,17 @@ class FileAdapter:
             raise ValueError('S3A requires endpoint and boolean use_ssl')
         parsed = urlsplit(endpoint if '://' in endpoint else ('https://' if secure else 'http://') + endpoint)
         if (parsed.scheme != ('https' if secure else 'http') or not parsed.hostname
-                or parsed.username or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
             raise ValueError('S3A endpoint conflicts with storage connection facts')
+        host = resolve_storage_host(parsed.hostname)
+        authority = '[' + host + ']' if ':' in host else host
+        if parsed.port is not None:
+            authority += ':' + str(parsed.port)
         if not all(isinstance(conn.get(name), str) and conn[name] for name in ('access_key', 'secret_key')):
             raise ValueError('S3A requires explicit access credentials')
         options = {
-            'fs.s3a.endpoint': parsed.scheme + '://' + parsed.netloc,
+            'fs.s3a.endpoint': parsed.scheme + '://' + authority,
             'fs.s3a.access.key': conn['access_key'], 'fs.s3a.secret.key': conn['secret_key'],
             'fs.s3a.aws.credentials.provider': 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider',
             'fs.s3a.connection.ssl.enabled': str(secure).lower(),
