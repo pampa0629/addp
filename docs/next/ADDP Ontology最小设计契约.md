@@ -204,6 +204,8 @@ Transfer 修订 9 在上述基础上捕获正式预检 Tool 开放。Tool Manife
 
 Transfer 修订 11 将正式只读预检装配到创建条件及 Skill。Runtime 在最终复核前和创建前，经同一白名单 Tool Adapter 调用 `transfer.task.config.check`，不依赖模型主动调用、不直接访问 SDK 或数据库；每次调用先清空旧报告并记录正式 Tool 审计。报告只绑定本次完整 Tool 参数摘要，owner 的 `config_hash` / `binding_hash` 原样保留，不在 Python 复制 Go JSON 哈希规则。复核指纹纳入报告稳定内容（含身份、配置摘要、结构事实、诊断及未检查项），仅排除报告的 `observed_at` 和包含该时间的 `binding_hash`；结构快照时刻变化仍属于事实变化。创建前重新预检，稳定内容变化使确认失效。unsupported 拒绝复核和创建；unknown 用 Runtime 固定本地化提示明确未检查项及运行时要求，取得绑定该报告的知情确认后才能保存未运行定义；supported 也不承诺执行成功。服务、授权或无效响应失败终止当前运行，不转换成 unknown 或自动重试。报告是当前 AgentRun 的受限观察，不进入平台静态图；不新增协议、权限、数据表或执行能力。沿现有 Agent eval、平台来源、Ontology PG/FalkorDB 与前端门禁验证，真实个人环境联调另行记录。
 
+Runtime 自动预检的 `unsupported` 是定义拒绝，不是预检服务故障。拒绝复核或创建时，同一模型 ToolMessage 必须携带该次已校验报告的 `status/checked/not_checked/runtime_checks_required/diagnostics`，保留 owner 给出的字段位置与原因，使模型能够解释或修正草稿；不能只给条件错误码后要求模型猜测。此受限反馈不携带主体、事实摘要或绑定哈希，不新增 API 或持久化原始结果。完整报告仍由原检查点和正式预检步骤保存，拒绝时不生成确认选项、不调用创建 owner；报告损坏、权限或依赖失败仍终止，不走配置修正路径。模型只能基于 owner 诊断修改草稿，涉及业务含义变化先澄清，并对修改后的完整参数重新预检和复核，不在 Agent 复制 Provider 规则。
+
 ## 2. 术语与唯一事实所有权
 
 新增术语见[术语表](../concepts/addp术语表.md)的“领域本体（目标设计）”。以下职责是目标边界，不表示现有接口已经支持。

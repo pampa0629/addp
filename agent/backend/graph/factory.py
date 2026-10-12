@@ -22,9 +22,9 @@ from pydantic import BaseModel, Field, ValidationError
 from agents.checkpoint import canonicalize_clarification_options, capture_owner_facts, checkpoint_prompt, normalize_checkpoint
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
-from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, capture_config_check, config_check_report, prepare_review, review_json, validate_create
+from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, ConfigCheckUnsupported, capture_config_check, config_check_report, prepare_review, review_json, validate_create
 from graph.state import TaskContext
-from i18n import transfer_config_check_error, transfer_create_review_messages
+from i18n import transfer_config_check_details, transfer_config_check_error, transfer_config_check_unsupported, transfer_create_review_messages
 from protocol.a2ui import preview_presentations
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -73,6 +73,7 @@ def _runtime_instructions() -> str:
 - 用户明确要求创建任务后，Transfer 创建前的最终配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成创建复核。
 - 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
 - Transfer 普通草稿不能称为已预检通过。最终复核前与创建前，Runtime 自动调用正式只读预检 Tool；unsupported 必须修正配置，unknown 需要用户知情确认未检查项。模型不得自报预检成功。预检与配置复核均不保证执行成功；最终提示和按钮由 Runtime 生成。
+- 自动预检拒绝的 ToolMessage 中，config_check 是正式 owner 报告的范围与诊断，不是服务故障。依据其中字段位置和原因解释或修正草稿，不猜测数据库类型规则，不原样重复创建。涉及业务含义变化先澄清，修改后重新预检和复核；不得把 unknown 或用户确认当作解除 unsupported 的依据。
 """
 
 
@@ -139,6 +140,8 @@ class _PlatformBoundary(AgentMiddleware):
                     if stopped is not None:
                         return stopped
                     validate_create(call["args"], self.checkpoint)
+                except ConfigCheckUnsupported as exc:
+                    return self._reject_config_check(call, name, exc)
                 except ValueError as exc:
                     return self._error(call, name, "platform_condition_unsatisfied", str(exc))
                 # Consume before any owner side effect; uncertain responses do
@@ -179,6 +182,19 @@ class _PlatformBoundary(AgentMiddleware):
             return halted
         if parent_call is not None:
             return self._finish_config_parent(parent_call)
+        return ToolMessage(content=content, tool_call_id=call["id"], name=call["name"], status="error")
+
+    def _reject_config_check(self, call, name, error):
+        # This report already passed the Manifest and exact-argument binding.
+        # The automatic check is audited separately, but its diagnostics must
+        # reach the model on the parent call without exposing owner identity.
+        code = "platform_condition_unsatisfied"
+        content = json.dumps({
+            "error": {"code": code, "message": str(error) + ": " + transfer_config_check_unsupported(self.accept_language)},
+            "config_check": transfer_config_check_details(error.report),
+        }, ensure_ascii=False)
+        _emit("tool_result", tool_call_id=call["id"], tool_name=name, content=content,
+              is_error=True, error_source="runtime", error_code=code)
         return ToolMessage(content=content, tool_call_id=call["id"], name=call["name"], status="error")
 
     def _finish_config_parent(self, call):
@@ -251,6 +267,8 @@ class _PlatformBoundary(AgentMiddleware):
                 options = canonicalize_clarification_options(
                     args.reason, [option.model_dump() for option in args.options], self.checkpoint,
                 )
+        except ConfigCheckUnsupported as exc:
+            return self._reject_config_check(call, "request_clarification", exc)
         except ValidationError:
             return self._error(call, "request_clarification", "invalid_clarification_request", "澄清请求结构无效")
         except ValueError as exc:

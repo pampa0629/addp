@@ -19,6 +19,14 @@ CREATE_TOOL = "transfer.task.create"
 CHECK_TOOL = "transfer.task.config.check"
 
 
+class ConfigCheckUnsupported(ValueError):
+    """A validated owner report rejects the definition, not the check service."""
+
+    def __init__(self, report: dict):
+        super().__init__("platform_condition_unsatisfied:config_check_unsupported")
+        self.report = copy.deepcopy(report)
+
+
 def _fail(condition: str) -> None:
     raise ValueError(f"platform_condition_unsatisfied:{condition}")
 
@@ -44,7 +52,7 @@ def config_check_report(arguments: dict, checkpoint: dict) -> dict:
     if not isinstance(report, dict) or list(Draft202012Validator(get_tool(CHECK_TOOL).output_schema).iter_errors(report)):
         _fail("readonly_config_check")
     if report["status"] == "unsupported":
-        _fail("config_check_unsupported")
+        raise ConfigCheckUnsupported(report)
     return report
 
 

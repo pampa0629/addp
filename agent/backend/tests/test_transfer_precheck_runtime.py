@@ -27,6 +27,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.requests = []
         self.delegations = []
         self.check_result = self.report
+        self.check_results = []
         self.check_status = 200
         self.cancel_check = False
         self.check_started = asyncio.Event()
@@ -46,14 +47,15 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             if self.cancel_check:
                 self.check_started.set()
                 await asyncio.Event().wait()
-            return httpx.Response(self.check_status, request=request, json=self.check_result)
+            result = self.check_results.pop(0) if self.check_results else self.check_result
+            return httpx.Response(self.check_status, request=request, json=result)
         self.assertEqual(path, "/api/v1/transfer/task-definitions")
         return httpx.Response(201, request=request, json={
             "id": 101, "name": self.arguments["name"], "task_type": "sync", "status": "idle",
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn"):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -63,7 +65,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 task_context={
                     "skill_name": "transfer-generation", "user_request": "先建任务，不要运行", "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
-                    "checkpoint": self.checkpoint,
+                    "checkpoint": self.checkpoint, "accept_language": accept_language,
                 }, skill_body="fixture", allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
                 max_iterations=3, llm=_model(client),
             ):
@@ -72,11 +74,11 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     event.checkpoint_committed.set_result(None)
         return events, client
 
-    def review_call(self):
+    def review_call(self, arguments=None):
         return Message(role="assistant", tool_calls=[_call("request_clarification", {
             "prompt": "model cannot declare the check passed", "reason": REVIEW_REASON,
             "options": [{"label": "model confirm", "value": "confirm"}, {"label": "model cancel", "value": "cancel"}],
-            "operation_review": {"tool": CREATE_TOOL, "arguments": self.arguments},
+            "operation_review": {"tool": CREATE_TOOL, "arguments": arguments or self.arguments},
         })])
 
     def confirm(self):
@@ -146,6 +148,62 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.writes(), [])
                 result = next(e.payload for e in events if e.kind == "tool_result" and e.payload["tool_name"] == CREATE_TOOL)
                 self.assertIn("user_review" if "not_checked" in change else "config_check_unsupported", result["content"])
+
+    async def test_unsupported_diagnostics_reach_model_without_review_or_write(self):
+        diagnostic = {
+            "status": "unsupported", "code": "array_element_type_unsupported", "check": "target_definition",
+            "config_path": "/config/transforms/0/fields/1", "source_field": "status", "target_field": "status",
+        }
+        self.check_result = {**self.report, "status": "unsupported", "diagnostics": [*self.report["diagnostics"], diagnostic]}
+        for language, expected in (("zh-cn", "未创建任务"), ("en", "No task was created")):
+            events, client = await self.run_factory(
+                [self.review_call(), Message(role="assistant", content="请先修正目标字段定义")],
+                accept_language=language,
+            )
+            with self.subTest(language=language):
+                feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
+                self.assertEqual(feedback["error"]["code"], "platform_condition_unsatisfied")
+                self.assertIn(expected, feedback["error"]["message"])
+                self.assertEqual(feedback["config_check"], {
+                    key: self.check_result[key]
+                    for key in ("status", "checked", "not_checked", "runtime_checks_required", "diagnostics")
+                })
+                self.assertNotIn("principal_id", str(feedback))
+                self.assertNotIn("config_hash", str(feedback))
+                self.assertFalse(any(e.kind in {"interaction_required", "run_failed"} for e in events))
+                self.assertEqual(self.writes(), [])
+
+    async def test_fresh_unsupported_at_creation_returns_report_and_closes_both_steps(self):
+        self.confirm()
+        self.check_result = {**self.report, "status": "unsupported"}
+        events, client = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CREATE_TOOL, self.arguments)]),
+            Message(role="assistant", content="新的预检拒绝了配置，需要重新复核"),
+        ])
+        feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
+        self.assertEqual(feedback["config_check"]["diagnostics"], self.report["diagnostics"])
+        self.assertEqual(feedback["config_check"]["status"], "unsupported")
+        self.assertEqual(
+            {e.payload["tool_call_id"] for e in events if e.kind == "tool_start"},
+            {e.payload["tool_call_id"] for e in events if e.kind == "tool_result"},
+        )
+        self.assertEqual(self.writes(), [])
+        self.assertFalse(any(e.kind == "interaction_required" for e in events))
+
+    async def test_revised_draft_requires_fresh_formal_check_and_review(self):
+        corrected = copy.deepcopy(self.arguments)
+        corrected["config"]["transforms"][0]["fields"][1]["target_type"] = "json"
+        self.check_results = [{**self.report, "status": "unsupported"}, self.report]
+        events, client = await self.run_factory([self.review_call(), self.review_call(corrected)])
+        checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
+        self.assertEqual(len(checks), 2)
+        self.assertNotEqual(checks[0][2]["json"], checks[1][2]["json"])
+        interaction = next(e.payload for e in events if e.kind == "interaction_required")
+        self.assertIn('"target_type":"json"', interaction["prompt"])
+        self.assertEqual(interaction["candidates"][0]["label"], "知悉未核验项，仅创建任务")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.checkpoint["confirmed"]["operation_reviews"], {})
 
     async def test_formal_check_failure_clears_old_report_and_stops_sibling_create(self):
         self.confirm()

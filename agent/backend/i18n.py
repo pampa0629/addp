@@ -28,6 +28,7 @@ _TRANSFER_CREATE_REVIEW = {
         "unknown_confirm": "知悉未核验项，仅创建任务",
         "supported": "预检结果为已检查部分支持（supported），不代表执行必然成功。",
         "failed": "只读配置预检失败，未创建任务",
+        "unsupported": "配置预检发现不支持的定义，未创建任务。请依据报告诊断修正配置；涉及业务含义的变化须先由用户确认。",
     },
     "en": {
         "prompt": (
@@ -46,6 +47,7 @@ _TRANSFER_CREATE_REVIEW = {
         "unknown_confirm": "Accept unchecked items; create only",
         "supported": "The checked definitions are supported; this does not guarantee execution success.",
         "failed": "Read-only configuration check failed; no task was created",
+        "unsupported": "The configuration check found unsupported definitions. No task was created. Correct the configuration using the report diagnostics; changes to business meaning require user confirmation first.",
     },
 }
 
@@ -63,7 +65,7 @@ def transfer_create_review_messages(accept_language: str, report: dict) -> dict[
     status = report["status"]
     if status not in {"supported", "unknown"}:
         raise ValueError("config_check_unsupported")
-    details = {key: report[key] for key in ("status", "checked", "not_checked", "runtime_checks_required", "diagnostics")}
+    details = transfer_config_check_details(report)
     messages["prompt"] += "\n\n" + messages[status] + "\n\n```json\n" + json.dumps(details, ensure_ascii=False, indent=2) + "\n```\n"
     if status == "unknown":
         messages["confirm"] = messages["unknown_confirm"]
@@ -72,3 +74,12 @@ def transfer_create_review_messages(accept_language: str, report: dict) -> dict[
 
 def transfer_config_check_error(accept_language: str) -> str:
     return _TRANSFER_CREATE_REVIEW[_language(accept_language)]["failed"]
+
+
+def transfer_config_check_details(report: dict) -> dict:
+    """The same bounded owner diagnostics for review and rejection, not identity."""
+    return {key: report[key] for key in ("status", "checked", "not_checked", "runtime_checks_required", "diagnostics")}
+
+
+def transfer_config_check_unsupported(accept_language: str) -> str:
+    return _TRANSFER_CREATE_REVIEW[_language(accept_language)]["unsupported"]

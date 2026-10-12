@@ -18,6 +18,8 @@ Transfer 创建条件以运行时 `platform.capability.context` 返回的定义�
 
 Transfer 创建的正式只读预检由 Runtime 在最终复核前及创建前自动通过白名单 `transfer.task.config.check` 执行，使用唯一 Manifest Adapter/SDK，记录同一 Run 的审计。unsupported 阻止创建，unknown 的未检查项与运行要求由固定本地化提示展示并绑定知情确认；supported 不保证执行成功。报告绑定完整 Tool 参数与当前能力/结构事实；仅排除报告自然前进的 observed_at 及其 binding_hash，其他事实变化要求重新确认。失败先清除旧报告、终止当前运行，不吞成 unknown。运行报告保存在受限 checkpoint，不进入平台静态本体图。Copilot 仍只通过可选的 `transfer.draft.generate` 提供草稿，不承担预检、确认或创建职责。
 
+自动预检的 unsupported 报告拒绝复核与创建，同时将 owner 的检查范围、未检查项、运行要求及完整字段诊断作为受限反馈交给当前模型，供解释或修正草稿；不只返回条件错误码，也不传主体及绑定哈希。业务含义变化仍须澄清，新参数重新预检和复核。预检服务失败与无效响应保持终止，不当作可修正的定义拒绝。
+
 ## 目录结构
 
 ```
