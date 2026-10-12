@@ -76,7 +76,7 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
     expect(item.attributes.access_index?.table).toBeUndefined()
   }
   await verifyPage(0, 20)
-  const next = frame.getByRole('button', { name: /下一页|Next page/, exact: true })
+  const next = frame.getByRole('button', { name: /下一页|Go to next page/, exact: true })
   await expect(next).toBeEnabled()
   await next.click()
   await verifyPage(20, 5)

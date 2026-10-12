@@ -85,6 +85,11 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Compare persisted snapshots: PostgreSQL stores timestamps at microsecond precision.
+			item, err = repo.GetItemByID(1, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			before, _ := json.Marshal(item)
 			process := func(current *models.MetaItem, data, encoding string, rescan bool) error {
 				detected := scanflow.KnownItemDetectedItem(current, scanflow.KnownItemDescriptorFromAttributes(current.Attributes))
