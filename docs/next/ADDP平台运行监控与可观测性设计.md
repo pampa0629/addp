@@ -1863,6 +1863,14 @@ Safari 沿用户现有平台管理员会话只读复核：首次进入的旧实�
 
 默认 make test-changed 对当前混合工作区因多个 Owner 的外部数据库输入缺失在预检返回 2，后续门禁未执行、不计通过（/tmp/addp-host-list-browser-runtime-changed-38336323214.log）。本轮 47 个归档文件未检出私钥/JWT 模式。原源码58fbfbf1e的Monitor/Console前端及Go工作区CI已通过，Platform consistency仍执行；不能将分项计作整轮CI通过。本次诊断尚未真实执行，待推送后沿原suite复验，不将T1通过视作导航失败已修复，不修改产品或重启个人服务。仅提交本会话的10.57验收记录及诊断，不包含资源总览会话的10.58工作区改动。
 
+2026-10-13 诊断提交 `4e9fe672f0aba3308566f86d306ef31238d1c71d` 的 [Hosted T4 38340694203](https://github.com/pampa0629/addp/actions/runs/38340694203)（Job 115110779377）completed/success；业务与浏览器报告均 passed/complete，独立 summary 为 result=passed / cleanup=passed / infra_cleanup=zero_residuals。新增主机列表自然刷新六项标志全部成立，完整归档六帧原页批量摘要；索引 2/3 的同一节点评估时刻从北京时间 12:09:43 前进到 12:09:58，URL/iframe 保持、无详情扇出，关闭后正式重载并自然等待未产生新摘要。25 项主机指标/趋势、当前服务摘要与两项趋势、原服务自然刷新、正式密码/MFA与无权限拒绝、进程重启身份隔离、指标中心/来源/控制面故障恢复、停用排除历史、恢复新采样及删除全部通过。
+
+真实安全运行报告已落盘：浏览器总耗时 174755 ms、原测试期限 240000 ms；子进程耗时 177758 ms、原期限 300 秒，test_deadline_reported=false、subprocess_deadline_exceeded=false。此次未复现上一轮 page.goto: Test ended，不能据此确认旧失败是整体期限或 load 未完成，也不将一次通过记作导航根因已修复。诊断保留，生产/API/权限、原期限及断言均未改变。48 个归档文件未检出私钥/JWT模式，证据保存在 /tmp/addp-host-list-browser-runtime-hosted-38340694203/；脚本 /tmp/addp-host-list-browser-runtime-inspect.py 的白名单读取核对与独立退出报告一致。
+
+同一冻结源码的 [Platform CI 38340609850](https://github.com/pampa0629/addp/actions/runs/38340609850) 已 completed/success，33 项任务全部通过，包含 Platform consistency、Go 工作区及 Monitor/Console 前端。完整 CI/T4 结果只覆盖上述冻结源码。总览独立提交4addf28611不在该T4源码内，10.58的新总览界面与聚合接口仍须自己的真实验收；不扩大为总览或生产T5通过。当前个人环境未重启。
+
+本次收尾只更新已有设计与Monitor导航说明，代码及原诊断不变。默认 make test-changed 在当前混合工作区的多个Owner数据库连接条件预检返回2，后续门禁未执行、不计通过（/tmp/addp-host-list-browser-runtime-acceptance-changed-38340694203.log）；文档结构/链接及任务范围git diff --check通过。当前源码4e9fe672f的真实完整CI/T4已分别闭合；本次文档提交的CI仍待推送后的既有Platform consistency复验，不将旧源码通过追溯计入新提交。推送由用户操作。
+
 ### 10.58 平台资源总览与主机 TOP5（独立开发批次）
 
 首批沿现有主机资源内核增加 Monitor 唯一 `/resource-overview` 页面及 `GET /platform/resource_overview`。当前非委托 Platform User 同时需要 `monitor.resource_observation.read` 和 System 的 `platform.host_node.read`；System 仍拥有主机身份与当前读取裁决，Monitor 不读取 System 私有表，不使用后台观测身份替代 User，不改变生产角色、MFA 或 Tenant 范围。总览到主机详情沿 `/node-resources/:node_id`，服务入口沿 `/service-resources` 并独立检查 `platform.module.read`。
