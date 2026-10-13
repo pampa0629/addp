@@ -1708,6 +1708,48 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
 
 
+def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> None:
+    if "raster-workflow-capacity" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  raster-capacity-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
+        "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow-capacity'\n" not in job.group("body")
+    ) or "&& inputs.suite != 'raster-workflow-capacity'" not in workflow:
+        raise RegistrationError("raster capacity requires its own manual Ubuntu Hosted job")
+    if load_suite_registry(repository)["raster-workflow-capacity"].nightly:
+        raise RegistrationError("raster capacity requires real evidence before schedule registration")
+    required = {
+        "scripts/test/online-hosted-raster-capacity-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow-capacity',
+            '--cpus 4 --memory 2g --memory-swap 2g', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800',
+            'online-raster-capacity-fixture.py stop', 'online-raster-capacity-fixture.py seed',
+            'scripts/test/online-engine-registration.py', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'env -u POSTGRES_PASSWORD make test-online', 'launch_online_geopython_runtime',
+        ),
+        "scripts/utils/hosted-product-runtime.sh": (
+            'com.addp.online-run-id', 'Runtime default entry mismatch', 'Runtime image identity mismatch',
+        ),
+        "scripts/test/raster-workflow-capacity-online.py": (
+            'CACHE_VALUES=(64,128,256)', 'REPETITIONS=2', 'validate_measurement', 'wait_applied',
+            'memory.peak', 'oom_kill', 'strict_sizes(artifact,actual,item)', 'type(value) is not int',
+            "physical('purge',names)", 'capacity-progress.json', 'wait_lineage', "'runtime_container_id'",
+        ),
+        "business/scripts/online-raster-capacity-fixture.py": (
+            'S2A_17SPV_20220304_0_L2A', 'SIZE = 10980', 'data_directory=root/',
+            'public asset checksum changed', 'full_check=True', 'expected_rows',
+            'capacity source object bytes changed', 'capacity target purge has residuals',
+        ),
+        "Makefile": ('scripts/test/raster-workflow-capacity-online_test.py',
+                     'scripts/test/online-raster-capacity-fixture_test.py',
+                     'scripts/test/online-hosted-raster-capacity-gate_test.py'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"raster capacity owner contract is incomplete: {relative}")
+
+
 def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
     if "hdfs-spark-consumer-flow" not in registered:
         return
@@ -1730,9 +1772,12 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
             'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop', 'ADDP_ONLINE_MINIO_ENGINE_ID',
         ),
         "scripts/utils/hosted-online.sh": (
-            "make build-images", "Runtime image identity mismatch", "Runtime default entry mismatch",
-            "${RUNTIME_REPORT}-runtime-build.txt", "${RUNTIME_REPORT}-runtime.log",
+            "make build-images", 'source "$ROOT_DIR/scripts/utils/hosted-product-runtime.sh"',
+            "${RUNTIME_REPORT}-runtime.log",
             "com.addp.online-runtime", "stop_online_product_runtime || status=1",
+        ),
+        "scripts/utils/hosted-product-runtime.sh": (
+            "Runtime image identity mismatch", "Runtime default entry mismatch", "${RUNTIME_REPORT}-runtime-build.txt",
         ),
         "business/scripts/online-hdfs-spark-fixture.sh": (
             'com.addp.online-fixture', '--network host', '--tmpfs /data', '/addp/hdfs/init.py',
@@ -1770,9 +1815,11 @@ def validate_elasticsearch_spark_profile(repository: Path, registered: set[str])
         'scripts/utils/hosted-online.sh': (
             'make build-images', '--services spark-workflow-engine --tag $tag --verify --jobs 1',
             '--network host', '-e WORKFLOW_BIND_HOST=127.0.0.1',
-            'Runtime image identity mismatch', 'Runtime default entry mismatch',
-            '${RUNTIME_REPORT}-runtime-build.txt', '${RUNTIME_REPORT}-runtime.log',
+            'source "$ROOT_DIR/scripts/utils/hosted-product-runtime.sh"', '${RUNTIME_REPORT}-runtime.log',
             'com.addp.online-runtime', 'stop_online_product_runtime || status=1',
+        ),
+        'scripts/utils/hosted-product-runtime.sh': (
+            'Runtime image identity mismatch', 'Runtime default entry mismatch', '${RUNTIME_REPORT}-runtime-build.txt',
         ),
         'scripts/test/elasticsearch-consumer-flow-online.py': (
             'SPARK.worker_evidence', 'SPARK.runtime_status_evidence', 'spark_cluster_id', 'validate_workflow_nodes',
@@ -1833,6 +1880,7 @@ def check_registration(repository: Path) -> None:
     validate_metric_engine_variant(repository, registered)
     validate_public_origin_browser_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
+    validate_raster_capacity_profile(repository, registered)
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)

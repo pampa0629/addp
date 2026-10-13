@@ -16,6 +16,78 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('online_raster_fixture', ROOT / 'business/scripts/online-raster-minio-fixture.py')
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
+capacity_spec = importlib.util.spec_from_file_location('capacity_raster_fixture', ROOT / 'business/scripts/online-raster-capacity-fixture.py')
+capacity_fixture = importlib.util.module_from_spec(capacity_spec)
+capacity_spec.loader.exec_module(capacity_fixture)
+
+
+@pytest.fixture
+def capacity_source(tmp_path, monkeypatch):
+    import numpy as np
+    monkeypatch.setattr(capacity_fixture, 'SIZE', 64)
+    path = tmp_path/'capacity-source.tif'
+    source = gdal.GetDriverByName('GTiff').Create(str(path),64,64,4,gdal.GDT_UInt16)
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(32617)
+    source.SetGeoTransform(capacity_fixture.TRANSFORM); source.SetProjection(reference.ExportToWkt())
+    arrays = []
+    for index in range(4):
+        values = (np.arange(4096).reshape(64,64)+1+index*100).astype(np.uint16)
+        values[:2,:2] = 0  # Entire first output cell is invalid.
+        values[index*2+4,5] = 0  # Independent per-band holes exclude joint contributors.
+        if index == 3: values[-1,-1] = 0
+        source.GetRasterBand(index+1).WriteArray(values)
+        source.GetRasterBand(index+1).SetNoDataValue(0)
+        arrays.append(values)
+    source = None
+    expected = np.full((32,32),np.nan)
+    # Deliberately scalar and independent of the strip/vectorized verifier.
+    for row in range(32):
+        for column in range(32):
+            contributors = []
+            for y in (row*2,row*2+1):
+                for x in (column*2,column*2+1):
+                    values = [int(array[y,x]) for array in arrays]
+                    if all(value != 0 for value in values): contributors.append(sum(values)*2+1)
+            if contributors: expected[row,column] = sum(contributors)/len(contributors)
+    yield gdal.Open(str(path)), expected
+
+
+def capacity_cog(tmp_path, expected, *, corruption=None):
+    values = expected.copy()
+    if corruption == 'last-pixel': values[-1,-1] += 1
+    if corruption == 'nodata-mask': values[0,0] = 0
+    path = tmp_path/'capacity-computed.tif'
+    output = gdal.GetDriverByName('GTiff').Create(str(path),32,32,1,gdal.GDT_Float64)
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(32617)
+    output.SetGeoTransform((600001 if corruption=='shifted-grid' else 600000,20,0,4000020,0,-20))
+    output.SetProjection(reference.ExportToWkt())
+    band=output.GetRasterBand(1); band.SetNoDataValue(float('nan')); band.WriteArray(values)
+    output.BuildOverviews('NEAREST',[2,4,8,16])
+    if corruption == 'overview':
+        band.GetOverview(3).WriteRaster(1,1,1,1,struct.pack('<d',-1),buf_type=gdal.GDT_Float64)
+    band=output=None
+    cog_path=tmp_path/'capacity-output.cog.tif'
+    converted=gdal.Translate(str(cog_path),str(path),format='COG',creationOptions=['BLOCKSIZE=128','OVERVIEWS=FORCE_USE_EXISTING'])
+    converted=None
+    return cog_path
+
+
+def test_capacity_full_pixel_mask_and_all_pyramids_use_independent_scalar_oracle(capacity_source,tmp_path):
+    import numpy as np
+    source, expected = capacity_source
+    np.testing.assert_allclose(capacity_fixture.expected_rows(source,0,32),expected,equal_nan=True)
+    facts = capacity_fixture.verify_file(source,capacity_cog(tmp_path,expected))
+    assert facts['full_pixel_and_mask_verification'] and facts['cog_valid']
+    assert facts['valid_pixels'] == 1023
+    assert facts['overview_sizes'] == [[16,16],[8,8],[4,4],[2,2]]
+    assert type(facts['size_bytes']) is int and facts['size_bytes']>0
+
+
+@pytest.mark.parametrize('corruption',['last-pixel','nodata-mask','shifted-grid','overview'])
+def test_capacity_verifier_rejects_final_pixel_mask_grid_and_deepest_overview_corruption(capacity_source,tmp_path,corruption):
+    source, expected = capacity_source
+    with pytest.raises(capacity_fixture.shared.FixtureError):
+        capacity_fixture.verify_file(source,capacity_cog(tmp_path,expected,corruption=corruption))
 
 
 class LocalMinio:

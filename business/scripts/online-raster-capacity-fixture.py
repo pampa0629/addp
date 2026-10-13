@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sys
 import tempfile
 import urllib.request
@@ -87,10 +88,16 @@ def download_asset(root,asset):
     return {'band':band,'href':url,'size_bytes':size,'sha256':sha}
 
 
+def require_disk(root):
+    if shutil.disk_usage(root).free < 6 * (1 << 30):
+        raise shared.FixtureError('capacity requires at least 6 GiB free disk space')
+
+
 def prepare_source(root):
     import numpy as np
     from osgeo import gdal,osr
     gdal.UseExceptions(); gdal.SetCacheMax(64<<20)
+    require_disk(root)
     data=root/'public-source'; data.mkdir(mode=0o700)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         assets=list(pool.map(lambda asset:download_asset(data,asset),ASSETS))
@@ -163,7 +170,7 @@ def verify_file(source,path):
         or (target.RasterXSize,target.RasterYSize,target.RasterCount)!=(SIZE//2,SIZE//2,1)
         or target.GetGeoTransform()!=(600000,20,0,4000020,0,-20)
         or not target.GetSpatialRef().IsSame(source.GetSpatialRef())
-        or band.DataType!=gdal.GDT_Float64 or not math.isnan(band.GetNoDataValue())
+        or band.DataType!=gdal.GDT_Float64 or not isinstance(band.GetNoDataValue(),float) or not math.isnan(band.GetNoDataValue())
         or band.GetColorInterpretation()!=gdal.GCI_GrayIndex):
         raise shared.FixtureError('capacity COG layout/grid/type changed')
     count=0
@@ -176,14 +183,20 @@ def verify_file(source,path):
         count+=int(np.isfinite(expected).sum())
     sizes=[]
     if band.GetOverviewCount()!=4: raise shared.FixtureError('capacity pyramid levels changed')
+    rows,columns=np.arange(SIZE//2),np.arange(SIZE//2)
     for level in range(band.GetOverviewCount()):
         overview=band.GetOverview(level); sizes.append([overview.XSize,overview.YSize])
-        columns=np.floor((np.arange(overview.XSize)+.5)*(SIZE//2)/overview.XSize).astype(int)
-        for row in range(overview.YSize):
-            base_row=int((row+.5)*(SIZE//2)/overview.YSize)
-            expected=band.ReadAsArray(0,base_row,SIZE//2,1)[0,columns]
+        if (overview.XSize,overview.YSize)!=(SIZE//2//(2**(level+1)),)*2:
+            raise shared.FixtureError('capacity pyramid dimensions changed')
+        # GDAL NEAREST overviews round top-left coordinates in the preceding grid.
+        # This differs from Warp nearest at pixel centers. Verify every cascaded sample.
+        rows=rows[np.floor(np.arange(overview.YSize)*rows.size/overview.YSize+.5).astype(int)]
+        columns=columns[np.floor(np.arange(overview.XSize)*columns.size/overview.XSize+.5).astype(int)]
+        for row,base_row in enumerate(rows):
+            expected=band.ReadAsArray(0,int(base_row),SIZE//2,1)[0,columns]
             actual=overview.ReadAsArray(0,row,overview.XSize,1)[0]
-            if not np.array_equal(actual,expected,equal_nan=True):
+            if (not np.array_equal(actual,expected,equal_nan=True)
+                or not np.array_equal(overview.GetMaskBand().ReadAsArray(0,row,overview.XSize,1)[0]!=0,np.isfinite(expected))):
                 raise shared.FixtureError('capacity pyramid disagrees with verified base pixels')
     band=target=None
     return {'size_bytes':path.stat().st_size,'sha256':digest(path),'cog_valid':True,
@@ -229,6 +242,7 @@ def worker(action,root,names):
 
 
 def physical(action,names):
+    if action not in ('seed','verify','purge'): raise shared.FixtureError('unknown capacity physical action')
     root=shared.environment(); names=[] if action=='seed' else names_checked(names)
     image=os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE']
     output=shared.command(['docker','run','--rm','--name',CONTAINERS[2],

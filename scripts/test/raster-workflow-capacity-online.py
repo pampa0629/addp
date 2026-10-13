@@ -6,7 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
-import subprocess
+import sys
 import threading
 import time
 
@@ -115,18 +115,45 @@ class Sampler:
         return self.samples
 
 
+def wait_applied(platform,path,cache,running,version):
+    deadline=time.monotonic()+90
+    while time.monotonic()<deadline:
+        runtime=platform.request('GET',path,(200,)).payload.get('runtime')
+        if (isinstance(runtime,dict) and runtime.get('enabled') is True
+            and runtime.get('cache_mib')==cache and runtime.get('applied_version')==version
+            and runtime.get('pending_restart') is False and runtime.get('running_limit')==running
+            and runtime.get('waiting_limit')==2 and runtime.get('running')==0 and runtime.get('waiting')==0):
+            return
+        time.sleep(1)
+    raise scene.SuiteError('capacity policy did not become ready before measurement')
+
+
+def matrix():
+    for repetition in range(1,REPETITIONS+1):
+        caches=CACHE_VALUES if repetition%2 else tuple(reversed(CACHE_VALUES))
+        limits=(1,2) if repetition%2 else (2,1)
+        for cache in caches:
+            for running in limits:
+                yield repetition,cache,running
+
+
 def validate_measurement(samples,before,after,cache,running,version):
-    if not samples or any(sample['oom'] or sample['oom_kill'] for sample in samples) or after['oom'] or after['oom_kill']:
+    if not samples or any(sample['oom'] or sample['oom_kill'] for sample in [before,*samples,after]):
         raise scene.SuiteError('capacity OOM or missing samples')
     applied=[s['runtime'] for s in samples if s['runtime'].get('enabled') is True]
-    if not applied or any(r.get('cache_mib')!=cache or r.get('pending_restart') is not False or r.get('applied_version')!=version for r in applied):
+    if len(applied)!=len(samples) or any(r.get('cache_mib')!=cache or r.get('pending_restart') is not False or r.get('applied_version')!=version for r in applied):
         raise scene.SuiteError('capacity saved/applied cache and version disagree')
-    if any(r.get('running',0)>running or r.get('running_limit')!=running or r.get('waiting_limit')!=2 for r in applied):
+    if any(type(r.get('running')) is not int or not 0<=r['running']<=running
+        or type(r.get('waiting')) is not int or not 0<=r['waiting']<=2
+        or r.get('running_limit')!=running or r.get('waiting_limit')!=2 for r in applied):
         raise scene.SuiteError('capacity admission exceeded the configured limit')
     if max(r.get('running',0) for r in applied)!=running:
         raise scene.SuiteError('capacity did not exercise the requested concurrency')
     if running==1 and max(r.get('waiting',0) for r in applied)<1:
         raise scene.SuiteError('capacity serial admission did not queue the second task')
+    if (after['memory_peak_bytes']<=0 or after['memory_peak_bytes']>2*(1<<30)
+        or after['cpu_usage_usec']<before['cpu_usage_usec']):
+        raise scene.SuiteError('capacity metrics are invalid or did not reset')
     final=applied[-1]
     if final.get('running')!=0 or final.get('waiting')!=0:
         raise scene.SuiteError('capacity admission did not drain')
@@ -167,49 +194,48 @@ def run(env):
         'source':json.loads((Path(env['ADDP_ONLINE_SECRET_DIR'])/'capacity-source-evidence.json').read_text())}
     scans=set(); hashes=set()
     try:
-        for repetition in range(1,REPETITIONS+1):
-            caches=CACHE_VALUES if repetition%2 else tuple(reversed(CACHE_VALUES))
-            limits=(1,2) if repetition%2 else (2,1)
-            for cache in caches:
-                for running in limits:
-                    current=platform.request('GET',path,(200,)).payload['policy']
-                    body={key:current[key] for key in ('running','waiting','cache_mib','default_tenant_running','default_tenant_waiting')}
-                    body.update(version=current['version'],running=running,waiting=2,cache_mib=cache,default_tenant_running=running,default_tenant_waiting=2)
-                    saved=platform.request('PUT',path,(200,),body).payload['policy']
-                    container=restart_runtime(image);directory=cgroup_directory(container['State']['Pid'])
-                    sampler=Sampler(directory,platform,path);sampler.start()
-                    started=time.monotonic();names=[f'capacity-c{cache}-n{running}-r{repetition}-{index}.cog.tif' for index in range(2)]
-                    executions=[]
-                    try:
-                        identifiers=[scene.submit(client,engine,workflow(locator,target_engine,name),execution_timeout=900) for name in names]
-                        for identifier in identifiers:executions.append(scene.wait_execution(client,'develop',identifier,1200))
-                    finally:samples=sampler.finish()
-                    elapsed=time.monotonic()-started
-                    metrics=validate_measurement(samples,sampler.before,sampler.after,cache,running,saved['version'])
-                    native=physical('verify',names);cases=[]
-                    if native['source_unchanged'] is not True or native['source_sha256']!=report['source']['source_sha256']:
-                        raise scene.SuiteError('capacity source changed')
-                    for name,identifier,execution in zip(names,identifiers,executions):
-                        target_locator=f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-                        facts,scan=scene.validate_success(execution,[locator],target_locator,'create',expectation())
-                        if scan in scans:raise scene.SuiteError('capacity scan reused')
-                        scans.add(scan);scene.wait_execution(client,'meta',scan,600)
-                        item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'capacity target')
-                        artifact=execution['metadata']['result']['final_result'];actual=native['outputs'][name]
-                        strict_sizes(artifact,actual,item);scene.validate_target_item(item,expectation(),actual)
-                        graph=scene.wait_lineage(client,source['id'],item['id'],identifier,120)
-                        monitor=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
-                        if monitor.get('status')!='success' or monitor.get('metadata',{}).get('lineage_facts')!=facts:
-                            raise scene.SuiteError('capacity Monitor differs from Develop')
-                        hashes.add(actual['sha256'])
-                        cases.append({'execution_id':identifier,'target_name':name,'target_item_id':item['id'],
-                            'artifact':artifact,'data_item_size_bytes':item['size_bytes'],'physical':actual,
-                            'automatic_scan_execution_id':scan,'lineage':graph})
-                    if physical('purge',names)['source_unchanged'] is not True:raise scene.SuiteError('capacity purge changed source')
-                    group={'cache_mib':cache,'running_limit':running,'repetition':repetition,'elapsed_seconds':elapsed,
-                        'policy_version':saved['version'],'measurement':metrics,'samples':samples,'cases':cases,'purge':'passed'}
-                    report['groups'].append(group)
-                    (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-progress.json').write_text(json.dumps(report,sort_keys=True))
+        for repetition,cache,running in matrix():
+            current=platform.request('GET',path,(200,)).payload['policy']
+            body={key:current[key] for key in ('running','waiting','cache_mib','default_tenant_running','default_tenant_waiting')}
+            body.update(version=current['version'],running=running,waiting=2,cache_mib=cache,default_tenant_running=running,default_tenant_waiting=2)
+            saved=platform.request('PUT',path,(200,),body).payload['policy']
+            fixture.require_disk(Path(env['ADDP_ONLINE_SECRET_DIR']))
+            container=restart_runtime(image);directory=cgroup_directory(container['State']['Pid'])
+            wait_applied(platform,path,cache,running,saved['version'])
+            sampler=Sampler(directory,platform,path);sampler.start()
+            started=time.monotonic();names=[f'capacity-c{cache}-n{running}-r{repetition}-{index}.cog.tif' for index in range(2)]
+            executions=[]
+            try:
+                identifiers=[scene.submit(client,engine,workflow(locator,target_engine,name),execution_timeout=900) for name in names]
+                for identifier in identifiers:executions.append(scene.wait_execution(client,'develop',identifier,1200))
+            finally:samples=sampler.finish()
+            elapsed=time.monotonic()-started
+            metrics=validate_measurement(samples,sampler.before,sampler.after,cache,running,saved['version'])
+            native=physical('verify',names);cases=[]
+            if native['source_unchanged'] is not True or native['source_sha256']!=report['source']['source_sha256']:
+                raise scene.SuiteError('capacity source changed')
+            for name,identifier,execution in zip(names,identifiers,executions):
+                target_locator=f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+                facts,scan=scene.validate_success(execution,[locator],target_locator,'create',expectation())
+                if scan in scans:raise scene.SuiteError('capacity scan reused')
+                scans.add(scan);scene.wait_execution(client,'meta',scan,600)
+                item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'capacity target')
+                artifact=execution['metadata']['result']['final_result'];actual=native['outputs'][name]
+                strict_sizes(artifact,actual,item);scene.validate_target_item(item,expectation(),actual)
+                graph=scene.wait_lineage(client,source['id'],item['id'],identifier,120)
+                monitor=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
+                if monitor.get('status')!='success' or monitor.get('metadata',{}).get('lineage_facts')!=facts:
+                    raise scene.SuiteError('capacity Monitor differs from Develop')
+                hashes.add(actual['sha256'])
+                cases.append({'execution_id':identifier,'target_name':name,'target_item_id':item['id'],
+                    'artifact':artifact,'data_item_size_bytes':item['size_bytes'],'physical':actual,
+                    'automatic_scan_execution_id':scan,'lineage':graph})
+            if physical('purge',names)['source_unchanged'] is not True:raise scene.SuiteError('capacity purge changed source')
+            group={'cache_mib':cache,'running_limit':running,'repetition':repetition,'elapsed_seconds':elapsed,
+                'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
+                'timing_method':'submit-two-through-parent-terminal-excludes-oracle-and-scan','measurement':metrics,'samples':samples,'cases':cases,'purge':'passed'}
+            report['groups'].append(group)
+            (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-progress.json').write_text(json.dumps(report,sort_keys=True))
         if len(hashes)!=1 or len(scans)!=24:raise scene.SuiteError('capacity results differ between groups')
         report.update(result='passed',automatic_scans=24,output_sha256=next(iter(hashes)))
         return report

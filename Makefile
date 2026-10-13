@@ -480,7 +480,7 @@ test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限�
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
-	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py
+	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py
 
 .PHONY: test-hdfs-online-runner
 test-hdfs-online-runner: ## 验证 HDFS Spark T4 场景、物理夹具与隔离生命周期

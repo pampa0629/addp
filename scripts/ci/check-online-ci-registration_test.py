@@ -17,6 +17,30 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_capacity_requires_full_scene_resource_profile_and_owner_regressions(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
+                 'scripts/test/online-hosted-raster-capacity-gate.sh', 'scripts/utils/hosted-product-runtime.sh',
+                 'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile')
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        registered = {'raster-workflow-capacity'}
+        CHECK.validate_raster_capacity_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "inputs.suite == 'raster-workflow-capacity'"),
+                (paths[2], '--cpus 4 --memory 2g --memory-swap 2g'),
+                (paths[2], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+                (paths[3], 'Runtime default entry mismatch'), (paths[4], 'strict_sizes(artifact,actual,item)'),
+                (paths[4], 'CACHE_VALUES=(64,128,256)'), (paths[5], 'public asset checksum changed'),
+                (paths[5], 'full_check=True'), (paths[6], 'scripts/test/online-raster-capacity-fixture_test.py')):
+            path = self.repository / relative
+            original = path.read_text()
+            path.write_text(original.replace(fragment, 'removed'))
+            with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_capacity_profile(self.repository, registered)
+            path.write_text(original)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="addp-online-registration-")
         self.repository = Path(self.temporary.name)
@@ -131,7 +155,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "scripts/test/online-hosted-hdfs-gate.sh", "scripts/test/online-gate.py",
             "business/scripts/online-hdfs-spark-fixture.sh", "scripts/test/hdfs-spark-consumer-flow-online.py",
             "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js", "Makefile",
-            ".github/workflows/online-t4-gates.yml", "scripts/test/spark-online-evidence.py", "scripts/utils/hosted-online.sh",
+            ".github/workflows/online-t4-gates.yml", "scripts/test/spark-online-evidence.py", "scripts/utils/hosted-online.sh", "scripts/utils/hosted-product-runtime.sh",
         )
         for relative in paths:
             destination = self.repository / relative
@@ -142,7 +166,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in (
             (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[0], 'start_online_spark_runtime online-hdfs hdfs'),
-            (paths[8], 'make build-images'), (paths[8], '${RUNTIME_REPORT}-runtime-build.txt'),
+            (paths[8], 'make build-images'), (paths[9], '${RUNTIME_REPORT}-runtime-build.txt'),
             (paths[8], '${RUNTIME_REPORT}-runtime.log'), (paths[8], 'com.addp.online-runtime'),
             (paths[2], 'refusing to delete a foreign container'),
             (paths[3], 'SPARK.worker_evidence'), (paths[7], 'Finished task'), (paths[4], 'login('),
@@ -161,7 +185,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-hosted-elasticsearch-gate.sh',
                  'scripts/test/elasticsearch-consumer-flow-online.py', 'scripts/test/spark-online-evidence.py',
-                 'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js', 'Makefile', 'scripts/utils/hosted-online.sh')
+                 'console/frontend/e2e/online/elasticsearch-consumer-flow.spec.js', 'Makefile', 'scripts/utils/hosted-online.sh', 'scripts/utils/hosted-product-runtime.sh')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -875,7 +899,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"raster-workflow"}
         CHECK.validate_raster_workflow_profile(self.repository, registered)
         faults = (
-            ("scripts/utils/hosted-online.sh", "verify_online_product_runtime", "omitted_identity_check"),
+            ("scripts/utils/hosted-product-runtime.sh", "verify_online_product_runtime", "omitted_identity_check"),
             ("scripts/utils/hosted-online.sh", "stop_online_product_runtime || status=1", "true"),
             ("scripts/test/online-hosted-raster-gate.sh", "start_online_geopython_runtime", "start_native_runtime"),
             (".github/workflows/online-t4-gates.yml", "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'", "if: github.event_name == 'schedule'"),

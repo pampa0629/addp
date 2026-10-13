@@ -29,9 +29,20 @@ stop_online_fixture() {
   return "$status"
 }
 if [ "${1:-}" = --start-runtime ]; then
-  [ "$#" -eq 1 ] && [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] && [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$(uname -s)" = Linux ] || exit 1
+  [ "$#" -eq 1 ] && [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] && [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] && [ "${ADDP_ONLINE_TEST:-}" = 1 ] && [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || exit 1
   [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] && [ -d "${ADDP_ONLINE_ARTIFACT_DIR:?}" ] && [ -n "${ADDP_ONLINE_TEST_RUN_ID:?}" ]
   case "$ADDP_ONLINE_SECRET_DIR" in "${RUNNER_TEMP:?}"/addp-online-secret-*) ;; *) exit 1 ;; esac
+  python3 - <<'PY'
+import os, pathlib, stat
+secret=pathlib.Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+artifacts=pathlib.Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
+assert secret.is_absolute() and artifacts.is_absolute()
+assert secret.resolve()==secret and artifacts.resolve()==artifacts
+assert secret.stat().st_uid==os.getuid() and stat.S_IMODE(secret.stat().st_mode)==0o700
+assert secret!=artifacts and secret not in artifacts.parents and artifacts not in secret.parents
+assert (secret/'capacity-fixture.json').is_file()
+assert os.environ['ADDP_ONLINE_TEST_RUN_ID']==f"raster-capacity-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+PY
   if docker container inspect "$RUNTIME_CONTAINER" >/dev/null 2>&1; then exit 1; fi
   run_logged() { "$@" >> "$ADDP_ONLINE_ARTIFACT_DIR/capacity-runtime-start.log" 2>&1; }
   fail() { echo 'Capacity Runtime launch verification failed' >&2; exit 1; }

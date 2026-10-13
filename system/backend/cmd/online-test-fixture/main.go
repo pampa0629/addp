@@ -214,6 +214,21 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 	return values
 }
 
+func fixtureSessionConfig(suite string) iam.BrowserSessionConfig {
+	config := iam.BrowserSessionConfig{
+		AccessTokenTTL:        30 * time.Minute,
+		RefreshTokenFamilyTTL: 45 * time.Minute,
+		ResourceTicketOwners:  models.BrowserResourceAccessOwners,
+	}
+	// Full-scene capacity can outlast the ordinary 1740-second raster suite.
+	// These identities exist only in the disposable Hosted platform database.
+	if suite == "raster-workflow-capacity" {
+		config.AccessTokenTTL = 4 * time.Hour
+		config.RefreshTokenFamilyTTL = 4 * time.Hour
+	}
+	return config
+}
+
 func main() {
 	if err := run(os.Args[1:], os.Environ()); err != nil {
 		fmt.Fprintf(os.Stderr, "External Online identity fixture failed: %v\n", err)
@@ -286,11 +301,7 @@ func run(args []string, environment []string) error {
 	tenantService := iam.NewPlatformTenantService(repository, nil)
 	membershipService := iam.NewTenantMembershipService(repository, nil)
 	roleService := iam.NewTenantRoleService(repository, nil)
-	tokenService, err := iam.NewTokenFamilyService(repository, iam.BrowserSessionConfig{
-		AccessTokenTTL:        30 * time.Minute,
-		RefreshTokenFamilyTTL: 45 * time.Minute,
-		ResourceTicketOwners:  models.BrowserResourceAccessOwners,
-	}, nil, nil)
+	tokenService, err := iam.NewTokenFamilyService(repository, fixtureSessionConfig(*suite), nil, nil)
 	if err != nil {
 		return err
 	}

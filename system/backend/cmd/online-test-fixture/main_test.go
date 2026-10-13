@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	commonauthorization "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/iam"
@@ -501,7 +502,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 }
 
 func TestConsumerEnvironmentPublishesOnlyRequiredBrowserCredentials(t *testing.T) {
-	for _, suite := range []string{"security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
+	for _, suite := range []string{"security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
 		t.Run(suite, func(t *testing.T) {
 			values := consumerEnvironment(suite, 2, "consumer-token", "private'password")
 			if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private'password" || values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"] != "consumer-token" || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" || len(values) != 4 {
@@ -662,19 +663,31 @@ func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T
 }
 
 func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
-	permissions, err := suitePermissions("raster-workflow")
-	if err != nil || !needsEngineProvisioner("raster-workflow") {
-		t.Fatal("raster fixture registration is incomplete", err)
+	for _, suite := range []string{"raster-workflow", "raster-workflow-capacity"} {
+		t.Run(suite, func(t *testing.T) {
+			permissions, err := suitePermissions(suite)
+			if err != nil || !needsEngineProvisioner(suite) {
+				t.Fatal("raster fixture registration is incomplete", err)
+			}
+			for _, permission := range permissions {
+				if strings.HasPrefix(permission, "system.engine.") || permission == "meta.lineage.create" || strings.HasPrefix(permission, "system.engine_raster_policy.") {
+					t.Fatalf("consumer has control-plane permission: %s", permission)
+				}
+			}
+			for _, permission := range []string{"develop.data_read.execute", "develop.data_write.execute", "monitor.execution.read"} {
+				if !contains(permissions, permission) {
+					t.Fatalf("missing %s", permission)
+				}
+			}
+		})
 	}
-	for _, permission := range permissions {
-		if strings.HasPrefix(permission, "system.engine.") || permission == "meta.lineage.create" {
-			t.Fatalf("consumer has control-plane permission: %s", permission)
-		}
-	}
-	for _, permission := range []string{"develop.data_read.execute", "develop.data_write.execute", "monitor.execution.read"} {
-		if !contains(permissions, permission) {
-			t.Fatalf("missing %s", permission)
-		}
+}
+
+func TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget(t *testing.T) {
+	capacity := fixtureSessionConfig("raster-workflow-capacity")
+	ordinary := fixtureSessionConfig("raster-workflow")
+	if capacity.AccessTokenTTL != 4*time.Hour || capacity.RefreshTokenFamilyTTL != 4*time.Hour || ordinary.AccessTokenTTL != 30*time.Minute || ordinary.RefreshTokenFamilyTTL != 45*time.Minute {
+		t.Fatal("fixture session TTL does not match its isolated suite budget")
 	}
 }
 
