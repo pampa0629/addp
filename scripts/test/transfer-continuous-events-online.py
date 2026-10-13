@@ -11,6 +11,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -269,6 +270,67 @@ def revoke(reader, admin, login, tenant, execution_id, mutate):
     invisible(fresh, execution_id, 403, 404)
 
 
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None):
+    require(phase in {'live', 'recovery', 'revocation'}, 'unknown browser phase')
+    require((action is not None) == (phase != 'recovery'), 'browser action binding changed')
+    execution_ids = [canonical_uuid(value) for value in execution_ids]
+    require(len(execution_ids) == (3 if phase == 'recovery' else 1), 'browser execution scope changed')
+    required_checks = {
+        'live': ['timeline', 'automatic_committed_progress', 'no_samples'],
+        'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
+        'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
+    }[phase]
+    evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / f'continuous-browser-{phase}.json'
+    evidence.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory(prefix='continuous-browser-', dir=secret) as temporary:
+        control = Path(temporary)
+        prefix = 'PARENT' if phase == 'revocation' else 'TEST'
+        environment = dict(os.environ, ADDP_CONTINUOUS_BROWSER_PHASE=phase,
+                           ADDP_CONTINUOUS_BROWSER_EXECUTIONS=json.dumps(execution_ids),
+                           ADDP_CONTINUOUS_BROWSER_PRINCIPAL=str(subject['principal_id']),
+                           ADDP_CONTINUOUS_BROWSER_CONTROL=str(control),
+                           ADDP_CONTINUOUS_BROWSER_USERNAME=os.environ[f'ADDP_ONLINE_{prefix}_USER_USERNAME'],
+                           ADDP_CONTINUOUS_BROWSER_PASSWORD=os.environ[f'ADDP_ONLINE_{prefix}_USER_PASSWORD'])
+        marker = {'run_id': run_id, 'phase': phase, 'execution_id': execution_ids[0]}
+        # Raw Playwright output may contain login fill arguments; keep it private.
+        with (control / 'output.log').open('w') as output:
+            process = subprocess.Popen(['npm', 'exec', '--', 'playwright', 'test',
+                         '--config=playwright.online.config.js', '--output=' + str(control / 'playwright'),
+                         'e2e/online/continuous-execution-events.spec.js'],
+                         cwd=ROOT / 'console/frontend', env=environment, stdout=output,
+                         stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                if action is not None:
+                    deadline = time.monotonic() + 100
+                    ready = control / 'ready.json'
+                    while not ready.exists():
+                        require(process.poll() is None and time.monotonic() < deadline,
+                                'browser did not reach its authorized observation')
+                        time.sleep(.2)
+                    require(json.loads(ready.read_text()) == marker, 'browser control identity changed')
+                    action()
+                    release = control / 'release.tmp'
+                    release.write_text(json.dumps(marker))
+                    release.replace(control / 'release.json')
+                require(process.wait(timeout=180) == 0, 'continuous browser acceptance failed: ' + phase)
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+        require(evidence.is_file(), 'browser report missing')
+        result = json.loads(evidence.read_text())
+        expected = {'schema_version': 'addp.continuous-execution-browser/v1', 'phase': phase,
+                    'run_id': run_id, 'tenant_id': str(subject['tenant_id']),
+                    'principal_id': str(subject['principal_id']), 'execution_ids': execution_ids,
+                    'checks': required_checks, 'result': 'passed'}
+        require(result == expected, 'browser evidence contract changed')
+        return result
+
+
 def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults):
     report.update(schema_version='addp.online-suite/v1', suite=SUITE, run_id=run_id, tenant_id=str(tenant),
                   result='failed', checks=[], resources=[], executions=[], cleanup='not_started',
@@ -344,6 +406,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             assert_projection(actor.request('GET', f'{MONITOR}/{initial}', (200,)).payload, initial, monitor=True, tenant=tenant)
             lifecycle_events(events(actor, f'{OWNER}/executions', initial))
         report['checks'].append('owner_permissions_foreign_tenant_and_peer_history')
+        def browser_progress():
+            require(physical('produce-after-recovery'), 'browser committed progress fixture failed')
+            until(lambda: physical('verify-kafka-recovered'))
+        report['browser_live'] = run_browser('live', [initial], report['consumer_identity'],
+                                             run_id, faults.secret, browser_progress)
         report['worker_fault'] = faults.kill_worker_and_replace()
         expired = wait_status(client, initial, 'failed')
         require(expired.get('error_details', {}).get('code') == 'lease_expired' and
@@ -383,6 +450,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
                 and client.request('GET', f'{MONITOR}/{resumed}', (200,)).payload.get('error_details', {}).get('code') == 'missing_source_key',
                 'record failure lost its stable code in Owner or Monitor')
         report['checks'].append('kafka_pause_resume_and_record_failure_without_samples')
+        report['browser_recovery'] = run_browser('recovery', [initial, recovery_id, resumed],
+                                                 report['consumer_identity'], run_id, faults.secret)
         # A hung owner must not cause Monitor to release previously readable facts.
         def owner_unavailable():
             response = client.request('GET', f'{MONITOR}/{initial}', (502, 503))
@@ -391,7 +460,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         faults.stop_owner_during(owner_unavailable)
         compare(initial, 'failed')
         report['checks'].append('owner_unavailable_fail_closed')
-        revoke(reader, admin, login, tenant, initial, mutate)
+        report['browser_revocation'] = run_browser('revocation', [initial], report['reader_identity'],
+            run_id, faults.secret, lambda: revoke(reader, admin, login, tenant, initial, mutate))
         report['checks'].append('revoked_token_and_fresh_monitor_only_reader_denied')
         cdc_task = create('cdc')
         cdc = launch(cdc_task)

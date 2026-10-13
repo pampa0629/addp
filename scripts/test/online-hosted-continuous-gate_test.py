@@ -38,6 +38,11 @@ class HostedContinuousGateTest(unittest.TestCase):
                 Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
             if __name__ == '__main__': main()
         ''')
+        self.host._executable('npm', '''
+            #!/usr/bin/env bash
+            echo "npm:$*" >> "$ADDP_TEST_GATE_TRACE"
+            exit 0
+        ''')
         self.host._executable('go', '''
             #!/usr/bin/env bash
             previous=
@@ -94,6 +99,8 @@ class HostedContinuousGateTest(unittest.TestCase):
             self.assertIn(fragment, trace)
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
         self.assertFalse(self.host.secrets.exists())
+        self.assertIn('playwright install --with-deps chromium', SCRIPT.read_text())
+        self.assertIn('playwright install --with-deps chromium', trace)
 
     def test_suite_failure_still_destroys_owned_application_business_and_infra(self):
         result = self.gate(ADDP_TEST_SUITE_FAIL='1')

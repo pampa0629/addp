@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [] } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {} } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
+  execution.metadata = metadata
   let treeRequests = 0
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
@@ -24,6 +25,17 @@ async function installBackend(page, { empty = false, unavailable = false, events
   })
   return { getTreeRequests: () => treeRequests }
 }
+
+for (const locale of ['zh-cn', 'en']) test(`shows recorded recovery context (${locale})`, async ({ page }) => {
+  const previous = 'aaaaaaaa-1111-4111-8111-111111111111'
+  await installBackend(page, { locale, metadata: { recovered_from_execution_id: previous, recovery_attempt: 2 } })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const summary = page.locator('.metadata-summary')
+  await expect(summary).toContainText(previous)
+  await expect(summary).toContainText(locale === 'zh-cn' ? '恢复来源执行 UUID' : 'Recovered from execution UUID')
+  await expect(summary).toContainText(locale === 'zh-cn' ? '恢复次数' : 'Recovery attempt')
+  await expect(summary).toContainText('2')
+})
 
 test('shows recorded steps, sanitized failure and truncation without raw results', async ({ page }) => {
   await installBackend(page)

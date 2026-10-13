@@ -12,6 +12,7 @@ stop_online_fixture() {
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export MONITOR_URL=http://127.0.0.1:8100
+export CONSOLE_URL=http://127.0.0.1:5170
 export TRANSFER_CONTINUOUS_LEASE_DURATION=8s TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL=2s
 export TRANSFER_CONTINUOUS_CLAIM_INTERVAL=500ms
 infra_owned=1
@@ -24,6 +25,7 @@ application_owned=1
 for start_target in -transfer -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite transfer-continuous-events --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 for kind in pg kafka; do

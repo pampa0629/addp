@@ -143,6 +143,8 @@
           "cached_tiles": "Cached tiles",
           "failed_tiles": "Failed tiles",
           "stop_reason": "Stop reason",
+          "recovered_from_execution_id": "Recovered from execution UUID",
+          "recovery_attempt": "Recovery attempt",
           "row_count_estimate": "Estimated rows",
           "analyze_executed": "ANALYZE executed"
         },

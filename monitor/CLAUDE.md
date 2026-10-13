@@ -64,6 +64,8 @@ monitor/
 
 父执行终态下仍为 `pending|running` 的步骤只表示最后记录。共享 `ExecutionSteps` 必须接收父执行状态，标注历史状态/阶段并提示核对子执行，不把旧 `waiting` 解释为当前编排仍在等待；展示及中英文回归由 `make test-common-frontend` 和 `make test-monitor-frontend` 覆盖，既有前端 CI 自动发现。
 
+恢复上下文复用 execution 已保存的 `recovered_from_execution_id` 和 `recovery_attempt`，在通用详情摘要中展示来源 UUID 与恢复次数，不从当前任务定义补造历史。真实页面验收沿 `transfer-continuous-events` Hosted 部署，使用正式 Console 登录核对运行过程自动刷新、恢复历史及撤权后的清空；测试控制文件只留在当次私有临时目录，截图与报告不包含令牌、业务样本或完整接口响应。
+
 详情刷新依据整棵已授权可见树：父执行结束但任一可见子执行仍运行时继续刷新，全部可见执行达到终态才停止；不根据私有步骤引用补查隐藏节点。每次刷新复用 Owner 裁决；返回 403/404 时清空旧树、步骤和事件并显示重新加载入口。异步响应必须属于当前详情请求，不能覆盖关闭后重新打开的页面。
 
 - Monitor 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。

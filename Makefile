@@ -512,6 +512,7 @@ test-transfer-online-runner: ## 验证 Transfer Hosted 身份、只读预检、�
 
 .PHONY: test-transfer-continuous-online-runner
 test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周期、业务事实、事件与故障安全契约
+	@node --check --input-type=module < console/frontend/e2e/online/continuous-execution-events.spec.js
 	@bash -n business/scripts/online-continuous-fixture.sh scripts/test/online-hosted-continuous-gate.sh
 	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

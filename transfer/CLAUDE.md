@@ -125,6 +125,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+连续执行浏览器验收复用同一 Hosted suite 与 Console canonical 路由，在真实事件已提交后核对时间线、自动刷新的新增计数、恢复来源与失败原因。正式撤权仍由 Python 夹具沿既有 IAM 入口执行；浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档；只归档闭合报告和安全页面截图。门禁继续使用 `make test-transfer-continuous-online-runner`，新增 ES module 语法校验，真实部署入口准备 Chromium；登记校验同时检查这些接线。
+
 真实 continuous 事件验收登记为手工 Hosted suite `transfer-continuous-events`，复用独占生命周期、System IAM 测试身份与正式 Gateway／Owner／Worker。业务 Kafka 与 PostgreSQL CDC 均由独立 Business 物理夹具验证目标事实；事件只沿已授权的 Transfer／Monitor 接口读取。新入口的确定性回归归 `make test-transfer-continuous-online-runner` 和 `make test-online-runner`，CI／T0 登记同次完成；实际 Hosted 运行成功前不得计为 T4，通过 API 不代表浏览器已验收。通用诊断投影同时排除连续执行内部 `owner_instance_id`，保留已有安全恢复、分区和延迟事实；共享 Go 消费者及 Common／Monitor PostgreSQL 门禁按 Common 改动扩散。
 
 continuous 的 claim、累计提交计数与终态复用 `common.execution_events`；Transfer 在同一事务持有任务、execution、Runtime lease 锁并校验当前 owner/fencing、执行归属及锁等待后的有效期，Common 不读取 Transfer 私有表。每个 session 新建 execution，实际 claim 写入 attempt 1；已有已开始的 attempt 0 记录由 execution store 标准迁移规范化，pending 取消只保留概览。过期 worker 不得续租或写入，supervisor 收敛过期 running；暂停／停止的过期运行会取消而不自动恢复。事件仅包含闭合状态和累计记录数，不含业务位点、partition、错误自由文本、Worker 或 lease 信息，心跳／诊断不追加。每日预算及 30 天维护沿共享实现，不改变 System 平台日志或操作审计。新增回归由现有 Common execution PostgreSQL 事件组及 `make test-transfer-postgres` 的 continuous 事件、fencing、恢复／结构阻塞组承接，Go T1 自动发现，Common 消费者沿 `make test-changed` 扩散；不新增 API、事件字段或基础设施。

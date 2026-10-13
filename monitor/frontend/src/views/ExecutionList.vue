@@ -754,6 +754,8 @@ function buildMetadataSummaryItems(metadata) {
   appendMetadataField(items, 'cached_tiles', metadata.cached_tiles)
   appendMetadataField(items, 'failed_tiles', metadata.failed_tiles)
   appendMetadataField(items, 'stop_reason', metadata.stop_reason)
+  appendMetadataField(items, 'recovered_from_execution_id', metadata.recovered_from_execution_id)
+  appendMetadataField(items, 'recovery_attempt', metadata.recovery_attempt)
   for (const key of ['catalog_nodes_scanned', 'items_scanned', 'fields_scanned', 'finding_count', 'quality_score']) {
     appendMetadataField(items, key, metadata[key])
   }

@@ -143,6 +143,8 @@
           "cached_tiles": "缓存瓦片数",
           "failed_tiles": "失败瓦片数",
           "stop_reason": "停止原因",
+          "recovered_from_execution_id": "恢复来源执行 UUID",
+          "recovery_attempt": "恢复次数",
           "row_count_estimate": "估算行数",
           "analyze_executed": "已执行 ANALYZE"
         },

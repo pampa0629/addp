@@ -2,6 +2,8 @@ from copy import deepcopy
 from importlib import import_module
 import unittest
 import os
+import json
+import tempfile
 from unittest.mock import patch
 from types import SimpleNamespace
 from pathlib import Path
@@ -30,6 +32,63 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def test_browser_uses_private_controls_and_only_closed_public_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts, secrets = root / 'artifacts', root / 'private'
+            artifacts.mkdir(); secrets.mkdir()
+            subject = {'tenant_id': '2', 'principal_id': '33'}
+            env = {'ADDP_ONLINE_ARTIFACT_DIR': str(artifacts),
+                   'ADDP_ONLINE_TEST_USER_USERNAME': 'external-online-consumer',
+                   'ADDP_ONLINE_TEST_USER_PASSWORD': 'private-password'}
+            instances = []
+            class Process:
+                pid = 999999
+                def __init__(self, args, **kwargs):
+                    self.ended = False
+                    self.env = kwargs['env']
+                    control = Path(self.env['ADDP_CONTINUOUS_BROWSER_CONTROL'])
+                    self.control = control
+                    self.assert_args = args
+                    instances.append(self)
+                    (control / 'ready.json').write_text(json.dumps({'run_id': 'run-1', 'phase': 'live', 'execution_id': UUID}))
+                    report = {'schema_version': 'addp.continuous-execution-browser/v1', 'phase': 'live',
+                              'run_id': 'run-1', 'tenant_id': '2', 'principal_id': '33',
+                              'execution_ids': [UUID], 'checks': ['timeline', 'automatic_committed_progress', 'no_samples'], 'result': 'passed'}
+                    (artifacts / 'continuous-browser-live.json').write_text(json.dumps(report))
+                def poll(self): return 0 if self.ended else None
+                def wait(self, timeout):
+                    assert json.loads((self.control / 'release.json').read_text())['execution_id'] == UUID
+                    self.ended = True
+                    return 0
+            action = []
+            with patch.dict(os.environ, env), patch.object(M.subprocess, 'Popen', Process):
+                result = M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: action.append(True))
+            self.assertEqual(action, [True])
+            self.assertEqual(result['principal_id'], '33')
+            self.assertIn('--output=' + str(instances[0].control / 'playwright'), instances[0].assert_args)
+            self.assertFalse(instances[0].control.exists())
+            self.assertNotIn('private-password', (artifacts / 'continuous-browser-live.json').read_text())
+            for change in [{'principal_id': '999'}, {'execution_ids': ['other']}, {'checks': []},
+                           {'access_token': 'private'}, {'raw_response': {}}]:
+                class Incorrect(Process):
+                    def __init__(self, args, **kwargs):
+                        super().__init__(args, **kwargs)
+                        path = artifacts / 'continuous-browser-live.json'
+                        payload = json.loads(path.read_text()); payload.update(change)
+                        path.write_text(json.dumps(payload))
+                with self.subTest(change=change), patch.dict(os.environ, env), patch.object(M.subprocess, 'Popen', Incorrect), self.assertRaises(M.SuiteError):
+                    M.run_browser('live', [UUID], subject, 'run-1', secrets, lambda: None)
+            self.assertFalse(list(secrets.iterdir()))
+
+    def test_browser_rejects_invalid_phase_identity_and_action_before_launch(self):
+        with patch.object(M.subprocess, 'Popen') as launch:
+            for phase, ids, action in [('unknown', [UUID], None), ('live', [UUID], None),
+                                       ('revocation', ['other'], lambda: None), ('recovery', [UUID], None)]:
+                with self.subTest(phase=phase), self.assertRaises(M.SuiteError):
+                    M.run_browser(phase, ids, {}, 'run-1', '/not-used', action)
+            launch.assert_not_called()
+
     def test_drains_cursor_pages_without_offset_payloads(self):
         items = [fact(4, 'started'), fact(9), fact(12, 'cancelled')]
         client = Client([page(items[:2], True), page(items[2:])])
@@ -168,6 +227,13 @@ class ContinuousRunnerTest(unittest.TestCase):
             self.assertIn(fragment, job)
         self.assertNotIn('secrets.', job)
         self.assertIn('test-transfer-continuous-online-runner', (M.ROOT / 'Makefile').read_text())
+        hosted = (M.ROOT / 'scripts/test/online-hosted-continuous-gate.sh').read_text()
+        self.assertIn('playwright install --with-deps chromium', hosted)
+        makefile = (M.ROOT / 'Makefile').read_text().split('test-transfer-continuous-online-runner:', 1)[1].split('\n\n', 1)[0]
+        self.assertIn('node --check --input-type=module < console/frontend/e2e/online/continuous-execution-events.spec.js', makefile)
+        browser = (M.ROOT / 'console/frontend/e2e/online/continuous-execution-events.spec.js').read_text()
+        self.assertNotIn('page.route(', browser)
+        self.assertIn('transfer-browser-support.js', browser)
 
 
 if __name__ == '__main__':
