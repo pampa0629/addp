@@ -24,6 +24,11 @@ POINTCLOUD_TASK_TYPE = "point_cloud_copc_generation"
 PPTX_TASK_TYPE = "pptx_pdf_generation"
 RASTER_TASK_TYPE = "raster_cog_generation"
 MODEL_TASK_TYPE = "model_3d_glb_generation"
+MODEL_FORMATS = ("dae", "3ds", "ifc", "osgb", "skp", "max", "fbx", "obj")
+MESH_SOURCE_FACTS = {
+    "fbx": {"size_bytes": 17200, "sha256": "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8"},
+    "obj": {"size_bytes": 97, "sha256": "77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7"},
+}
 MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
 MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
@@ -532,50 +537,62 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
         source = _object(_object(task.get("config"), "model task config").get("source"), "model task source")
         if source.get("item_fingerprint") == item["fingerprint"]:
             raise SuiteError(f"a stale {format_name} task exists for the dedicated fixture")
-    return ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
+    model = ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
+    if format_name in MESH_SOURCE_FACTS:
+        if item.get("size_bytes") != MESH_SOURCE_FACTS[format_name]["size_bytes"]:
+            raise SuiteError(f"{format_name} source size differs from the pinned fixture")
+        verify_mesh_source(client, model)
+    return model
 
 
-def validate_max_png(raw: bytes) -> None:
+def verify_mesh_source(client: GatewayClient, model: ArtifactFixture) -> None:
+    spec = MESH_SOURCE_FACTS[model.format]
+    raw = client.request("GET", "/api/v1/manager/downloads/file?" + urllib.parse.urlencode({"locator": model.locator}), (200,)).raw
+    if len(raw) != spec["size_bytes"] or hashlib.sha256(raw).hexdigest() != spec["sha256"]:
+        raise SuiteError(f"{model.format} original source bytes changed")
+
+
+def validate_fixture_png(raw: bytes) -> None:
     """Decode the bounded fixture pixels, allowing Blender to re-encode PNG."""
     import zlib
     if not raw.startswith(b'\x89PNG\r\n\x1a\n'):
-        raise SuiteError('MAX fixture texture must be PNG')
+        raise SuiteError('textured fixture texture must be PNG')
     offset, compressed, channels, ended = 8, bytearray(), None, False
     while offset + 12 <= len(raw):
         length, kind = struct.unpack_from('>I4s', raw, offset)
         end = offset + 12 + length
         if end > len(raw):
-            raise SuiteError('MAX fixture PNG chunk is truncated')
+            raise SuiteError('textured fixture PNG chunk is truncated')
         data = raw[offset + 8:end - 4]
         if zlib.crc32(kind + data) != struct.unpack_from('>I', raw, end - 4)[0]:
-            raise SuiteError('MAX fixture PNG checksum differs')
+            raise SuiteError('textured fixture PNG checksum differs')
         if kind == b'IHDR':
             if channels is not None or length != 13:
-                raise SuiteError('MAX fixture PNG header is invalid')
+                raise SuiteError('textured fixture PNG header is invalid')
             width, height, depth, color, compression, filtering, interlace = struct.unpack('>2I5B', data)
             if (width, height, depth, compression, filtering, interlace) != (4, 4, 8, 0, 0, 0) or color not in (2, 6):
-                raise SuiteError('MAX fixture PNG must be 4 by 4 RGB or RGBA')
+                raise SuiteError('textured fixture PNG must be 4 by 4 RGB or RGBA')
             channels = 3 if color == 2 else 4
         elif kind == b'IDAT':
             compressed.extend(data)
         elif kind == b'IEND':
             if length or end != len(raw):
-                raise SuiteError('MAX fixture PNG ending is invalid')
+                raise SuiteError('textured fixture PNG ending is invalid')
             ended = True
             break
         offset = end
     if not ended or channels is None:
-        raise SuiteError('MAX fixture PNG is incomplete')
+        raise SuiteError('textured fixture PNG is incomplete')
     decoder = zlib.decompressobj()
     decoded = decoder.decompress(compressed, 4 * (1 + 4 * channels) + 1)
     if not decoder.eof or decoder.unused_data or len(decoded) != 4 * (1 + 4 * channels):
-        raise SuiteError('MAX fixture PNG decoded pixels exceed fixture bounds')
+        raise SuiteError('textured fixture PNG decoded pixels exceed fixture bounds')
     previous = [0] * (4 * channels)
     for row in range(4):
         start = row * (1 + 4 * channels)
         filtering = decoded[start]
         if filtering > 4:
-            raise SuiteError('MAX fixture PNG filter is invalid')
+            raise SuiteError('textured fixture PNG filter is invalid')
         current = list(decoded[start + 1:start + 1 + 4 * channels])
         for i in range(len(current)):
             left = current[i - channels] if i >= channels else 0
@@ -587,7 +604,7 @@ def validate_max_png(raw: bytes) -> None:
             current[i] = (current[i] + (0, left, up, (left + up) // 2, paeth)[filtering]) % 256
         for i in range(0, len(current), channels):
             if current[i:i + channels] != [220, 30, 60] + ([255] if channels == 4 else []):
-                raise SuiteError('MAX fixture must preserve the declared red texture pixels')
+                raise SuiteError('textured fixture must preserve the declared red texture pixels')
         previous = current
 
 
@@ -601,7 +618,7 @@ def validate_max_glb(doc: dict, view_bytes: Callable, size: int) -> dict[str, ob
     image = _object(images[0], 'MAX embedded image')
     if image.get('mimeType') != 'image/png' or 'uri' in image:
         raise SuiteError('MAX fixture must preserve one embedded PNG')
-    validate_max_png(view_bytes(image.get('bufferView'))[0])
+    validate_fixture_png(view_bytes(image.get('bufferView'))[0])
     accessors = _array(doc.get('accessors'), 'MAX accessors')
     def values(index, kind, component):
         index = non_negative_int(index, 'MAX accessor index')
@@ -737,7 +754,7 @@ def validate_max_conversion(execution: dict) -> dict:
 
 
 def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
-    if format_name not in {"dae", "3ds", "ifc", "osgb", "skp", "max"}:
+    if format_name not in MODEL_FORMATS:
         raise SuiteError("unexpected model fixture format")
     if not 20 <= len(raw) <= 2 * 1024 * 1024:
         raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
@@ -774,7 +791,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         return validate_max_glb(doc, view_bytes, len(raw))
     images = _array(doc.get("images", []), "fixture GLB images")
     mime_type = "image/jpeg" if format_name == "osgb" else "image/png"
-    image_count = 0 if format_name == "ifc" else 1
+    image_count = 0 if format_name in {"ifc", "fbx"} else 1
     if len(images) != image_count:
         raise SuiteError(f"fixture GLB must preserve exactly {image_count} embedded images")
     for image in images:
@@ -785,6 +802,8 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         signature = b"\xff\xd8\xff" if format_name == "osgb" else b"\x89PNG\r\n\x1a\n"
         if not image_bytes.startswith(signature):
             raise SuiteError("fixture image bufferView must contain real encoded image bytes")
+        if format_name == "obj":
+            validate_fixture_png(image_bytes)
         if format_name == "skp" and hashlib.sha256(image_bytes).hexdigest() != "3168c3aa8cd3338d29b9ca74ee6794a2290b69d4da04d0869788187cb6ac4cf3":
             raise SuiteError("SKP fixture must preserve its embedded four-color PNG")
     textures = _array(doc.get("textures", []), "fixture textures")
@@ -804,7 +823,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
             raise SuiteError("fixture accessor index is out of bounds")
         return _object(accessors[index], "fixture accessor")
     position = accessor(attributes.get("POSITION"))
-    expected_vertices = 24 if format_name == "ifc" else 3
+    expected_vertices = 24 if format_name in {"ifc", "fbx"} else 3
     if (position.get("type") != "VEC3" or position.get("componentType") != 5126
             or position.get("count") != expected_vertices or primitive.get("mode", 4) != 4):
         raise SuiteError("fixture mesh must preserve its triangle geometry and vertex count")
@@ -816,6 +835,17 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
     points = [struct.unpack_from("<3f", position_bytes, offset + i * stride) for i in range(expected_vertices)]
     if not all(math.isfinite(value) for point in points for value in point):
         raise SuiteError("fixture POSITION must contain finite coordinates")
+    if format_name == "fbx":
+        material_index = non_negative_int(primitive.get("material"), "FBX material")
+        if material_index >= len(materials):
+            raise SuiteError("FBX material index is out of bounds")
+        pbr = _object(_object(materials[material_index], "FBX material").get("pbrMetallicRoughness"), "FBX diffuse material")
+        color = pbr.get("baseColorFactor")
+        if not isinstance(color, list) or len(color) != 4 or any(type(v) not in (int, float) or not math.isfinite(v) for v in color) or any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(color, [253/255, 236/255, 166/255, 1.])):
+            raise SuiteError("FBX fixture must preserve its original diffuse color")
+        corners = {(x, y, z) for x in (-100., 100.) for y in (-100., 100.) for z in (-100., 100.)}
+        if set(points) != corners:
+            raise SuiteError("FBX fixture must preserve its original eight box corners")
     # Positions are mesh-local: Assimp retains DAE centimeters and puts the
     # meter conversion on the scene root. Verify dimensions after scene transforms.
     nodes = _array(doc.get("nodes"), "fixture nodes")
@@ -844,6 +874,14 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if "mesh" in node:
             if node["mesh"] != 0:
                 raise SuiteError("fixture node must reference its only mesh")
+            if format_name == "fbx":
+                rx, ry = map(math.radians, (19.52863768959518, -30.398331095399516))
+                cx, sx, cy, sy = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry)
+                a, b, c = 0.0017681174642734368, 0.0015908040794570112, 0.0015908040167168886
+                source_matrix = [cy*a, 0., -sy*a, 0., sy*sx*b, cx*b, cy*sx*b, 0.,
+                                 sy*cx*c, -sx*c, cy*cx*c, 0., 0.02918294258415699, 0.041242070496082306, 0.2000068873167038, 1.]
+                if any(not math.isclose(x, y, rel_tol=1e-5, abs_tol=1e-8) for x, y in zip(world, source_matrix)):
+                    raise SuiteError("FBX fixture must preserve its source node transforms")
             world_points.extend(tuple(sum(world[k * 4 + axis] * point[k] for k in range(3)) + world[12 + axis]
                                       for axis in range(3)) for point in points)
         for child in _array(node.get("children", []), "fixture node children"):
@@ -855,6 +893,15 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         raise SuiteError(f"fixture scene must render its only mesh exactly {expected_instances} times")
     extent = [max(point[axis] for point in world_points) - min(point[axis] for point in world_points) for axis in range(3)]
     expected_extent = [1., 1., 1.] if format_name == "ifc" else [1., 1., 0.] if format_name == "osgb" else [1., 2., 0.]
+    if format_name == "obj":
+        expected_extent = [2., 3., 0.]
+    if format_name == "fbx":
+        # Derived independently from the pinned source's geometric XYZ rotation
+        # (19.52863768959518, -30.398331095399516, 0) and nonuniform scale.
+        expected_extent = [0.5105573967092505, 0.4062126128326324, 0.5293064548328336]
+        centre = [(max(point[axis] for point in world_points) + min(point[axis] for point in world_points)) / 2 for axis in range(3)]
+        if any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(centre, [0.02918294258415699, 0.041242070496082306, 0.2000068873167038])):
+            raise SuiteError("FBX fixture must preserve its geometric translation")
     if format_name == "skp":
         expected_extent = [0.0762, 0., 0.0508]
         if any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(extent, expected_extent)):
@@ -863,7 +910,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         raise SuiteError("fixture geometry extent must preserve its source dimensions")
     if "indices" in primitive:
         indices = accessor(primitive["indices"])
-        expected_indices = 36 if format_name == "ifc" else 3
+        expected_indices = 36 if format_name in {"ifc", "fbx"} else 3
         if indices.get("count") != expected_indices or indices.get("type") != "SCALAR":
             raise SuiteError("fixture triangle index count changed")
         index_bytes, _ = view_bytes(indices.get("bufferView"))
@@ -877,8 +924,8 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         decoded_indices = struct.unpack_from("<" + str(expected_indices) + index_encoding, index_bytes, index_offset)
         if any(index >= expected_vertices for index in decoded_indices):
             raise SuiteError("fixture triangle index exceeds vertex count")
-    elif format_name == "ifc":
-        raise SuiteError("IFC cube must preserve its twelve indexed triangles")
+    elif format_name in {"ifc", "fbx"}:
+        raise SuiteError("cube fixture must preserve its twelve indexed triangles")
     if image_count:
         if "TEXCOORD_0" not in attributes or accessor(attributes["TEXCOORD_0"]).get("count") != expected_vertices:
             raise SuiteError("fixture textured mesh must preserve UV coordinates")
@@ -896,7 +943,10 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if material_index >= len(materials):
             raise SuiteError("fixture material index is out of bounds")
         material = _object(materials[material_index], "fixture material")
-        texture = _object(_object(material.get("pbrMetallicRoughness"), "fixture PBR").get("baseColorTexture"), "fixture diffuse texture")
+        pbr = _object(material.get("pbrMetallicRoughness"), "fixture PBR")
+        if format_name == "obj" and pbr.get("baseColorFactor", [1., 1., 1., 1.])[3] != 1.:
+            raise SuiteError("OBJ fixture must preserve opaque diffuse material")
+        texture = _object(pbr.get("baseColorTexture"), "fixture diffuse texture")
         texture_index = non_negative_int(texture.get("index"), "fixture texture index")
         if texture_index >= len(textures) or _object(textures[texture_index], "fixture texture").get("source") != 0:
             raise SuiteError("fixture diffuse material must use the embedded image")
@@ -1127,7 +1177,7 @@ def validate_browser_report(
     ):
         raise SuiteError("browser structured JSON sources must match all four fixed fixtures")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1145,7 +1195,7 @@ def validate_browser_report(
         "model_generation_requests": 0,
         "raster_generation_requests": 0,
         "raster": {**raster, "range_loaded": True, "map_loaded": True},
-        "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
+        "models": [{**model, "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in MESH_SOURCE_FACTS else {})} for model in models],
         "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
             "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
@@ -1168,7 +1218,7 @@ def validate_browser_report(
             "schema_version", "phase", "suite", "run_id", "result",
             "model_generation_requests", "browser_warning_errors", "failed_business_responses",
         )}
-        expected["models"] = [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
+        expected["models"] = [{**model, "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
@@ -1184,7 +1234,7 @@ def validate_browser_report(
         stage = entry.get("stage")
         allowed = {"navigation", "pptx-preview", "raster-cog:preview", "raster-cog:screenshot"}
         allowed.update(f"{prefix}-{format_name}:{step}" for prefix in ("generation", "model")
-                       for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")
+                       for format_name in MODEL_FORMATS
                        for step in ("preview", "screenshot"))
         if entry.get("source") != "chromium-webgl-driver" or not isinstance(stage, str) or stage not in allowed or stage in seen:
             raise SuiteError("browser GPU diagnostic source or stage is invalid")
@@ -1295,7 +1345,7 @@ def run_scenario(
     assert_manager_cross_module_hidden(client, scan_execution_id)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
-    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds", "ifc", "osgb", "skp", "max")]
+    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in MODEL_FORMATS]
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
     delimited = []
@@ -1493,7 +1543,7 @@ def run_scenario(
             structured_json=structured_json,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
-                           "item_id": model.item["id"], **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
+                           "item_id": model.item["id"], **(MESH_SOURCE_FACTS.get(model.format, {})), **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
         entry_evidence: dict[str, object] = {}
         if browser_runner is not None:
             entry_evidence = browser_runner(repository, environment, **browser_arguments,
@@ -1508,6 +1558,7 @@ def run_scenario(
             "format": model.format, "locator": model.locator,
             "item_id": model.item["id"], "result_id": model.result_id,
             "preview_url": model.artifact["preview_url"],
+            **(MESH_SOURCE_FACTS.get(model.format, {})),
             **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {}),
         } for model in model_fixtures]
         browser_evidence: dict[str, object] = {}
@@ -1520,7 +1571,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v6",
+            "schema_version": "addp.manager-internal-artifact-lineage/v7",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1578,6 +1629,9 @@ def run_scenario(
         for model in reversed(model_fixtures):
             try:
                 cleanup_managed_artifact(client, model, timeout)
+                if model.format in MESH_SOURCE_FACTS:
+                    verify_mesh_source(client, model)
+                    model.cleanup["source_unchanged"] = True
             except SuiteError as error:
                 cleanup_errors.append(str(error))
         if pptx_result_id is not None:

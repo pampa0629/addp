@@ -47,6 +47,15 @@ async function verifyOriginalDownload(page, frame, source) {
   return { bytes, checksum }
 }
 
+async function verifySourceModel(page, frame, model) {
+  const preview = frame.locator('.model-preview')
+  await expect(preview).toBeVisible({ timeout: 60_000 })
+  await expect(preview.locator('canvas')).toBeVisible()
+  await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+  const downloaded = await verifyOriginalDownload(page, frame, model)
+  return { source_model_loaded: true, download_sha256: downloaded.checksum }
+}
+
 async function verifyDelimitedTable(page, api, source, artifactDir) {
   const route = `/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`
   await page.goto(route)
@@ -389,7 +398,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
-  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb', 'skp', 'max'])
+  expect(models.map(model => model.format)).toEqual(['dae', '3ds', 'ifc', 'osgb', 'skp', 'max', 'fbx', 'obj'])
   for (const model of models) {
     expect(Number.isInteger(model.item_id) && model.item_id > 0).toBe(true)
     if (phase === 'generation-entry') continue
@@ -474,7 +483,12 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
         const generate = modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })
         await expect(generate).toBeVisible()
         await expect(generate).toBeEnabled()
-        await expect(modelFrame.locator('.model-preview')).toHaveCount(0)
+        const sourceProof = model.format === 'obj'
+          ? await verifySourceModel(page, modelFrame, model)
+          : model.format === 'fbx' ? { download_sha256: (await verifyOriginalDownload(page, modelFrame, model)).checksum } : {}
+        if (!['fbx', 'obj'].includes(model.format)) {
+          await expect(modelFrame.locator('.model-preview')).toHaveCount(0)
+        }
         if (model.format === 'max') {
           expect(model.conversion_options.source_unit).toBe('mm')
           const options = modelFrame.locator('.max-options')
@@ -505,7 +519,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
           path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-generation-entry.png`)
         })
         gpuDiagnostics.setStage('navigation')
-        modelEvidence.push({ ...model, generation_entry_visible: true, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
+        modelEvidence.push({ ...model, generation_entry_visible: true, ...sourceProof, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
       }
       expect(modelGenerationRequests).toBe(0)
       expect(failedBusinessResponses).toEqual([])
@@ -513,7 +527,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v8', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v9', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -592,7 +606,9 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       gpuDiagnostics.setStage(`model-${model.format}:screenshot`)
       await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-preview.png`) })
       gpuDiagnostics.setStage('navigation')
-      modelEvidence.push({ ...model, model_loaded: true, content_loaded: true })
+      const sourceProof = ['fbx', 'obj'].includes(model.format)
+        ? { download_sha256: (await verifyOriginalDownload(page, modelFrame, model)).checksum } : {}
+      modelEvidence.push({ ...model, model_loaded: true, content_loaded: true, ...sourceProof })
     }
     const delimitedEvidence = []
     gpuDiagnostics.setStage('navigation')
@@ -610,7 +626,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v8',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v9',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,

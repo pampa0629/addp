@@ -10,7 +10,7 @@ PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_pre
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
 FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json)
-MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png)
+MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png fbx/model.fbx obj/model.obj obj/model.mtl obj/texture.png)
 
 fail() {
   echo "Online Manager MinIO fixture failed: $*" >&2
@@ -90,6 +90,7 @@ for format in ifc osgb skp max; do
   [ -f "$source" ] || fail "fixture source is missing: $source"
 done
 
+[ -f "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" ] || fail "FBX fixture source is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" ] || fail "MAX texture fixture source is missing"
 
 docker_fixture() {
@@ -219,7 +220,7 @@ struct.pack_into("<12d", header, 131, .01, .01, .01, 0, 0, 0, 2, 0, 2, 0, 1, 0)
 records = b"".join(struct.pack("<iiiHBBbBH", x, y, z, 100, 9, 1, 0, 0, 0)
                    for x, y, z in ((0, 0, 0), (100, 100, 50), (200, 200, 100)))
 (root / "pdal_las12_format0.las").write_bytes(header + vlr + records)
-for format_name in ("dae", "3ds"):
+for format_name in ("dae", "3ds", "fbx", "obj"):
     (root / format_name).mkdir(parents=True)
 
 def png_chunk(kind, data):
@@ -231,6 +232,10 @@ png = (b"\x89PNG\r\n\x1a\n"
        + png_chunk(b"IEND", b""))
 for format_name in ("dae", "3ds"):
     (root / format_name / "texture.png").write_bytes(png)
+
+(root / "obj/model.obj").write_text('mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
+    'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
+(root / "obj/model.mtl").write_text('newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n')
 
 (root / "dae/model.dae").write_text('''<?xml version="1.0" encoding="utf-8"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
@@ -281,6 +286,8 @@ seed_fixture() {
     cp "${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}" "$MODEL_FIXTURE_DIR/$format/model.$format"
   done
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/max/texture.png"
+  cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/obj/texture.png"
+  cp "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" "$MODEL_FIXTURE_DIR/fbx/model.fbx"
   POINTCLOUD_FIXTURE_SOURCE="$MODEL_FIXTURE_DIR/pdal_las12_format0.las"
   mc mb --ignore-existing "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET" >/dev/null
   local network

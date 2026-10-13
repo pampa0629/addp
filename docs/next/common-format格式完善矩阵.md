@@ -119,3 +119,11 @@
 实现已提交并推送为 `dc0c3f687d6436e6da3c0ccd3f3c579d6e953963`；[JSON / GeoJSON Hosted 38328291459](https://github.com/pampa0629/addp/actions/runs/38328291459) 已触发，实际源码为该提交、attempt 1，当前排队中。沿用现有普通 User 十项权限及 browser/v8、Owner/v6；真实四源页面、下载和最终清理须待正式 artifact 返回后独立核对，不提前登记通过。
 
 2026-10-13 支持矩阵复核：FBX / OBJ 的基础预览与 GLB 快显说明已按 Manager 现行三维预览规范及 Model3D operator 定义校正，当前六模型 Hosted 的源格式集合确实未包含二者；据此单列待补的真实验收范围，不将已有实现或其他模型通过外推为这两种格式已完成 T4。仅更新现有说明和工作优先级，规范／源码对照及 `git diff --check` 通过；工作区标准 `make test-changed` 含其他 Owner 的并行变更，因 T2 连接条件缺失在预检中止，未执行数据库测试，不记整轮通过。JSON / GeoJSON 的 Hosted `38328291459` 已进入运行，仍须等待实际业务、浏览器及最终清理报告。
+
+2026-10-13 FBX／OBJ Hosted 扩展准备：沿既有 Manager suite 增加固定 FBX 盒子和带 MTL／PNG 的 OBJ 三角形。复用十项普通 User 权限，按真实源下载核对大小与 SHA-256，检查生成入口、OBJ 基础几何预览及两种格式生成后的 GLB 缓存加载；GLB 分别核对原始变换／颜色和贴图／不透明度，清理后再次核对原模型字节。Owner/v7、browser/v9 为本扩展的单一报告契约，模型集合扩大到八种、产物集合扩大到十一类，不改血缘产品实现。仍待新增范围的 Hosted 实际报告，旧六模型及 JSON／GeoJSON 运行结果不外推为 FBX／OBJ 已通过。
+
+本轮浏览器探针复现固定 FBX 的空顶点颜色层在 Three.js 0.172.0 `FBXLoader.parseVertexColors` 中读取不存在的 `Colors.a`，与 [上游 issue 31247](https://github.com/mrdoob/three.js/issues/31247) 一致；最新上游源码已有存在性检查，升级影响另行评估。2026-10-13 用户已确认先完成 FBX GLB 快显，基础预览缺陷不计为通过、不自动切换或忽略浏览器错误。本轮不升级 Three.js，不改产品预览路线；OBJ 保留基础几何和 GLB 贴图验收。
+
+本扩展的隔离副本验证：`make test-manager-online-runner` 的 76 项及 Go 身份工具通过，完整 `make test-online-runner` 的 968 项 Python 回归（13 批）及 CI 登记核对通过；最终按已确认的 FBX GLB 范围再次执行 Manager 专项通过。既有 Linux ARM64 最终 Runtime 镜像经正式 operator 转换同一固定源，FBX 的 24 个顶点／源变换／颜色与 OBJ 的三角形／内嵌 PNG 像素通过新断言。标准浏览器入口的临时中英文探针共两项通过，已目视核对 FBX GLB 及 OBJ 基础几何、带贴图 GLB，原文件下载哈希一致；探针使用受控 API，不能代替 Hosted。临时测试与 Vite 文件服务已移除，未升级依赖或重启用户服务；正式八模型 Hosted 尚未执行。
+
+本扩展隔离副本的标准 `make test-changed` 因所选共享 CI 登记影响面所需 T2 数据库连接条件未注入，在统一预检中止；未执行其后续 T0—T3，不记整轮通过。已运行的专项与 Online runner 结果独立有效；完整扩散验证由既有 Platform CI、Release/T2 及后续 Manager Hosted 门禁承接。

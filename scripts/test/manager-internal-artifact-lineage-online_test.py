@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import math
 import struct
 import sys
 import tempfile
@@ -52,6 +53,23 @@ def fixture_glb(format_name="dae"):
         doc["bufferViews"] = [{"buffer": 0, "byteLength": 288}, {"buffer": 0, "byteOffset": 288, "byteLength": 144}]
         doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
         doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
+    elif format_name == "fbx":
+        points = [(x, y, z) for z in (-100., 100.) for y in (-100., 100.) for x in (-100., 100.)] * 3
+        binary = b"".join(struct.pack("<3f", *point) for point in points) + struct.pack("<36I", *([0, 1, 2] * 12))
+        doc.pop("images"); doc.pop("textures")
+        doc["materials"] = [{"pbrMetallicRoughness": {"baseColorFactor": [253/255,236/255,166/255,1.]}}]
+        doc["bufferViews"] = [{"buffer": 0, "byteLength": 288}, {"buffer": 0, "byteOffset": 288, "byteLength": 144}]
+        doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
+        doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
+        rx, ry = map(math.radians, [19.52863768959518, -30.398331095399516])
+        cx, sx, cy, sy = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry)
+        a, b, c = .0017681174642734368, .0015908040794570112, .0015908040167168886
+        doc["nodes"][0]["matrix"] = [cy*a,0.,-sy*a,0.,sy*sx*b,cx*b,cy*sx*b,0.,sy*cx*c,-sx*c,cy*cx*c,0.,.02918294258415699,.041242070496082306,.2000068873167038,1.]
+    elif format_name == "obj":
+        texture = (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png").read_bytes()
+        binary = struct.pack("<9f",0,0,0,2,0,0,0,3,0)+struct.pack("<6f",0,0,1,0,0,1)+texture
+        doc["bufferViews"][2]["byteLength"] = len(texture)
+        doc["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"] = [1.,1.,1.,1.]
     elif format_name == "skp":
         texture = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000004000000040802000000269309290000001b49444154789c63b8236723b24543ceedce872d724c0c4800370700e91e052fb0efe4d10000000049454e44ae426082")
         binary = struct.pack("<9f", 0, 0, 0, 25.4, 0, 0, 0, 0, -50.8) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + texture
@@ -135,7 +153,7 @@ class FakeGatewayClient:
             format_name: {"item_id": item_id, "task_id": item_id + 110, "result_id": item_id + 210,
                           "fingerprint": fingerprint * 64, "task_exists": False, "result_exists": False,
                           "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
-            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"), ("skp", 98, "h"), ("max", 99, "i"))
+            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"), ("ifc", 96, "f"), ("osgb", 97, "g"), ("skp", 98, "h"), ("max", 99, "i"), ("fbx", 107, "j"), ("obj", 108, "k"))
         }
         self.raster = {'id': 305, 'item_id': 95, 'task_id': 205, 'result_id': 305, 'fingerprint': 'e'*64,
             'item_fingerprint': 'e'*64, 'task_exists': False, 'result_exists': False,
@@ -311,12 +329,18 @@ class FakeGatewayClient:
                   for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)],
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
-                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
+                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": SUITE.MESH_SOURCE_FACTS.get(format_name, {}).get("size_bytes", 1024),
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
                                "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp", "max"} else {}},
             } for format_name, model in self.models.items()])
         parsed = urllib.parse.urlsplit(path)
         query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path == "/api/v1/manager/downloads/file" and method == "GET":
+            locator = query.get("locator", [""])[0]
+            if "/fbx/" in locator:
+                return response(200, raw=(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
+            if "/obj/" in locator:
+                return response(200, raw=b'mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
         if parsed.path == "/api/v1/manager/tasks" and method == "GET":
             rows = [{"id": model["task_id"], "config": {"source": {"item_fingerprint": model["fingerprint"]}}}
                     for model in self.models.values() if model["task_exists"]]
@@ -535,7 +559,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def browser_models(self):
         client = FakeGatewayClient()
         return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],
-                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
+                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **SUITE.MESH_SOURCE_FACTS.get(format_name, {}), **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
                 for format_name, model in client.models.items()]
 
     def browser_delimited(self):
@@ -557,14 +581,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
-                    "models": [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
+                    "models": [{**model, "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -582,7 +606,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "model_generation_requests": 0,
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
-            "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
+            "models": [{**model, "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
             "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
                 "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
                 "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
@@ -738,8 +762,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 9)
-        self.assertEqual(report["lineage"]["outputs"], 9)
+        self.assertEqual(report["lineage"]["inputs"], 11)
+        self.assertEqual(report["lineage"]["outputs"], 11)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         self.assertEqual(report['raster_cog']['mode'], 'direct')
         self.assertTrue(report['raster_cog']['physical']['cog_valid'])
@@ -757,12 +781,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "object_deleted": True, "source_unchanged": True, "residual_objects": 0,
             "result_unavailable": True, "source_item_preserved": True, "execution_preserved": True})
         for format_name, model in client.models.items():
-            self.assertEqual(report["cleanup"][format_name], {**expected_cleanup, "preview_mode_restored": True})
+            self.assertEqual(report["cleanup"][format_name], {**expected_cleanup, "preview_mode_restored": True, **({"source_unchanged": True} if format_name in SUITE.MESH_SOURCE_FACTS else {})})
             self.assertFalse(model["task_exists"])
             self.assertFalse(model["result_exists"])
             self.assertEqual(client.model_modes[format_name], "basic_preview")
-            self.assertEqual(report["artifacts"][format_name]["embedded_images"], 0 if format_name == "ifc" else 1)
-            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name == "ifc" else 444 if format_name == "max" else 3)
+            self.assertEqual(report["artifacts"][format_name]["embedded_images"], 0 if format_name in {"ifc", "fbx"} else 1)
+            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name in {"ifc", "fbx"} else 444 if format_name == "max" else 3)
         self.assertFalse(client.pointcloud_task_exists)
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
@@ -884,6 +908,60 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(model.cleanup["preview_mode_restored"])
         self.assertEqual(model.cleanup["residual_resources"], 0)
 
+    def test_fbx_and_obj_require_source_geometry_material_and_transforms(self):
+        for fmt, count, images in (("fbx", 24, 0), ("obj", 3, 1)):
+            with self.subTest(fmt=fmt):
+                facts = SUITE.validate_model_glb(fixture_glb(fmt), fmt)
+                self.assertEqual(facts["vertex_count"], count)
+                self.assertEqual(facts["embedded_images"], images)
+                with self.assertRaises(SUITE.SuiteError):
+                    SUITE.validate_model_glb(alter_glb(fixture_glb(fmt), lambda d: d["accessors"][0].update(count=0)), fmt)
+        for mutate, reason in (
+            (lambda d: d["nodes"][0]["matrix"].__setitem__(0, 1.), "source node transforms"),
+            (lambda d: d["materials"][0]["pbrMetallicRoughness"].update(baseColorFactor=[0.,0.,0.,1.]), "original diffuse color"),
+            (lambda d: d["accessors"][1].update(count=3), "triangle index count"),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
+                SUITE.validate_model_glb(alter_glb(fixture_glb("fbx"), mutate), "fbx")
+        for mutate, reason in (
+            (lambda d: d["materials"][0]["pbrMetallicRoughness"].update(baseColorFactor=[1.,1.,1.,0.]), "opaque diffuse"),
+            (lambda d: d["images"][0].update(uri="texture.png"), "embedded image"),
+            (lambda d: d["meshes"][0]["primitives"][0]["attributes"].pop("TEXCOORD_0"), "UV coordinates"),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
+                SUITE.validate_model_glb(alter_glb(fixture_glb("obj"), mutate), "obj")
+
+    def test_mesh_source_download_must_preserve_pinned_bytes(self):
+        client = FakeGatewayClient()
+        for fmt in ("fbx", "obj"):
+            model = client.models[fmt]
+            fixture = SUITE.ArtifactFixture(fmt, {"id": model["item_id"]}, model["locator"])
+            SUITE.verify_mesh_source(client, fixture)
+            original = client._request
+            def changed(method, path, body, headers):
+                if path.startswith("/api/v1/manager/downloads/file?"):
+                    return response(200, raw=b'changed')
+                return original(method, path, body, headers)
+            with mock.patch.object(client, "_request", side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, "original source bytes changed"):
+                SUITE.verify_mesh_source(client, fixture)
+
+    def test_mesh_browser_proofs_are_mandatory_in_both_phases(self):
+        for phase in ("generation-entry", "cached-preview"):
+            models = self.browser_models()
+            if phase == "generation-entry":
+                models = [{k: v for k, v in m.items() if k in ("format", "locator", "item_id", "sha256", "size_bytes")} for m in models]
+            evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                        "pptx_item_id": 92, "pptx_page_count": 3, "models": models, "phase": phase,
+                        "raster": self.browser_raster(), "delimited": self.browser_delimited(),
+                        "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            for index in (-2, -1):
+                bad = copy.deepcopy(report)
+                bad["models"][index].pop("download_sha256")
+                with self.assertRaisesRegex(SUITE.SuiteError, "contract mismatch"):
+                    SUITE.validate_browser_report(bad, run_id="run-1", **{k: v for k, v in evidence.items() if k not in ("phase", "delimited", "structured_json")},
+                        delimited=evidence["delimited"], structured_json=evidence["structured_json"], phase=phase)
+
     def test_glb_requires_a_textured_mesh_and_embedded_image(self):
         self.assertEqual(SUITE.validate_model_glb(fixture_glb(), "dae")["embedded_images"], 1)
         for change, reason in (
@@ -990,12 +1068,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             SUITE.validate_model_glb(bytes(mutated), 'max')
         image = doc['bufferViews'][doc['images'][0]['bufferView']]
         png = raw[28+json_size+image['byteOffset']:28+json_size+image['byteOffset']+image['byteLength']]
-        SUITE.validate_max_png(png)
+        SUITE.validate_fixture_png(png)
         wrong = bytearray(png); wrong[-8] ^= 1
         with self.assertRaises(SUITE.SuiteError):
-            SUITE.validate_max_png(bytes(wrong))
+            SUITE.validate_fixture_png(bytes(wrong))
         with self.assertRaises(SUITE.SuiteError):
-            SUITE.validate_max_png(png[:-1])
+            SUITE.validate_fixture_png(png[:-1])
         def chunk(kind, data):
             return struct.pack('>I', len(data))+kind+data+struct.pack('>I', zlib.crc32(kind+data))
         for color in ([219,30,60], [220,30,60,0]):
@@ -1003,7 +1081,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             wrong_pixels = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>2I5B',4,4,8,kind,0,0,0))
                             + chunk(b'IDAT', zlib.compress((b'\0'+bytes(color)*4)*4)) + chunk(b'IEND', b''))
             with self.assertRaisesRegex(SUITE.SuiteError, 'red texture pixels'):
-                SUITE.validate_max_png(wrong_pixels)
+                SUITE.validate_fixture_png(wrong_pixels)
 
     def test_max_conversion_audit_rejects_wrong_units_texture_and_runtime(self):
         execution = FakeGatewayClient().lineage_execution(SUITE.MODEL_TASK_TYPE, 'max')
@@ -1283,7 +1361,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 SUITE.validate_browser_report(report, run_id="run-1", **evidence)
 
     def test_generation_entry_report_rejects_missing_or_wrong_model_and_generation(self):
-        models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in self.browser_models()]
+        models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes")} for model in self.browser_models()]
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "phase": "generation-entry"}
@@ -1300,7 +1378,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         for phase in ("generation-entry", "cached-preview"):
             models = self.browser_models()
             if phase == "generation-entry":
-                models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in models]
+                models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes")} for model in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
                         "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "phase": phase}
@@ -1494,7 +1572,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v8")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v9")
 
 
 if __name__ == "__main__":
