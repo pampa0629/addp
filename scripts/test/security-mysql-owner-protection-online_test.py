@@ -1247,6 +1247,38 @@ class ExplicitRediscoveryTest(unittest.TestCase):
                 for probe in self.probes.values():
                     probe.assert_not_called()
 
+    def test_accepts_iso8601_offsets_and_compares_absolute_instants(self):
+        self.client.before["last_discovered_at"] = "2026-10-13T08:00:00+08:00"
+        self.client.created["created_at"] = "2026-10-12T19:00:59-05:00"
+        self.client.after["last_discovered_at"] = "2026-10-13T08:01:00+08:00"
+        for index, item in enumerate(self.client.after["owner_progress"]):
+            item["acknowledged_at"] = ("2026-10-12T19:01:01-05:00" if index % 2
+                                       else "2026-10-13T00:01:01Z")
+        result = self.run_rediscovery()
+        self.assertTrue(result["all_current_revisions_acknowledged"])
+        for probe in self.probes.values():
+            probe.assert_called_once_with()
+        self.assertEqual(ONLINE.utc_timestamp("2026-10-13T08:01:00+08:00", "time"),
+                         ONLINE.utc_timestamp("2026-10-13T00:01:00Z", "time"))
+
+    def test_offset_timestamps_cannot_hide_old_completion_or_acknowledgement(self):
+        for field in ("last_discovered_at", "acknowledged_at"):
+            with self.subTest(field=field):
+                self.client = RediscoveryClient()
+                if field == "last_discovered_at":
+                    self.client.after[field] = "2026-10-13T08:00:00+08:00"
+                else:
+                    self.client.after["owner_progress"][0][field] = "2026-10-13T08:00:59+08:00"
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_rediscovery()
+                for probe in self.probes.values():
+                    probe.assert_not_called()
+
+    def test_rejects_missing_naive_or_invalid_timestamp(self):
+        for value in (None, "", "invalid", "2026-10-13", "2026-10-13T08:00:00"):
+            with self.subTest(value=value), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.utc_timestamp(value, "time")
+
     def test_rejects_old_or_wrong_projection_proofs_even_when_acknowledged(self):
         for field, value in (("revision", "00000000000000000001"), ("revision", "2"),
                              ("revision", "00000000000000000000"), ("projection_id", "other"),

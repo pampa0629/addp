@@ -561,13 +561,13 @@ def wait_for_owner_projections(
 
 def utc_timestamp(value: object, field: str) -> datetime:
     if not isinstance(value, str):
-        raise SuiteError(field + " must be a UTC timestamp")
+        raise SuiteError(field + " must be an ISO 8601 timestamp with a timezone")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
-        raise SuiteError(field + " must be a UTC timestamp") from error
-    if parsed.tzinfo is None or parsed.utcoffset().total_seconds() != 0:
-        raise SuiteError(field + " must be a UTC timestamp")
+        raise SuiteError(field + " must be an ISO 8601 timestamp with a timezone") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise SuiteError(field + " must be an ISO 8601 timestamp with a timezone")
     return parsed.astimezone(timezone.utc)
 
 
