@@ -200,3 +200,5 @@ Desktop 磁盘采集沿设计 10.39：七采集器与五项既有磁盘目录，
 Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通过，失败阶段为新鲜 Monitor-only 会话的拒绝提示断言；整项 T4 失败，清理通过且 Infra 零残留。相同精确文本断言在标准 Monitor 浏览器门禁的冷启动 403/404 场景均复现 strict-mode 双匹配：无障碍 `StatusAnnouncer` 与可见 `el-result` 标题使用同一提示。断言改为唯一可见结果标题的可见性与完整文本校验，保留无障碍播报，以及无详情、步骤、事件和执行树断言；不删除播报，不放宽 Owner 裁决或修改生产逻辑。既有 `make test-monitor-frontend` 自动发现两个新回归，Console Hosted 同一 continuous suite 继续验证正式登录与撤权。
 
 该最小验收修正的 `make test-monitor-frontend` 已通过（59 单元、131 浏览器及构建），`make test-transfer-online-runner` 已通过（65 项）；修正前两个新用例明确失败于 strict-mode 双匹配。Hosted 复验另行记录，未完成前不计为通过。
+
+该修正以 `ba2c99652` 提交；包含修正的 main `65de8a82938ba1bbdd56df6f7c000be7f67076cc` 已在 [Hosted continuous T4 38381655995](https://github.com/pampa0629/addp/actions/runs/38381655995) 通过。下载后核对 live/recovery/revocation 三个闭合浏览器报告及九组接口/Worker 检查：真实事件进展、Worker 失联后新 UUID 恢复、暂停/恢复与安全失败码、跨租户与同租户 Owner 权限、Owner 不可用、撤权清空及新鲜 Monitor-only 会话拒绝、CDC 快照及增删改事件、删除任务后的授权历史读取均通过。正式登录的拒绝截图仅显示错误标题与重新加载按钮，无执行内容。System/Gateway/Meta/Transfer/Monitor 五个实际构建的源码均匹配上述 main；场景清理通过、残留 0，外层 Infra 销毁零残留。37 个归档文件未发现私有控制文件或标准访问令牌/JWT 模式。此前失败保持原记录，不将其改记为通过；本次不包含工作区尚未发布的 Workflow/Notebook 监督器改造、180 天概览清理或生产 T5。
