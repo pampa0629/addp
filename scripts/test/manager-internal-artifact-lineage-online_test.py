@@ -305,6 +305,10 @@ class FakeGatewayClient:
                   for i, (format_name, checksum) in enumerate(SUITE.DELIMITED_SHA256.items())],
                 {"id": 203, "full_name": "addp-online/format-samples/format-validation.xlsx",
                  "item_type": "object", "fingerprint": "a" * 64, "size_bytes": 7087},
+
+                *[{"id": 204+i, "full_name": f"addp-online/{spec['object']}", "item_type": "object",
+                   "fingerprint": spec['sha256'], "size_bytes": spec['size_bytes']}
+                  for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)],
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
                 "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
@@ -546,16 +550,21 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 "sha256": "317ad1292f7e21861a85607cb2423b10f554ef418b787b9d2d28222106d9b18b",
                 "size_bytes": 7087, "sheet_names": ["Cities", "Readings", "Empty", "HeaderOnly"]}
 
+    def browser_structured_json(self):
+        return [{**spec, "item_id": 204+i, "fingerprint": spec['sha256'],
+                 "locator": f"addp://engine/27/path/addp-online/{spec['object']}?type=object&item_id={204+i}"}
+                for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)]
+
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v7",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, "generation_entry_visible": True, **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v7",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -587,6 +596,11 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 "unknown_total_verified": True, "sheet_switch_reset": True,
                 "refresh_preserved_page": True, "refresh_preserved_empty_sheet": True,
                 "metadata_verified": True, "reopened": True, "download_sha256": evidence["workbook"]["sha256"]},
+        "structured_json": [{**source, "content_verified": True, "metadata_verified": True,
+            "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
+            **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
+            **({"map_loaded": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
+                "source_srid": 4326} if source["format"] == "geojson" else {})} for source in evidence["structured_json"]],
             "gpu_performance_diagnostics": {"count": 0, "stages": []},
             "browser_warning_errors": 0,
             "failed_business_responses": 0,
@@ -700,7 +714,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def test_raster_browser_evidence_is_mandatory(self):
         evidence = {'execution_id': 'execution-1', 'item_id': 91, 'output_name': 'source.copc.laz',
                     'pptx_item_id': 92, 'pptx_page_count': 3, 'models': self.browser_models(), 'raster': self.browser_raster(),
-                    'delimited': self.browser_delimited(), 'workbook': self.browser_workbook()}
+                    'delimited': self.browser_delimited(), 'workbook': self.browser_workbook(), 'structured_json': self.browser_structured_json()}
         for field in ('range_loaded', 'map_loaded'):
             report = self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence)
             report['raster'][field] = False
@@ -1214,7 +1228,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         validated = SUITE.validate_browser_report(
@@ -1226,7 +1240,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             pptx_item_id=92,
             pptx_page_count=3,
             models=evidence["models"],
-            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"],
+            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"],
         )
         self.assertEqual(validated, report)
 
@@ -1237,7 +1251,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["pptx_page_after_engine_refresh"] = 1
@@ -1251,12 +1265,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 pptx_item_id=92,
                 pptx_page_count=3,
                 models=evidence["models"],
-            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"],
+            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"],
             )
 
     def test_browser_model_report_must_match_both_artifacts_and_loaded_content(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
         for change in (
             lambda report: report.pop("models"),
             lambda report: report["models"][0].update(result_id=999),
@@ -1272,7 +1286,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in self.browser_models()]
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "phase": "generation-entry"}
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "phase": "generation-entry"}
         for mutate in (lambda report: report["models"][0].update(generation_entry_visible=False),
                        lambda report: report["models"].pop(),
                        lambda report: report["models"][1].update(item_id=999),
@@ -1289,7 +1303,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 models = [{key: model[key] for key in ("format", "locator", "item_id")} for model in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                        "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "phase": phase}
+                        "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "phase": phase}
             report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
             report["anonymous_refresh_401"] = 1
             SUITE.validate_browser_report(report, run_id="run-1", **evidence)
@@ -1303,7 +1317,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_gpu_diagnostics_validate_source_stage_and_total(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["gpu_performance_diagnostics"] = {"count": 2, "stages": [
             {"source": "chromium-webgl-driver", "stage": "raster-cog:preview", "count": 2}]}
@@ -1324,7 +1338,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def test_delimited_browser_proof_is_mandatory_and_exact(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
-                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook()}
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
         for mutate in (
             lambda report: report.pop("delimited_tables"),
             lambda report: report["delimited_tables"].pop(),
@@ -1363,11 +1377,55 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.raster["result_exists"] or client.raster["task_exists"])
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
 
+    def test_structured_json_browser_proof_is_mandatory_and_exact(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(),
+                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
+        mutations = [lambda value: value.pop('structured_json'),
+            lambda value: value['structured_json'].pop(),
+            lambda value: value['structured_json'][3].update(format='json'),
+            lambda value: value['structured_json'][0].update(download_sha256='corrupt'),
+            lambda value: value['structured_json'][0].update(item_id=999),
+            lambda value: value['structured_json'][1].update(first_page_rows=19),
+            lambda value: value['structured_json'][1].update(last_page_rows=20),
+            lambda value: value['structured_json'][1].update(last_page_disabled=False),
+            lambda value: value['structured_json'][2].update(source_srid=0),
+            lambda value: value['structured_json'][3].update(geometry_types=['Point']),
+            lambda value: value['structured_json'][2].update(feature_count=1)]
+        for index in range(4):
+            for field in ['content_verified', 'metadata_verified', 'ordinary_refresh', 'reopened']:
+                mutations.append(lambda value, index=index, field=field: value['structured_json'][index].update({field: False}))
+        mutations.append(lambda value: value['structured_json'][2].update(map_loaded=False))
+        for mutate in mutations:
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            mutate(report)
+            with self.subTest(mutate=mutate), self.assertRaisesRegex(SUITE.SuiteError, 'structured_json'):
+                SUITE.validate_browser_report(report, run_id='run-1', **evidence)
+        with self.assertRaisesRegex(SUITE.SuiteError, 'four fixed fixtures'):
+            SUITE.validate_browser_report(self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence),
+                run_id='run-1', **{**evidence, 'structured_json': evidence['structured_json'][:3]})
+
+    def test_failed_structured_json_proof_still_cleans_all_managed_artifacts(self):
+        client = FakeGatewayClient()
+        def failed_browser(repository, environment, **evidence):
+            report = self.browser_report(environment, evidence)
+            if evidence['phase'] == 'cached-preview':
+                report['structured_json'][3]['download_sha256'] = 'corrupt'
+            return report
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, 'GatewayClient', return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'structured_json'):
+                SUITE.run_scenario(Path('/repository'), scenario_environment(directory), failed_browser)
+        self.assertFalse(client.pptx_result_exists or client.pptx_task_exists)
+        self.assertFalse(client.pointcloud_result_exists or client.pointcloud_task_exists)
+        self.assertFalse(client.raster['result_exists'] or client.raster['task_exists'])
+        self.assertTrue(all(not model['task_exists'] and not model['result_exists'] for model in client.models.values()))
+
     def test_workbook_browser_proof_is_mandatory_and_exact(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(),
-                    "workbook": self.browser_workbook()}
+                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
         mutations = [lambda value: value.pop("workbook"),
                      lambda value: value["workbook"]["sheets"].pop(),
                      lambda value: value["workbook"]["sheets"][1].update(columns=["city_id", "city_name"]),
@@ -1420,7 +1478,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json()}
         with tempfile.TemporaryDirectory() as directory:
             environment = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-1"}
             def browser(*args, **kwargs):
@@ -1430,12 +1488,13 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_MODELS_JSON"]), evidence["models"])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_DELIMITED_JSON"]), evidence["delimited"])
                 self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_WORKBOOK_JSON"]), evidence["workbook"])
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_STRUCTURED_JSON"]), evidence["structured_json"])
                 Path(directory, "manager-internal-artifact-lineage-browser-cached-preview.json").write_text(json.dumps(self.browser_report(environment, evidence)))
                 return mock.Mock(returncode=0)
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v7")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v8")
 
 
 if __name__ == "__main__":

@@ -236,6 +236,35 @@ esac
                 rows = list(csv.reader(io.StringIO(raw.decode("gbk"), newline=""), delimiter=delimiter))
                 self.assertEqual(rows, [["id", "姓名", "备注"]] + [[str(i), f"张三{i}", f"北京,第{i}项\n第二行"] for i in range(25)])
 
+    def test_generated_json_sources_preserve_structures_coordinates_and_original_bytes(self):
+        checksums = {
+            "document.json": (144, "908f8831b957fdf8b9465da6306e4507b622da4534f7633b981a760bd8c8fa1f"),
+            "records.json": (1158, "4f9d773c8c40848fbc459c021e4be449104a706d7c88c62a8198ee89614500f2"),
+            "features.geojson": (682, "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"),
+            "features.json": (682, "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"),
+        }
+        previous = None
+        for _ in range(2):
+            started = self.run_fixture("start")
+            self.assertEqual(started.returncode, 0, started.stderr)
+            originals = {name: (self.root / "model-fixtures/format-samples" / name).read_bytes() for name in checksums}
+            for name, raw in originals.items():
+                self.assertEqual((len(raw), hashlib.sha256(raw).hexdigest()), checksums[name])
+                self.assertIn(f'cp --quiet /fixture/format-samples/{name} fixture/addp-online/format-samples/{name}', self.log.read_text())
+                self.assertIn(f'stat fixture/addp-online/format-samples/{name}', self.log.read_text())
+            if previous is not None:
+                self.assertEqual(originals, previous)
+            previous = originals
+            self.assertEqual(json.loads(originals['document.json']), {'title': '格式验证', 'settings': {'enabled': True, 'threshold': None}, 'values': [1, '中文', False]})
+            self.assertEqual(json.loads(originals['records.json']), [{'id': i, 'label': f'记录{i}'} for i in range(25)])
+            self.assertEqual(originals['features.json'], originals['features.geojson'])
+            features = json.loads(originals['features.geojson'])
+            self.assertEqual(features['type'], 'FeatureCollection')
+            self.assertEqual([feature['properties'] for feature in features['features']], [{'id': 1, 'label': '采样点'}, {'id': 2, 'label': '采样线'}])
+            self.assertEqual([feature['geometry'] for feature in features['features']], [
+                {'type': 'Point', 'coordinates': [120.0, 30.0]},
+                {'type': 'LineString', 'coordinates': [[120.0, 30.0], [120.01, 30.02], [120.02, 30.0]]}])
+
     def test_generated_workbook_preserves_all_four_sheet_structures_and_source_bytes(self):
         baseline = None
         ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}

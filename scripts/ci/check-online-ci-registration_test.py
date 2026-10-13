@@ -957,7 +957,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
             "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
-            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx\n",
+            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json\n",
             encoding="utf-8",
         )
         owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
@@ -968,7 +968,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source addp.manager-internal-artifact-lineage/v5\n',
+            'validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v6\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -980,8 +980,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible "
             "model_generation_requests anonymous_refresh_401 failed_business_responses "
-            "addp.manager-internal-artifact-lineage-browser/v7 ADDP_ONLINE_MANAGER_DELIMITED_JSON "
-            "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256 ADDP_ONLINE_MANAGER_WORKBOOK_JSON verifyWorkbook .container-preview workbook: workbookEvidence unknown_total_verified refresh_preserved_page refresh_preserved_empty_sheet\n",
+            "addp.manager-internal-artifact-lineage-browser/v8 ADDP_ONLINE_MANAGER_DELIMITED_JSON "
+            "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256 ADDP_ONLINE_MANAGER_WORKBOOK_JSON verifyWorkbook .container-preview workbook: workbookEvidence unknown_total_verified refresh_preserved_page refresh_preserved_empty_sheet ADDP_ONLINE_MANAGER_STRUCTURED_JSON verifyStructuredJSON structured_json: structuredEvidence content_verified source_srid\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -993,6 +993,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (fixture, "format-samples/gbk-quoted.csv", "fixture contract"),
             (fixture, "format-samples/gbk-quoted.tsv", "fixture contract"),
             (fixture, "format-samples/format-validation.xlsx", "fixture contract"),
+            (fixture, "format-samples/document.json", "fixture contract"),
+            (fixture, "format-samples/records.json", "fixture contract"),
+            (fixture, "format-samples/features.geojson", "fixture contract"),
+            (fixture, "format-samples/features.json", "fixture contract"),
+
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),
             (owner, "DELIMITED_SHA256", "owner contract"),
@@ -1000,9 +1005,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "WORKBOOK_SHA256", "owner contract"),
             (owner, "WORKBOOK_SHEETS", "owner contract"),
             (owner, "workbook_source", "owner contract"),
-            (owner, "addp.manager-internal-artifact-lineage/v5", "owner contract"),
+            (owner, "STRUCTURED_JSON_SOURCES", "owner contract"),
+            (owner, "structured_json_sources", "owner contract"),
+            (owner, "addp.manager-internal-artifact-lineage/v6", "owner contract"),
             (browser, ".model-preview", "browser contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v7", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v8", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_BROWSER_PHASE", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_DELIMITED_JSON", "browser contract"),
             (browser, "verifyDelimitedTable", "browser contract"),
@@ -1011,6 +1018,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (browser, "verifyWorkbook", "browser contract"),
             (browser, ".container-preview", "browser contract"),
             (browser, "workbook: workbookEvidence", "browser contract"),
+            (browser, "ADDP_ONLINE_MANAGER_STRUCTURED_JSON", "browser contract"),
+            (browser, "verifyStructuredJSON", "browser contract"),
+            (browser, "structured_json: structuredEvidence", "browser contract"),
+            (browser, "content_verified", "browser contract"),
+            (browser, "source_srid", "browser contract"),
             (browser, "unknown_total_verified", "browser contract"),
             (browser, "refresh_preserved_page", "browser contract"),
             (browser, "refresh_preserved_empty_sheet", "browser contract"),

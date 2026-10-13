@@ -345,6 +345,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "format-samples/gbk-quoted.csv",
         "format-samples/gbk-quoted.tsv",
         "format-samples/format-validation.xlsx",
+        "format-samples/document.json",
+        "format-samples/records.json",
+        "format-samples/features.geojson",
+        "format-samples/features.json",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -375,7 +379,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "WORKBOOK_SHA256",
         "WORKBOOK_SHEETS",
         "workbook_source",
-        "addp.manager-internal-artifact-lineage/v5",
+        "STRUCTURED_JSON_SOURCES",
+        "structured_json_sources",
+        "addp.manager-internal-artifact-lineage/v6",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -407,7 +413,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v7",
+        "addp.manager-internal-artifact-lineage-browser/v8",
         "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
         "verifyDelimitedTable",
         "delimited_tables",
@@ -417,6 +423,11 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "verifyWorkbook",
         ".container-preview",
         "workbook: workbookEvidence",
+        "ADDP_ONLINE_MANAGER_STRUCTURED_JSON",
+        "verifyStructuredJSON",
+        "structured_json: structuredEvidence",
+        "content_verified",
+        "source_srid",
         "unknown_total_verified",
         "refresh_preserved_page",
         "refresh_preserved_empty_sheet",

@@ -24,6 +24,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_RASTER_JSON',
   'ADDP_ONLINE_MANAGER_DELIMITED_JSON',
   'ADDP_ONLINE_MANAGER_WORKBOOK_JSON',
+  'ADDP_ONLINE_MANAGER_STRUCTURED_JSON',
   'GATEWAY_URL'
 ]
 
@@ -247,7 +248,126 @@ async function verifyWorkbook(page, api, source, artifactDir) {
   }
 }
 
-test('Manager lineage, cached previews, GBK tables and XLSX sheets through Console', async ({ page }) => {
+async function verifyStructuredJSON(page, api, source, artifactDir) {
+  const document = { title: '格式验证', settings: { enabled: true, threshold: null }, values: [1, '中文', false] }
+  const features = { type: 'FeatureCollection', features: [
+    { type: 'Feature', properties: { id: 1, label: '采样点' }, geometry: { type: 'Point', coordinates: [120, 30] } },
+    { type: 'Feature', properties: { id: 2, label: '采样线' }, geometry: { type: 'LineString', coordinates: [[120, 30], [120.01, 30.02], [120.02, 30]] } }
+  ] }
+  const received = []
+  const pending = []
+  const readErrors = []
+  const receive = response => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/v1/manager/preview' || url.searchParams.get('locator') !== source.locator) return
+    pending.push(response.json().then(body => received.push({ status: response.status(), page: Number(url.searchParams.get('page') || 1), ...body })).catch(error => readErrors.push(error.message)))
+  }
+  page.on('response', receive)
+  try {
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const verifyMetadata = async () => {
+      const item = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read structured JSON facts')
+      expect(item.id).toBe(source.item_id)
+      expect(item.fingerprint).toBe(source.fingerprint)
+      expect(item.size_bytes).toBe(source.size_bytes)
+      expect(item.attributes.item).toMatchObject({ format: source.format, data_type: source.data_type, layout: 'single' })
+      expect(item.attributes.storage.content_hash).toBe(source.sha256)
+      if (source.case === 'records') {
+        expect(item.row_count).toBe(25)
+        expect(item.attributes.type_info.table.fields.map(field => field.name)).toEqual(['id', 'label'])
+        expect(item.attributes.capabilities?.spatial).toBeUndefined()
+      } else if (source.format === 'geojson') {
+        expect(item.row_count).toBe(2)
+        expect(item.attributes.format_info.geojson.structure).toBe('geojson_feature_collection')
+        expect(item.attributes.format_info.json).toBeUndefined()
+        const geometry = item.attributes.capabilities.spatial.geometry_columns
+        expect(geometry).toHaveLength(1)
+        expect(geometry[0]).toMatchObject({ name: 'geometry', srid: 4326, crs_ref: 'EPSG:4326' })
+      } else {
+        expect(item.attributes.capabilities?.spatial).toBeUndefined()
+      }
+    }
+    const verifyContent = async (offset = 0, count = 20) => {
+      await expect.poll(() => received.length).toBeGreaterThan(0)
+      if (source.case === 'records') {
+        const table = frame.locator('.table-preview')
+        await expect(table.getByRole('columnheader')).toHaveText(['id', 'label'])
+        await expect(table.getByRole('cell', { name: `记录${offset}`, exact: true })).toBeVisible()
+        await expect(table.getByRole('cell')).toHaveCount(count * 2)
+        expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(
+          Array.from({ length: count }, (_, i) => [String(offset + i), `记录${offset + i}`]).flat())
+        await expect(frame.locator('.geojson-preview')).toHaveCount(0)
+        const expectedRows = Array.from({ length: count }, (_, i) => ({ id: offset + i, label: `记录${offset + i}` }))
+        await expect.poll(() => {
+          const preview = received.filter(value => value.page === (offset === 0 ? 1 : 2)).at(-1)
+          return preview && { type: preview.preview_type, total: preview.data?.total, rows: preview.data?.rows }
+        }).toEqual({ type: 'table', total: 25, rows: expectedRows })
+      } else {
+        await expect.poll(() => received.at(-1)?.data?.object?.content?.frontend_renderer).toBe(source.format === 'geojson' ? 'map' : 'json')
+        const content = received.at(-1)?.data?.object?.content
+        if (source.format === 'geojson') {
+          const preview = frame.locator('.geojson-preview')
+          await expect(preview).toBeVisible()
+          expect(JSON.parse(await preview.locator('.json-content').innerText())).toEqual(features)
+          expect(content).toMatchObject({ kind: 'json', preview_material: 'geojson', geojson: features,
+            metadata: { source_srid: 4326, source_crs: 'EPSG:4326', transform_status: 'not_transformed', preview_hint: 'direct_renderable' } })
+          await expect(preview.locator('.map-container')).toBeVisible()
+          await expect(preview.locator('.map-container canvas').first()).toBeVisible()
+          await expect(preview.locator('.map-placeholder')).toHaveCount(0)
+        } else {
+          const preview = frame.locator('.json-preview')
+          await expect(preview).toBeVisible()
+          expect(JSON.parse(await preview.locator('.json-content').innerText())).toEqual(document)
+          expect(content).toMatchObject({ kind: 'json', preview_material: 'json', json: document })
+          await expect(frame.locator('.table-preview, .geojson-preview')).toHaveCount(0)
+        }
+      }
+    }
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
+    await verifyContent()
+    if (source.case === 'records') {
+      const next = frame.getByRole('button', { name: /下一页|Go to next page/, exact: true })
+      await expect(next).toBeEnabled()
+      await next.click()
+      await verifyContent(20, 5)
+      await expect(next).toBeDisabled()
+    }
+    await verifyMetadata()
+    await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, `json-${source.case}-preview.png`) })
+    const { bytes, checksum } = await verifyOriginalDownload(page, frame, source)
+    expect(JSON.parse(bytes.toString('utf8'))).toEqual(source.case === 'document' ? document : source.case === 'records'
+      ? Array.from({ length: 25 }, (_, i) => ({ id: i, label: `记录${i}` })) : features)
+    const beforeRefresh = received.length
+    const refreshed = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.request().method() === 'POST'
+        && /\/api\/v1\/manager\/engines\/[1-9][0-9]*\/items\/refresh$/.test(url.pathname)
+        && url.searchParams.get('locator') === source.locator
+    })
+    await frame.getByRole('treeitem', { name: source.object.split('/').at(-1), exact: true }).locator('.node-action').click()
+    const response = await refreshed
+    expect(response.status()).toBe(200)
+    expect(response.request().postData()).toBeNull()
+    await expect.poll(() => received.length).toBeGreaterThan(beforeRefresh)
+    await verifyMetadata()
+    await Promise.all(pending)
+    expect(readErrors).toEqual([])
+    received.length = 0
+    await page.reload()
+    await verifyContent()
+    await verifyMetadata()
+    await Promise.all(pending)
+    expect(readErrors).toEqual([])
+    return { ...source, content_verified: true, metadata_verified: true, ordinary_refresh: true,
+      reopened: true, download_sha256: checksum,
+      ...(source.case === 'records' ? { first_page_rows: 20, last_page_rows: 5, last_page_disabled: true } : {}),
+      ...(source.format === 'geojson' ? { map_loaded: true, feature_count: 2, geometry_types: ['Point', 'LineString'], source_srid: 4326 } : {}) }
+  } finally {
+    page.off('response', receive)
+  }
+}
+
+test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -264,6 +384,8 @@ test('Manager lineage, cached previews, GBK tables and XLSX sheets through Conso
   const workbook = JSON.parse(env.ADDP_ONLINE_MANAGER_WORKBOOK_JSON)
   expect(workbook.format).toBe('excel')
   expect(workbook.sheet_names).toEqual(['Cities', 'Readings', 'Empty', 'HeaderOnly'])
+  const structuredJSON = JSON.parse(env.ADDP_ONLINE_MANAGER_STRUCTURED_JSON)
+  expect(structuredJSON.map(source => source.case)).toEqual(['document', 'records', 'geojson', 'geojson-json'])
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
@@ -391,7 +513,7 @@ test('Manager lineage, cached previews, GBK tables and XLSX sheets through Conso
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v7', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v8', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -478,13 +600,17 @@ test('Manager lineage, cached previews, GBK tables and XLSX sheets through Conso
       delimitedEvidence.push(await verifyDelimitedTable(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
     }
     const workbookEvidence = await verifyWorkbook(page, api, workbook, env.ADDP_ONLINE_ARTIFACT_DIR)
+    const structuredEvidence = []
+    for (const source of structuredJSON) {
+      structuredEvidence.push(await verifyStructuredJSON(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
+    }
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v7',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v8',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -505,6 +631,7 @@ test('Manager lineage, cached previews, GBK tables and XLSX sheets through Conso
       models: modelEvidence,
       delimited_tables: delimitedEvidence,
       workbook: workbookEvidence,
+      structured_json: structuredEvidence,
       gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,

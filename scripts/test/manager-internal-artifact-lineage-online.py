@@ -40,6 +40,40 @@ WORKBOOK_SHEETS = [
     {"name": "Empty", "columns": [], "verified_rows": 0},
     {"name": "HeaderOnly", "columns": ["code", "label"], "verified_rows": 0},
 ]
+STRUCTURED_JSON_SOURCES = [
+    {
+        "case": "document",
+        "object": "format-samples/document.json",
+        "format": "json",
+        "data_type": "document",
+        "size_bytes": 144,
+        "sha256": "908f8831b957fdf8b9465da6306e4507b622da4534f7633b981a760bd8c8fa1f"
+    },
+    {
+        "case": "records",
+        "object": "format-samples/records.json",
+        "format": "json",
+        "data_type": "table",
+        "size_bytes": 1158,
+        "sha256": "4f9d773c8c40848fbc459c021e4be449104a706d7c88c62a8198ee89614500f2"
+    },
+    {
+        "case": "geojson",
+        "object": "format-samples/features.geojson",
+        "format": "geojson",
+        "data_type": "table",
+        "size_bytes": 682,
+        "sha256": "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"
+    },
+    {
+        "case": "geojson-json",
+        "object": "format-samples/features.json",
+        "format": "geojson",
+        "data_type": "table",
+        "size_bytes": 682,
+        "sha256": "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"
+    }
+]
 REQUIRED_PERMISSIONS = {
     "manager.content.read",
     "manager.data_item.read",
@@ -1077,6 +1111,7 @@ def validate_browser_report(
     raster: dict[str, object],
     delimited: list[dict[str, object]],
     workbook: dict[str, object],
+    structured_json: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
@@ -1086,8 +1121,13 @@ def validate_browser_report(
         raise SuiteError("browser delimited sources must contain CSV and TSV in order")
     if workbook.get("format") != "excel" or workbook.get("sheet_names") != [sheet["name"] for sheet in WORKBOOK_SHEETS]:
         raise SuiteError("browser workbook source must be the four-sheet Excel fixture")
+    if len(structured_json) != len(STRUCTURED_JSON_SOURCES) or any(
+        any(source.get(key) != value for key, value in spec.items())
+        for source, spec in zip(structured_json, STRUCTURED_JSON_SOURCES)
+    ):
+        raise SuiteError("browser structured JSON sources must match all four fixed fixtures")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v7",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v8",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1115,6 +1155,11 @@ def validate_browser_report(
             "sheet_switch_reset": True, "refresh_preserved_page": True,
             "refresh_preserved_empty_sheet": True, "metadata_verified": True,
             "reopened": True, "download_sha256": workbook["sha256"]},
+        "structured_json": [{**source, "content_verified": True, "metadata_verified": True,
+            "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
+            **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
+            **({"map_loaded": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
+                "source_srid": 4326} if source["format"] == "geojson" else {})} for source in structured_json],
         "browser_warning_errors": 0,
         "failed_business_responses": 0,
     }
@@ -1170,6 +1215,7 @@ def run_browser(
     raster: dict[str, object],
     delimited: list[dict[str, object]],
     workbook: dict[str, object],
+    structured_json: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1190,6 +1236,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_RASTER_JSON": json.dumps(raster),
             "ADDP_ONLINE_MANAGER_DELIMITED_JSON": json.dumps(delimited),
             "ADDP_ONLINE_MANAGER_WORKBOOK_JSON": json.dumps(workbook),
+            "ADDP_ONLINE_MANAGER_STRUCTURED_JSON": json.dumps(structured_json),
         }
     )
     result = subprocess.run(
@@ -1222,6 +1269,7 @@ def run_browser(
         raster=raster,
         delimited=delimited,
         workbook=workbook,
+        structured_json=structured_json,
         phase=phase,
     )
 
@@ -1265,6 +1313,13 @@ def run_scenario(
         "item_id": workbook_item["id"], "fingerprint": workbook_item["fingerprint"],
         "sha256": WORKBOOK_SHA256, "size_bytes": WORKBOOK_SIZE_BYTES,
         "sheet_names": [sheet["name"] for sheet in WORKBOOK_SHEETS]}
+    structured_json = []
+    for spec in STRUCTURED_JSON_SOURCES:
+        item = find_fixture_item(client, engine_id, f"{bucket}/{spec['object']}", spec['case'])
+        if item.get("size_bytes") != spec["size_bytes"]:
+            raise SuiteError(f"{spec['case']} fixture source byte count differs from the fixed source")
+        structured_json.append({**spec, "locator": build_item_locator(engine_id, item),
+            "item_id": item["id"], "fingerprint": item["fingerprint"]})
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
@@ -1435,6 +1490,7 @@ def run_scenario(
             raster={"locator": raster.locator, "item_id": raster.item["id"], "preview_url": raster.artifact["preview_url"]},
             delimited=delimited,
             workbook=workbook,
+            structured_json=structured_json,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
                            "item_id": model.item["id"], **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
@@ -1464,7 +1520,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v5",
+            "schema_version": "addp.manager-internal-artifact-lineage/v6",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1476,6 +1532,7 @@ def run_scenario(
             "execution_read_checks": ["cross_module_execution_hidden", "explicit_professional_projection"],
             "delimited_sources": delimited,
             "workbook_source": workbook,
+            "structured_json_sources": structured_json,
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},

@@ -9,7 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
-FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx)
+FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json)
 MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png)
 
 fail() {
@@ -143,6 +143,7 @@ import struct
 import sys
 import zlib
 import zipfile
+import json
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -157,6 +158,16 @@ for extension, delimiter in (("csv", ","), ("tsv", "\t")):
 # Fixed, uncompressed OOXML package: no timestamp or compressor variation in source hashes.
 ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+json_document = {"title": "格式验证", "settings": {"enabled": True, "threshold": None}, "values": [1, "中文", False]}
+json_records = [{"id": i, "label": f"记录{i}"} for i in range(25)]
+geojson_features = {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"id": 1, "label": "采样点"}, "geometry": {"type": "Point", "coordinates": [120.0, 30.0]}},
+    {"type": "Feature", "properties": {"id": 2, "label": "采样线"}, "geometry": {"type": "LineString", "coordinates": [[120.0, 30.0], [120.01, 30.02], [120.02, 30.0]]}},
+]}
+for name, value in [("document.json", json_document), ("records.json", json_records),
+                    ("features.geojson", geojson_features), ("features.json", geojson_features)]:
+    (root / "format-samples" / name).write_bytes((json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode('utf-8'))
+
 sheets = [
     ("Cities", [["city_id", "city_name"]] + [[i, f"杭州{i}"] for i in range(1, 26)]),
     ("Readings", [["sensor", "temperature", "status"], ["Sensor-A", 18.5, "正常"]]),
