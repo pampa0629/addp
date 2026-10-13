@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "4e9577973959484cbd5f8eff329476b695e787c2b1cef31538a5784f8cf9ffd0",
+      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
+      "sha256": "4522f504a37cd3dccfaeefea4e40c4ea28733943b332b26aa62f3b175255ac65",
       "use": {
-        "zh-cn": "事实获取、澄清、确切配置复核与创建；分别确认行粒度和字段范围，草稿检查不进入创建复核。固定卡片承担同参事实概要、映射和参数，Skill 只指导关键检查解释，不生成第二份概要、重建历史映射或混淆定义保存与目标建表；修改仍须重新预检和复核",
-        "en": "Fact discovery, clarification, exact review and creation with separate row grain and fields; draft checks do not approve creation. Fixed cards own same-argument facts, mappings and parameters; Skill guides key explanations without duplicate summaries, reconstructed mappings or confusing saved definitions with table creation; changes require fresh checks and review"
+        "zh-cn": "事实获取、澄清、确切复核与创建；分别确认行粒度和字段范围。显式检查由 Runtime 固定展示并结束，不再要求模型收尾，后续解释读取原草稿引用。自动创建预检及修改沿原修正和复核路径，不重建参数或混淆定义保存与建表",
+        "en": "Fact discovery, clarification, exact review and creation with separate row grain and fields. Runtime displays and ends explicit checks without model closing text; later explanation reads the original draft reference. Automatic creation checks and changes retain the correction and review path without reconstructing parameters or confusing definitions with tables"
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "e7304671a257627592aeea3112ceb8352ea45725ae340ed0995410c807309d80",
+      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
+      "sha256": "00355694ec44731f9908cae7bd7dc4c97e7e8b0dfc4015ac73d265c1e49635cd",
       "use": {
-        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；拒绝反馈 owner 诊断供修正，服务失败清旧报告并终止；有效检查生成去身份只读投影。Runtime 明确固定卡片承担已预检事实概要，关键解释引用 Skill，完整诊断保留；不增加另一套领域方法、条件或授权",
-        "en": "Formal Adapter checks before review and creation; refusals return owner diagnostics and service failures clear stale reports and stop; valid checks yield identity-free read-only projections. Runtime delegates checked fact summaries to fixed cards and key explanation guidance to Skill, retaining full diagnostics without duplicate domain methods, conditions or authorization"
+        "zh-cn": "显式检查有效三态报告固定展示后结束，不再调用模型；同批调度前仅保留首个检查，失败取消不生成完成提示，不解析自然语言关键词。正式自动预检、诊断修正及创建条件保持原路径，不放宽条件或授权",
+        "en": "Explicit valid tri-state checks display fixed results and end without another model call; only the first check survives filtering before scheduling. Failure and cancellation produce no completion, without natural-language keyword parsing. Formal automatic checks, diagnostic correction and creation conditions retain their path without relaxed conditions or authorization"
       }
     },
     {
@@ -151,11 +151,24 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "cc3209ec0696d25894777ddb9e5f40b5032bbc1247f4ba6ed8103424649fff0f",
+      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
+      "sha256": "ac413932adae3f72bda5b3a5df1182711cc82e061eade74fe5661a632f6facfb",
       "use": {
-        "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、请求绑定、稳定事实变化、拒绝诊断反馈、重新预检、失败与取消无副作用；受控调用加载生产 Skill 组合，三态下短答指导进入模型且完整诊断保留，固定投影和数组字段不丢失；错误不生成卡片，不代替自由模型简洁性验收",
-        "en": "Real Harness, Manifest and SDK verify informed confirmation, request binding, stable changes, rejection feedback, fresh checks and zero effects on failure or cancellation; controlled calls load production Skill composition and retain concise guidance and full diagnostics for all states, fixed projections and array fields; errors produce no card and tests do not prove free-model concision"
+        "zh-cn": "真实 Harness、Manifest、SDK 下验证三态显式检查无后续模型调用、完整参数诊断、双语提示、任意顺序同批隔离、输入修正及失败取消；同时保持自动预检、诊断修正和知情复核回归。受控 HTTP/推理夹具不宣称真实模型或 Hosted 验收",
+        "en": "Real Harness, Manifest and SDK verify explicit tri-state termination without another model call, complete arguments and diagnostics, bilingual copy, batch isolation in either order, input correction, failure and cancellation; automatic checks, diagnostic correction and informed review remain covered. Controlled HTTP/inference fixtures do not claim real-model or hosted acceptance"
+      }
+    },
+    {
+      "id": "runtime_messages",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/i18n.py",
+      "anchor": "def transfer_config_check_completed(",
+      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
+      "sha256": "05f139a657e84b3447fb1a3f114c73eab24c5dc778ebf56f372be7a95c66c01d",
+      "use": {
+        "zh-cn": "显式只读检查的双语固定完成提示精确区分三态，明确检查不创建或执行；不裁剪诊断，不把 unknown 当作通过，不推测任务状态",
+        "en": "Fixed bilingual completion for explicit read-only checks distinguishes all three states and states no creation or execution by the check; no diagnostic truncation, treating unknown as passed or inferring task status"
       }
     },
     {
@@ -316,7 +329,7 @@
     }
   ],
   "bindings": [
-    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test", "message_parts", "message_parts_test", "draft_renderer", "draft_renderer_test", "chat_renderer", "chat_renderer_test"]},
+    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "runtime_messages", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test", "message_parts", "message_parts_test", "draft_renderer", "draft_renderer_test", "chat_renderer", "chat_renderer_test"]},
     {"subject": "concept/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "condition/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
     {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
