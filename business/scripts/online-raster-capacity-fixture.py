@@ -45,18 +45,26 @@ def names_checked(names):
     return names
 
 
+def owned(name):
+    if not shared.owned(name,SUITE): return False
+    container=json.loads(shared.command(['docker','inspect',name]))[0]
+    if container.get('Config',{}).get('Labels',{}).get('com.addp.online-run-id')!=os.environ['ADDP_ONLINE_TEST_RUN_ID']:
+        raise shared.FixtureError('capacity container belongs to another run')
+    return True
+
+
 def stop():
     errors=[]
     for name in reversed(CONTAINERS):
         try:
-            if shared.owned(name,SUITE): shared.command(['docker','rm','-fv',name])
-            if shared.owned(name,SUITE): raise shared.FixtureError('capacity fixture cleanup residual')
+            if owned(name): shared.command(['docker','rm','-fv',name])
+            if owned(name): raise shared.FixtureError('capacity fixture cleanup residual')
         except Exception as error: errors.append(type(error).__name__)
     if errors: raise shared.FixtureError('capacity fixture cleanup failed: '+','.join(errors))
 
 
 def start(root):
-    if any(shared.owned(name,SUITE) for name in CONTAINERS):
+    if any(owned(name) for name in CONTAINERS):
         raise shared.FixtureError('refusing existing capacity fixtures')
     config={role:{'endpoint':f'127.0.0.1:{59012+i}', 'bucket':'raster-'+role,
                   'access_key':'capacity-'+role,'secret_key':secrets.token_hex(32)}
@@ -139,7 +147,7 @@ def prepare_source(root):
     evidence={'item_id':ITEM_ID,'source_name':SOURCE_NAME,'source_sha256':digest(path),
         'size_bytes':path.stat().st_size,'width':SIZE,'height':SIZE,'band_count':4,'srid':32617,
         'transform':list(TRANSFORM),'valid_pixels_per_band':counts,'assets':assets,
-        'full_pixel_and_mask_verification':True,'raw_values_preserved':True}
+        'full_pixel_and_mask_verification':True,'raw_values_preserved':True,'gdal_version':gdal.VersionInfo('--version')}
     (root/'capacity-source-evidence.json').write_text(json.dumps(evidence))
     return path,evidence
 

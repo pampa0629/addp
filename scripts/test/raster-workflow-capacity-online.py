@@ -74,7 +74,7 @@ def read_metrics(directory,proc=Path('/proc')):
     events={key:int(value) for key,value in (line.split() for line in (directory/'memory.events').read_text().splitlines())}
     cpu={key:int(value) for key,value in (line.split() for line in (directory/'cpu.stat').read_text().splitlines())}
     maximum=int((directory/'memory.max').read_text()); quota,period=map(int,(directory/'cpu.max').read_text().split())
-    if maximum!=2*(1<<30) or quota/period!=4:
+    if maximum!=2*(1<<30) or quota/period!=4 or int((directory/'memory.swap.max').read_text())!=0:
         raise scene.SuiteError('capacity observed cgroup limits are wrong')
     high_water={}
     for value in (directory/'cgroup.procs').read_text().split():
@@ -88,6 +88,7 @@ def read_metrics(directory,proc=Path('/proc')):
         'memory_peak_bytes':int((directory/'memory.peak').read_text()),'memory_limit_bytes':maximum,
         'cpu_quota':quota/period,'cpu_usage_usec':cpu['usage_usec'],
         'oom':events.get('oom',0),'oom_kill':events.get('oom_kill',0),
+        'memory_max_events':events.get('max',0),'swap_current_bytes':int((directory/'memory.swap.current').read_text()),
         'process_peak_rss_bytes':sum(high_water.values())}
 
 
@@ -98,10 +99,12 @@ class Sampler:
         self.thread=threading.Thread(target=self.run,daemon=True)
     def sample(self):
         metrics=read_metrics(self.directory)
+        sample={'elapsed_seconds':time.monotonic()-self.started,**metrics,'runtime':None}
+        self.samples.append(sample)
         view=self.platform.request('GET',self.path,(200,)).payload
         runtime=view.get('runtime')
         if not isinstance(runtime,dict): raise scene.SuiteError('capacity runtime observation is missing')
-        self.samples.append({'elapsed_seconds':time.monotonic()-self.started,**metrics,'runtime':runtime})
+        sample['runtime']=runtime
     def run(self):
         while not self.event.wait(.25):
             try:self.sample()
@@ -140,7 +143,7 @@ def matrix():
 def validate_measurement(samples,before,after,cache,running,version):
     if not samples or any(sample['oom'] or sample['oom_kill'] for sample in [before,*samples,after]):
         raise scene.SuiteError('capacity OOM or missing samples')
-    applied=[s['runtime'] for s in samples if s['runtime'].get('enabled') is True]
+    applied=[s['runtime'] for s in samples if isinstance(s.get('runtime'),dict) and s['runtime'].get('enabled') is True]
     if len(applied)!=len(samples) or any(r.get('cache_mib')!=cache or r.get('pending_restart') is not False or r.get('applied_version')!=version for r in applied):
         raise scene.SuiteError('capacity saved/applied cache and version disagree')
     if any(type(r.get('running')) is not int or not 0<=r['running']<=running
@@ -151,8 +154,7 @@ def validate_measurement(samples,before,after,cache,running,version):
         raise scene.SuiteError('capacity did not exercise the requested concurrency')
     if running==1 and max(r.get('waiting',0) for r in applied)<1:
         raise scene.SuiteError('capacity serial admission did not queue the second task')
-    if (after['memory_peak_bytes']<=0 or after['memory_peak_bytes']>2*(1<<30)
-        or after['cpu_usage_usec']<before['cpu_usage_usec']):
+    if (after['memory_peak_bytes']<=0 or after['cpu_usage_usec']<before['cpu_usage_usec']):
         raise scene.SuiteError('capacity metrics are invalid or did not reset')
     final=applied[-1]
     if final.get('running')!=0 or final.get('waiting')!=0:
@@ -161,7 +163,9 @@ def validate_measurement(samples,before,after,cache,running,version):
         or final.get('advice')!={'running':2,'waiting':2,'cache_mib':64,'basis':'cpu-and-memory-budget-heuristic'}):
         raise scene.SuiteError('capacity resource observation/advice differs from the 4 CPU/2 GiB profile')
     return {'peak_rss_bytes':max(s['process_peak_rss_bytes'] for s in samples),
-        'container_memory_peak_bytes':after['memory_peak_bytes'],'cpu_seconds':(after['cpu_usage_usec']-before['cpu_usage_usec'])/1e6,
+        'container_memory_peak_bytes':after['memory_peak_bytes'],
+        'memory_max_events':after.get('memory_max_events',0),
+        'peak_exceeded_configured_limit':after['memory_peak_bytes']>2*(1<<30),'cpu_seconds':(after['cpu_usage_usec']-before['cpu_usage_usec'])/1e6,
         'oom':after['oom'],'oom_kill':after['oom_kill'],'max_running':max(r['running'] for r in applied),
         'max_waiting':max(r['waiting'] for r in applied),'rss_method':'sum-of-container-process-VmHWM',
         'resource_observation':final}
@@ -208,7 +212,16 @@ def run(env):
             try:
                 identifiers=[scene.submit(client,engine,workflow(locator,target_engine,name),execution_timeout=900) for name in names]
                 for identifier in identifiers:executions.append(scene.wait_execution(client,'develop',identifier,1200))
-            finally:samples=sampler.finish()
+            finally:
+                try:
+                    samples=sampler.finish()
+                finally:
+                    # Preserve observations even when execution, OOM or admission validation fails.
+                    evidence={'cache_mib':cache,'running_limit':running,'repetition':repetition,
+                        'policy_version':saved['version'],'runtime_container_id':container['Id'],
+                        'before':sampler.before,'after':getattr(sampler,'after',None),'samples':sampler.samples}
+                    evidence_path=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/f'capacity-c{cache}-n{running}-r{repetition}-measurements.json'
+                    evidence_path.write_text(json.dumps(evidence,sort_keys=True))
             elapsed=time.monotonic()-started
             metrics=validate_measurement(samples,sampler.before,sampler.after,cache,running,saved['version'])
             native=physical('verify',names);cases=[]

@@ -78,7 +78,8 @@ class ChangedGateTest(unittest.TestCase):
         module.parent.mkdir(parents=True)
         module.write_text('module example.com/duckdb\n')
         subprocess.run(['git', 'add', '.'], cwd=self.repository, check=True)
-        for path in ('business/scripts/online-raster-minio-fixture.py', 'scripts/test/raster-workflow-online.py'):
+        for path in ('business/scripts/online-raster-minio-fixture.py', 'scripts/test/raster-workflow-online.py',
+                     'business/scripts/online-raster-capacity-fixture.py', 'scripts/test/raster-workflow-capacity-online.py'):
             with self.subTest(path=path):
                 self.assertEqual(['engines'], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual([], MODULE.affected_modules(self.repository, ['business/scripts/unrelated.py']))

@@ -59,6 +59,13 @@ class CapacityFixtureTest(unittest.TestCase):
             self.assertEqual(ownership.call_count,5)
             command.assert_not_called()
 
+    def test_same_suite_foreign_run_is_never_deleted(self):
+        container={'Config':{'Labels':{'com.addp.online-run-id':'foreign'}}}
+        with patch.dict(os.environ,ADDP_ONLINE_TEST_RUN_ID='ours'), patch.object(m.shared,'owned',return_value=True), patch.object(m.shared,'command',return_value=json.dumps([container])) as command:
+            with self.assertRaises(m.shared.FixtureError): m.stop()
+            self.assertTrue(command.call_args_list)
+            self.assertTrue(all(call.args[0][1]=='inspect' for call in command.call_args_list))
+
     def test_unknown_physical_action_rejected_before_environment_or_mutation(self):
         with patch.object(m.shared,'environment') as environment,patch.object(m.shared,'command') as command:
             with self.assertRaises(m.shared.FixtureError): m.physical('foreign-delete',[])
