@@ -125,7 +125,7 @@ def wait_applied(platform,path,cache,running,version):
         if (isinstance(runtime,dict) and runtime.get('enabled') is True
             and runtime.get('cache_mib')==cache and runtime.get('applied_version')==version
             and runtime.get('pending_restart') is False and runtime.get('running_limit')==running
-            and runtime.get('waiting_limit')==2 and runtime.get('running')==0 and runtime.get('waiting')==0):
+            and runtime.get('waiting_limit')==2):
             return
         time.sleep(1)
     raise scene.SuiteError('capacity policy did not become ready before measurement')
@@ -143,8 +143,19 @@ def matrix():
 def validate_measurement(samples,before,after,cache,running,version):
     if not samples or any(sample['oom'] or sample['oom_kill'] for sample in [before,*samples,after]):
         raise scene.SuiteError('capacity OOM or missing samples')
-    applied=[s['runtime'] for s in samples if isinstance(s.get('runtime'),dict) and s['runtime'].get('enabled') is True]
-    if len(applied)!=len(samples) or any(r.get('cache_mib')!=cache or r.get('pending_restart') is not False or r.get('applied_version')!=version for r in applied):
+    # A fresh Runtime loads policy lazily on its first raster submission.
+    # Accept only the initial, empty/uninitialized prefix; a later pause is a failure.
+    applied=[]
+    for sample in samples:
+        runtime=sample.get('runtime')
+        if (not applied and isinstance(runtime,dict) and runtime.get('enabled') is False
+            and runtime.get('cache_mib') is None and runtime.get('applied_version') is None
+            and runtime.get('running')==0 and runtime.get('waiting')==0):
+            continue
+        if not isinstance(runtime,dict) or runtime.get('enabled') is not True:
+            raise scene.SuiteError('capacity Runtime paused or lost policy after initialization')
+        applied.append(runtime)
+    if not applied or any(r.get('cache_mib')!=cache or r.get('pending_restart') is not False or r.get('applied_version')!=version for r in applied):
         raise scene.SuiteError('capacity saved/applied cache and version disagree')
     if any(type(r.get('running')) is not int or not 0<=r['running']<=running
         or type(r.get('waiting')) is not int or not 0<=r['waiting']<=2
@@ -205,12 +216,12 @@ def run(env):
             saved=platform.request('PUT',path,(200,),body).payload['policy']
             fixture.require_disk(Path(env['ADDP_ONLINE_SECRET_DIR']))
             container=restart_runtime(image);directory=cgroup_directory(container['State']['Pid'])
-            wait_applied(platform,path,cache,running,saved['version'])
             sampler=Sampler(directory,platform,path);sampler.start()
             started=time.monotonic();names=[f'capacity-c{cache}-n{running}-r{repetition}-{index}.cog.tif' for index in range(2)]
             executions=[]
             try:
                 identifiers=[scene.submit(client,engine,workflow(locator,target_engine,name),execution_timeout=900) for name in names]
+                wait_applied(platform,path,cache,running,saved['version'])
                 for identifier in identifiers:executions.append(scene.wait_execution(client,'develop',identifier,1200))
             finally:
                 try:

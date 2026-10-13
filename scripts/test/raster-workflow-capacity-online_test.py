@@ -118,13 +118,25 @@ class CapacityEvidenceTest(unittest.TestCase):
                 with self.assertRaises(m.scene.SuiteError): m.restart_runtime('sha256:ours')
                 self.assertEqual(command.call_count, 1)
 
-    def test_waits_for_saved_policy_before_starting_measurement(self):
-        runtime = self.measurement()[0][-1]['runtime']
+    def test_waits_for_saved_policy_after_submission_with_active_execution(self):
+        runtime = self.measurement()[0][0]['runtime']
         platform = SimpleNamespace(request=unittest.mock.Mock(side_effect=[SimpleNamespace(payload={'runtime':None}),
                                     SimpleNamespace(payload={'runtime':runtime})]))
         with patch.object(m.time,'sleep'):
             m.wait_applied(platform,'/policy',64,1,3)
         self.assertEqual(platform.request.call_count, 2)
+
+    def test_only_empty_uninitialized_prefix_is_allowed_before_policy_load(self):
+        samples,before,after=self.measurement()
+        initial={**samples[0],'runtime':dict(enabled=False,cache_mib=None,applied_version=None,running=0,waiting=0)}
+        result=m.validate_measurement([initial,*samples],before,after,64,1,3)
+        self.assertEqual(result['max_running'],1)
+        for field,value in (('cache_mib',256),('applied_version',2),('running',1),('waiting',1)):
+            invalid=copy.deepcopy(initial); invalid['runtime'][field]=value
+            with self.subTest(field=field), self.assertRaises(m.scene.SuiteError):
+                m.validate_measurement([invalid,*samples],before,after,64,1,3)
+        with self.assertRaises(m.scene.SuiteError): m.validate_measurement([*samples,initial],before,after,64,1,3)
+        with self.assertRaises(m.scene.SuiteError): m.validate_measurement([initial],before,after,64,1,3)
 
     def test_sampler_retains_oom_metrics_when_runtime_health_is_lost(self):
         from unittest.mock import Mock
