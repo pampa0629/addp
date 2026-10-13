@@ -837,6 +837,10 @@ def verify_tile_file(path, key, compression='DEFLATE'):
             'source_unchanged': True, 'compression': compression, 'size_bytes': Path(path).stat().st_size,
             'sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest()}
 
+def physical_file_facts(path):
+    return {'size_bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
 def worker(action, path):
     # GDAL stays in the Runtime image; the verifier never imports production operators.
     from minio import Minio
@@ -951,9 +955,9 @@ def worker(action, path):
                             raise FixtureError('utility overview lost NoData validity')
                 return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
                     'valid_pixels': SIZE * SIZE - 1, 'band_valid_pixels': [SIZE * SIZE - 1] * 2,
-                    'source_unchanged': True, 'size_bytes': path.stat().st_size,
+                    'source_unchanged': True,
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
-                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                    **physical_file_facts(path)}
             if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
                 colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
                 label = 'outside clipping' if grid_case in OUTSIDE_CASES else 'aggregation' if grid_case in AGGREGATE_CASES else 'reclassification' if grid_case in RECLASS_CASES else 'multi-raster'
@@ -983,8 +987,8 @@ def worker(action, path):
                 return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
                     'valid_pixels': counts[0], 'invalid_pixels': expectation['width'] * expectation['height'] - counts[0], 'band_valid_pixels': counts,
                     'color_interpretations': colors, 'overview_sizes': [[expectation['width']//2, expectation['height']//2]],
-                    'source_unchanged': True, 'size_bytes': path.stat().st_size,
-                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                    'source_unchanged': True,
+                    **physical_file_facts(path)}
             if grid_case in MULTIBAND_CASES:
                 joint = grid_case.endswith('-joint')
                 average = 'average' in grid_case
@@ -1015,7 +1019,7 @@ def worker(action, path):
                         'band_valid_pixels': valid_counts, 'partial_alpha_pixels': partial_alpha_pixels,
                         'band_nodata': None if math.isnan(band.GetNoDataValue()) else band.GetNoDataValue(),
                         'band_nodata_is_nan': math.isnan(band.GetNoDataValue()),
-                        'source_unchanged': True, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                        'source_unchanged': True, **physical_file_facts(path)}
             if grid_case:
                 expected_values = list(grid_pixels(grid_case))
                 for actual, expected in zip(values, expected_values):
@@ -1031,7 +1035,7 @@ def worker(action, path):
                 return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': band.GetOverviewCount()>0,
                         'valid_pixels': expectation['valid_pixels'],
                         'invalid_pixels': count - expectation['valid_pixels'], 'source_unchanged': True,
-                        'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                        **physical_file_facts(path)}
             invalid = SPATIAL_NODATA if spatial else {0}
             # Near the equator, the projected pixel centres map strictly inside
             # the same source cells. No Warp/production math is used as an oracle.
@@ -1047,7 +1051,7 @@ def worker(action, path):
             return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': band.GetOverviewCount()>0,
                     'valid_pixels': expectation['valid_pixels'],
                     'invalid_pixels': len(invalid), 'source_unchanged': True,
-                    'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                    **physical_file_facts(path)}
 
         if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure') + CLEANUP_ACTIONS:
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],

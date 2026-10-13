@@ -258,6 +258,14 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_size_failure_identifies_numeric_values_without_echoing_untrusted_strings(self):
+        with self.assertRaisesRegex(m.SuiteError, r'result.cog.tif.*artifact=int:12, object=NoneType:None, DataItem=int:13'):
+            m.strict_sizes({'size_bytes':12},{},{'size_bytes':13},'result.cog.tif')
+        with self.assertRaises(m.SuiteError) as error:
+            m.strict_sizes({'size_bytes':12},{'size_bytes':'private credential'},{'size_bytes':12})
+        self.assertIn('object=str',str(error.exception))
+        self.assertNotIn('private credential',str(error.exception))
+
     def test_all_confirmed_writes_archive_strict_three_party_sizes(self):
         report = self.run_scene()
         records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]

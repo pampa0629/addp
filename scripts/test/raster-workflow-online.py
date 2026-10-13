@@ -479,10 +479,15 @@ def validate_raster_artifact(artifact, expectation):
             for item in value: check(item)
     check(artifact)
 
-def strict_sizes(artifact, physical, item):
+def strict_sizes(artifact, physical, item, target_name=None):
     sizes = tuple(facts.get('size_bytes') for facts in (artifact, physical, item))
     if any(type(value) is not int or value <= 0 for value in sizes) or len(set(sizes)) != 1:
-        raise SuiteError('raster artifact/object/DataItem sizes must be equal positive integers')
+        fields = ('artifact', 'object', 'DataItem')
+        detail = ', '.join(f'{field}={type(value).__name__}:'+repr(value)
+                          if type(value) in (int, float, bool, type(None)) else f'{field}={type(value).__name__}'
+                          for field, value in zip(fields, sizes))
+        label = f' [{target_name}]' if target_name is not None else ''
+        raise SuiteError('raster artifact/object/DataItem sizes must be equal positive integers'+label+' ('+detail+')')
     return dict(zip(('artifact_size_bytes', 'object_size_bytes', 'data_item_size_bytes'), sizes))
 
 
@@ -665,7 +670,7 @@ def queue_output_inspection(pending, client, run_id, source, source_locator, tar
     # No manual target scan or collect: both facts must converge automatically.
     target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
     validate_target_item(target, expectation, physical_evidence)
-    size_evidence.setdefault(execution_id, {})[target_name] = strict_sizes(artifact, physical_evidence, target)
+    size_evidence.setdefault(execution_id, {})[target_name] = strict_sizes(artifact, physical_evidence, target, target_name)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
     evidence = {
         'run_id': run_id, 'principal_id': identity['principal_id'],
@@ -740,7 +745,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('replace did not change the target pixels')
         if status == 'success':
             target = support.find_fixture_item(client, target_engine, 'raster-target/result.cog.tif', 'band-math target')
-            size_evidence[identifier] = {'result.cog.tif': strict_sizes(metadata['result']['final_result'], native, target)}
+            size_evidence[identifier] = {'result.cog.tif': strict_sizes(metadata['result']['final_result'], native, target, 'result.cog.tif')}
         physical_evidence.append(native)
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
     lineage, browser_evidence = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
@@ -1072,7 +1077,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
                 raise SuiteError('confirmed partial tile physical facts differ')
             target = support.find_fixture_item(client, target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
-            size_evidence.setdefault(identifier, {})[prefix+'/'+key+'.tif'] = strict_sizes(fact, tile, target)
+            size_evidence.setdefault(identifier, {})[prefix+'/'+key+'.tif'] = strict_sizes(fact, tile, target, prefix+'/'+key+'.tif')
             confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes']}
         items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
         partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']

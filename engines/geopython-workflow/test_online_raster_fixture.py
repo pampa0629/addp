@@ -101,6 +101,13 @@ class LocalMinio:
         return [type('Object', (), {'object_name': name}) for endpoint, bucket_name, name in self.objects if (endpoint, bucket_name) == (self.endpoint, bucket)]
 
 
+def assert_physical_size(evidence, name):
+    stored = LocalMinio.objects['target', 'raster-target', name]
+    assert type(evidence['size_bytes']) is int
+    assert evidence['size_bytes'] == len(stored) > 0
+    assert evidence['sha256'] == hashlib.sha256(stored).hexdigest()
+
+
 @pytest.fixture
 def physical(tmp_path):
     config = tmp_path / 'fixture.json'
@@ -170,9 +177,11 @@ def test_real_reproject_clip_mosaic_outputs_pass_independent_all_pixel_oracle(ph
     target(tmp_path, factor=3)
     spatial_target(tmp_path, 'first')
     first = fixture.worker('verify-mosaic-first', physical)
+    assert_physical_size(first, 'mosaic-first.cog.tif')
     assert (first['valid_pixels'], first['invalid_pixels'], first['overlap']) == (65534, 2, 'first')
     spatial_target(tmp_path, 'last')
     last = fixture.worker('verify-mosaic-last', physical)
+    assert_physical_size(last, 'mosaic-last.cog.tif')
     assert last['sha256'] != first['sha256']
     assert last['first_sha256'] == first['sha256']
     assert last['baseline_sha256'] == first['baseline_sha256']
@@ -210,8 +219,10 @@ def test_analysis_physical_verification_keeps_all_cog_hashes_and_rejects_extra_o
     target(tmp_path, factor=3)
     spatial_target(tmp_path, 'first')
     first = fixture.worker('verify-mosaic-first', physical)
+    assert_physical_size(first, 'mosaic-first.cog.tif')
     spatial_target(tmp_path, 'last')
     last = fixture.worker('verify-mosaic-last', physical)
+    assert_physical_size(last, 'mosaic-last.cog.tif')
     result = fixture.worker('verify-analysis', physical)
     assert result['sha256'] == last['baseline_sha256']
     assert result['first_sha256'] == first['sha256']
@@ -259,10 +270,12 @@ def test_source_metadata_only_change_and_missing_fingerprint_are_rejected(physic
 def test_independent_fixture_verifies_create_replace_pixels_and_cog(physical, tmp_path):
     target(tmp_path)
     created = fixture.worker('verify-create', physical)
+    assert_physical_size(created, 'result.cog.tif')
     assert created['valid_pixels'] == fixture.SIZE ** 2 - 1
     assert created['cog_valid'] and created['source_unchanged']
     target(tmp_path, factor=3)
     replaced = fixture.worker('verify-replace', physical)
+    assert_physical_size(replaced, 'result.cog.tif')
     assert replaced['sha256'] != created['sha256']
     assert replaced['factor'] == 3
 
@@ -300,6 +313,7 @@ def test_async_grid_outputs_pass_independent_pixel_and_alpha_oracle(physical, tm
         grid_target(tmp_path, scene, api_server, prior)
     result, output = grid_target(tmp_path, scene, api_server, case_name)
     evidence = fixture.worker('verify-' + case_name, physical)
+    assert_physical_size(evidence, case_name+'.cog.tif')
     expected = fixture.grid_expectation(case_name)
     assert evidence['has_overviews'] is (case_name=='clip-polygon')
     assert evidence['valid_pixels'] == expected['valid_pixels']
@@ -439,6 +453,8 @@ def test_async_multiband_save_reload_joint_math_passes_independent_all_pixel_ora
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     evidence, output = multiband_targets(tmp_path, scene, api_server)
+    assert_physical_size(evidence[0], 'multiband-alpha.cog.tif')
+    assert_physical_size(evidence[1], 'multiband-joint.cog.tif')
     assert evidence[0]['band_valid_pixels'] == [16382, 16382]
     assert evidence[0]['partial_alpha_pixels'] == 3
     assert evidence[1]['band_valid_pixels'] == [16381]
