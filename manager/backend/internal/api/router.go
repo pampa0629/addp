@@ -285,7 +285,7 @@ func SetupRouter(
 
 		// Manager 用户动作 API
 		api.GET("/resource-actions", permission(managerauthorization.PermissionManagerDataItemRead), resourceActionHandler.GetResourceActions)
-		api.POST("/uploads", permission(managerauthorization.PermissionManagerDataItemCreate), uploadHandler.UploadFiles)
+		api.POST("/uploads", permission(managerauthorization.PermissionManagerDataItemCreate, "meta.scan_task.execute", "meta.scan_task.read"), uploadHandler.UploadFiles)
 		api.POST("/imports", permission(managerauthorization.PermissionManagerDataItemCreate), importHandler.ImportData)
 		api.POST("/exports", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), exportHandler.CreateExport)
 		api.GET("/exports/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), exportHandler.GetExport)

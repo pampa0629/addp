@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -270,4 +271,32 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	request("wrong-machine", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	request("machine-denied", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	testMetaDevelopProducedScan(t, db, router, request)
+
+	// A synchronous Manager BFF submission must keep the actual User, rather than
+	// introducing a service-created execution that the browser cannot read.
+	bffServer := httptest.NewServer(router)
+	defer bffServer.Close()
+	bff := commonclient.NewMetaScanUserClient(bffServer.URL)
+	run, err := bff.CreateManualScanRun(context.Background(), "owner", commonclient.MetaScanOptions{
+		EngineID: 9, RefGroups: []commonclient.MetaScanRefGroup{{Primary: "results/upload-bff.parquet"}},
+		ScanDepth: "deep", Force: true, Source: "manager",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uploaded execution.TaskExecution
+	if err := db.Where("execution_id = ?", run.ExecutionID).First(&uploaded).Error; err != nil {
+		t.Fatal(err)
+	}
+	if uploaded.TriggeredBy == nil || *uploaded.TriggeredBy != mine || uploaded.TenantID != scanReadTenant || uploaded.Source != "manager" || uploaded.ParentExecutionID != nil || uploaded.SourceTaskID != nil {
+		t.Fatal("upload scan lost its verified initiating User or tenant")
+	}
+	encoded, _ := json.Marshal(uploaded.ExecutionConfig)
+	if strings.Contains(string(encoded), "Bearer") || strings.Contains(string(encoded), "owner") {
+		t.Fatal("User credential entered persisted execution config")
+	}
+	request("owner", "/executions/"+run.ExecutionID, 200)
+	request("peer", "/executions/"+run.ExecutionID, 404)
+	request("foreign", "/executions/"+run.ExecutionID, 404)
+	request("denied", "/executions/"+run.ExecutionID, 403)
 }

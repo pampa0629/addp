@@ -299,3 +299,6 @@ other = "此资源不支持预览"
 
 [manager.error.scan_encoding_invalid]
 other = "编码仅支持 utf-8、gbk、utf-16le、utf-16be，且只能用于单个 CSV/TSV 数据项的深度刷新"
+
+[manager.error.upload_scan_submission_failed]
+other = "文件已写入，但元数据扫描提交失败。请重新扫描，无需重复上传。"

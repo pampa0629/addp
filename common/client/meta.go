@@ -644,9 +644,7 @@ func (c *MetaClient) GetItemAncestors(itemID uint) (*models.MetaItemAncestors, e
 	return &result, nil
 }
 
-func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
-
+func manualMetaScanBody(opts MetaScanOptions) ([]byte, error) {
 	scanReq := map[string]interface{}{}
 	if opts.ParentExecutionID != "" {
 		scanReq["parent_execution_id"] = opts.ParentExecutionID
@@ -689,9 +687,15 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 		scanReq["source"] = source
 	}
 
-	body, err := json.Marshal(scanReq)
+	return json.Marshal(scanReq)
+}
+
+func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
+
+	body, err := manualMetaScanBody(opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal scan run request: %w", err)
+		return nil, fmt.Errorf("encode manual scan request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))

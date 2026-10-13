@@ -5317,7 +5317,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "将用户本地文件原样写入存储型引擎节点，完成后提交 Meta 后台扫描 | Upload local files to a storage engine node and submit a Meta background scan",
+                "description": "仅租户用户；写入前同时检查上传、Meta 扫描和读取权限，当前请求以用户身份同步提交 Meta 扫描；只返回扫描 UUID | Tenant users only; check upload, Meta scan and read permissions before writes; submit scan with the current user in the synchronous request and return only its UUID",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -5358,8 +5358,22 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "认证失效 | Authentication expired",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "扫描范围正在运行 | Scan scope is active",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5373,7 +5387,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "引擎不可用 | Engine unavailable",
+                        "description": "引擎或扫描服务不可用 | Engine or scan service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5382,7 +5396,9 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "manager.data_item.create"
+                    "manager.data_item.create",
+                    "meta.scan_task.execute",
+                    "meta.scan_task.read"
                 ]
             }
         },
@@ -6022,155 +6038,6 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "execution.TaskExecution": {
-            "type": "object",
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },
@@ -8486,9 +8353,6 @@ const docTemplate = `{
                 },
                 "scan_execution_id": {
                     "type": "string"
-                },
-                "scan_run": {
-                    "$ref": "#/definitions/execution.TaskExecution"
                 },
                 "target_node_locator": {
                     "type": "string"

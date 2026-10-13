@@ -64,6 +64,8 @@ Role／Permission／组织授权关系变化在同一事务推进 Principal 授�
 
 BFF 仅在当前同步调用栈转发已经验证的 User Bearer；下游 owner 重新认证并裁决，不信任自报主体，不保存、缓存、记录或后台使用该 Token。BFF 的机器身份仅用于明确授权的最小投影，不能代用户作业务决定。
 
+Manager 文件上传后的元数据同步采用这一同步 BFF 路线：`POST /api/v1/manager/uploads` 仅允许 Tenant User，并在任何文件写入前同时核验 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`。Manager 在当前上传请求栈内，将已验证的当前 User Bearer 交给独立的 Meta 用户扫描客户端，调用唯一的 `POST /api/v1/meta/scan/run/manual`；Meta 独立认证和裁决权限，从 AuthContext 记录真实发起人。只提交本次实际写出的精确 `ref_groups`，不得扩大到父目录。凭据只作为本次 HTTP 调用参数，不保存到客户端、上传结果、execution、日志或 Worker；不因用户请求失败改用服务身份重试。原有 Meta Service Client 保持仅服务身份使用。上传响应只返回文件定位与规范 `scan_execution_id`，不返回内部 TaskExecution；浏览器继续通过既有 Meta 用户执行接口等待终态，其他用户、跨租户和没有发起人证据的记录保持不可读。文件已写入后，扫描提交失败统一携带稳定错误码 `upload_scan_submission_failed`；下游认证失效返回上传扫描失败的 `503`，不转成 Manager 的 `401`，防止浏览器刷新凭据后重放整个上传；下游权限拒绝和范围冲突分别保留 `403`／`409`。上传与异步扫描不是跨服务原子事务，扫描提交或执行失败必须明确反馈，不回滚已写文件、不把失败当成功，也不自动重试上传。
+
 Monitor 任务诊断同样由任务 owner 复核当前用户范围；Monitor 功能权限和历史执行授权不替代 owner 读取权限。平台日志正文独立要求 Platform Context 与 `platform.module_log.read`，不混入租户任务或操作审计。具体入口见 [System 模块说明](../../system/CLAUDE.md)和 [Monitor 模块说明](../../monitor/CLAUDE.md)。
 
 ### 5.2 计算执行授权

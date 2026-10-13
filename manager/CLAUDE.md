@@ -84,6 +84,8 @@ manager/
     └── plugins/previews/
 ```
 
+文件上传后的扫描提交使用当前请求 User 的同步 BFF 身份，不使用 Meta Service Client。上传入口在写入前同时要求 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`；Meta 独立认证并记录发起人，Worker 不接收用户凭据。响应仅提供 `scan_execution_id`，前端按唯一字段回查 Meta 安全执行详情；不返回内部执行配置。完整身份与失败边界见平台《授权上下文规范》5.1。验证由既有 `make test-manager-backend`、`make test-manager-frontend`、`make test-go` 和 Swagger 门禁覆盖。
+
 ## 核心 API
 
 数据检索的结果对象仍为 DataItem。字段命中只来自搜索服务实际高亮的已登记事实，页面展示上下文并转义源文本；纯向量命中不声明字段命中。技术／正文快照分别幂等更新、精确删除、结构覆盖范围及历史补录均以 `docs/spec/addp元数据扫描机制规范.md` 的“DataItem 技术元数据搜索投影”和“技术投影的检索消费与覆盖边界”为准，不在本入口另存一份契约。验证沿用 `make test-manager-frontend`、`make test-manager-postgres`、`make test-go` 及 Swagger 标准检查。

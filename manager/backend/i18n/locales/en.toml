@@ -299,3 +299,6 @@ other = "This resource does not support preview"
 
 [manager.error.scan_encoding_invalid]
 other = "Encoding must be utf-8, gbk, utf-16le or utf-16be and is only supported for deep refresh of a single CSV/TSV item"
+
+[manager.error.upload_scan_submission_failed]
+other = "Files were written, but metadata scan submission failed. Rescan them without uploading again."

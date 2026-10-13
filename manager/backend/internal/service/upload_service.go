@@ -19,6 +19,7 @@ import (
 )
 
 var (
+	ErrUploadScanSubmission     = errors.New("upload metadata scan submission failed")
 	ErrUploadNoFiles            = errors.New("upload requires at least one file")
 	ErrUploadTargetUnsupported  = errors.New("upload target is not a supported storage node")
 	ErrUploadEngineUnsupported  = errors.New("upload engine does not support content write")
@@ -32,7 +33,7 @@ type UploadSystemClient interface {
 }
 
 type UploadMetaClient interface {
-	CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
+	CreateManualScanRun(ctx context.Context, userBearer string, opts commonClient.MetaScanOptions) (*commonClient.MetaScanRun, error)
 }
 
 type UploadService struct {
@@ -58,17 +59,16 @@ type UploadedFileResult struct {
 }
 
 type UploadResult struct {
-	TargetNodeLocator string                         `json:"target_node_locator"`
-	Files             []UploadedFileResult           `json:"files"`
-	ScanExecutionID   string                         `json:"scan_execution_id,omitempty"`
-	ScanRun           *commonExecution.TaskExecution `json:"scan_run,omitempty"`
+	TargetNodeLocator string               `json:"target_node_locator"`
+	Files             []UploadedFileResult `json:"files"`
+	ScanExecutionID   string               `json:"scan_execution_id"`
 }
 
 func NewUploadService(systemClient UploadSystemClient, metaClient UploadMetaClient) *UploadService {
 	return &UploadService{systemClient: systemClient, metaClient: metaClient}
 }
 
-func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*UploadResult, error) {
+func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest, userBearer string) (*UploadResult, error) {
 	if req == nil || len(req.Files) == 0 {
 		return nil, ErrUploadNoFiles
 	}
@@ -81,6 +81,9 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 	}
 	if s == nil || s.systemClient == nil {
 		return nil, fmt.Errorf("system client is required")
+	}
+	if s.metaClient == nil || strings.TrimSpace(userBearer) == "" {
+		return nil, errors.New("upload requires a configured Meta user client and current User credential")
 	}
 	engine, err := s.systemClient.GetEngineForTenant(ctx, req.TenantID, loc.EngineID)
 	if err != nil {
@@ -158,18 +161,15 @@ func (s *UploadService) UploadFiles(ctx context.Context, req *UploadRequest) (*U
 		}
 	}
 
-	run, err := s.submitUploadScan(req.TenantID, loc.EngineID, uploadedPaths)
+	run, err := s.submitUploadScan(ctx, userBearer, loc.EngineID, uploadedPaths)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrUploadScanSubmission, err)
 	}
 	result := &UploadResult{
 		TargetNodeLocator: strings.TrimSpace(req.TargetNodeLocator),
 		Files:             results,
-		ScanRun:           run,
 	}
-	if run != nil {
-		result.ScanExecutionID = run.ExecutionID
-	}
+	result.ScanExecutionID = run.ExecutionID
 	return result, nil
 }
 
@@ -241,13 +241,10 @@ func uploadLeafLocatorType(parentType resourcetree.ResourceType) resourcetree.Re
 	}
 }
 
-func (s *UploadService) submitUploadScan(tenantID uint, engineID uint, uploadedPaths []string) (*commonExecution.TaskExecution, error) {
-	if s == nil || s.metaClient == nil || engineID == 0 {
-		return nil, nil
-	}
+func (s *UploadService) submitUploadScan(ctx context.Context, userBearer string, engineID uint, uploadedPaths []string) (*commonClient.MetaScanRun, error) {
 	refGroups := uploadScanRefGroups(uploadedPaths)
 	if len(refGroups) == 0 {
-		return nil, nil
+		return nil, errors.New("upload produced no scan targets")
 	}
 	opts := commonClient.MetaScanOptions{
 		EngineID:    engineID,
@@ -257,7 +254,7 @@ func (s *UploadService) submitUploadScan(tenantID uint, engineID uint, uploadedP
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleManager,
 	}
-	return s.metaClient.CreateManualScanRunForTenant(tenantID, opts)
+	return s.metaClient.CreateManualScanRun(ctx, userBearer, opts)
 }
 
 func uploadScanRefGroups(uploadedPaths []string) []commonClient.MetaScanRefGroup {

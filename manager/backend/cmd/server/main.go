@@ -378,7 +378,7 @@ func main() {
 		vectorMaterializedViewTaskSvc,
 	)
 	importHandler := api.NewImportHandler(importService)
-	uploadService := service.NewUploadService(systemClient, metaClient)
+	uploadService := service.NewUploadService(systemClient, commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	uploadHandler := api.NewUploadHandler(uploadService)
 	resourceActionService := service.NewResourceActionService(systemClient)
 	resourceActionHandler := api.NewResourceActionHandler(resourceActionService)

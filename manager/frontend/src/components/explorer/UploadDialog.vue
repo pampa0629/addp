@@ -99,33 +99,21 @@ const handleUpload = async () => {
     const formData = new FormData()
     formData.append('target_node_locator', props.targetNodeLocator)
     files.forEach(file => formData.append('files', file))
-    const response = await dataExplorerAPI.uploadFiles(formData)
-    const payload = response?.data || response
-    const scanExecutionId = uploadScanExecutionIdOf(payload)
-    if (scanExecutionId) {
-      progressText.value = t('manager.upload.scanningMetadata')
-      await waitForMetaScanExecution(scanExecutionId)
-    }
+    const payload = await dataExplorerAPI.uploadFiles(formData)
+    const scanExecutionId = payload.scan_execution_id
+    progressText.value = t('manager.upload.scanningMetadata')
+    await waitForMetaScanExecution(scanExecutionId)
     progressText.value = t('manager.upload.uploadSuccess')
     ElMessage.success(t('manager.upload.uploadSuccess'))
     emit('success', payload)
     emit('update:modelValue', false)
   } catch (error) {
+    progressText.value = ''
     const message = error.response?.data?.error || error.message || String(error)
     ElMessage.error(t('manager.upload.uploadFailed', { msg: message }))
   } finally {
     uploading.value = false
   }
-}
-
-const uploadScanExecutionIdOf = (payload) => {
-  return payload?.scan_execution_id ||
-    payload?.scanExecutionId ||
-    payload?.scan_run?.execution_id ||
-    payload?.scanRun?.execution_id ||
-    payload?.scan_run?.executionId ||
-    payload?.scanRun?.executionId ||
-    ''
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
