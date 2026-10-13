@@ -62,7 +62,7 @@ PostgreSQL `agent` schema 当前包含：
 
 AgentRun 使用唯一语义恢复路线：
 
-已完成预检的草稿由 Runtime 以 AgentDraftRef 引用既有 `run_steps.input` 与同参 `facts.config_checks`，不新增数据库表或第二份可编辑配置。后续纯解释作为新 Run 按需读取同一 User/Tenant/Session 的历史快照，不复制旧 checkpoint 或创建确认。路由模型选择受信任近期引用，Runtime 单独审计只读 `draft.inspect` 并固定展示原参数／映射；缺失、错版、损坏和越界引用不从正文重建。修改配置仍进入原平台语义与 Skill 路径；完整契约见交互协议规范 3.4。
+已完成预检的草稿由 Runtime 以 AgentDraftRef 引用既有 `run_steps.input` 与同参 `facts.config_checks`，不新增数据库表或第二份可编辑配置。路由以唯一 `draft_action` 区分纯解释与原参数创建，并选择受信任近期引用；指代不清先询问，不自动选首项。两者复用同身份快照读取与私有 `draft.inspect` 审计。纯解释不装配业务工具；原参数创建在当前 checkpoint 仅保存 `draft_ref`，每次调用恢复原参数，复核和正式创建 Adapter 输入均由 Runtime 绑定，不让模型重写或补默认参数。仍读取当前平台能力/必要资源事实、重新预检和确认，绝不复制旧资源事实、报告、确认或授权。缺失、错版、损坏和越界引用终止，不从正文重建。明确修改仍进入原平台语义与 Skill 路径，不在原参数创建中静默更改；完整契约见交互协议规范 3.4。
 
 草稿卡片的固定事实概要直接读取同一参数，不保存独立摘要；源／目标展示复用共享定位符格式化，边界、装载、写入策略及映射数不由模型重新填写。模型按 Skill 只补充关键解释。后端与前端按事件顺序追加 parts，Presentation 分隔后的文本另起 text part，不将所有文字前置；保存的 `content` 仍完整。概要不推断行粒度、类型或当前执行状态，既有报告、复核、参数摘要与权限路径不变。
 

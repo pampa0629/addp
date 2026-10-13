@@ -5,8 +5,8 @@ AgentState:    请求级状态，在路由节点和执行节点之间传递
 TaskContext:   主 Agent → 领域 Agent 的标准化任务包
 RouteDecision: 路由节点的结构化输出 Schema（路由 + 直接回复二合一）
 """
-from typing import TypedDict, Optional, List, Dict, Any, NotRequired
-from pydantic import BaseModel, Field
+from typing import TypedDict, Optional, List, Dict, Any, NotRequired, Literal
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentState(TypedDict):
@@ -28,7 +28,7 @@ class AgentState(TypedDict):
     direct_reply: Optional[str]   # 无需技能时的直接回复内容（来自同一次 LLM 调用）
     needs_platform_semantics: NotRequired[bool]
     draft_catalog: NotRequired[List[Dict[str, str]]]
-    inspect_draft: NotRequired[bool]
+    draft_action: NotRequired[Optional[Literal["inspect", "create"]]]
     draft_ref: NotRequired[Optional[str]]
 
 
@@ -44,12 +44,14 @@ class TaskContext(TypedDict):
     agent_run_id: str        # 持久 AgentRun UUID，用于委托令牌审计绑定
     checkpoint: NotRequired[Dict[str, Any]]  # addp.agent-checkpoint/v1 语义检查点
     accept_language: NotRequired[str]  # 当前 HTTP 请求语言，只用于 Runtime 展示，不参与复核身份
+    draft_arguments: NotRequired[Dict[str, Any]]  # 本次按身份恢复的原参数，仅临时输入；checkpoint 只存引用
 
 
 class RouteDecision(BaseModel):
     """路由 + 直接回复的结构化输出 Schema（单次 LLM 调用）"""
 
-    inspect_draft: bool = Field(default=False, description="用户只解释已有草稿时为 true，不修改、创建或运行；与其他路线互斥；无唯一可读引用时仍为 true，但 draft_ref 为 null。")
+    model_config = ConfigDict(extra="forbid")
+    draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="inspect 只解释已有草稿且不操作业务；create 仅明确沿用全部原参数创建、不修改、不运行，此时必须 needs_platform_semantics=true。请求修改则走普通平台路线。指代不明时保留动作但 draft_ref=null，不能猜选。")
     draft_ref: Optional[str] = Field(default=None, description="只选近期受信任草稿目录的确切 reference；缺失或有歧义时为 null，不能从正文推测。")
     skill: Optional[str] = Field(
         default=None,

@@ -17,7 +17,7 @@ from addp_common.client import Message
 
 from agents.checkpoint import confirm_selection
 from agents.main_agent import _load_skill_registry
-from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, prepare_review
+from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, config_arguments_digest, prepare_review
 from graph.factory import AgentFactory
 from tests.test_deerflow_runtime import _InferenceFixture, _call, _model
 from tests.test_platform_conditions import platform_fixture, precheck_fixture
@@ -62,7 +62,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture"):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture", draft_arguments=None):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -73,6 +73,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "skill_name": "transfer-generation", "user_request": user_request, "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
+                    **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
                 }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
                 max_iterations=3, llm=_model(client),
             ):
@@ -94,6 +95,124 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     def writes(self):
         return [request for request in self.requests if request[1] == "/api/v1/transfer/task-definitions"]
+
+    def bind_draft(self):
+        import uuid
+        reference = f"draft:{uuid.uuid4()}:{config_arguments_digest(self.arguments)}"
+        self.checkpoint["draft_ref"] = reference
+        return reference
+
+    async def test_bound_review_uses_exact_candidate_and_current_report(self):
+        reference = self.bind_draft()
+        call = Message(role="assistant", tool_calls=[_call("request_clarification", {
+            "prompt": "review original draft", "reason": REVIEW_REASON,
+            "options": [{"label": "confirm", "value": "confirm"}, {"label": "cancel", "value": "cancel"}],
+            "operation_review": {"tool": CREATE_TOOL},
+        })])
+        events, client = await self.run_factory([call, Message(role="assistant", content="unexpected closing text")], draft_arguments=self.arguments)
+        self.assertEqual(len(client.calls), 1)
+        check = next(r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks")
+        self.assertEqual(check[2]["json"]["name"], self.arguments["name"])
+        interaction = next(e.payload for e in events if e.kind == "interaction_required")
+        self.assertIn(self.arguments["name"], interaction["prompt"])
+        self.assertEqual(interaction["candidates"][0]["label"], "知悉未核验项，仅创建任务")
+        saved = [e.payload["checkpoint"] for e in events if e.kind == "checkpoint"][-1]
+        self.assertEqual(saved["draft_ref"], reference)
+        self.assertNotIn("draft_arguments", saved)
+        self.assertEqual(self.writes(), [])
+
+    async def test_bound_creation_ignores_model_parameter_drift_before_schema_and_adapter(self):
+        self.bind_draft()
+        self.confirm()
+        events, _ = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CREATE_TOOL, {"name": "invented", "batch_size": 500, "enabled": True})]),
+            Message(role="assistant", content="任务已创建，未运行"),
+        ], draft_arguments=self.arguments)
+        self.assertEqual(len(self.writes()), 1)
+        write = self.writes()[0][2]["json"]
+        check = next(r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks")[2]["json"]
+        self.assertEqual(write, check)
+        self.assertEqual(write["name"], self.arguments["name"])
+        self.assertEqual(write["config"], self.arguments["config"])
+        self.assertFalse(write["enabled"])
+        self.assertNotEqual(write.get("batch_size"), 500)
+        create = next(e.payload for e in events if e.kind == "tool_start" and e.payload["tool_name"] == CREATE_TOOL)
+        self.assertEqual(create["args"], self.arguments)
+        self.assertTrue(any(e.checkpoint_committed is not None for e in events))
+
+    async def test_bound_arguments_digest_mismatch_fails_before_any_owner_request(self):
+        self.bind_draft()
+        changed = {**self.arguments, "name": "changed"}
+        with self.assertRaisesRegex(ValueError, "draft_snapshot_invalid"):
+            await self.run_factory([], draft_arguments=changed)
+        self.assertEqual(self.requests, [])
+
+    async def test_bound_creation_without_current_confirmation_never_writes(self):
+        self.bind_draft()
+        events, _ = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CREATE_TOOL, {})]),
+            Message(role="assistant", content="需要复核"),
+        ], draft_arguments=self.arguments)
+        self.assertEqual(self.writes(), [])
+        self.assertTrue(any(e.kind == "tool_result" and e.payload.get("error_code") == "platform_condition_unsatisfied" for e in events))
+
+    async def test_bound_reference_is_not_a_substitute_for_current_resource_facts(self):
+        self.bind_draft()
+        self.confirm()
+        self.checkpoint["observed"]["resources"].clear()
+        events, _ = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CREATE_TOOL, {})]),
+            Message(role="assistant", content="缺少当前资源事实"),
+        ], draft_arguments=self.arguments)
+        self.assertEqual(self.writes(), [])
+        self.assertTrue(any(e.kind == "tool_result" and e.payload.get("error_code") == "platform_condition_unsatisfied" for e in events))
+
+    async def test_bound_review_rejects_second_arguments_and_checks_current_support(self):
+        self.bind_draft()
+        call = Message(role="assistant", tool_calls=[_call("request_clarification", {
+            "prompt": "review", "reason": REVIEW_REASON,
+            "options": [{"label": "confirm", "value": "confirm"}, {"label": "cancel", "value": "cancel"}],
+            "operation_review": {"tool": CREATE_TOOL},
+        })])
+        self.check_result = precheck_fixture(self.arguments, self.checkpoint, "unsupported")
+        events, _ = await self.run_factory([self.review_call(), call, Message(role="assistant", content="当前配置不支持")], draft_arguments=self.arguments)
+        self.assertEqual(len([r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]), 1)
+        self.assertEqual(self.writes(), [])
+        self.assertFalse(any(e.kind == "interaction_required" for e in events))
+        rejection = next(e.payload for e in events if e.kind == "tool_result" and e.payload.get("error_code") == "platform_condition_unsatisfied")
+        self.assertEqual(json.loads(rejection["content"])["config_check"]["status"], "unsupported")
+
+    async def test_bound_creation_permission_failure_stops_without_reusing_old_check(self):
+        self.bind_draft()
+        self.confirm()
+        self.check_status = 403
+        self.check_result = {"code": "forbidden", "message": "denied"}
+        events, client = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CREATE_TOOL, {})]),
+            Message(role="assistant", content="must not continue"),
+        ], draft_arguments=self.arguments)
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(self.writes(), [])
+        self.assertTrue(any(e.kind == "run_failed" for e in events))
+        saved = [e.payload["checkpoint"] for e in events if e.kind == "checkpoint"][-1]
+        self.assertEqual(saved["observed"]["config_checks"], {})
+
+    async def test_bound_explicit_check_cannot_rebuild_or_complete_creation_goal(self):
+        self.bind_draft()
+        call = Message(role="assistant", tool_calls=[_call("request_clarification", {
+            "prompt": "review", "reason": REVIEW_REASON,
+            "options": [{"label": "confirm", "value": "confirm"}, {"label": "cancel", "value": "cancel"}],
+            "operation_review": {"tool": CREATE_TOOL},
+        })])
+        events, client = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CHECK_TOOL, {**self.arguments, "name": "invented"})]), call,
+        ], draft_arguments=self.arguments)
+        self.assertEqual(len(client.calls), 2)
+        checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0][2]["json"]["name"], self.arguments["name"])
+        self.assertTrue(any(e.kind == "interaction_required" for e in events))
+        self.assertEqual(self.writes(), [])
 
     async def test_unknown_is_runtime_checked_audited_and_shown_before_confirmation(self):
         # No model check call: Runtime must still issue one using formal delegation.

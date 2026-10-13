@@ -19,6 +19,7 @@ def validate_checkpoint_size(checkpoint: dict[str, Any]) -> None:
 def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
+        "draft_ref": None,
         "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}},
         "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}},
     }
@@ -28,6 +29,11 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
     checkpoint = new_checkpoint()
     if not isinstance(value, dict) or value.get("schema") != CHECKPOINT_SCHEMA:
         return checkpoint
+
+    reference = value.get("draft_ref")
+    if reference is not None and not isinstance(reference, str):
+        raise ValueError("invalid_draft_reference")
+    checkpoint["draft_ref"] = reference
 
     observed = value.get("observed") if isinstance(value.get("observed"), dict) else {}
     confirmed = value.get("confirmed") if isinstance(value.get("confirmed"), dict) else {}

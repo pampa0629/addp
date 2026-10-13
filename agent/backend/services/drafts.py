@@ -27,6 +27,17 @@ class DraftReferenceError(ValueError):
     pass
 
 
+def validate_draft_arguments(reference: str, arguments: dict) -> None:
+    """Validate the restored candidate, not its current authorization or facts."""
+    match = _REF.fullmatch(reference) if isinstance(reference, str) else None
+    if (not match or not isinstance(arguments, dict)
+            or list(Draft202012Validator(get_tool(CHECK_TOOL).input_schema).iter_errors(arguments))
+            or config_arguments_digest(arguments) != match[2]):
+        raise DraftReferenceError("draft_snapshot_invalid")
+    if len(json.dumps(arguments, ensure_ascii=False, separators=(",", ":")).encode()) > DRAFT_SNAPSHOT_MAX_BYTES:
+        raise DraftReferenceError("draft_snapshot_too_large")
+
+
 def draft_snapshot(step) -> dict:
     """Restore exact recorded arguments, never infer them from an owner schema."""
     if step.tool_name != CHECK_TOOL or step.status != "completed":

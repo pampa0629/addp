@@ -9,13 +9,15 @@ description: 理解 ADDP Transfer 平台能力，发现并确认源和目标、�
 
 ## 核心流程
 
+Runtime 已明确绑定原草稿时，只沿用恢复的候选参数，不重建任务名、描述、目标表名、查询、映射或可选参数，不新增 batch_size 等默认值。重新读取当前平台能力及必要资源事实，不把历史参数当作已确认资源或权限。最终 `transfer_create_review` 的 `operation_review` 只提交 `{tool:"transfer.task.create"}`，不提交 arguments；Runtime 使用原参数预检和复核。确认后的正式创建输入同样由 Runtime 绑定，不能借模型输入改写参数。不额外调用 draft.generate 或显式预检来重建原稿。若当前定义不支持原参数，明确解释；需要改配置时结束原参数创建，再按用户要求进入修改和新的复核流程。
+
 1. 理解 Runtime 在本次 Harness 进入时经 `platform.capability.context(capability="transfer.task.create")` 读取、并放入当前受信任状态的能力定义；无需重复读取。需要主动刷新时仍调用同一 Tool，失败不能沿用旧结果。理解其概念、前置条件和效果。`availability=not_observed` 不是可用性证明；实际 Tool 错误需明确呈现，不假装其他模块存在。
 2. 用 `engine.list` 确认用户可访问的源/目标引擎。按 `data-discovery` 只搜索源侧数据项，必要时限定源 engine_id；多个集合或引擎候选等待用户选择。搜索失败时明确报告并终止当前运行，不能把失败当作零召回，也不能静默改用源目录枚举来继续生成或创建。
 3. 通过 `resource.ancestors.get → resource.facts.get` 确认源身份和最新结构，不用样本猜 Schema。缺扫描事实则要求补扫描，不能读取原始行兜底。
 4. 用 `resource.children.list(engine_id=<目标>)` 从 owner 返回的真实根节点开始逐层浏览；后续父 locator 只取自返回结果。让用户确认目标 `parent_locator + name`，目标尚不存在时不能把它当成已有输入搜索。不可假定 PostgreSQL schema 是 public。
 5. 根据能力定义分别确定行粒度和字段保留范围，再补齐运行边界、装载、写入策略、目标字段及类型。不展开数组不等于删除数组字段；用户要求保留顶层字段时，数组和对象也应保留，不能把嵌套叶子误当成顶层列。不能确定目标表示时通过正式预检或澄清处理，不得为规避类型检查而静默删字段。有嵌套字段时让用户决定一文档一行还是单数组元素一行，再用明确的 MQL `$project`/单次 `$unwind` 表达；配置编码只覆盖直接字段引用，不生成复杂表达式。复杂计算交给 Develop，不伪造本次 Tool 能力。
 6. 如需名称、描述或直接字段映射辅助，可调用 `transfer.draft.generate`；调用前由本步骤的 Owner Tool 确认资源和字段并提交完整上下文。Copilot 不再代替 Agent 访问资源，不申请二次委托，只产生草稿；结果不是授权或资源真实性证明，不负责创建，且不能覆盖用户确定的 endpoint/边界/策略。没有资源时 Tool 只返回意图检索词，由 Agent 继续调用 Owner Tool，不把检索词当作候选身份。已有完整确认配置时不必调用 Copilot。
-7. 调用 `request_clarification`：`reason="transfer_create_review"`，`operation_review={"tool":"transfer.task.create","arguments":<完整创建参数>}`，options 提供 value 为 `confirm` 和 `cancel` 的两个选项及用户语言的标签。Runtime 自动通过正式 `transfer.task.config.check` 预检完整参数，再生成配置复核与绑定指纹；不必由模型重复调用预检。unsupported 必须修正配置，不能继续创建；unknown 不是通过，Runtime 展示未检查项及运行时要求，并取得用户知情确认。supported 也不保证执行成功。prompt 用简短业务摘要说明源/目标名称、行粒度、边界/装载方式、字段处理概要、写入策略及其影响，并明确只创建、不运行；不要在摘要中重复 locator、MQL、完整字段清单或 JSON。不能用摘要替代 Runtime 的完整参数和报告复核。只有用户选择 Runtime 绑定的确认选项后才提交同一配置，不能改字段、查询、策略、名称或批大小；文字回答是补充要求，不是创建确认，有修改先重新复核。只要求草稿时不进入此步骤，也不能宣称已经预检通过。
+7. 调用 `request_clarification`：`reason="transfer_create_review"`。未绑定原草稿时提交 `operation_review={"tool":"transfer.task.create","arguments":<完整创建参数>}`；已绑定原草稿时只提交 `operation_review={"tool":"transfer.task.create"}`，原参数由 Runtime 提供。options 提供 value 为 `confirm` 和 `cancel` 的两个选项及用户语言的标签。Runtime 自动通过正式 `transfer.task.config.check` 预检完整参数，再生成配置复核与绑定指纹；不必由模型重复调用预检。unsupported 必须修正配置，不能继续创建；unknown 不是通过，Runtime 展示未检查项及运行时要求，并取得用户知情确认。supported 也不保证执行成功。prompt 用简短业务摘要说明源/目标名称、行粒度、边界/装载方式、字段处理概要、写入策略及其影响，并明确只创建、不运行；不要在摘要中重复 locator、MQL、完整字段清单或 JSON。不能用摘要替代 Runtime 的完整参数和报告复核。只有用户选择 Runtime 绑定的确认选项后才提交同一配置，不能改字段、查询、策略、名称或批大小；文字回答是补充要求，不是创建确认，有修改先重新复核。只要求草稿时不进入此步骤，也不能宣称已经预检通过。
 8. 确认后调用 `transfer.task.create`，只提交 Manifest 接受的 name/description/config/batch_size。Runtime 在提交前重新预检；配置或稳定报告变化后必须重新复核，不能绕过。预检服务、权限或响应失败终止当前运行，不当作 unknown，也不自动重试。成功必须返回真实 ID、idle/stopped、无计划；报告“任务已创建，尚未运行”，给出 Transfer 页面入口。不宣称数据已同步，不调用其他执行 Tool。创建响应不确定或失败时不自动重发，要求用户到 Transfer 核对。
 
 ## 草稿阶段的只读检查
