@@ -437,7 +437,7 @@
         <ExecutionEvents
           v-if="detailDialogVisible && currentExecution.execution_id"
           :execution-id="currentExecution.execution_id"
-          :load-page="getExecutionEvents"
+          :load-page="loadExecutionEventPage"
           :running="isRunningStatus(currentExecution.status)"
         />
 
@@ -1125,15 +1125,33 @@ async function refreshOpenedExecution() {
     openExecutionTree(data)
   } catch (error) {
     if (!detailDialogVisible.value || openedExecutionID.value !== executionID || requestToken !== detailRequestToken) return
-    if ([403, 404].includes(error.response?.status)) {
-      currentExecution.value = null
-      executionTreeData.value = []
-      openedExecutionID.value = ''
-      detailLoadFailed.value = true
-    }
+    if ([401, 403, 404].includes(error.response?.status)) clearDeniedExecutionDetail()
     console.error(error)
   } finally {
     executionDetailRefreshInFlight = false
+  }
+}
+
+function clearDeniedExecutionDetail() {
+  detailRequestToken += 1
+  currentExecution.value = null
+  executionTreeData.value = []
+  openedExecutionID.value = ''
+  detailLoading.value = false
+  detailLoadFailed.value = true
+  stopExecutionDetailAutoRefresh()
+}
+
+async function loadExecutionEventPage(executionID, params) {
+  const requestToken = detailRequestToken
+  try {
+    return await getExecutionEvents(executionID, params)
+  } catch (error) {
+    if (detailDialogVisible.value && requestToken === detailRequestToken &&
+        currentExecution.value?.execution_id === executionID && [401, 403, 404].includes(error.response?.status)) {
+      clearDeniedExecutionDetail()
+    }
+    throw error
   }
 }
 
