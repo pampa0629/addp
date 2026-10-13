@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"bytes"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,6 +34,21 @@ func TestPostgresWriteValuePreservesOtherTypes(t *testing.T) {
 		got, err := ProtocolTableWriteValue(tc.value, tc.typ)
 		if err != nil || !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("type %s: got %#v, %v; want %#v", tc.typ, got, err, tc.want)
+		}
+	}
+}
+
+func TestProtocolBytesDistinguishesTypedNilFromEmpty(t *testing.T) {
+	var typedNil []byte
+	value, err := ProtocolTableWriteValue(typedNil, datatype.FieldTypeBytes)
+	if err != nil || value != nil {
+		t.Fatalf("typed nil bytes must bind SQL NULL, got %#v error=%v", value, err)
+	}
+	for _, input := range [][]byte{{}, {0, 255, 92}} {
+		value, err := ProtocolTableWriteValue(input, datatype.FieldTypeBytes)
+		got, ok := value.([]byte)
+		if err != nil || !ok || got == nil || !bytes.Equal(got, input) {
+			t.Fatalf("non-nil bytes changed: got=%#v error=%v", value, err)
 		}
 	}
 }

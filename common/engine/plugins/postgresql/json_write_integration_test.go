@@ -93,7 +93,8 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 			}
 			// Verify empty BYTEA and SQL NULL independently of JSON byte encoding.
 			rows[1]["blob"] = []byte{}
-			rows[2]["blob"] = nil
+			rows[2]["blob"] = []byte(nil)
+			rows[3]["blob"] = nil
 			rows[2]["location"] = []byte{}
 			if err := write(rows); err != nil {
 				t.Fatal(err)
@@ -103,11 +104,15 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 				if tc.json != "" {
 					want = tc.json
 				}
+				var wantBytes interface{} = rows[i]["blob"]
+				if value, ok := wantBytes.([]byte); ok && value == nil {
+					wantBytes = nil
+				}
 				var jsonOK, bytesOK, geometryOK bool
 				err := db.QueryRowContext(ctx, `SELECT "caredOutdoors" IS NOT DISTINCT FROM $1::jsonb,
 					blob IS NOT DISTINCT FROM $2::bytea,
 					ST_AsEWKB(location) IS NOT DISTINCT FROM $3::bytea
-					FROM `+table+` WHERE id=$4 AND label=$5`, want, rows[i]["blob"], func() interface{} {
+					FROM `+table+` WHERE id=$4 AND label=$5`, want, wantBytes, func() interface{} {
 					if i == 2 {
 						return nil
 					}

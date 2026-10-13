@@ -22,7 +22,7 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 	if os.Getenv("ADDP_OPENGAUSS_INTEGRATION") != "1" {
 		t.Skip("set ADDP_OPENGAUSS_INTEGRATION=1 to run openGauss integration test")
 	}
-	for _, method := range []string{"copy", "insert", "upsert"} {
+	for _, method := range []string{"copy_session", "protocol_copy_batch", "protocol_insert", "upsert"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 			defer cancel()
@@ -97,13 +97,24 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 			}
 			write := func(rows []map[string]interface{}) error {
 				batch := &plugin.BatchData{Fields: append([]datatype.FieldInfo(nil), fields...), Rows: rows}
+				if method == "protocol_insert" || method == "protocol_copy_batch" {
+					writeMethod := "insert"
+					if method == "protocol_copy_batch" {
+						writeMethod = "copy"
+					}
+					// Exercise the PostgreSQL protocol kernel against openGauss.
+					// This does not add a public openGauss batch writer.
+					// Batch writers take their declared types from batch fields.
+					return p.protocol().WriteBatch(ctx, connInfo, path, batch, plugin.BatchWriteOptions{Method: writeMethod})
+				}
+				// Session and upsert types come from their frozen options.
 				batch.Fields[1].Type = datatype.FieldTypeString
 				batch.Fields[2].Type = datatype.FieldTypeJSON
 				if method == "upsert" {
 					return p.UpsertBatch(ctx, connInfo, path, batch, opts)
 				}
 				openingFields := append([]datatype.FieldInfo(nil), fields...)
-				session, err := p.OpenTableWriteSession(ctx, connInfo, path, plugin.TableWriteSessionOptions{Fields: openingFields, Method: method})
+				session, err := p.OpenTableWriteSession(ctx, connInfo, path, plugin.TableWriteSessionOptions{Fields: openingFields, Method: "copy"})
 				if err != nil {
 					return err
 				}
@@ -141,15 +152,30 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 			for i, tc := range cases {
 				var document, members sql.NullString
 				var binary []byte
-				var binaryNull bool
+				var binaryNull, membersNull, documentNull bool
 				var label string
-				if err := db.QueryRowContext(ctx, `SELECT document::text,array_to_json(members)::text,payload,payload IS NULL,label FROM `+qualified+` WHERE id=$1`, i+1).Scan(&document, &members, &binary, &binaryNull, &label); err != nil {
+				if err := db.QueryRowContext(ctx, `SELECT document::text,document IS NULL,array_to_json(members)::text,members IS NULL,payload,payload IS NULL,label FROM `+qualified+` WHERE id=$1`, i+1).Scan(&document, &documentNull, &members, &membersNull, &binary, &binaryNull, &label); err != nil {
 					t.Fatal(err)
 				}
 				array := arrays[i%len(arrays)]
 				wantBinary := binaries[i%len(binaries)]
-				if document.Valid != (tc.document != "") || members.Valid != (array.document != "") || !reflect.DeepEqual(decode(document.String), decode(tc.document)) || !reflect.DeepEqual(decode(members.String), decode(array.document)) || !bytes.Equal(binary, wantBinary) || binaryNull != (wantBinary == nil) || label != "plain {" {
-					t.Fatalf("row %d JSON, array, SQL NULL, binary or text changed", i)
+				if documentNull != (tc.document == "") || (!documentNull && (!document.Valid || !reflect.DeepEqual(decode(document.String), decode(tc.document)))) {
+					t.Fatalf("row %d JSON changed: SQL NULL=%v want=%v actual=%q expected=%q", i, documentNull, tc.document == "", typedJSONPrefix(document.String), typedJSONPrefix(tc.document))
+				}
+				// Check the native column's NULL separately from array_to_json:
+				// the conversion function's handling of a NULL input is not
+				// evidence that the array column retained SQL NULL.
+				if membersNull && members.Valid {
+					t.Logf("row %d array is SQL NULL; array_to_json returned %q", i, members.String)
+				}
+				if membersNull != (array.document == "") || (!membersNull && (!members.Valid || !reflect.DeepEqual(decode(members.String), decode(array.document)))) {
+					t.Fatalf("row %d array changed: SQL NULL=%v want=%v actual=%q expected=%q", i, membersNull, array.document == "", members.String, array.document)
+				}
+				if !bytes.Equal(binary, wantBinary) || binaryNull != (wantBinary == nil) {
+					t.Fatalf("row %d bytes changed: SQL NULL=%v want=%v actual=%x expected=%x", i, binaryNull, wantBinary == nil, binary, wantBinary)
+				}
+				if label != "plain {" {
+					t.Fatalf("row %d text changed: %q", i, label)
 				}
 			}
 			for _, bad := range []struct {
@@ -172,4 +198,11 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+func typedJSONPrefix(document string) string {
+	if len(document) > 128 {
+		return document[:128] + "..."
+	}
+	return document
 }

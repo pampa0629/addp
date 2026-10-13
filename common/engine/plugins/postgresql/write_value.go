@@ -31,6 +31,13 @@ func ProtocolTableWriteValue(value interface{}, fieldType datatype.FieldType) (i
 	if value == nil {
 		return nil, nil
 	}
+	// lib/pq encodes a typed nil byte slice as empty BYTEA, including COPY.
+	// Preserve SQL NULL for bytes without changing non-nil empty slices.
+	if fieldType == datatype.FieldTypeBytes {
+		if value, ok := value.([]byte); ok && value == nil {
+			return nil, nil
+		}
+	}
 	if fieldType == datatype.FieldTypeArray {
 		return postgresArrayWriteValue(value)
 	}
