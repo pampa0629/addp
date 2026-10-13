@@ -19,7 +19,7 @@
 | CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 读取、Manager 编码选择与 Meta 持久化已通过确定性及 PostgreSQL 回归，真实 NFS CSV / TSV 的编码应用、中文、分页、重复刷新、重新打开和原文件下载已验收；固定 GBK CSV / TSV 的 Business MinIO Hosted 同一链路及原文件下载哈希、清理已通过。XLSX 已通过真实 NFS 与 Business MinIO Hosted 四工作表的不同字段、空表、只有表头、未知总数逐页读取、刷新及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 的地图＋属性表已有实现和本地样例页面复核；2026-10-13 已确认统一使用表格响应核对 GeoJSON，旧 Hosted 在错误的对象 renderer 断言处失败，修正后须重新验收。不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
-| FBX / OBJ | 基础预览直接读取源模型；GLB 快显调用 Model3D 的对应 mesh operator。正式 Linux ARM64 产品构建已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。当前六模型 Manager Hosted 未包含二者，Linux x86_64 构建和真实页面／缓存验收仍待补；不声明全部版本、动画或复杂材质保真。 |
+| FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。八模型 Manager Hosted 在生成前的 OBJ 数据项大小断言处失败，真实页面／缓存验收仍待重跑；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 
@@ -137,3 +137,7 @@
 本次修正验证：隔离副本的标准 `make test-go` 全部 22 个模块通过，临时 Go 探针经真实 FileTable Provider 读取相同固定 GeoJSON 字节并保存实际表格／源 CRS／几何响应，探针已移除。使用核实的 Node v24.19.0，经标准 frontend-browser-gate 复用最终 Hosted 同一 helper，中英文两项临时探针均通过；`.geojson` 与 `.json` 各自的地图要素点击、属性弹窗、完整下载 SHA256、刷新和重开通过，截图已目视确认点、折线和属性。受控身份及接口不代替 T4。临时 Vite 下载端点、浏览器测试和依赖链接已移除，未改产品路由或启动用户服务。Manager 专项 76 项及 Go 身份工具通过，CI 登记一致；标准 make test-changed 因多 Owner T2 连接条件缺失在预检中止，不记整轮通过，完整扩散验证仍由既有 Platform CI／Release-T2 及本 suite 的 Hosted 验证。
 
 修正已提交并推送为 `cfbb3b5a453b8e2524f2d47b511b3243d892fd77`；合入当前工作区后的 Manager 专项 76 项及 Go 身份工具再次通过，CI 登记检查通过。唯一新增 [Manager Hosted 38341080755](https://github.com/pampa0629/addp/actions/runs/38341080755) 已触发，实际源码为该修正提交、Job `115111976721`，当前 queued。该轮同时保留四种 JSON 源、CSV／TSV／XLSX、八模型及原 PPTX／点云／栅格，Owner/v8 与 browser/v10；最终原文件下载、十一类产物领域删除和基础设施清理仍须以实际报告分别核对，不将本地探针或旧失败轮清理当作本轮 T4 通过。
+
+2026-10-13 Run `38341080755`、Job `115111976721` 已结束为 failure，源码 `cfbb3b5a453b8e2524f2d47b511b3243d892fd77`。失败发生在生成前的 OBJ 夹具核验：误将 DataItem 的整体 `size_bytes` 与原模型下载大小比较。Meta 真实持久日志显示 OBJ 主文件 97 字节、MTL 45 字节和贴图 76 字节合计 218 字节，主文件 SHA-256 与固定源一致。验收必须分别核对数据项总大小和主文件下载大小，不能修改 Meta 的整体大小语义或删除原下载断言；确定性假客户端应复现真实 218 字节，夹具回归同时核对三个文件字节数及合计。Manager 实际日志没有生成请求，故本轮未创建十一类受管产物，也未执行正式浏览器与格式下载验收；不能登记领域删除通过。外层生命周期 cleanup passed、Infra zero_residuals。最终 Linux x86_64 Runtime 构建已完成正式 FBX 静态几何与 OBJ 内嵌 PNG 验证，但不代替页面 T4。修复沿用既有 Manager runner、Platform CI 自动登记和唯一 Hosted suite，不改权限、报告版本、产品 API 或血缘实现。
+
+本项最小回归已先复现旧断言失败，再由标准 `make test-manager-online-runner` 验证修正后的 77 项及 Go 身份工具全部通过；保留源文件下载大小与 SHA-256、两阶段页面和全部原场景的严格断言，Owner/v8、browser/v10 不变。现有 `test-platform → test-online-runner → test-manager-online-runner` 自动覆盖本次脚本和夹具回归，无需新建 CI 入口；`make test-changed` 因共享工作区多 Owner 变更及缺少 T2 连接条件在预检中止，未执行数据库测试，整轮不计通过。Hosted 须在修正提交重新执行；本地回归不替代 T4。

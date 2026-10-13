@@ -329,7 +329,7 @@ class FakeGatewayClient:
                   for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)],
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
-                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": SUITE.MESH_SOURCE_FACTS.get(format_name, {}).get("size_bytes", 1024),
+                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": {"fbx": 17200, "obj": 218}.get(format_name, 1024),
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
                                "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp", "max"} else {}},
             } for format_name, model in self.models.items()])
@@ -930,6 +930,24 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         ):
             with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
                 SUITE.validate_model_glb(alter_glb(fixture_glb("obj"), mutate), "obj")
+
+    def test_mesh_item_size_includes_companions_without_changing_primary_download(self):
+        client = FakeGatewayClient()
+        fixture = SUITE.prepare_model_fixture(client, 27, "addp-online", "obj")
+        self.assertEqual(fixture.item["size_bytes"], 218)
+        self.assertEqual(SUITE.MESH_SOURCE_FACTS["obj"]["size_bytes"], 97)
+        original = client._request
+
+        def primary_only_size(method, path, body, headers):
+            result = original(method, path, body, headers)
+            if path == "/api/v1/meta/engines/27/items":
+                for item in result.payload:
+                    if item["full_name"] == "addp-online/model3d/obj/model.obj":
+                        item["size_bytes"] = 97
+            return result
+
+        with mock.patch.object(client, "_request", side_effect=primary_only_size), self.assertRaisesRegex(SUITE.SuiteError, "item size differs"):
+            SUITE.prepare_model_fixture(client, 27, "addp-online", "obj")
 
     def test_mesh_source_download_must_preserve_pinned_bytes(self):
         client = FakeGatewayClient()

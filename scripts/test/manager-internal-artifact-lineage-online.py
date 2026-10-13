@@ -29,6 +29,12 @@ MESH_SOURCE_FACTS = {
     "fbx": {"size_bytes": 17200, "sha256": "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8"},
     "obj": {"size_bytes": 97, "sha256": "77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7"},
 }
+# DataItem storage size includes OBJ's 45-byte MTL and 76-byte PNG;
+# source-download size and hash above describe only the primary model file.
+MESH_ITEM_SIZE_BYTES = {
+    "fbx": MESH_SOURCE_FACTS["fbx"]["size_bytes"],
+    "obj": MESH_SOURCE_FACTS["obj"]["size_bytes"] + 45 + 76,
+}
 MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
 MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
@@ -539,8 +545,8 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
             raise SuiteError(f"a stale {format_name} task exists for the dedicated fixture")
     model = ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
     if format_name in MESH_SOURCE_FACTS:
-        if item.get("size_bytes") != MESH_SOURCE_FACTS[format_name]["size_bytes"]:
-            raise SuiteError(f"{format_name} source size differs from the pinned fixture")
+        if item.get("size_bytes") != MESH_ITEM_SIZE_BYTES[format_name]:
+            raise SuiteError(f"{format_name} item size differs from the pinned fixture")
         verify_mesh_source(client, model)
     return model
 
