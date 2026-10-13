@@ -30,6 +30,8 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 正式预检步骤完成并持久化后，Runtime 从其精确输入与同参报告生成 `AgentDraftRef` 和只读 `TransferDraftSnapshot`，复用共享表格／JSON 展示。新 Run 纯解释已有草稿时，路由只选同用户／租户／会话近期受信任目录中的引用，由私有 Runtime `draft.inspect` 读取历史输入；不装配业务 Tool 或进入领域 Harness，不复制旧确认、checkpoint 或授权。缺失、损坏、参数摘要不符及越界引用失败关闭。候选生成／修改／创建仍走原平台语义、Skill 和 owner 路径。本轮后端 SQL 隔离测试使用内存 SQLite，仅属 T1；前端由既有 Agent Vitest、浏览器及构建门禁自动发现，不声称真实模型或 Hosted T4 已通过。
 
+2026-10-13 用户重启后，会话 29 的简短草稿请求消费本体修订 18，完成源集合、行粒度与目标澄清后仅正式预检一次。固定配置为 16 条映射（11 条 json），报告为 unknown、35 条诊断；后续“解释刚才草稿里数组和对象的保存方式”创建新 Run，仅执行 Runtime `draft.inspect`，无新资源读取、预检或业务 Tool。两轮的完整参数、摘要引用、映射和六项报告投影与原步骤证据一致，消息 parts／安全事件及浏览器刷新恢复一致；未进入创建复核或创建／执行／样本读取／扫描流程。该本地真实联调通过草稿事实引用与历史解释，不等于 Hosted T4、配置可运行或回复简洁性验收：首轮仍重复字段清单、未检查项和运行要求，短答收敛未通过。
+
 ```
 agent/
 ├── authorization/
@@ -171,7 +173,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 - 工作流引擎澄清选项必须来自当前 run 的 `engine.list`；资源澄清 locator 必须来自当前 run 的 `data.search`、`resource.ancestors.get`、`resource.children.list`、`resource.facts.get` 或 `data.preview`。目录 Tool 只投影父节点及直接子节点身份，正式资源事实只保存受限 Schema 和查询信息；具体投影边界以交互协议规范为准。Runtime 使用 owner Tool 事实重建选项，未经观察的候选返回 `clarification_option_not_observed`，不得创建 Interaction。
 - AgentRun 跨初始 AG-UI 调用和 Interaction resume 调用存在；恢复身份只使用 Interaction 的 `agent_run_id`，不得按新的协议 `runId` 创建第二个 AgentRun。
 - Interaction resume 必须沿用该 AgentRun 已记录的 Skill，不重新交给路由模型选择，避免批准后偏离原 Tool 白名单或退化为直接回复。
-- 断线重连按 `agent.run_events` 的 run 内 sequence 回放；事件不得保存 Tool 参数或原始结果。取消只停止内置 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 中追加新的协议调用事件。
+- 断线重连按 `agent.run_events` 的 run 内 sequence 回放；事件不保存通用 Tool 参数事件或原始结果。正式预检参数仅通过有界只读 `TransferDraftSnapshot` Presentation 保存展示投影，完整边界见交互协议规范 3.4；不复制主体、权限或批准。取消只停止内置 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 中追加新的协议调用事件。
 - `agent.run_events` 的 SSE 使用标准 `id` 字段承载 run 内 sequence；客户端用 `after` 回放未处理的安全事件。
 - AgentCheckpoint 只保存 owner Tool 紧凑事实和用户已确认选择，不保存模型隐藏推理、框架私有内存、完整样本行或大 Tool 结果。
 - 持久化总量门禁固定为：单个 replayable run event 512 KiB、单条 message parts 2 MiB、AgentCheckpoint 256 KiB、单个 step facts 128 KiB；超限直接拒绝，不截取 JSON 前缀或转存旁路字段。
