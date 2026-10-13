@@ -187,8 +187,11 @@ class Prometheus:
         require(result.get("status") == "success", "Prometheus query failed")
         return result["data"]
 
-    def query(self, expression):
-        return self.request("/api/v1/query?"+urllib.parse.urlencode({"query": expression}))["result"]
+    def query(self, expression, *, at=None):
+        query = {"query": expression}
+        if at is not None:
+            query["time"] = at
+        return self.request("/api/v1/query?"+urllib.parse.urlencode(query))["result"]
 
     def targets(self, node):
         return [item for item in self.request("/api/v1/targets?state=active")["activeTargets"]
@@ -544,6 +547,53 @@ def process_query_ready(admin, instances, *, after=0, inactive=(), disconnected=
     if not all(r["collection"]["state"] == "collecting" and all(p["data_state"] == "valid" and utc_timestamp(p["sampled_at"]) > after for s in r["series"] for p in s["points"]) for r in active): return False
     assert_process_summaries(value, instances, after=after, inactive=inactive, disconnected=disconnected)
     return True
+
+
+def assert_source_process_isolation(admin, prom, instances, report):
+    evidence = report["source_outage_process_summaries"] = {}
+    ready = process_query_ready(admin, instances, evidence=evidence)
+    if not ready:
+        witnesses = report["source_outage_process_window"] = []
+        for owner in instances:
+            # The public batch is keyed by identity, not ordered by the request.
+            snapshot = next(row for row in evidence["data"] if row["subject"]["id"] == owner["id"])
+            at = snapshot["series"][0]["points"][0]["evaluated_at"]
+            selector = '{job="addp_nodes",addp_monitor_kind="process_resources",addp_source="application",'+",".join(
+                key+"="+json.dumps(owner[field]) for key, field in (("addp_module_name", "module_name"), ("addp_instance_id", "instance_id"), ("addp_runtime_role", "role")))+"}"
+            cpu = "process_cpu_seconds_total"+selector
+            probes = {"cpu_window_count": "max(count_over_time("+cpu+"[1m]))", "cpu_resets": "max(resets("+cpu+"[1m]))",
+                      "cpu_rate": "max(rate("+cpu+"[1m]))"}
+            identity = "addp_process_identity_info"+selector
+            matched = identity[:-1]+","+",".join(key+"="+json.dumps(owner[field]) for key, field in (
+                ("module_name", "module_name"), ("runtime_instance_id", "instance_id"), ("runtime_role", "role")))+',schema_version="addp.process-metrics/v1",operating_system=~"darwin|linux"}'
+            for prefix, raw in (("cpu", cpu), ("identity", identity), ("start", "process_start_time_seconds"+selector)):
+                for suffix, offset in (("current", ""), ("previous", " offset 1m")):
+                    probes[prefix+"_"+suffix+"_count"] = "count("+raw+offset+")"
+                    probes[prefix+"_"+suffix+"_value"] = "max("+raw+offset+")"
+                    probes[prefix+"_"+suffix+"_stamp"] = "max(timestamp("+raw+offset+"))"
+            for suffix, offset in (("current", ""), ("previous", " offset 1m")):
+                probes["identity_"+suffix+"_matched_count"] = "count("+matched+offset+")"
+            up = "up"+selector
+            probes.update(up_count="count("+up+")", up_value="max("+up+")", up_stamp="max(timestamp("+up+"))")
+            expression = " or ".join('label_replace(('+value+'),"addp_probe",'+json.dumps(name)+',"","")' for name, value in probes.items())
+            witness = {"subject": snapshot["subject"], "evaluated_at": at, "expected_started_at": owner["process_started_at"], "state": "unavailable"}
+            witnesses.append(witness)
+            try:
+                rows = prom.query(expression, at=at)
+                require(isinstance(rows, list) and len(rows) <= len(probes), "invalid window witness cardinality")
+                values, seen = dict.fromkeys(probes), set()
+                for row in rows:
+                    key, pair = row["metric"].get("addp_probe"), row["value"]
+                    require(key in probes and key not in seen and len(pair) == 2 and float(pair[0]) == utc_timestamp(at), "invalid window witness identity or anchor")
+                    number = float(pair[1])
+                    require(math.isfinite(number), "invalid window witness value")
+                    values[key] = number
+                    seen.add(key)
+                witness.update(state="captured", values=values)
+            except Exception:
+                # Diagnostics cannot replace the original isolation verdict or export raw errors.
+                pass
+    require(ready, "host source failure broke independent process resources")
 
 
 def monitor_lifecycle(directory, action):
@@ -980,13 +1030,15 @@ def run(base, directory, report):
             client.request("GET", "/api/v1/monitor/executions", (200,))
     finally:
         recovery = time.time()
+        report["center_recovery_started_at"] = datetime.datetime.fromtimestamp(recovery, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
         center_action("start")
     eventually(lambda: resource_query_after(admin, node, target, recovery), "new API query evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, FILESYSTEM_METRICS), "new filesystem evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, INODE_METRICS), "new inode evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, DISK_METRICS), "new disk evidence after center recovery")
     eventually(lambda: resource_query_after(admin, node, target, recovery, NETWORK_METRICS), "new network evidence after center recovery")
-    eventually(lambda: process_query_ready(admin, processes, after=recovery), "new process evidence after center recovery", timeout=150)
+    report["center_recovery_process_summaries"] = {}
+    eventually(lambda: process_query_ready(admin, processes, after=recovery, evidence=report["center_recovery_process_summaries"]), "new process evidence after center recovery", timeout=150)
     report["process_center_outage_recovery"] = True
     report["center_query_outage_recovery"] = True
     report["stage"] = "source-outage-recovery"
@@ -994,8 +1046,7 @@ def run(base, directory, report):
     try:
         eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
-        report["source_outage_process_summaries"] = {}
-        require(process_query_ready(admin, processes, evidence=report["source_outage_process_summaries"]), "host source failure broke independent process resources")
+        assert_source_process_isolation(admin, prom, processes, report)
     finally:
         source_action("start")
     eventually(lambda: bool(prom.query("up"+expression+" == 1")), "source recovery")

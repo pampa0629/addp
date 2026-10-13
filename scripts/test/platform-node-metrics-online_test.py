@@ -143,6 +143,71 @@ class MetricsProtocolTest(unittest.TestCase):
                 self.assertEqual(captured["series"][0]["points"][0], {key: row["series"][0]["points"][0][key]
                     for key in ("value", "sampled_at", "evaluated_at", "data_state")})
 
+    def test_source_isolation_witness_is_anchored_bounded_safe_and_preserves_original_failure(self):
+        for mode in ("ready", "warmup", "failed", "reordered", "unavailable", "duplicate", "nonfinite", "wrong_time"):
+            with self.subTest(mode=mode):
+                owners, reply = self.process_reply()
+                at = reply["data"][0]["series"][0]["points"][0]["evaluated_at"]
+                row = reply["data"][0]
+                if mode != "ready":
+                    row["series"][0]["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                if mode == "failed":
+                    row["collection"]["state"] = "failed"
+                    for series in row["series"]:
+                        series["points"][0].update(data_state="no_data", value=None, sampled_at=None)
+                if mode == "reordered": reply["data"].reverse()
+                client = unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200, reply)))
+                point = {"metric": {"addp_probe": "cpu_window_count", "credential": "must-never-retain"},
+                         "value": [ONLINE.utc_timestamp(at), "3"], "credential": "must-never-retain"}
+                values = [point]
+                if mode == "duplicate": values = [point, copy.deepcopy(point)]
+                if mode == "nonfinite": point["value"][1] = "NaN"
+                if mode == "wrong_time": point["value"][0] -= 1
+                prom = unittest.mock.Mock(query=unittest.mock.Mock(return_value=values))
+                if mode == "unavailable": prom.query.side_effect = ValueError("must-never-retain")
+                report = {}
+                if mode == "ready":
+                    ONLINE.assert_source_process_isolation(client, prom, owners, report)
+                    prom.query.assert_not_called()
+                    self.assertNotIn("source_outage_process_window", report)
+                else:
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "host source failure broke independent process resources"):
+                        ONLINE.assert_source_process_isolation(client, prom, owners, report)
+                    self.assertEqual(prom.query.call_count, 2)
+                    for call, owner in zip(prom.query.call_args_list, owners):
+                        self.assertEqual(call.kwargs, {"at": at})
+                        expression = call.args[0]
+                        self.assertIn('addp_instance_id='+json.dumps(owner["instance_id"]), expression)
+                        self.assertIn('addp_module_name='+json.dumps(owner["module_name"]), expression)
+                        for fragment in ("count_over_time(", "resets(", " offset 1m", "process_start_time_seconds", "addp_process_identity_info", 'addp_probe'):
+                            self.assertIn(fragment, expression)
+                        self.assertNotIn('job="prometheus"', expression)
+                    witnesses = report["source_outage_process_window"]
+                    self.assertEqual(len(witnesses), 2)
+                    for witness in witnesses:
+                        source = next(row for row in reply["data"] if row["subject"]["id"] == witness["subject"]["id"])
+                        self.assertEqual(witness["subject"], source["subject"])
+                        self.assertEqual(witness["evaluated_at"], at)
+                        self.assertEqual(witness["state"], "captured" if mode in {"warmup", "failed", "reordered"} else "unavailable")
+                        if witness["state"] == "captured":
+                            self.assertEqual(witness["values"]["cpu_window_count"], 3)
+                            self.assertIsNone(witness["values"]["cpu_previous_stamp"])
+                        else:
+                            self.assertNotIn("values", witness)
+                    self.assertNotIn("must-never-retain", json.dumps(report))
+                client.request.assert_called_once_with("GET", ONLINE.process_path(owners), (200,))
+
+    def test_prometheus_diagnostic_time_uses_the_existing_query_route(self):
+        prom = ONLINE.Prometheus.__new__(ONLINE.Prometheus)
+        prom.request = unittest.mock.Mock(return_value={"result": []})
+        at = "2026-10-13T00:32:11Z"
+        self.assertEqual(prom.query("count(up)", at=at), [])
+        path = prom.request.call_args.args[0]
+        self.assertEqual(ONLINE.urllib.parse.urlparse(path).path, "/api/v1/query")
+        self.assertEqual(ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlparse(path).query), {"query": ["count(up)"], "time": [at]})
+        prom.query("up")
+        self.assertEqual(ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlparse(prom.request.call_args.args[0]).query), {"query": ["up"]})
+
     def test_process_browser_binds_actual_owner_page_scope_and_requires_units_screenshot_and_denial(self):
         owners, reply = self.process_reply()
         expected = {"processes": owners, "policy_version": 4}
