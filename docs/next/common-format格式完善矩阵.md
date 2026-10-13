@@ -127,3 +127,5 @@
 本扩展的隔离副本验证：`make test-manager-online-runner` 的 76 项及 Go 身份工具通过，完整 `make test-online-runner` 的 968 项 Python 回归（13 批）及 CI 登记核对通过；最终按已确认的 FBX GLB 范围再次执行 Manager 专项通过。既有 Linux ARM64 最终 Runtime 镜像经正式 operator 转换同一固定源，FBX 的 24 个顶点／源变换／颜色与 OBJ 的三角形／内嵌 PNG 像素通过新断言。标准浏览器入口的临时中英文探针共两项通过，已目视核对 FBX GLB 及 OBJ 基础几何、带贴图 GLB，原文件下载哈希一致；探针使用受控 API，不能代替 Hosted。临时测试与 Vite 文件服务已移除，未升级依赖或重启用户服务；正式八模型 Hosted 尚未执行。
 
 本扩展隔离副本的标准 `make test-changed` 因所选共享 CI 登记影响面所需 T2 数据库连接条件未注入，在统一预检中止；未执行其后续 T0—T3，不记整轮通过。已运行的专项与 Online runner 结果独立有效；完整扩散验证由既有 Platform CI、Release/T2 及后续 Manager Hosted 门禁承接。
+
+扩展实现已提交并推送为 `3a8d809209b3d2661e6f9eadd13b2849470b8501`；合入当前工作区后 Manager 专项 76 项及 Go 身份工具再次通过，CI 登记检查通过。[FBX／OBJ Hosted 38337360185](https://github.com/pampa0629/addp/actions/runs/38337360185) 已触发，实际源码为包含该改动的 `b2e94c79b408a6297461f758f0ac1327d8b568c7`、Job `115100364456`，当前 pending。沿既有套件串行等待 JSON／GeoJSON Run `38328291459`，不取消或重复触发上一轮；两轮的实际浏览器、下载和清理结果分别核验，当前均不提前登记通过。
