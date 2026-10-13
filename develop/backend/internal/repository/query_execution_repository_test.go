@@ -169,6 +169,7 @@ func TestQueryExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
 	if stored.Status != commonExecution.ExecutionStatusFailed || stored.ErrorDetails["code"] != "develop.query.lease_missing" {
 		t.Fatalf("recovered execution = %#v", stored)
 	}
+	assertQueryEvents(t, db, execution.ExecutionID)
 }
 
 func newQueryExecutionTestDB(t *testing.T) *gorm.DB {

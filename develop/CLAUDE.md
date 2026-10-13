@@ -44,6 +44,14 @@ TaskExecutionRepository（统一执行记录持久化）
   └─ common.task_executions 表（module=develop）
 ```
 
+### Query 过程事件
+
+Query 的既有 bounded lease 队列统一写入 `common.execution_events`：实际 claim 写 started，执行查询阶段写仅含 progress 的进度事件，完成和过期收敛写唯一终态。事件与对应 execution 及任务最近执行摘要在同一事务提交；事件存储失败回滚这些事实，过期或错配 lease 不得写入。授权附加与心跳不追加事件，Query 没有稳定步骤身份时不把自由文本 current_step 复制为 step_id；事件不包含查询、参数、业务结果或授权引用。无有效 lease 的遗留 running 记录只收敛失败概览，不补造过程。读取继续使用 Monitor 的 Owner 授权入口与共享 30 天维护；Workflow／Notebook 的执行模型另行确认，不能通过无 lease 追加事件绕过。验证使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`，Query PostgreSQL 事件回归须由后者的名称筛选命中；既有 Go／Develop PostgreSQL CI 自动覆盖，不新增 API 或存储路径，确定性验证不代替真实 T4。
+
+真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
+
+2026-10-13 本地 Query 事件接入验证：平台 T0 在固定版本审计工具使用经官方 SHA-256 校验的临时 wheel 后通过；`make test-go` 全仓 Go T1、`make test-develop-frontend`（42 项浏览器及构建）、`make test-develop-postgres`（含 11 组新增事件事务回归）、`make test-transfer-online-runner`（65 项及 System 夹具）与执行夹具门禁通过。PostgreSQL 同时验证旧队列与受保护表结果；全部新场景以事务回滚清理，不新建本地 database。首次模块聚合因工具下载失败，第二次在 T1 的本地时区过期夹具失败；修正为 UTC 后上述各层标准入口通过，模块聚合整体未重跑，不把失败记录改记为通过。旧 PostgreSQL 队列夹具的纳秒租户 ID 已调整到现有事件表整数范围。Query 新事件的真实 Hosted T4 尚未运行，Workflow／Notebook、180 天概览清理未包含在本轮。
+
 ### 算子发现服务
 
 Develop 模块按具体工作流运行时实例聚合算子定义，用于工作流画布。当前内置运行时包括 GeoPython Workflow、Spark Workflow、SuperMap Workflow，以及 Model3D、PointCloud 等专用运行时；用户自研 `addp.workflow/v1` 运行时也走同一发现链路。

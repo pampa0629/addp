@@ -14,6 +14,43 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("DEVELOP_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("DEVELOP_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqlDB.Close() })
+	runQueryEventCases(t, func(t *testing.T) *gorm.DB {
+		tx := db.Begin()
+		if tx.Error != nil {
+			t.Fatal(tx.Error)
+		}
+		t.Cleanup(func() {
+			if err := tx.Rollback().Error; err != nil {
+				t.Errorf("rollback Query event test transaction: %v", err)
+			}
+		})
+		if err := commonExecution.EnsureStore(tx); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.AutoMigrate(&models.DevTask{}); err != nil {
+			t.Fatal(err)
+		}
+		return tx
+	})
+}
+
 func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("DEVELOP_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -40,7 +77,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	policyRepo := NewQueryPolicyRepository(tx)
-	tenant := uint(time.Now().UnixNano())
+	tenant := uint(time.Now().UnixNano()%1_000_000_000 + 100)
 	policy := &models.QueryPolicy{ScopeType: "tenant", TenantID: &tenant, DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, UpdatedBy: 1}
 	if err := policyRepo.Save(context.Background(), policy, 0); err != nil {
 		t.Fatal(err)
@@ -61,7 +98,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 	createdAt := time.Unix(1, 0).UTC()
 	for index, source := range []string{commonExecution.ModuleDevelop, commonExecution.ModuleOrchestrator} {
 		execution := &commonExecution.TaskExecution{
-			TenantID: int(time.Now().UnixNano()) + index, ExecutionID: uuid.NewString(),
+			TenantID: int(tenant) + index, ExecutionID: uuid.NewString(),
 			Module: commonExecution.ModuleDevelop, TaskType: commonExecution.TaskTypeQuery, Source: source,
 			Status: commonExecution.ExecutionStatusPending, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 			TriggerType: commonExecution.TriggerTypeManual, MaxAttempts: 1,
@@ -87,7 +124,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 
 	for index, engineID := range []int{9, 10} {
 		execution := &commonExecution.TaskExecution{
-			TenantID: int(time.Now().UnixNano()) + index, ExecutionID: uuid.NewString(),
+			TenantID: int(tenant) + index, ExecutionID: uuid.NewString(),
 			Module: commonExecution.ModuleDevelop, TaskType: commonExecution.TaskTypeQuery,
 			Source: commonExecution.ModuleDevelop, Status: commonExecution.ExecutionStatusPending,
 			ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual,
@@ -114,7 +151,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 
 	startedAt := time.Unix(3, 0).UTC()
 	unleased := &commonExecution.TaskExecution{
-		TenantID: int(time.Now().UnixNano()), ExecutionID: uuid.NewString(),
+		TenantID: int(tenant), ExecutionID: uuid.NewString(),
 		Module: commonExecution.ModuleDevelop, TaskType: commonExecution.TaskTypeQuery, Source: commonExecution.ModuleDevelop,
 		Status: commonExecution.ExecutionStatusRunning, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		TriggerType: commonExecution.TriggerTypeManual, StartedAt: &startedAt,

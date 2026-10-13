@@ -211,9 +211,7 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
 		return err
 	}
-	if err := s.queries.UpdateWithLease(ctx, lease, map[string]interface{}{
-		"progress": 30, "current_step": "执行查询",
-	}); err != nil {
+	if err := s.queries.UpdateProgressWithLease(ctx, lease, 30, "执行查询"); err != nil {
 		return err
 	}
 	engine, err := s.executor.sqlEngine.executionEngine(ctx, uint(execution.TenantID), executionID, *engineID, authorization)
@@ -324,9 +322,7 @@ func (s *QueryExecutionService) executeAndComplete(
 	authorization *IssuedSQLExecutionAuthorization,
 	startedAt time.Time,
 ) error {
-	if err := s.queries.UpdateWithLease(ctx, lease, map[string]interface{}{
-		"progress": 30, "current_step": "执行查询",
-	}); err != nil {
+	if err := s.queries.UpdateProgressWithLease(ctx, lease, 30, "执行查询"); err != nil {
 		return err
 	}
 	result, errorMessage, rowsAffected, errorCode := s.executor.executeQuery(
@@ -352,10 +348,7 @@ func (s *QueryExecutionService) attachAuthorization(
 		return fmt.Errorf("Develop query authorization lineage does not match the parent execution")
 	}
 	expiresAt := authorization.ExpiresAt.UTC()
-	if err := s.queries.UpdateWithLease(ctx, lease, map[string]interface{}{
-		"execution_authorization_id": authorization.AuthorizationID,
-		"authorization_expires_at":   expiresAt,
-	}); err != nil {
+	if err := s.queries.AttachAuthorizationWithLease(ctx, lease, authorization.AuthorizationID, expiresAt); err != nil {
 		return err
 	}
 	execution.ExecutionAuthorizationID = &authorization.AuthorizationID

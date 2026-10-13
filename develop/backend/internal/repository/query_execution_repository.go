@@ -93,6 +93,9 @@ func (r *QueryExecutionRepository) ClaimNext(
 		if err != nil || execution == nil {
 			return err
 		}
+		if err := commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"}); err != nil {
+			return err
+		}
 		return updateDevTaskExecutionSummary(tx, execution, commonExecution.ExecutionStatusRunning, now)
 	})
 	return execution, lease, err
@@ -153,8 +156,20 @@ func (r *QueryExecutionRepository) AttemptIsTerminal(ctx context.Context, lease 
 	return commonExecution.AttemptIsTerminal(ctx, r.db, lease)
 }
 
-func (r *QueryExecutionRepository) UpdateWithLease(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
-	return commonExecution.UpdateWithLease(ctx, r.db, lease, fields)
+func (r *QueryExecutionRepository) AttachAuthorizationWithLease(ctx context.Context, lease commonExecution.Lease, authorizationID int64, expiresAt time.Time) error {
+	return commonExecution.UpdateWithLease(ctx, r.db, lease, map[string]interface{}{
+		"execution_authorization_id": authorizationID,
+		"authorization_expires_at":   expiresAt.UTC(),
+	})
+}
+
+func (r *QueryExecutionRepository) UpdateProgressWithLease(ctx context.Context, lease commonExecution.Lease, progress int, currentStep string) error {
+	if progress < 0 || progress > 100 {
+		return fmt.Errorf("Develop query progress must be between 0 and 100")
+	}
+	return commonExecution.UpdateWithEvent(ctx, r.db, lease,
+		map[string]interface{}{"progress": progress, "current_step": currentStep},
+		commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
 func (r *QueryExecutionRepository) CompleteWithLease(
@@ -165,11 +180,12 @@ func (r *QueryExecutionRepository) CompleteWithLease(
 	completedAt time.Time,
 	fields map[string]interface{},
 ) error {
-	if execution == nil {
-		return fmt.Errorf("develop query execution is required")
+	if execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID ||
+		execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
+		return fmt.Errorf("Develop query completion must match its execution lease")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}
 		return updateDevTaskExecutionSummary(tx, execution, status, completedAt)
@@ -204,7 +220,7 @@ func (r *QueryExecutionRepository) RecoverExpired(ctx context.Context, now time.
 			if item.StartedAt != nil {
 				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
 			}
-			if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
 				return err
 			}
 			if err := updateDevTaskExecutionSummary(tx, &item, commonExecution.ExecutionStatusFailed, now); err != nil {

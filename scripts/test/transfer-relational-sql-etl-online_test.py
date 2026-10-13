@@ -21,6 +21,43 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    @staticmethod
+    def query_events(identifier):
+        return {"has_more": False, "next_cursor": 3, "retained_after": "2026-09-13T00:00:00Z", "items": [
+            {"id": index, "execution_id": identifier, "attempt": 1, "occurred_at": "2026-10-13T00:00:00Z",
+             "kind": kind, "counters": {"progress": 30} if kind == "progress" else {}}
+            for index, kind in enumerate(("started", "progress", "completed"), 1)]}
+
+    def test_query_process_events_reject_private_incomplete_and_mismatched_facts(self):
+        identifier = str(uuid.uuid4())
+        payload = self.query_events(identifier)
+        ONLINE.validate_query_events(payload, identifier)
+        mutations = [
+            lambda value: value.update(metadata={"private": "secret"}),
+            lambda value: value.update(has_more=True),
+            lambda value: value.update(next_cursor=2),
+            lambda value: value.update(retained_after="invalid"),
+            lambda value: value["items"].pop(),
+            lambda value: value["items"][0].update(execution_id=str(uuid.uuid4())),
+            lambda value: value["items"][0].update(attempt=2),
+            lambda value: value["items"][0].update(attempt=True),
+            lambda value: value["items"][0].update(kind="completed"),
+            lambda value: value["items"][1].update(id=1),
+            lambda value: value["items"][1].update(step_id="private query"),
+            lambda value: value["items"][1].update(counters={"progress": 30.0}),
+            lambda value: value["items"][1].update(counters={"progress": 30, "sample": "secret"}),
+            lambda value: value["items"][2].update(occurred_at="2026-09-01T00:00:00Z"),
+            lambda value: value["items"][2].update(occurred_at="2026-10-13T00:00:00"),
+        ]
+        for private in ("execution_config", "runtime_response", "execution_authorization_id", "lease_token", "message"):
+            mutations.append(lambda value, key=private: value["items"][0].update({key: "secret"}))
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index):
+                value = copy.deepcopy(payload)
+                mutate(value)
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_query_events(value, identifier)
+
     def test_transfer_professional_response_rejects_private_facts_at_each_boundary(self):
         execution, _, _ = self.multi_source_execution()
         ONLINE.assert_transfer_execution_projection(execution)
@@ -777,6 +814,10 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     self.assertIn("field_name=person_nickname", path)
                     return SimpleNamespace(payload={})
                 self.assertTrue(path.startswith("/api/v1/monitor/executions/by-execution-id/"))
+                if path.endswith("/events"):
+                    identifier = path.removesuffix("/events").rsplit("/", 1)[1]
+                    self.assertIn(identities[identifier][0], ("dim", "dwd"))
+                    return SimpleNamespace(payload=self.query_events(identifier))
                 identifier = path.rsplit("/", 1)[1]
                 key, round_id = identities[identifier]
                 module, task = {"ods": ("transfer", 7), "dim": ("develop", 8), "dwd": ("develop", 9)}[key]

@@ -691,6 +691,42 @@ def verify_historical_schema(client, item_id, hashes, as_of, expected_fields, ta
     return graphs
 
 
+def validate_query_events(payload, identifier):
+    page = _object(payload, "Query process events")
+    if set(page) != {"items", "next_cursor", "has_more", "retained_after"} or page["has_more"] is not False:
+        raise SuiteError("Query event page must be complete and closed")
+    items = _array(page["items"], "Query process events")
+    if len(items) != 3:
+        raise SuiteError("Query must record one started, progress and completed event")
+    try:
+        retained = datetime.fromisoformat(str(page["retained_after"]).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SuiteError("Query event retention must be RFC3339") from error
+    if retained.tzinfo is None:
+        raise SuiteError("Query event retention must have a timezone")
+    previous_id, previous_time = 0, retained
+    for event, kind in zip(items, ("started", "progress", "completed")):
+        event = _object(event, "Query process event")
+        required = {"id", "execution_id", "attempt", "occurred_at", "kind", "counters"}
+        if not required <= set(event) or set(event) - required - {"step_id"}:
+            raise SuiteError("Query event contains private or undeclared fields")
+        expected = {"progress": 30} if kind == "progress" else {}
+        if (type(event["id"]) is not int or event["id"] <= previous_id or event["execution_id"] != identifier
+                or type(event["attempt"]) is not int or event["attempt"] != 1 or event["kind"] != kind
+                or event.get("step_id", "") != "" or event["counters"] != expected
+                or any(type(value) is not int for value in _object(event["counters"], "Query event counters").values())):
+            raise SuiteError("Query event identity, sequence or closed counters mismatch")
+        try:
+            occurred = datetime.fromisoformat(str(event["occurred_at"]).replace("Z", "+00:00"))
+        except ValueError as error:
+            raise SuiteError("Query event time must be RFC3339") from error
+        if occurred.tzinfo is None or occurred < previous_time:
+            raise SuiteError("Query event times must be ordered inside the retained window")
+        previous_id, previous_time = event["id"], occurred
+    if type(page["next_cursor"]) is not int or page["next_cursor"] != previous_id:
+        raise SuiteError("Query event cursor must identify the last verified event")
+
+
 def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeout, owned_paths):
     # Existing-table writes use the sole TableResultProvider route; no DDL or inferred DAG edges.
     ods_locator = mongodb["target_locator"]
@@ -759,6 +795,9 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
             if observed.get("execution_id") != identifier:
                 raise SuiteError("Monitor observation has the wrong execution identity")
             validate_orchestrated_child(observed, parent_id, module, task_id)
+            if module == "develop":
+                event_page = client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(identifier)}/events", (200,)).payload
+                validate_query_events(event_page, identifier)
             ids[key], executions[key] = identifier, execution
         seen.update([parent_id, *ids.values()])
         source_locator = mongodb["source_locator"]
@@ -810,7 +849,7 @@ def run_orchestrated_lineage(client, engine_id, tenant_id, mongodb, name, timeou
         stable_hashes = dict(hashes)
         all_edges = ods_edges | {(ods_id, source, dim_id, target, transformation, ids["dim"]) for _, source, target, transformation in dim_mappings} | {(dim_id if port == "input.dim" else ods_id, source, dwd_id, target, transformation, ids["dwd"]) for port, source, target, transformation in dwd_mappings}
         wait_resource_chain(client, dwd_id, {(source_id, ods_id, ids["ods"]), (ods_id, dim_id, ids["dim"]), (ods_id, dwd_id, ids["dwd"]), (dim_id, dwd_id, ids["dwd"])}, timeout)
-        rounds.append({"parent_execution_id": parent_id, "completed_at": parent.get("completed_at"), "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2, "schema_snapshot_hash": hashes[dwd_id]})
+        rounds.append({"parent_execution_id": parent_id, "completed_at": parent.get("completed_at"), "child_execution_ids": ids, "dim_rows": 3, "dwd_rows": 2, "schema_snapshot_hash": hashes[dwd_id], "query_events_verified": 2})
         # Manager verifies the latest active ODS edges after the enclosing DAG rerun as well.
         mongodb.update(expected_edges=sorted(ods_edges), latest_execution_id=ids["ods"], schema_snapshot_hash=ods_hash)
     after_write = verify_historical_schema(client, dwd_id, old_hashes, historical_as_of, old_fields, "closed")
