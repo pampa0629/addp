@@ -47,7 +47,7 @@ var consumerPermissions = []string{
 
 var securityPermissions = []string{
 	"security.assessment.read", "security.assessment.create", "security.detector.read",
-	"security.enrollment.create", "security.enrollment.read", "security.finding.read", "security.finding.update",
+	"security.enrollment.create", "security.enrollment.read", "security.enrollment.update", "security.finding.read", "security.finding.update",
 	"security.protection_baseline.read", "security.protection_baseline.update",
 	"security.policy.read", "security.policy.create", "security.policy.update", "security.policy.delete",
 	"security.sensitive_data_type.create", "security.sensitive_data_type.delete", "security.sensitive_data_type.read",
