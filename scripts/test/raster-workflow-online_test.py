@@ -259,7 +259,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_all_confirmed_writes_archive_strict_three_party_sizes(self):
         report = self.run_scene()
         records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]
-        # 28 final single rasters plus the initial replaced raster, eight tile writes,
+        # 30 final single rasters plus the initial replaced raster, eight tile writes,
         # and six confirmed tiles across the three failed executions.
         self.assertEqual(len(records), 45)
         self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 40)
@@ -306,7 +306,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([edge['source_item_id'] for edge in case['lineage']],[10,12])
         self.assertEqual([edge['target_item_id'] for edge in case['lineage']],[47,47])
         self.assertEqual(case['physical']['band_valid_pixels'],[65535,65536])
-        self.assertEqual(len(case['physical']['preserved_sha256']),27)
+        self.assertEqual(len(case['physical']['preserved_sha256']),29)
         self.assertEqual([b['case_name'] for b in case['browser']],['update-valid-base','update-valid-patch'])
         for b in case['browser']:
             self.assertEqual(len(b['source_locators']),2)
@@ -317,7 +317,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             ['raster_load','raster_load','raster_clip','raster_align','raster_update','raster_build_overviews','raster_save'])
         self.assertEqual(definition['tasks'][4]['params']['input_raster']['$ref'],'base')
         self.assertEqual(definition['tasks'][4]['params']['update_raster']['$ref'],'align')
-        self.assertTrue(all(len(c['physical']['preserved_sha256'])==27 for c in report['footprint_cases']))
+        self.assertTrue(all(len(c['physical']['preserved_sha256'])==29 for c in report['footprint_cases']))
 
     def test_update_rejects_size_band_validity_sources_and_prior_mutation(self):
         for fault in ('declared-size','fractional-size','item-size','grid','colors','second-band','levels','source','prior','input'):
@@ -379,7 +379,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual(case['physical']['band_valid_pixels'], [53247, 53247])
         self.assertEqual(case['physical']['invalid_pixels'], 12289)
         self.assertEqual(case['physical']['color_interpretations'], ['Gray', 'Undefined', 'Alpha'])
-        self.assertEqual(len(case['physical']['preserved_sha256']), 26)
+        self.assertEqual(len(case['physical']['preserved_sha256']), 28)
         definition = [body['content']['workflow_definition'] for method, path, body in self.client.calls
             if method == 'POST' and path == '/api/v1/develop/executions' and any(task['operator'] == 'raster_clip' and task['params'].get('mode') == 'outside' for task in body['content']['workflow_definition']['tasks'])][-1]
         self.assertEqual([task['operator'] for task in definition['tasks']],
@@ -420,7 +420,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(case['browser']['source_name'], m.fixture.footprint_source_name(case['case_name']))
             self.assertEqual(case['browser']['result_kind'], 'json')
             self.assertEqual(case['browser']['expected_result'], case['json_result'])
-            self.assertEqual(len(case['physical']['preserved_sha256']), 27)
+            self.assertEqual(len(case['physical']['preserved_sha256']), 29)
         definitions = [body['content']['workflow_definition'] for method, path, body in self.client.calls
             if method == 'POST' and path == '/api/v1/develop/executions'
             and body['content']['workflow_definition']['tasks'][-1]['operator'] == 'raster_footprint']
@@ -883,7 +883,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'replacement browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
-        self.assertEqual(len(checked), 53)
+        self.assertEqual(len(checked), 55)
 
     def test_persistent_lineage_and_all_browsers_finish_after_physical_writes(self):
         request = self.client.request
@@ -893,14 +893,14 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         def converged_request(method, path, expected, body=None):
             if path.startswith('/api/v1/meta/lineage/graph'):
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 46 if 'verify-tiles-replace' in self.physical_actions else 45)
+                self.assertEqual(len(self.client.executions), 48 if 'verify-tiles-replace' in self.physical_actions else 47)
                 graphs.append(path)
             return request(method, path, expected, body)
 
         def browser(repo, env, evidence):
             if evidence.get('result_kind') != 'json':
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 46 if evidence['case_name'].startswith('tiles-replace-') else 45)
+                self.assertEqual(len(self.client.executions), 48 if evidence['case_name'].startswith('tiles-replace-') else 47)
             browsers.append(evidence['case_name'])
             return evidence
 
@@ -908,9 +908,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
             lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
         self.assertEqual(report['result'], 'passed')
-        self.assertEqual(len(browsers), 53)
-        self.assertEqual(len(set(browsers)), 53)
-        self.assertEqual(len(graphs), 39)
+        self.assertEqual(len(browsers), 55)
+        self.assertEqual(len(set(browsers)), 55)
+        self.assertEqual(len(graphs), 41)
         self.assertEqual(report['browser']['case_name'], 'band-math')
         for case in report['tiling_cases']:
             self.assertTrue(case['lineage'])
@@ -955,7 +955,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'last tile browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'})
-        self.assertEqual(len(checked), 49)
+        self.assertEqual(len(checked), 51)
         self.assertIn('verify-tiles', self.physical_actions)
 
     def test_tiles_reject_wrong_grid_partial_manifest_scope_locator_and_missing_scan(self):
@@ -1626,6 +1626,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def test_graph_rejects_reference_relationship_for_spatial_derivation(self):
         from unittest.mock import patch
+        self.run_scene()
         self.client.relation_kind = 'reference'
         with patch.object(m.time, 'monotonic', side_effect=[0, 0, 2]), patch.object(m.time, 'sleep'):
             with self.assertRaises(m.SuiteError):
