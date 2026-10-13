@@ -83,6 +83,7 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "fixtures/manager").mkdir(parents=True)
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.business / "scripts/online-manager-minio-fixture.sh")
+        shutil.copy2(SCRIPT.with_name("online-content-boundary-fixture.py"), self.business / "scripts/online-content-boundary-fixture.py")
         mesh = self.root / "engines/model3d-workflow/tests/fixtures/mesh"
         mesh.mkdir(parents=True)
         shutil.copy2(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx", mesh / "box.fbx")

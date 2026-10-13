@@ -281,6 +281,7 @@ seed_fixture() {
   MODEL_FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-model3d.XXXXXX")
   trap 'rm -rf "$MODEL_FIXTURE_DIR"' EXIT
   generate_fixtures "$MODEL_FIXTURE_DIR"
+  python3 "$SCRIPT_DIR/online-content-boundary-fixture.py" "$MODEL_FIXTURE_DIR"
   for format in ifc osgb skp max; do
     mkdir -p "$MODEL_FIXTURE_DIR/$format"
     cp "${BUSINESS_DIR}/fixtures/manager/addp_online_model_fixture.${format}" "$MODEL_FIXTURE_DIR/$format/model.$format"
@@ -334,6 +335,15 @@ seed_fixture() {
     mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$format_object" >/dev/null
   done
   local model_object
+  local boundary_object
+  while IFS= read -r boundary_object; do
+    boundary_object=${boundary_object#"$MODEL_FIXTURE_DIR/"}
+    docker_fixture run --rm --entrypoint mc --network "$network" \
+      -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
+      -v "$MODEL_FIXTURE_DIR:/fixture:ro" "$MC_IMAGE" cp --quiet "/fixture/$boundary_object" \
+      "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$boundary_object"
+    mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$boundary_object" >/dev/null
+  done < <(find "$MODEL_FIXTURE_DIR/scan-boundary" -type f | LC_ALL=C sort)
   for model_object in "${MODEL_OBJECTS[@]}"; do
     docker_fixture run --rm \
       --entrypoint mc \

@@ -960,6 +960,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             + job, encoding="utf-8")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
+        for name in ("online-manager-nfs-fixture.sh", "online-content-boundary-fixture.py"):
+            source = SCRIPT.parents[2] / "business/scripts" / name
+            (fixture.parent / name).write_text(source.read_text(), encoding="utf-8")
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
             "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
@@ -974,7 +977,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v8\n',
+            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v8 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -995,6 +998,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (hosted, "start_online_model3d_runtime", "Hosted profile"),
+            (hosted, "bash business/scripts/online-manager-nfs-fixture.sh start", "Hosted profile"),
+            (hosted, "bash business/scripts/online-manager-nfs-fixture.sh stop", "Hosted profile"),
+            (owner, "verify_content_boundaries", "owner contract"),
+            (owner, "boundaries += verify_content_boundaries", "owner contract"),
+            (owner, "content-boundaries.json", "owner contract"),
             (fixture, "texture.png", "fixture contract"),
             (fixture, "format-samples/gbk-quoted.csv", "fixture contract"),
             (fixture, "format-samples/gbk-quoted.tsv", "fixture contract"),

@@ -24,6 +24,14 @@ class HostedManagerGateTest(unittest.TestCase):
               [ "${ADDP_TEST_FIXTURE_FAIL:-0}" != 1 ] || exit 1
             fi
         ''')
+        self.host._write_repository_script("business/scripts/online-manager-nfs-fixture.sh", """
+            #!/usr/bin/env bash
+            echo "nfs-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = start ]; then
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json"
+              [ "${ADDP_TEST_NFS_FIXTURE_FAIL:-0}" != 1 ] || exit 1
+            fi
+        """)
         self.host._write_repository_script("scripts/infra/up.sh", '''
             #!/usr/bin/env bash
             set -euo pipefail
@@ -96,13 +104,25 @@ class HostedManagerGateTest(unittest.TestCase):
             if os.environ.get('ADDP_TEST_RASTER_SEED_FAIL') == '1': sys.exit(1)
         """)
         self.host._write_repository_script('.env.example', 'GEOPYTHON_WORKFLOW_PORT=8099\nMODEL3D_WORKFLOW_PORT=8101\n')
+        self.host._write_repository_script('scripts/test/online-engine-registration.py', """
+            import argparse
+            parser = argparse.ArgumentParser()
+            parser.add_argument('--descriptor', required=True)
+            parser.add_argument('--output', required=True)
+            args = parser.parse_args()
+            engine = 18 if args.descriptor.endswith('manager-nfs-engine.json') else 17
+            with open(args.output, 'w') as stream: stream.write(f'ADDP_ONLINE_CONSUMER_ENGINE_ID={engine}\\n')
+        """)
         self.host._executable('make', """
             #!/usr/bin/env bash
+            set -euo pipefail
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = build-images ]; then
               touch "${ADDP_TEST_GATE_TRACE}.image"
               exit 0
             fi
+            [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
+            [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         """)
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
@@ -140,6 +160,16 @@ class HostedManagerGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("runtime diagnostic for addp-manager-model3d-runtime",
                       (self.host.artifacts / "model3d-runtime.log").read_text())
+
+    def test_nfs_fixture_failure_still_cleans_both_storage_fixtures(self):
+        result = self.run_gate(ADDP_TEST_NFS_FIXTURE_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("nfs-fixture:start", trace)
+        self.assertIn("nfs-fixture:stop", trace)
+        self.assertIn("source-fixture:stop", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_model3d_log_failure_still_cleans_all_owned_resources(self):
         result = self.run_gate(ADDP_TEST_MODEL3D_LOG_FAIL="1")

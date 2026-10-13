@@ -25,6 +25,7 @@ start_online_model3d_runtime() (
 )
 stop_online_fixture() {
   local cleanup_status=0 image
+  run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
   if docker container inspect addp-manager-raster-verifier >/dev/null 2>&1; then
     if [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-fixture" }}' addp-manager-raster-verifier)" = "$ONLINE_SUITE" ]; then
       run_logged docker rm -fv addp-manager-raster-verifier || cleanup_status=1
@@ -77,6 +78,7 @@ run_logged docker push localhost:5001/python:3.11-slim
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged bash business/scripts/online-manager-minio-fixture.sh start
+run_logged bash business/scripts/online-manager-nfs-fixture.sh start
 application_owned=1
 for start_target in -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
@@ -91,6 +93,10 @@ source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
-unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 export ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+run_logged python3 scripts/test/online-engine-registration.py \
+  --descriptor "$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json" --output "$ADDP_ONLINE_SECRET_DIR/nfs-engine.env"
+source "$ADDP_ONLINE_SECRET_DIR/nfs-engine.env"
+export ADDP_ONLINE_MANAGER_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

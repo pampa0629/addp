@@ -307,6 +307,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',
         'bash business/scripts/online-manager-minio-fixture.sh start',
         'bash business/scripts/online-manager-minio-fixture.sh stop',
+        'bash business/scripts/online-manager-nfs-fixture.sh start',
+        'bash business/scripts/online-manager-nfs-fixture.sh stop',
+        'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID',
         'go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage',
         'scripts/test/online-engine-registration.py',
         'playwright install --with-deps chromium',
@@ -317,10 +320,14 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     job = re.search(r"(?ms)^  manager-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if not job or "runs-on: ubuntu-24.04" not in job.group("body"):
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
+    if "nfs-kernel-server" not in job.group("body"):
+        raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
     if "inputs.suite != 'manager-internal-artifact-lineage'" not in workflow:
         raise RegistrationError("manager-internal-artifact-lineage must not also dispatch on self-hosted")
     for relative in (
         "business/scripts/online-manager-minio-fixture.sh",
+        "business/scripts/online-manager-nfs-fixture.sh",
+        "business/scripts/online-content-boundary-fixture.py",
         "scripts/test/manager-internal-artifact-lineage-online.py",
         "console/frontend/playwright.online.config.js",
         "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js",
@@ -383,6 +390,11 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "structured_json_sources",
         "MODEL_FORMATS",
         "MESH_SOURCE_FACTS",
+        "verify_content_boundaries",
+        "boundaries = verify_content_boundaries",
+        "boundaries += verify_content_boundaries",
+        "content-boundaries.json",
+        "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
         "addp.manager-internal-artifact-lineage/v8",
     ):
@@ -390,6 +402,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             raise RegistrationError(
                 f"manager-internal-artifact-lineage owner contract is missing {fragment}"
             )
+    nfs = (repository / "business/scripts/online-manager-nfs-fixture.sh").read_text(encoding="utf-8")
+    for fragment in ("GITHUB_ACTIONS", "ADDP_ONLINE_HOSTED", "127.0.0.1(ro,sync", ".addp-online-owner", "online-content-boundary-fixture.py", "NFS export cleanup has residuals"):
+        if fragment not in nfs:
+            raise RegistrationError(f"Manager NFS lifecycle contract is missing {fragment}")
     browser = (
         repository
         / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"

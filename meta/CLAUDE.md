@@ -92,6 +92,8 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 所有 DataItem 的 basic / deep 扫描（含未变化跳过）与现有单项刷新共用 Indexer 的技术元数据投影构造器，经 Manager 正式客户端提交，不发送 attributes 或任何样本值；深度扫描分别提交技术快照与正文快照，正文请求不夹带技术字段或完整 attributes。不得保留 table / collection 的独立投影路线。集合 basic 扫描保留已有深度结构；历史缺投递集合经确认后使用精确 collection locator 的 `basic + force` manual execution 补录，不改用 deep 单项刷新采样。投递告警与 Meta 扫描完成分开核查，详见元数据扫描机制规范。
 
+清单可确定的组合边界由既有 Manager Hosted T4 复验：NFS、MinIO 各覆盖目录与显式 refs 的 basic→deep→basic，断言 ID、fingerprint、父节点、组成、deep 事实保留及范围外 item 不变。Business owner 使用同一小型 Shapefile 生成器准备两种存储，临时 NFS export 仅允许 GitHub Hosted Linux，退出删除 export、数据目录及凭据；不得在个人环境启动该 fixture。确定性门禁为 `make test-manager-online-runner`，真实入口仍为 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，报告为 `content-boundaries.json`。新增 Hosted NFS 路线实际运行通过前，不计为 T4 通过。
+
 ### 主要扫描链路
 
 对象存储 catalog scan：

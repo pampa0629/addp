@@ -905,6 +905,6 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
-	@bash -n scripts/test/online-hosted-manager-gate.sh
-	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
+	@bash -n scripts/test/online-hosted-manager-gate.sh business/scripts/online-manager-nfs-fixture.sh
+	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
