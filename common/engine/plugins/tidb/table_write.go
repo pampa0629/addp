@@ -35,3 +35,9 @@ func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.Connect
 func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
 	return p.tableWriter().UpsertBatch(ctx, connInfo, path, batch, opts)
 }
+
+var _ plugin.TableWriteDefinitionChecker = (*Plugin)(nil)
+
+func (p *Plugin) CheckTableWriteDefinition(definition plugin.TableWriteDefinition) plugin.TableWriteDefinitionReport {
+	return p.tableWriter().CheckTableWriteDefinition(definition)
+}

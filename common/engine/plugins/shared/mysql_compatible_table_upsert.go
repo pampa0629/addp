@@ -49,6 +49,9 @@ func (w MySQLCompatibleTableWriter) PrepareTableUpsertWithTargetPolicy(ctx conte
 	if err != nil {
 		return err
 	}
+	if err := w.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return err
+	}
 	database, table, err := w.tablePathParts(path)
 	if err != nil {
 		return err
@@ -105,6 +108,9 @@ func (w MySQLCompatibleTableWriter) UpsertBatch(ctx context.Context, connInfo pl
 	}
 	keys, err := w.validateTableUpsertOptions(opts)
 	if err != nil {
+		return err
+	}
+	if err := w.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
 		return err
 	}
 	database, table, err := w.tablePathParts(path)

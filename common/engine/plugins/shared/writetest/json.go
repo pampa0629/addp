@@ -64,6 +64,31 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 		{[]byte(`[1,"two"]`), `[1,"two"]`}, {json.RawMessage(`{"raw":true}`), `{"raw":true}`},
 		{"null", `null`}, {[]byte(nil), ""}, {json.RawMessage(nil), ""},
 	}
+	// A native array must fail before preparation can create a target table.
+	t.Run("invalid_definition_before_ddl", func(t *testing.T) {
+		table := fmt.Sprintf("invalid_array_%d", time.Now().UnixNano())
+		path := plugin.TabularItemPath(0, plugin.EngineCatalogTermDatabase, database, table)
+		qualified := "`" + strings.ReplaceAll(database, "`", "``") + "`.`" + table + "`"
+		t.Cleanup(func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			if _, err := db.ExecContext(cleanupCtx, "DROP TABLE IF EXISTS "+qualified); err != nil {
+				t.Errorf("cleanup invalid definition table: %v", err)
+			}
+			var count int
+			if err := db.QueryRowContext(cleanupCtx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?", database, table).Scan(&count); err != nil || count != 0 {
+				t.Errorf("invalid definition cleanup not proven: count=%d error=%v", count, err)
+			}
+		})
+		err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, Nullable: true}}})
+		if err == nil || !strings.Contains(err.Error(), `column "payload": field_definition_unsupported`) {
+			t.Fatalf("native array definition reached DDL: %v", err)
+		}
+		var count int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?", database, table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("invalid definition created target: count=%d error=%v", count, err)
+		}
+	})
 	methods := []string{"session", "upsert"}
 	if _, ok := p.(plugin.BatchWritableProvider); ok {
 		methods = append(methods, "batch")

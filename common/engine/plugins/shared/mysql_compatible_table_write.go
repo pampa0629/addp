@@ -45,6 +45,9 @@ func (w MySQLCompatibleTableWriter) PrepareTableWrite(ctx context.Context, connI
 	if HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
 		return fmt.Errorf("%s table write does not support spatial fields", w.engineType())
 	}
+	if err := w.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(opts)).UnsupportedError(); err != nil {
+		return err
+	}
 	database, table, err := w.tablePathParts(path)
 	if err != nil {
 		return err
@@ -104,6 +107,9 @@ func (w MySQLCompatibleTableWriter) OpenTableWriteSession(ctx context.Context, c
 		return nil, fmt.Errorf("%s table write session does not support spatial fields", w.engineType())
 	}
 
+	if err := w.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return nil, err
+	}
 	database, table, err := w.tablePathParts(path)
 	if err != nil {
 		return nil, err
@@ -395,6 +401,8 @@ func (w MySQLCompatibleTableWriter) sqlTypeForField(field datatype.FieldInfo) (s
 	}
 	fieldType := datatype.ParseFieldType(string(field.Type))
 	switch fieldType {
+	case datatype.FieldTypeArray:
+		return "", fmt.Errorf("%s table write does not support native array field %q; declare json explicitly to preserve containers", w.engineType(), field.Name)
 	case datatype.FieldTypeTime:
 		return "TIME(6)", nil
 	case datatype.FieldTypeTimestamp:

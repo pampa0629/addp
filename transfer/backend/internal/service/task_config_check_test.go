@@ -76,8 +76,8 @@ func checkFixtureReport(t *testing.T, svc *TaskConfigCheckService, subject autho
 }
 
 func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
-	for _, engineType := range []string{"opengauss", "kingbase"} {
-		for _, scenario := range []string{"json", "invalid_constant", "object_array", "unknown_source_with_invalid_constant", "geometry"} {
+	for _, engineType := range []string{"opengauss", "kingbase", "tidb", "oceanbase"} {
+		for _, scenario := range []string{"json", "invalid_constant", "object_array", "unknown_source_with_invalid_constant", "geometry", "append_json", "append_text", "source_text"} {
 			t.Run(engineType+"/"+scenario, func(t *testing.T) {
 				svc, facts, subject, body := configCheckFixture(t)
 				registered, err := plugin.Get(engineType)
@@ -109,12 +109,30 @@ func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
 					facts.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON, NativeType: "jsonb[]", Nullable: true}}})
 				case "geometry":
 					field["target_type"] = "geometry"
+				case "append_json", "append_text":
+					config["target"].(map[string]interface{})["policy"].(map[string]interface{})["apply_mode"] = "append"
+					native := "jsonb"
+					if engineType == "tidb" || engineType == "oceanbase" {
+						native = "json"
+					}
+					observedType := datatype.FieldTypeJSON
+					if scenario == "append_text" {
+						native = "text"
+						observedType = datatype.FieldTypeString
+					}
+					facts.items[2].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: observedType, NativeType: native, Nullable: true}}})
+				case "source_text":
+					facts.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true}}})
+
 				}
 				body, _ = json.Marshal(request)
 				report := checkFixtureReport(t, svc, subject, body)
 				want := plugin.DefinitionUnsupported
-				if scenario == "json" {
+				if scenario == "json" || scenario == "append_json" {
 					want = plugin.DefinitionSupported
+				}
+				if scenario == "source_text" {
+					want = plugin.DefinitionUnknown
 				}
 				if report.Status != want || !slicesContains(report.Checked, "provider_write_definition") || facts.calls != 4 {
 					t.Fatalf("report=%+v facts calls=%d", report, facts.calls)

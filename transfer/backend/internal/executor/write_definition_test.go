@@ -8,8 +8,10 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kingbase"
+	"github.com/addp/common/engine/plugins/oceanbase"
 	"github.com/addp/common/engine/plugins/opengauss"
 	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/common/engine/plugins/tidb"
 )
 
 type forbiddenDefinitionDelete struct {
@@ -18,7 +20,7 @@ type forbiddenDefinitionDelete struct {
 }
 
 func TestProtocolWriteDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
-	for _, provider := range []engineplugin.EnginePlugin{&opengauss.Plugin{}, &kingbase.Plugin{}} {
+	for _, provider := range []engineplugin.EnginePlugin{&opengauss.Plugin{}, &kingbase.Plugin{}, &tidb.Plugin{}, &oceanbase.Plugin{}} {
 		for _, field := range []datatype.FieldInfo{
 			{Name: "members", Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON},
 			{Name: "shape", Type: datatype.FieldTypeGeometry},

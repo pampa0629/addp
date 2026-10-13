@@ -90,7 +90,7 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。
 - FileGDB/PGeo 等 container table 源只接受通用 `source.options.child_name`；planner 必须从 Meta `type_info.container.children` 校验 child 并解析 `native.table`，任务配置不得直接保存 `layer` 或 `child_table` 等 provider 私有入口。
 - overwrite / append 是 Transfer policy；删除指定资源由 `common/engine` ResourceDeleteProvider 提供。
-- native target 在删除／准备之前消费 Provider 可选的纯 `TableWriteDefinitionChecker`，拒绝已知不支持的字段声明；PostgreSQL、openGauss 与 KingbaseES 已实现，后两者沿同一协议类型检查并拒绝空间声明。没有检查接口或实际值未知不能当作通过，逐值编码、现有授权／Security 和执行时结构校验继续生效。合成 PostgreSQL 数组源到 replace 目标的拒绝及既有目标 OID／哨兵保留，由 `make test-transfer-postgres` 自动覆盖；不意味着 replace 全流程原子回滚。
+- native target 在删除／准备之前消费 Provider 可选的纯 `TableWriteDefinitionChecker`，拒绝已知不支持的字段声明；PostgreSQL、openGauss、KingbaseES、TiDB 与 OceanBase 已实现；openGauss／KingbaseES 沿同一 PG 协议检查，TiDB／OceanBase 沿同一 MySQL 非空间写入核心检查，均保留各自的空间限制。MySQL 非空间核心在连接前拒绝原生 array，不靠默认 TEXT 映射或自动改成 JSON 兜底。没有检查接口或实际值未知不能当作通过，逐值编码、现有授权／Security 和执行时结构校验继续生效。合成 PostgreSQL 数组源到 replace 目标的拒绝及既有目标 OID／哨兵保留，由 `make test-transfer-postgres` 自动覆盖；不意味着 replace 全流程原子回滚。
 - checkpoint 当前只用于进度展示、故障定位和 provider marker 观测；失败执行 retry 按 restartable 从头重新入队，append 任务 retry 会被拒绝。不得宣称 table Transfer 已支持 checkpoint resumable。
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。

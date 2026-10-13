@@ -26,6 +26,8 @@ PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素�
 
 `TableWriteDefinitionChecker` 提供不接收连接或业务行的纯定义检查；openGauss 与 KingbaseES 转发同一 PostgreSQL 协议物理检查并拒绝 geometry／空间声明，Transfer 的既有只读配置预检与删除前校验自动消费，无引擎名单或权限变更。PostgreSQL 将物理类型映射、数组／decimal 声明、已知常量编码及既有目标列兼容规则用于同一报告。源字符串不保证是 JSON 文档，原生数组文本也不会因目标标注 `json` 自动转换；这些情况明确返回 `unknown`。真实 Prepare 复用该检查，Transfer 在 native target 的删除／准备之前拒绝确定不支持的目标定义。此检查不证明数据库权限、实时结构、扩展安装或逐行业务值合法，不能保证 replace 全流程回滚。`make test-transfer-postgres` 使用合成数组表及哨兵目标验证拒绝发生于删除之前，既有 Common PostgreSQL 门禁继续覆盖 JSONB／TEXT[] 编码。
 
+TiDB 与 OceanBase 通过同一 MySQL 非空间写入核心实现 `TableWriteDefinitionChecker`，Transfer 的现有配置预检和 replace 删除前校验直接消费。检查 JSON 常量、原生类型、decimal 上限和已有列兼容规则；拒绝原生 `array`，保留字符串／数组转 JSON 及缺少结构事实的 `unknown`，不自动改类型。Prepare、session 和 upsert 连接前复用同一确定性定义检查；MySQL 独立空间路径保持原有边界。T1 由 `make test-go` 自动发现，真实 JSON／bytes 和写入语法继续由已有 MySQL、TiDB、OceanBase T2 入口及 Release/T2 Job 验证，不新增测试入口。
+
 只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`，同时验证真实 JSONB 与 TEXT[] 的 COPY session、批量 COPY、INSERT、upsert。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
 
 ### client

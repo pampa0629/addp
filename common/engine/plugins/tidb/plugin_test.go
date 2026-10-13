@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	commonquery "github.com/addp/common/query"
 )
 
@@ -130,3 +131,5 @@ func TestTableWriteProviderRejectsSpatialFields(t *testing.T) {
 		t.Fatalf("PrepareTableWrite() spatial error = %v", err)
 	}
 }
+
+func TestNonSpatialWriteDefinition(t *testing.T) { writetest.MySQLNonSpatialDefinition(t, &Plugin{}) }
