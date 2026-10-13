@@ -202,3 +202,16 @@ test('a delayed denial from a closed detail cannot clear a newly authorized reop
     release()
   }
 })
+
+for (const status of [403, 404]) test(`fresh Monitor-only deep link ${status} shows denial without protected facts`, async ({ page }) => {
+  await installBackend(page, { empty: true })
+  await page.route('**/api/v1/monitor/**/tree', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }))
+  await page.route('**/api/v1/monitor/executions*', route => route.fulfill({ json: { executions: [], total: 0, page: 1, page_size: 20 } }))
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const title = page.locator('.execution-detail-dialog .el-result__title')
+  await expect(title).toBeVisible()
+  await expect(title).toHaveText('未能加载目标执行详情')
+  await expect(page.getByRole('dialog').getByRole('status')).toHaveText('未能加载目标执行详情')
+  await expect(page.locator('.execution-detail-content, .execution-steps, .execution-events, .el-tree')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+})

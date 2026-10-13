@@ -133,7 +133,9 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       stage = 'fresh_monitor_only_iframe'
       await expect(fresh.page.locator('iframe[data-testid="module-iframe"]')).toBeVisible()
       stage = 'fresh_monitor_only_detail_denied'
-      await expect(fresh.frame.getByText('未能加载目标执行详情', { exact: true })).toBeVisible()
+      const deniedTitle = fresh.frame.locator('.execution-detail-dialog .el-result__title')
+      await expect(deniedTitle).toBeVisible()
+      await expect(deniedTitle).toHaveText('未能加载目标执行详情')
       stage = 'fresh_monitor_only_no_detail'
       await expect(fresh.frame.locator('.execution-detail-content')).toHaveCount(0)
       stage = 'fresh_monitor_only_no_events'

@@ -194,3 +194,9 @@ Desktop 磁盘采集沿设计 10.39：七采集器与五项既有磁盘目录，
 10.39 个人来源已由用户通过标准 up 应用：实际七采集器成功，中心收到原节点 18 个设备及 vda 活跃的五项磁盘原始计算，新鲜样本约 13 秒。只读 mTLS 中心诊断不等于 Monitor 完整窗口或页面验收；Safari 登录过期，正式页面仍待用户重新登录。实现已随 main 推送至 51d7a66bfb，Platform CI 37877201811 和 Release/T2 37877201781 已触发，初查排队；文件系统/inode/网卡的 Desktop 空值与生产 T5 边界不变。
 
 主机列表与详情统一使用上述刷新控件，默认 15 秒；搜索/分页/refresh 沿 URL 恢复，进入详情及返回列表保留选择。每轮只批量查询 System 当前授权页，节点与观测同时发布，不覆盖未提交搜索；隐藏时取消、可见立即重读，授权拒绝清空并停止。Monitor/Console 既有前端门禁及 platform-node-metrics 同一 Hosted suite 覆盖，真实列表自然刷新、关闭恢复和原故障链路已在 Hosted 38340694203（源码4e9fe672f）通过，退出零残留；前次导航Test ended未复现，根因仍未确认，安全耗时诊断保留。见设计10.57；不代表后续总览或生产T5已验收。
+
+### 2026-10-13 continuous 租户执行诊断撤权回归
+
+Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通过，失败阶段为新鲜 Monitor-only 会话的拒绝提示断言；整项 T4 失败，清理通过且 Infra 零残留。相同精确文本断言在标准 Monitor 浏览器门禁的冷启动 403/404 场景均复现 strict-mode 双匹配：无障碍 `StatusAnnouncer` 与可见 `el-result` 标题使用同一提示。断言改为唯一可见结果标题的可见性与完整文本校验，保留无障碍播报，以及无详情、步骤、事件和执行树断言；不删除播报，不放宽 Owner 裁决或修改生产逻辑。既有 `make test-monitor-frontend` 自动发现两个新回归，Console Hosted 同一 continuous suite 继续验证正式登录与撤权。
+
+该最小验收修正的 `make test-monitor-frontend` 已通过（59 单元、131 浏览器及构建），`make test-transfer-online-runner` 已通过（65 项）；修正前两个新用例明确失败于 strict-mode 双匹配。Hosted 复验另行记录，未完成前不计为通过。
