@@ -12,6 +12,9 @@ import (
 )
 
 func (p *DorisPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(opts)).UnsupportedError(); err != nil {
+		return err
+	}
 	database, table, err := dorisTablePathParts(path)
 	if err != nil {
 		return err
@@ -64,25 +67,22 @@ func (p *DorisPlugin) serverDSN(connInfo plugin.ConnectionInfo) (string, error) 
 }
 
 func createDorisTableIfNotExists(ctx context.Context, db *sql.DB, database, table string, fields []datatype.FieldInfo) error {
-	if len(fields) == 0 {
-		return fmt.Errorf("doris table write prepare requires table fields")
+	if err := (&DorisPlugin{}).CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields})).UnsupportedError(); err != nil {
+		return err
+	}
+	writeFields, err := dorisWriteFields(fields)
+	if err != nil {
+		return err
+	}
+	keyField, err := dorisDuplicateKeyField(writeFields)
+	if err != nil {
+		return err
 	}
 	dialect := dorisDialect()
 	if _, err := db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS "+dialect.QuoteIdentifier(database)); err != nil {
 		return fmt.Errorf("create doris database %s: %w", database, err)
 	}
 
-	writeFields, err := dorisWriteFields(fields)
-	if err != nil {
-		return err
-	}
-	if len(writeFields) == 0 {
-		return fmt.Errorf("doris table write prepare requires at least one named field")
-	}
-	keyField, err := dorisDuplicateKeyField(writeFields)
-	if err != nil {
-		return err
-	}
 	writeFields = dorisFieldsWithKeyFirst(writeFields, keyField.Name)
 
 	definitions := make([]string, 0, len(writeFields))
@@ -188,25 +188,19 @@ func dorisSchemaEvolutionStatements(database, table string, fields []datatype.Fi
 
 func dorisWriteFields(fields []datatype.FieldInfo) ([]datatype.FieldInfo, error) {
 	result := make([]datatype.FieldInfo, 0, len(fields))
-	seen := map[string]struct{}{}
+	seen := map[string]bool{}
 	for _, field := range fields {
-		name := strings.TrimSpace(field.Name)
-		if name == "" {
-			continue
+		field.Name = strings.TrimSpace(field.Name)
+		field.Type = datatype.ParseFieldType(string(field.Type))
+		key := strings.ToLower(field.Name)
+		check := dorisFieldDefinitionCheck(field)
+		if field.Name == "" || seen[key] {
+			check.Status, check.Code = plugin.DefinitionUnsupported, "field_name_invalid"
 		}
-		if datatype.IsSpatialFieldType(field.Type) {
-			return nil, fmt.Errorf("doris table write does not support spatial field %q yet", name)
+		if err := (plugin.TableWriteDefinitionReport{Checks: []plugin.TableWriteDefinitionCheck{check}}).UnsupportedError(); err != nil {
+			return nil, err
 		}
-		if datatype.ParseFieldType(string(field.Type)) == datatype.FieldTypeDecimal {
-			if err := plugin.ValidateExplicitDecimalFieldDefinition("doris", field, dorisDecimalMaxPrecision, dorisDecimalMaxScale); err != nil {
-				return nil, err
-			}
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		field.Name = name
+		seen[key] = true
 		result = append(result, field)
 	}
 	return result, nil
@@ -224,7 +218,7 @@ func dorisDuplicateKeyField(fields []datatype.FieldInfo) (datatype.FieldInfo, er
 func dorisFieldCanBeDuplicateKey(field datatype.FieldInfo) bool {
 	switch datatype.ParseFieldType(string(field.Type)) {
 	case datatype.FieldTypeString, datatype.FieldTypeBool, datatype.FieldTypeInt, datatype.FieldTypeBigInt,
-		datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeDecimal,
+		datatype.FieldTypeDecimal,
 		datatype.FieldTypeDate, datatype.FieldTypeTimestamp, datatype.FieldTypeUUID:
 		return true
 	default:

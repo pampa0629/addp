@@ -290,7 +290,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 				delete(f.items, 2)
 				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "no_checker":
-				f.engines[2].EngineType = "doris"
+				f.engines[2].EngineType = "clickhouse"
 			case "bad_identity":
 				f.items[1].TenantID = 8
 				wantError = true
@@ -545,5 +545,63 @@ func TestConfigCheckBindingUsesWireObjectsAndAllSnapshotFields(t *testing.T) {
 	f.engines[1].Version++
 	if checkFixtureReport(t, svc, a, body).Facts[0].EngineFactsHash == beforeEngine {
 		t.Fatal("engine revision not bound")
+	}
+}
+
+func TestConfigCheckDorisDefinition(t *testing.T) {
+	for _, scenario := range []string{"json", "invalid_constant", "array", "decimal", "no_key", "append_json", "append_incompatible", "source_text"} {
+		t.Run(scenario, func(t *testing.T) {
+			svc, facts, subject, body := configCheckFixture(t)
+			registered, _ := plugin.Get("doris")
+			caps, _ := plugin.MarshalEngineCapabilities(registered.Capabilities())
+			declared := commonmodels.JSONString(caps)
+			facts.engines[2].EngineType, facts.engines[2].Capabilities = "doris", &declared
+			fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "payload", Type: datatype.FieldTypeJSON, NativeType: "string", Nullable: true}}
+			for _, id := range []uint{1, 2} {
+				facts.items[id].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
+			}
+			var request map[string]interface{}
+			_ = json.Unmarshal(body, &request)
+			config := request["config"].(map[string]interface{})
+			transform := config["transforms"].([]interface{})[0].(map[string]interface{})
+			payload := map[string]interface{}{"source": "payload", "target": "payload", "target_type": "json", "nullable": true}
+			transform["fields"] = []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint"}, payload}
+			want := plugin.DefinitionUnsupported
+			switch scenario {
+			case "json":
+				want = plugin.DefinitionSupported
+			case "invalid_constant":
+				delete(payload, "source")
+				payload["default"] = "{"
+			case "array":
+				payload["target_type"] = "array"
+			case "decimal":
+				payload["target_type"], payload["precision"], payload["scale"] = "decimal", 39, 2
+			case "no_key":
+				transform["fields"] = []interface{}{payload}
+			case "append_json", "append_incompatible":
+				config["target"].(map[string]interface{})["policy"].(map[string]interface{})["apply_mode"] = "append"
+				want = plugin.DefinitionSupported
+				if scenario == "append_incompatible" {
+					want = plugin.DefinitionUnsupported
+					fields[1].NativeType = "int"
+					facts.items[2].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
+				}
+			case "source_text":
+				want = plugin.DefinitionUnknown
+				fields[1].Type = datatype.FieldTypeString
+				facts.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
+			}
+			body, _ = json.Marshal(request)
+			report := checkFixtureReport(t, svc, subject, body)
+			if report.Status != want || facts.calls != 4 || !slicesContains(report.Checked, "provider_write_definition") {
+				t.Fatalf("scenario=%s report=%+v", scenario, report)
+			}
+			for _, d := range report.Diagnostics {
+				if d.Status == plugin.DefinitionUnsupported && scenario != "no_key" && (d.TargetField != "payload" || d.ConfigPath != "/config/transforms/0/fields/1") {
+					t.Fatalf("field location lost: %+v", d)
+				}
+			}
+		})
 	}
 }

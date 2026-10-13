@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/doris"
 	"github.com/addp/common/engine/plugins/kingbase"
 	"github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/oceanbase"
@@ -18,6 +19,22 @@ import (
 type forbiddenDefinitionDelete struct {
 	*postgresql.PostgreSQLPlugin
 	calls int
+}
+
+func TestDorisDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
+	p := &doris.DorisPlugin{}
+	for _, fields := range [][]datatype.FieldInfo{
+		{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "payload", Type: datatype.FieldTypeArray}},
+		{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 2, Scale: 3}},
+		{{Name: "payload", Type: datatype.FieldTypeJSON}},
+	} {
+		deleter := &forbiddenDefinitionDelete{}
+		target := &nativeTableBatchTarget{definitionChecker: tableWriteDefinitionChecker(p), deleter: &engineTargetResourceDeleter{provider: deleter}, preparer: p}
+		_, err := target.Open(t.Context(), &datatype.TableInfo{Fields: fields}, nil)
+		if err == nil || !strings.Contains(err.Error(), "target_definition") || deleter.calls != 0 {
+			t.Fatalf("invalid definition reached replace: delete=%d error=%v", deleter.calls, err)
+		}
+	}
 }
 
 func TestMySQLMixedDefinitionRejectsBeforeReplaceEffects(t *testing.T) {

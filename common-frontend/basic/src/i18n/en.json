@@ -65,6 +65,7 @@
       "fields_required": "Field definitions are required",
       "field_name_invalid": "Field name is empty or duplicated",
       "field_definition_unsupported": "Field definition is unsupported",
+      "key_definition_unsupported": "The target definition has no usable key column",
       "array_element_type_unsupported": "Array element type is unsupported",
       "decimal_definition_invalid": "Invalid decimal precision or scale",
       "field_definition_supported": "Field definition is supported",

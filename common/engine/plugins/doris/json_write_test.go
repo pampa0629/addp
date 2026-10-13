@@ -16,15 +16,14 @@ func TestDorisTableWriteArgsUsesDeclaredTypes(t *testing.T) {
 		{Name: "document", Type: datatype.FieldTypeJSON},
 		{Name: "raw", Type: datatype.FieldTypeBytes},
 		{Name: "label", Type: datatype.FieldTypeString},
-		{Name: "array", Type: datatype.FieldTypeArray},
 	}
 	types := pluginshared.TableWriteFieldTypes(fields)
 	fields[0].Type = datatype.FieldTypeString
-	args, err := dorisTableWriteArgs(context.Background(), []string{"document", "raw", "label", "array"}, types, []map[string]interface{}{
-		{"document": []interface{}{map[string]interface{}{"ok": true}, nil}, "raw": []byte{0, 255}, "label": "plain", "array": []int{1, 2}},
+	args, err := dorisTableWriteArgs(context.Background(), []string{"document", "raw", "label"}, types, []map[string]interface{}{
+		{"document": []interface{}{map[string]interface{}{"ok": true}, nil}, "raw": []byte{0, 255}, "label": "plain"},
 		{"document": json.RawMessage(` {"n":9007199254740993} `)},
 	})
-	want := []interface{}{`[{"ok":true},null]`, "00ff", "plain", []int{1, 2}, ` {"n":9007199254740993} `, nil, nil, nil}
+	want := []interface{}{`[{"ok":true},null]`, "00ff", "plain", ` {"n":9007199254740993} `, nil, nil}
 	if err != nil || !reflect.DeepEqual(args, want) {
 		t.Fatalf("args=%#v want=%#v err=%v", args, want, err)
 	}
@@ -66,7 +65,7 @@ func TestDorisTableWriteArgsRejectsLateInvalidJSON(t *testing.T) {
 
 func TestDorisSchemaValidationUsesWriteStorageMapping(t *testing.T) {
 	for _, fieldType := range []datatype.FieldType{
-		datatype.FieldTypeJSON, datatype.FieldTypeBytes, datatype.FieldTypeArray,
+		datatype.FieldTypeJSON, datatype.FieldTypeBytes,
 		datatype.FieldTypeMixed, datatype.FieldTypeUUID, datatype.FieldTypeTime,
 	} {
 		field := datatype.FieldInfo{Name: "value", Type: fieldType}

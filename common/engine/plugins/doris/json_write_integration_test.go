@@ -20,6 +20,8 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 	if os.Getenv("ADDP_DORIS_INTEGRATION") != "1" {
 		t.Skip("set ADDP_DORIS_INTEGRATION=1 to run Doris integration test")
 	}
+	t.Run("definition_before_ddl", testDorisDefinitionBeforeDDL)
+	t.Run("floating_value_and_insert_projection", testDorisFloatingValueAndInsertProjection)
 	for _, method := range []string{"session", "batch"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -211,5 +213,123 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 				t.Fatalf("write after rejection: %v", err)
 			}
 		})
+	}
+}
+
+func testDorisDefinitionBeforeDDL(t *testing.T) {
+	p := &DorisPlugin{}
+	conn := dorisIntegrationConnInfo(t)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, fields := range [][]datatype.FieldInfo{
+		{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "payload", Type: datatype.FieldTypeArray}},
+		{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 2, Scale: 3}},
+		{{Name: "payload", Type: datatype.FieldTypeJSON}},
+		{{Name: "score", Type: datatype.FieldTypeDouble}},
+	} {
+		t.Run(string(fields[len(fields)-1].Type), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			database := "addp_rejected_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+			t.Cleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cleanupCancel()
+				if _, err := db.ExecContext(cleanupCtx, "DROP DATABASE IF EXISTS "+dorisDialect().QuoteIdentifier(database)); err != nil {
+					t.Errorf("cleanup rejected definition: %v", err)
+				}
+				var count int
+				if err := db.QueryRowContext(cleanupCtx, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?", database).Scan(&count); err != nil || count != 0 {
+					t.Errorf("rejected definition cleanup not proven: count=%d error=%v", count, err)
+				}
+			})
+			path := plugin.TabularItemPath(93002, plugin.EngineCatalogTermDatabase, database, "target")
+			if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err == nil || !strings.Contains(err.Error(), "target_definition") {
+				t.Fatalf("invalid definition reached DDL: %v", err)
+			}
+			var count int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name=?", database).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("invalid definition created database: count=%d error=%v", count, err)
+			}
+		})
+	}
+}
+
+func testDorisFloatingValueAndInsertProjection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	p := &DorisPlugin{}
+	conn := dorisIntegrationConnInfo(t)
+	database := plugin.GetString(conn, "database")
+	table := "addp_definition_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	path := plugin.TabularItemPath(93002, plugin.EngineCatalogTermDatabase, database, table)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cleanupCancel()
+		if err := p.DeleteResource(cleanupCtx, conn, path); err != nil {
+			t.Errorf("cleanup definition table: %v", err)
+		}
+		var count int
+		if err := db.QueryRowContext(cleanupCtx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?", database, table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("definition table cleanup not proven: count=%d error=%v", count, err)
+		}
+	}()
+	fields := []datatype.FieldInfo{{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true}, {Name: "id", Type: datatype.FieldTypeBigInt, Nullable: true}, {Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}}
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	if err := db.QueryRowContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? AND ordinal_position=1", database, table).Scan(&first); err != nil || first != "id" {
+		t.Fatalf("floating column chosen as key: first=%s error=%v", first, err)
+	}
+	if err := p.WriteBatch(ctx, conn, path, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{"id": int64(1), "score": 1.25, "document": map[string]interface{}{"ok": true}}}}, plugin.BatchWriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	qualified := dorisDialect().QualifiedTable(database, table)
+	var score float64
+	if err := db.QueryRowContext(ctx, "SELECT score FROM "+qualified+" WHERE id=1").Scan(&score); err != nil || score != 1.25 {
+		t.Fatalf("floating value changed: %v error=%v", score, err)
+	}
+	invalid := append(append([]datatype.FieldInfo(nil), fields...), datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeArray, Nullable: true})
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: invalid}); err == nil || !strings.Contains(err.Error(), `column "payload"`) {
+		t.Fatalf("existing table accepted native array: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=? AND table_name=? AND column_name='payload'", database, table).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("invalid field added to target: count=%d error=%v", count, err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("sentinel changed: count=%d error=%v", count, err)
+	}
+	// A session writes a projection of an existing table; it need not include
+	// the key column required by full-table preparation.
+	session, err := p.OpenTableWriteSession(ctx, conn, path, plugin.TableWriteSessionOptions{Fields: fields[2:]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{{"document": []interface{}{true}}}}); err != nil {
+		_ = session.Abort(ctx)
+		t.Fatal(err)
+	}
+	if err := session.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("projection insert failed: count=%d error=%v", count, err)
 	}
 }

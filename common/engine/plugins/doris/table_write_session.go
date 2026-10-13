@@ -46,6 +46,17 @@ func (p *DorisPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin
 		return nil, fmt.Errorf("doris table write session only supports insert method")
 	}
 
+	// INSERT may project a subset of an existing table. Validate the same field
+	// rules, while key selection remains a full-table preparation constraint.
+	fields, err := dorisWriteFields(opts.Fields)
+	if err != nil {
+		return nil, err
+	}
+	if opts.SpatialInfo != nil && (opts.SpatialInfo.IsSpatial() || opts.SpatialInfo.HasSpatialIndex != nil && *opts.SpatialInfo.HasSpatialIndex) {
+		return nil, p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError()
+	}
+	opts.Fields = fields
+
 	database, table, err := dorisTablePathParts(path)
 	if err != nil {
 		return nil, err

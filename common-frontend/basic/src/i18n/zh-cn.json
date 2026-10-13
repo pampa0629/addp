@@ -65,6 +65,7 @@
       "fields_required": "缺少字段定义",
       "field_name_invalid": "字段名为空或重复",
       "field_definition_unsupported": "字段定义不受支持",
+      "key_definition_unsupported": "目标定义中缺少可用的键字段",
       "array_element_type_unsupported": "数组元素类型不受支持",
       "decimal_definition_invalid": "小数精度或小数位定义无效",
       "field_definition_supported": "字段定义受支持",
