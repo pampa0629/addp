@@ -1920,7 +1920,9 @@ Prometheus T2 实际完成 mTLS 采样、固定资源与进程目录/趋势、�
 
 拟新增断言：超过五项有效观测后再截取 TOP5、值降序与同值按 node_id 稳定排序、不同节点 CPU/内存顺序、有效零、启用/停用及缺采覆盖；将现有查询预算暂降到完整集合所需序列数以下，验证整份 422、无部分榜单并按 CAS 恢复；与现有中心/来源/控制面故障步骤协同读取总览，核对覆盖降级或明确整份失败、恢复后新采样。总览浏览器仍通过真实密码/MFA 和 Console iframe，无业务请求拦截，核对唯一聚合请求、自然刷新、off 重载、详情/列表/服务导航及失败清空；新增场景使用独立浏览器调用及独立原期限，保留原页面测试原期限与断言。正式清理沿既有 finally/Hosted 退出路径，逐项停用并删除当次目标、停用当次节点、销毁临时部署与凭据、核验零残留。局部门禁沿 `make test-node-metrics-online-runner`、完整 `make test-online-runner` 及平台登记，不另建 suite 或 workflow。
 
-身份用途待确认点：测试规范第 220、222、224 行分别限定既有临时平台系统管理员的当次节点查询、服务实例和趋势用途，未明确覆盖新 `GET /api/v1/monitor/platform/resource_overview` 的完整集合读取；拟扩展仍只限当次干净 Hosted 部署、原 User/角色/MFA 与独立 Prometheus 采集身份，不读取 Tenant 业务数据、不修改生产 IAM。授权拒绝沿已有 Security Administrator、Tenant、Service 和匿名身份；当前 User 撤销拟使用正式退出登录令会话失效，验证旧 Token 总览拒绝和页面清空，不撤销或改写角色权限。该会话失效验证不能冒充 Monitor Permission 与 System Owner Permission 分别撤销的独立实测，后者保留现有 T1 证明及明确的 T4 缺口。确认前不执行扩大用途的身份调用，不部署或登记这些受控多源夹具。
+身份用途确认（2026-10-13）：用户明确同意执行既有 `platform-node-metrics` 一次性 Hosted 部署中的单真实主机总览验收，允许原临时平台系统管理员沿真实密码/MFA 读取新增 `GET /api/v1/monitor/platform/resource_overview`；同次修订《测试与验收规范》的限定用途条款。只限当次完整授权主机集合，保留原 User/角色/MFA 和独立 Prometheus 采集身份，不读取 Tenant 业务数据、不修改生产 IAM。授权拒绝沿已有 Security Administrator、Tenant、Service 和匿名身份。上述受控多源与会话撤销方案尚未得到本次确认，不实施；Monitor Permission 与 System Owner Permission 分别撤销仍保留现有 T1 证明及明确 T4 缺口。单真实主机的可审阅验收代码与结果由第 10.59 节独立记录，后续真实执行必须使用已推送、包含该代码与本确认条款的冻结源码。
+
+本次用途条款仅修改既有规范与本节，未修改角色、权限、Swagger、部署或标准入口。`make test-platform-review` 退出 0；默认 `make test-changed` 在 136 个混合工作区文件、27 个 Owner 的数据库参数预检退出 2，后续未执行，不计通过。任务范围 `git diff --check` 通过；将由推送后的既有 Platform consistency 与单主机 Hosted 门禁分别验证条款和真实链路，执行前还须核对冻结源码包含第 10.59 节的正式验收改动。
 
 ### 10.59 资源总览独立 Hosted 验收补齐
 
