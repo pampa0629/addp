@@ -715,12 +715,15 @@ def validate_security_mysql_owner_protection_profile(
                      '"target_empty_before_and_after"', '"query_output_lineage_unresolved"',
                      "verify_mongodb_raw_export(", '"raw_record_export"', '"export_during_manager_policy"',
                      "canonical_int64_preserved=True",
-                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v9"',
+                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v10"',
                      'outage = exercise_owner_unavailability(', 'case["security_unavailability"] = exercise_owner_unavailability(',
                      'verify_mysql_outage_transfer(', 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)',
                      'SUPPORT.run_security_lifecycle(repository, "start", deadline)', 'finally:',
                      'SUPPORT.security_listener_refused()', 'owner_processes_unchanged', 'target_empty_before',
-                     'same_user_verified', 'target_output_verified', 'diagnostics.get("code") != "query_output_lineage_unresolved"'):
+                     'same_user_verified', 'target_output_verified', 'diagnostics.get("code") != "query_output_lineage_unresolved"',
+                     'exercise_explicit_rediscovery(', '"explicit_rediscovery"',
+                     '"all_current_revisions_acknowledged"', '"projections_before"', '"projections_after"',
+                     'verify_mysql_transfer_output(', '"security.enrollment.update"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")

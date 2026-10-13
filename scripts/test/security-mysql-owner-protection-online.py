@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import importlib.util
 import json
 import math
@@ -109,6 +109,7 @@ REQUIRED_PERMISSIONS = {
     "security.detector.read",
     "security.enrollment.create",
     "security.enrollment.read",
+    "security.enrollment.update",
     "security.finding.read",
     "security.finding.update",
     "security.protection_baseline.read",
@@ -557,6 +558,109 @@ def wait_for_owner_projections(
     raise SuiteError("MySQL email projections did not converge before the deadline")
 
 
+
+def utc_timestamp(value: object, field: str) -> datetime:
+    if not isinstance(value, str):
+        raise SuiteError(field + " must be a UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SuiteError(field + " must be a UTC timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset().total_seconds() != 0:
+        raise SuiteError(field + " must be a UTC timestamp")
+    return parsed.astimezone(timezone.utc)
+
+
+def rediscovery_owner_progress(enrollment: Mapping[str, object]) -> dict[str, dict[str, object]]:
+    progress = _array(enrollment.get("owner_progress"), "rediscovery owner progress")
+    result = {}
+    for owner, action in OWNER_ACTIONS.items():
+        matches = [item for item in progress if isinstance(item, dict) and item.get("consumer_owner") == owner]
+        if len(matches) != 1:
+            raise SuiteError("rediscovery requires one projection per owner: " + owner)
+        item = matches[0]
+        revision = item.get("revision")
+        if not isinstance(revision, str) or re.fullmatch(r"[0-9]{20}", revision) is None or int(revision) <= 0:
+            raise SuiteError("rediscovery projection revision is invalid: " + owner)
+        if item.get("projection_state") != "active":
+            raise SuiteError("rediscovery projection is not active: " + owner)
+        for key in ("projection_id", "published_cursor"):
+            if not isinstance(item.get(key), str) or not item[key]:
+                raise SuiteError("rediscovery projection " + key + " is missing: " + owner)
+        rules = _array(item.get("rules"), "rediscovery projection rules")
+        if (action, "suppress") not in {(rule.get("action"), rule.get("effect")) for rule in rules if isinstance(rule, dict)}:
+            raise SuiteError("rediscovery lost the email suppression rule: " + owner)
+        result[owner] = {key: item.get(key) for key in ("projection_id", "revision", "published_cursor", "acknowledged", "acknowledged_at")}
+    return result
+
+
+def exercise_explicit_rediscovery(client: GatewayClient, enrollment_id: str,
+                                 probes: Mapping[str, Callable[[], dict[str, object]]],
+                                 deadline: float) -> dict[str, object]:
+    if set(probes) != set(OWNER_ACTIONS):
+        raise SuiteError("rediscovery must verify all four actual output owners")
+    path = "/api/v1/security/protection-enrollments/" + urllib.parse.quote(enrollment_id, safe="")
+    before = _object(client.request("GET", path, (200,)).payload, "rediscovery enrollment before")
+    version = positive_int(before.get("version"), "rediscovery enrollment version")
+    previous = rediscovery_owner_progress(before)
+    if before.get("id") != enrollment_id or before.get("state") != "active" or any(item["acknowledged"] is not True for item in previous.values()):
+        raise SuiteError("rediscovery requires a fully synchronized active enrollment")
+    discovered_before = utc_timestamp(before.get("last_discovered_at"), "previous discovery time")
+    snapshot = before.get("latest_source_snapshot_hash")
+    if not isinstance(snapshot, str) or not snapshot:
+        raise SuiteError("rediscovery source snapshot is missing")
+    created = _object(client.request("POST", path + "/discovery-executions", (201,), {"version": version}).payload, "rediscovery execution")
+    execution_id = created.get("execution_id")
+    try:
+        if str(uuid.UUID(str(execution_id))) != execution_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("rediscovery execution UUID is invalid") from error
+    created_at = utc_timestamp(created.get("created_at"), "rediscovery creation time")
+    if (created.get("enrollment_id") != enrollment_id or created.get("status") != "pending"
+            or positive_int(created.get("enrollment_version"), "created enrollment version") != version + 1
+            or execution_id == before.get("latest_discovery_execution_id") or created_at < discovered_before):
+        raise SuiteError("rediscovery execution does not match the requested enrollment/version")
+    while time.monotonic() < deadline:
+        current = _object(client.request("GET", path, (200,)).payload, "rediscovery enrollment after")
+        if current.get("id") != enrollment_id or current.get("state") != "active":
+            raise SuiteError("rediscovery changed the protected enrollment identity/state")
+        latest = current.get("latest_discovery_execution_id")
+        if latest not in (before.get("latest_discovery_execution_id"), execution_id):
+            raise SuiteError("rediscovery completed a different execution")
+        if latest != execution_id:
+            time.sleep(1)
+            continue
+        if (positive_int(current.get("version"), "completed enrollment version") < version + 2
+                or current.get("latest_source_snapshot_hash") != snapshot
+                or _object(current.get("discovery_summary"), "rediscovery summary").get("status") != "completed"):
+            raise SuiteError("rediscovery completion facts differ")
+        discovered_at = utc_timestamp(current.get("last_discovered_at"), "rediscovery completion time")
+        if discovered_at <= discovered_before or discovered_at < created_at:
+            raise SuiteError("rediscovery did not advance the latest discovery time")
+        renewed = rediscovery_owner_progress(current)
+        for owner, item in renewed.items():
+            if (item["projection_id"] != previous[owner]["projection_id"]
+                    or item["revision"] <= previous[owner]["revision"]
+                    or item["published_cursor"] == previous[owner]["published_cursor"]):
+                raise SuiteError("rediscovery did not publish a newer stable owner projection: " + owner)
+        if not all(item["acknowledged"] is True for item in renewed.values()):
+            time.sleep(1)
+            continue
+        for owner, item in renewed.items():
+            if utc_timestamp(item["acknowledged_at"], "rediscovery acknowledgement time") < discovered_at:
+                raise SuiteError("rediscovery acknowledgement predates the new projection: " + owner)
+        outputs = {owner: probe() for owner, probe in probes.items()}
+        return {"execution_id": execution_id, "enrollment_id": enrollment_id,
+                "version_before": version, "version_after": current["version"],
+                "created_at": created["created_at"], "last_discovered_at": current["last_discovered_at"],
+                "last_discovered_at_before": before["last_discovered_at"],
+                "previous_discovery_execution_id": before["latest_discovery_execution_id"],
+                "source_snapshot_hash": snapshot, "source_snapshot_unchanged": True, "projections_before": previous, "projections_after": renewed,
+                "all_current_revisions_acknowledged": True, "outputs": outputs}
+    raise SuiteError("explicit rediscovery did not synchronize all four owner revisions before the deadline")
+
+
 def normalize_id(value: object) -> str:
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
@@ -581,6 +685,17 @@ def assert_email_suppressed(
     if len(rows) != 5 or ids != EXPECTED_IDS:
         raise SuiteError(f"{owner} did not return the five expected non-sensitive rows")
     return {"rows": len(rows), "email_field_present": False}
+
+
+
+def assert_mysql_customer_rows(rows: Iterable[Mapping[str, object]], owner: str,
+                               columns: Iterable[str] | None = None) -> dict[str, object]:
+    rows = list(rows)
+    output = assert_email_suppressed(rows, owner, columns)
+    if columns is not None and "customer_code" not in columns or any(
+            row.get("customer_code") != "CUST-1000" + normalize_id(row["id"]) for row in rows):
+        raise SuiteError(owner + " changed non-sensitive customer fields")
+    return {**output, "customer_codes_verified": True}
 
 
 def develop_execution(
@@ -964,29 +1079,37 @@ def verify_mysql_outage_transfer(client: GatewayClient, engine_id: int, locator:
     columns, rows = preview_rows(client, target_locator)
     if columns != ["id"] or rows:
         raise SuiteError("MySQL outage Transfer target must start empty with its fixture schema")
+    return {**verify_mysql_transfer_output(client, engine_id, locator, parent_locator,
+                                          name, identity, deadline, tasks), "target_empty_before": True}
+
+
+def verify_mysql_transfer_output(client: GatewayClient, engine_id: int, locator: str,
+                                parent_locator: str, name: str, identity: Mapping[str, object],
+                                deadline: float, tasks: list[int]) -> dict[str, object]:
+    previous_tasks = set(tasks)
     task_id, execution = create_and_run_task(client,
         transfer_payload(name, locator, parent_locator), deadline, tasks)
+    if task_id in previous_tasks:
+        raise SuiteError("MySQL Transfer reused a previous task")
     execution_id = execution.get("execution_id")
     try:
         if str(uuid.UUID(str(execution_id))) != execution_id:
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
-        raise SuiteError("MySQL outage Transfer execution UUID is invalid") from error
-    if (positive_int(execution.get("task_id"), "outage task id") != task_id
-            or positive_int(execution.get("trigger_by"), "outage initiator") != positive_int(identity["principal_id"], "ordinary User")
+        raise SuiteError("MySQL Transfer execution UUID is invalid") from error
+    if (positive_int(execution.get("task_id"), "Transfer task id") != task_id
+            or positive_int(execution.get("trigger_by"), "Transfer initiator") != positive_int(identity["principal_id"], "ordinary User")
             or execution.get("status") != "success"
-            or nonnegative_int(execution.get("records_read"), "outage rows read") != 5
-            or nonnegative_int(execution.get("records_written"), "outage rows written") != 5):
-        raise SuiteError("MySQL outage Transfer execution provenance or counts differ")
+            or nonnegative_int(execution.get("records_read"), "Transfer rows read") != 5
+            or nonnegative_int(execution.get("records_written"), "Transfer rows written") != 5):
+        raise SuiteError("MySQL Transfer execution provenance or counts differ")
     scan = wait_for_scan(client, engine_id, deadline)
     target = find_item(client, engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
     columns, rows = preview_rows(client, build_item_locator(engine_id, target))
-    evidence = assert_email_suppressed(rows, "Transfer during Security outage", columns)
-    if "customer_code" not in columns or any(row.get("customer_code") != "CUST-1000" + normalize_id(row["id"]) for row in rows):
-        raise SuiteError("MySQL outage Transfer target changed non-sensitive customer fields")
+    evidence = assert_mysql_customer_rows(rows, "Transfer protected output", columns)
     return {**evidence, "task_id": task_id, "execution_id": execution_id,
             "records_read": 5, "records_written": 5, "same_user_verified": True,
-            "target_empty_before": True, "target_rescan_execution_id": scan,
+            "target_rescan_execution_id": scan,
             "target_output_verified": True}
 
 
@@ -1621,8 +1744,20 @@ def run_scenario(
         if "customer_code" not in target_columns:
             raise SuiteError("Transfer target lost non-sensitive customer fields")
 
+        def manager_after_rediscovery():
+            columns, rows = preview_rows(client, source_locator)
+            return assert_mysql_customer_rows(rows, "Manager after rediscovery", columns)
+
+        rediscovery = exercise_explicit_rediscovery(client, enrollment_id, {
+            "manager": manager_after_rediscovery,
+            "develop": lambda: assert_mysql_customer_rows(develop_rows(client, source_engine_id, source_locator, deadline), "Develop after rediscovery"),
+            "service": lambda: assert_mysql_customer_rows(service_rows(client, service_name), "Service after rediscovery"),
+            "transfer": lambda: verify_mysql_transfer_output(client, target_engine_id, source_locator,
+                target_parent_locator, task_name + "_rediscovery", identity, deadline, task_ids),
+        }, deadline)
+
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v9",
+            "schema_version": "addp.security-mysql-owner-protection-online/v10",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -1642,6 +1777,7 @@ def run_scenario(
             },
             "projections": projections,
             "security_unavailability": outage,
+            "explicit_rediscovery": rediscovery,
             "owners": {
                 "manager": manager,
                 "develop": develop,

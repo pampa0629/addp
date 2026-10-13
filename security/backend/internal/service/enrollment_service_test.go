@@ -174,6 +174,17 @@ func TestProjectionRuleSummariesExposeInstalledActionEffects(t *testing.T) {
 }
 
 func TestExplicitRediscoveryIsUniqueAndRenewsLatestSchemaProjection(t *testing.T) {
+	for _, changedSchema := range []bool{false, true} {
+		name := "unchanged schema"
+		if changedSchema {
+			name = "changed schema"
+		}
+		t.Run(name, func(t *testing.T) { assertExplicitRediscoveryRenewal(t, changedSchema) })
+	}
+}
+
+func assertExplicitRediscoveryRenewal(t *testing.T, changedSchema bool) {
+	t.Helper()
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
 	assessments := NewAssessmentService(db, nil)
 	if _, err := assessments.ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段"}); err != nil {
@@ -183,10 +194,25 @@ func TestExplicitRediscoveryIsUniqueAndRenewsLatestSchemaProjection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	previous := make(map[string]dataprotection.Projection)
+	for _, owner := range allRequiredProtectionOwners() {
+		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+		if err != nil || len(changes.Changes) == 0 {
+			t.Fatalf("previous %s projection changes: %#v, %v", owner, changes, err)
+		}
+		last := changes.Changes[len(changes.Changes)-1].Projection
+		if last == nil || last.State != dataprotection.ProjectionStateActive {
+			t.Fatalf("previous %s active projection = %#v", owner, last)
+		}
+		previous[owner] = *last
+	}
 	fields := []datatype.FieldInfo{
 		{Name: "userInfo", Path: []string{"userInfo"}, Type: datatype.FieldTypeJSON, Nullable: true},
 		{Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString, Nullable: true},
 		{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString, Nullable: true},
+	}
+	if !changedSchema {
+		fields = fields[:2]
 	}
 	newHash, err := dataprotection.TableSchemaSnapshotHash(fields)
 	if err != nil {
@@ -228,15 +254,26 @@ func TestExplicitRediscoveryIsUniqueAndRenewsLatestSchemaProjection(t *testing.T
 	if completed.LatestSourceSnapshotHash != newHash || completed.LastDiscoveredAt == nil || completed.Version != afterCreate.Version+1 {
 		t.Fatalf("completed enrollment = %#v", completed)
 	}
-	changes, err := enrollments.ListChanges(context.Background(), 7, "manager", "", 20)
-	if err != nil {
-		t.Fatal(err)
+	for _, owner := range allRequiredProtectionOwners() {
+		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+		if err != nil || len(changes.Changes) == 0 {
+			t.Fatalf("renewed %s projection changes: %#v, %v", owner, changes, err)
+		}
+		last := changes.Changes[len(changes.Changes)-1].Projection
+		old := previous[owner]
+		if last == nil || last.SourceSnapshotHash != newHash || last.ProjectionID != old.ProjectionID || last.Revision <= old.Revision {
+			t.Fatalf("renewed %s projection = %#v", owner, last)
+		}
+		if last.ExpiresAt.Sub(last.ValidFrom) != 365*24*time.Hour || !last.ValidFrom.After(old.ValidFrom) || !last.ExpiresAt.After(old.ExpiresAt) {
+			t.Fatalf("renewed %s validity = %s to %s; previous = %s to %s", owner, last.ValidFrom, last.ExpiresAt, old.ValidFrom, old.ExpiresAt)
+		}
+		if err := last.Validate(time.Now().UTC()); err != nil {
+			t.Fatalf("renewed %s projection validation: %v", owner, err)
+		}
+		if owner == managerProtectionOwner {
+			requireManagerProjectionEffects(t, last, dataprotection.EffectMask)
+		}
 	}
-	last := changes.Changes[len(changes.Changes)-1].Projection
-	if last == nil || last.SourceSnapshotHash != newHash {
-		t.Fatalf("renewed projection = %#v", last)
-	}
-	requireManagerProjectionEffects(t, last, dataprotection.EffectMask)
 }
 
 func TestEnrollmentReleaseWaitsForEveryOwnerAndRemovesFeedProjection(t *testing.T) {

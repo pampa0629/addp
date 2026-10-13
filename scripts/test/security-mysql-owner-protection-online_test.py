@@ -1165,6 +1165,150 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
                     ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", 2)
 
 
+
+class RediscoveryClient:
+    def __init__(self):
+        self.execution_id = "11111111-2222-4333-8444-555555555555"
+        self.before = {"id": "enrollment", "state": "active", "version": 10,
+            "latest_discovery_execution_id": "previous-execution", "latest_source_snapshot_hash": "sha256:source",
+            "last_discovered_at": "2026-10-13T00:00:00Z", "discovery_summary": {"status": "completed"},
+            "owner_progress": [{"consumer_owner": owner, "projection_id": "projection-" + owner,
+                "revision": "00000000000000000001", "projection_state": "active",
+                "published_cursor": "previous-" + owner, "acknowledged": True,
+                "acknowledged_at": "2026-10-13T00:00:01Z", "rules": [{"action": action, "effect": "suppress"}]}
+                for owner, action in ONLINE.OWNER_ACTIONS.items()]}
+        self.after = copy.deepcopy(self.before)
+        self.after.update(version=12, latest_discovery_execution_id=self.execution_id,
+                          last_discovered_at="2026-10-13T00:01:00Z")
+        for item in self.after["owner_progress"]:
+            item.update(revision="00000000000000000002", published_cursor="renewed-" + item["consumer_owner"],
+                        acknowledged_at="2026-10-13T00:01:01Z")
+        self.created = {"execution_id": self.execution_id, "enrollment_id": "enrollment",
+            "enrollment_version": 11, "status": "pending", "created_at": "2026-10-13T00:00:59Z"}
+        self.posted = False
+        self.requests = []
+        self.polls = []
+
+    def request(self, method, path, expected, body=None):
+        self.requests.append((method, path, body))
+        if method == "POST":
+            assert not self.posted and path == "/api/v1/security/protection-enrollments/enrollment/discovery-executions"
+            assert expected == (201,) and body == {"version": 10}
+            self.posted = True
+            return ONLINE.SUPPORT.Response(201, copy.deepcopy(self.created))
+        assert method == "GET" and path == "/api/v1/security/protection-enrollments/enrollment"
+        payload = (self.polls.pop(0) if self.polls else self.after) if self.posted else self.before
+        return ONLINE.SUPPORT.Response(200, copy.deepcopy(payload))
+
+
+class ExplicitRediscoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.client = RediscoveryClient()
+        self.probes = {owner: Mock(return_value={"rows": 5, "email_field_present": False}) for owner in ONLINE.OWNER_ACTIONS}
+
+    def run_rediscovery(self, deadline=None):
+        with patch.object(ONLINE.time, "sleep"):
+            return ONLINE.exercise_explicit_rediscovery(self.client, "enrollment", self.probes,
+                time.monotonic() + 5 if deadline is None else deadline)
+
+    def test_waits_for_current_execution_and_current_revision_ack_before_all_four_outputs(self):
+        pending_ack = copy.deepcopy(self.client.after)
+        pending_ack["owner_progress"][0]["acknowledged"] = False
+        self.client.polls = [copy.deepcopy(self.client.before), pending_ack]
+        result = self.run_rediscovery()
+        self.assertTrue(result["all_current_revisions_acknowledged"])
+        self.assertEqual(result["execution_id"], self.client.execution_id)
+        self.assertEqual((result["version_before"], result["version_after"]), (10, 12))
+        self.assertEqual(set(result["outputs"]), set(ONLINE.OWNER_ACTIONS))
+        self.assertEqual(len(self.client.requests), 5)
+        self.assertEqual([r[0] for r in self.client.requests], ["GET", "POST", "GET", "GET", "GET"])
+        for owner, probe in self.probes.items():
+            probe.assert_called_once_with()
+            self.assertEqual(result["projections_before"][owner]["projection_id"], result["projections_after"][owner]["projection_id"])
+            self.assertLess(result["projections_before"][owner]["revision"], result["projections_after"][owner]["revision"])
+        self.assertIn("security.enrollment.update", ONLINE.REQUIRED_PERMISSIONS)
+
+    def test_rejects_wrong_execution_version_timestamp_or_snapshot_without_reading_outputs(self):
+        mutations = [
+            ("created", "execution_id", "invalid-uuid"), ("created", "enrollment_id", "other"),
+            ("created", "enrollment_version", 10), ("created", "status", "success"),
+            ("after", "latest_discovery_execution_id", "other-execution"), ("after", "version", 11),
+            ("after", "last_discovered_at", self.client.before["last_discovered_at"]),
+            ("after", "last_discovered_at", "2026-10-13T00:01:00"),
+            ("after", "latest_source_snapshot_hash", "sha256:changed"), ("after", "state", "released"),
+            ("after", "id", "other"), ("after", "discovery_summary", {"status": "not_completed"}),
+        ]
+        for target, field, value in mutations:
+            with self.subTest(target=target, field=field):
+                self.client = RediscoveryClient()
+                getattr(self.client, target)[field] = value
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_rediscovery()
+                for probe in self.probes.values():
+                    probe.assert_not_called()
+
+    def test_rejects_old_or_wrong_projection_proofs_even_when_acknowledged(self):
+        for field, value in (("revision", "00000000000000000001"), ("revision", "2"),
+                             ("revision", "00000000000000000000"), ("projection_id", "other"),
+                             ("published_cursor", "previous-manager"), ("published_cursor", ""),
+                             ("acknowledged_at", "2026-10-13T00:00:01Z"), ("projection_state", "enrolling"),
+                             ("rules", [{"action": "preview", "effect": "allow"}])):
+            with self.subTest(field=field):
+                self.client = RediscoveryClient()
+                self.client.after["owner_progress"][0][field] = value
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_rediscovery()
+                for probe in self.probes.values():
+                    probe.assert_not_called()
+
+    def test_missing_or_duplicate_owner_and_incomplete_probe_set_are_rejected(self):
+        for duplicate in (False, True):
+            self.client = RediscoveryClient()
+            if duplicate:
+                self.client.after["owner_progress"].append(copy.deepcopy(self.client.after["owner_progress"][0]))
+            else:
+                self.client.after["owner_progress"].pop()
+            with self.assertRaises(ONLINE.SuiteError):
+                self.run_rediscovery()
+        self.client = RediscoveryClient()
+        self.probes.pop("transfer")
+        with self.assertRaises(ONLINE.SuiteError):
+            self.run_rediscovery()
+        self.assertEqual(self.client.requests, [])
+
+    def test_unsynchronized_new_revision_times_out_without_output(self):
+        self.client.after["owner_progress"][0]["acknowledged"] = False
+        with patch.object(ONLINE.time, "monotonic", side_effect=[1, 3]), self.assertRaisesRegex(ONLINE.SuiteError, "did not synchronize"):
+            self.run_rediscovery(2)
+        for probe in self.probes.values():
+            probe.assert_not_called()
+
+    def test_renewed_transfer_cannot_reuse_a_previous_task_as_new_output(self):
+        with patch.object(ONLINE, "create_and_run_task", return_value=(81, {})), self.assertRaisesRegex(ONLINE.SuiteError, "reused a previous task"):
+            ONLINE.verify_mysql_transfer_output(Mock(), 17, "source", "parent", "renewed", {"principal_id": "7"}, time.monotonic() + 5, [81])
+
+    def test_renewed_output_rejects_plaintext_or_changed_neighbor_values(self):
+        rows = [{"id": i, "customer_code": "CUST-1000" + str(i)} for i in range(1, 6)]
+        self.assertTrue(ONLINE.assert_mysql_customer_rows(rows, "owner", ["id", "customer_code"])["customer_codes_verified"])
+        for mutation in ("email", "customer_code", "duplicate"):
+            with self.subTest(mutation=mutation):
+                changed = copy.deepcopy(rows)
+                if mutation == "email": changed[0]["email"] = "fixture@example.test"
+                elif mutation == "customer_code": changed[0]["customer_code"] = "changed"
+                else: changed.append(copy.deepcopy(changed[0]))
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_mysql_customer_rows(changed, "owner")
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_mysql_customer_rows(rows, "owner", ["id", "customer_code", "email"])
+
+    def test_actual_owner_output_failure_does_not_produce_a_passed_report(self):
+        self.probes["develop"].side_effect = ONLINE.SuiteError("actual output failed")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "actual output failed"):
+            self.run_rediscovery()
+        self.probes["service"].assert_not_called()
+        self.probes["transfer"].assert_not_called()
+
+
 class ManagerExportBrowserTest(unittest.TestCase):
     def test_main_waits_for_protected_email_search_before_starting_browser(self):
         environment = {
