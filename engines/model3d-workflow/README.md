@@ -174,6 +174,8 @@ DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，�
 
 2026-10-13 失败诊断门禁：`make test-model3d-workflow` 的 278 项测试通过（实际使用现有 Python 3.12 `venv`；标准入口覆盖新增测试），新增六项先复现 URI 诊断缺失和转换器输出未记录，再验证非法产物继续拒绝、旧文件保留、URI 内容不进入诊断以及日志长度有界。`make test-manager-online-runner` 的 70 项 Python 测试及 Go 身份工具通过；新用例先复现 Model3D 日志丢失及日志收集失败未导致验收失败，再核对成功／失败出口均收集日志、日志早于容器删除、日志失败仍完成其余清理。`make test-changed` 因 `MANAGER_POSTGRES_TEST_DSN` 缺失在 T2 预检中止，未执行数据库测试；完整 Linux 产品镜像和 Hosted 复验沿用已有 CI 门禁，尚未验证的结果不计为通过。以上为诊断能力验证，不宣称已解决 Hosted 的 DAE 非自包含产物问题。
 
+2026-10-13 [Hosted 38274727956](https://github.com/pampa0629/addp/actions/runs/38274727956) 已通过源码 `6b33eb9dcf27e1be1db66b44e260fd859ff9eb51` 的正式 Linux x86_64 产品链路。Model3D Runtime 日志已在删除容器前归档，DAE／3DS／IFC／OSGB／SKP／MAX 六种模型调用均返回 200，GLB 校验和浏览器缓存预览通过；DAE 为 1764 字节、3DS 为 1888 字节，均内嵌一张 PNG。MAX 保持固定导入器 1.9.2、手选毫米换算 0.001、五个静态网格和 444 个顶点；九类产物及 Hosted Infra 清理零残留。本次没有复现上次 DAE 图片 URI 失败，根因仍未确定；诊断能力保留，GLB 自包含校验和转换路线未放宽。同期 Platform CI 的 Model3D 测试及产品二进制构建通过，平台一致性因其他 suite 的共享 Runtime CI 登记检查失败，不能计整轮通过；详见 Manager 的同期门禁记录。
+
 DAE / 3DS 的基础颜色贴图还必须关联到网格实际使用的材质和有效 `TEXCOORD_n`：仅嵌入图片、未绑定材质、UV 缺失、顶点数不匹配或越界，都不能发布为成功产物。发布失败保留之前有效的目标文件。
 
 POSITION 与基础颜色 UV 的存储偏移、分量对齐和步长同时按 glTF 2.0 校验；显式步长必须按 4 字节对齐并位于 4–252 字节内，无符号整数 UV 必须提供步长。合法紧密排列与交错排列均可使用，非法存储布局在发布前拒绝。
