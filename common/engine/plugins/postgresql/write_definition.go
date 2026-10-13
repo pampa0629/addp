@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 )
 
 var _ plugin.TableWriteDefinitionChecker = (*PostgreSQLPlugin)(nil)
@@ -73,45 +74,49 @@ func (p *PostgreSQLPlugin) checkTableWriteDefinition(definition plugin.TableWrit
 		}
 		add(field.Name, "target_definition", status, code, physical)
 		if binding.Constant != nil {
-			encoded, err := ProtocolTableWriteValue(binding.Constant.Value, field.Type)
-			constantStatus, constantCode := plugin.DefinitionSupported, "constant_encoding_supported"
-			if err == nil && encoded != nil {
-				// Configuration constants contain JSON values. Do not call custom
-				// driver.Valuer implementations from this I/O-free contract.
-				kind := reflect.TypeOf(encoded).Kind()
-				if _, custom := encoded.(driver.Valuer); custom || kind == reflect.Pointer {
-					constantStatus, constantCode = plugin.DefinitionUnknown, "constant_encoding_not_checked"
-				} else {
-					_, err = driver.DefaultParameterConverter.ConvertValue(encoded)
-				}
-			}
-			if err == nil && encoded != nil && constantStatus == plugin.DefinitionSupported {
-				switch field.Type {
-				case datatype.FieldTypeJSON, datatype.FieldTypeArray:
-					// The shared write encoder checked the declared representation.
-				case datatype.FieldTypeString:
-					text, ok := encoded.(string)
-					if !ok {
-						constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
-					} else if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
-						err = fmt.Errorf("invalid PostgreSQL text constant")
-					}
-				case datatype.FieldTypeBool:
-					if _, ok := encoded.(bool); !ok {
-						constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
-					}
-				default:
-					// database/sql acceptance alone does not establish SQL casts,
-					// numeric bounds, temporal or geometry validity.
-					constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
-				}
-			}
-			if err != nil {
-				add(field.Name, "constant_encoding", plugin.DefinitionUnsupported, "constant_encoding_invalid", physical)
-			} else if encoded == nil && !field.Nullable {
-				add(field.Name, "constant_encoding", plugin.DefinitionUnsupported, "null_constant_not_nullable", physical)
+			if !shared.IsPureTableWriteConstant(binding.Constant.Value) {
+				add(field.Name, "constant_encoding", plugin.DefinitionUnknown, "constant_encoding_not_checked", physical)
 			} else {
-				add(field.Name, "constant_encoding", constantStatus, constantCode, physical)
+				encoded, err := ProtocolTableWriteValue(binding.Constant.Value, field.Type)
+				constantStatus, constantCode := plugin.DefinitionSupported, "constant_encoding_supported"
+				if err == nil && encoded != nil {
+					// Configuration constants contain JSON values. Do not call custom
+					// driver.Valuer implementations from this I/O-free contract.
+					kind := reflect.TypeOf(encoded).Kind()
+					if _, custom := encoded.(driver.Valuer); custom || kind == reflect.Pointer {
+						constantStatus, constantCode = plugin.DefinitionUnknown, "constant_encoding_not_checked"
+					} else {
+						_, err = driver.DefaultParameterConverter.ConvertValue(encoded)
+					}
+				}
+				if err == nil && encoded != nil && constantStatus == plugin.DefinitionSupported {
+					switch field.Type {
+					case datatype.FieldTypeJSON, datatype.FieldTypeArray:
+						// The shared write encoder checked the declared representation.
+					case datatype.FieldTypeString:
+						text, ok := encoded.(string)
+						if !ok {
+							constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
+						} else if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
+							err = fmt.Errorf("invalid PostgreSQL text constant")
+						}
+					case datatype.FieldTypeBool:
+						if _, ok := encoded.(bool); !ok {
+							constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
+						}
+					default:
+						// database/sql acceptance alone does not establish SQL casts,
+						// numeric bounds, temporal or geometry validity.
+						constantStatus, constantCode = plugin.DefinitionUnknown, "constant_value_not_checked"
+					}
+				}
+				if err != nil {
+					add(field.Name, "constant_encoding", plugin.DefinitionUnsupported, "constant_encoding_invalid", physical)
+				} else if encoded == nil && !field.Nullable {
+					add(field.Name, "constant_encoding", plugin.DefinitionUnsupported, "null_constant_not_nullable", physical)
+				} else {
+					add(field.Name, "constant_encoding", constantStatus, constantCode, physical)
+				}
 			}
 		}
 		if binding.Source != nil {

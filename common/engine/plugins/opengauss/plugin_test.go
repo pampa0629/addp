@@ -13,6 +13,7 @@ import (
 
 func TestOpenGaussNonSpatialWriteDefinition(t *testing.T) {
 	writetest.NonSpatialProtocolDefinition(t, &Plugin{})
+	writetest.PureDefinitionConstants(t, &Plugin{})
 }
 
 func TestProtocolIdentityDeclaresOpenGaussSystemSchemas(t *testing.T) {

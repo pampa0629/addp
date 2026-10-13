@@ -3,8 +3,6 @@ package shared
 import (
 	"database/sql"
 	"database/sql/driver"
-	"encoding"
-	"encoding/json"
 	"reflect"
 	"strconv"
 	"strings"
@@ -98,8 +96,7 @@ func (w MySQLCompatibleTableWriter) CheckTableWriteDefinition(definition plugin.
 }
 
 func mysqlCompatibleDefinitionConstant(value interface{}, field datatype.FieldInfo) (plugin.DefinitionCheckStatus, string) {
-	budget := 4096
-	if !mysqlCompatiblePureConstant(value, 0, &budget) {
+	if !IsPureTableWriteConstant(value) {
 		return plugin.DefinitionUnknown, "constant_encoding_not_checked"
 	}
 	encoded, err := EncodeTableWriteValue(value, field.Type)
@@ -183,47 +180,4 @@ func (w MySQLCompatibleTableWriter) mysqlCompatibleExistingDefinition(field data
 		return plugin.DefinitionUnsupported, "existing_column_incompatible"
 	}
 	return plugin.DefinitionSupported, "existing_column_compatible"
-}
-
-// Configuration constants are JSON values. Refuse custom conversion hooks and
-// opaque objects even when nested; they are not part of this pure contract.
-func mysqlCompatiblePureConstant(value interface{}, depth int, budget *int) bool {
-	if value == nil {
-		return true
-	}
-	*budget--
-	if depth > 64 || *budget < 0 {
-		return false
-	}
-	switch value.(type) {
-	case json.RawMessage, json.Number, []byte:
-		return true
-	}
-	if _, custom := value.(json.Marshaler); custom {
-		return false
-	}
-	if _, custom := value.(encoding.TextMarshaler); custom {
-		return false
-	}
-	if _, custom := value.(driver.Valuer); custom {
-		return false
-	}
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Struct:
-		return false
-	case reflect.Slice, reflect.Array:
-		for i := 0; i < v.Len(); i++ {
-			if !mysqlCompatiblePureConstant(v.Index(i).Interface(), depth+1, budget) {
-				return false
-			}
-		}
-	case reflect.Map:
-		for _, key := range v.MapKeys() {
-			if !mysqlCompatiblePureConstant(key.Interface(), depth+1, budget) || !mysqlCompatiblePureConstant(v.MapIndex(key).Interface(), depth+1, budget) {
-				return false
-			}
-		}
-	}
-	return true
 }

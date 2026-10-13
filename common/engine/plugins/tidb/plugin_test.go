@@ -132,4 +132,7 @@ func TestTableWriteProviderRejectsSpatialFields(t *testing.T) {
 	}
 }
 
-func TestNonSpatialWriteDefinition(t *testing.T) { writetest.MySQLNonSpatialDefinition(t, &Plugin{}) }
+func TestNonSpatialWriteDefinition(t *testing.T) {
+	writetest.MySQLNonSpatialDefinition(t, &Plugin{})
+	writetest.PureDefinitionConstants(t, &Plugin{})
+}

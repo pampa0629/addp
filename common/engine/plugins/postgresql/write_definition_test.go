@@ -5,7 +5,34 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 )
+
+func TestPostgresDefinitionConstantsArePure(t *testing.T) {
+	writetest.PureDefinitionConstants(t, &PostgreSQLPlugin{})
+}
+
+type definitionJSONHook struct{ calls *int }
+
+func (v definitionJSONHook) MarshalJSON() ([]byte, error) {
+	*v.calls++
+	return []byte(`{"hook":true}`), nil
+}
+
+func TestPostgresDefinitionDoesNotChangeRuntimeJSONEncoding(t *testing.T) {
+	calls := 0
+	value := definitionJSONHook{&calls}
+	report := (&PostgreSQLPlugin{}).CheckTableWriteDefinition(plugin.TableWriteDefinition{Fields: []plugin.TableWriteFieldDefinition{{
+		Target: datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeJSON}, Constant: &plugin.TableWriteConstant{Value: value},
+	}}})
+	if calls != 0 || len(report.Checks) != 2 || report.Checks[1].Status != plugin.DefinitionUnknown {
+		t.Fatalf("pure check invoked runtime encoding: calls=%d report=%+v", calls, report)
+	}
+	encoded, err := ProtocolTableWriteValue(value, datatype.FieldTypeJSON)
+	if err != nil || encoded != `{"hook":true}` || calls != 1 {
+		t.Fatalf("runtime encoding changed: calls=%d encoded=%v error=%v", calls, encoded, err)
+	}
+}
 
 func TestPostgresWriteDefinition(t *testing.T) {
 	pg := &PostgreSQLPlugin{}

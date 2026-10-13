@@ -13,6 +13,7 @@ import (
 
 func TestMySQLCompatibleWriteDefinition(t *testing.T) {
 	writetest.MySQLNonSpatialDefinition(t, MySQLCompatibleTableWriter{EngineType: "tidb", DefaultPort: 4000})
+	writetest.PureDefinitionConstants(t, MySQLCompatibleTableWriter{EngineType: "tidb", DefaultPort: 4000})
 }
 
 type forbiddenConstantHook struct{ calls *int }

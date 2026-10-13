@@ -13,6 +13,7 @@ import (
 
 func TestKingbaseNonSpatialWriteDefinition(t *testing.T) {
 	writetest.NonSpatialProtocolDefinition(t, &Plugin{})
+	writetest.PureDefinitionConstants(t, &Plugin{})
 }
 
 func TestPluginIdentityAndConnectionSpec(t *testing.T) {
