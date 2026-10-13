@@ -39,7 +39,7 @@ const { t } = useI18n()
 const tabsByOwner = {
   agent: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
   copilot: [{ name: 'inference', kind: 'inference', label: 'console.configuration.tabs.inference' }],
-  develop: [{ name: 'query-policy', kind: 'policy', label: 'console.configuration.tabs.queryPolicy' }],
+  develop: [{ name: 'execution-policy', kind: 'policy', label: 'console.configuration.tabs.executionPolicy' }],
   manager: [
     { name: 'quick-view-policy', kind: 'policy', label: 'console.configuration.tabs.quickViewPolicy' },
     { name: 'base-map', kind: 'map', label: 'console.configuration.tabs.baseMap' }

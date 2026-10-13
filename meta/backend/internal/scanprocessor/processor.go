@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaenrich"
@@ -53,6 +54,7 @@ type input struct {
 	ScanDepth            string
 	IncludeAccessIndex   bool
 	StrictDeepEnrich     bool
+	ClaimedFullNames     []string
 }
 
 type Result struct {
@@ -126,7 +128,8 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if found && existing.ScannedDepth == models.ScannedDepthDeep {
+		if found && existing.ScannedDepth == models.ScannedDepthDeep &&
+			commonJSON.String(existing.Attributes, "item", "layout") == commonJSON.String(attrs, "item", "layout") {
 			preserved := metaattr.Normalize(existing.Attributes)
 			metaattr.MergeStandardAttributes(preserved, attrs)
 			attrs = preserved
@@ -142,9 +145,26 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	item, err := p.persistItem(&input, attrs)
+	var item *models.MetaItem
+	var removed []models.MetaItem
+	err = p.repo.Transaction(func(repo *metaRepo.ScanRepository) error {
+		processor := p
+		processor.repo = repo
+		var err error
+		item, err = processor.persistItem(&input, attrs)
+		if err != nil {
+			return err
+		}
+		removed, err = repo.DeleteClaimedSingleItems(item, input.ClaimedFullNames)
+		return err
+	})
 	if err != nil {
 		return Result{}, err
+	}
+	if p.indexer != nil {
+		for _, component := range removed {
+			p.indexer.DeleteItemFromIndex(component.TenantID, component.EngineID, component.Fingerprint)
+		}
 	}
 
 	if err := ctx.Err(); err != nil {

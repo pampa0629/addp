@@ -11,6 +11,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
@@ -211,5 +212,42 @@ func TestSparkSaveDDLBelongsOnlyToTableTargetAndRuntime(t *testing.T) {
 				t.Fatalf("effects = %#v, want %#v", plan.engineEffects, want)
 			}
 		})
+	}
+}
+
+func TestPrepareWorkflowParentAuthorizationRequiresCurrentClaimIdentity(t *testing.T) {
+	parentID, executionID := uuid.New(), uuid.New()
+	lease := commonExecution.Lease{ExecutionID: executionID.String(), TenantID: 7, Attempt: 2, Owner: "owner", Token: uuid.NewString()}
+	called := 0
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		if r.URL.Path != "/api/v1/system/runtime/execution-authorizations" || r.Header.Get("Authorization") != "Bearer addp_at_service" {
+			t.Error("authorization did not use the dedicated service")
+		}
+		var input commonClient.IssueExecutionAuthorizationFromExecutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if input.ParentExecutionID != parentID.String() || input.ExecutionID != lease.ExecutionID || input.Attempt != lease.Attempt || input.LeaseToken != lease.Token {
+			t.Error("authorization is not bound to the active claim")
+		}
+		json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{ID: "81", ExecutionID: input.ExecutionID, Audience: "develop", Accesses: input.Accesses, ExpiresAt: time.Now().Add(time.Minute), ActorPrincipalID: "11", TenantID: "7", TenantMembershipID: "12", IssuedAuthorizationVersion: "3"})
+	}))
+	t.Cleanup(system.Close)
+	executor := &DevExecutor{operatorDiscovery: newWorkflowValidationTestService(t), sqlEngine: NewSQLEngineService(&config.Config{}, commonClient.NewSystemServiceClient(system.URL, staticServiceTokenSource("addp_at_service"), system.Client()), nil)}
+	task := &models.DevTask{DevType: "workflow", Timeout: 30, ExecutionConfig: models.DevTaskContent{"engine_id": 12}, Content: models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "buffer", "operator": "buffer", "depends_on": []interface{}{}, "params": map[string]interface{}{"distance": 1.0}}}}}}
+	issued, err := executor.prepareWorkflowExecutionAuthorizationFromExecution(t.Context(), task, 7, parentID, executionID, lease)
+	if err != nil || issued == nil || called != 1 {
+		t.Fatalf("issue: %v called=%d", err, called)
+	}
+	for _, mutate := range []func(*commonExecution.Lease){func(l *commonExecution.Lease) { l.ExecutionID = uuid.NewString() }, func(l *commonExecution.Lease) { l.TenantID++ }, func(l *commonExecution.Lease) { l.Attempt = 0 }, func(l *commonExecution.Lease) { l.Token = "" }} {
+		wrong := lease
+		mutate(&wrong)
+		if _, err := executor.prepareWorkflowExecutionAuthorizationFromExecution(t.Context(), task, 7, parentID, executionID, wrong); err == nil {
+			t.Fatal("invalid claim obtained workflow authorization")
+		}
+	}
+	if called != 1 {
+		t.Fatal("invalid claim reached IAM")
 	}
 }

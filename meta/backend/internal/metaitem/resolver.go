@@ -104,6 +104,7 @@ func ResolveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionR
 }
 
 func ResolveNonExclusiveItems(ctx context.Context, input DirectoryResolveInput) (*DetectionResult, error) {
+	input.Options.ExcludeWholeScope = true
 	result := &DetectionResult{
 		Items:  []*DetectedItem{},
 		Claims: ResourceClaimSet{},

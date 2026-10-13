@@ -73,111 +73,124 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 	}
 }
 
-func TestStartPreparedContentExecutionNotifiesQuerySupervisor(t *testing.T) {
-	notifications := 0
-	executor := &DevExecutor{}
-	executor.SetQueryExecutionNotifier(func() { notifications++ })
-	executor.startPreparedContentExecution(&preparedContentExecution{
-		execution: &commonExecution.TaskExecution{ExecutionID: uuid.NewString()},
-		devTask:   &models.DevTask{DevType: commonExecution.TaskTypeQuery},
-	})
-	if notifications != 1 {
-		t.Fatalf("query supervisor notifications = %d, want 1", notifications)
+func TestStartPreparedContentExecutionOnlyNotifiesSupervisor(t *testing.T) {
+	for _, kind := range []string{"query", "workflow", "script"} {
+		t.Run(kind, func(t *testing.T) {
+			notifications := 0
+			executor := &DevExecutor{}
+			executor.SetExecutionNotifier(func() { notifications++ })
+			executor.startPreparedContentExecution(&preparedContentExecution{execution: &commonExecution.TaskExecution{ExecutionID: uuid.NewString()}, devTask: &models.DevTask{DevType: kind}})
+			if notifications != 1 {
+				t.Fatalf("notifications=%d", notifications)
+			}
+		})
 	}
 }
 
-func TestExecuteWithParamsFromParentExecutionQueuesQueryWithoutBackendAuthorization(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
-		t.Fatalf("attach develop schema: %v", err)
-	}
-	if err := executiontest.EnsureSQLiteStore(db); err != nil {
-		t.Fatalf("ensure SQLite execution store: %v", err)
-	}
-	for _, statement := range []string{
-		`CREATE TABLE develop.dev_tasks (
+func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t *testing.T) {
+	for _, taskType := range []string{"query", "workflow"} {
+		t.Run(taskType, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
+				t.Fatalf("attach develop schema: %v", err)
+			}
+			if err := executiontest.EnsureSQLiteStore(db); err != nil {
+				t.Fatalf("ensure SQLite execution store: %v", err)
+			}
+			for _, statement := range []string{
+				`CREATE TABLE develop.dev_tasks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
 			display_name TEXT, dev_type TEXT NOT NULL, content JSON NOT NULL, execution_config JSON,
 			editor_layout JSON, timeout INTEGER, description TEXT, tags TEXT, created_by INTEGER,
 			updated_by INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME,
 			status TEXT, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME
 		)`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("create execution fixture table: %v", err)
-		}
-	}
-	devTaskRepo := repository.NewDevTaskRepository(db)
-	executionRepo := commonExecution.NewTaskExecutionRepository(db)
-	devTask := &models.DevTask{
-		TenantID: 7, Name: "scheduled query", DevType: commonExecution.TaskTypeQuery,
-		Status: "active", Timeout: 60,
-		Content:         models.DevTaskContent{"query_type": "sql", "query": "SELECT 1"},
-		ExecutionConfig: models.DevTaskContent{"engine_id": float64(12)},
-	}
-	if err := devTaskRepo.Create(devTask); err != nil {
-		t.Fatalf("create DevTask: %v", err)
-	}
-	parentExecutionID := uuid.New().String()
-	principalID, membershipID, authorizationVersion := int64(31), int64(37), int64(5)
-	parent := &commonExecution.TaskExecution{
-		TenantID: 7, ExecutionID: parentExecutionID, Module: commonExecution.ModuleOrchestrator,
-		TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
-		Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeScheduled,
-		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
-		IssuedAuthorizationVersion: &authorizationVersion, CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if err := executionRepo.Create(context.Background(), parent); err != nil {
-		t.Fatalf("create parent execution: %v", err)
-	}
+			} {
+				if err := db.Exec(statement).Error; err != nil {
+					t.Fatalf("create execution fixture table: %v", err)
+				}
+			}
+			devTaskRepo := repository.NewDevTaskRepository(db)
+			executionRepo := commonExecution.NewTaskExecutionRepository(db)
+			devTask := &models.DevTask{
+				TenantID: 7, Name: "scheduled query", DevType: commonExecution.TaskTypeQuery,
+				Status: "active", Timeout: 60,
+				Content:         models.DevTaskContent{"query_type": "sql", "query": "SELECT 1"},
+				ExecutionConfig: models.DevTaskContent{"engine_id": float64(12)},
+			}
+			if err := devTaskRepo.Create(devTask); err != nil {
+				t.Fatalf("create DevTask: %v", err)
+			}
+			parentExecutionID := uuid.New().String()
+			principalID, membershipID, authorizationVersion := int64(31), int64(37), int64(5)
+			parent := &commonExecution.TaskExecution{
+				TenantID: 7, ExecutionID: parentExecutionID, Module: commonExecution.ModuleOrchestrator,
+				TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
+				Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeScheduled,
+				ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+				IssuedAuthorizationVersion: &authorizationVersion, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			}
+			if err := executionRepo.Create(context.Background(), parent); err != nil {
+				t.Fatalf("create parent execution: %v", err)
+			}
 
-	called := false
-	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		called = true
-		if request.URL.Path != "/api/v1/system/runtime/execution-authorizations" ||
-			request.Header.Get("Authorization") != "Bearer addp_at_develop" ||
-			request.Header.Get("X-Internal-API-Key") != "" || request.Header.Get("X-Tenant-ID") != "" {
-			t.Fatalf("invalid authorization request: path=%s headers=%#v", request.URL.Path, request.Header)
-		}
-		http.Error(w, `{"error":"denied"}`, http.StatusForbidden)
-	}))
-	defer system.Close()
-	systemClient := commonClient.NewSystemServiceClient(
-		system.URL,
-		staticServiceTokenSource("addp_at_develop"),
-		system.Client(),
-	)
-	executor := &DevExecutor{
-		devTaskRepo: devTaskRepo, taskExecutionRepo: executionRepo,
-		sqlEngine: NewSQLEngineService(&config.Config{}, systemClient, nil),
-	}
-	notifications := 0
-	executor.SetQueryExecutionNotifier(func() { notifications++ })
-	childExecutionID, err := executor.ExecuteWithParamsFromParentExecution(
-		context.Background(), devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
-		commonExecution.ModuleOrchestrator, parentExecutionID, commonExecution.TaskTypeQuery,
-	)
-	if err != nil || childExecutionID == "" || called || notifications != 1 {
-		t.Fatalf("child execution id=%q error=%v called=%t notifications=%d", childExecutionID, err, called, notifications)
-	}
-	child, loadErr := executionRepo.GetByExecutionID(context.Background(), childExecutionID, 7)
-	if loadErr != nil {
-		t.Fatalf("load failed child execution: %v", loadErr)
-	}
-	if child.Status != commonExecution.ExecutionStatusPending || child.CompletedAt != nil ||
-		child.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || child.MaxAttempts != 1 ||
-		child.ParentExecutionID == nil || *child.ParentExecutionID != parentExecutionID ||
-		child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
-		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
-		child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion ||
-		child.ExecutionAuthorizationID != nil {
-		t.Fatalf("queued child execution facts = %#v", child)
-	}
-	if _, ok := child.ExecutionConfig["content"]; !ok {
-		t.Fatalf("queued child did not freeze content: %#v", child.ExecutionConfig)
+			called := false
+			system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				called = true
+				if request.URL.Path != "/api/v1/system/runtime/execution-authorizations" ||
+					request.Header.Get("Authorization") != "Bearer addp_at_develop" ||
+					request.Header.Get("X-Internal-API-Key") != "" || request.Header.Get("X-Tenant-ID") != "" {
+					t.Fatalf("invalid authorization request: path=%s headers=%#v", request.URL.Path, request.Header)
+				}
+				http.Error(w, `{"error":"denied"}`, http.StatusForbidden)
+			}))
+			defer system.Close()
+			systemClient := commonClient.NewSystemServiceClient(
+				system.URL,
+				staticServiceTokenSource("addp_at_develop"),
+				system.Client(),
+			)
+			executor := &DevExecutor{
+				devTaskRepo: devTaskRepo, taskExecutionRepo: executionRepo,
+				sqlEngine:         NewSQLEngineService(&config.Config{}, systemClient, nil),
+				operatorDiscovery: newWorkflowValidationTestService(t),
+			}
+			if taskType == "workflow" {
+				devTask.DevType = "workflow"
+				devTask.Content = models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "buffer", "operator": "buffer", "depends_on": []interface{}{}, "params": map[string]interface{}{"distance": 1.0}}}}}
+				if err := db.Model(devTask).Updates(map[string]interface{}{"dev_type": devTask.DevType, "content": devTask.Content}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			notifications := 0
+			executor.SetExecutionNotifier(func() { notifications++ })
+			childExecutionID, err := executor.ExecuteWithParamsFromParentExecution(
+				context.Background(), devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
+				commonExecution.ModuleOrchestrator, parentExecutionID, taskType,
+			)
+			if err != nil || childExecutionID == "" || called || notifications != 1 {
+				t.Fatalf("child execution id=%q error=%v called=%t notifications=%d", childExecutionID, err, called, notifications)
+			}
+			child, loadErr := executionRepo.GetByExecutionID(context.Background(), childExecutionID, 7)
+			if loadErr != nil {
+				t.Fatalf("load failed child execution: %v", loadErr)
+			}
+			if child.Status != commonExecution.ExecutionStatusPending || child.CompletedAt != nil ||
+				child.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || child.MaxAttempts != 1 ||
+				child.ParentExecutionID == nil || *child.ParentExecutionID != parentExecutionID ||
+				child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
+				child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
+				child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion ||
+				child.ExecutionAuthorizationID != nil {
+				t.Fatalf("queued child execution facts = %#v", child)
+			}
+			if _, ok := child.ExecutionConfig["content"]; !ok {
+				t.Fatalf("queued child did not freeze content: %#v", child.ExecutionConfig)
+			}
+		})
 	}
 }
 

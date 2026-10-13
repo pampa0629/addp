@@ -182,6 +182,10 @@ func qualifyObjectDetectedItemPaths(bucket string, item *metaitem.DetectedItem) 
 	}
 	item.PrimaryContentPath = qualifyObjectContentPath(bucket, item.PrimaryContentPath)
 	item.ScopePath = qualifyObjectContentPath(bucket, item.ScopePath)
+	item.ClaimPaths = slices.Clone(item.ClaimPaths)
+	for i := range item.ClaimPaths {
+		item.ClaimPaths[i] = qualifyObjectContentPath(bucket, item.ClaimPaths[i])
+	}
 	if item.PhysicalPath != "" {
 		item.PhysicalPath = qualifyObjectContentPath(bucket, item.PhysicalPath)
 	}

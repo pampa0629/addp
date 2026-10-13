@@ -64,6 +64,7 @@ func FileDetectedInput(
 	scanDepth string,
 ) input {
 	return input{
+		ClaimedFullNames:     detected.ClaimPaths,
 		Resource:             resource,
 		TenantID:             tenantID,
 		EngineID:             resource.ID,
@@ -135,6 +136,7 @@ func ObjectCompositeInput(
 	scanDepth string,
 ) input {
 	return input{
+		ClaimedFullNames:     itemPlan.DataItem.ClaimPaths,
 		Resource:             resource,
 		TenantID:             tenantID,
 		EngineID:             engineID,

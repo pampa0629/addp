@@ -19,6 +19,7 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         self.state = self.root / 'state'; self.state.mkdir()
         self.sql = self.root / 'postgres.sql'
         self.mongo = self.root / 'mongo.js'
+        self.mysql = self.root / 'mysql.sql'
         self.trace = self.root / 'trace'
         self.passwords = self.root / 'passwords'; self.passwords.mkdir(mode=0o700)
         self.seed = self.root / 'business/mysql'; self.seed.mkdir(parents=True)
@@ -69,14 +70,14 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
                   if [[ "$*" == *--file* ]]; then cat > "$ADDP_TEST_MONGO"; fi
                   exit 0
                 fi
-                cat >/dev/null
+                sed -n '/CREATE TABLE bank_card_accounts/,$p' > "$ADDP_TEST_MYSQL"
                 exit 0 ;;
             esac
             exit 2
         ''')
         self.env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
                         ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_HOST='1', ADDP_ONLINE_SECRET_DIR=str(self.secrets),
-                        ADDP_TEST_MONGO=str(self.mongo), ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace))
+                        ADDP_TEST_MYSQL=str(self.mysql), ADDP_TEST_MONGO=str(self.mongo), ADDP_TEST_STATE=str(self.state), ADDP_TEST_PASSWORDS=str(self.passwords), ADDP_TEST_SQL=str(self.sql), ADDP_TEST_TRACE=str(self.trace))
 
     def executable(self, name, content):
         path = self.bin / name
@@ -93,8 +94,13 @@ class SecurityOwnerFixtureTest(unittest.TestCase):
         for fragment in ('GRANT CONNECT, CREATE ON DATABASE security_fixture TO security_writer', 'CREATE TABLE addp_online_security.mongodb_query_transfer', 'CREATE TABLE addp_online_security.mongodb_query_control', 'CREATE TABLE addp_online_security.mongodb_query_denied',
                          'ALTER TABLE addp_online_security.mongodb_query_transfer OWNER TO security_writer', 'ALTER TABLE addp_online_security.mongodb_query_control OWNER TO security_writer', 'ALTER TABLE addp_online_security.mongodb_query_denied OWNER TO security_writer', 'CREATE EXTENSION postgis', 'CREATE TABLE addp_online_security.exemption_source', 'GRANT SELECT ON addp_online_security.exemption_source', 'location_point geometry(Point, 4326)', 'NULL::text', '张三abc',
                          'ST_SetSRID(ST_MakePoint(100 + id, 20 + id), 4326)', 'GRANT SELECT ON addp_online_security.spatial_algorithm_source',
-                         'spatial_algorithm_transfer OWNER TO security_writer', 'mysql_email_transfer OWNER TO security_writer'):
+                         'spatial_algorithm_transfer OWNER TO security_writer', 'mysql_email_transfer OWNER TO security_writer', 'bank_card_transfer OWNER TO security_writer'):
             self.assertIn(fragment, sql)
+        mysql = self.mysql.read_text()
+        for fragment in ('CREATE TABLE bank_card_accounts', 'bank_card_number varchar(64)',
+                         'credit_card_number int NOT NULL', 'bank_account_no', 'bank_card_verified',
+                         '测试卡abc', 'NULL', 'CUST-10005'):
+            self.assertIn(fragment, mysql)
         for kind, user, port in (('postgresql', 'security_writer', 55433), ('mysql', 'security_reader', 53306), ('mongodb', 'security_reader', 57017)):
             name = 'postgres' if kind == 'postgresql' else kind
             path = self.secrets / f'security-{name}.json'

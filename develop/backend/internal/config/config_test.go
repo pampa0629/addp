@@ -24,11 +24,11 @@ func TestLoadDefaultsDevelopServiceURLToStandardPort(t *testing.T) {
 }
 
 func TestLoadQuerySupervisorLeaseDefaults(t *testing.T) {
-	t.Setenv("DEVELOP_QUERY_LEASE_SECONDS", "")
-	t.Setenv("DEVELOP_QUERY_HEARTBEAT_SECONDS", "")
-	t.Setenv("DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS", "")
+	t.Setenv("DEVELOP_EXECUTION_LEASE_SECONDS", "")
+	t.Setenv("DEVELOP_EXECUTION_HEARTBEAT_SECONDS", "")
+	t.Setenv("DEVELOP_EXECUTION_CLAIM_INTERVAL_SECONDS", "")
 	cfg := Load()
-	if cfg.QueryLeaseDuration != 120*time.Second || cfg.QueryHeartbeatInterval != 30*time.Second || cfg.QueryClaimInterval != time.Second {
+	if cfg.ExecutionLeaseDuration != 120*time.Second || cfg.ExecutionHeartbeatInterval != 30*time.Second || cfg.ExecutionClaimInterval != time.Second {
 		t.Fatalf("unexpected lease config: %#v", cfg)
 	}
 }

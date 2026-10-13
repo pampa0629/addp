@@ -2512,7 +2512,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/settings/query-policy": {
+        "/settings/execution-policy": {
             "get": {
                 "security": [
                     {
@@ -2525,12 +2525,12 @@ const docTemplate = `{
                 "tags": [
                     "配置管理 | Configuration Management"
                 ],
-                "summary": "获取查询策略 | Get query policy",
+                "summary": "获取执行策略 | Get execution policy",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse"
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse"
                         }
                     }
                 },
@@ -2555,15 +2555,15 @@ const docTemplate = `{
                 "tags": [
                     "配置管理 | Configuration Management"
                 ],
-                "summary": "更新查询策略 | Update query policy",
+                "summary": "更新执行策略 | Update execution policy",
                 "parameters": [
                     {
-                        "description": "查询策略 | Query policy",
+                        "description": "执行策略 | Execution policy",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput"
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.UpdateExecutionPolicyInput"
                         }
                     }
                 ],
@@ -2571,7 +2571,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse"
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse"
                         }
                     },
                     "409": {
@@ -5225,6 +5225,44 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse": {
+            "type": "object",
+            "properties": {
+                "default_query_timeout": {
+                    "type": "integer"
+                },
+                "inherited": {
+                    "type": "boolean"
+                },
+                "max_query_timeout": {
+                    "type": "integer"
+                },
+                "notebook_concurrency": {
+                    "type": "integer"
+                },
+                "query_concurrency": {
+                    "type": "integer"
+                },
+                "query_per_engine_concurrency": {
+                    "type": "integer"
+                },
+                "query_result_limit": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "workflow_concurrency": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_service.KernelInfo": {
             "type": "object",
             "properties": {
@@ -5461,39 +5499,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_service.QueryPolicyResponse": {
-            "type": "object",
-            "properties": {
-                "default_query_timeout": {
-                    "type": "integer"
-                },
-                "inherited": {
-                    "type": "boolean"
-                },
-                "max_query_timeout": {
-                    "type": "integer"
-                },
-                "query_concurrency": {
-                    "type": "integer"
-                },
-                "query_per_engine_concurrency": {
-                    "type": "integer"
-                },
-                "query_result_limit": {
-                    "type": "integer"
-                },
-                "scope_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput": {
+        "github_com_addp_develop_backend_internal_service.UpdateExecutionPolicyInput": {
             "type": "object",
             "required": [
                 "default_query_timeout"
@@ -5505,6 +5511,9 @@ const docTemplate = `{
                 "max_query_timeout": {
                     "type": "integer"
                 },
+                "notebook_concurrency": {
+                    "type": "integer"
+                },
                 "query_concurrency": {
                     "type": "integer"
                 },
@@ -5515,6 +5524,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                },
+                "workflow_concurrency": {
                     "type": "integer"
                 }
             }

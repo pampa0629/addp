@@ -299,6 +299,55 @@ definitions:
       update_permission:
         type: string
     type: object
+  dataitem.AuthorizationBasisState:
+    enum:
+    - complete
+    - incomplete
+    - needs_refresh
+    - unsupported
+    type: string
+    x-enum-varnames:
+    - AuthorizationBasisComplete
+    - AuthorizationBasisIncomplete
+    - AuthorizationBasisNeedsRefresh
+    - AuthorizationBasisUnsupported
+  dataitem.AuthorizationBoundary:
+    properties:
+      layout:
+        enum:
+        - single
+        type: string
+      native_target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  dataitem.AuthorizationFacts:
+    properties:
+      basis_state:
+        allOf:
+        - $ref: '#/definitions/dataitem.AuthorizationBasisState'
+        enum:
+        - complete
+        - incomplete
+        - needs_refresh
+        - unsupported
+      boundary:
+        $ref: '#/definitions/dataitem.AuthorizationBoundary'
+      boundary_hash:
+        type: string
+      engine_id:
+        example: ""
+        type: string
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_type:
+        type: string
+      observed_at:
+        type: string
+      schema_version:
+        type: string
+    type: object
   datatype.CRSDefinition:
     properties:
       definition:
@@ -7100,6 +7149,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_catalog.read
+  /engines/{id}/data-items/{fingerprint}/authorization-facts:
+    get:
+      description: 当前 Tenant User 需源授权读取功能及本引擎管理资格。System 用独立 addp-system 身份读取 Meta
+        后再次核验用户资格；识别完整不代表获权，不扫描或签发 Grant | Requires current tenant User, source-grant
+        read permission and engine management qualification. System reads Meta as
+        addp-system then rechecks the user; complete facts are not an Allow. No scan
+        or Grant issuance
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 数据项指纹 | DataItem fingerprint
+        in: path
+        name: fingerprint
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 授权边界事实 | Authorization boundary facts
+          schema:
+            $ref: '#/definitions/dataitem.AuthorizationFacts'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核对数据项授权边界 | Inspect a DataItem authorization boundary
+      tags:
+      - 源数据授权 | Source Data Grants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_grant.read
   /engines/{id}/deletion-assessments:
     post:
       consumes:

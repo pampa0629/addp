@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func newQueryPolicyServiceTestDB(t *testing.T) *gorm.DB {
+func newExecutionPolicyServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -25,9 +25,9 @@ func newQueryPolicyServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE develop.query_policy (
+	if err := db.Exec(`CREATE TABLE develop.execution_policy (
 id INTEGER PRIMARY KEY AUTOINCREMENT, scope_type TEXT NOT NULL, tenant_id INTEGER,
-default_query_timeout INTEGER NOT NULL, max_query_timeout INTEGER NOT NULL, query_result_limit INTEGER NOT NULL,
+workflow_concurrency INTEGER NOT NULL DEFAULT 2, notebook_concurrency INTEGER NOT NULL DEFAULT 1, default_query_timeout INTEGER NOT NULL, max_query_timeout INTEGER NOT NULL, query_result_limit INTEGER NOT NULL,
 query_concurrency INTEGER NOT NULL DEFAULT 20, query_per_engine_concurrency INTEGER NOT NULL DEFAULT 5,
 version INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME,
 UNIQUE(scope_type,tenant_id))`).Error; err != nil {
@@ -36,9 +36,9 @@ UNIQUE(scope_type,tenant_id))`).Error; err != nil {
 	return db
 }
 
-func TestQueryPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
-	db := newQueryPolicyServiceTestDB(t)
-	policy := NewQueryPolicyService(repository.NewQueryPolicyRepository(db))
+func TestExecutionPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
+	db := newExecutionPolicyServiceTestDB(t)
+	policy := NewExecutionPolicyService(repository.NewExecutionPolicyRepository(db))
 	ctx := context.Background()
 	defaults, err := policy.Get(ctx, "platform", nil)
 	if err != nil || defaults.QueryConcurrency != 20 || defaults.QueryPerEngineConcurrency != 5 {
@@ -46,18 +46,18 @@ func TestQueryPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
 	}
 	notifications := 0
 	policy.SetOnChange(func() { notifications++ })
-	input := UpdateQueryPolicyInput{DefaultQueryTimeout: 60, MaxQueryTimeout: 600, QueryResultLimit: 2, QueryConcurrency: 20, QueryPerEngineConcurrency: 5}
+	input := UpdateExecutionPolicyInput{DefaultQueryTimeout: 60, MaxQueryTimeout: 600, QueryResultLimit: 2, QueryConcurrency: 20, QueryPerEngineConcurrency: 5, WorkflowConcurrency: 2, NotebookConcurrency: 1}
 	saved, err := policy.Update(ctx, "platform", nil, input, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tenant := uint(7)
-	if _, err := policy.Update(ctx, "tenant", &tenant, UpdateQueryPolicyInput{DefaultQueryTimeout: 90}, 2); err != nil {
+	if _, err := policy.Update(ctx, "tenant", &tenant, UpdateExecutionPolicyInput{DefaultQueryTimeout: 90}, 2); err != nil {
 		t.Fatal(err)
 	}
 	executor := &DevExecutor{sqlEngine: NewSQLEngineService(&config.Config{}, nil, nil, policy)}
 	task := &models.DevTask{DevType: "query", Content: models.DevTaskContent{"query_type": "sql", "query": "SELECT 1"}, ExecutionConfig: models.DevTaskContent{"engine_id": 9}}
-	if err := executor.freezeQueryPolicy(ctx, task, tenant); err != nil {
+	if err := executor.freezeExecutionPolicy(ctx, task, tenant); err != nil {
 		t.Fatal(err)
 	}
 	if task.Timeout != 90 || task.QueryResultLimit != 2 {
@@ -77,10 +77,10 @@ func TestQueryPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A different service instance must observe changes without any local notification.
-	other := NewQueryPolicyService(repository.NewQueryPolicyRepository(db))
-	total, perEngine, err := other.ResolveConcurrency(ctx)
-	if err != nil || total != 8 || perEngine != 3 || notifications != 2 {
-		t.Fatalf("limits=%d/%d notify=%d err=%v", total, perEngine, notifications, err)
+	other := NewExecutionPolicyService(repository.NewExecutionPolicyRepository(db))
+	limits, err := other.ResolveConcurrency(ctx)
+	if err != nil || limits.Query != 8 || limits.QueryPerEngine != 3 || notifications != 2 {
+		t.Fatalf("limits=%d/%d notify=%d err=%v", limits.Query, limits.QueryPerEngine, notifications, err)
 	}
 	frozenCtx := contextWithQuerySnapshot(ctx, frozen)
 	timeout, err := executor.sqlEngine.normalizedTimeoutForTenant(frozenCtx, tenant, frozen.Timeout)
@@ -92,13 +92,13 @@ func TestQueryPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
 		t.Fatalf("authorization ttl=%d %v", ttl, err)
 	}
 	newTask := &models.DevTask{}
-	if err := executor.freezeQueryPolicy(ctx, newTask, tenant); err != nil {
+	if err := executor.freezeExecutionPolicy(ctx, newTask, tenant); err != nil {
 		t.Fatal(err)
 	}
 	if newTask.Timeout != 20 || newTask.QueryResultLimit != 1 {
 		t.Fatalf("new policy not consumed: %#v", newTask)
 	}
-	if _, err := policy.Update(ctx, "platform", nil, input, 1); !errors.Is(err, repository.ErrQueryPolicyVersionConflict) {
+	if _, err := policy.Update(ctx, "platform", nil, input, 1); !errors.Is(err, repository.ErrExecutionPolicyVersionConflict) {
 		t.Fatalf("want version conflict: %v", err)
 	}
 	if notifications != 2 {
@@ -106,10 +106,10 @@ func TestQueryPolicyHotReloadAndExecutionSnapshot(t *testing.T) {
 	}
 }
 
-func TestQueryPolicyRejectsTenantLimitOverridesAndInvalidLimits(t *testing.T) {
-	policy := NewQueryPolicyService(repository.NewQueryPolicyRepository(newQueryPolicyServiceTestDB(t)))
+func TestExecutionPolicyRejectsTenantLimitOverridesAndInvalidLimits(t *testing.T) {
+	policy := NewExecutionPolicyService(repository.NewExecutionPolicyRepository(newExecutionPolicyServiceTestDB(t)))
 	tenant := uint(7)
-	for _, input := range []UpdateQueryPolicyInput{
+	for _, input := range []UpdateExecutionPolicyInput{
 		{DefaultQueryTimeout: 30, QueryConcurrency: 100},
 		{DefaultQueryTimeout: 30, QueryPerEngineConcurrency: 100},
 		{DefaultQueryTimeout: 30, MaxQueryTimeout: 100},
@@ -120,20 +120,20 @@ func TestQueryPolicyRejectsTenantLimitOverridesAndInvalidLimits(t *testing.T) {
 		}
 	}
 	for _, limits := range [][2]int{{0, 5}, {20, 0}, {5, 6}, {-1, 1}} {
-		input := UpdateQueryPolicyInput{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, QueryConcurrency: limits[0], QueryPerEngineConcurrency: limits[1]}
+		input := UpdateExecutionPolicyInput{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, QueryConcurrency: limits[0], QueryPerEngineConcurrency: limits[1], WorkflowConcurrency: 2, NotebookConcurrency: 1}
 		if _, err := policy.Update(context.Background(), "platform", nil, input, 1); err == nil {
 			t.Fatalf("invalid limits accepted: %v", limits)
 		}
 	}
 }
 
-func TestQueryPolicyReadFailureDoesNotUseStartupDefaults(t *testing.T) {
-	db := newQueryPolicyServiceTestDB(t)
-	policy := NewQueryPolicyService(repository.NewQueryPolicyRepository(db))
+func TestExecutionPolicyReadFailureDoesNotUseStartupDefaults(t *testing.T) {
+	db := newExecutionPolicyServiceTestDB(t)
+	policy := NewExecutionPolicyService(repository.NewExecutionPolicyRepository(db))
 	sqlDB, _ := db.DB()
 	sqlDB.Close()
 	executor := &DevExecutor{sqlEngine: NewSQLEngineService(&config.Config{}, nil, nil, policy)}
-	if err := executor.freezeQueryPolicy(context.Background(), &models.DevTask{}, 7); err == nil {
+	if err := executor.freezeExecutionPolicy(context.Background(), &models.DevTask{}, 7); err == nil {
 		t.Fatal("policy error was ignored")
 	}
 }

@@ -95,6 +95,10 @@ type DetectionResult struct {
 
 detector 必须先确定 data item 边界，再提取类型信息、格式信息和横切能力。`meta_item` 表字段是 item 身份事实源，不得由 parser、provider、reader 或格式私有逻辑任意覆盖。
 
+完整可见文件清单与既有格式规则足以确定的边界，必须在基础识别阶段确定；目录、对象 prefix 和显式 refs 共用此规则，basic / deep 不得仅因读取深度不同产生不同组成的 item。例如 Shapefile 的同级必需与可选 refs 在 basic 即归并，deep 只补充内容事实。2026-10-13 已确认：确需读取 manifest／header 才能确定的身份与组成，也属于有上限的基础结构识别，不再以“必须 deep”作为永久前提；未实现格式不得宣称已支持。读取限制、失败语义及实施状态见[元数据扫描机制规范](addp元数据扫描机制规范.md)。基础识别不能扩大枚举范围；同级 multi 只认领当前目录或显式引用组内的匹配资源，递归观察文件不能使其越过同级边界。
+
+组合 item 成功登记时，须在同一事务按该 item 的精确 claims 删除同 Tenant、Engine、叶子类型的既有独立组件记录，保留 primary 身份及未认领记录；失败不得清理组件。此收敛不依赖 force，不使用父目录或 prefix 的范围删除替代，成功后按被删除组件的 fingerprint 清理搜索投影。已知 item refresh 不重新发现或清理兄弟 item。
+
 | 场景 | `meta_item.name` 来源 | `meta_item.full_name` 来源 | 说明 |
 |---|---|---|---|
 | `layout=single` 对象 / 文件资源 | 入口资源名，保留扩展名 | 入口资源完整路径 | MinIO / S3 中 `item_type=object`；NFS / 本地文件系统中 `item_type=file` |
@@ -110,6 +114,12 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 4. 容器内部对象默认不生成独立 `meta_item`；只有对应规范明确声明后才可展开。
 5. `meta_item.item_type` 跟随引擎 catalog / 路径模型的原生叶子术语，不因 `data_type`、`format` 或 Manager 预览方式改变。
 6. 除非经过规范修订，不得改变 `meta_item.name/full_name/item_type` 的来源语义。
+
+### 授权消费的边界事实
+
+DataItem 授权以 detector 确定的身份与组成为资源事实，System 不另行识别 multi／whole，也不复制 detector 的文件判断规则。whole 的 `refs` 仍只记录 manifest／关键入口，不能为了授权改成百万叶子清单；其合法 scope 和格式组成规则约束后续动态成员。普通 node 不是 whole，选中目录做批量授权也不改变该事实。
+
+同一合法 whole 内增加成员是内容更新，不要求 System 为成员逐一授予 Grant。布局重识别、根范围改变或外部引用增加可能改变授权边界，必须交由统一授权链核验，不能因 primary 指纹保留或一次扫描成功而自动继承更大的旧许可。detector 负责事实，不修改 Grant；具体裁决职责与实施状态见[授权上下文规范 5.5.7](addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。
 
 ## 已入库 item 的再次消费
 

@@ -72,12 +72,13 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorizationFromExecution(
 	tenantID uint,
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
+	lease commonExecution.Lease,
 ) (*IssuedWorkflowExecutionAuthorization, error) {
 	if devTask == nil || devTask.DevType != commonExecution.TaskTypeWorkflow {
 		return nil, nil
 	}
 	if e.operatorDiscovery == nil || e.sqlEngine == nil || e.sqlEngine.systemService == nil ||
-		parentExecutionID == uuid.Nil || executionID == uuid.Nil {
+		parentExecutionID == uuid.Nil || executionID == uuid.Nil || lease.ExecutionID != executionID.String() || lease.TenantID != int(tenantID) || lease.Attempt <= 0 || lease.Token == "" {
 		return nil, fmt.Errorf("工作流执行授权服务不可用")
 	}
 	plan, err := e.buildWorkflowExecutionAuthorizationPlan(ctx, devTask, tenantID)
@@ -89,6 +90,7 @@ func (e *DevExecutor) prepareWorkflowExecutionAuthorizationFromExecution(
 		commonClient.IssueExecutionAuthorizationFromExecutionRequest{
 			ParentExecutionID: parentExecutionID.String(), Audience: "develop",
 			ExecutionID: executionID.String(), Accesses: plan.accesses,
+			Attempt: lease.Attempt, LeaseToken: lease.Token,
 			ExpiresIn: plan.expiresIn,
 		},
 	)

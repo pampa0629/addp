@@ -48,10 +48,11 @@ type ListKernelsResponse struct {
 }
 
 type JupyterRuntimeExecutionRequest struct {
-	TenantID     uint                   `json:"tenant_id"`
-	NotebookPath string                 `json:"notebook_path"`
-	Parameters   map[string]interface{} `json:"parameters"`
-	Kernel       string                 `json:"kernel"`
+	TenantID              uint                   `json:"tenant_id"`
+	NotebookContentSHA256 string                 `json:"notebook_content_sha256"`
+	NotebookPath          string                 `json:"notebook_path"`
+	Parameters            map[string]interface{} `json:"parameters"`
+	Kernel                string                 `json:"kernel"`
 }
 
 type JupyterRuntimeExecutionResponse struct {

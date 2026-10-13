@@ -122,7 +122,17 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 
 `multi` 只认领明确匹配的相关 ref，不独占整个目录或 prefix。Shapefile 是典型 `multi`。
 
-`whole` 表示整段范围构成一个 data item，不再逐个顾忌范围内的文件和子目录。只有规范明确声明的格式或引擎原生边界才应使用 `whole`。
+`whole` 表示整段范围构成一个 data item，不将组成文件和子目录逐个登记为独立数据项。只有规范明确声明的格式或引擎原生边界才应使用 `whole`；普通目录或 schema 不能因用户一次选中就变成 whole item。
+
+### 数据项与授权边界
+
+2026-10-13 已确认的源数据授权目标统一为 DataItem，实施契约见[授权上下文规范 5.5.7](../spec/addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。`scope` 在这里指 whole item 的组成范围，不是新增的 `data_type` 或第四种布局。倾斜摄影场景与栅格镶嵌可以有不同数据类型和格式，却同样采用 `layout=whole`。
+
+- `single`：数据库表作为一个数据项授权，增加行不产生新的授权对象。
+- `multi`：Shapefile 的主文件和相关组成文件作为一个数据项授权，不要求用户分别给 `.shp`、`.shx`、`.dbf` 发放 Grant。
+- `whole`：OSGB 场景或镶嵌数据集按稳定数据项及既定组成范围授权。合法新增 OSGB、TIFF 等成员是内容变化，不要求 System 同步文件清单或逐文件重新授权。Meta 负责识别范围与组成规则，读取端依照该边界约束本次真实读取；不以字符串路径前缀放行任意文件、外部引用或越界链接。
+
+普通 node 下新增独立数据项不继承兄弟数据项的 Grant。whole 的根范围、所属 Engine 或合法组成范围发生实质改变，也不能借稳定名称扩大已有授权。上述规则是已确认、待贯通的授权目标，不表示目前所有引擎和访问模块已实现。
 
 ## 数据类型、文件格式和横切能力
 
@@ -154,6 +164,8 @@ engine capability
 |---|---|---|
 | engine | 连接、catalog、元数据、内容读写、批次读写等 engine capability | 判断最终 `data_type`、归并 multi / whole item、写最终 attributes |
 | `meta` | 资源树扫描、detector 调度、data item 识别、claims / exclusive 合并、attributes normalizer、落库 | Manager 面向前端的 DTO、Transfer 执行计划、format plugin 内部解析细节 |
+| `system` 引擎访问控制 | 以 Meta 确定的 DataItem 为目标，维护唯一源数据授权、批准要求和撤销事实 | 复制 Meta 目录、重新探测布局、逐个管理 whole 的叶子文件 Grant |
+| `catalog` | 关联 DataItem，维护企业编目、责任与业务批准依据 | 再造数据项身份、持有第二份源数据 ACL、成为直接批准的必备模块 |
 | 内容 I/O 抽象 | 提供统一的 ref、reader、writer、range reader、stat 等内容访问边界 | 连接凭据管理、格式解析、multi item 组织规则、面向前端的 DTO |
 | 格式能力 | 提供格式身份、格式探测、类型信息、内容读取和写出能力 | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
 | `manager` | 消费已入库 data item 和标准 attributes，组装管理端内容结果 | 重新判断 layout、重新猜 format、重新枚举 sibling related refs |

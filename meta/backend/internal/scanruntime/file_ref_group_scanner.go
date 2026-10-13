@@ -72,7 +72,7 @@ func scanFileRefGroups(
 			result.CatalogNodes++
 		}
 
-		detection, err := scanflow.ResolveContentCandidates(ctx, contentReader, connInfo, resource.ID, candidates)
+		detection, err := scanflow.ResolveContentCandidates(ctx, scanflow.ContentReaderForDepth(contentReader, scanDepth), connInfo, resource.ID, candidates)
 		if err != nil {
 			return result, err
 		}

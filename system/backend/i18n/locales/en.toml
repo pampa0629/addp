@@ -427,3 +427,5 @@ other = "The observability identity snapshot timed out."
 other = "The approval mode has changed. Refresh and review it before confirming again."
 [system.engine_access_grant_relation_exists]
 other = "This recipient already has an active read grant for this data; no duplicate was issued. Manage the current relation. To change validity, explicitly withdraw it and obtain approval under the current requirements."
+[system.engine_access.authorization_facts_unavailable]
+other = "Unable to verify the DataItem authorization boundary; check Meta and System service credentials"

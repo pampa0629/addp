@@ -2,6 +2,7 @@ package scanflow
 
 import (
 	"context"
+	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metaitem"
@@ -55,4 +56,12 @@ func ResolveNonExclusiveContentCandidates(
 		Subdirs:              candidates.Subdirs,
 		Options:              candidates.ResolveOptions,
 	})
+}
+
+// ContentReaderForDepth keeps content-dependent detection and enrichment in deep scans.
+func ContentReaderForDepth(reader plugin.ContentReadableProvider, scanDepth string) plugin.ContentReadableProvider {
+	if !strings.EqualFold(scanDepth, "deep") {
+		return nil
+	}
+	return reader
 }

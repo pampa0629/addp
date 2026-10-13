@@ -28,7 +28,7 @@ func TestQueryExecutionEventsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sqlDB.Close() })
-	runQueryEventCases(t, func(t *testing.T) *gorm.DB {
+	runExecutionEventCases(t, func(t *testing.T) *gorm.DB {
 		tx := db.Begin()
 		if tx.Error != nil {
 			t.Fatal(tx.Error)
@@ -73,12 +73,12 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.AutoMigrate(&models.QueryPolicy{}); err != nil {
+	if err := tx.AutoMigrate(&models.ExecutionPolicy{}); err != nil {
 		t.Fatal(err)
 	}
-	policyRepo := NewQueryPolicyRepository(tx)
+	policyRepo := NewExecutionPolicyRepository(tx)
 	tenant := uint(time.Now().UnixNano()%1_000_000_000 + 100)
-	policy := &models.QueryPolicy{ScopeType: "tenant", TenantID: &tenant, DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, UpdatedBy: 1}
+	policy := &models.ExecutionPolicy{ScopeType: "tenant", TenantID: &tenant, DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, UpdatedBy: 1}
 	if err := policyRepo.Save(context.Background(), policy, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 	if err := policyRepo.Save(context.Background(), policy, version); err != nil {
 		t.Fatal(err)
 	}
-	storedPolicy, err := NewQueryPolicyRepository(tx).Get(context.Background(), "tenant", &tenant)
+	storedPolicy, err := NewExecutionPolicyRepository(tx).Get(context.Background(), "tenant", &tenant)
 	if err != nil || storedPolicy.QueryConcurrency != 12 || storedPolicy.QueryPerEngineConcurrency != 3 {
 		t.Fatalf("persisted policy: %#v %v", storedPolicy, err)
 	}
@@ -108,9 +108,10 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repository := NewQueryExecutionRepository(tx)
+	repository := NewExecutionRepository(tx)
 	for _, wantSource := range []string{commonExecution.ModuleDevelop, commonExecution.ModuleOrchestrator} {
-		claimed, lease, err := repository.ClaimNext(context.Background(), "postgres-query-supervisor", time.Now().UTC(), time.Minute, nil)
+		claimed, lease, err := repository.ClaimNext(
+			commonExecution.TaskTypeQuery, context.Background(), "postgres-query-supervisor", time.Now().UTC(), time.Minute, nil)
 		if err != nil || claimed == nil || lease == nil {
 			t.Fatalf("claim = %#v %#v, %v", claimed, lease, err)
 		}
@@ -136,7 +137,7 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 		}
 	}
 	claimed, lease, err := repository.ClaimNext(
-		context.Background(), "postgres-query-supervisor", time.Now().UTC(), time.Minute, []uint{9},
+		commonExecution.TaskTypeQuery, context.Background(), "postgres-query-supervisor", time.Now().UTC(), time.Minute, []uint{9},
 	)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("claim excluding engine 9 = %#v %#v, %v", claimed, lease, err)

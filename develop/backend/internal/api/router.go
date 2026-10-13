@@ -36,7 +36,7 @@ func SetupRouter(
 	catalogResourceHandler *CatalogResourceHandler,
 	systemClient *commonClient.SystemServiceClient, // 用于审计日志
 	lifecycle *modulelifecycle.Controller,
-	queryPolicyHandlers ...*QueryPolicyHandler,
+	executionPolicyHandlers ...*ExecutionPolicyHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -51,15 +51,15 @@ func SetupRouter(
 	router.Use(lifecycle.RequireReady())
 
 	taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
-	var queryPolicyHandler *QueryPolicyHandler
-	if len(queryPolicyHandlers) > 0 {
-		queryPolicyHandler = queryPolicyHandlers[0]
+	var executionPolicyHandler *ExecutionPolicyHandler
+	if len(executionPolicyHandlers) > 0 {
+		executionPolicyHandler = executionPolicyHandlers[0]
 	}
-	if queryPolicyHandler != nil {
+	if executionPolicyHandler != nil {
 		settings := router.Group("/api/v1/develop")
 		settings.Use(commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}))
-		settings.GET("/settings/query-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationRead), queryPolicyHandler.Get)
-		settings.PUT("/settings/query-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationUpdate), queryPolicyHandler.Update)
+		settings.GET("/settings/execution-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationRead), executionPolicyHandler.Get)
+		settings.PUT("/settings/execution-policy", commonAuth.MustNewPermissionGuard(developauthorization.PermissionDevelopConfigurationUpdate), executionPolicyHandler.Update)
 	}
 
 	// Kernel Capability 只允许访问独立的只读引擎发现端点。

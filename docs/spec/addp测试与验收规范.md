@@ -39,6 +39,9 @@ make test-changed BASE_REF=<ref>
 # 指定 owner 模块的 T0-T3 门禁
 make test-module MODULE=<module>
 
+# 仅运行 owner 的 Go T1，便于开发定位；不计为完整模块门禁
+make test-module MODULE=<module> GO_ONLY=1
+
 # 全部已登记 disposable 基础设施门禁
 make test-integration
 

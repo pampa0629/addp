@@ -249,11 +249,11 @@ other = "Failed to start task execution"
 [develop.query.parameter_definitions_invalid]
 other = "Query parameter definitions are invalid; check names, types, defaults, and references in the query"
 
-[develop.query_policy.invalid]
-other = "Failed to read or update query policy"
+[develop.execution_policy.invalid]
+other = "Failed to read or update execution policy"
 
-[develop.query_policy.conflict]
-other = "Query policy changed; reload before saving"
+[develop.execution_policy.conflict]
+other = "Execution policy changed; reload before saving"
 
 [develop.execution.read_failed]
 other = "Failed to read execution records"

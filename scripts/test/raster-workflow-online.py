@@ -222,17 +222,23 @@ def aggregate_workflow(source_locator, target_engine_id, case_name):
     if case_name not in fixture.AGGREGATE_CASES:
         raise SuiteError('unknown aggregation case')
     ref = lambda name: {'$ref': name, 'port': 'default'}
-    return {'tasks': [
-        {'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}},
-        {'id': 'select', 'operator': 'raster_select_bands', 'depends_on': ['load'], 'params': {'input_raster': ref('load'), 'bands': [2]}},
-        {'id': 'aggregate', 'operator': 'raster_aggregate', 'depends_on': ['select'], 'params': {
-            'input_raster': ref('select'), 'factors': [3, 5], 'method': case_name.removeprefix('aggregate-')}},
+    config = fixture.aggregate_config(case_name)
+    tasks = [{'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}}]
+    input_node = 'load'
+    if config['bands'] is not None:
+        tasks.append({'id': 'select', 'operator': 'raster_select_bands', 'depends_on': ['load'],
+                      'params': {'input_raster': ref('load'), 'bands': config['bands']}})
+        input_node = 'select'
+    tasks.extend([
+        {'id': 'aggregate', 'operator': 'raster_aggregate', 'depends_on': [input_node], 'params': {
+            'input_raster': ref(input_node), 'factors': config['factors'], 'method': config['method']}},
         {'id': 'levels', 'operator': 'raster_build_overviews', 'depends_on': ['aggregate'], 'params': {
             'input_raster': ref('aggregate'), 'levels': [2], 'resampling': 'nearest'}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['levels'], 'params': {
             'input_raster': ref('levels'), 'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
             'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}},
-    ]}
+    ])
+    return {'tasks': tasks}
 
 
 def update_workflow(base_locator, patch_locator, target_engine_id, case_name):
@@ -901,19 +907,25 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     patch_locator = support.build_item_locator(source_engine, patch_source)
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
     reference_locator = support.build_item_locator(target_engine, reference_source)
+    aggregate_sources = {
+        name: support.find_fixture_item(client, source_engine, 'raster-source/'+name, 'aggregation source')
+        for name in {fixture.aggregate_config(case)['source_name'] for case in fixture.AGGREGATE_CASES}}
     for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES:
         single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES
         case_sources = [(source, source_locator, '')] if single else [
             (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
         if case_name in fixture.UPDATE_CASES:
             case_sources = [(source,source_locator,'-base'),(patch_source,patch_locator,'-patch')]
+        if case_name in fixture.AGGREGATE_CASES:
+            case_source = aggregate_sources[fixture.aggregate_config(case_name)['source_name']]
+            case_sources = [(case_source, support.build_item_locator(source_engine, case_source), '')]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
         definition = (update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
                       outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
-                      aggregate_workflow(source_locator, target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
+                      aggregate_workflow(source_locators[0], target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
                       reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
                       foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
         identifier = submit(client, engine_id, definition)
@@ -926,7 +938,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('Monitor multi-raster execution differs from Develop status/lineage')
         native = physical_runner(repository, env, 'verify-' + case_name)
         artifact = execution['metadata']['result']['final_result']
-        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
+        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES + fixture.AGGREGATE_MULTIBAND_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
         levels = [[expectation['width']//2, expectation['height']//2]]
         if (native.get('case_name') != case_name or native.get('preserved_sha256') != preserved
             or native.get('cog_valid') is not True or native.get('source_unchanged') is not True

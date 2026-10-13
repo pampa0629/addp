@@ -38,7 +38,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	if len(input.RecursiveFiles) > 0 {
 		files = input.RecursiveFiles
 	}
-	initialResolved, err := resolveCommonItems(input.DirPath, files, true)
+	initialResolved, err := resolveCommonItems(input.DirPath, files, !input.Options.ExcludeWholeScope)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		appendResolvedDetection(input, result, item)
 	}
 
-	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(files, result.Claims), !initialResolved.Exclusive)
+	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(input.Files, result.Claims), !input.Options.ExcludeWholeScope && !initialResolved.Exclusive)
 	if err != nil {
 		return nil, err
 	}
@@ -699,6 +699,18 @@ func detectedItemFromResolvedItem(physicalPath string, item dataitem.ResolvedIte
 	sort.Slice(item.RefList, func(i, j int) bool {
 		return item.RefList[i].Path < item.RefList[j].Path
 	})
+	// The shared multi resolver expresses its claims through refs; retain the
+	// per-item exact claim set for atomic component reconciliation at persistence.
+	claims := map[string]bool{}
+	for _, claim := range item.ClaimPaths {
+		claims[claim] = true
+	}
+	for _, ref := range item.RefList {
+		if ref.Path != "" && !claims[ref.Path] {
+			item.ClaimPaths = append(item.ClaimPaths, ref.Path)
+			claims[ref.Path] = true
+		}
+	}
 
 	return &DetectedItem{
 		ResolvedItem: item,

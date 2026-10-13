@@ -26,6 +26,29 @@ class FakeS3Error(Exception):
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_multiband_aggregation_oracle_keeps_separate_nan_zero_partial_alpha_and_rotated_edges(self):
+        first = list(m.aggregate_pixels('aggregate-multiband-mean', 1))
+        second = list(m.aggregate_pixels('aggregate-multiband-mean', 2))
+        self.assertEqual(first[:6], [None, 2., None, 4., 0., 6.])
+        self.assertEqual(second[:6], [2., None, None, 8., 0., 12.])
+        expectation = m.aggregate_expectation('aggregate-multiband-mean')
+        self.assertEqual(expectation['band_valid_pixels'], [16382, 16382])
+        self.assertEqual(expectation['band_count'], 2)
+        self.assertEqual(expectation['transform'], [110, .02, 0, 20.32, 0, -.02])
+        expectation = m.aggregate_expectation('aggregate-rotated-sum')
+        self.assertEqual(expectation['band_valid_pixels'], [4472, 4472])
+        self.assertEqual(expectation['transform'], [110, .03, .02, 20.32, .006, -.1])
+        for band, first, right, bottom, last in ((1, 1552., 1152., 48772., 16384.),
+                                                (2, 3104., 2304., 97544., 32768.)):
+            pixels = list(m.aggregate_pixels('aggregate-rotated-sum', band))
+            self.assertEqual([pixels[0], pixels[85], pixels[51*86], pixels[-1]],
+                             [first, right, bottom, last])
+            self.assertEqual(list(m.aggregate_pixels('aggregate-rotated-sum', band, 2)),
+                             [pixels[y*86+x] for y in range(0, 52, 2) for x in range(0, 86, 2)])
+        for case in m.AGGREGATE_MULTIBAND_CASES:
+            self.assertIn('verify-'+case, m.ACTIONS)
+            self.assertIsNone(m.aggregate_config(case)['bands'])
+
     def test_aggregate_min_max_oracle_uses_selected_band_valid_cells_and_partial_edges(self):
         for case, first, right, bottom, interior in (
             ('aggregate-min', 4., 512., 130562., 2568.),

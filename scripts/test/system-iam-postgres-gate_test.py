@@ -112,6 +112,18 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_authorization_facts_filter_selects_only_registered_owner_tests(self):
+        for package, pattern in (
+            ("migration", "^TestMetaAuthorizationFactsForwardMigrationAgainstPostgres$"),
+            ("api", "^TestEngineAccessDelegationAgainstPostgres$"),
+        ):
+            result = self.run_gate(arguments=("--package", package, "--test", "authorization-facts"))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"./internal/{package} -run {pattern}", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "authorization-facts"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration or api", result.stderr)
+
     def test_full_gate_sets_a_finite_timeout_for_every_package(self):
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)

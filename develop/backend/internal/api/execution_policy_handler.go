@@ -12,57 +12,57 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type QueryPolicyHandler struct {
-	service *developService.QueryPolicyService
+type ExecutionPolicyHandler struct {
+	service *developService.ExecutionPolicyService
 }
 
-func NewQueryPolicyHandler(s *developService.QueryPolicyService) *QueryPolicyHandler {
-	return &QueryPolicyHandler{service: s}
+func NewExecutionPolicyHandler(s *developService.ExecutionPolicyService) *ExecutionPolicyHandler {
+	return &ExecutionPolicyHandler{service: s}
 }
 
 // Get godoc
-// @Summary 获取查询策略 | Get query policy
+// @Summary 获取执行策略 | Get execution policy
 // @Tags 配置管理 | Configuration Management
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} developService.QueryPolicyResponse
+// @Success 200 {object} developService.ExecutionPolicyResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.configuration.read"]
-// @Router /settings/query-policy [get]
-func (h *QueryPolicyHandler) Get(c *gin.Context) {
-	scope, tenantID, ok := queryPolicyScope(c)
+// @Router /settings/execution-policy [get]
+func (h *ExecutionPolicyHandler) Get(c *gin.Context) {
+	scope, tenantID, ok := executionPolicyScope(c)
 	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unsupported authorization context"})
 		return
 	}
 	value, err := h.service.Get(c.Request.Context(), scope, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgExecutionPolicyInvalid, err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, value)
 }
 
 // Update godoc
-// @Summary 更新查询策略 | Update query policy
+// @Summary 更新执行策略 | Update execution policy
 // @Tags 配置管理 | Configuration Management
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Description 平台维护并发、超时和预览策略；租户仅可覆盖默认超时。保存后并发热更新，新执行冻结超时和预览上限。 | Platform manages concurrency, timeout and preview limits; tenants override only the default timeout. Concurrency reloads without restart; new executions freeze their timeout and preview limits.
-// @Param request body developService.UpdateQueryPolicyInput true "查询策略 | Query policy"
-// @Success 200 {object} developService.QueryPolicyResponse
+// @Param request body developService.UpdateExecutionPolicyInput true "执行策略 | Execution policy"
+// @Success 200 {object} developService.ExecutionPolicyResponse
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.configuration.update"]
-// @Router /settings/query-policy [put]
-func (h *QueryPolicyHandler) Update(c *gin.Context) {
-	var input developService.UpdateQueryPolicyInput
+// @Router /settings/execution-policy [put]
+func (h *ExecutionPolicyHandler) Update(c *gin.Context) {
+	var input developService.UpdateExecutionPolicyInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgExecutionPolicyInvalid, err.Error())})
 		return
 	}
-	scope, tenantID, ok := queryPolicyScope(c)
+	scope, tenantID, ok := executionPolicyScope(c)
 	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": "unsupported authorization context"})
 		return
@@ -73,18 +73,18 @@ func (h *QueryPolicyHandler) Update(c *gin.Context) {
 		return
 	}
 	value, err := h.service.Update(c.Request.Context(), scope, tenantID, input, uint(principalID))
-	if errors.Is(err, repository.ErrQueryPolicyVersionConflict) {
-		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgQueryPolicyConflict), "error_code": "query_policy_version_conflict"})
+	if errors.Is(err, repository.ErrExecutionPolicyVersionConflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgExecutionPolicyConflict), "error_code": "execution_policy_version_conflict"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgExecutionPolicyInvalid, err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, value)
 }
 
-func queryPolicyScope(c *gin.Context) (string, *uint, bool) {
+func executionPolicyScope(c *gin.Context) (string, *uint, bool) {
 	ctx, ok := commonAuth.AuthContextFromGin(c)
 	if !ok {
 		return "", nil, false

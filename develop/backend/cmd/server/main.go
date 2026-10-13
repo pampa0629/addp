@@ -67,8 +67,8 @@ func main() {
 
 	// ========== Repository 层 ==========
 	devTaskRepo := repository.NewDevTaskRepository(db)
-	queryPolicyRepo := repository.NewQueryPolicyRepository(db)
-	queryPolicyService := service.NewQueryPolicyService(queryPolicyRepo)
+	executionPolicyRepo := repository.NewExecutionPolicyRepository(db)
+	executionPolicyService := service.NewExecutionPolicyService(executionPolicyRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
@@ -109,7 +109,7 @@ func main() {
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
 	// 2. SQL引擎服务
-	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient, queryPolicyService)
+	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient, executionPolicyService)
 	sqlEngine.SetProtectionGate(protectionGate)
 	log.Printf("✅ SQLEngineService 初始化完成")
 
@@ -144,10 +144,10 @@ func main() {
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
-	queryExecutionRepo := repository.NewQueryExecutionRepository(db)
-	queryExecutionService, err := service.NewQueryExecutionService(devExecutor, queryExecutionRepo)
+	executionQueue := repository.NewExecutionRepository(db)
+	executionService, err := service.NewExecutionService(devExecutor, executionQueue)
 	if err != nil {
-		log.Fatalf("Query Execution Service 初始化失败: %v", err)
+		log.Fatalf("Execution Service 初始化失败: %v", err)
 	}
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
@@ -182,9 +182,9 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	queryPolicyHandler := api.NewQueryPolicyHandler(queryPolicyService)
+	executionPolicyHandler := api.NewExecutionPolicyHandler(executionPolicyService)
 	lifecycleController := modulelifecycle.NewBusiness("develop", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, catalogResourceHandler, systemServiceClient, lifecycleController, queryPolicyHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, toolApprovalHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devTaskService, catalogResourceHandler, systemServiceClient, lifecycleController, executionPolicyHandler)
 	log.Printf("✅ 路由设置完成")
 	addr := cfg.ServerAddr
 	listener, err := net.Listen("tcp", addr)
@@ -197,36 +197,37 @@ func main() {
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
 	hostname, _ := os.Hostname()
-	querySupervisorInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
-	querySupervisor, err := worker.NewQueryExecutionSupervisor(
-		queryExecutionRepo,
-		queryExecutionService,
-		worker.QueryExecutionSupervisorConfig{
-			InstanceID:         querySupervisorInstanceID,
-			ResolveConcurrency: queryPolicyService.ResolveConcurrency,
-			LeaseDuration:      cfg.QueryLeaseDuration,
-			HeartbeatInterval:  cfg.QueryHeartbeatInterval, ClaimInterval: cfg.QueryClaimInterval,
+	executionSupervisorInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
+	executionSupervisor, err := worker.NewExecutionSupervisor(
+		executionQueue,
+		executionService,
+		worker.ExecutionSupervisorConfig{
+			InstanceID:         executionSupervisorInstanceID,
+			ResolveConcurrency: executionPolicyService.ResolveConcurrency,
+			LeaseDuration:      cfg.ExecutionLeaseDuration,
+			HeartbeatInterval:  cfg.ExecutionHeartbeatInterval, ClaimInterval: cfg.ExecutionClaimInterval,
 		},
 		nil,
 	)
 	if err != nil {
-		log.Fatalf("Query Execution Supervisor 配置无效: %v", err)
+		log.Fatalf("Execution Supervisor 配置无效: %v", err)
 	}
-	querySupervisorReporter, err := commonRuntimeHealth.NewReporter(
-		commonRuntimeHealth.NewRepository(db),
-		commonRuntimeHealth.ReporterConfig{
-			InstanceID: querySupervisorInstanceID, Module: commonExecution.ModuleDevelop,
-			Role: commonRuntimeHealth.RoleExecutionSupervisor, RuntimeName: "query",
-			CurrentCapacity: querySupervisor.Capacity, Interval: commonRuntimeHealth.DefaultInterval,
-			TTL: commonRuntimeHealth.DefaultTTL, ActiveCount: querySupervisor.ActiveCount,
-			Logger: slog.Default(),
-		},
-	)
-	if err != nil {
-		log.Fatalf("Query Execution Supervisor 心跳配置无效: %v", err)
+	var executionReporters []*commonRuntimeHealth.Reporter
+	for _, taskType := range []string{"query", "workflow", "script"} {
+		reporter, err := commonRuntimeHealth.NewReporter(commonRuntimeHealth.NewRepository(db), commonRuntimeHealth.ReporterConfig{
+			InstanceID: executionSupervisorInstanceID + "-" + taskType, Module: commonExecution.ModuleDevelop,
+			Role: commonRuntimeHealth.RoleExecutionSupervisor, RuntimeName: taskType,
+			CurrentCapacity: func() int { return executionSupervisor.Capacity(taskType) },
+			ActiveCount:     func() int { return executionSupervisor.ActiveCount(taskType) },
+			Interval:        commonRuntimeHealth.DefaultInterval, TTL: commonRuntimeHealth.DefaultTTL, Logger: slog.Default(),
+		})
+		if err != nil {
+			log.Fatalf("Execution Supervisor 心跳配置无效: %v", err)
+		}
+		executionReporters = append(executionReporters, reporter)
 	}
-	devExecutor.SetQueryExecutionNotifier(querySupervisor.Notify)
-	queryPolicyService.SetOnChange(querySupervisor.Notify)
+	devExecutor.SetExecutionNotifier(executionSupervisor.Notify)
+	executionPolicyService.SetOnChange(executionSupervisor.Notify)
 	projectionstore.NewRunner(
 		protectionStore, securityClient, systemServiceClient, 30*time.Second,
 		developprotection.NewExecutionBarrier(db, protectionGate, notebookHandler),
@@ -251,11 +252,13 @@ func main() {
 		lifecycleController.AttachRegistration(registration)
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
-	querySupervisorDone := make(chan struct{})
-	go querySupervisorReporter.Run(runtimeContext)
+	executionSupervisorDone := make(chan struct{})
+	for _, reporter := range executionReporters {
+		go reporter.Run(runtimeContext)
+	}
 	go func() {
-		defer close(querySupervisorDone)
-		querySupervisor.Run(runtimeContext, func() bool { return registration != nil && registration.IsRegistered() })
+		defer close(executionSupervisorDone)
+		executionSupervisor.Run(runtimeContext, func() bool { return registration != nil && registration.IsRegistered() })
 	}()
 
 	// 启动服务器（非阻塞）
@@ -275,7 +278,7 @@ func main() {
 	if registration != nil {
 		<-registration.Done()
 	}
-	<-querySupervisorDone
+	<-executionSupervisorDone
 	sessionShutdownContext, cancelSessionShutdown := context.WithTimeout(context.Background(), 20*time.Second)
 	notebookHandler.ShutdownSessions(sessionShutdownContext)
 	cancelSessionShutdown()

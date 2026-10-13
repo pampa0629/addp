@@ -1,5 +1,54 @@
 basePath: /api/v1/meta
 definitions:
+  dataitem.AuthorizationBasisState:
+    enum:
+    - complete
+    - incomplete
+    - needs_refresh
+    - unsupported
+    type: string
+    x-enum-varnames:
+    - AuthorizationBasisComplete
+    - AuthorizationBasisIncomplete
+    - AuthorizationBasisNeedsRefresh
+    - AuthorizationBasisUnsupported
+  dataitem.AuthorizationBoundary:
+    properties:
+      layout:
+        enum:
+        - single
+        type: string
+      native_target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  dataitem.AuthorizationFacts:
+    properties:
+      basis_state:
+        allOf:
+        - $ref: '#/definitions/dataitem.AuthorizationBasisState'
+        enum:
+        - complete
+        - incomplete
+        - needs_refresh
+        - unsupported
+      boundary:
+        $ref: '#/definitions/dataitem.AuthorizationBoundary'
+      boundary_hash:
+        type: string
+      engine_id:
+        example: ""
+        type: string
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_type:
+        type: string
+      observed_at:
+        type: string
+      schema_version:
+        type: string
+    type: object
   dataprotection.DataItemSecurityFacts:
     properties:
       fields:
@@ -964,6 +1013,26 @@ definitions:
       execution_id:
         type: string
       status:
+        type: string
+    type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
         type: string
     type: object
   resourcetree.TreeNode:
@@ -2231,6 +2300,58 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.catalog.read
+  /runtime/data-items/{fingerprint}/authorization-facts:
+    get:
+      description: 仅供 addp-system Tenant Service 精确读取已提交的 Meta 身份与边界，200 不表示访问许可；不扫描、不读取源内容、不返回凭据或完整
+        attributes | Restricted to addp-system Tenant Service. Reads committed Meta
+        identity and boundary; HTTP 200 is not an Allow. No scan, source content,
+        credentials or full attributes
+      parameters:
+      - description: 数据项指纹 | DataItem fingerprint
+        in: path
+        name: fingerprint
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前授权资源事实 | Current authorization resource facts
+          schema:
+            $ref: '#/definitions/dataitem.AuthorizationFacts'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询数据项授权资源事实 | Read DataItem authorization resource facts
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.authorization_facts.read
   /runtime/data-items/{fingerprint}/security-facts:
     get:
       description: 仅供 addp-security 使用，按当前 Tenant 和精确 fingerprint 返回无原值的字段结构事实 | Restricted

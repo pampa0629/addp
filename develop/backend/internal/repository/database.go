@@ -28,12 +28,16 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
 	}
 
+	if err := migrateExecutionPolicy(db); err != nil {
+		return nil, err
+	}
+
 	// AutoMigrate - 确保表结构最新
 	// 所有表由 GORM AutoMigrate 管理（符合统一的数据库表创建策略）
 	if err := db.AutoMigrate(
-		&models.DevTask{},      // 开发任务（query、workflow、script）
-		&models.ToolApproval{}, // 委托 workflow.run 审批事实
-		&models.QueryPolicy{},  // Develop 查询策略
+		&models.DevTask{},         // 开发任务（query、workflow、script）
+		&models.ToolApproval{},    // 委托 workflow.run 审批事实
+		&models.ExecutionPolicy{}, // Develop 执行策略
 		&models.CatalogResourceChangeRow{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
@@ -259,4 +263,28 @@ ALTER TABLE develop.dev_tasks
     DROP COLUMN IF EXISTS next_run_at`,
 		},
 	}
+}
+
+// One-way schema migration preserves the existing policy; no old read/write path remains.
+func migrateExecutionPolicy(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(2026101301)).Error; err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable("develop.query_policy") {
+			return nil
+		}
+		if tx.Migrator().HasTable("develop.execution_policy") {
+			return fmt.Errorf("Develop policy migration found two policy tables")
+		}
+		if err := tx.Migrator().RenameTable("develop.query_policy", "execution_policy"); err != nil {
+			return err
+		}
+		if tx.Dialector.Name() == "postgres" {
+			return tx.Exec("DROP INDEX IF EXISTS develop.idx_develop_query_policy_scope").Error
+		}
+		return nil
+	})
 }

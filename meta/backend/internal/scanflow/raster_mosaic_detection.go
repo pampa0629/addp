@@ -60,10 +60,14 @@ func detectRasterMosaicCompositeItems(
 			claimed[member.Path] = true
 			totalSize += member.SizeBytes
 		}
+		detected := rasterMosaicDetectedItem(prefix, resource.Path, manifest, totalSize)
+		for claim := range claims {
+			detected.ClaimPaths = append(detected.ClaimPaths, claim)
+		}
 		items = append(items, scanresource.ObjectCompositeItem{
 			Bucket: resource.RootName,
 			Prefix: prefix,
-			Item:   rasterMosaicDetectedItem(prefix, resource.Path, manifest, totalSize),
+			Item:   detected,
 			Claims: claims,
 		})
 	}

@@ -215,7 +215,7 @@
       },
       "tabs": {
         "inference": "Inference Scenarios",
-        "queryPolicy": "Query Policy",
+        "executionPolicy": "Execution Policy",
         "quickViewPolicy": "Quick-view policy",
         "baseMap": "Basemap services",
         "continuousPolicy": "Continuous task policy",
@@ -253,12 +253,14 @@
       },
       "policies": {
         "develop": {
-          "title": "Query policy",
+          "title": "Execution policy",
           "defaultQueryTimeout": "Default query timeout (seconds)",
           "maxQueryTimeout": "Maximum query timeout (seconds)",
           "queryResultLimit": "Result preview limit (rows)",
           "queryConcurrency": "Total query concurrency (per Backend)",
           "queryPerEngineConcurrency": "Per-engine query concurrency",
+          "workflowConcurrency": "Workflow concurrency (per Backend)",
+          "notebookConcurrency": "Notebook concurrency (per Backend)",
           "applyHint": "No restart required after saving. Concurrency changes apply to subsequent scheduling; running queries finish normally. Timeout and preview limits apply to new executions.",
           "tenantSettings": "Tenant settings",
           "tenantApplyHint": "No restart is required after saving the default query timeout. It applies to new executions in this tenant; existing executions keep their timeout. The platform maximum query timeout still applies.",

@@ -19,12 +19,12 @@ import (
 
 type QueryExecutionService struct {
 	executor *DevExecutor
-	queries  *repository.QueryExecutionRepository
+	queries  *repository.ExecutionRepository
 }
 
 func NewQueryExecutionService(
 	executor *DevExecutor,
-	queries *repository.QueryExecutionRepository,
+	queries *repository.ExecutionRepository,
 ) (*QueryExecutionService, error) {
 	if executor == nil || executor.sqlEngine == nil || executor.taskExecutionRepo == nil || queries == nil {
 		return nil, fmt.Errorf("Develop Query Execution Service dependencies are required")

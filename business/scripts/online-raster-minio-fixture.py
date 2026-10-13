@@ -41,7 +41,9 @@ MULTIBAND_CASES = ('multiband-alpha', 'multiband-joint', 'multiband-average', 'm
 UTILITY_CASES = ('build-overviews', 'to-cog')
 FOUNDATION_CASES = ('multiraster-weighted', 'multiraster-rgb')
 RECLASS_CASES = ('reclassify-nodata', 'reclassify-keep')
-AGGREGATE_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
+AGGREGATE_SINGLE_BAND_CASES = ('aggregate-mean', 'aggregate-sum', 'aggregate-min', 'aggregate-max')
+AGGREGATE_MULTIBAND_CASES = ('aggregate-multiband-mean', 'aggregate-rotated-sum')
+AGGREGATE_CASES = AGGREGATE_SINGLE_BAND_CASES + AGGREGATE_MULTIBAND_CASES
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
 FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2', 'footprint-holes', 'footprint-rotated', 'footprint-diagonal', 'footprint-pinch')
@@ -318,27 +320,78 @@ def reclass_expectation(case_name):
     return {**artifact_expectation(), 'valid_pixels': sum(value is not None for value in reclass_pixels(case_name))}
 
 
-def aggregate_expectation(case_name):
+def aggregate_config(case_name):
     if case_name not in AGGREGATE_CASES:
         raise FixtureError('unknown aggregation case')
-    width, height = 86, 52
-    transform = [110, .03, 0, 20.32, 0, -.05]
+    if case_name == 'aggregate-multiband-mean':
+        return {'source_name': 'multiband.tif', 'factors': [2, 2], 'method': 'mean', 'bands': None}
+    if case_name == 'aggregate-rotated-sum':
+        return {'source_name': ROTATED_SOURCE, 'factors': [3, 5], 'method': 'sum', 'bands': None}
+    return {'source_name': 'source.tif', 'factors': [3, 5],
+            'method': case_name.removeprefix('aggregate-'), 'bands': [2]}
+
+
+def aggregate_expectation(case_name):
+    config = aggregate_config(case_name)
+    factor_x, factor_y = config['factors']
+    width, height = math.ceil(SIZE/factor_x), math.ceil(SIZE/factor_y)
+    source_transform = ROTATED_TRANSFORM if config['source_name'] == ROTATED_SOURCE else TRANSFORM
+    transform = [source_transform[0], source_transform[1]*factor_x, source_transform[2]*factor_y,
+                 source_transform[3], source_transform[4]*factor_x, source_transform[5]*factor_y]
+    corners = [(transform[0]+x*transform[1]+y*transform[2], transform[3]+x*transform[4]+y*transform[5])
+               for x, y in ((0, 0), (width, 0), (width, height), (0, height))]
+    counts = [sum(value is not None for value in aggregate_pixels(case_name, band))
+              for band in range(1, 3 if config['bands'] is None else 2)]
     return {**artifact_expectation(), 'width': width, 'height': height,
-            'transform': transform, 'extent': [110, 20.32-height*.05, 110+width*.03, 20.32],
-            'valid_pixels': width*height}
+            'band_count': len(counts), 'transform': transform,
+            'extent': [min(x for x,y in corners), min(y for x,y in corners),
+                       max(x for x,y in corners), max(y for x,y in corners)],
+            'valid_pixels': counts[0], 'band_valid_pixels': counts}
+
+
+@lru_cache(maxsize=None)
+def aggregate_values(case_name, band):
+    """Scalar fixture oracle, independent of GDAL masks and product reducers."""
+    config = aggregate_config(case_name)
+    if band not in ((1,) if config['bands'] else (1, 2)):
+        raise FixtureError('unknown aggregation output band')
+    factor_x, factor_y = config['factors']
+    values = []
+    for row in range(0, SIZE, factor_y):
+        for column in range(0, SIZE, factor_x):
+            contributors = []
+            for y in range(row, min(row+factor_y, SIZE)):
+                for x in range(column, min(column+factor_x, SIZE)):
+                    if config['bands']:
+                        if y*SIZE+x != 0:
+                            contributors.append(2.*(y*SIZE+x+1))
+                    else:
+                        cell = (y//2)*(SIZE//2)+x//2
+                        if cell not in (band-1, 2):
+                            contributors.append(0. if cell == 4 else float(band*(cell+1)))
+            method = config['method']
+            if not contributors:
+                value = None
+            elif method == 'mean':
+                value = math.fsum(contributors)/len(contributors)
+            elif method == 'sum':
+                value = math.fsum(contributors)
+            elif method == 'min':
+                value = min(contributors)
+            else:
+                value = max(contributors)
+            values.append(value)
+    return tuple(values)
 
 
 def aggregate_pixels(case_name, band=1, level=1):
-    """Independent integer groups of source band 2, including incomplete right/bottom groups."""
-    if case_name not in AGGREGATE_CASES:
-        raise FixtureError('unknown aggregation case')
-    method = case_name.removeprefix('aggregate-')
-    for row in range(0, 52, level):
-        for column in range(0, 86, level):
-            values = [2.*(y*SIZE+x+1) for y in range(row*5, min((row+1)*5, SIZE))
-                      for x in range(column*3, min((column+1)*3, SIZE)) if y*SIZE+x != 0]
-            total = math.fsum(values)
-            yield total/len(values) if method == 'mean' else total if method == 'sum' else min(values) if method == 'min' else max(values)
+    config = aggregate_config(case_name)
+    factor_x, factor_y = config['factors']
+    width, height = math.ceil(SIZE/factor_x), math.ceil(SIZE/factor_y)
+    pixels = aggregate_values(case_name, band)
+    for row in range(0, height, level):
+        for column in range(0, width, level):
+            yield pixels[row*width+column]
 
 
 def footprint_source_name(case_name):
@@ -959,7 +1012,7 @@ def worker(action, path):
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
                     **physical_file_facts(path)}
             if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
-                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
+                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES + AGGREGATE_MULTIBAND_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
                 label = 'outside clipping' if grid_case in OUTSIDE_CASES else 'aggregation' if grid_case in AGGREGATE_CASES else 'reclassification' if grid_case in RECLASS_CASES else 'multi-raster'
                 counts = []
                 for index in range(1, dataset.RasterCount + 1):
@@ -976,14 +1029,14 @@ def worker(action, path):
                         expected = list(pixels(grid_case, index, level))
                         actual = struct.unpack(f'<{len(expected)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
                         if any(not math.isnan(value) if wanted is None else
-                               not math.isclose(value, wanted, rel_tol=1e-12, abs_tol=1e-9) if grid_case == 'aggregate-mean' else value != wanted
+                               not math.isclose(value, wanted, rel_tol=1e-12, abs_tol=1e-9) if grid_case in AGGREGATE_CASES and aggregate_config(grid_case)['method'] == 'mean' else value != wanted
                                for value, wanted in zip(actual, expected)):
                             raise FixtureError(f'{label} pixels/NaN differ from independent oracle')
                         mask = sampled.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
                         if any(value != (0 if wanted is None else 255) for value, wanted in zip(mask, expected)):
                             raise FixtureError(f'{label} mask differs from independent oracle')
                     if grid_case not in OUTSIDE_CASES or index != 3:
-                        counts.append(expectation['band_valid_pixels'][index-1] if grid_case in UPDATE_CASES else expectation['valid_pixels'])
+                        counts.append(expectation.get('band_valid_pixels', [expectation['valid_pixels']]*dataset.RasterCount)[index-1])
                 return {'cog_valid': True, 'cog_warnings': len(warnings), 'has_overviews': True,
                     'valid_pixels': counts[0], 'invalid_pixels': expectation['width'] * expectation['height'] - counts[0], 'band_valid_pixels': counts,
                     'color_interpretations': colors, 'overview_sizes': [[expectation['width']//2, expectation['height']//2]],

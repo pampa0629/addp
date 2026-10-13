@@ -80,10 +80,12 @@ func scanObjectRefGroups(
 		if err != nil {
 			return result, err
 		}
-		runtime.detectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
+		if scanflow.ContentReaderForDepth(contentReader, scanDepth) != nil {
+			runtime.detectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
+		}
 
 		candidates := scanflow.ObjectRefGroupCandidateSet(resource.ID, bucket, objectPath, resources)
-		detection, err := scanflow.ResolveContentCandidates(ctx, contentReader, connInfo, resource.ID, candidates)
+		detection, err := scanflow.ResolveContentCandidates(ctx, scanflow.ContentReaderForDepth(contentReader, scanDepth), connInfo, resource.ID, candidates)
 		if err != nil {
 			return result, err
 		}

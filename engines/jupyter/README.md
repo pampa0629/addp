@@ -33,6 +33,7 @@ Content-Type: application/json
 {
   "tenant_id": 1,
   "notebook_path": "analysis.ipynb",
+  "notebook_content_sha256": "<提交时源文件字节的 64 位小写 SHA-256>",
   "parameters": {
     "param1": "value1",
     "param2": 123
@@ -40,6 +41,8 @@ Content-Type: application/json
   "kernel": "python3"
 }
 ```
+
+提交时由 Develop 固定源文件摘要，Runtime 对下载到的实际字节核验后才执行；缺失或非法摘要返回 400，文件变化返回 409 和 `error_code=notebook_content_changed`，不调用 Papermill，也不写输出对象。路径只能是当前租户 Notebook 根下的规范相对路径，不保留缺失摘要时执行的旧路径。该契约不授予数据源访问能力，也不承诺客户端失联后远端已停止。
 
 响应：
 ```json
@@ -87,3 +90,5 @@ docker run -p 8097:8097 \
 ## 依赖库
 
 详见 requirements.txt
+
+确定性回归统一运行 `make test-jupyter`；根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口。该门禁 mock 存储与 Papermill，不接管开发服务，不代表真实 Notebook T4 已通过。

@@ -43,7 +43,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		return 0, extractionStats, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
-	if readableProvider != nil {
+	if scanflow.ContentReaderForDepth(readableProvider, scanDepth) != nil {
 		s.detectObjectCatalogResourceFormats(ctx, readableProvider, connInfo, resources)
 	}
 

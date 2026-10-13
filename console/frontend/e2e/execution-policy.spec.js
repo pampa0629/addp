@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 
 async function openPolicy(page, scope = 'platform', { locale = 'zh-cn', readonly = false, policy = {} } = {}) {
  await page.addInitScript(locale => localStorage.setItem('addp-lang', locale), locale)
- let saved = { version: 1, inherited: scope === 'tenant', default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, ...policy }
+ let saved = { version: 1, inherited: scope === 'tenant', default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, workflow_concurrency: 2, notebook_concurrency: 1, ...policy }
  const writes = []
- await page.route('**/develop/settings/query-policy', async route => {
+ await page.route('**/develop/settings/execution-policy', async route => {
   if (route.request().method() === 'PUT') {
    const input = route.request().postDataJSON()
    writes.push(input)
@@ -12,7 +12,7 @@ async function openPolicy(page, scope = 'platform', { locale = 'zh-cn', readonly
   }
   await route.fulfill({ json: saved })
  })
- await page.goto(`/e2e/fixtures/query-policy.html?scope=${scope}&readonly=${readonly}`)
+ await page.goto(`/e2e/fixtures/execution-policy.html?scope=${scope}&readonly=${readonly}`)
  await expect(page.getByRole('spinbutton').first()).toHaveValue('30')
  return writes
 }
@@ -21,14 +21,16 @@ test('platform saves hot concurrency with the version and keeps the form within 
  await page.setViewportSize({ width: 480, height: 900 })
  const writes = await openPolicy(page)
  const fields = page.getByRole('spinbutton')
- await expect(fields).toHaveCount(5)
+ await expect(fields).toHaveCount(7)
  await expect(fields.nth(3)).toHaveValue('20')
  await expect(fields.nth(4)).toHaveValue('5')
  await fields.nth(3).fill('12')
  await fields.nth(4).fill('3')
+ await fields.nth(5).fill('4')
+ await fields.nth(6).fill('2')
  await page.getByRole('button', { name: '保存', exact: true }).click()
  await expect.poll(() => writes.length).toBe(1)
- expect(writes[0]).toEqual({ version: 1, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 12, query_per_engine_concurrency: 3 })
+ expect(writes[0]).toEqual({ version: 1, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 12, query_per_engine_concurrency: 3, workflow_concurrency: 4, notebook_concurrency: 2 })
  await expect(page.getByText('保存后无需重启。', { exact: false })).toBeVisible()
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
@@ -43,7 +45,7 @@ test('tenant edits only its timeout and does not submit shared capacity', async 
  await expect(constraints.getByRole('spinbutton')).toHaveCount(0)
  for (const [label, value] of [
   ['最大查询超时（秒）', '300'], ['结果预览上限（行）', '500'],
-  ['总查询并发上限（每个 Backend）', '20'], ['单引擎查询并发上限', '5']
+  ['总查询并发上限（每个 Backend）', '20'], ['单引擎查询并发上限', '5'], ['工作流并发上限（每个 Backend）', '2'], ['Notebook 并发上限（每个 Backend）', '1']
  ]) {
   await expect(constraints.getByRole('row').filter({ hasText: label }).locator('td').last()).toHaveText(value)
  }
@@ -61,17 +63,17 @@ test('tenant edits only its timeout and does not submit shared capacity', async 
 
 test('tenant refresh reads changed platform constraints without issuing writes', async ({ page }) => {
  const writes = await openPolicy(page, 'tenant')
- await page.route('**/develop/settings/query-policy', route => {
+ await page.route('**/develop/settings/execution-policy', route => {
   if (route.request().method() !== 'GET') writes.push(route.request().postDataJSON())
   return route.fulfill({ json: {
    version: 1, inherited: false, default_query_timeout: 60, max_query_timeout: 120,
-   query_result_limit: 250, query_concurrency: 12, query_per_engine_concurrency: 3
+   query_result_limit: 250, query_concurrency: 12, query_per_engine_concurrency: 3, workflow_concurrency: 4, notebook_concurrency: 2
   } })
  })
  await page.getByRole('button', { name: '刷新', exact: true }).click()
  await expect(page.getByRole('spinbutton')).toHaveValue('60')
  const values = page.getByRole('region', { name: '平台统一约束（只读）' }).locator('.el-descriptions__content')
- await expect(values).toHaveText(['120', '250', '12', '3'])
+ await expect(values).toHaveText(['120', '250', '12', '3', '4', '2'])
  expect(writes).toEqual([])
 })
 
@@ -99,8 +101,8 @@ test('tenant constraints and ownership hints are localized and fit all themes', 
 
 test('failed initial load does not show frontend defaults as platform constraints', async ({ page }) => {
  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
- await page.route('**/develop/settings/query-policy', route => route.fulfill({ status: 503, json: { error: '读取配置失败' } }))
- await page.goto('/e2e/fixtures/query-policy.html?scope=tenant')
+ await page.route('**/develop/settings/execution-policy', route => route.fulfill({ status: 503, json: { error: '读取配置失败' } }))
+ await page.goto('/e2e/fixtures/execution-policy.html?scope=tenant')
  await expect(page.getByText('读取配置失败', { exact: true })).toBeVisible()
  await expect(page.getByRole('region', { name: '平台统一约束（只读）' })).toHaveCount(0)
  await expect(page.getByRole('spinbutton')).toHaveCount(0)

@@ -22,18 +22,16 @@ func DetectObjectCatalogCompositeItems(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	resources []scanresource.StorageResource,
-	includeWholeScope bool,
+	deepScan bool,
 ) (map[string]bool, []scanresource.ObjectCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
-	if contentReader == nil {
-		return skipPaths, nil, nil
+	if !deepScan {
+		contentReader = nil
 	}
 
 	groups := scanresource.ObjectResourcesByParentPrefix(resources)
-	if includeWholeScope {
-		for key, group := range scanresource.ObjectResourcesByPartitionRootPrefix(resources) {
-			groups[key] = append(groups[key], group...)
-		}
+	for key, group := range scanresource.ObjectResourcesByPartitionRootPrefix(resources) {
+		groups[key] = append(groups[key], group...)
 	}
 	items := make([]scanresource.ObjectCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
@@ -61,11 +59,17 @@ func DetectObjectCatalogCompositeItems(
 			continue
 		}
 		bucket, prefix := scanresource.SplitObjectCompositeGroupKey(groupKey)
-		detection, err := ResolveContentCandidates(ctx, contentReader, connInfo, engineID, ContentCandidateSet{
+		candidates := ContentCandidateSet{
 			DirPath:              prefix,
-			Files:                scanresource.StorageResourcesToFileRefs(group),
+			Files:                scanresource.StorageResourcesToFileRefs(scanresource.ObjectResourcesByParentPrefix(group)[groupKey]),
+			RecursiveFiles:       scanresource.StorageResourcesToFileRefs(group),
 			EngineCatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
-		})
+		}
+		resolve := ResolveContentCandidates
+		if prefix == "" {
+			resolve = ResolveNonExclusiveContentCandidates
+		}
+		detection, err := resolve(ctx, contentReader, connInfo, engineID, candidates)
 		if err != nil {
 			warnings = append(warnings, ObjectCatalogCompositeDetectionError{
 				Bucket: bucket,
@@ -82,7 +86,7 @@ func DetectObjectCatalogCompositeItems(
 			if detected == nil {
 				continue
 			}
-			if (!includeWholeScope || prefix == "") && detected.Layout != format.LayoutMulti {
+			if prefix == "" && detected.Layout != format.LayoutMulti {
 				continue
 			}
 			for _, path := range detected.RefFilePaths() {
@@ -96,7 +100,7 @@ func DetectObjectCatalogCompositeItems(
 				Claims: detection.Claims,
 			})
 		}
-		if includeWholeScope && acceptedAny {
+		if acceptedAny {
 			for path, claimed := range detection.Claims {
 				if claimed {
 					skipPaths[strings.Trim(path, "/")] = true

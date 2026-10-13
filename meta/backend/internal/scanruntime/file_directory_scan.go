@@ -62,7 +62,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	scannedItemFullNames := make(map[string]bool)
 	scannedSubdirFullNames := make(map[string]bool)
 	reconcileScannedDirectory := func() {
-		if !force {
+		if !force || failures.Err() != nil {
 			return
 		}
 		if err := s.repo.HardDeleteItemsByNodeExceptFullNames(parentNode.ID, scannedItemFullNames); err != nil {
@@ -102,8 +102,9 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	}
 
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
-	if isDeepScan && isBucketRoot {
-		detection, err := resolveNonExclusiveScopeItems(ctx, contentReader, connInfo, resource, dirPath, files, subdirs)
+	detectionReader := scanflow.ContentReaderForDepth(contentReader, scanDepth)
+	if isBucketRoot {
+		detection, err := resolveNonExclusiveScopeItems(ctx, detectionReader, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取根目录组合数据项信息失败",
 				"path", dirPath,
@@ -112,8 +113,8 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			failures.Add(dirPath, err)
 		}
 		applyDetection(detection)
-	} else if isDeepScan {
-		detection, err := s.resolveFileCatalogDirectoryItems(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
+	} else {
+		detection, err := s.resolveFileCatalogDirectoryItems(ctx, detectionReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
 			s.log.Warn("提取复合数据项信息失败",
 				"path", dirPath,

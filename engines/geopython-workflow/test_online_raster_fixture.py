@@ -335,7 +335,7 @@ def source_access_plan(path):
 def single_source_execution(tmp_path, scene, api_server, case_name):
     source_name = (fixture.NON_COG_SOURCE if case_name == 'validate-cog-invalid' else
                    'build-overviews.cog.tif' if case_name == 'info-overviews' else
-                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else fixture.footprint_source_name(case_name) if case_name in fixture.FOOTPRINT_CASES else 'source.tif')
+                   'to-cog.cog.tif' if case_name == 'validate-cog-valid' else fixture.footprint_source_name(case_name) if case_name in fixture.FOOTPRINT_CASES else fixture.aggregate_config(case_name)['source_name'] if case_name in fixture.AGGREGATE_CASES else 'source.tif')
     role = 'target' if source_name.endswith('.cog.tif') else 'source'
     source = tmp_path / ('utility-source-' + source_name)
     original = LocalMinio.objects[role, 'raster-' + role, source_name]
@@ -857,7 +857,7 @@ def aggregate_artifacts(reclass_artifacts,tmp_path):
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     preserved = {key[2]:hashlib.sha256(value).hexdigest() for key,value in LocalMinio.objects.items() if key[0]=='target'}
-    for case in fixture.AGGREGATE_CASES:
+    for case in fixture.AGGREGATE_SINGLE_BAND_CASES:
         result,output = single_source_execution(tmp_path,scene,api_server,case)
         evidence = fixture.worker('verify-'+case,reclass_artifacts)
         assert evidence['size_bytes']==result['size_bytes']==output.stat().st_size>0
@@ -1254,22 +1254,83 @@ def test_manager_cog_rejects_non_cog_layout(manager_physical):
 
 
 @pytest.fixture
-def outside_artifacts(aggregate_artifacts, tmp_path):
+def multiband_aggregate_artifacts(aggregate_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    preserved = {key[2]: hashlib.sha256(value).hexdigest()
+        for key, value in LocalMinio.objects.items() if key[0] == 'target'}
+    for case in fixture.AGGREGATE_MULTIBAND_CASES:
+        result, output = single_source_execution(tmp_path, scene, api_server, case)
+        evidence = fixture.worker('verify-'+case, aggregate_artifacts)
+        assert_physical_size(evidence, output.name)
+        assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+        assert evidence['preserved_sha256'] == preserved
+        assert evidence['band_valid_pixels'] == fixture.aggregate_expectation(case)['band_valid_pixels']
+        assert evidence['color_interpretations'] == ['Gray', 'Undefined']
+        preserved[output.name] = evidence['sha256']
+    return aggregate_artifacts
+
+
+def test_hosted_multiband_aggregation_dags_pass_full_pixel_mask_and_cog_oracle(multiband_aggregate_artifacts):
+    evidence = fixture.worker('verify-aggregate-rotated-sum', multiband_aggregate_artifacts)
+    assert len(evidence['preserved_sha256']) == 27
+    assert evidence['band_valid_pixels'] == [4472, 4472]
+    assert evidence['overview_sizes'] == [[43, 26]]
+
+
+@pytest.mark.parametrize('case_name', fixture.AGGREGATE_MULTIBAND_CASES)
+@pytest.mark.parametrize('fault', ['second-band-pixel', 'independent-mask', 'alpha-band', 'overview', 'rotation'])
+def test_hosted_multiband_aggregation_physical_oracle_rejects_persisted_corruption(
+        multiband_aggregate_artifacts, tmp_path, case_name, fault):
+    baseline = dict(LocalMinio.objects)
+    name = case_name+'.cog.tif'
+    original = tmp_path/'aggregate-original.tif'
+    original.write_bytes(baseline['target', 'raster-target', name])
+    edited_path = tmp_path/'aggregate-edited.tif'
+    edited = gdal.Translate(str(edited_path), str(original), format='GTiff', creationOptions=['TILED=YES'])
+    if fault == 'second-band-pixel':
+        edited.GetRasterBand(2).WriteRaster(0, 0, 1, 1, struct.pack('<d', -12345.), buf_type=gdal.GDT_Float64)
+    if fault == 'independent-mask':
+        edited.GetRasterBand(2).WriteRaster(0, 0, 1, 1, struct.pack('<d', float('nan')), buf_type=gdal.GDT_Float64)
+    if fault == 'alpha-band':
+        edited.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault == 'rotation':
+        transform = list(edited.GetGeoTransform()); transform[2] += .01
+        edited.SetGeoTransform(transform)
+    edited.BuildOverviews('NEAREST', [2])
+    if fault == 'overview':
+        edited.GetRasterBand(2).GetOverview(0).WriteRaster(0, 0, 1, 1,
+            struct.pack('<d', -12345.), buf_type=gdal.GDT_Float64)
+    edited = None
+    changed_path = tmp_path/'aggregate-changed.cog.tif'
+    changed = gdal.Translate(str(changed_path), str(edited_path), format='COG',
+        creationOptions=['BLOCKSIZE=128', 'OVERVIEWS=FORCE_USE_EXISTING'])
+    changed = None
+    LocalMinio.objects['target', 'raster-target', name] = changed_path.read_bytes()
+    try:
+        with pytest.raises(fixture.FixtureError):
+            fixture.worker('verify-aggregate-rotated-sum', multiband_aggregate_artifacts)
+    finally:
+        LocalMinio.objects = baseline
+
+
+@pytest.fixture
+def outside_artifacts(multiband_aggregate_artifacts, tmp_path):
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     preserved = {key[2]: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items() if key[0] == 'target'}
     result, output = single_source_execution(tmp_path, scene, api_server, 'clip-outside')
-    evidence = fixture.worker('verify-clip-outside', aggregate_artifacts)
+    evidence = fixture.worker('verify-clip-outside', multiband_aggregate_artifacts)
     assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
-    assert evidence['preserved_sha256'] == preserved and len(preserved) == 26
+    assert evidence['preserved_sha256'] == preserved and len(preserved) == 28
     assert evidence['band_valid_pixels'] == [53247, 53247]
     assert evidence['invalid_pixels'] == 12289
     assert evidence['color_interpretations'] == ['Gray', 'Undefined', 'Alpha']
     assert evidence['overview_sizes'] == [[128, 128]]
     assert result['width'] == result['height'] == 256 and result['band_count'] == 3
     assert result['transform'] == list(fixture.TRANSFORM)
-    assert len([key for key in LocalMinio.objects if key[0] == 'target']) == 27
-    return aggregate_artifacts
+    assert len([key for key in LocalMinio.objects if key[0] == 'target']) == 29
+    return multiband_aggregate_artifacts
 
 
 def test_async_outside_clipping_hole_alpha_full_grid_match_physical_oracle(outside_artifacts):
@@ -1379,12 +1440,12 @@ def test_async_update_local_aligned_patch_and_independent_pixel_oracle(outside_a
     assert evidence['band_valid_pixels']==[65535,65536]
     assert evidence['color_interpretations']==['Gray','Undefined']
     assert evidence['overview_sizes']==[[128,128]]
-    assert len(evidence['preserved_sha256'])==27
+    assert len(evidence['preserved_sha256'])==29
     assert evidence['size_bytes']==result['size_bytes']==output.stat().st_size>0
     assert result['width']==result['height']==256 and result['band_count']==2
     assert result['transform']==list(fixture.TRANSFORM)
     assert all(LocalMinio.objects[key]==value for key,value in baseline.items())
-    assert len([key for key in LocalMinio.objects if key[0]=='target'])==28
+    assert len([key for key in LocalMinio.objects if key[0]=='target'])==30
     verify_native_footprints(outside_artifacts,tmp_path,case)
     # Reject removal of valid base data at a transparent/independently missing
     # update cell and wrong overview values using the same real byte verifier.

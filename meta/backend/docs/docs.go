@@ -1667,6 +1667,79 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/data-items/{fingerprint}/authorization-facts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅供 addp-system Tenant Service 精确读取已提交的 Meta 身份与边界，200 不表示访问许可；不扫描、不读取源内容、不返回凭据或完整 attributes | Restricted to addp-system Tenant Service. Reads committed Meta identity and boundary; HTTP 200 is not an Allow. No scan, source content, credentials or full attributes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "查询数据项授权资源事实 | Read DataItem authorization resource facts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前授权资源事实 | Current authorization resource facts",
+                        "schema": {
+                            "$ref": "#/definitions/dataitem.AuthorizationFacts"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.authorization_facts.read"
+                ]
+            }
+        },
         "/runtime/data-items/{fingerprint}/security-facts": {
             "get": {
                 "security": [
@@ -2775,6 +2848,78 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dataitem.AuthorizationBasisState": {
+            "type": "string",
+            "enum": [
+                "complete",
+                "incomplete",
+                "needs_refresh",
+                "unsupported"
+            ],
+            "x-enum-varnames": [
+                "AuthorizationBasisComplete",
+                "AuthorizationBasisIncomplete",
+                "AuthorizationBasisNeedsRefresh",
+                "AuthorizationBasisUnsupported"
+            ]
+        },
+        "dataitem.AuthorizationBoundary": {
+            "type": "object",
+            "properties": {
+                "layout": {
+                    "type": "string",
+                    "enum": [
+                        "single"
+                    ]
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "dataitem.AuthorizationFacts": {
+            "type": "object",
+            "properties": {
+                "basis_state": {
+                    "enum": [
+                        "complete",
+                        "incomplete",
+                        "needs_refresh",
+                        "unsupported"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dataitem.AuthorizationBasisState"
+                        }
+                    ]
+                },
+                "boundary": {
+                    "$ref": "#/definitions/dataitem.AuthorizationBoundary"
+                },
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "dataprotection.DataItemSecurityFacts": {
             "type": "object",
             "properties": {
@@ -4202,6 +4347,37 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
                     "type": "string"
                 }
             }

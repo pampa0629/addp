@@ -21,6 +21,17 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ModuleGateTest(unittest.TestCase):
+    def test_go_only_selects_existing_go_steps_without_t2_preflight(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample", go_only=True)
+        self.assertEqual([step.command for step in steps], [("go", "test", "./...")])
+        self.assertEqual(steps[0].excluded_environment, MODULE.GO_T1_EXCLUDED_ENVIRONMENT)
+        MODULE.preflight_required_environment(steps, {})
+
+    def test_go_only_refuses_non_go_owner(self) -> None:
+        (self.repository / "sample/backend/go.mod").unlink()
+        with self.assertRaisesRegex(MODULE.ModuleGateError, "no Go T1"):
+            MODULE.plan_module(self.repository, "sample", go_only=True)
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repository = Path(self.temporary_directory.name)

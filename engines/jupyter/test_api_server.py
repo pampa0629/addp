@@ -1,9 +1,11 @@
+import hashlib
+import io
 import importlib
 import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -139,3 +141,56 @@ class NotebookRuntimeAuthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotebookContentIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.client = api_server.app.test_client()
+        self.content = b'{"cells": [], "nbformat": 4, "nbformat_minor": 5}'
+        self.digest = hashlib.sha256(self.content).hexdigest()
+
+    def request(self, **values):
+        async def resolve(*_args):
+            return _context()
+        payload = dict(tenant_id=7, notebook_path="analysis.ipynb", notebook_content_sha256=self.digest)
+        payload.update(values)
+        with patch.object(api_server, "resolve_authorization_context", resolve):
+            return self.client.post("/api/execute", headers={"Authorization": "Bearer token"}, json=payload)
+
+    def test_invalid_digest_and_path_rejected_before_storage_access(self):
+        for values in [{"notebook_content_sha256": None}, {"notebook_content_sha256": self.digest.upper()},
+                       {"notebook_content_sha256": "a" * 63}, {"notebook_path": "../other.ipynb"},
+                       {"notebook_path": "a/../other.ipynb"}, {"notebook_path": "/other.ipynb"},
+                       {"notebook_path": "a\\other.ipynb"}]:
+            with self.subTest(values=values), patch.object(api_server, "minio_client") as store, patch.object(api_server.pm, "execute_notebook") as execute:
+                self.assertEqual(self.request(**values).status_code, 400)
+                store.get_object.assert_not_called()
+                store.put_object.assert_not_called()
+                execute.assert_not_called()
+
+    def test_changed_download_never_executes_or_publishes(self):
+        with patch.object(api_server, "minio_client") as store, patch.object(api_server.pm, "execute_notebook") as execute:
+            download = MagicMock()
+            download.read.return_value = self.content + b"\n"
+            store.get_object.return_value = download
+            response = self.request()
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.get_json()["error_code"], "notebook_content_changed")
+            execute.assert_not_called()
+            store.put_object.assert_not_called()
+            download.close.assert_called_once()
+            download.release_conn.assert_called_once()
+
+    def test_verified_bytes_are_the_bytes_executed(self):
+        def execute(input_path, output_path, **_kwargs):
+            self.assertEqual(Path(input_path).read_bytes(), self.content)
+            Path(output_path).write_bytes(b"{}")
+        with patch.object(api_server, "minio_client") as store, patch.object(api_server.pm, "execute_notebook", execute), patch.object(api_server.nbformat, "read", return_value=SimpleNamespace(cells=[])):
+            download = MagicMock()
+            download.read.return_value = self.content
+            store.get_object.return_value = download
+            response = self.request()
+            self.assertEqual(response.status_code, 200)
+            store.get_object.assert_called_once_with(api_server.config.MINIO_BUCKET, "tenant_7/notebooks/analysis.ipynb")
+            store.put_object.assert_called_once()
+            self.assertEqual(response.get_json()["cell_count"], 0)

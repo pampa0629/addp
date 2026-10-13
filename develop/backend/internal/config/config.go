@@ -34,9 +34,9 @@ type Config struct {
 	ManagerServiceURL  string
 	CopilotServiceURL  string
 
-	QueryLeaseDuration     time.Duration
-	QueryHeartbeatInterval time.Duration
-	QueryClaimInterval     time.Duration
+	ExecutionLeaseDuration     time.Duration
+	ExecutionHeartbeatInterval time.Duration
+	ExecutionClaimInterval     time.Duration
 
 	// Redis 配置（资源回收 request/result）
 	RedisHost     string
@@ -76,9 +76,9 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),
 
-		QueryLeaseDuration:     time.Duration(getEnvAsInt("DEVELOP_QUERY_LEASE_SECONDS", 120)) * time.Second,
-		QueryHeartbeatInterval: time.Duration(getEnvAsInt("DEVELOP_QUERY_HEARTBEAT_SECONDS", 30)) * time.Second,
-		QueryClaimInterval:     time.Duration(getEnvAsInt("DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS", 1)) * time.Second,
+		ExecutionLeaseDuration:     time.Duration(getEnvAsInt("DEVELOP_EXECUTION_LEASE_SECONDS", 120)) * time.Second,
+		ExecutionHeartbeatInterval: time.Duration(getEnvAsInt("DEVELOP_EXECUTION_HEARTBEAT_SECONDS", 30)) * time.Second,
+		ExecutionClaimInterval:     time.Duration(getEnvAsInt("DEVELOP_EXECUTION_CLAIM_INTERVAL_SECONDS", 1)) * time.Second,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

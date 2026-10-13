@@ -35,7 +35,7 @@ type SQLEngineService struct {
 	cfg                     *config.Config
 	systemService           *commonClient.SystemServiceClient
 	executionAuthorizations *commonClient.SystemExecutionAuthorizationClient
-	queryPolicy             interface {
+	executionPolicy             interface {
 		ResolveRuntime(context.Context, uint) (int, int, int, error)
 	}
 	protectionGate interface {
@@ -61,15 +61,15 @@ func NewSQLEngineService(
 		ResolveRuntime(context.Context, uint) (int, int, int, error)
 	},
 ) *SQLEngineService {
-	var queryPolicy interface {
+	var executionPolicy interface {
 		ResolveRuntime(context.Context, uint) (int, int, int, error)
 	}
 	if len(queryPolicies) > 0 {
-		queryPolicy = queryPolicies[0]
+		executionPolicy = queryPolicies[0]
 	}
 	return &SQLEngineService{
 		cfg: cfg, systemService: systemService,
-		executionAuthorizations: executionAuthorizations, queryPolicy: queryPolicy,
+		executionAuthorizations: executionAuthorizations, executionPolicy: executionPolicy,
 	}
 }
 
@@ -427,7 +427,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	if snapshot, ok := ctx.Value(querySnapshotKey{}).(querySnapshot); ok {
 		limit = snapshot.ResultLimit + 1
 	} else if limit <= 0 {
-		_, _, policyLimit, policyErr := s.resolveQueryPolicy(ctx, tenantID)
+		_, _, policyLimit, policyErr := s.resolveExecutionPolicy(ctx, tenantID)
 		if policyErr != nil {
 			return nil, policyErr
 		}
@@ -726,7 +726,7 @@ func (s *SQLEngineService) normalizedTimeoutForTenant(ctx context.Context, tenan
 	if snapshot, ok := ctx.Value(querySnapshotKey{}).(querySnapshot); ok {
 		return snapshot.Timeout, nil
 	}
-	defaultTimeout, maxTimeout, _, err := s.resolveQueryPolicy(ctx, tenantID)
+	defaultTimeout, maxTimeout, _, err := s.resolveExecutionPolicy(ctx, tenantID)
 	if err != nil {
 		return 0, err
 	}

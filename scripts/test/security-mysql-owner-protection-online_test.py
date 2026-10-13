@@ -1479,12 +1479,12 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
         consumer.request.side_effect = lambda method, path, expected, body=None: context if method == 'GET' else ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
         return authorizer, consumer
 
-    def test_source_grants_cover_only_eight_exact_record_datasets_for_the_consumer(self):
+    def test_source_grants_cover_only_ten_exact_record_datasets_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
         ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
-        self.assertEqual(len(writes), 8)
-        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 8)
+        self.assertEqual(len(writes), 10)
+        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 10)
         actual = set()
         for call in writes:
             body = call.args[3]
@@ -1512,6 +1512,8 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "mongodb_query_control"),
             (17, "schema", "addp_online_security", "mongodb_query_denied"),
             (23, "database", "security_fixture", "customers"),
+            (23, "database", "security_fixture", "bank_card_accounts"),
+            (17, "schema", "addp_online_security", "bank_card_transfer"),
             (29, "database", "Outdoor", "Persons"),
         })
 
@@ -1555,7 +1557,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
                 ONLINE.initialize_governance(client, 2)
             self.assertTrue(all(call.args[0] == "GET" for call in client.request.call_args_list))
 
-    def test_creates_fresh_email_and_phone_with_atomic_defaults_through_api(self):
+    def test_creates_email_phone_and_bank_with_atomic_defaults_through_api(self):
         client = Mock()
         client.request.side_effect = [
             ONLINE.SUPPORT.Response(200, {"principal": {"type": "user"}, "context": {"type": "tenant", "tenant_id": "2"}}),
@@ -1563,18 +1565,156 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             ONLINE.SUPPORT.Response(201, {"id": "11"}), ONLINE.SUPPORT.Response(201, {"id": "12"}),
             ONLINE.SUPPORT.Response(201, {"id": "13"}), ONLINE.SUPPORT.Response(201, {"id": "14"}),
             ONLINE.SUPPORT.Response(201, {"id": "15"}), ONLINE.SUPPORT.Response(201, {"id": "16"}),
+            ONLINE.SUPPORT.Response(201, {"id": "17"}), ONLINE.SUPPORT.Response(201, {"id": "18"}),
         ]
         ONLINE.initialize_governance(client, 2)
         writes = [call for call in client.request.call_args_list if call.args[0] == "POST"]
-        email, detector, phone, phone_detector = [call.args[3] for call in writes[2:]]
+        email, detector, phone, phone_detector, bank, bank_detector = [call.args[3] for call in writes[2:]]
         self.assertEqual(email["default_protection"]["effect"], "suppress")
         self.assertEqual(detector["sensitive_data_type_id"], 13)
         self.assertEqual(detector["capability_key"], ONLINE.EMAIL_DETECTOR)
         self.assertEqual(phone["default_protection"]["allowed_algorithms"], [case[0] for case in ONLINE.ALGORITHM_CASES])
         self.assertEqual(phone_detector["capability_key"], ONLINE.PHONE_DETECTOR)
         self.assertEqual(phone_detector["sensitive_data_type_id"], 15)
+        self.assertEqual(bank_detector["sensitive_data_type_id"], 17)
+        self.assertEqual(bank_detector["capability_key"], ONLINE.BANK_DETECTOR)
+        self.assertEqual(bank["default_protection"]["parameters"], {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"})
         self.assertEqual(phone["security_classification_id"], 11)
         self.assertEqual(phone["default_security_grade_id"], 12)
+
+
+class BankCardMetadataAcceptanceTest(unittest.TestCase):
+    def rows(self, protected=True):
+        return [{"id": key, "customer_code": "CUST-1000" + key,
+                 "bank_card_number": (ONLINE.BANK_MASKED if protected else ONLINE.BANK_SOURCE_VALUES)[key], "bank_account_no": "account-" + key,
+                 "card_id": "card-" + key, "bank_card_verified": "verified-" + key,
+                 "credit_card_number": 100 + int(key)} for key in "12345"]
+
+    def enrollment(self):
+        return {"state": "active", "last_discovered_at": "2026-10-13T10:00:00+08:00",
+                "owner_progress": [{"consumer_owner": owner, "projection_state": "active",
+                    "projection_id": str(uuid.uuid4()), "revision": "00000000000000000001",
+                    "published_cursor": str(index), "acknowledged": True,
+                    "acknowledged_at": "2026-10-13T02:00:01Z", "validity": "valid",
+                    "rules": [{"action": action, "effect": "mask"}]}
+                    for index, (owner, action) in enumerate(ONLINE.OWNER_ACTIONS.items(), 1)]}
+
+    def assessment(self):
+        return {"id": "assessment-bank", "enrollment_id": "enrollment-bank", "current": {
+            "conclusion": "sensitive", "sensitive_data_type_id": "17", "component": {"key": ONLINE.BANK_FIELD, "value_type": "string",
+            "path": [{"name": ONLINE.BANK_FIELD, "container": "scalar"}],
+            "schema_fingerprint": "sha256:" + "a" * 64}}}
+
+    def finding(self):
+        return {"id": "finding-bank", "detector_version": ONLINE.BANK_DETECTOR,
+                "sensitive_data_type_id": "17",
+                "component": {"key": ONLINE.BANK_FIELD}}
+
+    def test_outputs_reject_plaintext_schema_and_negative_field_corruption(self):
+        expected = ONLINE.assert_bank_card_rows(self.rows(), "owner", ONLINE.BANK_FIELDS)
+        self.assertTrue(expected["null_preserved"])
+        ONLINE.assert_bank_card_rows(self.rows(False), "unprotected control", ONLINE.BANK_FIELDS, protected=False)
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_bank_card_rows(self.rows(), "stale protected source", protected=False)
+        rows = self.rows(); del rows[4][ONLINE.BANK_FIELD]
+        ONLINE.assert_bank_card_rows(rows, "raw invalid value suppression")
+        for mutation in ("plaintext", "unicode", "empty", "null", "account", "card_id", "number", "suffix", "duplicate", "missing"):
+            rows = self.rows()
+            if mutation == "plaintext": rows[0][ONLINE.BANK_FIELD] = "6222000000000000001"
+            if mutation == "unicode": rows[1][ONLINE.BANK_FIELD] = "测试卡abc"
+            if mutation == "empty": rows[4][ONLINE.BANK_FIELD] = ""
+            if mutation == "null": del rows[3][ONLINE.BANK_FIELD]
+            if mutation == "account": rows[0]["bank_account_no"] = "masked"
+            if mutation == "card_id": del rows[0]["card_id"]
+            if mutation == "number": rows[0]["credit_card_number"] = None
+            if mutation == "suffix": rows[0]["bank_card_verified"] = "masked"
+            if mutation == "duplicate": rows[1]["id"] = "1"
+            if mutation == "missing": rows.pop()
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_bank_card_rows(rows, "owner")
+        for columns in (ONLINE.BANK_FIELDS[:-1], ONLINE.BANK_FIELDS + ["unexpected"]):
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_bank_card_rows(self.rows(), "schema", columns)
+
+    def test_projection_requires_every_current_acknowledgement_and_valid_mask(self):
+        self.assertEqual(set(ONLINE.bank_card_projections(self.enrollment())), set(ONLINE.OWNER_ACTIONS))
+        for field, value in (("acknowledged", False), ("validity", "expired"), ("revision", "1"),
+                             ("published_cursor", ""), ("projection_id", "bad"),
+                             ("acknowledged_at", "2026-10-13T01:59:59Z"),
+                             ("rules", [{"action": "export", "effect": "allow"}])):
+            enrollment = self.enrollment(); enrollment["owner_progress"][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.bank_card_projections(enrollment)
+        enrollment = self.enrollment(); enrollment["owner_progress"].pop()
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.bank_card_projections(enrollment)
+
+    def test_discovery_rejects_false_positive_and_wrong_meta_component(self):
+        client = Mock(); client.request.return_value = ONLINE.SUPPORT.Response(200, self.assessment())
+        client.request.side_effect = lambda method, path, expected: (
+            ONLINE.SUPPORT.Response(200, [{"code": "bank_card", "id": "17"}])
+            if path.endswith("/sensitive-data-types") else client.request.return_value)
+        with patch.object(ONLINE, "list_pages", return_value=[self.finding()]):
+            result = ONLINE.assert_bank_card_discovery(client, "enrollment-bank", "assessment-bank", "finding-bank")
+        self.assertTrue(result["negative_fields_not_detected"])
+        for field in ("bank_account_no", "card_id", "bank_card_verified", "credit_card_number"):
+            finding = self.finding(); finding["component"]["key"] = field
+            with self.subTest(field=field), patch.object(ONLINE, "list_pages", return_value=[self.finding(), finding]), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_bank_card_discovery(client, "enrollment-bank", "assessment-bank", "finding-bank")
+        for field, value in (("value_type", "int"), ("key", "credit_card_number"), ("path", []), ("schema_fingerprint", "")):
+            assessment = self.assessment(); assessment["current"]["component"][field] = value
+            client.request.return_value = ONLINE.SUPPORT.Response(200, assessment)
+            with self.subTest(field=field), patch.object(ONLINE, "list_pages", return_value=[self.finding()]), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_bank_card_discovery(client, "enrollment-bank", "assessment-bank", "finding-bank")
+
+    def run_case(self, changes=None, cleanup_failure=False):
+        client = Mock()
+        def request(method, path, expected, body=None):
+            if path.endswith("/sensitive-data-types"): payload = [{"code": "bank_card", "id": "17"}]
+            elif path.endswith("/enrollment-bank"): payload = self.enrollment()
+            elif path.endswith("/assessment-bank"): payload = self.assessment()
+            elif path.startswith("/api/v1/service/query"): payload = {"id": 41, "version": 1}
+            else: raise AssertionError((method, path))
+            return ONLINE.SUPPORT.Response(expected[0], payload)
+        client.request.side_effect = request
+        execution = {"execution_id": str(uuid.uuid4()), "task_id": 51, "trigger_by": 7,
+                     "status": "success", "records_read": 5, "records_written": 5, **(changes or {})}
+        def transfer(*args):
+            args[3].append(51)
+            return 51, execution
+        with (patch.object(ONLINE, "find_item", return_value={"id": 1}),
+              patch.object(ONLINE, "build_item_locator", side_effect=lambda engine, item: "locator-" + str(engine)),
+              patch.object(ONLINE, "build_schema_locator", return_value="parent-locator"),
+              patch.object(ONLINE, "preview_rows", side_effect=[(["id"], []), (ONLINE.BANK_FIELDS, self.rows(False)),
+                  (ONLINE.BANK_FIELDS, self.rows()), (ONLINE.BANK_FIELDS, self.rows())]),
+              patch.object(ONLINE, "ensure_enrollment", return_value=("enrollment-bank", True)),
+              patch.object(ONLINE, "ensure_detected_assessment", return_value=("assessment-bank", True, "finding-bank")),
+              patch.object(ONLINE, "list_pages", return_value=[self.finding()]),
+              patch.object(ONLINE, "wait_for_algorithm_projections"),
+              patch.object(ONLINE, "develop_rows", return_value=self.rows()),
+              patch.object(ONLINE, "service_rows", return_value=self.rows()),
+              patch.object(ONLINE, "create_and_run_task", side_effect=transfer),
+              patch.object(ONLINE, "wait_for_scan", return_value=str(uuid.uuid4())),
+              patch.object(ONLINE, "cleanup_tasks", side_effect=ONLINE.SuiteError("cleanup blocked") if cleanup_failure else None) as cleanup):
+            try:
+                return ONLINE.exercise_bank_card_metadata(client, 23, 17, "security_fixture", "run-42",
+                                                          {"principal_id": "7"}, time.monotonic() + 30)
+            finally:
+                cleanup.assert_called_once_with(client, [51])
+                self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/41", (404,))
+                                    for call in client.request.call_args_list))
+
+    def test_transfer_requires_new_execution_actual_counts_and_ordinary_initiator(self):
+        result = self.run_case()
+        self.assertEqual(set(result["owners"]), set(ONLINE.OWNER_ACTIONS))
+        self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
+        self.assertTrue(result["task_deleted"] and result["service_deleted"])
+        self.assertNotIn("6222000000000000001", json.dumps(result))
+        for changes in ({"execution_id": "bad"}, {"trigger_by": 8}, {"records_read": 4},
+                        {"records_written": 0}, {"task_id": 50}, {"status": "failed"}):
+            with self.subTest(changes=changes), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(changes)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "owned resource cleanup failed"):
+            self.run_case(cleanup_failure=True)
 
 
 if __name__ == "__main__":

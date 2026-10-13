@@ -12,24 +12,30 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// QueryExecutionRepository owns the single durable queue for every Develop
-// query, regardless of whether Develop or Orchestrator created it.
-type QueryExecutionRepository struct {
+// ExecutionRepository owns the single durable queue for bounded Develop tasks.
+// Owner state and closed events commit with the same fenced transaction.
+type ExecutionRepository struct {
 	db *gorm.DB
 }
 
-// RecoverUnleased closes running query executions that predate or violate the
+var executionTaskTypes = []string{commonExecution.TaskTypeQuery, commonExecution.TaskTypeWorkflow, commonExecution.TaskTypeScript}
+
+func (r *ExecutionRepository) scoped() *gorm.DB {
+	return r.db.Where("module = ? AND task_type IN ?", commonExecution.ModuleDevelop, executionTaskTypes)
+}
+
+// RecoverUnleased closes running Develop executions that predate or violate the
 // lease protocol. A valid claim always writes the full lease identity in the
 // same transaction as pending -> running.
-func (r *QueryExecutionRepository) RecoverUnleased(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *ExecutionRepository) RecoverUnleased(ctx context.Context, now time.Time, limit int) (int, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Where(
-			"module = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
-			commonExecution.ModuleDevelop, commonExecution.TaskTypeQuery, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
+			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
+			commonExecution.ModuleDevelop, executionTaskTypes, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
 		).Order("created_at ASC, id ASC").Limit(limit)
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
@@ -43,7 +49,7 @@ func (r *QueryExecutionRepository) RecoverUnleased(ctx context.Context, now time
 			fields := map[string]interface{}{
 				"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(),
 				"lease_owner": nil, "lease_token": nil, "lease_expires_at": nil, "progress": 100, "current_step": nil,
-				"error_details": commonModels.JSONMap{"code": "develop.query.lease_missing", "message": "Develop query execution has no valid lease"},
+				"error_details": commonModels.JSONMap{"code": "develop." + item.TaskType + ".lease_missing", "message": "Develop execution has no valid lease; remote effects are not replayed"},
 			}
 			if item.StartedAt != nil {
 				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
@@ -55,7 +61,7 @@ func (r *QueryExecutionRepository) RecoverUnleased(ctx context.Context, now time
 				return result.Error
 			}
 			if result.RowsAffected != 1 {
-				return fmt.Errorf("Develop query execution %s changed during unleased recovery", item.ExecutionID)
+				return fmt.Errorf("Develop execution %s changed during unleased recovery", item.ExecutionID)
 			}
 			if err := updateDevTaskExecutionSummary(tx, item, commonExecution.ExecutionStatusFailed, now); err != nil {
 				return err
@@ -67,27 +73,34 @@ func (r *QueryExecutionRepository) RecoverUnleased(ctx context.Context, now time
 	return count, err
 }
 
-func NewQueryExecutionRepository(db *gorm.DB) *QueryExecutionRepository {
-	return &QueryExecutionRepository{db: db}
+func NewExecutionRepository(db *gorm.DB) *ExecutionRepository {
+	return &ExecutionRepository{db: db}
 }
 
-func (r *QueryExecutionRepository) ClaimNext(
+func (r *ExecutionRepository) ClaimNext(
+	taskType string,
 	ctx context.Context,
 	workerID string,
 	now time.Time,
 	leaseDuration time.Duration,
 	excludedEngineIDs []uint,
 ) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
+	if !validExecutionTaskType(taskType) {
+		return nil, nil, fmt.Errorf("unsupported Develop execution task type")
+	}
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if taskType != commonExecution.TaskTypeQuery && len(excludedEngineIDs) != 0 {
+			return fmt.Errorf("engine concurrency filter is query-only")
+		}
 		claimDB, filterErr := excludeQueryEngines(tx, excludedEngineIDs)
 		if filterErr != nil {
 			return filterErr
 		}
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
-			Module: commonExecution.ModuleDevelop, TaskType: commonExecution.TaskTypeQuery,
+			Module: commonExecution.ModuleDevelop, TaskType: taskType,
 			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
 		})
 		if err != nil || execution == nil {
@@ -127,7 +140,7 @@ func excludeQueryEngines(tx *gorm.DB, engineIDs []uint) (*gorm.DB, error) {
 	}
 }
 
-func (r *QueryExecutionRepository) FailClaimed(
+func (r *ExecutionRepository) FailClaimed(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -148,31 +161,31 @@ func (r *QueryExecutionRepository) FailClaimed(
 	return r.CompleteWithLease(ctx, execution, lease, commonExecution.ExecutionStatusFailed, completedAt, fields)
 }
 
-func (r *QueryExecutionRepository) Renew(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
+func (r *ExecutionRepository) Renew(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
+	return commonExecution.RenewLease(ctx, r.scoped(), lease, expiresAt)
 }
 
-func (r *QueryExecutionRepository) AttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
-	return commonExecution.AttemptIsTerminal(ctx, r.db, lease)
+func (r *ExecutionRepository) AttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
+	return commonExecution.AttemptIsTerminal(ctx, r.scoped(), lease)
 }
 
-func (r *QueryExecutionRepository) AttachAuthorizationWithLease(ctx context.Context, lease commonExecution.Lease, authorizationID int64, expiresAt time.Time) error {
-	return commonExecution.UpdateWithLease(ctx, r.db, lease, map[string]interface{}{
+func (r *ExecutionRepository) AttachAuthorizationWithLease(ctx context.Context, lease commonExecution.Lease, authorizationID int64, expiresAt time.Time) error {
+	return commonExecution.UpdateWithLease(ctx, r.scoped(), lease, map[string]interface{}{
 		"execution_authorization_id": authorizationID,
 		"authorization_expires_at":   expiresAt.UTC(),
 	})
 }
 
-func (r *QueryExecutionRepository) UpdateProgressWithLease(ctx context.Context, lease commonExecution.Lease, progress int, currentStep string) error {
+func (r *ExecutionRepository) UpdateProgressWithLease(ctx context.Context, lease commonExecution.Lease, progress int, currentStep string) error {
 	if progress < 0 || progress > 100 {
-		return fmt.Errorf("Develop query progress must be between 0 and 100")
+		return fmt.Errorf("Develop execution progress must be between 0 and 100")
 	}
-	return commonExecution.UpdateWithEvent(ctx, r.db, lease,
+	return commonExecution.UpdateWithEvent(ctx, r.scoped(), lease,
 		map[string]interface{}{"progress": progress, "current_step": currentStep},
 		commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
-func (r *QueryExecutionRepository) CompleteWithLease(
+func (r *ExecutionRepository) CompleteWithLease(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -181,11 +194,11 @@ func (r *QueryExecutionRepository) CompleteWithLease(
 	fields map[string]interface{},
 ) error {
 	if execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID ||
-		execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
-		return fmt.Errorf("Develop query completion must match its execution lease")
+		execution.Module != commonExecution.ModuleDevelop || !validExecutionTaskType(execution.TaskType) {
+		return fmt.Errorf("Develop execution completion must match its execution lease")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, execution.TaskType), lease, status, completedAt, fields); err != nil {
 			return err
 		}
 		return updateDevTaskExecutionSummary(tx, execution, status, completedAt)
@@ -195,11 +208,11 @@ func (r *QueryExecutionRepository) CompleteWithLease(
 // RecoverExpired fails closed. Relation-result queries may already have
 // partially written their runtime target and must be rerun by Orchestrator with
 // a fresh target instead of replaying the same execution.
-func (r *QueryExecutionRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleDevelop, TaskType: commonExecution.TaskTypeQuery,
+			Module: commonExecution.ModuleDevelop, TaskTypes: executionTaskTypes,
 			Now: now, Limit: limit,
 		})
 		if err != nil {
@@ -213,8 +226,8 @@ func (r *QueryExecutionRepository) RecoverExpired(ctx context.Context, now time.
 			}
 			fields := map[string]interface{}{
 				"error_details": commonModels.JSONMap{
-					"code":    "develop.query.lease_expired",
-					"message": "Develop query lease expired; query effects are not replayed automatically",
+					"code":    "develop." + item.TaskType + ".lease_expired",
+					"message": "Develop execution lease expired; remote effects are not replayed automatically",
 				},
 			}
 			if item.StartedAt != nil {
@@ -258,4 +271,17 @@ func updateDevTaskExecutionSummary(tx *gorm.DB, execution *commonExecution.TaskE
 		return fmt.Errorf("Develop task %d execution summary no longer matches %s", taskID, execution.ExecutionID)
 	}
 	return nil
+}
+
+func validExecutionTaskType(value string) bool {
+	return value == commonExecution.TaskTypeQuery || value == commonExecution.TaskTypeWorkflow || value == commonExecution.TaskTypeScript
+}
+
+// RecordWorkflowReceipt keeps only the remote identity in owner-only metadata.
+// It is not a progress event and cannot bypass the active Workflow lease.
+func (r *ExecutionRepository) RecordWorkflowReceipt(ctx context.Context, lease commonExecution.Lease, runtimeID string) error {
+	if runtimeID == "" {
+		return fmt.Errorf("workflow runtime receipt is empty")
+	}
+	return commonExecution.UpdateWithLease(ctx, r.db.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, commonExecution.TaskTypeWorkflow), lease, map[string]interface{}{"metadata": commonModels.JSONMap{"runtime_execution_id": runtimeID}})
 }

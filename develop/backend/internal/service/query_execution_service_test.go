@@ -160,7 +160,7 @@ func TestQueryCompletionCollectsOnlyCommittedLineage(t *testing.T) {
 				_, _ = w.Write([]byte(`{"observed":1,"skipped":0}`))
 			}))
 			defer server.Close()
-			worker := &QueryExecutionService{executor: &DevExecutor{metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("addp_at_develop"))}, queries: repository.NewQueryExecutionRepository(db)}
+			worker := &QueryExecutionService{executor: &DevExecutor{metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("addp_at_develop"))}, queries: repository.NewExecutionRepository(db)}
 			metadata, err := tableResultExecutionMetadata(execution.ExecutionID,
 				map[string]string{"source": "addp://engine/9/path/public/source?type=table"},
 				"addp://engine/9/path/public/result?type=table", "overwrite", tableResultTestEvidence(map[string]string{"source": "addp://engine/9/path/public/source?type=table"}, 3))

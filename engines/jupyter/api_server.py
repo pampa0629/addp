@@ -5,6 +5,9 @@ Jupyter Engine API Server
 
 import os
 import io
+import hashlib
+import re
+from pathlib import PurePosixPath
 import asyncio
 import logging
 import traceback
@@ -147,6 +150,13 @@ def execute_notebook():
             return jsonify({'status': 'error', 'message': 'tenant context mismatch'}), 403
         if not isinstance(parameters, dict) or any(str(key).startswith('ds_') for key in parameters):
             return jsonify({'status': 'error', 'message': 'data source injection is not supported'}), 400
+        content_digest = data.get('notebook_content_sha256')
+        if not isinstance(content_digest, str) or re.fullmatch(r'[0-9a-f]{64}', content_digest) is None:
+            return jsonify({'status': 'error', 'message': 'notebook_content_sha256 is required'}), 400
+        if (str(PurePosixPath(notebook_path)) != notebook_path or notebook_path in ('.', '..')
+                or notebook_path.startswith('/') or '..' in PurePosixPath(notebook_path).parts
+                or '\\' in notebook_path or '\x00' in notebook_path):
+            return jsonify({'status': 'error', 'message': 'invalid notebook_path'}), 400
         if kernel != 'python3':
             return jsonify({'status': 'error', 'message': 'unsupported kernel'}), 400
 
@@ -172,19 +182,23 @@ def execute_notebook():
 
         input_temp_fd, input_temp_path = tempfile.mkstemp(suffix='.ipynb')
         output_temp_fd, output_temp_path = tempfile.mkstemp(suffix='.ipynb')
+        os.close(output_temp_fd)
 
         try:
             # 下载输入文件
             with os.fdopen(input_temp_fd, 'wb') as f:
                 response = minio_client.get_object(config.MINIO_BUCKET, input_minio_path)
-                f.write(response.read())
-                response.close()
-                response.release_conn()
+                try:
+                    notebook_bytes = response.read()
+                finally:
+                    response.close()
+                    response.release_conn()
+                if hashlib.sha256(notebook_bytes).hexdigest() != content_digest:
+                    return jsonify({'status': 'error', 'error_code': 'notebook_content_changed',
+                                    'message': 'Notebook content changed; submit a new execution'}), 409
+                f.write(notebook_bytes)
 
             logger.info(f"已从 MinIO 下载: {input_minio_path}")
-
-            # 关闭 output_temp_fd，papermill 需要写入
-            os.close(output_temp_fd)
 
             logger.info(f"开始执行 Notebook: {input_temp_path} -> {output_temp_path}")
             start_time = datetime.now()

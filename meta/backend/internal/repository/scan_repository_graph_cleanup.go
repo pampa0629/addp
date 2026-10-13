@@ -3,8 +3,35 @@ package repository
 import (
 	"fmt"
 
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/models"
 )
+
+// DeleteClaimedSingleItems removes only independent components claimed by a persisted item.
+// Call in the same transaction as persistence; fullNames is an exact visible claim set.
+func (r *ScanRepository) DeleteClaimedSingleItems(item *models.MetaItem, fullNames []string) ([]models.MetaItem, error) {
+	if len(fullNames) == 0 {
+		return nil, nil
+	}
+	var candidates []models.MetaItem
+	if err := r.db.Unscoped().Where("tenant_id = ? AND engine_id = ? AND item_type = ? AND id <> ?", item.TenantID, item.EngineID, item.ItemType, item.ID).
+		Where("full_name IN ?", fullNames).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	removed := []models.MetaItem{}
+	for _, candidate := range candidates {
+		layout := dataitem.DescriptorFromAttributes(candidate.Attributes).Layout
+		if layout != "" && layout != format.LayoutSingle {
+			continue
+		}
+		if err := r.db.Unscoped().Delete(&candidate).Error; err != nil {
+			return nil, err
+		}
+		removed = append(removed, candidate)
+	}
+	return removed, nil
+}
 
 // HardDeleteItemsByNode 硬删除节点下的所有数据项
 func (r *ScanRepository) HardDeleteItemsByNode(nodeID uint) error {

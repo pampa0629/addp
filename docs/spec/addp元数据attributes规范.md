@@ -153,7 +153,7 @@ Kafka topic 第一版 basic scan 只保存 item identity，`attributes.item.data
 12. `locator` 不作为 attributes 标准分区写入。定位事实由 `meta_item.full_name`、`meta_item.item_type` 和搜索/DTO 层派生，不在 attributes 中重复保存。
 13. `access_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`access_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
 14. `SpatialInfo`、`AccessIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`access_index.<data_type>` 和 `format_info.<format>`。
-15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `EngineCatalogEntry` 或只读 database catalog / system table 的低成本 `estimated_row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
+15. attributes 写入受 `scan_depth` 约束。`basic` 写入身份、存储和轻量 item 组成事实，包括为确定边界而进行的有上限 manifest／header 结构识别；规则与支持状态见[元数据扫描机制规范](addp元数据扫描机制规范.md#basic-扫描)。来自 `EngineCatalogEntry` 或只读 database catalog / system table 的低成本 `estimated_row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、内容增强的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计由 `deep` 写入。授权资源描述是读取这些标准事实形成的最小运行时投影，其查询状态、观察时间和边界摘要不另存 attributes；事实不足时不补造完整状态。
 
 ## access_index 结构约定
 

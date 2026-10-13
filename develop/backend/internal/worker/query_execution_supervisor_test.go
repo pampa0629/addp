@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/google/uuid"
@@ -17,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestQueryExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
+func TestExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -37,15 +38,17 @@ func TestQueryExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
 	if err := db.Create(execution).Error; err != nil {
 		t.Fatal(err)
 	}
-	queries := repository.NewQueryExecutionRepository(db)
+	queries := repository.NewExecutionRepository(db)
 	executor := service.NewDevExecutor(nil, commonExecution.NewTaskExecutionRepository(db), nil, nil, nil,
 		service.NewSQLEngineService(&config.Config{}, nil, nil), nil, nil)
 	queryService, err := service.NewQueryExecutionService(executor, queries)
 	if err != nil {
 		t.Fatal(err)
 	}
-	supervisor, err := NewQueryExecutionSupervisor(queries, queryService, QueryExecutionSupervisorConfig{
-		InstanceID: "backend-1", ResolveConcurrency: func(context.Context) (int, int, error) { return 1, 1, nil }, LeaseDuration: time.Second,
+	supervisor, err := NewExecutionSupervisor(queries, queryService, ExecutionSupervisorConfig{
+		InstanceID: "backend-1", ResolveConcurrency: func(context.Context) (models.ExecutionConcurrency, error) {
+			return models.ExecutionConcurrency{Query: 1, QueryPerEngine: 1, Workflow: 2, Notebook: 1}, nil
+		}, LeaseDuration: time.Second,
 		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 5 * time.Millisecond,
 	}, nil)
 	if err != nil {
@@ -79,8 +82,8 @@ func TestQueryExecutionSupervisorClaimsAndConvergesInvalidQuery(t *testing.T) {
 	t.Fatal("query execution did not converge")
 }
 
-func TestQueryExecutionSupervisorTracksSaturatedEngines(t *testing.T) {
-	supervisor := &QueryExecutionSupervisor{
+func TestExecutionSupervisorTracksSaturatedEngines(t *testing.T) {
+	supervisor := &ExecutionSupervisor{
 		activeEngines: make(map[uint]int),
 	}
 	for count := 0; count < 5; count++ {
@@ -98,7 +101,7 @@ func TestQueryExecutionSupervisorTracksSaturatedEngines(t *testing.T) {
 }
 
 type blockedQueryService struct {
-	queries  *repository.QueryExecutionRepository
+	queries  *repository.ExecutionRepository
 	releases map[string]chan struct{}
 	started  chan string
 }
@@ -129,17 +132,17 @@ func TestQuerySupervisorReloadsLimitsWithoutRestartOrCancellingRunningQueries(t 
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE develop.query_policy (
+	if err := db.Exec(`CREATE TABLE develop.execution_policy (
 id INTEGER PRIMARY KEY AUTOINCREMENT, scope_type TEXT NOT NULL, tenant_id INTEGER,
-default_query_timeout INTEGER NOT NULL, max_query_timeout INTEGER NOT NULL, query_result_limit INTEGER NOT NULL,
+workflow_concurrency INTEGER NOT NULL DEFAULT 2, notebook_concurrency INTEGER NOT NULL DEFAULT 1, default_query_timeout INTEGER NOT NULL, max_query_timeout INTEGER NOT NULL, query_result_limit INTEGER NOT NULL,
 query_concurrency INTEGER NOT NULL DEFAULT 20, query_per_engine_concurrency INTEGER NOT NULL DEFAULT 5,
 version INTEGER NOT NULL, updated_by INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME,
 UNIQUE(scope_type,tenant_id))`).Error; err != nil {
 		t.Fatal(err)
 	}
-	queries := repository.NewQueryExecutionRepository(db)
-	policy := service.NewQueryPolicyService(repository.NewQueryPolicyRepository(db))
-	input := service.UpdateQueryPolicyInput{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, QueryConcurrency: 3, QueryPerEngineConcurrency: 2}
+	queries := repository.NewExecutionRepository(db)
+	policy := service.NewExecutionPolicyService(repository.NewExecutionPolicyRepository(db))
+	input := service.UpdateExecutionPolicyInput{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, QueryConcurrency: 3, QueryPerEngineConcurrency: 2, WorkflowConcurrency: 2, NotebookConcurrency: 1}
 	saved, err := policy.Update(context.Background(), "platform", nil, input, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +161,7 @@ UNIQUE(scope_type,tenant_id))`).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	supervisor, err := NewQueryExecutionSupervisor(queries, blocked, QueryExecutionSupervisorConfig{
+	supervisor, err := NewExecutionSupervisor(queries, blocked, ExecutionSupervisorConfig{
 		InstanceID: "reload-test", ResolveConcurrency: policy.ResolveConcurrency,
 		LeaseDuration: time.Minute, HeartbeatInterval: 10 * time.Second, ClaimInterval: 5 * time.Millisecond,
 	}, nil)
@@ -219,11 +222,11 @@ UNIQUE(scope_type,tenant_id))`).Error; err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for supervisor.Capacity() != 2 && time.Now().Before(deadline) {
+	for supervisor.Capacity("query") != 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if supervisor.Capacity() != 2 || supervisor.ActiveCount() != 5 {
-		t.Fatalf("shrink cancelled running work: capacity=%d active=%d", supervisor.Capacity(), supervisor.ActiveCount())
+	if supervisor.Capacity("query") != 2 || supervisor.ActiveCount("query") != 5 {
+		t.Fatalf("shrink cancelled running work: capacity=%d active=%d", supervisor.Capacity("query"), supervisor.ActiveCount("query"))
 	}
 	// Free four slots. Engine 1 still has one running query, so only engine 2 can start.
 	for _, id := range []string{"query-0", "query-4", "query-5", "query-7"} {

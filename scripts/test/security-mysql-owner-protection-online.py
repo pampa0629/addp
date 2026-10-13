@@ -54,6 +54,15 @@ TARGET_TABLE = "mysql_email_transfer"
 EMAIL_TYPE_CODE = "email"
 EMAIL_DETECTOR = "addp.detector.email_metadata/v1"
 PHONE_DETECTOR = "addp.detector.phone_metadata/v2"
+BANK_DETECTOR = "addp.detector.bank_card_number_metadata/v1"
+BANK_SOURCE = "bank_card_accounts"
+BANK_TARGET = "bank_card_transfer"
+BANK_FIELD = "bank_card_number"
+BANK_FIELDS = ["id", "customer_code", BANK_FIELD, "bank_account_no",
+               "card_id", "bank_card_verified", "credit_card_number"]
+# Independent fixture expectations; no product algorithm is used to calculate them.
+BANK_SOURCE_VALUES = {"1": "6222000000000000001", "2": "测试卡abc", "3": "abc", "4": None, "5": ""}
+BANK_MASKED = {"1": "6" + "*" * 17 + "1", "2": "测****c", "3": "a*c", "4": None, "5": None}
 MONGODB_SOURCE = "Outdoor.Persons"
 MONGODB_FIELD = "userInfo.phone"
 MONGODB_TRANSFER_TARGETS = ("mongodb_query_transfer", "mongodb_query_control", "mongodb_query_denied")
@@ -1654,6 +1663,173 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
             "cases": evidence, "baseline_restored": True, "active_policy_residuals": 0}
 
 
+def assert_bank_card_rows(rows: Iterable[Mapping[str, object]], owner: str,
+                          columns: Iterable[str] | None = None, *, protected: bool = True) -> dict[str, object]:
+    rows = list(rows)
+    columns = list(columns) if columns is not None else None
+    ids = [normalize_id(row.get("id")) for row in rows]
+    if len(rows) != 5 or set(ids) != EXPECTED_IDS:
+        raise SuiteError(owner + " bank-card output lost or duplicated rows")
+    if columns is not None and (len(columns) != len(BANK_FIELDS) or set(columns) != set(BANK_FIELDS)):
+        raise SuiteError(owner + " bank-card output changed its field schema")
+    for key, row in zip(ids, rows):
+        fields = set(row)
+        allowed = [set(BANK_FIELDS)]
+        if key == "5" and protected:
+            allowed.append(set(BANK_FIELDS) - {BANK_FIELD})
+        expected = BANK_MASKED if protected else BANK_SOURCE_VALUES
+        if (fields not in allowed or row.get(BANK_FIELD) != expected[key]
+                or row.get("customer_code") != "CUST-1000" + key
+                or row.get("bank_account_no") != "account-" + key
+                or row.get("card_id") != "card-" + key
+                or row.get("bank_card_verified") != "verified-" + key
+                or normalize_id(row.get("credit_card_number")) != str(100 + int(key))):
+            raise SuiteError(owner + " bank-card output differs from the independent fixture expectations")
+    return {"rows": 5, "masked_values_verified": protected, "source_values_verified": not protected,
+            "null_preserved": True, "empty_value_suppressed": protected, "non_sensitive_fields_preserved": True}
+
+
+def bank_card_projections(enrollment: Mapping[str, object]) -> dict[str, object]:
+    progress = _array(enrollment.get("owner_progress"), "bank-card Owner progress")
+    if enrollment.get("state") != "active" or len(progress) != 4:
+        raise SuiteError("bank-card Enrollment must have four active Owner projections")
+    evidence = {}
+    for owner, action in OWNER_ACTIONS.items():
+        matches = [p for p in progress if isinstance(p, dict) and p.get("consumer_owner") == owner]
+        if len(matches) != 1:
+            raise SuiteError("bank-card Owner progress is not unique")
+        item = matches[0]
+        rules = _array(item.get("rules"), "bank-card Owner rules")
+        revision = item.get("revision")
+        if (item.get("projection_state") != "active" or item.get("acknowledged") is not True
+                or item.get("validity") != "valid"
+                or not isinstance(revision, str) or not re.fullmatch(r"[0-9]{20}", revision)
+                or int(revision) <= 0 or not item.get("published_cursor")
+                or (action, "mask") not in {(r.get("action"), r.get("effect"))
+                                            for r in rules if isinstance(r, dict)}):
+            raise SuiteError("bank-card Owner did not acknowledge its current mask projection")
+        try:
+            uuid.UUID(str(item.get("projection_id")))
+        except ValueError as error:
+            raise SuiteError("bank-card projection ID is invalid") from error
+        acknowledged = utc_timestamp(item.get("acknowledged_at"), "bank-card acknowledgement")
+        discovered = utc_timestamp(enrollment.get("last_discovered_at"), "bank-card discovery time")
+        if acknowledged < discovered:
+            raise SuiteError("bank-card acknowledgement predates discovery")
+        evidence[owner] = {"projection_id": item["projection_id"], "revision": revision,
+                           "published_cursor": item["published_cursor"], "acknowledged": True,
+                           "action": action, "effect": "mask"}
+    return evidence
+
+
+def assert_bank_card_discovery(client: GatewayClient, enrollment_id: str,
+                               assessment_id: str, finding_id: str) -> dict[str, object]:
+    findings = list_pages(client, "/api/v1/security/findings?" + urllib.parse.urlencode(
+        {"enrollment_id": enrollment_id, "snapshot_scope": "current"}))
+    if (len(findings) != 1 or findings[0].get("id") != finding_id
+            or findings[0].get("detector_version") != BANK_DETECTOR
+            or _object(findings[0].get("component"), "bank-card Finding component").get("key") != BANK_FIELD):
+        raise SuiteError("bank-card discovery must find only the exact string field, excluding negative fields")
+    assessment = _object(client.request("GET", "/api/v1/security/assessments/" + assessment_id,
+                                        (200,)).payload, "bank-card Assessment")
+    current = _object(assessment.get("current"), "bank-card Assessment revision")
+    component = _object(current.get("component"), "bank-card assessed component")
+    types = [item for item in definition_array(client, "/api/v1/security/sensitive-data-types")
+             if item.get("code") == "bank_card"]
+    if len(types) != 1:
+        raise SuiteError("bank-card discovery requires its unique configured sensitive type")
+    type_id = positive_int(types[0].get("id"), "bank-card sensitive type ID")
+    if (assessment.get("id") != assessment_id or assessment.get("enrollment_id") != enrollment_id
+            or positive_int(current.get("sensitive_data_type_id"), "bank-card Assessment type") != type_id
+            or positive_int(findings[0].get("sensitive_data_type_id"), "bank-card Finding type") != type_id
+            or current.get("conclusion") != "sensitive" or component.get("key") != BANK_FIELD
+            or component.get("value_type") != "string"
+            or component.get("path") != [{"name": BANK_FIELD, "container": "scalar"}]
+            or not isinstance(component.get("schema_fingerprint"), str)
+            or not component["schema_fingerprint"].startswith("sha256:")):
+        raise SuiteError("bank-card Assessment must bind the actual Meta string field")
+    return {"finding_id": finding_id, "assessment_id": assessment_id,
+            "sensitive_data_type_id": str(type_id),
+            "detector": BANK_DETECTOR, "component_key": BANK_FIELD,
+            "meta_string_component_verified": True, "negative_fields_not_detected": True}
+
+
+def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
+                                target_engine_id: int, database: str, run_id: str,
+                                identity: Mapping[str, object], deadline: float) -> dict[str, object]:
+    source = find_item(client, source_engine_id, database + "." + BANK_SOURCE, "table")
+    target = find_item(client, target_engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
+    locator = build_item_locator(source_engine_id, source)
+    columns, rows = preview_rows(client, build_item_locator(target_engine_id, target))
+    if columns != ["id"] or rows:
+        raise SuiteError("bank-card Transfer target must start empty")
+    columns, rows = preview_rows(client, locator)
+    assert_bank_card_rows(rows, "Unprotected bank-card source control", columns, protected=False)
+    enrollment_id, initialized = ensure_enrollment(client, source_engine_id, database + "." + BANK_SOURCE, locator)
+    assessment_id, confirmed, finding_id = ensure_detected_assessment(
+        client, enrollment_id, deadline, BANK_FIELD, BANK_DETECTOR)
+    discovery = assert_bank_card_discovery(client, enrollment_id, assessment_id, finding_id)
+    wait_for_algorithm_projections(client, enrollment_id, deadline)
+    enrollment = _object(client.request("GET", "/api/v1/security/protection-enrollments/" + enrollment_id,
+                                        (200,)).payload, "bank-card Enrollment")
+    projections = bank_card_projections(enrollment)
+    name = "addp-online-security-bank-" + run_suffix(run_id, "-")
+    service_id = None
+    tasks: list[int] = []
+    failure: BaseException | None = None
+    outputs: dict[str, object] = {}
+    try:
+        columns, rows = preview_rows(client, locator)
+        outputs["manager"] = assert_bank_card_rows(rows, "Manager bank-card preview", columns)
+        query = "SELECT " + ", ".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id"
+        outputs["develop"] = assert_bank_card_rows(
+            develop_rows(client, source_engine_id, locator, deadline, query), "Develop bank-card query")
+        service = _object(client.request("POST", "/api/v1/service/query", (201,),
+            service_payload(name, source_engine_id, locator, BANK_FIELDS)).payload, "bank-card Query Service")
+        service_id = positive_int(service.get("id"), "bank-card service ID")
+        outputs["service"] = assert_bank_card_rows(service_rows(client, name, BANK_FIELDS), "Service bank-card query")
+        task_id, execution = create_and_run_task(client,
+            transfer_payload("addp_online_security_bank_" + run_suffix(run_id, "_"), locator,
+                             build_schema_locator(target_engine_id, target), BANK_TARGET), deadline, tasks)
+        execution_id = execution.get("execution_id")
+        try:
+            if str(uuid.UUID(str(execution_id))) != execution_id:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError) as error:
+            raise SuiteError("bank-card Transfer execution UUID is invalid") from error
+        if (execution.get("status") != "success" or positive_int(execution.get("task_id"), "bank task") != task_id
+                or positive_int(execution.get("trigger_by"), "bank initiator") != positive_int(identity["principal_id"], "ordinary user")
+                or nonnegative_int(execution.get("records_read"), "bank rows read") != 5
+                or nonnegative_int(execution.get("records_written"), "bank rows written") != 5):
+            raise SuiteError("bank-card Transfer execution provenance or counts differ")
+        scan = wait_for_scan(client, target_engine_id, deadline)
+        target = find_item(client, target_engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
+        columns, rows = preview_rows(client, build_item_locator(target_engine_id, target))
+        outputs["transfer"] = {**assert_bank_card_rows(rows, "Transfer bank-card target", columns),
+            "execution_id": execution_id, "task_id": task_id, "records_read": 5, "records_written": 5,
+            "same_user_verified": True, "target_empty_before": True, "target_output_verified": True,
+            "target_rescan_execution_id": scan}
+    except BaseException as error:
+        failure = error
+    cleanup_errors = []
+    for cleanup in (lambda: cleanup_tasks(client, tasks), lambda: cleanup_service(client, service_id)):
+        try:
+            cleanup()
+        except BaseException as error:
+            cleanup_errors.append(str(error))
+    if cleanup_errors:
+        raise SuiteError("bank-card owned resource cleanup failed: " + "; ".join(cleanup_errors)) from failure
+    if failure:
+        raise failure
+    return {**discovery, "enrollment_id": enrollment_id, "enrollment_initialized": initialized,
+            "unprotected_source_verified": True,
+            "finding_confirmed": confirmed, "source_table": database + "." + BANK_SOURCE,
+            "target_table": TARGET_SCHEMA + "." + BANK_TARGET, "service_id": service_id,
+            "algorithm": STRUCTURED_MASK_ALGORITHM, "projections": projections, "owners": outputs,
+            "task_deleted": True, "service_deleted": True, "temporary_execution_resources": 2,
+            "temporary_execution_resource_residuals": 0}
+
+
 def run_scenario(
     client: GatewayClient,
     tenant_id: int,
@@ -1677,6 +1853,8 @@ def run_scenario(
     source_scan = wait_for_scan(client, source_engine_id, deadline)
     target_scan = wait_for_scan(client, target_engine_id, deadline)
     spatial_algorithms = exercise_spatial_algorithms(client, target_engine_id, run_id, deadline, timeout)
+    bank_card_metadata = exercise_bank_card_metadata(
+        client, source_engine_id, target_engine_id, source_database, run_id, identity, deadline)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -1757,12 +1935,13 @@ def run_scenario(
         }, deadline)
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v10",
+            "schema_version": "addp.security-mysql-owner-protection-online/v11",
             "result": "passed",
             "identity": identity,
             "governance": governance,
             "default_protection_transaction": default_protection_transaction,
             "spatial_algorithms": spatial_algorithms,
+            "bank_card_metadata": bank_card_metadata,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -1788,8 +1967,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 3 + len(task_ids),
-            "deleted_resources": 3 + len(task_ids),
+            "created_resources": 5 + len(task_ids),
+            "deleted_resources": 5 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:
@@ -1828,6 +2007,8 @@ def initialize_source_grants(
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
         (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
         (mysql_engine_id, "database", mysql_database, SOURCE_TABLE),
+        (mysql_engine_id, "database", mysql_database, BANK_SOURCE),
+        (postgres_engine_id, "schema", TARGET_SCHEMA, BANK_TARGET),
     ]
     try:
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
@@ -1843,6 +2024,10 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
         {"code": "phone", "detector": PHONE_DETECTOR, "protection": {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
             "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
             "allowed_algorithms": [case[0] for case in ALGORITHM_CASES], "invalid_value_effect": "suppress"}},
+        {"code": "bank_card", "detector": BANK_DETECTOR, "protection": {
+            "effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+            "parameters": {"prefix_runes": 1, "suffix_runes": 1, "mask_rune": "*"},
+            "allowed_algorithms": [STRUCTURED_MASK_ALGORITHM], "invalid_value_effect": "suppress"}},
     ])
 
 

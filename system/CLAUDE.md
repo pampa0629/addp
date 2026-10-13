@@ -32,6 +32,8 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 ## 项目概述
 
+Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 读取 Meta，返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。首期只查询原生 schema 普通表 single，尚不替换现有签发／读取路径；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
+
 Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixture` 正式 IAM Service 路径；验收 User、引擎登记 User 与治理初始化 User 分别授权。Security 分类、等级和检测绑定的创建权限仅授予准备用户，不进入四出口验收身份；凭据由 Hosted 生命周期在业务验收前移除，完整身份随当次 Infra 销毁。
 
 正式 Runtime 首次受理（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/accept` 限定当前 `addp-catalog` Tenant Service 身份及 `.execute`。System 在本地锁外使用独立 `addp-system` Tenant Service OAuth 反查 Catalog 精确待核清依据，再按稳定 IAM 锁顺序核验原办理人、确认人、接收主体、独立办理权限／委派及批准要求版本；结果和审计原子提交。000180 仅给 `tenant.system_runtime` 最小 Catalog 依据读取权。可选 `SYSTEM_SERVICE_CLIENT_SECRET` 缺失不影响 Ready，只阻断新受理并返回明确 503；历史结果恢复和关闭不依赖它。移除配置停用 Client 并撤销原 Token Family，不借用其他模块凭据。此链路不是 Grant，不代表实际源读取或 Online T4 已验收。

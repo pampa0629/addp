@@ -23,7 +23,7 @@ addp_infra_verify_test_postgres_dsn "$DEVELOP_POSTGRES_TEST_DSN"
 
 cd "$ROOT_DIR/develop/backend"
 go test ./internal/repository \
-    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres)$' \
+    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
     echo "Develop PostgreSQL gate refuses skipped tests" >&2

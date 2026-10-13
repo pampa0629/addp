@@ -41,10 +41,11 @@ type RevokeInput struct {
 	Audit                 iam.AuditMetadata
 }
 type Service struct {
-	repository        *Repository
-	catalogEligible   func(*models.Engine) bool
-	fulfillmentBasis  FulfillmentBasisReader
-	independentTarget IndependentTargetVerifier
+	repository         *Repository
+	catalogEligible    func(*models.Engine) bool
+	fulfillmentBasis   FulfillmentBasisReader
+	independentTarget  IndependentTargetVerifier
+	authorizationFacts AuthorizationFactsReader
 }
 
 func NewService(repository *Repository, catalogEligible func(*models.Engine) bool) *Service {

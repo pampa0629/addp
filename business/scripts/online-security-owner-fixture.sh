@@ -84,6 +84,7 @@ INSERT INTO addp_online_security.spatial_algorithm_source
   FROM (VALUES (1, '13812345678'), (2, '张三abc'), (3, 'abc'), (4, NULL::text), (5, '')) AS fixture(id, value);
 CREATE TABLE addp_online_security.spatial_algorithm_transfer (id bigint PRIMARY KEY);
 CREATE TABLE addp_online_security.mysql_email_transfer (id bigint PRIMARY KEY);
+CREATE TABLE addp_online_security.bank_card_transfer (id bigint PRIMARY KEY);
 CREATE TABLE addp_online_security.mongodb_query_transfer (
   _id text PRIMARY KEY, display_name text NOT NULL, "userInfo__phone" text, nick_name text
 );
@@ -104,6 +105,7 @@ GRANT SELECT ON addp_online_security.spatial_algorithm_source TO security_writer
 GRANT SELECT ON addp_online_security.exemption_source TO security_writer;
 ALTER TABLE addp_online_security.spatial_algorithm_transfer OWNER TO security_writer;
 ALTER TABLE addp_online_security.mysql_email_transfer OWNER TO security_writer;
+ALTER TABLE addp_online_security.bank_card_transfer OWNER TO security_writer;
 ALTER TABLE addp_online_security.mongodb_query_transfer OWNER TO security_writer;
 ALTER TABLE addp_online_security.mongodb_query_control OWNER TO security_writer;
 ALTER TABLE addp_online_security.mongodb_query_denied OWNER TO security_writer;
@@ -115,6 +117,19 @@ if ! docker exec -i -e MYSQL_PWD "${containers[1]}" mysql -h127.0.0.1 -uroot sec
   >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/security-mysql-reader-error.log" <<SQL
 CREATE USER 'security_reader'@'%' IDENTIFIED BY '$SECURITY_MYSQL_READER_PASSWORD';
 GRANT SELECT ON security_fixture.* TO 'security_reader'@'%';
+SET NAMES utf8mb4;
+CREATE TABLE bank_card_accounts (
+  id bigint PRIMARY KEY, customer_code varchar(32) NOT NULL,
+  bank_card_number varchar(64), bank_account_no varchar(32) NOT NULL,
+  card_id varchar(32) NOT NULL, bank_card_verified varchar(32) NOT NULL,
+  credit_card_number int NOT NULL
+) CHARACTER SET utf8mb4;
+INSERT INTO bank_card_accounts VALUES
+  (1, 'CUST-10001', '6222000000000000001', 'account-1', 'card-1', 'verified-1', 101),
+  (2, 'CUST-10002', '测试卡abc', 'account-2', 'card-2', 'verified-2', 102),
+  (3, 'CUST-10003', 'abc', 'account-3', 'card-3', 'verified-3', 103),
+  (4, 'CUST-10004', NULL, 'account-4', 'card-4', 'verified-4', 104),
+  (5, 'CUST-10005', '', 'account-5', 'card-5', 'verified-5', 105);
 SQL
 then fail "MySQL reader creation failed"; fi
 if ! docker exec -i -e SECURITY_MONGODB_READER_PASSWORD "${containers[2]}" sh -lc \

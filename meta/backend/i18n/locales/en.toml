@@ -58,3 +58,14 @@ other = "Failed to read metadata item snapshot"
 
 [meta.scan.encoding_invalid]
 other = "Encoding must be UTF-8, GBK, UTF-16LE or UTF-16BE and is only allowed for a single CSV/TSV item deep refresh."
+[meta.authorization_facts.invalid]
+other = "Invalid authorization resource facts query"
+
+[meta.authorization_facts.unavailable]
+other = "DataItem authorization resource facts are currently unavailable"
+
+[permissions.meta.authorization_facts.read.name]
+other = "Read authorization resource facts"
+
+[permissions.meta.authorization_facts.read.description]
+other = "Allow System to read current DataItem identity and boundary without source content"

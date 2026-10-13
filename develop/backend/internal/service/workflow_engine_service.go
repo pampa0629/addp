@@ -229,6 +229,11 @@ func (s *WorkflowEngineService) executeWorkflowWithResolver(
 	if strings.TrimSpace(resp.ExecutionID) == "" {
 		return nil, fmt.Errorf("工作流运行时未返回 execution_id")
 	}
+	if record, ok := ctx.Value(workflowReceiptKey{}).(workflowReceiptRecorder); ok {
+		if err := record(ctx, resp.ExecutionID); err != nil {
+			return nil, fmt.Errorf("persist workflow runtime receipt: %w", err)
+		}
+	}
 	runtimeStatus, err := s.waitWorkflowRuntimeTerminalStatus(ctx, engine, resp.ExecutionID)
 	if runtimeStatus == nil {
 		return nil, err

@@ -158,6 +158,10 @@ func (r *ScanRepository) UpsertItemSelective(
 	// 更新已有记录（包括恢复软删除的记录）
 	now := time.Now()
 	scannedDepth = mergeScannedDepth(item.ScannedDepth, scanDepth)
+	if attrs != nil && commonJSON.String(item.Attributes, "item", "layout") != commonJSON.String(attrs, "item", "layout") {
+		// 内容布局重新裁决后，旧布局的深度完成状态不证明新布局已经增强。
+		scannedDepth = mergeScannedDepth(models.ScannedDepthNone, scanDepth)
+	}
 	updates := map[string]interface{}{
 		"node_id":         node.ID, // 允许 node_id 变化（数据移动）
 		"item_type":       itemType,

@@ -51,7 +51,7 @@ Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内�
 - `source` 只记录触发模块，例如 `meta`、`manager`、`console`、`transfer`；不得把来源、调度器、前后端通道或业务场景塞进 `trigger_type`。
 - `ScanTask` 是扫描调度定义权威，保存 scope、schedule、enabled、owner 和最近执行摘要；执行历史统一进入 `common.task_executions`。
 - `scan_tasks.schedule` 是 Cron 表达式；Console-facing 策略模式字段为 `schedule_mode`，只存在于策略载荷，不进入 `scan_tasks` 表。
-- System 不知道 Meta，也不保存 Meta 扫描策略。System engine 注册或编辑时的默认扫描体验由 Console 编排：Console 调用 System 保存 engine，再调用 Meta 维护 engine 绑定的 `ScanTask` 或创建一次 manual execution。
+- System 不保存 Meta 扫描策略。System engine 注册或编辑时的默认扫描体验由 Console 编排：Console 调用 System 保存 engine，再调用 Meta 维护 engine 绑定的 `ScanTask` 或创建一次 manual execution。授权资源事实由 Meta Runtime API 最小投影给 System，不复制目录或形成 Ready 前置依赖。
 - Manager preview 和 Meta 查询 API 只读取已落库 attributes，不暗中触发扫描、不写 attributes、不构建 `access_index`。
 - 扫描后派生能力、cleanup、查询快捷入口是独立专题，不应混入扫描主线中半截实现。
 
@@ -168,6 +168,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `meta.task_provider.read|execute`，不得复用用户扫描任务权限。
 - 引擎数据项：`GET /engines/:engine_id/items`。
+- 授权资源事实：`GET /runtime/data-items/:fingerprint/authorization-facts`，仅允许固定 `addp-system` Tenant Service 及 `meta.authorization_facts.read`；在只读快照中精确查询，不回源、扫描或写回。首期支持原生 schema 普通表 `single`，其余布局明确不支持；DTO／摘要归 `common/dataitem`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - `resource.children.list` Tool 复用 `GET /resource-tree/:engine_id/node` 返回父资源及直接子资源，并使用独立 Delegated Tool scope；不新增第二条 Catalog HTTP 路由。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。

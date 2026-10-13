@@ -28,8 +28,8 @@ const (
 
 	MsgExecutionNotFound                      = "develop.execution.not_found"
 	MsgExecutionReadFailed                    = "develop.execution.read_failed"
-	MsgQueryPolicyInvalid                     = "develop.query_policy.invalid"
-	MsgQueryPolicyConflict                    = "develop.query_policy.conflict"
+	MsgExecutionPolicyInvalid                     = "develop.execution_policy.invalid"
+	MsgExecutionPolicyConflict                    = "develop.execution_policy.conflict"
 	MsgExecutionStarted                       = "develop.execution.started"
 	MsgExecutionParametersInvalid             = "develop.execution.parameters_invalid"
 	MsgExecutionContractUnavailable           = "develop.execution.contract_unavailable"

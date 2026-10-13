@@ -3,9 +3,13 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
+	"strings"
 	"time"
 
 	commonConfig "github.com/addp/common/config"
@@ -106,7 +110,8 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 		*engineID,
 		JupyterRuntimeExecutionRequest{
 			TenantID: devTask.TenantID, NotebookPath: notebookPath,
-			Parameters: parameters, Kernel: kernel,
+			NotebookContentSHA256: notebookContentDigest(devTask),
+			Parameters:            parameters, Kernel: kernel,
 		},
 		time.Duration(timeout)*time.Second,
 	)
@@ -201,4 +206,36 @@ func (r *NotebookExecutionResult) ToMap() map[string]interface{} {
 	var result map[string]interface{}
 	json.Unmarshal(data, &result)
 	return result
+}
+
+// FreezeContent records the bytes selected at submission; the runtime rechecks its own download.
+func (s *NotebookExecutionService) FreezeContent(ctx context.Context, task *models.DevTask) error {
+	if task == nil || task.TenantID == 0 || s == nil || s.minioClient == nil {
+		return fmt.Errorf("Notebook content store is unavailable")
+	}
+	notebookPath, _ := task.Content["notebook_path"].(string)
+	if !validNotebookPath(notebookPath) {
+		return fmt.Errorf("invalid Notebook path")
+	}
+	content, err := s.ReadNotebookFromMinIO(ctx, fmt.Sprintf("tenant_%d/notebooks/%s", task.TenantID, notebookPath))
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(content)
+	config := models.DevTaskContent{}
+	for key, value := range task.ExecutionConfig {
+		config[key] = value
+	}
+	config["notebook_content_sha256"] = hex.EncodeToString(digest[:])
+	task.ExecutionConfig = config
+	return nil
+}
+
+func validNotebookPath(value string) bool {
+	return value != "" && value != "." && !strings.Contains(value, "\\") && !strings.ContainsRune(value, 0) && !strings.HasPrefix(value, "/") && path.Clean(value) == value && value != ".." && !strings.HasPrefix(value, "../")
+}
+
+func notebookContentDigest(task *models.DevTask) string {
+	value, _ := task.ExecutionConfig["notebook_content_sha256"].(string)
+	return value
 }

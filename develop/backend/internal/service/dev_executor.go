@@ -35,21 +35,22 @@ type DevExecutor struct {
 	sqlEngine                *SQLEngineService
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
-	notifyQueryExecution     func()
+	notifyExecution          func()
+	executionQueue           *repository.ExecutionRepository
 }
 
-// SetQueryExecutionNotifier wakes the embedded query supervisor after a
+// SetExecutionNotifier wakes the embedded query supervisor after a
 // pending execution has committed. PostgreSQL polling remains the durable
 // cross-instance fallback.
-func (e *DevExecutor) SetQueryExecutionNotifier(notify func()) {
+func (e *DevExecutor) SetExecutionNotifier(notify func()) {
 	if e != nil {
-		e.notifyQueryExecution = notify
+		e.notifyExecution = notify
 	}
 }
 
-func (e *DevExecutor) notifyPendingQuery() {
-	if e != nil && e.notifyQueryExecution != nil {
-		e.notifyQueryExecution()
+func (e *DevExecutor) notifyPendingExecution() {
+	if e != nil && e.notifyExecution != nil {
+		e.notifyExecution()
 	}
 }
 
@@ -60,10 +61,9 @@ type federatedQueryExecutor interface {
 }
 
 type preparedContentExecution struct {
-	execution             *commonExecution.TaskExecution
-	devTask               *models.DevTask
-	tenantID              int
-	workflowAuthorization *IssuedWorkflowExecutionAuthorization
+	execution *commonExecution.TaskExecution
+	devTask   *models.DevTask
+	tenantID  int
 }
 
 type preparedParameterizedDevTask struct {
@@ -281,6 +281,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	// 构造临时 DevTask
 	tempItem := &models.DevTask{
 		DevType:           devType,
+		TenantID:          tenantID,
 		Content:           content,
 		Timeout:           timeout,
 		ExecutionConfig:   models.DevTaskContent(executionConfig),
@@ -293,7 +294,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 		}
 	}
 	if devType == commonExecution.TaskTypeQuery {
-		if err := e.freezeQueryPolicy(ctx, tempItem, tenantID); err != nil {
+		if err := e.freezeExecutionPolicy(ctx, tempItem, tenantID); err != nil {
 			return nil, err
 		}
 	}
@@ -316,6 +317,11 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 			}
 		}
 	}
+	if devType == commonExecution.TaskTypeScript {
+		if err := e.notebookExecutionService.FreezeContent(ctx, tempItem); err != nil {
+			return nil, err
+		}
+	}
 	sqlAuthorization, err := e.prepareSQLExecutionAuthorization(
 		ctx, tempItem, tenantID, userAccessToken, executionID,
 	)
@@ -331,15 +337,12 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 	applyScriptExecutionActor(ctx, execution)
-	if devType == commonExecution.TaskTypeQuery {
-		execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
-		execution.MaxAttempts = 1
-		execution.ExecutionConfig = devTaskExecutionRecordConfig(tempItem, inputs)
-	}
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+	execution.MaxAttempts = 1
+	execution.ExecutionConfig = devTaskExecutionRecordConfig(tempItem, inputs)
 
 	return &preparedContentExecution{
 		execution: execution, devTask: tempItem, tenantID: int(tenantID),
-		workflowAuthorization: workflowAuthorization,
 	}, nil
 }
 
@@ -355,21 +358,7 @@ func (e *DevExecutor) persistPreparedContentExecution(
 }
 
 func (e *DevExecutor) startPreparedContentExecution(prepared *preparedContentExecution) {
-	log.Printf(
-		"🚀 [DevExecutor] 执行临时内容 execution_id=%s type=%s",
-		prepared.execution.ExecutionID,
-		prepared.devTask.DevType,
-	)
-	if prepared.devTask.DevType == commonExecution.TaskTypeQuery {
-		e.notifyPendingQuery()
-		return
-	}
-	go e.executeAsync(
-		prepared.execution.ExecutionID,
-		prepared.devTask,
-		prepared.tenantID,
-		prepared.workflowAuthorization,
-	)
+	e.notifyPendingExecution()
 }
 
 func (e *DevExecutor) prepareSQLExecutionAuthorization(
@@ -529,138 +518,16 @@ func workflowEngineIDFromExecutionConfig(executionConfig map[string]interface{})
 	return 0
 }
 
-// executeAsync 异步执行任务（核心执行逻辑）
-func (e *DevExecutor) executeAsync(
-	executionID string,
-	devTask *models.DevTask,
-	tenantID int,
-	workflowAuthorization *IssuedWorkflowExecutionAuthorization,
-) {
-	log.Printf("🟢 [DevExecutor] executeAsync 开始: execution_id=%s", executionID)
-	ctx := context.Background()
-	startTime := time.Now()
-
-	// 只有真正进入执行体后才从 pending 切换为 running 并写 started_at。
-	if err := e.taskExecutionRepo.StartExecution(ctx, executionID, tenantID, startTime); err != nil {
-		log.Printf("❌ [DevExecutor] 启动执行失败: execution_id=%s error=%v", executionID, err)
-		return
-	}
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 10, "开始执行")
-
-	var result commonModels.JSONMap
-	var stableOutputs commonModels.JSONMap
-	var errorMessage string
-
-	// 根据类型分发到不同引擎
-	log.Printf("🟢 [DevExecutor] 开始分发到引擎: execution_id=%s type=%s", executionID, devTask.DevType)
-	switch devTask.DevType {
-	case "workflow":
-		result, stableOutputs, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
-	case "script":
-		result, errorMessage = e.executeScript(ctx, devTask, executionID, tenantID)
-	default:
-		errorMessage = fmt.Sprintf("不支持的类型: %s", devTask.DevType)
-	}
-	log.Printf("🟢 [DevExecutor] 引擎执行完成: execution_id=%s errorMessage=%v", executionID, errorMessage)
-
-	// 计算执行时间
-	executionTime := time.Since(startTime).Milliseconds()
-	completedAt := time.Now()
-
-	// 确定最终状态
-	status := executionStatusForError(errorMessage)
-	log.Printf("🟢 [DevExecutor] 准备更新执行记录: execution_id=%s status=%s", executionID, status)
-
-	// 更新执行记录
-	execution, err := e.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
-	if err != nil {
-		log.Printf("❌ [DevExecutor] 查找执行记录失败: %v", err)
-		return
-	}
-	log.Printf("🟢 [DevExecutor] 找到执行记录: execution_id=%s id=%d", executionID, execution.ID)
-
-	execution.Status = status
-	execution.Progress = 100
-	execution.ExecutionTimeMs = &executionTime
-	execution.CompletedAt = &completedAt
-	execution.CurrentStep = nil // 清空当前步骤
-
-	// 将 result 和 size 存入 metadata JSONB
-	metadata := execution.Metadata
-	if metadata == nil {
-		metadata = commonModels.JSONMap{}
-	}
-	if result != nil {
-		metadata["result"] = result
-		// 计算结果大小
-		if resultBytes, err := json.Marshal(result); err == nil {
-			metadata["result_size_bytes"] = int64(len(resultBytes))
-		}
-	}
-	if len(stableOutputs) > 0 {
-		metadata["outputs"] = stableOutputs
-	}
-	lineageFactsWritten := false
-	if status == commonExecution.ExecutionStatusSuccess {
-		if facts := developLineageFacts(devTask, stableOutputs); facts != nil {
-			metadata["lineage_facts"] = facts
-			lineageFactsWritten = true
-		}
-	}
-	execution.Metadata = metadata
-
-	if errorMessage != "" {
-		execution.ErrorDetails = commonModels.JSONMap{
-			"message": errorMessage,
-		}
-	}
-
-	log.Printf("🟢 [DevExecutor] 准备调用 Update: execution_id=%s", executionID)
-	if err := e.taskExecutionRepo.Update(ctx, execution); err != nil {
-		log.Printf("❌ [DevExecutor] 更新执行记录失败: %v", err)
-		return
-	}
-	log.Printf("🟢 [DevExecutor] Update 调用完成: execution_id=%s", executionID)
-	if lineageFactsWritten {
-		e.notifyExecutionLineage(ctx, uint(tenantID), executionID)
-	}
-
-	log.Printf("✅ [DevExecutor] 执行记录已更新: execution_id=%s status=%s progress=100", executionID, status)
-
-	// 更新开发任务的最后执行信息
-	if execution.SourceTaskID != nil {
-		if taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID); err == nil {
-			_ = e.devTaskRepo.UpdateLastExecution(
-				taskID,
-				uint(execution.TenantID),
-				execution.ExecutionID, // UUID 字符串，软引用 common.task_executions
-				status,
-				completedAt,
-			)
-		}
-	}
-
-	log.Printf("✅ [DevExecutor] 执行完成 execution_id=%s status=%s time=%dms",
-		executionID, status, executionTime)
-}
-
-// updateExecutionStatus 更新执行状态和进度
+// Progress has one path: only the current bounded lease can commit it and its event.
 func (e *DevExecutor) updateExecutionStatus(ctx context.Context, executionID string, tenantID int, status string, progress int, currentStep string) error {
-	fields := map[string]interface{}{
-		"status":   status,
-		"progress": progress,
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID || status != commonExecution.ExecutionStatusRunning {
+		return fmt.Errorf("Develop progress requires the matching bounded execution lease")
 	}
-	if currentStep != "" {
-		fields["current_step"] = currentStep
+	if e.executionQueue == nil {
+		return fmt.Errorf("Develop execution queue is unavailable")
 	}
-	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
-		if lease.ExecutionID != executionID || lease.TenantID != tenantID || status != commonExecution.ExecutionStatusRunning {
-			return fmt.Errorf("bounded query progress does not match the current execution lease")
-		}
-		delete(fields, "status")
-		return e.taskExecutionRepo.UpdateWithLease(ctx, lease, fields)
-	}
-	return e.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, fields)
+	return e.executionQueue.UpdateProgressWithLease(ctx, lease, progress, currentStep)
 }
 
 // executeWorkflow 执行工作流（支持 JSONB 配置）
@@ -690,7 +557,9 @@ func (e *DevExecutor) executeWorkflow(
 		return nil, nil, "异步工作流执行缺少 Execution Authorization"
 	}
 
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行工作流")
+	if err := e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行工作流"); err != nil {
+		return nil, nil, err.Error()
+	}
 
 	// 解析输入数据（可选）
 	inputData, _ := devTask.Content["inputs"].(map[string]interface{})
@@ -707,7 +576,7 @@ func (e *DevExecutor) executeWorkflow(
 	configJSON, _ := json.Marshal(devTask.ExecutionConfig)
 	configStr := string(configJSON)
 
-	log.Printf("🔵 [DevExecutor] 调用工作流引擎: execution_id=%s config=%s", executionID, configStr)
+	log.Printf("[DevExecutor] 调用工作流引擎: execution_id=%s", executionID)
 	// 调用工作流引擎
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if err != nil {
@@ -725,7 +594,9 @@ func (e *DevExecutor) executeWorkflow(
 
 	if err == nil {
 		log.Printf("🔵 [DevExecutor] 工作流引擎返回成功: execution_id=%s", executionID)
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "工作流执行成功")
+		if err := e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "工作流执行成功"); err != nil {
+			return nil, nil, err.Error()
+		}
 	}
 
 	// 构造结果摘要
@@ -1540,10 +1411,8 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	if devTask.DevType == commonExecution.TaskTypeQuery {
-		execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
-		execution.MaxAttempts = 1
-	}
+	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+	execution.MaxAttempts = 1
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 	applyScriptExecutionActor(ctx, execution)
@@ -1552,18 +1421,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
 
-	log.Printf("🚀 [DevExecutor] 参数化执行已创建 execution_id=%s task_id=%d params=%v",
-		executionID, itemID, executionInputs["submitted_parameters"])
-
-	if devTask.DevType == commonExecution.TaskTypeQuery {
-		e.notifyPendingQuery()
-		return executionID, nil
-	}
-
-	// Workflow 与 Script 仍由 Backend 的既有即时路线执行。
-	go e.executeAsync(
-		executionID, tempItem, int(tenantID), workflowAuthorization,
-	)
+	e.notifyPendingExecution()
 
 	return executionID, nil
 }
@@ -1668,7 +1526,12 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		}
 	}
 	if task.DevType == commonExecution.TaskTypeQuery {
-		if err := e.freezeQueryPolicy(ctx, task, tenantID); err != nil {
+		if err := e.freezeExecutionPolicy(ctx, task, tenantID); err != nil {
+			return nil, err
+		}
+	}
+	if task.DevType == commonExecution.TaskTypeScript {
+		if err := e.notebookExecutionService.FreezeContent(ctx, task); err != nil {
 			return nil, err
 		}
 	}
@@ -1740,55 +1603,8 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)
 	}
-	if preparedTask.task.DevType == commonExecution.TaskTypeQuery {
-		// Orchestrator 查询由 Backend 内嵌 Supervisor 领取；查询所需的
-		// Execution Authorization 在 claim 后按当前执行边界签发。
-		e.notifyPendingQuery()
-		return executionID, nil
-	}
-
-	var workflowAuthorization *IssuedWorkflowExecutionAuthorization
-	switch preparedTask.task.DevType {
-	case commonExecution.TaskTypeWorkflow:
-		workflowAuthorization, err = e.prepareWorkflowExecutionAuthorizationFromExecution(
-			ctx, preparedTask.task, tenantID, parsedParentExecutionID, executionUUID,
-		)
-	}
-	if err != nil {
-		return executionID, e.failPendingAuthorization(ctx, execution, err)
-	}
-	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
-	if execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != principalID ||
-		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != membershipID ||
-		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion != authorizationVersion {
-		return executionID, e.failPendingAuthorization(ctx, execution, fmt.Errorf("子执行授权主体与父执行不一致"))
-	}
-	execution.UpdatedAt = time.Now()
-	if err := e.taskExecutionRepo.Update(ctx, execution); err != nil {
-		return executionID, e.failPendingAuthorization(ctx, execution, fmt.Errorf("保存子执行授权失败: %w", err))
-	}
-	e.startPreparedContentExecution(&preparedContentExecution{
-		execution: execution, devTask: preparedTask.task, tenantID: int(tenantID),
-		workflowAuthorization: workflowAuthorization,
-	})
+	e.notifyPendingExecution()
 	return executionID, nil
-}
-
-func (e *DevExecutor) failPendingAuthorization(
-	ctx context.Context,
-	execution *commonExecution.TaskExecution,
-	cause error,
-) error {
-	completedAt := time.Now()
-	execution.Status = commonExecution.ExecutionStatusFailed
-	execution.Progress = 100
-	execution.CompletedAt = &completedAt
-	execution.ErrorDetails = commonModels.JSONMap{"message": cause.Error()}
-	execution.UpdatedAt = completedAt
-	if err := e.taskExecutionRepo.Update(ctx, execution); err != nil {
-		return fmt.Errorf("%v; 收敛子执行失败状态失败: %w", cause, err)
-	}
-	return cause
 }
 
 func validateExpectedDevTaskType(devType, expectedTaskType string) error {
@@ -1799,10 +1615,11 @@ func validateExpectedDevTaskType(devType, expectedTaskType string) error {
 }
 
 func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.JSONMap) commonModels.JSONMap {
-	config := commonModels.JSONMap{
-		"inputs": inputs,
-	}
+	config := commonModels.JSONMap{"inputs": inputs}
 	if devTask != nil {
+		for key, value := range devTask.ExecutionConfig {
+			config[key] = value
+		}
 		config["engine_id"] = devTask.GetEngineID()
 		config["content"] = devTask.Content
 		config["timeout"] = devTask.Timeout

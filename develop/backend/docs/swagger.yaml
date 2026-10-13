@@ -1187,6 +1187,31 @@ definitions:
     - operator
     - params
     type: object
+  github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse:
+    properties:
+      default_query_timeout:
+        type: integer
+      inherited:
+        type: boolean
+      max_query_timeout:
+        type: integer
+      notebook_concurrency:
+        type: integer
+      query_concurrency:
+        type: integer
+      query_per_engine_concurrency:
+        type: integer
+      query_result_limit:
+        type: integer
+      scope_type:
+        type: string
+      tenant_id:
+        type: integer
+      version:
+        type: integer
+      workflow_concurrency:
+        type: integer
+    type: object
   github_com_addp_develop_backend_internal_service.KernelInfo:
     properties:
       display_name:
@@ -1348,32 +1373,13 @@ definitions:
         description: 算子类型 (scan/transfer/spatial等)
         type: string
     type: object
-  github_com_addp_develop_backend_internal_service.QueryPolicyResponse:
-    properties:
-      default_query_timeout:
-        type: integer
-      inherited:
-        type: boolean
-      max_query_timeout:
-        type: integer
-      query_concurrency:
-        type: integer
-      query_per_engine_concurrency:
-        type: integer
-      query_result_limit:
-        type: integer
-      scope_type:
-        type: string
-      tenant_id:
-        type: integer
-      version:
-        type: integer
-    type: object
-  github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput:
+  github_com_addp_develop_backend_internal_service.UpdateExecutionPolicyInput:
     properties:
       default_query_timeout:
         type: integer
       max_query_timeout:
+        type: integer
+      notebook_concurrency:
         type: integer
       query_concurrency:
         type: integer
@@ -1382,6 +1388,8 @@ definitions:
       query_result_limit:
         type: integer
       version:
+        type: integer
+      workflow_concurrency:
         type: integer
     required:
     - default_query_timeout
@@ -3589,7 +3597,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.export_provenance.read
-  /settings/query-policy:
+  /settings/execution-policy:
     get:
       produces:
       - application/json
@@ -3597,10 +3605,10 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse'
       security:
       - BearerAuth: []
-      summary: 获取查询策略 | Get query policy
+      summary: 获取执行策略 | Get execution policy
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: permission
@@ -3614,19 +3622,19 @@ paths:
         timeout. Concurrency reloads without restart; new executions freeze their
         timeout and preview limits.
       parameters:
-      - description: 查询策略 | Query policy
+      - description: 执行策略 | Execution policy
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.UpdateExecutionPolicyInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.ExecutionPolicyResponse'
         "409":
           description: Conflict
           schema:
@@ -3635,7 +3643,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 更新查询策略 | Update query policy
+      summary: 更新执行策略 | Update execution policy
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: permission

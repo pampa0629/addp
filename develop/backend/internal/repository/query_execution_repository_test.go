@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestQueryExecutionRepositoryClaimsDevelopAndOrchestratorQueries(t *testing.T) {
+func TestExecutionRepositoryClaimsDevelopAndOrchestratorQueries(t *testing.T) {
 	db := newQueryExecutionTestDB(t)
 	now := time.Now().UTC()
 	task := createQueryExecutionTestTask(t, db)
@@ -32,9 +32,10 @@ func TestQueryExecutionRepositoryClaimsDevelopAndOrchestratorQueries(t *testing.
 			t.Fatalf("create query execution: %v", err)
 		}
 	}
-	repo := NewQueryExecutionRepository(db)
+	repo := NewExecutionRepository(db)
 	for _, wantSource := range []string{commonExecution.ModuleDevelop, commonExecution.ModuleOrchestrator} {
-		claimed, lease, err := repo.ClaimNext(context.Background(), "query-supervisor", now, time.Minute, nil)
+		claimed, lease, err := repo.ClaimNext(
+			commonExecution.TaskTypeQuery, context.Background(), "query-supervisor", now, time.Minute, nil)
 		if err != nil || claimed == nil || lease == nil {
 			t.Fatalf("ClaimNext = %#v %#v, %v", claimed, lease, err)
 		}
@@ -47,7 +48,7 @@ func TestQueryExecutionRepositoryClaimsDevelopAndOrchestratorQueries(t *testing.
 	}
 }
 
-func TestQueryExecutionRepositorySkipsSaturatedEngineWithoutBlockingOthers(t *testing.T) {
+func TestExecutionRepositorySkipsSaturatedEngineWithoutBlockingOthers(t *testing.T) {
 	db := newQueryExecutionTestDB(t)
 	now := time.Now().UTC()
 	for index, engineID := range []int{9, 9, 10} {
@@ -64,8 +65,8 @@ func TestQueryExecutionRepositorySkipsSaturatedEngineWithoutBlockingOthers(t *te
 		}
 	}
 
-	claimed, lease, err := NewQueryExecutionRepository(db).ClaimNext(
-		context.Background(), "query-supervisor", now, time.Minute, []uint{9},
+	claimed, lease, err := NewExecutionRepository(db).ClaimNext(
+		commonExecution.TaskTypeQuery, context.Background(), "query-supervisor", now, time.Minute, []uint{9},
 	)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("ClaimNext = %#v %#v, %v", claimed, lease, err)
@@ -85,7 +86,7 @@ func TestQueryExecutionRepositorySkipsSaturatedEngineWithoutBlockingOthers(t *te
 	}
 }
 
-func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
+func TestExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 	for name, relationResult := range map[string]bool{"ordinary": false, "relation_result": true} {
 		t.Run(name, func(t *testing.T) {
 			db := newQueryExecutionTestDB(t)
@@ -129,7 +130,7 @@ func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 			}).Error; err != nil {
 				t.Fatalf("set task execution summary: %v", err)
 			}
-			count, err := NewQueryExecutionRepository(db).RecoverExpired(context.Background(), now, 10)
+			count, err := NewExecutionRepository(db).RecoverExpired(context.Background(), now, 10)
 			if err != nil || count != 1 {
 				t.Fatalf("RecoverExpired = %d, %v", count, err)
 			}
@@ -144,7 +145,7 @@ func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 	}
 }
 
-func TestQueryExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
+func TestExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
 	db := newQueryExecutionTestDB(t)
 	now := time.Now().UTC()
 	startedAt := now.Add(-time.Minute)
@@ -158,7 +159,7 @@ func TestQueryExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
 	if err := db.Create(&execution).Error; err != nil {
 		t.Fatal(err)
 	}
-	count, err := NewQueryExecutionRepository(db).RecoverUnleased(context.Background(), now, 10)
+	count, err := NewExecutionRepository(db).RecoverUnleased(context.Background(), now, 10)
 	if err != nil || count != 1 {
 		t.Fatalf("RecoverUnleased = %d, %v", count, err)
 	}
@@ -169,7 +170,7 @@ func TestQueryExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
 	if stored.Status != commonExecution.ExecutionStatusFailed || stored.ErrorDetails["code"] != "develop.query.lease_missing" {
 		t.Fatalf("recovered execution = %#v", stored)
 	}
-	assertQueryEvents(t, db, execution.ExecutionID)
+	assertExecutionEvents(t, db, commonExecution.TaskTypeQuery, execution.ExecutionID)
 }
 
 func newQueryExecutionTestDB(t *testing.T) *gorm.DB {

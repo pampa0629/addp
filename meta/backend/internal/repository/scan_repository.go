@@ -19,6 +19,10 @@ func NewScanRepository(db *gorm.DB) *ScanRepository {
 	return &ScanRepository{db: db}
 }
 
+func (r *ScanRepository) Transaction(fn func(*ScanRepository) error) error {
+	return r.db.Transaction(func(tx *gorm.DB) error { return fn(NewScanRepository(tx)) })
+}
+
 func EnsureEngineCatalogRootNode(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin) (*models.MetaNode, error) {
 	return EnsureEngineCatalogRootNodeWithNativeName(repo, tenantID, resource, p, "")
 }

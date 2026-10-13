@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgAuthorizationFactsUnavailable                 = "system.engine_access.authorization_facts_unavailable"
 	MsgIndependentGrantConflict                      = "system.engine_access_grant_command_conflict"
 	MsgGrantRelationExists                           = "system.engine_access_grant_relation_exists"
 	MsgIndependentGrantBasis                         = "system.engine_access_grant_approval_changed"

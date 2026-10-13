@@ -62,6 +62,7 @@ type DetectionResult struct {
 // ResolveOptions 控制扫描期 item 识别结果的范围。
 type ResolveOptions struct {
 	IncludeSingleResources bool
+	ExcludeWholeScope      bool
 }
 
 // DetectedItem 是 Meta 识别后的标准化 data item 计划。

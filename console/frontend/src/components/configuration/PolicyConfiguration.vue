@@ -22,6 +22,12 @@
           <el-form-item :label="t('console.configuration.policies.develop.queryPerEngineConcurrency')">
             <el-input-number v-model="form.query_per_engine_concurrency" :min="1" :max="form.query_concurrency" controls-position="right" />
           </el-form-item>
+          <el-form-item :label="t('console.configuration.policies.develop.workflowConcurrency')">
+            <el-input-number v-model="form.workflow_concurrency" :min="1" :max="1000" controls-position="right" />
+          </el-form-item>
+          <el-form-item :label="t('console.configuration.policies.develop.notebookConcurrency')">
+            <el-input-number v-model="form.notebook_concurrency" :min="1" :max="1000" controls-position="right" />
+          </el-form-item>
         </template>
       </template>
       <template v-else-if="owner === 'manager'"><el-form-item :label="t('console.configuration.policies.manager.flatgeobufRows')"><el-input-number v-model="form.direct_flatgeobuf_max_rows" :min="1" :max="1000000" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.mvtTimeout')"><el-input-number v-model="form.realtime_tile_timeout_ms" :min="100" :max="120000" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.retryAfter')"><el-input-number v-model="form.realtime_tile_retry_after_sec" :min="1" :max="3600" controls-position="right" /></el-form-item><el-form-item :label="t('console.configuration.policies.manager.rasterMosaicTimeout')"><el-input-number v-model="form.raster_mosaic_generation_timeout_seconds" :min="60" :max="604800" controls-position="right" /></el-form-item></template>
@@ -56,9 +62,11 @@ const DEVELOP_PLATFORM_FIELDS = [
   { key: 'max_query_timeout', label: 'maxQueryTimeout' },
   { key: 'query_result_limit', label: 'queryResultLimit' },
   { key: 'query_concurrency', label: 'queryConcurrency' },
-  { key: 'query_per_engine_concurrency', label: 'queryPerEngineConcurrency' }
+  { key: 'query_per_engine_concurrency', label: 'queryPerEngineConcurrency' },
+  { key: 'workflow_concurrency', label: 'workflowConcurrency' },
+  { key: 'notebook_concurrency', label: 'notebookConcurrency' }
 ]
-const form = reactive({ version: 0, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, direct_flatgeobuf_max_rows: 2000, realtime_tile_timeout_ms: 2500, realtime_tile_retry_after_sec: 60, raster_mosaic_generation_timeout_seconds: 7200, alert_evaluation_interval_seconds: 15, webhook_dispatch_interval_seconds: 2, webhook_http_timeout_seconds: 10, webhook_lease_duration_seconds: 30, webhook_max_attempts: 8, webhook_retry_initial_backoff_seconds: 5, webhook_retry_max_backoff_seconds: 300, email_dispatch_interval_seconds: 2, email_smtp_timeout_seconds: 15, email_lease_duration_seconds: 30, email_max_attempts: 8, email_retry_initial_backoff_seconds: 5, email_retry_max_backoff_seconds: 300, diagnostics_interval_seconds: 15, retention_degraded_horizon_seconds: 21600, retention_critical_horizon_seconds: 3600, checkpoint_stale_after_seconds: 300, recovery_initial_backoff_seconds: 1, recovery_max_backoff_seconds: 60, recovery_max_failures: 5, recovery_circuit_open_seconds: 300, recovery_stability_window_seconds: 300 })
+const form = reactive({ version: 0, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, workflow_concurrency: 2, notebook_concurrency: 1, direct_flatgeobuf_max_rows: 2000, realtime_tile_timeout_ms: 2500, realtime_tile_retry_after_sec: 60, raster_mosaic_generation_timeout_seconds: 7200, alert_evaluation_interval_seconds: 15, webhook_dispatch_interval_seconds: 2, webhook_http_timeout_seconds: 10, webhook_lease_duration_seconds: 30, webhook_max_attempts: 8, webhook_retry_initial_backoff_seconds: 5, webhook_retry_max_backoff_seconds: 300, email_dispatch_interval_seconds: 2, email_smtp_timeout_seconds: 15, email_lease_duration_seconds: 30, email_max_attempts: 8, email_retry_initial_backoff_seconds: 5, email_retry_max_backoff_seconds: 300, diagnostics_interval_seconds: 15, retention_degraded_horizon_seconds: 21600, retention_critical_horizon_seconds: 3600, checkpoint_stale_after_seconds: 300, recovery_initial_backoff_seconds: 1, recovery_max_backoff_seconds: 60, recovery_max_failures: 5, recovery_circuit_open_seconds: 300, recovery_stability_window_seconds: 300 })
 const TRANSFER_FIELDS = [
   { key: 'diagnostics_interval_seconds', label: 'diagnosticsInterval', min: 1, max: 86400 },
   { key: 'retention_degraded_horizon_seconds', label: 'retentionDegraded', min: 1, max: 31536000 },
@@ -103,7 +111,8 @@ function savePayload() {
   const payload = { version: form.version, default_query_timeout: form.default_query_timeout }
   if (isPlatform.value) Object.assign(payload, {
     max_query_timeout: form.max_query_timeout, query_result_limit: form.query_result_limit,
-    query_concurrency: form.query_concurrency, query_per_engine_concurrency: form.query_per_engine_concurrency
+    query_concurrency: form.query_concurrency, query_per_engine_concurrency: form.query_per_engine_concurrency,
+    workflow_concurrency: form.workflow_concurrency, notebook_concurrency: form.notebook_concurrency
   })
   return payload
 }

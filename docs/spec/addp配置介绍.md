@@ -133,13 +133,13 @@ System 的 `platform.configuration.read/update` 只允许管理 System-owned 的
 
 配置变更必须记录 owner、scope、配置版本、操作者、结果和脱敏后的差异。Secret 只能记录是否设置、版本或引用，不能进入响应、日志、审计详情或管理能力声明。
 
-### Develop 查询策略
+### Develop 执行策略
 
-Develop 配置统一由 `develop.query_policy` 持久化。平台管理员维护默认查询超时、最大超时、预览行数、单 Backend 总并发（默认 20）和单 Engine Instance 并发（默认 5）；Tenant 只能覆盖默认超时，不能改写平台上限。两个并发数必须为正整数，单引擎上限不得大于总并发。
+Develop 配置统一由 `develop.execution_policy` 持久化。平台管理员维护默认查询超时、最大超时、预览行数、单 Backend 查询总并发（默认 20）、单 Engine Instance 查询并发（默认 5）、Workflow 并发（默认 2）和 Notebook 并发（默认 1）；Tenant 只能覆盖默认超时，不能改写平台上限。全部并发数必须为正整数；Workflow 与 Notebook 各在 1–1000 内，单引擎上限不得大于总并发。
 
-Develop 租户配置页只读展示当前最大查询超时、结果预览上限、总查询并发和单引擎查询并发；后两者均为每个 Backend 内跨租户、跨来源共享的上限，不是租户独享配额。默认超时标注继承平台默认或本租户已设置，保存提示只说明租户默认超时作用于新建执行，不暗示租户能够调整并发。读取与保存继续使用现有查询策略接口；页面展示、来源标注、只读权限、刷新和保存字段白名单由 `make test-console-frontend` 的浏览器测试覆盖，现有 Platform CI 调用同一入口。
+Develop 租户配置页只读展示当前最大查询超时、结果预览上限、总查询并发、单引擎查询并发、Workflow 并发和 Notebook 并发；这些并发额度均为每个 Backend 内跨租户、跨来源共享的上限，不是租户独享配额。默认超时标注继承平台默认或本租户已设置，保存提示只说明租户默认超时作用于新建执行，不暗示租户能够调整并发。读取与保存继续使用唯一 `/settings/execution-policy` 接口；页面展示、来源标注、只读权限、刷新和保存字段白名单由 `make test-console-frontend` 的浏览器测试覆盖，现有 Platform CI 调用同一入口。
 
-并发采用 `hot_reload`：每次调度从平台策略读取一对完整上限，默认每秒检查一次；本进程保存后唤醒调度器，其他实例在下一轮读取生效。调高增加可领取数量；调低不取消已运行查询，活动数低于新上限后再领取。按 execution 冻结的 Runtime `engine_id` 分组，不按租户或 source 分裂。同一实例内所有来源共享限额；部署多个 Backend 时各实例独立应用上限。Monitor 心跳报告最新应用容量与真实活动数，缩容期间允许活动数暂时高于容量。
+并发采用 `hot_reload`：每次调度从平台策略读取一组完整的三类执行并发预算，默认每秒检查一次；本进程保存后唤醒调度器，其他实例在下一轮读取生效。调高增加可领取数量；调低不取消已运行执行，活动数低于新上限后再领取。Query 按 execution 冻结的 Runtime `engine_id` 分组，不按租户或 source 分裂。同一实例内所有来源共享限额；部署多个 Backend 时各实例独立应用上限。Monitor 心跳报告最新应用容量与真实活动数，缩容期间允许活动数暂时高于容量。
 
 超时、结果预览采用 `execution_snapshot`：创建 execution 时解析平台策略及租户默认超时，固化有效 `timeout` 和 `query_result_limit`；查询授权预算、实际执行及结果裁剪都消费该快照。配置读取失败必须返回错误，不回退环境变量。并发不是 execution 快照，pending 查询按领取时策略调度。缺少必需快照的 execution 明确失败，不保留旧运行路径。
 
@@ -656,7 +656,7 @@ System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Ten
 
 | 模块级入口 | 所有者 | 内部配置域 | 平台级字段 | 租户级字段 |
 | --- | --- | --- | --- | --- |
-| `develop.configuration` | Develop | `query_policy` | 最大查询超时、结果预览上限 | 默认查询超时 |
+| `develop.configuration` | Develop | `execution_policy` | 最大查询超时、结果预览上限与三类执行并发 | 默认查询超时 |
 | `manager.configuration` | Manager | `embedding`、`quick_view_policy` | 向量化策略、FlatGeobuf 行数上限、动态 MVT 超时预算、重试等待时间 | 向量化模型绑定及租户覆盖 |
 | `copilot.configuration` | Copilot | `inference_bindings`、`matching_policy` | 匹配阈值、候选数量上限 | 推理场景绑定、匹配阈值、候选数量上限 |
 

@@ -78,7 +78,7 @@ Meta 扫描只保留四个核心维度：
 6. Manager preview、Meta 查询 API 和其他消费方只能读取已落库 attributes 与 `access_index`；缺失或不可用时应降级读取或提示用户执行 item refresh，不得在预览或查询链路自动触发扫描、写回 attributes 或临时构建 `access_index`。
 7. 公共表格 Provider 通过必需的 `GetTable` 按命名空间与目标表名称查询；`ResolvePath` 不列举兄弟表、不读取字段，事实接口再读取该表详情。table、collection、graph、直接 catalog leaf、file 和 object 目标只扫描自身。复用 `EngineCatalogProvider.ResolvePath` 精确解析与既有事实／内容处理能力；不支持精确解析、路径无效或跨引擎时拒绝执行，不枚举父级作为兜底。只有显式 root 或 branch selector 才枚举该范围。
 8. 局部扫描不得清理未覆盖的兄弟 item，也不得更新祖先 node 的扫描完成时间、深度或状态。为落库建立结构父链不代表完成父范围扫描；只有成功完整枚举对应范围才允许清理该范围及标记完成。字符串路径不得按 `.` 或首段截断来扩大范围。
-9. 执行归属、扫描深度与数据访问授权是独立边界。租户集中采集、交互扫描与自动产物扫描应由 System 提供当前资源授权裁决，Meta 对解析后的实际范围执行裁决并在 Worker 重核；本期范围精确化不宣称已经完成该授权闭环，也不直接套用 Service 查询定义或 Manager 数据预览的专用授权契约。
+9. 执行归属、扫描深度与数据访问授权是独立边界。租户集中采集、交互扫描与自动产物扫描应由 System 提供相应操作的当前授权裁决，Meta 对解析后的实际范围执行裁决并在 Worker 重核。建立 DataItem 身份所必需的基础识别采用显式、限范围的扫描资格，不能要求一个尚未形成的数据项先有内容 Grant，也不能借此读取任意样本；deep 内容采样另受数据访问授权约束。本期范围精确化不宣称已经完成该授权闭环，不直接套用 Service 查询定义或 Manager 数据预览的专用契约。统一方向见[授权上下文规范 5.5.7](addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。
 
 精确 file/object leaf 必须把已解析的 `EngineCatalogEntry` 交给内容运行时，复用完整扫描的 entry → 存储资源 → processor 路径，保留大小、修改时间、MIME 和对象 ETag 等可用存储事实；不得降为仅含路径的 `ref_groups` 后以零值落库。`ref_groups` 继续只表达显式多内容引用边界，不能承载调用方自报的存储事实。
 
@@ -157,7 +157,7 @@ Meta 扫描允许在同一执行中继续处理多个目标，但不得因为“
 | `TaskExecution.source` | `meta` |
 | `TaskExecution.source_task_id` | `ScanTask.id` |
 
-System 不知道 Meta，不接收、不保存、不投递 Meta 扫描策略。System 注册引擎时“默认带有 Meta 扫描配置”的产品体验由 Console 编排完成，相关 manual execution 的 `source` 应记录为 `console`：
+System 不接收、不保存、不投递 Meta 扫描策略；授权资源事实查询也不编排扫描。System 注册引擎时“默认带有 Meta 扫描配置”的产品体验由 Console 编排完成，相关 manual execution 的 `source` 应记录为 `console`：
 
 1. Console 承载 System engine 注册体验；System 只保存 engine 身份、连接、能力、租户和生命周期等自身事实。
 2. System iframe 保存 engine 后，只通过 `postMessage` 向父级 Console 提交扫描策略编排请求，不直接调用 Meta。
@@ -349,7 +349,11 @@ Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `Engine
 
 ### Basic 扫描
 
-`basic` 的目标是低成本建立资源目录和 data item 身份。原则上不打开 file/object 内容流。
+`basic` 的目标是低成本建立资源目录，以及可被授权与读取流程可靠引用的 data item 身份和组成边界。原则上不读取业务内容；为确定身份与边界所必需的有限 manifest、入口或 header 结构读取属于基础识别，不等于 deep 内容增强。
+
+基础边界识别是 basic / deep 的共用阶段。仅凭完整可见清单及格式规则能确认的 multi / whole 必须在 basic 登记，后续 deep 与再次 basic 保持相同身份和组成；字段、空间信息及其它内容增强只在 deep 执行。确需读取 manifest 才能确认的组合，也应通过有上限的基础结构识别确定，不把正式组合边界留到 deep 才形成。目录与显式 refs 都不得借组合识别读取内容增强，亦不得为补全 refs 扩大输入范围。精确单文件目标不枚举同级文件；边界重识别仍须显式扫描必要目录或提交完整 refs。组件记录的精确收敛遵循[数据项探测器规范](addp数据项探测器规范.md)。
+
+2026-10-13 实施状态：上述“必要结构读取属于 basic”与 DataItem 授权前置是已确认目标，不能把当前仅凭清单完成的组合识别当作所有格式已经支持。各格式须声明身份识别所需入口、读取字节／数量上限、引用范围和失败语义，并经对应门禁验证；超限、缺失、格式不支持或边界不确定时明确报告识别未完成，不退回独立叶子并宣称整体可授权。不新增无消费者的状态字段，不以 `scanned_depth=basic` 单独证明授权边界可靠。
 
 允许写入：
 
@@ -357,9 +361,9 @@ Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `Engine
 - `meta_item` 身份字段：`item_type`、`name`、`full_name`、`fingerprint`、`node_id`。
 - `attributes.schema_version`。
 - `attributes.storage` 中由 catalog 直接返回的事实，例如 bucket、path、name、size、etag、last_modified_at、content_type。
-- `attributes.item` 中无需读取内容即可判断的事实，例如 `layout`、`data_type`、`format`。如果 `refs`、`file_count`、`scope_exclusive` 可由 catalog、manifest 或路径规则直接判断，也可以写入；需要打开 file/object 内容才能判断的，一律归 deep。
+- `attributes.item` 中由 catalog、格式／路径规则或必要的有限结构读取确定的身份与组成事实，例如 `layout`、`data_type`、`format`、`refs`、`scope_exclusive`。`file_count` 仅在已有低成本可靠事实时写入，不为授权枚举 whole 的全部成员；内容画像仍归 deep。
 - 来自 `EngineCatalogEntry` 或只读 catalog/system table 的低成本摘要，例如 table / collection 的估算 `row_count`、`size_bytes`、storage `etag` 和 `last_modified_at`。这类事实可用于列表展示、跳过判断和 basic attributes，但不得为了得到它们执行全表扫描、读取 file/object 内容或触发统计刷新。
-- 轻量格式判断：扩展名、MIME、catalog 声明。若确实需要读取极小 header，必须有读取上限和明确理由。
+- 轻量格式判断：扩展名、MIME、catalog 声明，以及确定组合边界所必需的有限 manifest／header。必须有明确理由、读取上限与受控引用范围；不执行内容采样、全量解析或统计刷新。
 
 不应写入：
 
@@ -370,6 +374,59 @@ Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `Engine
 - `access_index`。
 - 文档正文、媒体宽高、图片 EXIF、全文摘要、向量索引引用。
 - 为了获取 extent、真实 geometry 类型分布而扫描全量数据。
+
+### 授权消费与基础事实刷新
+
+System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep 或企业 Catalog 编目。注册引擎后的立即 basic 仍使用既有编排；注册成功不等于扫描成功。目标无基础事实、组成不完整或已有证据表明边界改变时，授权办理须先经 Meta 唯一扫描入口补齐或刷新目标范围，再进入签发；普通资源查询、展开和内容读取不暗中触发扫描。
+
+授权判断需要新鲜的是身份与合法组成边界，不是全部元数据。旧行数、大小、统计时间或合法内容更新本身不使 Grant 失效；既定 whole scope 内按原组成规则新增 OSGB、TIFF 等成员，不要求 System 重批、保存成员清单或强制全量重扫。Meta 提供整体边界，内容执行端验证实际成员未越界。根范围、布局或包含规则发生实质变化、外部引用无法证明合法时，先核验边界，不因指纹相同自动扩大授权。具体授权分工与未实施范围见[授权上下文规范 5.5.7](addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。
+
+### 授权资源描述契约
+
+本节定义 Meta → System 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、Deny 与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
+
+接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system` Service 使用。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime`，不可委托或租户定制。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有 System 的 IAM／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
+
+| 响应部分 | 最小内容与事实来源 |
+| --- | --- |
+| 协议 | `schema_version=meta.data_item_authorization_facts/v1`；共享 wire 类型与严格校验归 `common/dataitem`，HTTP Client 归 `common/client` |
+| 身份 | `item_fingerprint`、`engine_id`、`item_type`、`full_name`，取自当前未删除的 `meta_item`；指纹按现有 `engine_id + full_name` 算法复核，不输出 Meta 行号作为授权身份 |
+| 边界 | `boundary`，包含 `layout`、规范读取入口与下述布局对应的组成约束；定位所需的 `data_type`／`format` 复用标准 item 事实，不要求 deep 字段结构或样本 |
+| 识别依据 | `basis_state`，由已有持久事实、探测规则的明确支持范围及已知失效依据派生；不把查询状态写入 attributes，不以 `scanned_depth=basic/deep` 单独判定完整 |
+| 比对 | `boundary_hash`，仅完整边界可生成；System 保存它及被批准的最小边界绑定，用于复核而非同步 Meta 目录 |
+| 观察时间 | `observed_at`，表示本次 Meta 快照观察时刻；不承诺源端在此刻已全量复查，也不是许可期限 |
+
+路径复用现有 EngineCatalogPath／content ref 语义和共享转换，保留原生名称。响应不得携带连接信息、挂载配置、正文、字段值、全量 attributes、whole 叶子清单或 Catalog 责任信息。所有身份、入口与 refs 必须属于响应 Engine；接收端核对目标身份与 Engine，拒绝未知 Schema、缺项、重复或矛盾内容。
+
+| 布局 | `boundary` 的组成表达 | 当次读取约束 |
+| --- | --- | --- |
+| `single` | 一个规范原生目标或 content ref，不附加目录递归范围 | 只打开该对象；内容增加行或覆盖本身不扩大目标 |
+| `multi` | 唯一 primary 和明确 refs，保留路径、role、required／primary 语义；完整性由对应格式规则检查 | 使用被确认的完整组合，不自行枚举 sibling 补全；缺少必需 ref 时拒绝完整内容读取 |
+| `whole` | 根 scope、manifest／关键入口，以及格式明确声明的成员约束与引用范围 | 逐次打开均限制在该边界内；合法动态成员按同一规则进入，不列举或逐个签发 Grant |
+
+whole 的成员约束必须能由内容 I/O／Provider 执行，包括路径范围、成员角色及关联引用限制。格式名、`scope_exclusive=true` 或 `claim_policy=whole_scope` 单独不足以证明任意目录内容可读。当前格式不能提供可执行约束时，明确报告不支持；不能复制 detector 到 System，也不能用任意 glob／SQL／表达式建立第二套规则语言。
+
+`basis_state` 固定为 `complete | incomplete | needs_refresh | unsupported`。`complete` 只表示已有依据足以描述边界；其余状态的 `boundary` 与 `boundary_hash` 为 null，分别表示基础组成缺失、已有边界失效证据、或当前格式／引擎无法提供契约。现有持久事实无法证明完整时返回 incomplete，不补造成功扫描、版本或历史依据。`data_type=unknown` 本身不使一个已确定的原生 single 目标失效；是否完整取决于该布局实际需要的事实。
+
+查询成功返回 200 及上述状态，不等于授予权限。不存在、已删除或跨 Tenant 的目标返回 404；输入错误、凭据失效和功能拒绝分别为 400／401／403。数据库或服务依赖失败使用实际 5xx 与稳定 `error_code`，不得伪装 404 或识别未完成。System 将非 complete 状态作为对应授权办理／读取的阻断原因；首次扫描与刷新经 Meta 已有显式扫描编排完成，再重新查询，不在 GET 中自动补扫。
+
+**边界比对。** 规范化集合排序、去重并校验一致性，路径按既有引擎语义比较，不能一律转小写、修剪名称或仅做字符串前缀判断。`boundary_hash` 为协议定义的规范身份与边界表示的 SHA-256；字段和序列化规则由同一共享实现拥有。它包含布局、规范入口、明确 refs 与 whole 成员约束，排除行数、大小、成员数量、内容哈希、mtime／ETag、扫描时间、Meta 行号及变化游标。whole 内 manifest 更新只按解析后的边界语义判断，不能把原始 manifest 字节变化直接当作授权扩大。
+
+| 变化 | 授权处理 |
+| --- | --- |
+| 同目标内容更新、whole 原 scope 和规则内新增合法 OSGB／TIFF | 边界摘要保持不变；继续核验当前 Grant／Deny、真实成员和 Security |
+| layout、根范围、规范入口、明确 refs 或成员约束变化 | 标出边界差异并阻止旧绑定自动覆盖新范围；先完成识别核验，扩大许可须显式重新批准 |
+| 缺少必需组成、已知边界失效或能力不支持 | 保留原规则与历史，阻断对应新办理／内容读取；刷新或支持补齐不自动恢复已撤销 Grant |
+
+镶嵌 manifest 引用 scope 外另一独立 DataItem 时，该资源是额外读取依赖，须核验它自己的许可；不能因写进 manifest 就成为已授权 whole 的合法新增成员。依赖缺权时拒绝完整预览，不静默舍弃无权影像。manifest／路径解析、链接及实际打开共用同一受约束计划，防止检查后重新解析成更大的范围。
+
+System 在本地权威写事务外取得这一事实，事务内核验当前管理资格、规则及批准边界。新增授权的显式确认须绑定展示时的预期边界摘要；服务端从 Meta 重取可信事实，比对不同返回 409，重新展示差异后确认，不能自动换成更大的最新边界继续签发。浏览器摘要只是并发期望值，不是可信资源事实。实际读取 owner 使用同一共享边界表示核验计划与 System 当次检查的绑定；边界不一致则重新计划／核验或拒绝，不执行旧检查对应之外的入口。原生 SQL／文件 URL 到 DataItem 的归属须由 Meta 已确认的身份与组成证明，不能由消费方按名称或路径前缀猜测；该归属解析与真实 I/O 约束仍须随读取消费者单独接入。
+
+**实施与验收。** 正式事实查询、严格共享 DTO、状态投影及摘要已实现。首期支持持久化的 server → schema → 普通 table `single`，以 PostgreSQL 为首验对象；原生坐标取自父 schema 名称和表名，不拆分 `full_name`。已有身份、布局、父节点及 schema 属性须一致；缺失、矛盾或其他布局明确返回对应状态。统计、basic/deep 深度及观察时间不改变边界摘要。当前不支持文件 single、multi 或 whole，不证明源对象仍存在，也不扩展既有 Grant／Deny 的原生目标。
+
+System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权，也尚未替换签发及实际读取链。
+
+T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致，System IAM PostgreSQL 门禁覆盖最小 Role 迁移及跨服务期间资格变化。并发快照与真实双服务调用的 Online T4、Grant 边界绑定及同一计划实际读取仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
 
 ### Deep 扫描
 
@@ -447,7 +504,7 @@ node 的 `scan_status` 表达最近一次覆盖该 node 范围的扫描过程状
 | `basic` | `basic`，但如果原来已是 `deep`，保持 `deep` |
 | `deep` | `deep` |
 
-Basic 重新发现资源时不能把已有 deep 状态降级。
+同一内容布局下，Basic 重新发现资源时不能把已有 deep 状态降级。目录或完整 refs 重新裁决改变既有 item 的内容布局时，旧布局的 deep 状态及内容增强不证明新布局已完成 deep；按本次实际完成深度登记，后续 deep 补齐新布局事实。single 归并为 multi 时保留 primary 身份；whole 的身份仍由 scope 根范围决定。
 
 ## 覆盖策略
 

@@ -425,6 +425,7 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	}
 	exerciseApprovalRequirementAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 	exerciseHandlingScopeAPI(t, db, identity, service, actor, engine, otherTenant.ID)
+	exerciseAuthorizationFactsAPI(t, db, identity, actor, engine)
 }
 
 func engineDelegationTestRouter(t *testing.T, service engineAccessDelegationService, projection *commonauth.AuthContext) *gin.Engine {

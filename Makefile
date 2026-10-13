@@ -141,6 +141,11 @@ DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
 	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
 
+JUPYTER_PYTHON ?= engines/jupyter/venv/bin/python
+.PHONY: test-jupyter
+test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
+	@cd engines/jupyter && $(abspath $(JUPYTER_PYTHON)) -m unittest discover -p 'test_*.py'
+
 MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
 .PHONY: test-supermap-workflow
 test-supermap-workflow: ## 运行不加载厂商 SDK 的 SuperMap 协议、算子目录和资源主机测试
@@ -186,7 +191,7 @@ test-dameng-official-media-release:
 	@bash scripts/test/dameng-official-media-release-gate.sh
 
 test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
-	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)"
+	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)" $(if $(filter 1,$(GO_ONLY)),--go-only,)
 
 test-changed: ## 根据相对 HEAD 或 BASE_REF 的改动运行受影响 T0-T3 门禁
 	@python3 scripts/test/changed-gate.py --repository "$(CURDIR)" $(if $(BASE_REF),--base-ref "$(BASE_REF)",)
@@ -812,7 +817,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
+	test-document-workflow test-jupyter test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

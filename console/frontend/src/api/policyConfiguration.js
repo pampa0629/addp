@@ -1,7 +1,7 @@
 import client from './client'
 
 export const POLICY_CONFIGS = {
-  develop: { get: '/develop/settings/query-policy', put: '/develop/settings/query-policy' },
+  develop: { get: '/develop/settings/execution-policy', put: '/develop/settings/execution-policy' },
   manager: { get: '/manager/settings/quick-view-policy', put: '/manager/settings/quick-view-policy' },
   transfer: { get: '/transfer/settings/continuous-policy', put: '/transfer/settings/continuous-policy' },
   monitor: { get: '/monitor/settings/runtime-policy', put: '/monitor/settings/runtime-policy' },

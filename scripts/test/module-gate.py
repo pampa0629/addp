@@ -169,7 +169,7 @@ def platform_step(repository: Path) -> Step:
                 excluded_environment=GO_T1_EXCLUDED_ENVIRONMENT)
 
 
-def plan_module(repository: Path, module: str, include_platform: bool = True) -> list[Step]:
+def plan_module(repository: Path, module: str, include_platform: bool = True, go_only: bool = False) -> list[Step]:
     if not re.fullmatch(r"[a-z][a-z0-9-]*", module):
         raise ModuleGateError("MODULE must be a lowercase ADDP module name")
     modules = discover_modules(repository)
@@ -179,7 +179,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
 
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     steps = []
-    if include_platform:
+    if include_platform and not go_only:
         steps.append(platform_step(repository))
 
     go_modules = []
@@ -198,6 +198,11 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
                 GO_T1_EXCLUDED_ENVIRONMENT,
             )
         )
+
+    if go_only:
+        if not steps:
+            raise ModuleGateError(f"module {module!r} has no Go T1 gate")
+        return steps
 
     frontend_target = f"test-{module}-frontend"
     eval_target = f"test-{module}-eval"
@@ -327,13 +332,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--module", required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--go-only", action="store_true", help="Run only the owner's Go T1 steps; this is not a complete module gate")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        steps = plan_module(args.repository.resolve(), args.module)
+        steps = plan_module(args.repository.resolve(), args.module, go_only=args.go_only)
         run_steps(steps, args.dry_run)
     except (ModuleGateError, subprocess.CalledProcessError) as error:
         print(f"Module gate failed: {error}", file=sys.stderr)

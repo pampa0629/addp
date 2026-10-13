@@ -58,3 +58,14 @@ other = "元数据项快照读取失败"
 
 [meta.scan.encoding_invalid]
 other = "编码只支持 UTF-8、GBK、UTF-16LE 或 UTF-16BE，且只能用于单个 CSV/TSV 数据项的深度刷新。"
+[meta.authorization_facts.invalid]
+other = "授权资源事实查询参数无效"
+
+[meta.authorization_facts.unavailable]
+other = "暂时无法读取数据项授权资源事实"
+
+[permissions.meta.authorization_facts.read.name]
+other = "读取授权资源事实"
+
+[permissions.meta.authorization_facts.read.description]
+other = "仅供 System 读取当前数据项身份与授权边界，不读取源内容"
