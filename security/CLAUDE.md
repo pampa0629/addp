@@ -128,3 +128,5 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
 受保护资源列表支持资源 full_name 字面子串、引擎和既有生命周期状态的服务端组合筛选，计数与分页采用相同条件。Owner 同步摘要另从既有投影派生有效期和当前有效状态；界面区分规则同步与时间有效性，过期仍保持纳管并通过现有显式重新发现续期，不新增自动续期或调度。银行卡号元数据能力 `addp.detector.bank_card_number_metadata/v1` 只对表/集合字符串字段的明确银行卡号名称进行精确识别，复用现有末级/扁平路径语义和发现、复核、四 Owner 编译；不读取业务行或推断普通账号/卡 ID。
+
+提交 `b8ce75038` 的上述扩展已通过 `make test-module MODULE=security`：Go T1、212 个前端确定性用例、25 个浏览器用例、构建及 Security PostgreSQL T2 均通过；Swagger 生成和 62 条路由覆盖核验通过。[同提交 Platform CI 38338630796](https://github.com/pampa0629/addp/actions/runs/38338630796) 已成功。2026-10-13 重启后，本地 Security 就绪且构建包含该提交；无痕 Chrome 的 outdoor 开发者账号核对 Persons 名称有匹配／无匹配／重置恢复，以及四出口截止时间、独立时间有效状态和详情起止时间。Chrome 原生自动化通道不稳定的剩余控件由内置浏览器的 ADDP 开发管理员账号只读补验：MongoDB 与同步完成的组合找到 Persons，保护中与已停止保护的交集为空，重置后恢复；银行卡号能力的版本、字符串类型、精确别名、隐私边界和号码有效性／卡种／校验位局限均在真实界面可见。查看后取消表单，现有类型仍保持一项识别方式，未保存新增绑定或改变保护、授权。此记录不计为普通账号全部组合筛选、真实银行卡字段的发现与数据出口 T4，亦未在本地改时钟制造到期场景。
