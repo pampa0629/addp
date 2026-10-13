@@ -3317,7 +3317,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "查询失败 | Query failed",
+                        "description": "authorization_target_not_found：目标不存在或不属于当前引擎 | Target is missing or belongs to another engine",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }

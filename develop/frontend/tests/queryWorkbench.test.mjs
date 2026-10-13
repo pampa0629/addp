@@ -214,6 +214,12 @@ console.log('query workbench tests passed')
 
 assert.equal(queryErrorMessage('permission_denied', '', key => key), 'common.executionFailure.permission_denied')
 assert.equal(queryResultFromExecution({ status: 'failed', error_details: { category: 'timeout' } }).error_code, 'timeout')
+const snapshotFailure = queryResultFromExecution({ status: 'failed', execution_id: 'failed-run', error_details: {
+  category: 'execution_failed', code: 'develop.query.snapshot_invalid',
+  diagnostic: { schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid' }
+} })
+assert.equal(snapshotFailure.error_code, 'develop.query.snapshot_invalid')
+assert.equal(snapshotFailure.error_details.diagnostic.reason, 'query_template_invalid')
 
 assert.equal(queryErrorMessage('query_execution_failed', '', key => key, 'connection_failed'), 'common.executionFailure.connection_failed')
 

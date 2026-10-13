@@ -999,10 +999,6 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	return response, message, affected, ""
 }
 
-func queryErrorCode(err error) string {
-	return string(plugin.QueryErrorCodeOf(err))
-}
-
 func (e *DevExecutor) queryResult(
 	limit int,
 	columns []string,

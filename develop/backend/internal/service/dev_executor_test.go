@@ -265,21 +265,65 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferences(t *testing.T)
 }
 
 func TestCompileRelationPreviewQueryUsesEffectiveTableBinding(t *testing.T) {
-	compiled, err := compileRelationPreviewQuery(&models.DevTask{
+	template := &models.DevTask{
 		DevType: commonExecution.TaskTypeQuery,
 		Content: models.DevTaskContent{
-			"query": "SELECT * FROM source", "query_type": "sql",
-			"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
+			"query": "SELECT * FROM source WHERE id > :minimum", "query_type": "sql",
+			"query_parameters": []interface{}{
+				map[string]interface{}{"name": "source", "type": "relation"},
+				map[string]interface{}{"name": "minimum", "type": "integer", "default": 0},
+			},
 		},
-		ExecutionConfig: models.DevTaskContent{"engine_id": 12},
-	}, map[string]interface{}{
+		ExecutionConfig:   models.DevTaskContent{"engine_id": 12},
+		RuntimeParameters: map[string]interface{}{"minimum": 3},
+	}
+	compiled, err := compileRelationPreviewQuery(template, map[string]interface{}{
 		"source": map[string]interface{}{"locator": "addp://engine/12/path/public/source?type=table"},
 	}, "postgresql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := compiled.Content["query"]; got != `SELECT * FROM "public"."source"` {
+	if got := compiled.Content["query"]; got != `SELECT * FROM "public"."source" WHERE id > :minimum` {
 		t.Fatalf("compiled query = %q", got)
+	}
+	compiled.Timeout, compiled.QueryResultLimit = 45, 500
+	// Exercise the durable boundary rather than only checking compiler text.
+	config := devTaskExecutionRecordConfig(compiled, commonModels.JSONMap{
+		"effective_inputs": map[string]interface{}{"source": map[string]interface{}{"locator": "addp://engine/12/path/public/source?type=table"}},
+	})
+	payload, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored commonModels.JSONMap
+	if err := json.Unmarshal(payload, &restored); err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := devQueryTaskFromExecution(&commonExecution.TaskExecution{TenantID: 7, ExecutionConfig: restored})
+	if err != nil {
+		t.Fatalf("compiled preview rejected by Worker: %v", err)
+	}
+	if frozen.Content["query"] != compiled.Content["query"] {
+		t.Fatal("Worker changed the compiled query")
+	}
+	if _, relations, err := relationParameterBindingsFromContent(frozen.Content); err != nil || relations {
+		t.Fatalf("compiled preview still contains consumed relation parameters: %v", err)
+	}
+	definitions, err := queryParameterDefinitions(frozen.Content)
+	if err != nil || len(definitions) != 1 || definitions[0].Name != "minimum" || frozen.RuntimeParameters["minimum"] != float64(3) {
+		t.Fatalf("compiled preview lost its value parameter: %#v, %v", definitions, err)
+	}
+	if template.Content["query"] != "SELECT * FROM source WHERE id > :minimum" {
+		t.Fatal("compiler mutated the task template")
+	}
+	if _, relations, _ := relationParameterBindingsFromContent(template.Content); !relations {
+		t.Fatal("compiler removed the template's relation parameter")
+	}
+	inputs, _ := mapValue(restored["inputs"])
+	effective, _ := mapValue(inputs["effective_inputs"])
+	exportInputs := queryExportInputs(effective)
+	if len(exportInputs) != 1 || exportInputs[0].Name != "source" {
+		t.Fatal("compiled snapshot lost frozen export input lineage")
 	}
 }
 

@@ -49,7 +49,8 @@ func RegisterEngineAccessAuthorizationFactsRoutes(api *gin.RouterGroup, runtime 
 // @Param id path string true "引擎 ID | Engine ID"
 // @Param fingerprint path string true "数据项指纹 | DataItem fingerprint"
 // @Success 200 {object} dataitem.AuthorizationFacts "授权边界事实 | Authorization boundary facts"
-// @Failure 400,401,403,404,500,503 {object} IAMErrorResponse "查询失败 | Query failed"
+// @Failure 404 {object} IAMErrorResponse "authorization_target_not_found：目标不存在或不属于当前引擎 | Target is missing or belongs to another engine"
+// @Failure 400,401,403,500,503 {object} IAMErrorResponse "查询失败 | Query failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_grant.read"]
 // @Router /engines/{id}/data-items/{fingerprint}/authorization-facts [get]
@@ -66,6 +67,10 @@ func (h *EngineAccessAuthorizationFactsHandler) Get(c *gin.Context) {
 	facts, err := h.service.GetAuthorizationFacts(c.Request.Context(), actor, engineID, c.Param("fingerprint"))
 	if errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, sysi18n.MsgAuthorizationFactsUnavailable), "error_code": "authorization_facts_unavailable"})
+		return
+	}
+	if errors.Is(err, commonapi.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgAuthorizationTargetNotFound), "error_code": "authorization_target_not_found"})
 		return
 	}
 	if err != nil {

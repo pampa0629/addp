@@ -181,6 +181,7 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 
 // GetExecutionTreeByExecutionID 获取执行记录树
 // @Summary 按 execution_id 获取执行记录树 | Get execution tree by execution_id
+// @Description 失败诊断 error_details.diagnostic 只包含 schema_version=addp.execution-failure/v1、stage 和 reason 闭合码；历史未记录时省略。| Failure error_details.diagnostic contains only schema_version=addp.execution-failure/v1 and closed stage/reason codes; omitted when not recorded.
 // @Tags Monitor
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"

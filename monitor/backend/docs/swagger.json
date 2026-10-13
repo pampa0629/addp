@@ -1060,6 +1060,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "失败诊断 error_details.diagnostic 只包含 schema_version=addp.execution-failure/v1、stage 和 reason 闭合码；历史未记录时省略。| Failure error_details.diagnostic contains only schema_version=addp.execution-failure/v1 and closed stage/reason codes; omitted when not recorded.",
                 "produces": [
                     "application/json"
                 ],

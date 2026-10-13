@@ -67,14 +67,8 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	inputs, _ := mapValue(execution.ExecutionConfig["inputs"])
 	effectiveParameters, _ := mapValue(inputs["effective_parameters"])
 	effectiveInputs, _ := mapValue(inputs["effective_inputs"])
-	task := &models.DevTask{DevType: commonExecution.TaskTypeQuery, Content: models.DevTaskContent(content), ExecutionConfig: models.DevTaskContent(execution.ExecutionConfig)}
-	if execution.SourceTaskID == nil {
-		task, err = s.executor.compileRelationQueryPreview(ctx, task, effectiveInputs, tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: compile frozen query inputs: %v", ErrQueryExportInvalid, err)
-		}
-		query = strings.TrimSpace(interfaceString(task.Content["query"]))
-	}
+	// All preview executions freeze the already compiled query. Export consumes
+	// that query and its frozen bindings without recompiling a task template.
 	queryInputs := queryExportInputs(effectiveInputs)
 	sourceLocator := queryExportSourceLocator(content, queryInputs)
 	if sourceLocator == "" {

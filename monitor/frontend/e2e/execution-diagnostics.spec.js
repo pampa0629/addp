@@ -1,9 +1,16 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {} } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
   execution.metadata = metadata
+  if (queryFailure) {
+    Object.assign(execution, { module: 'develop', task_type: 'query', source: 'develop', source_task_id: null, source_task_name: null, steps: [], error_details: {
+      code: 'develop.query.snapshot_invalid', category: 'execution_failed', diagnostic: {
+        schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid'
+      }
+    } })
+  }
   let treeRequests = 0
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
@@ -25,6 +32,24 @@ async function installBackend(page, { empty = false, unavailable = false, events
   })
   return { getTreeRequests: () => treeRequests }
 }
+
+for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and opens an ad-hoc Owner execution (${locale})`, async ({ page }) => {
+  await installBackend(page, { locale, queryFailure: true, empty: true })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const diagnostic = page.locator('.execution-detail-content > .execution-failure')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询内容与参数定义不一致' : 'The query content and parameter definitions do not match')
+  await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
+  await expect(diagnostic).toContainText('diagnostic-run')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '校验执行配置' : 'Validate execution configuration')
+  const button = diagnostic.getByRole('button', { name: locale === 'zh-cn' ? '查看查询执行详情' : 'View query execution details', exact: true })
+  await expect(button).toBeVisible()
+  await expect(page.getByRole('button', { name: locale === 'zh-cn' ? '打开任务定义' : 'Open task definition', exact: true })).toHaveCount(0)
+  await page.setViewportSize({ width: 620, height: 700 })
+  expect(await diagnostic.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
+  await page.route('**/develop/executions/diagnostic-run', route => route.fulfill({ contentType: 'text/html', body: '<main>Owner execution destination</main>' }))
+  await button.click()
+  await expect(page).toHaveURL(/\/develop\/executions\/diagnostic-run$/)
+})
 
 for (const locale of ['zh-cn', 'en']) test(`shows recorded recovery context (${locale})`, async ({ page }) => {
   const previous = 'aaaaaaaa-1111-4111-8111-111111111111'

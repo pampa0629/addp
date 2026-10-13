@@ -2,10 +2,8 @@ import { resolveCanonicalTabRouteState } from '@common-ui/utils/recoverableRoute
 
 const BASE_TABS = ['result', 'logs', 'inputs']
 
-export function resolveExecutionDetailRouteState(routeQuery = {}, executionStatus = '') {
-  const allowedTabs = executionStatus === 'failed'
-    ? [...BASE_TABS, 'error']
-    : BASE_TABS
+export function resolveExecutionDetailRouteState(routeQuery = {}) {
+  const allowedTabs = BASE_TABS
 
   return resolveCanonicalTabRouteState({
     allowedTabs,

@@ -65,13 +65,12 @@
       show-icon
     />
 
-    <el-alert
-      v-if="result && result.success === false && errorMessage"
-      class="result-alert"
-      type="error"
-      :title="errorMessage"
-      :closable="false"
-      show-icon
+    <ExecutionFailure
+      v-if="result"
+      :status="result.status"
+      :error-details="result.error_details"
+      :execution-id="result.execution_id"
+      :fallback-message="result.execution_id ? '' : errorMessage"
     />
 
     <div v-if="customContent" class="custom-result-content">
@@ -133,6 +132,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   DataPagination,
+  ExecutionFailure,
   openMonitorExecution,
   paginateRows,
   TabularResultRenderer
@@ -264,6 +264,13 @@ const openExecution = () => openMonitorExecution(props.result.execution_id)
 
 .result-alert {
   margin: 8px 12px 0;
+}
+
+.execution-failure {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 8px 12px;
 }
 
 .result-grid {

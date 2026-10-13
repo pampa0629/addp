@@ -53,11 +53,11 @@ describe('canonical recoverable tab state', () => {
 })
 
 describe('Develop execution detail recoverable route state', () => {
-  it('allows the error tab only for failed executions', () => {
+  it('removes the error tab because diagnostics are always above the tabs', () => {
     expect(resolveExecutionDetailRouteState({ tab: 'error' }, 'failed')).toEqual({
-      tab: 'error',
-      query: { tab: 'error' },
-      changed: false
+      tab: 'result',
+      query: {},
+      changed: true
     })
     expect(resolveExecutionDetailRouteState({ tab: 'error' }, 'success')).toEqual({
       tab: 'result',

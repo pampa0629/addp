@@ -424,7 +424,7 @@ System 在本地权威写事务外取得这一事实，事务内核验当前管�
 
 **实施与验收。** 正式事实查询、严格共享 DTO、状态投影及摘要已实现。首期支持持久化的 server → schema → 普通 table `single`，以 PostgreSQL 为首验对象；原生坐标取自父 schema 名称和表名，不拆分 `full_name`。已有身份、布局、父节点及 schema 属性须一致；缺失、矛盾或其他布局明确返回对应状态。统计、basic/deep 深度及观察时间不改变边界摘要。当前不支持文件 single、multi 或 whole，不证明源对象仍存在，也不扩展既有 Grant／Deny 的原生目标。
 
-System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权，也尚未替换签发及实际读取链。
+System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权，也尚未替换签发及实际读取链。
 
 T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致，System IAM PostgreSQL 门禁覆盖最小 Role 迁移及跨服务期间资格变化。并发快照与真实双服务调用的 Online T4、Grant 边界绑定及同一计划实际读取仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
 

@@ -426,7 +426,8 @@ export function queryResultFromExecution(execution) {
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
     graph_data: result.graph_data || null,
     error_category: success ? '' : (execution?.error_details?.category || ''),
-    error_code: success ? '' : (execution?.error_details?.error_code || execution?.error_details?.category || ''),
+    error_details: execution?.error_details || {},
+    error_code: success ? '' : (execution?.error_details?.code || execution?.error_details?.error_code || execution?.error_details?.category || ''),
     error: success ? '' : (execution?.error_details?.message || execution?.error_details?.error || '')
   }
 }

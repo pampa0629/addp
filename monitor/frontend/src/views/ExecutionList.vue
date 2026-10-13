@@ -161,6 +161,12 @@
         </template>
       </el-result>
       <div v-else-if="currentExecution" class="execution-detail-content">
+        <ExecutionFailure
+          :status="currentExecution.status"
+          :error-details="currentExecution.error_details"
+          :execution-id="currentExecution.execution_id"
+          :owner-route="buildDevelopQueryExecutionRoute(currentExecution)"
+        />
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('monitor.execution.detail.id')">
             {{ currentExecution.id }}
@@ -232,7 +238,7 @@
         </el-descriptions>
 
         <div class="detail-actions">
-          <el-button type="primary" @click="openOwnerTask(currentExecution)">
+          <el-button v-if="currentExecution.source_task_id" type="primary" @click="openOwnerTask(currentExecution)">
             <el-icon><Link /></el-icon>
             {{ t('monitor.execution.detail.open_task_definition') }}
           </el-button>
@@ -463,15 +469,6 @@
           </el-descriptions>
         </div>
 
-        <!-- 错误详情 -->
-        <div v-if="executionErrorDetails" class="detail-section">
-          <h4>{{ t('monitor.execution.detail.error') }}</h4>
-          <el-alert
-            type="error"
-            :closable="false"
-            :description="executionErrorSummary"
-          />
-        </div>
       </div>
     </el-dialog>
   </div>
@@ -479,7 +476,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { ExecutionSteps, ExecutionEvents } from '@common-ui'
+import { ExecutionSteps, ExecutionEvents, ExecutionFailure, buildDevelopQueryExecutionRoute } from '@common-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -640,18 +637,6 @@ const executionTreeTruncated = computed(() => {
 const currentExecutionMetadata = computed(() => normalizeObject(currentExecution.value?.metadata))
 
 
-
-const executionErrorDetails = computed(() => {
-	const status = currentExecution.value?.status
-	if (!['failed', 'timeout', 'cancelled'].includes(status)) return null
-	const details = normalizeObject(currentExecution.value?.error_details)
-	return Object.keys(details).length > 0 ? details : null
-})
-
-const executionErrorSummary = computed(() => {
-  const details = executionErrorDetails.value || {}
-  return [details.category ? t(`common.executionFailure.${details.category}`) : '', details.code || details.error_code].filter(Boolean).join(' · ')
-})
 
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))

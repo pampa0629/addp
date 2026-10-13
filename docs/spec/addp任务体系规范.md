@@ -1032,6 +1032,12 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
+执行失败诊断使用同一 `error_details.diagnostic`，契约为 `schema_version=addp.execution-failure/v1`、`stage` 和 `reason`，只接受 Common 声明的闭合枚举，无自由文本、动态参数或附加字段。阶段为配置校验、授权、准备查询、执行查询或保存结果；原因包括执行配置缺失／无效、查询模板无效、关系参数绑定失败、授权失效、引擎访问失败、语法错误、字段／表不存在、类型不匹配、权限不足、连接失败、超时、取消、资源不足及未进一步分类的执行失败。Owner 根据实际失败边界和已知错误事实生成诊断；Common Observation 同时用于 Monitor 和 Owner 专业响应，仅投影合法诊断。界面由共享组件按中英文固定词条展示失败阶段、具体原因、处理建议、错误码和 execution UUID，不从原始错误拼接文案。未记录受控诊断的历史错误继续只展示安全类别和稳定码，不猜测具体原因、不回填历史。
+
+Develop 查询工作台在结果区持续展示失败诊断；Monitor 详情顶部使用同一组件。Develop 查询的领域执行详情按 `/develop/executions/{execution_id}` 打开，包含无任务定义的一次性执行，仍由既有 Owner 读取权限裁决。通用详情不以“打开任务定义”代替领域执行详情。
+
+关系参数预览编译产物的 `content.query` 为已绑定实际表的只读查询；已消费的 `type=relation` 定义从产物的 `content.query_parameters` 删除，值参数定义保留。原始任务模板不变，完整输入契约和有效资源绑定继续冻结在 `execution_config.inputs`，供导出与血缘消费。Worker 校验并执行这一编译产物，不再把实际表当作未编译的关系参数；编排写入仍校验原模板并按目标编译。
+
 Transfer 专业执行读取同时限定可信 Tenant、`module=transfer` 与 `task_type=sync`。第一方和普通 OAuth User 使用现有 `transfer.task.read`：有定义的历史（含已删除定义）可读，无定义的一次性执行仅发起 User 可读，无主体证据拒绝；详情、进度、事件、任务历史、全局列表及其总数和统计采用同一 SQL 范围。用户读取父执行不授予子执行读取权。模块导出结果仍独立使用已认证 Service Client 与 execution 的 source 精确匹配，且只允许无定义执行；TaskProvider 仍独立使用 `addp-orchestrator` 和 `transfer.task_provider.read`，不套用用户本人规则，两者也必须限定 sync 归属。
 
 Transfer 专业响应采用显式 DTO，保留执行身份、状态、时间和传输计数、Common 安全错误分类、冻结血缘资源与字段映射及结构快照，以及连续同步的分区位点、延迟、检查点健康、捕获恢复观测、恢复退避和结构变化诊断。结构快照不包含字段注释、默认表达式或生成表达式。只展示已声明的专业事实，不返回任意 metadata、原始 checkpoint、SQL／参数／业务样本、完整运行时响应、执行授权引用、fencing／租约或自由文本错误。启动、恢复、回放和重试响应也使用同一投影；模块导出结果另用显式结果 DTO，仅保留身份、状态、安全错误和导出会话所需的 typed `target_refs`。原始持久事实与运行时恢复逻辑不变，专业结果仍由所属模块的授权入口读取。

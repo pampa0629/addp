@@ -171,6 +171,16 @@ func compileRelationPreviewQuery(
 		content[key] = value
 	}
 	content["query"] = strings.TrimSpace(compiledSource)
+	// Relation placeholders have been consumed. Keep the executable content's
+	// parameter declarations consistent with its physical query; the complete
+	// input contract and locators remain frozen in execution_config.inputs.
+	valueParameters := make([]models.QueryParameterDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.Type != "relation" {
+			valueParameters = append(valueParameters, definition)
+		}
+	}
+	content["query_parameters"] = valueParameters
 	compiled := *task
 	compiled.Content = content
 	return &compiled, nil

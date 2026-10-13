@@ -99,6 +99,9 @@ func Observe(item *TaskExecution) *Observation {
 		if item.Status == ExecutionStatusCancelled {
 			errorDetails["category"] = "cancelled"
 		}
+		if diagnostic := projectFailureDiagnostic(item.ErrorDetails["diagnostic"]); diagnostic != nil {
+			errorDetails["diagnostic"] = diagnostic
+		}
 		for _, key := range []string{"code", "error_code"} {
 			if value, ok := item.ErrorDetails[key].(string); ok && diagnosticCode.MatchString(value) && !strings.Contains(strings.ToLower(value), "secret") {
 				errorDetails[key] = value

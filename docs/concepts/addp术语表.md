@@ -711,6 +711,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | execution observation | 执行观测 | 对统一执行记录的显式安全投影；不直接返回执行配置、原始 metadata、数据预览、授权引用或所有权凭据。 |
 | execution read scope | 执行读取范围 | Owner 在当前同步 User 请求中裁决的强类型读取范围；第一版使用明确的任务类型和租户级任务历史读取、本人一次性执行读取条件。不是 Execution Authorization，也不是 Monitor 的中央 ACL。 |
 | execution event | 执行过程事件 | 附属于 execution 和 attempt 的追加式安全过程事实；用于阶段、批次汇总、警告和恢复追踪，不作为 execution 主状态或业务结果的第二事实源。 |
+| execution failure diagnostic | 执行失败诊断 | Owner 写入统一 execution 错误事实的受控阶段和原因码；Common 校验闭合契约，前端按固定词条展示原因及处理建议，不包含原始错误正文、查询或业务值。 |
 
 
 ## 模块服务运行日志

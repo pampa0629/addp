@@ -37,6 +37,12 @@
       </div>
     </div>
 
+    <ExecutionFailure
+      :status="execution?.status"
+      :error-details="execution?.error_details"
+      :execution-id="execution?.execution_id"
+    />
+
     <!-- 基本信息卡片 -->
     <div class="info-section">
       <el-card>
@@ -168,6 +174,10 @@
         <!-- Tab 2: 执行日志 -->
         <el-tab-pane :label="t('develop.executionDetail.tabLogs')" name="logs">
           <div class="tab-content">
+            <template v-if="execution?.task_type !== 'query' && executionResult?.traceback">
+              <h4>{{ t('develop.executionDetail.stackTrace') }}</h4>
+              <pre class="json-result">{{ executionResult.traceback }}</pre>
+            </template>
             <el-timeline v-if="logs.length > 0">
               <el-timeline-item
                 v-for="(log, index) in logs"
@@ -195,27 +205,6 @@
           </div>
         </el-tab-pane>
 
-        <!-- Tab 4: 错误信息 -->
-        <el-tab-pane
-          v-if="execution?.status === 'failed'"
-          :label="t('develop.executionDetail.tabError')"
-          name="error"
-        >
-          <div class="tab-content">
-            <el-alert
-              type="error"
-              :title="executionErrorMessage || t('develop.executionDetail.unknownError')"
-              :closable="false"
-              show-icon
-            >
-              <template v-if="executionResult?.traceback">
-                <div style="margin-top: 12px; margin-bottom: 8px; font-weight: bold;">{{ t('develop.executionDetail.stackTrace') }}:</div>
-                <pre class="error-traceback">{{ executionResult.traceback }}</pre>
-              </template>
-              <pre v-else style="margin-top: 8px; white-space: pre-wrap;">{{ executionErrorMessage }}</pre>
-            </el-alert>
-          </div>
-        </el-tab-pane>
       </el-tabs>
     </div>
   </div>
@@ -235,8 +224,8 @@ import {
 import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
-import { queryErrorMessage, queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
-import { formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
+import { queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
+import { ExecutionFailure, formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -309,12 +298,6 @@ const workflowFinalResultScalar = computed(() => (
   workflowFinalResult.value === null || typeof workflowFinalResult.value !== 'object'
 ))
 const workflowFinalResultText = computed(() => JSON.stringify(workflowFinalResult.value, null, 2))
-const executionErrorMessage = computed(() => queryErrorMessage(
-  execution.value?.error_details?.error_code || execution.value?.error_details?.category,
-  execution.value?.error_details?.message || execution.value?.error_details?.error || '',
-  t,
-  execution.value?.error_details?.category
-))
 
 let refreshTimer = null
 let executionReadGeneration = 0
@@ -512,7 +495,7 @@ const handleRefresh = async () => {
 }
 
 const handleTabChange = async (tab) => {
-  const routeState = resolveExecutionDetailRouteState({ tab }, execution.value?.status)
+  const routeState = resolveExecutionDetailRouteState({ tab })
   const location = { path: route.path, query: routeState.query }
   if (router.resolve(location).fullPath !== route.fullPath) {
     await navigateDevelopRoute(router, location, { history: 'replace' })
@@ -520,7 +503,7 @@ const handleTabChange = async (tab) => {
 }
 
 async function restoreExecutionRoute() {
-  const routeState = resolveExecutionDetailRouteState(route.query, execution.value?.status)
+  const routeState = resolveExecutionDetailRouteState(route.query)
   activeTab.value = routeState.tab
   if (routeState.changed) {
     await navigateDevelopRoute(router, {
@@ -738,21 +721,6 @@ onUnmounted(() => {
   color: var(--addp-text-secondary);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-}
-
-.error-traceback {
-  background: #fff5f5;
-  color: #c45656;
-  padding: 12px;
-  border-radius: 4px;
-  overflow: auto;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
-  border: 1px solid #fde2e2;
-  max-height: 400px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
 }
 
 @keyframes rotate {

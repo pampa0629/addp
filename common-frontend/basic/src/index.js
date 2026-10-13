@@ -19,6 +19,8 @@ export { CONSOLE_ROUTE_ACCESS, consoleRouteAccess, allowsConsoleRoute } from './
 export { default as ExecutionParameterForm } from './components/ExecutionParameterForm.vue'
 export { default as ExecutionSteps } from './components/ExecutionSteps.vue'
 export { default as ExecutionEvents } from './components/ExecutionEvents.vue'
+export { default as ExecutionFailure } from './components/ExecutionFailure.vue'
+export * from './utils/executionFailure.mjs'
 export { default as MonitorExecutionsButton } from './components/MonitorExecutionsButton.vue'
 export { default as TabularResultRenderer } from './components/TabularResultRenderer.vue'
 export { default as DataPagination } from './components/DataPagination.vue'

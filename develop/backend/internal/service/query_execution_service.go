@@ -366,8 +366,17 @@ func (s *QueryExecutionService) completeQueryError(
 	errorCode, message string,
 ) error {
 	status := executionStatusForError(message)
+	if errorCode == "timeout" {
+		status = commonExecution.ExecutionStatusTimeout
+	}
+	if errorCode == "cancelled" {
+		status = commonExecution.ExecutionStatusCancelled
+	}
 	fields := terminalQueryFields(startedAt, queryExecutionMetadata(result), rowsAffected)
-	fields["error_details"] = commonModels.JSONMap{"message": message, "error_code": errorCode, "details": message}
+	if errorCode == "" {
+		errorCode = "develop.query.execution_failed"
+	}
+	fields["error_details"] = commonModels.JSONMap{"message": message, "code": errorCode, "diagnostic": queryFailureDiagnostic(errorCode, message, nil)}
 	return s.queries.CompleteWithLease(ctx, execution, lease, status, time.Now().UTC(), fields)
 }
 
@@ -380,7 +389,7 @@ func (s *QueryExecutionService) completeFailure(
 	code string,
 ) error {
 	fields := terminalQueryFields(startedAt, nil, nil)
-	fields["error_details"] = commonModels.JSONMap{"code": code, "message": cause.Error()}
+	fields["error_details"] = commonModels.JSONMap{"code": code, "message": cause.Error(), "diagnostic": queryFailureDiagnostic(code, cause.Error(), cause)}
 	if err := s.queries.CompleteWithLease(ctx, execution, lease, commonExecution.ExecutionStatusFailed, time.Now().UTC(), fields); err != nil {
 		return fmt.Errorf("%v; complete Develop query failure: %w", cause, err)
 	}
@@ -409,19 +418,19 @@ func (s *QueryExecutionService) completeSuccess(
 
 func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*models.DevTask, error) {
 	if execution == nil || execution.ExecutionConfig == nil {
-		return nil, fmt.Errorf("Develop query execution snapshot is missing")
+		return nil, &querySnapshotError{"configuration_missing", fmt.Errorf("Develop query execution snapshot is missing")}
 	}
 	content, ok := mapValue(execution.ExecutionConfig["content"])
 	if !ok {
-		return nil, fmt.Errorf("Develop query execution content snapshot is missing")
+		return nil, &querySnapshotError{"configuration_missing", fmt.Errorf("Develop query execution content snapshot is missing")}
 	}
 	timeout, ok := positiveInt(execution.ExecutionConfig["timeout"])
 	if !ok {
-		return nil, fmt.Errorf("Develop query execution timeout snapshot is invalid")
+		return nil, &querySnapshotError{"timeout_invalid", fmt.Errorf("Develop query execution timeout snapshot is invalid")}
 	}
 	resultLimit, ok := positiveInt(execution.ExecutionConfig["query_result_limit"])
 	if !ok {
-		return nil, fmt.Errorf("Develop query result limit snapshot is invalid")
+		return nil, &querySnapshotError{"result_limit_invalid", fmt.Errorf("Develop query result limit snapshot is invalid")}
 	}
 	runtimeParameters, _ := mapValue(execution.ExecutionConfig["runtime_parameters"])
 	config := models.DevTaskContent{"engine_id": execution.ExecutionConfig["engine_id"]}
@@ -430,8 +439,14 @@ func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*model
 		ExecutionConfig: config, Timeout: timeout, TenantID: uint(execution.TenantID),
 		RuntimeParameters: runtimeParameters, QueryResultLimit: resultLimit,
 	}
+	if task.GetEngineID() == nil {
+		return nil, &querySnapshotError{"configuration_invalid", fmt.Errorf("Develop query execution engine snapshot is invalid")}
+	}
+	if err := validateDevTaskContent(task.DevType, task.Content); err != nil {
+		return nil, &querySnapshotError{"query_template_invalid", err}
+	}
 	if err := validateDevTaskExecutionConfig(task.DevType, task.Content, task.ExecutionConfig); err != nil {
-		return nil, err
+		return nil, &querySnapshotError{"query_template_invalid", err}
 	}
 	if runtimeInputs, exists := execution.ExecutionConfig["runtime_inputs"]; exists {
 		task.ExecutionConfig["runtime_inputs"] = runtimeInputs

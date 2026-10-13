@@ -72,6 +72,43 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
+test('keeps a specific failure, stage and execution identity in the workbench and the Owner detail', async ({ page }) => {
+  const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
+    schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid'
+  } }
+  await installMockBackend(page, { resultKind: 'table', errorDetails })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  const diagnostic = page.locator('.execution-failure')
+  await expect(diagnostic).toContainText('查询内容与参数定义不一致')
+  await expect(diagnostic).toContainText('校验执行配置')
+  await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
+  await expect(diagnostic).toContainText(EXECUTION_ID)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await diagnostic.getByRole('button', { name: '复制诊断信息', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(EXECUTION_ID)
+  await page.setViewportSize({ width: 760, height: 700 })
+  await expectNoDocumentOverflow(page)
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  await expect(page.locator('.execution-failure')).toContainText('develop.query.snapshot_invalid')
+  await expect(page.locator('.execution-failure')).toContainText('查询内容与参数定义不一致')
+  await expect(page.getByRole('tab', { name: '错误信息', exact: true })).toHaveCount(0)
+})
+
+test('keeps a Notebook runtime traceback in Owner logs after removing the generic error tab', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code: 'develop.script.execution_failed' },
+    executionType: 'script', executionMetadata: { result: { traceback: 'Cell 4: controlled runtime traceback fixture' } } })
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  await page.getByRole('tab', { name: '执行日志', exact: true }).click()
+  await expect(page.getByRole('tabpanel', { name: '执行日志', exact: true }).locator('.json-result')).toHaveText('Cell 4: controlled runtime traceback fixture')
+  await expect(page.locator('.execution-failure')).toHaveCount(1)
+})
+
 test('submits a complete multiline JSON query and observes its browser execution result', async ({ page }) => {
   const engine = { ...ENGINE, engine_type: 'elasticsearch', capabilities: {
     compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'] } }
@@ -395,7 +432,10 @@ async function installMockBackend(page, {
   executionRequests = [],
   copilotRequests = [],
   resourceTreeRequests = [],
-  resultRows
+  resultRows,
+  errorDetails,
+  executionType = 'query',
+  executionMetadata = {}
 }) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
@@ -538,6 +578,7 @@ async function installMockBackend(page, {
       return fulfillJSON(route, { execution_id: EXECUTION_ID })
     }
     if (path === `/api/v1/develop/executions/${EXECUTION_ID}`) {
+      if (errorDetails) return fulfillJSON(route, { execution_id: EXECUTION_ID, module: 'develop', task_type: executionType, status: 'failed', progress: 100, execution_time_ms: 0, metadata: executionMetadata, error_details: errorDetails })
       return fulfillJSON(route, executionResult(resultKind, resultRows))
     }
 

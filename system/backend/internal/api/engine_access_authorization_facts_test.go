@@ -2,14 +2,17 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
@@ -61,6 +64,7 @@ func authorizationFactsTestRouter(t *testing.T, projection *commonauth.AuthConte
 		t.Fatal(err)
 	}
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	if err := RegisterEngineAccessAuthorizationFactsRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: auth, UserAccessCredential: credential}, &EngineAccessAuthorizationFactsHandler{service: s}); err != nil {
 		t.Fatal(err)
 	}
@@ -90,4 +94,27 @@ func TestAuthorizationFactsRequiresQualifiedTenantUser(t *testing.T) {
 	authorizationFactsRequest(t, router, "/api/v1/system/engines/02/data-items/"+fingerprint+"/authorization-facts", 400)
 	s.err = engineaccess.ErrAuthorizationFactsUnavailable
 	authorizationFactsRequest(t, router, path, 503)
+	s.err = commonapi.ErrNotFound
+	for language, expected := range map[string]string{
+		"zh-cn": "授权目标不存在或不属于当前引擎",
+		"en":    "Authorization target does not exist or does not belong to this engine",
+	} {
+		t.Run("missing target "+language, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Authorization", "Bearer user-token")
+			request.Header.Set("Accept-Language", language)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			var body struct {
+				Error string `json:"error"`
+				Code  string `json:"error_code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusNotFound || body.Error != expected || body.Code != "authorization_target_not_found" || response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("missing target mislabeled: status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
 }

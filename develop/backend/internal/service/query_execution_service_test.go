@@ -390,6 +390,57 @@ func TestDevQueryTaskFromExecutionUsesFrozenSnapshot(t *testing.T) {
 	}
 }
 
+func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *testing.T) {
+	for _, scenario := range []struct{ code, status, stage, reason string }{
+		{"develop.query.snapshot_invalid", "failed", "validation", "configuration_missing"},
+		{"sqlstate_42703", "failed", "execution", "column_not_found"},
+		{"timeout", "timeout", "execution", "timeout"},
+		{"cancelled", "cancelled", "execution", "cancelled"},
+	} {
+		t.Run(scenario.code, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sqlDB, _ := db.DB()
+			sqlDB.SetMaxOpenConns(1)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+			if err := executiontest.EnsureSQLiteStore(db); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			token, owner, expires := uuid.NewString(), "query-supervisor", now.Add(time.Minute)
+			item := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: "develop", TaskType: "query", Source: "develop", Status: "running", TriggerType: "manual", Attempt: 1, LeaseToken: &token, LeaseOwner: &owner, LeaseExpiresAt: &expires, CreatedAt: now, UpdatedAt: now}
+			if err := db.Create(item).Error; err != nil {
+				t.Fatal(err)
+			}
+			lease := commonExecution.Lease{ExecutionID: item.ExecutionID, TenantID: 7, Token: token, Owner: owner, Attempt: 1}
+			service := &QueryExecutionService{queries: repository.NewExecutionRepository(db)}
+			if scenario.code == "develop.query.snapshot_invalid" {
+				err = service.Execute(t.Context(), item, lease)
+			} else {
+				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, scenario.code, "runtime private-value password=credential-sentinel")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.Where("execution_id = ?", item.ExecutionID).First(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			observation := commonExecution.Observe(&stored)
+			diagnostic, ok := observation.ErrorDetails["diagnostic"].(*commonExecution.FailureDiagnostic)
+			if !ok || stored.Status != scenario.status || diagnostic.Stage != scenario.stage || diagnostic.Reason != scenario.reason {
+				t.Fatalf("persisted failure: %#v, diagnostic=%#v", stored, diagnostic)
+			}
+			encoded, _ := json.Marshal(observation.ErrorDetails)
+			if strings.Contains(string(encoded), "private-value") || strings.Contains(string(encoded), "credential-sentinel") {
+				t.Fatalf("unsafe response: %s", encoded)
+			}
+		})
+	}
+}
+
 func TestExistingResultRejectsSelfInputRegardlessOfCatalogHints(t *testing.T) {
 	task := &models.DevTask{Content: models.DevTaskContent{"query_type": "sql", "query": "SELECT id FROM source", "query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}}}}
 	for _, target := range []string{"addp://engine/9/path/public/source?type=table", "addp://engine/9/path/public/source?type=table&item_id=9"} {
