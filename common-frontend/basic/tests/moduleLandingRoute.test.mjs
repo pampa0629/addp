@@ -84,3 +84,11 @@ test('platform monitoring routes require node read and independent create permis
   assert.equal(allowsConsoleRoute('/monitor/monitoring-targets/new', 'platform', permissions), false)
   assert.equal(allowsConsoleRoute('/monitor/monitoring-targets/new', 'platform', [...permissions, 'monitor.monitoring_target.create']), true)
 })
+
+test('resource overview requires both platform owners and never becomes a Tenant entry', () => {
+  const keys = ['monitor.resource_observation.read', 'platform.host_node.read']
+  assert.equal(allowsConsoleRoute('/monitor/resource-overview', 'platform', keys), true)
+  for (const [context, permissions] of [['tenant', keys], ['platform', keys.slice(0, 1)], ['platform', keys.slice(1)]]) {
+    assert.equal(allowsConsoleRoute('/monitor/resource-overview', context, permissions), false)
+  }
+})

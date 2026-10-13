@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,6 +79,36 @@ func TestHostNodeIdentityVersionAndBindingAgainstPostgres(t *testing.T) {
 	var auditCount int64
 	if err := db.Model(&iam.AuditLog{}).Where("event_name = ? AND entity_id = ?", "host_node.created", node.NodeID).Count(&auditCount).Error; err != nil || auditCount != 1 {
 		t.Fatalf("audit=%d err=%v", auditCount, err)
+	}
+	// A concurrent insert after COUNT must not enter the page from another snapshot.
+	var inserted atomic.Bool
+	var isolation, readOnly string
+	var insertErr error
+	concurrent := models.HostNode{NodeID: uuid.NewString(), DisplayName: "concurrent", NodeKind: "virtual", Enabled: true, Version: 1, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{}}
+	callback := "test:host_node_list_snapshot"
+	if err := db.Callback().Query().After("gorm:query").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Table != "host_nodes" || !inserted.CompareAndSwap(false, true) {
+			return
+		}
+		if insertErr = tx.Session(&gorm.Session{NewDB: true}).Raw("SHOW transaction_isolation").Scan(&isolation).Error; insertErr != nil {
+			return
+		}
+		if insertErr = tx.Session(&gorm.Session{NewDB: true}).Raw("SHOW transaction_read_only").Scan(&readOnly).Error; insertErr != nil {
+			return
+		}
+		insertErr = db.Create(&concurrent).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	page, listErr := nodes.List(ctx, 1, 100, "")
+	if err := db.Callback().Query().Remove(callback); err != nil {
+		t.Fatal(err)
+	}
+	if listErr != nil || insertErr != nil || !inserted.Load() || isolation != "repeatable read" || readOnly != "on" || page.Total != 1 || len(page.Data) != 1 || page.Data[0].NodeID != node.NodeID {
+		t.Fatalf("list=%+v isolation=%s readonly=%s errors=%v/%v", page, isolation, readOnly, listErr, insertErr)
+	}
+	if err := db.Where("node_id = ?", concurrent.NodeID).Delete(&models.HostNode{}).Error; err != nil {
+		t.Fatal(err)
 	}
 	// Two updates racing on one version: exactly one commits; the other reports a conflict.
 	start := make(chan struct{})

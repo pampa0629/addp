@@ -1,5 +1,36 @@
 {
   "monitor": {
+    "overview": {
+      "title": "资源总览",
+      "scope": "覆盖当前授权的全部纳管主机，包含停用主机；榜单只比较本次有效观测。",
+      "evaluated": "统一评估时间：{time}",
+      "inventory": {
+        "managed": "纳管主机",
+        "enabled": "启用主机",
+        "disabled": "停用主机",
+        "connected": "已接入采集",
+        "not_connected": "未接入采集"
+      },
+      "collection": "采集覆盖",
+      "collectionHint": "最近抓取成功只表示采集证据，不代表业务健康或所有指标有效。",
+      "cpuTitle": "CPU 一分钟忙碌率 TOP5",
+      "memoryTitle": "内存使用率 TOP5",
+      "cpuHint": "同一主机一分钟内各逻辑核非 idle 时间的平均比例，包含 iowait 和 steal。",
+      "memoryHint": "基于主机总内存与可用内存计算，不与进程 RSS 或容器配额相加。",
+      "coverage": "有效观测 {valid} / 应覆盖 {expected} 台",
+      "complete": "覆盖完整",
+      "incomplete": "覆盖不完整",
+      "missing": "无有效样本 {missing} 台 · 过期 {stale} 台 · 未接入 {disconnected} 台",
+      "rank": "名次",
+      "usage": "使用率",
+      "noValid": "暂无有效观测，无法形成榜单",
+      "noNodes": "当前授权范围没有纳管主机",
+      "budget": "无法完整评估全部授权主机：已超过查询预算。未生成部分榜单。",
+      "kind": {
+        "physical": "物理主机",
+        "virtual": "虚拟主机"
+      }
+    },
     "login": {
       "title": "运行监控登录",
       "username_placeholder": "请输入用户名",

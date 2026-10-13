@@ -3064,6 +3064,89 @@
                 ]
             }
         },
+        "/platform/resource_overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "System 独立核验 platform.host_node.read；完整当前授权纳管主机集合，包含停用节点；固定 CPU 一分钟忙碌率及内存使用率，仅有效样本排序。统一评估时刻，明确有效/缺失/过期/未接入覆盖；抓取成功不代表业务健康。不接受分页/筛选/指标，完整集合超出双指标预算时整份拒绝，默认最多50台，不截断。| System independently requires platform.host_node.read. Complete current authorized managed-host inventory including disabled nodes. Fixed one-minute CPU busy and memory used percentages, ranking valid samples only at one evaluation time, with valid/missing/stale/not-connected coverage. Scrape success is not business health. No paging, filtering or metric input; reject the whole request beyond the two-metric budget, at most 50 hosts by default, without truncation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台运行监控 | Platform Runtime Monitoring"
+                ],
+                "summary": "读取平台资源总览与主机 TOP5 | Read platform resource overview and host TOP5",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceOverviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.resource_observation.read"
+                ]
+            }
+        },
         "/platform/resource_summaries": {
             "get": {
                 "security": [
@@ -4233,6 +4316,26 @@
         }
     },
     "definitions": {
+        "client.UserHostNode": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "node_kind": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "execution.DiagnosticStep": {
             "type": "object",
             "properties": {
@@ -5627,6 +5730,55 @@
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ResourceCoverage": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "expected": {
+                    "type": "integer"
+                },
+                "no_data": {
+                    "type": "integer"
+                },
+                "not_connected": {
+                    "type": "integer"
+                },
+                "stale": {
+                    "type": "integer"
+                },
+                "valid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceInventory": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "connected": {
+                    "type": "integer"
+                },
+                "disabled": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "integer"
+                },
+                "managed": {
+                    "type": "integer"
+                },
+                "not_connected": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ResourceObservationResponse": {
             "type": "object",
             "properties": {
@@ -5668,6 +5820,35 @@
                 },
                 "target_saved_version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "evaluated_at": {
+                    "type": "string"
+                },
+                "inventory": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceInventory"
+                },
+                "lookback_seconds": {
+                    "type": "integer"
+                },
+                "policy_version": {
+                    "type": "integer"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "rankings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceRanking"
+                    }
+                },
+                "scope": {
+                    "type": "string"
                 }
             }
         },
@@ -5734,6 +5915,43 @@
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceRank": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "$ref": "#/definitions/client.UserHostNode"
+                },
+                "sampled_at": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceRanking": {
+            "type": "object",
+            "properties": {
+                "coverage": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceCoverage"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "top": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceRank"
+                    }
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "window_seconds": {
                     "type": "integer"
                 }
             }

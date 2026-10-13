@@ -137,7 +137,7 @@ ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式�
 
 ### 平台节点台账与模块实例关联
 
-System 平台节点 API 为 `GET/POST /api/v1/system/platform/host_nodes` 与 `GET/PUT /api/v1/system/platform/host_nodes/{node_id}`。仅 Platform User 使用 `platform.host_node.read/create/update`，默认仅平台系统管理员获权。列表支持 `page/page_size/search`，页大小最大 100、页码最大 1,000,000、search 最大 255 字符；重复或未知 query 返回 400。创建返回 201 节点资源；读取/更新返回 200；列表采用标准 `data/total/page/page_size/total_pages`。不存在 404，版本冲突 409 与 `resource_version_conflict`。没有 DELETE 或主机远程操作。
+System 平台节点 API 为 `GET/POST /api/v1/system/platform/host_nodes` 与 `GET/PUT /api/v1/system/platform/host_nodes/{node_id}`。仅 Platform User 使用 `platform.host_node.read/create/update`，默认仅平台系统管理员获权。列表支持 `page/page_size/search`，页大小最大 100、页码最大 1,000,000、search 最大 255 字符；重复或未知 query 返回 400。创建返回 201 节点资源；读取/更新返回 200；列表采用标准 `data/total/page/page_size/total_pages`。不存在 404，版本冲突 409 与 `resource_version_conflict`。没有 DELETE 或主机远程操作。 节点列表计数和页数据来自同一只读可重复读事务；无筛选且首批返回条数等于 total 时才可作为本次完整授权集合，分页数据不能冒充全平台资源排行范围。
 
 创建完整提交 `display_name`（最多 255 字符且不含控制字符）、`node_kind=physical|virtual`、`addresses`（最多 32 项 IP/DNS，不含端口）、`enabled`、`allowed_module_bindings`（最多 64 项 `{client_id,module_name}`，Client 必须为 `addp-<module_name>`）。数组允许显式空数组，必填字段、数组不得省略或 null；创建不能传 node_id/version。PUT 完整替换上述字段并传正整数 version，绑定允许集合归节点聚合版本；变更与既有审计同事务。正文最大 64 KiB，未知字段、类型/语法/UUID 错误返回 400。
 

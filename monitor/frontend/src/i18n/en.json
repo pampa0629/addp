@@ -1,5 +1,36 @@
 {
   "monitor": {
+    "overview": {
+      "title": "Resource overview",
+      "scope": "All currently authorized managed hosts, including disabled hosts; rankings compare valid observations from this evaluation only.",
+      "evaluated": "Evaluation time: {time}",
+      "inventory": {
+        "managed": "Managed hosts",
+        "enabled": "Enabled hosts",
+        "disabled": "Disabled hosts",
+        "connected": "Collection connected",
+        "not_connected": "Not connected"
+      },
+      "collection": "Collection coverage",
+      "collectionHint": "A successful scrape is collection evidence, not business health or proof that every metric is valid.",
+      "cpuTitle": "One-minute CPU busy TOP5",
+      "memoryTitle": "Memory usage TOP5",
+      "cpuHint": "Mean non-idle time across logical cores over one minute, including iowait and steal.",
+      "memoryHint": "Based on host total and available memory; separate from process RSS and container limits.",
+      "coverage": "Valid observations {valid} / expected {expected} hosts",
+      "complete": "Complete coverage",
+      "incomplete": "Incomplete coverage",
+      "missing": "No valid sample: {missing} · Stale: {stale} · Not connected: {disconnected}",
+      "rank": "Rank",
+      "usage": "Usage",
+      "noValid": "No valid observations available for ranking",
+      "noNodes": "No managed hosts in the current authorized scope",
+      "budget": "Cannot evaluate all authorized hosts within the query budget. No partial ranking was generated.",
+      "kind": {
+        "physical": "Physical host",
+        "virtual": "Virtual host"
+      }
+    },
     "login": {
       "title": "Runtime Monitor Login",
       "username_placeholder": "Enter username",

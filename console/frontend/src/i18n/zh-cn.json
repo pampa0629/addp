@@ -566,6 +566,7 @@
         "recentNotifications": "执行告警通知",
         "advanced": "高级设置",
         "monitoringTargets": "采集配置",
+        "resourceOverview": "资源总览",
         "nodeResources": "主机监控",
         "serviceResources": "服务监控"
       },

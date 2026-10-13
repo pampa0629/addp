@@ -49,6 +49,14 @@ func (s *ResourceObservationService) Summaries(ctx context.Context, principal, t
 	if err := s.limiter.Check(principal, cfg.Budget); err != nil {
 		return result, err
 	}
+	return s.observeNodeSummaries(ctx, cfg, now, token, ids, plan)
+}
+
+// observeNodeSummaries is the single authorized node/target/query/freshness path.
+// Callers hold one limiter lease and the entire request timeout.
+func (s *ResourceObservationService) observeNodeSummaries(ctx context.Context, cfg ResourceQueryPolicyResponse, now time.Time, token string, ids []string, plan resourcequery.Plan) (ResourceSummaryResponse, error) {
+	result := ResourceSummaryResponse{Data: make([]ResourceObservationResponse, 0, len(ids))}
+	var err error
 	if s.nodes == nil {
 		return result, metricsdiscovery.ErrIdentityUnavailable
 	}

@@ -566,6 +566,7 @@
         "recentNotifications": "Execution Alert Notifications",
         "advanced": "Advanced settings",
         "monitoringTargets": "Collection settings",
+        "resourceOverview": "Resource overview",
         "nodeResources": "Host monitoring",
         "serviceResources": "Service monitoring"
       },

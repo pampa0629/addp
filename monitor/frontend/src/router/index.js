@@ -27,6 +27,7 @@ const routes = [
       return resolveModuleLandingRoute('/monitor', ['/node-resources', '/service-resources', '/monitoring-targets', '/dashboard', '/executions', '/alerts', '/notifications'], authStore.contextType, authStore.permissions)
     }
   },
+  { path: '/resource-overview', name: 'ResourceOverview', component: () => import('../views/ResourceOverview.vue') },
   {
     path: '/service-resources', name: 'ProcessResources', component: ProcessResources
   },

@@ -1862,3 +1862,40 @@ Safari 沿用户现有平台管理员会话只读复核：首次进入的旧实�
 安全诊断实施验证：实现前沿同一标准入口新增分类/脱敏场景，四个子场景报错（缺少运行报告、未包装子进程期限）；实现后及最终 `env PATH="/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" make test-node-metrics-online-runner` 返回 0，47 项测试与正式 System Metrics 身份夹具通过，Online ESM 语法检查通过。覆盖普通失败、明确报告测试期限、ANSI 输出、子进程期限及异常命令/输出/错误不落入公开证据；期限仍为原 300 秒，浏览器仍为原 240 秒。字段 test_deadline_reported 只表示捕获输出报告了该分类，false 不证明不存在超时。日志为 /tmp/addp-host-list-browser-runtime-red-38336323214.log 与 /tmp/addp-host-list-browser-runtime-green-final-38336323214.log。
 
 默认 make test-changed 对当前混合工作区因多个 Owner 的外部数据库输入缺失在预检返回 2，后续门禁未执行、不计通过（/tmp/addp-host-list-browser-runtime-changed-38336323214.log）。本轮 47 个归档文件未检出私钥/JWT 模式。原源码58fbfbf1e的Monitor/Console前端及Go工作区CI已通过，Platform consistency仍执行；不能将分项计作整轮CI通过。本次诊断尚未真实执行，待推送后沿原suite复验，不将T1通过视作导航失败已修复，不修改产品或重启个人服务。仅提交本会话的10.57验收记录及诊断，不包含资源总览会话的10.58工作区改动。
+
+### 10.58 平台资源总览与主机 TOP5（独立开发批次）
+
+首批沿现有主机资源内核增加 Monitor 唯一 `/resource-overview` 页面及 `GET /platform/resource_overview`。当前非委托 Platform User 同时需要 `monitor.resource_observation.read` 和 System 的 `platform.host_node.read`；System 仍拥有主机身份与当前读取裁决，Monitor 不读取 System 私有表，不使用后台观测身份替代 User，不改变生产角色、MFA 或 Tenant 范围。总览到主机详情沿 `/node-resources/:node_id`，服务入口沿 `/service-resources` 并独立检查 `platform.module.read`。
+
+总览范围为本次 System 授权读取的完整纳管主机集合（包括停用节点），与列表搜索及分页无关。复用 System `host_nodes?page=1&page_size=100`，计数及该页读取须在同一只读可重复读事务；Common 用户客户端严格检查完整分页协议、身份及版本。超过这一有界投影或双指标输出预算时整份返回 422，不读取后续页、不静默截断、不声称前页是平台 TOP5。初始 `max_series=100`，两项指标乘完整节点数，因此本批最多评估 50 台；保存更低预算立即生效。该边界是明确失败条件，不是范围缩水。真实空集合仍经 System 当前用户授权，返回零计数及空榜单；它不表示节点在线或业务健康。
+
+Monitor 在同一现有 limiter 租约、已提交预算版本和总计最多五秒期限内读取范围、核对当前节点身份及查询；沿原 Summaries 私有助手复用目标准入、两个固定 Prometheus 批量查询、质量与身份 guard、完成时的新鲜度检查。所有节点共享服务端整秒评估时刻及完成时刻；范围版本与随后节点裁决不一致则整份失败，不将混合身份结果发布。缺配置、后端错误、超时与并发超限继续明确失败；采集成功不能解释为业务健康。
+
+统计包括完整纳管数量、启用/停用数量、已接入/未接入数量及 collecting/failed/stale/no_sample/not_connected 采集证据。CPU 一分钟忙碌率、内存使用率各返回应覆盖数量、有效数量、缺失/过期/未接入数量和仅由 valid 构成的前五名，按值降序、同值按 node_id 升序稳定排序；有效零值参与排行，缺值不补零。缺少任何节点的有效指标时明确覆盖不完整，不能把有效子集榜单说成全部节点都有数据。服务端只截取已完成全范围评估后的五条排行，不向浏览器发送全量观测或私有采集地址。
+
+本批不计算主机容量总和、全局平均 CPU、进程 RSS 总和、容器配额或引擎集群容量：主机容量、进程 RSS 与容器配额属于不同口径，共享挂载和集群登记没有去重证据；不能相加为物理资源。后续聚合需先确认来源与去重规则。
+
+页面默认十五秒自动刷新，复用共享 AutoRefreshControl、createAutoRefresh、latestRequestScope 和格式化能力，唯一 query 为 refresh；关闭及非默认间隔按现有路由规范恢复。整轮成功原子发布，失败清除旧总览；401/403/404、身份或 Context 改变清空数据并停止读取，迟到响应不得覆盖新身份，隐藏页面取消在途请求并暂停。没有浏览器跨页或逐主机请求。
+
+实施前门禁：T0 Swagger/权限消费者/路由/平台登记；Common 客户端及 Monitor 聚合/预算/质量/排序/空集合 T1；System 现有 repository PostgreSQL T2 证明计数与取数同一只读快照，Monitor 原有 PostgreSQL预算与真实 Prometheus T2复用；Monitor/Console T1/T3/构建验证授权、中英文、窄屏、刷新、错误及导航。现有根 Make、Go/前端自动发现、System repository T2 和 Platform CI/Release T2 已覆盖相关文件；不增加 suite、依赖、测试库或生命周期。默认 make test-changed 单独记录共享依赖扩散和混合工作区输入。原会话独占 10.56/10.57 与 platform-node-metrics Hosted 证据，本批不修改其 runner/e2e/生命周期、不重复触发；新增总览的真实 T4 尚未执行，不能借用旧页面结果，后续需协调正式场景和限定身份用途后验收。仅提交本批，用户推送；个人服务重启由用户操作。
+
+本批实施与本地验证（2026-10-13）：System 原节点列表已在同一只读可重复读事务内计数及取数；Common 完整集合客户端只取一页并核对 total、total_pages、所有节点身份与字段，100 条边界接受、101 条明确拒绝，没有翻页或机器身份重试。Monitor 的原 Summaries 保留输入、预算和错误顺序，仅将授权/目标准入/查询/新鲜度抽为 observeNodeSummaries；总览共享这一唯一助手和现有 limiter。CPU/内存目录键、单位及窗口直接复用资源目录，不复制 PromQL。独立聚合回归覆盖 50 台完整范围、51 台整份 422、当前授权拒绝、零主机、配置降限、总超时、统一时刻、版本变化、跨页高值、同值稳定排序、有效零值和不同指标缺口；来源失败不返回部分榜单。
+
+| 标准入口 | 本批结果及边界 |
+| --- | --- |
+| `make test-go` | 最终退出 0，22 个 Go 模块；当前批次的 Common 用户客户端、Monitor API/聚合/预算及原摘要回归通过 |
+| `make test-module MODULE=monitor` | 退出 0，包含平台 T0、Monitor Go、前端单测/浏览器/构建、既有真实 Prometheus 与 PostgreSQL T2；没有接管个人服务 |
+| `make test-monitor-frontend` | 最终独立复跑退出 0，59 项单测、129 项浏览器及构建；JSON 字段顺序不影响同一节点身份核对，中英文窄屏、完整覆盖、有效零、错误清空、自然刷新、off 重载、隐藏取消/恢复、身份撤销及无权入口通过 |
+| `make test-console-frontend` | 最终完整复跑退出 0，170 项单测、134 项浏览器及构建；真实 Monitor iframe 的总览/主机/服务导航、单一历史、返回与关闭刷新重载，以及 Tenant 拒绝通过 |
+| `make test-common-frontend` | 退出 0，180 项测试；新增总览入口要求两个 Owner 的读取权限，Tenant 不因持有同名 Permission 字符串获得入口 |
+| `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package repository'` | 退出 0，五组 Repository T2；新增计数后并发插入用例检查 repeatable read 与 read only，完整页不混入并发新节点；仅使用已核实的 `127.0.0.1:25432/addp_iam_test` |
+| `make test-authorization` 与 Monitor Swagger 生成/路由覆盖 | 退出 0；本批新增 API 已进入权限消费者报告与 69 个 Monitor 公开路由方法，未修改 IAM Manifest、角色或 MFA |
+| `make build BUILD_ARGS=--force` | 退出 0，26 个正式 Go 服务/Worker/公共运行日志产品二进制强制编译为 Linux/arm64，没有使用临时 bin 或启动产品服务 |
+| `make build-images IMAGE_BUILD_ARGS="--verify --tag resource-overview-verify-20261013 --services <选择器输出>"` | 现有选择器因 Common/共享前端命中 50 项 Linux/arm64 产品镜像；首轮 49 项通过、Agent 在 Debian 软件包下载连接失败处退出 2。沿同一入口及原参数只重试 Agent，退出 0；49 项原有效证据与该复验覆盖完整选择范围，首轮整轮失败不改计通过。验证镜像仅在本地加载，未推送产品镜像 |
+| `make test-changed` | 最终预检退出 2，93 个混合工作区文件扩散到 27 个已登记模块；多个 Owner 的 PostgreSQL DSN 和 MySQL/OceanBase 条件缺失，后续门禁未执行，不计全工作区通过 |
+
+Prometheus T2 实际完成 mTLS 采样、固定资源与进程目录/趋势、预算、停采排除、独立来源故障恢复、中心 SIGKILL/WAL 恢复及 Desktop 受限语义，退出自建容器/网络/卷/临时文件残留为零；新增总览本身的真实 User → Gateway → System → Monitor T4 尚未执行。Monitor PostgreSQL T2 在同一标准模块入口内完成资源预算 CAS/热读取及已有 Owner 集成，仅使用 `addp_test`；没有创建或删除其他 database。共享依赖扩散的其余数据库 T2 因 PostgreSQL DSN、MySQL/OceanBase 条件缺失未在本地运行，由已登记的 Release/T2 各 Owner 门禁承接；生产 T5 未运行，由正式发布认证承接；新总览 T4 仍须在原会话收口后协调正式场景与限定身份用途，不能借用 10.56/10.57 的 Hosted 结果。
+
+首轮新增测试曾因夹具导入浏览器专用扩展名、数据库 COUNT 回调挂错通道、无效授权夹具，以及时区/共享前端拒绝页面断言失败；修复的是夹具与断言，最终按上述标准入口复跑，没有放宽生产身份、质量或预算 guard。任务范围的 `git diff --check` 通过；其他 Owner 的改动与结果不归入本批。应用本批 Common/后端代码时由用户按标准入口重启全部模块，本轮未重启个人环境，提交后推送仍由用户操作。
+
+产品构建复验日志：`/tmp/addp-resource-overview-product-binaries.log`、`/tmp/addp-resource-overview-product-images.log`、`/tmp/addp-resource-overview-agent-image-retry.log`；完整选择与首次/重试摘要分别保存在同名前缀的 selected-images.txt、product-images-summary.md 和 agent-image-summary.md。这些本地证据不替代推送后干净 GitHub Runner 的独立 CI，也不计为产品启动或生产 T5 认证。

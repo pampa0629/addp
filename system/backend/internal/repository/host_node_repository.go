@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -24,18 +25,20 @@ func (r *HostNodeRepository) Get(ctx context.Context, id string) (*models.HostNo
 	return &node, err
 }
 func (r *HostNodeRepository) List(ctx context.Context, page, size int, search string) ([]models.HostNode, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.HostNode{})
-	if search != "" {
-		// Escape SQL LIKE metacharacters; search is a literal fragment, not a pattern language.
-		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(search)) + "%"
-		query = query.Where("LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER(CAST(addresses AS TEXT)) LIKE ? ESCAPE '!'", pattern, pattern)
-	}
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
 	nodes := make([]models.HostNode, 0)
-	err := query.Order("created_at DESC, node_id ASC").Offset((page - 1) * size).Limit(size).Find(&nodes).Error
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&models.HostNode{})
+		if search != "" {
+			// Escape SQL LIKE metacharacters; search is a literal fragment, not a pattern language.
+			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(search)) + "%"
+			query = query.Where("LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER(CAST(addresses AS TEXT)) LIKE ? ESCAPE '!'", pattern, pattern)
+		}
+		if err := query.Count(&total).Error; err != nil {
+			return err
+		}
+		return query.Order("created_at DESC, node_id ASC").Offset((page - 1) * size).Limit(size).Find(&nodes).Error
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return nodes, total, err
 }
 

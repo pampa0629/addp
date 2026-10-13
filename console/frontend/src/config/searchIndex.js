@@ -52,6 +52,7 @@ export const SEARCH_INDEX = [
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
   // 运行监控
+  { labelKey: 'console.menus.monitor.resourceOverview', module: 'monitor', route: '/monitor/resource-overview', keywords: ['资源总览', 'TOP5', 'CPU忙碌率', '采集覆盖', 'resource overview', 'coverage'] },
   { labelKey: 'console.menus.monitor.serviceResources', module: 'monitor', route: '/monitor/service-resources', keywords: ['服务监控', '进程内存', 'CPU核占用', 'service resources', 'process RSS'] },
   { labelKey: 'console.menus.monitor.monitoringTargets', module: 'monitor', route: '/monitor/monitoring-targets', keywords: ['采集配置', '采集来源', 'monitoring targets', 'metrics'] },
   { labelKey: 'console.menus.monitor.nodeResources', module: 'monitor', route: '/monitor/node-resources', keywords: ['主机监控', '内存', '负载', 'node resources', 'memory', 'load'] },
