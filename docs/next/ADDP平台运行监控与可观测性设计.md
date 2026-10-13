@@ -1921,3 +1921,15 @@ Prometheus T2 实际完成 mTLS 采样、固定资源与进程目录/趋势、�
 拟新增断言：超过五项有效观测后再截取 TOP5、值降序与同值按 node_id 稳定排序、不同节点 CPU/内存顺序、有效零、启用/停用及缺采覆盖；将现有查询预算暂降到完整集合所需序列数以下，验证整份 422、无部分榜单并按 CAS 恢复；与现有中心/来源/控制面故障步骤协同读取总览，核对覆盖降级或明确整份失败、恢复后新采样。总览浏览器仍通过真实密码/MFA 和 Console iframe，无业务请求拦截，核对唯一聚合请求、自然刷新、off 重载、详情/列表/服务导航及失败清空；新增场景使用独立浏览器调用及独立原期限，保留原页面测试原期限与断言。正式清理沿既有 finally/Hosted 退出路径，逐项停用并删除当次目标、停用当次节点、销毁临时部署与凭据、核验零残留。局部门禁沿 `make test-node-metrics-online-runner`、完整 `make test-online-runner` 及平台登记，不另建 suite 或 workflow。
 
 身份用途待确认点：测试规范第 220、222、224 行分别限定既有临时平台系统管理员的当次节点查询、服务实例和趋势用途，未明确覆盖新 `GET /api/v1/monitor/platform/resource_overview` 的完整集合读取；拟扩展仍只限当次干净 Hosted 部署、原 User/角色/MFA 与独立 Prometheus 采集身份，不读取 Tenant 业务数据、不修改生产 IAM。授权拒绝沿已有 Security Administrator、Tenant、Service 和匿名身份；当前 User 撤销拟使用正式退出登录令会话失效，验证旧 Token 总览拒绝和页面清空，不撤销或改写角色权限。该会话失效验证不能冒充 Monitor Permission 与 System Owner Permission 分别撤销的独立实测，后者保留现有 T1 证明及明确的 T4 缺口。确认前不执行扩大用途的身份调用，不部署或登记这些受控多源夹具。
+
+### 10.59 资源总览独立 Hosted 验收补齐
+
+沿既有手动 `platform-node-metrics` suite 准备 10.58 的单真实主机验收，不增加部署或身份路线。拟将《测试与验收规范》第 220 行的临时平台管理员限定测试用途明确补充为读取唯一 `GET /api/v1/monitor/platform/resource_overview`；它仅派生汇总当次已纳管节点的 CPU/内存与采集状态，没有新增资源类型、Tenant 数据或 IAM 操作。现行条款列明节点查询，完整集合聚合接口尚未明确列入，须用户确认后修订该测试条款，再执行真实 Hosted；确定性回归及可审查场景准备可以继续。Prometheus 的独立服务身份及拒绝边界保持原契约。
+
+Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、两项覆盖率与该主机有效排名、身份/版本/预算/样本时间绑定；接入已有预算降低、中心中断、节点停用、恢复新样本、目标停用和删除阶段，证明整体预算拒绝、故障不伪造成功、停采不复用历史及恢复读取。Console 真实 iframe 增加总览自然刷新、URL/iframe 保持、关闭后重载及无后台请求、榜单到同一主机详情后返回、无权限入口拒绝。多主机 TOP5 排序、空集合、部分缺失/过期与真实撤权不由单主机成功结果推定，沿已有 T1/T3 或后续真实场景分别记录。
+
+实施前门禁确认：仅现有 Online browser、runner/回归和本设计变更，无产品 API/Swagger、IAM 或生命周期修改。现有 `make test-node-metrics-online-runner` 覆盖 Python 回归、正式身份夹具及显式 ESM 语法检查；`make test-online-runner`、Platform consistency 和既有手动 Hosted Job 已登记，无新增依赖或入口。保留浏览器单测 240 秒、子进程 300 秒及安全计时证据，不以延长期限代替成功断言。另运行默认 `make test-changed` 并分别报告混合工作区的预检结果。仅提交本批验收改动，用户推送后才能运行包含本批代码的冻结源码 T4；不重启个人环境。
+
+2026-10-13 场景准备已完成：新增严格总览证据校验与三项回归，验证完整单主机范围、身份/版本、两项覆盖率、有效零、样本新鲜度、停用不复用榜单及浏览器生命周期；预算失败同时拒绝任何部分 inventory/rankings。首跑旧预算夹具缺少总览请求分支，更新后最终沿 Node 24 标准入口 `make test-node-metrics-online-runner` 退出 0，50 项 Python 回归、正式 System Metrics 身份夹具及 ESM 检查通过，日志 `/tmp/addp-resource-overview-online-runner-final.log`。默认 `make test-changed` 对 78 个混合变更文件扩散至 27 个模块，因外部 PostgreSQL/MySQL/OceanBase 测试参数缺失在预检退出 2，后续门禁未执行、不计通过，日志 `/tmp/addp-resource-overview-online-changed.log`。任务范围 `git diff --check` 通过。
+
+已核实冻结源码 `5659f1cfd12b0f2541b14f3e0158efb15e19e801` 的 [Platform CI 38350331868](https://github.com/pampa0629/addp/actions/runs/38350331868) completed/success，33 项任务全部通过，包含新总览产品代码；该结果不覆盖本批未提交的 Online 场景。真实 Hosted 尚未执行，限定身份用途由总览会话统一向用户确认后再修订测试条款。本批只补中心故障及停采/恢复的总览读取，原来源故障和控制面故障段没有新增总览请求，不能借用原节点/进程结果作为总览证据。新增自然刷新与关闭等待至少约 31 秒，原单测期限不变，真实执行后必须核对安全计时报告；目前不能声称完整总览 T4 或生产 T5 通过。

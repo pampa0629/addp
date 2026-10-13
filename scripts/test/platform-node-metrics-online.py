@@ -29,6 +29,7 @@ TARGETS = "/api/v1/monitor/platform/monitoring_targets"
 DISCOVERY = "/api/v1/monitor/platform/metrics_discovery"
 OBSERVATIONS = "/api/v1/monitor/platform/resource_observations"
 SUMMARIES = "/api/v1/monitor/platform/resource_summaries"
+OVERVIEW = "/api/v1/monitor/platform/resource_overview"
 TRENDS = "/api/v1/monitor/platform/resource_trends"
 QUERY_POLICY = "/api/v1/monitor/settings/resource-query-policy"
 INSTANCES = "/api/v1/system/platform/module-instances"
@@ -387,6 +388,8 @@ def check_query_policy(admin, node):
     require(network_failure.get("error_code") == "observability_query_budget_exceeded", "network query ignored hot metric budget")
     failure = admin.request("GET", resource_path(node), (422,)).payload
     require(failure.get("error_code") == "observability_query_budget_exceeded", "new query ignored lowered budget")
+    overview_failure = admin.request("GET", OVERVIEW, (422,)).payload
+    require(overview_failure.get("error_code") == "observability_query_budget_exceeded" and "inventory" not in overview_failure and "rankings" not in overview_failure, "overview returned a partial scope under lowered budget")
     key = ["node.memory.total_bytes"]
     limited = admin.request("GET", resource_path(node, keys=key), (200,)).payload
     assert_resources(limited, node, keys=key)
@@ -664,6 +667,57 @@ def check_optional_process_source(admin, machine, directory, instances, tenant_c
     return current
 
 
+def assert_resource_overview(value, node, policy_version, display_name, disconnected=False, after=0):
+    """The disposable suite owns exactly one real host; never invent TOP5 peers."""
+    require(isinstance(value, dict) and set(value) == {"scope", "evaluated_at", "queried_at", "policy_version", "lookback_seconds", "inventory", "rankings"}, "overview projection mismatch")
+    evaluated, completed = utc_timestamp(value["evaluated_at"]), utc_timestamp(value["queried_at"])
+    require(value["scope"] == "current_authorized_host_nodes" and evaluated == math.floor(evaluated)
+            and completed >= evaluated and type(value["policy_version"]) is int and value["policy_version"] == policy_version
+            and value["lookback_seconds"] == 300, "overview scope, time or budget mismatch")
+    inventory = value["inventory"]
+    collection = {key: int(key == ("not_connected" if disconnected else "collecting")) for key in ("collecting", "failed", "stale", "no_sample", "not_connected")}
+    wanted = {"managed": 1, "enabled": int(node["enabled"]), "disabled": int(not node["enabled"]),
+              "connected": int(not disconnected), "not_connected": int(disconnected), "collection": collection}
+    require(isinstance(inventory, dict) and inventory == wanted and all(type(inventory[key]) is int for key in wanted if key != "collection")
+            and all(type(v) is int for v in inventory["collection"].values()), "overview inventory is not the complete one-host scope")
+    rankings = value["rankings"]
+    require(isinstance(rankings, list) and len(rankings) == 2, "overview ranking catalog mismatch")
+    for rank, (key, window) in zip(rankings, (("node.cpu.busy_percent", 60), ("node.memory.used_percent", 0))):
+        require(isinstance(rank, dict) and set(rank) == {"metric_key", "unit", "window_seconds", "coverage", "top"}
+                and rank["metric_key"] == key and rank["unit"] == "percent" and type(rank["window_seconds"]) is int and rank["window_seconds"] == window, "overview metric projection mismatch")
+        wanted_coverage = {"expected": 1, "valid": int(not disconnected), "no_data": 0, "stale": 0,
+                           "not_connected": int(disconnected), "complete": not disconnected}
+        coverage = rank["coverage"]
+        require(isinstance(coverage, dict) and coverage == wanted_coverage and type(coverage["complete"]) is bool
+                and all(type(coverage[k]) is int for k in wanted_coverage if k != "complete"), "overview coverage reused missing or disconnected data")
+        require(isinstance(rank["top"], list) and len(rank["top"]) == int(not disconnected), "overview TOP5 missing or reused history")
+        if disconnected:
+            continue
+        row = rank["top"][0]
+        require(isinstance(row, dict) and set(row) == {"node", "value", "sampled_at"}, "overview rank exposes extra facts")
+        require(row["node"] == {"node_id": node["node_id"], "display_name": display_name, "node_kind": "virtual", "version": node["version"], "enabled": True}, "overview rank host identity changed")
+        require(type(row["node"]["version"]) is int and row["node"]["enabled"] is True, "overview rank identity types mismatch")
+        sampled = utc_timestamp(row["sampled_at"])
+        require(type(row["value"]) in {int, float} and math.isfinite(row["value"]) and 0 <= row["value"] <= 100
+                and after < sampled <= evaluated and completed-sampled <= 60, "overview rank has no fresh native sample")
+    return value
+
+
+def validate_overview_browser(value, expected, artifacts):
+    evidence = value.get("overview", {})
+    flags = ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests", "detail_and_back", "negative_no_reads")
+    require(all(evidence.get(key) is True for key in flags), "overview browser lifecycle evidence missing")
+    rows = evidence.get("responses")
+    require(isinstance(rows, list) and 4 <= len(rows) <= 6, "overview browser responses missing or unbounded")
+    for row in rows:
+        require(row.get("path") == OVERVIEW and row.get("query") == {}, "overview browser changed full scope")
+        assert_resource_overview(row.get("value"), dict(expected["node"], enabled=True), expected["policy_version"], expected["display_name"])
+    require(utc_timestamp(rows[1]["value"]["evaluated_at"]) > utc_timestamp(rows[0]["value"]["evaluated_at"]), "overview natural server time did not advance")
+    screenshot = artifacts / "node-resources-overview.png"
+    require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "overview screenshot missing or invalid")
+    return {"result": "passed", "real_hosts": 1, **{key: True for key in flags}}
+
+
 def validate_resource_browser(value, expected, artifacts):
     require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
             and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "browser result mismatch")
@@ -834,7 +888,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
     evidence = artifacts / "node-resources-browser.json"
     evidence.unlink(missing_ok=True)
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services"):
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services", "overview"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     started = time.monotonic()
     runtime = {"schema_version": "addp.node-resources-browser-runtime/v1", "result": "failed", "duration_ms": 0,
@@ -860,6 +914,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     value = json.loads(evidence.read_text())
     result = validate_resource_browser(value, expected, artifacts)
     result["services"] = validate_process_browser(value, expected, artifacts)
+    result["overview"] = validate_overview_browser(value, expected, artifacts)
     return result
 
 
@@ -928,6 +983,7 @@ def run(base, directory, report):
             client.request("GET", resource_path(node, trend, keys=DISK_METRICS), expected)
             client.request("GET", resource_path(node, trend, keys=NETWORK_METRICS), expected)
         client.request("GET", QUERY_POLICY, expected)
+        client.request("GET", OVERVIEW, expected)
         client.request("PUT", QUERY_POLICY, expected, {key: value for key, value in query_policy.items() if key != "pending_restart"})
     require(admin.request("GET", QUERY_POLICY, (200,)).payload == query_policy, "denied budget writes changed state")
     report["query_identity_isolation"] = True
@@ -1000,6 +1056,7 @@ def run(base, directory, report):
         (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / ("node-"+name+"-trend.json")).write_text(json.dumps(device_history))
         report[name+"_query"] = True
     query_policy = check_query_policy(admin, node)
+    report["resource_overview"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"])
     report.update(resource_query=True, query_budget_cas_hot_read=True, query_policy_version=query_policy["version"])
     report["stage"] = "process-resource-identity-and-window"
     for client in [security, machine, *tenant_clients, API.GatewayClient(base, "", 10)]:
@@ -1044,6 +1101,8 @@ def run(base, directory, report):
         require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"}, "center failure became query success")
         failure = admin.request("GET", process_path(processes), (503, 504)).payload
         require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"}, "center failure became process query success")
+        failure = admin.request("GET", OVERVIEW, (503, 504)).payload
+        require(failure.get("error_code") in {"observability_backend_unavailable", "observability_query_timeout"} and "inventory" not in failure and "rankings" not in failure, "center failure became overview success")
         require({r["id"] for r in current_processes(admin)} == {r["id"] for r in processes}, "center failure broke service registration")
         API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
         for client in tenant_clients:
@@ -1061,6 +1120,7 @@ def run(base, directory, report):
     eventually(lambda: process_query_ready(admin, processes, after=recovery, evidence=report["center_recovery_process_summaries"]), "new process evidence after center recovery", timeout=150)
     report["process_center_outage_recovery"] = True
     report["center_query_outage_recovery"] = True
+    report["overview_center_recovery"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], after=recovery)
     report["stage"] = "source-outage-recovery"
     source_action("stop")
     try:
@@ -1083,6 +1143,7 @@ def run(base, directory, report):
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
     require(process_query_ready(admin, processes), "unbound process incorrectly disabled with host")
+    report["overview_node_disabled"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], disconnected=True)
     for trend in (False, True):
         assert_resources(admin.request("GET", resource_path(node, trend), (200,)).payload, node, trend=trend, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=FILESYSTEM_METRICS), (200,)).payload, node, trend=trend, keys=FILESYSTEM_METRICS, disconnected=True)
@@ -1101,6 +1162,7 @@ def run(base, directory, report):
     eventually(lambda: resource_query_after(admin, node, target, resumed_at, DISK_METRICS), "new disk evidence after node re-enablement")
     eventually(lambda: resource_query_after(admin, node, target, resumed_at, NETWORK_METRICS), "new network evidence after node re-enablement")
     report["node_query_resume_fresh_samples"] = True
+    report["overview_node_resumed"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], after=resumed_at)
     report["stage"] = "target-disable-and-delete"
     target = admin.request("PUT", target_path, (200,), dict(body, enabled=False, version=target["version"])).payload
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
@@ -1111,10 +1173,12 @@ def run(base, directory, report):
         assert_resources(admin.request("GET", resource_path(node, trend, keys=DISK_METRICS), (200,)).payload, node, trend=trend, keys=DISK_METRICS, disconnected=True)
         assert_resources(admin.request("GET", resource_path(node, trend, keys=NETWORK_METRICS), (200,)).payload, node, trend=trend, keys=NETWORK_METRICS, disconnected=True)
     report["disabled_query_does_not_reuse_history"] = True
+    report["overview_target_disabled"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], disconnected=True)
     eventually(lambda: not prom.targets(node["node_id"]), "target disable application")
     admin.request("DELETE", target_path, (409,), {"version": 2})
     admin.request("DELETE", target_path, (204,), {"version": target["version"]})
     admin.request("GET", target_path, (404,))
+    report["overview_target_removed"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], disconnected=True)
     admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"]))
     report.update(collector_grant_count=machine.grant_count, source_outage_recovery=True, control_outage_recovery=True, node_and_target_removal=True,
                   cleanup="awaiting-hosted-deployment-destruction", result="passed", stage="complete")

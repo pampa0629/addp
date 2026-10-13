@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
+import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -33,6 +34,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const instancePages = []
   const serviceBatches = []
   const serviceTrends = []
+  const overviews = []
   page.on('response', response => {
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
@@ -54,6 +56,9 @@ test('platform node resources through real Console password MFA and Monitor ifra
     }
     if (url.pathname.endsWith('resource_summaries')) {
       pending.push(response.json().then(value => summaries.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+    }
+    if (url.pathname.endsWith('resource_overview')) {
+      pending.push(response.json().then(value => overviews.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
     }
   })
   const login = async (target, prefix, principalID, role) => {
@@ -430,6 +435,63 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(summaries).toHaveLength(listOffCount)
     report.host_list_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
       iframe_preserved: true, off_restored: true, off_no_requests: true, before_index: listBeforeIndex, after_index: listAfterIndex }
+    save('overview-natural-refresh-off-and-navigation')
+    await page.goto('/monitor/resource-overview')
+    await expect(monitor.getByTestId('overview-statistics')).toBeVisible()
+    await expect(monitor.getByTestId('overview-refresh')).toContainText('每 15 秒')
+    const checkOverview = async () => {
+      await expect(monitor.getByTestId('resource-overview').getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+      await Promise.all(pending)
+      const entry = overviews.at(-1), value = validateResourceOverview(entry.value)
+      expect(entry.query).toEqual({})
+      expect(value.inventory).toEqual({ managed: 1, enabled: 1, disabled: 0, connected: 1, not_connected: 0,
+        collection: { collecting: 1, failed: 0, stale: 0, no_sample: 0, not_connected: 0 } })
+      for (const [index, rank] of value.rankings.entries()) {
+        expect(rank.coverage).toEqual({ expected: 1, valid: 1, no_data: 0, stale: 0, not_connected: 0, complete: true })
+        expect(rank.top).toHaveLength(1)
+        expect(rank.top[0].node).toEqual({ node_id: expected.node.node_id, display_name: expected.display_name,
+          node_kind: 'virtual', enabled: true, version: expected.node.version })
+        await expect(monitor.getByTestId(`overview-rank-${index}`).getByRole('button', { name: expected.display_name, exact: true })).toBeVisible()
+        await expect(monitor.getByTestId(`overview-rank-${index}`).locator('.el-table__body tr')).toHaveCount(1)
+      }
+      return entry
+    }
+    const beforeOverview = await checkOverview(), overviewURL = page.url(), overviewDocument = await documentOrigin()
+    const overviewCount = overviews.length
+    await expect.poll(() => overviews.length, { timeout: 25_000 }).toBe(overviewCount + 1)
+    const afterOverview = await checkOverview()
+    expect(Date.parse(afterOverview.value.evaluated_at)).toBeGreaterThan(Date.parse(beforeOverview.value.evaluated_at))
+    expect(page.url()).toBe(overviewURL)
+    expect(await documentOrigin()).toBe(overviewDocument)
+    const overviewOffResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/resource_overview') && response.ok())
+    await monitor.getByTestId('overview-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await overviewOffResponse
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/resource-overview' && url.searchParams.get('refresh') === 'off')
+    await checkOverview()
+    await page.reload()
+    await expect(monitor.getByTestId('overview-refresh-status')).toContainText('手工刷新')
+    await checkOverview()
+    const overviewOffCount = overviews.length
+    await new Promise(resolve => setTimeout(resolve, 16_000))
+    await Promise.all(pending)
+    expect(overviews).toHaveLength(overviewOffCount)
+    await page.screenshot({ path: resolve(artifact, 'node-resources-overview.png'), animations: 'disabled' })
+    const overviewRestoredDocument = await documentOrigin()
+    await monitor.getByTestId('overview-rank-0').getByRole('button', { name: expected.display_name, exact: true }).click()
+    await expect(page).toHaveURL(url => url.pathname === `/monitor/node-resources/${expected.node.node_id}`)
+    await expect(monitor.getByRole('heading', { name: expected.display_name, exact: true })).toBeVisible()
+    await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+    expect(await documentOrigin()).toBe(overviewRestoredDocument)
+    const overviewBackResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/resource_overview') && response.ok())
+    await page.goBack()
+    await overviewBackResponse
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/resource-overview' && url.searchParams.get('refresh') === 'off')
+    await checkOverview()
+    await expect(monitor.getByTestId('overview-refresh-status')).toContainText('手工刷新')
+    report.overview = { natural_timer: true, server_end_advanced: true, unchanged_url: true, iframe_preserved: true,
+      off_restored: true, off_no_requests: true, detail_and_back: true, negative_no_reads: false, responses: overviews }
+    expect(businessErrors).toEqual([])
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {
@@ -444,7 +506,12 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(negative.locator('.el-result')).toBeVisible()
       await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
       await expect(negative.locator('.sidebar .el-menu-item').filter({ hasText: '服务监控' })).toHaveCount(0)
+      await negative.goto('/monitor/resource-overview')
+      await expect(negative.locator('.el-result')).toBeVisible()
+      await expect(negative.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
+      await expect(negative.locator('.sidebar .el-menu-item').filter({ hasText: '资源总览' })).toHaveCount(0)
       expect(nodeReads).toBe(0)
+      report.overview.negative_no_reads = true
       report.service_presentation.negative_no_reads = true
       report.negative_no_business_reads = true
     } finally { await negativeContext.close() }

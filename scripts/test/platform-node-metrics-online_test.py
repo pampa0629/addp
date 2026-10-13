@@ -26,6 +26,76 @@ def collector_identity():
 
 
 class MetricsProtocolTest(unittest.TestCase):
+    @staticmethod
+    def overview_reply(at="2026-10-06T00:01:00Z", disconnected=False, enabled=True):
+        return {"scope": "current_authorized_host_nodes", "evaluated_at": at, "queried_at": at, "policy_version": 2, "lookback_seconds": 300,
+                "inventory": {"managed": 1, "enabled": int(enabled), "disabled": int(not enabled), "connected": int(not disconnected), "not_connected": int(disconnected),
+                              "collection": {key: int(key == ("not_connected" if disconnected else "collecting")) for key in ("collecting", "failed", "stale", "no_sample", "not_connected")}},
+                "rankings": [{"metric_key": key, "unit": "percent", "window_seconds": window,
+                              "coverage": {"expected": 1, "valid": int(not disconnected), "no_data": 0, "stale": 0, "not_connected": int(disconnected), "complete": not disconnected},
+                              "top": [] if disconnected else [{"node": {"node_id": "node-id", "version": 1, "display_name": "Online host", "node_kind": "virtual", "enabled": True}, "value": 0, "sampled_at": at}]}
+                             for key, window in (("node.cpu.busy_percent", 60), ("node.memory.used_percent", 0))]}
+
+    def test_overview_rejects_partial_scope_wrong_identity_stale_samples_and_private_facts(self):
+        node = {"node_id": "node-id", "version": 1, "enabled": True}
+        valid = self.overview_reply()
+        ONLINE.assert_resource_overview(valid, node, 2, "Online host")
+        mutations = [lambda v: v.update(scope="current_page"), lambda v: v.update(policy_version=1),
+                     lambda v: v.update(policy_version=True), lambda v: v.update(evaluated_at="2026-10-06T00:01:00.5Z"),
+                     lambda v: v.update(queried_at="2026-10-06T00:00:59Z"), lambda v: v.update(endpoint="private"),
+                     lambda v: v["inventory"].update(managed=2), lambda v: v["inventory"].update(managed=True),
+                     lambda v: v["inventory"]["collection"].update(collecting=True), lambda v: v["rankings"].pop(),
+                     lambda v: v["rankings"][0].update(window_seconds=0), lambda v: v["rankings"][0].update(unit="cores"),
+                     lambda v: v["rankings"][0]["coverage"].update(expected=2), lambda v: v["rankings"][0]["coverage"].update(complete=1),
+                     lambda v: v["rankings"][0]["top"][0]["node"].update(node_id="foreign"),
+                     lambda v: v["rankings"][0]["top"][0]["node"].update(version=2),
+                     lambda v: v["rankings"][0]["top"][0]["node"].update(addresses=["private"]),
+                     lambda v: v["rankings"][0]["top"][0].update(value=float("nan")),
+                     lambda v: v["rankings"][0]["top"][0].update(value=True),
+                     lambda v: v["rankings"][0]["top"][0].update(value=101),
+                     lambda v: v["rankings"][0]["top"][0].update(sampled_at="2026-10-06T00:01:01Z"),
+                     lambda v: v["rankings"][0]["top"][0].update(sampled_at="2026-10-05T23:59:59Z")]
+        for mutate in mutations:
+            bad = copy.deepcopy(valid); mutate(bad)
+            with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resource_overview(bad, node, 2, "Online host")
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_resource_overview(valid, node, 2, "Online host", after=ONLINE.utc_timestamp(valid["evaluated_at"]))
+
+    def test_overview_disabled_node_and_target_cannot_reuse_ranked_history(self):
+        for enabled in (True, False):
+            node = {"node_id": "node-id", "version": 1, "enabled": enabled}
+            disabled = self.overview_reply(disconnected=True, enabled=enabled)
+            ONLINE.assert_resource_overview(disabled, node, 2, "Online host", disconnected=True)
+            for mutate in (lambda v: v["rankings"][0].update(top=self.overview_reply()["rankings"][0]["top"]),
+                           lambda v: v["rankings"][0]["coverage"].update(valid=1, not_connected=0, complete=True),
+                           lambda v: v["inventory"].update(connected=1, not_connected=0)):
+                bad = copy.deepcopy(disabled); mutate(bad)
+                with self.subTest(enabled=enabled, mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_resource_overview(bad, node, 2, "Online host", disconnected=True)
+
+    def test_overview_browser_requires_real_refresh_restore_scope_and_screenshot(self):
+        expected = {"node": {"node_id": "node-id", "version": 1}, "display_name": "Online host", "policy_version": 2}
+        flags = ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests", "detail_and_back", "negative_no_reads")
+        evidence = {**{key: True for key in flags}, "responses": [{"path": ONLINE.OVERVIEW, "query": {}, "value": self.overview_reply(at)} for at in ("2026-10-06T00:01:00Z", "2026-10-06T00:01:15Z", "2026-10-06T00:01:16Z", "2026-10-06T00:01:17Z")]}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            screenshot = artifacts / "node-resources-overview.png"
+            screenshot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
+            ONLINE.validate_overview_browser({"overview": evidence}, expected, artifacts)
+            mutations = [lambda v, key=key: v.update({key: False}) for key in flags] + [
+                lambda v: v.update(responses=[]), lambda v: v.update(responses=v["responses"]*2),
+                lambda v: v["responses"][0].update(path=ONLINE.SUMMARIES),
+                lambda v: v["responses"][0].update(query={"node_ids": "node-id"}),
+                lambda v: v["responses"][1].update(value=v["responses"][0]["value"]),
+                lambda v: v["responses"][0]["value"]["inventory"].update(managed=2)]
+            for mutate in mutations:
+                bad = copy.deepcopy(evidence); mutate(bad)
+                with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_overview_browser({"overview": bad}, expected, artifacts)
+            screenshot.unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_overview_browser({"overview": evidence}, expected, artifacts)
+
     def test_online_module_syntax_rejects_duplicate_callback_before_other_gate_stages(self):
         root = Path(__file__).resolve().parents[2]
         for name, target, separated in (("platform-node-resources", "test-node-metrics-online-runner", False),
@@ -513,6 +583,7 @@ class MetricsProtocolTest(unittest.TestCase):
     def test_budget_verifies_cas_hot_consumption_and_restoration(self):
         initial = {"version": 0, "max_metrics": 12, "pending_restart": False}
         current, writes = dict(initial), []
+        partial_overview = False
         def request(method, path, expected, body=None):
             nonlocal current
             status = 200
@@ -524,6 +595,11 @@ class MetricsProtocolTest(unittest.TestCase):
                     else:
                         current = dict(body, version=body["version"]+1, pending_restart=False)
                 payload = dict(current)
+            elif path == ONLINE.OVERVIEW:
+                self.assertEqual(current["max_metrics"], 1)
+                status, payload = 422, {"error_code": "observability_query_budget_exceeded"}
+                if partial_overview:
+                    payload["rankings"] = []
             else:
                 keys = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)["metrics"][0].split(",")
                 if len(keys) > current["max_metrics"]:
@@ -538,6 +614,10 @@ class MetricsProtocolTest(unittest.TestCase):
         self.assertEqual(restored["version"], 2)
         self.assertEqual(restored["max_metrics"], initial["max_metrics"])
         self.assertTrue(all("pending_restart" not in write for write in writes))
+        client.request.assert_any_call("GET", ONLINE.OVERVIEW, (422,))
+        partial_overview = True
+        with self.assertRaisesRegex(ONLINE.SuiteError, "partial scope"):
+            ONLINE.check_query_policy(client, {"node_id": "node-id", "version": 1})
 
     def test_recovery_requires_new_samples_for_every_metric_and_current_versions(self):
         node, target = {"node_id": "node-id", "version": 1}, {"id": "target-id", "version": 2}
