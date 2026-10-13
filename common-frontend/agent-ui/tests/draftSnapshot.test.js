@@ -10,7 +10,13 @@ import zh from '../../../agent/frontend/src/i18n/zh-cn.json'
 import en from '../../../agent/frontend/src/i18n/en.json'
 
 const reference = `draft:cccccccc-cccc-cccc-cccc-cccccccccccc:${'a'.repeat(64)}`
-const snapshot = () => ({ reference, name: 'readonly_persons', parameters: JSON.stringify({ name: 'readonly_persons', config: { target: { apply_policy: 'replace' } } }, null, 2),
+const parameters = () => ({ name: 'readonly_persons', config: {
+  source: { locator: 'addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106', data_type: 'table', representation: 'native' },
+  target: { parent_locator: 'addp://engine/2/path/outdoor?type=schema&node_id=3', name: 'persons_check',
+    data_type: 'table', representation: 'native', policy: { apply_mode: 'replace' } },
+  runtime: { boundary: 'bounded' }, load: { mode: 'snapshot' }
+} })
+const snapshot = () => ({ reference, name: 'readonly_persons', parameters: JSON.stringify(parameters(), null, 2),
   mappings: [{ source: 'members', target: 'members', target_type: 'json', nullable: null, precision: null, scale: null }] })
 const operations = value => [
   { version: 'v0.9', createSurface: { surfaceId: 'surface:draft', catalogId: 'addp.catalog/v1' } },
@@ -34,6 +40,12 @@ describe('exact readonly checked draft snapshot', () => {
     expect(wrapper.get('pre').text()).toBe(value.parameters)
     expect(wrapper.text()).toContain(reference)
     expect(wrapper.text()).toContain('精确字段映射 (128)')
+    expect(wrapper.get('[data-testid="draft-sourceLocation"]').text()).toBe('引擎 11 · Outdoor.Persons')
+    expect(wrapper.get('[data-testid="draft-targetLocation"]').text()).toBe('引擎 2 · outdoor.persons_check')
+    expect(wrapper.get('[data-testid="draft-boundary"]').text()).toBe('bounded')
+    expect(wrapper.get('[data-testid="draft-loadMode"]').text()).toBe('snapshot')
+    expect(wrapper.get('[data-testid="draft-applyPolicy"]').text()).toBe('replace · 运行时先清理再写入')
+    expect(wrapper.get('[data-testid="draft-mappingCount"]').text()).toBe('128')
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.findAll('details').every(detail => detail.attributes('open') === undefined)).toBe(true)
     expect(wrapper.findAll('button')).toHaveLength(0)
@@ -42,6 +54,39 @@ describe('exact readonly checked draft snapshot', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain(en.agent.chat.presentation.draft.title)
     expect(wrapper.text()).toContain(en.agent.chat.presentation.draft.notice)
+    expect(wrapper.get('[data-testid="draft-sourceLocation"]').text()).toBe('Engine 11 · Outdoor.Persons')
+    expect(wrapper.get('[data-testid="draft-applyPolicy"]').text()).toBe(en.agent.chat.presentation.draft.replace)
+    wrapper.unmount()
+  })
+
+  it('formats complete locator paths with the shared formatter and escapes names without inferring data facts', async () => {
+    const input = parameters()
+    input.config.source.locator = 'addp://engine/15/path/%E5%8C%97%E4%BA%AC/a%2Fb?type=collection'
+    input.config.target.parent_locator = 'addp://engine/18/path/private_schema?type=schema'
+    input.config.target.name = '<img src=x onerror=alert(1)>'
+    input.config.target.policy.apply_mode = 'append'
+    const value = { ...snapshot(), parameters: JSON.stringify(input, null, 2) }
+    const wrapper = render(value)
+    await vi.waitFor(() => expect(wrapper.findComponent(Snapshot).exists()).toBe(true))
+    expect(wrapper.get('[data-testid="draft-sourceLocation"]').text()).toBe('引擎 15 · 北京.a/b')
+    expect(wrapper.get('[data-testid="draft-targetLocation"]').text()).toBe(`引擎 18 · private_schema.${input.config.target.name}`)
+    expect(wrapper.get('[data-testid="draft-applyPolicy"]').text()).toBe(zh.agent.chat.presentation.draft.append)
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.get('pre').text()).toBe(value.parameters)
+    expect(wrapper.get('.draft-overview').text()).not.toMatch(/JSONB|一文档一行|已创建|已授权/)
+    wrapper.unmount()
+  })
+
+  it('does not invent missing facts or reinterpret unknown mode literals', async () => {
+    const value = { ...snapshot(), parameters: JSON.stringify({ config: { runtime: { boundary: 'future-mode' } } }) }
+    const wrapper = render(value)
+    await vi.waitFor(() => expect(wrapper.findComponent(Snapshot).exists()).toBe(true))
+    for (const key of ['sourceLocation', 'targetLocation', 'loadMode', 'applyPolicy']) {
+      expect(wrapper.get(`[data-testid="draft-${key}"]`).text()).toBe(zh.agent.chat.presentation.draft.unspecified)
+    }
+    expect(wrapper.get('[data-testid="draft-boundary"]').text()).toBe('future-mode')
+    expect(wrapper.get('pre').text()).toBe(value.parameters)
+    expect(wrapper.emitted('action')).toBeUndefined()
     wrapper.unmount()
   })
 

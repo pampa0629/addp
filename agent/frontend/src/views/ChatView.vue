@@ -296,10 +296,10 @@ function startLiveMessage() {
 }
 
 function ensureLiveTextPart() {
-  let part = liveMessage.value.parts.find(item => item.type === 'text')
-  if (!part) {
+  let part = liveMessage.value.parts.at(-1)
+  if (part?.type !== 'text') {
     part = { type: 'text', text: '' }
-    liveMessage.value.parts.unshift(part)
+    liveMessage.value.parts.push(part)
   }
   return part
 }

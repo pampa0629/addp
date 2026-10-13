@@ -64,6 +64,8 @@ AgentRun 使用唯一语义恢复路线：
 
 已完成预检的草稿由 Runtime 以 AgentDraftRef 引用既有 `run_steps.input` 与同参 `facts.config_checks`，不新增数据库表或第二份可编辑配置。后续纯解释作为新 Run 按需读取同一 User/Tenant/Session 的历史快照，不复制旧 checkpoint 或创建确认。路由模型选择受信任近期引用，Runtime 单独审计只读 `draft.inspect` 并固定展示原参数／映射；缺失、错版、损坏和越界引用不从正文重建。修改配置仍进入原平台语义与 Skill 路径；完整契约见交互协议规范 3.4。
 
+草稿卡片的固定事实概要直接读取同一参数，不保存独立摘要；源／目标展示复用共享定位符格式化，边界、装载、写入策略及映射数不由模型重新填写。模型按 Skill 只补充关键解释。后端与前端按事件顺序追加 parts，Presentation 分隔后的文本另起 text part，不将所有文字前置；保存的 `content` 仍完整。概要不推断行粒度、类型或当前执行状态，既有报告、复核、参数摘要与权限路径不变。
+
 1. 新用户目标创建 `agent.runs`，状态进入 `running`。
 2. owner Tool 返回的引擎和 locator 等紧凑事实写入 `checkpoint.observed`，Tool 调用写入 `run_steps`。
 3. 创建澄清或 owner approval 投影时，Interaction 通过 `agent_run_id` 关联 AgentRun，run 状态进入 `waiting`。

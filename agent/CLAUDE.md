@@ -26,7 +26,7 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 正式 Transfer 配置预检的固定报告由 Runtime 从已验证 owner 响应产生 `TransferConfigCheckReport` Presentation，显式草稿检查与自动检查共用路径。只投影状态、检查时间、范围和完整诊断，不带主体、绑定哈希或业务数据，不发 action。消息 parts 与安全回放保存同一快照；历史报告不代表当前权限或执行成功。LLM 只解释/修正，服务失败不能生成 unknown 卡片。共享实现与 Transfer 向导共用，现有 Agent eval、共享组件、Agent/Transfer 浏览器与构建门禁覆盖；本次非破坏性 Catalog 扩充不改变既有 props、创建条件或权限。
 
-报告后的默认短答方法只由 `transfer-generation` Skill 维护，Runtime 仅说明卡片来源并引用该方法；不要求模型另列完整检查范围。默认草稿概要加关键检查解释，用户明确要求详解时可展开；完整 Tool 诊断仍提供给模型，创建条件、修正流程与固定报告不变。预检 Harness 回归加载生产 Skill 组合，核对短答指导进入模型和三态下诊断完整，但不把脚本化模型输出当作真实简洁性验收。
+报告后的默认短答方法只由 `transfer-generation` Skill 维护。已预检事实概要由固定快照从原参数直接展示，复用共享定位符格式化，不新增摘要副本或推测行粒度、物理类型和任务状态；完整引用、映射和参数可展开。Runtime 仅说明卡片来源并引用 Skill，模型只补充关键检查解释，不另列概要或完整检查范围；完整 Tool 诊断仍提供给模型，创建条件、修正流程与固定报告不变。实时消息、持久 parts 和安全回放按可见事件顺序组织，只合并相邻文字，不把后到的解释前置到卡片之前。预检 Harness 回归加载生产 Skill 组合，核对短答指导进入模型和三态下诊断完整，但不把脚本化模型输出当作真实简洁性验收。
 
 正式预检步骤完成并持久化后，Runtime 从其精确输入与同参报告生成 `AgentDraftRef` 和只读 `TransferDraftSnapshot`，复用共享表格／JSON 展示。新 Run 纯解释已有草稿时，路由只选同用户／租户／会话近期受信任目录中的引用，由私有 Runtime `draft.inspect` 读取历史输入；不装配业务 Tool 或进入领域 Harness，不复制旧确认、checkpoint 或授权。缺失、损坏、参数摘要不符及越界引用失败关闭。候选生成／修改／创建仍走原平台语义、Skill 和 owner 路径。本轮后端 SQL 隔离测试使用内存 SQLite，仅属 T1；前端由既有 Agent Vitest、浏览器及构建门禁自动发现，不声称真实模型或 Hosted T4 已通过。
 

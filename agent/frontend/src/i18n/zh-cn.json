@@ -37,6 +37,13 @@
           "mappings": "精确字段映射",
           "parameters": "完整预检参数",
           "unspecified": "未指定",
+          "overview": "草稿事实概要",
+          "sourceLocation": "源", "targetLocation": "目标",
+          "location": "引擎 {engine} · {path}",
+          "boundary": "运行边界", "loadMode": "装载方式",
+          "applyPolicy": "写入策略", "mappingCount": "映射数量",
+          "replace": "replace · 运行时先清理再写入",
+          "append": "append · 运行时追加写入",
           "source": "源字段", "target": "目标字段", "target_type": "目标标准类型",
           "nullable": "允许空值", "precision": "精度", "scale": "小数位"
         },

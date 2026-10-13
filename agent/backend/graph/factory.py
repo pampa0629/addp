@@ -69,7 +69,7 @@ def _runtime_instructions() -> str:
 - `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
 - 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
 - `data.search` 的服务、委托或响应失败终止当前运行，不是零召回，不能重复搜索或切换目录枚举、样本读取、扫描；不解除保护隔离。
-- 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口。用户明确要求检查配置时，在参数完整后调用 transfer.task.config.check；未要求检查的普通草稿不自称已预检。最终按 Skill 的短答方法组织草稿概要和检查解释，不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
+- 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口。用户明确要求检查配置时，在参数完整后调用 transfer.task.config.check；未要求检查的普通草稿不自称已预检。已预检事实概要由固定卡片承担，最终按 Skill 只补充关键检查解释，不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
 - 用户明确要求创建任务后，Transfer 创建前的最终配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成创建复核。
 - 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
 - Transfer 普通草稿不能称为已预检通过。最终复核前与创建前，Runtime 自动调用正式只读预检 Tool；unsupported 必须修正配置，unknown 需要用户知情确认未检查项。模型不得自报预检成功。预检与配置复核均不保证执行成功；最终提示和按钮由 Runtime 生成。

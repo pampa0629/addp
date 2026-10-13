@@ -14,10 +14,21 @@ from services.interactions import format_resume_message
 from services.interactions import InteractionTextAnswerError
 from fastapi import HTTPException
 
-from services.messages import MESSAGE_PARTS_MAX_BYTES, bounded_message_parts
+from services.messages import MESSAGE_PARTS_MAX_BYTES, append_text_delta, bounded_message_parts
 
 
 class MessagePersistenceTests(unittest.TestCase):
+    def test_text_merges_only_adjacent_deltas_without_crossing_presentations(self):
+        parts = []
+        append_text_delta(parts, "")
+        append_text_delta(parts, "before")
+        append_text_delta(parts, " check")
+        parts.append({"type": "presentation_ref", "surface_id": "check"})
+        append_text_delta(parts, "after")
+        append_text_delta(parts, " explanation")
+        self.assertEqual(parts, [{"type": "text", "text": "before check"},
+            {"type": "presentation_ref", "surface_id": "check"}, {"type": "text", "text": "after explanation"}])
+
     def test_message_parts_are_copied_before_persistence(self):
         source = [{"type": "text", "text": "hello"}]
 

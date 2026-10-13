@@ -11,6 +11,7 @@ const answer = '一文档一行，只投影标量字段。'
 const reviewOptions = [{ label: '知悉未核验项，仅创建任务', value: 'review-fingerprint' }, { label: '取消', value: 'cancel' }]
 const unknownWarning = '预检结果为无法确定（unknown），并非通过。请核对未检查项和运行时核验要求；确认表示知情接受这些限制，仅保存未运行任务。'
 const draftGoal = '把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，检查配置，只给草稿，不创建、不运行。'
+const checkExplanation = '关键检查解释：尚有未核验项，不代表可以运行。'
 
 function checkReport(status) {
   const report = { status, observed_at: '2026-10-12T00:00:00Z', checked: ['request_shape'], not_checked: ['business_rows'],
@@ -31,7 +32,12 @@ function checkedDraftPart() {
       { version: 'v0.9', createSurface: { surfaceId: surface, catalogId: 'addp.catalog/v1' } },
       { version: 'v0.9', updateComponents: { surfaceId: surface, components: [{ id: 'root', component: 'TransferDraftSnapshot',
         reference: `draft:cccccccc-cccc-cccc-cccc-cccccccccccc:${'a'.repeat(64)}`, name: 'readonly_persons',
-        parameters: JSON.stringify({ name: 'readonly_persons', config: { target: { name: 'persons_check', apply_policy: 'replace' } } }, null, 2),
+        parameters: JSON.stringify({ name: 'readonly_persons', config: {
+          source: { locator: 'addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106', data_type: 'table', representation: 'native' },
+          target: { parent_locator: 'addp://engine/2/path/outdoor?type=schema&node_id=3', name: 'persons_check',
+            data_type: 'table', representation: 'native', policy: { apply_mode: 'replace' } },
+          runtime: { boundary: 'bounded' }, load: { mode: 'snapshot' }
+        } }, null, 2),
         mappings: [{ source: 'members', target: 'members', target_type: 'json', nullable: null, precision: null, scale: null }]
       }] } }
     ] } }
@@ -91,7 +97,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
         const expectedGoal = draftReportStatus ? draftGoal : goal
         expect(input.messages[0]).toMatchObject({ role: 'user', content: expectedGoal })
         current = draftReportStatus ? checkReport(draftReportStatus) : question
-        if (checkedDraft) current.parts.unshift(checkedDraftPart())
+        if (checkedDraft) current.parts = [checkedDraftPart(), ...current.parts, { type: 'text', text: checkExplanation }]
         messages.push({ id: 'goal', role: 'user', parts: [{ type: 'text', text: expectedGoal }] }, current)
       } else if (requests.length === 2) {
         expect(input.messages).toEqual([])
@@ -111,9 +117,17 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
       const events = [
         { type: 'RUN_STARTED', threadId: input.threadId, runId: input.runId },
         { type: 'STATE_SNAPSHOT', snapshot: { agentRunId: runId, sessionId, status: waiting ? 'waiting' : 'completed' } },
-        ...(current ? current.parts.filter(part => part.type === 'presentation_ref').map((part, index) => (
-          { type: 'ACTIVITY_SNAPSHOT', messageId: `activity:${current.id}:${index}`, activityType: 'a2ui-surface', content: part.content }
-        )) : []),
+        ...(current ? current.parts.flatMap((part, index) => {
+          if (part.type === 'presentation_ref') return [
+            { type: 'ACTIVITY_SNAPSHOT', messageId: `activity:${current.id}:${index}`, activityType: 'a2ui-surface', content: part.content }
+          ]
+          if (part.type === 'text') return [
+            { type: 'TEXT_MESSAGE_START', messageId: `text:${current.id}:${index}`, role: 'assistant' },
+            { type: 'TEXT_MESSAGE_CONTENT', messageId: `text:${current.id}:${index}`, delta: part.text },
+            { type: 'TEXT_MESSAGE_END', messageId: `text:${current.id}:${index}` }
+          ]
+          return []
+        }) : []),
         { type: 'RUN_FINISHED', threadId: input.threadId, runId: input.runId,
           outcome: waiting ? { type: 'interrupt', interrupts: [{ id: current.id, reason: 'missing_input' }] } : { type: 'success' } }
       ]
@@ -161,6 +175,21 @@ test('short goal → reloaded text resume → reloaded review → cancel, with t
 })
 
 test('exact checked draft streams and reloads without rebuilding parameters or sending owner requests', async ({ page }) => {
+  await page.addInitScript(() => {
+    // Observe only rendered DOM, including the transient streaming message before history replaces it.
+    window.checkedDraftDomOrders = []
+    new MutationObserver(() => {
+      const parts = document.querySelector('.live-message .message-parts')
+      if (!parts) return
+      const order = Array.from(parts.children, child => {
+        if (child.matches('.message-content')) return 'text'
+        if (child.querySelector('[data-testid="transfer-draft-snapshot"]')) return 'draft'
+        if (child.querySelector('[data-testid="task-config-check-report"]')) return 'report'
+        return 'other'
+      })
+      window.checkedDraftDomOrders.push(order)
+    }).observe(document, { childList: true, subtree: true })
+  })
   const backend = await installBackend(page, { draftReportStatus: 'unknown', checkedDraft: true })
   await page.setViewportSize({ width: 620, height: 900 })
   await page.goto(`/module-ui/agent/sessions/${sessionId}`)
@@ -170,15 +199,28 @@ test('exact checked draft streams and reloads without rebuilding parameters or s
   await expect(panel).toContainText('readonly_persons')
   await expect(panel).toContainText('不代表已保存任务、已创建目标表或当前运行授权')
   await expect(panel.locator('button')).toHaveCount(0)
+  await expect(panel.getByTestId('draft-sourceLocation')).toHaveText('引擎 11 · Outdoor.Persons')
+  await expect(panel.getByTestId('draft-targetLocation')).toHaveText('引擎 2 · outdoor.persons_check')
+  await expect(panel.getByTestId('draft-applyPolicy')).toHaveText('replace · 运行时先清理再写入')
+  await expect(page.getByText(checkExplanation, { exact: true })).toBeVisible()
+  const orderedContent = () => panel.evaluate(element => {
+    const message = element.closest('.message-row')
+    const text = message?.querySelector('.message-content')
+    return !!text && !!(element.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+  expect(await orderedContent()).toBe(true)
+  expect(await page.evaluate(() => window.checkedDraftDomOrders)).toContainEqual(['draft', 'report', 'text'])
   await panel.locator('summary').filter({ hasText: '精确字段映射' }).click()
   await expect(panel.getByText('json', { exact: true })).toBeVisible()
   await panel.locator('summary').filter({ hasText: '完整预检参数' }).click()
-  await expect(panel.locator('pre')).toContainText('"apply_policy": "replace"')
+  await expect(panel.locator('pre')).toContainText('"apply_mode": "replace"')
   const parameters = await panel.locator('pre').textContent()
   const reference = await panel.locator('.draft-reference').textContent()
   expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
   await page.reload()
   await expect(panel.locator('.draft-reference')).toHaveText(reference)
+  await expect(page.getByText(checkExplanation, { exact: true })).toBeVisible()
+  expect(await orderedContent()).toBe(true)
   await panel.locator('summary').filter({ hasText: '完整预检参数' }).click()
   await expect(panel.locator('pre')).toHaveText(parameters)
   await expect(panel.locator('button')).toHaveCount(0)

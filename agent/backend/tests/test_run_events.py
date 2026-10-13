@@ -155,6 +155,12 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(committed.cancelled())
 
     async def test_search_failure_is_visible_persisted_and_never_completed(self):
+        await self._assert_search_failure_order(interleaved=False)
+
+    async def test_failure_after_presentation_retains_event_order_and_complete_text(self):
+        await self._assert_search_failure_order(interleaved=True)
+
+    async def _assert_search_failure_order(self, *, interleaved):
         from ag_ui.core import RunAgentInput
         from agents.events import AgentEvent
         from api.chat import chat
@@ -174,6 +180,10 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
 
         async def failed_stream(*_args, **_kwargs):
             self.assertEqual(_kwargs["accept_language"], "en-US")
+            if interleaved:
+                yield AgentEvent(kind="text", payload={"delta": "已经获取的结果"})
+                yield AgentEvent(kind="presentation", payload={"kind": "table_preview", "columns": ["name"],
+                    "rows": [{"name": "railway"}], "total": 1, "truncated": False})
             yield AgentEvent(kind="tool_start", payload={"tool_call_id": "search", "tool_name": "data.search", "args": {"query": "Outdoor"}})
             yield AgentEvent(kind="tool_result", payload={
                 "tool_call_id": "search", "tool_name": "data.search", "is_error": True,
@@ -214,8 +224,15 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set_status.await_args.kwargs["status"], "failed")
         self.assertEqual(set_status.await_args.kwargs["error_source"], "owner")
         self.assertEqual(set_status.await_args.kwargs["error_code"], "manager_search_isolated")
-        self.assertEqual(db.added[0].content, message)
-        self.assertEqual(db.added[0].parts, [{"type": "text", "text": message}])
+        if interleaved:
+            self.assertEqual(db.added[0].content, "已经获取的结果\n\n" + message)
+            self.assertEqual([part["type"] for part in db.added[0].parts], ["text", "presentation_ref", "text"])
+            self.assertEqual(db.added[0].parts[-1], {"type": "text", "text": "\n\n" + message})
+            visible_events = [event["type"] for event in events if event["type"] in {"TEXT_MESSAGE_CONTENT", "ACTIVITY_SNAPSHOT"}]
+            self.assertEqual(visible_events, ["TEXT_MESSAGE_CONTENT", "ACTIVITY_SNAPSHOT", "TEXT_MESSAGE_CONTENT"])
+        else:
+            self.assertEqual(db.added[0].content, message)
+            self.assertEqual(db.added[0].parts, [{"type": "text", "text": message}])
 
     def test_tool_arguments_are_not_replayable(self):
         self.assertIsNone(
@@ -361,6 +378,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             "checked": [], "not_checked": ["business_rows"], "runtime_checks_required": [], "diagnostics": []})
 
         async def stream(*_args, **_kwargs):
+            yield AgentEvent(kind="text", payload={"delta": "检查提示"})
             yield AgentEvent(kind="presentation", payload=presentation)
             yield AgentEvent(kind="text", payload={"delta": "只展示草稿，不创建"})
 
@@ -383,6 +401,9 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         part = next(part for part in db.added[0].parts if part["type"] == "presentation_ref")
         self.assertEqual(part["content"], activity["content"])
         self.assertEqual(part["content"]["operations"][1]["updateComponents"]["components"][0]["report"]["status"], "unknown")
+        self.assertEqual([part["type"] for part in db.added[0].parts], ["text", "presentation_ref", "text"])
+        self.assertEqual([part["text"] for part in db.added[0].parts if part["type"] == "text"], ["检查提示", "只展示草稿，不创建"])
+        self.assertEqual(db.added[0].content, "检查提示只展示草稿，不创建")
         self.assertEqual(status.await_args.kwargs["status"], "completed")
 
     async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(self):
@@ -404,6 +425,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(kwargs["draft_catalog"], [])
             yield AgentEvent(kind="tool_start", payload={"tool_call_id": "check", "tool_name": step.tool_name, "args": step.input_data})
             yield AgentEvent(kind="tool_result", payload={"tool_call_id": "check", "tool_name": step.tool_name, "content": "{}", "is_error": False})
+            yield AgentEvent(kind="text", payload={"delta": "只解释关键检查原因"})
 
         with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
               patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
@@ -434,6 +456,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(component["reference"], snapshot["reference"])
         self.assertEqual(json.loads(component["parameters"]), step.input_data)
         self.assertEqual(component["mappings"][-1]["target_type"], "json")
+        self.assertEqual([part["type"] for part in db.added[0].parts], ["presentation_ref", "text"])
         self.assertNotIn("fixture-user", json.dumps(part))
 
     def test_replay_event_rejects_payload_over_total_byte_limit(self):

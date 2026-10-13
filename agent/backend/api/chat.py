@@ -73,7 +73,7 @@ from services.interactions import (
     format_resume_message,
     resolve_interaction,
 )
-from services.messages import bounded_message_parts
+from services.messages import append_text_delta, bounded_message_parts
 from services.run_events import append_run_event
 from services.runs import (
     AgentRunNotFoundError,
@@ -551,6 +551,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                             TextMessageStartEvent(message_id=assistant_message_id, role="assistant")
                         )
                     full_text += delta
+                    append_text_delta(parts, delta)
                     yield await emit(
                         TextMessageContentEvent(message_id=assistant_message_id, delta=delta)
                     )
@@ -564,9 +565,9 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                         yield await emit(TextMessageStartEvent(message_id=assistant_message_id, role="assistant"))
                     delta = ("\n\n" if full_text else "") + error_message
                     full_text += delta
+                    append_text_delta(parts, delta)
                     yield await emit(TextMessageContentEvent(message_id=assistant_message_id, delta=delta))
                     yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
-                    parts.insert(0, {"type": "text", "text": full_text})
                     await _save_assistant_message(
                         session_id=session_id, message_id=assistant_message_id, content=full_text, parts=parts,
                     )
@@ -792,8 +793,6 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     )
                     if text_started:
                         yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
-                    if full_text:
-                        parts.insert(0, {"type": "text", "text": full_text})
                     await _save_assistant_message(
                         session_id=session_id,
                         message_id=assistant_message_id,
@@ -831,8 +830,6 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
 
             if text_started:
                 yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
-            if full_text:
-                parts.insert(0, {"type": "text", "text": full_text})
             await _save_assistant_message(
                 session_id=session_id,
                 message_id=assistant_message_id,

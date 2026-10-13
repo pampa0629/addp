@@ -233,8 +233,10 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 # Check production Skill composition reaches the actual Harness model.
                 # Scripted replies do not prove a free model will stay concise.
                 prompt = "\n".join(m.content for m in client.calls[1]["messages"] if m.role == "system")
-                self.assertEqual(prompt.count("默认只给草稿概要和检查解释"), 1)
-                self.assertIn("不逐项重列检查范围、未检查项、运行时要求或字段诊断", prompt)
+                self.assertEqual(prompt.count("默认只给关键检查解释"), 1)
+                self.assertIn("事实概要由 Runtime 固定卡片承担", prompt)
+                self.assertIn("不要另写“草稿概要”", prompt)
+                self.assertIn("不要逐项重列检查范围、未检查项、运行时要求或字段诊断", prompt)
                 self.assertIn("用户明确要求详细说明", prompt)
                 self.assertNotIn("按正式报告解释 supported、unsupported、unknown、字段诊断、未检查项及运行要求", prompt)
                 checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]

@@ -37,6 +37,13 @@
           "mappings": "Exact field mappings",
           "parameters": "Complete check arguments",
           "unspecified": "Not specified",
+          "overview": "Draft fact overview",
+          "sourceLocation": "Source", "targetLocation": "Target",
+          "location": "Engine {engine} · {path}",
+          "boundary": "Runtime boundary", "loadMode": "Load mode",
+          "applyPolicy": "Apply policy", "mappingCount": "Mapping count",
+          "replace": "replace · clear then write at execution time",
+          "append": "append · append at execution time",
           "source": "Source field", "target": "Target field", "target_type": "Target standard type",
           "nullable": "Nullable", "precision": "Precision", "scale": "Scale"
         },
