@@ -15,7 +15,7 @@ func isPostgresGeometryField(fieldType datatype.FieldType) bool {
 func postgresWriteRow(row map[string]interface{}, columns []string, fieldTypes map[string]datatype.FieldType) ([]interface{}, error) {
 	values := make([]interface{}, len(columns))
 	for i, column := range columns {
-		value, err := postgresWriteValue(row[column], fieldTypes[column])
+		value, err := ProtocolTableWriteValue(row[column], fieldTypes[column])
 		if err != nil {
 			return nil, fmt.Errorf("postgresql write column %q: %w", column, err)
 		}
@@ -24,7 +24,10 @@ func postgresWriteRow(row map[string]interface{}, columns []string, fieldTypes m
 	return values, nil
 }
 
-func postgresWriteValue(value interface{}, fieldType datatype.FieldType) (interface{}, error) {
+// ProtocolTableWriteValue is the single value encoder for certified PostgreSQL
+// wire-protocol writers, including engine-native statements that bind PG types.
+// JSON, TEXT[] and geometry rules stay here; bytes retain native binding.
+func ProtocolTableWriteValue(value interface{}, fieldType datatype.FieldType) (interface{}, error) {
 	if value == nil {
 		return nil, nil
 	}

@@ -7,8 +7,13 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	commonquery "github.com/addp/common/query"
 )
+
+func TestKingbaseNonSpatialWriteDefinition(t *testing.T) {
+	writetest.NonSpatialProtocolDefinition(t, &Plugin{})
+}
 
 func TestPluginIdentityAndConnectionSpec(t *testing.T) {
 	p := &Plugin{}

@@ -186,7 +186,7 @@ func TestIntegrationPostgresTypedArrayWrites(t *testing.T) {
 			t.Fatalf("native array element facts lost: %#v", field)
 		}
 		if field.Name == "labels" {
-			if encoded, err := postgresWriteValue(batch.Rows[0][field.Name], field.Type); err != nil || encoded != batch.Rows[0][field.Name] {
+			if encoded, err := ProtocolTableWriteValue(batch.Rows[0][field.Name], field.Type); err != nil || encoded != batch.Rows[0][field.Name] {
 				t.Fatalf("native text[] read/write encoding: %#v %v", encoded, err)
 			}
 			continue

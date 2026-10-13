@@ -30,7 +30,7 @@ func TestPostgresWriteValuePreservesOtherTypes(t *testing.T) {
 		{datatype.FieldTypeGeometry, []byte{}, nil},
 		{datatype.FieldTypeGeometry, "POINT(1 2)", "POINT(1 2)"},
 	} {
-		got, err := postgresWriteValue(tc.value, tc.typ)
+		got, err := ProtocolTableWriteValue(tc.value, tc.typ)
 		if err != nil || !reflect.DeepEqual(got, tc.want) {
 			t.Fatalf("type %s: got %#v, %v; want %#v", tc.typ, got, err, tc.want)
 		}

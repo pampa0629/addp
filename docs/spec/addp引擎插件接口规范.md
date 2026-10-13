@@ -298,7 +298,7 @@ type StoreProvider interface {
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
 - `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。已存在且当前连接可使用的目标命名空间必须直接复用，仅在缺失且当前连接具备创建权限时创建；不得因重复执行命名空间创建语句而要求已有目标写入方额外持有数据库级 CREATE 权限。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
-- `TableWriteDefinitionChecker.CheckTableWriteDefinition()`：可选的纯定义检查接口，输入目标字段、空间声明、可选源字段／配置常量及可选既有目标结构快照；不接收连接、Context 或业务行，不访问引擎。Provider 唯一负责物理类型及兼容规则，返回逐字段 `supported / unsupported / unknown`、稳定代码和物理类型。源表示不明、采样结构及缺少原生类型不能构造通过证据。Owner 在删除／准备目标之前消费确定性 `unsupported`；真实 Prepare 复用同一检查，逐值编码及实时结构检查仍保留。无该接口只能报告未检查，不建立 Owner 引擎名单或类型映射。快照检查不证明当前数据库结构、DDL／写入权限、实例扩展或实际行值可执行，也不形成授权凭证。
+- `TableWriteDefinitionChecker.CheckTableWriteDefinition()`：可选的纯定义检查接口，输入目标字段、空间声明、可选源字段／配置常量及可选既有目标结构快照；不接收连接、Context 或业务行，不访问引擎。Provider 唯一负责物理类型及兼容规则，返回逐字段 `supported / unsupported / unknown`、稳定代码和物理类型。源表示不明、采样结构及缺少原生类型不能构造通过证据。PostgreSQL 协议复用的 openGauss 与 KingbaseES 显式转发同一非空间定义检查，保留各自已有限制；不得因复用协议而把 geometry 或空间声明报告为支持。Owner 在删除／准备目标之前消费确定性 `unsupported`；真实 Prepare 复用同一检查，逐值编码及实时结构检查仍保留。无该接口只能报告未检查，不建立 Owner 引擎名单或类型映射。快照检查不证明当前数据库结构、DDL／写入权限、实例扩展或实际行值可执行，也不形成授权凭证。
 
 Transfer 的正式只读配置检查入口为 `POST /api/v1/transfer/task-config-checks`，首期只检查新建任务完整请求中的 bounded + snapshot、native table、replace/append 定义，不检查 upsert。入口要求当前 Tenant User 的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 交集；委托使用精确 transfer audience 与唯一 `transfer.task.config.check` Scope，并再次检查同一三项当前 Tenant Permission，不扩大 Runtime Service 权限。只读取 System 已登记引擎事实和 Meta 已落库结构快照，不调用实时 Catalog Facts、采样、源查询、Prepare、任务保存或执行。报告版本固定为 `addp.transfer_task_config_check/v1`，绑定完整提交请求的规范 JSON SHA-256、Tenant、Principal 和本次完整结构事实摘要；结构摘要包含字段顺序、原生类型、元素类型、精度、默认表达式、空间信息、Meta 身份及扫描时刻，不能用 Security 的裁剪结构 hash 替代。`binding_hash` 绑定该完整报告，是内容摘要，不是签名、授权或可复用执行凭据。客户端不自报结构快照、摘要或主体，保存／运行仍由 Owner 独立校验；此首期不改变原创建／更新 API 的权限或自动执行预检。
 
@@ -313,6 +313,8 @@ Transfer 的正式只读配置检查入口为 `POST /api/v1/transfer/task-config
 `json` 字段的统一输入契约为：Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil `[]byte` 和 nil `json.RawMessage` 表达 SQL NULL，typed nil 数组／对象表达 JSON `null`，非 nil 空数组／对象表达 `[]`／`{}`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法文档，不能再次编码或先解码为浮点数；JSON 字符串标量必须带 JSON 引号。非法 JSON 或不可编码的 Go 值必须返回带字段定位的错误，不得用普通字符串格式化兜底。该契约不把普通文本、`bytes`、原生 `array` 或空间字段解释成 JSON；空间与二进制转换仍归引擎 Provider。
 
 统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB、OceanBase、Oracle、Doris、ClickHouse 与达梦的表格写入使用该入口；Oracle 的 INSERT session 与分区变更 MERGE 共用此编码，编码后的 SQL NULL 仍须遵守字段非空约束。Doris 的 `json` 沿用现有 `STRING` 映射，ClickHouse 沿用 `String`／`Nullable(String)` 映射，不因此开放原生 JSON 列写入。ClickHouse 的 bytes 字节切片按原始二进制字符串绑定到 String 存储，避免驱动解释为 SQL 数组；nil、空字节与非 UTF-8 字节分别保留，不改变原生 array 或空间值的解释。两者的结构校验依据同一建表映射比较物理类型，不拿逻辑 `json` 与物理 `string` 直接比较；session 与批量 INSERT 在当前批次第一条 SQL 前完成全部值编码与校验。其 chunk 自动提交，`Abort` 不撤销此前提交的 chunk 或批次，数据库执行失败也不保证整批回滚。
+
+openGauss 的 COPY／INSERT 复用 PostgreSQL 写入，独立原生 MERGE 也必须使用同一协议值编码；字段类型只来自 upsert options，不由批次声明补全或覆盖。JSON、原生一维 TEXT[] 与 BYTEA 沿用 PostgreSQL 的编码边界，整批参数编码及非空校验须在连接／事务写入之前完成；空间写入仍拒绝。
 
 达梦的 INSERT session 与 MERGE upsert 共用该编码，沿用 CLOB 存储；按打开会话或 upsert options 的字段声明编码，在当前批次第一条写入 SQL 前完成全部行校验，编码后的 SQL NULL 仍遵守非空约束。原生 array 与空间类型继续拒绝，bytes 沿用 BLOB 驱动绑定。会话的 DELETE replace 与 INSERT 在同一事务中，Abort 撤销未提交数据；Prepare 的 DDL 不属于该事务。其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
 

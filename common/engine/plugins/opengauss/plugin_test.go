@@ -7,8 +7,13 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	commonquery "github.com/addp/common/query"
 )
+
+func TestOpenGaussNonSpatialWriteDefinition(t *testing.T) {
+	writetest.NonSpatialProtocolDefinition(t, &Plugin{})
+}
 
 func TestProtocolIdentityDeclaresOpenGaussSystemSchemas(t *testing.T) {
 	t.Parallel()
@@ -149,6 +154,6 @@ func TestWriteProvidersRejectUnadvertisedSpatialDataBeforeConnecting(t *testing.
 	))
 	assertSpatialError("UpsertBatch", p.UpsertBatch(
 		t.Context(), nil, plugin.EngineCatalogPath{},
-		&plugin.BatchData{Fields: fields}, plugin.TableUpsertOptions{},
+		&plugin.BatchData{Fields: fields}, plugin.TableUpsertOptions{Fields: fields},
 	))
 }

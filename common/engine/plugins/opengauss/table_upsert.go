@@ -32,7 +32,7 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 		return err
 	}
 	if batch != nil {
-		if err := validateNonSpatialWrite(batch.Fields, batch.Spatial); err != nil {
+		if err := validateNonSpatialWrite(nil, batch.Spatial); err != nil {
 			return err
 		}
 	}
@@ -43,6 +43,9 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	if err != nil {
 		return err
 	}
+	if err := p.protocol().CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return err
+	}
 	schema, table, err := openGaussTablePathParts(path)
 	if err != nil {
 		return err
@@ -51,9 +54,22 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	if len(columns) == 0 {
 		return fmt.Errorf("openGauss upsert requires batch columns")
 	}
-	fields, err := openGaussUpsertFields(columns, batch.Fields, opts.Fields)
+	fields, err := openGaussUpsertFields(columns, opts.Fields)
 	if err != nil {
 		return err
+	}
+	// Validate every parameter before opening the target connection. A later
+	// encoding failure cannot leave a successfully applied prefix of this batch.
+	rows := make([][]interface{}, len(batch.Rows))
+	for index, row := range batch.Rows {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		args, err := openGaussUpsertRowArgs(row, fields)
+		if err != nil {
+			return fmt.Errorf("openGauss upsert row %d: %w", index, err)
+		}
+		rows[index] = args
 	}
 	statement, err := buildOpenGaussMergeSQL(schema, table, fields, keys)
 	if err != nil {
@@ -73,11 +89,7 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 		return fmt.Errorf("begin openGauss upsert transaction: %w", err)
 	}
 	defer tx.Rollback()
-	for index, row := range batch.Rows {
-		args, err := openGaussUpsertRowArgs(row, columns)
-		if err != nil {
-			return fmt.Errorf("openGauss upsert row %d: %w", index, err)
-		}
+	for index, args := range rows {
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute openGauss MERGE row %d: %w", index, err)
 		}
@@ -157,14 +169,12 @@ func openGaussBatchColumns(batch *plugin.BatchData) []string {
 	return columns
 }
 
-func openGaussUpsertFields(columns []string, fieldSources ...[]datatype.FieldInfo) ([]datatype.FieldInfo, error) {
+func openGaussUpsertFields(columns []string, fields []datatype.FieldInfo) ([]datatype.FieldInfo, error) {
 	byName := map[string]datatype.FieldInfo{}
-	for _, fields := range fieldSources {
-		for _, field := range fields {
-			name := strings.TrimSpace(field.Name)
-			if name != "" {
-				byName[name] = field
-			}
+	for _, field := range fields {
+		name := strings.TrimSpace(field.Name)
+		if name != "" {
+			byName[name] = field
 		}
 	}
 	result := make([]datatype.FieldInfo, 0, len(columns))
@@ -233,12 +243,19 @@ func buildOpenGaussMergeSQL(schema, table string, fields []datatype.FieldInfo, k
 	return statement, nil
 }
 
-func openGaussUpsertRowArgs(row map[string]interface{}, columns []string) ([]interface{}, error) {
-	args := make([]interface{}, 0, len(columns))
-	for _, column := range columns {
-		value, ok := row[column]
+func openGaussUpsertRowArgs(row map[string]interface{}, fields []datatype.FieldInfo) ([]interface{}, error) {
+	args := make([]interface{}, 0, len(fields))
+	for _, field := range fields {
+		value, ok := row[field.Name]
 		if !ok {
-			return nil, fmt.Errorf("missing field %q", column)
+			return nil, fmt.Errorf("missing field %q", field.Name)
+		}
+		value, err := postgresql.ProtocolTableWriteValue(value, field.Type)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", field.Name, err)
+		}
+		if value == nil && !field.Nullable {
+			return nil, fmt.Errorf("field %q is NOT NULL", field.Name)
 		}
 		args = append(args, value)
 	}

@@ -46,6 +46,7 @@ var (
 	_ plugin.TableReadSessionProvider             = (*Plugin)(nil)
 	_ plugin.TableUpsertProvider                  = (*Plugin)(nil)
 	_ plugin.TableWritePreparer                   = (*Plugin)(nil)
+	_ plugin.TableWriteDefinitionChecker          = (*Plugin)(nil)
 	_ plugin.TableWriteSessionProvider            = (*Plugin)(nil)
 )
 
@@ -174,7 +175,14 @@ func (p *Plugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Connecti
 	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
 		return err
 	}
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(opts)).UnsupportedError(); err != nil {
+		return err
+	}
 	return p.protocol().PrepareTableWrite(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) CheckTableWriteDefinition(definition plugin.TableWriteDefinition) plugin.TableWriteDefinitionReport {
+	return p.protocol().CheckNonSpatialTableWriteDefinition(definition)
 }
 
 func (p *Plugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {

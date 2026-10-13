@@ -74,6 +74,63 @@ func checkFixtureReport(t *testing.T, svc *TaskConfigCheckService, subject autho
 	}
 	return result
 }
+
+func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
+	for _, engineType := range []string{"opengauss", "kingbase"} {
+		for _, scenario := range []string{"json", "invalid_constant", "object_array", "unknown_source_with_invalid_constant", "geometry"} {
+			t.Run(engineType+"/"+scenario, func(t *testing.T) {
+				svc, facts, subject, body := configCheckFixture(t)
+				registered, err := plugin.Get(engineType)
+				if err != nil {
+					t.Fatal(err)
+				}
+				caps, err := plugin.MarshalEngineCapabilities(registered.Capabilities())
+				if err != nil {
+					t.Fatal(err)
+				}
+				declared := commonmodels.JSONString(caps)
+				facts.engines[2].EngineType = engineType
+				facts.engines[2].Capabilities = &declared
+				var request map[string]interface{}
+				if err := json.Unmarshal(body, &request); err != nil {
+					t.Fatal(err)
+				}
+				config := request["config"].(map[string]interface{})
+				field := config["transforms"].([]interface{})[0].(map[string]interface{})["fields"].([]interface{})[0].(map[string]interface{})
+				switch scenario {
+				case "invalid_constant", "unknown_source_with_invalid_constant":
+					delete(field, "source")
+					field["default"] = "{"
+					if scenario == "unknown_source_with_invalid_constant" {
+						delete(facts.items, 1)
+					}
+				case "object_array":
+					field["target_type"] = "array"
+					facts.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON, NativeType: "jsonb[]", Nullable: true}}})
+				case "geometry":
+					field["target_type"] = "geometry"
+				}
+				body, _ = json.Marshal(request)
+				report := checkFixtureReport(t, svc, subject, body)
+				want := plugin.DefinitionUnsupported
+				if scenario == "json" {
+					want = plugin.DefinitionSupported
+				}
+				if report.Status != want || !slicesContains(report.Checked, "provider_write_definition") || facts.calls != 4 {
+					t.Fatalf("report=%+v facts calls=%d", report, facts.calls)
+				}
+				for _, diagnostic := range report.Diagnostics {
+					if diagnostic.Code == "provider_definition_check_not_available" {
+						t.Fatal("registered protocol checker was skipped")
+					}
+					if diagnostic.Status == plugin.DefinitionUnsupported && (diagnostic.TargetField != "payload" || diagnostic.ConfigPath != "/config/transforms/0/fields/0") {
+						t.Fatalf("field location lost: %+v", diagnostic)
+					}
+				}
+			})
+		}
+	}
+}
 func TestConfigCheckBindsFullRequestAndStructuralFacts(t *testing.T) {
 	svc, f, subject, body := configCheckFixture(t)
 	report := checkFixtureReport(t, svc, subject, body)

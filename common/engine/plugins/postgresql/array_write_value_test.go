@@ -21,7 +21,7 @@ func TestPostgresArrayWriteValue(t *testing.T) {
 		{`{a,NULL,"NULL",""}`, `{a,NULL,"NULL",""}`},
 		{`{null,NuLl,"null", a b }`, `{null,NuLl,"null", a b }`},
 	} {
-		got, err := postgresWriteValue(tc.value, datatype.FieldTypeArray)
+		got, err := ProtocolTableWriteValue(tc.value, datatype.FieldTypeArray)
 		if err != nil || got != tc.want {
 			t.Fatalf("%#v: got %#v %v, want %#v", tc.value, got, err, tc.want)
 		}

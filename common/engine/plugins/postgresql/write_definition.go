@@ -15,12 +15,31 @@ import (
 var _ plugin.TableWriteDefinitionChecker = (*PostgreSQLPlugin)(nil)
 
 func (p *PostgreSQLPlugin) CheckTableWriteDefinition(definition plugin.TableWriteDefinition) plugin.TableWriteDefinitionReport {
+	return p.checkTableWriteDefinition(definition, true)
+}
+
+// CheckNonSpatialTableWriteDefinition uses the same physical rules for
+// certified protocol writers whose Provider explicitly excludes spatial data.
+func (p *PostgreSQLPlugin) CheckNonSpatialTableWriteDefinition(definition plugin.TableWriteDefinition) plugin.TableWriteDefinitionReport {
+	return p.checkTableWriteDefinition(definition, false)
+}
+
+func (p *PostgreSQLPlugin) checkTableWriteDefinition(definition plugin.TableWriteDefinition, spatialAllowed bool) plugin.TableWriteDefinitionReport {
 	report := plugin.TableWriteDefinitionReport{Checks: []plugin.TableWriteDefinitionCheck{}}
 	add := func(name, check string, status plugin.DefinitionCheckStatus, code, physical string) {
 		report.Checks = append(report.Checks, plugin.TableWriteDefinitionCheck{Field: name, Check: check, Status: status, Code: code, PhysicalType: physical})
 	}
 	if len(definition.Fields) == 0 {
 		add("", "target_definition", plugin.DefinitionUnsupported, "fields_required", "")
+	}
+	spatialColumns := map[string]bool{}
+	if !spatialAllowed && definition.SpatialInfo != nil && definition.SpatialInfo.IsSpatial() {
+		if len(definition.SpatialInfo.GeometryColumnNames()) == 0 {
+			add("", "target_definition", plugin.DefinitionUnsupported, "field_definition_unsupported", "")
+		}
+		for _, name := range definition.SpatialInfo.GeometryColumnNames() {
+			spatialColumns[strings.TrimSpace(name)] = true
+		}
 	}
 	seen := map[string]bool{}
 	for _, binding := range definition.Fields {
@@ -32,6 +51,10 @@ func (p *PostgreSQLPlugin) CheckTableWriteDefinition(definition plugin.TableWrit
 			continue
 		}
 		seen[field.Name] = true
+		if !spatialAllowed && (datatype.IsSpatialFieldType(field.Type) || spatialColumns[field.Name]) {
+			add(field.Name, "target_definition", plugin.DefinitionUnsupported, "field_definition_unsupported", "")
+			continue
+		}
 		physical, err := postgresSQLTypeForField(field, definition.SpatialInfo)
 		if err != nil {
 			code := "field_definition_unsupported"
@@ -50,7 +73,7 @@ func (p *PostgreSQLPlugin) CheckTableWriteDefinition(definition plugin.TableWrit
 		}
 		add(field.Name, "target_definition", status, code, physical)
 		if binding.Constant != nil {
-			encoded, err := postgresWriteValue(binding.Constant.Value, field.Type)
+			encoded, err := ProtocolTableWriteValue(binding.Constant.Value, field.Type)
 			constantStatus, constantCode := plugin.DefinitionSupported, "constant_encoding_supported"
 			if err == nil && encoded != nil {
 				// Configuration constants contain JSON values. Do not call custom
@@ -118,6 +141,14 @@ func (p *PostgreSQLPlugin) CheckTableWriteDefinition(definition plugin.TableWrit
 					status, code = plugin.DefinitionUnsupported, "existing_column_incompatible"
 				}
 				add(field.Name, "existing_target", status, code, physical)
+			}
+		}
+	}
+	if !spatialAllowed && definition.SpatialInfo != nil && definition.SpatialInfo.IsSpatial() {
+		for _, name := range definition.SpatialInfo.GeometryColumnNames() {
+			name = strings.TrimSpace(name)
+			if !seen[name] {
+				add(name, "target_definition", plugin.DefinitionUnsupported, "field_definition_unsupported", "")
 			}
 		}
 	}

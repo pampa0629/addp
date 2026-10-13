@@ -18,11 +18,13 @@ ClickHouse session 与批量 INSERT 使用同一共享 JSON 编码，按打开�
 
 达梦的 `json` 表格写入沿用 `CLOB`，INSERT session 与 MERGE upsert 共用 `plugins/shared` 的 JSON 编码契约，在当前批次第一条写入 SQL 前校验全部行；编码后的 SQL NULL 遵守非空约束。原生 array／空间类型仍拒绝，bytes 保留 BLOB 绑定。`make test-common-dameng` 在固定官方介质与驱动的 Linux ARM64 Docker 进程中验证真实 CLOB/BLOB、幂等 MERGE 和 replace Abort 回滚，合成表逐个清理并核验零残留；宿主无官方驱动时拒绝数据面操作。该入口不登记 Hosted，也不证明生产 License 或正式部署认证。
 
+openGauss 的独立原生 MERGE 与 PostgreSQL COPY／INSERT 共用 `postgresql.ProtocolTableWriteValue`，不再原样绑定容器。字段类型只来自 upsert options；JSON、SQL NULL／JSON null、一维 TEXT[] 及 BYTEA 沿用同一协议编码，整批编码与非空校验先于目标连接，错误含行和字段。批次元数据不补全或覆盖目标类型，空间目标仍拒绝。`make test-common-opengauss` 的既有 Hosted-only Linux x86_64 官方介质门禁自动发现 COPY、INSERT session 与 MERGE 的真实 JSONB／TEXT[]／BYTEA 回归，覆盖大数、64 KiB 文本、NULL、幂等 MERGE 和失败批次无新增行；本地只用标准 PostgreSQL 类型写入门禁复核被复用编码，不将其计为真实 openGauss 验证。
+
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
 PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素，nil 容器为 SQL NULL、非 nil 空容器为空数组。Go 切片／数组及 PG 读取返回的数组文本在 Provider 内统一校验和编码；拒绝对象、嵌套数组、数字、布尔、非法 UTF-8／NUL，不隐式字符串化或改成 JSON。明确的非字符串 `ElementType` 在 DDL 前拒绝；未声明时逐值检查，不能据此证明源结构已知。PG 原生读取保留声明的数组元素类型，包含带长度／精度的数组，防止数组文本丢失类型证据；已有目标列严格匹配 `text[]`。
 
-`TableWriteDefinitionChecker` 提供不接收连接或业务行的纯定义检查；PostgreSQL 将物理类型映射、数组／decimal 声明、已知常量编码及既有目标列兼容规则用于同一报告。源字符串不保证是 JSON 文档，原生数组文本也不会因目标标注 `json` 自动转换；这些情况明确返回 `unknown`。真实 Prepare 复用该检查，Transfer 在 native target 的删除／准备之前拒绝确定不支持的目标定义。此检查不证明数据库权限、实时结构、扩展安装或逐行业务值合法，不能保证 replace 全流程回滚。`make test-transfer-postgres` 使用合成数组表及哨兵目标验证拒绝发生于删除之前，既有 Common PostgreSQL 门禁继续覆盖 JSONB／TEXT[] 编码。
+`TableWriteDefinitionChecker` 提供不接收连接或业务行的纯定义检查；openGauss 与 KingbaseES 转发同一 PostgreSQL 协议物理检查并拒绝 geometry／空间声明，Transfer 的既有只读配置预检与删除前校验自动消费，无引擎名单或权限变更。PostgreSQL 将物理类型映射、数组／decimal 声明、已知常量编码及既有目标列兼容规则用于同一报告。源字符串不保证是 JSON 文档，原生数组文本也不会因目标标注 `json` 自动转换；这些情况明确返回 `unknown`。真实 Prepare 复用该检查，Transfer 在 native target 的删除／准备之前拒绝确定不支持的目标定义。此检查不证明数据库权限、实时结构、扩展安装或逐行业务值合法，不能保证 replace 全流程回滚。`make test-transfer-postgres` 使用合成数组表及哨兵目标验证拒绝发生于删除之前，既有 Common PostgreSQL 门禁继续覆盖 JSONB／TEXT[] 编码。
 
 只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`，同时验证真实 JSONB 与 TEXT[] 的 COPY session、批量 COPY、INSERT、upsert。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
 
