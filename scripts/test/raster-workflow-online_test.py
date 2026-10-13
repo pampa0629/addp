@@ -41,7 +41,7 @@ class Client:
         self.calls = []
         self.executions = {}
         self.source = {'id': 10, 'item_type': 'object', 'full_name': 'raster-source/source.tif', 'fingerprint': 'source-fp'}
-        self.target = {'id': 20, 'item_type': 'object', 'full_name': 'raster-target/result.cog.tif', 'fingerprint': 'target-fp',
+        self.target = {'id': 20, 'item_type': 'object', 'full_name': 'raster-target/result.cog.tif', 'fingerprint': 'target-fp', 'size_bytes': 1024,
                        'attributes': {'item': {'format': 'tiff'}, 'type_info': {'media': {'width': 256, 'height': 256}},
                                       'format_info': {'tiff': {'profile': 'cog', 'is_tiled': True, 'has_overviews': True}},
                                       'capabilities': {'spatial': {'srid': 4326, 'extent': [110, 17.76, 112.56, 20.32]}}}}
@@ -258,6 +258,50 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_all_confirmed_writes_archive_strict_three_party_sizes(self):
+        report = self.run_scene()
+        records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]
+        # 28 final single rasters plus the initial replaced raster, eight tile writes,
+        # and six confirmed tiles across the three failed executions.
+        self.assertEqual(len(records), 43)
+        self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 38)
+        for sizes in records:
+            self.assertEqual(set(sizes), {'artifact_size_bytes', 'object_size_bytes', 'data_item_size_bytes'})
+            self.assertTrue(all(type(value) is int and value > 0 for value in sizes.values()))
+            self.assertEqual(len(set(sizes.values())), 1)
+        self.assertNotIn('run-2', report['size_evidence'])
+
+    def test_basic_spatial_grid_and_multiband_reject_all_three_size_faults(self):
+        cases = [('result', 'verify-create'), ('result', 'verify-replace'),
+                 ('mosaic-first', 'verify-mosaic-first'), ('clip-polygon', 'verify-clip-polygon'),
+                 ('multiband-alpha', 'verify-multiband-alpha')]
+        for name, action in cases:
+            for owner in ('artifact', 'physical', 'item'):
+                for value in (1024.0, True, 0, -1, 1025, None):
+                    with self.subTest(name=name, action=action, owner=owner, value=value):
+                        self.setUp()
+                        if owner == 'artifact':
+                            def mutate(execution):
+                                metadata = execution['metadata']
+                                resource = metadata.get('outputs', {}).get('save', {}).get('resource', {})
+                                matches = resource.get('locator', '').endswith('/'+name+'.cog.tif?type=object')
+                                replace = resource.get('write_mode') == 'replace'
+                                if matches and (name != 'result' or replace == (action == 'verify-replace')):
+                                    metadata['result']['final_result']['size_bytes'] = value
+                                return execution
+                            self.client.mutate = mutate
+                        def physical(repo, env, current_action):
+                            payload = self.physical(repo, env, current_action)
+                            if current_action == action:
+                                if owner == 'physical': payload['size_bytes'] = value
+                                if owner == 'item':
+                                    for target in self.client.targets.values():
+                                        if target['full_name'] == 'raster-target/'+name+'.cog.tif':
+                                            target['size_bytes'] = value
+                            return payload
+                        with self.assertRaisesRegex(m.SuiteError, 'positive integer'):
+                            self.run_scene(physical)
+
     def test_update_keeps_base_grid_and_both_real_source_lineage(self):
         report=self.run_scene()
         case=report['update_cases'][0]
@@ -536,7 +580,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.physical_actions.append(action)
         if action.startswith('verify-mosaic-'):
             overlap = action.removeprefix('verify-mosaic-')
-            return {'sha256': 'spatial-' + overlap, 'cog_valid': True, 'has_overviews': True, 'source_unchanged': True,
+            return {'size_bytes': 1024, 'sha256': 'spatial-' + overlap, 'cog_valid': True, 'has_overviews': True, 'source_unchanged': True,
                     'valid_pixels': 65534, 'invalid_pixels': 2, 'overlap': overlap,
                     'baseline_sha256': 'new', 'first_sha256': 'spatial-first'}
         case_name = action.removeprefix('verify-')
@@ -573,7 +617,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     'invalid_pixels': expectation['width'] * expectation['height'] - expectation['valid_pixels'],
                     'partial_alpha_pixels': 64 if case_name == 'multiband-bilinear' else 3 if case_name == 'multiband-alpha' else 0,
                     'band_nodata': expectation['band_nodata'], 'band_nodata_is_nan': expectation['band_nodata'] is None}
-            return {**extra, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
+            return {**extra, 'size_bytes': 1024, 'sha256': case_name, 'case_name': case_name, 'preserved_sha256': preserved,
                     'cog_valid': True, 'has_overviews': case_name=='clip-polygon' or 'bilinear' in case_name or 'fractional' in case_name or 'finite' in case_name,
                     'source_unchanged': True, 'valid_pixels': m.fixture.computed_expectation(case_name)['valid_pixels']}
         if action == 'verify-tiles-failure' or action in m.fixture.CLEANUP_ACTIONS:
@@ -607,7 +651,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         if action == 'verify-analysis':
             return {'sha256': 'new', 'cog_valid': True, 'source_unchanged': True, 'valid_pixels': 65535,
                     'first_sha256': 'spatial-first', 'last_sha256': 'spatial-last'}
-        return {'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True, 'has_overviews': True,
+        return {'size_bytes': 1024, 'sha256': 'new' if action == 'verify-replace' else 'original', 'cog_valid': True, 'has_overviews': True,
                 'source_unchanged': True, 'valid_pixels': 65535}
 
     def run_scene(self, physical=None):

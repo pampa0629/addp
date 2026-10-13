@@ -1734,6 +1734,9 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
     if load_suite_registry(repository)["raster-workflow-capacity"].nightly:
         raise RegistrationError("raster capacity requires real evidence before schedule registration")
     required = {
+        "scripts/test/raster-workflow-online.py": (
+            "def strict_sizes(", "type(value) is not int", "len(set(sizes)) != 1", "size_evidence",
+        ),
         "scripts/test/online-hosted-raster-capacity-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow-capacity',
             '--cpus 4 --memory 2g --memory-swap 2g', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=10800',
@@ -1746,7 +1749,7 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
         ),
         "scripts/test/raster-workflow-capacity-online.py": (
             'CACHE_VALUES=(64,128,256)', 'REPETITIONS=2', 'validate_measurement', 'wait_applied',
-            'memory.peak', 'oom_kill', 'strict_sizes(artifact,actual,item)', 'type(value) is not int',
+            'memory.peak', 'oom_kill', 'scene.strict_sizes(artifact,actual,item)',
             "physical('purge',names)", 'capacity-progress.json', 'wait_lineage', "'runtime_container_id'",
         ),
         "business/scripts/online-raster-capacity-fixture.py": (

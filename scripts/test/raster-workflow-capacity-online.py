@@ -36,12 +36,6 @@ def expectation():
             'transform':[600000,20,0,4000020,0,-20],'extent':[600000,3890220,709800,4000020],'band_nodata':None}
 
 
-def strict_sizes(artifact,physical,item):
-    sizes=(artifact['size_bytes'],physical['size_bytes'],item['size_bytes'])
-    if any(type(value) is not int or value<=0 for value in sizes) or len(set(sizes))!=1:
-        raise scene.SuiteError('capacity artifact/object/DataItem sizes must be equal positive integers')
-
-
 def owned_runtime(image):
     container=json.loads(fixture.shared.command(['docker','inspect',RUNTIME]))[0]
     if (container['Config']['Labels'].get('com.addp.online-runtime')!=SUITE
@@ -245,7 +239,7 @@ def run(env):
                 scans.add(scan);scene.wait_execution(client,'meta',scan,600)
                 item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'capacity target')
                 artifact=execution['metadata']['result']['final_result'];actual=native['outputs'][name]
-                strict_sizes(artifact,actual,item);scene.validate_target_item(item,expectation(),actual)
+                scene.strict_sizes(artifact,actual,item);scene.validate_target_item(item,expectation(),actual)
                 graph=scene.wait_lineage(client,source['id'],item['id'],identifier,120)
                 monitor=client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload
                 if monitor.get('status')!='success' or monitor.get('metadata',{}).get('lineage_facts')!=facts:

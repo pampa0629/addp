@@ -23,13 +23,13 @@ class CapacityEvidenceTest(unittest.TestCase):
         return samples, {**metrics, 'cpu_usage_usec': 1_000_000}, metrics
 
     def test_strict_three_party_sizes_reject_coercion_mismatch_and_nonpositive(self):
-        m.strict_sizes(*[{'size_bytes': 123} for _ in range(3)])
+        m.scene.strict_sizes(*[{'size_bytes': 123} for _ in range(3)])
         for index in range(3):
             for value in (123.0, True, '123', 0, -1, 124, None):
                 values = [{'size_bytes': 123} for _ in range(3)]
                 values[index]['size_bytes'] = value
                 with self.subTest(index=index, value=value), self.assertRaises(m.scene.SuiteError):
-                    m.strict_sizes(*values)
+                    m.scene.strict_sizes(*values)
 
     def test_profile_requires_actual_concurrency_queue_drain_no_oom_and_applied_cache(self):
         for limit in (1, 2):

@@ -479,6 +479,13 @@ def validate_raster_artifact(artifact, expectation):
             for item in value: check(item)
     check(artifact)
 
+def strict_sizes(artifact, physical, item):
+    sizes = tuple(facts.get('size_bytes') for facts in (artifact, physical, item))
+    if any(type(value) is not int or value <= 0 for value in sizes) or len(set(sizes)) != 1:
+        raise SuiteError('raster artifact/object/DataItem sizes must be equal positive integers')
+    return dict(zip(('artifact_size_bytes', 'object_size_bytes', 'data_item_size_bytes'), sizes))
+
+
 def validate_target_item(item, expectation, physical_evidence):
     if physical_evidence.get('cog_valid') is not True or not isinstance(physical_evidence.get('has_overviews'),bool):
         raise SuiteError('physical COG layout or overview evidence is incomplete')
@@ -653,11 +660,12 @@ def browser(repository, env, evidence):
 
 
 def queue_output_inspection(pending, client, run_id, source, source_locator, target_engine, target_name,
-                            execution_id, case_name, identity, browser_runner, expectation, physical_evidence, source_locators):
+                            execution_id, case_name, identity, browser_runner, expectation, physical_evidence, source_locators, artifact, size_evidence):
     target = support.find_fixture_item(client, target_engine, 'raster-target/' + target_name, 'COG target')
     # No manual target scan or collect: both facts must converge automatically.
     target = obj(client.request('GET', f'/api/v1/meta/items/{target["id"]}', (200,)).payload, 'target DataItem')
     validate_target_item(target, expectation, physical_evidence)
+    size_evidence.setdefault(execution_id, {})[target_name] = strict_sizes(artifact, physical_evidence, target)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/{target_name}?type=object'
     evidence = {
         'run_id': run_id, 'principal_id': identity['principal_id'],
@@ -692,6 +700,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '180'))
     identity = validate_identity(client, tenant)
     pending_outputs = []
+    size_evidence = {}
     engines = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'workflow engines')
     runtime = [item for item in engines if item.get('engine_type') == 'geopython_workflow' and item.get('connection_status') == 'online']
     if len(runtime) != 1:
@@ -729,11 +738,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('failed create modified the existing target')
         if mode == 'replace' and native.get('sha256') == physical_evidence[0].get('sha256'):
             raise SuiteError('replace did not change the target pixels')
+        if status == 'success':
+            target = support.find_fixture_item(client, target_engine, 'raster-target/result.cog.tif', 'band-math target')
+            size_evidence[identifier] = {'result.cog.tif': strict_sizes(metadata['result']['final_result'], native, target)}
         physical_evidence.append(native)
         executions.append({'execution_id': identifier, 'write_mode': mode, 'status': status})
     lineage, browser_evidence = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
         target_engine, 'result.cog.tif', executions[-1]['execution_id'], 'band-math', identity,
-        browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator])
+        browser_runner, fixture.artifact_expectation(), physical_evidence[-1], [source_locator], execution['metadata']['result']['final_result'], size_evidence)
     spatial_source = support.find_fixture_item(client, source_engine, 'raster-source/spatial.tif', 'spatial source')
     spatial_locator = support.build_item_locator(source_engine, spatial_source)
     spatial_cases = []
@@ -756,7 +768,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('last mosaic modified the first artifact or did not change overlap pixels')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], spatial_source, spatial_locator,
             target_engine, name, identifier, 'mosaic-' + overlap, identity,
-            browser_runner, fixture.artifact_expectation(True), native, [spatial_locator])
+            browser_runner, fixture.artifact_expectation(True), native, [spatial_locator], execution['metadata']['result']['final_result'], size_evidence)
         spatial_cases.append({'case_name': 'mosaic-' + overlap, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
     analysis_cases = []
@@ -819,7 +831,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 or native.get('band_nodata_is_nan') is not (expectation['band_nodata'] is None)):
                 raise SuiteError('multiband independent validity/partial alpha evidence is incomplete')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator,
-            target_engine, name, identifier, case_name, identity, browser_runner, expectation, native, [case_locator])
+            target_engine, name, identifier, case_name, identity, browser_runner, expectation, native, [case_locator], execution['metadata']['result']['final_result'], size_evidence)
         cases = multiband_cases if case_name in fixture.MULTIBAND_CASES else grid_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
@@ -844,15 +856,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         artifact = execution['metadata']['result']['final_result']
         if (native.get('preserved_sha256') != preserved or native.get('overview_sizes') != expected_levels
             or native.get('band_valid_pixels') != [65535, 65535]
-            or type(artifact.get('size_bytes')) is not int
-            or positive(native.get('size_bytes'), 'physical utility size') != artifact.get('size_bytes')
             or any(band.get('overviews') != expected_levels for band in artifact['bands'])):
-            raise SuiteError('utility workflow lost physical size, band validity, explicit levels or existing artifacts')
+            raise SuiteError('utility workflow lost band validity, explicit levels or existing artifacts')
         graph, browser_report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator,
-            target_engine, name, identifier, case_name, identity, browser_runner, fixture.utility_expectation(), native, [source_locator])
+            target_engine, name, identifier, case_name, identity, browser_runner, fixture.utility_expectation(), native, [source_locator], artifact, size_evidence)
         utility_sources[case_name] = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'utility source')
-        if positive(utility_sources[case_name].get('size_bytes'), 'utility DataItem size') != native['size_bytes']:
-            raise SuiteError('utility DataItem size differs from the physical artifact')
         utility_cases.append({'case_name': case_name, 'execution_id': identifier,
             'automatic_target_scan_execution_id': scan_id, 'lineage': graph, 'physical': native, 'browser': browser_report})
         preserved[name] = native['sha256']
@@ -923,19 +931,13 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or any(band.get('overviews') != levels for band in artifact['bands'])
             or native.get('valid_pixels') != expectation['valid_pixels']
             or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
-            or native.get('band_valid_pixels') != expectation.get('band_valid_pixels', [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES)))
-            or type(artifact.get('size_bytes')) is not int
-            or type(native.get('size_bytes')) is not int
-            or native['size_bytes'] <= 0
-            or native['size_bytes'] != artifact['size_bytes']):
-            raise SuiteError('multi-raster physical size, bands, colour, validity or preservation evidence differs')
+            or native.get('band_valid_pixels') != expectation.get('band_valid_pixels', [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES)))):
+            raise SuiteError('multi-raster bands, colour, validity or preservation evidence differs')
         target = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'multi-raster target')
-        if type(target.get('size_bytes')) is not int or target['size_bytes'] != native['size_bytes']:
-            raise SuiteError('multi-raster DataItem size differs from the physical artifact')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
             graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], case_source, case_locator, target_engine,
-                name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators)
+                name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators, artifact, size_evidence)
             graphs.append(graph)
             browsers.append(report)
         cases = update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
@@ -1005,13 +1007,10 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             physical_tile = obj(native['tiles'][key], 'physical tile')
             fact = manifest['tiles'][key]
             if (physical_tile.get('compression') != compression
-                or positive(physical_tile.get('size_bytes'), 'physical tile size') != fact['size_bytes']
                 or physical_tile.get('valid_pixels') != fixture.tile_expectation(key)['valid_pixels']
                 or [band.get('overviews') for band in fact['bands']] != [physical_tile.get('overview_sizes')]*2):
-                raise SuiteError('tile physical size, validity or overview facts differ')
+                raise SuiteError('tile physical validity or overview facts differ')
             target = support.find_fixture_item(client, target_engine, f'raster-target/tiles-basic/{key}.tif', 'tile target')
-            if positive(target.get('size_bytes'), 'tile DataItem size') != fact['size_bytes']:
-                raise SuiteError('tile DataItem size differs from artifact and physical size')
             if mode == 'replace':
                 original = tiling_results['create']['cases'][len(tiling_cases)]
                 if (target['id'] != original['browser']['target_item_id']
@@ -1022,7 +1021,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 return browser_runner(repo, browser_env, {**evidence, 'target_locators': list(locators.values())})
             graph, report = queue_output_inspection(pending_outputs, client, env['ADDP_ONLINE_TEST_RUN_ID'], source, source_locator, target_engine,
                 'tiles-basic/'+key+'.tif', identifier, ('tiles-' if mode == 'create' else 'tiles-replace-')+key, identity, tile_browser,
-                fixture.tile_expectation(key), physical_tile, [source_locator])
+                fixture.tile_expectation(key), physical_tile, [source_locator], fact, size_evidence)
             tiling_cases.append({'tile_key': key, 'execution_id': identifier, 'artifact': fact,
                 'physical': physical_tile, 'data_item_size_bytes': target['size_bytes'],
                 'lineage': graph, 'browser': report})
@@ -1069,13 +1068,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         for key, fact in manifest['tiles'].items():
             tile = obj(native['tiles'][key], 'confirmed physical tile')
             if (tile.get('cog_valid') is not True or tile.get('compression') != 'DEFLATE'
-                or type(tile.get('size_bytes')) is not int or tile['size_bytes'] != fact['size_bytes']
                 or tile.get('valid_pixels') != fixture.tile_expectation(key)['valid_pixels']
                 or [band.get('overviews') for band in fact['bands']] != [tile.get('overview_sizes')]*2):
                 raise SuiteError('confirmed partial tile physical facts differ')
             target = support.find_fixture_item(client, target_engine, 'raster-target/'+prefix+'/'+key+'.tif', 'confirmed partial tile')
-            if type(target.get('size_bytes')) is not int or target['size_bytes'] != fact['size_bytes']:
-                raise SuiteError('partial tile DataItem size differs from artifact and physical size')
+            size_evidence.setdefault(identifier, {})[prefix+'/'+key+'.tif'] = strict_sizes(fact, tile, target)
             confirmed_items[key] = {'target_item_id': target['id'], 'data_item_size_bytes': target['size_bytes']}
         items = array(client.request('GET', f'/api/v1/meta/engines/{target_engine}/items', (200,)).payload, 'target items')
         partial_names = [item['full_name'] for item in items if item.get('full_name', '').startswith('raster-target/'+prefix+'/') and item.get('item_type') == 'object']
@@ -1087,7 +1084,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
-            'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
+            'physical': physical_evidence, 'size_evidence': size_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
