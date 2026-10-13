@@ -1926,12 +1926,18 @@ Prometheus T2 实际完成 mTLS 采样、固定资源与进程目录/趋势、�
 
 ### 10.59 资源总览独立 Hosted 验收补齐
 
-沿既有手动 `platform-node-metrics` suite 准备 10.58 的单真实主机验收，不增加部署或身份路线。拟将《测试与验收规范》第 220 行的临时平台管理员限定测试用途明确补充为读取唯一 `GET /api/v1/monitor/platform/resource_overview`；它仅派生汇总当次已纳管节点的 CPU/内存与采集状态，没有新增资源类型、Tenant 数据或 IAM 操作。现行条款列明节点查询，完整集合聚合接口尚未明确列入，须用户确认后修订该测试条款，再执行真实 Hosted；确定性回归及可审查场景准备可以继续。Prometheus 的独立服务身份及拒绝边界保持原契约。
+沿既有手动 `platform-node-metrics` suite 准备 10.58 的单真实主机验收，不增加部署或身份路线。用户已于 2026-10-13 在总览会话明确同意新增总览接口的限定测试用途，规范与确认事实由该会话同步；本会话继续独占 Online 场景与本节证据。唯一 `GET /api/v1/monitor/platform/resource_overview` 仅派生汇总当次已纳管节点的 CPU/内存与采集状态，没有新增资源类型、Tenant 数据或 IAM 操作；Prometheus 的独立服务身份及拒绝边界保持原契约。真实执行使用同时包含确认条款和场景代码的已推送冻结源码，不再次请求同一授权。
 
 Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、两项覆盖率与该主机有效排名、身份/版本/预算/样本时间绑定；接入已有预算降低、中心中断、节点停用、恢复新样本、目标停用和删除阶段，证明整体预算拒绝、故障不伪造成功、停采不复用历史及恢复读取。Console 真实 iframe 增加总览自然刷新、URL/iframe 保持、关闭后重载及无后台请求、榜单到同一主机详情后返回、无权限入口拒绝。多主机 TOP5 排序、空集合、部分缺失/过期与真实撤权不由单主机成功结果推定，沿已有 T1/T3 或后续真实场景分别记录。
+
+确认后的补齐沿原来源与控制面故障，不增加来源、身份或故障路线：来源真实停采时总览须保留完整纳管/连接计数且采集状态为 failed；CPU/内存独立按有效、缺失或过期计数，只有仍有新鲜证据的值进入榜单，不把 up=0 转成零使用率。来源恢复后两项排名均须绑定恢复时刻后的新样本。控制面发现传输中断时，已有最后成功目标与独立采样继续，总览仍须完整且有效；沿原恢复准入核对后继续。测试变更仅扩大现有三项 Online 文件/本节的断言，标准门禁与销毁所有权不变。
 
 实施前门禁确认：仅现有 Online browser、runner/回归和本设计变更，无产品 API/Swagger、IAM 或生命周期修改。现有 `make test-node-metrics-online-runner` 覆盖 Python 回归、正式身份夹具及显式 ESM 语法检查；`make test-online-runner`、Platform consistency 和既有手动 Hosted Job 已登记，无新增依赖或入口。保留浏览器单测 240 秒、子进程 300 秒及安全计时证据，不以延长期限代替成功断言。另运行默认 `make test-changed` 并分别报告混合工作区的预检结果。仅提交本批验收改动，用户推送后才能运行包含本批代码的冻结源码 T4；不重启个人环境。
 
 2026-10-13 场景准备已完成：新增严格总览证据校验与三项回归，验证完整单主机范围、身份/版本、两项覆盖率、有效零、样本新鲜度、停用不复用榜单及浏览器生命周期；预算失败同时拒绝任何部分 inventory/rankings。首跑旧预算夹具缺少总览请求分支，更新后最终沿 Node 24 标准入口 `make test-node-metrics-online-runner` 退出 0，50 项 Python 回归、正式 System Metrics 身份夹具及 ESM 检查通过，日志 `/tmp/addp-resource-overview-online-runner-final.log`。默认 `make test-changed` 对 78 个混合变更文件扩散至 27 个模块，因外部 PostgreSQL/MySQL/OceanBase 测试参数缺失在预检退出 2，后续门禁未执行、不计通过，日志 `/tmp/addp-resource-overview-online-changed.log`。任务范围 `git diff --check` 通过。
 
-已核实冻结源码 `5659f1cfd12b0f2541b14f3e0158efb15e19e801` 的 [Platform CI 38350331868](https://github.com/pampa0629/addp/actions/runs/38350331868) completed/success，33 项任务全部通过，包含新总览产品代码；该结果不覆盖本批未提交的 Online 场景。真实 Hosted 尚未执行，限定身份用途由总览会话统一向用户确认后再修订测试条款。本批只补中心故障及停采/恢复的总览读取，原来源故障和控制面故障段没有新增总览请求，不能借用原节点/进程结果作为总览证据。新增自然刷新与关闭等待至少约 31 秒，原单测期限不变，真实执行后必须核对安全计时报告；目前不能声称完整总览 T4 或生产 T5 通过。
+已核实冻结源码 `5659f1cfd12b0f2541b14f3e0158efb15e19e801` 的 [Platform CI 38350331868](https://github.com/pampa0629/addp/actions/runs/38350331868) completed/success，33 项任务全部通过，包含新总览产品代码；该结果不覆盖本批 Online 场景。准备提交 `5b856df7e` 当时，真实 Hosted 尚未执行且限定身份用途待确认；该提交只补中心故障及停采/恢复的总览读取，原来源故障和控制面故障段没有新增总览请求，不能借用原节点/进程结果作为总览证据。新增自然刷新与关闭等待至少约 31 秒，原单测期限不变，真实执行后必须核对安全计时报告；目前不能声称完整总览 T4 或生产 T5 通过。
+
+授权后来源/控制面补齐：总览会话已独立提交限定用途规范 `d4e36e3f6`。本轮在原故障阶段新增总览请求：真实 up=0 后验证 failed 采集计数及 CPU/内存各自质量；缺失/过期不排名，仍有效的排名继续检查新鲜度。恢复后等待 CPU 完整窗口和两项恢复时刻后的样本；发现控制传输故障期间核对完整有效总览，随后以 Prometheus 实际消费节点停用与重新启用的新版本，以及新样本总览，证明该传输恢复，而非仅凭容器启动声明恢复。新增一项质量回归覆盖 failed 与有效/缺失/过期组合、错误连接计数、覆盖率、旧值入榜及正常路径不放宽。确定性标准入口最终验证结果与真实 Hosted 状态继续分别记录。
+
+本轮最终 `make test-node-metrics-online-runner` 退出 0，51 项回归、正式 System Metrics 夹具与显式 ESM 检查通过，日志 `/tmp/addp-resource-overview-source-runner-final.log`。默认 `make test-changed` 在 138 个混合变更文件、27 个 Owner 外部数据库参数预检退出 2，后续未运行、不计通过，日志 `/tmp/addp-resource-overview-source-changed.log`。任务范围 diff 检查通过，未改产品 API/Swagger、IAM、浏览器原期限或生命周期；未重启个人服务。真实 Hosted 尚未执行，待用户推送包含上述条款与两批 Online 场景的 main 后沿唯一 suite 验收，届时再核对各故障阶段、单主机范围、安全计时、证据归档和零残留。

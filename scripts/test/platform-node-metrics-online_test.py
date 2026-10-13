@@ -74,6 +74,34 @@ class MetricsProtocolTest(unittest.TestCase):
                 with self.subTest(enabled=enabled, mutate=mutate), self.assertRaises(ONLINE.SuiteError):
                     ONLINE.assert_resource_overview(bad, node, 2, "Online host", disconnected=True)
 
+    def test_overview_source_failure_keeps_scope_and_only_ranks_fresh_valid_evidence(self):
+        node = {"node_id": "node-id", "version": 1, "enabled": True}
+        for state in ("valid", "no_data", "stale"):
+            failed = self.overview_reply()
+            failed["inventory"]["collection"].update(collecting=0, failed=1)
+            rank = failed["rankings"][0]
+            rank["coverage"].update(valid=int(state == "valid"), no_data=int(state == "no_data"), stale=int(state == "stale"), complete=state == "valid")
+            if state != "valid": rank["top"] = []
+            with self.subTest(state=state):
+                ONLINE.assert_resource_overview(failed, node, 2, "Online host", source_failed=True)
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_resource_overview(failed, node, 2, "Online host")
+            mutations = [lambda v: v["inventory"]["collection"].update(collecting=1, failed=0),
+                         lambda v: v["inventory"].update(connected=0, not_connected=1),
+                         lambda v: v["rankings"][0]["coverage"].update(not_connected=1),
+                         lambda v: v["rankings"][0]["coverage"].update(expected=2),
+                         lambda v: v["rankings"][0]["coverage"].update(no_data=True),
+                         lambda v: v["rankings"][0]["coverage"].update(complete=state != "valid")]
+            if state == "valid":
+                mutations.append(lambda v: v["rankings"][0]["top"][0].update(sampled_at="2026-10-05T23:59:59Z"))
+            else:
+                mutations.append(lambda v: v["rankings"][0].update(top=self.overview_reply()["rankings"][0]["top"]))
+            for mutate in mutations:
+                bad = copy.deepcopy(failed); mutate(bad)
+                with self.subTest(state=state, mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_resource_overview(bad, node, 2, "Online host", source_failed=True)
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.assert_resource_overview(self.overview_reply(), node, 2, "Online host", source_failed=True, disconnected=True)
+
     def test_overview_browser_requires_real_refresh_restore_scope_and_screenshot(self):
         expected = {"node": {"node_id": "node-id", "version": 1}, "display_name": "Online host", "policy_version": 2}
         flags = ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests", "detail_and_back", "negative_no_reads")

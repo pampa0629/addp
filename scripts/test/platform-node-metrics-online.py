@@ -667,7 +667,7 @@ def check_optional_process_source(admin, machine, directory, instances, tenant_c
     return current
 
 
-def assert_resource_overview(value, node, policy_version, display_name, disconnected=False, after=0):
+def assert_resource_overview(value, node, policy_version, display_name, disconnected=False, after=0, source_failed=False):
     """The disposable suite owns exactly one real host; never invent TOP5 peers."""
     require(isinstance(value, dict) and set(value) == {"scope", "evaluated_at", "queried_at", "policy_version", "lookback_seconds", "inventory", "rankings"}, "overview projection mismatch")
     evaluated, completed = utc_timestamp(value["evaluated_at"]), utc_timestamp(value["queried_at"])
@@ -675,7 +675,9 @@ def assert_resource_overview(value, node, policy_version, display_name, disconne
             and completed >= evaluated and type(value["policy_version"]) is int and value["policy_version"] == policy_version
             and value["lookback_seconds"] == 300, "overview scope, time or budget mismatch")
     inventory = value["inventory"]
-    collection = {key: int(key == ("not_connected" if disconnected else "collecting")) for key in ("collecting", "failed", "stale", "no_sample", "not_connected")}
+    require(not (disconnected and source_failed), "source failure must remain connected to its current target")
+    state = "not_connected" if disconnected else "failed" if source_failed else "collecting"
+    collection = {key: int(key == state) for key in ("collecting", "failed", "stale", "no_sample", "not_connected")}
     wanted = {"managed": 1, "enabled": int(node["enabled"]), "disabled": int(not node["enabled"]),
               "connected": int(not disconnected), "not_connected": int(disconnected), "collection": collection}
     require(isinstance(inventory, dict) and inventory == wanted and all(type(inventory[key]) is int for key in wanted if key != "collection")
@@ -688,10 +690,16 @@ def assert_resource_overview(value, node, policy_version, display_name, disconne
         wanted_coverage = {"expected": 1, "valid": int(not disconnected), "no_data": 0, "stale": 0,
                            "not_connected": int(disconnected), "complete": not disconnected}
         coverage = rank["coverage"]
-        require(isinstance(coverage, dict) and coverage == wanted_coverage and type(coverage["complete"]) is bool
-                and all(type(coverage[k]) is int for k in wanted_coverage if k != "complete"), "overview coverage reused missing or disconnected data")
-        require(isinstance(rank["top"], list) and len(rank["top"]) == int(not disconnected), "overview TOP5 missing or reused history")
-        if disconnected:
+        require(isinstance(coverage, dict) and set(coverage) == set(wanted_coverage) and type(coverage["complete"]) is bool
+                and all(type(coverage[k]) is int and coverage[k] >= 0 for k in wanted_coverage if k != "complete"), "overview coverage types mismatch")
+        if source_failed:
+            require(coverage["expected"] == 1 and coverage["not_connected"] == 0
+                    and coverage["valid"]+coverage["no_data"]+coverage["stale"] == 1
+                    and coverage["complete"] == (coverage["valid"] == 1), "failed source coverage forged a healthy or disconnected scope")
+        else:
+            require(coverage == wanted_coverage, "overview coverage reused missing or disconnected data")
+        require(isinstance(rank["top"], list) and len(rank["top"]) == coverage["valid"], "overview TOP5 missing or reused history")
+        if not coverage["valid"]:
             continue
         row = rank["top"][0]
         require(isinstance(row, dict) and set(row) == {"node", "value", "sampled_at"}, "overview rank exposes extra facts")
@@ -1127,9 +1135,13 @@ def run(base, directory, report):
         eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
         assert_source_process_isolation(admin, prom, processes, report)
+        report["overview_source_failed"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], source_failed=True)
     finally:
+        source_resumed_at = time.time()
         source_action("start")
     eventually(lambda: bool(prom.query("up"+expression+" == 1")), "source recovery")
+    eventually(lambda: resource_query_after(admin, node, target, source_resumed_at, ["node.cpu.busy_percent", "node.memory.used_percent"]), "overview source recovery full-window fresh samples")
+    report["overview_source_recovered"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], after=source_resumed_at)
     report["stage"] = "control-outage-recovery"
     baseline = sum(float(row["value"][1]) for row in prom.query("prometheus_sd_http_failures_total"))
     owned_action("control-tls", "stop")
@@ -1137,8 +1149,10 @@ def run(base, directory, report):
         eventually(lambda: sum(float(row["value"][1]) for row in prom.query("prometheus_sd_http_failures_total")) > baseline, "real control transport failure")
         require(active(), "failed discovery unexpectedly removed the last successful target")
         require(prom.query("up"+expression+" == 1"), "existing source scrape stopped with control plane")
+        report["overview_control_unavailable"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"])
     finally:
         owned_action("control-tls", "start")
+    assert_discovery(machine, target, node["version"], processes)
     report["stage"] = "node-disable-and-resume"
     node = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
@@ -1163,6 +1177,8 @@ def run(base, directory, report):
     eventually(lambda: resource_query_after(admin, node, target, resumed_at, NETWORK_METRICS), "new network evidence after node re-enablement")
     report["node_query_resume_fresh_samples"] = True
     report["overview_node_resumed"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], after=resumed_at)
+    # The center has consumed both removal and this changed owner version, proving the actual SD transport recovered.
+    report["overview_control_recovered"] = report["overview_node_resumed"]
     report["stage"] = "target-disable-and-delete"
     target = admin.request("PUT", target_path, (200,), dict(body, enabled=False, version=target["version"])).payload
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
