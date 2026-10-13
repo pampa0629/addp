@@ -1094,7 +1094,11 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 GeoParquet 不是独立 format。GeoParquet 文件继续使用 `format=parquet + data_type=table`；Parquet footer 中 `geo` key 的原生标准字段写入 `format_info.parquet.geo`，归一化后的主几何列、几何列、拓扑类型、CRS 和文件范围写入 `capabilities.spatial`。几何列在 `type_info.table.fields` 中统一映射为 `geometry`，不得同时保留为 `string` 或 `bytes`。
 
-普通 Parquet 的 Decimal 读取按 footer 的 `DECIMAL(precision, scale)` 解释底层有符号整数，`FieldInfo` 保留 `type=decimal`、原始类型、`precision` 和 `scale`。样本、分页与连续读取统一返回保留 scale 的定点十进制字符串，不经过浮点转换；null 保持 null。现有 parquet-go 0.25.1 支持的物理编码为 `INT32`、`INT64` 和大端补码 `FIXED_LEN_BYTE_ARRAY`；标准允许的 Decimal `BYTE_ARRAY` 尚受该依赖限制，本轮不宣称支持。whole scope 中 Decimal precision 或 scale 不一致时拒绝归并，不按首个文件解释后续值。[编码定义](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#decimal)。该规则修正读取语义，不扩大现有 writer 的精确 Decimal 写出能力。
+普通 Parquet 的 Decimal 读取按 footer 的 `DECIMAL(precision, scale)` 解释底层有符号整数，`FieldInfo` 保留 `type=decimal`、原始类型、`precision` 和 `scale`。样本、分页与连续读取统一返回保留 scale 的定点十进制字符串，不经过浮点转换；null 保持 null。现有 parquet-go 0.25.1 支持的物理编码为 `INT32`、`INT64` 和大端补码 `FIXED_LEN_BYTE_ARRAY`；标准允许的 Decimal `BYTE_ARRAY` 尚受该依赖限制，本轮不宣称支持。whole scope 中 Decimal precision 或 scale 不一致时拒绝归并，不按首个文件解释后续值。[编码定义](https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#decimal)。
+
+Parquet writer 沿用 ADDP 可移植 Decimal 定义范围 `1 <= precision <= 1000`、`0 <= scale <= precision`，必须显式声明 precision，不能为未声明精度的来源选择默认值。precision 不超过 9 时写 `INT32`，不超过 18 时写 `INT64`，其余写满足声明精度的最小宽度 `FIXED_LEN_BYTE_ARRAY`，均带 `DECIMAL` 注解。行值接受精确十进制字符串、`json.Number` 和整数；科学计数法按十进制运算精确缩放。拒绝浮点值、非法文本、超 precision 值及必须舍入才能适配 scale 的值；可以无损移除多余的尾零。null 只允许写入可空 Decimal 字段。普通 Parquet 和 GeoParquet 共用同一 Decimal writer，不保留 Double 写出分支。
+
+当前依赖对固定长度字节列按无符号字节比较，不能据此生成 Decimal 的有符号 min/max。writer 对固定长度 Decimal 列不写范围统计，避免下游基于错误统计跳过数据；精确行数、值与 Decimal 注解仍正常写出，整数物理编码的统计保留。
 
 当前内置 GeoParquet 能力以稳定的 GeoParquet 1.0 / 1.1 为边界：
 

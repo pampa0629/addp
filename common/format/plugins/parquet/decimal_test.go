@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +16,150 @@ import (
 	"github.com/addp/common/format"
 	parquetgo "github.com/parquet-go/parquet-go"
 )
+
+func TestParquetDecimalWriterRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name             string
+		precision, scale int
+		kind             parquetgo.Kind
+		values           []interface{}
+		want             []interface{}
+	}{
+		{"int32", 9, 2, parquetgo.Int32, []interface{}{"9999999.99", "-9999999.99", "1.2500", 0, nil}, []interface{}{"9999999.99", "-9999999.99", "1.25", "0.00", nil}},
+		{"int64", 18, 0, parquetgo.Int64, []interface{}{int64(9007199254740993), "-999999999999999999"}, []interface{}{"9007199254740993", "-999999999999999999"}},
+		{"fixed_19", 19, 2, parquetgo.FixedLenByteArray, []interface{}{json.Number("9007199254740993.01"), "-9007199254740993.01"}, []interface{}{"9007199254740993.01", "-9007199254740993.01"}},
+		{"spark_38", 38, 18, parquetgo.FixedLenByteArray, []interface{}{"12345678901234567890.123456789012345678", "-0.000000000000000001", "0e999999", nil}, []interface{}{"12345678901234567890.123456789012345678", "-0.000000000000000001", "0.000000000000000000", nil}},
+		{"uint64", 20, 0, parquetgo.FixedLenByteArray, []interface{}{uint64(math.MaxUint64)}, []interface{}{"18446744073709551615"}},
+		{"exponents", 10, 2, parquetgo.Int64, []interface{}{json.Number("1.25e2"), "-1e-2", "1e+2", "-0", "0001.20"}, []interface{}{"125.00", "-0.01", "100.00", "0.00", "1.20"}},
+		{"portable_1000", 1000, 500, parquetgo.FixedLenByteArray, []interface{}{strings.Repeat("9", 500) + "." + strings.Repeat("9", 500), "-" + strings.Repeat("9", 500) + "." + strings.Repeat("9", 500)}, []interface{}{strings.Repeat("9", 500) + "." + strings.Repeat("9", 500), "-" + strings.Repeat("9", 500) + "." + strings.Repeat("9", 500)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			p := NewPlugin()
+			writer, err := p.OpenTableWriter(ctx, &buf, &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: tc.precision, Scale: tc.scale, Nullable: true}}}, &format.WriteOptions{ExtraParams: map[string]interface{}{ParquetWriterMaxRowsPerRowGroupOption: 1}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, value := range tc.values {
+				if err := writer.WriteRows(ctx, []map[string]interface{}{{"amount": value}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf, ok := file.Schema().Lookup("amount")
+			if !ok || leaf.Node.Type().Kind() != tc.kind || leaf.Node.Type().LogicalType() == nil || leaf.Node.Type().LogicalType().Decimal == nil {
+				t.Fatalf("not a DECIMAL column: %v", file.Schema())
+			}
+			info, err := p.DescribeTable(ctx, bytes.NewReader(buf.Bytes()), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			field := info.Table.Fields[0]
+			if field.Type != datatype.FieldTypeDecimal || field.Precision != tc.precision || field.Scale != tc.scale {
+				t.Fatalf("lost decimal definition: %#v", field)
+			}
+			reader, err := p.OpenTableReader(ctx, bytes.NewReader(buf.Bytes()), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close(ctx)
+			for i, want := range tc.want {
+				for route, read := range map[string]func() ([]map[string]interface{}, error){
+					"sample": func() ([]map[string]interface{}, error) {
+						return p.SampleTable(ctx, bytes.NewReader(buf.Bytes()), int64(i), 1, nil)
+					},
+					"continuous": func() ([]map[string]interface{}, error) { return reader.ReadRows(ctx, 1) },
+				} {
+					rows, err := read()
+					if err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0]["amount"], want) {
+						t.Errorf("%s row %d=%v,%v want %v", route, i, rows, err, want)
+					}
+				}
+			}
+			if tc.kind == parquetgo.FixedLenByteArray {
+				for _, group := range file.Metadata().RowGroups {
+					stats := group.Columns[0].MetaData.Statistics
+					if len(stats.MinValue) > 0 || len(stats.MaxValue) > 0 || len(stats.Min) > 0 || len(stats.Max) > 0 {
+						t.Fatal("fixed Decimal must not publish unsigned min/max bounds")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestParquetDecimalWriterRejectsInvalidDefinitions(t *testing.T) {
+	for _, tc := range []struct{ precision, scale int }{{0, 0}, {-1, 0}, {1001, 0}, {9, -1}, {9, 10}} {
+		var buf bytes.Buffer
+		writer, err := NewPlugin().OpenTableWriter(context.Background(), &buf, &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: tc.precision, Scale: tc.scale}}}, nil)
+		if err == nil || writer != nil || buf.Len() != 0 {
+			t.Errorf("accepted invalid DECIMAL(%d,%d)", tc.precision, tc.scale)
+		}
+	}
+}
+
+func TestGeoParquetWriterPreservesDecimalAlongsideGeometry(t *testing.T) {
+	ctx := context.Background()
+	spatial := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 0, 2)
+	spatial.CRSRef = "OGC:CRS84"
+	spatial.GeometryColumns[0].CRSRef = "OGC:CRS84"
+	var buf bytes.Buffer
+	writer, err := NewPlugin().OpenTableWriter(ctx, &buf, &datatype.TableInfo{Fields: []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 38, Scale: 18},
+		{Name: "shape", Type: datatype.FieldTypeGeometry},
+	}}, &format.WriteOptions{SpatialInfo: spatial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "9007199254740993.123456789012345678"
+	if err := writer.WriteRows(ctx, []map[string]interface{}{{"amount": want, "shape": testPointWKB()}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	info, err := NewPlugin().DescribeTable(ctx, bytes.NewReader(buf.Bytes()), nil)
+	if err != nil || info.Spatial == nil || info.Spatial.PrimaryGeometryName() != "shape" {
+		t.Fatalf("lost spatial info: %v, %v", info, err)
+	}
+	rows, err := NewPlugin().SampleTable(ctx, bytes.NewReader(buf.Bytes()), 0, 1, nil)
+	if err != nil || len(rows) != 1 || rows[0]["amount"] != want || !bytes.Equal(rows[0]["shape"].([]byte), testPointWKB()) {
+		t.Fatalf("GeoParquet round trip=%v, %v", rows, err)
+	}
+}
+
+func TestParquetDecimalWriterRejectsInvalidValuesWithoutWritingBatch(t *testing.T) {
+	ctx := context.Background()
+	for _, value := range []interface{}{nil, float64(1.25), float32(1.25), math.NaN(), true, []byte("1.25"), "", "NaN", "1/2", "0x10", "1.234", "10000000", "1e99999999999999999999", "1e-9223372036854775808", "1e9223372036854775807", json.Number("1.234")} {
+		t.Run(fmt.Sprintf("%T_%v", value, value), func(t *testing.T) {
+			var buf bytes.Buffer
+			writer, err := NewPlugin().OpenTableWriter(ctx, &buf, &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 9, Scale: 2}}}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.WriteRows(ctx, []map[string]interface{}{{"amount": "1.25"}, {"amount": value}}); err == nil {
+				t.Fatal("invalid decimal accepted")
+			}
+			if err := writer.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if file.NumRows() != 0 {
+				t.Fatalf("invalid batch was partially written: %d rows", file.NumRows())
+			}
+		})
+	}
+}
 
 func decimalParquetFixture(t *testing.T, precision, scale int, physical parquetgo.Type, values ...parquetgo.Value) []byte {
 	t.Helper()

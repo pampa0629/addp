@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
@@ -17,6 +18,63 @@ import (
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/resume"
 )
+
+func TestTableTransferExecutorPreservesWholeScopeParquetDecimal(t *testing.T) {
+	ctx := context.Background()
+	p := parquetformat.NewPlugin()
+	source := &fakeContentWriter{files: map[string][]byte{}}
+	field := datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 38, Scale: 18, Nullable: true}
+	info := &datatype.TableInfo{Fields: []datatype.FieldInfo{field}}
+	content, err := source.CreateContent(ctx, nil, engineplugin.FileItemPath(7, "datasets/decimals/part-000.parquet"), engineplugin.WriteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := p.OpenTableWriter(ctx, content, info, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []interface{}{"9007199254740993.123456789012345678", "-0.000000000000000001", nil}
+	for _, value := range want {
+		if err := writer.WriteRows(ctx, []map[string]interface{}{{"amount": value}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := content.Close(); err != nil {
+		t.Fatal(err)
+	}
+	output := &fakeContentWriter{}
+	exec := &TableTransferExecutor{SourceContentReader: source, TargetContentWriter: output, SourceScopeReadProvider: p, TargetTableWriterProvider: p}
+	metrics, err := exec.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Path: engineplugin.FileDirectoryPath(7, "datasets/decimals"), Format: format.FormatParquet, Layout: format.LayoutWhole, TableInfo: info},
+		Target: TableTargetPlan{Kind: TableEndpointEncoded, Path: engineplugin.FileItemPath(8, "exports/decimals.parquet"), Format: format.FormatParquet}, BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metrics.RecordsRead != 3 || metrics.RecordsWritten != 3 || metrics.Batches != 3 || !output.closed {
+		t.Fatalf("transfer metrics=%v closed=%v", metrics, output.closed)
+	}
+	description, err := p.DescribeTable(ctx, bytes.NewReader(output.buf.Bytes()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := description.Table.Fields[0]
+	if got.Type != field.Type || got.Precision != 38 || got.Scale != 18 {
+		t.Fatalf("target decimal definition=%v", got)
+	}
+	rows, err := p.SampleTable(ctx, bytes.NewReader(output.buf.Bytes()), 0, 3, nil)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("transfer output=%v, %v", rows, err)
+	}
+	for i, value := range want {
+		if rows[i]["amount"] != value {
+			t.Fatalf("row %d=%v want %v", i, rows[i]["amount"], value)
+		}
+	}
+}
 
 const testWGS84CRSDefinition = `GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]`
 

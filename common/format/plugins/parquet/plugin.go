@@ -251,6 +251,13 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("parquet table writer requires table fields")
 	}
+	for _, field := range fields {
+		if field.Type == datatype.FieldTypeDecimal {
+			if err := validateParquetDecimalField(field); err != nil {
+				return nil, err
+			}
+		}
+	}
 	geoMetadata, err := geoParquetWriteMetadata(fields, options)
 	if err != nil {
 		return nil, err
@@ -266,6 +273,12 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 		return nil, err
 	}
 	writerOptions := append([]parquetgo.WriterOption{schema}, writerOptionSet.options...)
+	for _, field := range fields {
+		if field.Type == datatype.FieldTypeDecimal && field.Precision > 18 {
+			// parquet-go compares fixed bytes unsigned; these are not Decimal bounds.
+			writerOptions = append(writerOptions, parquetgo.SkipPageBounds(field.Name))
+		}
+	}
 	writer := parquetgo.NewGenericWriter[any](output, writerOptions...)
 	if geoMetadata != "" {
 		writer.SetKeyValueMetadata(geoParquetMetadataKey, geoMetadata)
@@ -829,8 +842,10 @@ func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 		node = parquetgo.Int(64)
 	case datatype.FieldTypeFloat:
 		node = parquetgo.Leaf(parquetgo.FloatType)
-	case datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
+	case datatype.FieldTypeDouble:
 		node = parquetgo.Leaf(parquetgo.DoubleType)
+	case datatype.FieldTypeDecimal:
+		node = parquetgo.Decimal(field.Scale, field.Precision, parquetDecimalPhysicalType(field.Precision))
 	case datatype.FieldTypeBytes:
 		node = parquetgo.Leaf(parquetgo.ByteArrayType)
 	case datatype.FieldTypeGeometry:
@@ -856,7 +871,7 @@ func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo, g
 	out := make(map[string]any, len(fields))
 	for _, field := range fields {
 		geometryColumn, _ := geometryColumns[field.Name]
-		value, err := parquetWriterValue(row[field.Name], field.Type, geometryColumn)
+		value, err := parquetWriterValue(row[field.Name], field, geometryColumn)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)
 		}
@@ -865,11 +880,14 @@ func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo, g
 	return out, nil
 }
 
-func parquetWriterValue(value interface{}, fieldType datatype.FieldType, geometryColumn datatype.GeometryColumnInfo) (any, error) {
+func parquetWriterValue(value interface{}, field datatype.FieldInfo, geometryColumn datatype.GeometryColumnInfo) (any, error) {
+	if field.Type == datatype.FieldTypeDecimal {
+		return parquetDecimalWriterValue(value, field)
+	}
 	if value == nil {
 		return nil, nil
 	}
-	switch fieldType {
+	switch field.Type {
 	case datatype.FieldTypeBool:
 		return boolValue(value), nil
 	case datatype.FieldTypeInt:
@@ -878,7 +896,7 @@ func parquetWriterValue(value interface{}, fieldType datatype.FieldType, geometr
 		return int64Value(value), nil
 	case datatype.FieldTypeFloat:
 		return float32(float64Value(value)), nil
-	case datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
+	case datatype.FieldTypeDouble:
 		return float64Value(value), nil
 	case datatype.FieldTypeBytes:
 		if bytes, ok := value.([]byte); ok {

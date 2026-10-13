@@ -501,7 +501,7 @@ Provider 对外返回 `format.TableDescribeResult`。这是 format provider 的�
 
 字段结构统一承载在 `TableInfo.Fields` / `datatype.FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型，也不再保留 `format.FieldInfo`。`FieldType` 归属 `common/datatype`，字段名、类型、主键、精度、默认值等通用字段事实以 `datatype.FieldInfo` 为唯一事实源。
 
-Parquet Decimal reader 保留 footer 的 precision/scale，并在样本、分页和连续读取中返回定点十进制字符串；大端补码不按文本解码，整数编码不忽略 scale。whole scope 的字段一致性检查包含 Decimal precision/scale。聚焦验证使用根 `make test-common-parquet`；Common 全量 `go test ./...` 自动发现相同测试，既有 Go workspace CI 已覆盖，无独立外部服务依赖。
+Parquet Decimal reader 保留 footer 的 precision/scale，并在样本、分页和连续读取中返回定点十进制字符串；大端补码不按文本解码，整数编码不忽略 scale。writer 使用显式 precision/scale 和标准 DECIMAL 整数或大端补码编码，支持可移植 precision 1–1000；精确文本、JSON number 和整数不经过浮点转换，浮点值、溢出或有损 scale 转换明确拒绝。whole scope 的字段一致性检查包含 Decimal precision/scale。聚焦验证使用根 `make test-common-parquet`；Common 全量 `go test ./...` 自动发现相同测试，既有 Go workspace CI 已覆盖，无独立外部服务依赖。
 
 `TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和 `datatype.FieldType` 互转：
 
