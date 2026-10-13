@@ -92,3 +92,31 @@ def transfer_config_check_details(report: dict) -> dict:
 
 def transfer_config_check_unsupported(accept_language: str) -> str:
     return _TRANSFER_CREATE_REVIEW[_language(accept_language)]["unsupported"]
+
+
+def transfer_config_check_completed(accept_language: str, report: dict) -> str:
+    statuses = {
+        "zh-cn": {
+            "supported": "已检查定义受支持（supported），不保证执行成功",
+            "unknown": "尚无法确定（unknown），不是通过",
+            "unsupported": "发现不支持的定义（unsupported）",
+        },
+        "en": {
+            "supported": "Checked definitions are supported (supported); this does not guarantee execution success",
+            "unknown": "Unknown (unknown), not passed",
+            "unsupported": "Unsupported definitions (unsupported)",
+        },
+    }
+    language = _language(accept_language)
+    status = statuses[language][report["status"]]
+    if language == "en":
+        return (f"Read-only configuration check completed: {status}. See the report and exact arguments above. "
+                "This check does not create a task or target table, run a task, or write business data. "
+                "You can ask a follow-up question for an explanation.")
+    return (f"只读配置检查已完成：{status}。报告和原参数见上方卡片。"
+            "本次检查不创建任务或目标表、不运行任务或写入业务数据。需要解释时可继续提问。")
+
+
+def invocation_stopped(accept_language: str) -> str:
+    return ("This invocation has stopped; this tool was not executed." if _language(accept_language) == "en"
+            else "本次调用已停止，未执行此工具。")

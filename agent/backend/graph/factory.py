@@ -24,7 +24,7 @@ from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, ConfigCheckUnsupported, capture_config_check, config_check_report, prepare_review, review_json, validate_create
 from graph.state import TaskContext
-from i18n import transfer_config_check_details, transfer_config_check_error, transfer_config_check_unsupported, transfer_create_review_messages
+from i18n import invocation_stopped, transfer_config_check_completed, transfer_config_check_details, transfer_config_check_error, transfer_config_check_unsupported, transfer_create_review_messages
 from protocol.a2ui import preview_presentations, transfer_config_check_presentation
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 from utils.llm import get_llm
@@ -69,11 +69,11 @@ def _runtime_instructions() -> str:
 - `workflow.run` 返回 `approval_required` 时当前 run 必须暂停，不能重试或把客户端确认当作批准。
 - 恢复消息提供 approval_id 和 request_fingerprint 时，再次调用 `workflow.run` 且只提交这两个字段。
 - `data.search` 的服务、委托或响应失败终止当前运行，不是零召回，不能重复搜索或切换目录枚举、样本读取、扫描；不解除保护隔离。
-- 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口。用户明确要求检查配置时，在参数完整后调用 transfer.task.config.check；未要求检查的普通草稿不自称已预检。已预检事实概要由固定卡片承担，最终按 Skill 只补充关键检查解释，不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
+- 用户对 Transfer 只要求展示草稿或确认配置、明确不要创建时，可以取证及澄清配置缺口。用户明确要求检查配置时，在参数完整后调用 transfer.task.config.check；未要求检查的普通草稿不自称已预检。不调用 transfer_create_review，不提供“确认创建”选项，也不调用 transfer.task.create。选择源、目标或补充配置不代表改为要求创建。
 - 用户明确要求创建任务后，Transfer 创建前的最终配置复核必须使用 reason=transfer_create_review、operation_review={tool:"transfer.task.create",arguments:<完整创建参数>} 和 confirm/cancel 两个选项。Runtime 展示确切参数并绑定指纹；普通文字或其他澄清不构成创建复核。
 - 提交创建时参数必须与复核完全一致；参数或本体/结构事实变化后重新复核。平台条件错误先补齐缺口，不反复尝试写 Tool。
 - Transfer 普通草稿不能称为已预检通过。最终复核前与创建前，Runtime 自动调用正式只读预检 Tool；unsupported 必须修正配置，unknown 需要用户知情确认未检查项。模型不得自报预检成功。预检与配置复核均不保证执行成功；最终提示和按钮由 Runtime 生成。
-- 每次有效正式配置预检由 Runtime 自动展示只读报告卡片；模型不得生成或改写报告卡片。报告后的领域短答方法以 Skill 为准。卡片的三态与范围是该次检查的正式展示，不是运行授权。
+- 每次有效正式配置预检由 Runtime 自动展示只读报告卡片；模型不得生成或改写报告卡片。显式检查还由 Runtime 展示固定完成提示并结束本轮，不再请求模型收尾；同批只执行首个检查，不执行其他调用。自动创建预检继续原复核流程。卡片的三态与范围是该次检查的正式展示，不是运行授权。
 - 自动预检拒绝的 ToolMessage 中，config_check 是正式 owner 报告的范围与诊断，不是服务故障。依据其中字段位置和原因解释或修正草稿，不猜测数据库类型规则，不原样重复创建。涉及业务含义变化先澄清，修改后重新预检和复核；不得把 unknown 或用户确认当作解除 unsupported 的依据。
 """
 
@@ -93,13 +93,13 @@ class _PlatformBoundary(AgentMiddleware):
         self.max_iterations = max_iterations
         self.accept_language = accept_language
         self.model_calls = 0
-        self.paused = False
-        # LangGraph 默认并发调度同批工具；owner 暂停必须先于后续副作用。
+        self.halted = False
+        # LangGraph 并发调度同批工具；终态或 owner 暂停均禁止后续副作用。
         self.tool_lock = asyncio.Lock()
 
     @hook_config(can_jump_to=["end"])
     async def abefore_model(self, state, runtime):
-        if self.paused:
+        if self.halted:
             return {"jump_to": "end"}
         if self.model_calls >= self.max_iterations:
             raise RuntimeError("agent_iteration_limit_reached")
@@ -109,6 +109,10 @@ class _PlatformBoundary(AgentMiddleware):
         message = state["messages"][-1]
         if not isinstance(message, AIMessage):
             return
+        checks = [call for call in message.tool_calls if self.names.get(call["name"]) == CHECK_TOOL]
+        if checks:
+            # Filter before tool scheduling, including writes ordered before the check.
+            return {"messages": [message.model_copy(update={"tool_calls": checks[:1]})]}
         clarifications = [call for call in message.tool_calls if call["name"] == "request_clarification"]
         if clarifications:
             # 澄清优先，即使业务写入排在批次前面也不得执行。
@@ -119,9 +123,9 @@ class _PlatformBoundary(AgentMiddleware):
     async def awrap_tool_call(self, request, handler):
         async with self.tool_lock:
             call = request.tool_call
-            if self.paused:
+            if self.halted:
                 return Command(update={"messages": [ToolMessage(
-                    content="当前运行已暂停，未执行此调用", tool_call_id=call["id"],
+                    content=invocation_stopped(self.accept_language), tool_call_id=call["id"],
                 )]}, goto=END)
             name = self.names.get(call["name"], call["name"])
             _emit("tool_start", tool_call_id=call["id"], tool_name=name, args=call["args"])
@@ -169,7 +173,7 @@ class _PlatformBoundary(AgentMiddleware):
             if isinstance(approval, Command):
                 return approval
             if approval is not None:
-                self.paused = True
+                self.halted = True
                 _emit("interaction_required", tool_call_id=call["id"], **approval)
                 return Command(update={"messages": [message]}, goto=END)
             return message
@@ -207,7 +211,7 @@ class _PlatformBoundary(AgentMiddleware):
     def _halt_failed_evidence(self, call, name, source, code, message, content, parent_call=None):
         if name not in {"data.search", CHECK_TOOL} or not code or code in {"invalid_arguments", "invalid_tool_arguments", "tool_not_allowed"}:
             return None
-        self.paused = True
+        self.halted = True
         # Close both audited steps before run_failed: the AG-UI consumer ends
         # immediately on that event and must not retain a running parent step.
         message_result = self._finish_config_parent(parent_call) if parent_call is not None else ToolMessage(
@@ -274,7 +278,7 @@ class _PlatformBoundary(AgentMiddleware):
             return self._error(call, "request_clarification", "invalid_clarification_request", "澄清请求结构无效")
         except ValueError as exc:
             return self._error(call, "request_clarification", "clarification_option_not_observed", str(exc))
-        self.paused = True
+        self.halted = True
         content = "等待用户完成澄清"
         _emit("tool_result", tool_call_id=call["id"], tool_name="request_clarification", content=content, is_error=False)
         _emit("interaction_required", tool_call_id=call["id"], prompt=args.prompt, reason=args.reason, candidates=options)
@@ -321,6 +325,14 @@ class _PlatformBoundary(AgentMiddleware):
             return halted
         if code and parent_call is not None:
             return self._finish_config_parent(parent_call)
+        if name == CHECK_TOOL and not code and parent_call is None:
+            # Only explicit checks terminate; automatic review/create checks continue.
+            # The consumer persists the completed step and exact draft before this text.
+            self.halted = True
+            get_stream_writer()(text_event(transfer_config_check_completed(self.accept_language, result)))
+            return Command(update={"messages": [ToolMessage(
+                content=content, tool_call_id=call["id"], name=call["name"],
+            )]}, goto=END)
         if name == "workflow.run" and isinstance(result, dict) and result.get("status") == "approval_required":
             return {
                 "interaction_kind": "owner_approval", "owner": "develop",

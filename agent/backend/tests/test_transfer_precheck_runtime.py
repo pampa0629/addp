@@ -230,21 +230,16 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 Message(role="assistant", content="正式检查已返回，仍只展示草稿"),
             ], user_request="检查配置，只给草稿，不创建、不运行", skill_body=skill_body)
             with self.subTest(status=status):
-                # Check production Skill composition reaches the actual Harness model.
-                # Scripted replies do not prove a free model will stay concise.
-                prompt = "\n".join(m.content for m in client.calls[1]["messages"] if m.role == "system")
-                self.assertEqual(prompt.count("默认只给关键检查解释"), 1)
-                self.assertIn("事实概要由 Runtime 固定卡片承担", prompt)
-                self.assertIn("不要另写“草稿概要”", prompt)
-                self.assertIn("不要逐项重列检查范围、未检查项、运行时要求或字段诊断", prompt)
-                self.assertIn("用户明确要求详细说明", prompt)
-                self.assertNotIn("按正式报告解释 supported、unsupported、unknown、字段诊断、未检查项及运行要求", prompt)
+                self.assertEqual(len(client.calls), 1, "valid explicit check must not request model closing text")
+                prompt = "\n".join(m.content for m in client.calls[0]["messages"] if m.role == "system")
+                self.assertIn("不再调用模型收尾", prompt)
+                self.assertNotIn("默认只给关键检查解释", prompt)
                 checks = [r for r in self.requests if r[1] == "/api/v1/transfer/task-config-checks"]
                 self.assertEqual(len(checks), 1)
                 source = checks[0][2]["json"]["config"]["source"]
                 project = json.loads(source["query"]["statement"])["pipeline"][0]["$project"]
                 self.assertEqual(project["members"], 1)
-                feedback = json.loads(next(m.content for m in client.calls[1]["messages"] if m.role == "tool"))
+                feedback = json.loads(next(e.payload["content"] for e in events if e.kind == "tool_result" and e.payload["tool_name"] == CHECK_TOOL))
                 self.assertEqual(feedback["status"], status)
                 for key in ("checked", "not_checked", "runtime_checks_required", "diagnostics"):
                     self.assertEqual(feedback[key], self.check_result[key])
@@ -256,9 +251,71 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(presentations[0]["report"]["status"], status)
                 self.assertNotIn("principal_id", presentations[0]["report"])
                 self.assertNotIn("binding_hash", presentations[0]["report"])
+                texts = [e.payload["delta"] for e in events if e.kind == "text"]
+                self.assertEqual(len(texts), 1)
+                self.assertIn(status, texts[0])
+                self.assertIn("本次检查不创建任务或目标表", texts[0])
+                self.assertNotIn("正式检查已返回，仍只展示草稿", texts[0])
+                self.assertLess(next(i for i, e in enumerate(events) if e.kind == "tool_result" and e.payload["tool_name"] == CHECK_TOOL), next(i for i, e in enumerate(events) if e.kind == "text"))
                 phase = phase_from_events("draft_check", "fixture-draft-run", "completed", events,
                     owner_effects={"tasks_created": 0, "approvals_created": 0, "executions_created": 0, "business_rows_written": 0}, persisted_state={})
                 evaluate_trace(load_scenario(EVAL_ROOT / "platform-transfer-draft-check"), {"skill": "transfer-generation", "phases": [phase]})
+
+    async def test_explicit_check_preempts_all_sibling_calls_in_either_order(self):
+        self.confirm()
+        for calls in (
+            [_call(CREATE_TOOL, self.arguments), _call(CHECK_TOOL, self.arguments, "check")],
+            [_call(CHECK_TOOL, self.arguments, "check"), _call(CREATE_TOOL, self.arguments)],
+            [self.review_call().tool_calls[0], _call(CHECK_TOOL, self.arguments, "check"), _call(CHECK_TOOL, self.arguments, "second-check")],
+        ):
+            self.requests.clear()
+            events, client = await self.run_factory([
+                Message(role="assistant", tool_calls=calls), Message(role="assistant", content="unexpected model closing text"),
+            ])
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(self.writes(), [])
+            self.assertEqual(sum(r[1] == "/api/v1/transfer/task-config-checks" for r in self.requests), 1)
+            self.assertFalse(any(e.kind in {"interaction_required", "run_failed"} for e in events))
+            self.assertEqual([e.payload["tool_name"] for e in events if e.kind == "tool_start"], ["platform.capability.context", CHECK_TOOL])
+
+    async def test_explicit_input_error_can_be_corrected_without_sibling_write(self):
+        self.confirm()
+        events, client = await self.run_factory([
+            Message(role="assistant", tool_calls=[_call(CHECK_TOOL, {}, "invalid-check"), _call(CREATE_TOOL, self.arguments)]),
+            Message(role="assistant", tool_calls=[_call(CHECK_TOOL, self.arguments, "corrected-check")]),
+            Message(role="assistant", content="unexpected model closing text"),
+        ])
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(sum(e.kind == "text" for e in events), 1)
+        self.assertEqual(sum(e.kind == "presentation" for e in events), 1)
+        self.assertFalse(any(e.kind == "run_failed" for e in events))
+
+    async def test_explicit_failure_never_emits_completion(self):
+        for http_status, report in ((403, {"error": "forbidden"}), (200, {"status": "supported"})):
+            self.requests.clear()
+            self.check_status, self.check_result = http_status, report
+            events, client = await self.run_factory([
+                Message(role="assistant", tool_calls=[_call(CHECK_TOOL, self.arguments)]),
+                Message(role="assistant", content="unexpected model closing text"),
+            ])
+            self.assertEqual(len(client.calls), 1)
+            self.assertTrue(any(e.kind == "run_failed" for e in events))
+            self.assertFalse(any(e.kind in {"text", "presentation"} for e in events))
+            self.assertEqual(self.writes(), [])
+
+    async def test_explicit_check_completion_uses_user_language_and_exact_status(self):
+        for status, expected in (("supported", "does not guarantee execution success"), ("unknown", "not passed"), ("unsupported", "Unsupported definitions")):
+            self.check_result = {**self.report, "status": status}
+            events, client = await self.run_factory([
+                Message(role="assistant", tool_calls=[_call(CHECK_TOOL, self.arguments)]),
+                Message(role="assistant", content="unexpected model closing text"),
+            ], accept_language="en-US")
+            self.assertEqual(len(client.calls), 1)
+            text = next(e.payload["delta"] for e in events if e.kind == "text")
+            self.assertIn(expected, text)
+            self.assertIn(status, text)
+            self.assertIn("This check does not create a task or target table", text)
 
     async def test_formal_check_failure_clears_old_report_and_stops_sibling_create(self):
         self.confirm()
@@ -291,14 +348,16 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         from langgraph.errors import NodeCancelledError
         self.confirm()
         self.cancel_check = True
-        run = asyncio.create_task(self.run_factory([Message(role="assistant", tool_calls=[_call(CREATE_TOOL, self.arguments)])]))
-        try:
-            await asyncio.wait_for(self.check_started.wait(), timeout=5)
-        finally:
-            run.cancel()
-            with self.assertRaises((asyncio.CancelledError, NodeCancelledError)):
-                await run
-        self.assertEqual(self.writes(), [])
+        for tool in (CREATE_TOOL, CHECK_TOOL):
+            self.check_started.clear()
+            run = asyncio.create_task(self.run_factory([Message(role="assistant", tool_calls=[_call(tool, self.arguments)])]))
+            try:
+                await asyncio.wait_for(self.check_started.wait(), timeout=5)
+            finally:
+                run.cancel()
+                with self.assertRaises((asyncio.CancelledError, NodeCancelledError)):
+                    await run
+            self.assertEqual(self.writes(), [])
 
     async def test_missing_required_check_tool_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "agent_skill_tool_not_found"):
