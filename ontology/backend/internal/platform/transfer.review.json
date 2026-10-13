@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "ca36bd5d886f5c47188995417dda83e766af69eaa45e70084158ee27daa85304",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "4e9577973959484cbd5f8eff329476b695e787c2b1cef31538a5784f8cf9ffd0",
       "use": {
-        "zh-cn": "事实获取、用户澄清、确切配置复核与创建；分别确认行粒度和字段范围，草稿检查不进入创建复核。Runtime 固定展示已预检参数和映射，历史解释读取同参引用；Skill 维护业务概要与解释方法，不重建历史映射或把定义保存说成目标建表，修改仍须重新预检和复核",
-        "en": "Fact discovery, clarification, exact review and creation with separate row grain and retained fields; draft checks do not approve creation. Runtime displays checked parameters and mappings and historical inspection reads the exact reference. Skill owns business summaries and explanation guidance without rebuilding mappings or confusing saved definitions with table creation; changes require fresh checks and review"
+        "zh-cn": "事实获取、澄清、确切配置复核与创建；分别确认行粒度和字段范围，草稿检查不进入创建复核。固定卡片承担同参事实概要、映射和参数，Skill 只指导关键检查解释，不生成第二份概要、重建历史映射或混淆定义保存与目标建表；修改仍须重新预检和复核",
+        "en": "Fact discovery, clarification, exact review and creation with separate row grain and fields; draft checks do not approve creation. Fixed cards own same-argument facts, mappings and parameters; Skill guides key explanations without duplicate summaries, reconstructed mappings or confusing saved definitions with table creation; changes require fresh checks and review"
       }
     },
     {
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "88329610a6685d68f66b40cf42906c4d76e3f014",
-      "sha256": "6f3304fa3a9b3760e9f7de930a6033bfe9948cfacb06e0517d2108a30056ca82",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "e7304671a257627592aeea3112ceb8352ea45725ae340ed0995410c807309d80",
       "use": {
-        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；定义拒绝反馈 owner 诊断供修正且不创建，服务失败清旧报告并终止、不重试；有效检查生成只读投影，不带主体或绑定摘要；Runtime 指明卡片来源，报告后的领域短答引用 Skill，不另设逐项转述指导或声称确定性理解自然语言",
-        "en": "Formal Adapter checks before review and creation; rejected definitions return owner diagnostics without creation, while service failures clear stale reports and stop without retry; valid checks produce read-only projections without identities or binding hashes; Runtime declares card provenance and delegates reply guidance to Skill without duplicate enumeration guidance or deterministic intent claims"
+        "zh-cn": "最终复核和创建前经正式 Adapter 自动预检；拒绝反馈 owner 诊断供修正，服务失败清旧报告并终止；有效检查生成去身份只读投影。Runtime 明确固定卡片承担已预检事实概要，关键解释引用 Skill，完整诊断保留；不增加另一套领域方法、条件或授权",
+        "en": "Formal Adapter checks before review and creation; refusals return owner diagnostics and service failures clear stale reports and stop; valid checks yield identity-free read-only projections. Runtime delegates checked fact summaries to fixed cards and key explanation guidance to Skill, retaining full diagnostics without duplicate domain methods, conditions or authorization"
       }
     },
     {
@@ -151,8 +151,8 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "88329610a6685d68f66b40cf42906c4d76e3f014",
-      "sha256": "b8aa77c50da3a5e7a6a69669dfe742f5bc3a25fb6dec7f8d7783492c39c38549",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "cc3209ec0696d25894777ddb9e5f40b5032bbc1247f4ba6ed8103424649fff0f",
       "use": {
         "zh-cn": "真实 Harness、Manifest、SDK 下验证知情确认、请求绑定、稳定事实变化、拒绝诊断反馈、重新预检、失败与取消无副作用；受控调用加载生产 Skill 组合，三态下短答指导进入模型且完整诊断保留，固定投影和数组字段不丢失；错误不生成卡片，不代替自由模型简洁性验收",
         "en": "Real Harness, Manifest and SDK verify informed confirmation, request binding, stable changes, rejection feedback, fresh checks and zero effects on failure or cancellation; controlled calls load production Skill composition and retain concise guidance and full diagnostics for all states, fixed projections and array fields; errors produce no card and tests do not prove free-model concision"
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "684a6116c53b381692dbbad3fce373383af7dabd9562a767389d6d347e70d453",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "5fcf69edd4d238016129a71eda6462973d69f86bf6e411fb44ded513dd6e925b",
       "use": {
-        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，固定映射与完整参数通过唯一 A2UI 路径持久化和回放；历史读取记为 Runtime 审计，不注册业务 Tool、授予权限或创建任务",
-        "en": "Read original inputs within the same identity scope after step commit and persist exact mappings and arguments through one A2UI path; historical reads are runtime audit actions, not business tools, permission grants or task creation"
+        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，经唯一 A2UI 路径展示；实时与持久 parts 按事件顺序追加，后到文字不前置，完整 content 不截断。历史读取仍为 Runtime 审计，不注册业务 Tool、授予权限或创建任务",
+        "en": "Read original inputs within the same scope after step commit through one A2UI path; live and persisted parts append in event order without moving later text first or truncating content. Historical reads remain runtime audits, not business tools, grants or task creation"
       }
     },
     {
@@ -229,16 +229,94 @@
       "kind": "test",
       "path": "agent/backend/tests/test_run_events.py",
       "anchor": "async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "e5a17fbfdb1ccb415ed74bcbf2ff5864f3cbd0ba075c1f808509c2386a365d1a",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "e7794b7ac170f80ba654196d7752bd4dd18c41911f85c83ae475a14b143310f1",
       "use": {
-        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数和引用在 SSE、消息 parts 与安全回放中一致；不作为真实数据库或部署验收",
-        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope and exact arguments and references across SSE, message parts and safe replay; not a live database or deployment acceptance claim"
+        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数及引用在 SSE、消息和回放中一致；卡片前后文字与失败文字按原事件顺序保存，content 完整，不作为真实数据库或部署验收",
+        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope, exact arguments and references across SSE, messages and replay; text before and after cards and failure text retain event order and complete content, not live database or deployment acceptance"
+      }
+    },
+    {
+      "id": "message_parts",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/services/messages.py",
+      "anchor": "def append_text_delta(",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "5573d5ade999b2875e2ecd2524aa3fc45ccee7bf577922aa84611b3ee87252c1",
+      "use": {
+        "zh-cn": "只合并相邻文字，不跨 Presentation 重排；持久化仍使用原字节上限和深复制，不过滤内容",
+        "en": "Merge only adjacent text without reordering across presentations; persistence retains byte bounds and deep copying without filtering content"
+      }
+    },
+    {
+      "id": "message_parts_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_messages.py",
+      "anchor": "def test_text_merges_only_adjacent_deltas_without_crossing_presentations(",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "3b788001e145f568dbc6731517a33519d21dd99de907b9674f8dab3c808234ba",
+      "use": {
+        "zh-cn": "验证空 delta、相邻合并与卡片后的新文字段，不丢弃模型输出",
+        "en": "Verify empty deltas, adjacent merging and new text after cards without dropping model output"
+      }
+    },
+    {
+      "id": "draft_renderer",
+      "owner": "common-frontend",
+      "kind": "implementation",
+      "path": "common-frontend/agent-ui/src/a2ui/components/TransferDraftSnapshot.vue",
+      "anchor": "const overview = computed(",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "c46fd0b25d1f4aa2eaf33adf1543ea9c4b84f12d0918e996306b83196b2ef219",
+      "use": {
+        "zh-cn": "从同一已预检参数显示受限事实概要，复用共享定位符、表格和 JSON；不新增摘要 props、推测业务事实或任务状态，不发 action 或请求",
+        "en": "Display bounded facts from the same checked arguments using shared locators, tables and JSON; no summary props, inferred business facts or task state, actions or requests"
+      }
+    },
+    {
+      "id": "draft_renderer_test",
+      "owner": "common-frontend",
+      "kind": "test",
+      "path": "common-frontend/agent-ui/tests/draftSnapshot.test.js",
+      "anchor": "describe('exact readonly checked draft snapshot'",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "f2396ba7de98ddfacdd4261a64a2326a7707a68827a13d126ee27d871d58df29",
+      "use": {
+        "zh-cn": "核对概要和原参数一致、双语、路径与名称转义、缺失事实不猜测、完整 JSON 和无 action；Catalog 拒绝越界和额外属性",
+        "en": "Verify same-argument facts, languages, escaped paths and names, no invented missing facts, complete JSON and no actions; Catalog rejects oversized and extra properties"
+      }
+    },
+    {
+      "id": "chat_renderer",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/frontend/src/views/ChatView.vue",
+      "anchor": "function ensureLiveTextPart(",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "15ad282621419fb206a748602030920bf2db44d86b3318e74716a7f44a52ab9e",
+      "use": {
+        "zh-cn": "实时和安全事件回放只追加相邻文字段，不把模型解释移到此前卡片之前，不过滤或修订既有历史消息",
+        "en": "Live and safe event replay append adjacent text without moving explanations before preceding cards or filtering or revising existing history"
+      }
+    },
+    {
+      "id": "chat_renderer_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/frontend/e2e/clarification-resume.spec.js",
+      "anchor": "test('exact checked draft streams and reloads",
+      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
+      "sha256": "83c76e24025a393c064cb1eaf24d46a65c4cb543418ec516115999354f24b530",
+      "use": {
+        "zh-cn": "T3 用生产 UI 和协议客户端、受控 HTTP/SSE 记录实时 DOM 顺序，并核对刷新后的参数、引用和顺序；禁止夹具访问个人服务，不宣称自由模型或 Hosted T4 验收",
+        "en": "T3 production UI and protocol client with controlled HTTP/SSE record live DOM order and verify reloaded arguments, reference and order; fixtures forbid personal service calls and do not prove free-model or hosted T4 acceptance"
       }
     }
   ],
   "bindings": [
-    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test"]},
+    {"subject": "concept/readonly_config_check", "sources": ["config", "manifest", "conditions", "condition_test", "skill", "runtime", "runtime_test", "draft_snapshot", "draft_routing", "draft_protocol", "draft_snapshot_test", "draft_protocol_test", "message_parts", "message_parts_test", "draft_renderer", "draft_renderer_test", "chat_renderer", "chat_renderer_test"]},
     {"subject": "concept/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "condition/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
     {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
