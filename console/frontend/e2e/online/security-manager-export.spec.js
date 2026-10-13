@@ -4,11 +4,134 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
+async function verifyResourceCombinationFilters(page, api, env, principal) {
+  const endpoint = '/api/v1/security/protection-enrollments'
+  const baseline = await json(await api.get(`${endpoint}?scope=all&page=1&page_size=100`), 'ordinary user resource baseline')
+  expect(baseline.total).toBe(baseline.data.length)
+  expect(baseline.data.length).toBeGreaterThan(1)
+  expect(baseline.data.length).toBeLessThanOrEqual(20)
+  const mongoID = Number(env.ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID)
+  const mysqlID = Number(new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR).pathname.split('/')[1])
+  expect(mongoID).toBeGreaterThan(0)
+  expect(mysqlID).not.toBe(mongoID)
+  const targets = baseline.data.filter(row => row.target_snapshot.engine_id === mongoID && row.target_snapshot.full_name === 'Outdoor.Persons')
+  expect(targets).toHaveLength(1)
+  expect(targets[0].state).toBe('active')
+  const writes = []
+  const observe = request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/security/') && request.method() !== 'GET') {
+      writes.push({ method: request.method(), path: new URL(request.url()).pathname })
+    }
+  }
+  page.on('request', observe)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const filters = frame.locator('.resource-filters')
+  const name = filters.locator('.el-form-item').filter({ hasText: /资源名称|Resource name/ }).getByRole('textbox')
+  const engine = filters.locator('.el-form-item').filter({ hasText: /引擎|Engine/ }).locator('.el-select')
+  const state = filters.locator('.el-form-item').filter({ hasText: /保护状态|Protection state/ }).locator('.el-select')
+  const apply = filters.getByRole('button', { name: /^(筛选|Filter)$/ })
+  const reset = filters.getByRole('button', { name: /^(重置|Reset)$/ })
+  const rows = frame.locator('.enrollment-card .el-table__body tbody tr')
+  const cases = new Set()
+  async function checkCase(label, query, action) {
+    const expectedQuery = { scope: 'current', page: '1', page_size: '20', ...query }
+    const response = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === endpoint && response.request().method() === 'GET' &&
+        JSON.stringify(Object.fromEntries([...url.searchParams].sort())) === JSON.stringify(Object.fromEntries(Object.entries(expectedQuery).sort()))
+    })
+    await action()
+    const payload = await json(await response, `ordinary user filter ${label}`)
+    const expected = baseline.data.filter(row =>
+      (expectedQuery.scope === 'all' || (expectedQuery.scope === 'released') === (row.state === 'released')) &&
+      (!query.resource_name || row.target_snapshot.full_name.toLowerCase().includes(query.resource_name.toLowerCase())) &&
+      (!query.engine_id || String(row.target_snapshot.engine_id) === query.engine_id) &&
+      (!query.state || row.state === query.state))
+    expect(payload.total).toBe(expected.length)
+    expect(payload.page).toBe(1)
+    expect(payload.page_size).toBe(20)
+    expect(payload.data.map(row => row.id).sort()).toEqual(expected.map(row => row.id).sort())
+    await expect(rows).toHaveCount(expected.length)
+    expect((await rows.locator('.resource-path').allTextContents()).sort()).toEqual(expected.map(row => row.target_snapshot.full_name).sort())
+    await expect(apply).toBeEnabled()
+    if (label) cases.add(label)
+    return payload
+  }
+  async function select(control, label) {
+    await control.click()
+    await frame.getByRole('option', { name: label, exact: true }).click()
+  }
+  try {
+    await checkCase('', {}, () => page.goto('/security/protection-enrollments'))
+    await name.fill('Persons')
+    await checkCase('name', { resource_name: 'Persons' }, () => apply.click())
+    const engineDefinitions = await json(await api.get('/api/v1/meta/engines'), 'ordinary user catalog engines')
+    const mongo = engineDefinitions.find(item => Number(item.id) === mongoID)
+    const mysql = engineDefinitions.find(item => Number(item.id) === mysqlID)
+    expect(mongo?.name).toBeTruthy()
+    expect(mysql?.name).toBeTruthy()
+    await select(engine, mongo.name)
+    await select(state, /^(保护规则同步完成|Protection rules synchronized)$/)
+    const combined = { resource_name: 'Persons', engine_id: String(mongoID), state: 'active' }
+    const positive = await checkCase('combined', combined, () => apply.click())
+    expect(positive.total).toBe(1)
+    const progress = positive.data[0].owner_progress
+    expect(progress.map(owner => owner.consumer_owner).sort()).toEqual(['develop', 'manager', 'service', 'transfer'])
+    for (const owner of progress) {
+      expect(owner.acknowledged).toBe(true)
+      expect(owner.validity).toBe('valid')
+      expect(Date.parse(owner.expires_at)).toBeGreaterThan(Date.now())
+    }
+    await expect(rows.locator('.owner-item')).toHaveCount(4)
+    await expect(rows.locator('.owner-tags').filter({ hasText: /有效期内|Within validity period/ })).toHaveCount(4)
+    const securityFrame = page.frames().find(value => new URL(value.url()).pathname.startsWith('/module-ui/security/'))
+    expect(securityFrame).toBeTruthy()
+    const dates = await securityFrame.evaluate(values => values.map(value => new Date(value).toLocaleString()), progress.map(owner => owner.expires_at))
+    const visibleDates = await rows.locator('.owner-name small').allTextContents()
+    for (const date of dates) expect(visibleDates.some(value => value.includes(date))).toBe(true)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-resource-combination-filters.png') })
+
+    await select(engine, mysql.name)
+    expect((await checkCase('wrong-engine', { ...combined, engine_id: String(mysqlID) }, () => apply.click())).total).toBe(0)
+    await select(engine, mongo.name)
+    await select(state, /^(已停止保护|Protection stopped)$/)
+    const stopped = { ...combined, state: 'released' }
+    expect((await checkCase('current-released', stopped, () => apply.click())).total).toBe(0)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-resource-empty-intersection.png') })
+    expect((await checkCase('all-released', { ...stopped, scope: 'all' }, () => frame.locator('.list-scope-bar').getByText(/^(全部|All)$/).click())).total).toBe(0)
+    await select(state, /^(保护规则同步完成|Protection rules synchronized)$/)
+    expect((await checkCase('all-active', { ...combined, scope: 'all' }, () => apply.click())).total).toBe(1)
+    await name.fill('%')
+    expect((await checkCase('literal-percent', { ...combined, scope: 'all', resource_name: '%' }, () => apply.click())).total).toBe(0)
+    await checkCase('reset-all', { scope: 'all' }, () => reset.click())
+    await expect(name).toHaveValue('')
+    await expect(engine.locator('.el-select__placeholder.is-transparent')).toBeVisible()
+    await expect(state.locator('.el-select__placeholder.is-transparent')).toBeVisible()
+    await checkCase('current-restored', {}, () => frame.locator('.list-scope-bar').getByText(/^(保护中|Protected)$/).click())
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-resource-filter-reset.png') })
+    const current = identity(await json(await api.get('/api/v1/system/auth/context'), 'ordinary user after filters'))
+    expect(current.principalID).toBe(principal.principalID)
+    expect(current.principalType).toBe('user')
+    expect(current.contextType).toBe('tenant')
+    expect(current.tenantID).toBe(principal.tenantID)
+    expect([...current.permissions].sort()).toEqual([...principal.permissions].sort())
+    expect(writes).toEqual([])
+    expect(cases.size).toBe(9)
+    return { resource_combination_filters_verified: true, resource_literal_filter_verified: true,
+      resource_scope_intersection_verified: true, resource_reset_verified: true,
+      resource_filter_total_verified: true, resource_filters_read_only: true,
+      owner_validity_visible: true, resource_filter_case_count: cases.size }
+  } finally {
+    page.off('request', observe)
+  }
+}
+
 test('protected Manager preview retains field search and export provenance in Monitor', async ({ page }) => {
   const names = [
     'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID',
     'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
-    'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_SECURITY_EXPORT_LOCATOR', 'GATEWAY_URL'
+    'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_SECURITY_EXPORT_LOCATOR',
+    'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID', 'GATEWAY_URL'
   ]
   for (const name of names) if (!process.env[name]) throw new Error(`${name} is required`)
   const env = process.env
@@ -37,11 +160,12 @@ test('protected Manager preview retains field search and export provenance in Mo
   try {
     const requiredPermissions = [
       'manager.content.read', 'manager.data_item.read', 'manager.search.execute', 'manager.derived_artifact.create',
-      'manager.derived_artifact.read', 'monitor.execution.read'
+      'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read'
     ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
     expect(expected.principalType).toBe('user')
     expect(expected.contextType).toBe('tenant')
+    expect(expected.permissions.has('*')).toBe(false)
     expect(expected.tenantID).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     for (const permission of requiredPermissions) expect(expected.permissions.has(permission), permission).toBe(true)
     const path = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)}`
@@ -77,6 +201,10 @@ test('protected Manager preview retains field search and export provenance in Mo
     await expect(frame.getByRole('columnheader', { name: 'email', exact: true })).toHaveCount(0)
     await expect(frame.locator('.table-preview .el-table__body tbody tr')).toHaveCount(5)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
+
+    const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual)
+    await page.goto(path)
+    await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
 
     await page.locator('.sidebar').getByText(/^(数据检索|Data Retrieval)$/).click()
     await expect(page).toHaveURL(/\/manager\/data-retrieval$/)
@@ -181,7 +309,7 @@ test('protected Manager preview retains field search and export provenance in Mo
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v3', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v4', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -189,6 +317,7 @@ test('protected Manager preview retains field search and export provenance in Mo
       manager_source_verified: true, monitor_detail_visible: true,
       protected_preview_verified: true, technical_field_search_verified: true,
       search_to_preview_verified: true,
+      ...resourceFilters,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

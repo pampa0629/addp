@@ -123,6 +123,8 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
 
+普通账号资源组合筛选 T4 复用现有 Console 登录与 `security-mysql-owner-protection` 浏览器流程：使用同一普通 User 的正式 AuthContext，逐项核对名称、引擎、生命周期状态及列表范围的请求参数、返回成员、分页总数和实际表格。覆盖正确组合、错误引擎、保护中与已停止保护状态的空交集、百分号字面匹配、范围切换及重置恢复；当前四出口回执、有效期和页面截止时间同时核对。筛选阶段仅允许 Security GET，不创建或修改纳管、策略、授权和角色。新增三张筛选截图，浏览器报告升级为 v4、场景报告升级为 v12，严格校验新增字段；既有客户检索、预览、CSV、Monitor、银行卡和停机回归保持完整；沿现有前端、Online runner 及 Hosted 入口发现，1200 秒总预算不变。完整报告与截图完成独立核对前，不计为普通账号组合筛选 T4 通过。
+
 ## 数据库启动所有权
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。

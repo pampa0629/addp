@@ -4,6 +4,7 @@ import os
 import sys
 import copy
 import struct
+import subprocess
 import time
 import tempfile
 import urllib.parse
@@ -1391,7 +1392,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v3", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v4", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
@@ -1399,6 +1400,10 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "manager_source_verified": True, "monitor_detail_visible": True,
             "protected_preview_verified": True, "technical_field_search_verified": True,
             "search_to_preview_verified": True,
+            "resource_combination_filters_verified": True, "resource_literal_filter_verified": True,
+            "resource_scope_intersection_verified": True, "resource_reset_verified": True,
+            "resource_filter_total_verified": True, "resource_filters_read_only": True,
+            "owner_validity_visible": True, "resource_filter_case_count": 9,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1416,7 +1421,10 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("search_to_preview_verified", False),
             ("browser_warning_errors", 1), ("failed_business_responses", 1),
             ("anonymous_refresh_401", 0), ("anonymous_refresh_401", 2), ("anonymous_refresh_401", True),
-            ("schema_version", "addp.security-manager-export-browser/v2"),
+            ("schema_version", "addp.security-manager-export-browser/v3"),
+            ("resource_combination_filters_verified", False), ("resource_filters_read_only", False),
+            ("resource_filter_case_count", 8), ("resource_filter_case_count", "9"),
+            ("resource_filter_case_count", True), ("owner_validity_visible", False),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
@@ -1426,6 +1434,12 @@ class ManagerExportBrowserTest(unittest.TestCase):
             with self.subTest(missing=key), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_export_browser_report(incomplete, "run-42", "2")
 
+    def test_online_browser_javascript_parses(self):
+        result = subprocess.run(["node", "--check", "--input-type=module"],
+            input=(SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_browser_failure_and_missing_report_cannot_reuse_previous_success(self):
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory)
@@ -1433,6 +1447,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             environment = dict(ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_TEST_RUN_ID="run-42",
                 ADDP_ONLINE_TEST_TENANT_ID="2", ADDP_ONLINE_TEST_USER_ACCESS_TOKEN="test-token",
                 ADDP_ONLINE_TEST_USER_USERNAME="test-user", ADDP_ONLINE_TEST_USER_PASSWORD="test-password",
+                ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="29",
                 GATEWAY_URL="http://127.0.0.1:8000", CONSOLE_URL="http://127.0.0.1:5170")
             for exit_code in (1, 0):
                 path.write_text(json.dumps(self.report()))
@@ -1445,13 +1460,17 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
                 path.write_text(json.dumps(self.report()))
                 for name in ("security-manager-protected-preview.png", "security-manager-field-search.png",
-                             "security-manager-export.png", "security-manager-export-monitor.png"):
+                             "security-manager-export.png", "security-manager-export-monitor.png",
+                             "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
+                             "security-resource-filter-reset.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
                 self.assertEqual(ONLINE.run_export_browser(artifact, environment, "source"), self.report())
 
-            for missing in ("security-manager-protected-preview.png", "security-manager-field-search.png"):
+            for missing in ("security-manager-protected-preview.png", "security-manager-field-search.png",
+                            "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
+                            "security-resource-filter-reset.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)
                     (artifact / missing).unlink()

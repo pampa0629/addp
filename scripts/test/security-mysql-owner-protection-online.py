@@ -1935,7 +1935,7 @@ def run_scenario(
         }, deadline)
 
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v11",
+            "schema_version": "addp.security-mysql-owner-protection-online/v12",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2034,13 +2034,17 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v3", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v4", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
         "manager_source_verified": True, "monitor_detail_visible": True,
         "protected_preview_verified": True, "technical_field_search_verified": True,
         "search_to_preview_verified": True,
+        "resource_combination_filters_verified": True, "resource_literal_filter_verified": True,
+        "resource_scope_intersection_verified": True, "resource_reset_verified": True,
+        "resource_filter_total_verified": True, "resource_filters_read_only": True,
+        "owner_validity_visible": True, "resource_filter_case_count": 9,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
@@ -2063,7 +2067,7 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
 def run_export_browser(repository: Path, environment: Mapping[str, str], locator: str) -> dict[str, object]:
     required = ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_TEST_TENANT_ID",
                 "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_USER_USERNAME",
-                "ADDP_ONLINE_TEST_USER_PASSWORD", "GATEWAY_URL", "CONSOLE_URL")
+                "ADDP_ONLINE_TEST_USER_PASSWORD", "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID", "GATEWAY_URL", "CONSOLE_URL")
     missing = [key for key in required if not environment.get(key)]
     if missing:
         raise SuiteError("Manager export browser environment is missing: " + ", ".join(missing))
@@ -2072,6 +2076,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
     screenshots = [report_path.parent / name for name in (
         "security-manager-protected-preview.png", "security-manager-field-search.png",
         "security-manager-export.png", "security-manager-export-monitor.png",
+        "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
+        "security-resource-filter-reset.png",
     )]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
