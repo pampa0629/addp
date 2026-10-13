@@ -17,16 +17,16 @@
 | GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验，Manager Hosted 已通过 COG Range 读取和实际地图加载复验；范围限于所用真实夹具。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
 | CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 读取、Manager 编码选择与 Meta 持久化已通过确定性及 PostgreSQL 回归，真实 NFS CSV / TSV 的编码应用、中文、分页、重复刷新、重新打开和原文件下载已验收；固定 GBK CSV / TSV 的 Business MinIO Hosted 同一链路及原文件下载哈希、清理已通过。XLSX 已通过真实 NFS 与 Business MinIO Hosted 四工作表的不同字段、空表、只有表头、未知总数逐页读取、刷新及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
-| JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 的地图＋属性表已有实现和本地样例页面复核；2026-10-13 已确认统一使用表格响应核对 GeoJSON，旧 Hosted 在错误的对象 renderer 断言处失败，修正后须重新验收。不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
+| JSON / GeoJSON | 普通嵌套 JSON 文档、25 行 records array，以及相同 FeatureCollection 的 `.geojson`／`.json` 两种后缀已通过 [Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103)：文档或表格展示、分页、完整原文件下载、刷新和重开。GeoJSON 统一为地图＋属性表，核对 Point／LineString、EPSG:4326 和实际点选弹窗。不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
-| FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。八模型 Manager Hosted 在生成前的 OBJ 数据项大小断言处失败，真实页面／缓存验收仍待重跑；不声明全部版本、动画或复杂材质保真。 |
+| FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。已通过 [八模型 Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103) 的生成入口、OBJ 基础几何、两种格式 GLB 缓存预览、两阶段主文件下载哈希及清理后主文件不变核验；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 
-1. 优先收口 JSON / GeoJSON 的四源 Hosted 页面、原文件下载和清理证据；CSV / TSV 编码及 XLSX 四工作表的已有通过记录继续保留，不用旧报告代替新扩展结果。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
-2. 随后补 FBX / OBJ 的真实源模型、GLB 快显和浏览器验收；复用已有预览与转换能力，不因当前六模型 Hosted 通过而外推这两种格式。
-3. SGM 保留授权 SuperMap → OSGB → Model3D GLB 的唯一路线；本地厂商样例已有几何和基础贴图记录，后续重点为其他样例及 S3 外部贴图。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
-4. GeoTIFF/COG 与六种模型沿用既有 Hosted 范围，MAX / SKP 限于已验证的静态模型、单位与基础贴图。继续按实际格式和样例报告支持边界，不扩展 JPEG EXIF 细项作为当前优先任务。
+1. JSON / GeoJSON 四源、CSV / TSV / XLSX 与八模型的同轮 Hosted 已收口，范围见上述支持矩阵及文末正式证据。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
+2. 下一优先补 SGM 的其他真实样例及 S3 外部贴图验收，保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
+3. FBX 基础预览的 Three.js 升级继续单独评估 COPC／3D Tiles 等消费者影响；已有 GLB 快显通过不消除源 FBXLoader 缺陷，不引入平行转换路线。
+4. GeoTIFF/COG 与八种模型限于已验证的静态模型、单位和基础贴图。继续按实际格式和样例报告支持边界，不扩展 JPEG EXIF 细项作为当前优先任务。
 
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
@@ -141,3 +141,13 @@
 2026-10-13 Run `38341080755`、Job `115111976721` 已结束为 failure，源码 `cfbb3b5a453b8e2524f2d47b511b3243d892fd77`。失败发生在生成前的 OBJ 夹具核验：误将 DataItem 的整体 `size_bytes` 与原模型下载大小比较。Meta 真实持久日志显示 OBJ 主文件 97 字节、MTL 45 字节和贴图 76 字节合计 218 字节，主文件 SHA-256 与固定源一致。验收必须分别核对数据项总大小和主文件下载大小，不能修改 Meta 的整体大小语义或删除原下载断言；确定性假客户端应复现真实 218 字节，夹具回归同时核对三个文件字节数及合计。Manager 实际日志没有生成请求，故本轮未创建十一类受管产物，也未执行正式浏览器与格式下载验收；不能登记领域删除通过。外层生命周期 cleanup passed、Infra zero_residuals。最终 Linux x86_64 Runtime 构建已完成正式 FBX 静态几何与 OBJ 内嵌 PNG 验证，但不代替页面 T4。修复沿用既有 Manager runner、Platform CI 自动登记和唯一 Hosted suite，不改权限、报告版本、产品 API 或血缘实现。
 
 本项最小回归已先复现旧断言失败，再由标准 `make test-manager-online-runner` 验证修正后的 77 项及 Go 身份工具全部通过；保留源文件下载大小与 SHA-256、两阶段页面和全部原场景的严格断言，Owner/v8、browser/v10 不变。现有 `test-platform → test-online-runner → test-manager-online-runner` 自动覆盖本次脚本和夹具回归，无需新建 CI 入口；`make test-changed` 因共享工作区多 Owner 变更及缺少 T2 连接条件在预检中止，未执行数据库测试，整轮不计通过。Hosted 须在修正提交重新执行；本地回归不替代 T4。
+
+本轮正式验收收口：[Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103)、Job `115229667480`、attempt 1、源码 `c1c47c6d8df1f80b63043de1679daaf9188c94da` 已通过。独立下载 artifact 核对外层报告、Owner/v8、browser/v10、生成入口／缓存预览两份原始报告一致；System、Gateway、Meta、Manager、Monitor 五个服务的构建源码均匹配该提交，普通 User 恰持已批准的十项权限。四种 JSON 源均完成真实页面、下载 SHA256、普通刷新和重开；records array 为 20＋5 行且末页禁用，`.geojson` 与 `.json` FeatureCollection 均核对两条 Point／LineString、EPSG:4326、地图＋属性表及实际点选弹窗。GBK CSV／TSV 各 25 行的编码应用、中文三列、分页、末页、刷新、重开和源下载哈希再次通过；XLSX 的 Cities／Readings／Empty／HeaderOnly 四工作表、未知总数、切换重置、刷新保留页／空表和完整工作簿下载再次通过。
+
+八模型 DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 均通过真实 Runtime 转换与 GLB 缓存预览。FBX 为 24 顶点，保留源节点变换、尺寸及颜色；OBJ 为 3 顶点、2 × 3 三角形，UV、不透明材质和实际内嵌 PNG 像素通过，基础预览核对几何。FBX 主文件 17200 字节与 OBJ 主文件 97 字节在两阶段下载的 SHA256 均与固定源一致，清理后主文件不变；OBJ 数据项整体大小另按主文件＋MTL＋PNG 的 218 字节核对。MAX 使用内部 Blender／固定 io_scene_max 1.9.2，毫米换算、5 网格、12 图元、444 顶点、5 实例和内嵌贴图通过；SKP 的英寸到米尺寸、两个共享实例及彩色 PNG 通过。PPTX 三页 PDF 的缓存复用与刷新保留第 2 页、COG Range 和地图、点云预览等原场景同时通过；不扩展血缘产品实现。
+
+独立解析实际 Manager JSONL，按本轮结果／任务 ID 核对十一项结果 DELETE 200、十一项任务 DELETE 204 及各自后续内容／任务 GET 404，十一类报告残留资源均为零，模型预览模式已恢复。PDF／COG 的独立物理报告确认对象删除、源文件不变、零残留；summary 为 cleanup passed、Infra zero_residuals，未以 Infra 销毁替代领域清理。六张 GeoJSON、XLSX、FBX、OBJ、MAX 截图已目视复核；浏览器业务警告／错误及失败业务响应为零，另按既有协议记录 4 条 Chromium WebGL driver 性能诊断，不视作业务成功证据。此次只认证所用样例和静态主线；SGM 不在本轮 Hosted 内，固定 FBX 的基础预览缺陷、全部厂商版本、动画、复杂材质及设备轨迹业务规则仍未认证。
+
+同源码 [Release/T2 38377388800](https://github.com/pampa0629/addp/actions/runs/38377388800) 通过（21 个作业成功，18 个条件跳过；跳过不计执行通过），Quality frontend smoke 通过。[Platform CI 38377388963](https://github.com/pampa0629/addp/actions/runs/38377388963) 原轮停在 `ontology/backend` 的 go.mod／go.sum tidy 差异，不能登记原轮通过；对应 Owner 已在 `d56c8806d` 修正。包含本轮及该修正的后续 [Platform CI 38396404876](https://github.com/pampa0629/addp/actions/runs/38396404876)、源码 `eef85fca0ccd3937110b0e2eca0482f9f0d84f65` 已整轮通过，含 Go workspace；本轮五个夹具／Owner／浏览器实现文件与该源码一致。此复验不改写 Manager Hosted 的实际源码。本次仅维护既有验收文档，不改产品、依赖、权限或用户服务。
+
+本次验收记录更新的 `git diff --check` 通过；标准 `make test-changed` 再次因共享工作区多 Owner 所需 T2 连接未注入而在预检中止，未执行数据库测试，不计本地整轮通过。此次不变更实现和 CI 编排，代码验证复用上述真实 Hosted、专项回归、Release/T2 及后续 Platform CI 证据。
