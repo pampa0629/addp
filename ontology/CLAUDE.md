@@ -111,6 +111,8 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 ### 标准门禁
 
+2026-10-13 CI 依赖纠正：之前 `11b2a7a26` 按包含未提交 Common 授权事实源码的工作区执行 Ontology `tidy`，错误地为已提交的 `main` 增加 9 项未使用的间接依赖和 129 条校验记录。`38379543401` 的 Go workspace Job 在 Ontology `tidy -diff` 失败；已在 `65de8a829` 已提交源码的受控快照复现并收敛，标准 `make test-go` 全部 22 个模块及依赖规约检查通过。Ontology 本身不因此增加 MinIO 或业务读取能力；本体修订、来源冻结、PG/FalkorDB 内容、接口和权限均未改变。受控快照只包含已提交源码；Common 授权事实 owner 后续提交其源码时须同次同步真实消费方的依赖，不能把工作区图与 CI 图混记。此次未重启、不执行业务操作，未重跑数据库 T2 或真实对话 T4；使用现有 Go workspace 和 Ontology T2 CI，无新增门禁或旁路。
+
 平台 Transfer 修订 21 冻结 `1c07a4282` 的原参数创建职责：Agent 按身份恢复确切草稿输入，Runtime 绑定复核和正式 Adapter 参数，每次确认恢复重新读取；当前能力、资源事实、两次预检、知情确认和提交屏障仍独立核验。运行草稿和报告不写入静态本体，PG 权威与 FalkorDB 同版依赖投影职责不变；无新表、API、权限或 Provider 支持扩张。来源增加路由状态和检查点控制引用依据，原能力范围不变。另审查 `f6da6539d` 的 Parquet item-layout 读取说明，其属于 native-table 创建切片之外，仅更新规范来源冻结。
 
 2026-10-13 本轮 Agent eval、Agent 前端（69 项单测、7 项受控浏览器及构建）、平台来源审查、Go 依赖规约、Ontology PG 及独占 FalkorDB 联动门禁通过。PG/FalkorDB 包含本修订记录、真实图投影、发布激活和 owner 自动清理。Ontology `go.mod/go.sum` 同步 Common 已引入的 MinIO 间接依赖，版本符合规约，原 CI 自动发现覆盖，无新增 Job。完整 Agent 门禁首次因 Meta 权限常量未定义失败；生成后串行复跑越过编译，最终在 System/Meta 新 authorization-facts 接口的 Swagger 路由覆盖不一致处失败，后续 owner 阶段未执行。Ontology 整套尝试在公共 Spark 启动夹具 15 秒超时处失败，后续串行 Agent 公共检查同项通过；未改阈值或宣称偶发原因已修复，不能计整套 Ontology 通过。工作区 changed 门禁因其他 owner 的 T2 连接配置缺失执行前阻断。修订 21 真实部署创建验收与 Hosted T4 未运行，须公共 Swagger 登记完成并重跑后，由用户重启 Agent/Ontology 再验；本轮没有创建目标表、运行 Transfer 或写入 Outdoor 数据。

@@ -24,6 +24,8 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 ## 原参数创建（修订 21）
 
+2026-10-13 CI 依赖纠正：修订 21 的实现与本体语义未变，但先前按共享工作区运行 Ontology `tidy`，将未提交 Common 授权事实文件引出的 9 项间接依赖及 129 条校验记录提交到 `main`。CI `38379543401` 的 Go Job 在 Ontology `tidy -diff` 拒绝这些已提交源码未使用的记录；这是本会话的依赖同步处理错误，不是 Provider 修复引入了新契约。已按 `65de8a829` 已提交源码的受控快照收敛依赖，标准 `make test-go` 的 22 个模块及 `make test-go-dependency-policy` 通过。首次快照验证因验证环境的全局 Git 变量干扰临时 Git 夹具失败，改用普通临时仓库后通过，未修改测试断言。该证据不包含共享工作区未提交 Common 文件；相关 owner 后续提交共享源码时须同次同步消费方依赖。没有重启、业务数据操作或新平台修订；本次未重跑真实数据库 T2 或对话 T4，现有 Go workspace 与 Ontology T2 CI 继续承接验证。
+
 2026-10-13 原参数创建已按用户确认的职责契约实现，并冻结为平台 Transfer 修订 21（实现 `1c07a4282`）。唯一路由动作 `draft_action` 区分纯解释和原参数创建，删除 `inspect_draft`；创建候选只来自同用户、租户、会话的受信任草稿引用。检查点仅保存 `draft_ref`，每次确认恢复都重新读取并核验原参数，不保存第二份参数、不导入旧报告、资源事实或确认。绑定原稿时私有复核只提交 Tool 身份，Runtime 用原参数执行预检及复核；正式创建在 Schema 验证、审计和同一 Adapter 前绑定原参数，模型不能改写名称、描述、目标、映射或补可选默认值。当前能力读取、资源事实、两次正式预检、unknown 知情确认、确认消费和提交屏障保持原路径，不放宽权限或支持范围。需要改配置仍走明确修改流程，不在绑定创建内悄悄改参。
 
 本轮 `make test-agent-eval`、`make test-agent-frontend`（69 项单测、7 项受控浏览器及构建）、`make test-platform-review`、`make test-go-dependency-policy`、`make test-ontology-postgres` 和 `make test-ontology-falkor` 通过。回归覆盖原参数复核、模型漂移、恢复重读、引用损坏、歧义、未确认、当前权限拒绝、缺少资源事实及 unsupported 阻止创建；真实 Harness/Manifest/SDK 的受控 HTTP 夹具不创建个人业务任务。Ontology 同步 Common 已引入的 MinIO 间接依赖，版本沿用规约；已提交 Parquet 读取说明经审查属该 native-table 切片之外，只更新来源冻结。完整 Agent 模块门禁首次在公共 T0 因 Meta 权限常量未定义失败；该常量生成后串行复跑越过编译，最终因 System/Meta 新 authorization-facts 接口被 Swagger 覆盖检查判为 stale 而失败，后续 owner 阶段未执行。Ontology 整套模块尝试在公共 Spark 启动夹具 15 秒超时处失败，后续 Agent 串行复跑同项通过，未放宽超时或宣称修复偶发原因；专项通过不替代整套通过。`make test-changed` 因其他 owner 的 T2 连接配置缺失执行前阻断。修订 21 的真实部署创建验收和 Hosted T4 未运行；本轮未运行 Transfer、创建目标表或写入 Outdoor 数据。待公共 Swagger 登记完成并重跑门禁后，由用户重启 Agent/Ontology，再验证原参数创建。
