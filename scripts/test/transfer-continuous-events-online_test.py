@@ -234,6 +234,8 @@ class ContinuousRunnerTest(unittest.TestCase):
         browser = (M.ROOT / 'console/frontend/e2e/online/continuous-execution-events.spec.js').read_text()
         self.assertNotIn('page.route(', browser)
         self.assertIn('transfer-browser-support.js', browser)
+        self.assertIn("localStorage.setItem('addp-lang', 'zh-cn')", browser)
+        self.assertIn("locale: 'zh-CN'", browser)
 
 
 if __name__ == '__main__':

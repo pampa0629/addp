@@ -27,9 +27,10 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const destination = resolve(artifacts, `continuous-browser-${phase}.json`)
   const route = id => `/monitor/executions?execution_id=${encodeURIComponent(id)}`
   async function signedPage(id, owner = true) {
-    const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL })
+    const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     contexts.push(context)
     const page = await context.newPage()
+    await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
     const token = await login(page, ...credentials, route(id))
     const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
     try {
@@ -44,14 +45,22 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     return { page, frame: page.frameLocator('iframe[data-testid="module-iframe"]') }
   }
   async function timeline(frame, terminal) {
+    const prefix = stage
+    stage = prefix + '_detail'
     const detail = frame.locator('.execution-detail-content')
     await expect(detail).toBeVisible()
+    stage = prefix + '_retention'
     const events = detail.locator('.execution-events')
     await expect(events).toContainText('过程事件保留 30 天')
+    stage = prefix + '_started'
     await expect(events.locator('tbody tr').filter({ hasText: '开始执行' })).toHaveCount(1)
+    stage = prefix + '_progress'
     await expect(events.locator('tbody tr').filter({ hasText: '进度汇总' }).first()).toBeVisible()
+    stage = prefix + '_terminal'
     if (terminal) await expect(events.locator('tbody tr').filter({ hasText: terminal })).toHaveCount(1)
+    stage = prefix + '_no_samples'
     await expect(detail).not.toContainText('business-value-sentinel')
+    stage = prefix
     return { detail, events }
   }
   async function release() {
