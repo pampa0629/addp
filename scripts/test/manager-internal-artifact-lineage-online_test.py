@@ -581,14 +581,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v10",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v10",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -623,8 +623,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         "structured_json": [{**source, "content_verified": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
             **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
-            **({"map_loaded": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
-                "source_srid": 4326} if source["format"] == "geojson" else {})} for source in evidence["structured_json"]],
+            **({"map_loaded": True, "table_verified": True, "geometry_verified": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
+                "source_srid": 4326, "source_crs": "EPSG:4326"} if source["format"] == "geojson" else {})} for source in evidence["structured_json"]],
             "gpu_performance_diagnostics": {"count": 0, "stages": []},
             "browser_warning_errors": 0,
             "failed_business_responses": 0,
@@ -1470,6 +1470,10 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             lambda value: value['structured_json'][1].update(last_page_disabled=False),
             lambda value: value['structured_json'][2].update(source_srid=0),
             lambda value: value['structured_json'][3].update(geometry_types=['Point']),
+            lambda value: value['structured_json'][2].pop('table_verified'),
+            lambda value: value['structured_json'][3].update(geometry_verified=False),
+            lambda value: value['structured_json'][2].update(source_crs='EPSG:3857'),
+            lambda value: value['structured_json'][3].update(source_srid=0),
             lambda value: value['structured_json'][2].update(feature_count=1)]
         for index in range(4):
             for field in ['content_verified', 'metadata_verified', 'ordinary_refresh', 'reopened']:
@@ -1572,7 +1576,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v9")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v10")
 
 
 if __name__ == "__main__":

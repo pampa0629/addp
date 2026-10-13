@@ -1177,7 +1177,7 @@ def validate_browser_report(
     ):
         raise SuiteError("browser structured JSON sources must match all four fixed fixtures")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v9",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v10",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1208,8 +1208,8 @@ def validate_browser_report(
         "structured_json": [{**source, "content_verified": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
             **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
-            **({"map_loaded": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
-                "source_srid": 4326} if source["format"] == "geojson" else {})} for source in structured_json],
+            **({"map_loaded": True, "table_verified": True, "geometry_verified": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
+                "source_srid": 4326, "source_crs": "EPSG:4326"} if source["format"] == "geojson" else {})} for source in structured_json],
         "browser_warning_errors": 0,
         "failed_business_responses": 0,
     }
@@ -1571,7 +1571,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v7",
+            "schema_version": "addp.manager-internal-artifact-lineage/v8",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],

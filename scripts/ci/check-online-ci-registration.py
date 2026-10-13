@@ -384,7 +384,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "MODEL_FORMATS",
         "MESH_SOURCE_FACTS",
         "verify_mesh_source",
-        "addp.manager-internal-artifact-lineage/v7",
+        "addp.manager-internal-artifact-lineage/v8",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -417,7 +417,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v9",
+        "addp.manager-internal-artifact-lineage-browser/v10",
         "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
         "verifyDelimitedTable",
         "delimited_tables",
@@ -431,6 +431,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "verifyStructuredJSON",
         "structured_json: structuredEvidence",
         "content_verified",
+        "table_verified",
+        "geometry_verified",
+        "source_crs",
         "source_srid",
         "unknown_total_verified",
         "refresh_preserved_page",

@@ -1,6 +1,6 @@
 # common/format 格式后续事项
 
-更新时间：2026-10-12
+更新时间：2026-10-13
 
 只保留未决事项。
 
@@ -17,7 +17,7 @@
 | GeoTIFF | 空间栅格识别、属性与地图预览已有主线；COG 通过 Range 读取。地图依赖升级提交的 Raster Hosted 已通过计算、产物与执行页面复验，Manager Hosted 已通过 COG Range 读取和实际地图加载复验；范围限于所用真实夹具。 |
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
 | CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 读取、Manager 编码选择与 Meta 持久化已通过确定性及 PostgreSQL 回归，真实 NFS CSV / TSV 的编码应用、中文、分页、重复刷新、重新打开和原文件下载已验收；固定 GBK CSV / TSV 的 Business MinIO Hosted 同一链路及原文件下载哈希、清理已通过。XLSX 已通过真实 NFS 与 Business MinIO Hosted 四工作表的不同字段、空表、只有表头、未知总数逐页读取、刷新及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
-| JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
+| JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 的地图＋属性表已有实现和本地样例页面复核；2026-10-13 已确认统一使用表格响应核对 GeoJSON，旧 Hosted 在错误的对象 renderer 断言处失败，修正后须重新验收。不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
 | FBX / OBJ | 基础预览直接读取源模型；GLB 快显调用 Model3D 的对应 mesh operator。正式 Linux ARM64 产品构建已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。当前六模型 Manager Hosted 未包含二者，Linux x86_64 构建和真实页面／缓存验收仍待补；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
@@ -131,3 +131,7 @@
 扩展实现已提交并推送为 `3a8d809209b3d2661e6f9eadd13b2849470b8501`；合入当前工作区后 Manager 专项 76 项及 Go 身份工具再次通过，CI 登记检查通过。[FBX／OBJ Hosted 38337360185](https://github.com/pampa0629/addp/actions/runs/38337360185) 已触发，实际源码为包含该改动的 `b2e94c79b408a6297461f758f0ac1327d8b568c7`、Job `115100364456`，当前 pending。沿既有套件串行等待 JSON／GeoJSON Run `38328291459`，不取消或重复触发上一轮；两轮的实际浏览器、下载和清理结果分别核验，当前均不提前登记通过。
 
 2026-10-13 正式失败证据收口：JSON／GeoJSON Run `38328291459`、Job `115071985839`、源码 `dc0c3f687d6436e6da3c0ccd3f3c579d6e953963` 为 failure。停在 `features.geojson`：浏览器等待 `data.object.content.frontend_renderer=map`，实际 Manager 日志确认 `builtin:file-table` 与 `preview_type=table`；截图显示 EPSG:4326 点／折线和两条属性记录。现有对象内容规范与实际文件表路由的展示契约存在冲突，已向用户提交“地图＋属性表”与“GeoJSON 文档＋地图”的统一方案确认；确认前不修改依赖该决定的代码或测试，不接受 undefined，也不延长等待。六模型缓存、CSV／TSV GBK 全流程、XLSX 四工作表及下载哈希断言已先于失败点执行完成，普通 JSON 文档和 records array 也已执行至下载、刷新及重开；两种 GeoJSON 的完整下载与刷新尚未执行，没有 cached-preview 成功报告，整轮不计通过。实际 Manager JSONL 独立核对原九个产物 DELETE 200、九个任务 DELETE 204 及各自后续 GET 404；PDF／COG 物理删除报告均确认对象删除、源不变、零残留，外层 summary 确认 cleanup passed、Infra zero_residuals，未把 Infra 销毁替代领域删除证据。后续 FBX／OBJ Run `38337360185` 复用了相同错误断言，在 Job 尚无 steps 时取消，当前 completed/cancelled；保留全部旧失败证据，待统一契约及验证完成后再触发一次新增范围验收。
+
+2026-10-13 用户确认 GeoJSON 的唯一基础预览为“地图＋属性表”。已先修订 Manager 预览语义协议，再将 Hosted GeoJSON 两种后缀的断言统一到实际 `preview_type=table`：核对全部属性／Point 与 LineString 几何及源坐标、EPSG:4326、未变换 CRS 契约、属性表与真实地图 canvas、末页禁用、原文件下载、普通刷新及重开。普通 JSON 文档和 records array 仍各自严格验证。报告统一为 Owner/v8、browser/v10，新增 table_verified、geometry_verified、source_crs 证据，缺少或错误必须失败；不接受旧报告、不放宽警告或失败响应，不改产品路由、权限、血缘实现、Runtime 或等待时间。受影响入口仍为 make test-manager-online-runner、make test-online-runner、Manager 前端浏览器门禁及既有 Hosted Job，原有路径登记已覆盖。修正后的真实 Hosted 尚未执行，不提前登记通过。
+
+本次修正验证：隔离副本的标准 `make test-go` 全部 22 个模块通过，临时 Go 探针经真实 FileTable Provider 读取相同固定 GeoJSON 字节并保存实际表格／源 CRS／几何响应，探针已移除。使用核实的 Node v24.19.0，经标准 frontend-browser-gate 复用最终 Hosted 同一 helper，中英文两项临时探针均通过；`.geojson` 与 `.json` 各自的地图要素点击、属性弹窗、完整下载 SHA256、刷新和重开通过，截图已目视确认点、折线和属性。受控身份及接口不代替 T4。临时 Vite 下载端点、浏览器测试和依赖链接已移除，未改产品路由或启动用户服务。Manager 专项 76 项及 Go 身份工具通过，CI 登记一致；标准 make test-changed 因多 Owner T2 连接条件缺失在预检中止，不记整轮通过，完整扩散验证仍由既有 Platform CI／Release-T2 及本 suite 的 Hosted 验证。

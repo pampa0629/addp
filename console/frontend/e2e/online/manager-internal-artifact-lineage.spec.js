@@ -311,25 +311,55 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
           const preview = received.filter(value => value.page === (offset === 0 ? 1 : 2)).at(-1)
           return preview && { type: preview.preview_type, total: preview.data?.total, rows: preview.data?.rows }
         }).toEqual({ type: 'table', total: 25, rows: expectedRows })
+      } else if (source.format === 'geojson') {
+        const expectedRows = features.features.map(feature => ({ ...feature.properties, geometry: feature.geometry }))
+        await expect.poll(() => {
+          const preview = received.at(-1)
+          const data = preview?.data
+          return preview && { status: preview.status, type: preview.preview_type, total: data?.total,
+            columns: [...(data?.columns || [])].sort(), rows: data?.rows,
+            geometry_columns: data?.geometry_columns, geometry_column: data?.geometry_column,
+            source_srid: data?.source_srid, source_crs: data?.source_crs,
+            transform_status: data?.transform_status, preview_hint: data?.preview_hint }
+        }).toEqual({ status: 200, type: 'table', total: 2, columns: ['geometry', 'id', 'label'], rows: expectedRows,
+          geometry_columns: ['geometry'], geometry_column: 'geometry', source_srid: 4326, source_crs: 'EPSG:4326',
+          transform_status: 'not_transformed', preview_hint: 'direct_renderable' })
+        const table = frame.locator('.table-preview')
+        await expect(table.getByRole('columnheader')).toHaveText(['id', 'label'])
+        expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(['1', '采样点', '2', '采样线'])
+        await expect(table.getByRole('button', { name: /下一页|Go to next page/, exact: true })).toBeDisabled()
+        await expect(table.locator('.map-container canvas').first()).toBeVisible()
+        await expect(table.locator('.map-placeholder')).toHaveCount(0)
+        const map = table.locator('.map-container')
+        await expect.poll(async () => {
+          const popup = map.locator('.map-popup').last()
+          if (await popup.isVisible() && (await popup.innerText()).includes('采样点')) return true
+          // Read OpenLayers' current projected pixel, then use real pointer input.
+          // A visible canvas can precede feature insertion and the fit animation.
+          const pixel = await map.locator('.openlayers-map-renderer').evaluate(element => {
+            const value = element.__vueParentComponent?.setupState?.mapInstance
+            const instance = value?.value || value
+            if (!instance || instance.getView().getAnimating()) return null
+            const point = instance.getLayers().getArray()
+              .flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+              .find(feature => feature.getGeometry()?.getType() === 'Point')
+            return point ? instance.getPixelFromCoordinate(point.getGeometry().getCoordinates()) : null
+          })
+          const bounds = await map.boundingBox()
+          if (!pixel || !bounds || pixel[0] < 0 || pixel[1] < 0 || pixel[0] >= bounds.width || pixel[1] >= bounds.height) return false
+          await map.click({ position: { x: pixel[0], y: pixel[1] } })
+          await expect(popup).toBeVisible()
+          return (await popup.innerText()).includes('采样点')
+        }).toBe(true)
+        await expect(frame.locator('.geojson-preview, .json-preview')).toHaveCount(0)
       } else {
-        await expect.poll(() => received.at(-1)?.data?.object?.content?.frontend_renderer).toBe(source.format === 'geojson' ? 'map' : 'json')
+        await expect.poll(() => received.at(-1)?.data?.object?.content?.frontend_renderer).toBe('json')
         const content = received.at(-1)?.data?.object?.content
-        if (source.format === 'geojson') {
-          const preview = frame.locator('.geojson-preview')
-          await expect(preview).toBeVisible()
-          expect(JSON.parse(await preview.locator('.json-content').innerText())).toEqual(features)
-          expect(content).toMatchObject({ kind: 'json', preview_material: 'geojson', geojson: features,
-            metadata: { source_srid: 4326, source_crs: 'EPSG:4326', transform_status: 'not_transformed', preview_hint: 'direct_renderable' } })
-          await expect(preview.locator('.map-container')).toBeVisible()
-          await expect(preview.locator('.map-container canvas').first()).toBeVisible()
-          await expect(preview.locator('.map-placeholder')).toHaveCount(0)
-        } else {
-          const preview = frame.locator('.json-preview')
-          await expect(preview).toBeVisible()
-          expect(JSON.parse(await preview.locator('.json-content').innerText())).toEqual(document)
-          expect(content).toMatchObject({ kind: 'json', preview_material: 'json', json: document })
-          await expect(frame.locator('.table-preview, .geojson-preview')).toHaveCount(0)
-        }
+        const preview = frame.locator('.json-preview')
+        await expect(preview).toBeVisible()
+        expect(JSON.parse(await preview.locator('.json-content').innerText())).toEqual(document)
+        expect(content).toMatchObject({ kind: 'json', preview_material: 'json', json: document })
+        await expect(frame.locator('.table-preview, .geojson-preview')).toHaveCount(0)
       }
     }
     await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
@@ -358,6 +388,7 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
     expect(response.status()).toBe(200)
     expect(response.request().postData()).toBeNull()
     await expect.poll(() => received.length).toBeGreaterThan(beforeRefresh)
+    await verifyContent(source.case === 'records' ? 20 : 0, source.case === 'records' ? 5 : 20)
     await verifyMetadata()
     await Promise.all(pending)
     expect(readErrors).toEqual([])
@@ -370,7 +401,7 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
     return { ...source, content_verified: true, metadata_verified: true, ordinary_refresh: true,
       reopened: true, download_sha256: checksum,
       ...(source.case === 'records' ? { first_page_rows: 20, last_page_rows: 5, last_page_disabled: true } : {}),
-      ...(source.format === 'geojson' ? { map_loaded: true, feature_count: 2, geometry_types: ['Point', 'LineString'], source_srid: 4326 } : {}) }
+      ...(source.format === 'geojson' ? { map_loaded: true, table_verified: true, geometry_verified: true, feature_count: 2, geometry_types: ['Point', 'LineString'], source_srid: 4326, source_crs: 'EPSG:4326' } : {}) }
   } finally {
     page.off('response', receive)
   }
@@ -527,7 +558,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v9', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v10', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -626,7 +657,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v9',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v10',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
