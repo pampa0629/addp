@@ -777,6 +777,42 @@ class MetricsProtocolTest(unittest.TestCase):
                 value = json.loads((artifacts / "node-resources-browser-input.json").read_text())
                 self.assertEqual(set(value["node"]), {"node_id", "version"})
 
+    def test_browser_runtime_diagnostics_keep_deadlines_and_omit_captured_secrets(self):
+        for captured, deadline in (("Test timeout of 240000ms exceeded. secret-password", True),
+                                   ("\x1b[31mTest timeout of 240000ms exceeded.\x1b[0m secret-mfa", True),
+                                   ("page.goto: Test ended. secret-token", False)):
+            with self.subTest(deadline=deadline), tempfile.TemporaryDirectory() as directory:
+                with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                     patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout=captured, stderr="private-credentials")) as command, \
+                     patch("sys.stdout", new_callable=io.StringIO) as output:
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser failed"):
+                        ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}}, [])
+                    self.assertEqual(command.call_args.kwargs["timeout"], 300)
+                    content = (Path(directory) / "node-resources-browser-runtime.json").read_text()
+                    diagnostic = json.loads(content)
+                    self.assertEqual(diagnostic["test_deadline_reported"], deadline)
+                    self.assertFalse(diagnostic["subprocess_deadline_exceeded"])
+                    self.assertEqual(diagnostic["subprocess_timeout_seconds"], 300)
+                    self.assertIs(type(diagnostic["duration_ms"]), int)
+                    self.assertGreaterEqual(diagnostic["duration_ms"], 0)
+                    self.assertNotIn("secret-", content+output.getvalue())
+                    self.assertNotIn("private-credentials", content+output.getvalue())
+                    self.assertEqual(set(diagnostic), {"schema_version", "result", "duration_ms", "test_deadline_reported", "subprocess_deadline_exceeded", "subprocess_timeout_seconds"})
+
+    def test_browser_subprocess_deadline_records_safe_failure_without_extending_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            expired = ONLINE.subprocess.TimeoutExpired(["npm", "secret-argument"], 300, output="secret-output", stderr="secret-error")
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                 patch.object(ONLINE.subprocess, "run", side_effect=expired):
+                with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser subprocess exceeded existing deadline"):
+                    ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}}, [])
+            content = (Path(directory) / "node-resources-browser-runtime.json").read_text()
+            diagnostic = json.loads(content)
+            self.assertTrue(diagnostic["subprocess_deadline_exceeded"])
+            self.assertFalse(diagnostic["test_deadline_reported"])
+            self.assertEqual(diagnostic["result"], "failed")
+            self.assertNotIn("secret-", content)
+
     def test_center_fault_requires_hosted_boundary_and_owned_infra_identity(self):
         with patch.object(ONLINE.FIXTURE, "boundary", side_effect=ValueError("personal")), patch.object(ONLINE.FIXTURE, "command") as command:
             with self.assertRaises(ValueError):

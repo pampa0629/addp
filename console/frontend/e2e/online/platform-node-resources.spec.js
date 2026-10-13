@@ -9,13 +9,18 @@ import { json, matchesRedirectURL } from './transfer-browser-support.js'
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
 
-test('platform node resources through real Console password MFA and Monitor iframe', async ({ browser }) => {
+test('platform node resources through real Console password MFA and Monitor iframe', async ({ browser }, testInfo) => {
   test.setTimeout(240_000)
   const artifact = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const expected = JSON.parse(readFileSync(resolve(artifact, 'node-resources-browser-input.json'), 'utf8'))
   const repository = resolve(process.cwd(), '../..')
   const report = { schema_version: 'addp.node-resources-browser/v1', result: 'failed', run_id: expected.run_id }
+  const browserStarted = performance.now()
+  let stageStarted = browserStarted
   const save = stage => {
+    const now = performance.now()
+    if (report.stage !== stage) stageStarted = now
+    report.timing = { elapsed_ms: Math.round(now - browserStarted), stage_elapsed_ms: Math.round(now - stageStarted), test_timeout_ms: testInfo.timeout }
     report.stage = stage
     writeFileSync(resolve(artifact, 'node-resources-browser.json'), JSON.stringify(report, null, 2))
   }
@@ -446,6 +451,9 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.result = 'passed'
     save('complete')
   } catch (error) {
+    // Fixed route flags never export URL inputs or authentication state.
+    const pathname = new URL(page.url()).pathname
+    report.browser_state = { page_closed: page.isClosed(), current_node_list: pathname === '/monitor/node-resources', current_service_list: pathname === '/monitor/service-resources' }
     // A bounded diagnostic is useful without exporting Playwright's login snapshots.
     let message = String(error.message)
     for (const [key, value] of Object.entries(process.env)) {

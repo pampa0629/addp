@@ -1852,3 +1852,13 @@ Safari 沿用户现有平台管理员会话只读复核：首次进入的旧实�
 实现前沿标准浏览器入口过滤新 off 恢复场景，列表缺刷新控件且 refresh 被剔除，回归失败；初次完整复验 122/123 通过，失败用例在 reload 首轮列表未完成前记录请求数，已改为等待正式列表采集状态后再核对 off 无请求，最终完整门禁 123/123 通过。不放宽请求数、权限清空或可见性断言。日志位于 /tmp/addp-host-list-auto-refresh-red.log、/tmp/addp-host-list-auto-refresh-monitor-final.log、/tmp/addp-host-list-auto-refresh-console.log、/tmp/addp-host-list-auto-refresh-runner.log、/tmp/addp-host-list-auto-refresh-registration.log、/tmp/addp-host-list-auto-refresh-changed-final.log。构建保留既有大包提示；任务范围 git diff --check 通过。
 
 此次 Hosted 列表新增阶段尚未实际执行，不沿用 10.56 的完整通过作为新阶段证据；提交后需用户推送，再沿唯一 platform-node-metrics suite 验证真实默认定时与 off 恢复。未修改后端、权限、采集预算或个人部署，无需重启后端，未操作内置浏览器。
+
+2026-10-13 推送后的 [Hosted T4 38336323214](https://github.com/pampa0629/addp/actions/runs/38336323214)（Job 115097111675，源码 58fbfbf1e88dea1cd318df499fa87980a98b5609）最终失败。业务报告停在 console-resource-browser；浏览器阶段为 host-list-natural-refresh-and-off-restore，脱敏错误是 page.goto: Test ended，正在导航到主机列表并等待 load。已归档的 102 个主机资源响应、两帧列表摘要、服务摘要/趋势和全部服务自动刷新标志保留，但新列表阶段未取得任何新增摘要，不能计通过。后续负例身份及中心/来源/控制面故障阶段未执行、不计通过。独立 summary 为 result=failed / cleanup=passed / infra_cleanup=zero_residuals，归档位于 /tmp/addp-host-list-auto-refresh-hosted-38336323214/。
+
+现有公开报告没有浏览器总耗时、阶段耗时或明确的 Playwright 超时分类；原始测试输出只在内存捕获并在退出时丢弃，避免登录断言泄露凭据。不能仅凭 Test ended 判定是整个测试期限耗尽或 load 未完成，也不能将失败归因为 CPU 缺值。下一批只补充安全诊断：浏览器报告记录单调时钟的总/阶段耗时、现有 testInfo.timeout 及固定页面分类/关闭状态；runner 另保存白名单运行报告，包含原 300 秒子进程预算、实际经过时间、是否匹配测试超时分类及是否触发子进程期限，不保存捕获输出或异常正文。原 240 秒测试期限、300 秒子进程期限、导航等待、API/权限、所有原业务断言与重试次数保持；真实复验取得诊断后再确定修复，不盲目延长期限。
+
+实施前确认只涉及现有 Online 浏览器测试、runner 和现有文档，不改变产品。沿 make test-node-metrics-online-runner 验证 ESM、两类期限分类和脱敏，并执行默认 make test-changed；原 Platform consistency 及同一 Hosted suite 已登记，归档上传/销毁路径覆盖新增生成报告，不新增标准入口或依赖。resource_summary.go 及其配套内核测试归资源总览会话抽取，本会话不修改；10.58 由该会话维护。
+
+安全诊断实施验证：实现前沿同一标准入口新增分类/脱敏场景，四个子场景报错（缺少运行报告、未包装子进程期限）；实现后及最终 `env PATH="/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" make test-node-metrics-online-runner` 返回 0，47 项测试与正式 System Metrics 身份夹具通过，Online ESM 语法检查通过。覆盖普通失败、明确报告测试期限、ANSI 输出、子进程期限及异常命令/输出/错误不落入公开证据；期限仍为原 300 秒，浏览器仍为原 240 秒。字段 test_deadline_reported 只表示捕获输出报告了该分类，false 不证明不存在超时。日志为 /tmp/addp-host-list-browser-runtime-red-38336323214.log 与 /tmp/addp-host-list-browser-runtime-green-final-38336323214.log。
+
+默认 make test-changed 对当前混合工作区因多个 Owner 的外部数据库输入缺失在预检返回 2，后续门禁未执行、不计通过（/tmp/addp-host-list-browser-runtime-changed-38336323214.log）。本轮 47 个归档文件未检出私钥/JWT 模式。原源码58fbfbf1e的Monitor/Console前端及Go工作区CI已通过，Platform consistency仍执行；不能将分项计作整轮CI通过。本次诊断尚未真实执行，待推送后沿原suite复验，不将T1通过视作导航失败已修复，不修改产品或重启个人服务。仅提交本会话的10.57验收记录及诊断，不包含资源总览会话的10.58工作区改动。

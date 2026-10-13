@@ -836,10 +836,24 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     evidence.unlink(missing_ok=True)
     for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
-    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
-                             "e2e/online/platform-node-resources.spec.js",
-                             "--output=" + str(Path(os.environ["ADDP_ONLINE_SECRET_DIR"]) / "node-resource-browser-output")], cwd=FIXTURE.ROOT / "console/frontend",
-                            env=dict(os.environ), capture_output=True, text=True, timeout=300)
+    started = time.monotonic()
+    runtime = {"schema_version": "addp.node-resources-browser-runtime/v1", "result": "failed", "duration_ms": 0,
+               "test_deadline_reported": False, "subprocess_deadline_exceeded": False, "subprocess_timeout_seconds": 300}
+    try:
+        result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
+                                 "e2e/online/platform-node-resources.spec.js",
+                                 "--output=" + str(Path(os.environ["ADDP_ONLINE_SECRET_DIR"]) / "node-resource-browser-output")], cwd=FIXTURE.ROOT / "console/frontend",
+                                env=dict(os.environ), capture_output=True, text=True, timeout=runtime["subprocess_timeout_seconds"])
+        runtime["result"] = "passed" if result.returncode == 0 else "failed"
+        # Classify captured output in memory only; never export login assertions or exception payloads.
+        runtime["test_deadline_reported"] = any(re.search(r"\bTest timeout of [0-9]+ms exceeded", re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", stream or "")) is not None
+                                                  for stream in (result.stdout, result.stderr))
+    except subprocess.TimeoutExpired:
+        runtime["subprocess_deadline_exceeded"] = True
+        raise SuiteError("resource browser subprocess exceeded existing deadline") from None
+    finally:
+        runtime["duration_ms"] = max(0, round((time.monotonic() - started) * 1000))
+        (artifacts / "node-resources-browser-runtime.json").write_text(json.dumps(runtime))
     # Playwright may print assertions from login; never forward credential-bearing output.
     require(result.returncode == 0, "resource browser failed; inspect sanitized stage report")
     require(evidence.is_file(), "resource browser report missing")
