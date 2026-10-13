@@ -27,6 +27,8 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const destination = resolve(artifacts, `continuous-browser-${phase}.json`)
   const route = id => `/monitor/executions?execution_id=${encodeURIComponent(id)}`
   async function signedPage(id, owner = true) {
+    const prefix = owner ? 'owner_login' : 'fresh_monitor_only_login'
+    stage = prefix
     const context = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     contexts.push(context)
     const page = await context.newPage()
@@ -34,12 +36,19 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     const token = await login(page, ...credentials, route(id))
     const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
     try {
+      stage = prefix + '_auth_context'
       const current = identity(await json(await api.get('/api/v1/system/auth/context'), 'browser AuthContext'))
+      stage = prefix + '_principalType'
       expect(current.principalType).toBe('user')
+      stage = prefix + '_contextType'
       expect(current.contextType).toBe('tenant')
+      stage = prefix + '_principalID'
       expect(current.principalID).toBe(principalID)
+      stage = prefix + '_tenantID'
       expect(current.tenantID).toBe(tenantID)
+      stage = prefix + '_monitor_permission'
       expect(current.permissions.has('monitor.execution.read')).toBe(true)
+      stage = prefix + '_owner_permission'
       expect(current.permissions.has('transfer.task.read')).toBe(owner)
     } finally { await api.dispose() }
     return { page, frame: page.frameLocator('iframe[data-testid="module-iframe"]') }
@@ -121,8 +130,13 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       checks.push('old_content_cleared')
       stage = 'fresh_monitor_only_denied'
       const fresh = await signedPage(ids[0], false)
+      stage = 'fresh_monitor_only_iframe'
+      await expect(fresh.page.locator('iframe[data-testid="module-iframe"]')).toBeVisible()
+      stage = 'fresh_monitor_only_detail_denied'
       await expect(fresh.frame.getByText('未能加载目标执行详情', { exact: true })).toBeVisible()
+      stage = 'fresh_monitor_only_no_detail'
       await expect(fresh.frame.locator('.execution-detail-content')).toHaveCount(0)
+      stage = 'fresh_monitor_only_no_events'
       await expect(fresh.frame.locator('.execution-events')).toHaveCount(0)
       checks.push('fresh_monitor_only_denied', 'no_samples')
       await fresh.page.screenshot({ path: resolve(artifacts, 'continuous-revoked-reader.png'), fullPage: true })
