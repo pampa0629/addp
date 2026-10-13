@@ -191,6 +191,8 @@ MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个�
 | Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推；普通 Parquet 与 GeoParquet 共用列式压缩配置。 |
 | Shapefile | multi table read / write；完整 refs 由 format specs 或 Meta attributes 提供。 |
 
+格式同时提供 single 和 whole reader 时，Transfer 按 Meta 已确定的 item layout 选择读取入口：单个 Parquet 文件走 `TableReaderProvider`，目录数据集走 `ScopeTableReaderProvider`，不能仅因格式注册了 scope reader 就把单文件当目录读取。PGeo 等 container child 没有普通 content table reader，仍消费运行时工厂已绑定的 scope reader；不把父容器的 single layout 改写为 whole。
+
 Parquet writer 的列式压缩通过 `target.options.compression` 配置，该值作用于所有列的 Column Chunk / Data Page，不是文件封装压缩，也不是 Parquet value encoding。当前契约为：
 
 - 默认：`zstd`。

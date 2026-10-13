@@ -20,6 +20,15 @@ import (
 )
 
 func TestTableTransferExecutorPreservesWholeScopeParquetDecimal(t *testing.T) {
+	for _, layout := range []string{format.LayoutSingle, format.LayoutWhole} {
+		t.Run(layout, func(t *testing.T) {
+			testTableTransferExecutorPreservesParquetDecimal(t, layout)
+		})
+	}
+}
+
+func testTableTransferExecutorPreservesParquetDecimal(t *testing.T, layout string) {
+	t.Helper()
 	ctx := context.Background()
 	p := parquetformat.NewPlugin()
 	source := &fakeContentWriter{files: map[string][]byte{}}
@@ -46,9 +55,13 @@ func TestTableTransferExecutorPreservesWholeScopeParquetDecimal(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := &fakeContentWriter{}
-	exec := &TableTransferExecutor{SourceContentReader: source, TargetContentWriter: output, SourceScopeReadProvider: p, TargetTableWriterProvider: p}
+	exec := &TableTransferExecutor{SourceContentReader: source, TargetContentWriter: output, SourceTableReadProvider: p, SourceScopeReadProvider: p, TargetTableWriterProvider: p}
+	sourcePath := engineplugin.FileDirectoryPath(7, "datasets/decimals")
+	if layout == format.LayoutSingle {
+		sourcePath = engineplugin.FileItemPath(7, "datasets/decimals/part-000.parquet")
+	}
 	metrics, err := exec.Execute(ctx, TableTransferPlan{
-		Source: TableSourcePlan{Kind: TableEndpointEncoded, Path: engineplugin.FileDirectoryPath(7, "datasets/decimals"), Format: format.FormatParquet, Layout: format.LayoutWhole, TableInfo: info},
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Path: sourcePath, Format: format.FormatParquet, Layout: layout, TableInfo: info},
 		Target: TableTargetPlan{Kind: TableEndpointEncoded, Path: engineplugin.FileItemPath(8, "exports/decimals.parquet"), Format: format.FormatParquet}, BatchSize: 1,
 	})
 	if err != nil {

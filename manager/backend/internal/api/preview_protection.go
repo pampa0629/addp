@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	managerprotection "github.com/addp/manager/internal/protection"
@@ -28,11 +29,14 @@ func writePreviewResult(c *gin.Context, result *preview.PreviewResult, rules []d
 		protectionRequired(c)
 		return
 	}
-	if table, ok := result.Data.(*models.TablePreview); ok && table.Mode == preview.PreviewModeTable && table.Rows == nil {
-		table.Rows = []map[string]interface{}{}
+	wireResult, err := previewResultForJSON(result)
+	if err != nil {
+		logger.L().Error("数据预览序列化失败", "error_type", "bigint_representation")
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgPreviewFailed)
+		return
 	}
 	logger.L().Info("数据预览成功", "locator", c.Query("locator"), "preview_type", result.PreviewType)
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, wireResult)
 }
 
 // applyPreviewProtection is the Manager response-boundary executor. Providers

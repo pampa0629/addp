@@ -4974,6 +4974,7 @@ paths:
         PostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading
         表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
         表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
+        bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
       parameters:
       - description: 键空间浏览游标 | Keyspace browse cursor
         in: query

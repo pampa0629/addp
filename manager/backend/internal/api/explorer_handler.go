@@ -98,6 +98,7 @@ func bearerToken(c *gin.Context) string {
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Description 表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
 // @Description 表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
+// @Description bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"

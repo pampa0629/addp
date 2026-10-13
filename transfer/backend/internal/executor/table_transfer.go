@@ -271,7 +271,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}
-		if e.SourceScopeReadProvider != nil {
+		if e.SourceScopeReadProvider != nil && (plan.Layout == format.LayoutWhole || (e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil)) {
 			return &encodedContentTableSource{
 				reader:              e.SourceContentReader,
 				scopeReaderProvider: e.SourceScopeReadProvider,

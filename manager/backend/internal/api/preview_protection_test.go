@@ -21,6 +21,81 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func TestPreviewJSONPreservesBigIntWithoutMutatingNativeRows(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		value interface{}
+		want  interface{}
+	}{
+		{int64(9007199254740993), "9007199254740993"},
+		{int64(-9007199254740993), "-9007199254740993"},
+		{int64(9223372036854775807), "9223372036854775807"},
+		{int64(-9223372036854775808), "-9223372036854775808"},
+		{int64(1), "1"}, {int32(-1), "-1"},
+		{json.Number("9007199254740993"), "9007199254740993"},
+		{"9007199254740993", "9007199254740993"},
+		{"***", "***"}, {nil, nil},
+	} {
+		row := map[string]interface{}{"id": tc.value, "small": 3, "amount": "0.000000000000000001"}
+		table := &models.TablePreview{Mode: preview.PreviewModeTable, Columns: []string{"id", "small", "amount"},
+			Fields:         []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "small", Type: datatype.FieldTypeInt}, {Name: "amount", Type: datatype.FieldTypeDecimal}},
+			ColumnMetadata: []models.ColumnMetadata{{ColumnName: "id", Type: "bigint"}}, Rows: []map[string]interface{}{row}}
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}, nil)
+		var response struct {
+			Data struct {
+				Rows           []map[string]interface{} `json:"rows"`
+				ColumnMetadata []models.ColumnMetadata  `json:"column_metadata"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != 200 {
+			t.Fatalf("preview JSON failed: status=%d body=%s err=%v", w.Code, w.Body.String(), err)
+		}
+		if !reflect.DeepEqual(response.Data.Rows[0]["id"], tc.want) || response.Data.Rows[0]["small"] != float64(3) || response.Data.Rows[0]["amount"] != row["amount"] || response.Data.ColumnMetadata[0].Type != "bigint" {
+			t.Fatalf("JSON cells lost types or precision: %#v", response.Data)
+		}
+		if !reflect.DeepEqual(row["id"], tc.value) || !reflect.DeepEqual(table.Rows[0]["id"], tc.value) {
+			t.Fatal("JSON serialization changed the native bigint")
+		}
+	}
+}
+
+func TestPreviewBigIntJSONRejectsFloatAndInvalidProviderValues(t *testing.T) {
+	for _, value := range []interface{}{float64(9007199254740993), float32(1), json.Number("1.0"), true, []byte("9007199254740993")} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		table := &models.TablePreview{Mode: preview.PreviewModeTable,
+			Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
+			Rows:   []map[string]interface{}{{"id": value}}}
+		writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}, nil)
+		if w.Code != 500 || strings.Contains(w.Body.String(), "900719925474099") {
+			t.Fatalf("invalid bigint was serialized: status=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPreviewBigIntJSONRunsAfterFieldProtection(t *testing.T) {
+	seenNative := false
+	table := &models.TablePreview{Mode: preview.PreviewModeTable, Columns: []string{"id"},
+		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
+		Rows:   []map[string]interface{}{{"id": int64(9007199254740993)}},
+		PreparedProtection: &dataprotection.PreparedTableProtection{Apply: func(result *plugin.QueryResult) error {
+			seenNative = result.Rows[0]["id"] == int64(9007199254740993)
+			result.Rows = []map[string]interface{}{{"id": "***"}}
+			return nil
+		}}}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/preview", nil)
+	writePreviewResult(c, &preview.PreviewResult{Data: table}, nil, dataprotection.SubjectReference{}, nil)
+	if !seenNative || w.Code != 200 || !strings.Contains(w.Body.String(), `"id":"***"`) || strings.Contains(w.Body.String(), "9007199254740993") {
+		t.Fatalf("bigint protection order changed: status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestPreviewAuthorizationErrorsAreStableAndDoNotExposeUpstreamDetails(t *testing.T) {
 	for _, test := range []struct {
 		err    error
