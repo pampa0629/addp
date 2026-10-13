@@ -111,6 +111,10 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 ### 标准门禁
 
+平台 Transfer 修订 21 冻结 `1c07a4282` 的原参数创建职责：Agent 按身份恢复确切草稿输入，Runtime 绑定复核和正式 Adapter 参数，每次确认恢复重新读取；当前能力、资源事实、两次预检、知情确认和提交屏障仍独立核验。运行草稿和报告不写入静态本体，PG 权威与 FalkorDB 同版依赖投影职责不变；无新表、API、权限或 Provider 支持扩张。来源增加路由状态和检查点控制引用依据，原能力范围不变。另审查 `f6da6539d` 的 Parquet item-layout 读取说明，其属于 native-table 创建切片之外，仅更新规范来源冻结。
+
+2026-10-13 本轮 Agent eval、Agent 前端（69 项单测、7 项受控浏览器及构建）、平台来源审查、Go 依赖规约、Ontology PG 及独占 FalkorDB 联动门禁通过。PG/FalkorDB 包含本修订记录、真实图投影、发布激活和 owner 自动清理。Ontology `go.mod/go.sum` 同步 Common 已引入的 MinIO 间接依赖，版本符合规约，原 CI 自动发现覆盖，无新增 Job。完整 Agent 门禁首次因 Meta 权限常量未定义失败；生成后串行复跑越过编译，最终在 System/Meta 新 authorization-facts 接口的 Swagger 路由覆盖不一致处失败，后续 owner 阶段未执行。Ontology 整套尝试在公共 Spark 启动夹具 15 秒超时处失败，后续串行 Agent 公共检查同项通过；未改阈值或宣称偶发原因已修复，不能计整套 Ontology 通过。工作区 changed 门禁因其他 owner 的 T2 连接配置缺失执行前阻断。修订 21 真实部署创建验收与 Hosted T4 未运行，须公共 Swagger 登记完成并重跑后，由用户重启 Agent/Ontology 再验；本轮没有创建目标表、运行 Transfer 或写入 Outdoor 数据。
+
 平台 Transfer 修订 20 冻结 `a9b35fd89` 的显式检查终态与双语固定提示，以及生产 Harness 回归。显式有效三态报告展示后结束，不再调用模型；同批仅保留首个检查，避免其他工具副作用。输入错误可修参，失败与取消不生成完成提示。自动创建预检、诊断修正、创建确认和权限保持原路径。PG 仍拥有不可变定义与来源，FalkorDB 仍投影同版依赖；运行草稿、报告和解释不进入静态图。本轮不新增 API、表、权限、组件、依赖或 CI Job，现有 Agent eval/前端、平台来源审查及 Ontology PG/FalkorDB 自动发现覆盖；真实消费需重启后复验。
 
 2026-10-13 修订 20 的 `make test-module MODULE=agent` 完整通过；专项 `test-agent-eval`、`test-agent-frontend`（69 项单测、7 项浏览器及构建）、`test-platform-review`、`test-ontology-postgres` 和 `test-ontology-falkor` 通过。PG/FalkorDB 包含修订记录、真实投影与发布激活，并按 owner 门禁清理自有测试资源。新增终态回归先在旧实现失败，再在修复后通过；覆盖显式三态、同批隔离、输入修正、双语提示、失败及取消，原自动预检回归保持通过。工作区 `make test-changed` 扩散到其他 owner，因缺测试连接配置在执行前阻断，不计为通过；不接管其他 owner 环境。真实模型新会话与 Hosted T4 未运行，受控门禁不证明配置可运行。本轮不创建、运行或写入任何 Outdoor 业务数据。
