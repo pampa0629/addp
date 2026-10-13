@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
@@ -40,7 +40,7 @@ func exerciseAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	item := seedAuthorizationFacts(t, db)
 	s := NewMetadataQueryService(db)
 	facts, err := s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != dataitem.AuthorizationBasisComplete {
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
 		t.Fatalf("facts=%+v err=%v", facts, err)
 	}
 	if facts.Boundary.NativeTarget.Segments[1].Name != "Out.door" || facts.Boundary.NativeTarget.Segments[2].Name != item.Name {
@@ -66,7 +66,7 @@ func exerciseAuthorizationFacts(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != dataitem.AuthorizationBasisIncomplete || facts.BoundaryHash != nil || facts.Boundary != nil {
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisIncomplete || facts.BoundaryHash != nil || facts.Boundary != nil {
 		t.Fatal("deep flag implied complete boundary", err)
 	}
 	item.Attributes["item"] = map[string]any{"layout": "whole"}
@@ -74,7 +74,7 @@ func exerciseAuthorizationFacts(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != dataitem.AuthorizationBasisUnsupported {
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisUnsupported {
 		t.Fatal("unimplemented whole allowed", err)
 	}
 	item.Attributes["item"] = map[string]any{"layout": "single"}
@@ -83,7 +83,7 @@ func exerciseAuthorizationFacts(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	facts, err = s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
-	if err != nil || facts.BasisState != dataitem.AuthorizationBasisNeedsRefresh {
+	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisNeedsRefresh {
 		t.Fatal("inconsistent stored coordinates allowed", err)
 	}
 	if err := db.Delete(&item).Error; err != nil {

@@ -1688,7 +1688,7 @@
                     "200": {
                         "description": "当前授权资源事实 | Current authorization resource facts",
                         "schema": {
-                            "$ref": "#/definitions/dataitem.AuthorizationFacts"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationFacts"
                         }
                     },
                     "400": {
@@ -2841,7 +2841,7 @@
         }
     },
     "definitions": {
-        "dataitem.AuthorizationBasisState": {
+        "authorizationfacts.AuthorizationBasisState": {
             "type": "string",
             "enum": [
                 "complete",
@@ -2856,7 +2856,7 @@
                 "AuthorizationBasisUnsupported"
             ]
         },
-        "dataitem.AuthorizationBoundary": {
+        "authorizationfacts.AuthorizationBoundary": {
             "type": "object",
             "properties": {
                 "layout": {
@@ -2870,7 +2870,7 @@
                 }
             }
         },
-        "dataitem.AuthorizationFacts": {
+        "authorizationfacts.AuthorizationFacts": {
             "type": "object",
             "properties": {
                 "basis_state": {
@@ -2882,12 +2882,12 @@
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/dataitem.AuthorizationBasisState"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationBasisState"
                         }
                     ]
                 },
                 "boundary": {
-                    "$ref": "#/definitions/dataitem.AuthorizationBoundary"
+                    "$ref": "#/definitions/authorizationfacts.AuthorizationBoundary"
                 },
                 "boundary_hash": {
                     "type": "string"

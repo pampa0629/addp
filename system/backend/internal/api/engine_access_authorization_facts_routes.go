@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/authorization"
@@ -16,7 +16,7 @@ import (
 )
 
 type authorizationFactsService interface {
-	GetAuthorizationFacts(context.Context, engineaccess.Actor, int64, string) (*dataitem.AuthorizationFacts, error)
+	GetAuthorizationFacts(context.Context, engineaccess.Actor, int64, string) (*authorizationfacts.AuthorizationFacts, error)
 }
 
 // This route registration belongs to the canonical *_routes.go discovery.
@@ -48,7 +48,7 @@ func RegisterEngineAccessAuthorizationFactsRoutes(api *gin.RouterGroup, runtime 
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
 // @Param fingerprint path string true "数据项指纹 | DataItem fingerprint"
-// @Success 200 {object} dataitem.AuthorizationFacts "授权边界事实 | Authorization boundary facts"
+// @Success 200 {object} authorizationfacts.AuthorizationFacts "授权边界事实 | Authorization boundary facts"
 // @Failure 404 {object} IAMErrorResponse "authorization_target_not_found：目标不存在或不属于当前引擎 | Target is missing or belongs to another engine"
 // @Failure 400,401,403,500,503 {object} IAMErrorResponse "查询失败 | Query failed"
 // @x-addp-auth-mode "permission"
@@ -60,7 +60,7 @@ func (h *EngineAccessAuthorizationFactsHandler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || !dataitem.ValidItemFingerprint(c.Param("fingerprint")) {
+	if c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 || !authorizationfacts.ValidItemFingerprint(c.Param("fingerprint")) {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
 	}

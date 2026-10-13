@@ -766,6 +766,7 @@
           "assessment": "Security Assessment",
           "audit": "Catalog Audit",
           "authorization": "Asset Authorization",
+          "authorization_facts": "Authorization Resource Facts",
           "backup": "Backup",
           "build_task": "Graph Build Task",
           "catalog": "Metadata Catalog",

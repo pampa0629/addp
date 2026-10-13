@@ -389,7 +389,7 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 | 响应部分 | 最小内容与事实来源 |
 | --- | --- |
-| 协议 | `schema_version=meta.data_item_authorization_facts/v1`；共享 wire 类型与严格校验归 `common/dataitem`，HTTP Client 归 `common/client` |
+| 协议 | `schema_version=meta.data_item_authorization_facts/v1`；共享 wire 类型与严格校验归轻量纯值包 `common/dataitem/authorizationfacts`，不得使 HTTP Client 传递依赖格式解析器或引擎实现；HTTP Client 归 `common/client` |
 | 身份 | `item_fingerprint`、`engine_id`、`item_type`、`full_name`，取自当前未删除的 `meta_item`；指纹按现有 `engine_id + full_name` 算法复核，不输出 Meta 行号作为授权身份 |
 | 边界 | `boundary`，包含 `layout`、规范读取入口与下述布局对应的组成约束；定位所需的 `data_type`／`format` 复用标准 item 事实，不要求 deep 字段结构或样本 |
 | 识别依据 | `basis_state`，由已有持久事实、探测规则的明确支持范围及已知失效依据派生；不把查询状态写入 attributes，不以 `scanned_depth=basic/deep` 单独判定完整 |

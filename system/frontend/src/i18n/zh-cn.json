@@ -766,6 +766,7 @@
           "assessment": "安全评估",
           "audit": "目录审计",
           "authorization": "资产授权",
+          "authorization_facts": "授权资源事实",
           "backup": "备份",
           "build_task": "图谱构建任务",
           "catalog": "元数据目录",

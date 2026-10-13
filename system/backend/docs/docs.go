@@ -3295,7 +3295,7 @@ const docTemplate = `{
                     "200": {
                         "description": "授权边界事实 | Authorization boundary facts",
                         "schema": {
-                            "$ref": "#/definitions/dataitem.AuthorizationFacts"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationFacts"
                         }
                     },
                     "400": {
@@ -13691,6 +13691,78 @@ const docTemplate = `{
                 }
             }
         },
+        "authorizationfacts.AuthorizationBasisState": {
+            "type": "string",
+            "enum": [
+                "complete",
+                "incomplete",
+                "needs_refresh",
+                "unsupported"
+            ],
+            "x-enum-varnames": [
+                "AuthorizationBasisComplete",
+                "AuthorizationBasisIncomplete",
+                "AuthorizationBasisNeedsRefresh",
+                "AuthorizationBasisUnsupported"
+            ]
+        },
+        "authorizationfacts.AuthorizationBoundary": {
+            "type": "object",
+            "properties": {
+                "layout": {
+                    "type": "string",
+                    "enum": [
+                        "single"
+                    ]
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.AuthorizationFacts": {
+            "type": "object",
+            "properties": {
+                "basis_state": {
+                    "enum": [
+                        "complete",
+                        "incomplete",
+                        "needs_refresh",
+                        "unsupported"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationBasisState"
+                        }
+                    ]
+                },
+                "boundary": {
+                    "$ref": "#/definitions/authorizationfacts.AuthorizationBoundary"
+                },
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "configuration.ManagementDeclaration": {
             "type": "object",
             "properties": {
@@ -13727,78 +13799,6 @@ const docTemplate = `{
                     }
                 },
                 "update_permission": {
-                    "type": "string"
-                }
-            }
-        },
-        "dataitem.AuthorizationBasisState": {
-            "type": "string",
-            "enum": [
-                "complete",
-                "incomplete",
-                "needs_refresh",
-                "unsupported"
-            ],
-            "x-enum-varnames": [
-                "AuthorizationBasisComplete",
-                "AuthorizationBasisIncomplete",
-                "AuthorizationBasisNeedsRefresh",
-                "AuthorizationBasisUnsupported"
-            ]
-        },
-        "dataitem.AuthorizationBoundary": {
-            "type": "object",
-            "properties": {
-                "layout": {
-                    "type": "string",
-                    "enum": [
-                        "single"
-                    ]
-                },
-                "native_target": {
-                    "$ref": "#/definitions/plugin.EngineCatalogPath"
-                }
-            }
-        },
-        "dataitem.AuthorizationFacts": {
-            "type": "object",
-            "properties": {
-                "basis_state": {
-                    "enum": [
-                        "complete",
-                        "incomplete",
-                        "needs_refresh",
-                        "unsupported"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/dataitem.AuthorizationBasisState"
-                        }
-                    ]
-                },
-                "boundary": {
-                    "$ref": "#/definitions/dataitem.AuthorizationBoundary"
-                },
-                "boundary_hash": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "full_name": {
-                    "type": "string"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "item_type": {
-                    "type": "string"
-                },
-                "observed_at": {
-                    "type": "string"
-                },
-                "schema_version": {
                     "type": "string"
                 }
             }

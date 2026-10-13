@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 )
 
-func metaAuthorizationTestFacts(t *testing.T) dataitem.AuthorizationFacts {
+func metaAuthorizationTestFacts(t *testing.T) authorizationfacts.AuthorizationFacts {
 	t.Helper()
-	f := dataitem.AuthorizationFacts{SchemaVersion: dataitem.AuthorizationFactsSchemaV1, EngineID: 2, ItemType: "table", FullName: "outdoor.persons", BasisState: dataitem.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(),
-		Boundary: &dataitem.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(2, "schema", "outdoor", "persons")}}
+	f := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: 2, ItemType: "table", FullName: "outdoor.persons", BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(),
+		Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(2, "schema", "outdoor", "persons")}}
 	f.ItemFingerprint = models.GenerateItemFingerprint(2, f.FullName)
 	hash, err := f.ComputeBoundaryHash()
 	if err != nil {

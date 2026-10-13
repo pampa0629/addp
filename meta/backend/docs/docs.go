@@ -1695,7 +1695,7 @@ const docTemplate = `{
                     "200": {
                         "description": "当前授权资源事实 | Current authorization resource facts",
                         "schema": {
-                            "$ref": "#/definitions/dataitem.AuthorizationFacts"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationFacts"
                         }
                     },
                     "400": {
@@ -2848,7 +2848,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "dataitem.AuthorizationBasisState": {
+        "authorizationfacts.AuthorizationBasisState": {
             "type": "string",
             "enum": [
                 "complete",
@@ -2863,7 +2863,7 @@ const docTemplate = `{
                 "AuthorizationBasisUnsupported"
             ]
         },
-        "dataitem.AuthorizationBoundary": {
+        "authorizationfacts.AuthorizationBoundary": {
             "type": "object",
             "properties": {
                 "layout": {
@@ -2877,7 +2877,7 @@ const docTemplate = `{
                 }
             }
         },
-        "dataitem.AuthorizationFacts": {
+        "authorizationfacts.AuthorizationFacts": {
             "type": "object",
             "properties": {
                 "basis_state": {
@@ -2889,12 +2889,12 @@ const docTemplate = `{
                     ],
                     "allOf": [
                         {
-                            "$ref": "#/definitions/dataitem.AuthorizationBasisState"
+                            "$ref": "#/definitions/authorizationfacts.AuthorizationBasisState"
                         }
                     ]
                 },
                 "boundary": {
-                    "$ref": "#/definitions/dataitem.AuthorizationBoundary"
+                    "$ref": "#/definitions/authorizationfacts.AuthorizationBoundary"
                 },
                 "boundary_hash": {
                     "type": "string"

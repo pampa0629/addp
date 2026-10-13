@@ -9,7 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/engineaccess"
@@ -18,9 +18,9 @@ import (
 	"gorm.io/gorm"
 )
 
-type authorizationFactsReaderFunc func(context.Context, uint, string) (*dataitem.AuthorizationFacts, error)
+type authorizationFactsReaderFunc func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
 
-func (f authorizationFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fingerprint string) (*dataitem.AuthorizationFacts, error) {
+func (f authorizationFactsReaderFunc) ReadAuthorizationFacts(ctx context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
 	return f(ctx, tenant, fingerprint)
 }
 
@@ -47,14 +47,14 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 		refresh()
 		actor.TokenExpiresAt = time.Now().Add(time.Minute)
 		fingerprint := commonmodels.GenerateItemFingerprint(engine.ID, "outdoor.persons")
-		facts := &dataitem.AuthorizationFacts{SchemaVersion: dataitem.AuthorizationFactsSchemaV1, ItemFingerprint: fingerprint, EngineID: engine.ID, ItemType: "table", FullName: "outdoor.persons", BasisState: dataitem.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(), Boundary: &dataitem.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(engine.ID, "schema", "outdoor", "persons")}}
+		facts := &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, ItemFingerprint: fingerprint, EngineID: engine.ID, ItemType: "table", FullName: "outdoor.persons", BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(engine.ID, "schema", "outdoor", "persons")}}
 		hash, err := facts.ComputeBoundaryHash()
 		if err != nil {
 			t.Fatal(err)
 		}
 		facts.BoundaryHash = &hash
 		calls := 0
-		reader := authorizationFactsReaderFunc(func(_ context.Context, tenant uint, requested string) (*dataitem.AuthorizationFacts, error) {
+		reader := authorizationFactsReaderFunc(func(_ context.Context, tenant uint, requested string) (*authorizationfacts.AuthorizationFacts, error) {
 			calls++
 			if int64(tenant) != actor.TenantID || requested != fingerprint {
 				t.Fatal("wrong resource context")
@@ -76,7 +76,7 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 			t.Fatal(err)
 		}
 		other.BoundaryHash = &otherHash
-		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*dataitem.AuthorizationFacts, error) {
+		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error) {
 			return &other, nil
 		}))
 		if _, err := s.GetAuthorizationFacts(ctx, actor, int64(engine.ID), other.ItemFingerprint); !errors.Is(err, commonapi.ErrNotFound) {
@@ -89,13 +89,13 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 		if _, err := s.GetAuthorizationFacts(ctx, bad, int64(engine.ID), fingerprint); !errors.Is(err, commonapi.ErrForbidden) || calls != before {
 			t.Fatal("stale actor called Meta", err)
 		}
-		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*dataitem.AuthorizationFacts, error) {
+		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error) {
 			return nil, &client.TenantAPIError{StatusCode: http.StatusNotFound}
 		}))
 		if _, err := s.GetAuthorizationFacts(ctx, actor, int64(engine.ID), fingerprint); !errors.Is(err, commonapi.ErrNotFound) {
 			t.Fatal("missing target confused with dependency failure", err)
 		}
-		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*dataitem.AuthorizationFacts, error) {
+		s.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error) {
 			// Must complete while the remote read is in flight: no local IAM lock may remain held.
 			if err := db.WithContext(ctx).Exec("UPDATE system.principals SET authorization_version=authorization_version+1 WHERE id=?", actor.PrincipalID).Error; err != nil {
 				return nil, err

@@ -170,7 +170,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `meta.task_provider.read|execute`，不得复用用户扫描任务权限。
 - 引擎数据项：`GET /engines/:engine_id/items`。
-- 授权资源事实：`GET /runtime/data-items/:fingerprint/authorization-facts`，仅允许固定 `addp-system` Tenant Service 及 `meta.authorization_facts.read`；在只读快照中精确查询，不回源、扫描或写回。首期支持原生 schema 普通表 `single`，其余布局明确不支持；DTO／摘要归 `common/dataitem`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
+- 授权资源事实：`GET /runtime/data-items/:fingerprint/authorization-facts`，仅允许固定 `addp-system` Tenant Service 及 `meta.authorization_facts.read`；在只读快照中精确查询，不回源、扫描或写回。首期支持原生 schema 普通表 `single`，其余布局明确不支持；DTO／摘要归轻量纯值包 `common/dataitem/authorizationfacts`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - `resource.children.list` Tool 复用 `GET /resource-tree/:engine_id/node` 返回父资源及直接子资源，并使用独立 Delegated Tool scope；不新增第二条 Catalog HTTP 路由。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。

@@ -10,7 +10,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonmodels "github.com/addp/common/models"
@@ -36,12 +36,12 @@ type testAuthorizationFactsService struct {
 	err   error
 }
 
-func (s *testAuthorizationFactsService) GetAuthorizationFacts(_ context.Context, _ engineaccess.Actor, id int64, fingerprint string) (*dataitem.AuthorizationFacts, error) {
+func (s *testAuthorizationFactsService) GetAuthorizationFacts(_ context.Context, _ engineaccess.Actor, id int64, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
 	s.calls++
 	if s.err != nil {
 		return nil, s.err
 	}
-	facts := &dataitem.AuthorizationFacts{SchemaVersion: dataitem.AuthorizationFactsSchemaV1, EngineID: uint(id), ItemFingerprint: fingerprint, ItemType: "table", FullName: "outdoor.persons", BasisState: dataitem.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(), Boundary: &dataitem.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(uint(id), "schema", "outdoor", "persons")}}
+	facts := &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: uint(id), ItemFingerprint: fingerprint, ItemType: "table", FullName: "outdoor.persons", BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(uint(id), "schema", "outdoor", "persons")}}
 	hash, err := facts.ComputeBoundaryHash()
 	if err != nil {
 		return nil, err

@@ -1,6 +1,6 @@
 basePath: /api/v1/meta
 definitions:
-  dataitem.AuthorizationBasisState:
+  authorizationfacts.AuthorizationBasisState:
     enum:
     - complete
     - incomplete
@@ -12,7 +12,7 @@ definitions:
     - AuthorizationBasisIncomplete
     - AuthorizationBasisNeedsRefresh
     - AuthorizationBasisUnsupported
-  dataitem.AuthorizationBoundary:
+  authorizationfacts.AuthorizationBoundary:
     properties:
       layout:
         enum:
@@ -21,18 +21,18 @@ definitions:
       native_target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
     type: object
-  dataitem.AuthorizationFacts:
+  authorizationfacts.AuthorizationFacts:
     properties:
       basis_state:
         allOf:
-        - $ref: '#/definitions/dataitem.AuthorizationBasisState'
+        - $ref: '#/definitions/authorizationfacts.AuthorizationBasisState'
         enum:
         - complete
         - incomplete
         - needs_refresh
         - unsupported
       boundary:
-        $ref: '#/definitions/dataitem.AuthorizationBoundary'
+        $ref: '#/definitions/authorizationfacts.AuthorizationBoundary'
       boundary_hash:
         type: string
       engine_id:
@@ -2318,7 +2318,7 @@ paths:
         "200":
           description: 当前授权资源事实 | Current authorization resource facts
           schema:
-            $ref: '#/definitions/dataitem.AuthorizationFacts'
+            $ref: '#/definitions/authorizationfacts.AuthorizationFacts'
         "400":
           description: 查询失败 | Query failed
           schema:

@@ -19,7 +19,7 @@ import (
 // @Produce json
 // @Security BearerAuth
 // @Param fingerprint path string true "数据项指纹 | DataItem fingerprint"
-// @Success 200 {object} dataitem.AuthorizationFacts "当前授权资源事实 | Current authorization resource facts"
+// @Success 200 {object} authorizationfacts.AuthorizationFacts "当前授权资源事实 | Current authorization resource facts"
 // @Failure 400,401,403,404,500 {object} map[string]interface{} "查询失败 | Query failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.authorization_facts.read"]

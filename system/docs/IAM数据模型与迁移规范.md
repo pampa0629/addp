@@ -326,6 +326,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
 - `000194` 发布专职 `tenant.engine_access_delegation_administrator` 模板，只允许 Tenant Scope 的 User，并组合委派读取／创建／撤销、引擎管理读取与租户账号候选读取。角色 Manifest 117 同步；不改写旧角色、不新增任何 Assignment、不生成管理委派或数据 Grant。账号赋权仍走正常 IAM API 并执行原有授权版本与会话撤销规则。
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
+- DataItem 边界绑定切换时，经确认可丢弃的旧原生目标测试授权不自动转换为新 Grant；通过前向迁移清理相关源规则及依赖记录，重新核验 Meta 边界后显式授权。清理不扩大到 IAM 账号、角色、功能权限或引擎管理委派，也不删除通用审计历史。切换完成后，旧原生目标记录不能作为读取依据，不保留兼容放行路径。
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
 - 已登记的定向恢复只有 75 号历史不可变 audience 冲突、113 号 Security 首次失败迁移的完整回滚状态，以及 130 号 Security 原值访问申请权限迁移的完整回滚状态；只能使用 `cmd/iam-migration-repair --migration <75|113|130> --apply`。75 号必须通过精确状态、checksum、约束和触发器校验；113 号必须通过 `(113, dirty)`、checksum 恰好到 112、Security 目标事实零落地与 Standard 原分类权限未变更校验；130 号必须通过 `(130, dirty)`、checksum 恰好到 129、新申请权限零落地、旧豁免变更权限与内置角色绑定仍完整的校验。三者都不得扩展为通用 dirty force、跳过版本或 checksum 改写能力。

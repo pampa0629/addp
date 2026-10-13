@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 )
 
 // ReadAuthorizationFacts is the exact, bounded and uncached System-to-Meta contract.
-func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, fingerprint string) (*dataitem.AuthorizationFacts, error) {
-	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || !dataitem.ValidItemFingerprint(fingerprint) {
+func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || !authorizationfacts.ValidItemFingerprint(fingerprint) {
 		return nil, errors.New("invalid Meta authorization facts request")
 	}
 	copy := *c.WithTenantID(tenantID)
@@ -43,7 +43,7 @@ func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, 
 	if err != nil || len(encoded) > maxBytes {
 		return nil, errors.New("invalid Meta authorization facts response size")
 	}
-	var result dataitem.AuthorizationFacts
+	var result authorizationfacts.AuthorizationFacts
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil {

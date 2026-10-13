@@ -7,14 +7,14 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/system/internal/authorization"
 )
 
 var ErrAuthorizationFactsUnavailable = errors.New("Meta authorization facts unavailable")
 
 type AuthorizationFactsReader interface {
-	ReadAuthorizationFacts(context.Context, uint, string) (*dataitem.AuthorizationFacts, error)
+	ReadAuthorizationFacts(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
 }
 
 func (s *Service) WithAuthorizationFactsReader(reader AuthorizationFactsReader) *Service {
@@ -25,8 +25,8 @@ func (s *Service) WithAuthorizationFactsReader(reader AuthorizationFactsReader) 
 // AuthorizationFacts only observes current resources; it does not change ACLs.
 // Close all IAM/engine transactions before the cross-owner request, and recheck
 // the current user after it returns, including expired/revoked qualifications.
-func (s *Service) GetAuthorizationFacts(ctx context.Context, actor Actor, engineID int64, fingerprint string) (*dataitem.AuthorizationFacts, error) {
-	if !dataitem.ValidItemFingerprint(fingerprint) {
+func (s *Service) GetAuthorizationFacts(ctx context.Context, actor Actor, engineID int64, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+	if !authorizationfacts.ValidItemFingerprint(fingerprint) {
 		return nil, commonapi.ErrBadRequest
 	}
 	qualify := func() error {

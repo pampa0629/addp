@@ -273,6 +273,55 @@ definitions:
       type:
         type: string
     type: object
+  authorizationfacts.AuthorizationBasisState:
+    enum:
+    - complete
+    - incomplete
+    - needs_refresh
+    - unsupported
+    type: string
+    x-enum-varnames:
+    - AuthorizationBasisComplete
+    - AuthorizationBasisIncomplete
+    - AuthorizationBasisNeedsRefresh
+    - AuthorizationBasisUnsupported
+  authorizationfacts.AuthorizationBoundary:
+    properties:
+      layout:
+        enum:
+        - single
+        type: string
+      native_target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  authorizationfacts.AuthorizationFacts:
+    properties:
+      basis_state:
+        allOf:
+        - $ref: '#/definitions/authorizationfacts.AuthorizationBasisState'
+        enum:
+        - complete
+        - incomplete
+        - needs_refresh
+        - unsupported
+      boundary:
+        $ref: '#/definitions/authorizationfacts.AuthorizationBoundary'
+      boundary_hash:
+        type: string
+      engine_id:
+        example: ""
+        type: string
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_type:
+        type: string
+      observed_at:
+        type: string
+      schema_version:
+        type: string
+    type: object
   configuration.ManagementDeclaration:
     properties:
       entries:
@@ -297,55 +346,6 @@ definitions:
           type: string
         type: array
       update_permission:
-        type: string
-    type: object
-  dataitem.AuthorizationBasisState:
-    enum:
-    - complete
-    - incomplete
-    - needs_refresh
-    - unsupported
-    type: string
-    x-enum-varnames:
-    - AuthorizationBasisComplete
-    - AuthorizationBasisIncomplete
-    - AuthorizationBasisNeedsRefresh
-    - AuthorizationBasisUnsupported
-  dataitem.AuthorizationBoundary:
-    properties:
-      layout:
-        enum:
-        - single
-        type: string
-      native_target:
-        $ref: '#/definitions/plugin.EngineCatalogPath'
-    type: object
-  dataitem.AuthorizationFacts:
-    properties:
-      basis_state:
-        allOf:
-        - $ref: '#/definitions/dataitem.AuthorizationBasisState'
-        enum:
-        - complete
-        - incomplete
-        - needs_refresh
-        - unsupported
-      boundary:
-        $ref: '#/definitions/dataitem.AuthorizationBoundary'
-      boundary_hash:
-        type: string
-      engine_id:
-        example: ""
-        type: string
-      full_name:
-        type: string
-      item_fingerprint:
-        type: string
-      item_type:
-        type: string
-      observed_at:
-        type: string
-      schema_version:
         type: string
     type: object
   datatype.CRSDefinition:
@@ -7173,7 +7173,7 @@ paths:
         "200":
           description: 授权边界事实 | Authorization boundary facts
           schema:
-            $ref: '#/definitions/dataitem.AuthorizationFacts'
+            $ref: '#/definitions/authorizationfacts.AuthorizationFacts'
         "400":
           description: 查询失败 | Query failed
           schema:
