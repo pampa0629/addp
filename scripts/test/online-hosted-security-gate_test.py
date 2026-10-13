@@ -98,8 +98,10 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
             if [ "$ONLINE_SUITE_INPUT" = security-mysql-owner-protection ]; then
               [ "$ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID" = 29 ]
+              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1200 ]
             else
               [ -z "${ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID:-}" ]
+              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 900 ]
             fi
             [ "$ADDP_ONLINE_TEST_USER_ACCESS_TOKEN" = consumer-token ]
             [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ]

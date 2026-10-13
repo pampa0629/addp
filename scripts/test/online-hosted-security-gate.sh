@@ -17,6 +17,11 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-security-owner-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# The v11 suite adds discovery, four Owner acknowledgements and a real bank-card
+# transfer to the existing serial algorithm/outage/index-convergence acceptance.
+if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
+  export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200
+fi
 export SECURITY_URL=http://127.0.0.1:8194
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
