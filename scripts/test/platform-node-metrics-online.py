@@ -678,13 +678,19 @@ def validate_resource_browser(value, expected, artifacts):
     require(value.get("auto_refresh") == {"natural_timer": True, "server_end_advanced": True,
             "unchanged_url": True, "off_restored": True, "off_no_requests": True}, "browser automatic refresh evidence missing")
     summaries = value.get("summaries")
-    require(isinstance(summaries, list) and 1 <= len(summaries) <= 4, "browser list summary missing or unbounded")
+    require(isinstance(summaries, list) and 2 <= len(summaries) <= 8, "browser list summary missing or unbounded")
     for row in summaries:
         require(row.get("path") == SUMMARIES and row.get("query") == {"node_ids": expected["node"]["node_id"]}, "browser summary scope mismatch")
         data = row.get("value", {}).get("data")
         require(isinstance(data, list) and len(data) == 1, "browser summary batch incomplete")
         assert_resources(data[0], expected["node"], expected["target"], keys=["node.cpu.busy_percent", "node.memory.used_percent"])
         require(data[0]["policy_version"] == expected["policy_version"], "browser summary ignored current budget")
+    automatic = value.get("host_list_auto_refresh", {})
+    require(all(automatic.get(key) is True for key in ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests")), "host list auto refresh lifecycle evidence missing")
+    before, after = automatic.get("before_index"), automatic.get("after_index")
+    require(type(before) is int and type(after) is int and 0 <= before < after < len(summaries)
+            and after == before + 1, "host list auto refresh batch references invalid")
+    require(utc_timestamp(summaries[after]["value"]["data"][0]["end"]) > utc_timestamp(summaries[before]["value"]["data"][0]["end"]), "host list automatic server window did not advance")
     rows = value.get("resources")
     # Six reads per complete round; 22 navigation/refresh rounds plus four bounded timer rounds.
     require(isinstance(rows, list) and 8 <= len(rows) <= 156, "browser resource evidence missing or unbounded")
@@ -729,7 +735,7 @@ def validate_resource_browser(value, expected, artifacts):
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
-            "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True,
+            "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True, "host_list_auto_refresh": True,
             "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True}
 
 

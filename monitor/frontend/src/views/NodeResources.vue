@@ -3,7 +3,7 @@
     <header class="resource-toolbar">
       <h2>{{ t('monitor.resources.title') }}</h2>
       <el-button v-if="nodeID" @click="navigate('/node-resources', listQuery)">{{ t('monitor.resources.back') }}</el-button>
-      <AutoRefreshControl v-if="nodeID" :model-value="state.refresh" :status="refreshStatus" test-id="resource-refresh" @update:model-value="value => selectTrend('refresh', value)" />
+      <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="resource-refresh" @update:model-value="value => selectTrend('refresh', value)" />
       <el-button :loading="loading" @click="reload()">{{ t('common.refresh') }}</el-button>
     </header>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" show-icon :closable="false" data-testid="resource-error" />
@@ -169,7 +169,7 @@ const collectionMessage = computed(() => !instant.value ? '' : instant.value.col
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
-const listQuery = computed(() => { const { range, metric, refresh, device, mountpoint, fstype, ...query } = state.value.query; return query })
+const listQuery = computed(() => { const { range, metric, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false)
@@ -223,9 +223,9 @@ function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...q
 function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && Boolean(nodeID.value) && isTargetUUID(nodeID.value) && !refreshBlocked.value && !state.value.changed && !loading.value,
+  enabled: () => canRead.value && (!nodeID.value || isTargetUUID(nodeID.value)) && !refreshBlocked.value && !state.value.changed && !loading.value,
   refresh: () => reload({ automatic: true }),
-  pause: () => { if (nodeID.value) { invalidate(); loading.value = false } },
+  pause: () => { invalidate(); loading.value = false },
   visibilityChanged: visible => { pageVisible.value = visible }
 })
 function invalidate() { refreshCycle.stop(); epoch = requestScope.invalidate() }
@@ -236,12 +236,12 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  summaries.value = new Map(); summaryErrorKey.value = ''
+  if (!automatic) { summaries.value = new Map(); summaryErrorKey.value = '' }
   if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
   errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
-  searchText.value = state.value.search
+  if (!automatic) searchText.value = state.value.search
   const id = nodeID.value
   if (state.value.invalidDimensions) { errorKey.value = 'monitor.resources.errors.invalidDimensions'; return }
   if (id && !isTargetUUID(id)) { errorKey.value = 'monitor.resources.errors.invalidID'; return }
@@ -250,18 +250,20 @@ async function reload({ automatic = false } = {}) {
     if (!id) {
       const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}) }, config))
       if (!requestScope.current(ticket)) return
-      nodes.value = value.data; total.value = value.total
-      if (nodes.value.length) {
+      let nextSummaries = new Map(), nextSummaryError = ''
+      if (value.data.length) {
         try {
-          const overview = await request(config => api.summaries(nodes.value.map(row => row.node_id), config))
+          const overview = await request(config => api.summaries(value.data.map(row => row.node_id), config))
           if (!requestScope.current(ticket)) return
-          summaries.value = validateResourceSummaries(overview, nodes.value)
+          nextSummaries = validateResourceSummaries(overview, value.data)
         } catch (error) {
           if (!requestScope.current(ticket)) return
           if ([401, 403, 404].includes(error.response?.status)) throw error
-          summaryErrorKey.value = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
+          nextSummaryError = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
         }
       }
+      nodes.value = value.data; total.value = value.total
+      summaries.value = nextSummaries; summaryErrorKey.value = nextSummaryError
     } else {
       const value = await request(config => api.node(id, config))
       if (!requestScope.current(ticket)) return
@@ -326,6 +328,7 @@ async function reload({ automatic = false } = {}) {
     if (!requestScope.current(ticket)) return
     instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
+    if (!id) { nodes.value = []; total.value = 0; summaries.value = new Map() }
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = 0; summaries.value = new Map() }
   } finally { if (requestScope.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }

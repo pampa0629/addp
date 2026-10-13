@@ -1823,3 +1823,32 @@ Safari 沿用户现有平台管理员会话只读复核：首次进入的旧实�
 本次新增诊断的红/绿验证沿同一标准入口：实现前缺失固定时刻查询与诊断入口的 8 个子场景失败，实现后及最终复验 `env PATH="/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" make test-node-metrics-online-runner` 返回 0，45 项测试与正式 System Metrics 身份夹具通过；覆盖就绪时无额外查询、未就绪时原单次 User 请求/原失败不变、响应重排按实例 ID 关联、固定锚点、缺失探针为空、额外凭据字段不保留、诊断不可用/重复/非有限值/错时刻不替代失败。两个当前实例由原 current_processes 严格约束；每实例一次 union，26 项固定探针。测试日志为 /tmp/addp-process-window-witness-red-38325976574.log 与 /tmp/addp-process-window-witness-green-final-38325976574.log。诊断的真实 Prometheus 响应及下一次完整 Hosted 尚未执行，不将 T1 计作实际故障根因已查明。
 
 本轮归档 47 个文件未检出私钥/JWT 模式，浏览器 102 个资源响应；当前服务两次趋势均为实例记录 1，窗口由 00:25:06–00:30:06Z 自然推进到 00:25:21–00:30:21Z，六项刷新标志均为 true。完整 CI 的通过仅属于原 7c7151019，本次诊断提交的 CI 未运行，沿既有 Platform consistency 及同一 Hosted 复验。默认 make test-changed 对混合工作区 33 项文件因多个 owner 的外部数据库输入缺失而在预检退出 2（/tmp/addp-process-window-witness-changed-38325976574.log），后续业务门禁未执行、不计通过。最终 scoped git diff --check 通过；仅提交此诊断与现有文档，由用户推送，个人服务不需重启。
+
+
+2026-10-13 本批诊断提交 `565089e1c` 已进入冻结源码 `7f365279b46b26f8df3ebc9d14c63411338190e3`，其 [Hosted T4 38329665208](https://github.com/pampa0629/addp/actions/runs/38329665208)（Job 115076288408）completed/success。下载的独立 summary 为 result=passed / cleanup=passed / infra_cleanup=zero_residuals；业务与浏览器报告均 passed/complete。25 项主机目录、当前服务摘要与两项趋势、自然刷新/关闭恢复、指标中心及主机来源故障恢复、控制面故障、停用不复用历史、恢复新样本、删除，以及进程重启新旧身份隔离均通过。归档 47 个文件未检出私钥/JWT 模式，保存在 /tmp/addp-process-window-witness-hosted-38329665208/。
+
+本次中心恢复开始时间为 01:58:01.874038Z；恢复完成及来源隔离评估时两个当前实例 CPU/RSS/时长均有效。此前 System CPU 缺值未复现，故固定时刻的失败探针未触发，真实 PromQL 诊断执行与偶发缺值根因仍未验证；不将一次通过记作根因修复，不放宽 guard 或等待时间。同一冻结源码的 [Platform CI 38329461606](https://github.com/pampa0629/addp/actions/runs/38329461606) 已 completed/success，33 项任务通过。上述完整 CI/T4 结果只属于该源码；后续 main 仍按其各自运行记录核对。生产 T5 未执行，个人服务未重启。
+
+### 10.57 主机列表自动刷新
+
+沿已确认的资源刷新契约，将现有主机详情的唯一共享 AutoRefreshControl/createAutoRefresh 扩展至主机列表。默认每轮完整结束后等待 15 秒，可选 10/30/60 秒或关闭；refresh 与已提交的搜索、分页共同进入 canonical URL，默认值省略，进入详情与返回列表保留刷新选择。自动读取不覆盖尚未提交的搜索草稿。
+
+每轮只读取 System 当前授权页，并用原 resource_summaries 批量读取该页 CPU 一分钟忙碌率、内存使用率和采集证据，不扩大到其他页、不逐主机扇出、不标记全平台 TOP5。列表身份与本轮观测原子发布，失败清除旧观测；资源查询失败保留已授权节点及错误提示，401/403/404 清空节点和观测、停止自动读取。慢请求不重叠，隐藏页面取消当前请求并暂停，回到可见时立即重新读取；上下文变化、导航和卸载隔离迟到响应并退出循环。
+
+实施前门禁识别：仅 Monitor 前端及现有文档变更，无 API/Swagger、IAM、部署或后端变更；运行 make test-monitor-frontend、make test-console-frontend、make test-frontend-ci-registration，以及默认 make test-changed 并分别记录结果。现有 Node/Playwright 自动发现、Monitor 前端到 Console 影响扩散和 Platform CI 已覆盖，无需新入口或 workflow。确定性浏览器夹具不计为该新列表交互的真实 Hosted T4，个人后端无需重启。
+
+同次扩展既有 platform-node-metrics Hosted 浏览器阶段：使用原真实密码/MFA 与同一授权节点，列表自然等待默认周期，保存原页批量响应索引，核对服务器 end 前进、URL/iframe 未变化且无详情扇出；关闭后正式重新加载，再自然等待 16 秒验证无新增摘要请求。外层严格核对六项标志、连续批次索引、当前节点/目标/策略版本及时间；整轮列表最多八帧（原导航两帧、新阶段初读/自然刷新/关闭重读/重载四帧及两帧边界余量），不接受任意或无界数据。沿原 suite/runner 和 Platform consistency 登记，无新身份用途、API、权限或门禁入口。
+
+本批验证（bundled Node 24.19.0，命令前缀为 `env PATH="/Users/pampa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH"`）：
+
+| 标准入口 | 结果 |
+| --- | --- |
+| `make test-monitor-frontend` | 56 项单测、123 项浏览器测试及构建通过；新增中英文窄屏列表刷新、未提交搜索、原子发布、慢请求、隐藏取消/恢复、授权拒绝、上下文隔离、off 导航/重载五项浏览器用例 |
+| `make test-console-frontend` | 170 项单测、131 项浏览器测试及构建通过；新增真实 Monitor iframe 的列表/详情返回、刷新选择恢复与单文档导航 |
+| `make test-node-metrics-online-runner` | 45 项测试与正式 System Metrics 身份夹具通过；列表证据缺标志、无时间前进、非法或越界批次索引均拒绝，原 25 项目录、版本与权限校验不变；Online ESM 语法检查通过 |
+| `make test-frontend-ci-registration` | 20 项测试、21 个已登记前端一致性检查通过，现有扩散/自动发现覆盖本批，无新增 workflow |
+| `make test-changed` | 最终对混合工作区在其他 Owner 的 PostgreSQL/MySQL/OceanBase 等连接输入预检处返回 2，后续业务门禁未执行、不计为通过；未运行项仍由既有 Release/T2 Owner CI 验证 |
+
+实现前沿标准浏览器入口过滤新 off 恢复场景，列表缺刷新控件且 refresh 被剔除，回归失败；初次完整复验 122/123 通过，失败用例在 reload 首轮列表未完成前记录请求数，已改为等待正式列表采集状态后再核对 off 无请求，最终完整门禁 123/123 通过。不放宽请求数、权限清空或可见性断言。日志位于 /tmp/addp-host-list-auto-refresh-red.log、/tmp/addp-host-list-auto-refresh-monitor-final.log、/tmp/addp-host-list-auto-refresh-console.log、/tmp/addp-host-list-auto-refresh-runner.log、/tmp/addp-host-list-auto-refresh-registration.log、/tmp/addp-host-list-auto-refresh-changed-final.log。构建保留既有大包提示；任务范围 git diff --check 通过。
+
+此次 Hosted 列表新增阶段尚未实际执行，不沿用 10.56 的完整通过作为新阶段证据；提交后需用户推送，再沿唯一 platform-node-metrics suite 验证真实默认定时与 off 恢复。未修改后端、权限、采集预算或个人部署，无需重启后端，未操作内置浏览器。

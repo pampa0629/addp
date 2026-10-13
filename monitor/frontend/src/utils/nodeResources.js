@@ -81,8 +81,8 @@ export function resolveResourceRoute(query = {}, detail = false) {
   }
   if (hasDimensions && !metric.startsWith('node.filesystem.') && !metric.startsWith('node.disk.') && !metric.startsWith('node.network.')) invalidDimensions = true
   const canonicalDimensions = invalidDimensions ? Object.fromEntries(dimensionKeys.filter(key => Object.hasOwn(query, key)).map(key => [key, query[key]])) : dimensions
-  const refresh = detail && typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
-  const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(detail && refresh !== '15' ? { refresh } : {}) }
+  const refresh = typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
+  const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(refresh !== '15' ? { refresh } : {}) }
   return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, refresh, dimensions, invalidDimensions, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }

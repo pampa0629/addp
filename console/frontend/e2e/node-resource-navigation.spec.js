@@ -27,3 +27,22 @@ test('Tenant navigation hides the entry and never mounts the platform resource i
   await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
   expect(state.reads).toHaveLength(0)
 })
+
+
+test('host list refresh choice stays in Console URL across detail, back and reload', async ({ page }) => {
+  await resourceBackend(page)
+  await page.goto('/monitor/node-resources?page=2&refresh=off')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('resource-refresh-status')).toContainText('手工')
+  const frame = page.frames().find(frame => frame.parentFrame())
+  const documentID = await frame.evaluate(() => performance.timeOrigin)
+  await monitor.getByRole('button', { name: '查看资源' }).first().click()
+  await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect(page).toHaveURL(url => url.searchParams.get('refresh') === 'off' && url.pathname.endsWith(node))
+  await monitor.getByRole('button', { name: '返回主机列表' }).click()
+  await expect(page).toHaveURL('/monitor/node-resources?page=2&refresh=off')
+  await expect(monitor.getByTestId('resource-refresh-status')).toContainText('手工')
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(documentID)
+  await page.reload()
+  await expect(monitor.getByTestId('resource-refresh-status')).toContainText('手工')
+})

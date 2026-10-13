@@ -83,5 +83,5 @@ export async function resourceBackend(page, options = {}) {
     } else throw new Error(`Unexpected resource fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, releaseSummary: () => { releaseSummary?.(); heldSummary = null } })
+  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, holdSummary: () => { heldSummary = new Promise(resolve => { releaseSummary = resolve }) }, releaseSummary: () => { releaseSummary?.(); heldSummary = null } })
 }

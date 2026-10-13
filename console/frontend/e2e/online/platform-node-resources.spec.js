@@ -394,6 +394,37 @@ test('platform node resources through real Console password MFA and Monitor ifra
     report.service_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
       iframe_preserved: true, off_restored: true, off_no_requests: true, batches: [beforeAutoBatch, afterAutoBatch], trends: [beforeServiceAuto, afterAuto] }
     await monitor.locator('.el-dialog__headerbtn').click()
+    save('host-list-natural-refresh-and-off-restore')
+    await page.goto('/monitor/node-resources')
+    await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')
+    await Promise.all(pending)
+    const listBeforeIndex = summaries.length - 1
+    const listBeforeEnd = summaries[listBeforeIndex].value.data[0].end
+    const listURL = page.url(), listDocumentID = await documentOrigin(), listResourceCount = resources.length
+    const listNext = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/resource_summaries') && response.ok())
+    await listNext
+    await Promise.all(pending)
+    const listAfterIndex = summaries.length - 1
+    expect(listAfterIndex).toBe(listBeforeIndex + 1)
+    expect(Date.parse(summaries[listAfterIndex].value.data[0].end)).toBeGreaterThan(Date.parse(listBeforeEnd))
+    expect(page.url()).toBe(listURL)
+    expect(await documentOrigin()).toBe(listDocumentID)
+    expect(resources).toHaveLength(listResourceCount)
+    const listOff = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/resource_summaries') && response.ok())
+    await monitor.getByTestId('resource-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await listOff
+    await expect(page).toHaveURL(url => url.pathname === '/monitor/node-resources' && url.searchParams.get('refresh') === 'off')
+    await page.reload()
+    await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')
+    await expect(monitor.getByTestId('resource-refresh-status')).toContainText('手工刷新')
+    await Promise.all(pending)
+    const listOffCount = summaries.length
+    await new Promise(resolve => setTimeout(resolve, 16_000))
+    await Promise.all(pending)
+    expect(summaries).toHaveLength(listOffCount)
+    report.host_list_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
+      iframe_preserved: true, off_restored: true, off_no_requests: true, before_index: listBeforeIndex, after_index: listAfterIndex }
     save('security-administrator-denied')
     const negativeContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL, locale: 'zh-CN' })
     try {

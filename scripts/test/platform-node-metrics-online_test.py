@@ -690,6 +690,16 @@ class MetricsProtocolTest(unittest.TestCase):
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
                   "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
+        following = copy.deepcopy(report["summaries"][0])
+        fresh = following["value"]["data"][0]
+        at = "2026-10-06T00:01:15Z"
+        fresh.update(end=at, start=at, queried_at=at)
+        fresh["collection"]["sampled_at"] = at
+        for series in fresh["series"]:
+            series["points"][0].update(evaluated_at=at, sampled_at=at)
+        report["summaries"].append(following)
+        report["host_list_auto_refresh"] = {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True,
+            "iframe_preserved": True, "off_restored": True, "off_no_requests": True, "before_index": 0, "after_index": 1}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
@@ -730,6 +740,12 @@ class MetricsProtocolTest(unittest.TestCase):
                          lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
                          lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*157), lambda v: v.pop("auto_refresh"),
                          lambda v: v["auto_refresh"].update(off_no_requests=False),
+                         lambda v: v.pop("host_list_auto_refresh"),
+                         lambda v: v["host_list_auto_refresh"].update(off_no_requests=False),
+                         lambda v: v["host_list_auto_refresh"].update(before_index=True),
+                         lambda v: v["host_list_auto_refresh"].update(after_index=9),
+                         lambda v: v["host_list_auto_refresh"].update(after_index=0),
+                         lambda v: v["summaries"][1]["value"]["data"][0].update(end=v["summaries"][0]["value"]["data"][0]["end"]),
                          lambda v: v["navigation"].pop("disk_reload"), lambda v: v["presentation"].update(disk_rate_units=False),
                          lambda v: v["navigation"].pop("network_reload"), lambda v: v["presentation"].update(network_rate_units=False),
                          lambda v: v["presentation"].update(disk_timing_units=False),

@@ -61,13 +61,13 @@ test('rejects mismatched subjects, incomplete catalogs and invalid sample eviden
 })
 
 
-test('detail refresh has a single canonical bounded choice; list never retains it', () => {
+test('list and detail share one canonical bounded refresh choice', () => {
   for (const refresh of ['10', '30', '60', 'off']) {
     const value = resolveResourceRoute({ refresh }, true)
     assert.equal(value.refresh, refresh)
     assert.deepEqual(value.query, { refresh })
     assert.equal(value.changed, false)
-    assert.deepEqual(resolveResourceRoute({ refresh }).query, {})
+    assert.deepEqual(resolveResourceRoute({ refresh }).query, { refresh })
   }
   for (const refresh of [undefined, '15', '1', '09', '10.0', '0', 'OFF', ['10'], 10]) {
     const value = resolveResourceRoute({ refresh }, true)
