@@ -18,14 +18,15 @@
 | JPG / JPEG / PNG / Images | JPEG、PNG 原图预览及图片元信息已有实现和本地样例记录；Images 按具体图片编码处理，不表示所有图片编码都支持。 |
 | CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 读取、Manager 编码选择与 Meta 持久化已通过确定性及 PostgreSQL 回归，真实 NFS CSV / TSV 的编码应用、中文、分页、重复刷新、重新打开和原文件下载已验收；固定 GBK CSV / TSV 的 Business MinIO Hosted 同一链路及原文件下载哈希、清理已通过。XLSX 已通过真实 NFS 与 Business MinIO Hosted 四工作表的不同字段、空表、只有表头、未知总数逐页读取、刷新及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
-| 3DS / DAE / FBX / OBJ | 通过 Model3D 转自包含 GLB 后显示；按已验证的静态几何和基础材质范围支持，DAE / 3DS 的声明 PNG/JPEG 漫反射贴图已有真实转换验收。 |
+| 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
+| FBX / OBJ | 基础预览直接读取源模型；GLB 快显调用 Model3D 的对应 mesh operator。已有实现不等于全部版本和材质可用；当前六模型 Manager Hosted 未包含 FBX / OBJ，仍须补两者的真实转换、页面及源／产物检查。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 
-1. CSV、XLSX、JSON、GeoJSON 已完成下述现有 Business NFS 样例页面复核；XLSX 的不同字段与两种空表已补真实 NFS 验收，后续优先核对编码和大文件。只按现有明确格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
-2. SGM 继续核对厂商样例 `3d/sgm/compass.SGM` 的授权 Runtime 转换与最终 GLB 实际预览。无 SDK 的协议门禁不替代真实 SGM 转换；首期范围遵循内置格式规范，保留 SuperMap → OSGB → Model3D GLB 的唯一路线。
-3. MAX 静态模型页面和正式 Linux Runtime 的格式/几何/贴图验收已通过下述 Hosted 复验；动画、复杂材质或全部 MAX 版本不计为支持。SKP 同样保留静态网格、实例变换与内嵌基础贴图的范围，不扩展 SketchUp 编辑语义。
-4. 地图依赖升级后的 GeoTIFF/COG 与六种模型已核对既有 Hosted 格式和渲染证据；精确 GPU 性能诊断按已确认规范单列，其余页面警告、错误继续失败。不再扩展 JPEG EXIF 细项作为当前格式覆盖工作的优先任务。
+1. 优先收口 JSON / GeoJSON 的四源 Hosted 页面、原文件下载和清理证据；CSV / TSV 编码及 XLSX 四工作表的已有通过记录继续保留，不用旧报告代替新扩展结果。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
+2. 随后补 FBX / OBJ 的真实源模型、GLB 快显和浏览器验收；复用已有预览与转换能力，不因当前六模型 Hosted 通过而外推这两种格式。
+3. SGM 保留授权 SuperMap → OSGB → Model3D GLB 的唯一路线；本地厂商样例已有几何和基础贴图记录，后续重点为其他样例及 S3 外部贴图。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
+4. GeoTIFF/COG 与六种模型沿用既有 Hosted 范围，MAX / SKP 限于已验证的静态模型、单位与基础贴图。继续按实际格式和样例报告支持边界，不扩展 JPEG EXIF 细项作为当前优先任务。
 
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
@@ -116,3 +117,5 @@
 隔离副本完整 `make test-online-runner` 的 940 项 Python 回归（13 批）、Go 身份工具及 CI 登记核对全部通过；工作区 Manager 专项已按当前共享文件复验通过，其他 Owner 的变更保留。以上仍是确定性门禁，新增四源真实 Hosted 尚未执行，不提前登记通过。
 
 实现已提交并推送为 `dc0c3f687d6436e6da3c0ccd3f3c579d6e953963`；[JSON / GeoJSON Hosted 38328291459](https://github.com/pampa0629/addp/actions/runs/38328291459) 已触发，实际源码为该提交、attempt 1，当前排队中。沿用现有普通 User 十项权限及 browser/v8、Owner/v6；真实四源页面、下载和最终清理须待正式 artifact 返回后独立核对，不提前登记通过。
+
+2026-10-13 支持矩阵复核：FBX / OBJ 的基础预览与 GLB 快显说明已按 Manager 现行三维预览规范及 Model3D operator 定义校正，当前六模型 Hosted 的源格式集合确实未包含二者；据此单列待补的真实验收范围，不将已有实现或其他模型通过外推为这两种格式已完成 T4。仅更新现有说明和工作优先级，规范／源码对照及 `git diff --check` 通过；工作区标准 `make test-changed` 含其他 Owner 的并行变更，因 T2 连接条件缺失在预检中止，未执行数据库测试，不记整轮通过。JSON / GeoJSON 的 Hosted `38328291459` 已进入运行，仍须等待实际业务、浏览器及最终清理报告。
