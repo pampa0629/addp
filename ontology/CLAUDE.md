@@ -113,6 +113,8 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 平台 Transfer 修订 20 冻结 `a9b35fd89` 的显式检查终态与双语固定提示，以及生产 Harness 回归。显式有效三态报告展示后结束，不再调用模型；同批仅保留首个检查，避免其他工具副作用。输入错误可修参，失败与取消不生成完成提示。自动创建预检、诊断修正、创建确认和权限保持原路径。PG 仍拥有不可变定义与来源，FalkorDB 仍投影同版依赖；运行草稿、报告和解释不进入静态图。本轮不新增 API、表、权限、组件、依赖或 CI Job，现有 Agent eval/前端、平台来源审查及 Ontology PG/FalkorDB 自动发现覆盖；真实消费需重启后复验。
 
+2026-10-13 修订 20 的 `make test-module MODULE=agent` 完整通过；专项 `test-agent-eval`、`test-agent-frontend`（69 项单测、7 项浏览器及构建）、`test-platform-review`、`test-ontology-postgres` 和 `test-ontology-falkor` 通过。PG/FalkorDB 包含修订记录、真实投影与发布激活，并按 owner 门禁清理自有测试资源。新增终态回归先在旧实现失败，再在修复后通过；覆盖显式三态、同批隔离、输入修正、双语提示、失败及取消，原自动预检回归保持通过。工作区 `make test-changed` 扩散到其他 owner，因缺测试连接配置在执行前阻断，不计为通过；不接管其他 owner 环境。真实模型新会话与 Hosted T4 未运行，受控门禁不证明配置可运行。本轮不创建、运行或写入任何 Outdoor 业务数据。
+
 `make test-platform-review` 是不依赖外部服务的平台来源漂移门禁，已纳入 `test-platform`，因此其他 owner 的标准模块门禁同样检查已捕获文件 SHA-256 与锚点，并读取来源固定 Git 提交核对同一文件内容；缺失提交或摘要/锚点不符均拒绝，不联网补取或跳过。先提交来源代码，再冻结实际提交与摘要；旧提交配工作区新摘要不能通过。Git 只属于开发/CI 门禁，不进入生产编译、发布或消费路径。现有相关 CI checkout 均提供完整历史，原 Go T1 自动发现临时 Git 夹具对错误提交、文件缺失及伪造摘要的拒绝测试。Go T1 另核验完整成员绑定、覆盖状态、摘要绑定、来源隔离和拒绝旧格式；来源变化须审查后更新依据及新发布修订，不能盲目刷新摘要。现有 Go/PG/Falkor CI 自动发现覆盖新增测试，未增加运行依赖或另起 CI 路线。
 
 平台 Transfer 切片另用 `ADDP_SYSTEM_POSTGRES_TEST_DSN=<已核实端口的 addp_iam_test PostgreSQL URL> bash scripts/test/system-iam-postgres-gate.sh --package migration --test transfer-task-create` 精确验证迁移 181；默认 System IAM 门禁仍由 `AgainstPostgres$` 自动发现此测试，不将精确选择器视为全量通过。`make test-system-iam-runner` 验证选择器、默认发现和跨进程测试库互斥。
