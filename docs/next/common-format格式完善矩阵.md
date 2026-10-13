@@ -21,7 +21,7 @@
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
 | FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。已通过 [八模型 Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103) 的生成入口、OBJ 基础几何、两种格式 GLB 缓存预览、两阶段主文件下载哈希及清理后主文件不变核验；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
-| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
+| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已确认 S3 链路只下载主文件，外贴图搬运尚未实现；SDK 源材质接口可取得缺失贴图引用，后续按实际解析规则自动读取，不增加手工映射。其他模型、复杂材质及 S3 外贴图完整链路仍待验证。 |
 
 1. JSON / GeoJSON 四源、CSV / TSV / XLSX 与八模型的同轮 Hosted 已收口，范围见上述支持矩阵及文末正式证据。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
 2. 下一优先补 SGM 的其他真实样例及 S3 外部贴图验收，保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
@@ -151,3 +151,11 @@
 同源码 [Release/T2 38377388800](https://github.com/pampa0629/addp/actions/runs/38377388800) 通过（21 个作业成功，18 个条件跳过；跳过不计执行通过），Quality frontend smoke 通过。[Platform CI 38377388963](https://github.com/pampa0629/addp/actions/runs/38377388963) 原轮停在 `ontology/backend` 的 go.mod／go.sum tidy 差异，不能登记原轮通过；对应 Owner 已在 `d56c8806d` 修正。包含本轮及该修正的后续 [Platform CI 38396404876](https://github.com/pampa0629/addp/actions/runs/38396404876)、源码 `eef85fca0ccd3937110b0e2eca0482f9f0d84f65` 已整轮通过，含 Go workspace；本轮五个夹具／Owner／浏览器实现文件与该源码一致。此复验不改写 Manager Hosted 的实际源码。本次仅维护既有验收文档，不改产品、依赖、权限或用户服务。
 
 本次验收记录更新的 `git diff --check` 通过；标准 `make test-changed` 再次因共享工作区多 Owner 所需 T2 连接未注入而在预检中止，未执行数据库测试，不计本地整轮通过。此次不变更实现和 CI 编排，代码验证复用上述真实 Hosted、专项回归、Release/T2 及后续 Platform CI 证据。
+
+2026-10-14 SGM 官方资料与当前 SDK 调查：官方[模型数据说明](https://support.supermap.com/datawarehouse/webdochelp/iedge/Subject_introduce/Realspace/DataAndLayers/DataInRealspace/Model.htm) 确认 SGM 是 SuperMap Global Model，但该页面不提供完整的二进制或外部贴图解析规范。当前 12.1 SDK 的公共接口 `UGFileParseModel::GetModelDataInfo`、`ModelDataInfo::GetMaterial` 和 `UGMaterial::GetTexPath` 能提供源材质引用。临时副本经根 `make build-images --verify` 的 SDK CTest 真实验证：`SetParseModelNode(false)` 时，即使图片缺失，源材质仍保留贴图路径；直接生成模型节点时则丢弃缺失图片的引用。因此不能仅凭最终模型没有纹理就断言源模型无贴图，也不应先增加用户手工映射表。
+
+同一 `compass.SGM` 的独立临时目录探测覆盖缺图、仅有 `Textures/compass.png`、以及同目录和 `Textures/` 都有图片三种布局。源材质缺图时返回 `Textures/compass.png`；仅子目录存在时正确读取该图；两处都有时选择同目录图片。两个有效布局均生成可用的 256×256 纹理。这是当前 SDK 和该厂商样例的实测规则，不外推所有版本或任意路径。本地两套 SDK 所附 SGM 主文件均为同一 5422 字节样例，SHA256 `4ee43ceb4d9d0752a1567bc7a6f01a63be8ece90bb32d13a74e61db59606e188`，不能重复计为新增模型覆盖。
+
+已定位现有 S3 外贴图缺口：SuperMap 的 `resolve_workflow_file` 只下载入口对象，`sgm_to_osgb` 随后立即生成模型节点；外部图片未搬运，引用又可能丢失。后续应依据 SDK 源材质引用与实际查找规则自动解析，在源模型限定目录内读取精确图片，缺失或越界明确失败，不递归同步整个对象前缀，不新增手工映射交互，保持 SGM → OSGB → GLB 唯一路线。当前尚未实现或验收 S3 外贴图搬运，不将本次 SDK 探测登记为该能力已支持。`make test-supermap-workflow` 的 3 项协议测试及未修改产品代码的完整 ARM64 私有 Runtime 构建／4 项 CTest 通过；最终临时源材质／布局探测的 4 项 CTest 通过。探测中一次有符号计数编译错误已修正，一次 Ubuntu HTTP 502 下载失败不计通过；最终只在临时副本复用已验证的私有 SDK 编译环境完成观测，不改产品 Dockerfile、运行镜像或用户服务，厂商文件未提交或上传。
+
+本次调查仅更新现有文档；`git diff --check` 通过，`make test-changed` 因共享工作区多 Owner 所需 T2 连接条件缺失在预检中止，未执行数据库测试，不计为整轮通过。临时探测源码已还原、探测镜像标签已清理，原始 SDK 母版、运行中的 SuperMap 镜像及用户服务未修改。
