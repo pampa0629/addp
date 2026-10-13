@@ -2,9 +2,9 @@ import { expect, request, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
+import { browserAPIFromResponse, identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
-async function verifyResourceCombinationFilters(page, api, env, principal) {
+async function verifyResourceCombinationFilters(page, api, env, principal, navigate) {
   const endpoint = '/api/v1/security/protection-enrollments'
   const baseline = await json(await api.get(`${endpoint}?scope=all&page=1&page_size=100`), 'ordinary user resource baseline')
   expect(baseline.total).toBe(baseline.data.length)
@@ -62,7 +62,7 @@ async function verifyResourceCombinationFilters(page, api, env, principal) {
     await frame.getByRole('option', { name: label, exact: true }).click()
   }
   try {
-    await checkCase('', {}, () => page.goto('/security/protection-enrollments'))
+    await checkCase('', {}, async () => { api = await navigate('/security/protection-enrollments', endpoint) })
     await name.fill('Persons')
     await checkCase('name', { resource_name: 'Persons' }, () => apply.click())
     const engineDefinitions = await json(await api.get('/api/v1/meta/engines'), 'ordinary user catalog engines')
@@ -186,6 +186,19 @@ test('protected Manager preview retains field search and export provenance in Mo
     for (const permission of requiredPermissions) {
       expect(actual.permissions.has(permission)).toBe(true)
     }
+    let browserSessionRebinds = 0
+    async function navigateWithBrowserSession(path, endpoint) {
+      const moduleUI = `/module-ui/${new URL(path, page.url()).pathname.split('/')[1]}/`
+      const response = page.waitForResponse(response =>
+        new URL(response.url()).pathname === endpoint && response.request().method() === 'GET' &&
+        new URL(response.request().frame().url()).pathname.startsWith(moduleUI))
+      await page.goto(path)
+      const currentAPI = await browserAPIFromResponse(await response, env.GATEWAY_URL, actual)
+      await browserAPI.dispose()
+      browserAPI = currentAPI
+      browserSessionRebinds += 1
+      return currentAPI
+    }
 
     const preview = await json(await previewResponse, 'protected preview from browser')
     expect(preview.preview_type).toBe('table')
@@ -202,8 +215,8 @@ test('protected Manager preview retains field search and export provenance in Mo
     await expect(frame.locator('.table-preview .el-table__body tbody tr')).toHaveCount(5)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
 
-    const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual)
-    await page.goto(path)
+    const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual, navigateWithBrowserSession)
+    await navigateWithBrowserSession(path, '/api/v1/manager/preview')
     await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
 
     await page.locator('.sidebar').getByText(/^(数据检索|Data Retrieval)$/).click()
@@ -308,6 +321,7 @@ test('protected Manager preview retains field search and export provenance in Mo
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
+    expect(browserSessionRebinds).toBe(2)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
       schema_version: 'addp.security-manager-export-browser/v4', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
@@ -318,6 +332,7 @@ test('protected Manager preview retains field search and export provenance in Mo
       protected_preview_verified: true, technical_field_search_verified: true,
       search_to_preview_verified: true,
       ...resourceFilters,
+      browser_session_rebound_verified: browserSessionRebinds === 2,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

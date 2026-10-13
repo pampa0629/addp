@@ -1,8 +1,87 @@
 import { describe, expect, it } from 'vitest'
+import { createServer } from 'node:http'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
+import { browserAPIFromResponse, identity, isAnonymousRefreshConsoleError, matchesRedirectURL, isReadonlyTaskConfigCheckRequest } from '../../e2e/online/transfer-browser-support.js'
 
 const base = 'http://addp.invalid'
+
+const tenantIdentity = () => ({ principal: { id: '7', type: 'user' },
+  context: { type: 'tenant', tenant_id: '2' },
+  authorization: { role_assignments: [{ permissions: ['security.enrollment.read', 'meta.catalog.read'] }] } })
+const browserResponse = authorization => ({ ok: () => true, request: () => ({ headers: () => ({ authorization }) }) })
+
+async function withSessionAuthority(run) {
+  const authority = { credential: 'Bearer before-navigation', payload: tenantIdentity(), requests: [] }
+  const server = createServer((request, response) => {
+    authority.requests.push({ method: request.method, path: request.url })
+    response.setHeader('Content-Type', 'application/json')
+    if (request.headers.authorization !== authority.credential) {
+      response.writeHead(401)
+      response.end(JSON.stringify({ error_code: 'authentication_required' }))
+      return
+    }
+    response.end(JSON.stringify(authority.payload))
+  })
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  try {
+    await run(authority, `http://127.0.0.1:${server.address().port}`)
+  } finally {
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+  }
+}
+
+describe('current browser session API binding', () => {
+  it('rejects the pre-navigation credential and binds the actual new browser request', async () => {
+    await withSessionAuthority(async (authority, gateway) => {
+      const expected = identity(tenantIdentity())
+      const previous = await browserAPIFromResponse(browserResponse(authority.credential), gateway, expected)
+      authority.credential = 'Bearer after-navigation'
+      try {
+        expect((await previous.get('/api/v1/system/auth/context')).status()).toBe(401)
+      } finally {
+        await previous.dispose()
+      }
+      const current = await browserAPIFromResponse(browserResponse(authority.credential), gateway, expected)
+      try {
+        expect((await current.get('/api/v1/system/auth/context')).status()).toBe(200)
+        expect(authority.requests.every(item => item.method === 'GET' && item.path === '/api/v1/system/auth/context')).toBe(true)
+      } finally {
+        await current.dispose()
+      }
+    })
+  })
+
+  it('refuses another user, tenant, context, principal type or permission set', async () => {
+    for (const change of [
+      payload => { payload.principal.id = '8' },
+      payload => { payload.context.tenant_id = '3' },
+      payload => { payload.context.type = 'platform' },
+      payload => { payload.principal.type = 'service' },
+      payload => { payload.authorization.role_assignments[0].permissions = ['security.enrollment.read'] }
+    ]) {
+      await withSessionAuthority(async (authority, gateway) => {
+        change(authority.payload)
+        await expect(browserAPIFromResponse(browserResponse(authority.credential), gateway, identity(tenantIdentity()))).rejects.toThrow()
+        expect(authority.requests).toHaveLength(1)
+      })
+    }
+  })
+
+  it('does not substitute a fixture credential for a missing or rejected browser credential', async () => {
+    await withSessionAuthority(async (authority, gateway) => {
+      for (const value of [undefined, '', 'Basic unrelated']) {
+        await expect(browserAPIFromResponse(browserResponse(value), gateway, identity(tenantIdentity()))).rejects.toThrow()
+      }
+      expect(authority.requests).toEqual([])
+      await expect(browserAPIFromResponse(browserResponse('Bearer obsolete'), gateway, identity(tenantIdentity()))).rejects.toThrow(/401/)
+      expect(authority.requests).toHaveLength(1)
+    })
+  })
+})
 
 describe('read-only task configuration check safety guard', () => {
   it('allows only real checks, session refresh and declared persisted facts', () => {

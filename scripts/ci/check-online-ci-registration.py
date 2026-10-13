@@ -773,6 +773,7 @@ def validate_security_mysql_owner_protection_profile(
         "addp.security-manager-export-browser/v4", "anonymous_refresh_401", "download.delete()",
         "protected_preview_verified", "technical_field_search_verified", "search_to_preview_verified",
         "verifyResourceCombinationFilters(", "resource_combination_filters_verified", "resource_filters_read_only",
+        "browserAPIFromResponse(", "browser_session_rebound_verified",
         "resource_filter_case_count", "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
         "security-resource-filter-reset.png",
         "security-manager-protected-preview.png", "security-manager-field-search.png", ".field-name mark",

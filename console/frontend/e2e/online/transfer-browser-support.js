@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test'
+import { expect, request } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
 export async function json(response, operation) {
@@ -18,6 +18,31 @@ export function identity(payload) {
     tenantID: String(payload?.context?.tenant_id || ''),
     contextType: payload?.context?.type,
     permissions: new Set(assignments.flatMap(assignment => assignment.permissions || []))
+  }
+}
+
+export async function browserAPIFromResponse(response, gateway, expected) {
+  expect(response.ok()).toBe(true)
+  const authorization = response.request().headers().authorization
+  expect(typeof authorization === 'string' && /^Bearer\s+\S+$/.test(authorization)).toBe(true)
+  const api = await request.newContext({ baseURL: gateway, extraHTTPHeaders: { Authorization: authorization } })
+  try {
+    let contextResponse
+    try {
+      contextResponse = await api.get('/api/v1/system/auth/context')
+    } catch {
+      throw new Error('current browser session identity request failed')
+    }
+    const actual = identity(await json(contextResponse, 'current browser session identity'))
+    expect(actual.principalType).toBe('user')
+    expect(actual.contextType).toBe('tenant')
+    expect(actual.principalID).toBe(expected.principalID)
+    expect(actual.tenantID).toBe(expected.tenantID)
+    expect([...actual.permissions].sort()).toEqual([...expected.permissions].sort())
+    return api
+  } catch (error) {
+    await api.dispose()
+    throw error
   }
 }
 

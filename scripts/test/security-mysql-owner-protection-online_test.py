@@ -1404,6 +1404,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "resource_scope_intersection_verified": True, "resource_reset_verified": True,
             "resource_filter_total_verified": True, "resource_filters_read_only": True,
             "owner_validity_visible": True, "resource_filter_case_count": 9,
+            "browser_session_rebound_verified": True,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1425,6 +1426,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("resource_combination_filters_verified", False), ("resource_filters_read_only", False),
             ("resource_filter_case_count", 8), ("resource_filter_case_count", "9"),
             ("resource_filter_case_count", True), ("owner_validity_visible", False),
+            ("browser_session_rebound_verified", False),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):

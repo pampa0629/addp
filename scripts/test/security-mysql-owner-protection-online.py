@@ -2045,6 +2045,7 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "resource_scope_intersection_verified": True, "resource_reset_verified": True,
         "resource_filter_total_verified": True, "resource_filters_read_only": True,
         "owner_validity_visible": True, "resource_filter_case_count": 9,
+        "browser_session_rebound_verified": True,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()

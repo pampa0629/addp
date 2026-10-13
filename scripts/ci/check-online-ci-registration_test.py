@@ -772,6 +772,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("console/frontend/e2e/online/security-manager-export.spec.js", "technical_field_search_verified", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "verifyResourceCombinationFilters(", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "resource_filters_read_only", "export browser contract is missing"),
+            ("console/frontend/e2e/online/security-manager-export.spec.js", "browser_session_rebound_verified", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "security-manager-field-search.png", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "execution.triggered_by", "export browser contract is missing"),
             ("console/frontend/e2e/online/security-manager-export.spec.js", "download.delete()", "export browser contract is missing"),
