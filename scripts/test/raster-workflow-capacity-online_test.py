@@ -22,6 +22,22 @@ class CapacityEvidenceTest(unittest.TestCase):
         samples = [{**metrics, 'runtime': runtime}, {**metrics, 'runtime': {**runtime, 'running': 0, 'waiting': 0}}]
         return samples, {**metrics, 'cpu_usage_usec': 1_000_000}, metrics
 
+    def test_checkpoint_never_claims_final_success_or_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            for result in ('failed','passed'):
+                report={'schema_version':'addp.raster-workflow-capacity-online/v1','result':result,
+                        'run_id':'run','groups':[{'cache_mib':64,'running_limit':1,'repetition':1}]}
+                original=copy.deepcopy(report)
+                m.save_progress(root,report)
+                checkpoint=json.loads((root/'capacity-progress.json').read_text())
+                self.assertNotIn('result',checkpoint)
+                self.assertNotIn('schema_version',checkpoint)
+                self.assertEqual(checkpoint['completed_groups'],1)
+                self.assertEqual(checkpoint['run_id'],'run')
+                self.assertEqual(checkpoint['groups'],report['groups'])
+                self.assertEqual(report,original)
+
     def test_strict_three_party_sizes_reject_coercion_mismatch_and_nonpositive(self):
         m.scene.strict_sizes(*[{'size_bytes': 123} for _ in range(3)])
         for index in range(3):

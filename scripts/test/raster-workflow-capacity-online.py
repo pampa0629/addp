@@ -176,6 +176,11 @@ def validate_measurement(samples,before,after,cache,running,version):
         'resource_observation':final}
 
 
+def save_progress(root,report):
+    checkpoint={'run_id':report['run_id'],'completed_groups':len(report['groups']),'groups':report['groups']}
+    (root/'capacity-progress.json').write_text(json.dumps(checkpoint,sort_keys=True))
+
+
 def physical(action,names):
     return fixture.physical(action,names)
 
@@ -253,7 +258,7 @@ def run(env):
                 'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
                 'timing_method':'submit-two-through-parent-terminal-excludes-oracle-and-scan','measurement':metrics,'samples':samples,'cases':cases,'purge':'passed'}
             report['groups'].append(group)
-            (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'capacity-progress.json').write_text(json.dumps(report,sort_keys=True))
+            save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
         if len(hashes)!=1 or len(scans)!=24:raise scene.SuiteError('capacity results differ between groups')
         report.update(result='passed',automatic_scans=24,output_sha256=next(iter(hashes)))
         return report
