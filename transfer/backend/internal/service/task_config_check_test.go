@@ -75,8 +75,8 @@ func checkFixtureReport(t *testing.T, svc *TaskConfigCheckService, subject autho
 	return result
 }
 
-func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
-	for _, engineType := range []string{"opengauss", "kingbase", "tidb", "oceanbase"} {
+func TestConfigCheckUsesTargetProvider(t *testing.T) {
+	for _, engineType := range []string{"opengauss", "kingbase", "tidb", "oceanbase", "mysql"} {
 		for _, scenario := range []string{"json", "invalid_constant", "object_array", "unknown_source_with_invalid_constant", "geometry", "append_json", "append_text", "source_text"} {
 			t.Run(engineType+"/"+scenario, func(t *testing.T) {
 				svc, facts, subject, body := configCheckFixture(t)
@@ -112,7 +112,7 @@ func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
 				case "append_json", "append_text":
 					config["target"].(map[string]interface{})["policy"].(map[string]interface{})["apply_mode"] = "append"
 					native := "jsonb"
-					if engineType == "tidb" || engineType == "oceanbase" {
+					if engineType == "tidb" || engineType == "oceanbase" || engineType == "mysql" {
 						native = "json"
 					}
 					observedType := datatype.FieldTypeJSON
@@ -131,7 +131,7 @@ func TestConfigCheckUsesNonSpatialProtocolProvider(t *testing.T) {
 				if scenario == "json" || scenario == "append_json" {
 					want = plugin.DefinitionSupported
 				}
-				if scenario == "source_text" {
+				if scenario == "source_text" || (scenario == "geometry" && engineType == "mysql") {
 					want = plugin.DefinitionUnknown
 				}
 				if report.Status != want || !slicesContains(report.Checked, "provider_write_definition") || facts.calls != 4 {
@@ -202,6 +202,41 @@ func TestConfigCheckBindsFullRequestAndStructuralFacts(t *testing.T) {
 		t.Fatal("field order not bound")
 	}
 }
+
+func TestConfigCheckMySQLSpatialMixedArrayRejected(t *testing.T) {
+	svc, facts, subject, body := configCheckFixture(t)
+	registered, _ := plugin.Get("mysql")
+	caps, _ := plugin.MarshalEngineCapabilities(registered.Capabilities())
+	declared := commonmodels.JSONString(caps)
+	facts.engines[2].EngineType, facts.engines[2].Capabilities = "mysql", &declared
+	table := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON, Nullable: true}, {Name: "shape", Type: datatype.FieldTypeGeometry, Nullable: true}}}
+	facts.items[1].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(table)
+	facts.items[1].Attributes["capabilities"] = map[string]interface{}{"spatial": datatype.SpatialInfoPayload(datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2))}
+	var request map[string]interface{}
+	_ = json.Unmarshal(body, &request)
+	transform := request["config"].(map[string]interface{})["transforms"].([]interface{})[0].(map[string]interface{})
+	transform["fields"] = []interface{}{
+		map[string]interface{}{"source": "payload", "target": "payload", "target_type": "array", "nullable": true},
+		map[string]interface{}{"source": "shape", "target": "shape", "target_type": "geometry", "nullable": true},
+	}
+	body, _ = json.Marshal(request)
+	report := checkFixtureReport(t, svc, subject, body)
+	if report.Status != plugin.DefinitionUnsupported || facts.calls != 4 {
+		t.Fatalf("mixed table bypassed checker: %+v", report)
+	}
+	found := false
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Status == plugin.DefinitionUnsupported {
+			if diagnostic.TargetField != "payload" || diagnostic.ConfigPath != "/config/transforms/0/fields/0" {
+				t.Fatalf("incorrect field location: %+v", diagnostic)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("array rejection lost")
+	}
+}
 func TestConfigCheckDeniesBeforeReadingFacts(t *testing.T) {
 	for _, name := range []string{"create", "meta", "system", "other_tenant", "project_scope", "service", "ticket", "wrong_scope", "wrong_audience"} {
 		t.Run(name, func(t *testing.T) {
@@ -255,7 +290,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 				delete(f.items, 2)
 				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "no_checker":
-				f.engines[2].EngineType = "mysql"
+				f.engines[2].EngineType = "doris"
 			case "bad_identity":
 				f.items[1].TenantID = 8
 				wantError = true

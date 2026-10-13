@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/kingbase"
+	"github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/oceanbase"
 	"github.com/addp/common/engine/plugins/opengauss"
 	"github.com/addp/common/engine/plugins/postgresql"
@@ -17,6 +18,18 @@ import (
 type forbiddenDefinitionDelete struct {
 	*postgresql.PostgreSQLPlugin
 	calls int
+}
+
+func TestMySQLMixedDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
+	p := &mysql.MySQLPlugin{}
+	for _, field := range []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray}, {Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 2, Scale: 3}} {
+		deleter := &forbiddenDefinitionDelete{}
+		target := &nativeTableBatchTarget{definitionChecker: tableWriteDefinitionChecker(p), deleter: &engineTargetResourceDeleter{provider: deleter}, preparer: p}
+		_, err := target.Open(t.Context(), &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "shape", Type: datatype.FieldTypeGeometry}, field}}, datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 2))
+		if err == nil || !strings.Contains(err.Error(), `column "`+field.Name+`"`) || deleter.calls != 0 {
+			t.Fatalf("invalid mixed definition reached replace: delete=%d error=%v", deleter.calls, err)
+		}
+	}
 }
 
 func TestProtocolWriteDefinitionRejectsBeforeReplaceEffects(t *testing.T) {

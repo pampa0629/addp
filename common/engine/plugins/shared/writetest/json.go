@@ -80,7 +80,11 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 				t.Errorf("invalid definition cleanup not proven: count=%d error=%v", count, err)
 			}
 		})
-		err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, Nullable: true}}})
+		invalidFields := []datatype.FieldInfo{{Name: "payload", Type: datatype.FieldTypeArray, Nullable: true}}
+		if spatial != nil {
+			invalidFields = append(invalidFields, datatype.FieldInfo{Name: "shape", Type: datatype.FieldTypeGeometry, Nullable: true})
+		}
+		err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: invalidFields, SpatialInfo: spatial})
 		if err == nil || !strings.Contains(err.Error(), `column "payload": field_definition_unsupported`) {
 			t.Fatalf("native array definition reached DDL: %v", err)
 		}

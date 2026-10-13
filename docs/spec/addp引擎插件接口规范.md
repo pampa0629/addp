@@ -302,7 +302,9 @@ type StoreProvider interface {
 
 纯定义检查只能编码可审查的配置常量。PostgreSQL 协议与 MySQL-compatible 核心复用同一有界纯值检查；在调用 JSON 编码或参数转换前，递归排除自定义 `json.Marshaler`、`encoding.TextMarshaler`、`driver.Valuer`、指针和不透明对象，包含嵌套容器及 map key。超过深度／节点预算或循环引用保留 `unknown`，不调用用户方法，也不跳过其他字段、源类型和既有目标约束检查。正常写入仍沿用原有值编码，不把预检的纯值边界施加到实际行。
 
-MySQL 非空间表写入核心为 TiDB 和 OceanBase 提供同一 `TableWriteDefinitionChecker` 实现：复用真实建表的物理映射、decimal 上限及既有列兼容规则，并检查已知 JSON 常量。原生 `array` 没有受认证的写入编码，不得因默认 TEXT 映射而报告支持，也不得自动改成 JSON；在连接、DDL 和 Owner 删除目标之前拒绝。源 JSON 文档、字符串和数组的表示证据不足时保留 `unknown`；已有目标快照缺少原生类型或时间小数秒精度时同样保留 `unknown`。该纯检查不改变 MySQL 独立空间写入路径，不新增权限或接口契约。
+MySQL 非空间表写入核心为 TiDB 和 OceanBase 提供同一 `TableWriteDefinitionChecker` 实现：复用真实建表的物理映射、decimal 上限及既有列兼容规则，并检查已知 JSON 常量。原生 `array` 没有受认证的写入编码，不得因默认 TEXT 映射而报告支持，也不得自动改成 JSON；在连接、DDL 和 Owner 删除目标之前拒绝。源 JSON 文档、字符串和数组的表示证据不足时保留 `unknown`；已有目标快照缺少原生类型或时间小数秒精度时同样保留 `unknown`。该核心不新增权限或接口契约。
+
+MySQL 插件自身提供同一纯定义检查：非空间字段复用 MySQL-compatible 核心，空间字段复用自身物理映射、EWKB 编码和列兼容规则，混合表的数组／decimal／JSON 常量不得绕过检查。空间声明必须绑定真实 geometry 字段，维度和空间索引的已知约束在连接前检查；Prepare、session 与 upsert 复用同一检查。已有空间列按原生子类型比较，不把 POINT／POLYGON 因统一标准类型为 geometry 就判为兼容；目标结构快照没有独立列 SRID 事实，涉及 SRID 的兼容性保留 `unknown`，不得借目标声明补造事实。此扩展不改变已有 API、权限、共享 DTO 或 capabilities；实时 SRID／实例 SRS 可用性和逐值合法性仍在运行期核验。
 
 Transfer 的正式只读配置检查入口为 `POST /api/v1/transfer/task-config-checks`，首期只检查新建任务完整请求中的 bounded + snapshot、native table、replace/append 定义，不检查 upsert。入口要求当前 Tenant User 的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 交集；委托使用精确 transfer audience 与唯一 `transfer.task.config.check` Scope，并再次检查同一三项当前 Tenant Permission，不扩大 Runtime Service 权限。只读取 System 已登记引擎事实和 Meta 已落库结构快照，不调用实时 Catalog Facts、采样、源查询、Prepare、任务保存或执行。报告版本固定为 `addp.transfer_task_config_check/v1`，绑定完整提交请求的规范 JSON SHA-256、Tenant、Principal 和本次完整结构事实摘要；结构摘要包含字段顺序、原生类型、元素类型、精度、默认表达式、空间信息、Meta 身份及扫描时刻，不能用 Security 的裁剪结构 hash 替代。`binding_hash` 绑定该完整报告，是内容摘要，不是签名、授权或可复用执行凭据。客户端不自报结构快照、摘要或主体，保存／运行仍由 Owner 独立校验；此首期不改变原创建／更新 API 的权限或自动执行预检。
 

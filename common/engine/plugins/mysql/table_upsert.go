@@ -16,6 +16,9 @@ func (p *MySQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.Co
 }
 
 func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return err
+	}
 	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
 		return p.nonSpatialTableWriter().PrepareTableUpsertWithTargetPolicy(ctx, connInfo, path, opts, requireTargetAbsent)
 	}
@@ -67,6 +70,9 @@ func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.Co
 }
 
 func (p *MySQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return err
+	}
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

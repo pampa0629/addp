@@ -42,6 +42,9 @@ func (p *MySQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Connection
 }
 
 func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return nil, err
+	}
 	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
 		return p.nonSpatialTableWriter().OpenTableWriteSession(ctx, connInfo, path, opts)
 	}

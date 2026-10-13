@@ -28,9 +28,11 @@ PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素�
 
 PostgreSQL 协议与 MySQL-compatible 的纯定义检查共享有界常量审查：编码前递归排除自定义 JSON／Text 编码、driver.Valuer 及不透明对象，返回 `unknown` 且不执行回调；其他定义约束继续检查，真实写入值编码保持原有行为。回归由 `make test-go` 自动发现。
 
-TiDB 与 OceanBase 通过同一 MySQL 非空间写入核心实现 `TableWriteDefinitionChecker`，Transfer 的现有配置预检和 replace 删除前校验直接消费。检查 JSON 常量、原生类型、decimal 上限和已有列兼容规则；拒绝原生 `array`，保留字符串／数组转 JSON 及缺少结构事实的 `unknown`，不自动改类型。Prepare、session 和 upsert 连接前复用同一确定性定义检查；MySQL 独立空间路径保持原有边界。T1 由 `make test-go` 自动发现，真实 JSON／bytes 和写入语法继续由已有 MySQL、TiDB、OceanBase T2 入口及 Release/T2 Job 验证，不新增测试入口。
+TiDB 与 OceanBase 通过同一 MySQL 非空间写入核心实现 `TableWriteDefinitionChecker`，Transfer 的现有配置预检和 replace 删除前校验直接消费。检查 JSON 常量、原生类型、decimal 上限和已有列兼容规则；拒绝原生 `array`，保留字符串／数组转 JSON 及缺少结构事实的 `unknown`，不自动改类型。Prepare、session 和 upsert 连接前复用同一确定性定义检查。T1 由 `make test-go` 自动发现，真实 JSON／bytes 和写入语法继续由已有 MySQL、TiDB、OceanBase T2 入口及 Release/T2 Job 验证，不新增测试入口。
 
 只复验 PostgreSQL 类型感知写入时，在按 `scripts/infra/README.md` 核实并设置测试连接后运行 `bash scripts/test/common-postgres-gate.sh --test typed-write`，同时验证真实 JSONB 与 TEXT[] 的 COPY session、批量 COPY、INSERT、upsert。该选择仍使用同一门禁的测试库保护和清理，不能计为完整 Common PostgreSQL 门禁通过。批量 COPY 仍按 chunk 提交；失败 chunk 回滚不撤销此前已提交的 chunk，写入失败也不代表建表或 replace 已回滚。
+
+MySQL 自身的纯定义检查覆盖空间混合表：普通字段复用共享核心，geometry 使用插件自身规则；声明冲突、原生数组、非法 decimal 与不匹配的空间子类型在目标操作前拒绝。目标快照缺少独立列 SRID 事实时返回 `unknown`。回归由 `make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=transfer GO_ONLY=1` 以及已有 `make test-common-mysql-data-protection` 自动发现。
 
 ### client
 提供与其他服务交互的客户端：
