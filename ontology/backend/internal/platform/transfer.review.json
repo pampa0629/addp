@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "a049fc71dd51118f44f53306cea066f0ae3bad97",
-      "sha256": "9902b45401f85c0ff0509b5307cf127aad0bb4af987f13c262828a6d5e6640e5",
+      "commit": "f6da6539dbf4ff76d98556d19d03f6624b420b86",
+      "sha256": "750a367f6a38d204dcc2ac20497c4f7bdff6e97f884532228cb53b6484119d2a",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略的正式含义，以及只读预检的三权限交集、Runtime 两次预检和三态限制；复核可选查询定义分析仅用已保存快照、源未知仍检查显式目标约束及常量，unsupported 优先于 unknown",
-        "en": "Formal task, execution, configuration and apply policy semantics, the precheck permission intersection, two Runtime checks and tri-state limits; reviewed optional query definition analysis from saved snapshots only and explicit target constraints and constants with unknown sources, with unsupported taking precedence over unknown"
+        "zh-cn": "任务、执行、配置与写入策略，以及只读预检的权限交集、两次预检和三态限制；纯查询定义分析只用已保存快照，源未知仍检查目标约束及常量。新增 Parquet item-layout 读取说明属于当前 native-table 创建切片之外，不扩张此能力覆盖",
+        "en": "Task, execution, configuration, apply policy and precheck permission intersection, two checks and tri-state limits; pure query analysis uses saved snapshots and checks targets and constants with unknown sources. Added Parquet item-layout reader guidance lies outside this native-table creation slice and does not expand coverage"
       }
     },
     {
@@ -86,8 +86,8 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
-      "sha256": "4522f504a37cd3dccfaeefea4e40c4ea28733943b332b26aa62f3b175255ac65",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "37d45cb16e070b69ce888133d86d273a912850a3a0d177d63aa96815a6c47365",
       "use": {
         "zh-cn": "事实获取、澄清、确切复核与创建；分别确认行粒度和字段范围。显式检查由 Runtime 固定展示并结束，不再要求模型收尾，后续解释读取原草稿引用。自动创建预检及修改沿原修正和复核路径，不重建参数或混淆定义保存与建表",
         "en": "Fact discovery, clarification, exact review and creation with separate row grain and fields. Runtime displays and ends explicit checks without model closing text; later explanation reads the original draft reference. Automatic creation checks and changes retain the correction and review path without reconstructing parameters or confusing definitions with tables"
@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
-      "sha256": "00355694ec44731f9908cae7bd7dc4c97e7e8b0dfc4015ac73d265c1e49635cd",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "4e1eff543a34c4492a4a69bb560049a9f5cd9a45de1217dd49ca89c26bdb9f3c",
       "use": {
-        "zh-cn": "显式检查有效三态报告固定展示后结束，不再调用模型；同批调度前仅保留首个检查，失败取消不生成完成提示，不解析自然语言关键词。正式自动预检、诊断修正及创建条件保持原路径，不放宽条件或授权",
-        "en": "Explicit valid tri-state checks display fixed results and end without another model call; only the first check survives filtering before scheduling. Failure and cancellation produce no completion, without natural-language keyword parsing. Formal automatic checks, diagnostic correction and creation conditions retain their path without relaxed conditions or authorization"
+        "zh-cn": "显式三态检查固定展示并结束，同批仅保留首个检查；原参数创建由 Runtime 向复核及同一正式 Adapter 绑定精确候选，拒绝第二份复核参数；当前能力、自动两次预检、条件、知情确认与提交屏障仍走原路径，不放宽授权",
+        "en": "Explicit tri-state checks display and end with first-check batch isolation; Runtime binds exact restored arguments to review and the same formal adapter, rejecting a second review payload; current semantics, two automatic checks, conditions, informed confirmation and commit barrier retain their authorization boundaries"
       }
     },
     {
@@ -151,8 +151,8 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
-      "sha256": "ac413932adae3f72bda5b3a5df1182711cc82e061eade74fe5661a632f6facfb",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "864130a3169c324718f7273577ed1f86783174692ca41cf2b0768d4641a90256",
       "use": {
         "zh-cn": "真实 Harness、Manifest、SDK 下验证三态显式检查无后续模型调用、完整参数诊断、双语提示、任意顺序同批隔离、输入修正及失败取消；同时保持自动预检、诊断修正和知情复核回归。受控 HTTP/推理夹具不宣称真实模型或 Hosted 验收",
         "en": "Real Harness, Manifest and SDK verify explicit tri-state termination without another model call, complete arguments and diagnostics, bilingual copy, batch isolation in either order, input correction, failure and cancellation; automatic checks, diagnostic correction and informed review remain covered. Controlled HTTP/inference fixtures do not claim real-model or hosted acceptance"
@@ -164,8 +164,8 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "a9b35fd89121a0dab279ddd1cb04a937d0d13198",
-      "sha256": "05f139a657e84b3447fb1a3f114c73eab24c5dc778ebf56f372be7a95c66c01d",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "f00b698952fcd6358085473a7ab196dc6be2b08401b4620f1bb89199bc25e60c",
       "use": {
         "zh-cn": "显式只读检查的双语固定完成提示精确区分三态，明确检查不创建或执行；不裁剪诊断，不把 unknown 当作通过，不推测任务状态",
         "en": "Fixed bilingual completion for explicit read-only checks distinguishes all three states and states no creation or execution by the check; no diagnostic truncation, treating unknown as passed or inferring task status"
@@ -190,8 +190,8 @@
       "kind": "implementation",
       "path": "agent/backend/services/drafts.py",
       "anchor": "def draft_snapshot(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "ac5fd884b2115e7ad42af0188f185494766593cb6d7abd7d2c901e8c57904ac5",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "28190275eedf45fe44f7501af1af4fa5d885f587811f6648dbce47a900355809",
       "use": {
         "zh-cn": "只引用已完成正式预检步骤的原参数及同参报告，恢复时核验 Manifest、摘要和字节上限；按用户、租户、会话隔离，不复制业务实体、确认或授权，也不写入平台静态本体",
         "en": "Reference only completed formal check inputs and same-argument reports, verifying Manifest, digest and byte bounds on restore; isolate user, tenant and session without copying business entities, confirmation or authorization into platform definitions"
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "a420f278c60fa38acf488bd0c3a0097702eaaefc72a3f29154acfb915a8f7b88",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "66abfc1061e001d73a490ee693e8ca8d3b50e4c4eb80e7c1bf91556a1905867b",
       "use": {
-        "zh-cn": "纯历史解释只选受信任近期目录的确切引用，不装配业务 Tool 或重读 Owner；歧义不自动选首项，错版或损坏拒绝，修改与创建仍走原平台语义路径",
-        "en": "Pure historical explanation selects exact references from the trusted recent catalog without business tools or owner reads; ambiguity never selects the first item, invalid snapshots fail closed, and changes and creation retain the platform semantic path"
+        "zh-cn": "纯历史解释不装配业务 Tool；原参数创建从受信任目录选择确切引用并恢复精确候选，每次恢复重新按用户、租户、会话读取；不继承旧报告、事实或确认，仍走当前平台语义路径，歧义与损坏失败关闭",
+        "en": "Pure inspection has no business tools; unchanged creation selects a trusted exact reference and restores the scoped candidate on every resume, without old reports, facts or confirmation, retaining current platform semantics and failing closed on ambiguity or corruption"
       }
     },
     {
@@ -229,8 +229,8 @@
       "kind": "test",
       "path": "agent/backend/tests/test_drafts.py",
       "anchor": "class DraftScopeTests(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "70082b5a5c18eba59124f503a15c59ebaea47874bab4c1f7689d8196c018fde6",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "2f7219106d6e71a13016ecd44f2803eaa1ffdddf2ad77c5681ab17dec8a2c604",
       "use": {
         "zh-cn": "T1 用实际内存 SQL 谓词验证用户、租户和会话隔离、近期窗口及完整版本；受控路由验证精确 json 映射、无业务工具、歧义和损坏拒绝，不宣称 PG 集成或自由模型验收",
         "en": "T1 actual in-memory SQL predicates verify user, tenant and session scope, recent bounds and exact versions; controlled routing verifies exact json mappings, zero business tools, ambiguity and invalid snapshot refusal, not PostgreSQL integration or free-model acceptance"
@@ -315,6 +315,32 @@
       }
     },
     {
+      "id": "draft_state",
+      "owner": "agent",
+      "kind": "contract",
+      "path": "agent/backend/graph/state.py",
+      "anchor": "class RouteDecision(",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "5e553b50acb05a195267f00e4adfa17aadf8f35020b7956f9e0f80117f7bfc58",
+      "use": {
+        "zh-cn": "唯一路由动作区分纯解释与原参数创建，拒绝旧字段和额外输入；精确参数只放本次 TaskContext，不是权限或静态本体事实",
+        "en": "One route action distinguishes inspection from unchanged creation and rejects removed or extra inputs; exact arguments are ephemeral TaskContext data, not permission or static ontology facts"
+      }
+    },
+    {
+      "id": "draft_checkpoint",
+      "owner": "agent",
+      "kind": "implementation",
+      "path": "agent/backend/agents/checkpoint.py",
+      "anchor": "def normalize_checkpoint(",
+      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
+      "sha256": "de1da0a8d26533b4880466a15f8cc8a3f00056db795179478e1d33675800cc5e",
+      "use": {
+        "zh-cn": "检查点只保存原草稿控制引用，不持久化第二份参数；恢复拒绝错误引用类型，仍保留当前 Run 原有事实与复核边界，不导入旧 Run",
+        "en": "Checkpoint stores only the draft control reference, not a duplicate payload; restoration rejects wrong reference types and retains current-run evidence and review boundaries without importing an old run"
+      }
+    },
+    {
       "id": "chat_renderer_test",
       "owner": "agent",
       "kind": "test",
@@ -337,7 +363,7 @@
     {"subject": "requirement/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "concept/source_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
     {"subject": "concept/target_parent_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
-    {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test"]},
+    {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test", "runtime", "runtime_test", "draft_routing", "draft_snapshot", "draft_snapshot_test", "draft_state", "draft_checkpoint"]},
     {"subject": "relation/confirmed_source/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
     {"subject": "relation/confirmed_target_parent_and_name/reads_via/target_parent_discovery", "sources": ["skill", "conditions", "condition_test"]},
     {"subject": "relation/confirmed_target_parent_and_name/configured_by/target", "sources": ["skill", "conditions", "manifest"]},
