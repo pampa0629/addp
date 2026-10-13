@@ -117,6 +117,8 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 
 2026-10-13 用户重启后的会话 31 已真实消费修订 20，正式预检后固定卡片及 Runtime 完成提示正确展示；unknown 仍明确不是通过。历史解释只读原草稿引用，参数、映射、报告及持久消息/安全事件顺序一致，无创建或业务数据操作。刷新页面时 Agent 前端因终端输入 `read EIO` 退出，Console 模块入口 500，刷新恢复未通过，待用户重启后补验；不因此重建平台定义、投影或退回旧版本，也不把本地切片通过当作 Hosted T4 或可执行性结论。
 
+同日用户再次重启 Agent 后，原会话 31 的刷新恢复补验通过：原参数、摘要引用和两轮固定卡片顺序与持久审计及安全事件一致，刷新前后的限定数据库证据逐字未变，没有新增 Run、预检或任务定义。本地首轮/历史解释/刷新切片完成，不重建或重新发布本体、不更新平台修订；前端 EIO 根因修复、配置实际执行与 Hosted T4 均不在此通过范围。
+
 `make test-platform-review` 是不依赖外部服务的平台来源漂移门禁，已纳入 `test-platform`，因此其他 owner 的标准模块门禁同样检查已捕获文件 SHA-256 与锚点，并读取来源固定 Git 提交核对同一文件内容；缺失提交或摘要/锚点不符均拒绝，不联网补取或跳过。先提交来源代码，再冻结实际提交与摘要；旧提交配工作区新摘要不能通过。Git 只属于开发/CI 门禁，不进入生产编译、发布或消费路径。现有相关 CI checkout 均提供完整历史，原 Go T1 自动发现临时 Git 夹具对错误提交、文件缺失及伪造摘要的拒绝测试。Go T1 另核验完整成员绑定、覆盖状态、摘要绑定、来源隔离和拒绝旧格式；来源变化须审查后更新依据及新发布修订，不能盲目刷新摘要。现有 Go/PG/Falkor CI 自动发现覆盖新增测试，未增加运行依赖或另起 CI 路线。
 
 平台 Transfer 切片另用 `ADDP_SYSTEM_POSTGRES_TEST_DSN=<已核实端口的 addp_iam_test PostgreSQL URL> bash scripts/test/system-iam-postgres-gate.sh --package migration --test transfer-task-create` 精确验证迁移 181；默认 System IAM 门禁仍由 `AgainstPostgres$` 自动发现此测试，不将精确选择器视为全量通过。`make test-system-iam-runner` 验证选择器、默认发现和跨进程测试库互斥。
