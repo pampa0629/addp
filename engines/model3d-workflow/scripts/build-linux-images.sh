@@ -63,14 +63,18 @@ docker build \
 echo "Smoke checking runtime image"
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/_3dtile "${RUNTIME_IMAGE}" --help >/dev/null
 docker run --rm --platform "${PLATFORM}" --entrypoint /opt/addp/model3d-workflow/bin/IfcConvert "${RUNTIME_IMAGE}" --version >/dev/null
-docker run -i --rm --platform "${PLATFORM}" \
+docker run -i --rm --network none --platform "${PLATFORM}" \
   -v "${ROOT_DIR}/business/fixtures/manager/addp_online_model_fixture.osgb:/fixture/model.osgb:ro" \
+  -v "${ENGINE_DIR}/tests/fixtures/mesh:/fixture/mesh:ro" \
   --entrypoint python "${RUNTIME_IMAGE}" - <<'PY'
 from pathlib import Path
 import operators
 import struct
 import subprocess
 import tempfile
+import hashlib
+import io
+from PIL import Image
 from openskp import create
 from skp_converter import convert
 from glb_validation import validate_glb
@@ -116,6 +120,71 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit('invalid OSGB was silently accepted')
     print('Final Runtime compressed OSGB, staged paths and failure preservation smoke passed')
 
+    mesh_source = Path(tmp) / 'mesh source'
+    mesh_source.mkdir()
+    fbx = mesh_source / 'box.fbx'
+    fbx.write_bytes(Path('/fixture/mesh/box.fbx').read_bytes())
+    if hashlib.sha256(fbx.read_bytes()).hexdigest() != 'ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8':
+        raise SystemExit('FBX fixture differs from the pinned Assimp v5.4.3 source')
+    obj = mesh_source / 'triangle.obj'
+    obj.write_text('mtllib triangle.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
+                   'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
+    (mesh_source / 'triangle.mtl').write_text('newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n')
+    Image.new('RGB', (4, 4), (32, 180, 220)).save(mesh_source / 'texture.png')
+    source_hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in mesh_source.iterdir()}
+    for format_name, source, triangle_count in (('fbx', fbx, 12), ('obj', obj, 1)):
+        target = Path(tmp) / f'{format_name}.glb'
+        plan = {'schema_version': 'addp.workflow.access-plan/v1',
+                'source': {'kind': 'directory', 'format': format_name, 'entrypoint': source.name,
+                           'access': {'method': 'mounted_path', 'path': str(mesh_source)}},
+                'target': {'kind': 'file', 'format': 'glb', 'name': target.name, 'write_mode': 'create',
+                           'access': {'method': 'mounted_path', 'path': str(target)}}}
+        operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)
+        doc = validate_glb(target, basic_static=True)
+        primitives = [p for mesh in doc['meshes'] for p in mesh['primitives']]
+        if len(doc['meshes']) != 1 or any(p.get('mode', 4) != 4 for p in primitives):
+            raise SystemExit(f'{format_name} static mesh topology differs')
+        if sum(doc['accessors'][p['indices']]['count'] for p in primitives) != triangle_count * 3:
+            raise SystemExit(f'{format_name} triangle count differs')
+        scene = trimesh.load(target, force='scene')
+        if format_name == 'fbx':
+            # GLB export merges equivalent vertices. Compare source geometry,
+            # rather than requiring the FBX importer's expanded storage count.
+            corners = {(x, y, z) for x in (-100.0, 100.0) for y in (-100.0, 100.0) for z in (-100.0, 100.0)}
+            if len(scene.geometry) != 1 or set(map(tuple, next(iter(scene.geometry.values())).vertices)) != corners:
+                raise SystemExit('FBX box coordinates differ from the source')
+        if format_name == 'obj':
+            if sum(doc['accessors'][p['attributes']['POSITION']]['count'] for p in primitives) != 3:
+                raise SystemExit('OBJ vertex count differs')
+            if any(abs(actual - expected) > 1e-6 for actual, expected in zip(scene.extents, (2, 3, 0))):
+                raise SystemExit('OBJ source coordinates changed during conversion')
+            pbr = doc['materials'][primitives[0]['material']]['pbrMetallicRoughness']
+            image_index = doc['textures'][pbr['baseColorTexture']['index']]['source']
+            if len(doc.get('images', [])) != 1 or pbr.get('baseColorFactor', [1, 1, 1, 1])[3] != 1:
+                raise SystemExit('OBJ diffuse texture or opacity was lost')
+            _, chunks = operators._read_glb(target)
+            view = doc['bufferViews'][doc['images'][image_index]['bufferView']]
+            offset = view.get('byteOffset', 0)
+            with Image.open(io.BytesIO(chunks[1][1][offset:offset + view['byteLength']])) as image:
+                if image.size != (4, 4) or image.convert('RGB').tobytes() != bytes((32, 180, 220)) * 16:
+                    raise SystemExit('OBJ embedded texture pixels differ from the source')
+        previous = target.read_bytes()
+        invalid = mesh_source / f'invalid.{format_name}'
+        invalid.write_text('not a model')
+        plan['source']['entrypoint'] = invalid.name
+        plan['target']['write_mode'] = 'replace'
+        try:
+            operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)
+        except operators.ConverterError:
+            if target.read_bytes() != previous:
+                raise SystemExit(f'{format_name} failure replaced the previous artifact')
+        else:
+            raise SystemExit(f'invalid {format_name} was silently accepted')
+        invalid.unlink()
+    if {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in mesh_source.iterdir()} != source_hashes:
+        raise SystemExit('FBX/OBJ source files were modified')
+    print('Final Runtime FBX static geometry, OBJ embedded PNG and failure preservation smoke passed')
+
     source = Path(tmp) / "tiny.splat"
     target = Path(tmp) / "tiny.ksplat"
     record = bytearray(32)
@@ -147,9 +216,6 @@ with tempfile.TemporaryDirectory() as tmp:
     print("SKP parser, GLB publication validation and metre scale smoke passed")
 
     import json
-    import hashlib
-    import io
-    from PIL import Image
     from operators import ConverterError
     fixture = Path('/app/max-fixture')
     max_source = fixture / 'horsewalk02.max'

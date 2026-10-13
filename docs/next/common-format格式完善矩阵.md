@@ -19,7 +19,7 @@
 | CSV / XLSX | CSV 表格读取与分页已有 NFS 样例页面复核；CSV/TSV 已补 UTF-8 BOM 表头与源字节索引处理，十万行索引分页有确定性回归，新增真实 NFS 样例已通过扫描、索引边界分页、末页和原文件下载验收；带 BOM 的 UTF-16LE / UTF-16BE 读取已实现，真实 NFS 已通过重启后的扫描、20＋5 行分页与原文件下载验收；显式 GBK 读取、Manager 编码选择与 Meta 持久化已通过确定性及 PostgreSQL 回归，真实 NFS CSV / TSV 的编码应用、中文、分页、重复刷新、重新打开和原文件下载已验收；固定 GBK CSV / TSV 的 Business MinIO Hosted 同一链路及原文件下载哈希、清理已通过。XLSX 已通过真实 NFS 与 Business MinIO Hosted 四工作表的不同字段、空表、只有表头、未知总数逐页读取、刷新及完整原文件下载验收。大文件及编码变体仍需扩充验收，不把 CSV 坐标列自动解释为设备轨迹。 |
 | JSON / GeoJSON | 普通 JSON 文档、records array 分页及 GeoJSON FeatureCollection 空间预览已有实现和本地样例页面复核；不承诺任意 JSON 均可生成轨迹，也不把单个 Feature 当作 FeatureCollection。 |
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
-| FBX / OBJ | 基础预览直接读取源模型；GLB 快显调用 Model3D 的对应 mesh operator。已有实现不等于全部版本和材质可用；当前六模型 Manager Hosted 未包含 FBX / OBJ，仍须补两者的真实转换、页面及源／产物检查。 |
+| FBX / OBJ | 基础预览直接读取源模型；GLB 快显调用 Model3D 的对应 mesh operator。正式 Linux ARM64 产品构建已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。当前六模型 Manager Hosted 未包含二者，Linux x86_64 构建和真实页面／缓存验收仍待补；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
 | SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。其他样例、复杂材质及 S3 外部贴图仍待验证。 |
 

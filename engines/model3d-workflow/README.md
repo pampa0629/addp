@@ -84,6 +84,10 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 
 现有 Product binary build CI 会按受影响路径选择 Model3D 镜像，构建后用真实 Blender 检查静态 GLB、贴图、默认米与手选毫米的 1000 倍比例、源文件不变及失败时旧产物保留。此检查不代替真实业务源、Manager 页面与 Monitor 的 T4 验收。
 
+产品构建的最终 Runtime 转换检查还覆盖 FBX／OBJ 静态网格：FBX 使用 Assimp `v5.4.3`（提交 `c35200e38ea8f058812b83de2ef32c6093b0ece2`）的 [box.fbx](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/models/FBX/box.fbx)，保留在 `tests/fixtures/mesh/`，源 SHA-256 为 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`；原始许可完整保留在同目录 `LICENSE-assimp.txt`。上游 [独立断言](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/unit/utFBXImporterExporter.cpp#L67) 为一个网格、36 个顶点和 12 个三角面。OBJ 使用 ADDP 自建三角形及漫反射 PNG，核对源坐标、三角面、UV 贴图引用、实际内嵌像素与不透明度。两者经正式 access plan 和 operator 发布，并验证源字节不变、无效输入失败且保留旧产物；不扩大为动画、全部 FBX 版本、复杂材质或 Manager Hosted 页面已验收。
+
+2026-10-13，`make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify --jobs 1 --tag meshverify-20261013'` 在 Linux ARM64 最终 Runtime 镜像通过上述 FBX／OBJ 检查，原有 OSGB、SKP、MAX 验证同时通过。FBX 导出为 24 个存储顶点、12 个三角面，源文件也有 24 个存储顶点和八个唯一角点；上游导入测试的 36 个顶点不是 GLB 存储要求，因此检查源角点坐标和三角面数，允许等价顶点合并。OBJ 保留 `[2,3,0]` 的源坐标范围及全部 4 × 4 RGB `(32,180,220)` 内嵌贴图像素。验证镜像只加载独立标签，没有推送镜像或重启开发服务；Linux x86_64 产品构建与 Manager 页面验收仍需各自的 CI／Hosted 实际结果。
+
 ## 启动
 
 ```bash

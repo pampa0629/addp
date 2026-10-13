@@ -71,8 +71,18 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
         self.assertIn('!common-python/addp_common/**', (converter.parent / 'runtime/Dockerfile.dockerignore').read_text())
         builder = (ROOT / 'scripts/build/build-images.sh').read_text()
         block = builder[builder.index('        model3d-workflow-engine)'):builder.index('        pointcloud-workflow-engine|document-workflow-engine)')]
-        for extension in ('*.json', '*.lock', '*.cpp', '*.cmake', '*.dockerignore'):
+        for extension in ('*.json', '*.lock', '*.cpp', '*.cmake', '*.dockerignore', '*.fbx'):
             self.assertIn(extension, block)
+
+    def test_fbx_fixture_is_the_pinned_upstream_box_with_original_license(self):
+        fixture = ROOT / 'engines/model3d-workflow/tests/fixtures/mesh'
+        box = (fixture / 'box.fbx').read_bytes()
+        self.assertEqual(len(box), 17200)
+        self.assertEqual(hashlib.sha256(box).hexdigest(),
+                         'ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8')
+        self.assertTrue(box.startswith(b'Kaydara FBX Binary  \x00\x1a\x00'))
+        self.assertEqual(hashlib.sha256((fixture / 'LICENSE-assimp.txt').read_bytes()).hexdigest(),
+                         '147874443d242b4e2bae97036e26ec9d6b37f706174c1bd5ecfcc8c1294cef51')
 
     def run_build(self, architecture, platform=None, fail_build=False):
         with tempfile.TemporaryDirectory(prefix='addp-model3d-build-') as temporary:
@@ -84,13 +94,16 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
             bin_dir.mkdir()
             for name, source in {
                 'uname': '#!/bin/bash\nprintf "%s\\n" "$ADDP_TEST_ARCH"\n',
-                'docker': '#!/bin/bash\nprintf "%s\\n" "$*" >> "$ADDP_TEST_TRACE"\n[ "$1" != build ] || [ "$ADDP_TEST_BUILD_FAIL" != 1 ]\n',
+                'docker': '#!/bin/bash\nprintf "%s\\n" "$*" >> "$ADDP_TEST_TRACE"\n'
+                          'if [ "$1" = run ] && [ "$2" = -i ]; then cat > "$ADDP_TEST_SMOKE"; fi\n'
+                          '[ "$1" != build ] || [ "$ADDP_TEST_BUILD_FAIL" != 1 ]\n',
             }.items():
                 command = bin_dir / name
                 command.write_text(source)
                 command.chmod(0o755)
             env = dict(os.environ, PATH=f'{bin_dir}:{os.environ["PATH"]}',
                        ADDP_TEST_ARCH=architecture, ADDP_TEST_TRACE=str(root / 'trace'),
+                       ADDP_TEST_SMOKE=str(root / 'smoke.py'),
                        ADDP_TEST_BUILD_FAIL='1' if fail_build else '0')
             for key in ('MODEL3D_DOCKER_PLATFORM', 'MODEL3D_CONVERTER_IMAGE', 'MODEL3D_RUNTIME_IMAGE'):
                 env.pop(key, None)
@@ -98,6 +111,8 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
                 env['MODEL3D_DOCKER_PLATFORM'] = platform
             result = subprocess.run(['bash', str(path)], env=env, capture_output=True, text=True)
             trace = (root / 'trace').read_text() if (root / 'trace').exists() else ''
+            if (root / 'smoke.py').exists():
+                compile((root / 'smoke.py').read_text(), str(root / 'smoke.py'), 'exec')
             return result, trace
 
     def test_native_architecture_drives_both_images_and_all_smoke_checks(self):
@@ -111,6 +126,8 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
                 self.assertIn('IfcConvert', trace)
                 self.assertIn('--entrypoint python', trace)
                 self.assertIn('/fixture/model.osgb:ro', trace)
+                self.assertIn('/tests/fixtures/mesh:/fixture/mesh:ro', trace)
+                self.assertIn('run -i --rm --network none', trace)
 
 
     def test_invalid_platforms_reject_before_docker(self):
