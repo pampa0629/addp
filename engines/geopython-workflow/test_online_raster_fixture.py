@@ -876,6 +876,134 @@ def test_async_aggregation_partial_groups_and_source_nodata_match_physical_oracl
     assert list(fixture.aggregate_pixels('aggregate-mean'))[-1]==131072.
 
 
+@pytest.mark.parametrize('method', ['mean', 'sum', 'min', 'max'])
+@pytest.mark.parametrize('source_name,factors', [
+    ('multiband.tif', [2, 2]),
+    (fixture.ROTATED_SOURCE, [3, 5]),
+])
+def test_async_multiband_aggregation_preserves_independent_validity_rotation_and_edge_groups(
+        physical, tmp_path, monkeypatch, method, source_name, factors):
+    """Exercise raw alpha-bearing input through the real async DAG and COG writer."""
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    import api_server
+
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    source = tmp_path/source_name
+    original = LocalMinio.objects['source', 'raster-source', source_name]
+    source.write_bytes(original)
+    output = tmp_path/('multiband-aggregate-'+method+'.cog.tif')
+    definition = scene.aggregate_workflow('source-locator', 2, 'aggregate-'+method)
+    # Keep the source alpha for aggregation itself to evaluate, without band selection.
+    definition['tasks'] = [task for task in definition['tasks'] if task['id'] != 'select']
+    definition['tasks'][0]['params'] = {'access_plan': source_access_plan(source)}
+    aggregate = definition['tasks'][1]
+    aggregate['depends_on'] = ['load']
+    aggregate['params'].update(input_raster={'$ref': 'load', 'port': 'default'}, factors=factors)
+    save = definition['tasks'][-1]['params']
+    for key in ('target_parent_locator', 'target_name', 'write_mode'):
+        save.pop(key)
+    save['access_plan'] = {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
+        'kind': 'file', 'format': 'tiff', 'name': output.name, 'write_mode': 'create',
+        'access': {'method': 'mounted_path', 'path': str(output)}}}
+    client = api_server.app.test_client()
+    response = client.post('/api/workflow', json={'workflow_def': definition, 'input_data': {},
+        'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read', 'write']}}})
+    assert response.status_code == 202
+    deadline = time.monotonic()+10
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success', 'failed'):
+            break
+        time.sleep(.01)
+    assert status['status'] == 'success', status
+    artifact = json.loads(status['result'])
+    assert type(artifact['size_bytes']) is int and artifact['size_bytes'] == output.stat().st_size > 0
+    assert source.read_bytes() == original
+
+    factor_x, factor_y = factors
+    width, height = math.ceil(fixture.SIZE/factor_x), math.ceil(fixture.SIZE/factor_y)
+    transform = fixture.ROTATED_TRANSFORM if source_name == fixture.ROTATED_SOURCE else fixture.TRANSFORM
+    expected_transform = (transform[0], transform[1]*factor_x, transform[2]*factor_y,
+                          transform[3], transform[4]*factor_x, transform[5]*factor_y)
+    dataset = gdal.Open(str(output))
+    assert (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) == (width, height, 2)
+    assert dataset.GetGeoTransform() == pytest.approx(expected_transform)
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
+    assert osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
+    assert dataset.GetMetadataItem('LAYOUT', 'IMAGE_STRUCTURE') == 'COG'
+    assert not validate(dataset, full_check=True)[1]
+    assert (artifact['width'], artifact['height'], artifact['band_count']) == (width, height, 2)
+    assert artifact['transform'] == pytest.approx(expected_transform)
+    assert artifact['source_crs'] == 'EPSG:4326'
+    for band_index in (1, 2):
+        expected = []
+        # Scalar fixture formulas are independent of product masks and grouped reduction.
+        for row in range(height):
+            for column in range(width):
+                values = []
+                for y in range(row*factor_y, min((row+1)*factor_y, fixture.SIZE)):
+                    for x in range(column*factor_x, min((column+1)*factor_x, fixture.SIZE)):
+                        cell = (y//2)*(fixture.SIZE//2)+x//2
+                        if cell in (band_index-1, 2):
+                            continue  # Independent band NoData or shared alpha=0.
+                        values.append(0. if cell == 4 else float(band_index*(cell+1)))
+                expected.append(None if not values else math.fsum(values)/len(values) if method == 'mean'
+                    else math.fsum(values) if method == 'sum' else min(values) if method == 'min' else max(values))
+        band = dataset.GetRasterBand(band_index)
+        assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetColorInterpretation() != gdal.GCI_AlphaBand
+        assert band.GetOverviewCount() == 1
+        assert artifact['bands'][band_index-1]['overviews'] == [[width//2, height//2]]
+        for level, sampled in ((1, band), (2, band.GetOverview(0))):
+            sample_width, sample_height = width//level, height//level
+            assert (sampled.XSize, sampled.YSize) == (sample_width, sample_height)
+            # These even grids use the existing fixture's origin-anchored nearest oracle.
+            wanted = [expected[row*level*width+column*level]
+                for row in range(sample_height) for column in range(sample_width)] if level > 1 else expected
+            actual = struct.unpack(f'<{len(wanted)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
+            assert all(math.isnan(value) if target is None else math.isclose(value, target, rel_tol=1e-12, abs_tol=1e-9)
+                       for value, target in zip(actual, wanted)), 'aggregation pixels differ from scalar oracle'
+            assert sampled.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte) == bytes(
+                0 if value is None else 255 for value in wanted)
+        if factors == [2, 2]:
+            assert sum(value is None for value in expected) == 2
+            assert expected[band_index-1] is None and expected[2] is None
+            assert expected[4] == 0.  # Valid zero is retained, partial alpha does not scale values.
+            assert expected[2-band_index] == 2.*(4 if method == 'sum' else 1)
+    dataset = None
+
+
+@pytest.mark.parametrize('fault', ['joint-mask', 'ignore-alpha', 'scale-partial-alpha', 'drop-zero'])
+def test_async_multiband_aggregation_oracle_rejects_validity_regressions(physical, tmp_path, monkeypatch, fault):
+    import numpy as np
+    from operators import raster_compute
+
+    original_blocks = raster_compute._blocks
+
+    def corrupted_blocks(dataset, indices, *, window=None):
+        requested = [1, 2] if fault == 'joint-mask' else indices
+        for x, y, arrays, masks in original_blocks(dataset, requested, window=window):
+            if fault == 'joint-mask':
+                shared = masks[0] & masks[1]
+                arrays, masks = [arrays[index-1] for index in indices], [shared for _ in indices]
+            elif fault == 'ignore-alpha':
+                masks = [np.isfinite(values) for values in arrays]
+            elif fault == 'drop-zero':
+                masks = [mask & (values != 0) for values, mask in zip(arrays, masks)]
+            else:
+                height, width = arrays[0].shape
+                alpha = np.frombuffer(dataset.GetRasterBand(3).ReadRaster(x, y, width, height,
+                    buf_type=gdal.GDT_Float64), dtype=np.float64).reshape(height, width)
+                arrays = [values*(alpha/255.) for values in arrays]
+            yield x, y, arrays, masks
+
+    monkeypatch.setattr(raster_compute, '_blocks', corrupted_blocks)
+    with pytest.raises(AssertionError, match='aggregation pixels differ from scalar oracle'):
+        test_async_multiband_aggregation_preserves_independent_validity_rotation_and_edge_groups(
+            physical, tmp_path, monkeypatch, 'mean', 'multiband.tif', [2, 2])
+
+
 def test_aggregation_physical_oracle_rejects_pixels_edge_validity_and_preservation_faults(aggregate_artifacts,tmp_path):
     baseline = dict(LocalMinio.objects)
     try:
