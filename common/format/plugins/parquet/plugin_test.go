@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -495,6 +496,7 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeBigInt},
+			{Name: "count", Type: datatype.FieldTypeInt, Nullable: true},
 			{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
 			{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
 			{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
@@ -507,8 +509,8 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
 	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
-		{"id": int64(1), "name": "Alice", "score": 9.5, "active": true},
-		{"id": int64(2), "name": "Bob", "score": 8.25, "active": false},
+		{"id": int64(9007199254740993), "count": int32(-2147483648), "name": "Alice", "score": 9.5, "active": true},
+		{"id": int64(2), "count": nil, "name": "Bob", "score": 8.25, "active": false},
 	}); err != nil {
 		t.Fatalf("WriteRows failed: %v", err)
 	}
@@ -523,12 +525,41 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
 		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
+	for _, want := range tableInfo.Fields {
+		found := false
+		for _, got := range info.Table.Fields {
+			if got.Name == want.Name {
+				found = true
+				if got.Type != want.Type || got.Nullable != want.Nullable {
+					t.Fatalf("field %q = %#v, want type %q nullable %v", want.Name, got, want.Type, want.Nullable)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing field %q", want.Name)
+		}
+	}
 	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(buf.Bytes()), 0, 2, nil)
 	if err != nil {
 		t.Fatalf("SampleTable failed: %v", err)
 	}
 	if len(rows) != 2 || rows[0]["name"] != "Alice" || rows[1]["active"] != false {
 		t.Fatalf("rows = %#v, want Alice/Bob", rows)
+	}
+	if rows[0]["id"] != int64(9007199254740993) || rows[0]["count"] != int32(-2147483648) || rows[1]["count"] != nil {
+		t.Fatalf("integer rows = %#v, want exact bigint, signed int and null", rows)
+	}
+	reader, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(buf.Bytes()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close(context.Background())
+	if !reflect.DeepEqual(reader.Fields(), info.Table.Fields) {
+		t.Fatalf("reader fields = %#v, want %#v", reader.Fields(), info.Table.Fields)
+	}
+	streamed, err := reader.ReadRows(context.Background(), 2)
+	if err != nil || !reflect.DeepEqual(streamed, rows) {
+		t.Fatalf("continuous rows = %#v, %v, want %#v", streamed, err, rows)
 	}
 }
 

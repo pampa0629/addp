@@ -1861,6 +1861,13 @@ func mapParquetType(f parquetgo.Field) datatype.FieldType {
 	lt := f.Type().LogicalType()
 	if lt != nil {
 		switch {
+		case lt.Integer != nil && lt.Integer.IsSigned:
+			switch lt.Integer.BitWidth {
+			case 8, 16, 32:
+				return datatype.FieldTypeInt
+			case 64:
+				return datatype.FieldTypeBigInt
+			}
 		case lt.Date != nil:
 			return datatype.FieldTypeDate
 		case lt.Time != nil:
