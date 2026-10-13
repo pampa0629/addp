@@ -51,10 +51,15 @@
         v-model:scope="listScope"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
+        v-model:filters="resourceFilters"
+        :filter-busy="loading || backgroundRefreshing"
+        :engine-options="resourceEngineOptions"
         :total="total"
         :loading="loading"
         :can-create="canCreate"
         :presentation="resourceListPresentation"
+        @apply-filters="applyResourceFilters"
+        @reset-filters="resetResourceFilters"
         @scope-change="handleScopeChange"
         @page-change="handlePageChange"
         @open="openDetail"
@@ -374,6 +379,10 @@ const {
   currentPage,
   pageSize,
   listScope,
+  filters: resourceFilters,
+  applyFilters: applyResourceFilters,
+  resetFilters: resetResourceFilters,
+  backgroundRefreshing,
   loading,
   autoRefreshActive,
   lastRefreshedAt,
@@ -1003,6 +1012,7 @@ const detailLifecycle = computed(() => ({
   canCreate: canCreate.value,
   canUpdate: canRelease.value
 }))
+const resourceEngineOptions = computed(() => [...engineNames.value].map(([id, name]) => ({ id, name })))
 const resourceListPresentation = computed(() => resourceListView(rows.value))
 const reviewQueuePresentation = computed(() => findingReviewQueueView(reviewQueueRows.value, {
   detectorCapabilities: detectorCapabilities.value,

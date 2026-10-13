@@ -85,6 +85,8 @@
           <div>
             <strong>{{ owner.label }}</strong>
             <span>{{ owner.effectDescription }}</span>
+            <span>{{ t('security.enrollment.validity.period', { from: owner.validFrom, until: owner.expiresAt }) }}</span>
+            <el-tag size="small" :type="owner.validity.type">{{ owner.validity.label }}</el-tag>
           </div>
           <el-tag :type="owner.state.type">{{ owner.state.label }}</el-tag>
         </div>

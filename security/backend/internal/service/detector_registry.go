@@ -56,9 +56,22 @@ var installedDetectorCapabilities = []models.DetectorCapability{
 		SupportedFieldTypes:  []string{},
 		RecommendedThreshold: 0.9,
 	},
+	{
+		Key: models.FindingDetectorBankCardNumberMetadataV1, Code: "bank_card_number_metadata", Version: "v1",
+		NameI18nKey: "security.detectorCapabilities.bankCardNumberMetadata.name", DescriptionI18nKey: "security.detectorCapabilities.bankCardNumberMetadata.description",
+		MethodI18nKey: "security.detectorCapabilities.bankCardNumberMetadata.method", PrivacyI18nKey: "security.detectorCapabilities.bankCardNumberMetadata.privacy",
+		LimitationsI18nKey: "security.detectorCapabilities.bankCardNumberMetadata.limitations",
+		TargetKind:         detectorTargetFieldMetadata, EvidenceSource: detectorEvidenceMetadata,
+		SupportedItemTypes:  []string{string(resourcetree.TypeTable), string(resourcetree.TypeCollection)},
+		SupportedFieldTypes: []string{string(datatype.FieldTypeString)}, RecommendedThreshold: 0.9,
+	},
 }
 
 var fieldMetadataDetectorAliases = map[string]map[string]struct{}{
+	models.FindingDetectorBankCardNumberMetadataV1: {
+		"bankcard": {}, "bankcardno": {}, "bankcardnumber": {}, "creditcardno": {}, "creditcardnumber": {},
+		"银行卡": {}, "银行卡号": {}, "银行卡号码": {}, "信用卡号": {}, "信用卡号码": {},
+	},
 	models.FindingDetectorPhoneMetadataV2: {
 		"phone": {}, "mobile": {}, "mobilephone": {}, "phonenumber": {}, "telephone": {}, "手机号": {}, "手机号码": {},
 	},

@@ -133,81 +133,113 @@ func TestIdentityDocumentNumberMetadataDetectorRecognizesOnlyExactSemanticAliase
 	}
 }
 
-func TestEmailMetadataFindingCompilesGenericSuppressionForEveryStructuredOutlet(t *testing.T) {
-	db := openSecurityTestDB(t)
-	definitions := newTestDefinitionService(db)
-	classification, err := definitions.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grade, err := definitions.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "email", Name: "邮箱", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorEmailMetadataV1, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
-		t.Fatal(err)
-	}
-
-	enrollments := NewEnrollmentService(db)
-	created, err := enrollments.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(2, resourcetree.TypeTable, "business.customers"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, owner := range allRequiredProtectionOwners() {
-		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := enrollments.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
-			t.Fatal(err)
-		}
-	}
+func TestBankCardMetadataDetectorRecognizesExactPathsWithoutRowValues(t *testing.T) {
+	detector := configuredDetector{Binding: models.Detector{TenantID: 7, SensitiveDataTypeID: 11}, DataType: models.SensitiveDataType{ID: 11}, Capability: models.DetectorCapability{Key: models.FindingDetectorBankCardNumberMetadataV1, Code: "bank_card_number_metadata"}}
 	fields := []datatype.FieldInfo{
-		{Name: "customer_code", Path: []string{"customer_code"}, Type: datatype.FieldTypeString, Nullable: false},
-		{Name: "email", Path: []string{"email"}, Type: datatype.FieldTypeString, Nullable: false},
+		{Name: "bank_card_number", Type: datatype.FieldTypeString},
+		{Name: "payment__credit_card_no", Type: datatype.FieldTypeString},
+		{Name: "payment", Path: []string{"payment"}, Type: datatype.FieldTypeJSON},
+		{Name: "银行卡号", Path: []string{"payment", "银行卡号"}, Type: datatype.FieldTypeString},
+		{Name: "account", Type: datatype.FieldTypeString},
+		{Name: "bank_account_no", Type: datatype.FieldTypeString},
+		{Name: "card_id", Type: datatype.FieldTypeString},
+		{Name: "bank_card_verified", Type: datatype.FieldTypeString},
+		{Name: "bank_card_no", Type: datatype.FieldTypeInt},
 	}
-	hash, err := dataprotection.TableSchemaSnapshotHash(fields)
-	if err != nil {
-		t.Fatal(err)
+	findings, err := NewDiscoveryService(nil, nil).detectFieldFindings(models.ProtectionEnrollment{ID: "enrollment", TenantID: 7}, "execution", detector, dataprotection.DataItemSecurityFacts{Fields: fields, SourceSnapshotHash: "sha256:bank-card-test"})
+	if err != nil || len(findings) != 3 {
+		t.Fatalf("bank card findings = %#v, error = %v", findings, err)
 	}
-	facts := &dataprotection.DataItemSecurityFacts{
-		SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: created.Target.ResourceIdentity,
-		ItemType: string(resourcetree.TypeTable), Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
+	if findings[0].ComponentKey != "bank_card_number" || findings[1].ComponentKey != "payment__credit_card_no" || findings[2].ComponentKey != "payment.银行卡号" {
+		t.Fatalf("bank card component keys = %#v", findings)
 	}
-	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-email-test", time.Now().UTC(), time.Minute)
-	if err != nil || execution == nil || lease == nil {
-		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
+	if findings[1].Evidence["matched_alias"] != "creditcardno" {
+		t.Fatalf("bank card evidence = %#v", findings[1].Evidence)
 	}
-	if err := discoveries.Execute(context.Background(), execution, *lease); err != nil {
-		t.Fatal(err)
-	}
+}
 
-	listed, err := discoveries.ListFindings(context.Background(), 7, FindingListFilter{EnrollmentID: created.ID, DiscoveryExecutionID: execution.ExecutionID}, 1, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if listed.Total != 1 || listed.Data[0].ComponentKey != "email" || listed.Data[0].DetectorVersion != models.FindingDetectorEmailMetadataV1 {
-		t.Fatalf("email findings = %#v", listed)
-	}
-	for owner, assertion := range map[string]func(*testing.T, *dataprotection.Projection, string){
-		"manager":  requireManagerProjectionEffects,
-		"develop":  requireDevelopQueryProjection,
-		"service":  requireServiceExecuteProjection,
-		"transfer": requireTransferExportProjection,
+func TestStructuredMetadataFindingCompilesGenericSuppressionForEveryStructuredOutlet(t *testing.T) {
+	for _, detectorCase := range []struct{ code, capability, field string }{
+		{"email", models.FindingDetectorEmailMetadataV1, "email"},
+		{"bank_card_number", models.FindingDetectorBankCardNumberMetadataV1, "bank_card_number"},
 	} {
-		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
-		if err != nil || len(changes.Changes) != 2 {
-			t.Fatalf("%s changes = %#v, err=%v", owner, changes, err)
-		}
-		assertion(t, changes.Changes[1].Projection, dataprotection.EffectSuppress)
+		t.Run(detectorCase.code, func(t *testing.T) {
+			db := openSecurityTestDB(t)
+			definitions := newTestDefinitionService(db)
+			classification, err := definitions.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
+			if err != nil {
+				t.Fatal(err)
+			}
+			grade, err := definitions.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: detectorCase.code, Name: detectorCase.code, SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: detectorCase.capability, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
+				t.Fatal(err)
+			}
+
+			enrollments := NewEnrollmentService(db)
+			created, err := enrollments.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(2, resourcetree.TypeTable, "business.customers"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, owner := range allRequiredProtectionOwners() {
+				changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := enrollments.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fields := []datatype.FieldInfo{
+				{Name: "customer_code", Path: []string{"customer_code"}, Type: datatype.FieldTypeString, Nullable: false},
+				{Name: detectorCase.field, Path: []string{detectorCase.field}, Type: datatype.FieldTypeString, Nullable: false},
+			}
+			hash, err := dataprotection.TableSchemaSnapshotHash(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			facts := &dataprotection.DataItemSecurityFacts{
+				SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: created.Target.ResourceIdentity,
+				ItemType: string(resourcetree.TypeTable), Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
+			}
+			discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
+			execution, lease, err := discoveries.ClaimNext(context.Background(), "security-email-test", time.Now().UTC(), time.Minute)
+			if err != nil || execution == nil || lease == nil {
+				t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
+			}
+			if err := discoveries.Execute(context.Background(), execution, *lease); err != nil {
+				t.Fatal(err)
+			}
+
+			listed, err := discoveries.ListFindings(context.Background(), 7, FindingListFilter{EnrollmentID: created.ID, DiscoveryExecutionID: execution.ExecutionID}, 1, 20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if listed.Total != 1 || listed.Data[0].ComponentKey != detectorCase.field || listed.Data[0].DetectorVersion != detectorCase.capability {
+				t.Fatalf("email findings = %#v", listed)
+			}
+			for owner, assertion := range map[string]func(*testing.T, *dataprotection.Projection, string){
+				"manager":  requireManagerProjectionEffects,
+				"develop":  requireDevelopQueryProjection,
+				"service":  requireServiceExecuteProjection,
+				"transfer": requireTransferExportProjection,
+			} {
+				changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
+				if err != nil || len(changes.Changes) != 2 {
+					t.Fatalf("%s changes = %#v, err=%v", owner, changes, err)
+				}
+				assertion(t, changes.Changes[1].Projection, dataprotection.EffectSuppress)
+			}
+		})
 	}
 }
 

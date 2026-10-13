@@ -133,6 +133,8 @@ export function createProtectionEnrollmentResourcePresentation({
     if (row.state === 'released') return { type: 'info', label: t('security.enrollment.states.released'), description: t('security.enrollment.stateDescriptions.released') }
     if (row.state === 'releasing') return { type: 'warning', label: t('security.enrollment.states.releasing'), description: t('security.enrollment.stateDescriptions.releasing') }
     const owners = Array.isArray(row.owner_progress) ? row.owner_progress : []
+    if (owners.some(owner => owner.validity === 'expired')) return { type: 'danger', label: t('security.enrollment.validity.expired'), description: t('security.enrollment.validity.expiredHint') }
+    if (owners.some(owner => owner.validity === 'not_yet_valid')) return { type: 'warning', label: t('security.enrollment.validity.not_yet_valid'), description: t('security.enrollment.validity.not_yet_valid') }
     if (owners.length > 0 && owners.every(owner => owner.acknowledged && owner.projection_state === 'active')) {
       return { type: 'success', label: t('security.enrollment.states.active'), description: t('security.enrollment.stateDescriptions.active') }
     }
@@ -150,6 +152,12 @@ export function createProtectionEnrollmentResourcePresentation({
     return { type: 'info', label: t('security.enrollment.ownerStates.denied') }
   }
 
+  function ownerValidityPresentation(owner) {
+    const types = { valid: 'success', expired: 'danger', not_yet_valid: 'warning', released: 'info' }
+    return { type: types[owner.validity] || 'info', label: Object.hasOwn(types, owner.validity)
+      ? t(`security.enrollment.validity.${owner.validity}`) : t('security.common.notAvailable') }
+  }
+
   function resourceRowView(enrollment) {
     const discovery = discoveryPresentation(enrollment)
     const owners = Array.isArray(enrollment?.owner_progress) ? enrollment.owner_progress : []
@@ -161,7 +169,9 @@ export function createProtectionEnrollmentResourcePresentation({
       owners: owners.map(owner => ({
         key: owner.consumer_owner,
         label: ownerLabel(owner.consumer_owner),
-        state: ownerPresentation(enrollment, owner)
+        state: ownerPresentation(enrollment, owner),
+        expiresAt: formatDateTime(owner.expires_at),
+        validity: ownerValidityPresentation(owner)
       })),
       discovery: {
         type: discovery.type,
@@ -223,7 +233,10 @@ export function createProtectionEnrollmentResourcePresentation({
         key: owner.consumer_owner,
         label: ownerLabel(owner.consumer_owner),
         effectDescription: ownerEffectDescription(owner),
-        state: ownerPresentation(enrollment, owner)
+        state: ownerPresentation(enrollment, owner),
+        validFrom: formatDateTime(owner.valid_from),
+        expiresAt: formatDateTime(owner.expires_at),
+        validity: ownerValidityPresentation(owner)
       })),
       facts: {
         lastDiscoveredAt: formatDateTime(enrollment?.last_discovered_at),

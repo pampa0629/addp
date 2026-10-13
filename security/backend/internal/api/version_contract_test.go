@@ -53,3 +53,18 @@ func TestSecurityVersionedCommandsBindJSONIntegers(t *testing.T) {
 		})
 	}
 }
+
+func TestEnrollmentListRejectsInvalidEngineFilterBeforeReading(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, value := range []string{"", "0", "-1", "1.5", "abc", "18446744073709551615", "1&engine_id=2"} {
+		t.Run(value, func(t *testing.T) {
+			router := gin.New()
+			router.GET("/enrollments", NewEnrollmentHandler(nil).List)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/enrollments?engine_id="+value, nil))
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("invalid engine filter returned %d", recorder.Code)
+			}
+		})
+	}
+}

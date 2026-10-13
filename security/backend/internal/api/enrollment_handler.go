@@ -26,6 +26,9 @@ func NewEnrollmentHandler(svc *service.EnrollmentService) *EnrollmentHandler {
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量，最大 100 | Page size, maximum 100"
 // @Param scope query string false "生命周期视图，current 为保护中，released 为按退出完成时间倒序的已退出历史，all 为全部；默认 current | Lifecycle view: current for in-progress protection, released for exited history ordered by completion time descending, all for both; current by default" Enums(current,released,all) default(current)
+// @Param resource_name query string false "资源完整名称的字面子串，最多 200 字符 | Literal substring of the full resource name, maximum 200 characters"
+// @Param engine_id query int false "引擎 ID，必须为正整数 | Engine ID, must be a positive integer"
+// @Param state query string false "生命周期状态，与 scope 取交集 | Lifecycle state, intersected with scope" Enums(activating,enrolling,active,releasing,released)
 // @Success 200 {object} models.ProtectionEnrollmentListResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
@@ -38,7 +41,20 @@ func NewEnrollmentHandler(svc *service.EnrollmentService) *EnrollmentHandler {
 func (h *EnrollmentHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	scope := strings.TrimSpace(c.DefaultQuery("scope", models.EnrollmentListScopeCurrent))
-	result, err := h.svc.List(c.Request.Context(), getTenantID(c), scope, int64(page), int64(pageSize))
+	filter := models.ProtectionEnrollmentFilter{ResourceName: c.Query("resource_name"), State: strings.TrimSpace(c.Query("state"))}
+	if values, exists := c.Request.URL.Query()["engine_id"]; exists {
+		if len(values) != 1 {
+			respondError(c, errBadRequest)
+			return
+		}
+		id, err := strconv.ParseUint(values[0], 10, strconv.IntSize-1)
+		if err != nil || id == 0 {
+			respondError(c, errBadRequest)
+			return
+		}
+		filter.EngineID = uint(id)
+	}
+	result, err := h.svc.List(c.Request.Context(), getTenantID(c), scope, int64(page), int64(pageSize), filter)
 	if err != nil {
 		respondError(c, err)
 		return

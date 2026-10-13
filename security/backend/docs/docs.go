@@ -3359,6 +3359,31 @@ const docTemplate = `{
                         "description": "生命周期视图，current 为保护中，released 为按退出完成时间倒序的已退出历史，all 为全部；默认 current | Lifecycle view: current for in-progress protection, released for exited history ordered by completion time descending, all for both; current by default",
                         "name": "scope",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源完整名称的字面子串，最多 200 字符 | Literal substring of the full resource name, maximum 200 characters",
+                        "name": "resource_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "引擎 ID，必须为正整数 | Engine ID, must be a positive integer",
+                        "name": "engine_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "activating",
+                            "enrolling",
+                            "active",
+                            "releasing",
+                            "released"
+                        ],
+                        "type": "string",
+                        "description": "生命周期状态，与 scope 取交集 | Lifecycle state, intersected with scope",
+                        "name": "state",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6428,6 +6453,9 @@ const docTemplate = `{
                 "consumer_owner": {
                     "type": "string"
                 },
+                "expires_at": {
+                    "type": "string"
+                },
                 "projection_id": {
                     "type": "string"
                 },
@@ -6445,6 +6473,18 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionOwnerRuleSummary"
                     }
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "validity": {
+                    "type": "string",
+                    "enum": [
+                        "not_yet_valid",
+                        "valid",
+                        "expired",
+                        "released"
+                    ]
                 }
             }
         },

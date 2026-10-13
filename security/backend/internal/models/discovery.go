@@ -11,6 +11,7 @@ const (
 	FindingDetectorPhoneMetadataV2                  = "addp.detector.phone_metadata/v2"
 	FindingDetectorEmailMetadataV1                  = "addp.detector.email_metadata/v1"
 	FindingDetectorIdentityDocumentNumberMetadataV1 = "addp.detector.identity_document_number_metadata/v1"
+	FindingDetectorBankCardNumberMetadataV1         = "addp.detector.bank_card_number_metadata/v1"
 	FindingDetectorPhoneDocumentV1                  = "addp.detector.phone_document/v1"
 	FindingEvidenceSchemaV1                         = "addp.sensitive_finding_evidence/v1"
 

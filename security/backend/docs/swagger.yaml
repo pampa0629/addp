@@ -739,6 +739,8 @@ definitions:
         type: string
       consumer_owner:
         type: string
+      expires_at:
+        type: string
       projection_id:
         type: string
       projection_state:
@@ -751,6 +753,15 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionOwnerRuleSummary'
         type: array
+      valid_from:
+        type: string
+      validity:
+        enum:
+        - not_yet_valid
+        - valid
+        - expired
+        - released
+        type: string
     type: object
   github_com_addp_security_internal_models.ProtectionOwnerRuleSummary:
     properties:
@@ -3870,6 +3881,25 @@ paths:
         - all
         in: query
         name: scope
+        type: string
+      - description: 资源完整名称的字面子串，最多 200 字符 | Literal substring of the full resource
+          name, maximum 200 characters
+        in: query
+        name: resource_name
+        type: string
+      - description: 引擎 ID，必须为正整数 | Engine ID, must be a positive integer
+        in: query
+        name: engine_id
+        type: integer
+      - description: 生命周期状态，与 scope 取交集 | Lifecycle state, intersected with scope
+        enum:
+        - activating
+        - enrolling
+        - active
+        - releasing
+        - released
+        in: query
+        name: state
         type: string
       produces:
       - application/json

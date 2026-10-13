@@ -33,6 +33,8 @@ export function useProtectionEnrollmentCollection({
   const currentPage = ref(1)
   const pageSize = ref(20)
   const listScope = ref('current')
+  const filters = ref({ resource_name: '', engine_id: null, state: '' })
+  let appliedFilters = {}
   const loading = ref(false)
   const backgroundRefreshing = ref(false)
   const autoRefreshActive = ref(false)
@@ -134,6 +136,7 @@ export function useProtectionEnrollmentCollection({
 
     try {
       const response = await listEnrollments({
+        ...appliedFilters,
         scope: listScope.value,
         page: currentPage.value,
         page_size: pageSize.value
@@ -167,6 +170,21 @@ export function useProtectionEnrollmentCollection({
     currentPage.value = 1
     await load()
     scheduleAutoRefresh({ reset: true })
+  }
+
+  async function applyFilters() {
+    if (loading.value || backgroundRefreshing.value || disposed) return false
+    appliedFilters = Object.fromEntries(Object.entries(filters.value)
+      .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])
+      .filter(([, value]) => value !== '' && value !== null && value !== undefined))
+    await refreshChangedScope()
+    return true
+  }
+
+  async function resetFilters() {
+    if (loading.value || backgroundRefreshing.value || disposed) return false
+    filters.value = { resource_name: '', engine_id: null, state: '' }
+    return applyFilters()
   }
 
   function handleVisibilityChange() {
@@ -203,6 +221,9 @@ export function useProtectionEnrollmentCollection({
     currentPage,
     pageSize,
     listScope,
+    filters,
+    applyFilters,
+    resetFilters,
     loading,
     backgroundRefreshing,
     autoRefreshActive,

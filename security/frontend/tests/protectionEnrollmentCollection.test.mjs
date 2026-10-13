@@ -36,6 +36,22 @@ function createRuntime(initialNow = 1000) {
 }
 
 describe('protected resource collection', () => {
+  it('applies literal resource filters before pagination and preserves them during refresh', async () => {
+    const listEnrollments = vi.fn().mockResolvedValue({ data: [], total: 0 })
+    const collection = useProtectionEnrollmentCollection({ listEnrollments })
+    collection.currentPage.value = 4
+    collection.filters.value = { resource_name: ' Customer_% ', engine_id: 73, state: 'active' }
+    await collection.load()
+    expect(listEnrollments).toHaveBeenLastCalledWith({ scope: 'current', page: 4, page_size: 20 })
+    await collection.applyFilters()
+    expect(listEnrollments).toHaveBeenLastCalledWith({ scope: 'current', page: 1, page_size: 20, resource_name: 'Customer_%', engine_id: 73, state: 'active' })
+    collection.filters.value.resource_name = 'not submitted'
+    await collection.load({ background: true })
+    expect(listEnrollments.mock.lastCall[0].resource_name).toBe('Customer_%')
+    await collection.resetFilters()
+    expect(listEnrollments).toHaveBeenLastCalledWith({ scope: 'current', page: 1, page_size: 20 })
+    collection.dispose()
+  })
   it('owns list parameters, result state, refresh time, and request serialization', async () => {
     const harness = createRuntime()
     let resolveList

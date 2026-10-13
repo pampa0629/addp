@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -15,6 +16,84 @@ import (
 	"github.com/addp/security/internal/repository"
 	"gorm.io/gorm"
 )
+
+func TestEnrollmentSearchAndProjectionValidity(t *testing.T) {
+	assertEnrollmentSearchAndProjectionValidity(t, openSecurityTestDB(t))
+}
+
+func assertEnrollmentSearchAndProjectionValidity(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	svc := NewEnrollmentService(db)
+	start := time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC)
+	now := start
+	svc.now = func() time.Time { return now }
+	var target models.ProtectionEnrollmentResponse
+	for index, item := range []struct {
+		tenant int64
+		engine uint
+		name   string
+	}{
+		{7, 73, "test.Customer_%!"}, {7, 73, "test.Customer_A"}, {7, 74, "test.Customer_%!"}, {8, 73, "test.Customer_%!"},
+	} {
+		created, err := svc.Create(context.Background(), item.tenant, 11, testDataItemEnrollmentRequest(item.engine, resourcetree.TypeTable, item.name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			target = *created
+		}
+	}
+	filter := models.ProtectionEnrollmentFilter{ResourceName: " CUSTOMER_ ", EngineID: 73, State: models.EnrollmentStateActivating}
+	page, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 1, filter)
+	if err != nil || page.Total != 2 || len(page.Data) != 1 || page.TotalPages != 2 {
+		t.Fatalf("filtered pagination = %#v, error = %v", page, err)
+	}
+	filter.ResourceName = "%!"
+	page, err = svc.List(context.Background(), 7, models.EnrollmentListScopeAll, 1, 20, filter)
+	if err != nil || page.Total != 1 || page.Data[0].ID != target.ID {
+		t.Fatalf("literal filter and isolation = %#v, error = %v", page, err)
+	}
+	filter.State = models.EnrollmentStateReleased
+	page, err = svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20, filter)
+	if err != nil || page.Total != 0 {
+		t.Fatalf("scope intersection = %#v, error = %v", page, err)
+	}
+	filter.State = "invented"
+	if _, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20, filter); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("invalid state = %v", err)
+	}
+	for _, owner := range allRequiredProtectionOwners() {
+		changes, err := svc.ListChanges(context.Background(), 7, owner, "", 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, point := range []struct {
+		at       time.Time
+		validity string
+	}{{start.Add(-time.Second), "not_yet_valid"}, {start, "valid"}, {start.Add(24 * time.Hour), "expired"}} {
+		now = point.at
+		response, err := svc.Get(context.Background(), 7, target.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, owner := range response.OwnerProgress {
+			if !owner.ValidFrom.Equal(start) || !owner.ExpiresAt.Equal(start.Add(24*time.Hour)) || owner.Validity != point.validity || !owner.Acknowledged {
+				t.Fatalf("validity must not change acknowledgement: %#v", owner)
+			}
+		}
+	}
+	if err := db.Model(&models.ProtectionEnrollment{}).Where("id = ?", target.ID).Update("state", models.EnrollmentStateReleased).Error; err != nil {
+		t.Fatal(err)
+	}
+	response, err := svc.Get(context.Background(), 7, target.ID)
+	if err != nil || response.OwnerProgress[0].Validity != "released" {
+		t.Fatalf("released validity = %#v, error = %v", response, err)
+	}
+}
 
 func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T) {
 	db := openSecurityTestDB(t)
@@ -155,10 +234,11 @@ func TestProjectionRuleSummariesExposeInstalledActionEffects(t *testing.T) {
 		}`,
 	}
 
-	rules, err := projectionRuleSummaries(record)
-	if err != nil {
+	var projection dataprotection.Projection
+	if err := json.Unmarshal([]byte(record.ProjectionPayload), &projection); err != nil {
 		t.Fatal(err)
 	}
+	rules := projectionRuleSummaries(projection, time.Now().UTC())
 	want := []models.ProtectionOwnerRuleSummary{
 		{Action: "preview", Effect: dataprotection.EffectMask},
 		{Action: "profile", Effect: dataprotection.EffectSuppress},
@@ -378,7 +458,7 @@ func TestZeroFindingDiscoverySummaryAndAuditedRelease(t *testing.T) {
 	if current.DiscoverySummary.Status != models.DiscoverySummaryStatusCompleted || current.DiscoverySummary.FindingCount != 0 {
 		t.Fatalf("discovery summary = %#v", current.DiscoverySummary)
 	}
-	listed, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20)
+	listed, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20, models.ProtectionEnrollmentFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +519,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	currentList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20)
+	currentList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeCurrent, 1, 20, models.ProtectionEnrollmentFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +527,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 		t.Fatalf("current list = %#v", currentList)
 	}
 
-	releasedList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeReleased, 1, 20)
+	releasedList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeReleased, 1, 20, models.ProtectionEnrollmentFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +535,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 		t.Fatalf("released list = %#v", releasedList)
 	}
 
-	allList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeAll, 1, 20)
+	allList, err := svc.List(context.Background(), 7, models.EnrollmentListScopeAll, 1, 20, models.ProtectionEnrollmentFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +543,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 		t.Fatalf("all list = %#v", allList)
 	}
 
-	if _, err := svc.List(context.Background(), 7, "unknown", 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+	if _, err := svc.List(context.Background(), 7, "unknown", 1, 20, models.ProtectionEnrollmentFilter{}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("invalid scope error = %v, want bad request", err)
 	}
 }

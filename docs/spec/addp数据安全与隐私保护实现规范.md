@@ -159,6 +159,8 @@ Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
 
 结构化身份证件号码首期使用独立的 `addp.detector.identity_document_number_metadata/v1` 能力。它只处理表和集合的字符串字段，并复用相同的确定性语义末级名称规则；规范化名称必须与 `idcard`、`idcardno`、`idcardnumber`、`identitycard`、`identitycardno`、`identitycardnumber`、`identitydocumentno`、`identitydocumentnumber`、`nationalid`、`nationalidno`、`nationalidnumber`、`身份证`、`身份证号`、`身份证号码`、`身份证件号`、`身份证件号码` 之一精确匹配。不得把 `id`、`user_id`、普通 `certificate_no` 或包含额外业务后缀的字段自动判为身份证件号码。该能力只产生不含业务值的 Finding，不校验号码格式、地区码、出生日期、校验位或持有人身份。租户必须显式绑定 SensitiveDataType 并配置 ProtectionBaseline；字段值可使用通用 `addp.mask.keep_prefix_suffix/v2` 按实际长度遮盖，号码格式核验仍不属于遮盖算法职责。
 
+新增可信内置 `addp.detector.bank_card_number_metadata/v1`，只处理表/集合字符串字段，复用末级结构化路径和 `__` 扁平语义。归一化后精确匹配 bankcard、bankcardno、bankcardnumber、creditcardno、creditcardnumber、银行卡、银行卡号、银行卡号码、信用卡号、信用卡号码；account、bankaccount、card、cardid、普通编号及附加业务后缀不自动命中。该能力不校验业务号码、卡种或校验位，不采样、保存或记录行值；租户须显式绑定敏感类型及有效默认保护，后续复核和四 Owner 编译沿用唯一主链路。
+
 1. Security 只为已进入 `enrolling` 的显式 Enrollment 创建发现 execution。
 2. Worker 使用 `addp-security` Tenant Service Access Token 精确读取 owner 已授权技术事实，不订阅 Meta 全量 DataItem 变化。
 3. Detector 先使用字段路径、名称、注释、类型和结构；证据不足时才受控采样。
@@ -764,3 +766,8 @@ make test-changed
 - 文档文本、图像、人脸、车牌、媒体和图数据敏感发现；
 - 自动定时发现任务、TaskProvider 和 Orchestrator 编排；
 - 把 Security 摘要写入 Catalog 搜索投影。
+
+
+### 受保护资源治理与银行卡号元数据识别
+
+纳管列表在现有 Tenant 与生命周期 scope 内，支持 `resource_name`（目标 full_name 的不区分大小写字面子串，最多 200 字符）、`engine_id`（正整数）和 `state`（既有生命周期枚举）组合筛选；筛选必须在计数与分页前执行，不读取 Meta 或引擎。Owner 同步摘要从现有 ProjectionPayload 返回 `valid_from`、`expires_at` 和按同次服务端时点派生的 `validity=not_yet_valid|valid|expired|released`；到期不修改 Enrollment、回执或投影历史，已退出显示 released。已同步不等于有效，也不等于具体请求已成功执行。界面展示日期及到期警示，继续复用显式重新发现命令，不建立自动续期或提醒调度。

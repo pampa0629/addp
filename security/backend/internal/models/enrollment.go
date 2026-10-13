@@ -24,6 +24,12 @@ const (
 	DiscoverySummaryStatusCompleted    = "completed"
 )
 
+type ProtectionEnrollmentFilter struct {
+	ResourceName string
+	EngineID     uint
+	State        string
+}
+
 type ProtectionEnrollment struct {
 	ID                         string     `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID                   int64      `gorm:"not null;index" json:"-"`
@@ -149,6 +155,9 @@ type ProtectionDiscoveryExecutionResponse struct {
 }
 
 type ProtectionOwnerProgress struct {
+	ValidFrom       time.Time                    `json:"valid_from"`
+	ExpiresAt       time.Time                    `json:"expires_at"`
+	Validity        string                       `json:"validity" enums:"not_yet_valid,valid,expired,released"`
 	ConsumerOwner   string                       `json:"consumer_owner"`
 	ProjectionID    string                       `json:"projection_id"`
 	Revision        string                       `json:"revision"`

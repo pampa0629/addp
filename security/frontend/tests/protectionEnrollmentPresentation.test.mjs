@@ -42,6 +42,22 @@ function createPresentation(overrides = {}) {
   }
 }
 
+describe('projection time validity presentation', () => {
+  it('shows expiry independently from an acknowledged active projection and keeps rediscovery available', () => {
+    const { presentation } = createPresentation()
+    const enrollment = { state: 'active', owner_progress: [{ consumer_owner: 'manager', projection_state: 'active', acknowledged: true, validity: 'expired', valid_from: '2026-01-01T00:00:00Z', expires_at: '2027-01-01T00:00:00Z' }] }
+    expect(presentation.presentationState(enrollment).type).toBe('danger')
+    expect(presentation.ownerPresentation(enrollment, enrollment.owner_progress[0]).type).toBe('success')
+    const detail = presentation.resourceDetailView(enrollment, { canUpdate: true })
+    expect(detail.actions.canRediscover).toBe(true)
+    expect(detail.owners[0].expiresAt).not.toBe('security.common.notAvailable')
+    expect(detail.owners[0].validity.label).toBe('security.enrollment.validity.expired')
+    enrollment.state = 'released'
+    expect(presentation.presentationState(enrollment).type).toBe('info')
+    expect(presentation.resourceDetailView(enrollment, { canUpdate: true }).actions.canRediscover).toBe(false)
+  })
+})
+
 describe('protected-resource presentation model', () => {
   it('derives reactive refresh, review, and manual-assessment summaries', () => {
     const { dependencies, presentation } = createPresentation()
@@ -255,7 +271,9 @@ describe('protected-resource presentation model', () => {
     expect(row.owners).toEqual([{
       key: 'manager',
       label: 'security.enrollment.owners.manager',
-      state: { type: 'info', label: 'security.enrollment.ownerStates.released' }
+      state: { type: 'info', label: 'security.enrollment.ownerStates.released' },
+      expiresAt: 'security.common.notAvailable',
+      validity: { type: 'info', label: 'security.common.notAvailable' }
     }])
     expect(row.discovery.type).toBe('warning')
     expect(row.discovery.observedAt).not.toBe('security.common.notAvailable')

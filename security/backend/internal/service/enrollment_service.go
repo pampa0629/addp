@@ -188,15 +188,33 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 	return enrollment, nil
 }
 
-func (s *EnrollmentService) List(ctx context.Context, tenantID int64, scope string, page, pageSize int64) (*models.ProtectionEnrollmentListResponse, error) {
+func (s *EnrollmentService) List(ctx context.Context, tenantID int64, scope string, page, pageSize int64, filter models.ProtectionEnrollmentFilter) (*models.ProtectionEnrollmentListResponse, error) {
 	if tenantID <= 0 || page <= 0 || pageSize <= 0 || pageSize > 100 {
 		return nil, commonapi.ErrBadRequest
 	}
 	if scope != models.EnrollmentListScopeCurrent && scope != models.EnrollmentListScopeReleased && scope != models.EnrollmentListScopeAll {
 		return nil, commonapi.ErrBadRequest
 	}
+	filter.ResourceName = strings.TrimSpace(filter.ResourceName)
+	if len([]rune(filter.ResourceName)) > 200 {
+		return nil, commonapi.ErrBadRequest
+	}
+	if filter.State != "" && filter.State != models.EnrollmentStateActivating && filter.State != models.EnrollmentStateEnrolling && filter.State != models.EnrollmentStateActive && filter.State != models.EnrollmentStateReleasing && filter.State != models.EnrollmentStateReleased {
+		return nil, commonapi.ErrBadRequest
+	}
+	query := applyEnrollmentListScope(s.db.WithContext(ctx).Model(&models.ProtectionEnrollment{}).Where("tenant_id = ?", tenantID), scope)
+	if filter.ResourceName != "" {
+		literal := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(filter.ResourceName))
+		query = query.Where("LOWER(target_full_name) LIKE ? ESCAPE '!'", "%"+literal+"%")
+	}
+	if filter.EngineID > 0 {
+		query = query.Where("target_engine_id = ?", filter.EngineID)
+	}
+	if filter.State != "" {
+		query = query.Where("state = ?", filter.State)
+	}
 	var total int64
-	if err := applyEnrollmentListScope(s.db.WithContext(ctx).Model(&models.ProtectionEnrollment{}).Where("tenant_id = ?", tenantID), scope).Count(&total).Error; err != nil {
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, err
 	}
 	var enrollments []models.ProtectionEnrollment
@@ -204,7 +222,7 @@ func (s *EnrollmentService) List(ctx context.Context, tenantID int64, scope stri
 	if scope == models.EnrollmentListScopeReleased {
 		order = "released_at DESC, id ASC"
 	}
-	if err := applyEnrollmentListScope(s.db.WithContext(ctx).Where("tenant_id = ?", tenantID), scope).Order(order).Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&enrollments).Error; err != nil {
+	if err := query.Session(&gorm.Session{}).Order(order).Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&enrollments).Error; err != nil {
 		return nil, err
 	}
 	data, err := s.buildResponses(ctx, enrollments)
@@ -592,8 +610,9 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 	for _, row := range findingCounts {
 		findingCountByEnrollment[row.EnrollmentID] = row
 	}
+	now := s.now().UTC()
 	for _, enrollment := range enrollments {
-		progress, err := buildOwnerProgress(enrollment, projectionsByEnrollment[enrollment.ID], ackByOwner)
+		progress, err := buildOwnerProgress(enrollment, projectionsByEnrollment[enrollment.ID], ackByOwner, now)
 		if err != nil {
 			return nil, err
 		}
@@ -619,7 +638,7 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 	return responses, nil
 }
 
-func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []models.ProtectionProjectionRecord, ackByOwner map[string]models.ProtectionProjectionAcknowledgement) ([]models.ProtectionOwnerProgress, error) {
+func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []models.ProtectionProjectionRecord, ackByOwner map[string]models.ProtectionProjectionAcknowledgement, now time.Time) ([]models.ProtectionOwnerProgress, error) {
 	progress := make([]models.ProtectionOwnerProgress, 0, len(projections))
 	for _, projection := range projections {
 		requiredSequence := projection.PublishedSequence
@@ -629,11 +648,13 @@ func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []mo
 			}
 		}
 		acknowledgement, exists := ackByOwner[projection.ConsumerOwner]
-		rules, err := projectionRuleSummaries(projection)
-		if err != nil {
-			return nil, err
+		var payload dataprotection.Projection
+		if err := json.Unmarshal([]byte(projection.ProjectionPayload), &payload); err != nil {
+			return nil, fmt.Errorf("decode protection projection %s: %w", projection.ID, err)
 		}
+		rules := projectionRuleSummaries(payload, now)
 		item := models.ProtectionOwnerProgress{
+			ValidFrom: payload.ValidFrom, ExpiresAt: payload.ExpiresAt, Validity: projectionTimeValidity(enrollment.State, payload, now),
 			ConsumerOwner: projection.ConsumerOwner, ProjectionID: projection.ID,
 			Revision: projection.Revision, ProjectionState: projection.State, Rules: rules,
 			PublishedCursor: encodeProjectionCursor(requiredSequence),
@@ -648,16 +669,24 @@ func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []mo
 	return progress, nil
 }
 
-func projectionRuleSummaries(record models.ProtectionProjectionRecord) ([]models.ProtectionOwnerRuleSummary, error) {
-	if record.State == dataprotection.ProjectionStateEnrolling {
-		return []models.ProtectionOwnerRuleSummary{}, nil
+func projectionTimeValidity(state string, projection dataprotection.Projection, now time.Time) string {
+	if state == models.EnrollmentStateReleased {
+		return "released"
 	}
-	var projection dataprotection.Projection
-	if err := json.Unmarshal([]byte(record.ProjectionPayload), &projection); err != nil {
-		return nil, fmt.Errorf("decode protection projection %s: %w", record.ID, err)
+	if !now.Before(projection.ExpiresAt) {
+		return "expired"
+	}
+	if now.Before(projection.ValidFrom) {
+		return "not_yet_valid"
+	}
+	return "valid"
+}
+
+func projectionRuleSummaries(projection dataprotection.Projection, now time.Time) []models.ProtectionOwnerRuleSummary {
+	if projection.State == dataprotection.ProjectionStateEnrolling {
+		return []models.ProtectionOwnerRuleSummary{}
 	}
 	seen := make(map[string]models.ProtectionOwnerRuleSummary, len(projection.Rules))
-	now := time.Now().UTC()
 	for _, rule := range projection.Rules {
 		action := strings.TrimSpace(rule.Action)
 		effect := strings.TrimSpace(rule.EffectiveDecision(dataprotection.SubjectReference{}, now).Effect)
@@ -676,7 +705,7 @@ func projectionRuleSummaries(record models.ProtectionProjectionRecord) ([]models
 		}
 		return rules[i].Action < rules[j].Action
 	})
-	return rules, nil
+	return rules
 }
 
 func newDiscoveryExecution(enrollment models.ProtectionEnrollment, actorID int, triggerType string, now time.Time) commonexecution.TaskExecution {

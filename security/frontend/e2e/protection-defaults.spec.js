@@ -10,6 +10,24 @@ const accessRejectionRequestID = 'cf72b9b5-063d-4f22-aa07-5c7977580d2e'
 const findingID = '8dfe6d44-dd40-4f63-b2bb-aaeb5d7f83f4'
 const newEnrollmentLocator = 'addp://engine/2/path/business/customers_new?type=table&item_id=201'
 
+test('filters protected resources on the server and shows expired rules without removing rediscovery', async ({ page }) => {
+  const backend = await installMockBackend(page, { expiredProjection: true })
+  await page.goto('/protection-enrollments')
+  await expect(page.getByText('规则已到期', { exact: true }).first()).toBeVisible()
+  const filters = page.locator('.resource-filters')
+  await filters.locator('.el-form-item').filter({ hasText: '资源名称' }).getByRole('textbox').fill('not-present_%')
+  await filters.getByRole('button', { name: '筛选', exact: true }).click()
+  await expect.poll(() => backend.enrollmentListRequests.at(-1)?.resource_name).toBe('not-present_%')
+  await expect(page.getByRole('button', { name: '查看详情', exact: true })).toHaveCount(0)
+  await filters.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(page.getByRole('button', { name: '查看详情', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+  await expect(drawer.getByText(/有效期：/).first()).toBeVisible()
+  await expect(drawer.getByRole('button', { name: '重新发现', exact: true })).toBeVisible()
+  expect(backend.unhandledRequests).toEqual([])
+})
+
 test('saves permitted SM3 and constant field algorithms independently from the default mask', async ({ page }) => {
   const backend = await installMockBackend(page, { governanceValidation: true })
   backend.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1', 'addp.mask.constant/v1')
@@ -1160,6 +1178,7 @@ async function installMockBackend(page, options = {}) {
     )
   }
   const state = {
+    enrollmentListRequests: [],
     classificationCreateRequests: [],
     classificationDeleteRequests: [],
     gradeCreateRequests: [],
@@ -1293,6 +1312,7 @@ async function installMockBackend(page, options = {}) {
       { consumer_owner: 'service', projection_state: 'active', acknowledged: true, rules: [{ action: 'service_execute', effect: 'mask' }] }
     ]
   }
+  for (const owner of enrollment.owner_progress) Object.assign(owner, {valid_from: '2026-01-01T00:00:00Z', expires_at: '2027-01-01T00:00:00Z', validity: options.expiredProjection ? 'expired' : 'valid'})
   if (options.enrollmentState === 'released') {
     Object.assign(enrollment, {
       state: 'released',
@@ -1520,12 +1540,15 @@ async function installMockBackend(page, options = {}) {
     }
 
     if (method === 'GET' && path === '/api/v1/security/protection-enrollments') {
-      const scope = new URL(request.url()).searchParams.get('scope')
+      const params = new URL(request.url()).searchParams
+      state.enrollmentListRequests.push(Object.fromEntries(params))
+      const scope = params.get('scope')
       const rows = []
       if (scope !== 'current' && enrollment.state === 'released') rows.push(enrollment)
       if (scope !== 'released' && enrollment.state !== 'released') rows.push(enrollment)
       if (scope !== 'released' && state.currentEnrollment) rows.push(state.currentEnrollment)
-      return fulfillJSON(route, { data: rows, total: rows.length, page: 1, page_size: 20, total_pages: rows.length ? 1 : 0 })
+      const filtered = rows.filter(row => (!params.get('resource_name') || row.target_snapshot.full_name.toLowerCase().includes(params.get('resource_name').toLowerCase())) && (!params.get('engine_id') || String(row.target_snapshot.engine_id) === params.get('engine_id')) && (!params.get('state') || row.state === params.get('state')))
+      return fulfillJSON(route, { data: filtered, total: filtered.length, page: 1, page_size: 20, total_pages: filtered.length ? 1 : 0 })
     }
     if (method === 'POST' && path === '/api/v1/security/protection-enrollments') {
       state.enrollmentCreateRequests.push(request.postDataJSON())
