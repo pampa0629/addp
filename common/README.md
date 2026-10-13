@@ -16,6 +16,8 @@ Doris session 与批量 INSERT 使用共享 JSON 编码，JSON 字段沿用现�
 
 ClickHouse session 与批量 INSERT 使用同一共享 JSON 编码，按打开时的字段类型写入现有 `String`／`Nullable(String)` 列；这不声明原生 JSON 列写入。bytes 的 `[]byte` 按原始二进制字符串绑定，避免驱动把字节切片解释为 SQL 数组；NULL、空 bytes 与非 UTF-8 字节分别保留。整个当前批次在第一条 SQL 前完成编码校验，非法 JSON 不新增本批数据；chunk 自动提交，数据库执行错误或 `Abort` 不保证撤销已有写入，也不撤销建表／replace。`make test-common-clickhouse-decimal` 沿用已有 Hosted 一次性容器与 CI 登记，覆盖 Decimal、session／batch 的 JSON 和 bytes 保真、既有目标结构复核、字段类型固定及跨 chunk 编码失败无新增行。本地 T1 的 SQLite 夹具只观测参数绑定，真实 ClickHouse 验证由该 Hosted T2 入口完成。
 
+达梦的 `json` 表格写入沿用 `CLOB`，INSERT session 与 MERGE upsert 共用 `plugins/shared` 的 JSON 编码契约，在当前批次第一条写入 SQL 前校验全部行；编码后的 SQL NULL 遵守非空约束。原生 array／空间类型仍拒绝，bytes 保留 BLOB 绑定。`make test-common-dameng` 在固定官方介质与驱动的 Linux ARM64 Docker 进程中验证真实 CLOB/BLOB、幂等 MERGE 和 replace Abort 回滚，合成表逐个清理并核验零残留；宿主无官方驱动时拒绝数据面操作。该入口不登记 Hosted，也不证明生产 License 或正式部署认证。
+
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。
 
 PostgreSQL 原生 `array` 保持 `TEXT[]`，支持一维字符串／NULL 元素，nil 容器为 SQL NULL、非 nil 空容器为空数组。Go 切片／数组及 PG 读取返回的数组文本在 Provider 内统一校验和编码；拒绝对象、嵌套数组、数字、布尔、非法 UTF-8／NUL，不隐式字符串化或改成 JSON。明确的非字符串 `ElementType` 在 DDL 前拒绝；未声明时逐值检查，不能据此证明源结构已知。PG 原生读取保留声明的数组元素类型，包含带长度／精度的数组，防止数组文本丢失类型证据；已有目标列严格匹配 `text[]`。

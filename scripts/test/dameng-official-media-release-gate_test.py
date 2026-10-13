@@ -1,4 +1,5 @@
 import hashlib
+import os
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,33 @@ CONTAINERFILE = Path(__file__).parents[2] / "business/dameng/Containerfile"
 
 
 class DamengOfficialMediaReleaseGateTest(unittest.TestCase):
+    def test_provider_preflight_never_removes_unowned_container(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="addp-dameng-preflight-") as temporary:
+            root = Path(temporary)
+            docker = root / "docker"
+            calls = root / "calls"
+            docker.write_text(
+                '#!/bin/bash\n'
+                'printf "%s\\n" "$*" >> "$DOCKER_CALLS"\n'
+                'if [ "$1" = version ]; then\n'
+                '  case "$*" in *Server.Os*) echo linux;; *) echo arm64;; esac\n'
+                '  exit 0\n'
+                'fi\n'
+                '# A stopped/missing database rejects the gate before it owns a test container.\n'
+                'if [ "$1" = container ] && [ "$3" = business-dameng ]; then exit 1; fi\n'
+                'exit 0\n', encoding="utf-8",
+            )
+            docker.chmod(0o700)
+            result = subprocess.run(
+                ["bash", str(GATE.with_name("common-dameng-gate.sh"))],
+                env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                     "TMPDIR": temporary, "DOCKER_CALLS": str(calls)},
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("start DM8", result.stderr)
+            self.assertNotIn("rm --force", calls.read_text(encoding="utf-8"))
+
     def test_pins_single_arm64_route_and_zero_residue(self) -> None:
         helper = HELPER.read_text(encoding="utf-8")
         gate = GATE.read_text(encoding="utf-8")

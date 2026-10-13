@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
 )
@@ -156,18 +157,11 @@ func (s *tableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchD
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	for rowIndex, row := range batch.Rows {
-		args := make([]interface{}, 0, len(s.fields))
-		for _, field := range s.fields {
-			value, ok := row[field.Name]
-			if !ok {
-				return fmt.Errorf("DM8 insert row %d is missing field %q", rowIndex, field.Name)
-			}
-			if value == nil && !field.Nullable {
-				return fmt.Errorf("DM8 insert row %d field %q is NOT NULL", rowIndex, field.Name)
-			}
-			args = append(args, value)
-		}
+	rows, err := damengWriteRows(ctx, s.fields, batch.Rows)
+	if err != nil {
+		return err
+	}
+	for rowIndex, args := range rows {
 		if _, err := s.stmt.ExecContext(ctx, args...); err != nil {
 			return fmt.Errorf("insert DM8 row %d: %w", rowIndex, err)
 		}
@@ -238,9 +232,6 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	if err := validateWriteFields(opts.Fields, opts.SpatialInfo); err != nil {
 		return err
 	}
-	if err := p.validateUniqueFields(ctx, connInfo, path, opts.Keys); err != nil {
-		return err
-	}
 	schema, table, err := tablePathParts(path)
 	if err != nil {
 		return err
@@ -257,6 +248,13 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	if err != nil {
 		return err
 	}
+	rows, err := damengWriteRows(ctx, fields, batch.Rows)
+	if err != nil {
+		return err
+	}
+	if err := p.validateUniqueFields(ctx, connInfo, path, opts.Keys); err != nil {
+		return err
+	}
 	db, err := p.openDB(connInfo)
 	if err != nil {
 		return err
@@ -267,15 +265,7 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 		return fmt.Errorf("begin DM8 upsert transaction: %w", err)
 	}
 	defer tx.Rollback()
-	for rowIndex, row := range batch.Rows {
-		args := make([]interface{}, 0, len(columns))
-		for _, column := range columns {
-			value, ok := row[column]
-			if !ok {
-				return fmt.Errorf("DM8 upsert row %d is missing field %q", rowIndex, column)
-			}
-			args = append(args, value)
-		}
+	for rowIndex, args := range rows {
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute DM8 MERGE row %d: %w", rowIndex, err)
 		}
@@ -284,6 +274,34 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 		return fmt.Errorf("commit DM8 upsert: %w", err)
 	}
 	return nil
+}
+
+// Both INSERT and MERGE validate the entire batch before its first write.
+// Field declarations belong to the session/options, not per-batch metadata.
+func damengWriteRows(ctx context.Context, fields []datatype.FieldInfo, rows []map[string]interface{}) ([][]interface{}, error) {
+	result := make([][]interface{}, len(rows))
+	for rowIndex, row := range rows {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		args := make([]interface{}, len(fields))
+		for fieldIndex, field := range fields {
+			value, ok := row[field.Name]
+			if !ok {
+				return nil, fmt.Errorf("DM8 write row %d is missing field %q", rowIndex, field.Name)
+			}
+			value, err := shared.EncodeTableWriteValue(value, field.Type)
+			if err != nil {
+				return nil, fmt.Errorf("DM8 write row %d field %q: %w", rowIndex, field.Name, err)
+			}
+			if value == nil && !field.Nullable {
+				return nil, fmt.Errorf("DM8 write row %d field %q is NOT NULL", rowIndex, field.Name)
+			}
+			args[fieldIndex] = value
+		}
+		result[rowIndex] = args
+	}
+	return result, nil
 }
 
 func (p *Plugin) validateUniqueFields(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, keys []string) error {

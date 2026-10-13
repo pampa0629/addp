@@ -13,6 +13,7 @@ GO_TEST_IMAGE=golang:1.24.2-bookworm@sha256:79390b5e5af9ee6e7b1173ee3eac7fadf675
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-dameng.XXXXXX")
 DRIVER_ZIP=$WORK_DIR/dm-go-driver.zip
 DRIVER_DIR=$WORK_DIR/driver
+TEST_CONTAINER_OWNED=false
 
 fail() {
     echo "Common DM8 gate failed: $*" >&2
@@ -23,10 +24,14 @@ cleanup() {
     local status=$?
     trap - EXIT INT TERM
     set +e
-    docker rm --force "$TEST_CONTAINER" >/dev/null 2>&1 || true
+    if [ "$TEST_CONTAINER_OWNED" = true ]; then
+        if docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1; then
+            docker rm --force "$TEST_CONTAINER" >/dev/null 2>&1 || status=1
+        fi
+        docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1 && status=1
+    fi
     chmod -R u+rwX "$WORK_DIR" >/dev/null 2>&1 || true
     rm -rf "$WORK_DIR"
-    docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1 && status=1
     exit "$status"
 }
 trap cleanup EXIT INT TERM
@@ -49,6 +54,7 @@ mkdir -p "$DRIVER_DIR"
 unzip -q "$DRIVER_ZIP" -d "$DRIVER_DIR"
 [ -f "$DRIVER_DIR/dm/go.mod" ] || fail "official Go driver module is missing"
 
+TEST_CONTAINER_OWNED=true
 docker run --rm \
     --name "$TEST_CONTAINER" \
     --platform linux/arm64 \
@@ -68,9 +74,13 @@ docker run --rm \
         cd /tmp/common
         go mod edit -require=dm@v0.0.0 -replace=dm=/opt/dm-driver
         go test -tags dameng_official ./engine/plugins/dameng ./engine/plugins/builtin/general \
-            -run "TestIntegrationDM8ProviderContract|TestGeneralBuiltinPluginsRegistered" \
+            -run "^TestIntegrationDM8(ProviderContract|TypedJSONWrites)$|^TestGeneralBuiltinPluginsRegistered$" \
             -count=1 -v
-    '
+    ' 2>&1 | tee "$WORK_DIR/provider.log"
+
+if grep -q -- '--- SKIP:' "$WORK_DIR/provider.log"; then
+    fail "DM8 Provider gate refuses skipped tests"
+fi
 
 residual=$(printf "SET HEADING OFF\nSET FEEDBACK OFF\nSELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = 'ADDP_DM8_PROVIDER_CONTRACT';\nEXIT\n" | dameng_business_disql "$DATABASE_CONTAINER" 2>/dev/null)
 printf '%s\n' "$residual" | grep -Eq '(^|[[:space:]])0([[:space:]]|$)' || fail "DM8 Provider test table residue remains"
