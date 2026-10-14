@@ -13,6 +13,9 @@ import (
 )
 
 func (p *ClickHousePlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(opts)).UnsupportedError(); err != nil {
+		return err
+	}
 	database, table, err := clickhouseTablePathParts(path)
 	if err != nil {
 		return err
@@ -64,20 +67,16 @@ func (p *ClickHousePlugin) serverDSN(connInfo plugin.ConnectionInfo) (string, er
 }
 
 func createClickHouseTableIfNotExists(ctx context.Context, db *sql.DB, database, table string, fields []datatype.FieldInfo) error {
-	if len(fields) == 0 {
-		return fmt.Errorf("clickhouse table write prepare requires table fields")
+	if err := (&ClickHousePlugin{}).CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields})).UnsupportedError(); err != nil {
+		return err
 	}
-	dialect := clickhouseDialect()
-	if _, err := db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS "+dialect.QuoteIdentifier(database)); err != nil {
-		return fmt.Errorf("create clickhouse database %s: %w", database, err)
-	}
-
 	writeFields, err := clickhouseWriteFields(fields)
 	if err != nil {
 		return err
 	}
-	if len(writeFields) == 0 {
-		return fmt.Errorf("clickhouse table write prepare requires at least one named field")
+	dialect := clickhouseDialect()
+	if _, err := db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS "+dialect.QuoteIdentifier(database)); err != nil {
+		return fmt.Errorf("create clickhouse database %s: %w", database, err)
 	}
 
 	definitions := make([]string, 0, len(writeFields))
@@ -176,23 +175,20 @@ func clickhouseWriteFields(fields []datatype.FieldInfo) ([]datatype.FieldInfo, e
 	result := make([]datatype.FieldInfo, 0, len(fields))
 	seen := map[string]struct{}{}
 	for _, field := range fields {
-		name := strings.TrimSpace(field.Name)
-		if name == "" || field.Generated {
+		if field.Generated {
 			continue
 		}
-		if datatype.IsSpatialFieldType(field.Type) {
-			return nil, fmt.Errorf("clickhouse table write does not support spatial field %q yet", name)
+		field.Name = strings.TrimSpace(field.Name)
+		field.Type = datatype.ParseFieldType(string(field.Type))
+		if _, duplicate := seen[field.Name]; field.Name == "" || duplicate {
+			return nil, fmt.Errorf("table write column %q: field_name_invalid (target_definition)", field.Name)
 		}
-		if datatype.ParseFieldType(string(field.Type)) == datatype.FieldTypeDecimal {
-			if err := plugin.ValidateExplicitDecimalFieldDefinition("clickhouse", field, clickhouseDecimalMaxPrecision, clickhouseDecimalMaxScale); err != nil {
-				return nil, err
-			}
+		seen[field.Name] = struct{}{}
+		check := clickhouseFieldDefinitionCheck(field)
+		if err := (plugin.TableWriteDefinitionReport{Checks: []plugin.TableWriteDefinitionCheck{check}}).UnsupportedError(); err != nil {
+			return nil, err
 		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		field.Name = name
+
 		result = append(result, field)
 	}
 	return result, nil
@@ -261,7 +257,7 @@ func clickhouseBaseSQLTypeForField(field datatype.FieldInfo) string {
 		return "DateTime"
 	case datatype.FieldTypeBytes:
 		return "String"
-	case datatype.FieldTypeJSON, datatype.FieldTypeArray, datatype.FieldTypeMixed:
+	case datatype.FieldTypeJSON, datatype.FieldTypeMixed:
 		return "String"
 	case datatype.FieldTypeUUID:
 		return "UUID"

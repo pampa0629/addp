@@ -21,6 +21,8 @@ func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
 	if os.Getenv("ADDP_CLICKHOUSE_INTEGRATION") != "1" {
 		t.Skip("set ADDP_CLICKHOUSE_INTEGRATION=1 to run ClickHouse integration test")
 	}
+	t.Run("definition_before_ddl", testClickHouseDefinitionBeforeDDL)
+	t.Run("definition_preserves_target_and_projection", testClickHouseDefinitionPreservesTargetAndProjection)
 	for _, method := range []string{"session", "batch"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
@@ -182,5 +184,124 @@ func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
 				t.Fatalf("cross-chunk read %d/%d rows error=%v", chunkIndex, len(chunkRows), err)
 			}
 		})
+	}
+}
+
+func testClickHouseDefinitionBeforeDDL(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	p := &ClickHousePlugin{}
+	conn := clickhouseIntegrationConnInfo(t)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, field := range []datatype.FieldInfo{
+		{Name: "payload", Type: datatype.FieldTypeArray},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 2, Scale: 3},
+		{Name: "shape", Type: datatype.FieldTypeGeometry},
+	} {
+		t.Run(string(field.Type), func(t *testing.T) {
+			database := "addp_rejected_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+			t.Cleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cleanupCancel()
+				if _, err := db.ExecContext(cleanupCtx, "DROP DATABASE IF EXISTS "+clickhouseDialect().QuoteIdentifier(database)); err != nil {
+					t.Errorf("cleanup rejected database: %v", err)
+				}
+				var count uint64
+				if err := db.QueryRowContext(cleanupCtx, "SELECT count() FROM system.databases WHERE name=?", database).Scan(&count); err != nil || count != 0 {
+					t.Errorf("rejected database cleanup not proven: count=%d error=%v", count, err)
+				}
+			})
+			path := plugin.TabularItemPath(93003, plugin.EngineCatalogTermDatabase, database, "target")
+			fields := []datatype.FieldInfo{field}
+			if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err == nil || !strings.Contains(err.Error(), "target_definition") {
+				t.Fatalf("invalid definition reached DDL: %v", err)
+			}
+			// Exercise the private DDL path too, before its first CREATE DATABASE.
+			if err := createClickHouseTableIfNotExists(ctx, db, database, "target", fields); err == nil {
+				t.Fatal("private DDL accepted invalid definition")
+			}
+			var count uint64
+			if err := db.QueryRowContext(ctx, "SELECT count() FROM system.databases WHERE name=?", database).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("invalid definition created database: count=%d error=%v", count, err)
+			}
+		})
+	}
+}
+
+func testClickHouseDefinitionPreservesTargetAndProjection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	p := &ClickHousePlugin{}
+	conn := clickhouseIntegrationConnInfo(t)
+	database := plugin.GetString(conn, "database")
+	table := "addp_definition_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	path := plugin.TabularItemPath(93003, plugin.EngineCatalogTermDatabase, database, table)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+		if err := p.DeleteResource(cleanupCtx, conn, path); err != nil {
+			t.Errorf("cleanup definition table: %v", err)
+		}
+		var count uint64
+		if err := db.QueryRowContext(cleanupCtx, "SELECT count() FROM system.tables WHERE database=? AND name=?", database, table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("definition cleanup not proven: count=%d error=%v", count, err)
+		}
+	}()
+	// ClickHouse requires no Doris-style key, and identifiers are case-sensitive.
+	fields := []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "Document", Type: datatype.FieldTypeString, Nullable: true}}
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WriteBatch(ctx, conn, path, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{"document": map[string]interface{}{"sentinel": true}, "Document": "preserve"}}}, plugin.BatchWriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	invalid := []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeArray}}
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: invalid}); err == nil {
+		t.Fatal("native array accepted")
+	}
+	if err := p.WriteBatch(ctx, conn, path, &plugin.BatchData{Fields: invalid, Rows: []map[string]interface{}{{"document": []int{1}}}}, plugin.BatchWriteOptions{}); err == nil {
+		t.Fatal("native array batch accepted")
+	}
+	var stored, label string
+	qualified := clickhouseDialect().QualifiedTable(database, table)
+	if err := db.QueryRowContext(ctx, "SELECT document, Document FROM "+qualified).Scan(&stored, &label); err != nil || stored != `{"sentinel":true}` || label != "preserve" {
+		t.Fatalf("rejected definition changed target: json=%q label=%q error=%v", stored, label, err)
+	}
+	snapshot := &datatype.TableInfo{Fields: fields}
+	for i := range snapshot.Fields {
+		snapshot.Fields[i].NativeType = "Nullable(String)"
+	}
+	definition := plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields})
+	definition.Existing = snapshot
+	report := p.CheckTableWriteDefinition(definition)
+	for _, check := range report.Checks {
+		if check.Status != plugin.DefinitionSupported {
+			t.Fatalf("own physical structure rejected: %+v", report)
+		}
+	}
+	projection := []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "computed", Type: datatype.FieldTypeArray, Generated: true}}
+	if err := p.WriteBatch(ctx, conn, path, &plugin.BatchData{Fields: projection, Rows: []map[string]interface{}{{"document": []interface{}{true, nil}, "computed": []int{1}}}}, plugin.BatchWriteOptions{}); err != nil {
+		t.Fatalf("JSON-only/generated projection: %v", err)
+	}
+	var count uint64
+	if err := db.QueryRowContext(ctx, "SELECT count() FROM "+qualified+" WHERE document='[true,null]' AND isNull(Document)").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("projection not preserved: count=%d error=%v", count, err)
 	}
 }

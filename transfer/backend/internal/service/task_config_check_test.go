@@ -290,7 +290,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 				delete(f.items, 2)
 				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "no_checker":
-				f.engines[2].EngineType = "clickhouse"
+				f.engines[2].EngineType = "oracle"
 			case "bad_identity":
 				f.items[1].TenantID = 8
 				wantError = true
@@ -548,15 +548,27 @@ func TestConfigCheckBindingUsesWireObjectsAndAllSnapshotFields(t *testing.T) {
 	}
 }
 
-func TestConfigCheckDorisDefinition(t *testing.T) {
-	for _, scenario := range []string{"json", "invalid_constant", "array", "decimal", "no_key", "append_json", "append_incompatible", "source_text"} {
+func TestConfigCheckDorisDefinition(t *testing.T) { testConfigCheckAnalyticalDefinition(t, "doris") }
+func TestConfigCheckClickHouseDefinition(t *testing.T) {
+	testConfigCheckAnalyticalDefinition(t, "clickhouse")
+}
+
+func testConfigCheckAnalyticalDefinition(t *testing.T, engineType string) {
+	scenarios := []string{"json", "invalid_constant", "array", "decimal", "append_json", "append_incompatible", "source_text"}
+	if engineType == "doris" {
+		scenarios = append(scenarios, "no_key")
+	}
+	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			svc, facts, subject, body := configCheckFixture(t)
-			registered, _ := plugin.Get("doris")
+			registered, _ := plugin.Get(engineType)
 			caps, _ := plugin.MarshalEngineCapabilities(registered.Capabilities())
 			declared := commonmodels.JSONString(caps)
-			facts.engines[2].EngineType, facts.engines[2].Capabilities = "doris", &declared
+			facts.engines[2].EngineType, facts.engines[2].Capabilities = engineType, &declared
 			fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "payload", Type: datatype.FieldTypeJSON, NativeType: "string", Nullable: true}}
+			if engineType == "clickhouse" {
+				fields[0].NativeType, fields[1].NativeType = "Int64", "Nullable(String)"
+			}
 			for _, id := range []uint{1, 2} {
 				facts.items[id].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
 			}
@@ -584,7 +596,10 @@ func TestConfigCheckDorisDefinition(t *testing.T) {
 				want = plugin.DefinitionSupported
 				if scenario == "append_incompatible" {
 					want = plugin.DefinitionUnsupported
-					fields[1].NativeType = "int"
+					fields[1].NativeType = "Int32"
+					if engineType == "doris" {
+						fields[1].NativeType = "int"
+					}
 					facts.items[2].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
 				}
 			case "source_text":

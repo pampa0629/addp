@@ -45,6 +45,15 @@ func (p *ClickHousePlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 		return nil, fmt.Errorf("clickhouse table write session only supports insert method")
 	}
 
+	if err := p.CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo})).UnsupportedError(); err != nil {
+		return nil, err
+	}
+	fields, err := clickhouseWriteFields(opts.Fields)
+	if err != nil {
+		return nil, err
+	}
+	opts.Fields = fields
+
 	database, table, err := clickhouseTablePathParts(path)
 	if err != nil {
 		return nil, err
