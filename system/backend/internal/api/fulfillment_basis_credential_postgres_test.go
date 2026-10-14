@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -58,8 +59,13 @@ func exerciseSystemBasisCredential(t *testing.T, ctx context.Context, db *gorm.D
 			t.Fatal(err)
 		}
 		ac, err := runtime.AuthContextService.ResolveAccessToken(ctx, payload.AccessToken)
-		if err != nil || len(ac.Authorization.RoleAssignments) != 1 || len(ac.Authorization.RoleAssignments[0].Permissions) != 1 || ac.Authorization.RoleAssignments[0].Permissions[0] != "catalog.sharing_fulfillment.read" {
+		if err != nil || ac == nil || len(ac.Authorization.RoleAssignments) != 1 {
 			t.Fatalf("unexpected basis authority: %v", err)
+		}
+		permissions := slices.Clone(ac.Authorization.RoleAssignments[0].Permissions)
+		slices.Sort(permissions)
+		if !slices.Equal(permissions, []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read"}) {
+			t.Fatalf("unexpected System runtime permissions: %v", permissions)
 		}
 		if response := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-system", secret); response.Code != http.StatusBadRequest {
 			t.Fatalf("System obtained platform authority: %d", response.Code)
