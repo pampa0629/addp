@@ -1955,3 +1955,13 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 依赖链进一步核对：系统临时目录用 git archive 导出冻结 16b74e976 的 Common/Gateway 源码，GOWORK=off go mod tidy -diff 退出 1，确有 MinIO 间接依赖差异（`/tmp/addp-monitor-frozen-gateway-tidy.log`）。当前混合工作区已有另一开发线把 Common client 的授权事实类型从 dataitem 移至轻量 authorizationfacts 子包；当前 Gateway tidy-diff、Go-only 及标准 Linux amd64 构建通过依赖该未提交拆分，不能作为冻结源码已修复的证据。本线没有改动 Gateway 依赖、共享类型或该开发线文件，也不为待移除路径增加临时依赖。下一次验收先等该共享修复与必需 System/Monitor/Gateway 构建输入进入远端，再沿唯一 suite 复验；既有单主机身份用途许可保持有效，不重复确认、不扩大到多源或 IAM 修改。
 
 本次只提交第 10.59 节的实际运行/构建阻塞证据，不含其他 Owner 的共享拆分。文档代码围栏配对、章节唯一与任务范围 diff 检查通过；归档另检未发现 ADDP opaque Token 模式。默认 make test-changed 在 76 个混合文件、27 个 Owner 的外部数据库参数预检退出 2，后续未运行、不计通过，日志 `/tmp/addp-resource-overview-hosted-38468617343-changed.log`。原场景代码和授权不变，不需要个人环境重启。
+
+共享轻量拆分 `c2f17a45c` 及后续修复进入远端后，已独立核实源码 `a572156ce` 的 Platform CI `38481142647` 34/34 success 与 Release T2 `38480581145` success；此结果消除了原构建准入阻塞，但不作为本批总览 T4 证据。再次调度前核对最新 Online 失败 `38516563382` 属于 Manager、`38489163125` 属于 Raster，当前没有运行中的同 suite。2026-10-14 沿原唯一 suite 调度 [单主机 Hosted 38588001065](https://github.com/pampa0629/addp/actions/runs/38588001065)，专用 Job `115935061994`，实际冻结源码 `93b89ab33d8ac761eaf0eeee194455ddec15577f` 包含共享修复和本批全部验收/授权。该冻结源码的 [Platform CI 38527067649](https://github.com/pampa0629/addp/actions/runs/38527067649) completed/success，34 项任务全部通过。真实验收与该 CI 分别报告；未重复请求身份用途，未改个人环境。
+
+2026-10-14 北京时间 23:41:45，专用 Job completed/success；独立 summary 为 result=passed / cleanup=passed / infra_cleanup=zero_residuals。业务 suite 与浏览器均 passed/complete，下载后沿与冻结源码逐字一致的三项 Online 验收文件重新校验归档，原主机、进程及总览三类浏览器协议和十项总览 API 证据全部通过。总览初始覆盖完整单主机，CPU/内存各有效一台；预算热降低时整份拒绝，恢复后使用当前版本。中心故障明确失败，恢复绑定新样本；来源真实 up=0 时纳管/已连接仍各一台，采集失败一台、两项指标均缺失且榜单为空，不补零；恢复后两项新样本有效。控制传输故障保留最后成功目标且总览仍有效，随后中心实际消费节点停用/重新启用的新版本与新样本证明恢复；节点/目标停用、目标删除后均保留完整纳管计数且不复用历史排名。
+
+真实 Console 密码/MFA 与原无权限主体拒绝保持通过。总览八项自然刷新/关闭恢复/无请求/导航标志全部成立，五帧完整聚合响应已归档，评估时刻从北京时间 23:36:20 自然前进到 23:36:35；off 正式重载后等待无后台查询，榜单进入同一主机详情后返回保持 off。原 25 项主机目录/趋势、主机列表刷新、当前服务摘要及 CPU/RSS 趋势、服务自然刷新、进程重启身份隔离、来源可选边界、原全部故障及停采恢复也通过。浏览器单测实际 194132ms/原 240000ms，子进程 196308ms/原 300 秒，没有报告单测期限或子进程超限；不修改期限、重试或生产采样 guard。前批偶发导航/进程 CPU 缺值没有复现，不将本轮成功写作其根因已修复。
+
+归档 49 个文件位于 `/tmp/addp-resource-overview-hosted-38588001065/`，专用 Job 日志 `/tmp/addp-resource-overview-hosted-38588001065-job.log`；没有私有凭据文件，未检出私钥、JWT 或 ADDP opaque Token 模式。已目视检查正式总览及 RSS 趋势截图，范围计数、两项排名、百分比、采样时间、off 状态和 MiB 曲线显示正确。上述结果闭合已获批的单真实主机场景及同源码 CI，不扩大为多主机 TOP5 排序、完整总览 T4、两个 Owner 权限分别撤销、已退出实例历史或生产 T5 已通过。
+
+本次仅更新现有第 10.59 节与 Monitor 导航的验收状态，不修改产品、规范授权或原测试代码。默认 `make test-changed` 在 265 个混合文件、27 个 Owner 的外部数据库条件预检退出 2，后续未运行、不计通过，日志 `/tmp/addp-resource-overview-hosted-38588001065-changed.log`。文档围栏/章节唯一及任务范围 diff 检查通过；不提交其他 Owner 的工作区改动，推送由用户操作。下一步优先明确多主机聚合链路的真实验收拓扑与证据范围；受控多源提案仍未实施，不能把同宿主别名当作多台真实主机。
