@@ -58,6 +58,10 @@ func TestMetaAuthorizationFactsRuntimeGuardAndReadOnlyQuery(t *testing.T) {
 		want                                      int
 	}{
 		{"addp-system", "7", "service_access_token", "meta.authorization_facts.read", "", 200},
+		{"addp-catalog", "7", "service_access_token", "meta.authorization_facts.read", "", 200},
+		{"addp-catalog", "7", "service_access_token", "", "", 403},
+		{"addp-catalog", "8", "service_access_token", "meta.authorization_facts.read", "", 404},
+		{"addp-catalog", "7", "service_access_token", "meta.authorization_facts.read", "?tenant_id=8", 400},
 		{"addp-security", "7", "service_access_token", "meta.authorization_facts.read", "", 403},
 		{"addp-system", "7", "service_access_token", "", "", 403},
 		{"addp-web", "7", "first_party_access_token", "meta.authorization_facts.read", "", 403},

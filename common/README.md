@@ -53,7 +53,7 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 `contentio` 不依赖 engine，也不解析格式；多 content 的组织规则属于 `common/format`、`common/dataitem` 或调用编排层，engine 到 contentio 的适配放在 `common/engine/contentadapter`。
 
 ### dataitem/authorizationfacts
-授权资源事实的轻量 wire 契约、严格校验与边界摘要。独立于 DataItem 识别器和格式实现，供 HTTP Client、Meta 与 System 使用；不访问源资源、不持有 Grant，也不执行权限裁决。
+授权资源事实的轻量 wire 契约、严格校验与边界摘要。独立于 DataItem 识别器和格式实现，供 HTTP Client、Meta、System 与 Catalog 使用；不访问源资源、不持有 Grant，也不执行权限裁决。
 
 ### resourcetree
 把 Meta 已落库的 Engine Catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `EngineCatalogPath` 的纯转换能力。

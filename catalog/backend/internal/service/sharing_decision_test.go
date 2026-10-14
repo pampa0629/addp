@@ -22,7 +22,7 @@ type fakeSharingTargetResolver struct {
 	err    error
 }
 
-func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID, itemID int64, fingerprint string) (plugin.EngineCatalogPath, error) {
+func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID int64, fingerprint string) (plugin.EngineCatalogPath, error) {
 	r.calls++
 	if r.before != nil {
 		r.before()
@@ -262,48 +262,5 @@ func TestSharingDecisionFailsClosedWithoutMutatingAggregate(t *testing.T) {
 				t.Fatalf("partial version=%d err=%v", entry.Version, err)
 			}
 		})
-	}
-}
-
-func TestDatabaseSharingPathUsesTypedAncestryNotSplitNames(t *testing.T) {
-	model := plugin.TabularCatalogModel("schema")
-	for _, names := range [][2]string{{"public", "orders"}, {" team.space/一 ", " orders.v2/a "}} {
-		rootID := uint(10)
-		facts := commonModels.MetaItemAncestors{Item: commonModels.MetaItem{ID: 21, TenantID: 7, EngineID: 12, NodeID: 11, ItemType: "table", Name: names[1], FullName: names[0] + "." + names[1]}, Ancestors: []commonModels.MetaNode{{ID: rootID, TenantID: 7, EngineID: 12, NodeType: "server"}, {ID: 11, ParentNodeID: &rootID, TenantID: 7, EngineID: 12, NodeType: "schema", Name: names[0]}}}
-		facts.Item.Fingerprint = commonModels.GenerateItemFingerprint(12, facts.Item.FullName)
-		path, err := databaseSharingPath(7, facts.Item.Fingerprint, &facts, model)
-		if err != nil || len(path.Segments) != 3 || path.Segments[1].Name != names[0] || path.Segments[2].Name != names[1] {
-			t.Fatalf("path=%+v err=%v", path, err)
-		}
-		for _, name := range []string{"tenant", "engine", "parent", "duplicate", "namespace_type", "leaf", "fingerprint", "full_name", "root", "missing"} {
-			copy := facts
-			copy.Ancestors = append([]commonModels.MetaNode(nil), facts.Ancestors...)
-			switch name {
-			case "tenant":
-				copy.Item.TenantID++
-			case "engine":
-				copy.Ancestors[1].EngineID++
-			case "parent":
-				wrong := uint(90)
-				copy.Ancestors[1].ParentNodeID = &wrong
-			case "duplicate":
-				copy.Ancestors[1].ID = rootID
-			case "namespace_type":
-				copy.Ancestors[1].NodeType = "folder"
-			case "leaf":
-				copy.Item.ItemType = "file"
-			case "fingerprint":
-				copy.Item.Fingerprint = "wrong"
-			case "full_name":
-				copy.Item.FullName = "unverified"
-			case "root":
-				copy.Ancestors[0].NodeType = "engine"
-			case "missing":
-				copy.Ancestors = copy.Ancestors[:1]
-			}
-			if _, err := databaseSharingPath(7, facts.Item.Fingerprint, &copy, model); !errors.Is(err, ErrSharingTargetUnsupported) {
-				t.Fatalf("%s accepted: %v", name, err)
-			}
-		}
 	}
 }

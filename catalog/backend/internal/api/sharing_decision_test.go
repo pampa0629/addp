@@ -29,7 +29,7 @@ import (
 
 type sharingRouteTarget struct{}
 
-func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, int64, string) (plugin.EngineCatalogPath, error) {
+func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, string) (plugin.EngineCatalogPath, error) {
 	return plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"), nil
 }
 

@@ -68,4 +68,4 @@ other = "暂时无法读取数据项授权资源事实"
 other = "读取授权资源事实"
 
 [permissions.meta.authorization_facts.read.description]
-other = "仅供 System 读取当前数据项身份与授权边界，不读取源内容"
+other = "仅供 System 与 Catalog 读取当前数据项身份与授权边界，不读取源内容"

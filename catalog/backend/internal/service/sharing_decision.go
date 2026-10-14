@@ -241,14 +241,10 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		source.SourceModule != models.SourceModuleMeta || source.SourceType != models.SourceTypeDataItem || source.SourceStatus != models.SourceStatusActive {
 		return nil, false, ErrSharingTargetUnsupported
 	}
-	itemID, ok := numericInt64(source.ObservedSnapshot["item_id"])
-	if !ok || itemID <= 0 {
-		return nil, false, ErrSharingTargetUnsupported
-	}
 	if s.sharingTargets == nil || s.system == nil {
 		return nil, false, ErrReferenceValidationUnavailable
 	}
-	path, err := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, itemID, source.SourceIdentity)
+	path, err := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, source.SourceIdentity)
 	if err != nil {
 		return nil, false, err
 	}

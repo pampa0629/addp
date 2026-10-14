@@ -27,12 +27,14 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.catalog_runtime", []string{"service_principal"})
+	assertRepositoryRoleScopes(t, roles, "tenant.catalog_runtime", []string{"tenant"})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.prometheus_runtime", []string{"service_principal"})
 	assertRepositoryRoleScopes(t, roles, "platform.prometheus_runtime", []string{"platform"})
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
-			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" {
+			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("unexpected authorization facts role %q", role.Key)
 			}
 			if key == "ontology.platform_definition.read" && role.Key != "platform.system_administrator" {
@@ -106,7 +108,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
-	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})

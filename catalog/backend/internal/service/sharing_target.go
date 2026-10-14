@@ -2,18 +2,16 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"net/http"
 	"slices"
-	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
-	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/resourcetree"
 )
 
 type SharingTargetResolver interface {
-	ResolveSharingTarget(context.Context, int64, int64, string) (plugin.EngineCatalogPath, error)
+	ResolveSharingTarget(context.Context, int64, string) (plugin.EngineCatalogPath, error)
 }
 
 type sharingTargetResolver struct {
@@ -25,75 +23,57 @@ func NewSharingTargetResolver(meta *commonClient.MetaClient, system *commonClien
 	return &sharingTargetResolver{meta: meta, system: system}
 }
 
-func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenantID, itemID int64, fingerprint string) (plugin.EngineCatalogPath, error) {
-	if r == nil || r.meta == nil || r.system == nil || tenantID <= 0 || itemID <= 0 {
+func (r *sharingTargetResolver) ResolveSharingTarget(ctx context.Context, tenantID int64, fingerprint string) (plugin.EngineCatalogPath, error) {
+	if r == nil || r.meta == nil || r.system == nil || tenantID <= 0 {
 		return plugin.EngineCatalogPath{}, ErrReferenceValidationUnavailable
 	}
-	// Existing tenant-scoped Meta metadata read: no source connection or sample.
-	facts, err := r.meta.WithTenantID(uint(tenantID)).GetItemAncestors(uint(itemID))
-	if err != nil {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("%w: Meta current ancestry: %v", ErrReferenceValidationUnavailable, err)
-	}
-	if facts == nil || facts.Item.ID != uint(itemID) || facts.Item.TenantID != uint(tenantID) || facts.Item.Fingerprint != fingerprint {
+	if !authorizationfacts.ValidItemFingerprint(fingerprint) {
 		return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
 	}
-	descriptor, err := r.system.WithTenantID(uint(tenantID)).GetEngineRuntimeDescriptor(ctx, facts.Item.EngineID)
+	// Meta alone establishes the DataItem boundary. Use Catalog's own tenant
+	// Service credential, outside its business transaction; never reconstruct
+	// an authorization target from ancestry, row IDs or presentation names.
+	facts, err := r.meta.ReadAuthorizationFacts(ctx, uint(tenantID), fingerprint)
 	if err != nil {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("%w: System engine descriptor: %v", ErrReferenceValidationUnavailable, err)
+		if status, ok := commonClient.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
+			return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
+		}
+		return plugin.EngineCatalogPath{}, ErrReferenceValidationUnavailable
 	}
-	if descriptor == nil || descriptor.ID != facts.Item.EngineID || descriptor.LifecycleState != "active" || descriptor.Capabilities == nil {
+	if facts == nil || facts.Validate() != nil || facts.ItemFingerprint != fingerprint {
+		return plugin.EngineCatalogPath{}, ErrReferenceValidationUnavailable
+	}
+	if facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
 		return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
 	}
+	// This remains a resource observation, not a Grant. System still owns the
+	// current Engine lifecycle and subsequent independent access adjudication.
+	descriptor, err := r.system.WithTenantID(uint(tenantID)).GetEngineRuntimeDescriptor(ctx, facts.EngineID)
+	if err != nil {
+		return plugin.EngineCatalogPath{}, ErrReferenceValidationUnavailable
+	}
+	if descriptor == nil || descriptor.ID != facts.EngineID || descriptor.LifecycleState != "active" || descriptor.Capabilities == nil {
+		return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
+	}
+	path := facts.Boundary.NativeTarget
 	caps, err := plugin.ParseEngineCapabilities(string(*descriptor.Capabilities))
 	if err != nil || caps == nil || caps.Storage == nil || caps.Storage.CatalogModel == nil {
 		return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
 	}
-	return databaseSharingPath(tenantID, fingerprint, facts, *caps.Storage.CatalogModel)
-}
-
-// First source-read vertical slice: declared database namespaces and table leaf.
-// Meta ancestry provides exact names; never split a presentation full_name.
-func databaseSharingPath(tenantID int64, fingerprint string, facts *commonModels.MetaItemAncestors, model plugin.EngineCatalogModelSpec) (plugin.EngineCatalogPath, error) {
-	invalid := func() (plugin.EngineCatalogPath, error) {
+	// Retain the current Engine model check without deriving Meta's boundary.
+	model := caps.Storage.CatalogModel
+	if model.PathVersion != path.Version || model.RootTerm != path.Segments[0].Term || len(model.Levels) != len(path.Segments)-1 {
 		return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
 	}
-	if tenantID <= 0 || facts == nil || facts.Item.ID == 0 || facts.Item.TenantID != uint(tenantID) || facts.Item.EngineID == 0 || facts.Item.ItemType != "table" ||
-		facts.Item.Fingerprint != fingerprint || model.PathVersion != plugin.EngineCatalogPathVersion || model.RootTerm != plugin.EngineCatalogTermServer ||
-		len(model.Levels) < 2 || len(model.Levels) > 128 || len(facts.Ancestors) != len(model.Levels) {
-		return invalid()
-	}
-	root := facts.Ancestors[0]
-	if root.ID == 0 || root.EngineID != facts.Item.EngineID || root.TenantID != uint(tenantID) || root.ParentNodeID != nil || root.FullName != "" || root.NodeType != model.RootTerm {
-		return invalid()
-	}
-	names := make([]string, 0, len(model.Levels))
-	seen := map[uint]bool{root.ID: true}
-	for i, node := range facts.Ancestors[1:] {
-		level := model.Levels[i]
-		if node.ID == 0 || seen[node.ID] || level.Role != plugin.EngineCatalogRoleBranch || len(level.Kinds) != 1 || level.Term != node.NodeType || node.EngineID != facts.Item.EngineID ||
-			node.TenantID != uint(tenantID) || node.ParentNodeID == nil || *node.ParentNodeID != facts.Ancestors[i].ID {
-			return invalid()
+	for i, level := range model.Levels {
+		segment := path.Segments[i+1]
+		role := plugin.EngineCatalogRoleBranch
+		if i == len(model.Levels)-1 {
+			role = plugin.EngineCatalogRoleLeaf
 		}
-		seen[node.ID] = true
-		names = append(names, node.Name)
-	}
-	leaf := model.Levels[len(model.Levels)-1]
-	if leaf.Role != plugin.EngineCatalogRoleLeaf || leaf.Term != "table" || !slices.Contains(leaf.Kinds, facts.Item.ItemType) ||
-		facts.Item.NodeID != facts.Ancestors[len(facts.Ancestors)-1].ID {
-		return invalid()
-	}
-	names = append(names, facts.Item.Name)
-	// Check Meta's declared logical identity without normalizing source names.
-	fullName := strings.Join(names, ".")
-	if facts.Item.FullName != fullName || commonModels.GenerateItemFingerprint(facts.Item.EngineID, fullName) != fingerprint {
-		return invalid()
-	}
-	// The shared converter owns typed catalog path construction and name bounds.
-	path, err := resourcetree.EngineCatalogPathFromLocator(model, &resourcetree.ResourceLocator{
-		EngineID: facts.Item.EngineID, Type: resourcetree.TypeTable, Path: names,
-	})
-	if err != nil {
-		return invalid()
+		if level.Term != segment.Term || level.Role != role || !slices.Contains(level.Kinds, segment.Kind) {
+			return plugin.EngineCatalogPath{}, ErrSharingTargetUnsupported
+		}
 	}
 	return path, nil
 }

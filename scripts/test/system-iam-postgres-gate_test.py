@@ -114,7 +114,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
 
     def test_authorization_facts_filter_selects_only_registered_owner_tests(self):
         for package, pattern in (
-            ("migration", "^TestMetaAuthorizationFactsForwardMigrationAgainstPostgres$"),
+            ("migration", "^Test(Meta|Catalog)AuthorizationFactsForwardMigrationAgainstPostgres$"),
             ("api", "^TestEngineAccessDelegationAgainstPostgres$"),
         ):
             result = self.run_gate(arguments=("--package", package, "--test", "authorization-facts"))

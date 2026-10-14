@@ -7,5 +7,5 @@ import (
 )
 
 func registerDataItemAuthorizationFactsRoute(api *gin.RouterGroup, h *Handler) {
-	api.GET("/runtime/data-items/:fingerprint/authorization-facts", commonAuth.MustNewServiceClientGuard("addp-system"), commonAuth.MustNewPermissionGuard(authorization.PermissionMetaAuthorizationFactsRead), h.GetDataItemAuthorizationFacts)
+	api.GET("/runtime/data-items/:fingerprint/authorization-facts", commonAuth.MustNewServiceClientGuard("addp-system", "addp-catalog"), commonAuth.MustNewPermissionGuard(authorization.PermissionMetaAuthorizationFactsRead), h.GetDataItemAuthorizationFacts)
 }

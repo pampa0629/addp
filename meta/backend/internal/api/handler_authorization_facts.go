@@ -14,7 +14,7 @@ import (
 
 // GetDataItemAuthorizationFacts godoc
 // @Summary 查询数据项授权资源事实 | Read DataItem authorization resource facts
-// @Description 仅供 addp-system Tenant Service 精确读取已提交的 Meta 身份与边界，200 不表示访问许可；不扫描、不读取源内容、不返回凭据或完整 attributes | Restricted to addp-system Tenant Service. Reads committed Meta identity and boundary; HTTP 200 is not an Allow. No scan, source content, credentials or full attributes
+// @Description 仅供 addp-system 与 addp-catalog Tenant Service 经共享 MetaClient 精确读取已提交的身份与边界，200 不表示访问许可；不扫描、不读取源内容、不返回凭据或完整 attributes | Restricted to addp-system and addp-catalog Tenant Services through the shared MetaClient. Reads committed identity and boundary; HTTP 200 is not an Allow. No scan, source content, credentials or full attributes
 // @Tags Meta Runtime
 // @Produce json
 // @Security BearerAuth

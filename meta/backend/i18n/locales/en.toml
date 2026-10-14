@@ -68,4 +68,4 @@ other = "DataItem authorization resource facts are currently unavailable"
 other = "Read authorization resource facts"
 
 [permissions.meta.authorization_facts.read.description]
-other = "Allow System to read current DataItem identity and boundary without source content"
+other = "Allow System and Catalog to read current DataItem identity and boundary without source content"

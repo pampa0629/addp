@@ -383,9 +383,9 @@ System 的数据授权消费 Meta 已可靠识别的 DataItem，不要求 deep �
 
 ### 授权资源描述契约
 
-本节定义 Meta → System 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、Deny 与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
+本节定义 Meta → System／Catalog 最小事实投影；当前实现范围见本节“实施与验收”。它只描述数据项及其组成；System 仍独立判断操作者、接收方、批准要求、Grant、Deny 与期限。Meta 的完整详情、Catalog 变化摘要和 `common/dataitem.ItemDescriptor` 均不能直接当作这一可信契约：前两者的用途不同，后者尚未表达基础识别完整性与授权组成约束。
 
-接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system` Service 使用。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime`，不可委托或租户定制。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有 System 的 IAM／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
+接口为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/authorization-facts`，仅供当前 Tenant Context 的 `addp-system`、`addp-catalog` Service 使用。两者均通过唯一的 `common/client.MetaClient.ReadAuthorizationFacts` 和各自独立服务凭据读取，不直查 Meta 数据库、不从祖先链或完整详情另造授权边界。Tenant 从 AuthContext 派生；`meta.authorization_facts.read` 只授予内置 `tenant.system_runtime` 与 `tenant.catalog_runtime`，不可委托或租户定制。Catalog 用于核验业务批准目标，System 仍独占 Grant／Deny 与访问裁决；该机器读取资格不授予人员数据权限。该 GET 在同一已提交快照中读取 Meta 持久事实，不访问源内容、不扫描、不写回，也不持有调用方的业务／授权事务锁。响应使用 `Cache-Control: no-store`，不能跨请求缓存为许可。
 
 | 响应部分 | 最小内容与事实来源 |
 | --- | --- |
