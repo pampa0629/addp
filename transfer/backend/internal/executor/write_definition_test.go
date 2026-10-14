@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/clickhouse"
+	"github.com/addp/common/engine/plugins/dameng"
 	"github.com/addp/common/engine/plugins/doris"
 	"github.com/addp/common/engine/plugins/kingbase"
 	"github.com/addp/common/engine/plugins/mysql"
@@ -23,14 +24,25 @@ type forbiddenDefinitionDelete struct {
 }
 
 func TestClickHouseDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
-	p := &clickhouse.ClickHousePlugin{}
-	for _, field := range []datatype.FieldInfo{
+	testDefinitionRejectsBeforeReplaceEffects(t, &clickhouse.ClickHousePlugin{})
+}
+
+func TestDM8DefinitionRejectsBeforeReplaceEffects(t *testing.T) {
+	testDefinitionRejectsBeforeReplaceEffects(t, &dameng.Plugin{})
+}
+
+func testDefinitionRejectsBeforeReplaceEffects(t *testing.T, p engineplugin.EnginePlugin) {
+	fields := []datatype.FieldInfo{
 		{Name: "payload", Type: datatype.FieldTypeArray},
 		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 2, Scale: 3},
 		{Name: "shape", Type: datatype.FieldTypeGeometry},
-	} {
+	}
+	if p.Type() == "dameng" {
+		fields = append(fields, datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeJSON, PrimaryKey: true}, datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeBytes, PrimaryKey: true})
+	}
+	for _, field := range fields {
 		deleter := &forbiddenDefinitionDelete{}
-		target := &nativeTableBatchTarget{definitionChecker: tableWriteDefinitionChecker(p), deleter: &engineTargetResourceDeleter{provider: deleter}, preparer: p}
+		target := &nativeTableBatchTarget{definitionChecker: tableWriteDefinitionChecker(p), deleter: &engineTargetResourceDeleter{provider: deleter}, preparer: p.(engineplugin.TableWritePreparer)}
 		_, err := target.Open(t.Context(), &datatype.TableInfo{Fields: []datatype.FieldInfo{field}}, nil)
 		if err == nil || !strings.Contains(err.Error(), `column "`+field.Name+`"`) || deleter.calls != 0 {
 			t.Fatalf("invalid definition reached replace: delete=%d error=%v", deleter.calls, err)

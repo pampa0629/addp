@@ -548,13 +548,18 @@ func TestConfigCheckBindingUsesWireObjectsAndAllSnapshotFields(t *testing.T) {
 	}
 }
 
-func TestConfigCheckDorisDefinition(t *testing.T) { testConfigCheckAnalyticalDefinition(t, "doris") }
+func TestConfigCheckDM8Definition(t *testing.T) { testConfigCheckProviderDefinition(t, "dameng") }
+
+func TestConfigCheckDorisDefinition(t *testing.T) { testConfigCheckProviderDefinition(t, "doris") }
 func TestConfigCheckClickHouseDefinition(t *testing.T) {
-	testConfigCheckAnalyticalDefinition(t, "clickhouse")
+	testConfigCheckProviderDefinition(t, "clickhouse")
 }
 
-func testConfigCheckAnalyticalDefinition(t *testing.T, engineType string) {
+func testConfigCheckProviderDefinition(t *testing.T, engineType string) {
 	scenarios := []string{"json", "invalid_constant", "array", "decimal", "append_json", "append_incompatible", "source_text"}
+	if engineType == "dameng" {
+		scenarios = append(scenarios, "append_not_null")
+	}
 	if engineType == "doris" {
 		scenarios = append(scenarios, "no_key")
 	}
@@ -566,6 +571,9 @@ func testConfigCheckAnalyticalDefinition(t *testing.T, engineType string) {
 			declared := commonmodels.JSONString(caps)
 			facts.engines[2].EngineType, facts.engines[2].Capabilities = engineType, &declared
 			fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "payload", Type: datatype.FieldTypeJSON, NativeType: "string", Nullable: true}}
+			if engineType == "dameng" {
+				fields[0].NativeType, fields[1].NativeType = "BIGINT", "CLOB"
+			}
 			if engineType == "clickhouse" {
 				fields[0].NativeType, fields[1].NativeType = "Int64", "Nullable(String)"
 			}
@@ -577,7 +585,7 @@ func testConfigCheckAnalyticalDefinition(t *testing.T, engineType string) {
 			config := request["config"].(map[string]interface{})
 			transform := config["transforms"].([]interface{})[0].(map[string]interface{})
 			payload := map[string]interface{}{"source": "payload", "target": "payload", "target_type": "json", "nullable": true}
-			transform["fields"] = []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint"}, payload}
+			transform["fields"] = []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false}, payload}
 			want := plugin.DefinitionUnsupported
 			switch scenario {
 			case "json":
@@ -591,14 +599,19 @@ func testConfigCheckAnalyticalDefinition(t *testing.T, engineType string) {
 				payload["target_type"], payload["precision"], payload["scale"] = "decimal", 39, 2
 			case "no_key":
 				transform["fields"] = []interface{}{payload}
-			case "append_json", "append_incompatible":
+			case "append_json", "append_incompatible", "append_not_null":
 				config["target"].(map[string]interface{})["policy"].(map[string]interface{})["apply_mode"] = "append"
 				want = plugin.DefinitionSupported
+				if scenario == "append_not_null" {
+					want = plugin.DefinitionUnsupported
+					fields[1].Nullable = false
+					facts.items[2].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
+				}
 				if scenario == "append_incompatible" {
 					want = plugin.DefinitionUnsupported
 					fields[1].NativeType = "Int32"
-					if engineType == "doris" {
-						fields[1].NativeType = "int"
+					if engineType == "doris" || engineType == "dameng" {
+						fields[1].NativeType = "INTEGER"
 					}
 					facts.items[2].Attributes["type_info"].(map[string]interface{})["table"] = datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields})
 				}

@@ -17,11 +17,11 @@ import (
 const damengTableWriteSessionMarkerProvider = "dameng.table_write_session"
 
 func (p *Plugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
-	schema, table, err := tablePathParts(path)
-	if err != nil {
+	if err := validateWriteFields(opts.Fields, opts.SpatialInfo); err != nil {
 		return err
 	}
-	if err := validateWriteFields(opts.Fields, opts.SpatialInfo); err != nil {
+	schema, table, err := tablePathParts(path)
+	if err != nil {
 		return err
 	}
 	if err := p.requireCurrentSchema(ctx, connInfo, schema); err != nil {
@@ -50,16 +50,15 @@ func (p *Plugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Connecti
 	if err != nil {
 		return err
 	}
-	actualByName := make(map[string]datatype.FieldInfo, len(actual))
-	for _, field := range actual {
-		actualByName[strings.ToUpper(field.Name)] = field
+	definition := plugin.TableWriteDefinitionFromOptions(opts)
+	definition.Existing = &datatype.TableInfo{Fields: actual}
+	if err := p.CheckTableWriteDefinition(definition).UnsupportedError(); err != nil {
+		return err
 	}
+	actualTable := definition.Existing
 	for _, expected := range opts.Fields {
-		if _, ok := actualByName[strings.ToUpper(expected.Name)]; ok {
+		if actualTable.GetField(expected.Name) != nil {
 			continue
-		}
-		if !expected.Nullable {
-			return fmt.Errorf("DM8 existing table is missing NOT NULL field %q", expected.Name)
 		}
 		sqlType, err := dmSQLType(expected)
 		if err != nil {
@@ -294,7 +293,10 @@ func damengWriteRows(ctx context.Context, fields []datatype.FieldInfo, rows []ma
 			if err != nil {
 				return nil, fmt.Errorf("DM8 write row %d field %q: %w", rowIndex, field.Name, err)
 			}
-			if value == nil && !field.Nullable {
+			if binary, ok := value.([]byte); field.Type == datatype.FieldTypeBytes && ok && binary == nil {
+				value = nil
+			}
+			if value == nil && (!field.Nullable || field.PrimaryKey) {
 				return nil, fmt.Errorf("DM8 write row %d field %q is NOT NULL", rowIndex, field.Name)
 			}
 			args[fieldIndex] = value
@@ -333,30 +335,13 @@ func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
 }
 
 func validateWriteFields(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
-	if len(fields) == 0 {
-		return fmt.Errorf("DM8 table write requires fields")
-	}
-	if spatialInfo != nil && spatialInfo.IsSpatial() {
-		return fmt.Errorf("DM8 provider does not support spatial fields")
-	}
-	seen := map[string]bool{}
-	for _, field := range fields {
-		name := strings.TrimSpace(field.Name)
-		if name == "" || seen[strings.ToUpper(name)] {
-			return fmt.Errorf("DM8 table write fields must be non-empty and unique")
-		}
-		seen[strings.ToUpper(name)] = true
-		if datatype.IsSpatialFieldType(field.Type) {
-			return fmt.Errorf("DM8 provider does not support spatial fields")
-		}
-		if _, err := dmSQLType(field); err != nil {
-			return err
-		}
-	}
-	return nil
+	return (&Plugin{}).CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatialInfo})).UnsupportedError()
 }
 
 func createTableSQL(schema, table string, fields []datatype.FieldInfo) (string, error) {
+	if err := validateWriteFields(fields, nil); err != nil {
+		return "", err
+	}
 	dialect := commonquery.ForDialect(commonquery.DialectDameng)
 	definitions := make([]string, 0, len(fields)+1)
 	primaryKeys := make([]string, 0)
@@ -381,6 +366,11 @@ func createTableSQL(schema, table string, fields []datatype.FieldInfo) (string, 
 }
 
 func dmSQLType(field datatype.FieldInfo) (string, error) {
+	// DM8 primary keys use unique indexes; CLOB and BLOB cannot be indexed
+	// that way. Keep this rule in the mapping shared by DDL and pure checks.
+	if field.PrimaryKey && (field.Type == datatype.FieldTypeJSON || field.Type == datatype.FieldTypeBytes) {
+		return "", fmt.Errorf("DM8 field %q type %q cannot be a primary key", field.Name, field.Type)
+	}
 	switch field.Type {
 	case datatype.FieldTypeString, datatype.FieldTypeUUID:
 		size := field.Size

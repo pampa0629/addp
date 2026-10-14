@@ -22,6 +22,7 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 	if os.Getenv("ADDP_DAMENG_INTEGRATION") != "1" {
 		t.Skip("set ADDP_DAMENG_INTEGRATION=1 to run DM8 integration test")
 	}
+	t.Run("definition_before_ddl", testDM8DefinitionBeforeDDL)
 	for _, method := range []string{"session", "upsert"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
@@ -55,6 +56,10 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 			}
 			opts := plugin.TableUpsertOptions{Fields: fields, Keys: []string{"ID"}}
 			if err := p.PrepareTableUpsert(ctx, connInfo, path, opts); err != nil {
+				t.Fatal(err)
+			}
+			// Repeated preparation must consume actual CLOB/BLOB catalog facts.
+			if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
 				t.Fatal(err)
 			}
 			var physical string
@@ -159,5 +164,105 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func testDM8DefinitionBeforeDDL(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+	p := &Plugin{}
+	connInfo := integrationConnInfo()
+	db, err := p.openDB(connInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	table := "ADDP_JSON_" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:12])
+	path := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, "ADDP_BUSINESS", table)
+	qualified := `"ADDP_BUSINESS"."` + table + `"`
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := p.DeleteResource(cleanup, connInfo, path); err != nil {
+			t.Errorf("cleanup: %v", err)
+		}
+		var count int
+		if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE='TABLE' AND OBJECT_NAME=?", table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("fixture cleanup not proven: count=%d error=%v", count, err)
+		}
+	}()
+	for _, typ := range []datatype.FieldType{datatype.FieldTypeJSON, datatype.FieldTypeBytes} {
+		field := datatype.FieldInfo{Name: "DOC", Type: typ}
+		physical, err := dmSQLType(field)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+` ("DOC" `+physical+` PRIMARY KEY)`); err == nil {
+			t.Fatal("official DM8 accepted a LOB primary key")
+		}
+	}
+	for _, field := range []datatype.FieldInfo{{Name: "DOC", Type: datatype.FieldTypeArray}, {Name: "DOC", Type: datatype.FieldTypeGeometry}, {Name: "DOC", Type: datatype.FieldTypeJSON, PrimaryKey: true}, {Name: "DOC", Type: datatype.FieldTypeBytes, PrimaryKey: true}} {
+		if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: []datatype.FieldInfo{field}}); err == nil || !strings.Contains(err.Error(), "target_definition") {
+			t.Fatalf("definition not rejected: %v", err)
+		}
+		var count int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE='TABLE' AND OBJECT_NAME=?", table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("unsupported definition created table: %d %v", count, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE `+qualified+` ("ID" BIGINT PRIMARY KEY, "DOC" VARCHAR(255), "PAYLOAD" BLOB, "AMOUNT" DECIMAL(18,2))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` ("ID","DOC") VALUES (1,'sentinel')`); err != nil {
+		t.Fatal(err)
+	}
+	fields := []datatype.FieldInfo{{Name: "NEW_DOC", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "DOC", Type: datatype.FieldTypeJSON, Nullable: true}}
+	if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err == nil || !strings.Contains(err.Error(), "existing_column_incompatible") {
+		t.Fatalf("incompatible JSON storage accepted: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_TAB_COLUMNS WHERE TABLE_NAME=? AND COLUMN_NAME='NEW_DOC'", table).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("partial ALTER occurred: %d %v", count, err)
+	}
+	fields[1].Type = datatype.FieldTypeString
+	if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := p.listColumns(ctx, connInfo, "ADDP_BUSINESS", table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: []datatype.FieldInfo{{Name: "NEW_DOC", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "PAYLOAD", Type: datatype.FieldTypeBytes, Nullable: true}, {Name: "AMOUNT", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2, Nullable: true}}})
+	definition.Existing = &datatype.TableInfo{Fields: actual}
+	for _, check := range p.CheckTableWriteDefinition(definition).Checks {
+		if check.Status != plugin.DefinitionSupported {
+			t.Fatalf("actual facts not accepted: %+v facts=%+v", check, actual)
+		}
+	}
+	definition.Fields[2].Target.Scale = 3
+	if p.CheckTableWriteDefinition(definition).UnsupportedError() == nil {
+		t.Fatal("decimal mismatch accepted")
+	}
+	// A typed nil BLOB must fail before the first row SQL; abort restores DELETE.
+	session, err := p.OpenTableWriteSession(ctx, connInfo, path, plugin.TableWriteSessionOptions{Fields: []datatype.FieldInfo{{Name: "ID", Type: datatype.FieldTypeBigInt}, {Name: "PAYLOAD", Type: datatype.FieldTypeBytes}}, Replace: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Abort(context.Background())
+	if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{{"ID": int64(2), "PAYLOAD": []byte{}}, {"ID": int64(3), "PAYLOAD": []byte(nil)}}}); err == nil || !strings.Contains(err.Error(), `row 1 field "PAYLOAD" is NOT NULL`) {
+		t.Fatalf("required binary NULL accepted: %v", err)
+	}
+	if err := session.(*tableWriteSession).tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("invalid batch executed an earlier INSERT: %d %v", count, err)
+	}
+	if err := session.Abort(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var sentinel string
+	if err := db.QueryRowContext(ctx, `SELECT "DOC" FROM `+qualified+` WHERE "ID"=1`).Scan(&sentinel); err != nil || sentinel != "sentinel" {
+		t.Fatalf("sentinel changed: %q %v", sentinel, err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("failed batch leaked rows: %d %v", count, err)
 	}
 }
