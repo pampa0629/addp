@@ -119,8 +119,16 @@ func PaginateQuerySQL(query string, limit, offset int) string {
 }
 
 func (d Dialect) PaginateQuerySQL(query string, limit, offset int) string {
+	statement, _, _ := d.PaginateQuerySQLSourceRange(query, limit, offset)
+	return statement
+}
+
+// PaginateQuerySQLSourceRange returns the byte range occupied by the source's
+// trimmed body in the generated SQL. It shares the sole pagination implementation.
+func (d Dialect) PaginateQuerySQLSourceRange(query string, limit, offset int) (string, int, int) {
 	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	return fmt.Sprintf("SELECT * FROM (%s)%s%s", inner, d.SubqueryAlias("addp_page"), d.limitOffsetClause(limit, offset))
+	prefix := "SELECT * FROM ("
+	return fmt.Sprintf("%s%s)%s%s", prefix, inner, d.SubqueryAlias("addp_page"), d.limitOffsetClause(limit, offset)), len(prefix), len(prefix) + len(inner)
 }
 
 func CountSubquerySQL(query, alias string) string {

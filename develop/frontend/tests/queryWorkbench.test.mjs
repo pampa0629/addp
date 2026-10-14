@@ -216,7 +216,7 @@ assert.equal(queryErrorMessage('permission_denied', '', key => key), 'common.exe
 assert.equal(queryResultFromExecution({ status: 'failed', error_details: { category: 'timeout' } }).error_code, 'timeout')
 const snapshotFailure = queryResultFromExecution({ status: 'failed', execution_id: 'failed-run', error_details: {
   category: 'execution_failed', code: 'develop.query.snapshot_invalid',
-  diagnostic: { schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid' }
+  diagnostic: { schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid' }
 } })
 assert.equal(snapshotFailure.error_code, 'develop.query.snapshot_invalid')
 assert.equal(snapshotFailure.error_details.diagnostic.reason, 'query_template_invalid')

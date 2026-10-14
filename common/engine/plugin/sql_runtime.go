@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -12,6 +13,24 @@ import (
 	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
 )
+
+// sqlStatementFailure marks failures from this statement or its result stream.
+// Pool, transaction and preflight errors cannot borrow the user's SQL position.
+type sqlStatementFailure struct {
+	statement string
+	cause     error
+}
+
+func (e *sqlStatementFailure) Error() string { return e.cause.Error() }
+func (e *sqlStatementFailure) Unwrap() error { return e.cause }
+
+func ExecutedSQLForError(err error) (string, bool) {
+	var failure *sqlStatementFailure
+	if !errors.As(err, &failure) {
+		return "", false
+	}
+	return failure.statement, true
+}
 
 // ExecuteSQLWithConnectionPool executes SQL through a plugin-provided GORM pool.
 // It is intended for SQLQueryRuntimeProvider implementations that do not need
@@ -97,9 +116,13 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
-		return nil, err
+		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 	}
-	return scanRuntimeSQLRows(rows)
+	result, err := scanRuntimeSQLRows(rows)
+	if err != nil {
+		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
+	}
+	return result, nil
 }
 
 func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error) (*QueryResult, error) {
@@ -131,11 +154,11 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
 	result, err := scanRuntimeSQLRows(rows)
 	if err != nil {
-		return nil, err
+		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("提交只读事务失败：%w", err)
@@ -284,7 +307,8 @@ func PrepareSQLRuntimeQuery(
 	var readSet func(context.Context) (*QueryReadSet, error)
 	if resolveReadSet != nil {
 		readSet = func(ctx context.Context) (*QueryReadSet, error) {
-			return resolveReadSet(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq))
+			result, err := resolveReadSet(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq))
+			return result, remapQueryErrorSource(err, req.Query, preparedReq.Query)
 		}
 	}
 	var lineage func(context.Context, *QueryReadSet) (*QueryOutputLineage, error)
@@ -307,7 +331,7 @@ func PrepareSQLRuntimeQuery(
 		}
 		result, err := provider.ExecuteSQL(ctx, cloneQueryConnectionInfo(preparedConnInfo), request.Query, request.Options)
 		if err != nil {
-			return nil, err
+			return nil, remapQueryErrorSource(err, req.Query, preparedReq.Query)
 		}
 		if request.analytical != nil {
 			return request.analytical.normalizeResult(result)

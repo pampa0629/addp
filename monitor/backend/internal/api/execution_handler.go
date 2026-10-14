@@ -181,7 +181,7 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 
 // GetExecutionTreeByExecutionID 获取执行记录树
 // @Summary 按 execution_id 获取执行记录树 | Get execution tree by execution_id
-// @Description 失败诊断 error_details.diagnostic 只包含 schema_version=addp.execution-failure/v1、stage 和 reason 闭合码；历史未记录时省略。| Failure error_details.diagnostic contains only schema_version=addp.execution-failure/v1 and closed stage/reason codes; omitted when not recorded.
+// @Description 失败诊断 error_details.diagnostic 使用 schema_version=addp.execution-failure/v2、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置；历史未记录当前契约时省略。| Failure error_details.diagnostic uses schema_version=addp.execution-failure/v2 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions; omitted when the current contract was not recorded.
 // @Tags Monitor
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"

@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 
 	engineselection "github.com/addp/common/engine/selection"
@@ -247,6 +248,10 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	inputs["execution_contract"] = executionContract
 	inputs["effective_parameters"] = effectiveParameters
 	inputs["effective_inputs"] = effectiveInputs
+	if devType == commonExecution.TaskTypeQuery {
+		source, _ := content["query"].(string)
+		inputs["query_source_digest"] = commonquery.SourceDigest(source)
+	}
 
 	// 创建统一执行记录
 	now := time.Now()
@@ -832,7 +837,7 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 }
 
 // executeQuery 执行查询（根据query_type路由）
-func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64, string) {
+func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, *int64, error) {
 	queryType := devTask.GetQueryType()
 
 	// 根据 query_type 路由到不同执行器
@@ -840,48 +845,48 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 	case "sql", "mql", "cypher", "es_dsl":
 		return e.executeSQL(ctx, devTask, executionID, tenantID, authorization)
 	default:
-		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil, ""
+		return nil, nil, fmt.Errorf("不支持的查询类型: %s", queryType)
 	}
 }
 
 // executeSQL 执行SQL
-func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64, string) {
+func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, *int64, error) {
 	sqlContent, ok := devTask.Content["query"].(string)
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if !ok || err != nil {
-		return nil, "异步 SQL 执行上下文无效", nil, ""
+		return nil, nil, fmt.Errorf("异步 SQL 执行上下文无效")
 	}
 	if e.isFederatedQuery(ctx, devTask, uint(tenantID)) {
 		if devTask.RuntimeParameters != nil {
-			return nil, "联邦查询 Runtime 不支持查询参数", nil, ""
+			return nil, nil, fmt.Errorf("联邦查询 Runtime 不支持查询参数")
 		}
 		if e.federatedQuery == nil || authorization == nil {
-			return nil, "联邦查询服务或 Execution Authorization 未初始化", nil, ""
+			return nil, nil, fmt.Errorf("联邦查询服务或 Execution Authorization 未初始化")
 		}
 		runtimeEngineID := devTask.GetEngineID()
 		if runtimeEngineID == nil {
-			return nil, "联邦查询 Runtime Engine 无效", nil, ""
+			return nil, nil, fmt.Errorf("联邦查询 Runtime Engine 无效")
 		}
 		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
 			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
 			sqlContent, devTask.Timeout, (devTask.QueryResultLimit + 1), authorization.EngineIDs,
 		)
 		if executeErr != nil {
-			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil, ""
+			return nil, nil, fmt.Errorf("联邦查询执行失败: %w", executeErr)
 		}
-		response, message, affected := e.queryResult(
+		response, affected := e.queryResult(
 			devTask.QueryResultLimit,
 			federatedResult.Columns, federatedResult.Rows, int64(federatedResult.RowCount),
 			SQLExecutionEffectRead, "table", nil,
 		)
-		return response, message, affected, ""
+		return response, affected, nil
 	}
 	if authorization == nil {
-		return nil, "异步 SQL 执行缺少 Execution Authorization", nil, ""
+		return nil, nil, fmt.Errorf("异步 SQL 执行缺少 Execution Authorization")
 	}
 	engineID := devTask.GetEngineID()
 	if engineID == nil {
-		return nil, "异步 SQL 执行上下文无效", nil, ""
+		return nil, nil, fmt.Errorf("异步 SQL 执行上下文无效")
 	}
 	var result *SQLResult
 	if devTask.GetQueryType() == "sql" {
@@ -891,10 +896,10 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	} else {
 		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
 		if accessErr != nil {
-			return nil, fmt.Sprintf("查询执行授权失败: %v", accessErr), nil, ""
+			return nil, nil, fmt.Errorf("查询执行授权失败: %w", accessErr)
 		}
 		if supportErr := requireQueryParameterCapability(engine, devTask.GetQueryType(), devTask.RuntimeParameters); supportErr != nil {
-			return nil, supportErr.Error(), nil, ""
+			return nil, nil, supportErr
 		}
 		queryTimeout := devTask.Timeout
 		if queryTimeout <= 0 {
@@ -912,28 +917,28 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				if locatorErr == nil {
 					locatorErr = fmt.Errorf("资源定位符引擎 ID 不匹配")
 				}
-				return nil, fmt.Sprintf("查询目标无效: %v", locatorErr), nil, ""
+				return nil, nil, fmt.Errorf("查询目标无效: %w", locatorErr)
 			}
 			model, modelErr := dbbridge.EngineCatalogModel(engine.EngineType)
 			if modelErr != nil {
-				return nil, fmt.Sprintf("查询目标无效: %v", modelErr), nil, ""
+				return nil, nil, fmt.Errorf("查询目标无效: %w", modelErr)
 			}
 			path, pathErr := resourcetree.EngineCatalogPathFromLocator(model, locator)
 			if pathErr != nil {
-				return nil, fmt.Sprintf("查询目标无效: %v", pathErr), nil, ""
+				return nil, nil, fmt.Errorf("查询目标无效: %w", pathErr)
 			}
 			targetPath = &path
 		}
 		if engineSupportsQueryResultKind(engine, "graph") {
 			if e.sqlEngine == nil || e.sqlEngine.protectionGate == nil {
-				return nil, "Develop 图查询保护门禁未配置", nil, ""
+				return nil, nil, fmt.Errorf("Develop 图查询保护门禁未配置")
 			}
 			// Cypher may traverse resources beyond a caller-selected path. Until
 			// its Provider can prove a complete read set, keep this boundary
 			// conservative whenever the tenant has a managed DataItem.
 			endProtection, protectionErr := e.sqlEngine.protectionGate.BeginUnresolvedRead(execCtx, uint(tenantID))
 			if protectionErr != nil {
-				return nil, fmt.Sprintf("查询执行失败: %v", protectionErr), nil, queryErrorCode(protectionErr)
+				return nil, nil, fmt.Errorf("查询执行失败: %w", protectionErr)
 			}
 			defer endProtection()
 			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQueryWithPath(
@@ -987,16 +992,16 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
 			}
 			if err == nil {
-				response, message, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
-				return response, message, affected, ""
+				response, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
+				return response, affected, nil
 			}
 		}
 	}
 	if err != nil {
-		return nil, fmt.Sprintf("查询执行失败: %v", err), nil, queryErrorCode(err)
+		return nil, nil, fmt.Errorf("查询执行失败: %w", err)
 	}
-	response, message, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
-	return response, message, affected, ""
+	response, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+	return response, affected, nil
 }
 
 func (e *DevExecutor) queryResult(
@@ -1007,7 +1012,7 @@ func (e *DevExecutor) queryResult(
 	effect SQLExecutionEffect,
 	resultKind string,
 	graphData *plugin.GraphData,
-) (commonModels.JSONMap, string, *int64) {
+) (commonModels.JSONMap, *int64) {
 	if rows == nil {
 		rows = []map[string]interface{}{}
 	}
@@ -1036,10 +1041,10 @@ func (e *DevExecutor) queryResult(
 		result["graph_data"] = graphData
 	}
 	if effect == SQLExecutionEffectRead {
-		return result, "", nil
+		return result, nil
 	}
 	result["rows_affected"] = rowsAffected
-	return result, "", &rowsAffected
+	return result, &rowsAffected
 }
 
 func executionStatusForError(errorMessage string) string {
@@ -1504,6 +1509,10 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 	}
 	inputs["effective_parameters"] = effectiveParameters
 	inputs["effective_inputs"] = effectiveInputs
+	if devTask.DevType == commonExecution.TaskTypeQuery {
+		source, _ := resolvedContent["query"].(string)
+		inputs["query_source_digest"] = commonquery.SourceDigest(source)
+	}
 	task := &models.DevTask{
 		ID: devTask.ID, DevType: devTask.DevType, Content: resolvedContent,
 		Timeout: devTask.Timeout, TenantID: tenantID, Status: devTask.Status,
@@ -1611,7 +1620,7 @@ func validateExpectedDevTaskType(devType, expectedTaskType string) error {
 }
 
 func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.JSONMap) commonModels.JSONMap {
-	config := commonModels.JSONMap{"inputs": inputs}
+	config := commonModels.JSONMap{}
 	if devTask != nil {
 		for key, value := range devTask.ExecutionConfig {
 			config[key] = value
@@ -1631,6 +1640,7 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 			}
 		}
 	}
+	config["inputs"] = inputs
 	return config
 }
 

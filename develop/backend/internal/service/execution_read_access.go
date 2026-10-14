@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"maps"
 	"strconv"
 
 	"github.com/addp/common/authorization"
@@ -92,7 +93,13 @@ func applyScriptExecutionActor(ctx context.Context, execution *commonExecution.T
 }
 
 func professionalExecutionResponse(execution *commonExecution.TaskExecution) *models.ExecutionWithDevTask {
-	response := &models.ExecutionWithDevTask{Observation: commonExecution.Observe(execution), ExecutionConfig: execution.ExecutionConfig, Outputs: taskprovider.ExecutionOutputs(execution.Metadata)}
+	config := maps.Clone(execution.ExecutionConfig)
+	if inputs, ok := mapValue(config["inputs"]); ok {
+		inputs = maps.Clone(inputs)
+		delete(inputs, "query_source_digest")
+		config["inputs"] = inputs
+	}
+	response := &models.ExecutionWithDevTask{Observation: commonExecution.Observe(execution), ExecutionConfig: config, Outputs: taskprovider.ExecutionOutputs(execution.Metadata)}
 	if result, ok := execution.Metadata["result"]; ok {
 		if response.Metadata == nil {
 			response.Metadata = map[string]interface{}{}

@@ -236,8 +236,8 @@ func (p *PostgreSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Conne
 	if err != nil {
 		return nil, err
 	}
-	if _, err := pgquery.Parse(strings.TrimSpace(boundQuery)); err != nil {
-		return nil, plugin.NewQueryError(plugin.QueryErrorCodeSyntaxInvalid, fmt.Errorf("PostgreSQL 查询语法无效: %w", err))
+	if _, err := pgquery.Parse(boundQuery); err != nil {
+		return nil, postgresSyntaxError(plugin.NewQueryError(plugin.QueryErrorCodeSyntaxInvalid, fmt.Errorf("PostgreSQL 查询语法无效: %w", err)), req.Query, boundQuery)
 	}
 	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, p.resolvePreparedQueryReadSet, p.resolvePreparedQueryOutputLineage)
 }
@@ -255,7 +255,8 @@ func (p *PostgreSQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledRead
 }
 
 func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	result, err := plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	return result, postgresNativeQueryError(err, sql, opts)
 }
 
 func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

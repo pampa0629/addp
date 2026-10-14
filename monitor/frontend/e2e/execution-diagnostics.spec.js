@@ -7,8 +7,9 @@ async function installBackend(page, { empty = false, unavailable = false, events
   execution.metadata = metadata
   if (queryFailure) {
     Object.assign(execution, { module: 'develop', task_type: 'query', source: 'develop', source_task_id: null, source_task_name: null, steps: [], error_details: {
-      code: 'develop.query.snapshot_invalid', category: 'execution_failed', diagnostic: {
-        schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid'
+      code: 'table_not_found', category: 'execution_failed', diagnostic: {
+        schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'table_not_found',
+        sql: { object: { kind: 'table', name: 'public.farmla1nd' }, position: { line: 1, column: 15 } }
       }
     } })
   }
@@ -44,7 +45,7 @@ test('a query execution deep link opens its failure details and matching process
   await Promise.all([treeRequest, eventsRequest])
   const diagnostic = page.locator('.execution-detail-content > .execution-failure')
   await expect(diagnostic).toContainText(executionID)
-  await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
+  await expect(diagnostic).toContainText('table_not_found')
   await expect(diagnostic).toBeInViewport()
   await expect(diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true })).toHaveCount(0)
   await expect(page.locator('.execution-events tbody')).toContainText('执行失败')
@@ -55,10 +56,12 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await installBackend(page, { locale, queryFailure: true, empty: true })
   await page.goto('/executions?execution_id=diagnostic-run')
   const diagnostic = page.locator('.execution-detail-content > .execution-failure')
-  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询内容与参数定义不一致' : 'The query content and parameter definitions do not match')
-  await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询引用的数据表不存在' : 'A referenced table does not exist')
+  await expect(diagnostic).toContainText('table_not_found')
   await expect(diagnostic).toContainText('diagnostic-run')
-  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '校验执行配置' : 'Validate execution configuration')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '准备查询' : 'Prepare query')
+  await expect(diagnostic).toContainText('public.farmla1nd')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '第 1 行，第 15 列' : 'Line 1, column 15')
   const button = diagnostic.getByRole('button', { name: locale === 'zh-cn' ? '查看查询执行详情' : 'View query execution details', exact: true })
   await expect(button).toBeVisible()
   await expect(page.getByRole('button', { name: locale === 'zh-cn' ? '打开任务定义' : 'Open task definition', exact: true })).toHaveCount(0)

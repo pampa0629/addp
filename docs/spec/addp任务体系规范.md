@@ -1032,11 +1032,13 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 ### 租户执行诊断（2026-10-01 已确认）
 
-执行失败诊断使用同一 `error_details.diagnostic`，契约为 `schema_version=addp.execution-failure/v1`、`stage` 和 `reason`，只接受 Common 声明的闭合枚举，无自由文本、动态参数或附加字段。阶段为配置校验、授权、准备查询、执行查询或保存结果；原因包括执行配置缺失／无效、查询模板无效、关系参数绑定失败、授权失效、引擎访问失败、语法错误、字段／表不存在、类型不匹配、权限不足、连接失败、超时、取消、资源不足及未进一步分类的执行失败。Owner 根据实际失败边界和已知错误事实生成诊断；Common Observation 同时用于 Monitor 和 Owner 专业响应，仅投影合法诊断。界面由共享组件按中英文固定词条展示失败阶段、具体原因、处理建议、错误码和 execution UUID，不从原始错误拼接文案。未记录受控诊断的历史错误继续只展示安全类别和稳定码，不猜测具体原因、不回填历史。
+执行失败诊断使用同一 `error_details.diagnostic`，契约为 `schema_version=addp.execution-failure/v2`、`stage` 和 `reason`，阶段和原因只接受 Common 声明的闭合枚举。可选 `sql` 仅含 `object={kind,name}` 与 `position={line,column}`；对象类型限 table、column、function、operator，名称只来自 Provider 原生语法树中的标识符，最长 256 个字符／512 UTF-8 字节，禁止控制字符。位置为执行前原查询的 1 起始行号与 UTF-16 列号，符合编辑器坐标。禁止错误全文、Hint／Detail、查询片段、参数值、样本、凭据与其他附加字段。阶段为配置校验、授权、准备查询、执行查询或保存结果；原因包括执行配置缺失／无效、查询模板无效、关系参数绑定失败、授权失效、引擎访问失败、语法错误、字段／表不存在、类型不匹配、权限不足、连接失败、超时、取消、资源不足及未进一步分类的执行失败。Owner 根据实际失败边界和已知错误事实生成诊断；Common Observation 同时用于 Monitor 和 Owner 专业响应，仅投影合法诊断。界面由共享组件按中英文固定词条展示失败阶段、具体原因、处理建议、错误码和 execution UUID，不从原始错误拼接文案。未记录受控诊断的历史错误继续只展示安全类别和稳定码，不猜测具体原因、不回填历史。
 
 Develop 查询工作台在结果区持续展示失败诊断；Monitor 详情顶部使用同一组件。Develop 失败面板提供“查看监控错误详情”，通过既有 `/monitor/executions?execution_id={execution_id}` 直接打开本次执行的诊断与运行过程，不以任务定义 ID 替代 execution UUID；Monitor 继续按既有读取权限裁决。Develop 查询的领域执行详情按 `/develop/executions/{execution_id}` 打开，包含无任务定义的一次性执行，仍由既有 Owner 读取权限裁决。通用详情不以“打开任务定义”代替领域执行详情。
 
 查询准备阶段的原生语法拒绝、精确目录表／函数解析失败必须按 Provider 的受控错误码展示，并标注准备查询阶段；数据库执行期按保留下来的 SQLSTATE 展示语法、表／字段缺失、字段歧义、函数或运算符不匹配、类型错误及除零等具体原因。分类不解析原始报错文本，不把目录无记录误写为未知执行失败；仍不向通用诊断投影查询正文、业务值、连接信息或自由文本。未被证实的原因继续明确记录为未分类，不猜测对象名或推荐替代表。
+
+对象和位置与错误类型必须匹配。Provider 保留 typed QueryError 上下文，SQL 执行链路不得提前转成字符串；数据库位置必须来自原生结构化 Position，不能解析报错正文。Provider 只对可以精确映射的分页包装及前后空白转换位置；命名参数或关系模板改写后没有源映射时省略位置。Develop 在编译前冻结 `execution_config.inputs.query_source_digest`，仅在 Provider 原查询摘要与冻结摘要相等时保留位置。摘要只用于内部校验，不进入通用诊断；对象名与位置沿同一 Common 安全投影供 Develop 和 Monitor 展示，复制诊断同时包含它们。
 
 关系参数预览编译产物的 `content.query` 为已绑定实际表的只读查询；已消费的 `type=relation` 定义从产物的 `content.query_parameters` 删除，值参数定义保留。原始任务模板不变，完整输入契约和有效资源绑定继续冻结在 `execution_config.inputs`，供导出与血缘消费。Worker 校验并执行这一编译产物，不再把实际表当作未编译的关系参数；编排写入仍校验原模板并按目标编译。
 

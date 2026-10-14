@@ -86,7 +86,7 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 }
 
 func inspectPostgresSQLReadDependencies(query string) (postgresQueryReadDependencies, error) {
-	parsed, err := pgquery.Parse(strings.TrimSpace(query))
+	parsed, err := pgquery.Parse(query)
 	if err != nil || len(parsed.GetStmts()) != 1 || parsed.GetStmts()[0].GetStmt().GetSelectStmt() == nil {
 		return postgresQueryReadDependencies{}, fmt.Errorf("%w: PostgreSQL query must contain exactly one SELECT", plugin.ErrQueryReadSetUnresolved)
 	}
@@ -240,7 +240,7 @@ func (p *PostgreSQLPlugin) resolvePostgresQueryReadSet(
 	dependencies postgresQueryReadDependencies,
 	catalog postgresReadCatalog,
 ) (*plugin.QueryReadSet, error) {
-	if err := validatePostgresFunctionReferences(ctx, dependencies.Functions, catalog); err != nil {
+	if err := validatePostgresFunctionReferences(ctx, req.Query, dependencies.Functions, catalog); err != nil {
 		return nil, err
 	}
 	paths := make([]plugin.EngineCatalogPath, 0, len(dependencies.Relations))
@@ -250,6 +250,7 @@ func (p *PostgreSQLPlugin) resolvePostgresQueryReadSet(
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				err = plugin.NewQueryError(plugin.QueryErrorCodeTableNotFound, err)
+				err = plugin.WithQueryErrorContext(err, postgresNamedObjectContext(req.Query, "table", reference.Schema, reference.Name))
 			}
 			return nil, postgresQueryReadSetCatalogError("resolve relation", err)
 		}
@@ -328,6 +329,7 @@ func (p *PostgreSQLPlugin) expandPostgresReadRelation(
 
 func validatePostgresFunctionReferences(
 	ctx context.Context,
+	source string,
 	references []postgresFunctionReference,
 	catalog postgresReadCatalog,
 ) error {
@@ -337,7 +339,7 @@ func validatePostgresFunctionReferences(
 			return postgresQueryReadSetCatalogError("resolve function", err)
 		}
 		if len(candidates) == 0 {
-			return plugin.NewQueryError(plugin.QueryErrorCodeFunctionNotFound, postgresQueryReadSetError("function dependency cannot be resolved"))
+			return plugin.WithQueryErrorContext(plugin.NewQueryError(plugin.QueryErrorCodeFunctionNotFound, postgresQueryReadSetError("function dependency cannot be resolved")), postgresNamedObjectContext(source, "function", reference.Schema, reference.Name))
 		}
 		for _, candidate := range candidates {
 			if !isTransparentPostgresReadFunction(candidate) {

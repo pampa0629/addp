@@ -3,12 +3,38 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/lib/pq"
 )
+
+func TestQueryLocationRequiresTheFrozenSourceIdentity(t *testing.T) {
+	source := "SELECT missing_field FROM public.a"
+	cause := plugin.WithQueryErrorContext(&pq.Error{Code: "42703", Message: "private"}, commonquery.NewErrorContext(source, "column", "missing_field", 7))
+	for _, digest := range []string{commonquery.SourceDigest(source), "", commonquery.SourceDigest("SELECT other FROM public.a")} {
+		execution := &commonExecution.TaskExecution{ExecutionConfig: commonModels.JSONMap{"inputs": commonModels.JSONMap{"query_source_digest": digest}}}
+		diagnostic := queryExecutionFailureDiagnostic(execution, queryErrorCode(cause), cause)
+		if diagnostic.SQL == nil || diagnostic.SQL.Object == nil {
+			t.Fatal("lost provider object")
+		}
+		if (diagnostic.SQL.Position != nil) != (digest == commonquery.SourceDigest(source)) {
+			t.Fatalf("unproven source location: %+v", diagnostic.SQL)
+		}
+		response := professionalExecutionResponse(execution)
+		inputs, _ := mapValue(response.ExecutionConfig["inputs"])
+		if _, present := inputs["query_source_digest"]; present {
+			t.Fatal("internal source digest reached Owner response")
+		}
+		storedInputs, _ := mapValue(execution.ExecutionConfig["inputs"])
+		if storedInputs["query_source_digest"] != digest {
+			t.Fatal("Owner projection mutated frozen facts")
+		}
+	}
+}
 
 func TestQueryFailuresUseTypedSQLStateWithoutRuntimeValues(t *testing.T) {
 	for _, test := range []struct{ state, reason string }{

@@ -325,11 +325,11 @@ func (s *QueryExecutionService) executeAndComplete(
 	if err := s.queries.UpdateProgressWithLease(ctx, lease, 30, "执行查询"); err != nil {
 		return err
 	}
-	result, errorMessage, rowsAffected, errorCode := s.executor.executeQuery(
+	result, rowsAffected, queryErr := s.executor.executeQuery(
 		ctx, devTask, execution.ExecutionID, execution.TenantID, authorization,
 	)
-	if errorMessage != "" {
-		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, errorCode, errorMessage)
+	if queryErr != nil {
+		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, queryErr)
 	}
 	metadata := queryExecutionMetadata(result)
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
@@ -363,8 +363,9 @@ func (s *QueryExecutionService) completeQueryError(
 	startedAt time.Time,
 	result commonModels.JSONMap,
 	rowsAffected *int64,
-	errorCode, message string,
+	cause error,
 ) error {
+	errorCode, message := queryErrorCode(cause), cause.Error()
 	status := executionStatusForError(message)
 	if errorCode == "timeout" {
 		status = commonExecution.ExecutionStatusTimeout
@@ -376,7 +377,7 @@ func (s *QueryExecutionService) completeQueryError(
 	if errorCode == "" {
 		errorCode = "develop.query.execution_failed"
 	}
-	fields["error_details"] = commonModels.JSONMap{"message": message, "code": errorCode, "diagnostic": queryFailureDiagnostic(errorCode, message, nil)}
+	fields["error_details"] = commonModels.JSONMap{"message": message, "code": errorCode, "diagnostic": queryExecutionFailureDiagnostic(execution, errorCode, cause)}
 	return s.queries.CompleteWithLease(ctx, execution, lease, status, time.Now().UTC(), fields)
 }
 
@@ -389,7 +390,7 @@ func (s *QueryExecutionService) completeFailure(
 	code string,
 ) error {
 	fields := terminalQueryFields(startedAt, nil, nil)
-	fields["error_details"] = commonModels.JSONMap{"code": code, "message": cause.Error(), "diagnostic": queryFailureDiagnostic(code, cause.Error(), cause)}
+	fields["error_details"] = commonModels.JSONMap{"code": code, "message": cause.Error(), "diagnostic": queryExecutionFailureDiagnostic(execution, code, cause)}
 	if err := s.queries.CompleteWithLease(ctx, execution, lease, commonExecution.ExecutionStatusFailed, time.Now().UTC(), fields); err != nil {
 		return fmt.Errorf("%v; complete Develop query failure: %w", cause, err)
 	}

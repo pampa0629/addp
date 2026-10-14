@@ -17,6 +17,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -92,18 +93,27 @@ func TestQueryFailureDiagnosticsAgainstPostgres(t *testing.T) {
 	}
 	gate := protection.NewGate(store)
 	service := &QueryExecutionService{queries: repository.NewExecutionRepository(local)}
-	for _, scenario := range []struct{ name, query, code, stage, reason string }{
-		{"wrong table", "SELECT * FROM " + prefix + "farmla1nd", "table_not_found", "preparation", "table_not_found"},
-		{"syntax", "SELECT id, FROM " + prefix + "a", "query_syntax_invalid", "preparation", "query_syntax_invalid"},
-		{"wrong field", "SELECT missing_field FROM " + prefix + "a", "sqlstate_42703", "execution", "column_not_found"},
-		{"ambiguous field", "SELECT id FROM " + prefix + "a x JOIN " + prefix + "a y ON x.id=y.id", "sqlstate_42702", "execution", "ambiguous_column"},
-		{"wrong function", "SELECT missing_function(id) FROM " + prefix + "a", "function_not_found", "preparation", "function_or_operator_not_found"},
-		{"wrong operator", "SELECT id + true FROM " + prefix + "a", "sqlstate_42883", "execution", "function_or_operator_not_found"},
-		{"wrong type", "SELECT CAST('not-number' AS integer) FROM " + prefix + "a", "sqlstate_22P02", "execution", "type_mismatch"},
-		{"division by zero", "SELECT 1/(id-id) FROM " + prefix + "a", "sqlstate_22012", "execution", "division_by_zero"},
+	for _, scenario := range []struct {
+		name, query, code, stage, reason, object string
+		line, column                             int
+	}{
+		{"wrong table", "SELECT * FROM " + prefix + "farmla1nd", "table_not_found", "preparation", "table_not_found", "farmla1nd", 1, 15},
+		{"syntax", "SELECT id, FROM " + prefix + "a", "query_syntax_invalid", "preparation", "query_syntax_invalid", "", 1, 12},
+		{"wrong field", "SELECT missing_field FROM " + prefix + "a", "sqlstate_42703", "execution", "column_not_found", "missing_field", 1, 8},
+		{"ambiguous field", "SELECT id FROM " + prefix + "a x JOIN " + prefix + "a y ON x.id=y.id", "sqlstate_42702", "execution", "ambiguous_column", "id", 1, 8},
+		{"wrong function", "SELECT missing_function(id) FROM " + prefix + "a", "function_not_found", "preparation", "function_or_operator_not_found", "missing_function", 1, 8},
+		{"wrong operator", "SELECT id + true FROM " + prefix + "a", "sqlstate_42883", "execution", "function_or_operator_not_found", "+", 1, 11},
+		{"wrong type", "SELECT CAST('not-number' AS integer) FROM " + prefix + "a", "sqlstate_22P02", "execution", "type_mismatch", "", 0, 0},
+		{"division by zero", "SELECT 1/(id-id) FROM " + prefix + "a", "sqlstate_22012", "execution", "division_by_zero", "", 0, 0},
+		{"unicode multiline field", " \n-- 中文😀\n  SELECT missing_field FROM " + prefix + "a;", "sqlstate_42703", "execution", "column_not_found", "missing_field", 3, 10},
+		{"parameter shifted field", "SELECT :value, missing_field FROM " + prefix + "a", "sqlstate_42703", "execution", "column_not_found", "missing_field", -1, 0},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			prepared, queryErr := provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: scenario.query, Options: plugin.QueryOptions{ReadOnly: true}})
+			options := plugin.QueryOptions{ReadOnly: true, Limit: 11}
+			if scenario.name == "parameter shifted field" {
+				options.Parameters = map[string]interface{}{"value": 1}
+			}
+			prepared, queryErr := provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: scenario.query, Options: options})
 			if queryErr == nil {
 				_, end, gateErr := gate.BeginPreparedQuery(ctx, 7, provider, prepared)
 				queryErr = gateErr
@@ -123,11 +133,12 @@ func TestQueryFailureDiagnosticsAgainstPostgres(t *testing.T) {
 			}
 			token, owner, expires := uuid.NewString(), "diagnostic-worker", now.Add(time.Minute)
 			item := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: "develop", TaskType: "query", Source: "develop", Status: "running", TriggerType: "manual", Attempt: 1, LeaseToken: &token, LeaseOwner: &owner, LeaseExpiresAt: &expires, CreatedAt: now, UpdatedAt: now}
+			item.ExecutionConfig = commonModels.JSONMap{"inputs": commonModels.JSONMap{"query_source_digest": commonquery.SourceDigest(scenario.query)}}
 			if err := local.Create(item).Error; err != nil {
 				t.Fatal(err)
 			}
 			lease := commonExecution.Lease{ExecutionID: item.ExecutionID, TenantID: 7, Token: token, Owner: owner, Attempt: 1}
-			if err := service.completeQueryError(ctx, item, lease, now, nil, nil, code, fmt.Sprintf("查询执行失败: %v", queryErr)); err != nil {
+			if err := service.completeQueryError(ctx, item, lease, now, nil, nil, queryErr); err != nil {
 				t.Fatal(err)
 			}
 			var stored commonExecution.TaskExecution
@@ -139,8 +150,17 @@ func TestQueryFailureDiagnosticsAgainstPostgres(t *testing.T) {
 			if !ok || stored.Status != "failed" || diagnostic.Stage != scenario.stage || diagnostic.Reason != scenario.reason {
 				t.Fatalf("diagnostic=%+v, expected %s/%s", diagnostic, scenario.stage, scenario.reason)
 			}
+			if scenario.object != "" && (diagnostic.SQL == nil || diagnostic.SQL.Object == nil || !strings.Contains(diagnostic.SQL.Object.Name, scenario.object)) {
+				t.Fatalf("missing confirmed object: %+v", diagnostic.SQL)
+			}
+			if scenario.line > 0 && (diagnostic.SQL == nil || diagnostic.SQL.Position == nil || diagnostic.SQL.Position.Line != scenario.line || diagnostic.SQL.Position.Column != scenario.column) {
+				t.Fatalf("position=%+v, want %d:%d", diagnostic.SQL, scenario.line, scenario.column)
+			}
+			if scenario.line == -1 && diagnostic.SQL.Position != nil {
+				t.Fatalf("parameter rewrite leaked unproven position: %+v", diagnostic.SQL)
+			}
 			encoded, _ := json.Marshal(observation.ErrorDetails)
-			for _, private := range []string{schema, "not-number", "missing_field", "farmla1nd", "missing_function"} {
+			for _, private := range []string{"not-number", "source_digest", "SourceDigest", "Offset", "message", "pq:", "SELECT "} {
 				if strings.Contains(string(encoded), private) {
 					t.Fatalf("raw runtime text in observation: %s", encoded)
 				}

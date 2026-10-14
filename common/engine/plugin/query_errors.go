@@ -1,6 +1,9 @@
 package plugin
 
-import "errors"
+import (
+	"errors"
+	commonquery "github.com/addp/common/query"
+)
 
 // QueryErrorCode identifies a stable, machine-readable query runtime error.
 // Codes are intentionally not localized; callers should translate them at the UI boundary.
@@ -15,8 +18,9 @@ const (
 
 // QueryError preserves a stable error code while retaining the provider error for diagnostics.
 type QueryError struct {
-	Code QueryErrorCode
-	Err  error
+	Code    QueryErrorCode
+	Err     error
+	Context *commonquery.ErrorContext
 }
 
 func (e *QueryError) Error() string {
@@ -48,4 +52,28 @@ func QueryErrorCodeOf(err error) QueryErrorCode {
 		return ""
 	}
 	return queryErr.Code
+}
+
+func WithQueryErrorContext(err error, context *commonquery.ErrorContext) error {
+	if err == nil || context == nil || !context.Valid() {
+		return err
+	}
+	return &QueryError{Code: QueryErrorCodeOf(err), Err: err, Context: context.Clone()}
+}
+
+func QueryErrorContextOf(err error) *commonquery.ErrorContext {
+	var queryErr *QueryError
+	if !errors.As(err, &queryErr) || queryErr.Context == nil {
+		return nil
+	}
+	return queryErr.Context.Clone()
+}
+
+func remapQueryErrorSource(err error, source, bound string) error {
+	context := QueryErrorContextOf(err)
+	if context == nil {
+		return err
+	}
+	// Preserve the outer context even when all location facts are removed.
+	return &QueryError{Code: QueryErrorCodeOf(err), Err: err, Context: context.RemapSource(source, bound)}
 }

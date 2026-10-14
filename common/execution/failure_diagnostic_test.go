@@ -7,7 +7,29 @@ import (
 
 	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 )
+
+func TestSQLFailureContextSurvivesPersistenceWithoutInternalEvidence(t *testing.T) {
+	diagnostic := execution.WithSQLFailureContext(execution.NewFailureDiagnostic("preparation", "table_not_found"), commonquery.NewErrorContext("SELECT * FROM public.farmla1nd", "table", "public.farmla1nd", 14))
+	payload, _ := json.Marshal(diagnostic)
+	var value interface{}
+	if err := json.Unmarshal(payload, &value); err != nil {
+		t.Fatal(err)
+	}
+	observation := execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"diagnostic": value, "message": "private runtime body"}})
+	encoded, _ := json.Marshal(observation.ErrorDetails)
+	for _, required := range []string{"public.farmla1nd", `"line":1`, `"column":15`} {
+		if !strings.Contains(string(encoded), required) {
+			t.Fatalf("missing SQL fact: %s", encoded)
+		}
+	}
+	for _, forbidden := range []string{"SELECT", "SourceDigest", "Offset", "private runtime"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("unsafe observation: %s", encoded)
+		}
+	}
+}
 
 func TestFailureDiagnosticSurvivesPersistenceWithoutRuntimeText(t *testing.T) {
 	item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{
@@ -42,12 +64,16 @@ func TestFailureDiagnosticSurvivesPersistenceWithoutRuntimeText(t *testing.T) {
 
 func TestFailureDiagnosticRejectsUnknownContractAndFreeText(t *testing.T) {
 	for _, raw := range []string{
-		`{"schema_version":"addp.execution-failure/v2","stage":"validation","reason":"query_template_invalid"}`,
-		`{"schema_version":"addp.execution-failure/v1","stage":"SELECT secret","reason":"query_template_invalid"}`,
-		`{"schema_version":"addp.execution-failure/v1","stage":"validation","reason":"password=secret"}`,
-		`{"schema_version":"addp.execution-failure/v1","stage":"validation","reason":"query_template_invalid","message":"business-secret"}`,
-		`{"schema_version":"addp.execution-failure/v1","stage":"validation"}`,
+		`{"schema_version":"addp.execution-failure/v1","stage":"validation","reason":"query_template_invalid"}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"SELECT secret","reason":"query_template_invalid"}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"validation","reason":"password=secret"}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"validation","reason":"query_template_invalid","message":"business-secret"}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"validation"}`,
 		`"arbitrary runtime body"`, `null`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"table","name":"private"}}}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":0}}}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"column","name":"a","message":"private"}}}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":1},"SourceDigest":"private"}}`,
 	} {
 		var value interface{}
 		if err := json.Unmarshal([]byte(raw), &value); err != nil {

@@ -74,7 +74,8 @@ const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
 test('shows the actual missing-table preparation failure with an actionable correction in the workbench', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code: 'table_not_found', diagnostic: {
-    schema_version: 'addp.execution-failure/v1', stage: 'preparation', reason: 'table_not_found'
+    schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'table_not_found',
+    sql: { object: { kind: 'table', name: 'public.farmla1nd' }, position: { line: 1, column: 15 } }
   } } })
   await page.goto('/sql')
   const catalog = page.locator('.catalog-panel')
@@ -88,6 +89,14 @@ test('shows the actual missing-table preparation failure with an actionable corr
   await expect(diagnostic).toContainText('准备查询')
   await expect(diagnostic).toContainText('核对数据表参数、Schema 及表的读取权限后重新执行。')
   await expect(diagnostic).not.toContainText('交给管理员')
+  await expect(diagnostic).toContainText('数据表 public.farmla1nd')
+  await expect(diagnostic).toContainText('第 1 行，第 15 列')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await diagnostic.getByRole('button', { name: '复制诊断信息', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('public.farmla1nd')
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('第 1 行，第 15 列')
+  await page.setViewportSize({ width: 760, height: 700 })
+  await expectNoDocumentOverflow(page)
   await expect(diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true })).toBeVisible()
 })
 
@@ -97,7 +106,7 @@ for (const [code, reason, explanation, action] of [
   ['sqlstate_22012', 'division_by_zero', '除零错误', 'NULLIF(除数, 0)']
 ]) test(`shows useful SQL execution guidance for ${reason}`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code,
-    diagnostic: { schema_version: 'addp.execution-failure/v1', stage: 'execution', reason } } })
+    diagnostic: { schema_version: 'addp.execution-failure/v2', stage: 'execution', reason } } })
   await page.goto(`/executions/${EXECUTION_ID}`)
   const diagnostic = page.locator('.execution-failure')
   await expect(diagnostic).toContainText(explanation)
@@ -107,7 +116,7 @@ for (const [code, reason, explanation, action] of [
 
 test('keeps a specific failure, stage and execution identity in the workbench and the Owner detail', async ({ page }) => {
   const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
-    schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid'
+    schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid'
   } }
   await installMockBackend(page, { resultKind: 'table', errorDetails })
   await page.goto('/sql')

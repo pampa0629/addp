@@ -15,6 +15,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
@@ -189,6 +190,12 @@ func TestExecuteWithParamsFromParentExecutionQueuesWithoutBackendAuthorization(t
 			}
 			if _, ok := child.ExecutionConfig["content"]; !ok {
 				t.Fatalf("queued child did not freeze content: %#v", child.ExecutionConfig)
+			}
+			if taskType == "query" {
+				inputs, _ := mapValue(child.ExecutionConfig["inputs"])
+				if inputs["query_source_digest"] != commonquery.SourceDigest("SELECT 1") {
+					t.Fatalf("source digest not frozen before compilation: %#v", inputs)
+				}
 			}
 		})
 	}
@@ -503,7 +510,7 @@ func TestWorkflowProducedTargetScanOptionsUseTargetsForTableTargets(t *testing.T
 
 func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 	executor := &DevExecutor{}
-	result, errorMessage, rowsAffected := executor.queryResult(
+	result, rowsAffected := executor.queryResult(
 		2,
 		[]string{"id"},
 		[]map[string]interface{}{{"id": 1}, {"id": 2}, {"id": 3}},
@@ -512,8 +519,8 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 		"table",
 		nil,
 	)
-	if errorMessage != "" || rowsAffected != nil {
-		t.Fatalf("error = %q, rowsAffected = %v", errorMessage, rowsAffected)
+	if rowsAffected != nil {
+		t.Fatalf("rowsAffected = %v", rowsAffected)
 	}
 	if result["rows_count"] != 2 || result["result_limit"] != 2 || result["truncated"] != true {
 		t.Fatalf("result limit metadata = %#v", result)
@@ -533,7 +540,7 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 
 func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
 	executor := &DevExecutor{}
-	result, errorMessage, rowsAffected := executor.queryResult(
+	result, rowsAffected := executor.queryResult(
 		2,
 		nil,
 		nil,
@@ -542,8 +549,8 @@ func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
 		"table",
 		nil,
 	)
-	if errorMessage != "" || rowsAffected == nil || *rowsAffected != 7 {
-		t.Fatalf("error = %q, rowsAffected = %v", errorMessage, rowsAffected)
+	if rowsAffected == nil || *rowsAffected != 7 {
+		t.Fatalf("rowsAffected = %v", rowsAffected)
 	}
 	if result["rows_affected"] != int64(7) {
 		t.Fatalf("write result rows_affected = %#v", result["rows_affected"])

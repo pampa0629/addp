@@ -419,7 +419,7 @@ func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *test
 			if scenario.code == "develop.query.snapshot_invalid" {
 				err = service.Execute(t.Context(), item, lease)
 			} else {
-				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, scenario.code, "runtime private-value password=credential-sentinel")
+				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, plugin.NewQueryError(plugin.QueryErrorCode(scenario.code), errors.New("runtime private-value password=credential-sentinel")))
 			}
 			if err != nil {
 				t.Fatal(err)

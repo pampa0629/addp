@@ -533,7 +533,7 @@ type QueryOutputBinding struct {
 
 `QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
 
-准备、读集解析及实际执行失败时，Provider 必须保留底层错误类型和原生 SQLSTATE，不得用字符串格式化丢弃错误链。PostgreSQL 原生解析器拒绝语法时使用 `QueryError(query_syntax_invalid)`；精确目录查询证实引用表不存在或当前连接不可见时使用 `QueryError(table_not_found)`，函数名无法解析时使用 `QueryError(function_not_found)`。读集仍返回 `ErrQueryReadSetUnresolved` 并阻止执行，同时保留具体 `QueryError`；不能为取得数据库报错绕过保护门禁。这些是失败边界的受控事实，不是额外的查询语义分析路线。
+准备、读集解析及实际执行失败时，Provider 必须保留底层错误类型和原生 SQLSTATE，不得用字符串格式化丢弃错误链。PostgreSQL 原生解析器拒绝语法时使用 `QueryError(query_syntax_invalid)`；精确目录查询证实引用表不存在或当前连接不可见时使用 `QueryError(table_not_found)`，函数名无法解析时使用 `QueryError(function_not_found)`。读集仍返回 `ErrQueryReadSetUnresolved` 并阻止执行，同时保留具体 `QueryError`；不能为取得数据库报错绕过保护门禁。这些是失败边界的受控事实，不是额外的查询语义分析路线。 QueryError 可携带结构化对象和源位置；对象只从本次 SQL 的原生 AST 标识符提取，数据库错误只读取 typed SQLSTATE 与 Position，不解析 Message／Detail／Hint。内部上下文携带源查询摘要与字节偏移，用于精确转换；不可映射的改写必须移除位置。所有包装保留 typed error 到 Owner 持久化边界；未匹配或无原生位置时省略对象或位置，不猜测。
 
 `QueryDefinitionChecker.CheckQueryDefinition(QueryDefinition)` 是可选的纯定义检查接口，与 PreparedQuery 的运行时分析职责分开：输入固定 `QueryRequest`、服务端已保存快照的 `SourcePath / Source / SchemaCoverage`，不接收连接或 Context；返回 `QueryDefinitionReport` 的部分 `Output`、`SchemaCoverage` 与逐项 `supported / unsupported / unknown` 稳定代码。不得执行 I/O、PrepareQuery、实时 Catalog、采样或查询；不形成 QueryReadSet、QueryOutputLineage 或授权证明，不增加执行入口或 capability 开关。Owner 必须绑定本次请求、快照身份、覆盖度和内容摘要，不能把查询前表结构当作查询输出。
 

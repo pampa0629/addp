@@ -110,3 +110,17 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 	}
 	return commonExecution.NewFailureDiagnostic(stage, reason)
 }
+
+func queryExecutionFailureDiagnostic(execution *commonExecution.TaskExecution, code string, cause error) *commonExecution.FailureDiagnostic {
+	diagnostic := queryFailureDiagnostic(code, cause.Error(), cause)
+	context := plugin.QueryErrorContextOf(cause)
+	if context == nil {
+		return diagnostic
+	}
+	inputs, _ := mapValue(execution.ExecutionConfig["inputs"])
+	digest, _ := inputs["query_source_digest"].(string)
+	if digest == "" || context.SourceDigest != digest {
+		context.Position = nil
+	}
+	return commonExecution.WithSQLFailureContext(diagnostic, context)
+}
