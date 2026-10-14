@@ -1571,16 +1571,19 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             path = root / 'logs/runtime/develop/instance/events.jsonl'
             path.parent.mkdir(parents=True)
             import json
-            for fault in ('execution', 'target', 'cause', 'owner', 'role', None):
+            for fault in ('execution', 'target', 'cause', 'owner', 'role', 'obsolete', 'success', None):
                 with self.subTest(fault=fault):
                     event = {'module_name': 'develop', 'role': 'backend', 'message':
-                        '[DevExecutor] 引擎执行完成: execution_id=run-2 errorMessage=工作流执行失败: '
-                        '工作流运行时执行失败: 任务 save 执行失败: target object already exists: raster-target/result.cog.tif'}
+                        '2026/10/14 08:33:18 ❌ [DevExecutor] 工作流引擎调用失败: execution_id=run-2 err='
+                        '工作流运行时执行失败: EXECUTION_FAILED: 任务 save 执行失败: target object already exists: raster-target/result.cog.tif'}
                     if fault == 'execution': event['message'] = event['message'].replace('run-2', 'other')
                     if fault == 'target': event['message'] = event['message'].replace('result.cog.tif', 'other.tif')
                     if fault == 'cause': event['message'] = event['message'].replace('target object already exists', 'permission denied')
                     if fault == 'owner': event['module_name'] = 'manager'
                     if fault == 'role': event['role'] = 'frontend'
+                    if fault == 'obsolete':
+                        event['message'] = event['message'].replace('工作流引擎调用失败:', '引擎执行完成:').replace(' err=', ' errorMessage=')
+                    if fault == 'success': event['message'] = event['message'].replace('工作流引擎调用失败:', '工作流引擎返回成功:')
                     path.write_text(json.dumps(event) + '\n{')
                     if fault:
                         with self.assertRaises(m.SuiteError):

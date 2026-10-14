@@ -556,7 +556,7 @@ def duplicate_create_diagnostic(repository, env, execution_id, timeout):
                     continue  # The capture process may be appending the last line.
                 message = event.get('message', '')
                 if (event.get('module_name') == 'develop' and event.get('role') == 'backend'
-                    and f'[DevExecutor] 引擎执行完成: execution_id={execution_id} errorMessage=' in message
+                    and f'[DevExecutor] 工作流引擎调用失败: execution_id={execution_id} err=' in message
                     and message.endswith('任务 save 执行失败: target object already exists: raster-target/result.cog.tif')):
                     return {'execution_id': execution_id, 'cause': 'target_already_exists',
                             'source': 'develop_runtime_log'}
