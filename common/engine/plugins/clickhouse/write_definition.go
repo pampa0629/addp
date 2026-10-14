@@ -2,8 +2,6 @@ package clickhouse
 
 import (
 	"context"
-	"database/sql/driver"
-	"encoding/json"
 	"strings"
 
 	"github.com/addp/common/datatype"
@@ -107,24 +105,9 @@ func clickhouseDefinitionConstant(field datatype.FieldInfo, value interface{}) (
 		return plugin.DefinitionUnsupported, "constant_encoding_invalid"
 	}
 	encoded := args[0]
-	// Unlike database/sql's default converter, the native driver accepts full
-	// uint64. Numeric/date/UUID conversion remains unknown, without narrowing it.
-	if encoded != nil && field.Type != datatype.FieldTypeJSON && field.Type != datatype.FieldTypeBytes && field.Type != datatype.FieldTypeString && field.Type != datatype.FieldTypeBool {
-		return plugin.DefinitionUnknown, "constant_value_not_checked"
-	}
-	if _, err := driver.DefaultParameterConverter.ConvertValue(encoded); err != nil {
-		return plugin.DefinitionUnsupported, "constant_encoding_invalid"
-	}
-	switch value := encoded.(type) {
-	case []byte:
-		if value == nil {
-			encoded = nil
-		}
-	case json.RawMessage:
-		if value == nil {
-			encoded = nil
-		}
-	}
+	// Exec uses the native driver's formatter, not database/sql's default
+	// converter or column.AppendRow. Certify only explicit encodings below;
+	// numeric and container-to-String casts remain unknown.
 	if encoded == nil {
 		if !field.Nullable {
 			return plugin.DefinitionUnsupported, "null_constant_not_nullable"
@@ -136,10 +119,6 @@ func clickhouseDefinitionConstant(field datatype.FieldInfo, value interface{}) (
 		return plugin.DefinitionSupported, "constant_encoding_supported"
 	case datatype.FieldTypeString, datatype.FieldTypeBytes:
 		if _, ok := encoded.(string); ok {
-			return plugin.DefinitionSupported, "constant_encoding_supported"
-		}
-		switch encoded.(type) {
-		case []byte, json.RawMessage:
 			return plugin.DefinitionSupported, "constant_encoding_supported"
 		}
 	case datatype.FieldTypeBool:

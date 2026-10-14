@@ -265,7 +265,7 @@ func testClickHouseDefinitionPreservesTargetAndProjection(t *testing.T) {
 		}
 	}()
 	// ClickHouse requires no Doris-style key, and identifiers are case-sensitive.
-	fields := []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "Document", Type: datatype.FieldTypeString, Nullable: true}}
+	fields := []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "Document", Type: datatype.FieldTypeString, Nullable: true}, {Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true}}
 	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
 		t.Fatal(err)
 	}
@@ -304,4 +304,36 @@ func testClickHouseDefinitionPreservesTargetAndProjection(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT count() FROM "+qualified+" WHERE document='[true,null]' AND isNull(Document)").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("projection not preserved: count=%d error=%v", count, err)
 	}
+	// Exec formats non-JSON slices as native arrays; implicit casts to String
+	// are not certified as binary encoding or misreported as SQL NULL.
+	nullRow := map[string]interface{}{"document": json.RawMessage(nil), "Document": []byte(nil), "payload": json.RawMessage(nil)}
+	nullDefinition := plugin.TableWriteDefinition{}
+	for _, field := range fields {
+		nullDefinition.Fields = append(nullDefinition.Fields, plugin.TableWriteFieldDefinition{Target: field, Constant: &plugin.TableWriteConstant{Value: nullRow[field.Name]}})
+	}
+	constantChecks := 0
+	for _, check := range p.CheckTableWriteDefinition(nullDefinition).Checks {
+		if check.Check != "constant_encoding" {
+			continue
+		}
+		constantChecks++
+		want := plugin.DefinitionUnknown
+		if check.Field == "document" {
+			want = plugin.DefinitionSupported
+		}
+		if check.Status != want {
+			t.Fatalf("native constant precheck diverged: %+v", check)
+		}
+	}
+	if constantChecks != len(fields) {
+		t.Fatal("missing native constant checks")
+	}
+	if err := p.WriteBatch(ctx, conn, path, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{nullRow}}, plugin.BatchWriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	var text, binary sql.NullString
+	if err := db.QueryRowContext(ctx, "SELECT Document, payload FROM "+qualified+" WHERE isNull(document)").Scan(&text, &binary); err != nil || !text.Valid || text.String != "[]" || !binary.Valid || binary.String != "[]" {
+		t.Fatalf("native Exec cast semantics changed: text=%+v bytes=%+v error=%v", text, binary, err)
+	}
+
 }
