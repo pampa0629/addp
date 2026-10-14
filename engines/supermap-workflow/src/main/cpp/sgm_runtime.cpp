@@ -1,11 +1,15 @@
 #include "sgm_runtime.hpp"
 #include "runtime_access.hpp"
+#include "workflow_file_reference.hpp"
+#include "Base3D/UGMaterial.h"
 #include "FileParser/UGFileParseManager.h"
 #include "FileParser/UGFileParseModel.h"
 #include "FileParser/UGModelConfigParams.h"
 #include "FileParser/UGSgmConfigParams.h"
 #include <filesystem>
 #include <memory>
+#include <map>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -14,6 +18,7 @@ namespace {
 using addp::workflow::Json;
 struct ParserDeleter {
   void operator()(UGC::UGFileParser* parser) const {
+    if (!parser) return;
     parser->Close();
     UGC::UGFileParseManager::DestroyFileParser(parser);
   }
@@ -35,6 +40,73 @@ UGC::UGFileParseModel& model_parser(const Parser& parser) {
   model->SetParseSkeleton(true);
   model->SetReadOnlyShell(false);
   return *model;
+}
+std::string sdk_string(const UGC::UGString& value) {
+  std::string result;
+  value.ToStd(result, OGDC::OGDCCharset::UTF8);
+  return result;
+}
+bool has_pixels(const UGC::UGTextureData* data) {
+  return data && data->m_pBuffer && data->m_nWidth > 0 && data->m_nHeight > 0 && data->m_nSize > 0;
+}
+std::size_t prepare_textures(const Json& access, const std::filesystem::path& model_file) {
+  Parser reader(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
+  auto& model = model_parser(reader);
+  model.SetParseModelNode(false);
+  UGC::UGSgmImportParams params;
+  params.SetFilePathName(sdk_path(model_file));
+  if (!reader->Open(params)) throw std::runtime_error("SuperMap could not read SGM source materials");
+  auto* info = model.GetModelDataInfo();
+  if (!info) throw std::runtime_error("SGM source materials are unavailable");
+  if (info->GetMaterial3D().GetSize() > 0)
+    throw std::runtime_error("SGM source material layout is not supported");
+  std::set<std::string> references;
+  auto& materials = info->GetMaterial();
+  for (decltype(materials.GetSize()) index = 0; index < materials.GetSize(); ++index) {
+    auto* material = materials[index];
+    if (!material) throw std::runtime_error("SGM source contains an invalid material");
+    for (unsigned int unit = 0; unit < material->GetTextureUnits(); ++unit) {
+      const auto reference = sdk_string(material->GetTexPath(unit));
+      if (!references.insert(reference).second) continue;
+      const auto* embedded = material->GetTextureData(unit);
+      if (embedded) {
+        if (!has_pixels(embedded)) throw std::runtime_error("SGM embedded texture has no pixels");
+        continue;
+      }
+      bool found = false;
+      for (const auto& relative : sgm_texture_candidates(model_file.parent_path(), reference)) {
+        const auto destination = model_file.parent_path() / relative;
+        if (std::filesystem::is_regular_file(destination) ||
+            materialize_workflow_sibling(access, relative, destination)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) throw std::runtime_error("SGM referenced texture is missing");
+    }
+  }
+  return references.size();
+}
+std::size_t texture_count(UGC::UGModelNode& node, std::size_t minimum) {
+  std::map<UGC::UGString, UGC::UGModelTexturePtr> textures;
+  node.GetMapTextureData(textures);
+  if (textures.size() < minimum) throw std::runtime_error("SGM conversion lost referenced textures");
+  for (const auto& entry : textures) {
+    if (entry.second.IsNull() || !has_pixels(entry.second->m_pTextureData))
+      throw std::runtime_error("SGM conversion contains an undecodable texture");
+  }
+  std::map<UGC::UGString, UGC::UGModelMaterialPtr> materials;
+  node.GetMapMaterial3D(materials);
+  for (const auto& entry : materials) {
+    if (entry.second.IsNull()) throw std::runtime_error("SGM conversion contains an invalid material");
+    std::vector<UGC::UGString> names;
+    entry.second->GetTextureNames(names);
+    for (const auto& name : names) {
+      if (textures.find(name) == textures.end())
+        throw std::runtime_error("SGM conversion contains an unresolved texture binding");
+    }
+  }
+  return textures.size();
 }
 std::pair<UGC::UGint, UGC::UGint> geometry_counts(UGC::UGModelNode& node) {
   UGC::UGint vertices = 0, triangles = 0;
@@ -67,18 +139,23 @@ Json convert_sgm_to_osgb(const Json& params) {
   if (target_access.value("method", "") != "mounted_path" &&
       target_access.value("method", "") != "object_store")
     throw std::invalid_argument("SGM target access must be mounted_path or object_store");
-  auto input = resolve_workflow_file(object(source, "access"));
+  const auto& source_access = object(source, "access");
+  auto input = resolve_workflow_file(source_access);
   if (!std::filesystem::is_regular_file(input.path()))
     throw std::invalid_argument("SGM source must be a regular file");
+  auto staged = make_workflow_temporary_file(input.path().filename().string());
+  std::filesystem::copy_file(input.path(), staged.path());
+  const auto source_textures = prepare_textures(source_access, staged.path());
   auto output = make_workflow_temporary_file("model.osgb");
   Parser reader(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
   auto& model = model_parser(reader);
   UGC::UGSgmImportParams import_params;
-  import_params.SetFilePathName(sdk_path(input.path()));
+  import_params.SetFilePathName(sdk_path(staged.path()));
   if (!reader->Open(import_params)) throw std::runtime_error("SuperMap could not open SGM source");
   std::unique_ptr<UGC::UGModelNode> node(model.GetModelNode());
   if (!node) throw std::runtime_error("SGM source has no model node");
   const auto counts = geometry_counts(*node);
+  const auto textures = texture_count(*node, source_textures);
   Parser writer(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::ModelOSG));
   auto& export_model = model_parser(writer);
   OSGBExportParams export_params;
@@ -95,6 +172,8 @@ Json convert_sgm_to_osgb(const Json& params) {
   std::unique_ptr<UGC::UGModelNode> verified(verify_model.GetModelNode());
   if (!verified || geometry_counts(*verified) != counts)
     throw std::runtime_error("OSGB output geometry count differs from SGM source");
+  if (texture_count(*verified, textures) != textures)
+    throw std::runtime_error("OSGB output texture count differs from SGM source");
   const auto size = std::filesystem::file_size(output.path());
   publish_workflow_file(output.path(), target_access, mode);
   Json result{{"format", "osgb"}, {"vertex_count", counts.first}, {"triangle_count", counts.second},

@@ -1,6 +1,7 @@
 #include "runtime_access.hpp"
 
 #include "resource_host.hpp"
+#include "workflow_file_reference.hpp"
 
 #include "Base3D/UGTinyxml.h"
 
@@ -264,10 +265,11 @@ void check_s3_result(CURL* request, CURLcode code, const char* error_buffer, con
   }
 }
 
-void download_object(
+bool download_object(
     const ObjectStoreConfig& config,
     const std::string& object,
-    const std::filesystem::path& destination) {
+    const std::filesystem::path& destination,
+    bool allow_missing = false) {
   ensure_curl_initialized();
   CURL* request = curl_easy_init();
   if (request == nullptr) {
@@ -286,8 +288,16 @@ void download_object(
     const CURLcode code = curl_easy_perform(request);
     std::fclose(output);
     output = nullptr;
+    long status = 0;
+    curl_easy_getinfo(request, CURLINFO_RESPONSE_CODE, &status);
+    if (allow_missing && code == CURLE_HTTP_RETURNED_ERROR && status == 404) {
+      std::filesystem::remove(destination);
+      curl_easy_cleanup(request);
+      return false;
+    }
     check_s3_result(request, code, error_buffer.data(), "download");
     curl_easy_cleanup(request);
+    return true;
   } catch (...) {
     if (output != nullptr) {
       std::fclose(output);
@@ -744,6 +754,36 @@ WorkflowAccessFile make_workflow_temporary_file(const std::string& filename) {
   }
   const auto root = create_temporary_directory("addp-supermap-workflow-output-");
   return WorkflowAccessFile(root / filename, root);
+}
+
+bool materialize_workflow_sibling(
+    const Json& source_access,
+    const std::filesystem::path& relative_file,
+    const std::filesystem::path& destination) {
+  const auto relative = workflow_relative_file(relative_file.generic_string());
+  const auto method = connection_string(source_access, "method", true);
+  if (method == "object_store") {
+    const auto object = trim_slashes(connection_string(source_access, "object", true));
+    const auto sibling = std::filesystem::path(object).parent_path() / relative;
+    return download_object(object_store_config(source_access), sibling.generic_string(), destination, true);
+  }
+  if (method != "mounted_path")
+    throw std::invalid_argument("workflow sibling access must be mounted_path or object_store");
+  const auto root = std::filesystem::canonical(resolve_workflow_mounted_path(source_access).parent_path());
+  const auto file = root / relative;
+  const auto resolved = std::filesystem::weakly_canonical(file);
+  if (!workflow_path_within(root, resolved))
+    throw std::invalid_argument("workflow sibling resolves outside the source directory");
+  if (!std::filesystem::exists(file)) {
+    if (std::filesystem::is_symlink(std::filesystem::symlink_status(file)))
+      throw std::invalid_argument("workflow sibling is a dangling symbolic link");
+    return false;
+  }
+  if (!std::filesystem::is_regular_file(file))
+    throw std::invalid_argument("workflow sibling must be a regular file");
+  std::filesystem::create_directories(destination.parent_path());
+  std::filesystem::copy_file(file, destination);
+  return true;
 }
 
 void publish_workflow_file(

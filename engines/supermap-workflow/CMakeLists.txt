@@ -140,6 +140,11 @@ if(BUILD_TESTING)
   target_compile_options(resource-host-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_test(NAME resource-host-test COMMAND resource-host-test)
 
+  add_executable(workflow-file-reference-test src/test/cpp/workflow_file_reference_test.cpp)
+  target_link_libraries(workflow-file-reference-test PRIVATE addp_workflow_core)
+  target_compile_options(workflow-file-reference-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME workflow-file-reference-test COMMAND workflow-file-reference-test)
+
   if(SUPERMAP_SDK_ROOT)
     add_executable(sgm-conversion-test src/test/cpp/sgm_conversion_test.cpp)
     target_link_libraries(sgm-conversion-test PRIVATE addp_supermap_runtime)

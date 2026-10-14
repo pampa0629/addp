@@ -31,6 +31,11 @@ class WorkflowAccessFile {
 
 WorkflowAccessFile resolve_workflow_file(const addp::workflow::Json& access);
 WorkflowAccessFile make_workflow_temporary_file(const std::string& filename);
+// Returns false only when the exact adjacent resource does not exist.
+bool materialize_workflow_sibling(
+    const addp::workflow::Json& source_access,
+    const std::filesystem::path& relative_file,
+    const std::filesystem::path& destination);
 void publish_workflow_file(
     const std::filesystem::path& source,
     const addp::workflow::Json& access,
