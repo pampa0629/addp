@@ -183,6 +183,10 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源读取显式拒绝
 
+DataItem 边界绑定切换必须区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。该规则是已确认的切换契约，当前下述原生路径实现尚未替换，不能据此宣称已完成 DataItem 判权。
+
+切换回归须覆盖：同一数据项边界改变后旧 Grant 不覆盖、新 Grant 仍被原有效 Deny 阻断；正常内容更新及 whole 合法成员增长不改变摘要；解除 Deny 不复活无效 Grant；其他 Tenant／Engine／数据项不误命中；Meta 不可用不回退原生 ACL，且不阻止对已存规则的合法撤销／解除。Grant、Deny、当前来源查询与正式读取消费必须同次切换，不保留按路径独立放行的第二路线。
+
 `system.engine_access_denies`（000185）是 System 引擎访问控制领域的不可变拒绝建立事实，不是 IAM 全平台中央 ACL。它保存独立 UUID、Tenant／Engine、精确结构化叶子、User／Department／Project Group 主体、`read` 动作、期限模式、原操作者引用、数据库建立时刻和原因，不复制 Catalog 责任或专业定义。指定到期必须有限且晚于真实建立时刻；长期有效必须显式为 `until_revoked` 且到期字段为空。插入触发器覆盖调用方时间，拒绝回填时间绕过到期；UPDATE、DELETE 和 TRUNCATE 都禁止。
 
 唯一建立命令 `POST /engines/:id/access_denies` 通过独立 `.create` Permission 与当前有效引擎管理委派取交集。Permission 仅 Tenant Scope、high risk、不可委托、允许租户定制，不默认给任何 Role 赋权、不增加 Assignment 或推进已有主体版本。完整账号集合先去重升序锁定，再读取成员／Tenant、当前权限、接收组织、引擎及委派，最后按命令编号与精确目标排序；规则和高风险审计同事务，锁等待后及审计后提交前复核当前资格、接收主体和数据库期限。停用引擎仍可建立限制，不访问源端或 Catalog。
