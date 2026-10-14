@@ -3,6 +3,7 @@ import importlib.util
 import sys
 import time
 import unittest
+import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,7 +26,17 @@ class BoundaryAPI:
             self.executions += 1
             depth = body["scan_depth"]
             grouped = body.get("ref_groups")
-            scope = grouped[0]["primary"].rsplit("/", 1)[0] if grouped else body["catalog_paths"][0]
+            if body.get("targets"):
+                locator = urllib.parse.urlsplit(body["targets"][0])
+                if locator.scheme != "addp" or locator.netloc != "engine" or locator.path.split("/", 3)[:3] != ["", "9", "path"]:
+                    raise OWNER.SuiteError("outside target must use an exact Engine locator")
+                if urllib.parse.parse_qs(locator.query) != {"type": ["object" if self.bucket else "file"]}:
+                    raise OWNER.SuiteError("outside target must retain its native leaf type")
+                scope = urllib.parse.unquote(locator.path.split("/", 3)[3])
+            else:
+                scope = grouped[0]["primary"].rsplit("/", 1)[0] if grouped else body["catalog_paths"][0]
+                if not grouped and scope.endswith(".dbf"):
+                    raise OWNER.SuiteError("a file cannot be enumerated as a directory")
             if scope.endswith("roads.dbf"):
                 self.make_item(scope, depth)
             else:
@@ -94,6 +105,11 @@ class ContentBoundaryOnlineTest(unittest.TestCase):
                 scans = [body for method, _, body in api.calls if method == "POST"]
                 self.assertEqual([scan["scan_depth"] for scan in scans], ["basic", "basic", "deep", "basic", "basic", "deep", "basic"])
                 self.assertTrue(all(scan["force"] for scan in scans))
+                outside = (bucket + "/" if bucket else "") + "scan-boundary/outside/roads.dbf"
+                term = "object" if bucket else "file"
+                self.assertEqual(scans[0]["targets"], [f"addp://engine/9/path/{outside}?type={term}"])
+                self.assertNotIn("catalog_paths", scans[0])
+                self.assertNotIn("ref_groups", scans[0])
                 self.assertEqual(len(scans[4]["ref_groups"][0]["refs"]), 4)
                 self.assertNotIn("catalog_paths", scans[4])
                 self.assertEqual([len(case["items"]) for case in report], [4, 1])

@@ -324,7 +324,8 @@ def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str
     term = "object" if bucket else "file"
     # A previously registered sibling must survive every directory and refs scan.
     outside = qualify("scan-boundary/outside/roads.dbf")
-    wait_for_meta_scan(client, engine_id, deadline, depth="basic", scope={"catalog_paths": [outside]})
+    outside_locator = f"addp://engine/{engine_id}/path/{urllib.parse.quote(outside, safe='/')}?type={term}"
+    wait_for_meta_scan(client, engine_id, deadline, depth="basic", scope={"targets": [outside_locator]})
     outside_item = snapshot().get(outside)
     if outside_item is None:
         raise SuiteError("boundary outside sibling is missing")
