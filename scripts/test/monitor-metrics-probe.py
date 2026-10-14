@@ -520,3 +520,60 @@ eventually(lambda: bool(query('addp_fixture_resource_bytes{job="addp_nodes"}')),
 result = api('query?' + urllib.parse.urlencode({'query': 'addp_fixture_resource_bytes{job="addp_nodes"}', 'time': initial_sample_time}))['result']
 assert result and result[0]['value'][1] == '4096', result
 print('Metrics T2: prior sample persisted after SIGKILL; independent fixture route remained available', flush=True)
+
+# Six controlled source inputs exercise the actual service aggregation through
+# real HTTP SD / mTLS / Prometheus. No real host registrations or User grants.
+overview_ip = json.loads(original_discovery)[0]['targets'][0].rsplit(':', 1)[0]
+overview_groups = []
+for index, available in enumerate((100000000, 90000000, 80000000, 40000000, 40000000, 10000000)):
+    (WORK / 'source' / f'overview-{index}.prom').write_text(
+        'node_uname_info{sysname="Linux"} 1\n'
+        'node_exporter_build_info{version="1.12.1"} 1\n'
+        'node_cpu_seconds_total{cpu="0",mode="idle"} 0\n'
+        'node_cpu_seconds_total{cpu="0",mode="user"} 0\n'
+        'node_boot_time_seconds 1\n'
+        'node_memory_MemTotal_bytes 100000000\n'
+        f'node_memory_MemAvailable_bytes {available}\n')
+    overview_groups.append({'targets': [f'{overview_ip}:{19450+index}'], 'labels': {
+        'addp_node_id': f'00000000-0000-4000-8000-{index+1:012d}',
+        'addp_monitor_kind': 'host_resources', 'addp_source': 'node_exporter',
+        '__meta_addp_target_version': '1', '__meta_addp_node_version': '3'}})
+try:
+    overview_started = time.time()
+    discovery_text(json.dumps(overview_groups))
+    expected_ids = {group['labels']['addp_node_id'] for group in overview_groups}
+    expected_scopes = {(group['labels']['addp_node_id'], group['targets'][0]) for group in overview_groups}
+    # WAL replay can leave a prior removed identity visible within lookback.
+    # Readiness concerns this current projection, not all historic Job series.
+    overview_selector = ('{job="addp_nodes",addp_monitor_kind="host_resources",addp_source="node_exporter",'
+                         'addp_node_id=~"' + '|'.join(sorted(expected_ids)) + '"}')
+    def overview_sources_ready():
+        active = [row for row in api('targets')['activeTargets'] if row['labels'].get('job') == 'addp_nodes']
+        if (len(active) != 6 or any(row['health'] != 'up' or row['lastError'] for row in active)
+                or {(row['labels'].get('addp_node_id'), row['labels'].get('instance')) for row in active} != expected_scopes):
+            return False
+        for metric in ('up', 'node_memory_MemTotal_bytes'):
+            rows = query('timestamp(' + metric + overview_selector + ')')
+            if (len(rows) != 6 or {(row['metric'].get('addp_node_id'), row['metric'].get('instance')) for row in rows} != expected_scopes
+                    or any(float(row['value'][1]) < overview_started for row in rows)):
+                return False
+        return True
+    try:
+        eventually(overview_sources_ready, 'six controlled overview inputs enter real HTTP SD')
+    except AssertionError:
+        # Only owned scope/status evidence; no URL credentials, TLS keys or OAuth data.
+        print('Metrics T2 overview readiness: up=', query('up{job="addp_nodes"}'),
+              'memory=', query('node_memory_MemTotal_bytes{job="addp_nodes"}'), flush=True)
+        active = api('targets')['activeTargets']
+        print('Metrics T2 overview target status:', [
+            {'node': row['labels'].get('addp_node_id'), 'health': row['health'],
+             'error': row['lastError']} for row in active if row['labels'].get('job') == 'addp_nodes'], flush=True)
+        raise
+    query_env.update(MONITOR_PROMETHEUS_URL=base, ADDP_METRICS_OVERVIEW_SOURCE_IP=overview_ip)
+    subprocess.run(['go', 'test', './internal/service', '-run',
+                    '^TestIntegrationMetricsResourceOverview$', '-count=1', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                   env=query_env, check=True, timeout=180)
+finally:
+    discovery_text(original_discovery)
+print('Metrics T2: six-source overview ranks, independent coverage, target exclusion and pre-query budget passed', flush=True)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
+# ADDP_T2_INPUT_FILES=scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go monitor/backend/internal/service/resource_observation.go monitor/backend/internal/service/resource_observation_test.go monitor/backend/internal/service/resource_summary.go monitor/backend/internal/service/resource_overview.go monitor/backend/internal/service/resource_overview_test.go monitor/backend/internal/service/resource_overview_prometheus_test.go monitor/backend/internal/service/monitoring_target_test.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -153,7 +153,24 @@ from pathlib import Path
 import base64, os, sys
 p=Path(sys.argv[1])
 basic=base64.b64encode(('addp-prometheus:'+os.environ['PROMETHEUS_SERVICE_CLIENT_SECRET']).encode()).decode()
-p.write_text(p.read_text().replace('@@BASIC@@','Basic '+basic))
+config=p.read_text().replace('@@BASIC@@','Basic '+basic)
+# Internal-only endpoints share the owned source's mTLS identity and lifecycle.
+# These are controlled metric inputs, not six real managed hosts.
+servers=[]
+for index in range(6):
+    servers.append('''  server {
+    listen %d ssl;
+    ssl_certificate /source/server.crt;
+    ssl_certificate_key /source/server.key;
+    ssl_client_certificate /source/source-ca.crt;
+    ssl_verify_client on;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location = /metrics { alias /source/overview-%d.prom; default_type text/plain; }
+    location / { return 404; }
+  }
+''' % (19450+index, index))
+assert config.endswith('}\n')
+p.write_text(config[:-2]+''.join(servers)+'}\n')
 CONFIG
 printf 'addp_fixture_resource_bytes{job="spoof",addp_node_id="spoof",addp_tenant_id="spoof",addp_source="spoof",exported_addp_node_id="spoof",addp_target_version="spoof"} 4096\n' >"$WORK_DIR/source/metrics"
 echo '[]' >"$WORK_DIR/source/discovery.json"

@@ -1965,3 +1965,19 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 归档 49 个文件位于 `/tmp/addp-resource-overview-hosted-38588001065/`，专用 Job 日志 `/tmp/addp-resource-overview-hosted-38588001065-job.log`；没有私有凭据文件，未检出私钥、JWT 或 ADDP opaque Token 模式。已目视检查正式总览及 RSS 趋势截图，范围计数、两项排名、百分比、采样时间、off 状态和 MiB 曲线显示正确。上述结果闭合已获批的单真实主机场景及同源码 CI，不扩大为多主机 TOP5 排序、完整总览 T4、两个 Owner 权限分别撤销、已退出实例历史或生产 T5 已通过。
 
 本次仅更新现有第 10.59 节与 Monitor 导航的验收状态，不修改产品、规范授权或原测试代码。默认 `make test-changed` 在 265 个混合文件、27 个 Owner 的外部数据库条件预检退出 2，后续未运行、不计通过，日志 `/tmp/addp-resource-overview-hosted-38588001065-changed.log`。文档围栏/章节唯一及任务范围 diff 检查通过；不提交其他 Owner 的工作区改动，推送由用户操作。下一步优先明确多主机聚合链路的真实验收拓扑与证据范围；受控多源提案仍未实施，不能把同宿主别名当作多台真实主机。
+
+### 10.60 多指标源聚合的真实 Prometheus T2
+
+资源总览原有 T1 已覆盖九个节点的完整集合排序、同值按 node_id 排序、有效零、缺失/过期排除及预算。单真实主机 T4 已覆盖身份、真实采集、界面和故障链路。先补两者之间的多源 Prometheus 聚合 T2，不部署新的真实主机、不实施 10.58 待确认的多源 Hosted 提案、不扩大测试管理员用途。只在既有独占 T2 中使用六个受控 mTLS 指标端点和内存中的 System 当前身份/目标/预算夹具，真实 Prometheus 抓取并由正式 Overview/Summaries 内核查询；这些是 T2 协议输入，不能称为六台真实主机或多主机 T4。
+
+复用现有 metrics-source Nginx、证书、动态私网 IP、Prometheus HTTP SD 和唯一销毁流程，每个端点监听不同的容器内端口、仅暴露固定 /metrics，不增加宿主端口、容器、镜像或技术组件。六份固定 Linux 指标输入使 CPU 同值排名可精确核对，内存顺序不同且含有效零，最高值位于集合最后一项；预热完整窗口后核对两个固定批量请求、完整覆盖、TOP5 截取及同值稳定排序。随后删除一项内存指标，验证 CPU 与内存独立覆盖和有效零进入排名；停用该目标后排除仍存在的历史样本；降低序列预算时整份拒绝且不发后端请求。
+
+实施前门禁：Monitor Go T1、既有 make test-monitor-metrics 的独占 mTLS/Prometheus T2、T2/平台登记及默认 make test-changed。将新增 service 集成测试与源内核登记到既有 T2 INPUT_FILES，并由原 probe 显式执行；Release/T2 与模块门禁沿同一入口自动覆盖，无新 suite/workflow。产品实现、API/Swagger、IAM、个人部署及 Hosted 场景均不变。本会话统一负责此批，原并行总览会话不再重复实现或调度。
+
+2026-10-15 首次及诊断复验均在六来源就绪检查失败，新增 Go 总览断言尚未执行，不计通过。诊断证明实际活动目标恰为六个本轮身份，均 health=up、lastError 为空；Job 无身份限制的瞬时 up/内存查询仍返回前一受限 VM（2222 身份）的 WAL 历史样本，共七条，原断言错误地要求整个 Job 只存在六条。就绪检查修正为当前六个节点与端点的精确集合、真实活动目标状态及切换后的新样本；不删除历史数据、不等待旧样本自然消失、不增加超时、不修改正式查询。正式 Overview/Summaries 仍只按当前授权身份与解析端点构建固定查询，旧身份不参与本轮聚合。诊断日志 `/tmp/addp-overview-multisource-t2-diagnostic.log`。
+
+修正后的第三次运行已执行真实 service 集成测试，85.85 秒完成六来源的两次固定批量请求、完整覆盖、CPU 同值顺序、内存末项最高值、独立指标缺失、有效零、当前目标停用排除及整份预算拒绝。但运行期间修改了门禁脚本头部的输入登记注释，导致 Bash 结尾读到错位内容并报 unexpected EOF；虽然退出码为 0、独占资源清理报告零残留，该运行仍不计为干净标准门禁。最终复跑冻结四项执行输入并核对 SHA-256，日志 `/tmp/addp-overview-multisource-t2-final.log`，执行期间不再修改这些输入。
+
+最终固定输入复跑 `make test-monitor-metrics` 退出 0，无 Traceback / FAIL / unexpected EOF；`TestIntegrationMetricsResourceOverview` 在 83.94 秒完成全部断言，四项执行文件前后 SHA-256 一致。既有真实进程、完整/受限主机目录与趋势、mTLS/限额、SD/OAuth、来源/中心故障、WAL 持久化场景同时通过，标准清理报告容器、网络、卷及临时文件零残留。日志 `/tmp/addp-overview-multisource-t2-final.log`。Monitor Go T1 标准 `make test-module MODULE=monitor GO_ONLY=1`、23 项部署配置回归、38 项 T2 登记及现有登记校验、`make test-platform-review` 均退出 0；日志统一 `/tmp/addp-overview-multisource-` 的 go/config/registration/platform 文件。GO_ONLY 不代表完整模块 T0–T3，多受控来源 T2 不代表真实多主机 T4 或生产 T5；当前批次的远端 CI 待提交推送后验证。
+
+默认 `make test-changed` 最终对 279 个混合文件扩散至 27 个 Owner，外部数据库连接条件缺失，在预检退出 2；后续未运行、不计通过，日志 `/tmp/addp-overview-multisource-changed-final.log`。本批仅提交既有 T2 门禁/登记回归、新增 service 集成测试与现有设计/模块导航，不带其他 Owner 改动；无需重启个人服务，推送由用户操作。下一步先核对本提交的 Platform CI 和既有 Release/T2 monitor-metrics Job，真实多主机 T4 仍需另外明确实际拓扑。

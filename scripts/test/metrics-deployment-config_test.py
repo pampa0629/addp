@@ -44,6 +44,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'common/client/system_service.go',
                      'common/client/system_runtime_instances.go',
                      'common/client/system_observability_identity.go',
+                     'common/client/system_host_node.go',
+                     'common/client/system_host_node_scope.go',
                      'common/models/module_runtime_query.go',
                      'monitor/backend/internal/metricsdiscovery/node_projection.go',
                      'monitor/backend/internal/resourcequery/process.go',
@@ -53,6 +55,13 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'monitor/backend/internal/resourcequery/disk_io_test.go',
                      'monitor/backend/internal/resourcequery/deleted-or-future.go',
                      'monitor/backend/internal/config/config.go',
+                     'monitor/backend/internal/service/resource_observation.go',
+                     'monitor/backend/internal/service/resource_observation_test.go',
+                     'monitor/backend/internal/service/resource_summary.go',
+                     'monitor/backend/internal/service/resource_overview.go',
+                     'monitor/backend/internal/service/resource_overview_test.go',
+                     'monitor/backend/internal/service/resource_overview_prometheus_test.go',
+                     'monitor/backend/internal/service/monitoring_target_test.go',
                      'scripts/prod/metrics-query.yml',
                      'scripts/infra/node-metrics-desktop.yml'):
             self.assertTrue(gate_module.gate_input_covers(inputs, path), path)
@@ -63,6 +72,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertLess(job.index('uses: actions/setup-go@'), job.index('run: make test-monitor-metrics'))
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
         self.assertIn('CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
+        self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)
