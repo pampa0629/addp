@@ -4,6 +4,17 @@
       <div class="panel-header">
         <span class="header-title">{{ selectedNode?.label || t('manager.explorer.dataPreview') }}</span>
         <div class="header-actions">
+          <el-tooltip v-if="selectedNode?.locator" :content="t('manager.explorer.deepScanNodeTooltip')">
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="scanning"
+              :disabled="scanning || !store.isEngineAvailable(selectedEngineId)"
+              @click="handleDeepScanNode"
+            >
+              {{ t('manager.explorer.deepScanNode') }}
+            </el-button>
+          </el-tooltip>
           <el-button
             v-if="showUploadButton"
             size="small"
@@ -117,7 +128,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Upload } from '@element-plus/icons-vue'
+import { MagicStick, Refresh, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
@@ -194,6 +205,7 @@ const metadataItemCount = computed(() => {
 })
 
 const scanSummary = computed(() => buildNodeScanSummary(props.selectedNode?.metadata, t))
+const scanning = computed(() => store.refreshingLocators.has(props.selectedNode?.locator))
 const selectedEngineId = computed(() => {
   const direct = Number(props.selectedNode?.engineId || props.selectedNode?.engine_id || 0)
   if (direct > 0) {
@@ -221,6 +233,21 @@ const selectedEngineName = computed(() => {
 const showVectorizeButton = computed(() => isVectorizableRangeNode(props.selectedNode))
 const showUploadButton = computed(() => resourceActions.value?.actions?.upload?.supported === true)
 const showImportButton = computed(() => resourceActions.value?.actions?.import?.supported === true)
+
+const handleDeepScanNode = async () => {
+  const locator = props.selectedNode?.locator
+  if (!locator || scanning.value || !store.isEngineAvailable(selectedEngineId.value)) return
+  try {
+    await store.deepScanNode(locator)
+    ElMessage.success(t('manager.explorer.scanCompleted'))
+  } catch (error) {
+    if (error?.response?.status === 409 && error?.response?.data?.error_code === 'scan_scope_active') {
+      ElMessage.warning(error.response.data.error)
+      return
+    }
+    ElMessage.error(t('manager.explorer.deepScanNodeFailed', { error: error?.response?.data?.error || error.message }))
+  }
+}
 
 watch(
   () => props.selectedNode?.locator || '',
@@ -334,6 +361,8 @@ const handleUploadSuccess = async () => {
 
 .header-title {
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .panel-header {
@@ -341,6 +370,7 @@ const handleUploadSuccess = async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .header-actions {
@@ -348,6 +378,7 @@ const handleUploadSuccess = async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
   margin-left: auto;
 }
 

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, executionID = 'diagnostic-run' } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
+  execution.execution_id = executionID
   execution.metadata = metadata
   if (queryFailure) {
     Object.assign(execution, { module: 'develop', task_type: 'query', source: 'develop', source_task_id: null, source_task_name: null, steps: [], error_details: {
@@ -24,6 +25,7 @@ async function installBackend(page, { empty = false, unavailable = false, events
     else if (path.endsWith('/tree')) { treeRequests++; body = { execution, children, truncated: !empty }; if (unavailable) { status = 503; body = { error_code: 'execution_owner_unavailable', error: '任务所属模块暂时无法完成读取授权' } } }
     else if (path.endsWith('/events')) {
       if (eventsDenied) { status = 403; body = { error_code: 'permission_denied' } }
+      else if (queryFailure && !empty) body = { items: [{ id: 1, execution_id: executionID, attempt: 1, occurred_at: new Date().toISOString(), kind: 'failed', counters: {} }], next_cursor: 1, has_more: false, retained_after: new Date(Date.now() - 30 * 86400000).toISOString() }
       else { const after = new URL(route.request().url()).searchParams.get('after'); body = { items: empty ? [] : [{ id: after === '0' ? 1 : 2, execution_id: path.split('/').at(-2), attempt: 1, occurred_at: new Date().toISOString(), kind: after === '0' ? 'progress' : 'truncated', counters: after === '0' ? { records_written: 123 } : {} }], next_cursor: after === '0' ? 1 : 2, has_more: !empty && after === '0', retained_after: new Date(Date.now() - 30 * 86400000).toISOString() } }
     }
     else if (path === '/api/v1/monitor/executions') body = { executions: [execution], total: 1, page: 1, page_size: 20 }
@@ -32,6 +34,22 @@ async function installBackend(page, { empty = false, unavailable = false, events
   })
   return { getTreeRequests: () => treeRequests }
 }
+
+test('a query execution deep link opens its failure details and matching process events without a task definition', async ({ page }) => {
+  const executionID = '11111111-1111-4111-8111-111111111111'
+  await installBackend(page, { executionID, queryFailure: true })
+  const treeRequest = page.waitForRequest(request => new URL(request.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${executionID}/tree`)
+  const eventsRequest = page.waitForRequest(request => new URL(request.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${executionID}/events`)
+  await page.goto(`/executions?execution_id=${executionID}`)
+  await Promise.all([treeRequest, eventsRequest])
+  const diagnostic = page.locator('.execution-detail-content > .execution-failure')
+  await expect(diagnostic).toContainText(executionID)
+  await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
+  await expect(diagnostic).toBeInViewport()
+  await expect(diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true })).toHaveCount(0)
+  await expect(page.locator('.execution-events tbody')).toContainText('执行失败')
+  await expect(page.getByRole('button', { name: '打开任务定义', exact: true })).toHaveCount(0)
+})
 
 for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and opens an ad-hoc Owner execution (${locale})`, async ({ page }) => {
   await installBackend(page, { locale, queryFailure: true, empty: true })

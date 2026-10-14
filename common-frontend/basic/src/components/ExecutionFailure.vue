@@ -14,6 +14,9 @@
       </template>
     </dl>
     <div class="execution-failure-actions">
+      <el-button v-if="showMonitorLink && executionId" type="primary" size="small" @click="openMonitorExecution(executionId, { target: '_self' })">
+        {{ t('common.executionFailure.openMonitorExecution') }}
+      </el-button>
       <el-button v-if="executionId" size="small" @click="copyDetails">{{ t('common.executionFailure.copy') }}</el-button>
       <el-button v-if="ownerRoute" type="primary" size="small" @click="openConsoleRoute(ownerRoute)">
         {{ t('common.executionFailure.openQueryExecution') }}
@@ -27,12 +30,13 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { executionFailurePresentation } from '../utils/executionFailure.mjs'
-import { openConsoleRoute } from '../utils/taskOwnerUrl'
+import { openConsoleRoute, openMonitorExecution } from '../utils/taskOwnerUrl'
 
 const props = defineProps({
   status: { type: String, default: '' },
   errorDetails: { type: Object, default: () => ({}) },
   executionId: { type: String, default: '' },
+  showMonitorLink: { type: Boolean, default: false },
   ownerRoute: { type: String, default: '' },
   // Request admission errors are already localized by the HTTP Owner. Execution
   // diagnostics never use a raw runtime message as a fallback.

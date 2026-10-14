@@ -12,6 +12,60 @@ const TIDB_ENGINE = {
 const ROOT_LOCATOR = 'addp://engine/25/path/?type=server&node_id=377'
 const BUSINESS_LOCATOR = 'addp://engine/25/path/business?type=database&node_id=378'
 
+for (const [locale, label, completedDepth] of [['zh-cn', '深度扫描', '深度'], ['en', 'Deep Scan', 'Deep']]) {
+  test(`deep scans only the selected node and updates its range facts (${locale})`, async ({ page }) => {
+    const backend = await installMockBackend(page, { locale, executionStatus: 'running' })
+    await page.goto('/data-explorer')
+    await treeNodeContent(page, TIDB_ENGINE.name).click()
+    await treeNodeContent(page, 'business').click()
+    const button = page.getByRole('button', { name: label, exact: true })
+    await button.click()
+    await expect(button).toBeDisabled()
+    await expect.poll(() => backend.deepScanRequests).toEqual([{
+      engine_id: 25, targets: [BUSINESS_LOCATOR], scan_depth: 'deep', force: true, source: 'manager'
+    }])
+    expect(backend.refreshRequests).toEqual([])
+    backend.executionStatus = 'success'
+    await expect(button).toBeEnabled()
+    await expect(page.locator('.node-panel .el-descriptions')).toContainText(completedDepth)
+    await expect(page.locator('.node-panel .el-descriptions')).toContainText('2026-10-14T01:02:03Z')
+    await expect(page.locator('.node-panel .header-title')).toHaveText('business')
+    await expect(treeNodeContent(page, 'customers')).toBeVisible()
+  })
+}
+
+test('keeps the new selection when a node deep scan finishes', async ({ page }) => {
+  const backend = await installMockBackend(page, { executionStatus: 'running' })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await treeNodeContent(page, 'business').click()
+  await page.getByRole('button', { name: '深度扫描', exact: true }).click()
+  await expect.poll(() => backend.deepScanRequests.length).toBe(1)
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  backend.executionStatus = 'success'
+  await expect(page.locator('.el-message--success')).toBeVisible()
+  await expect(page.locator('.node-panel .header-title')).toHaveText(TIDB_ENGINE.name)
+  await expect(treeNodeContent(page, TIDB_ENGINE.name).locator('..')).toHaveClass(/is-current/)
+})
+
+test('shows deep scan conflicts and failures without reporting success', async ({ page }) => {
+  const backend = await installMockBackend(page, { deepScanConflict: true })
+  await page.goto('/data-explorer')
+  await treeNodeContent(page, TIDB_ENGINE.name).click()
+  await treeNodeContent(page, 'business').click()
+  const button = page.getByRole('button', { name: '深度扫描', exact: true })
+  await button.click()
+  await expect(page.locator('.el-message--warning')).toContainText('该扫描范围正在执行中')
+  await expect(button).toBeEnabled()
+  await expect(page.locator('.el-message--error')).toHaveCount(0)
+  backend.deepScanConflict = false
+  backend.executionStatus = 'failed'
+  await button.click()
+  await expect(page.locator('.el-message--error')).toContainText('深度扫描失败：源数据读取失败')
+  await expect(button).toBeEnabled()
+  await expect(page.locator('.el-message--success')).toHaveCount(0)
+})
+
 test('keeps long resource names and refresh actions inside a scrolling tree panel', async ({ page }) => {
   const labels = Array.from({ length: 60 }, (_, index) => `resource_${index}_with_a_long_name_that_must_not_push_the_refresh_action_outside_the_panel`)
   const backend = await installMockBackend(page, { labels })
@@ -147,15 +201,17 @@ test('keeps real server errors visible with their returned explanation', async (
 async function installMockBackend(page, options = {}) {
   const state = {
     refreshRequests: [],
+    deepScanRequests: [],
+    deepScanConflict: options.deepScanConflict || false,
     itemRefreshRequests: [],
     childRequests: [],
     executionStatus: options.executionStatus || 'success'
   }
 
-  await page.addInitScript(() => {
-    localStorage.setItem('addp-lang', 'zh-cn')
+  await page.addInitScript(locale => {
+    localStorage.setItem('addp-lang', locale)
     localStorage.setItem('theme-mode', 'light')
-  })
+  }, options.locale || 'zh-cn')
 
   await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: [] }))
   await page.route('**/api/v1/**', async route => {
@@ -181,6 +237,19 @@ async function installMockBackend(page, options = {}) {
     if (path === `/api/v1/manager/engines/${TIDB_ENGINE.id}/items/refresh` && request.method() === 'POST') {
       state.itemRefreshRequests.push(url.searchParams.get('locator') || '')
       return fulfillJSON(route, {})
+    }
+    if (path === '/api/v1/meta/scan/run/manual' && request.method() === 'POST') {
+      state.deepScanRequests.push(request.postDataJSON())
+      if (state.deepScanConflict) {
+        return fulfillJSON(route, { error_code: 'scan_scope_active', error: '该扫描范围正在执行中，请等待当前扫描完成' }, 409)
+      }
+      return fulfillJSON(route, { execution_id: 'node-deep-scan-1', status: 'pending' }, 201)
+    }
+    if (path === '/api/v1/meta/executions/node-deep-scan-1') {
+      return fulfillJSON(route, {
+        execution_id: 'node-deep-scan-1', status: state.executionStatus,
+        error_message: state.executionStatus === 'failed' ? '源数据读取失败' : ''
+      })
     }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/refresh` && request.method() === 'POST') {
       state.refreshRequests.push(url.searchParams.get('locator') || '')
@@ -211,7 +280,11 @@ async function installMockBackend(page, options = {}) {
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/node`) {
       const locator = url.searchParams.get('locator') || ''
       state.childRequests.push(locator)
-      return fulfillJSON(route, locator === BUSINESS_LOCATOR ? businessNode(true, options.labels) : shallowTree())
+      const node = locator === BUSINESS_LOCATOR ? businessNode(true, options.labels) : shallowTree()
+      if (locator === BUSINESS_LOCATOR && state.deepScanRequests.length && state.executionStatus === 'success') {
+        node.metadata = { ...node.metadata, scan_status: 'completed', scanned_depth: 'deep', scanned_at: '2026-10-14T01:02:03Z' }
+      }
+      return fulfillJSON(route, node)
     }
     if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/ancestors`) {
       return fulfillJSON(route, { ancestors: [{ ...shallowTree(), children: [] }], target_locator: ROOT_LOCATOR })

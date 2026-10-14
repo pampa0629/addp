@@ -13,6 +13,8 @@ import (
 func TestQueryFailuresUseTypedSQLStateWithoutRuntimeValues(t *testing.T) {
 	for _, test := range []struct{ state, reason string }{
 		{"42703", "column_not_found"}, {"42P01", "table_not_found"},
+		{"42702", "ambiguous_column"}, {"42883", "function_or_operator_not_found"},
+		{"22012", "division_by_zero"},
 		{"42601", "query_syntax_invalid"}, {"22P02", "type_mismatch"},
 		{"42501", "permission_denied"}, {"08006", "connection_failed"},
 		{"53200", "resource_exhausted"}, {"XX000", "query_failed"},

@@ -31,7 +31,7 @@
       </el-tooltip>
 
       <div class="summary-actions">
-        <el-tooltip v-if="result.execution_id" :content="t('develop.queryResult.executionDetail')">
+        <el-tooltip v-if="result.execution_id && !isFailed" :content="t('develop.queryResult.executionDetail')">
           <el-button circle size="small" :aria-label="t('develop.queryResult.executionDetail')" @click="openExecution">
             <el-icon><View /></el-icon>
           </el-button>
@@ -70,6 +70,7 @@
       :status="result.status"
       :error-details="result.error_details"
       :execution-id="result.execution_id"
+      show-monitor-link
       :fallback-message="result.execution_id ? '' : errorMessage"
     />
 
@@ -160,6 +161,7 @@ const pageSizeOptions = Object.freeze([10, 20, 50, 100])
 const currentPage = ref(1)
 const pageSize = ref(20)
 const isRunning = computed(() => ['pending', 'running'].includes(props.result?.status))
+const isFailed = computed(() => ['failed', 'timeout', 'cancelled'].includes(props.result?.status))
 const hasRows = computed(() => Array.isArray(props.result?.rows) && props.result.rows.length > 0)
 const canExportFullResult = computed(() => Boolean(
   props.result?.success

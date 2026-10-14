@@ -28,6 +28,7 @@ var failureReasons = map[string]bool{
 	"authorization_invalid": true, "engine_unavailable": true, "engine_mismatch": true,
 	"query_syntax_invalid": true, "column_not_found": true, "table_not_found": true,
 	"type_mismatch": true, "permission_denied": true, "connection_failed": true,
+	"ambiguous_column": true, "function_or_operator_not_found": true, "division_by_zero": true,
 	"timeout": true, "cancelled": true, "resource_exhausted": true,
 	"query_failed": true, "result_invalid": true,
 	"database_required": true,

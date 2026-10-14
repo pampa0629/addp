@@ -42,6 +42,15 @@ export const dataExplorerAPI = {
       params: { locator }
     })
   },
+  deepScanNode(engineId, locator) {
+    return client.post('/meta/scan/run/manual', {
+      engine_id: engineId,
+      targets: [locator],
+      scan_depth: 'deep',
+      force: true,
+      source: 'manager'
+    })
+  },
   getPreview(locator, page = 1, pageSize = 50, childName = '', refPath = '', nestedChildPath = '') {
     // 取消之前未完成的预览请求
     if (previewAbortController) {

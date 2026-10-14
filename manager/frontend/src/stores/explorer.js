@@ -306,13 +306,16 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    async refreshTree(locator, hooks = {}) {
+    async scanNode(locator, scanDepth, hooks = {}) {
       this.refreshingLocators.add(locator)
 
       try {
         const loc = parseLocator(locator)
-        const response = await dataExplorerAPI.refreshNode(loc.engineId, locator)
-        const result = response?.data || response
+        const response = scanDepth === 'deep'
+          ? await dataExplorerAPI.deepScanNode(loc.engineId, locator)
+          : await dataExplorerAPI.refreshNode(loc.engineId, locator)
+        const payload = response?.data || response
+        const result = scanDepth === 'deep' ? { run: payload } : payload
         const run = result?.run || result?.data?.run
         if (run) {
           notifyRefreshHook(hooks.onSubmitted, run)
@@ -335,7 +338,11 @@ export const useExplorerStore = defineStore('explorer', {
      * 刷新节点并重载目标节点的直接子资源。
      */
     async refreshNode(locator, hooks = {}) {
-      return await this.refreshTree(locator, hooks)
+      return await this.scanNode(locator, 'basic', hooks)
+    },
+
+    async deepScanNode(locator, hooks = {}) {
+      return await this.scanNode(locator, 'deep', hooks)
     },
 
     /**

@@ -8,6 +8,9 @@ type QueryErrorCode string
 
 const (
 	QueryErrorCodeMongoDBDatabaseRequired QueryErrorCode = "mongodb_database_required"
+	QueryErrorCodeSyntaxInvalid           QueryErrorCode = "query_syntax_invalid"
+	QueryErrorCodeTableNotFound           QueryErrorCode = "table_not_found"
+	QueryErrorCodeFunctionNotFound        QueryErrorCode = "function_not_found"
 )
 
 // QueryError preserves a stable error code while retaining the provider error for diagnostics.

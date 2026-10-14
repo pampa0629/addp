@@ -237,7 +237,7 @@ func (p *PostgreSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Conne
 		return nil, err
 	}
 	if _, err := pgquery.Parse(strings.TrimSpace(boundQuery)); err != nil {
-		return nil, fmt.Errorf("PostgreSQL 查询语法无效: %w", err)
+		return nil, plugin.NewQueryError(plugin.QueryErrorCodeSyntaxInvalid, fmt.Errorf("PostgreSQL 查询语法无效: %w", err))
 	}
 	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, p.resolvePreparedQueryReadSet, p.resolvePreparedQueryOutputLineage)
 }

@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -73,11 +74,11 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 
 	dsn, err := p.BuildDSN(connInfo)
 	if err != nil {
-		return nil, fmt.Errorf("%w: build PostgreSQL connection: %v", plugin.ErrQueryReadSetUnresolved, err)
+		return nil, fmt.Errorf("%w: build PostgreSQL connection: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("%w: open PostgreSQL catalog connection: %v", plugin.ErrQueryReadSetUnresolved, err)
+		return nil, fmt.Errorf("%w: open PostgreSQL catalog connection: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
 	defer db.Close() //nolint:errcheck
 
@@ -247,6 +248,9 @@ func (p *PostgreSQLPlugin) resolvePostgresQueryReadSet(
 	for _, reference := range dependencies.Relations {
 		relation, err := catalog.ResolveRelation(ctx, reference)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				err = plugin.NewQueryError(plugin.QueryErrorCodeTableNotFound, err)
+			}
 			return nil, postgresQueryReadSetCatalogError("resolve relation", err)
 		}
 		resolved, err := p.expandPostgresReadRelation(ctx, req.EngineID, relation, catalog, seen)
@@ -333,7 +337,7 @@ func validatePostgresFunctionReferences(
 			return postgresQueryReadSetCatalogError("resolve function", err)
 		}
 		if len(candidates) == 0 {
-			return postgresQueryReadSetError("function dependency cannot be resolved")
+			return plugin.NewQueryError(plugin.QueryErrorCodeFunctionNotFound, postgresQueryReadSetError("function dependency cannot be resolved"))
 		}
 		for _, candidate := range candidates {
 			if !isTransparentPostgresReadFunction(candidate) {
@@ -546,5 +550,5 @@ func postgresQueryReadSetError(message string) error {
 }
 
 func postgresQueryReadSetCatalogError(operation string, err error) error {
-	return fmt.Errorf("%w: %s: %v", plugin.ErrQueryReadSetUnresolved, operation, err)
+	return fmt.Errorf("%w: %s: %w", plugin.ErrQueryReadSetUnresolved, operation, err)
 }

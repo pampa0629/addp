@@ -3,7 +3,8 @@ export const failureReasons = Object.freeze([
   'configuration_missing', 'configuration_invalid', 'timeout_invalid', 'result_limit_invalid',
   'query_template_invalid', 'relation_binding_invalid', 'authorization_invalid',
   'engine_unavailable', 'engine_mismatch', 'query_syntax_invalid', 'column_not_found',
-  'table_not_found', 'type_mismatch', 'permission_denied', 'connection_failed',
+  'table_not_found', 'ambiguous_column', 'function_or_operator_not_found', 'division_by_zero',
+  'type_mismatch', 'permission_denied', 'connection_failed',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required'
 ])
 

@@ -2,12 +2,39 @@ package postgresql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/lib/pq"
 )
+
+func TestPostgresReadSetCatalogFailureRetainsItsTypedCause(t *testing.T) {
+	cause := &pq.Error{Code: "42501", Message: "private detail"}
+	err := postgresQueryReadSetCatalogError("resolve relation", cause)
+	var state interface{ SQLState() string }
+	if !errors.Is(err, plugin.ErrQueryReadSetUnresolved) || !errors.As(err, &state) || state.SQLState() != "42501" {
+		t.Fatalf("lost catalog failure type: %v", err)
+	}
+}
+
+func TestPostgresReadSetMissingRelationHasControlledFailure(t *testing.T) {
+	reference := postgresRelationReference{Schema: "public", Name: "farmla1nd"}
+	_, err := (&PostgreSQLPlugin{}).resolvePostgresQueryReadSet(t.Context(), plugin.QueryRequest{EngineID: 7},
+		postgresQueryReadDependencies{Relations: []postgresRelationReference{reference}}, &fakePostgresReadCatalog{})
+	if !errors.Is(err, plugin.ErrQueryReadSetUnresolved) || !errors.Is(err, sql.ErrNoRows) || plugin.QueryErrorCodeOf(err) != "table_not_found" {
+		t.Fatalf("missing table must retain read-set rejection and useful cause: %v", err)
+	}
+}
+
+func TestPostgresPrepareSyntaxFailureHasControlledCode(t *testing.T) {
+	_, err := (&PostgreSQLPlugin{}).PrepareQuery(t.Context(), nil, plugin.QueryRequest{EngineID: 7, Language: "sql", Query: "SELECT id, FROM public.a", Options: plugin.QueryOptions{ReadOnly: true}})
+	if plugin.QueryErrorCodeOf(err) != "query_syntax_invalid" {
+		t.Fatalf("syntax failure has no useful code: %v", err)
+	}
+}
 
 func TestInspectPostgresSQLReadReferencesTracksCTEScope(t *testing.T) {
 	dependencies, err := inspectPostgresSQLReadDependencies(`
@@ -264,7 +291,7 @@ type fakePostgresReadCatalog struct {
 func (c *fakePostgresReadCatalog) ResolveRelation(_ context.Context, reference postgresRelationReference) (postgresResolvedRelation, error) {
 	relation, ok := c.resolved[reference]
 	if !ok {
-		return postgresResolvedRelation{}, fmt.Errorf("relation not found")
+		return postgresResolvedRelation{}, sql.ErrNoRows
 	}
 	return relation, nil
 }

@@ -72,6 +72,39 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
+test('shows the actual missing-table preparation failure with an actionable correction in the workbench', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code: 'table_not_found', diagnostic: {
+    schema_version: 'addp.execution-failure/v1', stage: 'preparation', reason: 'table_not_found'
+  } } })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  const diagnostic = page.locator('.execution-failure')
+  await expect(diagnostic).toContainText('查询引用的数据表不存在或当前连接不可见。')
+  await expect(diagnostic).toContainText('准备查询')
+  await expect(diagnostic).toContainText('核对数据表参数、Schema 及表的读取权限后重新执行。')
+  await expect(diagnostic).not.toContainText('交给管理员')
+  await expect(diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true })).toBeVisible()
+})
+
+for (const [code, reason, explanation, action] of [
+  ['sqlstate_42702', 'ambiguous_column', '字段名存在歧义', '数据表名或别名前缀'],
+  ['sqlstate_42883', 'function_or_operator_not_found', '函数或运算符不存在', '参数数量和参数类型'],
+  ['sqlstate_22012', 'division_by_zero', '除零错误', 'NULLIF(除数, 0)']
+]) test(`shows useful SQL execution guidance for ${reason}`, async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code,
+    diagnostic: { schema_version: 'addp.execution-failure/v1', stage: 'execution', reason } } })
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  const diagnostic = page.locator('.execution-failure')
+  await expect(diagnostic).toContainText(explanation)
+  await expect(diagnostic).toContainText(action)
+  await expect(diagnostic).toContainText(code)
+})
+
 test('keeps a specific failure, stage and execution identity in the workbench and the Owner detail', async ({ page }) => {
   const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
     schema_version: 'addp.execution-failure/v1', stage: 'validation', reason: 'query_template_invalid'
@@ -94,10 +127,18 @@ test('keeps a specific failure, stage and execution identity in the workbench an
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(EXECUTION_ID)
   await page.setViewportSize({ width: 760, height: 700 })
   await expectNoDocumentOverflow(page)
+  await expect(page.getByRole('button', { name: '查看执行详情', exact: true })).toHaveCount(0)
+  await page.route(`**/monitor/executions?execution_id=${EXECUTION_ID}`, route => route.fulfill({
+    contentType: 'text/html', body: '<main>Monitor execution destination</main>'
+  }))
+  await diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
   await page.goto(`/executions/${EXECUTION_ID}`)
   await expect(page.locator('.execution-failure')).toContainText('develop.query.snapshot_invalid')
   await expect(page.locator('.execution-failure')).toContainText('查询内容与参数定义不一致')
   await expect(page.getByRole('tab', { name: '错误信息', exact: true })).toHaveCount(0)
+  await page.locator('.execution-failure').getByRole('button', { name: '查看监控错误详情', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
 })
 
 test('keeps a Notebook runtime traceback in Owner logs after removing the generic error tab', async ({ page }) => {

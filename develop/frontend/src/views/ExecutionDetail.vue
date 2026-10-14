@@ -41,6 +41,7 @@
       :status="execution?.status"
       :error-details="execution?.error_details"
       :execution-id="execution?.execution_id"
+      show-monitor-link
     />
 
     <!-- 基本信息卡片 -->

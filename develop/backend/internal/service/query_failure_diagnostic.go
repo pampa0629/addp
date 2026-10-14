@@ -68,10 +68,22 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 			code = queryErrorCode(cause)
 		}
 		switch code {
+		case string(plugin.QueryErrorCodeSyntaxInvalid):
+			stage, reason = "preparation", "query_syntax_invalid"
+		case string(plugin.QueryErrorCodeTableNotFound):
+			stage, reason = "preparation", "table_not_found"
+		case string(plugin.QueryErrorCodeFunctionNotFound):
+			stage, reason = "preparation", "function_or_operator_not_found"
 		case "sqlstate_42601":
 			reason = "query_syntax_invalid"
 		case "sqlstate_42703":
 			reason = "column_not_found"
+		case "sqlstate_42702":
+			reason = "ambiguous_column"
+		case "sqlstate_42883":
+			reason = "function_or_operator_not_found"
+		case "sqlstate_22012":
+			reason = "division_by_zero"
 		case "sqlstate_42P01":
 			reason = "table_not_found"
 		case "sqlstate_42804", "sqlstate_22P02", "sqlstate_22003", "sqlstate_22007", "sqlstate_22008":
