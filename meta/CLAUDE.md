@@ -94,7 +94,7 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 清单可确定的组合边界由既有 Manager Hosted T4 复验：NFS、MinIO 各覆盖目录与显式 refs 的 basic→deep→basic，断言 ID、fingerprint、父节点、组成、deep 事实保留及范围外 item 不变。Business owner 使用同一小型 Shapefile 生成器准备两种存储，临时 NFS export 仅允许 GitHub Hosted Linux，退出删除 export、数据目录及凭据；不得在个人环境启动该 fixture。确定性门禁为 `make test-manager-online-runner`，真实入口仍为 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`，报告为 `content-boundaries.json`。2026-10-15 已在提交 `935dabe02` 的 [Hosted T4 38660099411](https://github.com/pampa0629/addp/actions/runs/38660099411) 通过：四个场景共 12 次扫描均为 success，目录场景各保留两组 Shapefile 和两个独立文件，refs 场景各只登记指定组合；普通 User、构建身份与报告一致，退出清理通过且 Infra 零残留。
 
-同一 Hosted suite 另覆盖既有独立组件的收敛：在 NFS、MinIO 的新范围先用精确 leaf `targets` 登记十条 single，再以目录或完整 refs 运行不带 force 的 basic→deep→basic。目录场景删除六条被认领组件、保留两个 primary 和两个独立文件；refs 场景只删除指定组合的三条组件，另一个组合的四条独立记录及两个普通文件保持不变。退役组件详情须返回 404，primary 的 ID、fingerprint 与父节点保持原值，报告升级为 `addp.content-boundaries/v2`。此扩展共八个场景，旧四项 Hosted 证据保留；新增收敛场景须另经实际 Hosted 通过后才能计为完成。
+同一 Hosted suite 另覆盖既有独立组件的收敛：在 NFS、MinIO 的新范围先用精确 leaf `targets` 登记十条 single，再以目录或完整 refs 运行不带 force 的 basic→deep→basic。目录场景删除六条被认领组件、保留两个 primary 和两个独立文件；refs 场景只删除指定组合的三条组件，另一个组合的四条独立记录及两个普通文件保持不变。退役组件详情须返回 404，primary 的 ID、fingerprint 与父节点保持原值，报告升级为 `addp.content-boundaries/v2`。2026-10-15，提交 `468df57af` 的 [Hosted 38676830266](https://github.com/pampa0629/addp/actions/runs/38676830266) 已通过本领域八个场景：独立报告为 passed，24 次边界扫描与四次收敛准备执行均有 Worker success 终态，共 18 条被认领组件通过清理及详情 404 断言；主项身份和未认领记录保留断言通过，五个服务构建提交一致。该次完整 suite 因后续 3DS 转换失败而为 failed，主报告未生成完整 suite_report，不能计为完整 T4 通过；退出清理 passed、Infra zero_residuals。旧四项完整 Hosted 通过证据仍以上一段运行记录为准。
 
 ### 主要扫描链路
 
