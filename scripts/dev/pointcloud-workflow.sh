@@ -69,12 +69,12 @@ addp_prepare_pointcloud_workflow() (
   fi
   addp_pointcloud_native_environment
   if [ "$active" = 1 ]; then
-    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir") || return 1
+    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir" "$ROOT_DIR/common-python") || return 1
     addp_python_dependencies_current "$runtime_dir" "$fingerprint" 'PointCloud Workflow' || {
       echo '✗ PointCloud Python 依赖需要更新，请先停止该 Runtime 再启动' >&2; return 1;
     }
   else
-    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'PointCloud Workflow' || return 1
+    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'PointCloud Workflow' "$ROOT_DIR/common-python" || return 1
   fi
   "$python_bin" "$runtime_dir/native_check.py" "$runtime_dir/venv" || return 1
   (cd "$runtime_dir" && "$python_bin" -c 'import api_server') || return 1

@@ -20,7 +20,7 @@
 
 `restart.sh` 无参数或 `-all` 执行全量重启；指定一个或多个模块时，只停止并重启所选模块所属的 Backend、Worker、Frontend 和显式 Runtime。局部停止统一由 `stop.sh -<模块名> ...` 执行，不扩散到模块依赖，不删除其他模块的 PID、前端缓存或 Runtime 容器，不卸载其他模块的 launchd 作业。进程身份须核验工作区归属，前端启动器及其子进程一并停止；残留监听者仅查询所选模块的端口。
 
-局部重启先完成所选 Go 模块的 Swagger 同步和覆盖检查，再停止所选进程；预检失败保留现有服务。随后由 `start.sh -<模块名> ...` 按所选模块的依赖并集启动，运行中的依赖复用，缺失的依赖补齐。`-all` 不得与模块参数混用，重复模块参数去重；`start.sh` 不替代重启，已运行的进程不会因产物重新编译而自动更新。所选模块停机期间，消费其 API 的功能仍可能短暂不可用，重启 System 或 Gateway 尤其会影响公共能力。
+局部重启先完成所选 Go 模块的 Swagger 同步和覆盖检查，再停止所选进程；预检失败保留现有服务。随后由 `start.sh -<模块名> ...` 按所选模块的依赖并集启动，运行中的依赖复用，缺失的依赖补齐。Go 服务在检查构建指纹前，必须先核验受管进程和端口状态；已运行的服务跳过构建检查和编译，仅为实际需要启动的进程准备产物。Backend 与 Worker 分别判断，Backend 已运行但 Worker 缺失时仍需构建并启动该 Worker。编译结束后、启动前重新核验进程和端口，不能跨编译阶段复用监听快照；归属冲突、检查或构建失败必须阻止后续启动。`-all` 不得与模块参数混用，重复模块参数去重；`start.sh` 不替代重启，不更新已经运行的进程。所选模块停机期间，消费其 API 的功能仍可能短暂不可用，重启 System 或 Gateway 尤其会影响公共能力。
 
 应用启动入口只在核心 Infra 未就绪时调用 `scripts/infra/up.sh`。核心容器健康时必须复用，不因日志或指标能力关闭、配置预检失败、观测容器未就绪而构建镜像或执行 Compose 更新。所选观测能力异常时单独报告、继续启动业务并返回非零；设施修复和部署配置应用由显式 `scripts/infra/up.sh` 管理。
 
@@ -71,11 +71,11 @@ Go 二进制不得直接编译到 `.dev-bins/addp-*` 正式路径。统一流程
 
 ## 三、运行时依赖构建输入
 
-Model3D、Spark Workflow、GeoPython Workflow、PointCloud Workflow 和 Document Workflow 的宿主机 Python Runtime 在每次启动和重启时，必须复用同一依赖同步函数。每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹：输入覆盖完整 `requirements.txt`、`common-python` 的构建声明、README 和包源码；环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化及依赖检查失败时，通过既有 Python 安装互斥锁重新检查并安装完整 requirements 与 editable `common-python`，避免并发调用重复安装。仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹；失败必须撤销本次同步记录并阻止启动。各 Runtime 继续执行已有导入与原生依赖预检。重启先停止所选服务，再由 start 执行唯一准备入口；健康且未变化的环境仍按成功记录跳过安装。
+Model3D、Spark Workflow、GeoPython Workflow、PointCloud Workflow、Document Workflow 和 Manager Raster Mosaic 的宿主机 Python Runtime 在每次启动和重启时，必须复用同一依赖同步函数。调用方显式传入需要 editable 安装的本地包目录，只有这些目录进入安装命令和输入指纹；前五个 Runtime 声明 `common-python`，Raster Mosaic 不声明该包。每个 venv 在 `.addp-dependency-fingerprint` 保存上次成功同步的输入与安装环境指纹：输入覆盖完整 `requirements.txt` 及其引用文件、显式声明的本地包构建声明与源码；本地包的虚拟环境、构建产物和缓存不属于输入。环境覆盖 Python 解释器身份、已安装包版本、依赖元数据和 editable 来源。只有指纹相同且 `pip check` 通过时才跳过安装；已有虚拟环境或少量模块可导入不能单独作为复用依据。无记录、输入变化、包缺失、包版本或来源变化及依赖检查失败时，通过既有 Python 安装互斥锁重新检查并安装完整 requirements 及调用方显式声明的 editable 本地包，避免并发调用重复安装。仅在安装和 `pip check` 成功、输入在安装期间未变化后，原子写入新指纹；失败必须撤销本次同步记录并阻止启动。各 Runtime 继续执行已有导入与原生依赖预检。重启先停止所选服务，再由 start 执行唯一准备入口；健康且未变化的环境仍按成功记录跳过安装。
 
 PointCloud Workflow 原生开发使用独立 Conda 前缀 `engines/pointcloud-workflow/venv`，固定 Python 3.12、PDAL core/E57 2.10.2，并将所有传递原生库留在该前缀。start/restart 共用唯一原生入口；完整 Python 依赖沿用平台安装锁和指纹，原生包声明与真实加载、驱动及三点 COPC 转换共同作为准备门禁。运行中环境只读校验，不能就地更新依赖。HTTP 回环监听按原生 PID 和端口归属验证；stop 只管理原生进程，开发入口不构建镜像。Hosted Manager T4 同样使用原生入口；生产 Compose 使用产品镜像。首次迁移由用户清理旧开发容器和普通 Python venv，不在生命周期内保留容器备选路径。
 
-Document Workflow 原生开发只处理可信文件，以非 root 开发用户运行；venv、profile 和工作目录不是文件沙箱。Python 3.12 venv、官方 LibreOffice 26.8.0.3 和固定 Noto CJK 字体属于独立 Runtime；官方包与字体按 SHA-256 校验后安装到工作区私有目录，Fontconfig 不继承系统字体配置。start/restart 共用唯一准备入口，依赖同步复用平台安装锁和指纹，运行中只读校验，实际中文 PPTX 转 PDF 作为停止后的启动准备验证。HTTP 只监听回环并核对原生 PID/监听归属；stop 删除开发容器路径。Hosted Manager 使用同一原生入口；生产镜像继续执行非 root、只读文件系统与能力限制。首次迁移由用户清理旧 Document 开发容器。
+Document Workflow 原生开发只处理可信文件，以非 root 开发用户运行；venv、profile 和工作目录不是文件沙箱。Python 3.12 venv、官方 LibreOffice 26.8.0.3 和固定 Noto CJK 字体属于独立 Runtime；官方包与字体按 SHA-256 校验后安装到工作区私有目录，Fontconfig 不继承系统字体配置。start/restart 共用唯一准备入口，依赖同步复用平台安装锁和指纹，运行中只读校验。启动准备只检查依赖完整性、LibreOffice 版本和服务导入，不执行样例转换；实际中文 PPTX 转 PDF 由独立标准入口 `make test-document-native` 验证，并由 Platform CI 的 Document Workflow Job 调用。HTTP 只监听回环并核对原生 PID/监听归属及健康响应；stop 删除开发容器路径。Hosted Manager 使用同一原生入口，跨模块真实转换仍由 Manager T4 验证；生产镜像继续执行非 root、只读文件系统与能力限制。首次迁移由用户清理旧 Document 开发容器。
 
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
@@ -85,7 +85,7 @@ Spark Workflow 本地开发统一使用宿主机 Python 3.11/3.12 虚拟环境�
 
 GeoPython Workflow 本地开发统一使用不继承系统包的 Python 3.12 虚拟环境与原生 GDAL，Python 绑定版本必须与 `gdal-config --version` 一致。PGeo 依赖 MDBTools 与 unixODBC，驱动配置限于 Runtime 自身。GDAL/PROJ 资源目录从原生依赖派生，仅注入该 Runtime；不得继承 Anaconda 的资源目录或插件目录。start/restart 共用原生入口，重启先停止所选服务，再完成依赖、PGeo/FileGDB/COG 驱动、坐标系和 HTTP 端口归属验证；准备失败的服务不启动，入口返回非零。原生开发与产品镜像统一使用单 Worker、四线程 Gunicorn，监听就绪后在同一 Worker 中异步注册。开发入口不构建镜像，栅格 Hosted T4 使用根产品构建入口及独立 Runtime 所有权。
 
-Manager Raster Mosaic Runtime 属于 Manager，随 `stop.sh -manager` 停止、随普通 `start/restart -manager` 启动，独立进程验收入口不隐式启动它。本地开发统一使用 Python 3.12 独立虚拟环境，禁止继承系统 site-packages。停止后的准备阶段自动重建不符合该约束的环境；正在运行或端口被占用时不得改写环境。GDAL 来源选择、资源目录派生和失效绑定源码重建由 `scripts/dev/gdal-env.sh` 唯一实现，GeoPython 与 Raster Mosaic 共同调用；各自检查业务所需驱动，Raster Mosaic 仅要求 GTiff/COG、GDAL NumPy 数组和坐标系能力，不依赖 PGeo/MDBTools。每次启动按完整 requirements 同步依赖并执行 pip check，安装使用既有 Python 依赖锁。保留 Manager 主服务的既定启动策略：Raster Mosaic 准备失败明确报告并跳过该 Runtime，不将其计为就绪；启动后须核验 PID、监听归属和健康响应。
+Manager Raster Mosaic Runtime 属于 Manager，随 `stop.sh -manager` 停止、随普通 `start/restart -manager` 启动，独立进程验收入口不隐式启动它。本地开发统一使用 Python 3.12 独立虚拟环境，禁止继承系统 site-packages。停止后的准备阶段自动重建不符合该约束的环境；正在运行或端口被占用时不得改写环境。GDAL 来源选择、资源目录派生和失效绑定源码重建由 `scripts/dev/gdal-env.sh` 唯一实现，GeoPython 与 Raster Mosaic 共同调用；各自检查业务所需驱动，Raster Mosaic 仅要求 GTiff/COG、GDAL NumPy 数组和坐标系能力，不依赖 PGeo/MDBTools。每次启动复用共享依赖指纹同步入口，仅在完整 requirements 或安装环境变化、记录缺失或 pip check 失败时安装依赖；不安装或追踪未声明的 `common-python`。原生 GDAL 加载、版本、数组绑定、驱动和坐标系检查每次执行，安装继续使用既有 Python 依赖锁。保留 Manager 主服务的既定启动策略：Raster Mosaic 准备失败明确报告并跳过该 Runtime，不将其计为就绪；启动后须核验 PID、监听归属和健康响应。
 
 GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Runtime NumPy 和 `--no-build-isolation` 从源码编译，禁止复用缓存 wheel；否则 GDAL 包可能安装成功但缺少 `_gdal_array`。编译工具安装和绑定重建均使用既有依赖锁，完成后重新检查数组绑定、版本和 pip 依赖。Linux CI 与原生开发共用此入口，不能另走直接 `pip install GDAL` 的准备路径。
 

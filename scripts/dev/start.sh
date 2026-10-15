@@ -688,6 +688,16 @@ check_service_running() {
 # 编译函数: 快速编译服务为指定名称的二进制
 # ============================================================
 
+# 构建阶段独立核验进程；运行中的依赖不检查或更新产物。
+# 启动阶段仍重新检查端口和 PID，不跨编译阶段复用监听快照。
+build_if_service_stopped() {
+    local name="$1" port="$2"
+    shift 2
+    if check_service_running "$name" "$port"; then
+        "$@"
+    fi
+}
+
 # 编译 Server 二进制
 # 参数: $1=服务名称 $2=源码路径
 build_service() {
@@ -991,131 +1001,131 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
-  # Phase 1: 并行编译所有 Go 服务
+  # Phase 1: 并行检查进程，仅为未运行的 Go 服务准备构建产物
   # ============================================================
-  echo "  [1/3] 检查本次后端和 Worker 的构建指纹，按需并行编译..."
+  echo "  [1/3] 检查本次后端和 Worker 的运行状态，仅为未运行的进程按需并行编译..."
 
   # 并行编译后端服务(仅编译需要启动的)
   BUILD_PIDS=()
 
   if [ "$START_DUCKDB" = true ]; then
-    build_service "duckdb" "engines/duckdb" &
+    build_if_service_stopped "duckdb" "$DUCKDB_RUNTIME_PORT" build_service "duckdb" "engines/duckdb" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_MANAGER_BACKEND" = true ]; then
-    build_service "manager" "manager/backend" &
+    build_if_service_stopped "manager" "$MANAGER_BACKEND_PORT" build_service "manager" "manager/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_META_BACKEND" = true ]; then
-    build_service "meta" "meta/backend" &
+    build_if_service_stopped "meta" "$META_BACKEND_PORT" build_service "meta" "meta/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_TRANSFER_BACKEND" = true ]; then
-    build_service "transfer" "transfer/backend" &
+    build_if_service_stopped "transfer" "$TRANSFER_BACKEND_PORT" build_service "transfer" "transfer/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
-    build_service "orchestrator" "orchestrator/backend" &
+    build_if_service_stopped "orchestrator" "$ORCHESTRATOR_BACKEND_PORT" build_service "orchestrator" "orchestrator/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_DEVELOP_BACKEND" = true ]; then
-    build_service "develop" "develop/backend" &
+    build_if_service_stopped "develop" "$DEVELOP_BACKEND_PORT" build_service "develop" "develop/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_SERVICE_BACKEND" = true ]; then
-    build_service "service" "service/backend" &
+    build_if_service_stopped "service" "$SERVICE_BACKEND_PORT" build_service "service" "service/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_MONITOR_BACKEND" = true ]; then
-    build_service "monitor" "monitor/backend" &
+    build_if_service_stopped "monitor" "$MONITOR_BACKEND_PORT" build_service "monitor" "monitor/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_STANDARD_BACKEND" = true ]; then
-    build_service "standard" "standard/backend" &
+    build_if_service_stopped "standard" "$STANDARD_BACKEND_PORT" build_service "standard" "standard/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_MODEL_BACKEND" = true ]; then
-    build_service "model" "model/backend" &
+    build_if_service_stopped "model" "$MODEL_BACKEND_PORT" build_service "model" "model/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_QUALITY_BACKEND" = true ]; then
-    build_service "quality" "quality/backend" &
+    build_if_service_stopped "quality" "$QUALITY_BACKEND_PORT" build_service "quality" "quality/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_SECURITY_BACKEND" = true ]; then
-    build_service "security" "security/backend" &
+    build_if_service_stopped "security" "$SECURITY_BACKEND_PORT" build_service "security" "security/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_ASSET_BACKEND" = true ]; then
-    build_service "asset" "asset/backend" &
+    build_if_service_stopped "asset" "$ASSET_BACKEND_PORT" build_service "asset" "asset/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_CATALOG_BACKEND" = true ]; then
-    build_service "catalog" "catalog/backend" &
+    build_if_service_stopped "catalog" "$CATALOG_BACKEND_PORT" build_service "catalog" "catalog/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
-    build_service "ontology" "ontology/backend" &
+    build_if_service_stopped "ontology" "$ONTOLOGY_BACKEND_PORT" build_service "ontology" "ontology/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
-    build_service "workbench" "workbench/backend" &
+    build_if_service_stopped "workbench" "$WORKBENCH_BACKEND_PORT" build_service "workbench" "workbench/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_PORTAL_BACKEND" = true ]; then
-    build_service "portal" "portal/backend" &
+    build_if_service_stopped "portal" "$PORTAL_BACKEND_PORT" build_service "portal" "portal/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_GRAPH_BACKEND" = true ]; then
-    build_service "graph" "graph/backend" &
+    build_if_service_stopped "graph" "$GRAPH_BACKEND_PORT" build_service "graph" "graph/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
-    build_service "inference" "inference/backend" &
+    build_if_service_stopped "inference" "$INFERENCE_BACKEND_PORT" build_service "inference" "inference/backend" &
     BUILD_PIDS+=($!)
   fi
 
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_META_WORKER" = true ]; then
-    build_worker "meta" "meta/backend" &
+    build_if_service_stopped "meta-worker" "" build_worker "meta" "meta/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_QUALITY_WORKER" = true ]; then
-    build_worker "quality" "quality/backend" &
+    build_if_service_stopped "quality-worker" "" build_worker "quality" "quality/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_SECURITY_WORKER" = true ]; then
-    build_worker "security" "security/backend" &
+    build_if_service_stopped "security-worker" "" build_worker "security" "security/backend" &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
-    build_transfer_bounded_worker &
+    build_if_service_stopped "transfer-bounded-worker" "" build_transfer_bounded_worker &
     BUILD_PIDS+=($!)
   fi
 
   if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
-    build_transfer_continuous_worker &
+    build_if_service_stopped "transfer-continuous-worker" "" build_transfer_continuous_worker &
     BUILD_PIDS+=($!)
   fi
 
@@ -1125,7 +1135,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     exit 1
   fi
 
-  echo -e "  ${GREEN}✓ 本次后端和 Worker 的构建产物已就绪${NC}"
+  echo -e "  ${GREEN}✓ 需要启动的后端和 Worker 构建产物已就绪${NC}"
 else
   echo -e "${YELLOW}Step 3/5: 跳过后端服务启动${NC}"
 fi

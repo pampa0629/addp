@@ -423,7 +423,7 @@
       destroy-on-close
       @closed="handleDetailsClosed"
     >
-      <div v-loading="detailsLoading" style="min-height: 300px">
+      <div v-loading="detailsLoading || authorizationPending" :aria-busy="authorizationPending" style="min-height: 300px">
         <el-empty v-if="detailError" :description="detailError" />
         <el-tabs v-else-if="selectedEngine && !isAuthorizationView" v-model="detailTab" type="border-card" @tab-change="selectDetailTab">
           <!-- 基本信息标签页 -->
@@ -572,11 +572,11 @@
           </el-tab-pane>
 
         </el-tabs>
-        <el-tabs v-else-if="selectedEngine" v-model="detailTab" class="engine-authorization-tabs" type="border-card" @tab-change="selectDetailTab">
-          <el-tab-pane v-if="availableAuthorizationTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
-            <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" />
+        <el-tabs v-else-if="selectedEngine" v-show="authorizationReady" :inert="!authorizationReady || undefined" v-model="detailTab" class="engine-authorization-tabs" type="border-card" @tab-change="selectDetailTab">
+          <el-tab-pane v-if="renderedAuthorizationTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
+            <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" :authorization-key="authorizationKey" :authorization-ready="authorizationReady" />
           </el-tab-pane>
-          <el-tab-pane v-if="availableAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
+          <el-tab-pane v-if="renderedAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
         </el-tabs>
@@ -721,6 +721,7 @@ import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
+import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -808,6 +809,7 @@ const extensionRuntimeStatusTagType = computed(() => {
 // 引擎详情弹窗相关
 const detailsVisible = ref(false)
 const selectedEngine = ref(null)
+const { authorizationPending, authorizationReady, authorizationKey } = useEngineAuthorizationSession(authStore, selectedEngine)
 const detailTab = ref('basic')
 const isAuthorizationView = computed(() => ['data-authorization', 'delegations'].includes(detailTab.value))
 useConsolePageDescriptor(router, 'system', {
@@ -1839,6 +1841,12 @@ const availableAuthorizationTabs = computed(() => {
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
   return tabs
 })
+
+const settledAuthorizationTabs = ref([])
+watch([authorizationReady, availableAuthorizationTabs], ([ready, tabs]) => {
+  if (ready) settledAuthorizationTabs.value = [...tabs]
+}, { immediate: true })
+const renderedAuthorizationTabs = computed(() => authorizationPending.value ? settledAuthorizationTabs.value : availableAuthorizationTabs.value)
 
 const availableDetailTabs = computed(() => {
   const tabs = ['basic']

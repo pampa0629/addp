@@ -1774,6 +1774,14 @@ for value in ('Flask==3.0.0\n', 'Flask==3.1.0\n'):
     result, arguments = run()
     assert result.returncode == 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
 
+# editable 安装元数据、缓存和本地构建产物不是依赖源码输入。
+for relative in ('addp_common.egg-info/PKG-INFO', 'addp_common/__pycache__/cached.pyc', 'build/output.txt', 'venv/generated.txt'):
+    path = common/relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('generated during installation')
+result, arguments = run()
+assert result.returncode == 0 and not any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
+
 # 指纹相同但 pip check 失败，不能跳过安装或留下成功记录。
 result, arguments = run(FAIL_CHECK='1')
 assert result.returncode != 0 and any(args[:3] == ['-m', 'pip', 'install'] for args in arguments), arguments
@@ -1789,7 +1797,7 @@ assert '依赖输入在安装期间变化' in result.stderr, result.stderr
 
 # 同一 venv 并发请求须在锁内重查，只安装一次。
 calls.unlink()
-sync = f'source "{root}/scripts/dev/lifecycle-lock.sh"; addp_sync_python_dependencies "$ROOT_DIR" "{engine}" Model3D'
+sync = f'source "{root}/scripts/dev/lifecycle-lock.sh"; addp_sync_python_dependencies "$ROOT_DIR" "{engine}" Model3D "$ROOT_DIR/common-python"'
 processes = [subprocess.Popen(['bash', '-c', sync], env=dict(environment, SLOW_INSTALL='1'),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(4)]
 for process in processes:
@@ -2194,6 +2202,86 @@ print('PASS: per-module Worker ordering, independent progress, dead/timeout Back
 PY
 }
 
+test_build_only_stopped_processes() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root/'scripts/dev/start.sh').read_text()
+start = source.index('if [ "$START_MANAGER_BACKEND" = true ] ||')
+end = source.index('\n# ============================================================\n# Phase 2:', start)
+phase = source[start:end]
+helper = re.search(r'^build_if_service_stopped\(\) \{.*?^\}', source, re.M | re.S)
+helper = helper.group(0) if helper else ''
+services = ('duckdb', 'manager', 'meta', 'transfer', 'orchestrator', 'develop',
+            'service', 'monitor', 'standard', 'model', 'quality', 'security',
+            'asset', 'catalog', 'ontology', 'workbench', 'portal', 'graph', 'inference')
+workers = ('meta-worker', 'quality-worker', 'security-worker',
+           'transfer-bounded-worker', 'transfer-continuous-worker')
+all_names = set(services + workers)
+base = r'''
+set -eu
+YELLOW= GREEN= RED= NC=
+cd "$CASE_ROOT"
+source "$BUILD_SCRIPT"
+check_service_running() {
+  printf 'check|%s|%s\n' "$1" "${2:-}" >> events
+  [ "$1" != "$CONFLICT" ] || exit 23
+  case " $RUNNING " in *" $1 "*) return 1 ;; esac
+  return 0
+}
+record_build() {
+  printf 'build|%s\n' "$1" >> events
+  [ "$1" != "$FAILED_BUILD" ]
+}
+build_service() { record_build "$1"; }
+build_worker() { record_build "$1-worker"; }
+build_transfer_bounded_worker() { record_build transfer-bounded-worker; }
+build_transfer_continuous_worker() { record_build transfer-continuous-worker; }
+'''
+cases = (
+    ('all-running', all_names, all_names, set(), '', ''),
+    ('all-stopped', all_names, set(), all_names, '', ''),
+    ('missing-worker', {'meta', 'meta-worker'}, {'meta'}, {'meta-worker'}, '', ''),
+    ('missing-backend', {'meta', 'meta-worker'}, {'meta-worker'}, {'meta'}, '', ''),
+    ('port-conflict', {'meta', 'meta-worker'}, {'meta-worker'}, set(), 'meta', ''),
+    ('build-failure', {'meta', 'meta-worker'}, set(), {'meta', 'meta-worker'}, '', 'meta'),
+)
+for mode, selected, running, expected, conflict, failed_build in cases:
+    workspace = temporary/('build-process-state-'+mode)
+    workspace.mkdir()
+    flags = []
+    for flag in sorted(set(re.findall(r'\$([A-Z_]+)', phase))):
+        if not flag.startswith('START_'):
+            continue
+        name = flag.removeprefix('START_').removesuffix('_BACKEND').lower().replace('_', '-')
+        flags.append(f'{flag}={"true" if name in selected else "false"}')
+    ports = {name: str(20000 + index) for index, name in enumerate(sorted(set(
+        re.findall(r'\$\{?([A-Z_]+PORT)', source))))}
+    script = base+'\n'+'\n'.join(flags)+'\n'+helper+'\n'+phase+'\ntouch completed\n'
+    result = subprocess.run(['bash', '-c', script], env=dict(
+        os.environ, **ports, CASE_ROOT=str(workspace), BUILD_SCRIPT=str(root/'scripts/dev/build-identity.sh'),
+        RUNNING=' '.join(sorted(running)), CONFLICT=conflict, FAILED_BUILD=failed_build),
+        capture_output=True, text=True, timeout=10)
+    events = [line.split('|') for line in (workspace/'events').read_text().splitlines()]
+    builds = [event[1] for event in events if event[0] == 'build']
+    assert sorted(builds) == sorted(expected), (mode, builds, expected, result.stdout, result.stderr)
+    assert (result.returncode != 0) == bool(conflict or failed_build), (mode, result.stdout, result.stderr)
+    assert (workspace/'completed').exists() == (not conflict and not failed_build), mode
+    checks = {event[1]: event[2] for event in events if event[0] == 'check'}
+    assert set(checks) == selected, (mode, checks, selected)
+    for name in selected:
+        expected_port = '' if name in workers else ports[name.upper()+'_BACKEND_PORT' if name != 'duckdb' else 'DUCKDB_RUNTIME_PORT']
+        assert checks[name] == expected_port, (mode, name, checks[name], expected_port)
+print('PASS: running backends/workers skip builds; missing processes build independently; conflicts and build failures stop startup')
+PY
+}
+
+test_build_only_stopped_processes
 test_model3d_python_dependency_sync
 test_stop_keeps_system_available_for_deregistration
 test_worker_backend_readiness_order

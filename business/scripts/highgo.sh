@@ -42,17 +42,24 @@ case "$action" in
     start)
         [ -n "${HIGHGO_PASSWORD:-}" ] || { echo '请在 business/.env 设置 HIGHGO_PASSWORD。' >&2; exit 1; }
         [[ "$HIGHGO_PASSWORD" != *$'\n'* && "$HIGHGO_PASSWORD" != *$'\r'* ]] || { echo 'HIGHGO_PASSWORD 不得包含换行。' >&2; exit 1; }
+        export HIGHGO_USER=${HIGHGO_USER:-business}
+        POSTGRES_PASSWORD="$HIGHGO_PASSWORD" bash "$PROJECT_ROOT/highgo/init/01-business.sh" --check-config
         if lsof -nP -iTCP:"$HIGHGO_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
             actual=$(docker port business-highgo 5866/tcp 2>/dev/null || true)
             [ "$actual" = "127.0.0.1:$HIGHGO_PORT" ] || { echo "端口 $HIGHGO_PORT 已被其他服务占用。" >&2; exit 1; }
         fi
         addp_business_ensure_network
         compose up -d highgo
-        # Compose 健康检查使用配置密码和 TLS；不将密码写入命令输出。
+        # 已有卷也复用原生初始化；先等服务接收连接，再初始化并检查业务登录。
+        initialized=false
         for ((attempt=0; attempt<60; attempt++)); do
+            if [ "$initialized" = false ] && docker exec business-highgo pg_isready -h 127.0.0.1 -p 5866 -U sysdba -d highgo >/dev/null 2>&1; then
+                docker exec -e PGHOST=127.0.0.1 -e PGSSLMODE=require business-highgo bash /addp/highgo/init/01-business.sh
+                initialized=true
+            fi
             health=$(docker inspect --format '{{.State.Health.Status}}' business-highgo)
-            if [ "$health" = healthy ]; then
-                echo "瀚高已就绪：127.0.0.1:$HIGHGO_PORT/highgo，schema=addp_business，user=sysdba，sslmode=require"
+            if [ "$initialized" = true ] && [ "$health" = healthy ]; then
+                echo "瀚高已就绪：127.0.0.1:$HIGHGO_PORT/highgo，schema=addp_business，user=$HIGHGO_USER，sslmode=require"
                 exit 0
             fi
             [ "$(docker inspect --format '{{.State.Running}}' business-highgo)" = true ] || { echo '瀚高容器已退出，请检查日志。' >&2; exit 1; }

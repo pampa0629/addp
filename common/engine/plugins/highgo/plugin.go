@@ -46,6 +46,7 @@ func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
 	return postgresql.NewProtocolCompatiblePlugin(postgresql.ProtocolIdentity{
 		EngineType: p.Type(), DisplayName: p.DisplayName(), DriverName: "highgo", DefaultPort: p.DefaultPort(), DefaultSSLMode: "require",
 		AdditionalSystemSchemas: []string{"dbms_alert", "dbms_assert", "dbms_output", "dbms_pipe", "dbms_random", "dbms_utility", "mysql", "oracle", "plunit", "plvchr", "plvdate", "plvlex", "plvstr", "plvsubst", "utl_file", "wmsys", "tiger", "tiger_data", "topology"},
+		AdditionalSystemTables:  []string{"hg_t_audit_log", "pg_buffercache", "pg_stat_statements"},
 	})
 }
 func (p *Plugin) ConnectionSpec() plugin.ConnectionSpec {

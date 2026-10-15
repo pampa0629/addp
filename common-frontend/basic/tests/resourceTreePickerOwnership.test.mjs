@@ -26,6 +26,20 @@ test('ResourceTreePicker is the single form-level resource tree implementation',
   assert.doesNotMatch(picker, /<el-tree(?:\s|>)/)
 })
 
+test('compact resource selection has one shared input and tree owner across System authorization views', () => {
+  const select = source('common-frontend/basic/src/components/ResourceTreeSelect.vue')
+  assert.match(select, /<ResourceTreePicker\s/)
+  assert.doesNotMatch(select, /<el-tree\b|<ResourceTree\s|fetch\(|axios/)
+  assert.match(select, /@keydown\.esc\.stop="close"/)
+  assert.match(select, /@keydown\.down\.prevent="browse"/)
+  assert.match(source('common-frontend/basic/src/index.js'), /export .*ResourceTreeSelect/)
+  for (const file of ['EngineDataAuthorization.vue', 'EngineSourceGrants.vue']) {
+    const consumer = source(`system/frontend/src/components/engines/${file}`)
+    assert.match(consumer, /<ResourceTreeSelect\s/)
+    assert.doesNotMatch(consumer, /<ResourceTreePicker\s|<el-popover\b|<el-tree\b/)
+  }
+})
+
 test('manager resource-selection forms compose ResourceTreePicker instead of rebuilding resource trees', () => {
   const consumers = [
     'manager/frontend/src/components/tasks/VectorTileSetTaskEditor.vue',

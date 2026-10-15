@@ -28,8 +28,22 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	if native {
+		t.Cleanup(func() { plugin.ClosePool(0) })
 		if err := p.TestConnection(ctx, info); err != nil {
 			t.Fatalf("native V4.5 identity/SM3/TLS: %v", err)
+		}
+		entries, err := p.ListChildren(ctx, info, plugin.TabularNamespacePath(0, plugin.EngineCatalogTermSchema, "public"), plugin.ListOptions{})
+		if err != nil {
+			t.Fatalf("native business catalog: %v", err)
+		}
+		for _, entry := range entries {
+			if entry.Name == "hg_t_audit_log" || entry.Name == "pg_buffercache" || entry.Name == "pg_stat_statements" {
+				t.Fatal("native audit/monitoring object leaked into the business catalog")
+			}
+		}
+		hidden := plugin.TabularItemPath(0, plugin.EngineCatalogTermSchema, "public", "hg_t_audit_log")
+		if _, err := p.ResolvePath(ctx, info, hidden); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+			t.Fatalf("native audit table old path must be not_found: %v", err)
 		}
 	}
 	dsn, err := p.BuildDSN(info)

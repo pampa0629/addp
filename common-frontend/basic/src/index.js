@@ -11,6 +11,7 @@ export { buildBusinessDomainOptions, businessDomainReferenceOptions } from './ut
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
+export { default as ResourceTreeSelect } from './components/ResourceTreeSelect.vue'
 export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
 export { default as TransferConfigCheckReport } from './components/TransferConfigCheckReport.vue'

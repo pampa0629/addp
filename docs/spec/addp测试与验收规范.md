@@ -89,6 +89,8 @@ Model3D 原生安装的下载完整性、私有资源隔离和损坏缓存拒绝
 
 ### 4.2 T2
 
+Document 原生转换使用独立入口 `make test-document-native`，在已准备的私有 LibreOffice 和固定中文字体上，经正式 `document_to_pdf` 算子转换三页 PPTX，核对页数、中文文本、工作目录清理及源样例不变。缺失或损坏的依赖直接失败，不跳过、不隐式安装。测试使用临时输入、输出和 profile，不启动 ADDP 服务；由 Platform CI 的 Document Workflow Job 准备依赖后调用。普通 start/restart 只负责依赖与服务就绪，不执行该功能测试。HTTP／算子确定性测试继续使用 `make test-document-workflow`，跨模块产物生成与浏览器预览继续由 Manager T4 验证，三者分别报告。
+
 T2 使用真实但可丢弃的基础设施，并满足：
 
 - CI Job 使用独占 Service 和随 Job 销毁的数据库。
@@ -195,7 +197,9 @@ Orchestrator 执行 T4 `orchestrator-execution` 复用 Hosted 生命周期、Sys
 
 一次性执行权限扩展沿用同一 `orchestrator-execution` 手动 Hosted T4。通过现有 Meta 手动扫描 API 创建无任务定义的真实执行，核对 `source_task_id` 为空、发起主体与当前普通 User 一致、执行收敛成功，Monitor 详情、树和过程事件可读且只含安全投影。System 正式 IAM 夹具增加同 Tenant 的另一普通 User，仅授予 Meta 扫描历史与 Monitor 执行读取权限；先证明该读者能读取已有任务定义的扫描执行，再确认其列表及总数不包含其他 User 的一次性执行，详情、树和事件返回无执行数据的 404。发起人的列表仅增加该执行；跨 Tenant 与缺少 Owner 权限时仍不可见。未知创建结果不重试，已知一次性执行必须收敛为终态，历史随 Hosted Infra 销毁。报告仅增加安全执行 UUID、事件数量、身份权限摘要和闭合检查名，不保存配置、主体编号或响应快照。复用既有 `make test-orchestrator-online-runner`、`make test-online-runner` 与 Platform CI 登记；公开 API、平台进程日志和审计路径不变，真实验收证据见下段。
 
-一次性执行权限扩展已在提交 `d2af33d7b` 的 [Hosted T4 37131353509](https://github.com/pampa0629/addp/actions/runs/37131353509) 真实通过，共 28 项检查。Meta 手动扫描创建无任务定义、主体与发起 User 一致的真实执行并收敛成功；发起人可读取安全详情、单节点树及七条过程事件，执行列表仅增加该记录。同 Tenant 另一普通 User 的 Meta 与 Monitor 读取权限经真实任务历史正向证明后，对该一次性执行的详情、树和事件仍返回无诊断数据的 404，列表及总数保持不变；跨 Tenant 和缺少 Owner 权限时同样不可见。此前的嵌套编排、业务源中断、响应丢失、Backend 崩溃、Owner 不可用、已删除任务历史及正式撤权检查同时通过。四个任务定义确认删除，两类派发故障仍各只有一次请求，无重放。五个服务构建身份均匹配该提交，生命周期清理通过，Infra 容器、网络和数据卷零残留；61 个归档文件未包含凭据环境或代理控制文件，未检出标准令牌及夹具密码模式。同一提交的 [Platform CI 37131346153](https://github.com/pampa0629/addp/actions/runs/37131346153) 全部 29 个任务通过，包括 53 项所有者测试、333 项 Online 聚合测试和正式身份夹具测试；Orchestrator PostgreSQL 可靠性门禁也已通过。[System IAM PostgreSQL 门禁 37131346068](https://github.com/pampa0629/addp/actions/runs/37131346068) 首轮及单独重跑均被共享 main 的后续推送取消，日志未显示测试断言失败，但该门禁尚未完成，不计为通过；需在无新推送的窗口重跑。本轮不包含续租故障。
+一次性执行权限扩展已在提交 `d2af33d7b` 的 [Hosted T4 37131353509](https://github.com/pampa0629/addp/actions/runs/37131353509) 真实通过，共 28 项检查。Meta 手动扫描创建无任务定义、主体与发起 User 一致的真实执行并收敛成功；发起人可读取安全详情、单节点树及七条过程事件，执行列表仅增加该记录。同 Tenant 另一普通 User 的 Meta 与 Monitor 读取权限经真实任务历史正向证明后，对该一次性执行的详情、树和事件仍返回无诊断数据的 404，列表及总数保持不变；跨 Tenant 和缺少 Owner 权限时同样不可见。此前的嵌套编排、业务源中断、响应丢失、Backend 崩溃、Owner 不可用、已删除任务历史及正式撤权检查同时通过。四个任务定义确认删除，两类派发故障仍各只有一次请求，无重放。五个服务构建身份均匹配该提交，生命周期清理通过，Infra 容器、网络和数据卷零残留；61 个归档文件未包含凭据环境或代理控制文件，未检出标准令牌及夹具密码模式。同一提交的 [Platform CI 37131346153](https://github.com/pampa0629/addp/actions/runs/37131346153) 全部 29 个任务通过，包括 53 项所有者测试、333 项 Online 聚合测试和正式身份夹具测试；Orchestrator PostgreSQL 可靠性门禁也已通过。本轮不包含续租故障。
+
+[System IAM PostgreSQL 门禁 37131346068](https://github.com/pampa0629/addp/actions/runs/37131346068) 首轮及单独重跑均被共享 main 的后续推送取消，日志未显示测试断言失败，两次取消本身不计为通过。后续 [Release and T2 运行 37164414672](https://github.com/pampa0629/addp/actions/runs/37164414672) 的[实际 IAM 验证任务 111324425990](https://github.com/pampa0629/addp/actions/runs/37164414672/job/111324425990) 已在包含上述实现的提交 `2eb927f37393088e628a8e1e3a087ea525b8d63b` 上成功完成，日志统计 319 项测试通过、0 失败、0 跳过，补齐该历史 T2 验证缺口，无需因早先取消再次重跑。该结果不替代后续 IAM 实现、迁移或门禁变更的验证，也不扩张上述执行读取隔离的验收范围。
 
 范围限制：上述一次性执行隔离结论针对 Monitor 通用诊断，不能替代 Meta 专业入口的直接隔离证据。Meta 专业详情与列表的模块归属、任务历史及本人一次性执行读取已由独立回归与 Hosted 验收覆盖，见本文“Meta 专业扫描执行读取”。TaskProvider 服务状态读取仍按专用机器身份与 Permission 独立裁决，不套用用户本人读取规则。
 

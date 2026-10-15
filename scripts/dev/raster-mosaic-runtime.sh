@@ -29,7 +29,7 @@ addp_prepare_raster_mosaic_runtime() {
     echo 'Raster Mosaic: 重建独立 Python 3.12 环境...'
     "$python_source" -m venv --clear "$runtime_dir/venv" || return 1
   fi
-  addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" -m pip install -r "$runtime_dir/requirements.txt" || return 1
+  addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Raster Mosaic' || return 1
   addp_prepare_gdal_binding "$python_bin" 'Raster Mosaic' || return 1
   "$python_bin" - <<'PY' || return 1
 from osgeo import gdal, gdal_array, osr

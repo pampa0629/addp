@@ -175,12 +175,15 @@ def validate_document_workflow_test_registration(repository: Path) -> list[str]:
     errors: list[str] = []
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     workflow = (repository / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
-    if not re.search(r"(?m)^test-document-workflow:\s", makefile):
-        errors.append("Makefile target test-document-workflow is missing")
+    for target in ("test-document-workflow", "test-document-native"):
+        if not re.search(rf"(?m)^{target}:\s", makefile):
+            errors.append(f"Makefile target {target} is missing")
     for fragment in (
         "uses: ./.github/actions/prepare-python-gate",
         "engines/document-workflow/requirements-dev.txt",
         "run: make test-document-workflow",
+        "run: make test-document-native",
+        "native_setup.py prepare .dev-state/document-native",
     ):
         if fragment not in workflow:
             errors.append(f"platform-ci Document Workflow gate is missing {fragment}")

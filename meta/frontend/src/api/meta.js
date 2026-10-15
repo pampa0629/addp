@@ -57,17 +57,7 @@ export default {
   },
 
   // 提交后台扫描运行
-  createManualScanRun(engineId, catalogPaths, options = {}) {
-    const payload = {
-      engine_id: engineId,
-      scan_depth: options.scan_depth || 'deep',
-      force: options.force === true,
-      trigger_type: 'manual',
-      source: options.source || 'meta_frontend'
-    }
-    if (catalogPaths && catalogPaths.length > 0) {
-      payload.catalog_paths = catalogPaths
-    }
+  createManualScanRun(payload) {
     return client.post('/meta/scan/run/manual', payload)
   },
 

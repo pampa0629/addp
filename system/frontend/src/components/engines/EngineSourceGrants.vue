@@ -27,7 +27,7 @@
         <el-table-column :label="t('system.engine.sourceGrants.state')"><template #default="{ row }">{{ row.done ? t(row.recovered ? 'system.engine.sourceGrants.historyRecovered' : 'system.engine.sourceGrants.created') : row.error }}</template></el-table-column>
         <el-table-column :label="t('system.engine.sourceGrants.command')" prop="requestID" show-overflow-tooltip />
       </el-table>
-      <div><el-button :disabled="saving" @click="closeGrant">{{ t('common.cancel') }}</el-button><el-button type="primary" data-testid="source-grant-confirm" :loading="saving" :disabled="!canCreate || !canReadCandidates" @click="create">{{ t(attempt ? 'system.engine.sourceGrants.retry' : 'system.engine.sourceGrants.create') }}</el-button></div>
+      <div><el-button :disabled="saving" @click="closeGrant">{{ t('common.cancel') }}</el-button><el-button type="primary" data-testid="source-grant-confirm" :loading="saving" :disabled="!canCreate || !canReadCandidates || (!attempt && !dataItemReady)" @click="create">{{ t(attempt ? 'system.engine.sourceGrants.retry' : 'system.engine.sourceGrants.create') }}</el-button></div>
     </div>
     <template v-if="canRead">
       <template v-if="view === 'list'">
@@ -39,17 +39,12 @@
             </el-select>
           </el-form-item>
           <el-form-item :label="t('system.engine.dataAuthorization.target')">
-            <el-popover :visible="treeFilterVisible" placement="bottom-start" :trigger="[]" :trigger-keys="[]" :width="560" popper-class="source-grant-tree-popover" :popper-style="{ maxWidth: 'calc(100vw - 48px)' }" @update:visible="treeFilterVisible = $event">
-              <template #reference>
-                <el-input ref="tableFilterInput" v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter" :prefix-icon="Search" :placeholder="t('system.engine.sourceGrants.tableSearch')" :maxlength="filterPath ? undefined : 200" clearable @input="scheduleFilters" @keydown.esc.stop="treeFilterVisible = false" @keydown.down.prevent="openTreeFilter">
-                  <template #append><el-button data-testid="source-grant-tree-filter" :icon="ArrowDown" :aria-label="t('system.engine.sourceGrants.selectFromTree')" :aria-expanded="treeFilterVisible" :disabled="!catalogAdapter || revoking" @click.stop="openTreeFilter" /></template>
-                </el-input>
-              </template>
-              <div v-if="treeFilterVisible && catalogAdapter" data-testid="source-grant-tree-panel">
-                <el-alert v-if="treeFilterError" type="error" :closable="false" :title="treeFilterError" />
-                <ResourceTreePicker :adapter="catalogAdapter" :engine-id="engine.id" mode="any" :show-engine-selector="false" :show-search="false" :show-selection-summary="false" :selectable-filter="isApprovalTable" :title="t('system.engine.dataAuthorization.target')" tree-height="320px" @update:model-value="selectFilterTarget" @error="treeFilterError = t('system.engine.sourceGrants.treeFilterFailed')" />
-              </div>
-            </el-popover>
+            <ResourceTreeSelect ref="tableFilterInput" v-model="filterDraft.tableSearch" data-testid="source-grant-table-filter"
+              :adapter="catalogAdapter" :engine-id="engine.id" :selectable-filter="isApprovalTable" :tree-disabled="revoking"
+              :disabled="!authorizationReady" :scope-key="`${authorizationKey}:${view}:${listMode}`" :maxlength="filterPath ? undefined : 200"
+              :placeholder="t('system.engine.sourceGrants.tableSearch')" :tree-label="t('system.engine.sourceGrants.selectFromTree')"
+              :title="t('system.engine.dataAuthorization.target')" :error-text="t('system.engine.sourceGrants.treeFilterFailed')"
+              @input="scheduleFilters" @select="selectFilterTarget" />
             <span v-if="filterPath" class="filter-hint" data-testid="source-grant-exact-filter">{{ t('system.engine.sourceGrants.exactTableFilter') }}</span>
           </el-form-item>
           <el-form-item class="recipient-type-filter" :label="t('system.engine.sourceGrants.recipientType')">
@@ -97,7 +92,7 @@
       </template>
     </template>
     <el-alert v-else-if="view !== 'create'" type="info" :closable="false" :title="t('system.engine.sourceGrants.readRequired')" />
-    <el-dialog v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @opened="revokeCancel?.$el?.focus()">
+    <el-dialog v-if="authorizationReady" v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @opened="revokeCancel?.$el?.focus()">
       <p>{{ approvalPathLabel(revokeRow?.catalog_path) }}</p>
       <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
       <el-alert type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeBoundary')" />
@@ -112,10 +107,9 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ArrowDown, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
-import { ResourceTreePicker, StatusAnnouncer, serializeEngineCatalogTarget } from '@common-ui'
+import { ResourceTreeSelect, StatusAnnouncer, serializeEngineCatalogTarget } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
@@ -125,7 +119,7 @@ import { observeNativeApprovalBinding } from '@common-ui'
 import TenantMemberSelect from '../iam/TenantMemberSelect.vue'
 import EngineGrantRecipient from './EngineGrantRecipient.vue'
 
-const props = defineProps({ engine: { type: Object, required: true }, view: { type: String, required: true, validator: value => ['list', 'create'].includes(value) }, listMode: { type: String, required: true, validator: value => ['current', 'history'].includes(value) }, requirements: { type: Array, default: () => [] }, catalogAdapter: { type: Object, default: null } })
+const props = defineProps({ engine: { type: Object, required: true }, authorizationKey: { type: String, required: true }, authorizationReady: Boolean, dataItemReady: Boolean, view: { type: String, required: true, validator: value => ['list', 'create'].includes(value) }, listMode: { type: String, required: true, validator: value => ['current', 'history'].includes(value) }, requirements: { type: Array, default: () => [] }, catalogAdapter: { type: Object, default: null } })
 const recipientTypeSelect = ref(null), revokeCancel = ref(null), grantTable = ref(null)
 const emit = defineEmits(['close', 'busy', 'issued']), auth = useAuthStore(), { t, locale } = useI18n()
 const canCreate = computed(() => auth.hasPermission('system.engine_access_grant.create'))
@@ -145,7 +139,7 @@ const accountScope = computed(() => listMode.value === 'current' && appliedFilte
 // Element Plus's previous row store when switching to account source details.
 const listProjection = computed(() => listMode.value === 'history' ? 'history' : accountScope.value ? 'account' : 'relations')
 const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '', state: '' })
-const filterPath = ref(null), treeFilterVisible = ref(false), treeFilterError = ref('')
+const filterPath = ref(null)
 const tableFilterInput = ref(null)
 const appliedFilters = ref({})
 const filterMembers = ref([])
@@ -196,6 +190,7 @@ function validAccountObservation(row) {
     observation.rule_covered === (observation.reason === 'grant') && Number.isFinite(new Date(observation.observed_at).getTime())
 }
 async function load() {
+  if (!props.authorizationReady) return
   if (props.view === 'create') return
   if (filterTimer !== null) captureFilters()
   if (!canRead.value) return
@@ -227,7 +222,6 @@ function captureFilters() {
 function applyFilters() { captureFilters(); load() }
 function changeRecipientType() { filterDraft.recipientID = ''; applyFilters() }
 function scheduleFilters() {
-  treeFilterVisible.value = false
   filterPath.value = null
   cancelFilterTimer()
   // Invalidate in-flight results as soon as input changes, before the debounce.
@@ -236,23 +230,21 @@ function scheduleFilters() {
   loading.value = true
   filterTimer = setTimeout(applyFilters, 300)
 }
-function openTreeFilter() {
-  if (!props.catalogAdapter || !canRead.value || revoking.value) return
-  treeFilterError.value = ''; treeFilterVisible.value = !treeFilterVisible.value
-}
 function selectFilterTarget(selection) {
   if (!selection) return
   try {
     const path = approvalTargetFromSelection(selection, props.engine.id)
     if (new TextEncoder().encode(serializeEngineCatalogTarget(path)).length > 4096) throw new Error('invalidCatalogTarget')
     filterPath.value = path; filterDraft.tableSearch = approvalPathLabel(path)
-    treeFilterVisible.value = false; applyFilters()
+    applyFilters()
     nextTick(() => tableFilterInput.value?.focus())
-  } catch { treeFilterError.value = t('system.engine.sourceGrants.treeFilterFailed') }
+  } catch { error.value = t('system.engine.sourceGrants.treeFilterFailed') }
 }
-async function loadCandidates() {
+async function loadCandidates({ preserveSelection = false } = {}) {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
-  candidates.value = []; members.value = []; form.recipientID = ''; candidateLoading.value = false; formError.value = ''
+  const selectedID = preserveSelection ? form.recipientID : ''
+  candidates.value = []; members.value = []; if (!preserveSelection) form.recipientID = ''; candidateLoading.value = false; formError.value = ''
+  if (!props.authorizationReady) return
   if (!props.requirements.length || !canCreate.value || !canReadCandidates.value) return
   candidateLoading.value = true
   try {
@@ -262,6 +254,7 @@ async function loadCandidates() {
       members.value = result.filter(item => item.principal_type === 'user' && item.status === 'active' && item.principal_status === 'active' && !item.ended_at && (!item.expires_at || new Date(item.expires_at).getTime() > Date.now()))
       candidates.value = members.value.map(item => ({ id: String(item.principal_id), name: item.display_name || item.username || String(item.principal_id) }))
     } else candidates.value = result.filter(item => item.status === 'active').map(item => ({ id: String(item.id), name: item.name }))
+    if (preserveSelection) form.recipientID = candidates.value.some(item => item.id === selectedID) ? selectedID : ''
   } catch (e) { if (epoch === generation && seq === candidateSequence) formError.value = message(e) }
   finally { if (epoch === generation && seq === candidateSequence) candidateLoading.value = false }
 }
@@ -270,7 +263,7 @@ function closeGrant() {
   attempt.value = null; emit('busy', false); emit('close')
 }
 async function create() {
-  if (saving.value || !canCreate.value || !props.requirements.length || !canReadCandidates.value) return
+  if (!props.authorizationReady || saving.value || !canCreate.value || !props.requirements.length || !canReadCandidates.value || (!attempt.value && !props.dataItemReady)) return
   const epoch = generation
   saving.value = true; formError.value = ''; success.value = ''
   try {
@@ -318,9 +311,9 @@ async function create() {
   } catch (e) { if (epoch === generation && e !== 'cancel' && e !== 'close') formError.value = e?.message === 'invalidGrant' || e?.message === 'invalidEngineCatalogTarget' ? t('system.engine.sourceGrants.invalid') : message(e) }
   finally { if (epoch === generation) saving.value = false }
 }
-function openRevoke(row) { if (!canRevoke.value || listMode.value !== 'current') return; revokeRow.value = row; revokeReason.value = ''; revokeError.value = ''; revokeVisible.value = true }
+function openRevoke(row) { if (!props.authorizationReady || !canRevoke.value || listMode.value !== 'current') return; revokeRow.value = row; revokeReason.value = ''; revokeError.value = ''; revokeVisible.value = true }
 async function revoke() {
-  if (revoking.value || !canRevoke.value || !revokeRow.value) return
+  if (!props.authorizationReady || revoking.value || !canRevoke.value || !revokeRow.value) return
   const reason = revokeReason.value.trim(), row = revokeRow.value, epoch = generation
   if (!reason || Array.from(reason).length > 2000) { revokeError.value = t('system.engine.sourceGrants.invalidReason'); return }
   revoking.value = true; revokeError.value = ''
@@ -336,23 +329,28 @@ watch(() => JSON.stringify(props.requirements), () => {
   generation++; attempt.value = null; outcomes.value = []; saving.value = false; formError.value = ''; form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = ''
   loadCandidates(); load()
 })
-watch([() => props.engine.id, () => props.engine.lifecycle_state, () => auth.authContext?.principal?.id, () => auth.authContext?.context?.tenant_id,
-  () => auth.authContext?.context?.tenant_membership_id, () => auth.authContext?.authorization?.authorization_version, canRead, canCreate, canRevoke,
-  ...Object.values(recipientSources).map(source => () => auth.hasPermission(source.permission))], () => {
+watch(() => props.authorizationKey, () => {
   cancelFilterTimer(); generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
 
   filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; filterDraft.state = ''; appliedFilters.value = {}; filterMembers.value = []
-  filterPath.value = null; treeFilterVisible.value = false; treeFilterError.value = ''
+  filterPath.value = null
   saving.value = revoking.value = loading.value = false; revokeVisible.value = false; error.value = formError.value = success.value = ''; load()
 }, { immediate: true })
+watch(() => props.authorizationReady, ready => {
+  if (!ready) {
+    cancelFilterTimer(); generation++; readSequence++; candidateSequence++
+    saving.value = revoking.value = loading.value = candidateLoading.value = false
+    ElMessageBox.close()
+  } else {
+    loadCandidates({ preserveSelection: true }); load()
+  }
+})
 watch([() => props.view, () => props.listMode], ([view]) => {
-  treeFilterVisible.value = false
   cancelFilterTimer(); readSequence++; error.value = ''; loading.value = false
   if (view !== 'list') success.value = ''
   if (view === 'list') captureFilters()
   load()
 })
-watch(() => props.catalogAdapter, adapter => { if (!adapter) treeFilterVisible.value = false })
 watch([saving, attempt, revoking], () => emit('busy', saving.value || !!attempt.value || revoking.value), { immediate: true })
 onBeforeUnmount(() => { cancelFilterTimer(); generation++ })
 </script>

@@ -141,6 +141,11 @@ DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
 	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
 
+DOCUMENT_NATIVE_PYTHON ?= engines/document-workflow/venv/bin/python
+.PHONY: test-document-native
+test-document-native: ## 使用已准备的私有 LibreOffice 与中文字体验证三页 PDF 转换
+	@ROOT_DIR="$(CURDIR)" DOCUMENT_NATIVE_PYTHON="$(abspath $(DOCUMENT_NATIVE_PYTHON))" bash -c 'set -e; source scripts/dev/document-workflow.sh; addp_document_native_environment; "$$DOCUMENT_NATIVE_PYTHON" engines/document-workflow/native_setup.py check "$$ROOT_DIR/.dev-state/document-native"; cd engines/document-workflow; exec "$$DOCUMENT_NATIVE_PYTHON" -m unittest discover -s native_tests -p "test_*.py" -v'
+
 JUPYTER_PYTHON ?= engines/jupyter/venv/bin/python
 .PHONY: test-jupyter
 test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
@@ -209,7 +214,7 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
-	@bash -n business/highgo/entrypoint.sh business/scripts/highgo.sh
+	@bash -n business/highgo/entrypoint.sh business/highgo/init/01-business.sh business/scripts/highgo.sh
 	@python3 scripts/test/business-highgo_test.py
 	@bash business/scripts/start.sh --help | grep -Fq -- '-highgo'
 	@! bash business/scripts/start.sh -highgo -postgres >/dev/null 2>&1
@@ -556,6 +561,10 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-infra-runtime-log-lifecycle
+test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
+	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py
+
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/model3d-workflow.sh
@@ -566,7 +575,8 @@ test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh; do bash -n "$$script" || exit 1; done
-	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
+	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
+	@$(MAKE) test-infra-runtime-log-lifecycle
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore

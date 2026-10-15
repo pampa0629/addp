@@ -870,6 +870,8 @@ bash scripts/prod/stop.sh
 
 ## 模块实例运行日志验收
 
+Infra 日志和指标的启动选择、失败隔离及容器归属回归使用 `make test-infra-runtime-log-lifecycle`。它由 `make test-dev-lifecycle` 唯一调用，并随 `make test-platform` 进入现有 Platform CI；测试使用临时工作区和 Shell Docker 模拟，不启动个人 Infra。完整 `up.sh` 场景的子进程上限为 30 秒，模拟命令按参数个数和 NUL 分隔记录，覆盖空参数、回车、换行及中文保真。
+
 模块实例运行日志 T2 入口为 `make test-system-runtime-log`，由 System owner 自建 disposable MinIO/Alloy/Loki 并清理全部测试资源；构建共享启动工具、身份关联、授权代理和重建保留同次验证，具体范围见 `scripts/infra/README.md`。
 
 Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。

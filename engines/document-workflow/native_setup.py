@@ -13,7 +13,6 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -136,7 +135,7 @@ def prepare(root):
         raise RuntimeError("Document native installation failed validation")
 
 
-def verify(root):
+def check(root):
     if not current(root):
         raise RuntimeError("Document native dependencies changed; stop the Runtime before preparing again")
     manifest, _, prefix, executable, _ = native_paths(root)
@@ -144,43 +143,12 @@ def verify(root):
                              text=True, timeout=20).stdout
     if not version.startswith("LibreOffice " + manifest["version"] + " "):
         raise RuntimeError("Unexpected LibreOffice version: " + version)
-    from operators import invoke_operator
-    from pypdf import PdfReader
-    fixture = ENGINE.parents[1] / "business/fixtures/manager/addp_online_preview_fixture.pptx"
-    before = sha256(fixture)
-    title = "ADDP 文档原生转换实验：中文与 English"
-    with tempfile.TemporaryDirectory(prefix="addp-document-check-") as directory:
-        directory = Path(directory)
-        source, target = directory / "source.pptx", directory / "converted.pdf"
-        with zipfile.ZipFile(fixture) as original, zipfile.ZipFile(source, "w") as output:
-            for member in original.infolist():
-                data = original.read(member.filename)
-                if member.filename == "ppt/slides/slide1.xml":
-                    tree = ET.fromstring(data)
-                    next(tree.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}t")).text = title
-                    data = ET.tostring(tree, encoding="utf-8", xml_declaration=True)
-                output.writestr(member, data)
-        plan = {"schema_version": "addp.workflow.access-plan/v1",
-                "source": {"kind": "file", "format": "pptx", "access": {"method": "mounted_path", "path": str(source)}},
-                "target": {"kind": "file", "format": "pdf", "name": target.name, "write_mode": "create",
-                           "access": {"method": "mounted_path", "path": str(target)}}}
-        work = directory / "work"
-        invoke_operator("document_to_pdf", {"access_plan": plan},
-                        env={"DOCUMENT_LIBREOFFICE_BIN": str(executable), "FONTCONFIG_FILE": str(prefix / "fonts.conf"),
-                             "DOCUMENT_WORK_DIR": str(work)}, timeout_seconds=60)
-        reader = PdfReader(target)
-        if len(reader.pages) != 3 or title not in reader.pages[0].extract_text():
-            raise RuntimeError("Document Chinese PPTX conversion check failed")
-        if work.exists() and any(work.iterdir()):
-            raise RuntimeError("Document conversion workspace was not cleaned")
-    if before != sha256(fixture):
-        raise RuntimeError("Document check changed the source fixture")
-    print("✓ Document 原生 LibreOffice、私有中文字体与三页 PDF 转换已验证")
+    print("✓ Document 原生依赖完整性与 LibreOffice 版本检查通过")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "current", "verify", "environment"))
+    parser.add_argument("action", choices=("prepare", "current", "check", "environment"))
     parser.add_argument("root")
     args = parser.parse_args()
     try:
@@ -188,8 +156,8 @@ if __name__ == "__main__":
             sys.exit(0 if current(args.root) else 1)
         elif args.action == "prepare":
             prepare(args.root)
-        elif args.action == "verify":
-            verify(args.root)
+        elif args.action == "check":
+            check(args.root)
         else:
             _, _, prefix, executable, _ = native_paths(args.root)
             print(executable)

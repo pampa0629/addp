@@ -19,6 +19,8 @@ func TestIntegrationOracleDecimalTableWriteDefinition(t *testing.T) {
 		t.Skip("set ADDP_ORACLE_DECIMAL_INTEGRATION=1 to run Oracle decimal integration test")
 	}
 	t.Run("definition_and_evolution", testOracleDefinitionAndEvolution)
+	t.Run("non_spatial_delete", testOracleNonSpatialDelete)
+	t.Run("delete_metadata_guard", testOracleDeleteMetadataGuard)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

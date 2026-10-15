@@ -29,7 +29,7 @@ engines/
 | Spark Workflow | 原生 Python 3.11/3.12 + OpenJDK 11 | 已统一标准启动、重启、停止；macOS 配置本机 `host.docker.internal` 映射，Worker 使用 Docker 内置解析 |
 | GeoPython Workflow | 原生 Python 3.12 + GDAL + MDBTools/ODBC | 独立 venv；GDAL 绑定与原生库同版本；产品栅格 T4 独立构建和启动镜像 |
 | PointCloud Workflow | 原生 Python 3.12 + 独立 Conda PDAL 2.10.2 | 已统一原生生命周期；GDAL、PROJ、E57 库随 Runtime 环境隔离，预检 COPC、LAS、E57、PCD、text 驱动及实际转换；详见 `pointcloud-workflow/README.md` |
-| Document Workflow | 原生 Python 3.12 + 私有 LibreOffice 与中文字体 | 已统一原生生命周期；官方包校验 SHA-256，每次转换使用独立 profile，真实 PPTX 转 PDF 纳入准备预检；详见 `document-workflow/README.md` |
+| Document Workflow | 原生 Python 3.12 + 私有 LibreOffice 与中文字体 | 已统一原生生命周期；启动检查依赖完整性与版本，每次转换使用独立 profile，真实 PPTX 转 PDF 由 `make test-document-native` 独立验证；详见 `document-workflow/README.md` |
 | SuperMap Workflow | Docker，当前接入 Linux ARM64 C++ SDK | 先核对同版本 SDK 的 macOS 支持及许可；不能从当前 Linux 制品推断厂商仅支持 Linux |
 | Model3D Workflow | 原生 Python + 私有转换工具包 | 当前开发安装支持 macOS arm64；转换器版本与完整性由私有包校验，删除开发 Docker wrapper；详见 `model3d-workflow/README.md` |
 | Math、DuckDB、Jupyter | 原生进程 | 沿用各自标准生命周期与依赖准备入口 |

@@ -49,7 +49,7 @@ addp_prepare_model3d_workflow() (
     "$python_bin" "$runtime_dir/blender_setup.py" current "$ROOT_DIR/.dev-state/model3d-blender" || {
       echo '✗ Model3D Blender 工具需要准备或更新，请先执行 README 的独立工具准备命令' >&2; return 1;
     }
-    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir") || return 1
+    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir" "$ROOT_DIR/common-python") || return 1
     addp_python_dependencies_current "$runtime_dir" "$fingerprint" 'Model3D' || {
       echo '✗ Model3D Python 依赖需要更新，请先停止该 Runtime 再启动' >&2; return 1;
     }
@@ -65,7 +65,7 @@ addp_prepare_model3d_workflow() (
       source "$ROOT_DIR/scripts/dev/model3d-workflow.sh"
       addp_model3d_python_current "$runtime_dir/venv/bin/python"
     ' _ "$ROOT_DIR" || return 1
-    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Model3D' || return 1
+    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Model3D' "$ROOT_DIR/common-python" || return 1
     "$python_bin" "$runtime_dir/native_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-native" || return 1
     "$python_bin" "$runtime_dir/blender_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-blender" || return 1
   fi

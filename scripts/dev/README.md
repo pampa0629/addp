@@ -25,7 +25,7 @@ scripts/dev/
 ├── stop-exact-process.sh # 仅供 addp-online T4 精确停止正式进程
 ├── restart.sh         # 智能重启服务；纯扩展服务参数支持局部重启
 ├── keepalive.sh       # 托管命令环境前台保活入口
-├── document-workflow.sh # Document 原生依赖准备、中文转换预检与 PID 启动
+├── document-workflow.sh # Document 原生依赖准备、版本检查与 PID 启动
 ├── modtidy.sh         # 清理 Go 模块依赖
 ├── clean.sh           # 清理开发环境编译产物
 └── install-frontend-deps.sh # 安装前端依赖
@@ -152,9 +152,10 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 - 无参数或 `-all` 时先 `stop.sh`，再同步 Swagger 并执行 `start.sh`；指定模块时只停止并启动所选模块。
 - 全局重启通过 `stop.sh` 统一停止 Python、Go 和 Runtime，保留 System 供注销；只有优雅退出超时后才强制终止工作区所属进程。
 - 所有局部重启统一通过 `stop.sh -<模块> ...` 停止所选服务，再通过 `start.sh -<模块> ...` 启动；运行中的公共依赖复用，缺失的依赖由启动入口补齐。停止失败时不进入准备和启动阶段。
+- Go Backend 和 Worker 在构建检查前分别核验进程状态；已经运行的受管服务跳过指纹检查和编译，仅对需要启动的进程按需构建。编译后、启动前重新核验端口和进程归属。单独重启 Runtime 不会顺带编译仍在运行的 Meta Backend/Worker。
 - `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
 - Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
-- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython 和 Model3D 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，后续启动复用该记录。所有依赖同步与原生转换验证均在所选服务停止后进行；准备失败的服务不启动，入口返回非零。
+- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。Spark、GeoPython、Model3D、PointCloud、Document 和 Raster Mosaic 仅在依赖输入或安装环境指纹变化、记录缺失或 `pip check` 失败时重新安装；共享同步入口只安装和追踪调用方显式声明的 editable 本地包，Raster Mosaic 不依赖 `common-python`；相同输入且依赖一致时输出“依赖未变化，跳过安装”。首次使用该机制仍需同步一次并生成成功记录，后续启动复用该记录。所有依赖同步与原生转换验证均在所选服务停止后进行；准备失败的服务不启动，入口返回非零。
 - Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
 - 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
@@ -185,7 +186,7 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
 - PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 同步依赖、验证驱动和真实 COPC 写入并启动。开发入口不构建镜像，首次迁移需先移走旧普通 venv 并停止旧开发容器。
-- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、验证三页中文 PDF 转换并启动。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
+- Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性和版本并启动，核对 PID、监听归属及 HTTP 健康状态。真实三页中文 PDF 转换由 `make test-document-native` 和 CI 独立验证。开发态只处理可信文件，首次迁移需先停止、删除旧开发容器；生产保留容器隔离。
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装

@@ -87,6 +87,8 @@ class HighGoInitializationTest(unittest.TestCase):
         self.assertTrue(mounts['/docker-entrypoint-initdb.d']['source'].endswith('/business/highgo/init'))
         self.assertEqual(service['environment']['POSTGRES_DB'], 'highgo')
         self.assertIn('PGSSLMODE=require', service['healthcheck']['test'][1])
+        self.assertIn('HIGHGO_APP_PASSWORD', service['healthcheck']['test'][1])
+        self.assertEqual(service['environment']['HIGHGO_USER'], 'business')
         self.assertIn('password_encryption=sm3', service['command'])
         result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', '-f', str(ROOT / 'business/docker-compose.yml'),
                                  'config', '--services'], text=True, capture_output=True, check=True)
@@ -118,6 +120,93 @@ esac
             result = subprocess.run(args, env=env, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(any(line.startswith('compose ') for line in log.read_text().splitlines()))
+
+
+class HighGoBusinessAccountTest(unittest.TestCase):
+    initializer = ROOT / 'business/highgo/init/01-business.sh'
+
+    def run_initializer(self, directory, state='', login_bad=False, failure='', password="Business@9'\\$", valid_until='infinity'):
+        mock = Path(directory) / 'psql'
+        mock.write_text('''#!/usr/bin/env python3
+import json,os,pathlib,sys
+args=sys.argv[1:]; role=args[args.index('-U')+1]
+assert os.environ['HIGHGO_APP_PASSWORD'] not in ' '.join(args)
+sql='' if '-c' in args or '-Atc' in args or '-f' in args else sys.stdin.read()
+step=''
+if 'FROM pg_roles r' in sql:
+    print(os.environ['MOCK_STATE']); step='inspect'
+elif 'PASSWORD' in sql:
+    step='create' if 'CREATE USER' in sql else 'rotate'
+    first=sql.splitlines()[0]
+    literal=first[len("\\\\set app_password '"):-1]
+    decoded=''; i=0
+    while i<len(literal):
+        if literal[i]=='\\\\': i+=1
+        decoded+=literal[i]; i+=1
+    assert decoded == os.environ['HIGHGO_APP_PASSWORD']
+    if os.environ['MOCK_FAIL']=='password':
+        print(sql,file=sys.stderr); sys.exit(3)
+    pathlib.Path(os.environ['MOCK_CHANGED']).touch()
+elif "VALID UNTIL" in sql: step='expiry'; assert role=='syssso'
+elif 'GRANT CONNECT' in sql:
+    step='catalog'; assert role=='sysdba'; assert 'BEGIN;' in sql and 'COMMIT;' in sql
+elif '-f' in args:
+    step='sample'; assert role=='business'
+    if os.environ['MOCK_FAIL']=='sample': sys.exit(3)
+elif any('engine_name' in arg for arg in args):
+    step='probe'; assert role=='business'; print('HighGo V4.5 Business')
+else:
+    step='login'; assert role=='business'
+    if os.environ['MOCK_LOGIN_BAD']=='1' and not pathlib.Path(os.environ['MOCK_CHANGED']).exists(): sys.exit(2)
+    print(1)
+with open(os.environ['MOCK_LOG'],'a') as f: f.write(json.dumps([step,role])+'\\n')
+''')
+        mock.chmod(0o755)
+        env=dict(os.environ, PATH=directory+os.pathsep+os.environ['PATH'], POSTGRES_PASSWORD='Admin@98765',
+                 HIGHGO_USER='business', HIGHGO_APP_PASSWORD=password, HIGHGO_APP_VALID_UNTIL=valid_until,
+                 MOCK_STATE=state, MOCK_LOGIN_BAD=str(int(login_bad)), MOCK_FAIL=failure,
+                 MOCK_LOG=str(Path(directory)/'log'), MOCK_CHANGED=str(Path(directory)/'changed'))
+        result=subprocess.run(['bash',str(self.initializer)],env=env,capture_output=True,text=True)
+        log=Path(directory)/'log'
+        steps=[json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        self.assertNotIn(password,result.stdout+result.stderr)
+        return result,steps
+
+    def test_fresh_existing_and_changed_password_follow_role_boundaries(self):
+        for state,bad,expected in [('',False,'create'),('ordinary',False,None),('ordinary',True,'rotate')]:
+            with self.subTest(state=state,bad=bad),tempfile.TemporaryDirectory() as directory:
+                result,steps=self.run_initializer(directory,state,bad)
+                self.assertEqual(result.returncode,0,result.stderr)
+                changes=[entry for entry in steps if entry[0] in ('create','rotate')]
+                self.assertEqual(changes, [] if expected is None else [[expected,'sysdba' if expected=='create' else 'syssso']])
+                self.assertEqual(steps[-4:],[['expiry','syssso'],['catalog','sysdba'],['sample','business'],['probe','business']])
+
+    def test_unsafe_existing_role_is_rejected_before_any_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result,steps=self.run_initializer(directory,'unsafe')
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(steps,[['inspect','sysdba']])
+
+    def test_password_failure_does_not_leak_or_continue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result,steps=self.run_initializer(directory,failure='password')
+            self.assertNotEqual(result.returncode,0)
+            self.assertEqual(steps,[['inspect','sysdba']])
+
+    def test_sample_failure_stops_before_ready_and_empty_expiry_preserves_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result,steps=self.run_initializer(directory,'ordinary',failure='sample',valid_until='')
+            self.assertNotEqual(result.returncode,0)
+            self.assertFalse(any(step[0] in ('expiry','probe') for step in steps))
+
+    def test_invalid_config_rejected_without_database_calls(self):
+        for user,password,expiry in [('sysdba','Business@9',''),('pg_monitor','Business@9',''),
+                                    ('business','',''),('business','Admin@98765',''),
+                                    ('business','a\nb',''),('business','Business@9','2099-01-01')]:
+            env=dict(os.environ,POSTGRES_PASSWORD='Admin@98765',HIGHGO_USER=user,
+                     HIGHGO_APP_PASSWORD=password,HIGHGO_APP_VALID_UNTIL=expiry)
+            result=subprocess.run(['bash',str(self.initializer),'--check-config'],env=env,capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
 
 
 if __name__ == '__main__':

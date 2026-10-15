@@ -627,7 +627,7 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 |---|---|---|---|
 | System 新建引擎后立即扫描 | `manual` | `basic` | `false` |
 | System 定时扫描 | `scheduled` | `deep` | `false` |
-| Meta 前端手动扫描 | `manual` | 第一阶段固定 `deep`；API 支持用户选择 | 第一阶段固定 `false`；API 支持用户选择 |
+| Meta 前端手动扫描 | `manual` | 用户选择，默认 `basic` | 用户选择；已扫描范围重新扫描默认 `true`，首次扫描默认 `false` |
 | Meta 前端定时扫描 | `scheduled` | 用户选择，默认 `deep` | 默认 `false` |
 | Manager node 行内刷新 | `manual` | `basic` | `true` |
 | Manager node 详情深度扫描 | `manual` | `deep` | `true` |
@@ -636,6 +636,10 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 | Transfer 完成后触发 | `manual` | `basic` 或按导入结果决定 | `false` |
 
 `manual` 可以在执行配置中额外记录来源模块，例如 `source=system`、`source=manager`、`source=meta`、`source=transfer`，用于审计和排查。但来源不进入 trigger type 枚举，也不表达具体场景。
+
+Meta 手动扫描在提交前统一展示引擎、精确目标、深度和强制更新选项，点击扫描／重新扫描入口只打开配置，不直接创建 execution。单项选择复用共享资源树选择器的完整 locator，原样提交 `targets`；顶层范围和批量范围使用原有 `catalog_paths`，不得将单表改为父 schema。提交后使用同一 manual execution 入口和执行等待逻辑，不创建调度任务。
+
+确定授权边界只需要可靠完成基础识别，不要求 deep。手动界面默认 basic；deep 由用户显式选择，用于补充字段、统计等增强事实，不能作为签发读取授权的隐式前提。
 
 Transfer 完成后触发 Meta 扫描时，应按本次执行实际写出的内容提交 `ref_groups`。Transfer 不应调用 data item detector，不应判断 refs 是否组成 Shapefile、GeoPackage 等 data item，也不应为了让 Meta 重新识别而把目标扩大为父目录 `catalog_paths`。
 

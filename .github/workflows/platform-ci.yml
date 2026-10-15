@@ -247,6 +247,7 @@ jobs:
         if: steps.selection.outputs.run == 'true'
         uses: ./.github/actions/prepare-python-gate
         with:
+          python-version: "3.12"
           venv-path: engines/document-workflow/.venv
           cache-dependency-path: |
             engines/document-workflow/requirements-dev.txt
@@ -258,6 +259,25 @@ jobs:
       - name: Run Document Workflow tests
         if: steps.selection.outputs.run == 'true'
         run: make test-document-workflow
+
+      - name: Install Document native system libraries
+        if: steps.selection.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1 libcairo2 libcups2t64 libdbus-1-3 libnspr4 libnss3 \
+            libsm6 libx11-6 libxext6 libxinerama1 libxrender1 libxcb1 libxslt1.1 \
+            libgpgme11t64 libgpgmepp6t64
+
+      - name: Prepare private Document native dependencies
+        if: steps.selection.outputs.run == 'true'
+        run: engines/document-workflow/.venv/bin/python engines/document-workflow/native_setup.py prepare .dev-state/document-native
+
+      - name: Run Document native conversion gate
+        if: steps.selection.outputs.run == 'true'
+        env:
+          DOCUMENT_NATIVE_PYTHON: engines/document-workflow/.venv/bin/python
+        run: make test-document-native
 
       - name: Summarize Document Workflow gate
         if: always()

@@ -68,20 +68,55 @@ func (p *OraclePlugin) DeleteResource(ctx context.Context, connInfo plugin.Conne
 	if err := validateOracleTargetSchema(ctx, db, schema); err != nil {
 		return err
 	}
+	return deleteOracleTable(ctx, db, schema, table)
+}
+
+func deleteOracleTable(ctx context.Context, db *sql.DB, schema, table string) error {
 	exists, err := oracleBaseTableExists(ctx, db, schema, table)
 	if err != nil {
 		return err
 	}
 	if exists {
+		cleanupMetadata, err := oracleDeleteMetadataPreflight(ctx, db, schema, table)
+		if err != nil {
+			return err
+		}
 		qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 		if _, err := db.ExecContext(ctx, "DROP TABLE "+qualified+" PURGE"); err != nil {
 			return fmt.Errorf("drop Oracle table %s.%s: %w", schema, table, err)
+		}
+		if !cleanupMetadata {
+			return nil
 		}
 	}
 	if _, err := db.ExecContext(ctx, "DELETE FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME = :1", table); err != nil {
 		return fmt.Errorf("delete Oracle spatial metadata for %s.%s: %w", schema, table, err)
 	}
 	return nil
+}
+
+// Scalar tables have no Spatial dependency. Native object columns (including
+// hidden/nested object storage) and MDSYS domain indexes require metadata facts;
+// an unknown object type is never evidence that the table is non-spatial.
+func oracleDeleteMetadataPreflight(ctx context.Context, db *sql.DB, schema, table string) (bool, error) {
+	var dependent int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT 1 FROM all_tab_cols
+		 WHERE owner = :1 AND table_name = :2 AND data_type_owner IS NOT NULL
+		UNION ALL
+		SELECT 1 FROM all_indexes
+		 WHERE table_owner = :3 AND table_name = :4 AND ityp_owner = 'MDSYS'
+	)`, schema, table, schema, table).Scan(&dependent); err != nil {
+		return false, fmt.Errorf("check Oracle delete type facts: %w", err)
+	}
+	if dependent == 0 {
+		return false, nil
+	}
+	var metadata int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME = :1", table).Scan(&metadata); err != nil {
+		return false, fmt.Errorf("check Oracle delete spatial metadata: %w", err)
+	}
+	return metadata > 0, nil
 }
 
 func ensureOracleSpatialMetadataAndIndexes(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {

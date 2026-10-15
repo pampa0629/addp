@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -492,10 +493,14 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		if err != nil {
 			return nil, err
 		}
-		if addressKey != engine.IdentityKey && !req.ConfirmSameEngine {
+		sameAddress, err := sameConnectionIdentityKey(engine.IdentityKey, addressKey)
+		if err != nil {
+			return nil, err
+		}
+		if !sameAddress && !req.ConfirmSameEngine {
 			return nil, ErrEngineRelocationUnconfirmed
 		}
-		if addressKey != engine.IdentityKey {
+		if !sameAddress {
 			if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, addressKey); findErr == nil && existing.ID != engine.ID {
 				return nil, ErrEngineAddressConflict
 			} else if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
@@ -509,7 +514,7 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 			return nil, fmt.Errorf("加密连接信息失败: %w", err)
 		}
 		engine.ConnectionInfo = encryptedConnInfo
-		if addressKey != engine.IdentityKey {
+		if !sameAddress {
 			addressChanged = true
 			engine.IdentityKey = addressKey
 			engine.ConnectionStatus = models.EngineConnectionUnknown
@@ -929,7 +934,11 @@ func (s *EngineService) Restore(id, tenantID, actorID uint, req *models.EngineRe
 	if err != nil {
 		return nil, err
 	}
-	if identityKey != engine.IdentityKey && !req.ConfirmSameEngine {
+	sameAddress, err := sameConnectionIdentityKey(engine.IdentityKey, identityKey)
+	if err != nil {
+		return nil, err
+	}
+	if !sameAddress && !req.ConfirmSameEngine {
 		return nil, ErrEngineRelocationUnconfirmed
 	}
 	if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil && existing.ID != engine.ID {
@@ -1215,6 +1224,19 @@ func (s *EngineService) mergePlainConnectionInfo(engineType string, original, up
 	}
 
 	return merged
+}
+
+// sameConnectionIdentityKey compares the persisted JSONB object, independent of
+// PostgreSQL's text formatting and key order. Invalid stored identities fail closed.
+func sameConnectionIdentityKey(left, right models.JSONString) (bool, error) {
+	var before, after map[string]string
+	if err := json.Unmarshal([]byte(left), &before); err != nil || len(before) == 0 {
+		return false, errors.New("invalid stored engine connection identity")
+	}
+	if err := json.Unmarshal([]byte(right), &after); err != nil || len(after) == 0 {
+		return false, errors.New("invalid proposed engine connection identity")
+	}
+	return maps.Equal(before, after), nil
 }
 
 func buildConnectionIdentityKey(engineType string, connInfo models.ConnectionInfo) (models.JSONString, error) {

@@ -49,7 +49,7 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete' } = {}) {
   const writes = [], reads = []
   let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
   let grants = [...history], failedGrant = false, failedChange = false
@@ -77,10 +77,13 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       const fingerprint = path.split('/').at(-2)
       const candidates = [tablePath, { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }]
       const native = candidates.find(p => createHash('sha256').update(`2:${p.segments[1].name}.${p.segments[2].name}`).digest('hex') === fingerprint)
-      if (!native) return reply({error:'Missing DataItem'},404)
+      if (!native || factsState === 'missing') return reply({ error: 'Missing DataItem', error_code: 'authorization_target_not_found' }, 404)
+      if (factsState === 'failed') return reply({ error: 'Facts unavailable', error_code: 'authorization_facts_unavailable' }, 503)
+      if (factsState === 'forbidden') return reply({ error: 'Forbidden', error_code: 'forbidden' }, 403)
+      if (factsState === 'unknown404') return reply({ error: 'Endpoint not found' }, 404)
       return reply({schema_version:'meta.data_item_authorization_facts/v1',engine_id:2,item_fingerprint:fingerprint,item_type:'table',
-      full_name:`${native.segments[1].name}.${native.segments[2].name}`,basis_state:'complete',observed_at:new Date().toISOString(),
-      boundary_hash:'b'.repeat(64),boundary:{layout:'single',native_target:native}})
+      full_name:`${native.segments[1].name}.${native.segments[2].name}`,basis_state:factsState,observed_at:new Date().toISOString(),
+      boundary_hash:factsState === 'complete' ? 'b'.repeat(64) : null,boundary:factsState === 'complete' ? {layout:'single',native_target:native} : null})
     }
     if (path.endsWith('/access_delegations')) {
       reads.push(path)
@@ -174,7 +177,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
     if (path.endsWith('/engines')) return reply([engine])
     throw new Error(`Unexpected configuration fixture request: ${request.method()} ${path}`)
   })
-  return { writes, reads }
+  return { writes, reads, setFactsState: value => { factsState = value } }
 }
 
 async function selectAccountFilter(page) {
@@ -193,8 +196,8 @@ test('authorization actions share one row and resource tree precisely filters cu
     return Math.max(...positions.map(box => box.y + box.height / 2)) - Math.min(...positions.map(box => box.y + box.height / 2))
   }).toBeLessThan(3)
   await selectAccountFilter(page)
-  await page.getByTestId('source-grant-tree-filter').click()
-  const dialog = page.getByTestId('source-grant-tree-panel')
+  await page.locator('.resource-tree-select__toggle').click()
+  const dialog = page.locator('.resource-tree-select__panel')
   const namespace = dialog.getByRole('treeitem', { name: 'outdoor', exact: true })
   await namespace.locator('.el-tree-node__expand-icon').first().click()
   await dialog.getByRole('treeitem', { name: 'activities', exact: true }).click()
@@ -229,17 +232,17 @@ test('integrated table filter closes its tree without closing the authorization 
   await page.goto('/engines/2?tab=data-authorization')
   const input = page.getByTestId('source-grant-table-filter')
   await input.click(); await input.fill('activ')
-  await expect(page.getByTestId('source-grant-tree-panel')).toHaveCount(0)
+  await expect(page.locator('.resource-tree-select__panel')).toHaveCount(0)
   await expect(page.getByTestId('source-grant-list')).toContainText('activities')
   await input.press('ArrowDown')
-  await expect(page.getByTestId('source-grant-tree-panel')).toBeVisible()
+  await expect(page.locator('.resource-tree-select__panel')).toBeVisible()
   await input.press('Escape')
-  await expect(page.getByTestId('source-grant-tree-panel')).toBeHidden()
+  await expect(page.locator('.resource-tree-select__panel')).toBeHidden()
   await expect(page.getByTestId('authorization-workspace-tabs')).toBeVisible()
-  await page.getByTestId('source-grant-tree-filter').click()
-  await expect(page.getByTestId('source-grant-tree-panel')).toBeVisible()
+  await page.locator('.resource-tree-select__toggle').click()
+  await expect(page.locator('.resource-tree-select__panel')).toBeVisible()
   await page.getByTestId('authorization-workspace-tabs').getByText('全部授权记录', { exact: true }).click()
-  await expect(page.getByTestId('source-grant-tree-panel')).toHaveCount(0)
+  await expect(page.locator('.resource-tree-select__panel')).toHaveCount(0)
   await expect(input).toHaveValue('activ')
   expect(writes).toEqual([])
 })
@@ -247,7 +250,7 @@ test('integrated table filter closes its tree without closing the authorization 
 test('table text filtering remains available without resource tree permission', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: grantPermissions.filter(key => key !== 'system.engine_catalog.read'), history: [historicalGrant()] })
   await page.goto('/engines/2?tab=data-authorization')
-  await expect(page.getByTestId('source-grant-tree-filter')).toBeDisabled()
+  await expect(page.getByRole('button', { name: '资源树选择', exact: true })).toBeDisabled()
   await page.getByTestId('source-grant-table-filter').fill('not-found')
   await expect.poll(() => reads.some(url => url.includes('table_search=not-found'))).toBe(true)
   expect(reads.some(url => url.endsWith('/catalog/children'))).toBe(false)
@@ -531,16 +534,73 @@ async function selectData(page, schema = false) {
   const panel = page.getByTestId('engine-data-authorization')
   await expect(page.getByTestId('authorization-workspace-toolbar')).toBeVisible()
   if (await page.getByTestId('authorization-new').isVisible()) await page.getByTestId('authorization-new').click()
-  await panel.locator('.picker-node-label').filter({ hasText: /^outdoor$/ }).click()
-  if (!schema) {
-    const namespace = panel.getByRole('treeitem', { name: 'outdoor', exact: true })
+  await page.locator('.resource-tree-select__toggle').click()
+  const picker = page.locator('.resource-tree-select__panel')
+  if (schema) await picker.locator('.picker-node-label').filter({ hasText: /^outdoor$/ }).click()
+  else {
+    const namespace = picker.getByRole('treeitem', { name: 'outdoor', exact: true })
     if (await namespace.getAttribute('aria-expanded') !== 'true') await namespace.locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
-    await panel.locator('.picker-node-label').filter({ hasText: /^activities$/ }).click()
+    await picker.getByRole('treeitem', { name: 'activities', exact: true }).click()
   }
   await page.getByTestId('approval-add-selection').click()
   await expect(page.getByTestId('approval-targets')).toBeVisible()
   return panel
 }
+test('new authorization unifies native search and tree selection without granting from free text', async ({ page }, testInfo) => {
+  await page.clock.install()
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization')
+  await page.getByTestId('authorization-new').click()
+  const input = page.getByTestId('approval-resource-input')
+  await expect(page.locator('.resource-tree-select__panel')).toHaveCount(0)
+  await input.fill('activities')
+  await page.clock.runFor(350)
+  await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
+  const picker = page.locator('.resource-tree-select__panel')
+  const result = picker.getByRole('button', { name: /activities outdoor.activities/ })
+  await expect(result).toBeVisible()
+  const refresh = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
+  await page.clock.runFor(10000); await refresh
+  await expect(result).toBeVisible()
+  await expect(picker).not.toContainText('activities_view')
+  await result.click()
+  await expect(picker).toBeHidden()
+  await expect(input).toHaveValue('outdoor.activities')
+  await expect(input).toBeFocused()
+  await expect(page.getByTestId('approval-add-selection')).toBeEnabled()
+  expect(reads.some(url => url.includes('/authorization-facts'))).toBe(false)
+  await input.fill('arbitrary table')
+  await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
+  await input.press('ArrowDown')
+  await expect(picker.getByRole('tree')).toBeVisible()
+  const namespace = picker.getByRole('treeitem', { name: 'outdoor', exact: true })
+  await namespace.locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
+  await picker.getByRole('treeitem', { name: 'activities', exact: true }).click()
+  await page.getByTestId('approval-add-selection').click()
+  await expect(page.getByTestId('approval-targets')).toContainText('outdoor / activities')
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+  await page.screenshot({ path: testInfo.outputPath('new-authorization-integrated-picker.png'), fullPage: true, animations: 'disabled' })
+  expect(reads.some(url => url.includes('/authorization-facts'))).toBe(true)
+  expect(writes).toEqual([])
+})
+test('new authorization picker closes with Escape and does not overflow narrow windows', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions })
+  await page.setViewportSize({ width: 760, height: 720 })
+  await page.goto('/engines/2?tab=data-authorization')
+  await page.getByTestId('authorization-new').click()
+  const input = page.getByTestId('approval-resource-input')
+  await input.fill('activities')
+  const picker = page.locator('.resource-tree-select__panel')
+  await expect(picker.getByRole('button', { name: /activities outdoor.activities/ })).toBeVisible()
+  const box = await picker.boundingBox()
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(760)
+  await input.press('Escape')
+  await expect(picker).toBeHidden()
+  await expect(page.getByTestId('authorization-workspace-toolbar')).toBeVisible()
+  await expect(input).toHaveValue('activities')
+  expect(writes).toEqual([])
+})
 async function chooseMode(page, mode = '直接批准') {
   await page.getByTestId('approval-mode').click()
   await page.getByRole('option', { name: mode, exact: true }).click()
@@ -561,6 +621,80 @@ async function confirmGrant(page, cancel = false) {
   await confirm.getByRole('button', { name: cancel ? '取消' : '确定', exact: true }).click()
   await expect(confirm).toBeHidden()
 }
+for (const [factsState, label] of [
+  ['missing', '未找到数据项'], ['incomplete', '基础识别不完整'], ['needs_refresh', '边界需要刷新'],
+  ['unsupported', '当前类型暂不支持'], ['failed', '核对失败'], ['forbidden', '无数据项核对权限'], ['unknown404', '核对失败']
+]) {
+  test(`native tree selection cannot issue without complete DataItem facts: ${factsState}`, async ({ page }) => {
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', factsState })
+    await page.goto('/engines/2?tab=data-authorization')
+    await selectData(page); await grantDraft(page)
+    await expect(page.getByTestId('approval-basis-status')).toContainText(label)
+    await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+    await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+    expect(reads.some(url => url.includes('/authorization-facts'))).toBe(true)
+    expect(writes).toEqual([])
+  })
+}
+test('DataItem basis recheck refreshes only facts and preserves the grant draft', async ({ page }) => {
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent', factsState: 'missing' })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectData(page); await grantDraft(page)
+  await expect(page.getByTestId('approval-basis-status')).toContainText('未找到数据项')
+  setFactsState('complete')
+  const before = reads.filter(url => url.includes('/authorization-facts')).length
+  await page.getByTestId('approval-basis-refresh').click()
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+  await expect(page.getByTestId('source-grant-confirm')).toBeEnabled()
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(before + 1)
+  expect(writes).toEqual([])
+})
+test('DataItem facts observation is skipped without its function permission', async ({ page }) => {
+  const { reads, writes } = await fixture(page, { allowed: permissions })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
+  await expect(page.getByTestId('approval-basis-status')).toContainText('无数据项核对权限')
+  await expect(page.getByTestId('approval-basis-refresh')).toBeDisabled()
+  expect(reads.some(url => url.includes('/authorization-facts'))).toBe(false)
+  expect(writes).toEqual([])
+})
+test('complete DataItem display cannot replace fresh facts verification at signing', async ({ page }) => {
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+  setFactsState('incomplete')
+  await page.getByTestId('source-grant-confirm').click()
+  await expect(page.getByTestId('source-grant-form').locator('.el-alert--error')).toBeVisible()
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(2)
+  expect(writes).toEqual([])
+  await page.getByTestId('approval-basis-refresh').click()
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别不完整')
+  await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+})
+test('late DataItem basis responses cannot overwrite a removed and re-added target', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+  let release, started, hold = true
+  const pending = new Promise(resolve => { release = resolve }), observed = new Promise(resolve => { started = resolve })
+  await page.route('**/authorization-facts', async route => {
+    if (!hold) return route.fallback()
+    hold = false; started(); await pending
+    await route.fulfill({ status: 503, json: { error: 'Delayed facts failure' } })
+  })
+  try {
+    await page.getByTestId('approval-basis-refresh').click(); await observed
+    await expect(page.getByTestId('approval-basis-status')).toContainText('正在核对')
+    await page.getByTestId('approval-targets').getByRole('button', { name: '移除', exact: true }).click()
+    await page.getByTestId('approval-add-selection').click()
+    await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+    const response = page.waitForResponse(item => item.url().includes('/authorization-facts') && item.status() === 503)
+    release(); await response
+    await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+    expect(writes).toEqual([])
+  } finally { release() }
+})
 async function refreshSameAuthorization(page) {
   await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().fetchAuthContext())
 }
@@ -709,6 +843,47 @@ test('unchanged engine and authorization refresh preserve the draft; losing perm
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   expect(writes).toEqual([])
 })
+for (const existing of [false, 'independent']) test(`opaque token rotation preserves the ${existing ? 'existing' : 'first'} approval grant draft`, async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
+  if (!existing) await chooseMode(page)
+  await grantDraft(page)
+  let release, requested
+  const held = new Promise(resolve => { release = resolve })
+  const arrived = new Promise(resolve => { requested = resolve })
+  await page.route('**/api/v1/system/auth/context', async route => {
+    requested(); await held
+    await route.fulfill({ json: { principal: { id: '1', principal_type: 'user' }, context: { type: 'tenant', tenant_id: '2', tenant_membership_id: '4' },
+      authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '2' }, permissions: grantPermissions }] } } })
+  })
+  await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().setToken('rotated-opaque-fixture', 3600))
+  await arrived
+  try {
+    // Pending authority must not permit interaction, but it must not destroy
+    // the in-memory component that owns the unsubmitted draft either.
+    await expect(page.getByTestId('engine-data-authorization')).toHaveCount(1)
+    await expect(page.getByTestId('source-grant-confirm')).not.toBeVisible()
+    expect(writes).toEqual([])
+  } finally { release() }
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  await expect(page.getByTestId('source-grant-expiry')).toContainText('长期有效，直到撤销')
+  await expect(page.getByTestId('source-grant-form')).toContainText('Outdoor reader')
+  await expect(page.getByTestId('approval-targets')).toContainText('activities')
+  expect(writes).toEqual([])
+})
+for (const change of ['permission', 'membership', 'failure']) test(`token rotation never restores a draft after ${change} changes`, async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
+  await page.route('**/api/v1/system/auth/context', async route => {
+    if (change === 'failure') return route.fulfill({ status: 503, json: { error: 'Unavailable' } })
+    await route.fulfill({ json: { principal: { id: '1', principal_type: 'user' }, context: { type: 'tenant', tenant_id: '2', tenant_membership_id: change === 'membership' ? '5' : '4' },
+      authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '2' }, permissions: change === 'permission' ? grantPermissions.filter(permission => permission !== 'system.engine_access_grant.create') : grantPermissions }] } } })
+  })
+  await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().setToken('rotated-restricted-fixture', 3600))
+  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
 test('authorization version change clears the selected snapshot', async ({ page }) => {
   await fixture(page, { allowed: grantPermissions })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await chooseMode(page)
@@ -718,6 +893,17 @@ test('authorization version change clears the selected snapshot', async ({ page 
   })
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+})
+test('rotation cancels an open grant confirmation without submitting or losing its draft', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
+  await page.getByTestId('source-grant-confirm').click()
+  const confirmation = page.getByRole('dialog').filter({ hasText: '即将授予 Outdoor reader' })
+  await expect(confirmation).toBeVisible()
+  await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().setToken('rotate-during-confirmation', 3600))
+  await expect(confirmation).toBeHidden()
+  await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+  expect(writes).toEqual([])
 })
 test('read-only configuration neither browses sources nor exposes grant controls', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_approval_requirement.read'], existing: true })

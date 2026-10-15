@@ -1182,6 +1182,20 @@
         "title": "Data authorization",
         "boundary": "Choose data and recipients, an approval mode and read validity, then confirm. Authorization administrators may handle grants directly; delegating handling does not grant reading.",
         "selectData": "1. Choose data to authorize",
+        "basis": {
+          "title": "DataItem basic identification",
+          "refresh": "Recheck",
+          "boundary": "Basic identification is not read permission. The DataItem and boundary are checked again when issuing a grant.",
+          "checking": "Checking",
+          "complete": "Basic identification complete",
+          "incomplete": "Basic identification incomplete; run a basic scan first",
+          "needs_refresh": "Boundary needs refresh; run a new basic scan first",
+          "unsupported": "Authorization boundaries are not supported for this type yet",
+          "missing": "DataItem not found; run a basic scan or verify the resource",
+          "forbidden": "No permission to inspect DataItem facts",
+          "failed": "Check failed; please retry",
+          "pending": "Not checked"
+        },
         "addSelection": "Add to this authorization",
         "snapshotOnly": "Select a table or schema/node to list existing ordinary tables (up to 200), then remove any table. Views and future tables are excluded. Outcomes are shown per table.",
         "remove": "Remove",
@@ -1226,6 +1240,8 @@
         }
       },
       "delegations": {
+        "new": "New delegation",
+        "existing": "Existing delegations",
         "title": "Delegate Authorization",
         "navigationTitle": "Delegate Authorization",
         "created": "Management delegation created; no data read permission has been granted.",

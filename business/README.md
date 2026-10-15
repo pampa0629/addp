@@ -38,12 +38,12 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 
 瀚高使用已确认的社区镜像 `qiuchenjun/hgdb-see:4.5.10.3`，固定 OCI 摘要 `sha256:e4dd0ac4877c3a8818ec4cef68108be8d54c410782a6248a01257ea66dd49725`，不是官方镜像。默认匹配 Docker Server 架构；本机已拉取 Linux ARM64 介质，其他架构尚未进行运行认证。
 
-`highgo` 为独立 Compose profile，不进入 `start.sh -all`。标准入口 `bash business/scripts/start.sh -highgo` 从 Business `.env` 读取 `HIGHGO_PASSWORD` 和 `HIGHGO_PORT`，只管理 `business-highgo`，不调用 System API。数据库固定为原生 `highgo`，业务样例在 `addp_business` schema；以独立 `engine_type=highgo` 登记，不改登记为 PostgreSQL。
+`highgo` 为独立 Compose profile，不进入 `start.sh -all`。标准入口 `bash business/scripts/start.sh -highgo` 从 Business `.env` 读取 `HIGHGO_PASSWORD`、`HIGHGO_USER`、`HIGHGO_APP_PASSWORD` 和 `HIGHGO_PORT`，只管理 `business-highgo`，不调用 System API。数据库固定为原生 `highgo`，业务样例在 `addp_business` schema；以独立 `engine_type=highgo` 登记，不改登记为 PostgreSQL。
 
 初始化复用固定镜像的服务启动流程，由仓库入口替换硬编码三权密码的初始化函数；三个管理角色的初始密码直接来自 `HIGHGO_PASSWORD`。仓库只挂载自己的幂等样例 SQL，不执行镜像的 `10_setup.sh`，因此不降低口令策略、关闭审计、创建高权限额外账号或用 SQL 字符串拼接密码。保留 SM3，TCP 仅接受 TLS；仅发布 `127.0.0.1:${HIGHGO_PORT:-5866}`，数据保存在独立 `highgo_data` 卷。此本地开发路线不代表生产许可或完整瀚高能力认证。
 
 ```bash
-# 在 business/.env 中设置满足数据库口令策略的 HIGHGO_PASSWORD，端口默认 5866。
+# 在 business/.env 中设置独立的 HIGHGO_PASSWORD 和 HIGHGO_APP_PASSWORD，端口默认 5866。
 bash business/scripts/start.sh -highgo
 bash business/scripts/highgo.sh status
 bash business/scripts/stop.sh -highgo
@@ -51,11 +51,26 @@ bash business/scripts/stop.sh -highgo
 bash business/scripts/restart.sh -highgo
 ```
 
-首次初始化写入密码；已有数据卷不在重启时自动改密。修改配置密码后应通过数据库正式账号管理完成轮换，不删除卷重建。停止只停止容器，保留数据。已有同名容器归属不符、端口冲突或 SQL 健康检查失败时直接报错。
+三权管理员密码 `HIGHGO_PASSWORD` 仅在首次建卷时写入，已有卷不自动轮换管理员密码。平台接入使用普通账号 `HIGHGO_USER`（默认 `business`），密码独立配置为 `HIGHGO_APP_PASSWORD`。首次建卷和每次标准启动共用 `highgo/init/01-business.sh`，初始化普通账号、业务 schema 和样例；已有同名账号若带管理属性或角色成员关系则拒绝使用。首次创建通过 stdin 传入原生 `psql` 变量并使用标识符／字面量引用绑定，口令不放入进程参数或临时文件。已有业务密码能登录时不重复改密，配置密码变化时由 `syssso` 通过 stdin 的原生 `psql` 变量绑定轮换，失败诊断不输出密码语句，密码不进入进程参数或临时文件。`HIGHGO_APP_VALID_UNTIL` 留空时保留原生有效期；可经明确确认仅对业务账号设置 `infinity`，不改变全局安全策略。样例由业务账号持有，旧 SYSDBA 探针只调整属主，不删除业务数据。停止只停止容器，保留数据。已有同名容器归属不符、端口冲突或 SQL 健康检查失败时直接报错。
 
-`make test-business-config` 覆盖 profile 隔离、固定镜像、回环端口、独立数据卷及初始化回归，已纳入 `make test-platform` 和现有 Platform CI。确定性回归验证三行密码文件、失败清理、拒绝空值／换行口令、SM3/TLS HBA 及数据卷复用；不等同于原生数据库运行验收。用户启动后需核验版本、TLS、样例及配置密码登录，再创建新的 System 引擎。
+业务样例由普通账号在 `addp_business` 中持有：探针 `addp_engine_probe` 1 行、客户 `customers` 3 行、商品 `products` 3 行、订单 `orders` 3 行、订单明细 `order_items` 4 行。字段与 Kingbase 普通关系样例一致，编号使用 `HG-` 前缀；保留主键、业务唯一键、三条外键及订单客户／更新时间索引，订单合计与明细合计均为 `6795.50`。整个样例 SQL 在一个事务中执行；重复初始化按固定主键更新这些受管理样例，保留额外记录，不删除或重建表。样例仍由唯一 `highgo/init/01-business.sh` 执行，首次建卷与已有卷共用此路径。
 
-2026-10-15 本机运行复核：标准入口已启动 `business-highgo`，状态 healthy，实际映射 `127.0.0.1:5866`。原生只读事务确认版本 `HighGo Database Management System 4.5 on aarch64,build on 20250227`、数据库 `highgo`、SM3、TLS 1.3 和一行样例；配置密码可登录三个管理角色。数据库保留默认口令有效期，本轮初始化的三权账号提示截止到 2026-10-22，不自动改为无限期。原生 Go 标准入口 `scripts/test/common-postgres-gate.sh --test highgo-write --highgo-native` 通过建表、COPY/INSERT、精确类型、Abort 和失败批次回滚，随机测试 schema 已清理且零残留。System 页面首轮连接被旧插件的中文版本字串检查误拒绝；共享插件已修复并通过 Common/System Go T1，页面登记仍待全部模块加载修复后复验，不能将原生门禁通过记为已完成 System 登记。
+`make test-business-config` 覆盖 profile 隔离、固定镜像、回环端口、独立数据卷及初始化回归，已纳入 `make test-platform` 和现有 Platform CI。确定性回归验证三行密码文件、失败清理、拒绝空值／换行口令、SM3/TLS HBA 及数据卷复用；不等同于原生数据库运行验收。用户启动后需核验版本、TLS、样例及业务密码登录。System 使用同一数据库身份登记；已有 Engine 只更新业务账号凭据。
+
+2026-10-15 本机运行复核：标准入口已启动 `business-highgo`，状态 healthy，实际映射 `127.0.0.1:5866`。原生只读事务确认版本 `HighGo Database Management System 4.5 on aarch64,build on 20250227`、数据库 `highgo`、SM3、TLS 1.3 和一行样例；配置密码可登录三个管理角色。数据库保留默认口令有效期，本轮初始化的三权账号提示截止到 2026-10-22，不自动改为无限期。原生 Go 标准入口 `scripts/test/common-postgres-gate.sh --test highgo-write --highgo-native` 通过建表、COPY/INSERT、精确类型、Abort 和失败批次回滚，随机测试 schema 已清理且零残留。System 页面首轮连接被旧插件的中文版本字串检查误拒绝；共享插件已修复并通过 Common/System Go T1。用户重启全部模块后，System 表单和保存后的连接检测均成功，新建 Engine 29「Business HighGo」（`127.0.0.1:5866/highgo`，`sslmode=require`）；原远程 Engine 28 保持删除状态。Meta 基础扫描成功，Manager 可浏览 `addp_business` 和 `public`，并在数据项 44352 预览 `addp_business.addp_engine_probe` 的 1 行、2 字段，内容为 `1 / HighGo V4.5 Business`。此复核确认本地接入、基础目录及样例预览，不代表全量深度扫描或所有消费链路认证。
+
+2026-10-15 审计对象预览回归：`SYSDBA` 对 `public.hg_t_audit_log` 的通用 SELECT ACL 虽返回 true，原生读取仍按三权分立拒绝；Manager 原失败发生在 `SELECT COUNT(*)`。另一个运行监控视图 `pg_stat_statements` 因未预加载而不可读。HighGo 插件复用现有系统对象过滤，排除 `hg_t_audit_log`、`pg_buffercache`、`pg_stat_statements`，不删除源对象、不扩大账号权限、不关闭审计。原生目录过滤／旧路径拒绝及写入门禁已通过，测试 schema 零残留；用户重启全部模块后，Engine 29 根节点的完整范围深度扫描成功，技术数据项数量由 4 收敛为 1；`public` 目录显示 0 项，三个系统对象已不在业务目录中。原生只读目录查询确认源数据库中的三个对象仍保留。Manager 对数据项 44352 的业务样例预览再次通过（1 行、2 字段）；旧审计表链接无法再定位误发现的数据项，页面回到待选择状态。运行复验完成。
+
+2026-10-15 业务账号收敛：用户明确确认仅业务账号长期有效。已在现有卷创建普通账号 `business`，三权角色的权限和 2026-10-22 有效期保持原值；`addp_business` 与探针表均由 `business` 持有，探针仍为 1 行。独立业务密码保存在忽略的 Business `.env`，原生 SM3/TLS 登录、幂等重复初始化及密码轮换已实测；普通业务账号通过现有 HighGo 原生建表／COPY／INSERT／精确类型／回滚门禁，随机 schema 零残留。`make test-business-config` 通过新增账号初始化回归（共 11 个瀚高用例）及已有 Business 配置检查。工作区 `make test-changed` 因其他受影响 owner 缺少 T2 连接配置在 preflight 阻断，不计为通过。System 凭据更新过程中发现通用地址比较误判：JSONB 返回的键顺序和空格与新生成文本不同。System 已改为按地址对象内容比较，Go T1 与 `scripts/test/system-iam-postgres-gate.sh --package repository --test engine-address` 真实 JSONB 回归通过；改变实际端口仍被拒绝为未确认搬迁。新 PostgreSQL 用例由现有 repository T2 自动发现，不新增 CI 路线。用户通过标准入口重启后，容器已采用 `business` 账号健康检查并恢复 healthy。随后 Engine 29 的连接账号已实际保存为 `business`，原 ID、`highgo` 数据库及地址键不变；保存后的连接测试成功。Manager 对既有数据项 44352 的 `addp_business.addp_engine_probe` 预览通过，显示 1 行、2 字段及 `1 / HighGo V4.5 Business`。重启后再次以普通业务账号运行原生读写门禁通过，测试 schema 零残留；本机业务账号切换、容器健康检查和样例预览验收完成。
+
+2026-10-15 管理员长期密码：按用户对本机测试环境的明确要求，三个管理账号分别使用自身身份轮换为同一组新的强密码，现有 `sysdba`、`syssso`、`syssao` 的 `rolvaliduntil` 均已核验为 `infinity`；`business` 继续长期有效。管理密码仅保存到忽略且权限为 `0600` 的 `business/.env` 中 `HIGHGO_PASSWORD`，不进入日志或仓库。操作期间临时将原生密码有效期策略设为 0，轮换完成后已恢复原来的 7 天默认值，三权分立、最高口令复杂度、身份鉴别、SM3 和 TLS 保留。新密码登录、使用新配置执行既有 Business 幂等初始化及业务探针读取均通过，无需为此立即重启；后续标准启动会将更新的管理员配置应用到容器。长期有效期保存在现有数据卷；新建卷仍遵循初始化默认策略。此前 10 月 22 日管理员到期提醒已解除。
+
+2026-10-15 普通关系样例验收：沿用 Business 初始化入口补齐客户／商品／订单／订单明细四表，`business` 原生连续初始化两次后逐表内容指纹一致，行数分别为 3／3／3／4；探针仍为 1 行。三条外键、普通账号属主、逐单金额及订单／明细合计 `6795.50` 均核验通过。Manager 在 Engine 29 的 `addp_business` 执行完整范围深度扫描成功，目录由 1 项增加至 5 项；四张新表逐表预览通过，字段数分别为 6／7／7／5，中文、布尔、小数和时间正常显示。`make test-business-config` 通过（11 个瀚高用例及已有 Business 检查）。`make test-module MODULE=business` 已完整通过：平台检查、66 项原生运行时等生命周期回归、38 项 Infra 定向回归及独占 Redis T2 的 5 项断言均通过。Infra 测试夹具改用 Shell 模拟 Docker，命令序列保持一致，参数记录覆盖空值、回车、换行及中文；完整启动场景采用 30 秒有界等待。该组由唯一 `make test-infra-runtime-log-lifecycle` 子入口接入既有生命周期和 Platform CI，不修改生产重启逻辑。工作流审计使用经 PyPI SHA-256 校验的固定版本本地 wheel，通过原标准审计入口执行。此次样例沿用现有 SQL 与配置验证入口，无新增依赖、生命周期或 CI 路线。
+
+
+2026-10-15 PostgreSQL → 瀚高本机同步验收：通过 Console 创建 Transfer 任务 13（`瀚高同步验收-PG订单-20261015_ac48d5`），从 Engine 2 的 `public.highgo_sync_orders_src_20261015_ac48d5` 同步到 Engine 29 的独立新表 `addp_business.orders_from_pg_20261015_ac48d5`。源表为三行合成订单，源字段经单表深度扫描取得；采用 bounded snapshot、append 和 7 个同名字段映射，普通账号 `business` 自动建表并写入。执行 `2895342d-b40a-4f3c-94aa-b9fc4aec0507` 成功，读取／写入均为 3，统一监控记录 573 显示成功。原生只读查询逐行比较全部七字段一致，金额列为 `numeric(14,2)`，两端合计均为 `6795.50`；原五张样例表行数仍为 1／3／3／3／4。自动扫描发现目标数据项 44575，Manager 预览显示三行七字段，订单号为 `PG-SYNC-2026-0001` 至 `0003`。保留任务和验收表供复查；append 再次执行会追加同一批记录，不应将其当作幂等刷新任务。
+
+本次同时发现范围限制：初次选择 replace 的执行 `86e59858-424d-41cb-a6e6-59c6cad34f66` 在读写前失败，原因是当前 HighGo 未声明／实现 ResourceDeleteProvider；失败后原生确认目标表仍不存在，随后在同一任务改用已支持的 append 才成功。只读配置预检此前仍显示定义受支持，Transfer 执行详情也未展示已记录的错误 message，这两项诊断缺口尚未修复。本记录只证明本机一次快照新表写入及预览，不计为隔离 T4、replace、upsert、增量或 CDC 认证。本轮未变更运行代码、API、依赖或 CI 路线；验收证据来自正式页面与两端原生只读查询，文档执行 `git diff --check -- business/README.md`，不重复执行上节已经通过的完整 Business 门禁。
 
 ## 快速开始
 

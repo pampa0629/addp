@@ -1533,3 +1533,51 @@ func TestRuntimeReregistrationRefreshesCapabilitiesWithoutReplacingManagedFacts(
 		t.Fatalf("stale write accepted: %v", err)
 	}
 }
+
+func TestUpdateEngineCredentialsAfterJSONBAddressRoundTrip(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	service := NewEngineService(repo, nil, nil)
+	tenantID, actorID := uint(7), uint(42)
+	original := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8080, "user": "sysdba"}
+	created, _, err := service.Create(&models.EngineCreateRequest{
+		Name: "Runtime JSONB", EngineType: "custom_runtime", EngineOrigin: "extension",
+		ConnectionInfo: original, Capabilities: customRuntimeCapabilities(),
+	}, actorID, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.GetByID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// PostgreSQL JSONB returns its own key order and whitespace, not json.Marshal's text.
+	stored.IdentityKey = models.JSONString(`{"host": "runtime.internal", "port": "8080", "protocol": "http"}`)
+	stored.ConnectionStatus = models.EngineConnectionOnline
+	if err := repo.Update(stored); err != nil {
+		t.Fatal(err)
+	}
+	rotated := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8080, "user": "business"}
+	updated, err := service.Update(created.ID, tenantID, &models.EngineUpdateRequest{Version: stored.Version, ConnectionInfo: &rotated})
+	if err != nil {
+		t.Fatalf("same JSONB address with different credentials must not require relocation confirmation: %v", err)
+	}
+	if updated.ID != created.ID || updated.ConnectionStatus != models.EngineConnectionOnline || updated.ConnectionInfo["user"] != "business" {
+		t.Fatalf("credential update changed engine identity/observation or lost new user: %#v", updated)
+	}
+	moved := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8081, "user": "business"}
+	if _, err := service.Update(created.ID, tenantID, &models.EngineUpdateRequest{Version: updated.Version, ConnectionInfo: &moved}); !errors.Is(err, ErrEngineRelocationUnconfirmed) {
+		t.Fatalf("real address move still requires confirmation: %v", err)
+	}
+}
+
+func TestConnectionIdentityJSONBComparisonRejectsMalformedKeys(t *testing.T) {
+	valid := models.JSONString(`{"host":"runtime.internal","port":"8080"}`)
+	for _, invalid := range []models.JSONString{"", "null", "{}", "[]", `{"port":8080}`, "invalid"} {
+		if same, err := sameConnectionIdentityKey(invalid, valid); err == nil || same {
+			t.Fatalf("invalid stored address %q was accepted", invalid)
+		}
+		if same, err := sameConnectionIdentityKey(valid, invalid); err == nil || same {
+			t.Fatalf("invalid proposed address %q was accepted", invalid)
+		}
+	}
+}

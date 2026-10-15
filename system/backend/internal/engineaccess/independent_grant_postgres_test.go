@@ -78,6 +78,56 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		}
 		receiver, _ := newUser(t, time.Hour)
 		input := CreateIndependentGrantInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, RequirementVersion: basis.Version, RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
+		t.Run("personal department and project grants withdraw independently", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			organizations := iam.NewOrganizationService(iam.NewRepository(db), testDatabaseClock(t, db))
+			department, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: "combined_sources_department", Name: "Combined sources department"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := organizations.CreateDepartmentMembership(ctx, iam.CreateDepartmentMembershipInput{TenantID: tenantID, DepartmentID: department.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, MembershipType: "primary", RelationRole: "member"}); err != nil {
+				t.Fatal(err)
+			}
+			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: tenantID, ActorPrincipalID: adminID, Code: "combined_sources_group", Name: "Combined sources group"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: tenantID, ProjectGroupID: group.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, RelationRole: "member"}); err != nil {
+				t.Fatal(err)
+			}
+			principal, err := iam.NewRepository(db).GetPrincipal(ctx, user.PrincipalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			user.AuthorizationVersion = principal.AuthorizationVersion
+			ids := make([]uuid.UUID, 0, 3)
+			for _, recipient := range []struct {
+				kind string
+				id   int64
+			}{{"user", user.PrincipalID}, {"department", department.ID}, {"project_group", group.ID}} {
+				command := input
+				command.RequestID, command.RecipientType, command.RecipientID = uuid.New(), recipient.kind, recipient.id
+				if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
+					t.Fatal(err)
+				}
+				ids = append(ids, command.RequestID)
+			}
+			for remaining := 3; remaining >= 0; remaining-- {
+				observation, err := service.InspectSourceGrants(ctx, actor, int64(base.EngineID), user.PrincipalID, path)
+				if err != nil || observation == nil || len(observation.Sources) != remaining || observation.RuleCovered != (remaining > 0) {
+					t.Fatalf("remaining=%d inspection=%+v err=%v", remaining, observation, err)
+				}
+				rules, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
+				if err != nil || rules == nil || rules.Covered != (remaining > 0) {
+					t.Fatalf("remaining=%d actual rules=%+v err=%v", remaining, rules, err)
+				}
+				if remaining > 0 {
+					if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: ids[3-remaining], Reason: "Withdraw only this source"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+		})
 		t.Run("administrator handles without granting itself access", func(t *testing.T) {
 			administrator := qualify(t, false)
 			adminRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.engine_grant_administrator", Name: "Authorization administrator fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_delegation.create"}, ActorPrincipalID: adminID})

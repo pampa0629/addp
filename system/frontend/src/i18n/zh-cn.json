@@ -1182,6 +1182,20 @@
         "title": "数据授权",
         "boundary": "选择数据与接收方，明确批准方式和读取有效期后确认。授权管理员可以直接办理；委托他人办理不会让其自动获得读取权。",
         "selectData": "1. 选择要授权的数据",
+        "basis": {
+          "title": "DataItem 基础识别",
+          "refresh": "重新核对",
+          "boundary": "基础识别状态不等于读取权限；签发时仍会重新核验数据项及边界。",
+          "checking": "正在核对",
+          "complete": "基础识别完整",
+          "incomplete": "基础识别不完整，请先完成基础扫描",
+          "needs_refresh": "边界需要刷新，请先重新基础扫描",
+          "unsupported": "当前类型暂不支持授权边界识别",
+          "missing": "未找到数据项，请先基础扫描或核对资源",
+          "forbidden": "无数据项核对权限",
+          "failed": "核对失败，请重试",
+          "pending": "尚未核对"
+        },
         "addSelection": "加入本次授权清单",
         "snapshotOnly": "可选择表或 schema／节点，展开本次已有的普通表（最多 200 张），可逐张移除。不包含视图和未来新增表；每张表单独显示办理结果。",
         "remove": "移除",
@@ -1226,6 +1240,8 @@
         }
       },
       "delegations": {
+        "new": "新增委托",
+        "existing": "已有委托",
         "title": "委托授权",
         "navigationTitle": "委托授权",
         "created": "管理委派已创建；尚未授予任何数据读取权限。",

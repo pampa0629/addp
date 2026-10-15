@@ -11,6 +11,35 @@ import pytest
 import native_setup
 
 
+def test_startup_check_only_probes_native_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(native_setup, "current", lambda root: True)
+    monkeypatch.setattr(native_setup, "native_paths", lambda root: (
+        {"version": "26.8.0.3"}, "identity", tmp_path, tmp_path / "soffice", tmp_path / "fonts"))
+    with patch.object(native_setup.subprocess, "run", return_value=subprocess.CompletedProcess(
+        [], 0, stdout="LibreOffice 26.8.0.3 build\n")) as run:
+        native_setup.check(tmp_path)
+    run.assert_called_once_with([str(tmp_path / "soffice"), "--version"], check=True,
+                                capture_output=True, text=True, timeout=20)
+
+
+def test_startup_check_rejects_dependency_drift_before_version_probe(tmp_path, monkeypatch):
+    monkeypatch.setattr(native_setup, "current", lambda root: False)
+    with patch.object(native_setup.subprocess, "run") as run:
+        with pytest.raises(RuntimeError, match="dependencies changed"):
+            native_setup.check(tmp_path)
+    run.assert_not_called()
+
+
+def test_startup_check_rejects_wrong_office_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(native_setup, "current", lambda root: True)
+    monkeypatch.setattr(native_setup, "native_paths", lambda root: (
+        {"version": "26.8.0.3"}, "identity", tmp_path, tmp_path / "soffice", tmp_path / "fonts"))
+    with patch.object(native_setup.subprocess, "run", return_value=subprocess.CompletedProcess(
+        [], 0, stdout="LibreOffice wrong-version\n")):
+        with pytest.raises(RuntimeError, match="Unexpected LibreOffice version"):
+            native_setup.check(tmp_path)
+
+
 def test_private_package_identity_font_and_configuration_changes(tmp_path, monkeypatch):
     executable_bytes = b"private executable"
     font_bytes = b"private font"

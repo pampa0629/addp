@@ -18,6 +18,8 @@
 
 唯一解析接口为 `GET /api/v1/system/auth/context`。`GET /users/me` 只提供用户资料，不得用于验证令牌。客户端提供的 Principal、Tenant、Membership、Role 或 `user_type` 不能成为身份依据；缺失、零值或空 Tenant 不表示全租户。
 
+引擎数据授权工作区在令牌轮换、重新核验 AuthContext 期间暂停交互、隐藏草稿和查询结果，并停止旧异步链继续提交。尚未提交的草稿可仅保留在组件内存中，不持久化、不作为授权事实；不得因为暂时的空上下文销毁工作区。核验完成后，只有 Principal、Context／Membership、授权版本、当前权限及目标引擎状态均未变化才恢复原草稿；真实边界变化、登出或核验失败仍清除旧工作区。保留草稿不能保留旧权限，所有操作仍以当前 AuthContext 和服务端裁决为准。
+
 ## 三、AuthContext 语义契约
 
 唯一版本为 `addp.auth_context/v1`。机器契约见 [JSON Schema](../../common/authorization/schemas/auth-context-v1.schema.json)，共享实现位于 `common/authorization` 与 `common-python/addp_common/auth.py`；本文不复制完整结构。

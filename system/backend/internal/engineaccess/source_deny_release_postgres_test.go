@@ -402,7 +402,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 			if _, err := service.ReleaseDeny(ctx, input); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Table("system.engine_access_delegations").Where("id=?", delegation.ID).Updates(map[string]any{"status": "revoked", "version": delegation.Version + 1, "revoked_at": time.Now(), "revoked_by_principal_id": adminID, "revoked_reason": "Release qualification test"}).Error; err != nil {
+			if err := db.Table("system.engine_access_delegations").Where("id=?", delegation.ID).Updates(map[string]any{"status": "revoked", "version": delegation.Version + 1, "revoked_at": gorm.Expr("clock_timestamp()"), "revoked_by_principal_id": adminID, "revoked_reason": "Release qualification test"}).Error; err != nil {
 				t.Fatal(err)
 			}
 			if _, err := service.ReleaseDeny(ctx, input); !errors.Is(err, commonapi.ErrForbidden) {

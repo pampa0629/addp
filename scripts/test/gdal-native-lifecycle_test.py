@@ -32,12 +32,17 @@ class RasterNativeLifecycleTests(unittest.TestCase):
         self.work = Path(self.temporary.name).resolve()
         self.runtime = self.work / "manager/raster-mosaic-runtime"
         self.runtime.mkdir(parents=True)
+        (self.runtime / "requirements.txt").write_text("flask==3.0.0\nnumpy>=1.26,<2.3\n")
+        self.site = self.work / "site"
+        self.metadata = self.site / "fixture-1.0.dist-info"
+        self.metadata.mkdir(parents=True)
+        (self.metadata / "METADATA").write_text("Name: fixture\nVersion: 1.0\n")
         self.python = self.runtime / "venv/bin/python"
         self.bin = self.work / "bin"
         self.bin.mkdir()
         self.source_python = self.bin / "python3.12"
         self.source_python.write_text("#!" + sys.executable + "\n" + r'''
-import json, os, sys
+import json, os, shutil, sys
 from pathlib import Path
 work = Path(os.environ["ROOT_DIR"])
 with (work / "calls").open("a") as trace:
@@ -45,6 +50,7 @@ with (work / "calls").open("a") as trace:
 if sys.argv[1:3] == ["-m", "venv"]:
     assert "--clear" in sys.argv and "--system-site-packages" not in sys.argv
     runtime = Path(sys.argv[-1])
+    shutil.rmtree(runtime, ignore_errors=True)
     (runtime / "bin").mkdir(parents=True, exist_ok=True)
     (runtime / "bin/python").write_bytes(Path(__file__).read_bytes())
     (runtime / "bin/python").chmod(0o755)
@@ -55,9 +61,22 @@ if len(sys.argv) > 2 and sys.argv[1] == "-c":
     if "import app" in sys.argv[2]: sys.exit(int(os.environ.get("FAIL_IMPORT", "0")))
     sys.exit(0)
 if sys.argv[1:3] == ["-m", "pip"]:
-    assert "requirements.txt" in sys.argv[-1] or sys.argv[-1] == "check"
+    if sys.argv[3] == "check":
+        sys.exit(int(os.environ.get("FAIL_CHECK", "0")))
+    assert sys.argv[3] == "install" and "-r" in sys.argv and "-e" not in sys.argv
+    if os.environ.get("CHANGE_INPUT") == "1":
+        (work / "manager/raster-mosaic-runtime/requirements.txt").write_text("flask==3.1.0\n")
+    if os.environ.get("SLOW_INSTALL") == "1":
+        import time
+        time.sleep(0.2)
     sys.exit(int(os.environ.get("FAIL_PIP", "0")))
-if sys.argv[1] == "-": sys.exit(int(os.environ.get("FAIL_DRIVERS", "0")))
+if sys.argv[1] == "-":
+    code = sys.stdin.read()
+    if "importlib.metadata" in code:
+        sys.argv = sys.argv[1:]
+        exec(compile(code, "<dependency-fingerprint>", "exec"))
+        sys.exit(0)
+    sys.exit(int(os.environ.get("FAIL_DRIVERS", "0")))
 os.execv(sys.executable, [sys.executable] + sys.argv[1:])
 ''')
         self.source_python.chmod(0o755)
@@ -65,7 +84,8 @@ os.execv(sys.executable, [sys.executable] + sys.argv[1:])
             sock.bind(("127.0.0.1", 0))
             self.port = str(sock.getsockname()[1])
         self.environment = dict(os.environ, ROOT_DIR=str(self.work), SOURCE_ROOT=str(ROOT),
-                                RASTER_MOSAIC_RUNTIME_PORT=self.port, PATH=str(self.bin) + ":" + os.environ["PATH"])
+                                RASTER_MOSAIC_RUNTIME_PORT=self.port, PYTHONPATH=str(self.site),
+                                PATH=str(self.bin) + ":" + os.environ["PATH"])
         self.prepare = r'''
 set -euo pipefail
 source "$SOURCE_ROOT/scripts/dev/ports.sh"
@@ -96,16 +116,73 @@ addp_prepare_raster_mosaic_runtime
             self.assertTrue((self.work / ".dev-state/python-dependencies.lock").is_file())
             self.assertFalse((self.work / ".dev-state/geopython-odbc").exists())
 
-    def test_healthy_environment_reuses_binding_and_syncs_full_requirements(self):
+    def test_healthy_environment_skips_install_but_keeps_native_checks(self):
         self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertTrue((self.runtime / "venv/.addp-dependency-fingerprint").is_file())
         (self.work / "calls").unlink()
         result = self.run_prepare()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.calls()
         self.assertFalse(any(call[:2] == ["-m", "venv"] for call in calls))
-        self.assertIn(["-m", "pip", "install", "-r", str(self.runtime / "requirements.txt")], calls)
+        self.assertFalse(any(call[:3] == ["-m", "pip", "install"] for call in calls))
         self.assertIn(["-m", "pip", "check"], calls)
+        self.assertTrue(any(call[:1] == ["-c"] and "gdal_array" in call[1] for call in calls))
+        self.assertIn(["-"], calls)
+        self.assertIn("依赖未变化，跳过安装", result.stdout)
         self.assertFalse(any("--force-reinstall" in call for call in calls))
+
+    def test_requirements_and_installed_metadata_changes_resync(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        nested = self.runtime / "extra.txt"
+        for path, contents in (
+            (self.runtime / "requirements.txt", "-r extra.txt\n"),
+            (nested, "flask==3.1.0\n"),
+            (self.metadata / "METADATA", "Name: fixture\nVersion: 2.0\n"),
+            (self.metadata / "direct_url.json", '{"url": "file:///other-source"}'),
+        ):
+            with self.subTest(path=path):
+                if not nested.exists():
+                    nested.write_text("flask==3.0.0\n")
+                path.write_text(contents)
+                (self.work / "calls").unlink()
+                result = self.run_prepare()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(sum(call[:3] == ["-m", "pip", "install"] for call in self.calls()), 1)
+
+    def test_undeclared_common_package_does_not_invalidate_dependencies(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        common = self.work / "common-python"
+        common.mkdir()
+        (common / "pyproject.toml").write_text("changed unrelated package\n")
+        (self.work / "calls").unlink()
+        result = self.run_prepare()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(call[:3] == ["-m", "pip", "install"] for call in self.calls()))
+
+    def test_failed_sync_removes_record_and_recovers(self):
+        for flag in ("FAIL_CHECK", "FAIL_PIP", "CHANGE_INPUT"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_prepare().returncode, 0)
+                fingerprint = self.runtime / "venv/.addp-dependency-fingerprint"
+                if flag != "FAIL_CHECK":
+                    fingerprint.unlink()
+                result = self.run_prepare(**{flag: "1"})
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(fingerprint.exists())
+                self.assertEqual(self.run_prepare().returncode, 0)
+                self.assertTrue(fingerprint.is_file())
+
+    def test_concurrent_preparations_install_once(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        (self.runtime / "venv/.addp-dependency-fingerprint").unlink()
+        (self.work / "calls").unlink()
+        processes = [subprocess.Popen(["bash", "-c", self.prepare],
+                     env=dict(self.environment, SLOW_INSTALL="1"),
+                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(3)]
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=20)
+            self.assertEqual(process.returncode, 0, stdout + stderr)
+        self.assertEqual(sum(call[:3] == ["-m", "pip", "install"] for call in self.calls()), 1)
 
     def test_failures_do_not_publish_pid(self):
         for flag in ("FAIL_PIP", "FAIL_IMPORT", "FAIL_DRIVERS"):

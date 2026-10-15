@@ -3,11 +3,14 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	systemauthorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -120,6 +123,50 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				result, err := service.CheckManagerPreviewRead(ctx, credential, request)
 				if err != nil || result == nil || result.ObservedAt.IsZero() {
 					t.Fatalf("function + source intersection=%+v %v", result, err)
+				}
+			}
+			trustedReader := service.authorizationFacts
+			for _, state := range []string{"missing", "offline", "incomplete", "needs_refresh", "unsupported"} {
+				t.Run("existing Grant still requires current Meta facts "+state, func(t *testing.T) {
+					defer service.WithAuthorizationFactsReader(trustedReader)
+					calls := 0
+					want := ErrAuthorizationBoundaryChanged
+					if state == "offline" {
+						want = ErrAuthorizationFactsUnavailable
+					}
+					service.WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+						calls++
+						facts := testBindingFacts(path)
+						if int64(tenant) != tenantID || fingerprint != facts.ItemFingerprint {
+							t.Fatal("facts request lost the trusted tenant or exact target")
+						}
+						switch state {
+						case "missing":
+							return nil, &client.TenantAPIError{StatusCode: http.StatusNotFound}
+						case "offline":
+							return nil, errors.New("Meta facts unavailable")
+						default:
+							facts.BasisState = authorizationfacts.AuthorizationBasisState(state)
+							facts.Boundary, facts.BoundaryHash = nil, nil
+							return &facts, nil
+						}
+					}))
+					for _, credential := range credentials {
+						if result, err := service.CheckManagerPreviewRead(ctx, credential, request); result != nil || !errors.Is(err, want) {
+							t.Fatalf("stored Grant bypassed Meta facts: result=%+v error=%v want=%v", result, err, want)
+						}
+					}
+					if result, err := service.CheckManagerProfileResultRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, want) {
+						t.Fatalf("stored profile Grant bypassed Meta facts: result=%+v error=%v want=%v", result, err, want)
+					}
+					if calls != len(credentials)+1 {
+						t.Fatalf("every check must re-read current Meta facts: calls=%d", calls)
+					}
+				})
+				// The same credential and stored Grant recover only after trusted
+				// facts recover; no new grant or cached Allow is manufactured.
+				if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); err != nil || result == nil {
+					t.Fatalf("recovered facts failed to restore the original check: %+v %v", result, err)
 				}
 			}
 			d := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "formal_preview_ungranted_D")

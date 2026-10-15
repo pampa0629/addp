@@ -16,20 +16,21 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
-	"github.com/addp/system/internal/testsupport"
 	"gorm.io/gorm"
 )
 
-// Align test IAM assignments with the SQL authority without sleeping or
-// changing production validity checks. Starting the monotonic clock after the
-// query response cannot move a fixture assignment ahead of the database.
+// IAM fixtures must read the authority clock at each command, not extrapolate
+// an old DB timestamp with the host's monotonic clock: the Docker VM wall clock
+// can adjust during this long-running suite. Production validity is unchanged.
 func testDatabaseClock(t *testing.T, db *gorm.DB) func() time.Time {
 	t.Helper()
-	clock, err := testsupport.FixtureDatabaseClock(t.Context(), db)
-	if err != nil {
-		t.Fatal(err)
+	return func() time.Time {
+		now, err := NewRepository(db).wallClock(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return now
 	}
-	return clock
 }
 
 func testBindingFacts(path plugin.EngineCatalogPath) authorizationfacts.AuthorizationFacts {

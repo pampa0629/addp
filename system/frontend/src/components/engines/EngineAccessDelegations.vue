@@ -1,22 +1,27 @@
 <template>
   <section data-testid="engine-access-delegations" class="delegations">
+    <div class="workspace-toolbar">
+      <el-radio-group v-model="workspaceView" data-testid="delegation-workspace-tabs" :disabled="busy" @change="changeWorkspace">
+        <el-radio-button v-if="canCreate" value="create" data-testid="delegation-new">{{ t('system.engine.delegations.new') }}</el-radio-button>
+        <el-radio-button ref="existingTab" value="list" :disabled="!canRead">{{ t('system.engine.delegations.existing') }}</el-radio-button>
+      </el-radio-group>
+    </div>
     <el-alert type="info" :closable="false" show-icon :title="t('system.engine.delegations.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
     <el-alert v-if="created" type="success" :closable="false" :title="t('system.engine.delegations.created')" />
-    <template v-if="canRead">
-      <el-button :loading="loading" @click="load">{{ t('system.engine.delegations.refresh') }}</el-button>
-      <el-table :data="rows" v-loading="loading">
+    <template v-if="workspaceView === 'list' && canRead">
+      <div class="list-toolbar"><el-button :disabled="busy" :loading="loading" @click="load">{{ t('system.engine.delegations.refresh') }}</el-button></div>
+      <el-table :data="rows" v-loading="loading" data-testid="delegation-list">
         <el-table-column prop="display_name" :label="t('system.engine.delegations.account')" min-width="150" />
         <el-table-column :label="t('system.engine.delegations.state')" min-width="110"><template #default="{ row }">{{ t(`system.engine.delegations.states.${row.effective_state}`) }}</template></el-table-column>
         <el-table-column :label="t('system.engine.delegations.expiresAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.expires_at) }}</template></el-table-column>
         <el-table-column prop="grant_reason" :label="t('system.engine.delegations.reason')" min-width="180" />
-        <el-table-column v-if="canRevoke" width="100"><template #default="{ row }"><el-button v-if="row.status === 'active' && row.effective_state !== 'expired'" data-testid="delegation-revoke" link type="danger" @click="openRevoke(row)">{{ t('system.engine.delegations.revoke') }}</el-button></template></el-table-column>
+        <el-table-column v-if="canRevoke" width="100"><template #default="{ row }"><el-button v-if="row.status === 'active' && row.effective_state !== 'expired'" data-testid="delegation-revoke" link type="danger" :disabled="busy" @click="openRevoke(row)">{{ t('system.engine.delegations.revoke') }}</el-button></template></el-table-column>
       </el-table>
-      <el-pagination layout="prev, pager, next, total" :total="total" :page-size="10" :current-page="page" @current-change="changePage" />
+      <el-pagination layout="prev, pager, next, total" :disabled="busy" :total="total" :page-size="10" :current-page="page" @current-change="changePage" />
     </template>
-    <el-alert v-else type="info" :closable="false" :title="t('system.engine.delegations.readRequired')" />
-    <el-form v-if="canCreate" label-position="top" @submit.prevent="create">
-      <h3>{{ t('system.engine.delegations.create') }}</h3>
+    <el-alert v-if="!canRead" type="info" :closable="false" :title="t('system.engine.delegations.readRequired')" />
+    <el-form v-if="workspaceView === 'create' && canCreate" data-testid="delegation-form" label-position="top" @submit.prevent="create">
       <el-alert v-if="!canReadMembers" type="info" :closable="false" :title="t('system.engine.delegations.membersRequired')" />
       <el-form-item :label="t('system.engine.delegations.account')" required>
         <TenantMemberSelect v-model="form.membershipID" :members="members" principal-type="user" active-only
@@ -25,9 +30,12 @@
       <el-button v-if="canReadMembers" :disabled="saving" :loading="membersLoading" @click="loadMembers">{{ t('system.engine.delegations.refreshMembers') }}</el-button>
       <el-form-item :label="t('system.engine.delegations.expiresAt')" required><el-date-picker v-model="form.expiresAt" type="datetime" :disabled="saving" /></el-form-item>
       <el-form-item :label="t('system.engine.delegations.reason')" required><el-input v-model="form.reason" data-testid="delegation-reason" type="textarea" maxlength="2000" show-word-limit :disabled="saving" /></el-form-item>
-      <el-button data-testid="delegation-create" type="primary" :disabled="!canReadMembers" :loading="saving" @click="create">{{ t('system.engine.delegations.create') }}</el-button>
+      <div class="form-actions">
+        <el-button data-testid="delegation-cancel" :disabled="saving" @click="cancelCreate">{{ t('common.cancel') }}</el-button>
+        <el-button data-testid="delegation-create" type="primary" :disabled="!canReadMembers" :loading="saving" @click="create">{{ t('system.engine.delegations.create') }}</el-button>
+      </div>
     </el-form>
-    <el-dialog v-model="revokeVisible" :title="t('system.engine.delegations.revoke')" append-to-body width="min(600px, 95vw)">
+    <el-dialog v-model="revokeVisible" :title="t('system.engine.delegations.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" append-to-body width="min(600px, 95vw)">
       <p>{{ revokeRow?.display_name }}</p>
       <el-alert type="warning" :closable="false" :title="t('system.engine.delegations.revokeBoundary')" />
       <el-form label-position="top" @submit.prevent="revoke">
@@ -40,7 +48,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { enginesAPI } from '../../api/engines'
 import { iamAPI } from '../../api/iam'
@@ -58,11 +66,32 @@ const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), error
 const members = ref([]), membersLoading = ref(false), saving = ref(false), created = ref(false)
 const form = reactive({ membershipID: '', expiresAt: null, reason: '' })
 const revokeVisible = ref(false), revokeRow = ref(null), revokeReason = ref(''), revokeError = ref(''), revoking = ref(false)
+const workspaceView = ref('list'), existingTab = ref(null)
+const busy = computed(() => saving.value || revoking.value || revokeVisible.value)
 let generation = 0, readSequence = 0, memberSequence = 0
 const message = e => e?.response?.data?.error || t('system.engine.delegations.failed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
-async function load() {
+function resetDraft() { form.membershipID = ''; form.expiresAt = null; form.reason = '' }
+function changeWorkspace() {
+  readSequence++; memberSequence++; loading.value = membersLoading.value = false
+  error.value = ''; created.value = false
+  if (workspaceView.value === 'list') load()
+  else loadMembers()
+}
+function returnToList() {
   if (!canRead.value) return
+  memberSequence++; membersLoading.value = false
+  workspaceView.value = 'list'
+  load()
+  nextTick(() => existingTab.value?.$el?.querySelector('input')?.focus())
+}
+function cancelCreate() {
+  if (busy.value) return
+  resetDraft(); error.value = ''; created.value = false
+  returnToList()
+}
+async function load() {
+  if (!canRead.value || workspaceView.value !== 'list') return
   const epoch = generation, seq = ++readSequence
   loading.value = true; error.value = ''; rows.value = []; total.value = 0
   try {
@@ -71,9 +100,9 @@ async function load() {
   } catch (e) { if (epoch === generation && seq === readSequence) error.value = message(e) }
   finally { if (epoch === generation && seq === readSequence) loading.value = false }
 }
-function changePage(value) { page.value = value; load() }
+function changePage(value) { if (!busy.value) { page.value = value; load() } }
 async function loadMembers() {
-  if (!canCreate.value || !canReadMembers.value) return
+  if (!canCreate.value || !canReadMembers.value || workspaceView.value !== 'create') return
   const epoch = generation, seq = ++memberSequence
   membersLoading.value = true
   try {
@@ -83,7 +112,7 @@ async function loadMembers() {
   finally { if (epoch === generation && seq === memberSequence) membersLoading.value = false }
 }
 async function create() {
-  if (saving.value || !canCreate.value || !canReadMembers.value) return
+  if (saving.value || workspaceView.value !== 'create' || !canCreate.value || !canReadMembers.value) return
   let payload
   try { payload = captureDelegation(form, members.value) }
   catch { error.value = t('system.engine.delegations.invalid'); return }
@@ -92,13 +121,13 @@ async function create() {
   try {
     await enginesAPI.createAccessDelegation(props.engineId, payload)
     if (epoch !== generation) return
-    form.membershipID = ''; form.expiresAt = null; form.reason = ''; created.value = true
-    await load()
+    resetDraft(); created.value = true; page.value = 1
+    returnToList()
   } catch (e) { if (epoch === generation) error.value = message(e) }
   finally { if (epoch === generation) saving.value = false }
 }
 function openRevoke(row) {
-  if (!canRevoke.value || row.status !== 'active' || row.effective_state === 'expired' || !Number.isSafeInteger(row.version) || row.version <= 0) return
+  if (busy.value || workspaceView.value !== 'list' || !canRevoke.value || row.status !== 'active' || row.effective_state === 'expired' || !Number.isSafeInteger(row.version) || row.version <= 0) return
   revokeRow.value = row; revokeReason.value = ''; revokeError.value = ''; revokeVisible.value = true
 }
 async function revoke() {
@@ -119,13 +148,20 @@ watch(() => [props.engineId, auth.authContext?.principal?.id, auth.authContext?.
   canRead.value, canCreate.value, canRevoke.value, canReadMembers.value], () => {
   generation++; page.value = 1; rows.value = []; total.value = 0; members.value = []
   loading.value = membersLoading.value = saving.value = revoking.value = revokeVisible.value = created.value = false
-  revokeRow.value = null; error.value = revokeError.value = ''; form.membershipID = ''; form.expiresAt = null; form.reason = ''
+  revokeRow.value = null; error.value = revokeError.value = ''; resetDraft()
+  workspaceView.value = canRead.value ? 'list' : canCreate.value ? 'create' : 'list'
   load(); loadMembers()
 }, { immediate: true })
 onBeforeUnmount(() => { generation++ })
 </script>
 
 <style scoped>
-.delegations { display: grid; gap: 16px; }
+.delegations { display: grid; gap: 16px; min-width: 0; }
+.workspace-toolbar { position: sticky; top: 0; z-index: 2; padding: 8px 0; background: var(--addp-bg-primary); }
+.workspace-toolbar :deep(.el-radio-group) { display: flex; flex-wrap: wrap; max-width: 100%; }
+.workspace-toolbar :deep(.el-radio-button__inner) { white-space: normal; }
+.list-toolbar { display: flex; justify-content: flex-end; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.form-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .delegations :deep(.el-date-editor) { width: 100%; }
 </style>

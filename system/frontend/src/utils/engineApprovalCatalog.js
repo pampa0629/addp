@@ -68,6 +68,7 @@ export function approvalTargetsEqual(left, right) {
 // System protocol adapter only. Tree rendering/selection remains shared.
 export function createApprovalCatalogAdapter(engine, listChildren) {
   const id = safePickerEngineID(engine.id)
+  let searchSequence = 0
   function node(entry) {
     if (entry?.path?.engine_id !== id || entry.path.version !== 'catalog.path/v1' || !Array.isArray(entry.path.segments) ||
         !entry.path.segments.length || !['branch', 'leaf'].includes(entry.role)) throw new Error('invalidCatalogTarget')
@@ -80,7 +81,7 @@ export function createApprovalCatalogAdapter(engine, listChildren) {
     if (!Array.isArray(result?.nodes)) throw new Error('invalidCatalogTarget')
     return result.nodes.map(node)
   }
-  return {
+  const adapter = {
     listEngines: async () => [{ ...engine, id }],
     getTreeRoot: async () => {
       const roots = await children({ segments: [] })
@@ -90,4 +91,30 @@ export function createApprovalCatalogAdapter(engine, listChildren) {
     },
     getNodeChildren: current => children(current.metadata.catalog_entry.path)
   }
+  // Candidate discovery only: no Meta lookup or content read. Do not cache
+  // native membership across searches or treat a search result as a Grant.
+  adapter.search = async (engineID, keyword, { limit = 20 } = {}) => {
+    if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget')
+    const query = keyword.trim().toLocaleLowerCase(), sequence = ++searchSequence
+    if (!query) return []
+    const queue = [await adapter.getTreeRoot()], found = [], visited = new Set()
+    for (let index = 0; index < queue.length; index++) {
+      if (sequence !== searchSequence) return []
+      const current = queue[index], entry = current.metadata.catalog_entry
+      const key = JSON.stringify(entry.path)
+      if (visited.has(key) || visited.size >= 2000 || entry.path.segments.length > 64) throw new Error('invalidCatalogTarget')
+      visited.add(key)
+      if (isApprovalSelection(current) && approvalPathLabel(entry.path).toLocaleLowerCase().includes(query)) {
+        found.push(current)
+        if (found.length >= Math.min(limit, 20)) return found
+      }
+      if (entry.role === 'branch') {
+        const next = current.children || await adapter.getNodeChildren(current)
+        if (queue.length + next.length > 2000) throw new Error('invalidCatalogTarget')
+        queue.push(...next)
+      }
+    }
+    return found
+  }
+  return adapter
 }

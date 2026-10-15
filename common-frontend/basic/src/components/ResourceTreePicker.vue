@@ -198,6 +198,10 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  searchQuery: {
+    type: String,
+    default: ''
+  },
   treeHeight: {
     type: String,
     default: '420px'
@@ -928,6 +932,8 @@ const scheduleSearch = () => {
     runSearch()
   }, 300)
 }
+
+watch(() => props.searchQuery, value => { searchKeyword.value = value }, { immediate: true })
 
 watch(() => props.modelValue, value => {
   currentSelection.value = value

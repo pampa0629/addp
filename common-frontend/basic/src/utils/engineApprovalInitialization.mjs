@@ -31,7 +31,7 @@ export function approvedBoundaryFields(target, binding) {
   return { item_fingerprint: binding.item_fingerprint, expected_boundary_hash: binding.boundary_hash }
 }
 
-export async function observeNativeApprovalBinding(target, readFacts) {
+export async function readNativeApprovalFacts(target, readFacts) {
   // Native paths use numeric Engine IDs. Normalize only exactly representable
   // numbers; never stringify an already rounded large identifier as identity.
   const id = typeof target?.engine_id === 'number' && Number.isSafeInteger(target.engine_id) ? String(target.engine_id) : target?.engine_id
@@ -44,8 +44,19 @@ export async function observeNativeApprovalBinding(target, readFacts) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))
   const candidate = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   const facts = await readFacts(target.engine_id, candidate)
-  if (facts?.schema_version !== 'meta.data_item_authorization_facts/v1' || facts.item_fingerprint !== candidate || facts.basis_state !== 'complete') throw new Error('invalidDataItemBoundary')
+  if (facts?.schema_version !== 'meta.data_item_authorization_facts/v1' || facts.item_fingerprint !== candidate ||
+      !['complete', 'incomplete', 'needs_refresh', 'unsupported'].includes(facts.basis_state)) throw new Error('invalidDataItemBoundary')
+  if (facts.basis_state !== 'complete') {
+    if (facts.boundary !== null || facts.boundary_hash !== null) throw new Error('invalidDataItemBoundary')
+    return Object.freeze({ state: facts.basis_state, binding: null })
+  }
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash, native_target: facts.boundary?.native_target }
   approvedBoundaryFields(target, binding)
-  return Object.freeze(binding)
+  return Object.freeze({ state: 'complete', binding: Object.freeze(binding) })
+}
+
+export async function observeNativeApprovalBinding(target, readFacts) {
+  const observation = await readNativeApprovalFacts(target, readFacts)
+  if (observation.state !== 'complete') throw new Error('invalidDataItemBoundary')
+  return observation.binding
 }

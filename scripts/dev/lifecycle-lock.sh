@@ -22,15 +22,18 @@ PY
 # 输入和实际安装环境共同决定是否可复用；不依赖源码时间戳。
 addp_python_dependency_fingerprint() {
   local project_root="$1" runtime_dir="$2"
-  "$runtime_dir/venv/bin/python" - "$project_root" "$runtime_dir" <<'PY'
+  shift 2
+  "$runtime_dir/venv/bin/python" - "$project_root" "$runtime_dir" "$@" <<'PY'
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import shlex
 import sys
 
-root, runtime = map(Path, sys.argv[1:])
+root, runtime = map(Path, sys.argv[1:3])
+editable_projects = sorted({Path(value).resolve() for value in sys.argv[3:]})
 files = set()
 
 def collect_requirements(path):
@@ -51,12 +54,17 @@ def collect_requirements(path):
             collect_requirements(path.parent / option[2:])
 
 collect_requirements(runtime / 'requirements.txt')
-common = root / 'common-python'
-files.update((common / 'pyproject.toml', common / 'README.md'))
-files.update(path for path in (common / 'addp_common').rglob('*')
-             if path.is_file() and '__pycache__' not in path.parts
-             and path.suffix not in ('.pyc', '.pyo'))
-inputs = [('python-dependencies-v1',)]
+for project in editable_projects:
+    if not project.is_dir():
+        raise NotADirectoryError(project)
+    for directory, children, filenames in os.walk(project):
+        children[:] = [name for name in children
+                       if name not in ('.git', 'venv', '.venv', '__pycache__', '.cache',
+                                       '.pytest_cache', '.mypy_cache', '.ruff_cache', 'build', 'dist')
+                       and not name.endswith(('.egg-info', '.dist-info'))]
+        files.update(Path(directory) / name for name in filenames
+                     if not name.endswith(('.pyc', '.pyo')))
+inputs = [('python-dependencies-v2', [str(path) for path in editable_projects])]
 inputs.extend((str(path), hashlib.sha256(path.read_bytes()).hexdigest())
               for path in sorted(files))
 packages = sorted((dist.metadata['Name'] or '', dist.version,
@@ -89,12 +97,17 @@ addp_install_python_dependencies() {
   local project_root="$1"
   local runtime_dir="$2"
   local label="$3"
+  shift 3
   local python_bin="$runtime_dir/venv/bin/python"
   local fingerprint_file="$runtime_dir/venv/.addp-dependency-fingerprint"
   local fingerprint installed_fingerprint temporary
-  local pip_args=(-m pip install -r "$runtime_dir/requirements.txt" -e "$project_root/common-python")
+  local pip_args=(-m pip install -r "$runtime_dir/requirements.txt")
+  local editable_project
+  for editable_project in "$@"; do
+    pip_args+=(-e "$editable_project")
+  done
 
-  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir" "$@") || return 1
   addp_python_dependencies_current "$runtime_dir" "$fingerprint" "$label" && return 0
   rm -f "$fingerprint_file" || return 1
 
@@ -111,7 +124,7 @@ addp_install_python_dependencies() {
     echo "✗ $label Python 依赖同步失败" >&2
     return 1
   fi
-  installed_fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  installed_fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir" "$@") || return 1
   if [ "${fingerprint%%:*}" != "${installed_fingerprint%%:*}" ]; then
     echo "✗ $label 依赖输入在安装期间变化，请重新执行" >&2
     return 1
@@ -125,20 +138,21 @@ addp_install_python_dependencies() {
   echo "✓ $label Python 依赖同步完成"
 }
 
-# 宿主机 Python Runtime 按完整声明检查与同步；启动和重启共用。
+# 宿主机 Python Runtime 按完整声明检查与同步；后续实参为显式 editable 包目录。
 addp_sync_python_dependencies() {
   local project_root="$1" runtime_dir="$2" label="$3" fingerprint
+  shift 3
   if [ ! -x "$runtime_dir/venv/bin/python" ]; then
     echo "✗ $label 虚拟环境不存在或不可执行，请先使用 start.sh 创建环境" >&2
     return 1
   fi
-  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir") || return 1
+  fingerprint=$(addp_python_dependency_fingerprint "$project_root" "$runtime_dir" "$@") || return 1
   addp_python_dependencies_current "$runtime_dir" "$fingerprint" "$label" && return 0
   addp_with_python_dependency_lock "$project_root" bash -c '
     source "$1"
     shift
     addp_install_python_dependencies "$@"
-  ' _ "${BASH_SOURCE[0]}" "$project_root" "$runtime_dir" "$label"
+  ' _ "${BASH_SOURCE[0]}" "$project_root" "$runtime_dir" "$label" "$@"
 }
 
 addp_process_is_descendant_of() {

@@ -19,7 +19,16 @@ class DocumentNativeLifecycleTests(unittest.TestCase):
         self.runtime.mkdir(parents=True)
         (self.runtime / "venv/bin").mkdir(parents=True)
         (self.runtime / "venv/bin/python").symlink_to(sys.executable)
-        (self.runtime / "native_setup.py").write_text("import sys; print('/private/soffice\\n/private/fonts.conf') if sys.argv[1] == 'environment' else None\n")
+        (self.runtime / "native_setup.py").write_text('''
+import os, sys
+from pathlib import Path
+action = sys.argv[1]
+with Path(__file__).with_name('native-trace').open('a') as trace:
+    trace.write(action + '\\n')
+if action not in ('environment', 'current', 'prepare', 'check'): sys.exit(99)
+if action == 'environment': print('/private/soffice\\n/private/fonts.conf')
+if action == 'check' and os.environ.get('FAIL_CHECK'): sys.exit(1)
+''')
 
     def shell(self, code, **environment):
         return subprocess.run(["bash", "-c", 'set -euo pipefail; source "$SOURCE_ROOT/scripts/dev/document-workflow.sh"; ' + code],
@@ -73,6 +82,40 @@ addp_prepare_document_workflow
         self.assertEqual(values["FONTCONFIG_FILE"], "/private/fonts.conf")
         for key in ("FONTCONFIG_PATH", "DYLD_LIBRARY_PATH", "PYTHONPATH", "DOCUMENT_OBJECT_STORE_LOOPBACK_HOST", "RUNTIME_PUBLIC_PORT"):
             self.assertNotIn(key, values)
+
+    def test_preparation_checks_dependencies_without_converting(self):
+        (self.runtime / "api_server.py").write_text("# Importable runtime without any conversion fixture.\n")
+        for active in ("0", "1"):
+            with self.subTest(active=active):
+                trace = self.runtime / "native-trace"
+                trace.unlink(missing_ok=True)
+                result = self.shell('''
+addp_dev_port_busy() { [ "$ACTIVE" = 1 ]; }
+addp_dev_owned_listener() { return 0; }
+docker() { return 1; }
+id() { echo 1001; }
+addp_document_python_current() { return 0; }
+addp_python_dependency_fingerprint() { echo unchanged; }
+addp_python_dependencies_current() { return 0; }
+addp_with_python_dependency_lock() { echo prepare-dependencies; }
+addp_sync_python_dependencies() { echo sync-dependencies; }
+addp_prepare_document_workflow
+''', ACTIVE=active)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(trace.read_text().splitlines(),
+                                 ["environment", "current", "check"] if active == "1" else ["environment", "check"])
+                self.assertEqual("sync-dependencies" in result.stdout, active == "0")
+                result = self.shell('''
+addp_dev_port_busy() { return 0; }
+addp_dev_owned_listener() { return 0; }
+docker() { return 1; }
+id() { echo 1001; }
+addp_document_python_current() { return 0; }
+addp_python_dependency_fingerprint() { echo unchanged; }
+addp_python_dependencies_current() { return 0; }
+addp_prepare_document_workflow
+''', FAIL_CHECK="1")
+                self.assertNotEqual(result.returncode, 0, "failed native check must block preparation")
 
     def test_native_pid_readiness_and_failed_launch_cleanup(self):
         (self.runtime / "api_server.py").write_text('''

@@ -34,7 +34,7 @@ addp_prepare_geopython_workflow() {
     python3.12 -m venv "$runtime_dir/venv" || return 1
   fi
   "$python_bin" -c 'import sys; assert sys.version_info[:2] == (3,12), "GeoPython 要求 Python 3.12"; from pathlib import Path; assert "include-system-site-packages = false" in Path(sys.prefix, "pyvenv.cfg").read_text(), "GeoPython 不允许继承系统 site-packages，请重建独立 venv"' || return 1
-  addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'GeoPython Workflow' || return 1
+  addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'GeoPython Workflow' "$ROOT_DIR/common-python" || return 1
   addp_prepare_gdal_binding "$python_bin" 'GeoPython' || return 1
   version=$(gdal-config --version) || return 1
   "$python_bin" - "$version" <<'PY' || return 1

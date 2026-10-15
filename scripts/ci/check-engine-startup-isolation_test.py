@@ -73,8 +73,8 @@ func main() {
             "engines/pointcloud-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "engines/document-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "common-python/addp_common/module_lifecycle.py": "\n",
-            "Makefile": "test-document-workflow: ## test\n\t@true\n",
-            ".github/workflows/platform-ci.yml": "uses: ./.github/actions/prepare-python-gate\nengines/document-workflow/requirements-dev.txt\nrun: make test-document-workflow\n",
+            "Makefile": "test-document-workflow: ## test\n\t@true\ntest-document-native: ## test\n\t@true\n",
+            ".github/workflows/platform-ci.yml": "uses: ./.github/actions/prepare-python-gate\nengines/document-workflow/requirements-dev.txt\nrun: make test-document-workflow\nrun: make test-document-native\nnative_setup.py prepare .dev-state/document-native\n",
             ".env.example": "POSTGRES_HOST=localhost\n",
         }
         for relative, content in files.items():
@@ -196,6 +196,19 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
         (root / ".github/workflows/platform-ci.yml").write_text("name: platform\n", encoding="utf-8")
         errors = CHECKER.validate(root)
         self.assertTrue(any("Document Workflow gate" in error for error in errors), errors)
+
+    def test_rejects_missing_document_native_gate(self) -> None:
+        for relative, fragment in (
+            ("Makefile", "test-document-native: ## test\n\t@true\n"),
+            (".github/workflows/platform-ci.yml", "run: make test-document-native\n"),
+            (".github/workflows/platform-ci.yml", "native_setup.py prepare .dev-state/document-native\n"),
+        ):
+            with self.subTest(relative=relative, fragment=fragment):
+                root = self.repository()
+                path = root / relative
+                path.write_text(path.read_text().replace(fragment, ""))
+                errors = CHECKER.validate(root)
+                self.assertTrue(any("document-native" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

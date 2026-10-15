@@ -7,6 +7,28 @@ const namespace = { name: '户外', path: { ...rootPath, segments: [...rootPath.
 const table = { name: 'a/b', path: { ...rootPath, segments: [...namespace.path.segments, { term: 'table', kind: 'table', name: 'a/b' }] }, role: 'leaf', term: 'table', kind: 'table' }
 const engine = { id: '2', name: 'Database', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }
 describe('System live-catalog protocol adapter', () => {
+  it('searches current native paths with the same adapter and preserves exact resource identity', async () => {
+    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [root] : path.segments.length === 1 ? [namespace] : [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] }))
+    const adapter = createApprovalCatalogAdapter(engine, api)
+    const result = await adapter.search('2', 'a/b')
+    expect(result).toHaveLength(1)
+    expect(approvalTargetFromSelection({ raw: { node: result[0] } }, '2')).toEqual({ ...table.path, engine_id: '2' })
+    expect(await adapter.search('2', '户外')).toHaveLength(2)
+    expect(await adapter.search('2', 'view')).toEqual([])
+    await expect(adapter.search('3', 'a')).rejects.toThrow()
+    await expect(adapter.search('2', 'a', { limit: 0 })).rejects.toThrow()
+    expect(api.mock.calls.every(([id]) => id === '2')).toBe(true)
+  })
+  it('does not return partial candidates after directory failure or an oversized search', async () => {
+    const api = vi.fn(async (_, path) => {
+      if (path.segments.length === 2) throw new Error('directory unavailable')
+      return { nodes: path.segments.length === 0 ? [root] : [namespace] }
+    })
+    const adapter = createApprovalCatalogAdapter(engine, api)
+    await expect(adapter.search('2', 'missing')).rejects.toThrow('directory unavailable')
+    api.mockResolvedValue({ nodes: Array.from({ length: 2001 }, () => root) })
+    await expect(adapter.search('2', 'missing')).rejects.toThrow()
+  })
   it('expands a namespace into existing tables, never the parent, views or future tables', async () => {
     const api = vi.fn().mockResolvedValueOnce({ nodes: [root] }).mockResolvedValueOnce({ nodes: [namespace] }).mockResolvedValueOnce({ nodes: [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] })
     const adapter = createApprovalCatalogAdapter(engine, api), node = await adapter.getTreeRoot()

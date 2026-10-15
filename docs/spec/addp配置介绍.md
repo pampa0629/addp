@@ -454,7 +454,7 @@ TIDB_PORT=4000
 
 `business/scripts/start.sh -tidb` 启动三组件并幂等初始化普通关系样例。System 注册时使用独立 `engine_type=tidb` 和配置的 database/user/password；ADDP 服务以宿主机进程运行时连接 `localhost:${TIDB_PORT:-4000}`，以 Business Compose 同网络容器运行时连接 `business-tidb:4000`。不得登记为 MySQL Engine，也不得据 MySQL 协议兼容性声明 CDC、空间或分区变化应用能力。
 
-Business 瀚高使用 `highgo` 独立 profile，固定社区镜像 `qiuchenjun/hgdb-see:4.5.10.3` 与 OCI 摘要，不进入 `start.sh -all`。配置归 `business/.env`：`HIGHGO_PASSWORD` 必填、`HIGHGO_PORT` 默认 `5866`；默认原生数据库 `highgo`、账号 `sysdba`、业务 schema `addp_business`。仓库替换镜像的硬编码密码初始化及安全降级样例，只用配置密码初始化三权角色并保留默认安全策略、SM3 和 TCP TLS。已有卷不自动轮换密码；System 登记独立 `engine_type=highgo`，Business 生命周期不调用平台 API。
+Business 瀚高使用 `highgo` 独立 profile，固定社区镜像 `qiuchenjun/hgdb-see:4.5.10.3` 与 OCI 摘要，不进入 `start.sh -all`。配置归 `business/.env`：管理员 `HIGHGO_PASSWORD` 和业务 `HIGHGO_APP_PASSWORD` 必填且独立；`HIGHGO_USER` 默认 `business`、`HIGHGO_PORT` 默认 `5866`。数据库固定 `highgo`，业务 schema 固定 `addp_business`，System 接入普通业务账号。`HIGHGO_APP_VALID_UNTIL` 留空保留原生策略，明确确认后可仅将业务账号设置为 `infinity`。仓库替换镜像的硬编码密码初始化及安全降级样例，只用配置密码初始化三权角色并保留默认安全策略、SM3 和 TCP TLS。已有卷不自动轮换管理员密码；每次标准启动幂等初始化业务账号和样例，只在配置业务密码无法登录时通过 SYSSSO 的原生 `psql` 变量绑定改密，不降低全局安全策略。System 登记独立 `engine_type=highgo`，Business 生命周期不调用平台 API。
 
 Business openGauss 固定使用 openGauss 6.0.6 LTS 官方 Docker tar，不接受第三方镜像或可变 tag。当前 `business/scripts/start.sh -opengauss` 只允许在具备 NUMA 的 Linux x86_64 主机选择并校验官方 x86_64 介质，加载为 `opengauss:6.0.6`；首次下载约 1.4 GB，后续复用本地镜像和缓存。官方 6.0.6 Docker 构建包含 MOT，而 Docker Desktop for macOS 不提供它需要的 NUMA 拓扑，因此 macOS 本地巡检不启动 openGauss，实库门禁由 GitHub Actions Linux x86_64 Job 承担。`scripts/lib/opengauss-official-media.sh` 仍维护 aarch64 官方介质事实，供后续具备 NUMA 的 Linux ARM64 专项认证使用，未认证前不得作为 Business 默认路径。
 

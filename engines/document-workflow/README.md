@@ -17,7 +17,7 @@ bash scripts/dev/restart.sh -document-workflow
 
 开发态通过 `scripts/dev/document-workflow.sh` 统一准备和启动。Python 3.12 使用独立 `venv`，完整依赖沿用平台安装锁与指纹。官方 LibreOffice 26.8.0.3 和 Noto CJK Sans 2.004 下载包逐项核对 SHA-256，安装到 `.dev-state/document-native`，不依赖宿主机全局 LibreOffice 或系统字体。私有 Fontconfig 配置绑定包内字体与固定中文字体；每次转换仍使用独立 profile。原生包当前支持 macOS arm64/x86_64 和 Linux x86_64；Linux 需要发行版提供的图形/字体系统库，Hosted Runner 由既有环境准备入口安装。
 
-start/restart/stop 只管理原生 PID。普通 start 对运行中的依赖只允许校验；restart 先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、验证真实转换并启动。准备失败的服务不启动，入口返回非零。首次迁移由用户停止并删除旧 `document-workflow-engine` 开发容器，脚本不会接管该容器，也不保留开发镜像备选路径。直接使用 NFS 的宿主机路径，通过回环地址访问 System 和对象存储；不需要 Docker host gateway 改写。
+start/restart/stop 只管理原生 PID。普通 start 对运行中的依赖只允许校验；restart 先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性、LibreOffice 版本及服务导入后启动。启动后核对 PID、监听归属和 HTTP 健康状态，不执行样例转换。准备失败的服务不启动，入口返回非零。首次迁移由用户停止并删除旧 `document-workflow-engine` 开发容器，脚本不会接管该容器，也不保留开发镜像备选路径。直接使用 NFS 的宿主机路径，通过回环地址访问 System 和对象存储；不需要 Docker host gateway 改写。
 
 主要配置：
 
@@ -28,7 +28,7 @@ start/restart/stop 只管理原生 PID。普通 start 对运行中的依赖只�
 - `DOCUMENT_CONVERSION_CONCURRENCY`：单 Runtime 转换并发，默认 `1`。
 - `DOCUMENT_OBJECT_STORE_LOOPBACK_HOST`：仅供容器部署使用，原生开发入口清除该变量。
 
-正式启动前的准备与真实转换预检（不启动服务）：
+正式启动前的依赖准备与检查（不启动服务）：
 
 ```bash
 ROOT_DIR="$PWD"
@@ -45,3 +45,11 @@ python3 -m venv engines/document-workflow/.venv
 engines/document-workflow/.venv/bin/pip install -r engines/document-workflow/requirements-dev.txt -e common-python
 make test-document-workflow
 ```
+
+私有原生依赖准备完成后，真实中文三页 PPTX 转 PDF 通过独立入口验证：
+
+```bash
+make test-document-native
+```
+
+该入口默认使用开发态 `venv/bin/python`，只校验已准备的依赖，不安装依赖、不启动服务。测试使用临时输入和输出，核对三页 PDF、中文文本、转换目录清理及源样例不变；缺失依赖直接失败。CI 在 Document Workflow Job 中准备同一官方包和字体，并通过 `DOCUMENT_NATIVE_PYTHON` 指定测试解释器调用此入口。跨模块转换与浏览器预览仍由 Manager T4 独立验收。

@@ -78,53 +78,103 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
         env = self.fixture_environment()
         env.update(PATH=f"{self.bin}:{env['PATH']}", ENV="development", INFRA_FALKORDB_PASSWORD="graph-test", REDIS_PASSWORD="redis-test")
         env.update(values)
+        # Full startup spans core services and both optional observability
+        # selections. Bound hangs without treating host scheduling as failure.
         return subprocess.run(["bash", "scripts/infra/up.sh", *cli], cwd=self.repo, env=env,
-                              capture_output=True, text=True, timeout=10)
+                              capture_output=True, text=True, timeout=30)
 
     def healthy_docker(self):
-        self.commands = self.root / "commands.jsonl"
+        self.commands = self.root / "commands.argv"
         docker = self.bin / "docker"
-        docker.write_text("#!/usr/bin/env python3\n" + r'''import json, os, sys
-from pathlib import Path
-a = sys.argv[1:]
-with open(os.environ['MOCK_COMMANDS'], 'a') as f: f.write(json.dumps(a)+'\n')
-if a[0]=='compose' and any(x in a for x in ('postgres','runtime-log-pruner')):
-    if any(os.environ.get(k) != '0' for k in ('LOKI_PORT', 'ALLOY_PORT', 'PROMETHEUS_PORT')): sys.exit(81)
-if a[0]=='ps':
-    if os.environ.get('MOCK_MEILI_ABSENT')!='1': print('fixture-meili-container')
-elif a[0]=='image' and '--format' in a:
-    if os.environ.get('MOCK_MEILI_IMAGE_MISSING')=='1': sys.exit(1)
-    print('sha256:'+'a'*64)
-elif a[0]=='inspect':
-    container=a[-1]
-    service=container.removeprefix('addp-')
-    logs=service in ('loki','alloy','runtime-log-api','runtime-log-observer','runtime-log-store-init')
-    if logs and os.environ.get('MOCK_EXISTING_LOGS')!='1': sys.exit(1)
-    if service=='metrics-control' and os.environ.get('MOCK_EXISTING_CONTROL')!='1': sys.exit(1)
-    if service=='prometheus' and os.environ.get('MOCK_EXISTING_METRICS')!='1' and not Path(os.environ['MOCK_COMMANDS']).with_suffix('.metrics-started').exists(): sys.exit(1)
-    if '--format' in a:
-        fmt=a[a.index('--format')+1]
-        if 'com.docker.compose.project' in fmt:
-            root=str(Path.cwd()) if os.environ.get('MOCK_FOREIGN_LOGS')!='1' or not logs else '/foreign'
-            if service=='prometheus' and os.environ.get('MOCK_FOREIGN_METRICS')=='1': root='/foreign'
-            if service=='metrics-control' and os.environ.get('MOCK_FOREIGN_CONTROL')=='1': root='/foreign'
-            print('addp-infra|'+service+'|'+root)
-        elif 'ExitCode' in fmt: print('exited:0')
-        elif 'State.Running' in fmt: print('true:healthy' if 'Health' in fmt else 'true')
-        elif 'Health' in fmt: print('healthy')
-        elif fmt=='{{.Image}}': print(os.environ.get('MOCK_MEILI_IMAGE_ID','sha256:'+'a'*64))
-elif a[0]=='port':
-    internal=a[2].split('/')[0]
-    print('127.0.0.1:'+{'5432':'15432','6379':('16479' if a[1]=='addp-falkordb' else '16379'),'9000':'19000','9001':'19001','7700':'17700','9092':'19092','8083':'18083','3100':'13100','12345':'12345','9090':'19090'}[internal])
-elif a[0]=='compose':
-    if 'ps' in a and '-aq' in a:
-        key={'prometheus':'MOCK_EXISTING_METRICS','metrics-control':'MOCK_EXISTING_CONTROL'}.get(a[-1],'MOCK_EXISTING_LOGS')
-        if os.environ.get(key)=='1': print('addp-'+a[-1])
-    if 'up' in a and 'prometheus' in a and os.environ.get('MOCK_FAIL_METRICS_START')=='1': sys.exit(72)
-    if 'up' in a and 'prometheus' in a: Path(os.environ['MOCK_COMMANDS']).with_suffix('.metrics-started').touch()
-    if 'build' in a and 'runtime-log-observer' in a and os.environ.get('MOCK_FAIL_LOG_BUILD')=='1': sys.exit(71)
-    if 'exec' in a and 'redis' in a: print('PONG')
-    elif 'config' in a and '--images' in a: print('fixture-owned-image')
+        # up.sh invokes Docker around 90 times. Keep the fake in shell so the
+        # fixture measures lifecycle behavior rather than Python startup cost.
+        docker.write_text(r'''#!/bin/bash
+set -eu
+args=("$@")
+printf '%s\0' "$#" "$@" >> "$MOCK_COMMANDS"
+has_arg() {
+    local value
+    for value in "${args[@]}"; do
+        if [[ "$value" == "$1" ]]; then return 0; fi
+    done
+    return 1
+}
+digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+marker="${MOCK_COMMANDS%.*}.metrics-started"
+if [[ "$1" == compose ]] && { has_arg postgres || has_arg runtime-log-pruner; }; then
+    [[ "${LOKI_PORT:-}" == 0 && "${ALLOY_PORT:-}" == 0 && "${PROMETHEUS_PORT:-}" == 0 ]] || exit 81
+fi
+case "$1" in
+    ps)
+        if [[ "${MOCK_MEILI_ABSENT:-}" != 1 ]]; then printf '%s\n' fixture-meili-container; fi
+        ;;
+    image)
+        if has_arg --format; then
+            [[ "${MOCK_MEILI_IMAGE_MISSING:-}" != 1 ]] || exit 1
+            printf '%s\n' "$digest"
+        fi
+        ;;
+    inspect)
+        container="${!#}"
+        service="${container#addp-}"
+        logs=false
+        case "$service" in loki|alloy|runtime-log-api|runtime-log-observer|runtime-log-store-init) logs=true ;; esac
+        if [[ "$logs" == true && "${MOCK_EXISTING_LOGS:-}" != 1 ]]; then exit 1; fi
+        if [[ "$service" == metrics-control && "${MOCK_EXISTING_CONTROL:-}" != 1 ]]; then exit 1; fi
+        if [[ "$service" == prometheus && "${MOCK_EXISTING_METRICS:-}" != 1 && ! -f "$marker" ]]; then exit 1; fi
+        if has_arg --format; then
+            format="$3"
+            case "$format" in
+                *com.docker.compose.project*)
+                    root="$PWD"
+                    if [[ "$logs" == true && "${MOCK_FOREIGN_LOGS:-}" == 1 ]] ||
+                       [[ "$service" == prometheus && "${MOCK_FOREIGN_METRICS:-}" == 1 ]] ||
+                       [[ "$service" == metrics-control && "${MOCK_FOREIGN_CONTROL:-}" == 1 ]]; then root=/foreign; fi
+                    printf 'addp-infra|%s|%s\n' "$service" "$root"
+                    ;;
+                *ExitCode*) printf '%s\n' exited:0 ;;
+                *State.Running*)
+                    if [[ "$format" == *Health* ]]; then printf '%s\n' true:healthy; else printf '%s\n' true; fi
+                    ;;
+                *Health*) printf '%s\n' healthy ;;
+                '{{.Image}}') printf '%s\n' "${MOCK_MEILI_IMAGE_ID-$digest}" ;;
+            esac
+        fi
+        ;;
+    port)
+        case "${3%/*}" in
+            5432) port=15432 ;;
+            6379) if [[ "$2" == addp-falkordb ]]; then port=16479; else port=16379; fi ;;
+            9000) port=19000 ;; 9001) port=19001 ;; 7700) port=17700 ;;
+            9092) port=19092 ;; 8083) port=18083 ;; 3100) port=13100 ;;
+            12345) port=12345 ;; 9090) port=19090 ;;
+            *) exit 1 ;;
+        esac
+        printf '127.0.0.1:%s\n' "$port"
+        ;;
+    compose)
+        if has_arg ps && has_arg -aq; then
+            service="${!#}"
+            case "$service" in
+                prometheus) key=MOCK_EXISTING_METRICS ;;
+                metrics-control) key=MOCK_EXISTING_CONTROL ;;
+                *) key=MOCK_EXISTING_LOGS ;;
+            esac
+            if [[ "${!key:-}" == 1 ]]; then printf 'addp-%s\n' "$service"; fi
+        fi
+        if has_arg up && has_arg prometheus; then
+            [[ "${MOCK_FAIL_METRICS_START:-}" != 1 ]] || exit 72
+            : > "$marker"
+        fi
+        if has_arg build && has_arg runtime-log-observer && [[ "${MOCK_FAIL_LOG_BUILD:-}" == 1 ]]; then exit 71; fi
+        if has_arg exec && has_arg redis; then
+            printf '%s\n' PONG
+        elif has_arg config && has_arg --images; then
+            printf '%s\n' fixture-owned-image
+        fi
+        ;;
+esac
+exit 0
 ''')
         docker.chmod(0o755)
         curl = self.bin / "curl"
@@ -139,7 +189,18 @@ elif a[0]=='compose':
         return dict(MOCK_COMMANDS=str(self.commands), SKIP_POSTGRESQL_INIT="1", SKIP_MINIO_INIT="1", SKIP_MEILISEARCH_INIT="1")
 
     def calls(self):
-        return [json.loads(line) for line in self.commands.read_text().splitlines()]
+        # Count-prefixed NUL records preserve empty arguments and line breaks
+        # without launching a serializer for each fake Docker invocation.
+        fields = iter(self.commands.read_bytes().decode().split('\0')[:-1])
+        return [[next(fields) for _ in range(int(count))] for count in fields]
+
+    def test_mock_preserves_literal_command_arguments(self):
+        values = self.healthy_docker()
+        arguments = ['fixture', 'space value', '', 'quote"\\', 'line\nbreak', 'carriage\rreturn', '中文']
+        result = subprocess.run([str(self.bin / 'docker'), *arguments],
+                                env=dict(os.environ, **values), capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls(), [arguments])
 
     def test_existing_meilisearch_image_change_is_rejected_before_any_container_mutation(self):
         result = self.run_up(**self.healthy_docker(),

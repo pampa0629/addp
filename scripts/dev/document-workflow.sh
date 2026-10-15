@@ -40,7 +40,7 @@ addp_prepare_document_workflow() (
     "$python_bin" "$runtime_dir/native_setup.py" current "$ROOT_DIR/.dev-state/document-native" || {
       echo '✗ Document 原生依赖需要更新，请先停止该 Runtime 再启动' >&2; return 1;
     }
-    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir") || return 1
+    fingerprint=$(addp_python_dependency_fingerprint "$ROOT_DIR" "$runtime_dir" "$ROOT_DIR/common-python") || return 1
     addp_python_dependencies_current "$runtime_dir" "$fingerprint" 'Document Workflow' || {
       echo '✗ Document Python 依赖需要更新，请先停止该 Runtime 再启动' >&2; return 1;
     }
@@ -57,10 +57,10 @@ addp_prepare_document_workflow() (
       addp_document_python_current "$runtime_dir/venv/bin/python"
       "$runtime_dir/venv/bin/python" "$runtime_dir/native_setup.py" prepare "$1/.dev-state/document-native"
     ' _ "$ROOT_DIR" || return 1
-    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Document Workflow' || return 1
+    addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Document Workflow' "$ROOT_DIR/common-python" || return 1
   fi
   addp_document_python_current "$python_bin" || return 1
-  "$python_bin" "$runtime_dir/native_setup.py" verify "$ROOT_DIR/.dev-state/document-native" || return 1
+  "$python_bin" "$runtime_dir/native_setup.py" check "$ROOT_DIR/.dev-state/document-native" || return 1
   (cd "$runtime_dir" && "$python_bin" -c 'import api_server') || return 1
 )
 

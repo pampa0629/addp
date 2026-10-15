@@ -23,6 +23,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
+            echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
@@ -107,6 +108,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    engine-address)
+        [ "$PACKAGE_FILTER" = repository ] || { echo "engine-address requires --package repository" >&2; exit 2; }
+        test_pattern='^TestEngineCredentialUpdateAfterJSONBAddressAgainstPostgres$'
+        ;;
     authorization-facts)
         case "$PACKAGE_FILTER" in
             migration) test_pattern='^Test(Meta|Catalog)AuthorizationFactsForwardMigrationAgainstPostgres$' ;;

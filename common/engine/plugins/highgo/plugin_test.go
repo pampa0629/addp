@@ -150,6 +150,21 @@ func TestHighGoOnlyDeclaresCertifiedSurface(t *testing.T) {
 	}
 }
 
+func TestHighGoAuditTableIsOutsideBusinessCatalog(t *testing.T) {
+	p := &Plugin{}
+	for _, name := range []string{"hg_t_audit_log", "pg_buffercache", "pg_stat_statements"} {
+		t.Run(name, func(t *testing.T) {
+			path := plugin.TabularItemPath(29, plugin.EngineCatalogTermSchema, "public", name)
+			if _, err := p.ResolvePath(t.Context(), nil, path); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+				t.Fatalf("system object must be hidden before connecting: %v", err)
+			}
+			if _, err := p.DescribeEngineCatalogFacts(t.Context(), nil, path, plugin.EngineCatalogFactsOptions{}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+				t.Fatalf("cached system object facts must be hidden before connecting: %v", err)
+			}
+		})
+	}
+}
+
 func TestHighGoRejectsUnsupportedWriteDefinitionsBeforeConnecting(t *testing.T) {
 	p := &Plugin{}
 	for _, field := range []datatype.FieldInfo{

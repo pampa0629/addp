@@ -158,6 +158,9 @@
           <div class="panel-header">
             <h3>{{ rightPanelTitle }}</h3>
             <div v-if="selectedResource" class="catalogEntry-actions-bar">
+              <el-button v-if="canExecuteScan" type="primary" :disabled="scanning || unscannedScanning" @click="openManualScan()">
+                {{ t('meta.scan.manual.open') }}
+              </el-button>
               <el-button
                 v-if="selectedCatalogIsDirectLeaf && canExecuteScan"
                 type="primary"
@@ -282,7 +285,7 @@
                       type="primary"
                       size="default"
                       @click.stop="handleScanCatalogEntry(row)"
-                      :loading="scanningCatalogEntries[row.id ?? catalogEntryNameOf(row)]"
+                      :disabled="scanning || unscannedScanning"
                     >
                       <el-icon><Search /></el-icon>
                       {{ row.scan_status === 'completed' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
@@ -305,6 +308,9 @@
         </div>
       </div>
     </el-card>
+
+    <ManualScanDialog v-if="manualScanContext" :context="manualScanContext" :busy="scanning"
+      @close="manualScanContext = null" @submit="submitManualScan" />
 
     <el-dialog
       v-model="scheduleDialogVisible"
@@ -397,7 +403,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -409,6 +415,7 @@ import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
 import { resolveMetadataScanRouteState } from '../utils/routeState'
 import { scanRunFailureSamples, waitForScanRuns } from '../utils/scanRunBatch'
+import ManualScanDialog from '../components/ManualScanDialog.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -441,7 +448,7 @@ const catalogAvailability = ref({ status: 'idle', message: '' })
 // 扫描状态
 const unscannedScanning = ref(false)
 const scanning = ref(false)
-const scanningCatalogEntries = reactive({})
+const manualScanContext = ref(null)
 const activeScan = ref({
   visible: false,
   title: '',
@@ -1007,32 +1014,39 @@ const deriveAutoTaskEntryPaths = () => {
     .filter(Boolean)
 }
 
-const handleScanSelectedEngine = async () => {
-  if (!selectedResource.value) return
+const openManualScan = (scope = null, force = false) => {
+  if (!canExecuteScan.value || !selectedResource.value || scanning.value || unscannedScanning.value) return
+  manualScanContext.value = {
+    engine: { id: selectedResource.value.id, name: selectedResource.value.name },
+    scope,
+    force
+  }
+}
 
-  const engineName = selectedResource.value.name
+const handleScanSelectedEngine = () => openManualScan({ kind: 'engine' }, Boolean(selectedResource.value?.scanned_at))
+
+// The dialog supplies the exact immutable payload reviewed by the user. Every
+// interactive scope uses this one submission and execution-observation path.
+const submitManualScan = async (payload) => {
+  if (!canExecuteScan.value || scanning.value || !manualScanContext.value || payload.engine_id !== manualScanContext.value.engine.id) return
   scanning.value = true
+  manualScanContext.value = null
+  let submitted = false
   try {
-    const run = await metaApi.createManualScanRun(selectedResource.value.id, [], {
-      scan_depth: 'deep',
-      force: Boolean(selectedResource.value.scanned_at)
-    })
-    startScanStatus(t('meta.scan.engineScanSubmitted', { name: engineName }), t('meta.scan.scanWaiting'), 5)
+    const run = await metaApi.createManualScanRun(payload)
+    submitted = true
+    startScanStatus(t('meta.scan.manual.submitted'), t('meta.scan.scanWaiting'), 5)
     await waitForScanRun(run, {
-      onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.engineScanSubmitted', { name: engineName }))
+      onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.manual.submitted'))
     })
-    completeScanStatus(
-      t('meta.scan.engineScanCompleted', { name: engineName }),
-      t('meta.scan.engineScanCompleted', { name: engineName })
-    )
-    ElMessage.success(t('meta.scan.engineScanCompleted', { name: engineName }))
-    await loadEngines()
-    await loadCatalogEntries()
+    completeScanStatus(t('meta.scan.manual.completed'), t('meta.scan.manual.completed'))
+    ElMessage.success(t('meta.scan.manual.completed'))
   } catch (error) {
     failScanStatus(error)
     ElMessage.error(t('meta.scan.scanError', { msg: error.response?.data?.error || error.message }))
   } finally {
     scanning.value = false
+    if (submitted && !disposed) await loadEngines()
   }
 }
 
@@ -1281,41 +1295,9 @@ const handleCreateUnscannedScanRuns = async () => {
 }
 
 // 批量扫描顶层资源
-const handleBatchScan = async () => {
+const handleBatchScan = () => {
   if (!selectedCatalogEntries.value.length) return
-
-  const terminology = getCatalogEntryTerminology(selectedResource.value)
-  let submitted = false
-
-  try {
-    await ElMessageBox.confirm(
-      t('meta.scan.batchScanConfirmMsg', { n: selectedCatalogEntries.value.length, term: terminology }),
-      t('meta.scan.batchScanConfirmTitle'),
-      { type: 'warning' }
-    )
-
-    scanning.value = true
-
-    const catalogPaths = selectedCatalogEntries.value.map(item => catalogEntryTargetOf(item)).filter(Boolean)
-    const run = await metaApi.createManualScanRun(selectedResource.value.id, catalogPaths, { scan_depth: 'deep', force: false })
-    submitted = true
-    startScanStatus(t('meta.scan.batchScanSubmitted'), t('meta.scan.scanWaiting'), 5)
-    await waitForScanRun(run, {
-      onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.batchScanSubmitted'))
-    })
-    completeScanStatus(t('meta.scan.batchScanCompleted'), t('meta.scan.batchScanCompleted'))
-    ElMessage.success(t('meta.scan.batchScanCompleted'))
-  } catch (error) {
-    if (error !== 'cancel') {
-      failScanStatus(error)
-      ElMessage.error(t('meta.scan.batchScanFailed', { msg: error.response?.data?.error || error.message }))
-    }
-  } finally {
-    if (submitted) {
-      await loadCatalogEntries()
-    }
-    scanning.value = false
-  }
+  openManualScan({ kind: 'catalog', paths: selectedCatalogEntries.value.map(item => catalogEntryTargetOf(item)) })
 }
 
 const submitScheduleForm = async () => {
@@ -1363,35 +1345,9 @@ const submitScheduleForm = async () => {
 }
 
 // 扫描单个顶层资源
-const handleScanCatalogEntry = async (catalogEntry) => {
-  const catalogEntryName = catalogEntryNameOf(catalogEntry)
-  const terminology = getCatalogEntryTerminology(selectedResource.value)
-  const key = catalogEntry.id ?? catalogEntryName
-  scanningCatalogEntries[key] = true
-
-  try {
-    const target = catalogEntryTargetOf(catalogEntry) || catalogEntryName
-    const run = await metaApi.createManualScanRun(selectedResource.value.id, [target], {
-      scan_depth: 'deep',
-      force: catalogEntry.scan_status === 'completed'
-    })
-    startScanStatus(t('meta.scan.catalogEntryScanSubmitted', { term: terminology, name: catalogEntryName }), t('meta.scan.scanWaiting'), 5)
-    await waitForScanRun(run, {
-      onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.catalogEntryScanSubmitted', { term: terminology, name: catalogEntryName }))
-    })
-    completeScanStatus(
-      t('meta.scan.catalogEntryScanCompleted', { term: terminology, name: catalogEntryName }),
-      t('meta.scan.catalogEntryScanCompleted', { term: terminology, name: catalogEntryName })
-    )
-    ElMessage.success(t('meta.scan.catalogEntryScanCompleted', { term: terminology, name: catalogEntryName }))
-    await loadCatalogEntries(selectedResource.value)
-  } catch (error) {
-    failScanStatus(error)
-    ElMessage.error(t('meta.scan.scanError', { msg: error.response?.data?.error || error.message }))
-  } finally {
-    scanningCatalogEntries[key] = false
-  }
-}
+const handleScanCatalogEntry = (entry) => openManualScan(
+  { kind: 'catalog', paths: [catalogEntryTargetOf(entry)] }, entry.scan_status === 'completed'
+)
 
 // 顶层资源调度相关方法
 const handleCatalogEntrySchedule = async (catalogEntry) => {

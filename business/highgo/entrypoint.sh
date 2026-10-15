@@ -10,6 +10,10 @@ addp_highgo_validate_password() {
 }
 
 addp_highgo_install_initializers() {
+    docker_process_init_files() {
+        bash /addp/highgo/init/01-business.sh
+    }
+
     docker_init_database_dir() {
         local password_file result=0
         addp_highgo_validate_password || return 1

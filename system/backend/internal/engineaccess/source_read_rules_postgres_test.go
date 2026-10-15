@@ -388,6 +388,24 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			}
 			assert(t, refresh(t, user), "no_grant")
 		})
+		t.Run("new Grant cannot bypass an existing personal Deny", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			original := grant(t, "user", user.PrincipalID, nil)
+			denyID := deny(t, "user", user.PrincipalID, nil)
+			assert(t, user, "explicit_deny")
+			revoke(t, original)
+			assert(t, user, "explicit_deny")
+			replacement := grant(t, "user", user.PrincipalID, nil)
+			if replacement == original {
+				t.Fatal("expected an explicit new Grant, not historical recovery")
+			}
+			inspect(t, user, "explicit_deny", "user")
+			assert(t, user, "explicit_deny")
+			release(t, denyID)
+			assert(t, user, "grant")
+			revoke(t, replacement)
+			assert(t, user, "no_grant")
+		})
 		t.Run("department is direct not ancestor inheritance", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			parent, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "rule_parent", Name: "Parent"})
