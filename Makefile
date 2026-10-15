@@ -383,8 +383,8 @@ test-common-kingbase: ## 在 owner 受控 Linux x86_64 主机使用正规 Licens
 test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例验证 DM8 Provider 契约
 	@bash scripts/test/common-dameng-gate.sh
 
-test-common-oracle-decimal: ## 验证 Oracle Provider；ORACLE_READONLY=1 时只读检查显式指定的现有实例
-	@bash scripts/test/common-oracle-decimal-gate.sh $(if $(filter 1,$(ORACLE_READONLY)),--read-only,)
+test-common-oracle-decimal: ## 验证 Oracle Provider；ORACLE_SPATIAL=1 验证原生空间删除，ORACLE_READONLY=1 只读检查现有实例
+	@bash scripts/test/common-oracle-decimal-gate.sh $(if $(filter 1,$(ORACLE_READONLY)),--read-only,) $(if $(filter 1,$(ORACLE_SPATIAL)),--spatial,)
 
 test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal 与 JSON 写入 Provider 契约
 	@bash scripts/test/common-doris-decimal-gate.sh

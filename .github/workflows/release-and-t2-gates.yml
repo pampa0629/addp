@@ -748,6 +748,9 @@ jobs:
       - name: Run Common Oracle typed-write gate
         run: make test-common-oracle-decimal
 
+      - name: Run Common Oracle native Spatial delete gate
+        run: make test-common-oracle-decimal ORACLE_SPATIAL=1
+
       - name: Summarize Common Oracle typed-write gate
         if: always()
         uses: ./.github/actions/ci-gate-summary

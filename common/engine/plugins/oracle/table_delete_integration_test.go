@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 	"github.com/google/uuid"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +82,9 @@ func testOracleNonSpatialDelete(t *testing.T) {
 		}
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("target was not removed %q: %d %v", table, count, err)
+		}
+		if err := p.DeleteResource(ctx, info, path); err != nil {
+			t.Fatalf("repeated scalar delete: %v", err)
 		}
 	}
 }
@@ -166,13 +170,14 @@ func testOracleDeleteMetadataGuard(t *testing.T) {
 	path := func(name string) plugin.EngineCatalogPath {
 		return plugin.TabularItemPath(93001, plugin.EngineCatalogTermSchema, schema, name)
 	}
-	// A broken metadata view is irrelevant for a proven scalar table.
-	if err := p.DeleteResource(ctx, info, path(scalar)); err != nil {
-		t.Fatalf("scalar delete touched invalid metadata: %v", err)
+	// Scalar tables may have stale geometry registrations, so an existing but
+	// broken metadata view must also stop their deletion before DROP.
+	if err := p.DeleteResource(ctx, info, path(scalar)); err == nil || !strings.Contains(err.Error(), "check Oracle delete spatial metadata") {
+		t.Fatalf("scalar delete ignored invalid metadata: %v", err)
 	}
 	var absent int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", scalar).Scan(&absent); err != nil || absent != 0 {
-		t.Fatalf("scalar delete left a target: %d %v", absent, err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", scalar).Scan(&absent); err != nil || absent != 1 {
+		t.Fatalf("metadata failure removed scalar target: %d %v", absent, err)
 	}
 	if err := p.DeleteResource(ctx, info, path(target)); err == nil || !strings.Contains(err.Error(), "check Oracle delete spatial metadata") {
 		t.Fatalf("object delete did not fail before DROP: %v", err)
@@ -192,7 +197,7 @@ func testOracleDeleteMetadataGuard(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "CREATE OR REPLACE "+viewDDL); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{target, "OTHER_" + suffix} {
+	for _, name := range []string{target, scalar, "OTHER_" + suffix} {
 		if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified(source)+" VALUES (:1,'PAYLOAD')", name); err != nil {
 			t.Fatal(err)
 		}
@@ -203,12 +208,151 @@ func testOracleDeleteMetadataGuard(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", target).Scan(&absent); err != nil || absent != 0 {
 		t.Fatalf("object delete left a target: %d %v", absent, err)
 	}
+	if err := p.DeleteResource(ctx, info, path(scalar)); err != nil {
+		t.Fatal(err)
+	}
+	// Recreate only the now-orphaned registration, then delete the absent table.
+	if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified(source)+" VALUES (:1,'PAYLOAD')", target); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.DeleteResource(ctx, info, path(target)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.DeleteResource(ctx, info, path(target)); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name string
 		want int
-	}{{target, 0}, {"OTHER_" + suffix, 1}} {
+	}{{target, 0}, {scalar, 0}, {"OTHER_" + suffix, 1}} {
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified(source)+" WHERE TABLE_NAME=:1", tc.name).Scan(&rows); err != nil || rows != tc.want {
 			t.Fatalf("metadata scope %q: %d %v", tc.name, rows, err)
 		}
+	}
+}
+
+// This test uses the real MDSYS types, metadata view, index implementation and
+// drop routines. The disposable full-image profile is required; no shadow view.
+func TestIntegrationOracleSpatialDelete(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_SPATIAL_INTEGRATION") != "1" {
+		t.Skip("set ADDP_ORACLE_SPATIAL_INTEGRATION=1 to run Oracle Spatial integration test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	p := &OraclePlugin{}
+	info := oracleIntegrationConnInfo(t)
+	dsn, err := p.BuildDSN(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("oracle", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	schema := strings.ToUpper(plugin.GetString(info, "user"))
+	dialect := commonquery.ForDialect("oracle")
+	suffix := strings.ToUpper(uuid.NewString()[:8])
+	control, target, orphan := "ADDP_SC_"+suffix, "ADDP_ST_"+suffix, "ADDP_SO_"+suffix
+	var owned []string
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		for _, table := range owned {
+			var n int
+			if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME=:1", table).Scan(&n); err != nil {
+				t.Error(err)
+				continue
+			}
+			if n != 0 {
+				if _, err := db.ExecContext(cleanup, "DROP TABLE "+dialect.QualifiedTable(schema, table)+" PURGE"); err != nil {
+					t.Error(err)
+				}
+			}
+			if _, err := db.ExecContext(cleanup, "DELETE FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1", table); err != nil {
+				t.Error(err)
+			}
+			for _, q := range []string{
+				"SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1",
+				"SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1",
+				"SELECT COUNT(*) FROM USER_INDEXES WHERE TABLE_NAME=:1",
+			} {
+				if err := db.QueryRowContext(cleanup, q, table).Scan(&n); err != nil || n != 0 {
+					t.Errorf("native spatial fixture residue %s: %d %v", table, n, err)
+				}
+			}
+		}
+	})
+	for _, table := range []string{control, target, orphan} {
+		var n int
+		for _, q := range []string{
+			"SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1",
+			"SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1",
+		} {
+			if err := db.QueryRowContext(ctx, q, table).Scan(&n); err != nil || n != 0 {
+				t.Fatalf("occupied spatial fixture %s: %d %v", table, n, err)
+			}
+		}
+		qualified := dialect.QualifiedTable(schema, table)
+		if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+" (ID NUMBER PRIMARY KEY, SHAPE MDSYS.SDO_GEOMETRY)"); err != nil {
+			t.Fatal(err)
+		}
+		owned = append(owned, table)
+		// Use native SQL for this fixture so the test isolates delete semantics.
+		if _, err := db.ExecContext(ctx, `INSERT INTO USER_SDO_GEOM_METADATA (TABLE_NAME,COLUMN_NAME,DIMINFO,SRID)
+			VALUES (:1,'SHAPE',MDSYS.SDO_DIM_ARRAY(MDSYS.SDO_DIM_ELEMENT('X',-180,180,0.005),MDSYS.SDO_DIM_ELEMENT('Y',-90,90,0.005)),4326)`, table); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified+" VALUES (1,MDSYS.SDO_GEOMETRY(2001,4326,MDSYS.SDO_POINT_TYPE(116,39,NULL),NULL,NULL))"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ensureOracleSpatialIndex(ctx, db, schema, table, "SHAPE"); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_INDEXES WHERE TABLE_NAME=:1 AND INDEX_TYPE='DOMAIN'", table).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("native spatial index missing: %d %v", n, err)
+		}
+	}
+	// Establish actual Oracle behavior independently of the Provider: DROP may
+	// remove the domain index while leaving the user-managed column metadata.
+	if _, err := db.ExecContext(ctx, "DROP TABLE "+dialect.QualifiedTable(schema, orphan)+" PURGE"); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1", orphan).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("native DROP TABLE PURGE left %d geometry metadata rows", remaining)
+	if remaining != 1 {
+		t.Fatalf("expected a native orphan registration, got %d", remaining)
+	}
+	for _, table := range []string{target, orphan} {
+		path := plugin.TabularItemPath(93001, plugin.EngineCatalogTermSchema, schema, table)
+		if err := p.DeleteResource(ctx, info, path); err != nil {
+			t.Fatalf("spatial delete %s: %v", table, err)
+		}
+		if err := p.DeleteResource(ctx, info, path); err != nil {
+			t.Fatalf("repeated spatial delete %s: %v", table, err)
+		}
+		for _, q := range []string{
+			"SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1",
+			"SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1",
+			"SELECT COUNT(*) FROM USER_INDEXES WHERE TABLE_NAME=:1",
+		} {
+			if err := db.QueryRowContext(ctx, q, table).Scan(&remaining); err != nil || remaining != 0 {
+				t.Fatalf("spatial delete residue %s: %d %v", table, remaining, err)
+			}
+		}
+	}
+	for _, q := range []string{
+		"SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1",
+		"SELECT COUNT(*) FROM USER_INDEXES WHERE TABLE_NAME=:1 AND INDEX_TYPE='DOMAIN'",
+	} {
+		if err := db.QueryRowContext(ctx, q, control).Scan(&remaining); err != nil || remaining != 1 {
+			t.Fatalf("sibling spatial facts changed: %d %v", remaining, err)
+		}
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+dialect.QualifiedTable(schema, control)+" WHERE ID=1").Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatalf("sibling row changed: %d %v", remaining, err)
 	}
 }

@@ -8,6 +8,8 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 CONTAINER_NAME=addp-oracle-decimal-disposable
 ORACLE_IMAGE='gvenzl/oracle-free:23-slim@sha256:fbbd3023d5abc33e36d3814816e6fd740e8efabeaa70cf470ddeab5874a3f6f8'
+SPATIAL_INTEGRATION=0
+TEST_PATTERN='^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog)$'
 ORACLE_PASSWORD='addp_oracle_sys_password'
 ORACLE_USER=addp
 ORACLE_APP_PASSWORD='addp_oracle_password'
@@ -61,7 +63,21 @@ case "${1:-}" in
         fi
         exit 0
         ;;
-    '') ;;
+    --spatial)
+        if [ "$#" -ne 1 ]; then
+            echo "spatial Oracle verification accepts no additional arguments" >&2
+            exit 2
+        fi
+        ORACLE_IMAGE='gvenzl/oracle-free:23@sha256:e2763af84ecc345d48e4e3fe7999d0b7bb57885b6e0166051acd5f62e27eb605'
+        SPATIAL_INTEGRATION=1
+        TEST_PATTERN='^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog|SpatialDelete)$'
+        ;;
+    '')
+        if [ "$#" -ne 0 ]; then
+            echo "Oracle verification accepts no empty arguments" >&2
+            exit 2
+        fi
+        ;;
     *) echo "unknown Oracle verification mode: $1" >&2; exit 2 ;;
 esac
 
@@ -112,6 +128,7 @@ case "$host_port" in
 esac
 
 cd "$ROOT_DIR/common"
+ADDP_ORACLE_SPATIAL_INTEGRATION="$SPATIAL_INTEGRATION" \
 ADDP_ORACLE_DECIMAL_INTEGRATION=1 \
 ADDP_ORACLE_JSON_INTEGRATION=1 \
 ADDP_ORACLE_INTEGRATION=1 \
@@ -122,7 +139,7 @@ ADDP_TEST_ORACLE_SERVICE_NAME=FREEPDB1 \
 ADDP_TEST_ORACLE_USER="$ORACLE_USER" \
 ADDP_TEST_ORACLE_PASSWORD="$ORACLE_APP_PASSWORD" \
     go test ./engine/plugins/oracle \
-    -run '^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog)$' \
+    -run "$TEST_PATTERN" \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-oracle-decimal.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-oracle-decimal.log"; then

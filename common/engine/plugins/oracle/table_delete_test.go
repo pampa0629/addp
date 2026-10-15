@@ -17,6 +17,7 @@ func TestOracleDeleteMetadataPreflight(t *testing.T) {
 		want                  bool
 	}{
 		{name: "scalar without Spatial"},
+		{name: "scalar with stale metadata", metadata: true, want: true},
 		{name: "native geometry without metadata view", owner: "MDSYS", fail: true},
 		{name: "unknown object without metadata view", owner: "CUSTOM", fail: true},
 		{name: "domain index without metadata view", index: true, fail: true},
@@ -34,6 +35,8 @@ func TestOracleDeleteMetadataPreflight(t *testing.T) {
 			for _, q := range []string{
 				"CREATE TABLE all_tab_cols (owner TEXT, table_name TEXT, data_type_owner TEXT)",
 				"CREATE TABLE all_indexes (owner TEXT, table_owner TEXT, table_name TEXT, ityp_owner TEXT)",
+				"CREATE TABLE all_objects (owner TEXT, object_name TEXT)",
+				"CREATE TABLE all_synonyms (owner TEXT, synonym_name TEXT)",
 			} {
 				if _, err := db.Exec(q); err != nil {
 					t.Fatal(err)
@@ -58,6 +61,9 @@ func TestOracleDeleteMetadataPreflight(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.metadata {
+				if _, err := db.Exec("INSERT INTO all_objects VALUES (?, 'USER_SDO_GEOM_METADATA')", schema); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := db.Exec("CREATE TABLE USER_SDO_GEOM_METADATA (TABLE_NAME TEXT)"); err != nil {
 					t.Fatal(err)
 				}
@@ -96,6 +102,87 @@ func TestOracleDeleteMetadataPreflight(t *testing.T) {
 				}
 				if _, err := oracleDeleteMetadataPreflight(t.Context(), db, schema, table); err == nil {
 					t.Fatal("dictionary failure treated as scalar proof")
+				}
+			}
+		})
+	}
+}
+
+func TestOracleDeleteMissingTable(t *testing.T) {
+	for _, mode := range []string{"no Spatial", "orphan metadata", "broken public synonym", "inaccessible private synonym", "dictionary failure"} {
+		t.Run(mode, func(t *testing.T) {
+			db, err := sql.Open("sqlite3", ":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			db.SetMaxOpenConns(1)
+			for _, q := range []string{
+				"CREATE TABLE all_tables (owner TEXT, table_name TEXT)",
+				"CREATE TABLE all_tab_cols (owner TEXT, table_name TEXT, data_type_owner TEXT)",
+				"CREATE TABLE all_indexes (owner TEXT, table_owner TEXT, table_name TEXT, ityp_owner TEXT)",
+				"CREATE TABLE all_objects (owner TEXT, object_name TEXT)",
+				"CREATE TABLE all_synonyms (owner TEXT, synonym_name TEXT)",
+			} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			schema, table := "Case.schema", "quoted.'Table"
+			// Other users' objects and private synonyms cannot prove availability.
+			for _, q := range []string{
+				"INSERT INTO all_objects VALUES ('OTHER', 'USER_SDO_GEOM_METADATA')",
+				"INSERT INTO all_synonyms VALUES ('OTHER', 'USER_SDO_GEOM_METADATA')",
+			} {
+				if _, err := db.Exec(q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch mode {
+			case "orphan metadata":
+				for _, q := range []string{
+					"CREATE TABLE USER_SDO_GEOM_METADATA (TABLE_NAME TEXT, COLUMN_NAME TEXT)",
+					"INSERT INTO all_synonyms VALUES ('PUBLIC', 'USER_SDO_GEOM_METADATA')",
+				} {
+					if _, err := db.Exec(q); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, name := range []string{table, table, "QUOTED.'TABLE", "OTHER"} {
+					if _, err := db.Exec("INSERT INTO USER_SDO_GEOM_METADATA VALUES (?, 'Shape')", name); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case "broken public synonym":
+				if _, err := db.Exec("INSERT INTO all_synonyms VALUES ('PUBLIC', 'USER_SDO_GEOM_METADATA')"); err != nil {
+					t.Fatal(err)
+				}
+			case "inaccessible private synonym":
+				if _, err := db.Exec("INSERT INTO all_synonyms VALUES (?, 'USER_SDO_GEOM_METADATA')", schema); err != nil {
+					t.Fatal(err)
+				}
+			case "dictionary failure":
+				if _, err := db.Exec("DROP TABLE all_synonyms"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = deleteOracleTable(t.Context(), db, schema, table)
+			if mode == "broken public synonym" || mode == "inaccessible private synonym" || mode == "dictionary failure" {
+				if err == nil || !strings.Contains(err.Error(), "check Oracle delete spatial metadata") {
+					t.Fatalf("metadata failure lost: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := deleteOracleTable(t.Context(), db, schema, table); err != nil {
+				t.Fatalf("repeated delete: %v", err)
+			}
+			if mode == "orphan metadata" {
+				var count int
+				if err := db.QueryRow("SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA").Scan(&count); err != nil || count != 2 {
+					t.Fatalf("wrong cleanup scope: %d %v", count, err)
 				}
 			}
 		})

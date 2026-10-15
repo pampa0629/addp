@@ -109,6 +109,8 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；同一门禁的 Service 用例依赖 PostGIS，验证生成目标的 3857 类型声明、2D／Z／M／ZM 保留、空目标校验、未声明旧目标拒绝及无内容 SELECT 权限的目录核验，清理自建 Schema 与事务内角色并核对零残留。该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database；CI 复用固定摘要的 PostGIS 15-3.4 镜像。同一门禁使用独占 Meilisearch 验证技术与正文快照任意顺序并存、重复提交、空值清除及单指纹删除；本地标准脚本自动创建临时容器并在退出时删除，CI 使用随 Job 销毁的固定摘要 Service，禁止连接开发内容索引。
 - Orchestrator 的独立进程故障回归归入既有 `make test-orchestrator-postgres`：测试进程运行正式监督器，在提交与等待阶段分别强制终止持有租约的运行者，再由新进程验证过期失败收敛、不重发请求、旧租约写入拒绝、子执行引用保留及唯一终态事件。HTTP Provider 是受控夹具，因此不作为 T4 真实拓扑验收。Go 测试自动发现和现有 Hosted PostgreSQL Job 覆盖同一入口，无新增基础设施依赖；子进程和当次数据库事实必须在成功、失败路径清理并核对残留。
 
+Oracle 的既有 `make test-common-oracle-decimal` 默认使用 Slim 一次性容器验证非空间类型写入及删除；`make test-common-oracle-decimal ORACLE_SPATIAL=1` 使用固定摘要的完整镜像，额外验证原生 SDO_GEOMETRY、空间索引、DROP 后的登记状态、存在／缺失表的精确登记清理、重复删除及其他表登记保留。两种配置均由既有 Hosted Oracle Job 执行，容器只绑定随机回环端口，退出销毁容器及卷；不得连接业务 Oracle 或以模拟视图代替原生空间认证。
+
 ### 4.3 T3
 
 T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态。真实 System、Gateway、owner Backend、真实身份与数据源的浏览器链路归入 T4，不与确定性浏览器测试混跑。

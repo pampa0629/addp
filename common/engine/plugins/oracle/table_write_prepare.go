@@ -76,28 +76,27 @@ func deleteOracleTable(ctx context.Context, db *sql.DB, schema, table string) er
 	if err != nil {
 		return err
 	}
+	cleanupMetadata, err := oracleDeleteMetadataPreflight(ctx, db, schema, table)
+	if err != nil {
+		return err
+	}
 	if exists {
-		cleanupMetadata, err := oracleDeleteMetadataPreflight(ctx, db, schema, table)
-		if err != nil {
-			return err
-		}
 		qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 		if _, err := db.ExecContext(ctx, "DROP TABLE "+qualified+" PURGE"); err != nil {
 			return fmt.Errorf("drop Oracle table %s.%s: %w", schema, table, err)
 		}
-		if !cleanupMetadata {
-			return nil
-		}
 	}
-	if _, err := db.ExecContext(ctx, "DELETE FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME = :1", table); err != nil {
-		return fmt.Errorf("delete Oracle spatial metadata for %s.%s: %w", schema, table, err)
+	if cleanupMetadata {
+		if _, err := db.ExecContext(ctx, "DELETE FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME = :1", table); err != nil {
+			return fmt.Errorf("delete Oracle spatial metadata for %s.%s: %w", schema, table, err)
+		}
 	}
 	return nil
 }
 
-// Scalar tables have no Spatial dependency. Native object columns (including
-// hidden/nested object storage) and MDSYS domain indexes require metadata facts;
-// an unknown object type is never evidence that the table is non-spatial.
+// Metadata outlives a table or its geometry columns. Inspect it even for absent
+// and scalar targets when its native entry point exists. Object columns and
+// MDSYS domain indexes cannot be deleted without that entry point.
 func oracleDeleteMetadataPreflight(ctx context.Context, db *sql.DB, schema, table string) (bool, error) {
 	var dependent int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
@@ -109,7 +108,20 @@ func oracleDeleteMetadataPreflight(ctx context.Context, db *sql.DB, schema, tabl
 	)`, schema, table, schema, table).Scan(&dependent); err != nil {
 		return false, fmt.Errorf("check Oracle delete type facts: %w", err)
 	}
-	if dependent == 0 {
+	var entryPoints int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT 1 FROM all_objects
+		 WHERE owner = :1 AND object_name = 'USER_SDO_GEOM_METADATA'
+		UNION ALL
+		SELECT 1 FROM all_synonyms
+		 WHERE owner IN (:2, 'PUBLIC') AND synonym_name = 'USER_SDO_GEOM_METADATA'
+	)`, schema, schema).Scan(&entryPoints); err != nil {
+		return false, fmt.Errorf("check Oracle delete spatial metadata entry point: %w", err)
+	}
+	if entryPoints == 0 {
+		if dependent != 0 {
+			return false, fmt.Errorf("check Oracle delete spatial metadata for %s.%s: USER_SDO_GEOM_METADATA is unavailable", schema, table)
+		}
 		return false, nil
 	}
 	var metadata int
