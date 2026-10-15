@@ -7,6 +7,8 @@
 #include "FileParser/UGFileParseModel.h"
 #include "FileParser/UGModelConfigParams.h"
 #include "FileParser/UGSgmConfigParams.h"
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <map>
@@ -50,7 +52,8 @@ std::string sdk_string(const UGC::UGString& value) {
 bool has_pixels(const UGC::UGTextureData* data) {
   return data && data->m_pBuffer && data->m_nWidth > 0 && data->m_nHeight > 0 && data->m_nSize > 0;
 }
-std::size_t prepare_textures(const Json& access, const std::filesystem::path& model_file) {
+std::size_t prepare_model(const Json& access, const std::filesystem::path& model_file,
+                          const std::filesystem::path& prepared_file) {
   Parser reader(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
   auto& model = model_parser(reader);
   model.SetParseModelNode(false);
@@ -61,7 +64,7 @@ std::size_t prepare_textures(const Json& access, const std::filesystem::path& mo
   if (!info) throw std::runtime_error("SGM source materials are unavailable");
   if (info->GetMaterial3D().GetSize() > 0)
     throw std::runtime_error("SGM source material layout is not supported");
-  std::set<std::string> references;
+  std::map<std::string, std::filesystem::path> references;
   auto& materials = info->GetMaterial();
   std::set<UGC::UGint> used_materials;
   auto use_material = [&](UGC::UGint index) {
@@ -88,10 +91,15 @@ std::size_t prepare_textures(const Json& access, const std::filesystem::path& mo
     if (!material) throw std::runtime_error("SGM source contains an invalid material");
     for (unsigned int unit = 0; unit < material->GetTextureUnits(); ++unit) {
       const auto reference = sdk_string(material->GetTexPath(unit));
-      if (!references.insert(reference).second) continue;
+      const auto previous = references.find(reference);
+      if (previous != references.end()) {
+        if (!previous->second.empty()) material->SetTexPath(sdk_path(previous->second), unit);
+        continue;
+      }
       const auto* embedded = material->GetTextureData(unit);
       if (embedded) {
         if (!has_pixels(embedded)) throw std::runtime_error("SGM embedded texture has no pixels");
+        references.emplace(reference, std::filesystem::path{});
         continue;
       }
       bool found = false;
@@ -99,6 +107,17 @@ std::size_t prepare_textures(const Json& access, const std::filesystem::path& mo
         const auto destination = model_file.parent_path() / relative;
         if (std::filesystem::is_regular_file(destination) ||
             materialize_workflow_sibling(access, relative, destination)) {
+          // Exact source keys are resolved before naming the private SDK copy.
+          auto extension = destination.extension().string();
+          std::transform(extension.begin(), extension.end(), extension.begin(),
+                         [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+          const auto normalized = std::filesystem::path("Textures") /
+              ("texture-" + std::to_string(references.size()) + extension);
+          const auto image = prepared_file.parent_path() / normalized;
+          std::filesystem::create_directories(image.parent_path());
+          std::filesystem::copy_file(destination, image);
+          material->SetTexPath(sdk_path(normalized), unit);
+          references.emplace(reference, normalized);
           found = true;
           break;
         }
@@ -106,6 +125,12 @@ std::size_t prepare_textures(const Json& access, const std::filesystem::path& mo
       if (!found) throw std::runtime_error("SGM referenced texture is missing");
     }
   }
+  Parser writer(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
+  auto& output_model = model_parser(writer);
+  UGC::UGSgmExportParams export_params;
+  export_params.SetFilePathName(sdk_path(prepared_file));
+  if (!output_model.Save(export_params, info))
+    throw std::runtime_error("SuperMap could not prepare SGM texture references");
   return references.size();
 }
 std::size_t texture_count(UGC::UGModelNode& node, std::size_t minimum) {
@@ -166,16 +191,28 @@ Json convert_sgm_to_osgb(const Json& params) {
     throw std::invalid_argument("SGM source must be a regular file");
   auto staged = make_workflow_temporary_file(input.path().filename().string());
   std::filesystem::copy_file(input.path(), staged.path());
-  const auto source_textures = prepare_textures(source_access, staged.path());
+  auto prepared = make_workflow_temporary_file("model.sgm");
+  const auto source_textures = prepare_model(source_access, staged.path(), prepared.path());
   auto output = make_workflow_temporary_file("model.osgb");
+  std::pair<UGC::UGint, UGC::UGint> counts;
+  {
+    Parser reader(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
+    auto& model = model_parser(reader);
+    UGC::UGSgmImportParams import_params;
+    import_params.SetFilePathName(sdk_path(staged.path()));
+    if (!reader->Open(import_params)) throw std::runtime_error("SuperMap could not open SGM source");
+    std::unique_ptr<UGC::UGModelNode> node(model.GetModelNode());
+    if (!node) throw std::runtime_error("SGM source has no model node");
+    counts = geometry_counts(*node);
+  }
   Parser reader(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM));
   auto& model = model_parser(reader);
   UGC::UGSgmImportParams import_params;
-  import_params.SetFilePathName(sdk_path(staged.path()));
-  if (!reader->Open(import_params)) throw std::runtime_error("SuperMap could not open SGM source");
+  import_params.SetFilePathName(sdk_path(prepared.path()));
+  if (!reader->Open(import_params)) throw std::runtime_error("SuperMap could not open prepared SGM");
   std::unique_ptr<UGC::UGModelNode> node(model.GetModelNode());
-  if (!node) throw std::runtime_error("SGM source has no model node");
-  const auto counts = geometry_counts(*node);
+  if (!node || geometry_counts(*node) != counts)
+    throw std::runtime_error("Prepared SGM geometry count differs from source");
   const auto textures = texture_count(*node, source_textures);
   Parser writer(UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::ModelOSG));
   auto& export_model = model_parser(writer);

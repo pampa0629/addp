@@ -39,7 +39,7 @@ std::set<std::filesystem::path> temporary_files() {
   }
   return result;
 }
-void verify_texture(const std::filesystem::path& path) {
+std::string verify_texture(const std::filesystem::path& path) {
   auto* parser = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::ModelOSG);
   require(parser != nullptr, "OSGB parser unavailable");
   struct Cleanup {
@@ -64,6 +64,44 @@ void verify_texture(const std::filesystem::path& path) {
   const auto* data = textures.begin()->second->m_pTextureData;
   require(data && data->m_pBuffer && data->m_nWidth == 256 && data->m_nHeight == 256 && data->m_nSize > 0,
           "published OSGB must retain compass texture pixels");
+  return {reinterpret_cast<const char*>(data->m_pBuffer), static_cast<std::size_t>(data->m_nSize)};
+}
+void write_sample(const std::filesystem::path& sample, const std::filesystem::path& destination,
+                  const char* texture_reference) {
+  struct ParserCleanup {
+    UGC::UGFileParser* value;
+    ~ParserCleanup() { value->Close(); UGC::UGFileParseManager::DestroyFileParser(value); }
+  };
+  auto* raw = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
+  require(raw != nullptr, "fixture source parser unavailable");
+  ParserCleanup raw_cleanup{raw};
+  auto* raw_model = dynamic_cast<UGC::UGFileParseModel*>(raw);
+  require(raw_model != nullptr, "fixture source parser unavailable");
+  raw_model->SetParseModelNode(false);
+  UGC::UGSgmImportParams source_params;
+  UGC::UGString source_path; source_path.FromStd(sample.string(), OGDC::OGDCCharset::UTF8);
+  source_params.SetFilePathName(source_path);
+  require(raw->Open(source_params), "fixture source read failed");
+  auto* info = raw_model->GetModelDataInfo();
+  require(info != nullptr, "fixture source materials missing");
+  auto& source_materials = info->GetMaterial();
+  UGC::UGString companion; companion.FromStd(texture_reference, OGDC::OGDCCharset::UTF8);
+  for (decltype(source_materials.GetSize()) index = 0; index < source_materials.GetSize(); ++index)
+    for (unsigned int unit = 0; unit < source_materials[index]->GetTextureUnits(); ++unit)
+      source_materials[index]->SetTexPath(companion, unit);
+  auto material = std::make_unique<UGC::UGMaterial>();
+  UGC::UGString missing; missing.FromStd("unused.png", OGDC::OGDCCharset::UTF8);
+  material->SetName(missing); material->SetTexPath(missing);
+  info->GetMaterial().Add(material.release());
+  auto* writer = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
+  require(writer != nullptr, "fixture writer unavailable");
+  ParserCleanup writer_cleanup{writer};
+  auto* output_model = dynamic_cast<UGC::UGFileParseModel*>(writer);
+  require(output_model != nullptr, "fixture writer unavailable");
+  UGC::UGSgmExportParams export_params;
+  UGC::UGString output_path; output_path.FromStd(destination.string(), OGDC::OGDCCharset::UTF8);
+  export_params.SetFilePathName(output_path);
+  require(output_model->Save(export_params, info), "fixture source write failed");
 }
 // A loopback HTTP fixture exercises the real signed S3 download path, not MinIO authorization.
 class ObjectFixture {
@@ -161,7 +199,7 @@ int main(int argc, char** argv) {
     require(replaced.at("size_bytes") == std::filesystem::file_size(target.path()) &&
             replaced.at("vertex_count") == 136 && replaced.at("triangle_count") == 94,
             "replace output differs");
-    verify_texture(target.path());
+    const auto expected_pixels = verify_texture(target.path());
     const auto workflow = runtime.execute_workflow("sgm-workflow-test", Json{
       {"workflow_def", {{"tasks", Json::array({{
         {"id", "convert"}, {"operator", "sgm_to_osgb"}, {"params", params}, {"depends_on", Json::array()}
@@ -200,7 +238,8 @@ int main(int argc, char** argv) {
       require(converted.at("vertex_count") == 136 && converted.at("triangle_count") == 94,
               "textured source geometry differs");
       require(temporary_files() == before, "successful conversion must remove staged files");
-      verify_texture(target.path());
+      require(verify_texture(target.path()) == expected_pixels,
+              "prepared model must preserve all decoded texture bytes");
     };
     reject_preserving_output("missing NFS companion image must fail");
     std::filesystem::create_directories(isolated.path().parent_path() / "Textures");
@@ -251,45 +290,35 @@ int main(int argc, char** argv) {
             "corrupt adjacent image must not trigger a fallback download");
     // An unused source material must not require a companion image.
     auto unused_source = addp::supermap::make_workflow_temporary_file("unused.SGM");
-    struct ParserCleanup {
-      UGC::UGFileParser* value;
-      ~ParserCleanup() { value->Close(); UGC::UGFileParseManager::DestroyFileParser(value); }
-    };
-    {
-      auto* raw = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
-      require(raw != nullptr, "fixture source parser unavailable");
-      ParserCleanup raw_cleanup{raw};
-      auto* raw_model = dynamic_cast<UGC::UGFileParseModel*>(raw);
-      require(raw_model != nullptr, "fixture source parser unavailable");
-      raw_model->SetParseModelNode(false);
-      UGC::UGSgmImportParams source_params;
-      UGC::UGString source_path; source_path.FromStd(argv[2], OGDC::OGDCCharset::UTF8);
-      source_params.SetFilePathName(source_path);
-      require(raw->Open(source_params), "fixture source read failed");
-      auto* info = raw_model->GetModelDataInfo();
-      require(info != nullptr, "fixture source materials missing");
-      auto& source_materials = info->GetMaterial();
-      UGC::UGString companion; companion.FromStd("compass.png", OGDC::OGDCCharset::UTF8);
-      for (decltype(source_materials.GetSize()) index = 0; index < source_materials.GetSize(); ++index)
-        for (unsigned int unit = 0; unit < source_materials[index]->GetTextureUnits(); ++unit)
-          source_materials[index]->SetTexPath(companion, unit);
-      auto material = std::make_unique<UGC::UGMaterial>();
-      UGC::UGString missing; missing.FromStd("unused.png", OGDC::OGDCCharset::UTF8);
-      material->SetName(missing); material->SetTexPath(missing);
-      info->GetMaterial().Add(material.release());
-      auto* writer = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
-      require(writer != nullptr, "fixture writer unavailable");
-      ParserCleanup writer_cleanup{writer};
-      auto* output_model = dynamic_cast<UGC::UGFileParseModel*>(writer);
-      require(output_model != nullptr, "fixture writer unavailable");
-      UGC::UGSgmExportParams export_params;
-      UGC::UGString destination; destination.FromStd(unused_source.path().string(), OGDC::OGDCCharset::UTF8);
-      export_params.SetFilePathName(destination);
-      require(output_model->Save(export_params, info), "fixture source write failed");
-    }
+    write_sample(argv[2], unused_source.path(), "compass.png");
     std::filesystem::copy_file(image, unused_source.path().parent_path() / "compass.png");
     params["access_plan"]["source"]["access"] = {{"method", "mounted_path"}, {"path", unused_source.path().string()}};
     convert_textured();
+    // Source object names remain case sensitive; only private SDK references are normalized.
+    for (const char* name : {"compass.PNG", "compass.PnG"}) {
+      auto uppercase = addp::supermap::make_workflow_temporary_file("uppercase.SGM");
+      write_sample(argv[2], uppercase.path(), name);
+      const auto source_before = read_bytes(uppercase.path());
+      const auto texture_path = uppercase.path().parent_path() / name;
+      std::filesystem::copy_file(image, texture_path);
+      params["access_plan"]["source"]["access"] = {{"method", "mounted_path"}, {"path", uppercase.path().string()}};
+      convert_textured();
+      require(read_bytes(uppercase.path()) == source_before && read_bytes(texture_path) == image_bytes,
+              "normalization must not change source model or texture bytes");
+      require(!std::filesystem::exists(uppercase.path().parent_path() / "compass.png"),
+              "normalization must not create aliases beside the source");
+      params["access_plan"]["source"]["access"] = {
+        {"method", "object_store"}, {"endpoint", "http://127.0.0.1:" + std::to_string(fixture.port)},
+        {"access_key", "fixture-key"}, {"secret_key", "fixture-secret"},
+        {"bucket", "samples"}, {"object", "models/source.SGM"}
+      };
+      const std::string exact_image = "/samples/models/Textures/" + std::string(name);
+      fixture.configure({{model_object, {200, source_before}}, {exact_image, {200, image_bytes}}});
+      convert_textured();
+      require(fixture.requests() == std::vector<std::string>{
+                "GET " + model_object, "GET /samples/models/" + std::string(name), "GET " + exact_image},
+              "uppercase S3 texture must use exact original object keys and candidate order");
+    }
     params["access_plan"]["source"]["format"] = "skp";
     rejected = false;
     try { runtime.invoke_direct("sgm_to_osgb", params); } catch (const std::exception&) { rejected = true; }
