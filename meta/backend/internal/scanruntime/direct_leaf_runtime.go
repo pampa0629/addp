@@ -153,7 +153,7 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 			}
 			for _, item := range existing {
 				if !keep[item.Fingerprint] {
-					s.indexer.DeleteItemFromIndex(tenantID, resource.ID, item.Fingerprint)
+					_ = s.indexer.DeleteItemsFromIndex(ctx, tenantID, resource.ID, []string{item.Fingerprint})
 				}
 			}
 		}

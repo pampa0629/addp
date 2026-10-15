@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -65,4 +67,46 @@ func TestContentIndexHandlerReportsDistinctProtectionAndDeliveryOutcomes(t *test
 			}
 		})
 	}
+}
+
+type deletionScopeRecorder struct {
+	contentIndexerTestService
+	scope service.ContentDocumentDeleteScope
+	calls int
+}
+
+func (r *deletionScopeRecorder) DeleteContentDocuments(_ context.Context, _ uint, s service.ContentDocumentDeleteScope) error {
+	r.scope = s
+	r.calls++
+	return r.err
+}
+func TestContentDeletionHandlerKeepsExactBatchAndRejectsInvalidScopes(t *testing.T) {
+	recorder := &deletionScopeRecorder{}
+	router := gin.New()
+	router.DELETE("/content", NewContentIndexHandler(recorder).DeleteEngineDocuments)
+	request := func(query string, want int) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("DELETE", "/content?"+query, nil))
+		if w.Code != want {
+			t.Fatalf("status=%d want=%d body=%s", w.Code, want, w.Body)
+		}
+	}
+	request("engine_id=14&document_id=one&document_id=two", 204)
+	if len(recorder.scope.DocumentIDs) != 2 || recorder.scope.DocumentIDs[0] != "one" || recorder.scope.EngineID != 14 {
+		t.Fatalf("scope=%+v", recorder.scope)
+	}
+	for _, query := range []string{"engine_id=14&document_id=", "engine_id=14&document_id=one&document_id=one", "engine_id=14&document_id=one&schema=public", "engine_id=14&document_id=" + url.QueryEscape("x\ny")} {
+		request(query, 400)
+	}
+	query := "engine_id=14"
+	for i := 0; i < 101; i++ {
+		query += fmt.Sprintf("&document_id=id%d", i)
+	}
+	request(query, 400)
+	if recorder.calls != 1 {
+		t.Fatalf("invalid scopes reached side effects: %d", recorder.calls)
+	}
+	recorder.err = errors.New("private receipt detail")
+	request("engine_id=14&document_id=one", 503)
 }

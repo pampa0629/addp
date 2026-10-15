@@ -30,8 +30,11 @@ type boundaryScanProvider struct {
 
 type boundaryIndexer struct{ deleted []string }
 
-func (i *boundaryIndexer) DeleteItemFromIndex(tenantID, engineID uint, fingerprint string) {
-	i.deleted = append(i.deleted, fmt.Sprintf("%d/%d/%s", tenantID, engineID, fingerprint))
+func (i *boundaryIndexer) DeleteItemsFromIndex(_ context.Context, tenantID, engineID uint, fingerprints []string) error {
+	for _, fingerprint := range fingerprints {
+		i.deleted = append(i.deleted, fmt.Sprintf("%d/%d/%s", tenantID, engineID, fingerprint))
+	}
+	return nil
 }
 func (*boundaryIndexer) IndexTechnicalMetadata(context.Context, *commonModels.Engine, uint, *models.MetaNode, ...*models.MetaItem) bool {
 	return true

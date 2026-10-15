@@ -681,6 +681,12 @@ node 行内刷新与 node 详情深度扫描共用执行等待和扫描后的资
 
 文件系统范围扫描的执行观测通过 Meta `ScanExecutionResponse.scan_progress` 返回固定类型的快照，不开放 execution 的任意 metadata 或配置。阶段为 `discovering`（枚举）、`identifying`（识别数据项）、`processing`（处理）、`finalizing`（收尾）；当前操作为 `listing`、`identifying`、`enriching`、`hashing`、`extracting`、`saving` 或 `indexing`。当前路径仅为引擎内相对路径，不含挂载位置、连接信息或 ResourceLocator query。
 
+同一次文件系统范围扫描按规范 fingerprint 对逻辑数据项去重。非 whole 数据项归主文件实际父目录；祖先 resolver 发现的结果转交该目录，不能在祖先和后代重复增强、持久化或计数。认领组件仍在完整可见范围内抑制独立 single，force 回收不能误删其他目录已登记的逻辑数据项。
+
+组合数据项收敛旧组件时，Meta 在原持久化事务中按精确 ID 分批删除旧元数据；提交后通过既有 `DELETE /api/v1/manager/runtime/content-documents`，以重复的 `document_id` query 一批提交 1–100 个精确指纹，固定 `engine_id`，不得混用 schema、bucket、path_prefix 或 data_item_type 范围筛选。单项也使用同一数组契约；不新增删除端点、不按目录前缀扩大删除范围。Manager 校验重复、空白、长度及控制字符，并复用原持久投递和外部成功确认；204 才表示该批完成，503 保留原有未决语义，Meta 不自动重试该批。
+
+`cleaning_index` 操作显示旧组件索引清理进度，`index_cleanup_total`、`index_cleanup_completed`、`index_cleanup_failed` 为本次范围的累计指纹数量，后两项分别只统计已确认成功及本次未确认成功的批次；失败不表示外部任务已取消。Meta 每批检查取消、逐批上报，索引清理未确认不冒充数据项扫描失败，也不计入成功清理数；不得以后台心跳伪造进展。
+
 - `files_discovered`、`directories_discovered` 是本次清单中排除系统噪声后的物理条目数，目录数包含扫描起点；`files_total_known` 表示枚举完整。计数、组合识别与扫描复用同一清单，每个目录仅枚举一次，不额外遍历仅为计算分母。
 - `items_planned` 是识别后实际要处理的逻辑 DataItem 数；`items_total_known` 仅在全部范围识别完成且无清单/识别错误时为真。multi / whole 按逻辑数据项计数，不能以物理文件或历史 `meta_item` 数作分母。`items_completed = items_succeeded + items_failed`，复用未变化项也属于已处理；尚未进入处理的项不算成功。
 - `current_bytes_read` / `current_bytes_total` 仅表示当前文件的内容指纹读取，不累加元数据采样、解压或重复读取；切换操作时清零。内容读取过程持续上报字节变化，并检查取消。

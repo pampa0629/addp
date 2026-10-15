@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -85,9 +86,21 @@ func (h *ContentIndexHandler) UpsertDocuments(c *gin.Context) {
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.content_index.update"]
-// @Param document_id query string false "限定单个指纹 | Restrict to one fingerprint"
+// @Param document_id query []string false "1–100 个精确指纹，重复 query；不能混用范围选择器 | 1–100 exact fingerprints using repeated query parameters; mutually exclusive with range selectors" collectionFormat(multi)
 // @Router /runtime/content-documents [delete]
 func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
+	query, parseErr := url.ParseQuery(c.Request.URL.RawQuery)
+	invalid := parseErr != nil
+	allowed := map[string]bool{"engine_id": true, "document_id": true, "data_item_type": true, "schema": true, "bucket": true, "path_prefix": true}
+	for key, values := range query {
+		if !allowed[key] || (key != "document_id" && len(values) != 1) {
+			invalid = true
+		}
+	}
+	if invalid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentDocumentInvalid), "error_code": "manager_content_document_invalid"})
+		return
+	}
 	engineID, err := strconv.ParseUint(strings.TrimSpace(c.Query("engine_id")), 10, 64)
 	if err != nil || engineID == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgInvalidEngineIDParam), "error_code": "manager_content_document_invalid"})
@@ -98,9 +111,13 @@ func (h *ContentIndexHandler) DeleteEngineDocuments(c *gin.Context) {
 		return
 	}
 	scope := service.ContentDocumentDeleteScope{
-		DocumentID: strings.TrimSpace(c.Query("document_id")), EngineID: uint(engineID), DataItemType: strings.TrimSpace(c.Query("data_item_type")),
+		DocumentIDs: c.QueryArray("document_id"), EngineID: uint(engineID), DataItemType: strings.TrimSpace(c.Query("data_item_type")),
 		Schema: strings.TrimSpace(c.Query("schema")), Bucket: strings.TrimSpace(c.Query("bucket")),
 		PathPrefix: strings.TrimSpace(c.Query("path_prefix")),
+	}
+	if err := scope.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentDocumentInvalid), "error_code": "manager_content_document_invalid"})
+		return
 	}
 	if err := h.search.DeleteContentDocuments(c.Request.Context(), commonAuth.GetTenantID(c), scope); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentIndexUnavailable), "error_code": "manager_content_index_unavailable"})

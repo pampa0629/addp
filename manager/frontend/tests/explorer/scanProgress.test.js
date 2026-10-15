@@ -28,6 +28,14 @@ describe('scan progress observations', () => {
     expect(view.lines.join(' ')).toContain('1.0 MiB')
     expect(view.lines.join(' ')).toContain('1.0 GiB')
   })
+  it('shows confirmed cleanup batches independently of item processing', () => {
+    const view = scanProgressView({ status: 'running', scan_progress: { ...snapshot, operation: 'cleaning_index',
+      index_cleanup_total: 205, index_cleanup_completed: 100, index_cleanup_failed: 100 } }, t, now)
+    expect(view.percent).toBe(20)
+    expect(view.lines.join(' ')).toContain('"completed":100,"total":205,"failed":100')
+    expect(view.lines.join(' ')).toContain('operation.cleaning_index')
+    expect(view.lines.join(' ')).not.toContain('1.0 MiB')
+  })
   it('never reports completion before success or fabricates 100 percent on failure', () => {
     const run = { status: 'running', scan_progress: { ...snapshot, items_completed: 100, items_succeeded: 99 } }
     expect(scanProgressView(run, t).percent).toBe(99)

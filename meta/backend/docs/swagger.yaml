@@ -778,6 +778,12 @@ definitions:
         type: integer
       files_total_known:
         type: boolean
+      index_cleanup_completed:
+        type: integer
+      index_cleanup_failed:
+        type: integer
+      index_cleanup_total:
+        type: integer
       items_completed:
         type: integer
       items_failed:
@@ -799,6 +805,7 @@ definitions:
         - extracting
         - saving
         - indexing
+        - cleaning_index
         type: string
       phase:
         enum:

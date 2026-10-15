@@ -251,7 +251,7 @@ func (s *DatabaseRuntime) deleteRemovedTables(
 				continue
 			}
 			if s.tableIndexer != nil {
-				s.tableIndexer.DeleteItemFromIndex(tenantID, engineID, item.Fingerprint)
+				_ = s.tableIndexer.DeleteItemsFromIndex(context.Background(), tenantID, engineID, []string{item.Fingerprint})
 			}
 		}
 	}

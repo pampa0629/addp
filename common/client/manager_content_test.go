@@ -3,8 +3,11 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,5 +105,39 @@ func TestManagerContentBatchRejectsInvalidMembersBeforeSending(t *testing.T) {
 	}
 	if err := (ManagerContentBatch{Documents: []ManagerContentDocument{doc}}).Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExactContentDeletionValidatesAndSendsOneBoundedRequest(t *testing.T) {
+	calls := 0
+	ids := make([]string, ManagerContentBatchLimit)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("fingerprint-%03d", i)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != "DELETE" || r.URL.Path != "/api/v1/manager/runtime/content-documents" || !reflect.DeepEqual(r.URL.Query()["document_id"], ids) || r.URL.Query().Get("engine_id") != "14" {
+			t.Errorf("exact scope changed: %s", r.URL)
+		}
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+	c := NewManagerContentClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "tenant", nil }), server.Client()).WithTenantID(7)
+	if err := c.DeleteDocuments(context.Background(), ManagerContentDeleteScope{EngineID: 14, DocumentIDs: ids}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []ManagerContentDeleteScope{
+		{EngineID: 14, DocumentIDs: []string{""}}, {EngineID: 14, DocumentIDs: []string{"x", "x"}},
+		{EngineID: 14, DocumentIDs: append(append([]string{}, ids...), "extra")},
+		{EngineID: 14, DocumentIDs: []string{"x"}, PathPrefix: "3d"},
+		{EngineID: 14, DocumentIDs: []string{" " + ids[0]}}, {EngineID: 14, DocumentIDs: []string{strings.Repeat("x", 129)}},
+		{EngineID: 14, DocumentIDs: []string{"bad\nname"}}, {DocumentIDs: []string{"x"}},
+	} {
+		if err := c.DeleteDocuments(context.Background(), bad); err == nil {
+			t.Fatalf("invalid scope sent: %+v", bad)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("expected one bounded request, got %d", calls)
 	}
 }

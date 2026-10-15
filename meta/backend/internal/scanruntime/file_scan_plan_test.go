@@ -2,6 +2,7 @@ package scanruntime
 
 import (
 	"context"
+	"fmt"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -162,5 +163,61 @@ func TestRecursiveCancellationDoesNotCountUnstartedItems(t *testing.T) {
 	p := recorder.snapshots[len(recorder.snapshots)-1]
 	if p.ItemsPlanned != 2 || p.ItemsCompleted != 1 || p.ItemsSucceeded != 1 || p.ItemsFailed != 0 {
 		t.Fatalf("unstarted items counted: %+v", p)
+	}
+}
+
+func TestNestedLogicalItemsAreProcessedOnceByCanonicalParent(t *testing.T) {
+	for _, depth := range []string{"basic", "deep"} {
+		t.Run(depth, func(t *testing.T) {
+			db := openObjectCatalogScanTestDB(t)
+			repo := metaRepo.NewScanRepository(db)
+			indexer := &boundaryIndexer{}
+			runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, indexer)
+			provider := &countingFileCatalog{calls: map[string]int{}, filesystemScanTestProvider: filesystemScanTestProvider{
+				entriesByPath: map[string][]plugin.EngineCatalogEntry{
+					"3d":            {progressDirectory("3d/gltf")},
+					"3d/gltf":       {progressDirectory("3d/gltf/model")},
+					"3d/gltf/model": {progressFile("3d/gltf/model/scene.gltf"), progressFile("3d/gltf/model/mesh.bin"), progressFile("3d/gltf/model/readme.txt")},
+				}, contentByPath: map[string]string{"3d/gltf/model/scene.gltf": `{"asset":{"version":"2.0"},"buffers":[{"uri":"mesh.bin","byteLength":4}]}`, "3d/gltf/model/mesh.bin": "0000", "3d/gltf/model/readme.txt": "independent"}}}
+			plugin.Register(provider)
+			t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+			// Existing primary identity must be retained, and old claimed component removed.
+			_, node, err := runtime.ensureFilesystemScanRoot(1, &commonModels.Engine{ID: 26, EngineType: provider.Type()}, provider, "3d/gltf/model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			primary, err := repo.UpsertItemWithDepth(1, 26, node, "file", "scene.gltf", "3d/gltf/model/scene.gltf", models.JSONMap{"item": map[string]interface{}{"layout": "single"}}, nil, nil, nil, "basic")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = repo.UpsertItemWithDepth(1, 26, node, "file", "mesh.bin", "3d/gltf/model/mesh.bin", models.JSONMap{"item": map[string]interface{}{"layout": "single"}}, nil, nil, nil, "basic")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantItems, wantRemoved := int64(3), 0
+			if depth == "deep" {
+				wantItems, wantRemoved = 2, 1
+			}
+			for pass := 0; pass < 2; pass++ {
+				recorder := &recursiveScanReporter{}
+				result, err := runtime.ScanPaths(context.Background(), &commonModels.Engine{ID: 26, EngineType: provider.Type()}, 1, []string{"3d"}, depth, true, recorder)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot := recorder.snapshots[len(recorder.snapshots)-1]
+				var count int64
+				db.Model(&models.MetaItem{}).Where("engine_id = 26").Count(&count)
+				if snapshot.ItemsPlanned != wantItems || snapshot.ItemsCompleted != wantItems || int64(result.Items) != wantItems || count != wantItems {
+					t.Fatalf("pass %d duplicate plan/reconciliation: %+v result=%+v count=%d", pass, snapshot, result, count)
+				}
+				got, found, err := repo.FindItemByFullName(1, 26, "3d/gltf/model/scene.gltf")
+				if err != nil || !found || got.ID != primary.ID || got.NodeID != node.ID {
+					t.Fatalf("unstable canonical identity: %+v %v", got, err)
+				}
+			}
+			if len(indexer.deleted) != wantRemoved {
+				t.Fatal(fmt.Sprintf("component cleanup duplicated: %+v", indexer.deleted))
+			}
+		})
 	}
 }

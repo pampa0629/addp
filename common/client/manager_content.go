@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type ManagerContentClient struct{ tenantHTTPClient }
@@ -136,7 +137,7 @@ func (c *ManagerContentClient) UpsertDocuments(ctx context.Context, documents []
 }
 
 type ManagerContentDeleteScope struct {
-	DocumentID   string
+	DocumentIDs  []string
 	EngineID     uint
 	DataItemType string
 	Schema       string
@@ -144,14 +145,40 @@ type ManagerContentDeleteScope struct {
 	PathPrefix   string
 }
 
+// Validate guards the one deletion contract before any transport or side effect.
+func (s ManagerContentDeleteScope) Validate() error {
+	if s.EngineID == 0 {
+		return errors.New("Manager content deletion requires an engine ID")
+	}
+	if len(s.DocumentIDs) > ManagerContentBatchLimit {
+		return errors.New("Manager content deletion exceeds batch limit")
+	}
+	if len(s.DocumentIDs) > 0 && (s.DataItemType != "" || s.Schema != "" || s.Bucket != "" || s.PathPrefix != "") {
+		return errors.New("Manager exact deletion cannot mix range selectors")
+	}
+	seen := make(map[string]bool, len(s.DocumentIDs))
+	for _, id := range s.DocumentIDs {
+		if id == "" || id != strings.TrimSpace(id) || len(id) > 128 || strings.ContainsAny(id, "/\\") || seen[id] {
+			return errors.New("Manager content deletion has an invalid or duplicate fingerprint")
+		}
+		for _, r := range id {
+			if unicode.IsControl(r) {
+				return errors.New("Manager content deletion has an invalid fingerprint")
+			}
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
 func (c *ManagerContentClient) DeleteDocuments(ctx context.Context, scope ManagerContentDeleteScope) error {
-	if scope.EngineID == 0 {
-		return errors.New("Manager content document deletion requires an engine ID")
+	if err := scope.Validate(); err != nil {
+		return err
 	}
 	query := url.Values{}
 	query.Set("engine_id", strconv.FormatUint(uint64(scope.EngineID), 10))
-	if value := strings.TrimSpace(scope.DocumentID); value != "" {
-		query.Set("document_id", value)
+	for _, id := range scope.DocumentIDs {
+		query.Add("document_id", id)
 	}
 	if value := strings.TrimSpace(scope.DataItemType); value != "" {
 		query.Set("data_item_type", value)

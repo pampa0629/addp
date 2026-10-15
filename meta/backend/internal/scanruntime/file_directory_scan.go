@@ -45,7 +45,7 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 	extractionStats := scanflow.ExtractionCounts{}
 	failures := &scanflow.FailedTargetCollector{}
 
-	claimedPaths := metaitem.ResourceClaimSet{}
+	claimedPaths := plan.claimed
 	scannedFileFullNames := make(map[string]bool, len(files))
 	for _, file := range files {
 		scannedFileFullNames[metapath.JoinFSPath(parentNode.FullName, file.Name)] = true

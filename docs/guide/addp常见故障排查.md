@@ -431,6 +431,15 @@ Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度
 
 验证：`META_POSTGRES_TEST_DSN=<addp_test连接> make test-module MODULE=meta`、`make test-manager-frontend`、`make test-go`。迁移用例已登记到 `scripts/test/meta-postgres-gate.sh`，由既有 Meta T2 workflow 执行；共享资源树变更由全量 Go 消费方和 platform-ci 的受影响镜像构建门禁验证。部署需一起重启受影响服务，不能仅刷新浏览器。
 
+
+### NFS 深度扫描长时间停在同一比例，完成数又大于最终数据项数
+
+2026-10-15 核验 `3d` 扫描时，19,238 个物理文件排除 9 个系统文件后为 19,229 个；whole / multi 合并后不应再把物理文件数作为数据项分母。该次执行虽成功，但 42 分钟内串行完成了 9,493 次旧组件索引 DELETE；进度操作仍停留在 saving。另有 6 个对象分别被祖先、中间目录和实际父目录处理，107 次处理对应 95 个最终数据项。
+
+排查应关联同一 execution 的进度事件、`scan_progress` 快照和 Manager 内容删除请求；租约正常只证明 Worker 仍持有执行，不能证明实际工作有新进展。修复在原事务内按精确 ID 分批删除元数据，事务外按至多 100 个精确 fingerprint 调用唯一 Manager 删除入口，并逐批上报 cleaning_index 的已确认与未确认计数；不按目录前缀扩大范围，不自动重试未决投递。扫描计划按 fingerprint 去重，非 whole 项交给实际父目录，后续 force 回收也消费同一归属结果。
+
+验证使用 `make test-go`、`make test-meta-postgres`、`make test-manager-postgres` 与 `make test-manager-frontend`；PostgreSQL 入口按已核实端口配置 `addp_test`，Manager 门禁自行管理独占 Meilisearch fixture。历史执行只读保留，新代码不能改写 107 的历史计数，也不能把未重跑的业务扫描计为性能验收通过。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。

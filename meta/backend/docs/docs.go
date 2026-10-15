@@ -4001,6 +4001,15 @@ const docTemplate = `{
                 "files_total_known": {
                     "type": "boolean"
                 },
+                "index_cleanup_completed": {
+                    "type": "integer"
+                },
+                "index_cleanup_failed": {
+                    "type": "integer"
+                },
+                "index_cleanup_total": {
+                    "type": "integer"
+                },
                 "items_completed": {
                     "type": "integer"
                 },
@@ -4028,7 +4037,8 @@ const docTemplate = `{
                         "hashing",
                         "extracting",
                         "saving",
-                        "indexing"
+                        "indexing",
+                        "cleaning_index"
                     ]
                 },
                 "phase": {

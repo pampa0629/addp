@@ -151,5 +151,5 @@ func TestDeletedItemProjectionUsesOnlyItsFingerprint(t *testing.T) {
 	}))
 	defer manager.Close()
 	client := commonClient.NewManagerContentClient(manager.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "tenant-7", nil }), manager.Client())
-	NewIndexerService(client, nil).DeleteItemFromIndex(7, 9, "one-table")
+	NewIndexerService(client, nil).DeleteItemsFromIndex(context.Background(), 7, 9, []string{"one-table"})
 }

@@ -11,7 +11,7 @@ import (
 // ScanProgress is Meta's bounded file-scan observation, not execution configuration.
 type ScanProgress struct {
 	Phase                 string    `json:"phase" enums:"discovering,identifying,processing,finalizing"`
-	Operation             string    `json:"operation,omitempty" enums:"listing,identifying,enriching,hashing,extracting,saving,indexing"`
+	Operation             string    `json:"operation,omitempty" enums:"listing,identifying,enriching,hashing,extracting,saving,indexing,cleaning_index"`
 	FilesDiscovered       int64     `json:"files_discovered"`
 	DirectoriesDiscovered int64     `json:"directories_discovered"`
 	FilesTotalKnown       bool      `json:"files_total_known"`
@@ -23,6 +23,9 @@ type ScanProgress struct {
 	CurrentPath           string    `json:"current_path,omitempty"`
 	CurrentBytesRead      int64     `json:"current_bytes_read"`
 	CurrentBytesTotal     int64     `json:"current_bytes_total"`
+	IndexCleanupTotal     int64     `json:"index_cleanup_total"`
+	IndexCleanupCompleted int64     `json:"index_cleanup_completed"`
+	IndexCleanupFailed    int64     `json:"index_cleanup_failed"`
 	LastProgressAt        time.Time `json:"last_progress_at"`
 }
 
@@ -53,7 +56,7 @@ func ObserveScanProgress(metadata commonModels.JSONMap) *ScanProgress {
 		return nil
 	}
 	switch p.Operation {
-	case "", "listing", "identifying", "enriching", "hashing", "extracting", "saving", "indexing":
+	case "", "listing", "identifying", "enriching", "hashing", "extracting", "saving", "indexing", "cleaning_index":
 	default:
 		p.Operation = ""
 	}
@@ -64,7 +67,7 @@ func ObserveScanProgress(metadata commonModels.JSONMap) *ScanProgress {
 	if len([]rune(p.CurrentPath)) > 512 {
 		p.CurrentPath = string([]rune(p.CurrentPath)[:512])
 	}
-	if p.FilesDiscovered < 0 || p.DirectoriesDiscovered < 0 || p.ItemsPlanned < 0 || p.ItemsCompleted < 0 || p.ItemsSucceeded < 0 || p.ItemsFailed < 0 || p.CurrentBytesRead < 0 || p.CurrentBytesTotal < 0 || p.ItemsCompleted != p.ItemsSucceeded+p.ItemsFailed {
+	if p.FilesDiscovered < 0 || p.DirectoriesDiscovered < 0 || p.ItemsPlanned < 0 || p.ItemsCompleted < 0 || p.ItemsSucceeded < 0 || p.ItemsFailed < 0 || p.CurrentBytesRead < 0 || p.CurrentBytesTotal < 0 || p.ItemsCompleted != p.ItemsSucceeded+p.ItemsFailed || p.IndexCleanupTotal < 0 || p.IndexCleanupCompleted < 0 || p.IndexCleanupFailed < 0 || p.IndexCleanupCompleted+p.IndexCleanupFailed > p.IndexCleanupTotal {
 		return nil
 	}
 	return &p

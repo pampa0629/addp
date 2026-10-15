@@ -3994,6 +3994,15 @@
                 "files_total_known": {
                     "type": "boolean"
                 },
+                "index_cleanup_completed": {
+                    "type": "integer"
+                },
+                "index_cleanup_failed": {
+                    "type": "integer"
+                },
+                "index_cleanup_total": {
+                    "type": "integer"
+                },
                 "items_completed": {
                     "type": "integer"
                 },
@@ -4021,7 +4030,8 @@
                         "hashing",
                         "extracting",
                         "saving",
-                        "indexing"
+                        "indexing",
+                        "cleaning_index"
                     ]
                 },
                 "phase": {

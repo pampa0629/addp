@@ -3,8 +3,10 @@ package scanruntime
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -24,6 +26,8 @@ type fileDirectoryPlan struct {
 type fileScanPlan struct {
 	directories map[string]*fileDirectoryPlan
 	progress    *scanflow.FileProgress
+	claimed     metaitem.ResourceClaimSet
+	order       []string
 	complete    bool
 }
 
@@ -77,6 +81,7 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		if d == nil || d.listingErr != nil {
 			return nil
 		}
+		plan.order = append(plan.order, path)
 		plan.progress.Operation("identifying", path)
 		detectionReader := scanflow.ContentReaderForDepth(reader, depth)
 		if isRoot {
@@ -97,26 +102,7 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 		if d.detectionErr != nil {
 			plan.complete = false
 		}
-		count := int64(0)
-		claims := metaitem.ResourceClaimSet{}
-		if d.detection != nil {
-			claims = d.detection.Claims
-			for _, item := range d.detection.Items {
-				if item != nil {
-					if _, ok := scanresource.PlanFileDetectedItem(resource.ID, path, item, plugin.EngineCatalogTermFile); ok {
-						count++
-					}
-				}
-			}
-		}
-		if d.detection == nil || !d.detection.Exclusive {
-			for _, file := range d.files {
-				if !claims[file.Path] {
-					count++
-				}
-			}
-		}
-		plan.progress.Update(func(p *models.ScanProgress) { p.ItemsPlanned += count })
+
 		if d.detection != nil && d.detection.Exclusive {
 			return nil
 		}
@@ -132,6 +118,11 @@ func (s *FilesystemCatalogRuntime) prepareFileScan(ctx context.Context, reader p
 			return nil, err
 		}
 	}
+	total, err := plan.normalizeItems(resource.ID)
+	if err != nil {
+		return nil, err
+	}
+	plan.progress.Update(func(p *models.ScanProgress) { p.ItemsPlanned = total })
 	plan.progress.Update(func(p *models.ScanProgress) {
 		p.ItemsTotalKnown = plan.complete
 		p.Phase = "processing"
@@ -162,4 +153,79 @@ func (p *fileScanPlan) recursive(path string) ([]metaitem.StorageFileRef, []meta
 		dirs = append(dirs, childDirs...)
 	}
 	return files, dirs, nil
+}
+
+// normalizeItems assigns exactly one processing owner to each canonical identity.
+// Ancestor claims remain effective across the inventory; processing and force
+// reconciliation both consume the normalized owner directory.
+func (p *fileScanPlan) normalizeItems(engineID uint) (int64, error) {
+	type plannedItem struct {
+		item   *metaitem.DetectedItem
+		owner  string
+		native bool
+	}
+	selected := map[string]plannedItem{}
+	fingerprints := []string{}
+	active := map[string]bool{}
+	p.claimed = metaitem.ResourceClaimSet{}
+	for _, dir := range p.order {
+		active[dir] = true
+	}
+	for _, dir := range p.order {
+		d := p.directories[dir]
+		if d.detection == nil {
+			continue
+		}
+		for path, claimed := range d.detection.Claims {
+			if claimed {
+				p.claimed[path] = true
+			}
+		}
+		for _, item := range d.detection.Items {
+			planned, ok := scanresource.PlanFileDetectedItem(engineID, dir, item, plugin.EngineCatalogTermFile)
+			if !ok {
+				continue
+			}
+			p.claimed[planned.FullName] = true
+			owner := dir
+			if item.Layout != format.LayoutWhole {
+				owner = path.Dir(planned.FullName)
+				if owner == "." {
+					owner = ""
+				}
+			}
+			if !active[owner] {
+				return 0, fmt.Errorf("logical file item %q has no owner directory in the scan plan", planned.FullName)
+			}
+			previous, exists := selected[planned.Fingerprint]
+			if !exists {
+				fingerprints = append(fingerprints, planned.Fingerprint)
+			}
+			if !exists || (!previous.native && dir == owner) {
+				selected[planned.Fingerprint] = plannedItem{item: item, owner: owner, native: dir == owner}
+			}
+		}
+		d.detection.Items = nil
+	}
+	for _, fingerprint := range fingerprints {
+		selectedItem := selected[fingerprint]
+		d := p.directories[selectedItem.owner]
+		if d.detection == nil {
+			d.detection = &metaitem.DetectionResult{}
+		}
+		d.detection.Items = append(d.detection.Items, selectedItem.item)
+	}
+	total := int64(len(fingerprints))
+	for _, dir := range p.order {
+		d := p.directories[dir]
+		if d.detection != nil && d.detection.Exclusive {
+			continue
+		}
+		for _, file := range d.files {
+			if !p.claimed[file.Path] {
+				total++
+			}
+		}
+	}
+	return total, nil
 }

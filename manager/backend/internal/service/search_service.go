@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	commonClient "github.com/addp/common/client"
 	"net/http"
 	"sort"
 	"strings"
@@ -596,25 +598,18 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 // Close 释放底层资源
 func (s *HybridSearchService) Close() {}
 
-type ContentDocumentDeleteScope struct {
-	DocumentID   string
-	EngineID     uint
-	DataItemType string
-	Schema       string
-	Bucket       string
-	PathPrefix   string
-}
+type ContentDocumentDeleteScope = commonClient.ManagerContentDeleteScope
 
 func (s *HybridSearchService) DeleteContentDocuments(ctx context.Context, tenantID uint, scope ContentDocumentDeleteScope) error {
 	if !s.Enabled() {
 		return ErrSearchDisabled
 	}
-	if tenantID == 0 || scope.EngineID == 0 {
+	if tenantID == 0 || scope.Validate() != nil {
 		return errors.New("invalid Manager content document deletion scope")
 	}
 	filters := []string{fmt.Sprintf("tenant_id = %d", tenantID), fmt.Sprintf("engine_id = %d", scope.EngineID)}
 	for field, value := range map[string]string{
-		"document_id": scope.DocumentID, "data_item_type": scope.DataItemType, "schema": scope.Schema, "bucket": scope.Bucket,
+		"data_item_type": scope.DataItemType, "schema": scope.Schema, "bucket": scope.Bucket,
 	} {
 		if value = strings.TrimSpace(value); value != "" {
 			filters = append(filters, fmt.Sprintf("%s = '%s'", field, strings.ReplaceAll(value, "'", "\\'")))
@@ -622,6 +617,13 @@ func (s *HybridSearchService) DeleteContentDocuments(ctx context.Context, tenant
 	}
 	if value := strings.TrimSpace(scope.PathPrefix); value != "" {
 		filters = append(filters, fmt.Sprintf("path ^= '%s'", strings.ReplaceAll(value, "'", "\\'")))
+	}
+	if len(scope.DocumentIDs) > 0 {
+		encoded, err := json.Marshal(scope.DocumentIDs)
+		if err != nil {
+			return err
+		}
+		filters = append(filters, "document_id IN "+string(encoded))
 	}
 	filter := strings.Join(filters, " AND ")
 	op, err := s.deliveries.QueueDelete(ctx, s.epoch, int64(tenantID), filter)

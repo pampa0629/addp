@@ -25,10 +25,19 @@ func (r *ScanRepository) DeleteClaimedSingleItems(item *models.MetaItem, fullNam
 		if layout != "" && layout != format.LayoutSingle {
 			continue
 		}
-		if err := r.db.Unscoped().Delete(&candidate).Error; err != nil {
+		removed = append(removed, candidate)
+	}
+	// Keep each statement bounded while preserving the caller's transaction and row triggers.
+	const deleteBatchSize = 256
+	for start := 0; start < len(removed); start += deleteBatchSize {
+		end := min(len(removed), start+deleteBatchSize)
+		ids := make([]uint, 0, end-start)
+		for _, item := range removed[start:end] {
+			ids = append(ids, item.ID)
+		}
+		if err := r.db.Unscoped().Where("tenant_id = ? AND engine_id = ? AND id IN ?", item.TenantID, item.EngineID, ids).Delete(&models.MetaItem{}).Error; err != nil {
 			return nil, err
 		}
-		removed = append(removed, candidate)
 	}
 	return removed, nil
 }

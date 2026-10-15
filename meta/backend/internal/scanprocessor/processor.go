@@ -25,7 +25,7 @@ type AssetIndexer interface {
 }
 
 type TechnicalMetadataIndexer interface {
-	DeleteItemFromIndex(tenantID, engineID uint, fingerprint string)
+	DeleteItemsFromIndex(ctx context.Context, tenantID, engineID uint, fingerprints []string) error
 	IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, items ...*models.MetaItem) bool
 }
 
@@ -164,10 +164,8 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if p.indexer != nil {
-		for _, component := range removed {
-			p.indexer.DeleteItemFromIndex(component.TenantID, component.EngineID, component.Fingerprint)
-		}
+	if err := p.cleanComponentIndexes(ctx, input, removed); err != nil {
+		return Result{}, err
 	}
 
 	if err := ctx.Err(); err != nil {

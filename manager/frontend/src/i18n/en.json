@@ -1083,6 +1083,7 @@
       "scanSubmitted": "Background scan submitted. Waiting for completion.",
       "scanRunning": "Background scan is running.",
       "scanProgress": {
+        "cleanup": "Old component index cleanup: confirmed {completed}/{total}, unconfirmed {failed}",
         "totalPending": "Total pending",
         "files": "Discovered {files} files and {directories} directories",
         "filesKnown": "{files} files, {directories} directories in total",
@@ -1108,7 +1109,8 @@
           "hashing": "Reading content fingerprint",
           "extracting": "Extracting document content",
           "saving": "Saving metadata",
-          "indexing": "Submitting index projection"
+          "indexing": "Submitting index projection",
+          "cleaning_index": "Cleaning old component index"
         }
       },
       "scanWaiting": "Waiting for scan progress update.",

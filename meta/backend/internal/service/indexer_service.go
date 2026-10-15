@@ -30,16 +30,19 @@ func NewIndexerService(contentIndex *commonClient.ManagerContentClient, log *slo
 	}
 }
 
-// DeleteItemFromIndex 仅删除一个登记指纹的完整搜索文档。
-func (s *IndexerService) DeleteItemFromIndex(tenantID, engineID uint, fingerprint string) {
-	if s.contentIndex == nil || fingerprint == "" {
-		return
+// DeleteItemsFromIndex submits one exact batch through Manager's durable deletion route.
+func (s *IndexerService) DeleteItemsFromIndex(ctx context.Context, tenantID, engineID uint, fingerprints []string) error {
+	if len(fingerprints) == 0 {
+		return nil
 	}
-	if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(context.Background(), commonClient.ManagerContentDeleteScope{
-		EngineID: engineID, DocumentID: fingerprint,
-	}); err != nil {
-		s.log.Warn("删除单项索引失败", "fingerprint", fingerprint, "engine_id", engineID, "error", err)
+	if s.contentIndex == nil {
+		return fmt.Errorf("content index client unavailable")
 	}
+	if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(ctx, commonClient.ManagerContentDeleteScope{EngineID: engineID, DocumentIDs: fingerprints}); err != nil {
+		s.log.Warn("删除数据项索引批次未确认", "items", len(fingerprints), "engine_id", engineID, "error", err)
+		return err
+	}
+	return nil
 }
 
 // DeleteObjectsFromIndex 从索引中删除对象

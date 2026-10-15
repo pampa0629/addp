@@ -1083,6 +1083,7 @@
       "scanSubmitted": "后台扫描已提交，正在等待完成",
       "scanRunning": "后台扫描进行中",
       "scanProgress": {
+        "cleanup": "清理旧组件索引：成功 {completed}/{total}，未确认 {failed}",
         "totalPending": "总量待确定",
         "files": "已发现 {files} 个文件、{directories} 个目录",
         "filesKnown": "文件总数 {files}，目录 {directories}",
@@ -1108,7 +1109,8 @@
           "hashing": "读取内容指纹",
           "extracting": "提取文档内容",
           "saving": "保存元数据",
-          "indexing": "提交索引投影"
+          "indexing": "提交索引投影",
+          "cleaning_index": "清理旧组件索引"
         }
       },
       "scanWaiting": "正在等待扫描进度更新",

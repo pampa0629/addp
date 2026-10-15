@@ -132,4 +132,37 @@ func TestClaimedComponentsAgainstPostgres(t *testing.T) {
 	if len(missing) != 2 {
 		t.Fatalf("missing events = %v, want exactly two claimed components", missing)
 	}
+	t.Run("large_exact_batch_preserves_per_item_change_events", func(t *testing.T) {
+		claims := make([]string, 0, 600)
+		items := make([]models.MetaItem, 0, 600)
+		for i := 0; i < 600; i++ {
+			name := fmt.Sprintf("member-%03d.bin", i)
+			fullName := "whole/" + name
+			claims = append(claims, fullName)
+			items = append(items, models.MetaItem{TenantID: 1, EngineID: 26, NodeID: 3, ItemType: "file", Name: name, FullName: fullName, Fingerprint: fmt.Sprintf("large-component-%d", i), Attributes: single})
+		}
+		if err := tx.CreateInBatches(items, 100).Error; err != nil {
+			t.Fatal(err)
+		}
+		whole, err := repo.UpsertItemWithDepth(1, 26, node, "file", "whole", "whole", models.JSONMap{"item": map[string]interface{}{"layout": "whole"}}, nil, nil, nil, "deep")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var removed []models.MetaItem
+		err = repo.Transaction(func(repo *ScanRepository) error {
+			var err error
+			removed, err = repo.DeleteClaimedSingleItems(whole, claims)
+			return err
+		})
+		if err != nil || len(removed) != 600 {
+			t.Fatalf("large batch: removed=%d err=%v", len(removed), err)
+		}
+		var remaining, changes int64
+		tx.Unscoped().Model(&models.MetaItem{}).Where("fingerprint LIKE 'large-component-%'").Count(&remaining)
+		tx.Table("meta.data_item_changes").Where("operation = 'missing' AND source_identity LIKE 'large-component-%'").Count(&changes)
+		if remaining != 0 || changes != 600 {
+			t.Fatalf("large batch remaining=%d change events=%d", remaining, changes)
+		}
+	})
+
 }

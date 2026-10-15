@@ -1,6 +1,7 @@
 package scanruntime
 
 import (
+	"context"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
@@ -29,7 +30,7 @@ func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, bra
 				continue
 			}
 			if s.indexer != nil {
-				s.indexer.DeleteItemFromIndex(tenantID, engineID, item.Fingerprint)
+				_ = s.indexer.DeleteItemsFromIndex(context.Background(), tenantID, engineID, []string{item.Fingerprint})
 			}
 		}
 	}

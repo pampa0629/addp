@@ -128,6 +128,53 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+
+	t.Run("exact_delete_batch_preserves_tenant_engine_and_sibling", func(t *testing.T) {
+		docs := []commonClient.ManagerContentDocument{}
+		ids := []string{}
+		for i := 0; i < 5; i++ {
+			id := fmt.Sprintf("delete-batch-%d", i)
+			ids = append(ids, id)
+			docs = append(docs, commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "file", Name: id})
+		}
+		if err := svc.UpsertContentDocuments(ctx, 7, docs); err != nil {
+			t.Fatal(err)
+		}
+		var before int64
+		db.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryDelete).Count(&before)
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 10, DocumentIDs: ids[:3]}); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			read(t, id)
+		}
+		if err := svc.DeleteContentDocuments(ctx, 8, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: ids[:3]}); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			read(t, id)
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: ids[:3]}); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids[:3] {
+			var document map[string]interface{}
+			if err := client.Index(index).GetDocumentWithContext(ctx, id, nil, &document); err == nil {
+				t.Fatalf("member survived exact batch: %s", id)
+			}
+		}
+		for _, id := range ids[3:] {
+			read(t, id)
+		}
+		var after int64
+		db.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryDelete).Count(&after)
+		if after-before != 3 {
+			t.Fatalf("expected one delivery per request: %d", after-before)
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: ids[3:]}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	for _, first := range []bool{false, true} {
 		t.Run(fmt.Sprintf("content_first_%v", first), func(t *testing.T) {
 			id := fmt.Sprintf("item-%v", first)
@@ -168,7 +215,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 				t.Fatalf("scope=%v returned unrelated fields: %+v %v", scope, result, err)
 			}
 		}
-		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 11, DocumentID: doc.DocumentID}); err != nil {
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 11, DocumentIDs: []string{doc.DocumentID}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -242,7 +289,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 				t.Fatalf("body remains searchable after purge: %+v %v", result, err)
 			}
 		}
-		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentID: id}); err != nil {
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: []string{id}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -265,7 +312,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		if !reflect.DeepEqual(doc, map[string]interface{}{"id": id, "document_id": id, "tenant_id": float64(7), "engine_id": float64(9)}) {
 			t.Fatalf("purge invented technical facts: %+v", doc)
 		}
-		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentID: id}); err != nil {
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: []string{id}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -284,7 +331,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	// Exact deletion preserves the sibling snapshot and remains idempotent.
 	before := read(t, "item-true")
 	for range 2 {
-		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentID: "item-false"}); err != nil {
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9, DocumentIDs: []string{"item-false"}}); err != nil {
 			t.Fatal(err)
 		}
 	}

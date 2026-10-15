@@ -5741,10 +5741,14 @@ paths:
         in: query
         name: path_prefix
         type: string
-      - description: 限定单个指纹 | Restrict to one fingerprint
+      - collectionFormat: multi
+        description: 1–100 个精确指纹，重复 query；不能混用范围选择器 | 1–100 exact fingerprints using
+          repeated query parameters; mutually exclusive with range selectors
         in: query
+        items:
+          type: string
         name: document_id
-        type: string
+        type: array
       responses:
         "204":
           description: No Content

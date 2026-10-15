@@ -3757,8 +3757,12 @@
                         "in": "query"
                     },
                     {
-                        "type": "string",
-                        "description": "限定单个指纹 | Restrict to one fingerprint",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "1–100 个精确指纹，重复 query；不能混用范围选择器 | 1–100 exact fingerprints using repeated query parameters; mutually exclusive with range selectors",
                         "name": "document_id",
                         "in": "query"
                     }
