@@ -21,10 +21,10 @@
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
 | FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。已通过 [八模型 Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103) 的生成入口、OBJ 基础几何、两种格式 GLB 缓存预览、两阶段主文件下载哈希及清理后主文件不变核验；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
-| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；2026-10-15 已通过同一厂商样例在本地 NFS 与真实 Business MinIO 同目录贴图的完整 GLB 页面复验，136 顶点、94 三角面及 256×256 内嵌 JPEG 正常。新增 iDesktopX 春树与汽车已完成本地真实 MinIO 页面生成；冬树的未使用材质误判已修复并通过 SDK／Model3D 验证，页面待重启复验；秋树实际使用的红叶贴图仍被 SDK 丢弃，继续拒绝发布。PNG 透明度、复杂材质、其他 S3 实现及受控 T4 未认证。 |
+| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；2026-10-15 已通过同一厂商样例在本地 NFS 与真实 Business MinIO 同目录贴图的完整 GLB 页面复验，136 顶点、94 三角面及 256×256 内嵌 JPEG 正常。新增 iDesktopX 春树与汽车已完成本地真实 MinIO 页面生成；冬树的未使用材质误判已修复，SDK／Model3D 及重启后的本地 MinIO 页面复验均通过；秋树实际使用的红叶贴图仍被 SDK 丢弃，继续拒绝发布。PNG 透明度、复杂材质、其他 S3 实现及受控 T4 未认证。 |
 
 1. JSON / GeoJSON 四源、CSV / TSV / XLSX 与八模型的同轮 Hosted 已收口，范围见上述支持矩阵及文末正式证据。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
-2. 下一优先重启后复验冬树，再处理秋树实际绑定的红叶贴图在 SDK 中丢失的问题；保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
+2. 下一优先定位独立 Manager Hosted 的 3DS GLB 校验失败；SGM 冬树页面已闭环，秋树实际绑定的红叶贴图丢失和透明度继续作为未认证边界；保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
 3. FBX 基础预览的 Three.js 升级继续单独评估 COPC／3D Tiles 等消费者影响；已有 GLB 快显通过不消除源 FBXLoader 缺陷，不引入平行转换路线。
 4. GeoTIFF/COG 与八种模型限于已验证的静态模型、单位和基础贴图。继续按实际格式和样例报告支持边界，不扩展 JPEG EXIF 细项作为当前优先任务。
 
@@ -177,3 +177,8 @@
 
 
 随后修正 SuperMap 代码镜像的依赖下载：编译层和最终运行层均使用同一 Ubuntu 官方 HTTPS 源。最小运行层缺少初始 CA 包，通过受信任编译层的 Ubuntu 系统根证书引导，安装后仍由 `ca-certificates` 包维护；未关闭 TLS／签名验证，没有 HTTP 回退或全局 Docker／代理修改。工作区标准 `make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify --jobs 1 --tag sgm-used-materials-https-20261015"` 完整通过，五项 SDK CTest 通过，最终 ARM64 镜像为 `sha256:2bef16317c6be9aa9b2952c1343ed7d20aa6482c4c87f7f2a77e1d18c8f60962`，只加载本机、不推送 SDK 镜像。Dockerfile 变更后的 `make test-build-registration test-engine-startup-isolation` 通过，现有 CI 路径登记仍覆盖；用户运行中的 SuperMap 镜像未被替换。
+
+
+2026-10-15 冬树重启后页面闭环：用户按标准入口重启 SuperMap，运行镜像 `sha256:f21dccdf57636731402d551734f7bdd1476199dbbf8a04b24824488b84cacc39` healthy，源码指纹 `b79f19a6677fb3a51472500d10edb3bd09315b7e` 与当前脚本全部构建输入一致。通过正式入口重建 item 44565／task 15 的失败快显，13:31:04 生成成功，页面实际显示树干、枝条和树皮贴图。最终 GLB 为 429100 字节、3154 顶点、1919 三角面，包含一张 1024×1024 RGB JPEG；复用统一 `validate_glb` 通过，SHA256 `dee74aebc05be2d80d552c4c6245ed5c533bed2ca6e67ab515458b21639942e3`。211 个业务来源文件逐对象哈希均保持不变，Manager 中间 SGM 对象前缀和 SuperMap 临时源／输出目录为空，正常来源、任务及快显留作演示。这证明该冬树静态几何和基础 RGB 贴图的本地链路，不替代透明度、默认朝向／坐标语义、秋树或 T4。
+
+完整 `make test-module MODULE=engines` 在单次命令指定既有本机代理、Model3D／PointCloud Python venv 后返回 0，平台 T0 及全部已登记 Engines 步骤实际完成；首次 zizmor 下载失败保留为失败记录，不把它改写为通过。修复提交 `b25917baff5d214b7f886066c13ffa7238ee07da` 的 [Platform CI 38683194686](https://github.com/pampa0629/addp/actions/runs/38683194686) 和 [Release/T2 38683194744](https://github.com/pampa0629/addp/actions/runs/38683194744) 均成功。以上不覆盖另一份源码的 Manager Hosted 3DS 转换失败，须独立定位与复验。
