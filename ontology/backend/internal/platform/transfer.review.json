@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "f6da6539dbf4ff76d98556d19d03f6624b420b86",
-      "sha256": "750a367f6a38d204dcc2ac20497c4f7bdff6e97f884532228cb53b6484119d2a",
+      "commit": "091391c54da947501bdc5010bc94e765ab43077e",
+      "sha256": "fbc3a21929afaae8f4db5a46a0b877f439da5760e4f1325f3d95bb49660a3cd6",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略，以及只读预检的权限交集、两次预检和三态限制；纯查询定义分析只用已保存快照，源未知仍检查目标约束及常量。新增 Parquet item-layout 读取说明属于当前 native-table 创建切片之外，不扩张此能力覆盖",
-        "en": "Task, execution, configuration, apply policy and precheck permission intersection, two checks and tri-state limits; pure query analysis uses saved snapshots and checks targets and constants with unknown sources. Added Parquet item-layout reader guidance lies outside this native-table creation slice and does not expand coverage"
+        "zh-cn": "任务、执行、配置与写入策略及只读预检的权限交集和三态限制；复核 replace 需实例删除声明与当前插件删除声明及 Provider，已知不支持优先于结构 unknown，不扩张创建切片或实际执行保证",
+        "en": "Task, execution, apply policy and read-only precheck permissions and tri-state limits; reviewed replace requirements for registered delete capability and the current plugin declaration and Provider, with known unsupported taking precedence over unknown structure; no expanded creation coverage or execution guarantee"
       }
     },
     {
@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "a049fc71dd51118f44f53306cea066f0ae3bad97",
-      "sha256": "9060c2450965e3c88de769d26fe94c1580ac61ac01c8596738b36aa9719609fa",
+      "commit": "091391c54da947501bdc5010bc94e765ab43077e",
+      "sha256": "e6445c07e0c51fdd59cb0b26f92a71a4fc4fd97b521be49736fa958a1b653306",
       "use": {
-        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检注释中的纯查询定义分析和源未知时的显式目标约束，创建条件与权限不变",
-        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed read-only precheck annotations for pure query definition analysis and explicit target constraints with unknown sources, without changing creation conditions or permissions"
+        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检按写入策略检查删除能力的双语注释，创建条件与权限不变",
+        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed bilingual precheck annotations for apply-policy delete capability checks, without changing creation conditions or permissions"
       }
     },
     {
