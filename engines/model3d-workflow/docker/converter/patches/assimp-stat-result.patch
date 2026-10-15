@@ -1,13 +1,7 @@
 --- a/code/Common/DefaultIOSystem.cpp
 +++ b/code/Common/DefaultIOSystem.cpp
-@@ -96,7 +96,9 @@
-     }
- #else
- 	struct stat statbuf;
+@@ -107 +107,3 @@
 -    stat(pFile, &statbuf);
 +    if (stat(pFile, &statbuf) != 0) {
 +        return false;
 +    }
-     // test for a regular file
-     if (!S_ISREG(statbuf.st_mode)) {
-         return false;
