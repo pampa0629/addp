@@ -19,10 +19,10 @@ import (
 
 type LogPipelineHandler struct {
 	pipeline      *service.LogPipelineService
-	notifications *service.PlatformLogNotifications
+	notifications *service.PlatformAlertNotifications
 }
 
-func NewLogPipelineHandler(p *service.LogPipelineService, n *service.PlatformLogNotifications) *LogPipelineHandler {
+func NewLogPipelineHandler(p *service.LogPipelineService, n *service.PlatformAlertNotifications) *LogPipelineHandler {
 	return &LogPipelineHandler{pipeline: p, notifications: n}
 }
 
@@ -129,7 +129,7 @@ func (h *LogPipelineHandler) Observe(c *gin.Context) {
 // @Param id path int true "资源 ID | Resource ID"
 // @Accept json
 // @Param request body LogIncidentAction true "请求 | Request"
-// @Success 200 {object} models.PlatformLogIncident
+// @Success 200 {object} service.LogIncidentView
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
@@ -146,7 +146,7 @@ func (h *LogPipelineHandler) Acknowledge(c *gin.Context) { h.manageIncident(c, "
 // @Param id path int true "资源 ID | Resource ID"
 // @Accept json
 // @Param request body LogIncidentAction true "请求 | Request"
-// @Success 200 {object} models.PlatformLogIncident
+// @Success 200 {object} service.LogIncidentView
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
@@ -160,7 +160,7 @@ func (h *LogPipelineHandler) Suppress(c *gin.Context) { h.manageIncident(c, "sup
 // @Tags 平台日志链路 | Platform Log Pipeline
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {array} models.PlatformLogDestination
+// @Success 200 {array} models.PlatformAlertDestination
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
@@ -180,7 +180,7 @@ func (h *LogPipelineHandler) Destinations(c *gin.Context) {
 // @Security BearerAuth
 // @Accept json
 // @Param request body service.LogDestinationInput true "请求 | Request"
-// @Success 200 {object} models.PlatformLogDestination
+// @Success 200 {object} models.PlatformAlertDestination
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
@@ -205,7 +205,7 @@ func (h *LogPipelineHandler) CreateDestination(c *gin.Context) {
 // @Param id path int true "资源 ID | Resource ID"
 // @Accept json
 // @Param request body service.LogDestinationInput true "请求 | Request"
-// @Success 200 {object} models.PlatformLogDestination
+// @Success 200 {object} models.PlatformAlertDestination
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
@@ -234,7 +234,7 @@ func (h *LogPipelineHandler) UpdateDestination(c *gin.Context) {
 // @Param id path int true "资源 ID | Resource ID"
 // @Accept json
 // @Param request body LogCredentialInput true "请求 | Request"
-// @Success 200 {object} models.PlatformLogDestination
+// @Success 200 {object} models.PlatformAlertDestination
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse

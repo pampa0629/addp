@@ -1489,7 +1489,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination"
+                                "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertDestination"
                             }
                         }
                     },
@@ -1549,7 +1549,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertDestination"
                         }
                     },
                     "400": {
@@ -1617,7 +1617,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertDestination"
                         }
                     },
                     "400": {
@@ -1750,7 +1750,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertDestination"
                         }
                     },
                     "400": {
@@ -1990,7 +1990,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
                         }
                     },
                     "400": {
@@ -2057,7 +2057,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
                         }
                     },
                     "400": {
@@ -4678,7 +4678,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_monitor_internal_models.PlatformLogDestination": {
+        "github_com_addp_monitor_internal_models.PlatformAlertDestination": {
             "type": "object",
             "properties": {
                 "channel": {
@@ -4715,50 +4715,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_models.PlatformLogIncident": {
-            "type": "object",
-            "properties": {
-                "acknowledged_at": {
-                    "type": "string"
-                },
-                "acknowledged_by": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "last_observed_at": {
-                    "type": "string"
-                },
-                "node": {
-                    "type": "string"
-                },
-                "opened_at": {
-                    "type": "string"
-                },
-                "resolved_at": {
-                    "type": "string"
-                },
-                "severity": {
-                    "type": "string"
-                },
-                "signal": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "suppressed_until": {
                     "type": "string"
                 },
                 "version": {
@@ -5440,6 +5396,50 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.LogIncidentView": {
+            "type": "object",
+            "properties": {
+                "acknowledged_at": {
+                    "type": "string"
+                },
+                "acknowledged_by": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "node": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "signal": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suppressed_until": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.LogPipelineSummary": {
             "type": "object",
             "properties": {
@@ -5460,7 +5460,7 @@ const docTemplate = `{
                 "incidents": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
                     }
                 },
                 "node": {

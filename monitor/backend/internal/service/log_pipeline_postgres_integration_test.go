@@ -35,20 +35,20 @@ func (emptyLogRegistry) ListModules(context.Context) ([]*client.ModuleInfo, erro
 
 func TestIntegrationPostgresPlatformLogCapacityIncidentsRecoverIndependently(t *testing.T) {
 	f := newLogRetryFixture(t, "wecom")
-	db, ctx, nodeID := f.db, context.Background(), f.incident.Node
+	db, ctx, nodeID := f.db, context.Background(), f.incident.SubjectID
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, f.n)
-	ids := db.Model(&models.PlatformLogIncident{}).Select("id").Where("node=? AND signal IN ?", nodeID, []string{"source_capacity", "source_quota"})
-	eventIDs := db.Model(&models.PlatformLogEvent{}).Select("id").Where("incident_id IN (?)", ids)
+	ids := db.Model(&models.PlatformAlertIncident{}).Select("id").Where("subject_id=? AND signal IN ?", nodeID, []string{"source_capacity", "source_quota"})
+	eventIDs := db.Model(&models.PlatformAlertEvent{}).Select("id").Where("incident_id IN (?)", ids)
 	t.Cleanup(func() {
 		for _, q := range []struct {
 			model any
 			where string
 			value any
 		}{
-			{&models.PlatformLogDelivery{}, "event_id IN (?)", eventIDs},
-			{&models.PlatformLogEvent{}, "incident_id IN (?)", ids},
-			{&models.PlatformLogIncident{}, "id IN (?)", ids},
+			{&models.PlatformAlertDelivery{}, "event_id IN (?)", eventIDs},
+			{&models.PlatformAlertEvent{}, "incident_id IN (?)", ids},
+			{&models.PlatformAlertIncident{}, "id IN (?)", ids},
 			{&models.LogObserverBoot{}, "node=?", nodeID},
 			{&models.LogPipelineNode{}, "node=?", nodeID},
 		} {
@@ -83,10 +83,10 @@ func TestIntegrationPostgresPlatformLogCapacityIncidentsRecoverIndependently(t *
 			obs.SampledAt, obs.HousekeepingAt = now, now
 		}
 	}
-	read := func(signal string) models.PlatformLogIncident {
+	read := func(signal string) models.PlatformAlertIncident {
 		t.Helper()
-		var incident models.PlatformLogIncident
-		if err := db.Where("node=? AND signal=?", nodeID, signal).Take(&incident).Error; err != nil {
+		var incident models.PlatformAlertIncident
+		if err := db.Where("subject_id=? AND signal=?", nodeID, signal).Take(&incident).Error; err != nil {
 			t.Fatal(err)
 		}
 		return incident
@@ -94,13 +94,13 @@ func TestIntegrationPostgresPlatformLogCapacityIncidentsRecoverIndependently(t *
 	counts := func(want int64) {
 		t.Helper()
 		var events, deliveries, upgrades int64
-		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?)", ids).Count(&events).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertEvent{}).Where("incident_id IN (?)", ids).Count(&events).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Model(&models.PlatformLogDelivery{}).Where("event_id IN (?)", eventIDs).Count(&deliveries).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertDelivery{}).Where("event_id IN (?)", eventIDs).Count(&deliveries).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?) AND type='escalated'", ids).Count(&upgrades).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertEvent{}).Where("incident_id IN (?) AND type='escalated'", ids).Count(&upgrades).Error; err != nil {
 			t.Fatal(err)
 		}
 		if events != want || deliveries != want || upgrades != 0 {
@@ -207,12 +207,12 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	n := NewPlatformLogNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), false, sender, nil, 3, 30*time.Second, time.Second, 5*time.Second)
+	n := NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), false, sender, nil, 3, 30*time.Second, time.Second, 5*time.Second)
 	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, n)
-	var destination models.PlatformLogDestination
+	var destination models.PlatformAlertDestination
 	t.Cleanup(func() {
 		var ids []uint
-		if err := db.Model(&models.PlatformLogIncident{}).Where("node=?", nodeID).Pluck("id", &ids).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertIncident{}).Where("subject_id=?", nodeID).Pluck("id", &ids).Error; err != nil {
 			t.Error(err)
 		}
 		for _, q := range []struct {
@@ -220,10 +220,10 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 			where string
 			value any
 		}{
-			{&models.PlatformLogDelivery{}, "destination_id=?", destination.ID},
-			{&models.PlatformLogEvent{}, "incident_id IN ?", ids},
-			{&models.PlatformLogIncident{}, "node=?", nodeID},
-			{&models.PlatformLogDestination{}, "id=?", destination.ID},
+			{&models.PlatformAlertDelivery{}, "destination_id=?", destination.ID},
+			{&models.PlatformAlertEvent{}, "incident_id IN ?", ids},
+			{&models.PlatformAlertIncident{}, "subject_id=?", nodeID},
+			{&models.PlatformAlertDestination{}, "id=?", destination.ID},
 			{&models.LogObserverBoot{}, "node=?", nodeID},
 			{&models.LogPipelineNode{}, "node=?", nodeID},
 		} {
@@ -265,10 +265,10 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 	counts := func(want int64) {
 		t.Helper()
 		var events, deliveries int64
-		if err := db.Model(&models.PlatformLogEvent{}).Where("incident_id IN (?)", db.Model(&models.PlatformLogIncident{}).Select("id").Where("node=?", nodeID)).Count(&events).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertEvent{}).Where("incident_id IN (?)", db.Model(&models.PlatformAlertIncident{}).Select("id").Where("subject_id=?", nodeID)).Count(&events).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Model(&models.PlatformLogDelivery{}).Where("destination_id=?", destination.ID).Count(&deliveries).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertDelivery{}).Where("destination_id=?", destination.ID).Count(&deliveries).Error; err != nil {
 			t.Fatal(err)
 		}
 		if events != want || deliveries != want {
@@ -298,7 +298,7 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 	wg.Wait()
 	counts(1)
 	dispatch(now, true)
-	var opened models.PlatformLogDelivery
+	var opened models.PlatformAlertDelivery
 	if err := db.Where("destination_id=?", destination.ID).Take(&opened).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 	counts(3)
 	dispatch(now, true)
 	dispatch(now, false)
-	var deliveries []models.PlatformLogDelivery
+	var deliveries []models.PlatformAlertDelivery
 	if err := db.Where("destination_id=?", destination.ID).Order("created_at,id").Find(&deliveries).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 	}
 	var firstIncident uint
 	for index, d := range deliveries {
-		var event models.PlatformLogEvent
+		var event models.PlatformAlertEvent
 		if err := db.First(&event, "id=?", d.EventID).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -434,22 +434,22 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		w.WriteHeader(202)
 	}))
 	defer server.Close()
-	notifications := NewPlatformLogNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, NewHTTPWebhookSender(time.Second, true), nil, 3, 30*time.Second, time.Second, 5*time.Second)
+	notifications := NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, NewHTTPWebhookSender(time.Second, true), nil, 3, 30*time.Second, time.Second, 5*time.Second)
 	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, notifications)
 	if err = pipeline.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	var destination models.PlatformLogDestination
+	var destination models.PlatformAlertDestination
 	t.Cleanup(func() {
 		var ids []uint
-		if err := db.Model(&models.PlatformLogIncident{}).Where("node=?", nodeID).Pluck("id", &ids).Error; err != nil {
+		if err := db.Model(&models.PlatformAlertIncident{}).Where("subject_id=?", nodeID).Pluck("id", &ids).Error; err != nil {
 			t.Error(err)
 		}
 		for _, query := range []struct {
 			model any
 			where string
 			arg   any
-		}{{&models.PlatformLogDelivery{}, "destination_id=?", destination.ID}, {&models.PlatformLogEvent{}, "incident_id IN ?", ids}, {&models.PlatformLogIncident{}, "node=?", nodeID}, {&models.PlatformLogDestination{}, "id=?", destination.ID}, {&models.LogObserverBoot{}, "node=?", nodeID}, {&models.LogPipelineNode{}, "node=?", nodeID}} {
+		}{{&models.PlatformAlertDelivery{}, "destination_id=?", destination.ID}, {&models.PlatformAlertEvent{}, "incident_id IN ?", ids}, {&models.PlatformAlertIncident{}, "subject_id=?", nodeID}, {&models.PlatformAlertDestination{}, "id=?", destination.ID}, {&models.LogObserverBoot{}, "node=?", nodeID}, {&models.LogPipelineNode{}, "node=?", nodeID}} {
 			if err := db.Where(query.where, query.arg).Delete(query.model).Error; err != nil {
 				t.Error(err)
 			}
@@ -509,7 +509,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	}
 	incident := summary.Incidents[0]
 	var events int64
-	if err = db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", incident.ID).Count(&events).Error; err != nil || events != 1 {
+	if err = db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", incident.ID).Count(&events).Error; err != nil || events != 1 {
 		t.Fatalf("opened events=%d err=%v", events, err)
 	}
 	if processed, err := notifications.DispatchOnce(ctx, now); err != nil || !processed {
@@ -575,7 +575,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		if message.payload.Schema != "addp.platform-log-alert/v1" || message.payload.IncidentID != incident.ID || message.payload.Node != nodeID || message.payload.Signal != "collector_dropped" || message.payload.Severity != "critical" || message.payload.InstanceID != "" {
 			t.Fatal("received webhook does not identify the platform incident")
 		}
-		var delivery models.PlatformLogDelivery
+		var delivery models.PlatformAlertDelivery
 		if err := db.First(&delivery, "id=?", message.id).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -603,7 +603,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	if err = pipeline.Ingest(ctx, obs, now); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", incident.ID).Count(&events).Error; err != nil || events != 2 {
+	if err = db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", incident.ID).Count(&events).Error; err != nil || events != 2 {
 		t.Fatalf("lifecycle events=%d err=%v", events, err)
 	}
 	if err = pipeline.CheckStale(ctx, now.Add(121*time.Second)); err != nil {
@@ -633,14 +633,14 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		t.Fatalf("retired observer boot accepted: %v", err)
 	}
 	// A crashed final attempt must not cause unlimited network retries after its lease expires.
-	result := db.Model(&models.PlatformLogDelivery{}).Where("destination_id=? AND status='pending'", destination.ID).Updates(map[string]any{"status": "delivering", "attempt_count": 3, "lease_expires_at": now.Add(-time.Second)})
+	result := db.Model(&models.PlatformAlertDelivery{}).Where("destination_id=? AND status='pending'", destination.ID).Updates(map[string]any{"status": "delivering", "attempt_count": 3, "lease_expires_at": now.Add(-time.Second)})
 	if result.Error != nil || result.RowsAffected != 1 {
 		t.Fatalf("seed expired final claim: %d %v", result.RowsAffected, result.Error)
 	}
 	if processed, err := notifications.DispatchOnce(ctx, now); err != nil || !processed {
 		t.Fatalf("expired final claim processed=%v err=%v", processed, err)
 	}
-	var exhausted models.PlatformLogDelivery
+	var exhausted models.PlatformAlertDelivery
 	if err := db.Where("destination_id=? AND status='dead'", destination.ID).Take(&exhausted).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -657,12 +657,12 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
-	enabled := NewLogPipelineService(f.db, f.incident.Node, emptyLogRegistry{}, f.n)
+	enabled := NewLogPipelineService(f.db, f.incident.SubjectID, emptyLogRegistry{}, f.n)
 	if err := enabled.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
 	}
 	var stored models.LogPipelineNode
-	if err := f.db.Where("node=?", f.incident.Node).Take(&stored).Error; err != nil {
+	if err := f.db.Where("node=?", f.incident.SubjectID).Take(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	policy, err := enabled.Policy(ctx)
@@ -674,17 +674,17 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := f.db.Where("node=?", f.incident.Node).Delete(&models.LogPipelineNode{}).Error; err != nil {
+		if err := f.db.Where("node=?", f.incident.SubjectID).Delete(&models.LogPipelineNode{}).Error; err != nil {
 			t.Error(err)
 		}
 	})
 	var eventsBefore int64
-	if err := f.db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsBefore).Error; err != nil {
+	if err := f.db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, state := range []string{"false", "invalid"} {
 		t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", state)
-		paused := NewLogPipelineService(f.db, f.incident.Node, nil, f.n)
+		paused := NewLogPipelineService(f.db, f.incident.SubjectID, nil, f.n)
 		if err := paused.CheckStale(ctx, now.Add(24*time.Hour)); err != nil {
 			t.Fatal(err)
 		}
@@ -697,14 +697,14 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		}
 	}
 	var eventsAfter int64
-	if err := f.db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsAfter).Error; err != nil {
+	if err := f.db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", f.incident.ID).Count(&eventsAfter).Error; err != nil {
 		t.Fatal(err)
 	}
 	if eventsBefore != eventsAfter {
 		t.Fatal("pause emitted a synthetic transition")
 	}
 	t.Setenv("ADDP_OBSERVABILITY_LOGS_ENABLED", "true")
-	resumed := NewLogPipelineService(f.db, f.incident.Node, emptyLogRegistry{}, f.n)
+	resumed := NewLogPipelineService(f.db, f.incident.SubjectID, emptyLogRegistry{}, f.n)
 	if err := resumed.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
 	}
@@ -713,7 +713,7 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		t.Fatalf("resume synthesized recovery: %#v %v", summary, err)
 	}
 	observation := healthyLogObservation(now, 1)
-	observation.Node, observation.BootID = f.incident.Node, uuid.NewString()
+	observation.Node, observation.BootID = f.incident.SubjectID, uuid.NewString()
 	if err := resumed.Ingest(ctx, observation, now); err != nil {
 		t.Fatal(err)
 	}

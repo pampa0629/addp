@@ -49,11 +49,11 @@ func (s *retryTestEmail) SendMessage(_ context.Context, m EmailMessage, _ time.T
 
 type logRetryFixture struct {
 	db       *gorm.DB
-	n        *PlatformLogNotifications
-	target   models.PlatformLogDestination
-	incident models.PlatformLogIncident
-	event    models.PlatformLogEvent
-	delivery models.PlatformLogDelivery
+	n        *PlatformAlertNotifications
+	target   models.PlatformAlertDestination
+	incident models.PlatformAlertIncident
+	event    models.PlatformAlertEvent
+	delivery models.PlatformAlertDelivery
 	webhook  *retryTestWebhook
 	email    *retryTestEmail
 }
@@ -71,20 +71,20 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 		t.Fatal(err)
 	}
 	f := &logRetryFixture{db: db, webhook: &retryTestWebhook{}, email: &retryTestEmail{}}
-	f.n = NewPlatformLogNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, f.webhook, f.email, 3, 30*time.Second, time.Second, 5*time.Second)
+	f.n = NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, f.webhook, f.email, 3, 30*time.Second, time.Second, 5*time.Second)
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	f.incident = models.PlatformLogIncident{Node: "retry-" + uuid.NewString(), Signal: "delivery_probe", Severity: "critical", Status: "resolved", OpenedAt: now.Add(-time.Hour), LastObservedAt: now, ResolvedAt: &now}
-	f.event = models.PlatformLogEvent{ID: uuid.NewString(), Type: "opened", Severity: "critical", OccurredAt: f.incident.OpenedAt}
+	f.incident = models.PlatformAlertIncident{Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver, SubjectID: "retry-" + uuid.NewString(), Signal: "delivery_probe", Severity: "critical", Status: "resolved", OpenedAt: now.Add(-time.Hour), LastObservedAt: now, ResolvedAt: &now}
+	f.event = models.PlatformAlertEvent{ID: uuid.NewString(), Type: "opened", Severity: "critical", OccurredAt: f.incident.OpenedAt}
 	t.Cleanup(func() {
 		for _, q := range []struct {
 			model any
 			where string
 			value any
 		}{
-			{&models.PlatformLogDelivery{}, "event_id=?", f.event.ID},
-			{&models.PlatformLogEvent{}, "id=?", f.event.ID},
-			{&models.PlatformLogIncident{}, "node=?", f.incident.Node},
-			{&models.PlatformLogDestination{}, "id=?", f.target.ID},
+			{&models.PlatformAlertDelivery{}, "event_id=?", f.event.ID},
+			{&models.PlatformAlertEvent{}, "id=?", f.event.ID},
+			{&models.PlatformAlertIncident{}, "subject_id=?", f.incident.SubjectID},
+			{&models.PlatformAlertDestination{}, "id=?", f.target.ID},
 		} {
 			if err := db.Where(q.where, q.value).Delete(q.model).Error; err != nil {
 				t.Error(err)
@@ -102,7 +102,7 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 	if err := db.Create(&f.event).Error; err != nil {
 		t.Fatal(err)
 	}
-	input := LogDestinationInput{Name: f.incident.Node, Channel: channel, EventTypes: []string{"opened", "resolved"}}
+	input := LogDestinationInput{Name: f.incident.SubjectID, Channel: channel, EventTypes: []string{"opened", "resolved"}}
 	if channel == "webhook" {
 		input.URL = "http://127.0.0.1:18080/original"
 	} else if channel == "email" {
@@ -228,7 +228,7 @@ func TestIntegrationPostgresPlatformLogManualRetryCyclesAndConcurrency(t *testin
 		}
 	}
 	var events int64
-	if err := f.db.Model(&models.PlatformLogEvent{}).Where("incident_id=?", f.incident.ID).Count(&events).Error; err != nil || events != 1 {
+	if err := f.db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", f.incident.ID).Count(&events).Error; err != nil || events != 1 {
 		t.Fatal("retry manufactured lifecycle events")
 	}
 	if _, err := f.n.Retry(ctx, f.delivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &view.ManualRetryCount, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogConflict) {

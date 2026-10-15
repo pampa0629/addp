@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type PlatformLogNotifications struct {
+type PlatformAlertNotifications struct {
 	db                            *gorm.DB
 	key                           []byte
 	allowPrivate                  bool
@@ -26,9 +26,9 @@ type PlatformLogNotifications struct {
 	lease, retryInitial, retryMax time.Duration
 }
 
-func NewPlatformLogNotifications(db *gorm.DB, key []byte, allowPrivate bool, webhook WebhookTransport, email EmailTransport, maxAttempts int, lease, retryInitial, retryMax time.Duration) *PlatformLogNotifications {
+func NewPlatformAlertNotifications(db *gorm.DB, key []byte, allowPrivate bool, webhook WebhookTransport, email EmailTransport, maxAttempts int, lease, retryInitial, retryMax time.Duration) *PlatformAlertNotifications {
 	wecom, _ := webhook.(WeComTransport)
-	return &PlatformLogNotifications{wecom: wecom, db: db, key: key, allowPrivate: allowPrivate, webhook: webhook, email: email, maxAttempts: maxAttempts, lease: lease, retryInitial: retryInitial, retryMax: retryMax}
+	return &PlatformAlertNotifications{wecom: wecom, db: db, key: key, allowPrivate: allowPrivate, webhook: webhook, email: email, maxAttempts: maxAttempts, lease: lease, retryInitial: retryInitial, retryMax: retryMax}
 }
 
 type LogDestinationInput struct {
@@ -41,8 +41,8 @@ type LogDestinationInput struct {
 	Enabled    bool     `json:"enabled"`
 }
 
-func (n *PlatformLogNotifications) validate(ctx context.Context, input LogDestinationInput) (models.PlatformLogDestination, error) {
-	d := models.PlatformLogDestination{Name: strings.TrimSpace(input.Name), Channel: input.Channel, URL: input.URL, Recipients: models.StringList{}, Enabled: input.Enabled, Version: 1}
+func (n *PlatformAlertNotifications) validate(ctx context.Context, input LogDestinationInput) (models.PlatformAlertDestination, error) {
+	d := models.PlatformAlertDestination{Categories: models.StringList{models.PlatformAlertCategoryLog}, Name: strings.TrimSpace(input.Name), Channel: input.Channel, URL: input.URL, Recipients: models.StringList{}, Enabled: input.Enabled, Version: 1}
 	if d.Name == "" || len(d.Name) > 100 {
 		return d, ErrLogInvalid
 	}
@@ -80,15 +80,15 @@ func (n *PlatformLogNotifications) validate(ctx context.Context, input LogDestin
 	}
 	return d, nil
 }
-func (n *PlatformLogNotifications) List(ctx context.Context) ([]models.PlatformLogDestination, error) {
-	d := []models.PlatformLogDestination{}
-	err := n.db.WithContext(ctx).Order("id DESC").Find(&d).Error
+func (n *PlatformAlertNotifications) List(ctx context.Context) ([]models.PlatformAlertDestination, error) {
+	d := []models.PlatformAlertDestination{}
+	err := n.db.WithContext(ctx).Where("categories = ?::jsonb", `["log_pipeline"]`).Order("id DESC").Find(&d).Error
 	for i := range d {
 		d[i].SecretConfigured = d[i].SecretCiphertext != ""
 	}
 	return d, err
 }
-func (n *PlatformLogNotifications) Save(ctx context.Context, id uint, input LogDestinationInput) (models.PlatformLogDestination, error) {
+func (n *PlatformAlertNotifications) Save(ctx context.Context, id uint, input LogDestinationInput) (models.PlatformAlertDestination, error) {
 	d, err := n.validate(ctx, input)
 	if err != nil {
 		return d, err
@@ -114,8 +114,8 @@ func (n *PlatformLogNotifications) Save(ctx context.Context, id uint, input LogD
 		return d, nil
 	}
 	err = n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var old models.PlatformLogDestination
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&old, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		var old models.PlatformAlertDestination
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("categories = ?::jsonb", `["log_pipeline"]`).First(&old, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound
 		} else if err != nil {
 			return err
@@ -137,20 +137,20 @@ func (n *PlatformLogNotifications) Save(ctx context.Context, id uint, input LogD
 			return err
 		}
 		if !d.Enabled {
-			return tx.Model(&models.PlatformLogDelivery{}).Where("destination_id=? AND status='pending'", id).Updates(map[string]any{"status": "cancelled", "secret_ciphertext": "", "next_attempt_at": nil}).Error
+			return tx.Model(&models.PlatformAlertDelivery{}).Where("destination_id=? AND status='pending'", id).Updates(map[string]any{"status": "cancelled", "secret_ciphertext": "", "next_attempt_at": nil}).Error
 		}
 		return nil
 	})
 	d.SecretConfigured = d.SecretCiphertext != ""
 	return d, err
 }
-func (n *PlatformLogNotifications) SetSecret(ctx context.Context, id uint, version uint64, secret string) (models.PlatformLogDestination, error) {
-	var d models.PlatformLogDestination
+func (n *PlatformAlertNotifications) SetSecret(ctx context.Context, id uint, version uint64, secret string) (models.PlatformAlertDestination, error) {
+	var d models.PlatformAlertDestination
 	if len(secret) < 16 || len(secret) > 256 || version == 0 {
 		return d, ErrLogInvalid
 	}
 	err := n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND channel IN ?", id, []string{"webhook", "wecom"}).Take(&d).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND channel IN ? AND categories = ?::jsonb", id, []string{"webhook", "wecom"}, `["log_pipeline"]`).Take(&d).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound
 		} else if err != nil {
 			return err
@@ -177,13 +177,13 @@ func (n *PlatformLogNotifications) SetSecret(ctx context.Context, id uint, versi
 	d.SecretConfigured = d.SecretCiphertext != ""
 	return d, err
 }
-func (n *PlatformLogNotifications) Delete(ctx context.Context, id uint, version uint64) error {
+func (n *PlatformAlertNotifications) Delete(ctx context.Context, id uint, version uint64) error {
 	if version == 0 {
 		return ErrLogInvalid
 	}
 	return n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var d models.PlatformLogDestination
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&d, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		var d models.PlatformAlertDestination
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("categories = ?::jsonb", `["log_pipeline"]`).First(&d, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound
 		} else if err != nil {
 			return err
@@ -191,13 +191,13 @@ func (n *PlatformLogNotifications) Delete(ctx context.Context, id uint, version 
 		if d.Version != version {
 			return ErrLogConflict
 		}
-		if err := tx.Model(&models.PlatformLogDelivery{}).Where("destination_id=? AND status='pending'", id).Updates(map[string]any{"status": "cancelled", "secret_ciphertext": "", "next_attempt_at": nil}).Error; err != nil {
+		if err := tx.Model(&models.PlatformAlertDelivery{}).Where("destination_id=? AND status='pending'", id).Updates(map[string]any{"status": "cancelled", "secret_ciphertext": "", "next_attempt_at": nil}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&d).Error
 	})
 }
-func (n *PlatformLogNotifications) Status(ctx context.Context) (string, error) {
+func (n *PlatformAlertNotifications) Status(ctx context.Context) (string, error) {
 	d, err := n.List(ctx)
 	if err != nil {
 		return "unknown", err
@@ -219,7 +219,7 @@ func (n *PlatformLogNotifications) Status(ctx context.Context) (string, error) {
 		usable = true
 	}
 	var failed int64
-	if err = n.db.WithContext(ctx).Model(&models.PlatformLogDelivery{}).Where("status='dead'").Count(&failed).Error; err != nil {
+	if err = logDeliveryQuery(n.db.WithContext(ctx)).Where("d.status='dead'").Count(&failed).Error; err != nil {
 		return "unknown", err
 	}
 	if failed > 0 {
@@ -230,15 +230,15 @@ func (n *PlatformLogNotifications) Status(ctx context.Context) (string, error) {
 	}
 	return "unconfigured", nil
 }
-func (n *PlatformLogNotifications) RecordTx(tx *gorm.DB, event models.PlatformLogEvent, incident models.PlatformLogIncident, now time.Time) error {
-	if event.Type != "opened" && event.Type != "resolved" {
+func (n *PlatformAlertNotifications) RecordTx(tx *gorm.DB, event models.PlatformAlertEvent, incident models.PlatformAlertIncident, now time.Time) error {
+	if incident.Category != models.PlatformAlertCategoryLog || incident.SubjectKind != models.PlatformAlertSubjectLogObserver || event.IncidentID != incident.ID || (event.Type != "opened" && event.Type != "resolved") {
 		return ErrLogInvalid
 	}
-	var destinations []models.PlatformLogDestination
-	if err := tx.Where("enabled=true").Order("id").Find(&destinations).Error; err != nil {
+	var destinations []models.PlatformAlertDestination
+	if err := tx.Where("enabled=true AND categories @> ?::jsonb", `["log_pipeline"]`).Order("id").Find(&destinations).Error; err != nil {
 		return err
 	}
-	payload := map[string]any{"schema": "addp.platform-log-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "node": incident.Node, "signal": logSignalName(incident.Signal), "instance_id": incident.InstanceID, "severity": incident.Severity, "occurred_at": now}
+	payload := map[string]any{"schema": "addp.platform-log-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "node": incident.SubjectID, "signal": logSignalName(incident.Signal), "instance_id": incident.InstanceID, "severity": incident.Severity, "occurred_at": now}
 	body, _ := json.Marshal(payload)
 	for _, d := range destinations {
 		if !stringListContains(d.EventTypes, event.Type) {
@@ -248,7 +248,7 @@ func (n *PlatformLogNotifications) RecordTx(tx *gorm.DB, event models.PlatformLo
 		if incident.SuppressedUntil != nil && incident.SuppressedUntil.After(now) {
 			status = "suppressed"
 		}
-		delivery := models.PlatformLogDelivery{ID: uuid.NewString(), EventID: event.ID, DestinationID: d.ID, Channel: d.Channel, URL: d.URL, SecretCiphertext: d.SecretCiphertext, Recipients: d.Recipients, Payload: string(body), Status: status, NextAttemptAt: &now, CreatedAt: now}
+		delivery := models.PlatformAlertDelivery{ID: uuid.NewString(), EventID: event.ID, DestinationID: d.ID, Channel: d.Channel, URL: d.URL, SecretCiphertext: d.SecretCiphertext, Recipients: d.Recipients, Payload: string(body), Status: status, NextAttemptAt: &now, CreatedAt: now}
 		if status != "pending" {
 			delivery.SecretCiphertext = ""
 			delivery.NextAttemptAt = nil
@@ -267,7 +267,7 @@ func stringListContains(v []string, s string) bool {
 	}
 	return false
 }
-func (n *PlatformLogNotifications) send(ctx context.Context, d models.PlatformLogDelivery, now time.Time) error {
+func (n *PlatformAlertNotifications) send(ctx context.Context, d models.PlatformAlertDelivery, now time.Time) error {
 	if d.Channel == "wecom" {
 		if n.wecom == nil {
 			return ErrLogInvalid
@@ -306,41 +306,41 @@ func (n *PlatformLogNotifications) send(ctx context.Context, d models.PlatformLo
 	}
 	return n.email.SendMessage(ctx, EmailMessage{DeliveryID: d.ID, Recipients: d.Recipients, Subject: "ADDP platform log pipeline alert", TextBody: d.Payload, HTMLBody: "<pre>" + html.EscapeString(d.Payload) + "</pre>"}, now)
 }
-func (n *PlatformLogNotifications) Test(ctx context.Context, id uint, now time.Time) error {
-	var d models.PlatformLogDestination
-	if err := n.db.WithContext(ctx).First(&d, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+func (n *PlatformAlertNotifications) Test(ctx context.Context, id uint, now time.Time) error {
+	var d models.PlatformAlertDestination
+	if err := n.db.WithContext(ctx).Where("categories = ?::jsonb", `["log_pipeline"]`).First(&d, id).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrLogNotFound
 	} else if err != nil {
 		return err
 	}
-	return n.send(ctx, models.PlatformLogDelivery{ID: uuid.NewString(), Channel: d.Channel, URL: d.URL, SecretCiphertext: d.SecretCiphertext, Recipients: d.Recipients, Payload: `{"schema":"addp.platform-log-notification-test/v1","test":true}`}, now)
+	return n.send(ctx, models.PlatformAlertDelivery{ID: uuid.NewString(), Channel: d.Channel, URL: d.URL, SecretCiphertext: d.SecretCiphertext, Recipients: d.Recipients, Payload: `{"schema":"addp.platform-log-notification-test/v1","test":true}`}, now)
 }
-func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Time) (bool, error) {
+func (n *PlatformAlertNotifications) DispatchOnce(ctx context.Context, now time.Time) (bool, error) {
 	claim := uuid.NewString()
-	var deliveries []models.PlatformLogDelivery
+	var deliveries []models.PlatformAlertDelivery
 	err := n.db.WithContext(ctx).Raw(`WITH candidate AS (
- SELECT id FROM monitor.platform_log_deliveries WHERE ((status='pending' AND next_attempt_at<=?) OR (status='delivering' AND lease_expires_at<=?)) AND (channel='webhook' OR (channel='wecom' AND ?) OR (channel='email' AND ?))
+ SELECT id FROM monitor.platform_alert_deliveries WHERE ((status='pending' AND next_attempt_at<=?) OR (status='delivering' AND lease_expires_at<=?)) AND (channel='webhook' OR (channel='wecom' AND ?) OR (channel='email' AND ?))
  ORDER BY next_attempt_at NULLS FIRST,id LIMIT 1 FOR UPDATE SKIP LOCKED)
- UPDATE monitor.platform_log_deliveries d SET status='delivering',attempt_count=d.attempt_count+1,claim_id=?,lease_expires_at=? FROM candidate WHERE d.id=candidate.id RETURNING d.*`, now, now, n.wecom != nil, n.email != nil, claim, now.Add(n.lease)).Scan(&deliveries).Error
+ UPDATE monitor.platform_alert_deliveries d SET status='delivering',attempt_count=d.attempt_count+1,claim_id=?,lease_expires_at=? FROM candidate WHERE d.id=candidate.id RETURNING d.*`, now, now, n.wecom != nil, n.email != nil, claim, now.Add(n.lease)).Scan(&deliveries).Error
 	if err != nil || len(deliveries) == 0 {
 		return false, err
 	}
 	d := deliveries[0]
 	cycleAttempt := d.AttemptCount - d.RetryBaseAttemptCount
 	if cycleAttempt > n.maxAttempts {
-		result := n.db.WithContext(ctx).Model(&models.PlatformLogDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(map[string]any{"status": "dead", "last_error": "notification_attempt_limit", "secret_ciphertext": "", "claim_id": "", "lease_expires_at": nil, "next_attempt_at": nil})
+		result := n.db.WithContext(ctx).Model(&models.PlatformAlertDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(map[string]any{"status": "dead", "last_error": "notification_attempt_limit", "secret_ciphertext": "", "claim_id": "", "lease_expires_at": nil, "next_attempt_at": nil})
 		return true, result.Error
 	}
 	// Re-read suppression and destination while the claim is current. A request already sent may complete.
-	var event models.PlatformLogEvent
+	var event models.PlatformAlertEvent
 	if err = n.db.WithContext(ctx).First(&event, "id=?", d.EventID).Error; err != nil {
 		return true, err
 	}
-	var i models.PlatformLogIncident
+	var i models.PlatformAlertIncident
 	if err = n.db.WithContext(ctx).First(&i, event.IncidentID).Error; err != nil {
 		return true, err
 	}
-	var dest models.PlatformLogDestination
+	var dest models.PlatformAlertDestination
 	targetErr := n.db.WithContext(ctx).First(&dest, d.DestinationID).Error
 	updates := map[string]any{"claim_id": "", "lease_expires_at": nil, "next_attempt_at": nil}
 	if i.SuppressedUntil != nil && i.SuppressedUntil.After(now) {
@@ -369,7 +369,7 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 			}
 		}
 	}
-	result := n.db.WithContext(ctx).Model(&models.PlatformLogDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(updates)
+	result := n.db.WithContext(ctx).Model(&models.PlatformAlertDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(updates)
 	if result.Error != nil {
 		return true, result.Error
 	}
@@ -378,7 +378,7 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 	}
 	return true, nil
 }
-func (n *PlatformLogNotifications) Run(ctx context.Context) {
+func (n *PlatformAlertNotifications) Run(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -404,12 +404,12 @@ type LogDeliveryList struct {
 	TotalPages int               `json:"total_pages"`
 }
 
-func (n *PlatformLogNotifications) Deliveries(ctx context.Context, page, size int) (LogDeliveryList, error) {
+func (n *PlatformAlertNotifications) Deliveries(ctx context.Context, page, size int) (LogDeliveryList, error) {
 	r := LogDeliveryList{Data: []LogDeliveryView{}, Page: page, PageSize: size}
 	if page < 1 || page > 10000 || size < 1 || size > 100 {
 		return r, ErrLogInvalid
 	}
-	q := n.db.WithContext(ctx).Model(&models.PlatformLogDelivery{})
+	q := logDeliveryQuery(n.db.WithContext(ctx))
 	if err := q.Count(&r.Total).Error; err != nil {
 		return r, err
 	}

@@ -382,10 +382,10 @@
 | target apply ledger | 目标应用账本 | 与业务数据位于同一目标数据库、记录各 source partition 已原子应用位置的技术账本。 | continuous PostgreSQL v1 固定为 `addp_transfer.apply_positions`；数据 upsert 与 `next_offset` 推进必须在同一事务，不能用 Infra PostgreSQL 中的 `transfer.sync_states` 替代。 |
 | observation signal | 观测信号 | 由 owner 写入的运行诊断事实无状态派生出的当前风险提示。 | 不是任务状态、execution 状态或持久化告警；例如 retention critical、checkpoint stalled。 |
 | execution runtime metric | 执行运行指标 | Monitor 按 Tenant、module、task type 和 execution boundary 从公共 execution 事实聚合出的容量决策指标。 | 时间窗口只约束新建、完成、耗时、attempt 重试和恢复统计；当前 `pending` / `running` 积压跨窗口计算，避免长期积压被窗口过滤。自动 attempt 重试、用户 retry 新 execution 与恢复原因分别计数。 |
-| alert incident | 告警事件 | Monitor 将持续存在的观测信号物化出的可确认、可抑制、可恢复的运维事件。 | 告警不反向修改 owner 状态；同一任务同一信号同时最多一个未恢复事件。 |
-| alert event | 告警生命周期事件 | 告警事件发生打开、严重级别升级或恢复时，由 Monitor 在同一事务中写入的不可变事件。 | 稳定类型为 `opened`、`escalated`、`resolved`；是通知 outbox 的事实输入。 |
-| alert notification | 告警通知 | 告警事件打开、升级或恢复时向外部渠道发送的消息。 | 通知是告警生命周期的消费结果，不是新的健康事实源。 |
-| alert rule | 告警规则 | Monitor 对一个稳定 owner 任务定义配置的告警判定策略。 | 第一版精确绑定 `module + task_type + source_task_id`，规则不进入 owner 任务 config，也不读取 owner 私有表。 |
+| alert incident | 告警事件 | Monitor 将持续存在的观测信号物化出的可确认、可抑制、可恢复的运维事件。 | Platform 与 Tenant 使用独立事实及权限；同一范围、主体和规则/信号同时最多一个未恢复事件，不反向修改 owner 状态。 |
+| alert event | 告警生命周期事件 | 告警状态变化时，由 Monitor 在同一事务中写入的不可变事件，是通知 outbox 的事实输入。 | 租户执行告警使用 `opened/escalated/resolved`；平台告警仅使用 `opened/resolved`，每个信号严重级别固定，不混用升级语义。 |
+| alert notification | 告警通知 | 消费所属告警域的生命周期事件并向外部渠道发送的消息。 | 通知不是新的健康事实源；平台与租户的事件、订阅及投递范围独立。 |
+| alert rule | 告警规则 | Monitor 对明确来源和监控主体配置的告警判定策略。 | 租户执行规则精确绑定 `module + task_type + source_task_id`；平台资源规则精确绑定 System 主机及固定指标，实施范围见运行监控设计。规则不进入 owner 任务 config，也不读取 owner 私有表。 |
 | generic execution alert | 通用执行告警 | Monitor 根据统一 execution 终态派生的任务级告警。 | 第一版包括最近失败、最近超时和连续失败；ad-hoc execution、子 execution 与 Transfer continuous session 不进入通用规则。 |
 | notification route | 通知路由 | 一条租户告警规则到一个 Webhook 或邮件目标的显式投递绑定。 | 无路由时仍保存 incident/event，但不生成外部 delivery；路由只影响后续生命周期事件。 |
 | webhook destination | Webhook 目标 | 租户在 Monitor 中配置的告警通知 HTTP 接收端。 | 保存名称、URL、订阅事件、启用状态和加密签名密钥；不属于 System Engine 或 TaskProvider。 |
@@ -719,6 +719,8 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 ## 模块服务运行日志
 
 运行日志是模块进程的启动输出、运行消息和异常堆栈，由受控启动边界赋予进程实例身份；正文归运行日志存储，不属于操作审计或任务执行记录。日志链路状态与实例 UP/DOWN 分开表达。单实例日志入口由 System 在 Platform Context 下授权。 历史日志分页固定本次查询窗口，按接收时间和实例内精确序号续读；它不表示存储快照或采集完整性，迟到记录由刷新补查。
+
+平台运行告警由 Monitor 管理平台基础设施与运行链路的异常事件，来源类别包括日志链路与主机资源；Platform 告警与 Tenant 执行告警使用独立事实和权限，不因共用 Monitor 而混合数据范围。平台事件的生命周期仅为打开（opened）和恢复（resolved），确认表示接手、抑制只控制通知，未知或暂停不能证明恢复。首期主机 CPU／内存压力规则默认停用，需显式选择主机并启用；它们不是内存泄漏诊断或自动扩容结论。平台完整告警管理入口归 Monitor，System 保留对象管理及日志诊断和上下文跳转；上述统一迁移已于 2026-10-15 确认，实际交付边界见运行监控设计 10.61 起的批次记录。
 
 日志链路观测是 Infra 节点观测器定期产生的有界安全事实，不含日志正文或租户业务数据。平台日志链路告警由 Monitor 根据有效观测判定并持久保存，每类信号使用固定严重级别，生命周期仅包含打开（opened）和恢复（resolved）；不同信号各自告警、各自恢复，不将容量预警转为容量耗尽告警。与租户任务告警使用独立事实模型和 Platform 权限，System 提供展示入口。健康只证明近期探针与观测成功，不证明历史日志零丢失。
 

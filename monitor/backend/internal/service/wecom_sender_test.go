@@ -120,8 +120,8 @@ func TestWeComMessagePreservesOriginalEventAndRejectsMarkdownInjection(t *testin
 }
 
 func TestPlatformLogOutboxRejectsUnsupportedEvents(t *testing.T) {
-	n := NewPlatformLogNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
-	if err := n.RecordTx(nil, models.PlatformLogEvent{Type: "escalated"}, models.PlatformLogIncident{}, time.Now()); !errors.Is(err, ErrLogInvalid) {
+	n := NewPlatformAlertNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
+	if err := n.RecordTx(nil, models.PlatformAlertEvent{Type: "escalated"}, models.PlatformAlertIncident{}, time.Now()); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("platform outbox accepted an unsupported lifecycle event")
 	}
 }

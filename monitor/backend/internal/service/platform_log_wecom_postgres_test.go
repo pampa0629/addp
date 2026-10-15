@@ -98,11 +98,11 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 		t.Fatal("completed delivery sent twice")
 	}
 
-	event := models.PlatformLogEvent{ID: uuid.NewString(), IncidentID: f.incident.ID, Type: "resolved", Severity: "critical", OccurredAt: now}
+	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: f.incident.ID, Type: "resolved", Severity: "critical", OccurredAt: now}
 	t.Cleanup(func() {
-		for _, model := range []any{&models.PlatformLogDelivery{}, &models.PlatformLogEvent{}} {
+		for _, model := range []any{&models.PlatformAlertDelivery{}, &models.PlatformAlertEvent{}} {
 			field := "event_id"
-			if _, ok := model.(*models.PlatformLogEvent); ok {
+			if _, ok := model.(*models.PlatformAlertEvent); ok {
 				field = "id"
 			}
 			if err := f.db.Where(field+"=?", event.ID).Delete(model).Error; err != nil {
@@ -129,13 +129,13 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 		t.Fatal("missing distinct recovery notification")
 	}
 	var countBefore, countAfter int64
-	if err := f.db.Model(&models.PlatformLogDelivery{}).Where("destination_id=?", f.target.ID).Count(&countBefore).Error; err != nil {
+	if err := f.db.Model(&models.PlatformAlertDelivery{}).Where("destination_id=?", f.target.ID).Count(&countBefore).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err = f.n.Test(ctx, f.target.ID, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.db.Model(&models.PlatformLogDelivery{}).Where("destination_id=?", f.target.ID).Count(&countAfter).Error; err != nil {
+	if err := f.db.Model(&models.PlatformAlertDelivery{}).Where("destination_id=?", f.target.ID).Count(&countAfter).Error; err != nil {
 		t.Fatal(err)
 	}
 	if countBefore != countAfter || !strings.Contains(bodies[len(bodies)-1], "无需处理") {
@@ -157,7 +157,7 @@ func TestIntegrationPostgresPlatformLogSubscriptionsRejectEscalation(t *testing.
 			if _, err := f.n.Save(context.Background(), f.target.ID, input); !errors.Is(err, ErrLogInvalid) {
 				t.Fatalf("platform escalation subscription accepted: %v", err)
 			}
-			var target models.PlatformLogDestination
+			var target models.PlatformAlertDestination
 			if err := f.db.First(&target, f.target.ID).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -203,8 +203,8 @@ func TestIntegrationPostgresPlatformLogSubscriptionConvergence(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, f := range []*logRetryFixture{full, only, current, obsolete, history} {
-			var target models.PlatformLogDestination
-			var delivery models.PlatformLogDelivery
+			var target models.PlatformAlertDestination
+			var delivery models.PlatformAlertDelivery
 			if err := f.db.First(&target, f.target.ID).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -239,7 +239,7 @@ func TestIntegrationPostgresPlatformLogSubscriptionConvergence(t *testing.T) {
 				t.Fatal("completed or cancelled delivery retains retry credentials")
 			}
 			if f == obsolete || f == history {
-				var event models.PlatformLogEvent
+				var event models.PlatformAlertEvent
 				if err := f.db.First(&event, "id=?", f.event.ID).Error; err != nil || event.Type != "escalated" || !event.OccurredAt.Equal(f.event.OccurredAt) {
 					t.Fatal("immutable historical event was rewritten")
 				}

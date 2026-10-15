@@ -13,7 +13,6 @@ import (
 	commonconfig "github.com/addp/common/config"
 	"github.com/addp/common/logpipeline"
 	"github.com/addp/monitor/internal/models"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -31,11 +30,11 @@ type LogPipelineService struct {
 	db              *gorm.DB
 	node            string
 	registry        logModuleLister
-	notifications   *PlatformLogNotifications
+	notifications   *PlatformAlertNotifications
 	deploymentState string
 }
 
-func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformLogNotifications) *LogPipelineService {
+func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformAlertNotifications) *LogPipelineService {
 	return &LogPipelineService{db: db, node: node, registry: registry, notifications: n, deploymentState: commonconfig.RuntimeLogDeploymentState()}
 }
 func (s *LogPipelineService) Initialize(ctx context.Context, now time.Time) error {
@@ -180,43 +179,15 @@ func (s *LogPipelineService) reconcile(tx *gorm.DB, node models.LogPipelineNode,
 	sort.Strings(keys)
 	for _, signal := range keys {
 		state := node.Signals[signal]
-		var incident models.PlatformLogIncident
-		err := tx.Where("node=? AND signal=? AND status IN ?", node.Node, signal, []string{"open", "acknowledged"}).Take(&incident).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		verdict := PlatformAlertNormal
+		if state.Active {
+			verdict = PlatformAlertRisk
+		}
+		if err := reconcilePlatformAlert(tx, s.notifications, PlatformAlertEvaluation{
+			Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver,
+			SubjectID: node.Node, Signal: signal, InstanceID: state.InstanceID, Severity: state.Severity, Verdict: verdict,
+		}, now); err != nil {
 			return err
-		}
-		event := ""
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if !state.Active {
-				continue
-			}
-			incident = models.PlatformLogIncident{Version: 1, Node: node.Node, Signal: signal, InstanceID: state.InstanceID, Severity: state.Severity, Status: "open", OpenedAt: now, LastObservedAt: now}
-			if err = tx.Create(&incident).Error; err != nil {
-				return err
-			}
-			event = "opened"
-		} else {
-			incident.Version++
-			incident.LastObservedAt = now
-			if !state.Active {
-				incident.Status = "resolved"
-				incident.ResolvedAt = &now
-				event = "resolved"
-			}
-			if err = tx.Save(&incident).Error; err != nil {
-				return err
-			}
-		}
-		if event != "" {
-			e := models.PlatformLogEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: event, Severity: incident.Severity, OccurredAt: now}
-			if err = tx.Create(&e).Error; err != nil {
-				return err
-			}
-			if s.notifications != nil {
-				if err = s.notifications.RecordTx(tx, e, incident, now); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	return nil
@@ -265,16 +236,16 @@ func (s *LogPipelineService) CheckStale(ctx context.Context, now time.Time) erro
 }
 
 type LogPipelineSummary struct {
-	DeploymentState string                       `json:"deployment_state" enums:"enabled,disabled,unconfigured"`
-	Configured      bool                         `json:"configured"`
-	Health          string                       `json:"health"`
-	Node            *models.LogPipelineNode      `json:"node,omitempty"`
-	Incidents       []models.PlatformLogIncident `json:"incidents"`
-	Notifications   string                       `json:"notifications"`
+	DeploymentState string                  `json:"deployment_state" enums:"enabled,disabled,unconfigured"`
+	Configured      bool                    `json:"configured"`
+	Health          string                  `json:"health"`
+	Node            *models.LogPipelineNode `json:"node,omitempty"`
+	Incidents       []LogIncidentView       `json:"incidents"`
+	Notifications   string                  `json:"notifications"`
 }
 
 func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPipelineSummary, error) {
-	result := LogPipelineSummary{DeploymentState: s.deploymentState, Configured: s.node != "", Health: "unknown", Notifications: "unconfigured", Incidents: []models.PlatformLogIncident{}}
+	result := LogPipelineSummary{DeploymentState: s.deploymentState, Configured: s.node != "", Health: "unknown", Notifications: "unconfigured", Incidents: []LogIncidentView{}}
 	if s.node == "" {
 		return result, nil
 	}
@@ -290,7 +261,7 @@ func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPip
 		return result, err
 	}
 	result.Node = &node
-	if err = s.db.WithContext(ctx).Where("node=? AND status IN ?", s.node, []string{"open", "acknowledged"}).Order("opened_at DESC,id DESC").Find(&result.Incidents).Error; err != nil {
+	if err = s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{}).Select(logIncidentColumns).Where("category=? AND subject_kind=? AND subject_id=? AND status IN ?", models.PlatformAlertCategoryLog, models.PlatformAlertSubjectLogObserver, s.node, []string{"open", "acknowledged"}).Order("opened_at DESC,id DESC").Scan(&result.Incidents).Error; err != nil {
 		return result, err
 	}
 	if s.deploymentState == "enabled" {
@@ -315,13 +286,13 @@ func logPipelineHealth(node models.LogPipelineNode, p models.LogPipelinePolicy, 
 	return "unknown"
 }
 
-func (s *LogPipelineService) ManageIncident(ctx context.Context, id uint, version uint64, action string, until *time.Time, principal int64, now time.Time) (models.PlatformLogIncident, error) {
-	var i models.PlatformLogIncident
+func (s *LogPipelineService) ManageIncident(ctx context.Context, id uint, version uint64, action string, until *time.Time, principal int64, now time.Time) (LogIncidentView, error) {
+	var i models.PlatformAlertIncident
 	if version == 0 || principal <= 0 || (action != "acknowledge" && action != "suppress") || (action == "suppress" && (until == nil || !until.After(now) || until.After(now.Add(24*time.Hour)))) {
-		return i, ErrLogInvalid
+		return logIncidentView(i), ErrLogInvalid
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND node=?", id, s.node).Take(&i).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND category=? AND subject_kind=? AND subject_id=?", id, models.PlatformAlertCategoryLog, models.PlatformAlertSubjectLogObserver, s.node).Take(&i).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound
 		} else if err != nil {
 			return err
@@ -342,7 +313,7 @@ func (s *LogPipelineService) ManageIncident(ctx context.Context, id uint, versio
 		}
 		return tx.Save(&i).Error
 	})
-	return i, err
+	return logIncidentView(i), err
 }
 func (s *LogPipelineService) Run(ctx context.Context) {
 	if s.deploymentState != "enabled" {

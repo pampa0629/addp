@@ -9,6 +9,9 @@ func EnsureMonitorStore(db *gorm.DB) error {
 	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS monitor").Error; err != nil {
 		return err
 	}
+	if err := migratePlatformAlertStore(db, "monitor"); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(
 		&monitorModels.AlertIncident{},
 		&monitorModels.AlertEvent{},
@@ -21,16 +24,16 @@ func EnsureMonitorStore(db *gorm.DB) error {
 		&monitorModels.ResourceQueryPolicy{}, &monitorModels.RuntimePolicy{}, &monitorModels.MonitoringTarget{},
 		&monitorModels.SMTPRelay{},
 		&monitorModels.LogPipelinePolicy{}, &monitorModels.LogPipelineNode{}, &monitorModels.LogObserverBoot{},
-		&monitorModels.PlatformLogIncident{}, &monitorModels.PlatformLogEvent{}, &monitorModels.PlatformLogDestination{}, &monitorModels.PlatformLogDelivery{},
+		&monitorModels.PlatformAlertIncident{}, &monitorModels.PlatformAlertEvent{}, &monitorModels.PlatformAlertDestination{}, &monitorModels.PlatformAlertDelivery{},
 	); err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_platform_log_active
- ON monitor.platform_log_incidents(node, signal) WHERE status IN ('open','acknowledged')`).Error; err != nil {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_platform_alert_active
+ ON monitor.platform_alert_incidents(category, subject_kind, subject_id, signal) WHERE status IN ('open','acknowledged')`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_monitor_platform_log_due
- ON monitor.platform_log_deliveries(next_attempt_at, id) WHERE status IN ('pending','delivering')`).Error; err != nil {
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_monitor_platform_alert_due
+ ON monitor.platform_alert_deliveries(next_attempt_at, id) WHERE status IN ('pending','delivering')`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_active_alert_fingerprint
@@ -64,17 +67,17 @@ func EnsureMonitorStore(db *gorm.DB) error {
 	// Converge platform subscriptions and pending deliveries atomically. Historical
 	// events and completed deliveries remain immutable; tenant alerts are separate.
 	return db.Exec(`WITH changed AS (
- UPDATE monitor.platform_log_destinations
+ UPDATE monitor.platform_alert_destinations
  SET event_types = event_types - 'escalated',
      enabled = enabled AND jsonb_array_length(event_types - 'escalated') > 0,
      version = version + 1, updated_at = clock_timestamp()
  WHERE event_types @> '["escalated"]'::jsonb
  RETURNING id, enabled
 )
-UPDATE monitor.platform_log_deliveries
+UPDATE monitor.platform_alert_deliveries
  SET status = 'cancelled', secret_ciphertext = '', next_attempt_at = NULL
  WHERE status = 'pending' AND (
    destination_id IN (SELECT id FROM changed WHERE NOT enabled)
-   OR event_id IN (SELECT id FROM monitor.platform_log_events WHERE type = 'escalated')
+   OR event_id IN (SELECT id FROM monitor.platform_alert_events WHERE type = 'escalated')
  )`).Error
 }

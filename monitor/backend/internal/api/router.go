@@ -31,7 +31,7 @@ func SetupRouter(
 	systemClient *commonClient.SystemServiceClient,
 	lifecycle *modulelifecycle.Controller,
 	logPipeline *service.LogPipelineService,
-	logNotifications *service.PlatformLogNotifications,
+	logNotifications *service.PlatformAlertNotifications,
 	runtimeHealthService *service.RuntimeHealthService,
 	monitoringTargets *service.MonitoringTargetService,
 	resourceObservations *service.ResourceObservationService,
