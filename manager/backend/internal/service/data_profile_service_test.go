@@ -164,9 +164,9 @@ func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *t
 	executions := &dataProfileServiceTestExecutionStore{}
 	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{ReadSet: profileReadSetForTest(t)}, onSample: func() {
 		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
+			SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
 			Target:    dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"},
-			ValidFrom: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(time.Hour),
+			ValidFrom: time.Now().Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(time.Now().Add(time.Hour)),
 		}
 		if err := projection.Seal(); err != nil {
 			t.Fatal(err)
@@ -190,7 +190,7 @@ func TestDataProfileServiceRevalidatesExpiredRulesAtCommit(t *testing.T) {
 	executions := &dataProfileServiceTestExecutionStore{}
 	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{Fields: fields, ReadSet: profileReadSetForTest(t)}, onSample: func() {
 		// Same checkpoint; the rule itself expires while work is in flight.
-		gate.result.Projections[0].ExpiresAt = time.Now().Add(-time.Second)
+		gate.result.Projections[0].ExpiresAt = dataprotection.ProjectionDeadline(time.Now().Add(-time.Second))
 		if err := gate.result.Projections[0].Seal(); err != nil {
 			t.Fatal(err)
 		}
@@ -1148,14 +1148,14 @@ func managedDataProfileServiceTestGate(t *testing.T, itemFingerprint string, fie
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: itemFingerprint},
 		SourceSnapshotHash: snapshotHash,
 		Rules: []dataprotection.Rule{{
 			Action: "profile", Component: component, Decision: dataprotection.Decision{Effect: effect, InvalidValueEffect: effect},
 		}},
-		ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

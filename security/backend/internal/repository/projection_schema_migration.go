@@ -10,22 +10,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// migrateProtectionProjectionSchemaV2 is a one-way data migration. It rewrites
-// every persisted non-v2 payload in place so existing feed cursors and sequence
+// migrateProtectionProjectionSchemaV3 is a one-way data migration. It rewrites
+// every persisted non-v3 payload in place so existing feed cursors and sequence
 // ordering remain valid. The shared converter owns legacy protocol semantics;
 // Security only orchestrates migration of its central persisted facts.
-func migrateProtectionProjectionSchemaV2(db *gorm.DB) error {
+func migrateProtectionProjectionSchemaV3(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		payloadVersionPredicate := "COALESCE(json_extract(projection_payload, '$.schema_version'), '') <> ?"
 		if tx.Dialector.Name() == "postgres" {
 			payloadVersionPredicate = "COALESCE(projection_payload ->> 'schema_version', '') <> ?"
 		}
 		var records []models.ProtectionProjectionRecord
-		if err := tx.Where(payloadVersionPredicate, dataprotection.ProjectionSchemaV2).Find(&records).Error; err != nil {
+		if err := tx.Where(payloadVersionPredicate, dataprotection.ProjectionSchemaV3).Find(&records).Error; err != nil {
 			return fmt.Errorf("find non-current protection projection records: %w", err)
 		}
 		for _, record := range records {
-			payload, _, err := migratePersistedProjectionPayloadV2(record.ProjectionPayload)
+			payload, _, err := migratePersistedProjectionPayloadV3(record.ProjectionPayload)
 			if err != nil {
 				return fmt.Errorf("migrate protection projection record %s: %w", record.ID, err)
 			}
@@ -35,11 +35,11 @@ func migrateProtectionProjectionSchemaV2(db *gorm.DB) error {
 		}
 
 		var changes []models.ProtectionProjectionChange
-		if err := tx.Where("projection_payload IS NOT NULL AND "+payloadVersionPredicate, dataprotection.ProjectionSchemaV2).Find(&changes).Error; err != nil {
+		if err := tx.Where("projection_payload IS NOT NULL AND "+payloadVersionPredicate, dataprotection.ProjectionSchemaV3).Find(&changes).Error; err != nil {
 			return fmt.Errorf("find non-current protection projection changes: %w", err)
 		}
 		for _, change := range changes {
-			payload, _, err := migratePersistedProjectionPayloadV2(*change.ProjectionPayload)
+			payload, _, err := migratePersistedProjectionPayloadV3(*change.ProjectionPayload)
 			if err != nil {
 				return fmt.Errorf("migrate protection projection change %s: %w", change.ChangeID, err)
 			}
@@ -51,8 +51,8 @@ func migrateProtectionProjectionSchemaV2(db *gorm.DB) error {
 	})
 }
 
-func migratePersistedProjectionPayloadV2(payload string) (string, bool, error) {
-	projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV2([]byte(payload))
+func migratePersistedProjectionPayloadV3(payload string) (string, bool, error) {
+	projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV3([]byte(payload))
 	if err != nil {
 		return "", false, err
 	}

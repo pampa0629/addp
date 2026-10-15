@@ -459,7 +459,7 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2,
+		SchemaVersion: dataprotection.ProjectionSchemaV3,
 		ProjectionID:  "outdoor-phone-manager",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "manager",
@@ -486,7 +486,7 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 				Decision: dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress},
 			},
 		},
-		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

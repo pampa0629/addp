@@ -4001,6 +4001,110 @@ const docTemplate = `{
                 ]
             }
         },
+        "/protection-enrollments/{id}/validity": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "资源级长期有效或指定未来截止时间；同事务递增版本并同步四 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish four owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Enrollment"
+                ],
+                "summary": "修改资源保护有效期 | Update resource protection validity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "纳管 ID | Enrollment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "资源版本和有效期 | Resource version and validity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.UpdateProtectionValidityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.enrollment.update"
+                ]
+            }
+        },
         "/protection-exemptions": {
             "get": {
                 "security": [
@@ -5643,8 +5747,18 @@ const docTemplate = `{
                 "locator"
             ],
             "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
                 "locator": {
                     "type": "string"
+                },
+                "validity_mode": {
+                    "type": "string",
+                    "enum": [
+                        "permanent",
+                        "until"
+                    ]
                 }
             }
         },
@@ -6112,6 +6226,9 @@ const docTemplate = `{
                 "projection_acknowledged": {
                     "type": "boolean"
                 },
+                "protection_expires_at": {
+                    "type": "string"
+                },
                 "requestable": {
                     "type": "boolean"
                 },
@@ -6294,6 +6411,9 @@ const docTemplate = `{
                 "discovery_summary": {
                     "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionDiscoverySummary"
                 },
+                "expires_at": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -6342,6 +6462,20 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "validity_mode": {
+                    "type": "string",
+                    "enum": [
+                        "permanent",
+                        "until"
+                    ]
+                },
+                "validity_updated_at": {
+                    "type": "string"
+                },
+                "validity_updated_by": {
+                    "type": "string",
+                    "example": "0"
                 },
                 "version": {
                     "type": "integer"
@@ -6455,6 +6589,9 @@ const docTemplate = `{
                 },
                 "expires_at": {
                     "type": "string"
+                },
+                "expiring_soon": {
+                    "type": "boolean"
                 },
                 "projection_id": {
                     "type": "string"
@@ -7063,6 +7200,28 @@ const docTemplate = `{
                 "sensitive_data_type_id": {
                     "type": "string",
                     "example": "0"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.UpdateProtectionValidityRequest": {
+            "type": "object",
+            "required": [
+                "validity_mode",
+                "version"
+            ],
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "validity_mode": {
+                    "type": "string",
+                    "enum": [
+                        "permanent",
+                        "until"
+                    ]
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

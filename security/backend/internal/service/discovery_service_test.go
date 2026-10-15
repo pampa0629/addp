@@ -503,7 +503,7 @@ func TestDiscoveryQualityUsesLatestWorkloadAndDeduplicatedHumanEvidence(t *testi
 	for sequence, owner := range allRequiredProtectionOwners() {
 		record := models.ProtectionProjectionRecord{
 			ID: uuid.NewString(), TenantID: 7, EnrollmentID: enrollmentID, ConsumerOwner: owner,
-			Revision: "1", State: dataprotection.ProjectionStateEnrolling, ProjectionPayload: `{"rules":[]}`,
+			Revision: "1", State: dataprotection.ProjectionStateEnrolling, ProjectionPayload: `{"rules":[],"expires_at":null}`,
 			PublishedSequence: int64(sequence + 1), CreatedAt: now, UpdatedAt: now,
 		}
 		if err := db.Create(&record).Error; err != nil {

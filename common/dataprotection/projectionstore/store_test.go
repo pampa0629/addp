@@ -223,7 +223,7 @@ func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 2 || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
+	if len(versions) != 3 || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("migration versions = %#v", versions)
 	}
 	if err := db.Exec("INSERT INTO "+store.migrationsTable+" (version) VALUES (?)", "999_unknown").Error; err != nil {
@@ -243,7 +243,7 @@ func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.
 	now := time.Now().UTC()
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item"}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-legacy-mask", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-legacy-mask", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             target,
 		SourceSnapshotHash: "sha256:snapshot",
@@ -253,7 +253,7 @@ func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, InvalidValueEffect: dataprotection.EffectSuppress,
 			Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 		}}},
-		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -292,7 +292,7 @@ func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.
 	if !gate.Managed || gate.Err != nil || len(gate.Projections) != 1 {
 		t.Fatalf("migrated gate = %#v", gate)
 	}
-	if gate.Projections[0].SchemaVersion != dataprotection.ProjectionSchemaV2 {
+	if gate.Projections[0].SchemaVersion != dataprotection.ProjectionSchemaV3 {
 		t.Fatalf("migrated owner projection schema = %q", gate.Projections[0].SchemaVersion)
 	}
 	decision := gate.Projections[0].Rules[0].Decision
@@ -310,7 +310,7 @@ func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
 	now := time.Now().UTC()
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:schema-only-item"}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-legacy-schema-only", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-legacy-schema-only", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             target,
 		SourceSnapshotHash: "sha256:schema-only-snapshot",
@@ -319,7 +319,7 @@ func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
 		}, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress,
 		}}},
-		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -356,7 +356,7 @@ func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
 		t.Fatalf("migrated gate = %#v", gate)
 	}
 	migrated := gate.Projections[0]
-	if migrated.SchemaVersion != dataprotection.ProjectionSchemaV2 || migrated.Checksum == legacyChecksum {
+	if migrated.SchemaVersion != dataprotection.ProjectionSchemaV3 || migrated.Checksum == legacyChecksum {
 		t.Fatalf("schema-only migrated projection schema=%q checksum=%q", migrated.SchemaVersion, migrated.Checksum)
 	}
 	if err := migrated.Validate(time.Time{}); err != nil {
@@ -396,7 +396,7 @@ func enrollingProjection(t *testing.T, owner string, target dataprotection.Resou
 	t.Helper()
 	now := time.Now().UTC().Add(-time.Minute)
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2,
+		SchemaVersion: dataprotection.ProjectionSchemaV3,
 		ProjectionID:  "projection-1",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: owner,
@@ -404,7 +404,7 @@ func enrollingProjection(t *testing.T, owner string, target dataprotection.Resou
 		Target:        target,
 		Rules:         []dataprotection.Rule{},
 		ValidFrom:     now,
-		ExpiresAt:     now.Add(time.Hour),
+		ExpiresAt:     dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -435,5 +435,45 @@ func TestOpenDoesNotMigrateMissingProjectionStore(t *testing.T) {
 	}
 	if _, err := Open(db, "manager", "manager", nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBoundedProjectionMigrationPreservesOwnerDeadline(t *testing.T) {
+	store, err := Migrate(openProjectionStoreDB(t), "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBoundedProjectionMigration(t, store)
+}
+
+func assertBoundedProjectionMigration(t *testing.T, store *Store) {
+	t.Helper()
+	now := time.Now().UTC()
+	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "validity-migration"}
+	projection := enrollingProjection(t, store.consumerOwner, target)
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "migration-source", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "preserve-validity-cursor"}, now); err != nil {
+		t.Fatal(err)
+	}
+	projection.SchemaVersion = "addp.protection_projection/v2"
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(projection)
+	if err := store.db.Table(store.entriesTable).Where("tenant_id = ? AND projection_id = ?", 7, projection.ProjectionID).Update("projection_payload", string(payload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Exec("DELETE FROM "+store.migrationsTable+" WHERE version = ?", "003_projection_validity_v3").Error; err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := Migrate(store.db, store.schema, store.consumerOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := migrated.Gate(7, target, now)
+	if len(gate.Projections) != 1 || gate.Projections[0].SchemaVersion != dataprotection.ProjectionSchemaV3 || gate.Projections[0].ExpiresAt == nil || !gate.Projections[0].ExpiresAt.Equal(*projection.ExpiresAt) || gate.Projections[0].Revision != projection.Revision {
+		t.Fatal("owner migration changed deadline or revision")
+	}
+	if cursor, err := migrated.CurrentCursor(t.Context(), 7); err != nil || cursor != "preserve-validity-cursor" {
+		t.Fatal("migration changed cursor")
 	}
 }

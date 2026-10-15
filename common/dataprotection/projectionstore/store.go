@@ -361,7 +361,10 @@ func (s *Store) applyChange(tx *gorm.DB, tenantID int64, change dataprotection.P
 			return errors.New("invalid protection projection upsert change")
 		}
 		validationTime := now
-		if change.Projection.State == dataprotection.ProjectionStateEnrolling {
+		// Delayed feeds must retain managed deny facts and keep consuming newer
+		// revisions. Current-time validity is enforced again by every read/output.
+		if change.Projection.State == dataprotection.ProjectionStateEnrolling ||
+			(change.Projection.ExpiresAt != nil && !now.Before(*change.Projection.ExpiresAt)) {
 			validationTime = time.Time{}
 		}
 		if err := change.Projection.Validate(validationTime); err != nil {

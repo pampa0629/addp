@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ProjectionSchemaV2 = "addp.protection_projection/v2"
+	ProjectionSchemaV3 = "addp.protection_projection/v3"
 
 	ProjectionStateEnrolling = "enrolling"
 	ProjectionStateActive    = "active"
@@ -88,12 +88,12 @@ type Projection struct {
 	SourceSnapshotHash string            `json:"source_snapshot_hash"`
 	Rules              []Rule            `json:"rules"`
 	ValidFrom          time.Time         `json:"valid_from"`
-	ExpiresAt          time.Time         `json:"expires_at"`
+	ExpiresAt          *time.Time        `json:"expires_at"`
 	Checksum           string            `json:"checksum"`
 }
 
 func (p Projection) Validate(now time.Time) error {
-	if p.SchemaVersion != ProjectionSchemaV2 {
+	if p.SchemaVersion != ProjectionSchemaV3 {
 		return errors.New("unsupported protection projection schema")
 	}
 	if strings.TrimSpace(p.ProjectionID) == "" || !revisionPattern.MatchString(p.Revision) {
@@ -108,10 +108,10 @@ func (p Projection) Validate(now time.Time) error {
 	if err := p.Target.Validate(); err != nil {
 		return err
 	}
-	if p.ValidFrom.IsZero() || p.ExpiresAt.IsZero() || !p.ExpiresAt.After(p.ValidFrom) {
+	if p.ValidFrom.IsZero() || (p.ExpiresAt != nil && (p.ExpiresAt.IsZero() || !p.ExpiresAt.After(p.ValidFrom))) {
 		return errors.New("invalid protection projection validity interval")
 	}
-	if !now.IsZero() && (now.Before(p.ValidFrom) || !now.Before(p.ExpiresAt)) {
+	if !now.IsZero() && (now.Before(p.ValidFrom) || (p.ExpiresAt != nil && !now.Before(*p.ExpiresAt))) {
 		return errors.New("protection projection is not currently valid")
 	}
 	if p.State == ProjectionStateEnrolling {
@@ -132,7 +132,7 @@ func (p Projection) Validate(now time.Time) error {
 			return fmt.Errorf("invalid protection rule %d: %w", index, err)
 		}
 		for authorizationIndex, authorization := range rule.Authorizations {
-			if authorization.ValidFrom.Before(p.ValidFrom) || authorization.ValidUntil.After(p.ExpiresAt) {
+			if authorization.ValidFrom.Before(p.ValidFrom) || (p.ExpiresAt != nil && authorization.ValidUntil.After(*p.ExpiresAt)) {
 				return fmt.Errorf("invalid protection rule %d authorization %d: validity exceeds projection validity", index, authorizationIndex)
 			}
 		}
@@ -296,4 +296,26 @@ func effectRank(effect string) int {
 	default:
 		return -1
 	}
+}
+
+// ProjectionDeadline returns a deadline value for explicitly bounded projections.
+func ProjectionDeadline(value time.Time) *time.Time { value = value.UTC(); return &value }
+
+// UnmarshalJSON requires an explicit deadline, including null for permanent rules.
+// Missing deadline data must never silently become a permanent projection.
+func (p *Projection) UnmarshalJSON(data []byte) error {
+	type plain Projection
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if _, present := fields["expires_at"]; !present {
+		return errors.New("protection projection expires_at is required")
+	}
+	var result plain
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	*p = Projection(result)
+	return nil
 }

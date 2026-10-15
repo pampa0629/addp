@@ -1,7 +1,9 @@
 package dataprotection
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -163,7 +165,7 @@ func TestProjectionRejectsAllowDefaultAndInvalidAuthorization(t *testing.T) {
 
 func testProjection(now time.Time) Projection {
 	return Projection{
-		SchemaVersion: ProjectionSchemaV2,
+		SchemaVersion: ProjectionSchemaV3,
 		ProjectionID:  "projection-1",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "manager",
@@ -190,6 +192,76 @@ func testProjection(now time.Time) Projection {
 			},
 		}},
 		ValidFrom: now,
-		ExpiresAt: now.Add(24 * time.Hour),
+		ExpiresAt: ProjectionDeadline(now.Add(24 * time.Hour)),
+	}
+}
+
+func TestPermanentProjectionRequiresExplicitNullAndKeepsTemporaryAuthorizationBounded(t *testing.T) {
+	now := time.Now().UTC()
+	projection := testProjection(now)
+	projection.ExpiresAt = nil
+	projection.Rules[0].Authorizations = []TemporaryAuthorization{{Subject: SubjectReference{Type: "user", ID: "41"}, Effect: EffectAllow, ValidFrom: now, ValidUntil: now.Add(time.Hour)}}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projection.Validate(now.AddDate(10, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"expires_at":null`) {
+		t.Fatal("permanent projection must encode an explicit null")
+	}
+	var decoded Projection
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoded.Validate(now); err != nil {
+		t.Fatal(err)
+	}
+	if decision := projection.Rules[0].EffectiveDecision(SubjectReference{Type: "user", ID: "41"}, now.Add(2*time.Hour)); decision.Effect != EffectMask {
+		t.Fatal("permanent rules must not extend temporary plaintext authorization")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatal(err)
+	}
+	delete(fields, "expires_at")
+	missing, _ := json.Marshal(fields)
+	if json.Unmarshal(missing, &decoded) == nil {
+		t.Fatal("missing deadline silently became permanent")
+	}
+	projection.SchemaVersion = "addp.protection_projection/v2"
+	_ = projection.Seal()
+	if projection.Validate(now) == nil {
+		t.Fatal("runtime accepted the old protocol")
+	}
+	projection.SchemaVersion = ProjectionSchemaV3
+	projection.ExpiresAt = ProjectionDeadline(time.Time{})
+	_ = projection.Seal()
+	if projection.Validate(now) == nil {
+		t.Fatal("zero deadline treated as permanent")
+	}
+}
+
+func TestMigrateV2ProjectionPreservesDeadlineAndRejectsCorruptPayload(t *testing.T) {
+	projection := testProjection(time.Now().UTC())
+	projection.SchemaVersion = "addp.protection_projection/v2"
+	_ = projection.Seal()
+	payload, _ := json.Marshal(projection)
+	migrated, changed, err := MigrateProjectionPayloadV3(payload)
+	if err != nil || !changed || migrated.ExpiresAt == nil || !migrated.ExpiresAt.Equal(*projection.ExpiresAt) || migrated.Revision != projection.Revision {
+		t.Fatalf("migration changed validity: %#v %v", migrated, err)
+	}
+	_ = migrated.Seal()
+	if err := migrated.Validate(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	projection.Checksum = "sha256:corrupt"
+	payload, _ = json.Marshal(projection)
+	if _, _, err := MigrateProjectionPayloadV3(payload); err == nil {
+		t.Fatal("corrupt persisted projection accepted")
 	}
 }

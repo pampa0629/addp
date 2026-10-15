@@ -8,6 +8,8 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
   const root = { id: rootLocator, locator: rootLocator, label: 'Security test engine', type: 'server', hasChildren: true, children: [item] }
   const auth = structuredClone(managerAuthContext)
   auth.authorization.role_assignments[0].permissions.push('security.protection_access_request.create', 'security.protection_access_request.read')
+  const protectionDeadline = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+  const submitted = []
   let stage = 'pending'
   let previews = 0
   let targets = 0
@@ -30,13 +32,17 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
         rows: [{ id: 1, phone: stage === 'synchronized' ? '13812345678' : '138****5678' }]
       } })
     }
+    if (path.endsWith('/security/protection-access-requests') && route.request().method() === 'POST') {
+      submitted.push(route.request().postDataJSON())
+      return json(route, { id: 'new-request' })
+    }
     if (path.endsWith('/security/protection-access-request-targets')) {
       targets += 1
       return json(route, { data: [{ assessment_id: 'phone-assessment', requestable: true,
         component: { key: 'phone', path: [{ name: 'phone', container: 'scalar' }], value_type: 'string' },
-        access_request: { id: 'request-1', state: stage === 'pending' ? 'pending' : 'approved' },
+        ...(stage === 'requestable' ? { protection_expires_at: protectionDeadline } : { access_request: { id: 'request-1', state: stage === 'pending' ? 'pending' : 'approved' } }),
         projection_acknowledged: stage === 'synchronized',
-        ...(stage === 'pending' ? {} : { active_exemption_id: 'grant-1' })
+        ...(['pending', 'requestable'].includes(stage) ? {} : { active_exemption_id: 'grant-1' })
       }] })
     }
     return json(route, {})
@@ -60,6 +66,17 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
   expect(previews).toBe(initialPreviews + 1)
   await page.clock.runFor(10_000)
   expect(previews).toBe(initialPreviews + 1)
+  // A bounded resource also caps the default plaintext request, rather than
+  // proposing the usual eight hours and waiting for a backend rejection.
+  stage = 'requestable'
+  await page.reload()
+  await page.getByRole('button', { name: '申请查看原值', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '申请查看字段原值', exact: true })
+  await expect(dialog.getByText(/申请期限不能超过资源保护截止时间/)).toBeVisible()
+  await dialog.locator('textarea').fill('核对资源期限内的联系方式')
+  await dialog.getByRole('button', { name: '提交申请', exact: true }).click()
+  await expect.poll(() => submitted.length).toBe(1)
+  expect(Date.parse(submitted[0].requested_expires_at)).toBe(Date.parse(protectionDeadline))
 })
 
 function json(route, body) {

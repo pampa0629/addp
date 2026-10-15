@@ -205,10 +205,14 @@ func policyDependencies(tx *gorm.DB, tenantID int64, assessmentID string) (model
 	if current.Conclusion != models.AssessmentConclusionSensitive {
 		return assessment, current, models.ProtectionEnrollment{}, models.ProtectionBaseline{}, commonapi.ErrConflict
 	}
-	var enrollment models.ProtectionEnrollment
-	if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, assessment.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
-		return assessment, current, enrollment, models.ProtectionBaseline{}, policyDBError(err)
+	enrollment, err := lockProtectionEnrollment(tx, tenantID, assessment.EnrollmentID)
+	if err != nil {
+		return assessment, current, enrollment, models.ProtectionBaseline{}, err
 	}
+	if enrollment.State != models.EnrollmentStateEnrolling && enrollment.State != models.EnrollmentStateActive {
+		return assessment, current, enrollment, models.ProtectionBaseline{}, commonapi.ErrNotFound
+	}
+
 	var baseline models.ProtectionBaseline
 	if err := tx.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ? AND enabled = ?", tenantID, current.SensitiveDataTypeID, current.SecurityGradeID, true).First(&baseline).Error; err != nil {
 		return assessment, current, enrollment, baseline, policyDBError(err)

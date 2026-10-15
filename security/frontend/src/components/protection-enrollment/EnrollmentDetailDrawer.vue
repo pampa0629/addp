@@ -43,6 +43,9 @@
         </el-descriptions>
       </template>
 
+      <h4>{{ t('security.enrollment.validity.settings') }}</h4>
+      <p>{{ detail.enrollment.expires_at ? detail.enrollment.expires_at && new Date(detail.enrollment.expires_at).toLocaleString() : t('security.enrollment.validity.permanent') }}</p>
+      <el-button v-if="canUpdateValidity && !['released', 'releasing'].includes(detail.enrollment.state)" @click="emit('validity', detail.enrollment)">{{ t('security.enrollment.validity.edit') }}</el-button>
       <h4>{{ t('security.enrollment.discovery') }}</h4>
       <el-alert
         :type="detail.discovery.alertType"
@@ -142,12 +145,14 @@ import EnrollmentExemptionSection from './EnrollmentExemptionSection.vue'
 import EnrollmentGovernanceSection from './EnrollmentGovernanceSection.vue'
 
 const props = defineProps({
+  canUpdateValidity: Boolean,
   modelValue: { type: Boolean, default: false },
   refreshState: { type: Object, required: true },
   presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits([
+  'validity',
   'update:modelValue',
   'update:findingsPage',
   'close',

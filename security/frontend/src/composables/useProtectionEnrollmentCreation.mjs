@@ -1,3 +1,4 @@
+import { protectionValidityPayload } from './useProtectionEnrollmentValidity.mjs'
 import { computed, nextTick, reactive, ref, unref } from 'vue'
 
 function resourceLocator(selection) {
@@ -24,7 +25,7 @@ export function useProtectionEnrollmentCreation({
 }) {
   const drawer = ref(false)
   const drawerRef = ref(null)
-  const form = reactive({ resource: null })
+  const form = reactive({ resource: null, validity_mode: 'permanent', expires_at: null })
   const selectedItem = ref(null)
   const selectedItemLoading = ref(false)
   const initialLocator = ref('')
@@ -61,6 +62,8 @@ export function useProtectionEnrollmentCreation({
     itemRequest += 1
     drawer.value = false
     form.resource = null
+    form.validity_mode = 'permanent'
+    form.expires_at = null
     selectedItem.value = null
     selectedItemLoading.value = false
     initialLocator.value = ''
@@ -165,7 +168,9 @@ export function useProtectionEnrollmentCreation({
     }
 
     try {
-      const result = await createEnrollment({ locator })
+      const validity = protectionValidityPayload(form)
+      if (!validity) { saving.value = false; onSubmitError(new Error(t('security.enrollment.validity.invalid'))); return { status: 'invalid' } }
+      const result = await createEnrollment({ locator, ...validity })
       if (request !== submitRequest || disposed) return { status: 'stale' }
       showCurrentCollection()
       await refreshCollection()

@@ -85,6 +85,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	protectionEnrollments := api.Group("/protection-enrollments")
 	protectionEnrollments.GET("", permission(securityauthorization.PermissionSecurityEnrollmentRead), enrollmentHandler.List)
 	protectionEnrollments.POST("", permission(securityauthorization.PermissionSecurityEnrollmentCreate), enrollmentHandler.Create)
+	protectionEnrollments.PUT("/:id/validity", permission(securityauthorization.PermissionSecurityEnrollmentUpdate), enrollmentHandler.UpdateValidity)
 	protectionEnrollments.GET("/:id", permission(securityauthorization.PermissionSecurityEnrollmentRead), enrollmentHandler.Get)
 	protectionEnrollments.POST("/:id/re-enrollments", permission(securityauthorization.PermissionSecurityEnrollmentCreate), enrollmentHandler.ReEnroll)
 	protectionEnrollments.GET("/:id/components", permission(securityauthorization.PermissionSecurityEnrollmentRead), permission(securityauthorization.PermissionSecurityAssessmentRead), assessmentHandler.ListComponents)

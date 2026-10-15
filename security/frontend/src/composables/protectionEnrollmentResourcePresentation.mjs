@@ -153,6 +153,7 @@ export function createProtectionEnrollmentResourcePresentation({
   }
 
   function ownerValidityPresentation(owner) {
+    if (owner.expiring_soon && owner.validity === 'valid') return { type: 'warning', label: t('security.enrollment.validity.expiringSoon') }
     const types = { valid: 'success', expired: 'danger', not_yet_valid: 'warning', released: 'info' }
     return { type: types[owner.validity] || 'info', label: Object.hasOwn(types, owner.validity)
       ? t(`security.enrollment.validity.${owner.validity}`) : t('security.common.notAvailable') }
@@ -170,7 +171,7 @@ export function createProtectionEnrollmentResourcePresentation({
         key: owner.consumer_owner,
         label: ownerLabel(owner.consumer_owner),
         state: ownerPresentation(enrollment, owner),
-        expiresAt: formatDateTime(owner.expires_at),
+        expiresAt: owner.expires_at === null ? t('security.enrollment.validity.permanent') : formatDateTime(owner.expires_at),
         validity: ownerValidityPresentation(owner)
       })),
       discovery: {
@@ -235,7 +236,7 @@ export function createProtectionEnrollmentResourcePresentation({
         effectDescription: ownerEffectDescription(owner),
         state: ownerPresentation(enrollment, owner),
         validFrom: formatDateTime(owner.valid_from),
-        expiresAt: formatDateTime(owner.expires_at),
+        expiresAt: owner.expires_at === null ? t('security.enrollment.validity.permanent') : formatDateTime(owner.expires_at),
         validity: ownerValidityPresentation(owner)
       })),
       facts: {

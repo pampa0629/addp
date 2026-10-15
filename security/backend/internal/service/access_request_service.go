@@ -150,7 +150,7 @@ func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targ
 		if rule.Action != action {
 			continue
 		}
-		target := models.ProtectionAccessTarget{Component: rule.Component, UnavailableReason: "formal_assessment_required", ProjectionAcknowledged: acknowledged}
+		target := models.ProtectionAccessTarget{ProtectionExpiresAt: enrollment.ProtectionExpiresAt, Component: rule.Component, UnavailableReason: "formal_assessment_required", ProjectionAcknowledged: acknowledged}
 		assessment, exists := assessmentByComponent[rule.Component.Key]
 		if !exists {
 			result = append(result, target)
@@ -184,6 +184,9 @@ func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targ
 			}
 			if current.AssessmentRevision == revision.Revision && now.Before(current.ExpiresAt) {
 				target.ActiveExemptionID, target.AuthorizedUntil = exemption.ID, &current.ExpiresAt
+				if enrollment.ProtectionExpiresAt != nil && current.ExpiresAt.After(*enrollment.ProtectionExpiresAt) {
+					target.AuthorizedUntil = enrollment.ProtectionExpiresAt
+				}
 			}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -212,6 +215,9 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		assessment, current, enrollment, _, err := policyDependencies(tx, tenantID, request.AssessmentID)
 		if err != nil {
 			return err
+		}
+		if enrollment.ProtectionExpiresAt != nil && request.RequestedExpiresAt.After(*enrollment.ProtectionExpiresAt) {
+			return commonapi.ErrBadRequest
 		}
 		binding := "tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?"
 		bindingValues := []any{tenantID, assessment.ID, request.ConsumerOwner, request.Action, "user", userIDString(userID)}
@@ -486,7 +492,7 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		}
 		state, exemptionID := models.ProtectionAccessRequestStateRejected, ""
 		if request.Decision == "approve" {
-			if !validExemptionDeadline(now, request.ExpiresAt) || request.ExpiresAt.After(row.RequestedExpiresAt) {
+			if !validExemptionDeadline(now, request.ExpiresAt) || request.ExpiresAt.After(row.RequestedExpiresAt) || (enrollment.ProtectionExpiresAt != nil && request.ExpiresAt.After(*enrollment.ProtectionExpiresAt)) {
 				return commonapi.ErrBadRequest
 			}
 			exemptionID, err = approveSubjectExemption(tx, row, reviewerID, request.ExpiresAt, request.Rationale, now)

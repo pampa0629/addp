@@ -54,12 +54,16 @@ func (s *EnrollmentService) Create(ctx context.Context, tenantID, userID int64, 
 		ResourceIdentity: commonmodels.GenerateItemFingerprint(locator.EngineID, fullName),
 	}
 	now := s.now().UTC()
+	deadline, err := protectionValidityDeadline(request.ValidityMode, request.ExpiresAt, now, true)
+	if err != nil {
+		return nil, err
+	}
 	var enrollment models.ProtectionEnrollment
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var createErr error
 		enrollment, createErr = createProtectionEnrollment(tx, tenantID, userID, target, models.ProtectionTargetSnapshot{
 			EngineID: locator.EngineID, ItemType: itemType, FullName: fullName,
-		}, now)
+		}, now, deadline)
 		return createErr
 	})
 	if err != nil {
@@ -102,7 +106,7 @@ func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64
 			return ErrLiveEnrollmentAlreadyExists
 		}
 		var createErr error
-		created, createErr = createProtectionEnrollment(tx, tenantID, userID, source.Target(), source.TargetSnapshot(), now)
+		created, createErr = createProtectionEnrollment(tx, tenantID, userID, source.Target(), source.TargetSnapshot(), now, nil)
 		if errors.Is(createErr, commonapi.ErrConflict) {
 			return ErrLiveEnrollmentAlreadyExists
 		}
@@ -133,9 +137,10 @@ func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64
 	}, nil
 }
 
-func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target dataprotection.ResourceReference, snapshot models.ProtectionTargetSnapshot, now time.Time) (models.ProtectionEnrollment, error) {
+func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target dataprotection.ResourceReference, snapshot models.ProtectionTargetSnapshot, now time.Time, deadline *time.Time) (models.ProtectionEnrollment, error) {
 	enrollment := models.ProtectionEnrollment{
-		ID: uuid.NewString(), TenantID: tenantID,
+		ProtectionExpiresAt: deadline,
+		ID:                  uuid.NewString(), TenantID: tenantID,
 		TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
 		TargetIdentity: target.ResourceIdentity, TargetEngineID: snapshot.EngineID,
 		TargetItemType: snapshot.ItemType, TargetFullName: snapshot.FullName,
@@ -150,11 +155,11 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 	}
 	for _, owner := range allRequiredProtectionOwners() {
 		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV2,
+			SchemaVersion: dataprotection.ProjectionSchemaV3,
 			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
 			ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
 			Target: target, Rules: []dataprotection.Rule{},
-			ValidFrom: now, ExpiresAt: now.Add(24 * time.Hour),
+			ValidFrom: now, ExpiresAt: enrollment.ProtectionExpiresAt,
 		}
 		if err := projection.Seal(); err != nil {
 			return models.ProtectionEnrollment{}, err
@@ -626,6 +631,7 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 		}
 		responses = append(responses, models.ProtectionEnrollmentResponse{
 			ID: enrollment.ID, Target: enrollment.Target(), TargetSnapshot: enrollment.TargetSnapshot(), State: enrollment.State,
+			ValidityMode: enrollment.ValidityMode(), ExpiresAt: enrollment.ProtectionExpiresAt, ValidityUpdatedBy: enrollment.ValidityUpdatedBy, ValidityUpdatedAt: enrollment.ValidityUpdatedAt,
 			Version: enrollment.Version, ReleaseReason: enrollment.ReleaseReason, ReleaseBasis: enrollment.ReleaseBasis,
 			ReleaseRequestedBy: enrollment.ReleaseRequestedBy, ReleaseRequestedAt: enrollment.ReleaseRequestedAt,
 			ReleaseSourceSnapshotHash: enrollment.ReleaseSourceSnapshotHash,
@@ -654,7 +660,7 @@ func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []mo
 		}
 		rules := projectionRuleSummaries(payload, now)
 		item := models.ProtectionOwnerProgress{
-			ValidFrom: payload.ValidFrom, ExpiresAt: payload.ExpiresAt, Validity: projectionTimeValidity(enrollment.State, payload, now),
+			ValidFrom: payload.ValidFrom, ExpiresAt: payload.ExpiresAt, Validity: projectionTimeValidity(enrollment.State, payload, now), ExpiringSoon: payload.ExpiresAt != nil && now.Before(*payload.ExpiresAt) && payload.ExpiresAt.Sub(now) <= 7*24*time.Hour,
 			ConsumerOwner: projection.ConsumerOwner, ProjectionID: projection.ID,
 			Revision: projection.Revision, ProjectionState: projection.State, Rules: rules,
 			PublishedCursor: encodeProjectionCursor(requiredSequence),
@@ -673,7 +679,7 @@ func projectionTimeValidity(state string, projection dataprotection.Projection, 
 	if state == models.EnrollmentStateReleased {
 		return "released"
 	}
-	if !now.Before(projection.ExpiresAt) {
+	if projection.ExpiresAt != nil && !now.Before(*projection.ExpiresAt) {
 		return "expired"
 	}
 	if now.Before(projection.ValidFrom) {
@@ -749,4 +755,100 @@ func decodeProjectionCursor(cursor string) (int64, error) {
 		return 0, ErrProjectionCursorConflict
 	}
 	return sequence, nil
+}
+
+func protectionValidityDeadline(mode string, deadline *time.Time, now time.Time, creating bool) (*time.Time, error) {
+	if creating && mode == "" {
+		mode = "permanent"
+	}
+	switch mode {
+	case "permanent":
+		if deadline != nil {
+			return nil, commonapi.ErrBadRequest
+		}
+		return nil, nil
+	case "until":
+		if deadline == nil || !deadline.After(now) || deadline.Year() > 9999 {
+			return nil, commonapi.ErrBadRequest
+		}
+		value := deadline.UTC().Truncate(time.Microsecond)
+		if !value.After(now) {
+			return nil, commonapi.ErrBadRequest
+		}
+		return &value, nil
+	default:
+		return nil, commonapi.ErrBadRequest
+	}
+}
+
+func (s *EnrollmentService) UpdateValidity(ctx context.Context, tenantID, userID int64, id string, request models.UpdateProtectionValidityRequest) (*models.ProtectionEnrollmentResponse, error) {
+	if tenantID <= 0 || userID <= 0 || uuid.Validate(id) != nil || request.Version <= 0 {
+		return nil, commonapi.ErrBadRequest
+	}
+	now := s.now().UTC()
+	deadline, err := protectionValidityDeadline(request.ValidityMode, request.ExpiresAt, now, false)
+	if err != nil {
+		return nil, err
+	}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := lockProtectionEnrollment(tx, tenantID, id)
+		if err != nil {
+			return err
+		}
+		if row.Version != request.Version {
+			return repository.ErrVersionConflict
+		}
+		if row.State == models.EnrollmentStateReleased || row.State == models.EnrollmentStateReleasing {
+			return commonapi.ErrConflict
+		}
+		update := tx.Model(&row).Where("version = ?", request.Version).Updates(map[string]any{"protection_expires_at": deadline, "validity_updated_by": userID, "validity_updated_at": now, "updated_at": now, "version": gorm.Expr("version + 1")})
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected != 1 {
+			return repository.ErrVersionConflict
+		}
+		row.ProtectionExpiresAt = deadline
+		// Recompile existing facts through the unique compiler; no discovery is started.
+		if row.LatestSourceSnapshotHash != "" {
+			return compileProtectionProjections(tx, row, row.LatestSourceSnapshotHash, now, allRequiredProtectionOwners())
+		}
+		// No source facts yet: retain the initial resource-level deny barrier.
+		var records []models.ProtectionProjectionRecord
+		if err := tx.Where("tenant_id = ? AND enrollment_id = ?", tenantID, id).Order("consumer_owner ASC").Find(&records).Error; err != nil {
+			return err
+		}
+		if len(records) != len(allRequiredProtectionOwners()) {
+			return commonapi.ErrConflict
+		}
+		for _, record := range records {
+			var current dataprotection.Projection
+			if err := json.Unmarshal([]byte(record.ProjectionPayload), &current); err != nil {
+				return err
+			}
+			if err := current.Validate(time.Time{}); err != nil {
+				return err
+			}
+			if err := publishProtectionProjection(tx, row, record.ConsumerOwner, current.SourceSnapshotHash, current.Rules, now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, tenantID, id)
+}
+
+func lockProtectionEnrollment(tx *gorm.DB, tenantID int64, id string) (models.ProtectionEnrollment, error) {
+	var row models.ProtectionEnrollment
+	query := tx
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Where("tenant_id = ? AND id = ?", tenantID, id).First(&row).Error; err != nil {
+		return row, policyDBError(err)
+	}
+	return row, nil
 }

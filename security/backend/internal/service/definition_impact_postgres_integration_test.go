@@ -44,6 +44,7 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	}
 	assertEnrollmentEffectiveProjectionActivation(t, tx)
 	assertEnrollmentSearchAndProjectionValidity(t, tx)
+	assertResourceProtectionValidity(t, tx)
 
 	service := NewEnrollmentService(tx)
 	created, err := service.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(2, resourcetree.TypeTable, "business.customers"))

@@ -66,7 +66,7 @@ func TestContentIndexProtectionMasksManagedDocumentBeforeIndexWrite(t *testing.T
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "fingerprint-1"},
 		SourceSnapshotHash: hash,
@@ -76,7 +76,7 @@ func TestContentIndexProtectionMasksManagedDocumentBeforeIndexWrite(t *testing.T
 				"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit",
 			}},
 		}},
-		ValidFrom: time.Now().Add(-time.Hour), ExpiresAt: time.Now().Add(time.Hour),
+		ValidFrom: time.Now().Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(time.Now().Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,30 @@ const accessRejectionRequestID = 'cf72b9b5-063d-4f22-aa07-5c7977580d2e'
 const findingID = '8dfe6d44-dd40-4f63-b2bb-aaeb5d7f83f4'
 const newEnrollmentLocator = 'addp://engine/2/path/business/customers_new?type=table&item_id=201'
 
+
+test('edits an existing protection deadline to permanent and preserves input on conflict', async ({ page }) => {
+  const backend = await installMockBackend(page)
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  await page.getByRole('button', { name: '修改有效期', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '保护有效期', exact: true })
+  await expect(dialog.getByRole('radio', { name: '指定截止时间', exact: true })).toBeChecked()
+  await dialog.getByText('长期有效', { exact: true }).click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog.getByText('资源已被其他操作更新，当前输入已保留，请加载最新资源后重新确认。', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('radio', { name: '长期有效', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+  expect(backend.validityRequests).toHaveLength(1)
+  await dialog.getByRole('button', { name: '放弃当前输入并加载最新资源' }).click()
+  await expect(dialog.getByRole('radio', { name: '指定截止时间', exact: true })).toBeChecked()
+  await dialog.getByText('长期有效', { exact: true }).click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(backend.validityRequests[1]).toEqual({ version: 5, validity_mode: 'permanent', expires_at: null })
+  await expect(page.locator('.owner-detail').getByText(/长期有效/)).toHaveCount(4)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
 test('filters protected resources on the server and shows expired rules without removing rediscovery', async ({ page }) => {
   const backend = await installMockBackend(page, { expiredProjection: true })
   await page.goto('/protection-enrollments')
@@ -201,7 +225,7 @@ test('marks and validates the required enrollment resource inline', async ({ pag
   await expect(createDrawer.locator('.selection-card')).toContainText('business.customers_new')
   await expect(resourceField.locator(':scope > .el-form-item__content > .el-form-item__error')).toHaveCount(0)
   await createDrawer.getByRole('button', { name: '确认纳入保护' }).click()
-  await expect.poll(() => backend.enrollmentCreateRequests).toEqual([{ locator: newEnrollmentLocator }])
+  await expect.poll(() => backend.enrollmentCreateRequests).toEqual([{ locator: newEnrollmentLocator, validity_mode: 'permanent', expires_at: null }])
   expect(backend.unhandledRequests).toEqual([])
 })
 
@@ -1230,6 +1254,8 @@ async function installMockBackend(page, options = {}) {
   }
   const state = {
     enrollmentListRequests: [],
+    validityRequests: [],
+    conflictNextValidity: true,
     classificationCreateRequests: [],
     classificationDeleteRequests: [],
     gradeCreateRequests: [],
@@ -1377,6 +1403,8 @@ async function installMockBackend(page, options = {}) {
       owner_progress: []
     })
   }
+  enrollment.validity_mode = 'until'
+  enrollment.expires_at = '2099-01-01T00:00:00Z'
   const governanceFinding = {
     id: findingID,
     enrollment_id: enrollmentID,
@@ -1604,6 +1632,20 @@ async function installMockBackend(page, options = {}) {
     if (method === 'POST' && path === '/api/v1/security/protection-enrollments') {
       state.enrollmentCreateRequests.push(request.postDataJSON())
       return fulfillJSON(route, { ...enrollment, id: 'new-enrollment', version: '1' }, 201)
+    }
+    if (method === 'PUT' && path === `/api/v1/security/protection-enrollments/${enrollmentID}/validity`) {
+      const body = request.postDataJSON()
+      state.validityRequests.push(body)
+      if (state.conflictNextValidity) {
+        state.conflictNextValidity = false
+        enrollment.version = 5
+        return fulfillJSON(route, { error: 'version conflict', error_code: 'resource_version_conflict' }, 409)
+      }
+      enrollment.version = body.version + 1
+      enrollment.validity_mode = body.validity_mode
+      enrollment.expires_at = body.expires_at
+      enrollment.owner_progress.forEach(owner => { owner.expires_at = body.expires_at })
+      return fulfillJSON(route, enrollment)
     }
     if (method === 'GET' && path === `/api/v1/security/protection-enrollments/${enrollmentID}`) {
       state.enrollmentDetailRequests += 1

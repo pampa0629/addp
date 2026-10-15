@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import importlib.util
 import json
 import math
@@ -1830,6 +1830,153 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "temporary_execution_resource_residuals": 0}
 
 
+
+def validity_snapshot(enrollment: Mapping[str, object], mode: str,
+                      expected_deadline: datetime | None, *, expired: bool = False) -> dict[str, object]:
+    if mode not in {"permanent", "until"} or (mode == "permanent") != (expected_deadline is None) or (expired and mode == "permanent"):
+        raise SuiteError("invalid resource validity expectation")
+    if enrollment.get("validity_mode") != mode or "expires_at" not in enrollment:
+        raise SuiteError("resource protection validity mode is missing or differs")
+    actual = enrollment["expires_at"]
+    if expected_deadline is None:
+        if actual is not None:
+            raise SuiteError("permanent resource has an unexpected deadline")
+    elif utc_timestamp(actual, "resource protection deadline") != expected_deadline:
+        raise SuiteError("resource protection deadline changed")
+    progress = [_object(item, "validity Owner") for item in _array(enrollment.get("owner_progress"), "resource validity owners")]
+    if len(progress) != 4:
+        raise SuiteError("resource validity requires all four Owner projections")
+    result = {}
+    for owner in OWNER_ACTIONS:
+        matches = [item for item in progress if item.get("consumer_owner") == owner]
+        if len(matches) != 1:
+            raise SuiteError("resource validity Owner is missing or duplicated")
+        item = matches[0]
+        if (item.get("acknowledged") is not True or item.get("projection_state") != "active"
+                or item.get("validity") != ("expired" if expired else "valid")
+                or "expires_at" not in item):
+            raise SuiteError("resource validity is not synchronized or has the wrong time state")
+        if expected_deadline is None:
+            if item["expires_at"] is not None:
+                raise SuiteError("permanent Owner still has a hidden deadline")
+        elif utc_timestamp(item["expires_at"], "Owner deadline") != expected_deadline:
+            raise SuiteError("Owner did not install the exact resource deadline")
+        revision = item.get("revision")
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9]{20}", revision):
+            raise SuiteError("validity Owner revision is invalid")
+        result[owner] = {key: item[key] for key in ("projection_id", "revision", "published_cursor")}
+    return result
+
+
+def wait_protection_deadline(expires_at: datetime, deadline: float) -> None:
+    # Real elapsed wall-clock time; never modify clocks or bypass Owner stores.
+    while datetime.now(timezone.utc) <= expires_at + timedelta(seconds=1):
+        if time.monotonic() >= deadline:
+            raise SuiteError("resource protection natural expiry exceeded the suite budget")
+        time.sleep(1)
+
+
+def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source_engine_id: int,
+                               target_engine_id: int, locator: str, parent_locator: str,
+                               target_locator: str, service_name: str, task_name: str,
+                               identity: Mapping[str, object], deadline: float,
+                               tasks: list[int]) -> dict[str, object]:
+    path = "/api/v1/security/protection-enrollments/" + enrollment_id
+    original = _object(client.request("GET", path, (200,)).payload, "validity resource")
+    initial = validity_snapshot(original, "permanent", None)
+    processes = {owner: SUPPORT.ready_process(owner) for owner in OWNER_ACTIONS}
+    configured_deadline = (datetime.now(timezone.utc) + timedelta(seconds=90)).replace(microsecond=0)
+    def update(row, mode, until):
+        return _object(client.request("PUT", path + "/validity", (200,), {
+            "version": positive_int(row.get("version"), "validity resource version"),
+            "validity_mode": mode, "expires_at": until.isoformat() if until else None,
+        }).payload, "updated validity resource")
+    def synchronized(mode, until):
+        wait_for_algorithm_projections(client, enrollment_id, deadline)
+        row = _object(client.request("GET", path, (200,)).payload, "synchronized validity resource")
+        return row, validity_snapshot(row, mode, until)
+    def normal_outputs(suffix):
+        columns, rows = preview_rows(client, locator)
+        return {"manager": assert_mysql_customer_rows(rows, "Manager validity " + suffix, columns),
+                "develop": assert_mysql_customer_rows(develop_rows(client, source_engine_id, locator, deadline), "Develop validity " + suffix),
+                "service": assert_mysql_customer_rows(service_rows(client, service_name), "Service validity " + suffix),
+                "transfer": verify_mysql_transfer_output(client, target_engine_id, locator, parent_locator,
+                    task_name + "_validity_" + suffix, identity, deadline, tasks)}
+    changed = False
+    result = {}
+    try:
+        changed = True
+        bounded = update(original, "until", configured_deadline)
+        bounded, installed = synchronized("until", configured_deadline)
+        for owner in OWNER_ACTIONS:
+            if (installed[owner]["projection_id"] != initial[owner]["projection_id"]
+                    or installed[owner]["revision"] <= initial[owner]["revision"]):
+                raise SuiteError("validity update did not publish higher stable Owner revisions")
+        conflict = client.request("PUT", path + "/validity", (409,), {
+            "version": original["version"], "validity_mode": "permanent", "expires_at": None,
+        })
+        if _object(conflict.payload, "stale validity rejection").get("error_code") != "resource_version_conflict":
+            raise SuiteError("stale validity update did not produce a version conflict")
+        before = normal_outputs("before")
+        if datetime.now(timezone.utc) >= configured_deadline:
+            raise SuiteError("bounded validity pre-expiry outputs finished after the deadline")
+        wait_protection_deadline(configured_deadline, deadline)
+        expiry_observed_at = datetime.now(timezone.utc).isoformat()
+        expired = _object(client.request("GET", path, (200,)).payload, "expired resource")
+        if validity_snapshot(expired, "until", configured_deadline, expired=True) != installed:
+            raise SuiteError("natural expiry silently refreshed Owner rules")
+        query = urllib.parse.urlencode({"locator": locator, "page": 1, "page_size": 100})
+        manager = client.request("GET", "/api/v1/manager/preview?" + query, (403,))
+        if any(key in _object(manager.payload, "expired preview error") for key in ("data", "rows", "columns")):
+            raise SuiteError("expired preview exposed data or field structure")
+        develop = develop_execution(client, source_engine_id, locator, deadline,
+            "SELECT id, customer_code, email FROM customers ORDER BY id", "sql")
+        if develop.get("status") != "failed" or "result" in (develop.get("metadata") or {}):
+            raise SuiteError("expired Develop query returned a result")
+        service = client.request("POST", "/api/query/" + urllib.parse.quote(service_name, safe="") + "/query", (500,), {
+            "select": ["id", "customer_code", "email"], "order_by": [{"field": "id", "direction": "asc"}],
+            "page": {"limit": 100}, "format": "json",
+        })
+        service_error = _object(service.payload, "expired Service error")
+        if service_error.get("error_code") != "query_execution_failed" or "data" in service_error:
+            raise SuiteError("expired Service did not fail without output")
+        columns_before, rows_before = preview_rows(client, target_locator)
+        _, transfer = create_and_run_task(client, transfer_payload(task_name + "_validity_expired", locator, parent_locator),
+                                          deadline, tasks, expected_status="failed")
+        if (nonnegative_int(transfer.get("records_written"), "expired Transfer writes") != 0
+                or nonnegative_int(transfer.get("bytes_written"), "expired Transfer bytes") != 0
+                or positive_int(transfer.get("trigger_by"), "expired Transfer initiator") != positive_int(identity["principal_id"], "ordinary User")):
+            raise SuiteError("expired Transfer wrote data or changed its initiating User")
+        if preview_rows(client, target_locator) != (columns_before, rows_before):
+            raise SuiteError("expired Transfer changed the existing protected target")
+        restored = update(expired, "permanent", None)
+        restored, renewed = synchronized("permanent", None)
+        for owner in OWNER_ACTIONS:
+            if renewed[owner]["projection_id"] != installed[owner]["projection_id"] or renewed[owner]["revision"] <= installed[owner]["revision"]:
+                raise SuiteError("explicit restoration did not publish newer Owner revisions")
+        after = normal_outputs("restored")
+        if validate_user_identity(client, positive_int(identity["tenant_id"], "validity Tenant")) != identity:
+            raise SuiteError("validity acceptance changed the ordinary User or Tenant")
+        if any(SUPPORT.ready_process(owner) != processes[owner] for owner in OWNER_ACTIONS):
+            raise SuiteError("validity acceptance changed an Owner process")
+        result = {"initial_permanent": initial, "configured_deadline": configured_deadline.isoformat(),
+                  "bounded": installed, "expired": installed, "restored_permanent": renewed,
+                  "before_expiry": before, "after_restoration": after,
+                  "same_user_verified": True, "owner_processes_unchanged": True,
+                  "natural_expiry_verified": True, "stale_version_rejected": True,
+                  "expiry_observed_at": expiry_observed_at, "owner_processes": processes,
+                  "expired_outputs": {"manager_http_status": 403, "develop_status": "failed", "service_http_status": 500,
+                    "transfer_execution_id": transfer["execution_id"], "records_written": 0, "bytes_written": 0,
+                    "target_unchanged": True, "result_absent": True}, "permanent_restored": True}
+    finally:
+        if changed:
+            current = _object(client.request("GET", path, (200,)).payload, "validity cleanup resource")
+            if current.get("validity_mode") != "permanent":
+                update(current, "permanent", None)
+                synchronized("permanent", None)
+    return result
+
+
 def run_scenario(
     client: GatewayClient,
     tenant_id: int,
@@ -1934,8 +2081,11 @@ def run_scenario(
                 target_parent_locator, task_name + "_rediscovery", identity, deadline, task_ids),
         }, deadline)
 
+        resource_validity = exercise_resource_validity(client, enrollment_id, source_engine_id, target_engine_id,
+            source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
-            "schema_version": "addp.security-mysql-owner-protection-online/v12",
+            "resource_validity": resource_validity,
+            "schema_version": "addp.security-mysql-owner-protection-online/v13",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2034,7 +2184,7 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v4", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v5", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -2045,7 +2195,7 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "resource_scope_intersection_verified": True, "resource_reset_verified": True,
         "resource_filter_total_verified": True, "resource_filters_read_only": True,
         "owner_validity_visible": True, "resource_filter_case_count": 9,
-        "browser_session_rebound_verified": True,
+        "browser_session_rebound_verified": True, "resource_permanent_validity_visible": True,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()

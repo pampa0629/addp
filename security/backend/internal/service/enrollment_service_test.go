@@ -35,7 +35,10 @@ func assertEnrollmentSearchAndProjectionValidity(t *testing.T, db *gorm.DB) {
 	}{
 		{7, 73, "test.Customer_%!"}, {7, 73, "test.Customer_A"}, {7, 74, "test.Customer_%!"}, {8, 73, "test.Customer_%!"},
 	} {
-		created, err := svc.Create(context.Background(), item.tenant, 11, testDataItemEnrollmentRequest(item.engine, resourcetree.TypeTable, item.name))
+		request := testDataItemEnrollmentRequest(item.engine, resourcetree.TypeTable, item.name)
+		request.ValidityMode = "until"
+		request.ExpiresAt = dataprotection.ProjectionDeadline(start.Add(24 * time.Hour))
+		created, err := svc.Create(context.Background(), item.tenant, 11, request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,6 +229,7 @@ func TestProjectionRuleSummariesExposeInstalledActionEffects(t *testing.T) {
 		ID:    "projection-1",
 		State: dataprotection.ProjectionStateActive,
 		ProjectionPayload: `{
+ "expires_at":null,
 			"rules": [
 				{"action":"preview","decision":{"effect":"mask"}},
 				{"action":"profile","decision":{"effect":"suppress"}},
@@ -344,7 +348,7 @@ func assertExplicitRediscoveryRenewal(t *testing.T, changedSchema bool) {
 		if last == nil || last.SourceSnapshotHash != newHash || last.ProjectionID != old.ProjectionID || last.Revision <= old.Revision {
 			t.Fatalf("renewed %s projection = %#v", owner, last)
 		}
-		if last.ExpiresAt.Sub(last.ValidFrom) != 365*24*time.Hour || !last.ValidFrom.After(old.ValidFrom) || !last.ExpiresAt.After(old.ExpiresAt) {
+		if last.ExpiresAt != nil || old.ExpiresAt != nil || !last.ValidFrom.After(old.ValidFrom) {
 			t.Fatalf("renewed %s validity = %s to %s; previous = %s to %s", owner, last.ValidFrom, last.ExpiresAt, old.ValidFrom, old.ExpiresAt)
 		}
 		if err := last.Validate(time.Now().UTC()); err != nil {
@@ -634,4 +638,231 @@ func prepareZeroFindingEnrollment(t *testing.T) (*gorm.DB, *EnrollmentService, *
 		t.Fatal(err)
 	}
 	return db, enrollments, current
+}
+
+func TestResourceProtectionValidity(t *testing.T) {
+	assertResourceProtectionValidity(t, openSecurityTestDB(t))
+}
+
+func assertResourceProtectionValidity(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := context.Background()
+	svc := NewEnrollmentService(db)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	svc.now = func() time.Time { return now }
+	row, err := svc.Create(ctx, 7, 11, testDataItemEnrollmentRequest(97, resourcetree.TypeTable, "validity.accounts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.ExpiresAt != nil || row.ValidityMode != "permanent" {
+		t.Fatal("new resource must be permanent")
+	}
+	for _, owner := range row.OwnerProgress {
+		if owner.ExpiresAt != nil || owner.Validity != "valid" {
+			t.Fatal("initial deny must use resource validity")
+		}
+	}
+	deadline := now.Add(3 * time.Hour)
+	updated, err := svc.UpdateValidity(ctx, 7, 12, row.ID, models.UpdateProtectionValidityRequest{Version: row.Version, ValidityMode: "until", ExpiresAt: &deadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Version != row.Version+1 || updated.ExpiresAt == nil || !updated.ExpiresAt.Equal(deadline) || updated.ValidityUpdatedBy == nil || *updated.ValidityUpdatedBy != 12 {
+		t.Fatal("validity update omitted version, deadline or actor")
+	}
+	var count int64
+	db.Model(&models.ProtectionProjectionChange{}).Where("enrollment_id = ?", row.ID).Count(&count)
+	if count != 8 {
+		t.Fatalf("want 4 initial and 4 revised projections; got %d", count)
+	}
+	for i, request := range []models.UpdateProtectionValidityRequest{
+		{Version: row.Version, ValidityMode: "permanent"},
+		{Version: updated.Version, ValidityMode: "unknown"},
+		{Version: updated.Version, ValidityMode: "permanent", ExpiresAt: &deadline},
+		{Version: updated.Version, ValidityMode: "until"},
+		{Version: updated.Version, ValidityMode: "until", ExpiresAt: &now},
+	} {
+		_, err := svc.UpdateValidity(ctx, 7, 12, row.ID, request)
+		if err == nil {
+			t.Fatalf("invalid request %d accepted", i)
+		}
+		if i == 0 && !errors.Is(err, repository.ErrVersionConflict) {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.UpdateValidity(ctx, 8, 12, row.ID, models.UpdateProtectionValidityRequest{Version: updated.Version, ValidityMode: "permanent"}); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("cross tenant: %v", err)
+	}
+	var afterCount int64
+	db.Model(&models.ProtectionProjectionChange{}).Where("enrollment_id = ?", row.ID).Count(&afterCount)
+	if afterCount != count {
+		t.Fatal("rejected writes changed projections")
+	}
+	now = deadline
+	expired, err := svc.Get(ctx, 7, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range expired.OwnerProgress {
+		if owner.Validity != "expired" || owner.ExpiringSoon {
+			t.Fatal("expiry must be authoritative")
+		}
+	}
+	restored, err := svc.UpdateValidity(ctx, 7, 12, row.ID, models.UpdateProtectionValidityRequest{Version: updated.Version, ValidityMode: "permanent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range restored.OwnerProgress {
+		if owner.ExpiresAt != nil || owner.Validity != "valid" || owner.Revision <= "00000000000000000002" {
+			t.Fatal("permanent restoration must publish higher revisions")
+		}
+	}
+	// A later Owner failure rolls back the deadline, actor, version and all earlier publications.
+	var record models.ProtectionProjectionRecord
+	if err := db.Where("enrollment_id = ? AND consumer_owner = ?", row.ID, "transfer").First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	payload := record.ProjectionPayload
+	if err := db.Model(&record).Update("projection_payload", "{}").Error; err != nil {
+		t.Fatal(err)
+	}
+	var beforeChanges int64
+	db.Model(&models.ProtectionProjectionChange{}).Where("enrollment_id = ?", row.ID).Count(&beforeChanges)
+	future := now.Add(time.Hour)
+	if _, err := svc.UpdateValidity(ctx, 7, 12, row.ID, models.UpdateProtectionValidityRequest{Version: restored.Version, ValidityMode: "until", ExpiresAt: &future}); err == nil {
+		t.Fatal("invalid last Owner accepted")
+	}
+	var unchanged models.ProtectionEnrollment
+	db.First(&unchanged, "id = ?", row.ID)
+	db.Model(&models.ProtectionProjectionChange{}).Where("enrollment_id = ?", row.ID).Count(&afterCount)
+	if unchanged.Version != restored.Version || unchanged.ProtectionExpiresAt != nil || afterCount != beforeChanges {
+		t.Fatal("partial validity publication escaped the transaction")
+	}
+	if err := db.Model(&record).Update("projection_payload", payload).Error; err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestActiveValidityUpdatePreservesRulesAndBoundsPlaintext(t *testing.T) {
+	db, svc, finding, _, _ := prepareReviewablePhoneFinding(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	svc.now = func() time.Time { return now }
+	if _, err := NewAssessmentService(db, nil).ReviewFinding(ctx, 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认有效期测试"}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := svc.Get(ctx, 7, finding.EnrollmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := now.Add(20 * time.Minute)
+	row, err = svc.UpdateValidity(ctx, 7, 21, row.ID, models.UpdateProtectionValidityRequest{Version: row.Version, ValidityMode: "until", ExpiresAt: &deadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range row.OwnerProgress {
+		if owner.ProjectionState != "active" || owner.ExpiresAt == nil || !owner.ExpiresAt.Equal(deadline) {
+			t.Fatal("active rules lost during validity change")
+		}
+	}
+
+	// An older control-plane caller must not republish its formerly permanent deadline.
+	var stale models.ProtectionEnrollment
+	if err := db.First(&stale, "id = ?", row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	stale.ProtectionExpiresAt = nil
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return compileProtectionProjections(tx, stale, stale.LatestSourceSnapshotHash, now, allRequiredProtectionOwners())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.Get(ctx, 7, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range current.OwnerProgress {
+		if owner.ExpiresAt == nil || !owner.ExpiresAt.Equal(deadline) {
+			t.Fatal("stale compiler replaced the configured deadline")
+		}
+	}
+	requests := NewAccessRequestService(db, testAccessActorResolver)
+	requests.now = func() time.Time { return now }
+	var assessment models.ResourceSecurityAssessment
+	if err := db.Where("enrollment_id = ?", row.ID).First(&assessment).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{AssessmentID: assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: deadline.Add(time.Minute), Rationale: "期限之外"}); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("plaintext exceeded protection deadline: %v", err)
+	}
+
+	grantDeadline := now.Add(15 * time.Minute)
+	application, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{AssessmentID: assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: grantDeadline, Rationale: "期限内核验"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := requests.Decide(ctx, 7, 42, application.ID, models.DecideProtectionAccessRequest{Version: application.Version, Decision: "approve", ExpiresAt: grantDeadline, Rationale: "独立复核"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = approved
+	row, err = svc.Get(ctx, 7, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline = now.Add(10 * time.Minute)
+	row, err = svc.UpdateValidity(ctx, 7, 21, row.ID, models.UpdateProtectionValidityRequest{Version: row.Version, ValidityMode: "until", ExpiresAt: &deadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := requests.Targets(ctx, 7, 41, row.Target.ResourceIdentity, managerProtectionOwner, managerPreviewAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets.Data) != 1 || targets.Data[0].AuthorizedUntil == nil || !targets.Data[0].AuthorizedUntil.Equal(deadline) || targets.Data[0].ProtectionExpiresAt == nil || !targets.Data[0].ProtectionExpiresAt.Equal(deadline) {
+		t.Fatal("plaintext target exceeded the effective resource deadline")
+	}
+	var grant models.ProtectionExemptionRevision
+	if err := db.Where("source_request_id = ?", application.ID).First(&grant).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !grant.ExpiresAt.Equal(grantDeadline) {
+		t.Fatal("resource deadline rewrote grant history")
+	}
+	changes, err := svc.ListChanges(ctx, 7, managerProtectionOwner, "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := changes.Changes[len(changes.Changes)-1].Projection
+	if len(installed.Rules[0].Authorizations) != 1 || !installed.Rules[0].Authorizations[0].ValidUntil.Equal(deadline) {
+		t.Fatal("compiled plaintext grant exceeds the resource deadline")
+	}
+	// Rediscovery or recompilation must retain the explicit deadline, even after expiry.
+	now = deadline.Add(time.Second)
+	var stored models.ProtectionEnrollment
+	db.First(&stored, "id = ?", row.ID)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return compileProtectionProjections(tx, stored, stored.LatestSourceSnapshotHash, now, allRequiredProtectionOwners())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := svc.Get(ctx, 7, row.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range expired.OwnerProgress {
+		if owner.Validity != "expired" || owner.ProjectionState != "enrolling" || !owner.ExpiresAt.Equal(deadline) {
+			t.Fatal("recompile renewed or relaxed expired protection")
+		}
+	}
+	restored, err := svc.UpdateValidity(ctx, 7, 21, row.ID, models.UpdateProtectionValidityRequest{Version: row.Version, ValidityMode: "permanent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range restored.OwnerProgress {
+		if owner.ProjectionState != "active" || owner.ExpiresAt != nil {
+			t.Fatal("explicit permanent update did not restore current rules")
+		}
+	}
 }

@@ -161,7 +161,7 @@ func installTransferProjection(t *testing.T, store *projectionstore.Store, ident
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2,
+		SchemaVersion: dataprotection.ProjectionSchemaV3,
 		ProjectionID:  "projection-transfer-persons",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "transfer",
@@ -169,7 +169,7 @@ func installTransferProjection(t *testing.T, store *projectionstore.Store, ident
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity,
 		},
-		Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -211,13 +211,13 @@ func installActiveTransferProjectionForComponentAt(t *testing.T, store *projecti
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: exportAction, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
 			Parameters:         map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 			InvalidValueEffect: dataprotection.EffectSuppress,
-		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

@@ -359,6 +359,7 @@
             :disabled-date="disableAccessRequestDate"
           />
           <small class="plaintext-access-form__help">{{ t('manager.explorer.plaintextAccess.deadlineHint') }}</small>
+          <small v-if="selectedAccessTarget?.protection_expires_at" class="plaintext-access-form__help">{{ t('manager.explorer.plaintextAccess.protectionDeadline', { at: new Date(selectedAccessTarget.protection_expires_at).toLocaleString() }) }}</small>
         </el-form-item>
         <el-form-item :label="t('manager.explorer.plaintextAccess.rationale')" required>
           <el-input v-model="accessRequestForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('manager.explorer.plaintextAccess.rationalePlaceholder')" />
@@ -583,19 +584,22 @@ const loadAccessTargets = async () => {
   }
 }
 
-const disableAccessRequestDate = value => value.getTime() < Date.now() - 24 * 60 * 60 * 1000 || value.getTime() > Date.now() + ACCESS_REQUEST_MAX_DURATION_MS
+const selectedAccessTarget = computed(() => requestableAccessTargets.value.find(target => target.assessment_id === accessRequestForm.assessmentId))
+const accessRequestMaximum = () => Math.min(Date.now() + ACCESS_REQUEST_MAX_DURATION_MS,
+  selectedAccessTarget.value?.protection_expires_at ? Date.parse(selectedAccessTarget.value.protection_expires_at) : Infinity)
+const disableAccessRequestDate = value => value.getTime() < Date.now() - 24 * 60 * 60 * 1000 || value.getTime() > accessRequestMaximum()
 
 const validAccessRequestDeadline = value => {
   const deadline = value instanceof Date ? value : new Date(value)
   const remaining = deadline.getTime() - Date.now()
-  return !Number.isNaN(deadline.getTime()) && remaining > 0 && remaining <= ACCESS_REQUEST_MAX_DURATION_MS
+  return !Number.isNaN(deadline.getTime()) && remaining > 0 && deadline.getTime() <= accessRequestMaximum()
 }
 
 const openAccessRequest = () => {
   const target = requestableAccessTargets.value[0]
   if (!target) return
   accessRequestForm.assessmentId = target.assessment_id
-  accessRequestForm.expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  accessRequestForm.expiresAt = new Date(Math.min(Date.now() + 8 * 60 * 60 * 1000, accessRequestMaximum()))
   accessRequestForm.rationale = ''
   accessRequestVisible.value = true
 }

@@ -1050,6 +1050,7 @@
         "field": "Sensitive field",
         "deadline": "Requested until",
         "deadlineHint": "The deadline must be in the future and no more than 30 days away.",
+      "protectionDeadline": "The request cannot exceed the resource protection deadline: {at}",
         "rationale": "Business rationale",
         "rationalePlaceholder": "Explain why plaintext is required, the usage scope, and the expected end time",
         "required": "Select a field and deadline, and provide a business rationale",

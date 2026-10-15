@@ -8,11 +8,18 @@ import (
 )
 
 func Migrate(db *gorm.DB) error {
+	hadValidity, err := protectionValidityColumnExists(db)
+	if err != nil {
+		return err
+	}
 	if db.Dialector.Name() == "sqlite" {
 		if err := migrateSQLite(db); err != nil {
 			return err
 		}
-		if err := migrateProtectionProjectionSchemaV2(db); err != nil {
+		if err := migrateProtectionValidity(db, hadValidity); err != nil {
+			return err
+		}
+		if err := migrateProtectionProjectionSchemaV3(db); err != nil {
 			return err
 		}
 		if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {
@@ -76,7 +83,10 @@ func Migrate(db *gorm.DB) error {
 			}
 		}
 	}
-	if err := migrateProtectionProjectionSchemaV2(db); err != nil {
+	if err := migrateProtectionValidity(db, hadValidity); err != nil {
+		return err
+	}
+	if err := migrateProtectionProjectionSchemaV3(db); err != nil {
 		return err
 	}
 	if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {

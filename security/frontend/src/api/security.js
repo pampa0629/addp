@@ -31,6 +31,7 @@ export const protectionEnrollmentAPI = {
   get: id => client.get(`/security/protection-enrollments/${id}`),
   components: id => client.get(`/security/protection-enrollments/${id}/components`),
   create: data => client.post('/security/protection-enrollments', data),
+  updateValidity: (id, data) => client.put(`/security/protection-enrollments/${id}/validity`, data),
   reEnroll: (id, data) => client.post(`/security/protection-enrollments/${id}/re-enrollments`, data),
   release: (id, data) => client.post(`/security/protection-enrollments/${id}/releases`, data),
   rediscover: (id, data) => client.post(`/security/protection-enrollments/${id}/discovery-executions`, data)

@@ -42,7 +42,7 @@ type legacyProjectionV1 struct {
 	ExpiresAt          time.Time                        `json:"expires_at"`
 }
 
-func TestProjectionSchemaV2MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
+func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestProjectionSchemaV2MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 		t.Fatal(err)
 	}
 
-	if err := migrateProtectionProjectionSchemaV2(db); err != nil {
+	if err := migrateProtectionProjectionSchemaV3(db); err != nil {
 		t.Fatal(err)
 	}
 	var migratedRecord models.ProtectionProjectionRecord
@@ -117,7 +117,7 @@ func TestProjectionSchemaV2MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 	if err := projection.Validate(time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	if projection.SchemaVersion != dataprotection.ProjectionSchemaV2 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
+	if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
 		t.Fatalf("unexpected migrated projection: %#v", projection)
 	}
 	if projection.Rules[0].Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || projection.Rules[0].Decision.Parameters["mask_rune"] != "*" || len(projection.Rules[0].Decision.Parameters) != 3 {
@@ -141,7 +141,7 @@ func TestProjectionSchemaV2MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 
 func timePointer(value time.Time) *time.Time { return &value }
 
-func TestProjectionSchemaV2MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
+func TestProjectionSchemaV3MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		payload  string
 		expected string
@@ -169,9 +169,9 @@ func TestProjectionSchemaV2MigrationFailsClosedForNonCurrentPayloads(t *testing.
 			if err := db.Create(&record).Error; err != nil {
 				t.Fatal(err)
 			}
-			err = migrateProtectionProjectionSchemaV2(db)
+			err = migrateProtectionProjectionSchemaV3(db)
 			if err == nil || !strings.Contains(err.Error(), testCase.expected) {
-				t.Fatalf("migrateProtectionProjectionSchemaV2() error=%v, want %q", err, testCase.expected)
+				t.Fatalf("migrateProtectionProjectionSchemaV3() error=%v, want %q", err, testCase.expected)
 			}
 		})
 	}
@@ -198,7 +198,7 @@ func TestKeepPrefixSuffixV2MigrationRewritesBaselineAndCurrentFeed(t *testing.T)
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item"},
 		SourceSnapshotHash: "sha256:snapshot",
@@ -207,7 +207,7 @@ func TestKeepPrefixSuffixV2MigrationRewritesBaselineAndCurrentFeed(t *testing.T)
 		}, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: legacyKeepPrefixSuffixAlgorithmV1, InvalidValueEffect: dataprotection.EffectSuppress,
 			Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit"},
-		}}}, ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		}}}, ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -272,4 +272,51 @@ func migratedSecurityProjectionPayloads(t *testing.T, db *gorm.DB, recordID, cha
 		t.Fatal("migrated change payload is nil")
 	}
 	return []string{record.ProjectionPayload, *change.ProjectionPayload}
+}
+
+func TestExistingEnrollmentValidityMigrationPreservesDeadline(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS security").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	deadline := now.Add(time.Hour)
+	row := models.ProtectionEnrollment{ID: "existing-validity", TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: "old-validity", State: "active", Version: 3, CreatedBy: 11, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []string{"manager", "develop", "service", "transfer"} {
+		projection := dataprotection.Projection{SchemaVersion: "addp.protection_projection/v2", ProjectionID: "old-validity-" + owner, Revision: "00000000000000000003", ConsumerOwner: owner, State: "enrolling", Target: row.Target(), Rules: []dataprotection.Rule{}, ValidFrom: now, ExpiresAt: &deadline}
+		if err := projection.Seal(); err != nil {
+			t.Fatal(err)
+		}
+		payload, _ := json.Marshal(projection)
+		record := models.ProtectionProjectionRecord{ID: projection.ProjectionID, TenantID: 7, EnrollmentID: row.ID, ConsumerOwner: owner, Revision: projection.Revision, State: "enrolling", ProjectionPayload: string(payload), PublishedSequence: 1, CreatedAt: now, UpdatedAt: now}
+		if err := db.Create(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, column := range []string{"protection_expires_at", "validity_updated_by", "validity_updated_at"} {
+		if err := db.Exec("ALTER TABLE security.protection_enrollments DROP COLUMN " + column).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for repeat := 0; repeat < 2; repeat++ {
+		if err := Migrate(db); err != nil {
+			t.Fatal(err)
+		}
+		var migrated models.ProtectionEnrollment
+		if err := db.First(&migrated, "id = ?", row.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if migrated.ProtectionExpiresAt == nil || !migrated.ProtectionExpiresAt.Equal(deadline) || migrated.Version != row.Version {
+			t.Fatal("migration silently renewed an existing resource")
+		}
+	}
 }

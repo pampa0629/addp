@@ -48,7 +48,7 @@ func TestValidateTableProjectionAcceptsOutdoorPhoneAndRejectsDrift(t *testing.T)
 	}
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	projection := Projection{
-		SchemaVersion: ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion: ProjectionSchemaV3, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item", ComponentKey: "userInfo.phone"},
 		SourceSnapshotHash: snapshotHash,
@@ -56,7 +56,7 @@ func TestValidateTableProjectionAcceptsOutdoorPhoneAndRejectsDrift(t *testing.T)
 			Action: "preview", Component: component,
 			Decision: Decision{Effect: EffectMask, Algorithm: AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: EffectSuppress},
 		}},
-		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

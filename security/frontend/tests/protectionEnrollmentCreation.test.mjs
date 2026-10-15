@@ -147,7 +147,7 @@ describe('protection enrollment creation session', () => {
     await expect(first).resolves.toMatchObject({ status: 'created' })
     await expect(second).resolves.toEqual({ status: 'unavailable' })
     expect(dependencies.createEnrollment).toHaveBeenCalledOnce()
-    expect(dependencies.createEnrollment).toHaveBeenCalledWith({ locator: selection.identity.locator })
+    expect(dependencies.createEnrollment).toHaveBeenCalledWith({ locator: selection.identity.locator, validity_mode: 'permanent', expires_at: null })
     expect(dependencies.showCurrentCollection).toHaveBeenCalledOnce()
     expect(dependencies.refreshCollection).toHaveBeenCalledOnce()
     expect(dependencies.scheduleAutoRefresh).toHaveBeenCalledWith({ reset: true })

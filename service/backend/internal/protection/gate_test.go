@@ -190,7 +190,7 @@ func installServiceProjection(t *testing.T, store *projectionstore.Store, identi
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2,
+		SchemaVersion: dataprotection.ProjectionSchemaV3,
 		ProjectionID:  "projection-service-persons",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "service",
@@ -198,7 +198,7 @@ func installServiceProjection(t *testing.T, store *projectionstore.Store, identi
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity,
 		},
-		Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		Rules: []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func installActiveServiceProjectionAt(t *testing.T, store *projectionstore.Store
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
 		ConsumerOwner: "service", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,
@@ -244,7 +244,7 @@ func installActiveServiceProjectionAt(t *testing.T, store *projectionstore.Store
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
 			Parameters:         map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 			InvalidValueEffect: dataprotection.EffectSuppress,
-		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

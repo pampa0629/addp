@@ -283,13 +283,13 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 
 被 SensitiveFinding、SensitiveFindingReview 或 ResourceSecurityAssessmentRevision 引用的 SensitiveDataType、SecurityGrade、SecurityClassification 不允许删除。定义删除不得级联删除 Finding、review、Assessment、Policy、Projection 或历史修订。
 
-## 八、Protection Projection v2
+## 八、Protection Projection v3
 
-稳定 Schema 名称为 `addp.protection_projection/v2`。示例：
+稳定 Schema 名称为 `addp.protection_projection/v3`。示例：
 
 ```json
 {
-  "schema_version": "addp.protection_projection/v2",
+  "schema_version": "addp.protection_projection/v3",
   "projection_id": "34bd62a9-b8a1-476e-80aa-80350d13cf87",
   "revision": "00000000000000000017",
   "consumer_owner": "manager",
@@ -368,7 +368,7 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 10. `state=enrolling` 是激活屏障专用的资源级 `deny` 投影：`source_snapshot_hash` 必须为空且 `rules` 必须为空；Owner 命中后直接拒绝目标资源的相关动作，不尝试字段遍历。Security 不得在读取 Owner 技术事实之前伪造结构快照或字段规则。其有效期不能被解释为解除纳管；即使安装时已过有效期，Owner 仍安装纳管标记并按资源级 `deny` 处理，直到收到明确 `release`。
 11. `state=active` 必须携带 `sha256:` 格式的 `source_snapshot_hash` 和至少一条可执行规则；Owner 必须校验 Schema、revision、checksum、有效期、target 和结构指纹后才原子切换。
 12. 投影缺失、无法解析、checksum 错误、结构冲突或过期时，已纳管资源使用资源级 `deny`；不取消纳管标记。
-13. 有效期校验必须同时覆盖读取准入和实际输出边界。查询结果、预览响应、Transfer 每批记录及编码前的原始记录在变换或输出前，必须以当前服务端时间重新校验本次读取绑定的全部投影；即使结果为空，也不能输出已过期投影的字段结构。读取开始时有效不代表输出时仍有效，任一投影到期都拒绝本次输出，不回退旧规则或明文。本规则不改变当前编译器的 365 天有效期和显式续期路径。
+13. 有效期校验必须同时覆盖读取准入和实际输出边界。查询结果、预览响应、Transfer 每批记录及编码前的原始记录在变换或输出前，必须以当前服务端时间重新校验本次读取绑定的全部投影；即使结果为空，也不能输出已过期投影的字段结构。读取开始时有效不代表输出时仍有效，任一投影到期都拒绝本次输出，不回退旧规则或明文。有效期由 Enrollment 明确设置，重新发现不隐式延长指定期限。
 
 结构化表数据的 `source_snapshot_hash` 与 `component.schema_fingerprint` 只能由
 `common/dataprotection` 的规范算法生成，Security 和 Owner 不得各自拼装 JSON：
@@ -428,7 +428,7 @@ Owner 必须在单个本地数据库事务中：
 
 `protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。存量 payload 的单向收敛必须复用 `common/dataprotection` 唯一转换器，严格按“投影协议结构升级→投影内算法升级→当前契约校验与 checksum 重算”的顺序执行；Security 中央当前投影、历史变化载荷与 Owner 本地投影不得分别实现协议转换。一次性存储迁移不构成运行时兼容，数据面始终只接受当前协议。
 
-新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v2` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须把存量 v1 记录及历史变化原地单向改写为 v2 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
+新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v3` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须把存量 v1/v2 记录及历史变化原地单向改写为 v3 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
 
 Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保存 cursor”操作：
 
@@ -485,7 +485,7 @@ Owner 从当前请求解析出专业资源身份后，只允许一条本地门�
 - Locator / 任务绑定出口：Owner 使用服务端已校验的 ResourceLocator、Meta DataItem fingerprint 或不可变发布快照；
 - 查询出口：Owner 只消费 Engine `QueryRuntimeProvider.PrepareQuery()` 生成的 PreparedQuery，根据本地纳管范围决定是否调用其 `ReadSet()`，再按 Engine Catalog Model 转为 DataItem `engine_id + full_name` 指纹；命中纳管资源后继续从同一计划读取 `OutputLineage()`，不解析查询文本。Security、Meta 和 Catalog 不参与用户请求期间的身份或结果来源解析。
 
-`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。Owner 在当前 Tenant 的本地索引完全没有纳管目标时不展开完整读依赖；只要该 Tenant 存在任一纳管目标，查询 Owner 就必须执行有界的 `ReadSet()` 分析并以本地指纹 map 精确判断本次查询是否命中。Projection v2 只有稳定 DataItem 指纹，没有可作为安全依据的 Engine 路由提示，因此不得在解析 ReadSet 前猜测“当前 Engine 与纳管无关”。未命中纳管目标的查询可能因 JOIN、View 或类似间接引用而承担该最小必要分析成本；不承诺绝对零负担。
+`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。Owner 在当前 Tenant 的本地索引完全没有纳管目标时不展开完整读依赖；只要该 Tenant 存在任一纳管目标，查询 Owner 就必须执行有界的 `ReadSet()` 分析并以本地指纹 map 精确判断本次查询是否命中。Projection v3 只有稳定 DataItem 指纹，没有可作为安全依据的 Engine 路由提示，因此不得在解析 ReadSet 前猜测“当前 Engine 与纳管无关”。未命中纳管目标的查询可能因 JOIN、View 或类似间接引用而承担该最小必要分析成本；不承诺绝对零负担。
 
 当查询可能涉及已纳管 DataItem 而 Provider 无法得到完整 `QueryReadSet` 时，Owner 必须拒绝当前查询，不得只检查 `TargetPath`、默认 schema 或 SQL 顶层对象。这是当前请求的不可解析失败，不能扩大为租户级全局禁用 SQL。
 
@@ -774,4 +774,21 @@ make test-changed
 
 ### 受保护资源治理与银行卡号元数据识别
 
-纳管列表在现有 Tenant 与生命周期 scope 内，支持 `resource_name`（目标 full_name 的不区分大小写字面子串，最多 200 字符）、`engine_id`（正整数）和 `state`（既有生命周期枚举）组合筛选；筛选必须在计数与分页前执行，不读取 Meta 或引擎。Owner 同步摘要从现有 ProjectionPayload 返回 `valid_from`、`expires_at` 和按同次服务端时点派生的 `validity=not_yet_valid|valid|expired|released`；到期不修改 Enrollment、回执或投影历史，已退出显示 released。已同步不等于有效，也不等于具体请求已成功执行。界面展示日期及到期警示，继续复用显式重新发现命令，不建立自动续期或提醒调度。
+纳管列表在现有 Tenant 与生命周期 scope 内，支持 `resource_name`（目标 full_name 的不区分大小写字面子串，最多 200 字符）、`engine_id`（正整数）和 `state`（既有生命周期枚举）组合筛选；筛选必须在计数与分页前执行，不读取 Meta 或引擎。Owner 同步摘要从现有 ProjectionPayload 返回 `valid_from`、`expires_at` 和按同次服务端时点派生的 `validity=not_yet_valid|valid|expired|released`；到期不修改 Enrollment、回执或投影历史，已退出显示 released。已同步不等于有效，也不等于具体请求已成功执行。界面展示日期及到期警示，期限只能经显式有效期修改命令调整；重新发现不延期，不建立自动续期或提醒调度。
+
+
+### 资源保护有效期
+
+ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null 明确表示长期有效。新纳管与重新纳入默认长期有效；创建可提交 `validity_mode=permanent|until` 和 `expires_at`，permanent 必须无截止时间，until 必须为未来时间。响应始终返回明确的 validity_mode 与可空 expires_at。完整表／集合内的四 Owner 使用同一截止时间，不按字段设置期限。
+
+`PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、四 Owner 新投影和变更流必须同事务，失败整体回滚。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
+
+Projection 唯一运行协议升级为 v3，expires_at 必须出现，可为 null（长期）或非零且晚于 valid_from 的时间。缺失 expires_at、旧协议及非法日期均拒绝；checksum 包含 null。迁移单向转换中央当前投影、历史变化流及四 Owner 本地副本，保留原日期、ID、revision、cursor 和顺序，重新计算 checksum；不保留运行时兼容。旧 Enrollment 首次回填四 Owner 当前投影中最早截止时间，不能静默变为长期。初始 enrolling deny 也服从资源期限，到期不能解除门禁。
+
+临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及四 Owner 同步状态，冲突保留表单，不自动重试。
+
+Manager 原值申请目标可返回 protection_expires_at；长期有效时省略。申请界面默认期限和校验上限同时受该资源截止时间与 30 天上限限制；既有授权的 authorized_until 展示当前投影下实际可用的截止时间，授权历史原期限保持不变。
+
+Owner 补拉历史变化时允许原子安装结构、checksum 和期限区间均合法但已过截止时间的 active 投影，并推进 cursor；读取和实际输出门禁仍按当前服务端时间拒绝。安装过期事实不是授权生效，不能沿用旧投影或解除纳管，也不能因旧批次过期而永久阻断后续较高修订的恢复。
+
+期限修改、原值申请／审批及所有投影重编译共享 Enrollment 行锁；编译器必须重新读取已提交的资源期限，不能使用调用方此前持有的旧期限覆盖新配置。

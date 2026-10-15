@@ -52,7 +52,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
 	projection := activeTableProjection(t, owner, action, model, path, fields)
 	projection.ValidFrom = time.Now().UTC().Add(-366 * 24 * time.Hour)
-	projection.ExpiresAt = projection.ValidFrom.Add(365 * 24 * time.Hour)
+	projection.ExpiresAt = dataprotection.ProjectionDeadline(projection.ValidFrom.Add(365 * 24 * time.Hour))
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
 	}
@@ -60,13 +60,13 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
 		Changes:       []dataprotection.ProjectionChange{{ChangeID: "expiry-" + owner, Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
 		NextCursor:    "expiry-" + owner,
-	}, projection.ValidFrom); err != nil {
+	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	validAt := projection.ExpiresAt.Add(-time.Nanosecond)
-	for _, at := range []time.Time{validAt, projection.ExpiresAt, projection.ExpiresAt.Add(time.Nanosecond)} {
+	for _, at := range []time.Time{validAt, *projection.ExpiresAt, projection.ExpiresAt.Add(time.Nanosecond)} {
 		gate := store.Gate(7, projection.Target, at)
-		if !gate.Managed || gate.State != dataprotection.ProjectionStateActive || (gate.Err != nil) != !at.Before(projection.ExpiresAt) {
+		if !gate.Managed || gate.State != dataprotection.ProjectionStateActive || (gate.Err != nil) != !at.Before(*projection.ExpiresAt) {
 			t.Fatalf("expiry gate at %s: managed=%t, state=%s, error=%v", at, gate.Managed, gate.State, gate.Err)
 		}
 	}
@@ -94,7 +94,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 			t.Fatalf("prepare query=%t before expiry: %v", query, err)
 		}
 		staleProtectors = append(staleProtectors, protect)
-		if _, err := prepare(projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) {
+		if _, err := prepare(*projection.ExpiresAt); !errors.Is(err, dataprotection.ErrDenied) {
 			t.Fatalf("prepare query=%t at expiry: %v", query, err)
 		}
 		for _, empty := range []bool{false, true} {
@@ -113,7 +113,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	if cursor, err := store.CurrentCursor(t.Context(), 7); err != nil || cursor != "expiry-"+owner {
 		t.Fatalf("expiry changed the installed cursor: %q, %v", cursor, err)
 	}
-	if !store.Gate(7, projection.Target, time.Now().UTC()).Managed {
+	if gate := store.Gate(7, projection.Target, time.Now().UTC()); !gate.Managed || gate.Err == nil {
 		t.Fatal("expiry must not release the managed-resource marker")
 	}
 
@@ -123,7 +123,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	neighbor := activeTableProjection(t, owner, action, model, neighborPath, fields)
 	neighbor.ProjectionID = "neighbor-projection"
 	neighbor.ValidFrom = projection.ValidFrom.Add(2 * 24 * time.Hour)
-	neighbor.ExpiresAt = neighbor.ValidFrom.Add(365 * 24 * time.Hour)
+	neighbor.ExpiresAt = dataprotection.ProjectionDeadline(neighbor.ValidFrom.Add(365 * 24 * time.Hour))
 	if err := neighbor.Seal(); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 	}
 	replacement := activeTableProjection(t, owner, action, model, path, fields)
 	replacement.Revision = "00000000000000000002"
-	replacement.ExpiresAt = replacement.ValidFrom.Add(365 * 24 * time.Hour)
+	replacement.ExpiresAt = dataprotection.ProjectionDeadline(replacement.ValidFrom.Add(365 * 24 * time.Hour))
 	replacement.Rules[0].Decision = dataprotection.Decision{
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmConstantV1,
 		Parameters: map[string]interface{}{"value": "renewed-protected"}, InvalidValueEffect: dataprotection.EffectSuppress,
@@ -490,13 +490,13 @@ func activeTableProjection(t *testing.T, owner, action string, model plugin.Engi
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-table", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-table", Revision: "00000000000000000001",
 		ConsumerOwner: owner, State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: action, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
 			Parameters:         map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 			InvalidValueEffect: dataprotection.EffectSuppress,
-		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

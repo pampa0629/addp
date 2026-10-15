@@ -98,6 +98,7 @@ type ProtectionAccessRequestListResponse struct {
 }
 
 type ProtectionAccessTarget struct {
+	ProtectionExpiresAt    *time.Time                      `json:"protection_expires_at,omitempty"`
 	AssessmentID           string                          `json:"assessment_id"`
 	AssessmentRevision     int64                           `json:"assessment_revision,string"`
 	Component              dataprotection.Component        `json:"component"`

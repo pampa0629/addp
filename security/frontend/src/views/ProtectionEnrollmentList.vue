@@ -103,9 +103,14 @@
       @submit="createEnrollment"
     />
 
+    <EnrollmentValidityDialog :model-value="validity.dialog.value" :saving="validity.saving.value" :reloading="validity.reloading.value"
+      :conflict="validity.conflict.value" :enrollment="validity.enrollment.value" :form="validity.form"
+      @update:model-value="validity.close" @submit="validity.submit" @reload="validity.reload" />
     <EnrollmentDetailDrawer
       v-model="detailDrawer"
       ref="detailDrawerRef"
+      :can-update-validity="canRelease"
+      @validity="validity.open"
       :refresh-state="detailRefreshState"
       :presentation="detailPresentation"
       @update:findings-page="findingsPage = $event"
@@ -302,6 +307,8 @@
 </template>
 
 <script setup>
+import { useProtectionEnrollmentValidity } from '../composables/useProtectionEnrollmentValidity.mjs'
+import EnrollmentValidityDialog from '../components/protection-enrollment/EnrollmentValidityDialog.vue'
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -444,6 +451,16 @@ const {
     }
   }
 })
+const validity = useProtectionEnrollmentValidity({
+  getEnrollment: id => protectionEnrollmentAPI.get(id),
+  updateValidity: (id, payload) => protectionEnrollmentAPI.updateValidity(id, payload),
+  replaceEnrollment,
+  onSaved: () => ElMessage.success(t('security.enrollment.validity.saved')),
+  onInvalid: () => ElMessage.warning(t('security.enrollment.validity.invalid')),
+  onError: error => ElMessage.error(error.message || t('security.common.failed')),
+  scheduleAutoRefresh
+})
+onBeforeUnmount(validity.dispose)
 const canRelease = computed(() => auth.hasPermission('security.enrollment.update'))
 const canReadFindings = computed(() => auth.hasPermission('security.finding.read'))
 const canReviewFindings = computed(() => auth.hasPermission('security.finding.update'))

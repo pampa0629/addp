@@ -26,6 +26,7 @@ type storeMigration struct {
 var storeMigrations = []storeMigration{
 	{version: initialProjectionStoreMigration, apply: createInitialProjectionStore},
 	{version: keepPrefixSuffixV2StoreMigration, apply: migrateKeepPrefixSuffixV2},
+	{version: "003_projection_validity_v3", apply: migrateKeepPrefixSuffixV2},
 }
 
 type postgresColumnDefinition struct {
@@ -215,7 +216,7 @@ func migrateKeepPrefixSuffixV2(tx *gorm.DB, store *Store) error {
 		return fmt.Errorf("read protection projections for mask migration: %w", err)
 	}
 	for _, row := range rows {
-		projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV2([]byte(row.ProjectionPayload))
+		projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV3([]byte(row.ProjectionPayload))
 		if err != nil {
 			return fmt.Errorf("migrate protection projection %s schema: %w", row.ProjectionID, err)
 		}

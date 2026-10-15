@@ -58,5 +58,5 @@ func migrateKeepPrefixSuffixAlgorithmV2(db *gorm.DB) error {
 }
 
 func migrateProjectionMaskPayload(payload string) (string, bool, error) {
-	return migratePersistedProjectionPayloadV2(payload)
+	return migratePersistedProjectionPayloadV3(payload)
 }

@@ -80,10 +80,10 @@ func TestQueryFailureDiagnosticsAgainstPostgres(t *testing.T) {
 	now := time.Now().UTC()
 	// A tenant with another enrolled resource must still resolve this query's
 	// exact read set; no unmanaged-tenant shortcut may hide the reported defect.
-	projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV2,
+	projection := dataprotection.Projection{SchemaVersion: dataprotection.ProjectionSchemaV3,
 		ProjectionID: "diagnostic-other-resource", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateEnrolling,
 		Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonModels.GenerateItemFingerprint(91, schema+".other")},
-		Rules:  []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}
+		Rules:  []dataprotection.Rule{}, ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour))}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
 	}

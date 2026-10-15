@@ -189,6 +189,7 @@
 | ProtectionAccessRequest | 原值访问申请 | 用户从实际数据出口针对一个正式资源安全评估、具体 Owner 动作和期限发起的原值访问申请。 | 状态固定为 `pending|approved|rejected|expired`。申请主体只能取当前可信 AuthContext，不能由请求正文指定；申请人和审批人的 Principal ID 是权威身份，Security 在动作发生时通过 System 受信租户用户引用固化显示名快照，列表不实时逐行跨模块查询；申请本身不产生明文访问权，超过申请截止时间后由 Security 按服务端时间统一视为已过期并保留在审批历史中。 |
 | ProtectionExemption | 临时原值授权 | Security 审批原值访问申请后，针对申请用户、正式评估修订、消费 Owner 和具体出口动作形成的显式、限时、可审计授权。 | 不替代 Owner 的资源授权；仅在调用主体完全匹配时取消对应字段的内容变换，最长 30 天。到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline，Owner 不得设置本地授权。 |
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
+| protection validity | 保护有效期 | 保护规则有效期归 Security 的 ProtectionEnrollment 聚合所有，按完整表／集合统一设置；新纳管默认长期有效，也可明确指定未来截止时间。长期有效无时间终点，不使用远期日期模拟。各 Owner 的保护投影携带该有效期，字段算法独立配置；期限不是模块凭据或原值授权。已有资源迁移保留当前最早投影截止时间，只有显式修改期限才改变，重新发现不隐式延期。 | 原值授权继续限时；到期不解除纳管，相关输出拒绝，期限只能显式修改。 |
 | protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
 | dynamic masking | 动态遮盖 | 不改写源数据，在 Owner 服务端出口按投影将敏感值转换为可用但不暴露原值的形式。 | 例如手机号 `13661384499` 显示为 `136****4499`；浏览器不应接收原值。 |
 | suppression | 抑制 | 不向当前出口返回受保护字段、组件或资源内容的保守效果。 | 用于无安全遮盖算法、投影异常或 Owner 尚不具备组件级执行能力的场景。协议与技术文档使用 `suppress` / “抑制”；面向用户的结构化字段规则显示为“移除字段”，通用投影效果显示为“移除”。 |

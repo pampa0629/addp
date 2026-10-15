@@ -37,11 +37,11 @@ type legacyProjectionV1 struct {
 	ExpiresAt          time.Time                `json:"expires_at"`
 }
 
-// MigrateProjectionPayloadV2 performs the one-way persisted-data conversion
-// from projection schema v1 to v2. It intentionally does not validate or seal
+// MigrateProjectionPayloadV3 performs the one-way persisted-data conversion
+// from persisted projection schemas v1/v2 to v3. It intentionally does not validate or seal
 // the result because callers must migrate embedded algorithms before applying
-// the current v2 contract and recalculating the checksum.
-func MigrateProjectionPayloadV2(payload []byte) (Projection, bool, error) {
+// the current v3 contract and recalculating the checksum.
+func MigrateProjectionPayloadV3(payload []byte) (Projection, bool, error) {
 	var envelope struct {
 		SchemaVersion string `json:"schema_version"`
 	}
@@ -49,12 +49,27 @@ func MigrateProjectionPayloadV2(payload []byte) (Projection, bool, error) {
 		return Projection{}, false, fmt.Errorf("decode protection projection schema: %w", err)
 	}
 	switch envelope.SchemaVersion {
-	case ProjectionSchemaV2:
+	case ProjectionSchemaV3:
 		var projection Projection
 		if err := json.Unmarshal(payload, &projection); err != nil {
-			return Projection{}, false, fmt.Errorf("decode v2 protection projection: %w", err)
+			return Projection{}, false, fmt.Errorf("decode v3 protection projection: %w", err)
 		}
 		return projection, false, nil
+	case "addp.protection_projection/v2":
+		var projection Projection
+		if err := json.Unmarshal(payload, &projection); err != nil {
+			return Projection{}, false, err
+		}
+		if projection.ExpiresAt == nil || projection.ExpiresAt.IsZero() {
+			return Projection{}, false, errors.New("legacy projection deadline is required")
+		}
+		// Verify legacy integrity before converting the schema and resealing.
+		expected, err := projection.CalculateChecksum()
+		if err != nil || projection.Checksum != expected {
+			return Projection{}, false, errors.New("legacy protection projection checksum mismatch")
+		}
+		projection.SchemaVersion = ProjectionSchemaV3
+		return projection, true, nil
 	case legacyProjectionSchemaV1:
 		var legacy legacyProjectionV1
 		if err := json.Unmarshal(payload, &legacy); err != nil {
@@ -84,7 +99,7 @@ func MigrateProjectionPayloadV2(payload []byte) (Projection, bool, error) {
 			})
 		}
 		return Projection{
-			SchemaVersion:      ProjectionSchemaV2,
+			SchemaVersion:      ProjectionSchemaV3,
 			ProjectionID:       legacy.ProjectionID,
 			Revision:           legacy.Revision,
 			ConsumerOwner:      legacy.ConsumerOwner,
@@ -93,7 +108,7 @@ func MigrateProjectionPayloadV2(payload []byte) (Projection, bool, error) {
 			SourceSnapshotHash: legacy.SourceSnapshotHash,
 			Rules:              rules,
 			ValidFrom:          legacy.ValidFrom,
-			ExpiresAt:          legacy.ExpiresAt,
+			ExpiresAt:          ProjectionDeadline(legacy.ExpiresAt),
 		}, true, nil
 	default:
 		if envelope.SchemaVersion == "" {

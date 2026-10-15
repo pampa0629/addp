@@ -1392,7 +1392,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v4", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v5", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
@@ -1404,7 +1404,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "resource_scope_intersection_verified": True, "resource_reset_verified": True,
             "resource_filter_total_verified": True, "resource_filters_read_only": True,
             "owner_validity_visible": True, "resource_filter_case_count": 9,
-            "browser_session_rebound_verified": True,
+            "browser_session_rebound_verified": True, "resource_permanent_validity_visible": True,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1425,7 +1425,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("schema_version", "addp.security-manager-export-browser/v3"),
             ("resource_combination_filters_verified", False), ("resource_filters_read_only", False),
             ("resource_filter_case_count", 8), ("resource_filter_case_count", "9"),
-            ("resource_filter_case_count", True), ("owner_validity_visible", False),
+            ("resource_filter_case_count", True), ("owner_validity_visible", False), ("resource_permanent_validity_visible", False),
             ("browser_session_rebound_verified", False),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
@@ -1737,6 +1737,35 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
         with self.assertRaisesRegex(ONLINE.SuiteError, "owned resource cleanup failed"):
             self.run_case(cleanup_failure=True)
 
+
+
+class ResourceValiditySnapshotTest(unittest.TestCase):
+    def snapshot(self, until=None, expired=False):
+        return {"validity_mode": "permanent" if until is None else "until", "expires_at": until,
+            "owner_progress": [{"consumer_owner": owner,"projection_id":"projection-"+owner,"revision":"00000000000000000004",
+                "published_cursor":"cursor-"+owner,"acknowledged":True,"projection_state":"active",
+                "validity":"expired" if expired else "valid","expires_at":until} for owner in ONLINE.OWNER_ACTIONS]}
+
+    def test_permanent_requires_explicit_null_for_resource_and_every_owner(self):
+        value=self.snapshot()
+        self.assertEqual(set(ONLINE.validity_snapshot(value,"permanent",None)),set(ONLINE.OWNER_ACTIONS))
+        for target in [value]+value["owner_progress"]:
+            with self.subTest(target=target.get("consumer_owner")):
+                old=target.pop("expires_at")
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.validity_snapshot(value,"permanent",None)
+                target["expires_at"]=old
+        value["owner_progress"][0]["expires_at"]="2099-01-01T00:00:00Z"
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.validity_snapshot(value,"permanent",None)
+
+    def test_bounded_requires_identical_owner_deadlines_and_server_expiry(self):
+        until="2026-10-15T12:00:00Z"
+        expected=ONLINE.utc_timestamp(until,"test deadline")
+        value=self.snapshot(until,expired=True)
+        ONLINE.validity_snapshot(value,"until",expected,expired=True)
+        for key,bad in [("acknowledged",False),("validity","valid"),("projection_state","enrolling"),("expires_at",None),("revision","4")]:
+            row=value["owner_progress"][0];old=row[key];row[key]=bad
+            with self.subTest(key=key),self.assertRaises(ONLINE.SuiteError): ONLINE.validity_snapshot(value,"until",expected,expired=True)
+            row[key]=old
 
 if __name__ == "__main__":
     unittest.main()

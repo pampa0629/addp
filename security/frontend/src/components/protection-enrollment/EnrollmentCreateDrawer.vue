@@ -27,6 +27,7 @@
             @select="emit('resourceSelect', $event)"
           />
         </el-form-item>
+        <ProtectionValidityFields :form="form" :disabled="saving" />
       </el-form>
 
       <el-skeleton v-if="selectedItemLoading" :rows="3" animated />
@@ -74,6 +75,7 @@
 </template>
 
 <script setup>
+import ProtectionValidityFields from './ProtectionValidityFields.vue'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ResourceTreePicker } from '@common-ui'

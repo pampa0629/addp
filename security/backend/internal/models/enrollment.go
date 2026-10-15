@@ -31,6 +31,9 @@ type ProtectionEnrollmentFilter struct {
 }
 
 type ProtectionEnrollment struct {
+	ProtectionExpiresAt        *time.Time `json:"-"`
+	ValidityUpdatedBy          *int64     `json:"-"`
+	ValidityUpdatedAt          *time.Time `json:"-"`
 	ID                         string     `gorm:"type:uuid;primaryKey" json:"id"`
 	TenantID                   int64      `gorm:"not null;index" json:"-"`
 	TargetOwner                string     `gorm:"size:32;not null" json:"target_owner_module"`
@@ -118,7 +121,9 @@ func (ProtectionProjectionAcknowledgement) TableName() string {
 }
 
 type CreateProtectionEnrollmentRequest struct {
-	Locator string `json:"locator" binding:"required"`
+	Locator      string     `json:"locator" binding:"required"`
+	ValidityMode string     `json:"validity_mode" enums:"permanent,until"`
+	ExpiresAt    *time.Time `json:"expires_at"`
 }
 
 type ReEnrollProtectionEnrollmentRequest struct {
@@ -156,7 +161,8 @@ type ProtectionDiscoveryExecutionResponse struct {
 
 type ProtectionOwnerProgress struct {
 	ValidFrom       time.Time                    `json:"valid_from"`
-	ExpiresAt       time.Time                    `json:"expires_at"`
+	ExpiresAt       *time.Time                   `json:"expires_at"`
+	ExpiringSoon    bool                         `json:"expiring_soon"`
 	Validity        string                       `json:"validity" enums:"not_yet_valid,valid,expired,released"`
 	ConsumerOwner   string                       `json:"consumer_owner"`
 	ProjectionID    string                       `json:"projection_id"`
@@ -181,6 +187,10 @@ type ProtectionDiscoverySummary struct {
 }
 
 type ProtectionEnrollmentResponse struct {
+	ValidityMode               string                           `json:"validity_mode" enums:"permanent,until"`
+	ExpiresAt                  *time.Time                       `json:"expires_at"`
+	ValidityUpdatedBy          *int64                           `json:"validity_updated_by,string"`
+	ValidityUpdatedAt          *time.Time                       `json:"validity_updated_at"`
 	ID                         string                           `json:"id"`
 	Target                     dataprotection.ResourceReference `json:"target"`
 	TargetSnapshot             ProtectionTargetSnapshot         `json:"target_snapshot"`
@@ -208,4 +218,17 @@ type ProtectionEnrollmentListResponse struct {
 	Page       int                            `json:"page"`
 	PageSize   int                            `json:"page_size"`
 	TotalPages int                            `json:"total_pages"`
+}
+
+type UpdateProtectionValidityRequest struct {
+	Version      int64      `json:"version" binding:"required"`
+	ValidityMode string     `json:"validity_mode" binding:"required,oneof=permanent until" enums:"permanent,until"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+}
+
+func (e ProtectionEnrollment) ValidityMode() string {
+	if e.ProtectionExpiresAt == nil {
+		return "permanent"
+	}
+	return "until"
 }

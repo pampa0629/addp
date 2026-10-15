@@ -27,6 +27,12 @@ type protectionCandidate struct {
 // compileProtectionProjections is the only Security path that turns provisional
 // Findings or formal Assessment revisions into executable owner changes.
 func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrollment, sourceSnapshotHash string, now time.Time, consumerOwners []string) error {
+	current, err := lockProtectionEnrollment(tx, enrollment.TenantID, enrollment.ID)
+	if err != nil {
+		return err
+	}
+	enrollment.ProtectionExpiresAt = current.ProtectionExpiresAt
+	enrollment.CreatedAt = current.CreatedAt
 	var findings []models.SensitiveFinding
 	if err := tx.Where("tenant_id = ? AND enrollment_id = ? AND discovery_execution_id = ?", enrollment.TenantID, enrollment.ID, enrollment.LatestDiscoveryExecutionID).Order("component_key ASC, created_at ASC").Find(&findings).Error; err != nil {
 		return err
@@ -353,15 +359,43 @@ func publishProtectionProjection(tx *gorm.DB, enrollment models.ProtectionEnroll
 	if err != nil {
 		return err
 	}
+	// Recompiling an expired resource preserves its deadline and a resource deny.
+	if enrollment.ProtectionExpiresAt != nil && !now.Before(*enrollment.ProtectionExpiresAt) {
+		rules = nil
+	}
 	state := dataprotection.ProjectionStateActive
 	if len(rules) == 0 {
 		state = dataprotection.ProjectionStateEnrolling
 		sourceSnapshotHash = ""
 	}
+	// Keep the configured interval intact, including for already expired resources.
+	validFrom := now
+	if enrollment.ProtectionExpiresAt != nil && !validFrom.Before(*enrollment.ProtectionExpiresAt) {
+		validFrom = enrollment.CreatedAt
+	}
+	for i := range rules {
+		rules[i].Authorizations = append([]dataprotection.TemporaryAuthorization(nil), rules[i].Authorizations...)
+		kept := rules[i].Authorizations[:0]
+		for _, authorization := range rules[i].Authorizations {
+			if !authorization.ValidUntil.After(now) {
+				continue
+			}
+			if authorization.ValidFrom.Before(validFrom) {
+				authorization.ValidFrom = validFrom
+			}
+			if enrollment.ProtectionExpiresAt != nil && authorization.ValidUntil.After(*enrollment.ProtectionExpiresAt) {
+				authorization.ValidUntil = *enrollment.ProtectionExpiresAt
+			}
+			if authorization.ValidUntil.After(authorization.ValidFrom) {
+				kept = append(kept, authorization)
+			}
+		}
+		rules[i].Authorizations = kept
+	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: record.ID, Revision: revision,
+		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: record.ID, Revision: revision,
 		ConsumerOwner: consumerOwner, State: state, Target: enrollment.Target(),
-		SourceSnapshotHash: sourceSnapshotHash, Rules: rules, ValidFrom: now, ExpiresAt: now.Add(365 * 24 * time.Hour),
+		SourceSnapshotHash: sourceSnapshotHash, Rules: rules, ValidFrom: validFrom, ExpiresAt: enrollment.ProtectionExpiresAt,
 	}
 	if err := projection.Seal(); err != nil {
 		return err

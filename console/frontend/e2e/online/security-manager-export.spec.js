@@ -80,15 +80,17 @@ async function verifyResourceCombinationFilters(page, api, env, principal, navig
     for (const owner of progress) {
       expect(owner.acknowledged).toBe(true)
       expect(owner.validity).toBe('valid')
-      expect(Date.parse(owner.expires_at)).toBeGreaterThan(Date.now())
+      expect(positive.data[0].validity_mode).toBe('permanent')
+      expect(positive.data[0].expires_at).toBeNull()
+      expect(owner.expires_at).toBeNull()
     }
     await expect(rows.locator('.owner-item')).toHaveCount(4)
     await expect(rows.locator('.owner-tags').filter({ hasText: /有效期内|Within validity period/ })).toHaveCount(4)
     const securityFrame = page.frames().find(value => new URL(value.url()).pathname.startsWith('/module-ui/security/'))
     expect(securityFrame).toBeTruthy()
-    const dates = await securityFrame.evaluate(values => values.map(value => new Date(value).toLocaleString()), progress.map(owner => owner.expires_at))
+    const dates = await securityFrame.evaluate(values => values.map(value => value === null ? null : new Date(value).toLocaleString()), progress.map(owner => owner.expires_at))
     const visibleDates = await rows.locator('.owner-name small').allTextContents()
-    for (const date of dates) expect(visibleDates.some(value => value.includes(date))).toBe(true)
+    for (const date of dates) expect(visibleDates.some(value => date === null ? /长期有效|Permanent/.test(value) : value.includes(date))).toBe(true)
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-resource-combination-filters.png') })
 
     await select(engine, mysql.name)
@@ -323,7 +325,7 @@ test('protected Manager preview retains field search and export provenance in Mo
     expect(anonymousRefresh401).toBe(1)
     expect(browserSessionRebinds).toBe(2)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v4', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v5', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -332,7 +334,7 @@ test('protected Manager preview retains field search and export provenance in Mo
       protected_preview_verified: true, technical_field_search_verified: true,
       search_to_preview_verified: true,
       ...resourceFilters,
-      browser_session_rebound_verified: browserSessionRebinds === 2,
+      browser_session_rebound_verified: browserSessionRebinds === 2, resource_permanent_validity_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

@@ -763,7 +763,7 @@ def validate_security_mysql_owner_protection_profile(
                      '"target_empty_before_and_after"', '"query_output_lineage_unresolved"',
                      "verify_mongodb_raw_export(", '"raw_record_export"', '"export_during_manager_policy"',
                      "canonical_int64_preserved=True",
-                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v12"',
+                     '"develop_during_manager_policy"', '"addp.security-mysql-owner-protection-online/v13"',
                      'outage = exercise_owner_unavailability(', 'case["security_unavailability"] = exercise_owner_unavailability(',
                      'verify_mysql_outage_transfer(', 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)',
                      'SUPPORT.run_security_lifecycle(repository, "start", deadline)', 'finally:',
@@ -771,7 +771,9 @@ def validate_security_mysql_owner_protection_profile(
                      'same_user_verified', 'target_output_verified', 'diagnostics.get("code") != "query_output_lineage_unresolved"',
                      'exercise_explicit_rediscovery(', '"explicit_rediscovery"',
                      '"all_current_revisions_acknowledged"', '"projections_before"', '"projections_after"',
-                     'verify_mysql_transfer_output(', '"security.enrollment.update"'):
+                     'verify_mysql_transfer_output(', '"security.enrollment.update"',
+                     'exercise_resource_validity(', 'wait_protection_deadline(', '"resource_validity": resource_validity',
+                     '"natural_expiry_verified"', '"permanent_restored"', '"resource_permanent_validity_visible"'):
         if fragment not in owner:
             raise RegistrationError("security-mysql-owner-protection must dispatch and validate export browser: " + fragment)
     browser = (repository / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(encoding="utf-8")
@@ -780,7 +782,7 @@ def validate_security_mysql_owner_protection_profile(
         "format: 'csv'", "csv.DictReader",
         "transfer_execution_id", "execution.triggered_by", "execution.source_task_id",
         "/api/v1/monitor/executions/by-execution-id/", ".execution-detail-content",
-        "addp.security-manager-export-browser/v4", "anonymous_refresh_401", "download.delete()",
+        "addp.security-manager-export-browser/v5", "anonymous_refresh_401", "download.delete()",
         "protected_preview_verified", "technical_field_search_verified", "search_to_preview_verified",
         "verifyResourceCombinationFilters(", "resource_combination_filters_verified", "resource_filters_read_only",
         "browserAPIFromResponse(", "browser_session_rebound_verified",

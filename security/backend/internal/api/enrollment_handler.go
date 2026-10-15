@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -290,4 +292,43 @@ func protectionConsumerOwner(c *gin.Context) string {
 	default:
 		return ""
 	}
+}
+
+// @Summary 修改资源保护有效期 | Update resource protection validity
+// @Description 资源级长期有效或指定未来截止时间；同事务递增版本并同步四 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish four owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict
+// @Tags Protection Enrollment
+// @Accept json
+// @Produce json
+// @Param id path string true "纳管 ID | Enrollment ID"
+// @Param request body models.UpdateProtectionValidityRequest true "资源版本和有效期 | Resource version and validity"
+// @Success 200 {object} models.ProtectionEnrollmentResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["security.enrollment.update"]
+// @Router /protection-enrollments/{id}/validity [put]
+// @Security BearerAuth
+func (h *EnrollmentHandler) UpdateValidity(c *gin.Context) {
+	var request models.UpdateProtectionValidityRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&request) != nil {
+		respondError(c, errBadRequest)
+		return
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		respondError(c, errBadRequest)
+		return
+	}
+	result, err := h.svc.UpdateValidity(c.Request.Context(), getTenantID(c), getUserID(c), c.Param("id"), request)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

@@ -22,11 +22,11 @@ func TestDocumentTextSampleAndProjectionUseSameSnapshot(t *testing.T) {
 		"prefix_runes": float64(3), "suffix_runes": float64(4), "replacement": "****", "exact_runes": float64(11), "character_class": "ascii_digit",
 	}}
 	projection := Projection{
-		SchemaVersion: ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion: ProjectionSchemaV3, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "document-1"},
 		SourceSnapshotHash: hash, Rules: []Rule{{Action: "search_index", Component: DocumentTextComponent(), Decision: decision}},
-		ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Minute), ExpiresAt: ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)
@@ -60,11 +60,11 @@ func TestDocumentTextProjectionRejectsMismatchedTargetComponent(t *testing.T) {
 		"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit",
 	}}
 	projection := Projection{
-		SchemaVersion: ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion: ProjectionSchemaV3, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "document-1", ComponentKey: "wrong.component"},
 		SourceSnapshotHash: hash, Rules: []Rule{{Action: "search_index", Component: DocumentTextComponent(), Decision: decision}},
-		ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Minute), ExpiresAt: ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatal(err)

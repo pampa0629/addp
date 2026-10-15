@@ -86,7 +86,7 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(migrated.ProjectionPayload), &projection); err != nil {
 		t.Fatalf("decode migrated projection: %v", err)
 	}
-	if projection.SchemaVersion != dataprotection.ProjectionSchemaV2 {
+	if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 {
 		t.Fatalf("migrated PostgreSQL owner projection schema = %q", projection.SchemaVersion)
 	}
 	decision := projection.Rules[0].Decision
@@ -131,6 +131,17 @@ func TestProjectionStoreResultExpiryAgainstPostgres(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			assertBoundedProjectionMigration(t, store)
+			if err := store.db.Exec("DELETE FROM " + store.entriesTable).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := store.db.Exec("DELETE FROM " + store.checkpointTable).Error; err != nil {
+				t.Fatal(err)
+			}
+			store, err = Migrate(db, schema, owner, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
 			assertPreparedOutputExpiry(t, store, owner, action)
 		})
 	}
@@ -163,7 +174,7 @@ func postgresLegacyStructuredMaskProjection(t *testing.T) dataprotection.Project
 				InvalidValueEffect: dataprotection.EffectSuppress,
 			},
 		}},
-		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),
 	}
 	if err := projection.Seal(); err != nil {
 		t.Fatalf("seal legacy projection: %v", err)
@@ -220,7 +231,7 @@ func assertCurrentMigrations(t *testing.T, db *gorm.DB, store *Store) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatalf("read projection store migration versions: %v", err)
 	}
-	if len(versions) != 2 || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
+	if len(versions) != 3 || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("projection store migration versions = %#v", versions)
 	}
 }
