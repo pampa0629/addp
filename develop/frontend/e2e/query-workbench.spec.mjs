@@ -97,7 +97,7 @@ test('shows the actual missing-table preparation failure with an actionable corr
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('第 1 行，第 15 列')
   await page.setViewportSize({ width: 760, height: 700 })
   await expectNoDocumentOverflow(page)
-  await expect(diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true })).toBeVisible()
+  await expect(diagnostic.getByRole('link', { name: '查看监控错误详情', exact: true })).toBeVisible()
 })
 
 for (const [code, reason, explanation, action] of [
@@ -114,19 +114,45 @@ for (const [code, reason, explanation, action] of [
   await expect(diagnostic).toContainText(code)
 })
 
-test('keeps a specific failure, stage and execution identity in the workbench and the Owner detail', async ({ page }) => {
+for (const embedded of [false, true]) test(`keeps the query draft and opens the same failure in a new Monitor tab (${embedded ? 'Console iframe' : 'standalone'})`, async ({ page }) => {
   const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
     schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid'
   } }
   await installMockBackend(page, { resultKind: 'table', errorDetails })
-  await page.goto('/sql')
-  const catalog = page.locator('.catalog-panel')
+  if (embedded) {
+    await page.route('**/failure-navigation-harness', route => route.fulfill({
+      contentType: 'text/html', body: `<style>body{margin:0}iframe{display:block;width:100%;height:900px;border:0}</style>
+        <main>Console fixture</main><output id="navigation-count">0</output>
+        <script type="module">
+          import { createIframeAuthCoordinator } from '/@fs${new URL('../../../common-frontend/basic/src/auth/authSession.js', import.meta.url).pathname}'
+          import { registerConsoleBridgeHandler } from '/@fs${new URL('../../../common-frontend/basic/src/utils/consoleBridge.js', import.meta.url).pathname}'
+          createIframeAuthCoordinator({
+            allowedOrigins: [location.origin], getToken: () => 'develop-e2e-token',
+            getExpiresAt: () => Date.now() + 300000,
+            refreshToken: async () => 'develop-e2e-token', logout: async () => {}
+          })
+          registerConsoleBridgeHandler('console-navigation', request => {
+            if (!request.synchronized) {
+              const count = document.querySelector('#navigation-count')
+              count.textContent = String(Number(count.textContent) + 1)
+            }
+            return { cancelled: true }
+          })
+          const frame = document.createElement('iframe')
+          frame.src = '/sql'
+          document.body.appendChild(frame)
+        </script>`
+    }))
+  }
+  await page.goto(embedded ? '/failure-navigation-harness' : '/sql')
+  const workbench = embedded ? page.frameLocator('iframe') : page
+  const catalog = workbench.locator('.catalog-panel')
   await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
   await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
   await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
   await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
-  await page.getByRole('button', { name: '执行', exact: true }).click()
-  const diagnostic = page.locator('.execution-failure')
+  await workbench.getByRole('button', { name: '执行', exact: true }).click()
+  const diagnostic = workbench.locator('.execution-failure')
   await expect(diagnostic).toContainText('查询内容与参数定义不一致')
   await expect(diagnostic).toContainText('校验执行配置')
   await expect(diagnostic).toContainText('develop.query.snapshot_invalid')
@@ -137,17 +163,36 @@ test('keeps a specific failure, stage and execution identity in the workbench an
   await page.setViewportSize({ width: 760, height: 700 })
   await expectNoDocumentOverflow(page)
   await expect(page.getByRole('button', { name: '查看执行详情', exact: true })).toHaveCount(0)
-  await page.route(`**/monitor/executions?execution_id=${EXECUTION_ID}`, route => route.fulfill({
+  await page.context().route(`**/monitor/executions?execution_id=${EXECUTION_ID}`, route => route.fulfill({
     contentType: 'text/html', body: '<main>Monitor execution destination</main>'
   }))
-  await diagnostic.getByRole('button', { name: '查看监控错误详情', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
+  const originalUrl = page.url()
+  const queryBefore = await workbench.locator('.view-lines').innerText()
+  const monitorLink = diagnostic.getByRole('link', { name: '查看监控错误详情', exact: true })
+  await expect(monitorLink).toHaveAttribute('target', '_blank')
+  await expect(monitorLink).toHaveAttribute('rel', 'noopener noreferrer')
+  const [monitorPage] = await Promise.all([page.waitForEvent('popup'), monitorLink.click()])
+  await expect(monitorPage).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
+  await expect(monitorPage.getByText('Monitor execution destination')).toBeVisible()
+  expect(await monitorPage.evaluate(() => window.opener === null)).toBe(true)
+  expect(page.url()).toBe(originalUrl)
+  if (embedded) await expect(page.locator('#navigation-count')).toHaveText('0')
+  await expect(workbench.locator('.view-lines')).toHaveText(queryBefore)
+  await expect(diagnostic).toContainText(EXECUTION_ID)
+  await expect(page.getByText('有未保存的修改', { exact: true })).toHaveCount(0)
+  await monitorPage.close()
   await page.goto(`/executions/${EXECUTION_ID}`)
   await expect(page.locator('.execution-failure')).toContainText('develop.query.snapshot_invalid')
   await expect(page.locator('.execution-failure')).toContainText('查询内容与参数定义不一致')
   await expect(page.getByRole('tab', { name: '错误信息', exact: true })).toHaveCount(0)
-  await page.locator('.execution-failure').getByRole('button', { name: '查看监控错误详情', exact: true }).click()
-  await expect(page).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
+  const ownerUrl = page.url()
+  const [ownerMonitorPage] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.locator('.execution-failure').getByRole('link', { name: '查看监控错误详情', exact: true }).click()
+  ])
+  await expect(ownerMonitorPage).toHaveURL(new RegExp(`/monitor/executions\\?execution_id=${EXECUTION_ID}$`))
+  expect(page.url()).toBe(ownerUrl)
+  await ownerMonitorPage.close()
 })
 
 test('keeps a Notebook runtime traceback in Owner logs after removing the generic error tab', async ({ page }) => {

@@ -20,7 +20,7 @@
       </template>
     </dl>
     <div class="execution-failure-actions">
-      <el-button v-if="showMonitorLink && executionId" type="primary" size="small" @click="openMonitorExecution(executionId, { target: '_self' })">
+      <el-button v-if="showMonitorLink && executionId" tag="a" type="primary" size="small" :href="buildMonitorExecutionUrl(executionId)" target="_blank" rel="noopener noreferrer">
         {{ t('common.executionFailure.openMonitorExecution') }}
       </el-button>
       <el-button v-if="executionId" size="small" @click="copyDetails">{{ t('common.executionFailure.copy') }}</el-button>
@@ -36,7 +36,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { executionFailurePresentation } from '../utils/executionFailure.mjs'
-import { openConsoleRoute, openMonitorExecution } from '../utils/taskOwnerUrl'
+import { openConsoleRoute, buildMonitorExecutionUrl } from '../utils/taskOwnerUrl'
 
 const props = defineProps({
   status: { type: String, default: '' },
