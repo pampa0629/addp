@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -121,6 +122,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		}
 		contexts["Bearer "+token] = a
 	}
+	var ownerRevoked atomic.Bool
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/system/oauth/token" {
 			json.NewEncoder(w).Encode(map[string]interface{}{"access_token": "addp_at_meta_fixture", "token_type": "bearer", "expires_in": 300, "scope": "addp.api"})
@@ -135,6 +137,10 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		if !ok {
 			w.WriteHeader(401)
 			return
+		}
+		if r.Header.Get("Authorization") == "Bearer owner" && ownerRevoked.Load() {
+			a = authorization.CloneAuthContext(a)
+			a.Authorization.RoleAssignments = []authorization.RoleAssignment{}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(a)
@@ -265,6 +271,20 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	request("foreign", "/executions/"+fixtures[0].ExecutionID, 404)
 	request("denied", "/scan/runs", 403)
 	request("denied", "/executions/"+fixtures[0].ExecutionID, 403)
+	// Reusing a formerly authorized token must consume current permissions;
+	// neither another User nor the dedicated machine caller inherits revocation.
+	ownerRevoked.Store(true)
+	for _, path := range []string{"/scan/runs", "/scan/runs?task_id=99", "/executions/" + fixtures[0].ExecutionID, "/executions/" + fixtures[1].ExecutionID} {
+		request("owner", path, http.StatusForbidden)
+	}
+	request("peer", "/executions/"+fixtures[0].ExecutionID, http.StatusOK)
+	request("peer", "/executions/"+fixtures[1].ExecutionID, http.StatusNotFound)
+	request("machine", "/task-provider/executions/"+fixtures[1].ExecutionID, http.StatusOK)
+	ownerRevoked.Store(false)
+	request("owner", "/executions/"+fixtures[1].ExecutionID, http.StatusOK)
+	if restored := request("owner", "/scan/runs", http.StatusOK); restored["total"] != float64(2) {
+		t.Fatal("restored permissions did not restore the original isolated list")
+	}
 	request("", "/scan/runs", 401)
 	request("machine", "/scan/runs", 403)
 	// Machine access intentionally reads another User's ad-hoc execution.

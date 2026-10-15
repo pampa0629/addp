@@ -202,3 +202,7 @@ Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通�
 该最小验收修正的 `make test-monitor-frontend` 已通过（59 单元、131 浏览器及构建），`make test-transfer-online-runner` 已通过（65 项）；修正前两个新用例明确失败于 strict-mode 双匹配。Hosted 复验另行记录，未完成前不计为通过。
 
 该修正以 `ba2c99652` 提交；包含修正的 main `65de8a82938ba1bbdd56df6f7c000be7f67076cc` 已在 [Hosted continuous T4 38381655995](https://github.com/pampa0629/addp/actions/runs/38381655995) 通过。下载后核对 live/recovery/revocation 三个闭合浏览器报告及九组接口/Worker 检查：真实事件进展、Worker 失联后新 UUID 恢复、暂停/恢复与安全失败码、跨租户与同租户 Owner 权限、Owner 不可用、撤权清空及新鲜 Monitor-only 会话拒绝、CDC 快照及增删改事件、删除任务后的授权历史读取均通过。正式登录的拒绝截图仅显示错误标题与重新加载按钮，无执行内容。System/Gateway/Meta/Transfer/Monitor 五个实际构建的源码均匹配上述 main；场景清理通过、残留 0，外层 Infra 销毁零残留。37 个归档文件未发现私有控制文件或标准访问令牌/JWT 模式。此前失败保持原记录，不将其改记为通过；本次不包含工作区尚未发布的 Workflow/Notebook 监督器改造、180 天概览清理或生产 T5。
+
+### 2026-10-15 租户执行读取链路 T1
+
+新增 `TestExecutionReadAPIReauthenticatesThroughOwnerForEveryRequest`：真实 Monitor 路由、HTTP Owner 裁决 Client、Owner 共享读取范围 Handler 和认证中间件串联，身份事实由独立 HTTP 夹具提供。逐请求核对 Owner 调用及身份重新读取，验证跨租户、同租户他人一次性执行、缺少发起主体、父可读子不可读、已删除定义历史、列表与统计总数、详情/树/事件的动态撤权及恢复，以及 Owner 不可用时整份 503、恢复后可读；响应不带执行配置、业务载荷或 Owner 原始错误。临时让身份夹具保留撤权前权限时，回归明确失败于应 404 实际 200；恢复后 `make test-module MODULE=monitor GO_ONLY=1` 通过。新增测试由现有 Monitor Go T1 及 Platform CI `Go workspace tests` 自动发现，无新增注册或 Swagger 变更。该证据仅为使用身份夹具的 T1，不代表真实 System IAM、PostgreSQL T2、完整模块门禁或新的 Hosted T4 通过；本次不修改这些实现或重跑历史 IAM 门禁。
