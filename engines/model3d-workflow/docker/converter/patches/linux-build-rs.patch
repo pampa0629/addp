@@ -1,49 +1,22 @@
-diff --git a/build.rs b/build.rs
-index d27160b..c6e04d4 100644
 --- a/build.rs
 +++ b/build.rs
-@@ -173,6 +173,11 @@ fn get_target_dir() -> std::path::PathBuf {
- 
- fn build_linux_unknown() {
-     let vcpkg_root = std::env::var("VCPKG_ROOT").expect("VCPKG_ROOT environment variable is not set");
+@@ -175,0 +176,5 @@
 +    let target = env::var("TARGET").unwrap_or_default();
 +    let vcpkg_triplet = match target.as_str() {
 +        "aarch64-unknown-linux-gnu" => "arm64-linux",
 +        _ => "x64-linux",
 +    };
- 
-     let vcpkg_has_been_installed = env::var("VCPKG_HAS_BEEN_INSTALLED").unwrap_or_default() == "1";
-     if vcpkg_has_been_installed {
-@@ -186,6 +191,7 @@ fn build_linux_unknown() {
-     let mut config = Config::new(".");
-     config
-         .define("CMAKE_TOOLCHAIN_FILE",format!("{}/scripts/buildsystems/vcpkg.cmake", vcpkg_root))
+@@ -188,0 +194 @@
 +        .define("VCPKG_INSTALL_OPTIONS", "--allow-unsupported")
-         .define("CMAKE_C_COMPILER", "/usr/bin/gcc")
-         .define("CMAKE_CXX_COMPILER", "/usr/bin/g++")
-         .define("CMAKE_MAKE_PROGRAM", "/usr/bin/make")
-@@ -216,15 +222,14 @@ fn build_linux_unknown() {
-     let vcpkg_installed_dir = Path::new(&out_dir)
-         .join("build")
-         .join("vcpkg_installed")
+@@ -219 +225 @@
 -        .join("x64-linux");
 +        .join(vcpkg_triplet);
-     // Link Search Path for third party library
-     let vcpkg_installed_lib_dir = vcpkg_installed_dir.join("lib");
-     println!("cargo:rustc-link-search=native={}", vcpkg_installed_lib_dir.display());
-     let osg_plugins_lib = vcpkg_installed_lib_dir.join("osgPlugins-3.6.5");
-     println!("cargo:rustc-link-search=native={}", osg_plugins_lib.display());
- 
+@@ -226,2 +232 @@
 -    // 0. System C++ library first
 -    println!("cargo:rustc-link-lib=stdc++");
 +    // 0. System libraries that do not depend on C++ symbols
-     println!("cargo:rustc-link-lib=z");
- 
-     // 1. FFI static
-@@ -301,6 +306,24 @@ fn build_linux_unknown() {
-     // GeographicLib for geoid height calculation
-     println!("cargo:rustc-link-lib=GeographicLib");
- 
+@@ -302,0 +308,18 @@
++
 +    // Static Linux linking needs provider libraries after dependent archives too.
 +    println!("cargo:rustc-link-lib=static=draco");
 +    println!("cargo:rustc-link-lib=GL");
@@ -61,67 +34,173 @@ index d27160b..c6e04d4 100644
 +    // GNU ld resolves libraries left-to-right; libstdc++ must follow the C++ archives above.
 +    println!("cargo:rustc-link-lib=stdc++");
 +    println!("cargo:rustc-link-lib=z");
-+
-     let vcpkg_share_dir = vcpkg_installed_dir.join("share");
-     copy_gdal_data(vcpkg_share_dir.to_str().unwrap());
-     copy_proj_data(vcpkg_share_dir.to_str().unwrap());
-@@ -721,6 +730,7 @@ fn main() {
-     match env::var("TARGET") {
-         Ok(val) => match val.as_str() {
-             "x86_64-unknown-linux-gnu" => build_linux_unknown(),
+@@ -723,0 +747 @@
 +            "aarch64-unknown-linux-gnu" => build_linux_unknown(),
-             "x86_64-pc-windows-msvc" => build_win_msvc(),
-             "aarch64-apple-darwin" => build_macos(),
-             "x86_64-apple-darwin" => build_macos_x86_64(),
-diff --git a/src/osgb23dtile.cpp b/src/osgb23dtile.cpp
 --- a/src/osgb23dtile.cpp
 +++ b/src/osgb23dtile.cpp
-@@ -52,4 +52,6 @@ USE_OSGPLUGIN(tga)
- USE_OSGPLUGIN(jpeg)
- USE_OSGPLUGIN(png)
- USE_SERIALIZER_WRAPPER_LIBRARY(osg)
+@@ -54,0 +55,2 @@
 +// Static OSG linking must retain the compressor registration used by compressed OSGB.
 +USE_COMPRESSOR_WRAPPER(ZLibCompressor)
- #endif
-diff --git a/src/mesh_processor.cpp b/src/mesh_processor.cpp
+@@ -1154,0 +1157 @@
++    std::vector<bool> texture_alpha;
+@@ -1164 +1167,3 @@
+-            if (::process_texture(tex, image_data, mime_type, enable_texture_compress)) {
++            bool image_has_alpha = false;
++            if (::process_texture(tex, image_data, mime_type, enable_texture_compress, &image_has_alpha)) {
++                texture_alpha.push_back(image_has_alpha);
+@@ -1179,0 +1185,2 @@
++            } else {
++                return false;
+@@ -1229,0 +1237 @@
++        if (texture_alpha.at(i)) mat.alphaMode = "BLEND";
 --- a/src/mesh_processor.cpp
 +++ b/src/mesh_processor.cpp
-@@ -208,6 +208,22 @@ bool process_texture(
-                     break;
-+                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
-+                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
-+                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
-+                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
-+                    jpeg_buf.resize(static_cast<size_t>(width) * height * 3);
-+                    for (int y = 0; y < height; ++y) {
-+                        for (int x = 0; x < width; ++x) {
-+                            const osg::Vec4 color = img->getColor(x, y, 0);
-+                            const size_t offset = (static_cast<size_t>(y) * width + x) * 3;
-+                            for (int channel = 0; channel < 3; ++channel) {
-+                                jpeg_buf[offset + channel] = static_cast<unsigned char>(
-+                                    color[channel] * 255.0f + 0.5f);
-+                            }
-+                        }
-+                    }
-+                    break;
-                 default:
-                     break;
-                 }
-             }
-         }
-diff --git a/src/main.rs b/src/main.rs
+@@ -8,0 +9,2 @@
++#include <algorithm>
++#include <limits>
+@@ -73 +75,2 @@
+-bool process_texture(osg::Texture* tex, std::vector<unsigned char>& image_data, std::string& mime_type, bool enable_texture_compress) {
++bool process_texture(osg::Texture* tex, std::vector<unsigned char>& image_data, std::string& mime_type, bool enable_texture_compress, bool* image_has_alpha) {
++    if (image_has_alpha) *image_has_alpha = false;
+@@ -171,62 +174,46 @@
+-        // If KTX2 compression failed, fall back to JPEG
+-    }
+-
+-    // Fallback to JPEG compression
+-    std::vector<unsigned char> jpeg_buf;
+-    int width, height;
+-    if (tex) {
+-        if (tex->getNumImages() > 0) {
+-            osg::Image* img = tex->getImage(0);
+-            if (img) {
+-                width = img->s();
+-                height = img->t();
+-
+-                const GLenum format = img->getPixelFormat();
+-                const char* rgb = (const char*)(img->data());
+-                uint32_t rowStep = img->getRowStepInBytes();
+-                uint32_t rowSize = img->getRowSizeInBytes();
+-                switch (format)
+-                {
+-                case GL_RGBA:
+-                    jpeg_buf.resize(width * height * 3);
+-                    for (int i = 0; i < height; i++)
+-                    {
+-                        for (int j = 0; j < width; j++)
+-                        {
+-                            jpeg_buf[i * width * 3 + j * 3] = rgb[i * width * 4 + j * 4];
+-                            jpeg_buf[i * width * 3 + j * 3 + 1] = rgb[i * width * 4 + j * 4 + 1];
+-                            jpeg_buf[i * width * 3 + j * 3 + 2] = rgb[i * width * 4 + j * 4 + 2];
+-                        }
+-                    }
+-                    break;
+-                case GL_BGRA:
+-                    jpeg_buf.resize(width * height * 3);
+-                    for (int i = 0; i < height; i++)
+-                    {
+-                        for (int j = 0; j < width; j++)
+-                        {
+-                            jpeg_buf[i * width * 3 + j * 3] = rgb[i * width * 4 + j * 4 + 2];
+-                            jpeg_buf[i * width * 3 + j * 3 + 1] = rgb[i * width * 4 + j * 4 + 1];
+-                            jpeg_buf[i * width * 3 + j * 3 + 2] = rgb[i * width * 4 + j * 4];
+-                        }
+-                    }
+-                    break;
+-                case GL_RGB:
+-                    for (int i = 0; i < height; i++)
+-                    {
+-                        for (int j = 0; j < rowSize; j++)
+-                        {
+-                            jpeg_buf.push_back(rgb[rowStep * i + j]);
+-                        }
+-                    }
+-                    break;
+-                default:
+-                    break;
+-                }
+-            }
+-        }
+-    }
+-    if (!jpeg_buf.empty()) {
+-        std::vector<char> buffer_data;
+-        stbi_write_jpg_to_func(write_buf, &buffer_data, width, height, 3, jpeg_buf.data(), 80);
+-        image_data.assign(buffer_data.begin(), buffer_data.end());
++        // Continue with standard PNG/JPEG encoding if KTX2 encoding fails.
++    }
++
++    if (!tex || tex->getNumImages() == 0) return false;
++    const osg::Image* img = tex->getImage(0);
++    if (!img || !img->data() || img->r() != 1) return false;
++    const int width = img->s(), height = img->t();
++    if (width <= 0 || height <= 0 || width > std::numeric_limits<int>::max() / 4 ||
++        static_cast<size_t>(width) > std::numeric_limits<size_t>::max() / height / 4) return false;
++    switch (img->getPixelFormat()) {
++        case GL_RGB:
++        case GL_RGBA:
++        case GL_BGRA:
++            if (img->getDataType() != GL_UNSIGNED_BYTE) return false;
++            break;
++        case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++        case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
++        case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
++        case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
++            break;
++        default:
++            return false;
++    }
++    // OSG handles row padding, channel order and DXT decoding in one pixel path.
++    std::vector<unsigned char> rgba(static_cast<size_t>(width) * height * 4);
++    bool translucent = false;
++    for (int y = 0; y < height; ++y) {
++        for (int x = 0; x < width; ++x) {
++            const osg::Vec4 color = img->getColor(x, y, 0);
++            const size_t offset = (static_cast<size_t>(y) * width + x) * 4;
++            for (int channel = 0; channel < 4; ++channel)
++                rgba[offset + channel] = static_cast<unsigned char>(
++                    std::clamp(color[channel], 0.0f, 1.0f) * 255.0f + 0.5f);
++            translucent = translucent || rgba[offset + 3] != 255;
++        }
++    }
++    std::vector<char> buffer;
++    bool encoded = false;
++    if (translucent) {
++        encoded = stbi_write_png_to_func(write_buf, &buffer, width, height, 4, rgba.data(), width * 4);
++        mime_type = "image/png";
++    } else {
++        std::vector<unsigned char> rgb(static_cast<size_t>(width) * height * 3);
++        for (size_t pixel = 0; pixel < rgb.size() / 3; ++pixel)
++            std::copy_n(rgba.data() + pixel * 4, 3, rgb.data() + pixel * 3);
++        encoded = stbi_write_jpg_to_func(write_buf, &buffer, width, height, 3, rgb.data(), 80);
+@@ -234,13 +221,5 @@
+-        return true;
+-    }
+-    else {
+-        std::vector<char> v_data(256 * 256 * 3, 255);
+-        width = height = 256;
+-        std::vector<char> buffer_data;
+-        stbi_write_jpg_to_func(write_buf, &buffer_data, width, height, 3, v_data.data(), 80);
+-        image_data.assign(buffer_data.begin(), buffer_data.end());
+-        mime_type = "image/jpeg";
+-        return true;
+-    }
+-
+-    return false;
++    }
++    if (!encoded || buffer.empty()) return false;
++    image_data.assign(buffer.begin(), buffer.end());
++    if (image_has_alpha) *image_has_alpha = translucent;
++    return true;
+--- a/src/mesh_processor.h
++++ b/src/mesh_processor.h
+@@ -68 +68 @@
+-bool process_texture(osg::Texture* tex, std::vector<unsigned char>& image_data, std::string& mime_type, bool enable_texture_compress = false);
++bool process_texture(osg::Texture* tex, std::vector<unsigned char>& image_data, std::string& mime_type, bool enable_texture_compress = false, bool* image_has_alpha = nullptr);
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -470,9 +470,11 @@ fn convert_gltf(src: &str, dest: &str) {
-     }
-     unsafe {
+@@ -472,0 +473 @@
 +        let source = CString::new(src).unwrap();
-         let c_str = CString::new(dest).unwrap();
+@@ -474 +475 @@
 -        let ret = osgb::osgb2glb(src.as_ptr(), c_str.as_ptr() as *const u8);
 +        let ret = osgb::osgb2glb(source.as_ptr() as *const u8, c_str.as_ptr() as *const u8);
-         if !ret {
-             error!("convert failed");
+@@ -476,0 +478 @@
 +            std::process::exit(1);
-         } else {
-             info!("task over");
-         }

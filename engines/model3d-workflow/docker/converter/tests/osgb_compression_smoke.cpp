@@ -35,24 +35,55 @@ int main(int argc, char** argv) {
       geometry->addPrimitiveSet(indices.get());
       if (argc == 4) {
         const std::string format = argv[3];
-        const GLenum pixel_format = format == "dxt1" ? GL_COMPRESSED_RGB_S3TC_DXT1_EXT :
-          format == "dxt1a" ? GL_COMPRESSED_RGBA_S3TC_DXT1_EXT :
-          format == "dxt3" ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT :
-          format == "dxt5" ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT : 0;
-        if (!pixel_format) throw std::runtime_error("unknown fixture texture format");
-        const int block_bytes = format == "dxt1" || format == "dxt1a" ? 8 : 16;
-        auto* pixels = new unsigned char[4 * block_bytes]{};
-        for (int block = 0; block < 4; ++block) {
-          auto* data = pixels + block * block_bytes;
-          if (format == "dxt3") std::fill(data, data + 8, 255);
-          if (format == "dxt5") data[0] = 255;
-          auto* color = data + block_bytes - 8;
-          color[0] = 0; color[1] = 0xf8; // RGB565 red endpoint, all indices zero.
-          color[2] = 0xe0; color[3] = 0x07;
-        }
+        const bool transparent = format.find("-alpha") != std::string::npos;
+        const auto base = format.substr(0, format.find("-alpha"));
+        const GLenum pixel_format = base == "dxt1" ? GL_COMPRESSED_RGB_S3TC_DXT1_EXT :
+          base == "dxt1a" ? GL_COMPRESSED_RGBA_S3TC_DXT1_EXT :
+          base == "dxt3" ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT :
+          base == "dxt5" ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT : 0;
         osg::ref_ptr<osg::Image> image = new osg::Image;
-        image->setImage(8, 8, 1, pixel_format, pixel_format, GL_UNSIGNED_BYTE,
-                        pixels, osg::Image::USE_NEW_DELETE, 1);
+        if (pixel_format) {
+          const int block_bytes = base == "dxt1" || base == "dxt1a" ? 8 : 16;
+          auto* pixels = new unsigned char[4 * block_bytes]{};
+          for (int block = 0; block < 4; ++block) {
+            auto* data = pixels + block * block_bytes;
+            if (base == "dxt3") {
+              for (int byte = 0; byte < 8; ++byte)
+                data[byte] = transparent && byte % 2 == 0 ? 0x80 : 0xff;
+            }
+            if (base == "dxt5") {
+              data[0] = 255;
+              if (transparent) {
+                std::uint64_t indices = 0;
+                for (int pixel = 0; pixel < 16; ++pixel)
+                  indices |= std::uint64_t(pixel % 4 == 0 ? 1 : pixel % 4 == 1 ? 2 : 0) << (pixel * 3);
+                for (int byte = 0; byte < 6; ++byte) data[byte + 2] = (indices >> (byte * 8)) & 255;
+              }
+            }
+            auto* color = data + block_bytes - 8;
+            color[0] = 0; color[1] = 0xf8; // RGB565 red endpoint.
+            color[2] = 0xe0; color[3] = 0x07;
+            if (base == "dxt1a" && transparent) {
+              color[0] = 0xe0; color[1] = 0x07; // c0 <= c1 enables transparent index 3.
+              color[2] = 0; color[3] = 0xf8;
+              std::fill(color + 4, color + 8, 0xdd); // Alternate red index 1 and transparent index 3.
+            }
+          }
+          // SuperMap serializes compressed blocks with dataType=0; their format defines decoding.
+          image->setImage(8, 8, 1, pixel_format, pixel_format, transparent ? 0 : GL_UNSIGNED_BYTE,
+                          pixels, osg::Image::USE_NEW_DELETE, 1);
+        } else {
+          const GLenum raw_format = format == "rgb-padded" ? GL_RGB :
+              format == "rgba-padded" ? GL_RGBA : format == "bgra-padded" ? GL_BGRA : 0;
+          if (!raw_format) throw std::runtime_error("unknown fixture texture format");
+          image->allocateImage(7, 8, 1, raw_format, GL_UNSIGNED_BYTE, 8);
+          for (int y = 0; y < 8; ++y) for (int x = 0; x < 7; ++x) {
+            auto* pixel = image->data(x, y);
+            pixel[0] = raw_format == GL_BGRA ? 0 : 255;
+            pixel[1] = 0; pixel[2] = raw_format == GL_BGRA ? 255 : 0;
+            if (raw_format != GL_RGB) pixel[3] = x % 4 == 0 ? 0 : x % 4 == 1 ? 128 : 255;
+          }
+        }
         osg::ref_ptr<osg::Texture2D> texture = new osg::Texture2D(image.get());
         geometry->getOrCreateStateSet()->setTextureAttributeAndModes(0, texture.get(), osg::StateAttribute::ON);
         osg::ref_ptr<osg::Vec2Array> uv = new osg::Vec2Array;
@@ -91,7 +122,14 @@ int main(int argc, char** argv) {
         const auto texture = material.at("pbrMetallicRoughness").at("baseColorTexture").at("index").get<std::size_t>();
         if (doc.at("textures").at(texture).at("source") != 0)
           throw std::runtime_error("GLB material must reference the compressed texture");
+        const std::string format = argv[3];
+        const bool raw_alpha = format == "rgba-padded" || format == "bgra-padded";
+        const bool transparent = raw_alpha || format.find("-alpha") != std::string::npos;
+        if (material.value("alphaMode", "OPAQUE") != (transparent ? "BLEND" : "OPAQUE"))
+          throw std::runtime_error("GLB material must preserve texture alpha coverage");
         const auto& image = doc.at("images").at(0);
+        if (image.at("mimeType") != (transparent ? "image/png" : "image/jpeg"))
+          throw std::runtime_error("GLB texture encoding must preserve alpha without changing opaque JPEG");
         const auto& view = doc.at("bufferViews").at(image.at("bufferView").get<std::size_t>());
         std::uint32_t binary_header[2]{};
         input.read(reinterpret_cast<char*>(binary_header), sizeof(binary_header));
@@ -104,11 +142,20 @@ int main(int argc, char** argv) {
         int width = 0, height = 0, channels = 0;
         std::unique_ptr<unsigned char, decltype(&stbi_image_free)> pixels(
           stbi_load_from_memory(reinterpret_cast<const unsigned char*>(binary.data() + offset),
-                                static_cast<int>(length), &width, &height, &channels, 3), stbi_image_free);
-        if (!pixels || width != 8 || height != 8) throw std::runtime_error("compressed texture dimensions changed");
-        for (int i = 0; i < width * height; ++i)
-          if (pixels.get()[i * 3] < 200 || pixels.get()[i * 3 + 1] > 60 || pixels.get()[i * 3 + 2] > 60)
-            throw std::runtime_error("compressed red texture became a placeholder or lost its color");
+                                static_cast<int>(length), &width, &height, &channels, 4), stbi_image_free);
+        const int expected_width = format.find("padded") != std::string::npos ? 7 : 8;
+        if (!pixels || width != expected_width || height != 8 || channels != (transparent ? 4 : 3))
+          throw std::runtime_error("texture dimensions or encoded channels changed");
+        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+          const auto* pixel = pixels.get() + (y * width + x) * 4;
+          unsigned char expected_alpha = 255;
+          if (format == "dxt1a-alpha") expected_alpha = x % 2 == 0 ? 255 : 0;
+          else if (transparent) expected_alpha = x % 4 == 0 ? 0 : x % 4 == 1 ?
+              (format == "dxt3-alpha" ? 136 : format == "dxt5-alpha" ? (6 * 255 + 3) / 7 : 128) : 255;
+          if (pixel[3] != expected_alpha) throw std::runtime_error("texture alpha pixel changed");
+          if (expected_alpha && (pixel[0] < 200 || pixel[1] > 60 || pixel[2] > 60))
+            throw std::runtime_error("texture color or row alignment changed");
+        }
         std::cout << argv[3] << " texture pixel regression passed\n";
       }
       std::cout << "Compressed OSGB to GLB 2.0 smoke passed" << std::endl;

@@ -255,7 +255,7 @@ def verify(prefix):
             invoke_operator(operator, {"access_plan": plan}, env=bound, timeout_seconds=60)
             validate_glb(target)
             return target
-        for texture in ("dxt1", "dxt1a", "dxt3", "dxt5"):
+        for texture in ("dxt1", "dxt1a", "dxt3", "dxt5", "dxt1a-alpha", "dxt3-alpha", "dxt5-alpha", "rgb-padded", "rgba-padded", "bgra-padded"):
             source = work / (texture + ".osgb")
             subprocess.run([str(prefix / "bin/osgb-smoke"), "generate", str(source), texture], check=True, capture_output=True)
             target = convert("osgb_to_glb", source, "osgb")

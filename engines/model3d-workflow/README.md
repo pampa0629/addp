@@ -118,6 +118,13 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 
 2026-10-15 [Hosted 38695122458](https://github.com/pampa0629/addp/actions/runs/38695122458) 已通过修复源码 `7a3c9a6f2006321a1eec6161d90a21380ecbde22` 的正式 Linux x86_64 产品构建和 Manager 链路。归档的 Runtime 日志核对 DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 八个正式算子均返回 200，八个浏览器缓存预览均加载成功；DAE 和 3DS 分别为 1764／1888 字节，各内嵌一张 PNG，截图均显示有色三角形。MAX 仍使用导入器 1.9.2、用户毫米换算 0.001、五个静态网格和 444 个顶点。测试使用已批准的十项权限普通 User；逐格式结果与任务删除、内容不可用和资源零残留断言通过，最终 Hosted Infra 清理为零残留。该结果补齐上一段尚未完成的完整 Runtime／x86_64 验证，不包含后续 SGM 秋树修复的页面验收。
 
+OSGB 基础颜色贴图统一由 OSG 读取 RGB／RGBA／BGRA 与 DXT1／DXT3／DXT5 像素，含透明或半透明像素时内嵌 RGBA PNG 并给关联材质设置 `alphaMode=BLEND`；全不透明图片继续输出 RGB JPEG。源行对齐和 PNG alpha 必须保留，不能仅改材质模式而丢弃图片 alpha；未知／损坏图片不能替换为白色占位图。该规则同时作用于共享的 OSGB 单体与场景转换代码；不声明源 AlphaFunc 阈值及全部材质保真；透明模式遵循 [glTF 2.0 Alpha Coverage](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#alpha-coverage)。现有 Linux 产品构建和 macOS 原生 prepare／verify 均运行同一 `osgb_compression_smoke.cpp`，增加压缩及原始透明像素、MIME、材质和行对齐断言；根 `make test-model3d-workflow`、`make test-module MODULE=engines`、开发生命周期及已有 Platform CI／产品构建登记覆盖变更，无新服务、API、依赖或公共测试入口。
+
+
+2026-10-15 透明贴图转换验证：已确认真实 SGM 派生 OSGB 的 DXT5 仍保留 alpha，旧转换器在 JPEG 编码时丢弃该通道，GLB 材质也未声明透明模式。压缩图片的 `dataType=0` 是当前 SDK 的真实输出，其像素格式决定 DXT 解码，不按原始 RGB 的 component type 校验；自建透明 DXT 用例覆盖该表达。macOS 新私有工具包 `51fccfb784dbf9a0` 经标准 `native_setup.py prepare` 完成构建及 verify。根 `make test-model3d-workflow` 通过 293 项（279 项常规测试，加 10 个临时真实原生贴图用例和 4 个私有 SGM 派生模型用例）；旧代码先在透明及行对齐用例上复现失败。真实秋树与春树均输出一张 RGBA PNG 和一张不透明 RGB JPEG；秋树 PNG 的 774205 个全透明、126685 个半透明像素与 OSGB 解码一致，9589 顶点、7273 面及材质 UV 保持。冬树 GLB 的 SHA-256 仍为 `dee74aebc05be2d80d552c4c6245ed5c533bed2ca6e67ab515458b21639942e3`，汽车转换通过，四个源 OSGB 字节不变。
+
+同轮 `make test-module MODULE=engines` 首次因 Infra 生命周期夹具的 10 秒超时失败，本轮构建结束后复跑，104 项生命周期单测通过，但随后在独立 Agent restart 夹具的 30 秒超时中止；完整模块门禁未计为通过，待已有 Platform consistency 与 Model3D CI 门禁复验。完整 Linux 产品构建首次直连及临时代理复试均在固定版本 vcpkg 的 GitHub TLS 下载阶段失败，未关闭证书校验或改换版本、软件源；该结果不计为 Linux 编译或 Runtime 镜像通过，后续由已有 Manager Hosted 产品构建及 T4 入口验证。临时代理只作用于当次独立 Docker 配置，退出后已清理，个人 Docker 配置和运行服务保持原样。透明度的实际页面效果尚待 Model3D 重启后重新生成快显并验收。
+
 Linux 静态 OSG 显式注册 zlib compressor，以读取超图等工具导出的压缩 OSGB。Converter 镜像构建在复制生产产物前，用自建三角形生成 zlib 压缩 OSGB、调用同一 `_3dtile` 转换，再校验 GLB 2.0 及顶点/三角面数量；该构建门禁不依赖 SuperMap SDK 或许可。
 
 默认上游引用固定为 `fanvanzh/3dtiles@acbcf603f33fdfe3c34b704a8b019c4fd32a8376`。如需临时验证其他上游版本，可通过 `THREE_DTILES_REF=<commit-or-branch>` 覆盖，但生产镜像应使用固定 commit。

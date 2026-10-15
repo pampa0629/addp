@@ -58,7 +58,7 @@ RUN set -eu; \
     /tmp/osgb-compression-smoke generate /tmp/compressed-triangle.osgb; \
     target/release/_3dtile -f gltf -i /tmp/compressed-triangle.osgb -o /tmp/compressed-triangle.glb; \
     /tmp/osgb-compression-smoke verify /tmp/compressed-triangle.glb; \
-    for format in dxt1 dxt1a dxt3 dxt5; do \
+    for format in dxt1 dxt1a dxt3 dxt5 dxt1a-alpha dxt3-alpha dxt5-alpha rgb-padded rgba-padded bgra-padded; do \
       /tmp/osgb-compression-smoke generate "/tmp/texture-${format}.osgb" "$format"; \
       target/release/_3dtile -f gltf -i "/tmp/texture-${format}.osgb" -o "/tmp/texture-${format}.glb"; \
       /tmp/osgb-compression-smoke verify "/tmp/texture-${format}.glb" "$format"; \

@@ -98,3 +98,18 @@ def test_corrupt_ready_cache_cannot_be_rebuilt_while_bound(tmp_path, monkeypatch
     monkeypatch.setattr(native_setup, "build", lambda *a: pytest.fail("damaged cache was overwritten"))
     with pytest.raises(RuntimeError, match="cache is damaged"):
         native_setup.prepare(tmp_path)
+
+
+def test_native_and_linux_texture_smoke_share_alpha_and_padding_cases():
+    import ast
+    import re
+
+    tree = ast.parse(Path(native_setup.__file__).read_text())
+    verify = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "verify")
+    loop = next(node for node in ast.walk(verify) if isinstance(node, ast.For) and
+                isinstance(node.target, ast.Name) and node.target.id == "texture")
+    native_cases = list(ast.literal_eval(loop.iter))
+    dockerfile = (native_setup.CONVERTER / "Dockerfile").read_text()
+    linux_cases = re.search(r"for format in ([^;]+); do", dockerfile).group(1).split()
+    assert native_cases == linux_cases
+    assert {"dxt1a-alpha", "dxt3-alpha", "dxt5-alpha", "rgb-padded", "rgba-padded", "bgra-padded"} <= set(native_cases)
