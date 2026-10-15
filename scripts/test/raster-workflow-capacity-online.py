@@ -233,6 +233,25 @@ def validate_directory_execution(execution,source_locator,name):
     return facts,scans[0]
 
 
+def validate_directory_scan(parent,scan,scan_id,identity,target_engine):
+    principal=scene.positive(int(identity['principal_id']),'mosaic initiating User')
+    tenant=scene.positive(int(identity['tenant_id']),'mosaic Tenant')
+    parent_id=parent.get('execution_id')
+    context=scene.obj(scan.get('scan_context'),'mosaic scan context')
+    if (not isinstance(parent_id,str) or not parent_id
+        or type(parent.get('triggered_by')) is not int or parent['triggered_by']!=principal
+        or type(scan.get('triggered_by')) is not int or scan['triggered_by']!=principal
+        or type(scan.get('tenant_id')) is not int or scan['tenant_id']!=tenant
+        or scan.get('execution_id')!=scan_id or scan.get('parent_execution_id')!=parent_id
+        or (scan.get('module'),scan.get('task_type'),scan.get('status'))!=('meta','scan','success')
+        or scan.get('source_task_id') is not None
+        or type(context.get('engine_id')) is not int or context['engine_id']!=target_engine
+        or context.get('scan_depth')!='deep'):
+        raise scene.SuiteError('capacity mosaic automatic scan actor, parent, Tenant or target differ')
+    return {**{key:scan[key] for key in ('execution_id','parent_execution_id','module','task_type','status','triggered_by','tenant_id')},
+            'scan_context':{'engine_id':context['engine_id'],'scan_depth':context['scan_depth']}}
+
+
 def validate_directory_item(item,physical):
     attrs=scene.obj(item.get('attributes'),'mosaic attributes');facts=scene.obj(attrs.get('item'),'mosaic item facts')
     if (facts.get('data_type'),facts.get('format'),facts.get('layout'))!=('media','raster_mosaic','whole'):
@@ -305,7 +324,10 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         expected_hashes=hashes
         verification.update(physical_verified=True,physical=actual)
         verification_path.write_text(json.dumps(verification,sort_keys=True))
-        scans.add(scan);scene.wait_execution(client,'meta',scan,600)
+        scans.add(scan);scan_execution=scene.wait_execution(client,'meta',scan,600)
+        scan_observation=validate_directory_scan(execution,scan_execution,scan,report['identity'],target_engine)
+        verification['automatic_scan_observation']=scan_observation
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
         item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
         item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         sizes=validate_directory_item(item,actual)
@@ -320,6 +342,7 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
             'elapsed_seconds':elapsed,'timing_method':'submit-one-Manager-task-through-parent-terminal-excludes-oracle-and-scan',
             'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
             'measurement':metrics,'samples':samples,'target_item_id':item['id'],'automatic_scan_execution_id':scan,
+            'automatic_scan_observation':scan_observation,
             'owner_facts':facts,'size_evidence':sizes,'physical':actual,'purge':'passed'})
         save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
     if len(report['mosaic_groups'])!=4 or expected_hashes is None:

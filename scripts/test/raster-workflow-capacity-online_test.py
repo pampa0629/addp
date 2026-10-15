@@ -227,6 +227,31 @@ class CapacityEvidenceTest(unittest.TestCase):
 
 
 class DirectoryCapacityEvidenceTest(unittest.TestCase):
+    def test_scan_observation_requires_user_parent_tenant_target_and_exact_reference(self):
+        parent=self.execution();parent['triggered_by']=33
+        identity={'principal_id':'33','tenant_id':'2'}
+        child={'execution_id':'new-scan','parent_execution_id':'parent','triggered_by':33,'tenant_id':2,
+               'module':'meta','task_type':'scan','status':'success','scan_context':{'engine_id':9,'scan_depth':'deep'}}
+        evidence=m.validate_directory_scan(parent,child,'new-scan',identity,9)
+        self.assertEqual(evidence['parent_execution_id'],'parent')
+        self.assertEqual(evidence['triggered_by'],33)
+        self.assertEqual(evidence['scan_context'],child['scan_context'])
+        for field,value in [('execution_id','other'),('parent_execution_id','foreign-parent'),('triggered_by',34),
+                            ('triggered_by','33'),('triggered_by',True),('triggered_by',None),('tenant_id',3),
+                            ('tenant_id','2'),('module','manager'),('task_type','other'),('status','failed'),
+                            ('source_task_id','persisted-task')]:
+            invalid=copy.deepcopy(child);invalid[field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_scan(parent,invalid,'new-scan',identity,9)
+        for field,value in [('engine_id',8),('engine_id','9'),('scan_depth','basic')]:
+            invalid=copy.deepcopy(child);invalid['scan_context'][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_scan(parent,invalid,'new-scan',identity,9)
+        for value in (34,'33',None,True):
+            invalid=copy.deepcopy(parent);invalid['triggered_by']=value
+            with self.subTest(parent_actor=value),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_scan(invalid,child,'new-scan',identity,9)
+
     def test_directory_matrix_and_task_keep_original_scene_and_single_parent_scope(self):
         self.assertEqual(list(m.directory_matrix()),[(1,1),(1,4),(2,4),(2,1)])
         self.assertEqual(len(list(m.matrix())),12)
@@ -317,7 +342,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
         for fail in (None,'parent','physical','meta'):
             with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);env={'ADDP_ONLINE_ARTIFACT_DIR':str(root),'ADDP_ONLINE_SECRET_DIR':str(root)}
-                report={'identity':{'principal_id':'33'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
+                report={'identity':{'principal_id':'33','tenant_id':'2'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
                 current=dict(version=1,running=2,waiting=2,cache_mib=256,default_tenant_running=2,default_tenant_waiting=2)
                 tasks={};calls=[];executions={};scans=set();verification_order=[]
                 item,actual=self.item();actual.update(source_unchanged=True,rasters={'cog':{'sha256':'stable'}})
@@ -333,6 +358,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     if method=='POST' and path.endswith('/execute'):
                         task_id=int(path.split('/')[-2]);name=tasks[task_id]['name'];identifier='parent-'+str(task_id)
                         e=self.execution();e['execution_id']=identifier
+                        e['triggered_by']=33
                         e['metadata']['lineage_facts']['outputs'][0]['locator']=f'/vsis3/raster-target/{name}/mosaic.addp.json'
                         e['metadata']['lineage_facts']['meta_scan_refs']=['scan-'+str(task_id)]
                         executions[identifier]=e;return SimpleNamespace(payload={'execution_id':identifier})
@@ -354,7 +380,9 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     if module=='meta':
                         verification_order.append('meta')
                         if fail=='meta':raise m.scene.SuiteError('Meta execution returned HTTP 404')
-                        return {'status':'success'}
+                        return {'execution_id':identifier,'parent_execution_id':identifier.replace('scan-','parent-'),
+                                'module':'meta','task_type':'scan','status':'success','triggered_by':33,'tenant_id':2,
+                                'scan_context':{'engine_id':9,'scan_depth':'deep'}}
                     if fail=='parent':raise m.scene.SuiteError('Manager execution failed')
                     return executions[identifier]
                 def physical(action,names):
@@ -396,6 +424,11 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                 if fail:self.assertFalse((root/'capacity-progress.json').exists())
                 if not fail:
                     self.assertEqual([g['leaf_concurrency'] for g in report['mosaic_groups']],[1,4,4,1])
+                    for group in report['mosaic_groups']:
+                        proof=group['automatic_scan_observation']
+                        self.assertEqual(proof['parent_execution_id'],group['execution_id'])
+                        snapshot=json.loads((root/(group['dataset_name']+'-verification.json')).read_text())
+                        self.assertEqual(snapshot['automatic_scan_observation'],proof)
                     self.assertEqual(json.loads((root/'capacity-progress.json').read_text())['completed_mosaic_groups'],4)
 
 
