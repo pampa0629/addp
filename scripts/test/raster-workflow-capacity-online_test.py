@@ -201,4 +201,157 @@ class CapacityEvidenceTest(unittest.TestCase):
                              {k:v for k,v in original.items() if k!='version'})
 
 
+class DirectoryCapacityEvidenceTest(unittest.TestCase):
+    def test_directory_matrix_and_task_keep_original_scene_and_single_parent_scope(self):
+        self.assertEqual(list(m.directory_matrix()),[(1,1),(1,4),(2,4),(2,1)])
+        self.assertEqual(len(list(m.matrix())),12)
+        body=m.directory_task(8,9,'capacity-mosaic-l4-r1',4);cfg=body['config']
+        self.assertEqual(cfg['source']['node_locator'],'addp://engine/8/path/raster-source/mosaic-source?type=prefix')
+        self.assertEqual(cfg['target']['storage_locator'],'addp://engine/9/path/raster-target?type=bucket')
+        self.assertEqual(cfg['cog']['leaf_concurrency'],4)
+        self.assertEqual(cfg['cog']['num_threads'],1)
+        self.assertEqual(cfg['overview'],{'enabled':True,'max_pixels':5490**2,'resampling':'NEAREST'})
+        self.assertFalse(cfg['tiles']['enabled'])
+
+    def test_capacity_identity_requires_exact_manager_extension_without_escalating_original(self):
+        original=importlib.import_module('scripts.test.raster-workflow-online_test')
+        client=original.Client()
+        permissions=client.context['authorization']['role_assignments'][0]['permissions']
+        with self.assertRaises(m.scene.SuiteError):m.scene.validate_identity(client,2,required_permissions=m.scene.PERMISSIONS|m.MANAGER_PERMISSIONS)
+        permissions.extend(sorted(m.MANAGER_PERMISSIONS))
+        identity=m.scene.validate_identity(client,2,required_permissions=m.scene.PERMISSIONS|m.MANAGER_PERMISSIONS)
+        self.assertEqual(set(identity['permissions_verified']),m.scene.PERMISSIONS|m.MANAGER_PERMISSIONS)
+        with self.assertRaises(m.scene.SuiteError):m.scene.validate_identity(client,2)
+        permissions.append('manager.derived_artifact.delete')
+        with self.assertRaises(m.scene.SuiteError):m.scene.validate_identity(client,2,required_permissions=m.scene.PERMISSIONS|m.MANAGER_PERMISSIONS)
+
+    def execution(self):
+        return {'execution_id':'parent','module':'manager','task_type':m.MOSAIC_TASK_TYPE,'status':'success',
+            'metadata':{'workflow_runtime':{'engine_type':'geopython_workflow','operator':'build_raster_mosaic','mode':'direct'},
+                'lineage_facts':{'schema_version':'addp.lineage-facts/v1',
+                    'inputs':[{'locator':'addp://engine/8/path/raster-source/mosaic-source?type=prefix'}],
+                    'outputs':[{'locator':'/vsis3/raster-target/capacity-mosaic-l1-r1/mosaic.addp.json'}],
+                    'operations':[{'kind':'derive','operator':m.MOSAIC_TASK_TYPE}], 'meta_scan_refs':['new-scan']}}}
+
+    def test_directory_owner_runtime_source_output_and_new_automatic_scan_are_required(self):
+        original=self.execution();source=original['metadata']['lineage_facts']['inputs'][0]['locator']
+        self.assertEqual(m.validate_directory_execution(original,source,'capacity-mosaic-l1-r1')[1],'new-scan')
+        mutations=[('owner',lambda e:e.update(module='develop')),('status',lambda e:e.update(status='failed')),
+            ('runtime',lambda e:e['metadata']['workflow_runtime'].update(mode='workflow')),
+            ('operator',lambda e:e['metadata']['workflow_runtime'].update(operator='raster_mosaic')),
+            ('source',lambda e:e['metadata']['lineage_facts']['inputs'][0].update(locator='other')),
+            ('output',lambda e:e['metadata']['lineage_facts']['outputs'][0].update(locator='/vsis3/raster-target/other/mosaic.addp.json')),
+            ('scan',lambda e:e['metadata']['lineage_facts'].update(meta_scan_refs=[])),
+            ('schema',lambda e:e['metadata']['lineage_facts'].update(schema_version='other'))]
+        for name,mutate in mutations:
+            e=copy.deepcopy(original);mutate(e)
+            with self.subTest(name=name),self.assertRaises(m.scene.SuiteError):m.validate_directory_execution(e,source,'capacity-mosaic-l1-r1')
+
+    def item(self):
+        summary=dict(extent=[600000,3890220,709800,4000020],leaf_count=4,source_count=4,failed_count=0,
+                     vrt_width=10980,vrt_height=10980,overview_width=5490,overview_height=5490)
+        physical={'physical_size_bytes':123,'object_size_bytes':123,'summary':summary}
+        attrs={'item':{'data_type':'media','format':'raster_mosaic','layout':'whole'},
+               'capabilities':{'spatial':{'srid':32617,'extent':summary['extent']}},
+               'format_info':{'raster_mosaic':{**{k:v for k,v in summary.items() if k!='extent'},
+                   'manifest_ref':'mosaic.addp.json','index_ref':'index/source-index.json','overview_ref':'overviews/overview.cog.tif'}}}
+        return {'id':88,'size_bytes':123,'attributes':attrs},physical
+
+    def test_whole_dataset_sizes_use_physical_and_object_totals_not_manifest_bytes(self):
+        item,physical=self.item()
+        self.assertEqual(m.validate_directory_item(item,physical),{'physical_total_size_bytes':123,'object_total_size_bytes':123,'data_item_size_bytes':123})
+        for key in ('physical_size_bytes','object_size_bytes','size_bytes'):
+            for value in (123.0,True,0,-1,124,'123',None):
+                item,physical=self.item();(item if key=='size_bytes' else physical)[key]=value
+                with self.subTest(key=key,value=value),self.assertRaises(m.scene.SuiteError):m.validate_directory_item(item,physical)
+        for key,value in [('layout','single'),('data_type','table'),('format','tiff')]:
+            item,physical=self.item();item['attributes']['item'][key]=value
+            with self.subTest(key=key),self.assertRaises(m.scene.SuiteError):m.validate_directory_item(item,physical)
+        item,physical=self.item();item['attributes']['format_info']['raster_mosaic']['overview_width']=10980
+        with self.assertRaises(m.scene.SuiteError):m.validate_directory_item(item,physical)
+
+    def test_single_parent_has_no_fake_queue_requirement_but_still_needs_actual_admission_and_drain(self):
+        samples,before,after=CapacityEvidenceTest().measurement()
+        samples[0]['runtime']['waiting']=0
+        self.assertEqual(m.validate_measurement(samples,before,after,64,1,3,submitted_tasks=1)['max_waiting'],0)
+        with self.assertRaises(m.scene.SuiteError):m.validate_measurement(samples,before,after,64,1,3)
+        samples[0]['runtime']['running']=0
+        with self.assertRaises(m.scene.SuiteError):m.validate_measurement(samples,before,after,64,1,3,submitted_tasks=1)
+
+    def test_checkpoint_keeps_directory_progress_without_final_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);group={'leaf_concurrency':4,'repetition':1}
+            m.save_progress(root,{'run_id':'run','result':'passed','groups':[{}]*12,'mosaic_groups':[group]})
+            report=json.loads((root/'capacity-progress.json').read_text())
+            self.assertEqual(report['completed_groups'],12);self.assertEqual(report['completed_mosaic_groups'],1)
+            self.assertEqual(report['mosaic_groups'],[group]);self.assertNotIn('result',report)
+
+
+    def test_real_manager_route_sequence_four_groups_and_failure_measurements(self):
+        from unittest.mock import Mock
+        for fail in (False,True):
+            with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);env={'ADDP_ONLINE_ARTIFACT_DIR':str(root),'ADDP_ONLINE_SECRET_DIR':str(root)}
+                report={'identity':{'principal_id':'33'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
+                current=dict(version=1,running=2,waiting=2,cache_mib=256,default_tenant_running=2,default_tenant_waiting=2)
+                tasks={};calls=[];executions={};scans=set()
+                item,actual=self.item();actual.update(source_unchanged=True,rasters={'cog':{'sha256':'stable'}})
+                def request(method,path,statuses,body=None):
+                    calls.append((method,path,statuses,body))
+                    if path=='/policy':
+                        if method=='PUT':current.update(body);current['version']+=1
+                        return SimpleNamespace(payload={'policy':current.copy()})
+                    if method=='POST' and path.endswith('/'+m.MOSAIC_TASK_TYPE):
+                        identifier=len(tasks)+1;tasks[identifier]=copy.deepcopy(body)
+                        return SimpleNamespace(payload={'id':identifier})
+                    if method=='DELETE':return SimpleNamespace(payload=None)
+                    if method=='POST' and path.endswith('/execute'):
+                        task_id=int(path.split('/')[-2]);name=tasks[task_id]['name'];identifier='parent-'+str(task_id)
+                        e=self.execution();e['execution_id']=identifier
+                        e['metadata']['lineage_facts']['outputs'][0]['locator']=f'/vsis3/raster-target/{name}/mosaic.addp.json'
+                        e['metadata']['lineage_facts']['meta_scan_refs']=['scan-'+str(task_id)]
+                        executions[identifier]=e;return SimpleNamespace(payload={'execution_id':identifier})
+                    if '/tasks/' in path:
+                        task=tasks[int(path.rsplit('/',1)[1])]
+                        return SimpleNamespace(payload={**task,'task_type':m.MOSAIC_TASK_TYPE,'created_by':33})
+                    if '/meta/items/' in path:return SimpleNamespace(payload=item)
+                    if '/monitor/' in path:
+                        e=executions[path.rsplit('/',1)[1]]
+                        return SimpleNamespace(payload={**e,'metadata':{'lineage_facts':{k:v for k,v in e['metadata']['lineage_facts'].items() if k!='operations'}}})
+                    raise AssertionError((method,path))
+                client=SimpleNamespace(request=request)
+                def sampler(*args):
+                    samples,before,after=CapacityEvidenceTest().measurement()
+                    samples[0]['runtime']['waiting']=0
+                    for sample in samples:sample['runtime']['applied_version']=current['version']
+                    return SimpleNamespace(samples=samples,before=before,after=after,start=Mock(),finish=Mock(return_value=samples))
+                def wait(client,module,identifier,timeout):
+                    if module=='meta':return {'status':'success'}
+                    if fail:raise m.scene.SuiteError('Manager execution failed')
+                    return executions[identifier]
+                def physical(action,names):
+                    if action=='seed-mosaic':return {'source_unchanged':True,'tiles':dict.fromkeys(m.fixture.mosaic_windows(),{})}
+                    if action=='verify-mosaic':return actual
+                    if action=='purge-mosaic':return {'source_unchanged':True}
+                    raise AssertionError(action)
+                with patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
+                     patch.object(m.scene.support,'find_fixture_item',return_value=item),patch.object(m.fixture,'require_disk'), \
+                     patch.object(m,'restart_runtime',return_value={'Id':'fresh','State':{'Pid':17}}),patch.object(m,'cgroup_directory'), \
+                     patch.object(m,'Sampler',side_effect=sampler),patch.object(m,'wait_applied'),patch.object(m.scene,'wait_execution',side_effect=wait):
+                    if fail:
+                        with self.assertRaisesRegex(m.scene.SuiteError,'Manager execution failed'):
+                            m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
+                    else:m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
+                measurements=list(root.glob('*-measurements.json'))
+                self.assertEqual(len(measurements),1 if fail else 4)
+                self.assertEqual(len(report['mosaic_groups']),0 if fail else 4)
+                self.assertEqual(len(scans),0 if fail else 4)
+                self.assertEqual(report['result'],'failed')  # Only the outer complete suite may declare success.
+                self.assertTrue(all(call[2]==(403,) for call in calls if call[0]=='DELETE'))
+                self.assertTrue(all('manager' in call[1] for call in calls if call[0]=='POST'))
+                if not fail:
+                    self.assertEqual([g['leaf_concurrency'] for g in report['mosaic_groups']],[1,4,4,1])
+                    self.assertEqual(json.loads((root/'capacity-progress.json').read_text())['completed_mosaic_groups'],4)
+
+
 if __name__=='__main__': unittest.main()

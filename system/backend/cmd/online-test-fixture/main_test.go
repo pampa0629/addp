@@ -700,6 +700,31 @@ func TestCapacityFixtureSessionLastsBeyondTheThreeHourBudget(t *testing.T) {
 	}
 }
 
+func TestRasterCapacityAddsOnlyManagerCreateAndRead(t *testing.T) {
+	ordinary, err := suitePermissions("raster-workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	capacity, err := suitePermissions("raster-workflow-capacity")
+	if err != nil || len(capacity) != len(ordinary)+2 {
+		t.Fatal("unexpected capacity permissions", capacity, err)
+	}
+	for _, permission := range []string{"manager.derived_artifact.create", "manager.derived_artifact.read"} {
+		if !contains(capacity, permission) || contains(ordinary, permission) {
+			t.Fatal("Manager permission escaped the capacity fixture", permission)
+		}
+	}
+	for _, permission := range ordinary {
+		if !contains(capacity, permission) {
+			t.Fatal("capacity lost its original workflow permission", permission)
+		}
+	}
+	capacity[0] = "mutated"
+	if ordinary[0] == "mutated" || rasterWorkflowPermissions[0] == "mutated" {
+		t.Fatal("capacity aliases the ordinary permission slice")
+	}
+}
+
 func TestElasticsearchFixtureUsesOnlyReadConsumerAndSeparateProvisioner(t *testing.T) {
 	permissions, err := suitePermissions("elasticsearch-consumer-flow")
 	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("elasticsearch-consumer-flow") {

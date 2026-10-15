@@ -12,6 +12,31 @@ m = importlib.import_module('business.scripts.online-raster-capacity-fixture')
 
 
 class CapacityFixtureTest(unittest.TestCase):
+    def test_directory_names_windows_and_inventory_cannot_expand_cleanup_scope(self):
+        for repetition in (1,2):
+            for concurrency in (1,4):
+                names=[f'capacity-mosaic-l{concurrency}-r{repetition}']
+                self.assertEqual(m.mosaic_names_checked(names),names)
+        for names in ([],['keep'],['capacity-mosaic-l2-r1'],['capacity-mosaic-l1-r3'],
+                      ['capacity-mosaic-l1-r1/../keep'],['capacity-mosaic-l1-r1']*2,[True]):
+            with self.subTest(names=names),self.assertRaises(m.shared.FixtureError):m.mosaic_names_checked(names)
+        self.assertEqual(set(m.mosaic_windows().values()),{(0,0,5490,5490),(5490,0,5490,5490),
+                                                        (0,5490,5490,5490),(5490,5490,5490,5490)})
+        self.assertEqual(len(m.mosaic_paths()),7)
+        for size in (0,63,True):
+            with patch.object(m,'SIZE',size),self.assertRaises(m.shared.FixtureError):m.mosaic_windows()
+
+    def test_directory_markers_are_bounded_empty_objects_and_are_not_data_files(self):
+        name='capacity-mosaic-l1-r1';objects={name+'/'+p:123 for p in m.mosaic_paths()}
+        self.assertEqual(m.mosaic_objects_checked(objects,name),[])
+        objects.update({name+'/':0,name+'/leaf/':0,name+'/index/':0,name+'/overviews/':0})
+        self.assertEqual(len(m.mosaic_objects_checked(objects,name)),4)
+        for key,value in ((name+'/keep/',0),(name+'/leaf/',1),(name+'/leaf/',False),('other/',0)):
+            invalid={**objects,key:value}
+            with self.subTest(key=key,value=value),self.assertRaises(m.shared.FixtureError):m.mosaic_objects_checked(invalid,name)
+        del objects[name+'/mosaic.addp.json']
+        with self.assertRaises(m.shared.FixtureError):m.mosaic_objects_checked(objects,name)
+
     def test_target_names_are_bounded_unique_and_reject_arbitrary_deletion(self):
         valid = ['capacity-c64-n1-r1-0.cog.tif','capacity-c64-n1-r1-1.cog.tif']
         self.assertEqual(m.names_checked(valid), valid)

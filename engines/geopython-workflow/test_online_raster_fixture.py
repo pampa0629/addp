@@ -90,6 +90,86 @@ def test_capacity_verifier_rejects_final_pixel_mask_grid_and_deepest_overview_co
         capacity_fixture.verify_file(source,capacity_cog(tmp_path,expected,corruption=corruption))
 
 
+@pytest.fixture
+def capacity_directory_source(tmp_path,monkeypatch):
+    import numpy as np
+    size=1026
+    monkeypatch.setattr(capacity_fixture,'SIZE',size)
+    root=tmp_path/'secrets';(root/'public-source').mkdir(parents=True)
+    path=root/'public-source'/capacity_fixture.SOURCE_NAME
+    dataset=gdal.GetDriverByName('GTiff').Create(str(path),size,size,4,gdal.GDT_UInt16)
+    projection=osr.SpatialReference();projection.ImportFromEPSG(32617)
+    dataset.SetProjection(projection.ExportToWkt());dataset.SetGeoTransform(capacity_fixture.TRANSFORM)
+    for index in range(1,5):
+        rows,columns=np.indices((size,size));values=((columns+rows*7+index*100)%60000+1).astype(np.uint16)
+        values[index*2+1,index*2+1]=0;values[-1,index*2+1]=0
+        band=dataset.GetRasterBand(index);band.WriteArray(values);band.SetNoDataValue(0)
+        band.SetColorInterpretation(gdal.GCI_GrayIndex if index==1 else gdal.GCI_Undefined)
+    band=dataset=None
+    original=capacity_fixture.digest(path)
+    tiles=capacity_fixture.prepare_mosaic_source(root)
+    assert len(tiles)==4 and all(f['full_pixel_and_mask_verification'] for f in tiles.values())
+    source=gdal.Open(str(path))
+    yield root,source,original
+    source=None
+    assert capacity_fixture.digest(path)==original
+
+
+def directory_capacity_result(root,tmp_path,leaf_concurrency=1):
+    from operators.raster_operators import build_raster_mosaic
+    target=tmp_path/'capacity-mosaic-l1-r1'
+    result=build_raster_mosaic(
+        access_plan={'source':{'root_uri':str(root/capacity_fixture.MOSAIC_SOURCE_PREFIX),'recursive':True,'include_patterns':['*.tif']},
+                     'target':{'dataset_root_uri':str(target),'dataset_name':target.name}},
+        placement={'mode':'detached'},cog={'compression':'DEFLATE','blocksize':512,'overview_resampling':'NEAREST',
+            'leaf_concurrency':leaf_concurrency,'num_threads':1,'leaf_retry_attempts':1},
+        overview={'enabled':True,'max_pixels':(capacity_fixture.SIZE//2)**2,'resampling':'NEAREST'},tiles={'enabled':False})
+    assert result['stage_timings']['leaf_cog']['generated_count']==4
+    assert result['stage_timings']['leaf_cog']['concurrency']==leaf_concurrency
+    return target
+
+
+@pytest.mark.parametrize('leaf_concurrency',[1,4])
+def test_capacity_directory_all_bands_global_base_grid_and_full_pyramids(capacity_directory_source,tmp_path,leaf_concurrency):
+    root,source,_=capacity_directory_source
+    target=directory_capacity_result(root,tmp_path,leaf_concurrency)
+    sizes={p.relative_to(target).as_posix():p.stat().st_size for p in target.rglob('*') if p.is_file()}
+    facts=capacity_fixture.verify_mosaic_directory(source,target,target.name,sizes)
+    assert facts['object_count']==7 and len(facts['rasters'])==5
+    assert facts['physical_size_bytes']==facts['object_size_bytes']==sum(sizes.values())>0
+    overview=facts['rasters']['overviews/overview.cog.tif']
+    assert (overview['width'],overview['height'],overview['band_count'])==(513,513,4)
+    assert overview['overview_sizes']==[[256,256]]
+    assert all(r['cog_valid'] and r['full_pixel_and_mask_verification'] for r in facts['rasters'].values())
+
+
+@pytest.mark.parametrize('fault',['last-band-pixel','independent-mask','grid','pyramid','missing','extra','index-binding','manifest-grid','object-float'])
+def test_capacity_directory_oracle_rejects_corrupt_components_and_scope(capacity_directory_source,tmp_path,fault):
+    root,source,_=capacity_directory_source;target=directory_capacity_result(root,tmp_path)
+    if fault in ('last-band-pixel','independent-mask','grid','pyramid'):
+        path=target/'overviews/overview.cog.tif';intermediate=tmp_path/'changed.tif'
+        dataset=gdal.Translate(str(intermediate),str(path),format='GTiff',creationOptions=['COPY_SRC_OVERVIEWS=YES'])
+        if fault=='last-band-pixel':dataset.GetRasterBand(4).WriteRaster(512,512,1,1,struct.pack('<H',65534),buf_type=gdal.GDT_UInt16)
+        elif fault=='independent-mask':dataset.GetRasterBand(3).SetNoDataValue(65535)
+        elif fault=='grid':
+            gt=list(dataset.GetGeoTransform());gt[0]+=10;dataset.SetGeoTransform(gt)
+        else:dataset.GetRasterBand(4).GetOverview(0).WriteRaster(255,255,1,1,struct.pack('<H',65534),buf_type=gdal.GDT_UInt16)
+        dataset=None;path.unlink()
+        converted=gdal.Translate(str(path),str(intermediate),format='COG',creationOptions=['BLOCKSIZE=512','OVERVIEWS=FORCE_USE_EXISTING'])
+        converted=None
+    elif fault=='missing':(target/'index/source-index.json').unlink()
+    elif fault=='extra':(target/'keep.txt').write_text('unexpected')
+    elif fault=='index-binding':
+        path=target/'index/source-index.json';payload=json.loads(path.read_text())
+        payload['leaves'][0]['source_ref']=payload['leaves'][1]['source_ref'];path.write_text(json.dumps(payload))
+    elif fault=='manifest-grid':
+        path=target/'mosaic.addp.json';payload=json.loads(path.read_text())
+        payload['summary']['vrt_width']+=1;path.write_text(json.dumps(payload))
+    sizes={p.relative_to(target).as_posix():p.stat().st_size for p in target.rglob('*') if p.is_file()}
+    if fault=='object-float':sizes['mosaic.addp.json']=float(sizes['mosaic.addp.json'])
+    with pytest.raises(capacity_fixture.shared.FixtureError):capacity_fixture.verify_mosaic_directory(source,target,target.name,sizes)
+
+
 class LocalMinio:
     objects = {}
 

@@ -249,9 +249,207 @@ def worker(action,root,names):
     return {'source_unchanged':True,'source_sha256':evidence['source_sha256'],'outputs':outputs}
 
 
+# Complete-scene directory workload. The original single-file oracle stays intact.
+MOSAIC_SOURCE_PREFIX = 'mosaic-source'
+MOSAIC_TARGET_PATTERN = re.compile(r'capacity-mosaic-l[14]-r[12]')
+
+
+def mosaic_names_checked(names):
+    if not isinstance(names,list) or len(names)!=1 or not isinstance(names[0],str) or not MOSAIC_TARGET_PATTERN.fullmatch(names[0]):
+        raise shared.FixtureError('invalid capacity mosaic dataset name')
+    return names
+
+
+def mosaic_windows():
+    if type(SIZE) is not int or SIZE<=0 or SIZE%2:
+        raise shared.FixtureError('capacity mosaic requires an even complete-scene grid')
+    half=SIZE//2
+    return {f'r{y}_c{x}.tif':(x,y,half,half) for y in (0,half) for x in (0,half)}
+
+
+def mosaic_paths():
+    return {'mosaic.addp.json','index/source-index.json','overviews/overview.cog.tif',
+            *('leaf/'+Path(name).stem+'.cog.tif' for name in mosaic_windows())}
+
+
+def mosaic_objects_checked(objects,name):
+    mosaic_names_checked([name])
+    expected={name+'/'+relative for relative in mosaic_paths()}
+    markers={name+'/',name+'/leaf/',name+'/overviews/',name+'/index/'}
+    if (not expected.issubset(objects) or set(objects)-expected-markers
+        or any(type(objects[key]) is not int or objects[key]!=0 for key in set(objects)&markers)):
+        raise shared.FixtureError('capacity mosaic target inventory differs')
+    return sorted(set(objects)&markers)
+
+
+def verify_mosaic_raster(source,path,window=None,*,overview=False,cog=True):
+    """Compare every raw band and mask with a window of the original full scene."""
+    import numpy as np
+    from osgeo import gdal
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    target=gdal.Open(str(path)); factor=2 if overview else 1
+    x,y,width,height=window or (0,0,SIZE,SIZE)
+    out_width,out_height=width//factor,height//factor
+    gt=source.GetGeoTransform()
+    transform=(gt[0]+x*gt[1]+y*gt[2],gt[1]*factor,gt[2]*factor,
+               gt[3]+x*gt[4]+y*gt[5],gt[4]*factor,gt[5]*factor)
+    if (not target or (target.RasterXSize,target.RasterYSize,target.RasterCount)!=(out_width,out_height,4)
+        or target.GetGeoTransform()!=transform or not target.GetSpatialRef().IsSame(source.GetSpatialRef())
+        or target.GetFileList()!=[str(path)]):
+        raise shared.FixtureError('capacity mosaic raster grid or sidecars differ')
+    if cog:
+        _,errors,_=validate(target,full_check=True)
+        if errors or target.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE')!='COG':
+            raise shared.FixtureError('capacity mosaic COG layout differs')
+    overview_sizes=[];valid_counts=[]
+    expected_sizes=[];w,h=out_width,out_height
+    while max(w,h)>512:
+        w,h=w//2,h//2;expected_sizes.append([w,h])
+    for index in range(1,5):
+        original,band=source.GetRasterBand(index),target.GetRasterBand(index)
+        if (band.DataType!=gdal.GDT_UInt16 or band.GetNoDataValue()!=0
+            or original.GetNoDataValue()!=0 or band.GetColorInterpretation()!=original.GetColorInterpretation()):
+            raise shared.FixtureError('capacity mosaic band type/NoData/color differs')
+        count=0
+        for row in range(0,out_height,32):
+            count_rows=min(32,out_height-row)
+            args=(x+factor//2,y+row*factor+factor//2,(out_width-1)*factor+1,(count_rows-1)*factor+1)
+            expected=original.ReadAsArray(*args)[::factor,::factor]
+            mask=original.GetMaskBand().ReadAsArray(*args)[::factor,::factor]
+            if (not np.array_equal(band.ReadAsArray(0,row,out_width,count_rows),expected)
+                or not np.array_equal(band.GetMaskBand().ReadAsArray(0,row,out_width,count_rows),mask)):
+                raise shared.FixtureError('capacity mosaic full pixels or independent mask differ')
+            count+=int(np.count_nonzero(mask))
+        valid_counts.append(count)
+        sizes=[[band.GetOverview(level).XSize,band.GetOverview(level).YSize] for level in range(band.GetOverviewCount())]
+        if cog and sizes!=expected_sizes:
+            raise shared.FixtureError('capacity mosaic pyramid dimensions differ')
+        if index==1:overview_sizes=sizes
+        elif sizes!=overview_sizes:raise shared.FixtureError('capacity mosaic band pyramids differ')
+        rows,columns=np.arange(out_height),np.arange(out_width)
+        for level in range(band.GetOverviewCount()):
+            lower=band.GetOverview(level)
+            rows=rows[np.floor(np.arange(lower.YSize)*rows.size/lower.YSize+.5).astype(int)]
+            columns=columns[np.floor(np.arange(lower.XSize)*columns.size/lower.XSize+.5).astype(int)]
+            for start in range(0,lower.YSize,16):
+                selected=rows[start:start+16];first,last=int(selected[0]),int(selected[-1])+1
+                expected=band.ReadAsArray(0,first,out_width,last-first)[selected[:,None]-first,columns]
+                mask=band.GetMaskBand().ReadAsArray(0,first,out_width,last-first)[selected[:,None]-first,columns]
+                if (not np.array_equal(lower.ReadAsArray(0,start,lower.XSize,len(selected)),expected)
+                    or not np.array_equal(lower.GetMaskBand().ReadAsArray(0,start,lower.XSize,len(selected)),mask)):
+                    raise shared.FixtureError('capacity mosaic full pyramid pixels or masks differ')
+    target=None
+    return {'size_bytes':path.stat().st_size,'sha256':digest(path),'cog_valid':cog,
+            'width':out_width,'height':out_height,'band_count':4,'transform':list(transform),
+            'band_valid_pixels':valid_counts,'overview_sizes':overview_sizes,
+            'full_pixel_and_mask_verification':True}
+
+
+def prepare_mosaic_source(root):
+    from osgeo import gdal
+    source_path=root/'public-source'/SOURCE_NAME; source=gdal.Open(str(source_path))
+    directory=root/MOSAIC_SOURCE_PREFIX;directory.mkdir(mode=0o700)
+    tiles={}
+    for name,window in mosaic_windows().items():
+        path=directory/name
+        converted=gdal.Translate(str(path),source,format='GTiff',srcWin=list(window),
+            creationOptions=['TILED=YES','COMPRESS=DEFLATE','PREDICTOR=2','INTERLEAVE=BAND','BLOCKXSIZE=512','BLOCKYSIZE=512'])
+        converted=None
+        tiles[name]=verify_mosaic_raster(source,path,window,cog=False)
+    source=None
+    return tiles
+
+
+def verify_mosaic_directory(source,directory,name,object_sizes):
+    """Validate the exact whole scope; no producer size is invented for a manifest."""
+    paths={p.relative_to(directory).as_posix():p for p in directory.rglob('*') if p.is_file()}
+    if set(paths)!=mosaic_paths() or set(object_sizes)!=set(paths):
+        raise shared.FixtureError('capacity mosaic exact seven-object inventory differs')
+    for relative,path in paths.items():
+        size=object_sizes[relative]
+        if type(size) is not int or size<=0 or size!=path.stat().st_size:
+            raise shared.FixtureError('capacity mosaic object/file sizes differ')
+    manifest=json.loads(paths['mosaic.addp.json'].read_text());index=json.loads(paths['index/source-index.json'].read_text())
+    extent=[TRANSFORM[0],TRANSFORM[3]-10*SIZE,TRANSFORM[0]+10*SIZE,TRANSFORM[3]]
+    if (manifest.get('schema_version')!='addp.raster_mosaic.v1' or manifest.get('dataset_name')!=name
+        or (manifest.get('data_type'),manifest.get('format'),manifest.get('layout'))!=('media','raster_mosaic','whole')
+        or manifest.get('refs')!={'index':'index/source-index.json','overview':'overviews/overview.cog.tif'}
+        or manifest.get('summary')!={'leaf_count':4,'source_count':4,'failed_count':0,'extent':extent,
+            'source_crs':'EPSG:32617','vrt_width':SIZE,'vrt_height':SIZE,'overview_width':SIZE//2,'overview_height':SIZE//2}
+        or index.get('schema_version')!='addp.raster_mosaic.source_index.v1' or index.get('leaf_count')!=4):
+        raise shared.FixtureError('capacity mosaic manifest/index grid or references differ')
+    leaves=index.get('leaves')
+    if not isinstance(leaves,list) or len(leaves)!=4:
+        raise shared.FixtureError('capacity mosaic index leaves differ')
+    rasters={}
+    for filename,window in mosaic_windows().items():
+        reference='leaf/'+Path(filename).stem+'.cog.tif'
+        matches=[leaf for leaf in leaves if leaf.get('source_ref')==filename and leaf.get('leaf_ref')==reference]
+        if len(matches)!=1 or matches[0].get('generation_status')!='generated' or matches[0].get('cog_validation',{}).get('status')!='valid':
+            raise shared.FixtureError('capacity mosaic source-to-leaf binding differs')
+        rasters[reference]=verify_mosaic_raster(source,paths[reference],window)
+    rasters['overviews/overview.cog.tif']=verify_mosaic_raster(source,paths['overviews/overview.cog.tif'],overview=True)
+    return {'physical_size_bytes':sum(p.stat().st_size for p in paths.values()),
+            'object_size_bytes':sum(object_sizes.values()),'object_sizes':object_sizes,
+            'object_sha256':{relative:digest(path) for relative,path in paths.items()},
+            'rasters':rasters,'summary':manifest['summary'],'object_count':len(paths)}
+
+
+def mosaic_worker(action,root,names):
+    from minio import Minio
+    from osgeo import gdal
+    gdal.UseExceptions();gdal.SetCacheMax(64<<20)
+    config=json.loads((root/'capacity-fixture.json').read_text())
+    clients={role:Minio(entry['endpoint'],access_key=entry['access_key'],secret_key=entry['secret_key'],secure=False)
+             for role,entry in config.items()}
+    source_path=root/'public-source'/SOURCE_NAME
+    evidence=json.loads((root/'capacity-source-evidence.json').read_text())
+    if digest(source_path)!=evidence['source_sha256']:
+        raise shared.FixtureError('capacity mosaic local source changed')
+    if action=='seed-mosaic':
+        require_disk(root);tiles=prepare_mosaic_source(root)
+        for filename in tiles:
+            clients['source'].fput_object(config['source']['bucket'],MOSAIC_SOURCE_PREFIX+'/'+filename,str(root/MOSAIC_SOURCE_PREFIX/filename))
+        (root/'capacity-mosaic-source-evidence.json').write_text(json.dumps(tiles,sort_keys=True))
+        return {'tiles':tiles,'source_sha256':evidence['source_sha256'],'source_unchanged':True}
+    name=mosaic_names_checked(names)[0]
+    tiles=json.loads((root/'capacity-mosaic-source-evidence.json').read_text())
+    expected_source={SOURCE_NAME,*[MOSAIC_SOURCE_PREFIX+'/'+filename for filename in mosaic_windows()]}
+    if {item.object_name for item in clients['source'].list_objects(config['source']['bucket'],recursive=True)}!=expected_source:
+        raise shared.FixtureError('capacity mosaic source inventory changed')
+    actual={item.object_name:item.size for item in clients['target'].list_objects(config['target']['bucket'],recursive=True)}
+    markers=mosaic_objects_checked(actual,name)
+    with tempfile.TemporaryDirectory(prefix='capacity-mosaic-verify-',dir=root) as temporary:
+        temporary=Path(temporary)
+        for key in sorted(expected_source):
+            copy=temporary/'source-check.tif';clients['source'].fget_object(config['source']['bucket'],key,str(copy))
+            expected=evidence['source_sha256'] if key==SOURCE_NAME else tiles[Path(key).name]['sha256']
+            local=source_path if key==SOURCE_NAME else root/key
+            if digest(copy)!=expected or digest(local)!=expected:
+                raise shared.FixtureError('capacity mosaic source bytes changed')
+            copy.unlink()
+        if action=='purge-mosaic':
+            for key in sorted(actual):clients['target'].remove_object(config['target']['bucket'],key)
+            if list(clients['target'].list_objects(config['target']['bucket'],recursive=True)):
+                raise shared.FixtureError('capacity mosaic purge has residuals')
+            return {'source_unchanged':True,'purged':[name]}
+        for relative in mosaic_paths():
+            path=temporary/relative;path.parent.mkdir(parents=True,exist_ok=True)
+            clients['target'].fget_object(config['target']['bucket'],name+'/'+relative,str(path))
+        source=gdal.Open(str(source_path))
+        stat_sizes={relative:clients['target'].stat_object(config['target']['bucket'],name+'/'+relative).size for relative in mosaic_paths()}
+        if any(stat_sizes[relative]!=actual[name+'/'+relative] for relative in stat_sizes):
+            raise shared.FixtureError('capacity mosaic object list/stat sizes differ')
+        if any(clients['target'].stat_object(config['target']['bucket'],key).size!=0 for key in markers):
+            raise shared.FixtureError('capacity mosaic directory marker stat differs')
+        result=verify_mosaic_directory(source,temporary,name,stat_sizes);source=None
+    return {**result,'source_unchanged':True,'directory_markers':markers,'raw_object_count':len(actual)}
+
+
 def physical(action,names):
-    if action not in ('seed','verify','purge'): raise shared.FixtureError('unknown capacity physical action')
-    root=shared.environment(); names=[] if action=='seed' else names_checked(names)
+    if action not in ('seed','verify','purge','seed-mosaic','verify-mosaic','purge-mosaic'): raise shared.FixtureError('unknown capacity physical action')
+    root=shared.environment()
+    names=[] if action in ('seed','seed-mosaic') else mosaic_names_checked(names) if action.endswith('-mosaic') else names_checked(names)
     image=os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE']
     output=shared.command(['docker','run','--rm','--name',CONTAINERS[2],
         '--label',f'com.addp.online-fixture={SUITE}', '--label',f'com.addp.online-run-id={os.environ["ADDP_ONLINE_TEST_RUN_ID"]}',
@@ -264,12 +462,14 @@ def physical(action,names):
 def main():
     action=sys.argv[1]
     if action.startswith('worker-'):
-        result=worker(action.removeprefix('worker-'),Path(sys.argv[2]),json.loads(sys.argv[3]))
+        operation=action.removeprefix('worker-')
+        function=mosaic_worker if operation.endswith('-mosaic') else worker
+        result=function(operation,Path(sys.argv[2]),json.loads(sys.argv[3]))
     else:
         root=shared.environment()
         if action=='start': start(root);result={'started':True,'storage':'owned-disk'}
         elif action=='stop': stop();result={'cleanup':'passed'}
-        elif action in ('seed','verify','purge'): result=physical(action,[] if len(sys.argv)<3 else json.loads(sys.argv[2]))
+        elif action in ('seed','verify','purge','seed-mosaic','verify-mosaic','purge-mosaic'): result=physical(action,[] if len(sys.argv)<3 else json.loads(sys.argv[2]))
         else: raise shared.FixtureError('unknown capacity fixture action')
     print(json.dumps(result,sort_keys=True))
 

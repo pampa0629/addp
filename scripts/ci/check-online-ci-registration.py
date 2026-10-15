@@ -1792,6 +1792,10 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
         ),
         "scripts/test/raster-workflow-capacity-online.py": (
             'CACHE_VALUES=(64,128,256)', 'REPETITIONS=2', 'validate_measurement', 'wait_applied',
+            'def run_directories(', 'def directory_matrix(', 'manager.derived_artifact.create',
+            'manager.derived_artifact.read', 'mosaic_groups', 'submitted_tasks=1', 'automatic_scans=28',
+            "physical('verify-mosaic',[name])", "physical('purge-mosaic',[name])",
+            "validate_monitor_lineage(monitor,facts)",
             'memory.peak', 'oom_kill', 'scene.strict_sizes(artifact,actual,item)',
             "physical('purge',names)", 'capacity-progress.json', 'wait_lineage', "'runtime_container_id'",
         ),
@@ -1799,6 +1803,16 @@ def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> 
             'S2A_17SPV_20220304_0_L2A', 'SIZE = 10980', 'data_directory=root/',
             'public asset checksum changed', 'full_check=True', 'expected_rows',
             'capacity source object bytes changed', 'capacity target purge has residuals',
+            'def verify_mosaic_directory(', 'def verify_mosaic_raster(', 'def mosaic_names_checked(',
+            'capacity mosaic exact seven-object inventory differs', 'capacity mosaic source bytes changed',
+        ),
+        "system/backend/cmd/online-test-fixture/main.go": (
+            'case "raster-workflow-capacity":',
+            'return append(append([]string{}, rasterWorkflowPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read"), nil',
+        ),
+        "engines/geopython-workflow/test_online_raster_fixture.py": (
+            'test_capacity_directory_all_bands_global_base_grid_and_full_pyramids',
+            'test_capacity_directory_oracle_rejects_corrupt_components_and_scope',
         ),
         "Makefile": ('scripts/test/raster-workflow-capacity-online_test.py',
                      'scripts/test/online-raster-capacity-fixture_test.py',

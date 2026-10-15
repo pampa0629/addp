@@ -24,7 +24,7 @@ PERMISSIONS = {'develop.task.read', 'develop.task.execute', 'develop.data_read.e
 SCHEMA = 'addp.raster-workflow-online/v1'
 
 
-def validate_identity(client, tenant_id):
+def validate_identity(client, tenant_id, *, required_permissions=PERMISSIONS):
     context = obj(client.request('GET', '/api/v1/system/auth/context', (200,)).payload, 'AuthContext')
     principal = obj(context.get('principal'), 'principal')
     tenant = obj(context.get('context'), 'context')
@@ -36,10 +36,10 @@ def validate_identity(client, tenant_id):
     assignments = array(obj(context.get('authorization'), 'authorization').get('role_assignments'), 'assignments')
     roles = {obj(assignment, 'assignment').get('role_key') for assignment in assignments}
     permissions = {key for assignment in assignments for key in array(assignment.get('permissions'), 'permissions')}
-    if roles & support.FORBIDDEN_ADMIN_ROLES or permissions != PERMISSIONS:
+    if roles & support.FORBIDDEN_ADMIN_ROLES or permissions != required_permissions:
         raise SuiteError('raster User must have exactly the scene permissions and no administrator role')
     return {'principal_id': str(positive(principal.get('id'), 'principal.id')), 'tenant_id': str(tenant_id),
-            'principal_type': 'user', 'permissions_verified': sorted(PERMISSIONS)}
+            'principal_type': 'user', 'permissions_verified': sorted(required_permissions)}
 
 
 def wait_execution(client, module, execution_id, timeout, expected='success'):

@@ -134,7 +134,7 @@ def matrix():
                 yield repetition,cache,running
 
 
-def validate_measurement(samples,before,after,cache,running,version):
+def validate_measurement(samples,before,after,cache,running,version,*,submitted_tasks=2):
     if not samples or any(sample['oom'] or sample['oom_kill'] for sample in [before,*samples,after]):
         raise scene.SuiteError('capacity OOM or missing samples')
     # A fresh Runtime loads policy lazily on its first raster submission.
@@ -157,7 +157,7 @@ def validate_measurement(samples,before,after,cache,running,version):
         raise scene.SuiteError('capacity admission exceeded the configured limit')
     if max(r.get('running',0) for r in applied)!=running:
         raise scene.SuiteError('capacity did not exercise the requested concurrency')
-    if running==1 and max(r.get('waiting',0) for r in applied)<1:
+    if running==1 and submitted_tasks>1 and max(r.get('waiting',0) for r in applied)<1:
         raise scene.SuiteError('capacity serial admission did not queue the second task')
     if (after['memory_peak_bytes']<=0 or after['cpu_usage_usec']<before['cpu_usage_usec']):
         raise scene.SuiteError('capacity metrics are invalid or did not reset')
@@ -177,7 +177,8 @@ def validate_measurement(samples,before,after,cache,running,version):
 
 
 def save_progress(root,report):
-    checkpoint={'run_id':report['run_id'],'completed_groups':len(report['groups']),'groups':report['groups']}
+    checkpoint={'run_id':report['run_id'],'completed_groups':len(report['groups']),'groups':report['groups'],
+                'completed_mosaic_groups':len(report.get('mosaic_groups',[])),'mosaic_groups':report.get('mosaic_groups',[])}
     (root/'capacity-progress.json').write_text(json.dumps(checkpoint,sort_keys=True))
 
 
@@ -185,11 +186,137 @@ def physical(action,names):
     return fixture.physical(action,names)
 
 
+MANAGER_PERMISSIONS={'manager.derived_artifact.create','manager.derived_artifact.read'}
+MOSAIC_TASK_TYPE='raster_mosaic_generation'
+
+
+def directory_matrix():
+    for repetition in (1,2):
+        for leaf_concurrency in ((1,4) if repetition==1 else (4,1)):
+            yield repetition,leaf_concurrency
+
+
+def directory_task(source_engine,target_engine,name,leaf_concurrency):
+    return {'name':name,'enabled':True,'config':{
+        'source':{'node_locator':f'addp://engine/{source_engine}/path/raster-source/{fixture.MOSAIC_SOURCE_PREFIX}?type=prefix',
+                  'source_engine_id':source_engine,'recursive':True,'include_patterns':['*.tif'],'exclude_patterns':[]},
+        'target':{'storage_locator':f'addp://engine/{target_engine}/path/raster-target?type=bucket',
+                  'target_engine_id':target_engine,'dataset_name':name},
+        'placement':{'mode':'detached'},
+        'cog':{'compression':'DEFLATE','blocksize':512,'overview_resampling':'NEAREST',
+               'validate_source_cog':True,'leaf_concurrency':leaf_concurrency,'num_threads':1,'leaf_retry_attempts':1},
+        'overview':{'enabled':True,'max_pixels':(fixture.SIZE//2)**2,'resampling':'NEAREST'},
+        'tiles':{'enabled':False,'min_zoom':0,'max_zoom':0,'format':'webp'}}}
+
+
+def validate_directory_execution(execution,source_locator,name):
+    if execution.get('module')!='manager' or execution.get('task_type')!=MOSAIC_TASK_TYPE or execution.get('status')!='success':
+        raise scene.SuiteError('capacity mosaic parent execution owner/type/status differ')
+    metadata=scene.obj(execution.get('metadata'),'mosaic metadata')
+    runtime=scene.obj(metadata.get('workflow_runtime'),'mosaic Runtime')
+    if (runtime.get('engine_type'),runtime.get('operator'),runtime.get('mode'))!=('geopython_workflow','build_raster_mosaic','direct'):
+        raise scene.SuiteError('capacity mosaic did not invoke the product direct operator')
+    facts=scene.obj(metadata.get('lineage_facts'),'mosaic Owner facts')
+    inputs=scene.array(facts.get('inputs'),'mosaic inputs');outputs=scene.array(facts.get('outputs'),'mosaic outputs')
+    operations=scene.array(facts.get('operations'),'mosaic operations');scans=scene.array(facts.get('meta_scan_refs'),'mosaic auto scans')
+    if (facts.get('schema_version')!='addp.lineage-facts/v1' or len(inputs)!=1 or inputs[0].get('locator')!=source_locator
+        or len(outputs)!=1 or outputs[0].get('locator')!=f'/vsis3/raster-target/{name}/mosaic.addp.json'
+        or len(operations)!=1 or operations[0].get('kind')!='derive' or operations[0].get('operator')!=MOSAIC_TASK_TYPE
+        or len(scans)!=1 or not isinstance(scans[0],str) or not scans[0]):
+        raise scene.SuiteError('capacity mosaic scope/output/automatic scan facts differ')
+    return facts,scans[0]
+
+
+def validate_directory_item(item,physical):
+    attrs=scene.obj(item.get('attributes'),'mosaic attributes');facts=scene.obj(attrs.get('item'),'mosaic item facts')
+    if (facts.get('data_type'),facts.get('format'),facts.get('layout'))!=('media','raster_mosaic','whole'):
+        raise scene.SuiteError('capacity mosaic must resolve to a whole DataItem')
+    spatial=scene.obj(scene.obj(attrs.get('capabilities'),'mosaic capabilities').get('spatial'),'mosaic spatial')
+    fmt=scene.obj(scene.obj(attrs.get('format_info'),'mosaic formats').get('raster_mosaic'),'mosaic format')
+    if (spatial.get('srid')!=32617 or spatial.get('extent')!=physical['summary']['extent']
+        or any(fmt.get(k)!=physical['summary'][k] for k in ('leaf_count','source_count','failed_count','vrt_width','vrt_height','overview_width','overview_height'))
+        or (fmt.get('manifest_ref'),fmt.get('index_ref'),fmt.get('overview_ref'))!=('mosaic.addp.json','index/source-index.json','overviews/overview.cog.tif')):
+        raise scene.SuiteError('capacity mosaic Meta grid or component facts differ')
+    # Same strict integer/equality rule, with whole-scope physical/stat totals.
+    scene.strict_sizes({'size_bytes':physical['physical_size_bytes']},{'size_bytes':physical['object_size_bytes']},item)
+    return {'physical_total_size_bytes':physical['physical_size_bytes'],
+            'object_total_size_bytes':physical['object_size_bytes'],'data_item_size_bytes':item['size_bytes']}
+
+
+def run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans):
+    source=physical('seed-mosaic',[])
+    if source.get('source_unchanged') is not True or set(source.get('tiles',{}))!=set(fixture.mosaic_windows()):
+        raise scene.SuiteError('capacity mosaic source preparation is incomplete')
+    report['mosaic_source']=source
+    scene.support.wait_for_meta_scan(client,source_engine,time.monotonic()+600)
+    source_locator=f'addp://engine/{source_engine}/path/raster-source/{fixture.MOSAIC_SOURCE_PREFIX}?type=prefix'
+    expected_hashes=None
+    for repetition,leaf_concurrency in directory_matrix():
+        name=f'capacity-mosaic-l{leaf_concurrency}-r{repetition}'
+        body=directory_task(source_engine,target_engine,name,leaf_concurrency)
+        task=scene.obj(client.request('POST',f'/api/v1/manager/tasks/{MOSAIC_TASK_TYPE}',(201,),body).payload,'mosaic task')
+        task_id=scene.positive(task.get('id'),'mosaic task id');task_path=f'/api/v1/manager/tasks/{MOSAIC_TASK_TYPE}/{task_id}'
+        detail=scene.obj(client.request('GET',task_path,(200,)).payload,'mosaic task detail')
+        if (detail.get('config')!=body['config'] or detail.get('task_type')!=MOSAIC_TASK_TYPE
+            or str(detail.get('created_by'))!=report['identity']['principal_id']):
+            raise scene.SuiteError('capacity mosaic task config or initiating User differ')
+        # The ordinary consumer gains only create/read; deletion remains forbidden.
+        client.request('DELETE',task_path,(403,))
+        current=platform.request('GET',path,(200,)).payload['policy']
+        fields=('running','waiting','cache_mib','default_tenant_running','default_tenant_waiting')
+        saved=platform.request('PUT',path,(200,),{**{k:current[k] for k in fields},'version':current['version'],
+            'running':1,'waiting':2,'cache_mib':64,'default_tenant_running':1,'default_tenant_waiting':2}).payload['policy']
+        fixture.require_disk(Path(env['ADDP_ONLINE_SECRET_DIR']))
+        container=restart_runtime(image);sampler=Sampler(cgroup_directory(container['State']['Pid']),platform,path);sampler.start()
+        started=time.monotonic()
+        try:
+            submitted=scene.obj(client.request('POST',task_path+'/execute',(202,),{}).payload,'mosaic submitted execution')
+            identifier=submitted.get('execution_id')
+            if not isinstance(identifier,str) or not identifier:raise scene.SuiteError('capacity mosaic execution id is missing')
+            wait_applied(platform,path,64,1,saved['version'])
+            execution=scene.wait_execution(client,'manager',identifier,1800)
+            elapsed=time.monotonic()-started
+        finally:
+            try:samples=sampler.finish()
+            finally:
+                evidence={'leaf_concurrency':leaf_concurrency,'repetition':repetition,'samples':sampler.samples,
+                          'before':sampler.before,'after':getattr(sampler,'after',None)}
+                (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(name+'-measurements.json')).write_text(json.dumps(evidence,sort_keys=True))
+        metrics=validate_measurement(samples,sampler.before,sampler.after,64,1,saved['version'],submitted_tasks=1)
+        facts,scan=validate_directory_execution(execution,source_locator,name)
+        if scan in scans:raise scene.SuiteError('capacity mosaic automatic scan reused')
+        scans.add(scan);scene.wait_execution(client,'meta',scan,600)
+        item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
+        item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        actual=physical('verify-mosaic',[name]);sizes=validate_directory_item(item,actual)
+        if actual.get('source_unchanged') is not True:raise scene.SuiteError('capacity mosaic source changed')
+        hashes={key:value['sha256'] for key,value in actual['rasters'].items()}
+        if expected_hashes is not None and hashes!=expected_hashes:raise scene.SuiteError('capacity mosaic raster bytes differ between runs')
+        expected_hashes=hashes
+        monitor=scene.obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mosaic Monitor')
+        if monitor.get('status')!='success' or monitor.get('module')!='manager' or monitor.get('task_type')!=MOSAIC_TASK_TYPE:
+            raise scene.SuiteError('capacity mosaic Monitor differs from its parent')
+        scene.support.validate_monitor_lineage(monitor,facts)
+        if physical('purge-mosaic',[name]).get('source_unchanged') is not True:
+            raise scene.SuiteError('capacity mosaic purge changed source')
+        report['mosaic_groups'].append({'dataset_name':name,'task_id':task_id,'execution_id':identifier,
+            'leaf_concurrency':leaf_concurrency,'repetition':repetition,'configured_cache_mib':64,'running_limit':1,
+            'elapsed_seconds':elapsed,'timing_method':'submit-one-Manager-task-through-parent-terminal-excludes-oracle-and-scan',
+            'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
+            'measurement':metrics,'samples':samples,'target_item_id':item['id'],'automatic_scan_execution_id':scan,
+            'owner_facts':facts,'size_evidence':sizes,'physical':actual,'purge':'passed'})
+        save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
+    if len(report['mosaic_groups'])!=4 or expected_hashes is None:
+        raise scene.SuiteError('capacity mosaic matrix is incomplete')
+    report['mosaic_raster_sha256']=expected_hashes
+
+
 def run(env):
     client=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'],30)
     platform=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN'],30)
     tenant=scene.GatewayClient(env['GATEWAY_URL'],env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'],30)
-    identity=scene.validate_identity(client,scene.positive(int(env['ADDP_ONLINE_TEST_TENANT_ID']),'tenant'))
+    identity=scene.validate_identity(client,scene.positive(int(env['ADDP_ONLINE_TEST_TENANT_ID']),'tenant'),
+                                     required_permissions=scene.PERMISSIONS|MANAGER_PERMISSIONS)
     engines=platform.request('GET','/api/v1/system/platform/engine-raster-policies/engines',(200,)).payload
     if len(engines)!=1:raise scene.SuiteError('capacity requires one shared runtime')
     engine=scene.positive(engines[0]['id'],'engine');path=f'/api/v1/system/platform/engine-raster-policies/{engine}'
@@ -204,7 +331,7 @@ def run(env):
     locator=scene.support.build_item_locator(source_engine,source)
     image=json.loads(fixture.shared.command(['docker','image','inspect',env['ADDP_ONLINE_RASTER_RUNTIME_IMAGE']]))[0]['Id']
     report={'schema_version':'addp.raster-workflow-capacity-online/v1','suite':SUITE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
-        'identity':identity,'image_id':image,'source_item_id':source['id'],'groups':[],'result':'failed',
+        'identity':identity,'image_id':image,'source_item_id':source['id'],'groups':[],'mosaic_groups':[],'result':'failed',
         'source':json.loads((Path(env['ADDP_ONLINE_SECRET_DIR'])/'capacity-source-evidence.json').read_text())}
     scans=set(); hashes=set()
     try:
@@ -260,7 +387,9 @@ def run(env):
             report['groups'].append(group)
             save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
         if len(hashes)!=1 or len(scans)!=24:raise scene.SuiteError('capacity results differ between groups')
-        report.update(result='passed',automatic_scans=24,output_sha256=next(iter(hashes)))
+        run_directories(env,client,platform,path,image,source_engine,target_engine,report,scans)
+        if len(scans)!=28:raise scene.SuiteError('capacity automatic scans are incomplete')
+        report.update(result='passed',automatic_scans=28,output_sha256=next(iter(hashes)))
         return report
     finally:
         current=platform.request('GET',path,(200,)).payload['policy']

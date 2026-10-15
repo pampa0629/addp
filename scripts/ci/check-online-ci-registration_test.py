@@ -21,7 +21,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
                  'scripts/test/online-hosted-raster-capacity-gate.sh', 'scripts/utils/hosted-product-runtime.sh',
-                 'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile', 'scripts/test/raster-workflow-online.py')
+                 'scripts/test/raster-workflow-capacity-online.py', 'business/scripts/online-raster-capacity-fixture.py', 'Makefile', 'scripts/test/raster-workflow-online.py',
+                 'system/backend/cmd/online-test-fixture/main.go', 'engines/geopython-workflow/test_online_raster_fixture.py')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +36,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 (paths[4], 'CACHE_VALUES=(64,128,256)'), (paths[5], 'public asset checksum changed'),
                 (paths[5], 'full_check=True'), (paths[6], 'scripts/test/online-raster-capacity-fixture_test.py'),
                 (paths[7], 'type(value) is not int'), (paths[7], 'len(set(sizes)) != 1'),
-                (paths[7], 'size_evidence')):
+                (paths[7], 'size_evidence'), (paths[4], 'def run_directories('),
+                (paths[4], 'automatic_scans=28'), (paths[5], 'def verify_mosaic_directory('),
+                (paths[8], 'case "raster-workflow-capacity":'),
+                (paths[9], 'test_capacity_directory_oracle_rejects_corrupt_components_and_scope')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))

@@ -159,8 +159,10 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case "platform-node-metrics":
 		return nil, nil
-	case "raster-workflow", "raster-workflow-capacity":
+	case "raster-workflow":
 		return rasterWorkflowPermissions, nil
+	case "raster-workflow-capacity":
+		return append(append([]string{}, rasterWorkflowPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read"), nil
 	case "security-mysql-owner-protection":
 		permissions := append(append([]string{}, consumerPermissions...), securityPermissions...)
 		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read"), nil
