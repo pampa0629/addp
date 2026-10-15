@@ -19,6 +19,8 @@
 #include "FileParser/UGFileParseManager.h"
 #include "FileParser/UGFileParseModel.h"
 #include "FileParser/UGModelConfigParams.h"
+#include "FileParser/UGSgmConfigParams.h"
+#include "Base3D/UGMaterial.h"
 
 using addp::workflow::Json;
 void require(bool value, const char* message) {
@@ -247,6 +249,47 @@ int main(int argc, char** argv) {
     reject_preserving_output("corrupt S3 companion image must fail");
     require(fixture.requests() == std::vector<std::string>{"GET " + model_object, "GET " + adjacent},
             "corrupt adjacent image must not trigger a fallback download");
+    // An unused source material must not require a companion image.
+    auto unused_source = addp::supermap::make_workflow_temporary_file("unused.SGM");
+    struct ParserCleanup {
+      UGC::UGFileParser* value;
+      ~ParserCleanup() { value->Close(); UGC::UGFileParseManager::DestroyFileParser(value); }
+    };
+    {
+      auto* raw = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
+      require(raw != nullptr, "fixture source parser unavailable");
+      ParserCleanup raw_cleanup{raw};
+      auto* raw_model = dynamic_cast<UGC::UGFileParseModel*>(raw);
+      require(raw_model != nullptr, "fixture source parser unavailable");
+      raw_model->SetParseModelNode(false);
+      UGC::UGSgmImportParams source_params;
+      UGC::UGString source_path; source_path.FromStd(argv[2], OGDC::OGDCCharset::UTF8);
+      source_params.SetFilePathName(source_path);
+      require(raw->Open(source_params), "fixture source read failed");
+      auto* info = raw_model->GetModelDataInfo();
+      require(info != nullptr, "fixture source materials missing");
+      auto& source_materials = info->GetMaterial();
+      UGC::UGString companion; companion.FromStd("compass.png", OGDC::OGDCCharset::UTF8);
+      for (decltype(source_materials.GetSize()) index = 0; index < source_materials.GetSize(); ++index)
+        for (unsigned int unit = 0; unit < source_materials[index]->GetTextureUnits(); ++unit)
+          source_materials[index]->SetTexPath(companion, unit);
+      auto material = std::make_unique<UGC::UGMaterial>();
+      UGC::UGString missing; missing.FromStd("unused.png", OGDC::OGDCCharset::UTF8);
+      material->SetName(missing); material->SetTexPath(missing);
+      info->GetMaterial().Add(material.release());
+      auto* writer = UGC::UGFileParseManager::CreateFileParser(UGC::UGFileType::SGM);
+      require(writer != nullptr, "fixture writer unavailable");
+      ParserCleanup writer_cleanup{writer};
+      auto* output_model = dynamic_cast<UGC::UGFileParseModel*>(writer);
+      require(output_model != nullptr, "fixture writer unavailable");
+      UGC::UGSgmExportParams export_params;
+      UGC::UGString destination; destination.FromStd(unused_source.path().string(), OGDC::OGDCCharset::UTF8);
+      export_params.SetFilePathName(destination);
+      require(output_model->Save(export_params, info), "fixture source write failed");
+    }
+    std::filesystem::copy_file(image, unused_source.path().parent_path() / "compass.png");
+    params["access_plan"]["source"]["access"] = {{"method", "mounted_path"}, {"path", unused_source.path().string()}};
+    convert_textured();
     params["access_plan"]["source"]["format"] = "skp";
     rejected = false;
     try { runtime.invoke_direct("sgm_to_osgb", params); } catch (const std::exception&) { rejected = true; }

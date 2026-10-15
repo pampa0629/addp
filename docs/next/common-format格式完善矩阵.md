@@ -21,10 +21,10 @@
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
 | FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。已通过 [八模型 Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103) 的生成入口、OBJ 基础几何、两种格式 GLB 缓存预览、两阶段主文件下载哈希及清理后主文件不变核验；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
-| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；2026-10-15 已通过同一厂商样例在本地 NFS 与真实 Business MinIO 同目录贴图的完整 GLB 页面复验，136 顶点、94 三角面及 256×256 内嵌 JPEG 正常。其他真实模型、复杂材质、其他 S3 实现及受控 T4 仍待验收。 |
+| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；2026-10-15 已通过同一厂商样例在本地 NFS 与真实 Business MinIO 同目录贴图的完整 GLB 页面复验，136 顶点、94 三角面及 256×256 内嵌 JPEG 正常。新增 iDesktopX 春树与汽车已完成本地真实 MinIO 页面生成；冬树的未使用材质误判已修复并通过 SDK／Model3D 验证，页面待重启复验；秋树实际使用的红叶贴图仍被 SDK 丢弃，继续拒绝发布。PNG 透明度、复杂材质、其他 S3 实现及受控 T4 未认证。 |
 
 1. JSON / GeoJSON 四源、CSV / TSV / XLSX 与八模型的同轮 Hosted 已收口，范围见上述支持矩阵及文末正式证据。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
-2. 下一优先补 SGM 的其他真实样例及 S3 外部贴图验收，保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
+2. 下一优先重启后复验冬树，再处理秋树实际绑定的红叶贴图在 SDK 中丢失的问题；保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
 3. FBX 基础预览的 Three.js 升级继续单独评估 COPC／3D Tiles 等消费者影响；已有 GLB 快显通过不消除源 FBXLoader 缺陷，不引入平行转换路线。
 4. GeoTIFF/COG 与八种模型限于已验证的静态模型、单位和基础贴图。继续按实际格式和样例报告支持边界，不扩展 JPEG EXIF 细项作为当前优先任务。
 
@@ -165,3 +165,15 @@
 两份实际 GLB 均为 12032 字节，复用 Model3D `validate_glb` 检查自包含 GLB 2.0，实读 136 个顶点、94 个三角面及一张 256×256 内嵌 JPEG，RGB 各通道范围 8–255；浏览器业务错误／警告为空。NFS 与 MinIO 源文件哈希在生成后均未改变，Manager infra 的 `temp/model3d-sgm/tenant_1/` 没有剩余对象，SuperMap 临时 `workflow-file`／`workflow-output` 目录为空。业务源样例、正式快显任务及 GLB 留作演示，不宣称领域全部零残留，也未改动血缘产品实现。本轮为个人开发环境中现有开发账号（页面显示“ADDP 开发管理员”）的本地产品复验，不能替代普通 User、最小权限及隔离部署的 T4。`Textures/` 查找及缺图／403／500／损坏图拒绝仍由已有 SDK 构建回归证明，本次真实 MinIO 只覆盖同目录图片。对应修复提交 `2b40557f23ee607d934167ddd26c19d7d3d9ae1d` 的 [Platform CI 38594507144](https://github.com/pampa0629/addp/actions/runs/38594507144) 和 [Release/T2 38594506657](https://github.com/pampa0629/addp/actions/runs/38594506657) 均成功，公开 SuperMap 无 SDK 门禁实际执行；条件跳过项不计作通过。
 
 本轮只更新以上验收事实；`git diff --check` 通过。共享工作区的 `make test-changed` 因其他 Owner 所需 T2 连接条件缺失在预检中止，未执行数据库门禁，不登记为通过。本轮没有修改产品代码、源授权、服务生命周期或血缘实现，已通过的 SGM 源码／SDK 构建证据保持有效。
+
+
+2026-10-15 独立 SGM 样例扩验：从用户已有 iDesktopX 11.2 压缩包提取 `SpringTree.SGM`、`AutumnTree.SGM`、`WinterTree.SGM`、`car01.sgm` 及其原配图片，准备到私有 Business MinIO `addp/3d/sgm/desktop-samples/{trees,car}/`，保留原始目录与大小写。四份模型 SHA256 均不同于 `compass.SGM`；211 个来源文件共 10814230 字节，正式深度扫描成功发现，生成后逐对象哈希未改变。文件仅保存在本地私有业务存储和临时验证副本，不进入 Git 或公共镜像。春树（item 44564）与汽车（item 44482）通过正式生成入口及 GLB 页面；实际产物分别为 9589 顶点／7273 面／两张 1024×1024 内嵌 RGB JPEG，以及 21012 顶点／11683 面／无内嵌图片。只认证汽车静态几何及春树基础 RGB 贴图；原 PNG 的 alpha 为 0–255，最终 JPEG 没有透明通道，不宣称透明度保真。
+
+冬树（item 44565、task 15）最初在 SuperMap 阶段报 `SGM conversion lost referenced textures`。SDK 只读核对确认源材质表仍有红叶材质，但非空网格仅使用树干材质；空网格还保留无效材质编号。Runtime 已改为仅准备非空源网格实际绑定材质（含按面子材质）的图片，不读取未使用条目；缺失的实际绑定图片及无效绑定仍拒绝。原生回归由 SDK 将指南针重新保存为带未使用缺图材质的 SGM，旧实现因 `unused.png` 缺失失败，修复后通过。冬树现经 SDK 转 OSGB 得到 3154 顶点、1919 面，再经正式 Model3D `osgb_to_glb` 及发布校验通过；当前开发服务未替换，冬树页面重建待用户重启后验收。
+
+秋树（item 44563）实际绑定两张图片。精确准备后 SDK 节点有完整的 9589 顶点、7273 面，却仅保留树干图片和材质，因此仍明确失败，未发布残缺 OSGB／GLB。仅在隔离探测中增加小写文件名副本未改变结果，相关别名已删除，不把大小写猜测写入产品；尚不能将最终 SDK 行为归因为图片损坏或路径大小写。春树、汽车成功及秋树失败路径的 Manager 中间 SGM 对象前缀均为空，保留来源、正常产物及任务供继续复验。
+
+本轮标准 `make test-supermap-workflow` 四项通过；首次工作区标准 SuperMap 产品镜像构建的编译阶段五项 CTest（含新增未使用材质回归）通过，但最终 Runtime 层下载 Ubuntu 官方依赖返回 HTTP 500／502，整次构建失败；单次临时 Docker 代理复验也失败，这两次不计完整产品构建通过。隔离副本经同一根 `make build-images --verify` 验证九项 CTest：五项现有门禁、春树／冬树／汽车转换，以及秋树丢图必须拒绝且不发布的负向断言均通过；不是四个样例全部转换成功。隔离副本复用工作区的 Model3D 原生工具，经根 `make test-model3d-workflow` 运行 278 项现有测试和三项真实派生 OSGB 转 GLB，281 项通过；不替代重启后页面或 T4。新增回归由现有 CMake 构建自动发现，不增加依赖、测试入口或 CI 编排。
+
+
+随后修正 SuperMap 代码镜像的依赖下载：编译层和最终运行层均使用同一 Ubuntu 官方 HTTPS 源。最小运行层缺少初始 CA 包，通过受信任编译层的 Ubuntu 系统根证书引导，安装后仍由 `ca-certificates` 包维护；未关闭 TLS／签名验证，没有 HTTP 回退或全局 Docker／代理修改。工作区标准 `make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify --jobs 1 --tag sgm-used-materials-https-20261015"` 完整通过，五项 SDK CTest 通过，最终 ARM64 镜像为 `sha256:2bef16317c6be9aa9b2952c1343ed7d20aa6482c4c87f7f2a77e1d18c8f60962`，只加载本机、不推送 SDK 镜像。Dockerfile 变更后的 `make test-build-registration test-engine-startup-isolation` 通过，现有 CI 路径登记仍覆盖；用户运行中的 SuperMap 镜像未被替换。

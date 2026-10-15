@@ -5,7 +5,8 @@ FROM ${BASE_IMAGE} AS build
 ENV LD_LIBRARY_PATH=
 ENV LD_PRELOAD=
 
-RUN apt-get update \
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends libx11-dev \
   && rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +48,12 @@ FROM ${RUNTIME_IMAGE} AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+# Ubuntu's minimal runtime has no CA bundle before ca-certificates is installed.
+# Bootstrap HTTPS with the system trust store from our trusted Ubuntu build stage.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+RUN sed -i 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources \
+  && apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \

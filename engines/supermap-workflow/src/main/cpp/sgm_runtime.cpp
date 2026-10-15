@@ -2,6 +2,7 @@
 #include "runtime_access.hpp"
 #include "workflow_file_reference.hpp"
 #include "Base3D/UGMaterial.h"
+#include "Base3D/UGMesh.h"
 #include "FileParser/UGFileParseManager.h"
 #include "FileParser/UGFileParseModel.h"
 #include "FileParser/UGModelConfigParams.h"
@@ -62,7 +63,27 @@ std::size_t prepare_textures(const Json& access, const std::filesystem::path& mo
     throw std::runtime_error("SGM source material layout is not supported");
   std::set<std::string> references;
   auto& materials = info->GetMaterial();
-  for (decltype(materials.GetSize()) index = 0; index < materials.GetSize(); ++index) {
+  std::set<UGC::UGint> used_materials;
+  auto use_material = [&](UGC::UGint index) {
+    if (index == -1) return;  // The SDK uses -1 for an untextured default material.
+    if (index < 0 || static_cast<std::size_t>(index) >= static_cast<std::size_t>(materials.GetSize()))
+      throw std::runtime_error("SGM source contains an invalid material");
+    used_materials.insert(index);
+  };
+  auto& meshes = info->GetMesh();
+  for (decltype(meshes.GetSize()) index = 0; index < meshes.GetSize(); ++index) {
+    const auto* mesh = meshes[index];
+    if (!mesh) throw std::runtime_error("SGM source contains an invalid material");
+    // Empty SDK meshes can retain uninitialized material IDs and unused table entries.
+    if (mesh->m_nVerticesCount == 0 || mesh->m_nIndexesCount == 0) continue;
+    if (mesh->m_arrFaces.GetSize() == 0) {
+      use_material(mesh->m_nMaterialID);
+    } else {
+      for (decltype(mesh->m_arrFaces.GetSize()) face = 0; face < mesh->m_arrFaces.GetSize(); ++face)
+        use_material(mesh->m_arrFaces[face].second);
+    }
+  }
+  for (const auto index : used_materials) {
     auto* material = materials[index];
     if (!material) throw std::runtime_error("SGM source contains an invalid material");
     for (unsigned int unit = 0; unit < material->GetTextureUnits(); ++unit) {
