@@ -1084,6 +1084,7 @@
       "scanSubmitted": "Background scan submitted. Waiting for completion.",
       "scanRunning": "Background scan is running.",
       "scanProgress": {
+        "rangeReads": "Attribute range reads: {read} across {ranges} ranges",
         "cleanup": "Old component index cleanup: confirmed {completed}/{total}, unconfirmed {failed}",
         "totalPending": "Total pending",
         "files": "Discovered {files} files and {directories} directories",

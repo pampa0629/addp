@@ -444,6 +444,8 @@ Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度
 
 旧执行耗时 2,673.4 秒，但本次 `index_cleanup_total=0`，未覆盖遗留组件索引删除，因此不能将两次总耗时差异单独归因于批量清理，也不能据此宣称批量清理的真实业务性能已验收。批量删除的确认计数、取消边界、租户和引擎隔离继续以既有独占 fixture 集成门禁为证；业务验收未制造或重建历史散件。
 
+PLY 属性提取的无进展区间来自高斯泼溅采样：`蒙古族敖包.ply` 含 3,843,812 个高斯点，格式 provider 对 8,192 个均匀位置逐个范围读取，原扫描进度只记录调用前后的 enriching 阶段。属性读取观测应在 Meta 的同一增强入口接入实际范围流，以读取返回字节及已读取范围数持续更新；不更改采样数量或位置、不改成全量 body 读取，不把范围数当作文件完成比例。每次打开范围和读取前检查取消；空范围、EOF 和心跳不制造进展。验证使用 `make test-module MODULE=meta GO_ONLY=1`、`make test-meta-postgres`、`make test-manager-frontend` 和 Meta Swagger 生成／覆盖校验。新增观测需用户重启 Meta 后再作页面验收，不能复用上述旧执行证明新增字段已经在线生效。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。

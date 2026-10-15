@@ -3992,6 +3992,12 @@ const docTemplate = `{
                 "current_path": {
                     "type": "string"
                 },
+                "current_range_bytes_read": {
+                    "type": "integer"
+                },
+                "current_ranges_read": {
+                    "type": "integer"
+                },
                 "directories_discovered": {
                     "type": "integer"
                 },

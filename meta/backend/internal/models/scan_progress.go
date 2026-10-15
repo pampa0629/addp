@@ -23,6 +23,8 @@ type ScanProgress struct {
 	CurrentPath           string    `json:"current_path,omitempty"`
 	CurrentBytesRead      int64     `json:"current_bytes_read"`
 	CurrentBytesTotal     int64     `json:"current_bytes_total"`
+	CurrentRangeBytesRead int64     `json:"current_range_bytes_read"`
+	CurrentRangesRead     int64     `json:"current_ranges_read"`
 	IndexCleanupTotal     int64     `json:"index_cleanup_total"`
 	IndexCleanupCompleted int64     `json:"index_cleanup_completed"`
 	IndexCleanupFailed    int64     `json:"index_cleanup_failed"`
@@ -67,7 +69,7 @@ func ObserveScanProgress(metadata commonModels.JSONMap) *ScanProgress {
 	if len([]rune(p.CurrentPath)) > 512 {
 		p.CurrentPath = string([]rune(p.CurrentPath)[:512])
 	}
-	if p.FilesDiscovered < 0 || p.DirectoriesDiscovered < 0 || p.ItemsPlanned < 0 || p.ItemsCompleted < 0 || p.ItemsSucceeded < 0 || p.ItemsFailed < 0 || p.CurrentBytesRead < 0 || p.CurrentBytesTotal < 0 || p.ItemsCompleted != p.ItemsSucceeded+p.ItemsFailed || p.IndexCleanupTotal < 0 || p.IndexCleanupCompleted < 0 || p.IndexCleanupFailed < 0 || p.IndexCleanupCompleted+p.IndexCleanupFailed > p.IndexCleanupTotal {
+	if p.FilesDiscovered < 0 || p.DirectoriesDiscovered < 0 || p.ItemsPlanned < 0 || p.ItemsCompleted < 0 || p.ItemsSucceeded < 0 || p.ItemsFailed < 0 || p.CurrentBytesRead < 0 || p.CurrentBytesTotal < 0 || p.CurrentRangeBytesRead < 0 || p.CurrentRangesRead < 0 || p.ItemsCompleted != p.ItemsSucceeded+p.ItemsFailed || p.IndexCleanupTotal < 0 || p.IndexCleanupCompleted < 0 || p.IndexCleanupFailed < 0 || p.IndexCleanupCompleted+p.IndexCleanupFailed > p.IndexCleanupTotal {
 		return nil
 	}
 	return &p

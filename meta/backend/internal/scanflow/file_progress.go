@@ -49,6 +49,8 @@ func (p *FileProgress) Operation(operation, path string) {
 		if s.Operation != operation || s.CurrentPath != path {
 			s.CurrentBytesRead = 0
 			s.CurrentBytesTotal = 0
+			s.CurrentRangeBytesRead = 0
+			s.CurrentRangesRead = 0
 		}
 		s.Operation, s.CurrentPath = operation, path
 	})

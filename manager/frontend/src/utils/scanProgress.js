@@ -22,6 +22,9 @@ export function scanProgressView(run, t, now = Date.now()) {
     if (snapshot.index_cleanup_total > 0) lines.push(t(prefix + 'cleanup', { completed: snapshot.index_cleanup_completed, total: snapshot.index_cleanup_total, failed: snapshot.index_cleanup_failed }))
     if (snapshot.current_path) lines.push(t(prefix + 'current', { path: snapshot.current_path }))
     if (snapshot.operation) lines.push(t(prefix + 'operation.' + snapshot.operation))
+    if (snapshot.operation === 'enriching' && snapshot.current_ranges_read > 0) lines.push(t(prefix + 'rangeReads', {
+      read: formatScanBytes(snapshot.current_range_bytes_read), ranges: snapshot.current_ranges_read
+    }))
     if (snapshot.operation === 'hashing') lines.push(t(prefix + 'bytes', {
       read: formatScanBytes(snapshot.current_bytes_read), total: formatScanBytes(snapshot.current_bytes_total)
     }))

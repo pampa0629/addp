@@ -14,6 +14,10 @@ import (
 )
 
 func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
+	originalReader := input.ContentReader
+	input.ContentReader = observeMetadataRanges(originalReader)
+	defer func() { input.ContentReader = originalReader }()
+
 	if input.Encoding == "" && input.Detected.Layout == format.LayoutSingle && (input.Detected.Format == "csv" || input.Detected.Format == "tsv") {
 		input.Encoding = commonJSON.String(attrs, "format_info."+input.Detected.Format, "encoding")
 		if input.Encoding == "" {

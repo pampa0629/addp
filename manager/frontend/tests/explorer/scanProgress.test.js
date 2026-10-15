@@ -36,6 +36,17 @@ describe('scan progress observations', () => {
     expect(view.lines.join(' ')).toContain('operation.cleaning_index')
     expect(view.lines.join(' ')).not.toContain('1.0 MiB')
   })
+  it('shows real attribute range reads without changing item or fingerprint progress', () => {
+    const run = { status: 'running', scan_progress: { ...snapshot, operation: 'enriching',
+      current_range_bytes_read: 229376, current_ranges_read: 4096,
+      last_progress_at: new Date(now).toISOString() } }
+    const view = scanProgressView(run, t, now)
+    expect(view.percent).toBe(20)
+    expect(view.stale).toBe(false)
+    expect(view.lines.join(' ')).toContain('rangeReads:{"read":"224.0 KiB","ranges":4096}')
+    expect(view.lines.join(' ')).not.toContain('1.0 MiB')
+    expect(scanProgressView({ ...run, scan_progress: { ...run.scan_progress, operation: 'hashing' } }, t, now).lines.join(' ')).not.toContain('rangeReads')
+  })
   it('never reports completion before success or fabricates 100 percent on failure', () => {
     const run = { status: 'running', scan_progress: { ...snapshot, items_completed: 100, items_succeeded: 99 } }
     expect(scanProgressView(run, t).percent).toBe(99)

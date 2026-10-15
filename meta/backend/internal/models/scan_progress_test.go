@@ -33,3 +33,20 @@ func TestScanProgressProjectionOnlyExposesTypedObservations(t *testing.T) {
 		t.Fatal("inconsistent completed counters projected")
 	}
 }
+
+func TestAttributeRangeProgressProjectionRejectsNegativeCounters(t *testing.T) {
+	raw := map[string]interface{}{"phase": "processing", "operation": "enriching", "current_range_bytes_read": 458752, "current_ranges_read": 8192}
+	metadata := commonModels.JSONMap{"scan_progress": raw}
+	p := ObserveScanProgress(metadata)
+	if p == nil || p.CurrentRangeBytesRead != 458752 || p.CurrentRangesRead != 8192 {
+		t.Fatalf("attribute range observations missing: %+v", p)
+	}
+	for _, key := range []string{"current_range_bytes_read", "current_ranges_read"} {
+		previous := raw[key]
+		raw[key] = -1
+		if ObserveScanProgress(metadata) != nil {
+			t.Fatalf("negative %s projected", key)
+		}
+		raw[key] = previous
+	}
+}

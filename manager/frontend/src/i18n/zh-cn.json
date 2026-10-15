@@ -1084,6 +1084,7 @@
       "scanSubmitted": "后台扫描已提交，正在等待完成",
       "scanRunning": "后台扫描进行中",
       "scanProgress": {
+        "rangeReads": "属性范围读取 {read}，已读取 {ranges} 个范围",
         "cleanup": "清理旧组件索引：成功 {completed}/{total}，未确认 {failed}",
         "totalPending": "总量待确定",
         "files": "已发现 {files} 个文件、{directories} 个目录",

@@ -180,6 +180,11 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 		f.ExecutionConfig = commonmodels.JSONMap{"engine_id": 9, "scan_depth": "deep", "password": private}
 		f.Metadata = commonmodels.JSONMap{"private": private, "items_scanned": 3, "step_results": map[string]interface{}{"scan": map[string]interface{}{"status": "failed", "result": private}}}
 		f.Metadata["scan_progress"] = map[string]interface{}{"phase": "processing", "operation": "hashing", "files_discovered": 10, "items_planned": 2, "items_total_known": true, "items_completed": 1, "items_succeeded": 1, "current_path": "3d/model.obj", "current_bytes_read": 1024, "current_bytes_total": 4096, "private": private}
+		if i == 1 {
+			progress := f.Metadata["scan_progress"].(map[string]interface{})
+			progress["operation"], progress["current_bytes_read"], progress["current_bytes_total"] = "enriching", 0, 0
+			progress["current_range_bytes_read"], progress["current_ranges_read"] = 229376, 4096
+		}
 		f.ErrorDetails = commonmodels.JSONMap{"code": "meta.scan.failed", "message": private, "category": "source"}
 		authorizationID, principalID, membershipID, version := int64(710000090+i), int64(31), int64(1), int64(1)
 		expires := time.Now().UTC().Add(time.Hour)
@@ -223,7 +228,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	}
 	body := request("owner", "/executions/"+fixtures[1].ExecutionID, 200)
 	progress, ok := body["scan_progress"].(map[string]interface{})
-	if !ok || progress["files_discovered"] != float64(10) || progress["items_completed"] != float64(1) || progress["current_bytes_read"] != float64(1024) {
+	if !ok || progress["files_discovered"] != float64(10) || progress["items_completed"] != float64(1) || progress["current_bytes_read"] != float64(0) || progress["current_range_bytes_read"] != float64(229376) || progress["current_ranges_read"] != float64(4096) {
 		t.Fatalf("safe scan progress missing from detail: %v", body)
 	}
 	for _, token := range []string{"owner", "peer", "oauth"} {
@@ -245,6 +250,9 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 			t.Fatalf("pagination returned wrong actors: %v", seen)
 		}
 		detail := request(token, "/executions/"+fixtures[0].ExecutionID, 200)
+		if hash := detail["scan_progress"].(map[string]interface{}); hash["current_bytes_read"] != float64(1024) || hash["current_ranges_read"] != float64(0) {
+			t.Fatalf("fingerprint and attribute observations mixed: %v", hash)
+		}
 		ctx := detail["scan_context"].(map[string]interface{})
 		if ctx["engine_id"] != float64(9) || ctx["scan_depth"] != "deep" {
 			t.Fatalf("scan context lost: %v", ctx)

@@ -415,6 +415,14 @@ test('reports discovery, recursive item totals and large-file reads separately f
   await expect(progress.locator('.scan-status__stale')).toHaveCount(0)
   backend.scanProgress.current_bytes_read = 104857600
   await expect(progress).toContainText('内容指纹读取 100.0 MiB / 1.0 GiB')
+  backend.scanProgress = { ...backend.scanProgress, operation: 'enriching', current_bytes_read: 0, current_bytes_total: 0,
+    current_range_bytes_read: 229376, current_ranges_read: 4096 }
+  await expect(progress).toContainText('属性范围读取 224.0 KiB，已读取 4096 个范围')
+  await expect(progress).not.toContainText('内容指纹读取')
+  await expect(progress.locator('.scan-status__percent')).toHaveText('20%')
+  backend.scanProgress.current_range_bytes_read = 458752
+  backend.scanProgress.current_ranges_read = 8192
+  await expect(progress).toContainText('属性范围读取 448.0 KiB，已读取 8192 个范围')
   backend.scanProgress = { ...backend.scanProgress, operation: 'cleaning_index', current_bytes_read: 0, current_bytes_total: 0,
     index_cleanup_total: 205, index_cleanup_completed: 100, index_cleanup_failed: 0 }
   await expect(progress).toContainText('清理旧组件索引：成功 100/205，未确认 0')
