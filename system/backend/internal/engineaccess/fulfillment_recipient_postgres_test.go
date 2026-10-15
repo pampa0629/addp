@@ -127,11 +127,10 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 	seedDelegation func(*testing.T, int64, time.Time) *Delegation,
 	confirmation userProvenance,
 ) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	ctx := t.Context()
 	base := newRequest()
 	repo := NewRepository(db)
-	settle := func(request fulfillmentRequest, accept bool, verify func(*Repository) error) (*fulfillmentOutcome, error) {
+	settle := func(ctx context.Context, request fulfillmentRequest, accept bool, verify func(*Repository) error) (*fulfillmentOutcome, error) {
 		var outcome *fulfillmentOutcome
 		err := repo.transaction(ctx, func(tx *Repository) error {
 			var err error
@@ -142,6 +141,8 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 	}
 	verified := func(*Repository) error { return nil }
 	t.Run("lower recipient account precedes operator during real role write", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
 		receiver, _ := newUser(t, time.Hour)
 		operator, membershipExpiry := newUser(t, time.Hour)
 		seedDelegation(t, operator.MembershipID, membershipExpiry.Add(-time.Second))
@@ -164,9 +165,9 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 			return err
 		})
 	})
-	reject := func(t *testing.T, request fulfillmentRequest, verify func(*Repository) error) {
+	reject := func(t *testing.T, ctx context.Context, request fulfillmentRequest, verify func(*Repository) error) {
 		t.Helper()
-		if _, err := settle(request, true, verify); err == nil {
+		if _, err := settle(ctx, request, true, verify); err == nil {
 			t.Fatal("invalid recipient produced acceptance")
 		}
 		for _, table := range []string{"system.engine_access_fulfillment_outcomes", "system.audit_logs"} {
@@ -183,25 +184,27 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 			t.Fatalf("failed recipient became a durable outcome: %v", err)
 		}
 		// Invalid recipients must not prevent releasing pending business facts.
-		closed, err := settle(request, false, nil)
+		closed, err := settle(ctx, request, false, nil)
 		if err != nil || closed.Outcome != "closed" {
 			t.Fatalf("invalid recipient stranded close: %+v %v", closed, err)
 		}
 	}
+	setupCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	newGlobal := func() *iam.Principal {
 		p := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
-		if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
-			if err := tx.CreatePrincipal(ctx, p); err != nil {
+		if err := identity.Transaction(setupCtx, func(tx *iam.Repository) error {
+			if err := tx.CreatePrincipal(setupCtx, p); err != nil {
 				return err
 			}
-			return tx.CreateUser(ctx, &iam.User{ID: p.ID, DisplayName: "Recipient fixture"})
+			return tx.CreateUser(setupCtx, &iam.User{ID: p.ID, DisplayName: "Recipient fixture"})
 		}); err != nil {
 			t.Fatal(err)
 		}
 		return p
 	}
 	foreignUser := newGlobal()
-	foreign, err := iam.NewPlatformTenantService(identity, time.Now).Create(ctx, iam.CreateTenantInput{
+	foreign, err := iam.NewPlatformTenantService(identity, time.Now).Create(setupCtx, iam.CreateTenantInput{
 		Code: "recipient_foreign", Name: "Recipient foreign", InitialAdministratorPrincipalID: foreignUser.ID,
 		ActorPrincipalID: base.Operator.PrincipalID})
 	if err != nil {
@@ -221,6 +224,8 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		{"ended membership", 0, "ended"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
 			request := newRequest()
 			request.RecipientID = test.id
 			if test.state != "" {
@@ -235,19 +240,21 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 					if err != nil {
 						t.Fatal(err)
 					}
-					reject(t, request, verified)
+					reject(t, ctx, request, verified)
 					return
 				}
 				if err := db.Table(table).Where("id = ?", id).Update("status", status).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
-			reject(t, request, verified)
+			reject(t, ctx, request, verified)
 		})
 	}
 	t.Run("recipient locks coordinate real IAM lifecycle writes", func(t *testing.T) {
 		for _, kind := range []string{"user", "department", "project_group"} {
 			t.Run(kind, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				defer cancel()
 				request := newRequest()
 				request.RecipientType = kind
 				actor, _ := newUser(t, time.Hour)
@@ -292,13 +299,15 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 				}
 				assertQualificationMutationWaitsForAcceptance(t, db, request, confirmation, write)
 				request.RequestID = uuid.New()
-				reject(t, request, verified)
+				reject(t, ctx, request, verified)
 			})
 		}
 	})
 	for _, kind := range []string{"department", "project_group"} {
 		for _, state := range []string{"active", "missing", "foreign", "unavailable"} {
 			t.Run(kind+" "+state, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				defer cancel()
 				request := newRequest()
 				request.RecipientType = kind
 				tenantID := base.TenantID
@@ -334,14 +343,14 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 					}
 				}
 				if state == "active" {
-					original, err := settle(request, true, verified)
+					original, err := settle(ctx, request, true, verified)
 					if err != nil || original.Outcome != "accepted" {
 						t.Fatalf("empty active organization rejected: %+v %v", original, err)
 					}
 					if err := invalidate(); err != nil {
 						t.Fatal(err)
 					}
-					recovered, err := settle(request, true, nil)
+					recovered, err := settle(ctx, request, true, nil)
 					if err != nil || !recovered.RecordedAt.Equal(original.RecordedAt) {
 						t.Fatalf("organization invalidation stranded historical recovery: %+v %v", recovered, err)
 					}
@@ -353,15 +362,17 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 						t.Fatal(err)
 					}
 				}
-				reject(t, request, verified)
+				reject(t, ctx, request, verified)
 			})
 		}
 	}
 	t.Run("member expiry during business verification", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
 		source, expires := newUser(t, time.Second)
 		request := newRequest()
 		request.RecipientID = source.PrincipalID
-		reject(t, request, func(tx *Repository) error {
+		reject(t, ctx, request, func(tx *Repository) error {
 			now, err := tx.wallClock(ctx)
 			if err != nil {
 				return err
@@ -371,6 +382,8 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		})
 	})
 	t.Run("user versions do not become a recipient snapshot", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
 		source, _ := newUser(t, time.Hour)
 		request := newRequest()
 		request.RecipientID = source.PrincipalID
@@ -378,7 +391,7 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 			Update("authorization_version", gorm.Expr("authorization_version + 1")).Error; err != nil {
 			t.Fatal(err)
 		}
-		original, err := settle(request, true, verified)
+		original, err := settle(ctx, request, true, verified)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -389,11 +402,11 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		if err != nil || !read.RecordedAt.Equal(original.RecordedAt) {
 			t.Fatalf("user invalidation stranded read: %+v %v", read, err)
 		}
-		recovered, err := settle(request, true, nil)
+		recovered, err := settle(ctx, request, true, nil)
 		if err != nil || !recovered.RecordedAt.Equal(original.RecordedAt) {
 			t.Fatalf("user invalidation stranded arbitration retry: %+v %v", recovered, err)
 		}
 		request.RequestID = uuid.New()
-		reject(t, request, verified)
+		reject(t, ctx, request, verified)
 	})
 }

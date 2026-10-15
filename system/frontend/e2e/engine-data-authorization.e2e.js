@@ -49,10 +49,11 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete' } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false } = {}) {
   const writes = [], reads = []
   let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
-  let grants = [...history], failedGrant = false, failedChange = false
+  let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
+  const restrictions = [...denies]
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
@@ -95,6 +96,20 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       const filtered = filterGrants(grants, query)
       return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size, total_pages: Math.ceil(filtered.length / size) })
     }
+    if (path.endsWith('/access_denies')) {
+      const body = request.postDataJSON(); writes.push({ path, body })
+      let result = restrictions.find(row => row.deny_id === body.deny_id)
+      if (!result) { result = { ...body, established_at: new Date().toISOString() }; restrictions.push(result) }
+      if (denyFailure && !failedDeny) { failedDeny = true; return reply({ error: 'Restriction result unknown' }, 503) }
+      return reply(result)
+    }
+    if (path.includes('/access_denies/') && path.endsWith('/release')) {
+      const body = request.postDataJSON(); writes.push({ path, body })
+      const id = path.split('/').at(-2), row = restrictions.find(row => row.deny_id === id)
+      row.released = true
+      if (releaseFailure && !failedRelease) { failedRelease = true; return reply({ error: 'Release result unknown' }, 503) }
+      return reply({ deny_id: id, released_at: new Date().toISOString() })
+    }
     if (path.endsWith('/access_grants')) {
       reads.push(request.url())
       if (request.method() === 'GET') {
@@ -109,11 +124,16 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         if (query.get('recipient_type') === 'user' && query.get('recipient_id')) {
           if (inspectionDenied) return reply({ error: '本引擎管理资格不足', error_code: 'forbidden' }, 403)
           const account = query.get('recipient_id'), expanded = new Map()
-          const candidates = current.filter(item => String(item.recipient_id) === account && (item.recipient_type === 'user' || organizationMember))
+          const activeDenies = restrictions.filter(item => !item.released && (!item.expires_at || new Date(item.expires_at) > new Date()))
+          const candidates = [...current, ...activeDenies].filter(item => String(item.recipient_id) === account && (item.recipient_type === 'user' || organizationMember))
           for (const source of candidates) {
-            const key = JSON.stringify(source.catalog_path), target = expanded.get(key) || { ...source, recipient_type: 'user', recipient_id: account, grant_count: 0, inspection: { account_id: account, catalog_path: source.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason, sources: [] } }
-            if (['grant', 'explicit_deny', 'target_unavailable'].includes(inspectionReason)) target.inspection.sources.push(source)
-            target.grant_count += source.grant_count; expanded.set(key,target)
+            const key = JSON.stringify(source.catalog_path), target = expanded.get(key) || { ...source, recipient_type: 'user', recipient_id: account, grant_count: 0, inspection: { account_id: account, catalog_path: source.catalog_path, observed_at: '2026-10-09T08:00:00Z', rule_covered: inspectionReason === 'grant', reason: inspectionReason, sources: [], denies: [] } }
+            if (source.deny_id) { target.inspection.denies.push(source); target.inspection.reason = 'explicit_deny'; target.inspection.rule_covered = false }
+            else {
+              if (['grant', 'explicit_deny', 'target_unavailable'].includes(inspectionReason)) target.inspection.sources.push(source)
+              target.grant_count += source.grant_count
+            }
+            expanded.set(key,target)
           }
           const searchQuery = new URLSearchParams(query); searchQuery.delete('recipient_type'); searchQuery.delete('recipient_id')
           filtered = filterGrants([...expanded.values()], searchQuery)
@@ -335,6 +355,125 @@ test('current account query denial stays in the authorization window', async ({p
   await expect(page).toHaveURL(/engines\/2\?tab=data-authorization$/)
 })
 
+test('current account prohibits and releases reading without changing Grants', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'system.engine_access_deny.create', 'system.engine_access_deny.release'], history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  await page.getByTestId('source-deny-create').click()
+  const dialog = page.getByRole('dialog', { name: '禁止读取', exact: true })
+  await expect(dialog).toContainText('Outdoor reader')
+  await expect(dialog).toContainText('不会撤销已有授权')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toContainText('请填写原因')
+  expect(writes).toEqual([])
+  await dialog.getByTestId('source-deny-expiry').click()
+  await page.getByRole('option', { name: '长期有效，直到解除', exact: true }).click()
+  await dialog.getByTestId('source-deny-reason').fill('Explicit account restriction')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('account-grant-status')).toContainText('命中源拒绝规则')
+  await expect(page.getByTestId('source-deny-create')).toBeDisabled()
+  await page.getByTestId('account-grant-expand').click()
+  await expect(page.getByTestId('account-source-denies')).toContainText('Outdoor reader')
+  await page.getByTestId('source-deny-release').click()
+  const release = page.getByRole('dialog', { name: '解除禁止', exact: true })
+  await expect(release).toContainText('不创建、恢复或续期读取授权')
+  await release.getByTestId('source-deny-reason').fill('End this restriction only')
+  await release.getByTestId('source-deny-confirm').click()
+  await expect(release).toBeHidden()
+  await expect(page.getByTestId('account-grant-status')).toContainText('源规则覆盖')
+  expect(writes).toHaveLength(2)
+  expect(writes[0].body).toMatchObject({ recipient_type: 'user', recipient_id: '33', action: 'read', expiry_mode: 'until_revoked', expires_at: null,
+    item_fingerprint: historicalGrant().item_fingerprint, catalog_path: tablePath })
+  expect(writes[1].path).toContain(`/access_denies/${writes[0].body.deny_id}/release`)
+  expect(writes.every(row => row.path.includes('/access_denies'))).toBe(true)
+})
+
+test('unknown Deny and release outcomes retry exactly the original commands', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'system.engine_access_deny.create', 'system.engine_access_deny.release'], history: [historicalGrant()], denyFailure: true, releaseFailure: true })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  await page.getByTestId('source-deny-create').click()
+  const dialog = page.getByRole('dialog', { name: '禁止读取', exact: true })
+  await dialog.getByTestId('source-deny-expiry').click()
+  await page.getByRole('option', { name: '长期有效，直到解除', exact: true }).click()
+  await dialog.getByTestId('source-deny-reason').fill('Keep immutable command')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toContainText('Restriction result unknown')
+  await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await expect(dialog.getByTestId('source-deny-confirm')).toHaveText('按原命令重试')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toBeHidden()
+  expect(writes[0]).toEqual(writes[1])
+  await page.getByTestId('account-grant-expand').click()
+  await expect(page.getByTestId('source-deny-release')).toHaveCount(1)
+  await page.getByTestId('source-deny-release').click()
+  const release = page.getByRole('dialog', { name: '解除禁止', exact: true })
+  await release.getByTestId('source-deny-reason').fill('Keep release reason')
+  await release.getByTestId('source-deny-confirm').click()
+  await expect(release).toContainText('Release result unknown')
+  await release.getByTestId('source-deny-confirm').click()
+  await expect(release).toBeHidden()
+  expect(writes[2]).toEqual(writes[3])
+  expect(writes).toHaveLength(4)
+})
+
+test('Deny-only data remains discoverable and organization release warns about its full scope', async ({ page }) => {
+  const deny = { deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, item_fingerprint: historicalGrant().item_fingerprint,
+    recipient_type: 'department', recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null }
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'iam.department.read', 'system.engine_access_deny.release'], organizationMember: true, denies: [deny] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  await expect(page.getByTestId('source-deny-create')).toHaveCount(0)
+  await page.getByTestId('account-grant-expand').click()
+  await expect(page.getByTestId('account-grant-sources')).toContainText('没有当前有效的授权来源')
+  await page.getByTestId('source-deny-release').click()
+  const dialog = page.getByRole('dialog', { name: '解除禁止', exact: true })
+  await expect(dialog).toContainText('所有受此规则约束的成员')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(writes).toEqual([])
+  await page.getByTestId('source-deny-release').click()
+  await dialog.getByTestId('source-deny-reason').fill('Release department restriction')
+  await dialog.getByTestId('source-deny-confirm').click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByTestId('source-grant-list')).toContainText('当前筛选下没有授权记录')
+  expect(writes).toHaveLength(1)
+})
+
+test('grant-read permission does not confer Deny creation or release', async ({ page }) => {
+  const deny = { deny_id: '17824529-7cbf-43db-bbe1-c31917836022', catalog_path: tablePath, recipient_type: 'user', recipient_id: '33', expiry_mode: 'until_revoked', expires_at: null }
+  const { writes } = await fixture(page, { allowed: grantPermissions, history: [historicalGrant()], denies: [deny] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  await page.getByTestId('account-grant-expand').click()
+  await expect(page.getByTestId('account-source-denies')).toContainText('Outdoor reader')
+  await expect(page.getByTestId('source-deny-create')).toHaveCount(0)
+  await expect(page.getByTestId('source-deny-release')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
+
+test('Deny confirmation is translated and usable on a narrow viewport without writing on cancel', async ({ page }, testInfo) => {
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'system.engine_access_deny.create'], history: [historicalGrant()], language: 'en' })
+  await page.goto('/engines/2?tab=data-authorization')
+  const type = page.getByTestId('source-grant-type-filter')
+  await type.click(); await page.getByRole('option', { name: 'Account', exact: true }).click()
+  const recipient = page.getByTestId('source-grant-recipient-filter')
+  await recipient.click(); await page.getByRole('option', { name: /Outdoor reader/ }).click()
+  await page.getByTestId('source-deny-create').click()
+  await page.setViewportSize({ width: 390, height: 844 })
+  const dialog = page.getByRole('dialog', { name: 'Prohibit reading', exact: true })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('without revoking them')
+  await dialog.getByTestId('source-deny-reason').fill('Validate layout only')
+  await expect(dialog.getByTestId('source-deny-reason')).toBeFocused()
+  const bounds = await dialog.boundingBox()
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390)
+  await page.screenshot({ path: testInfo.outputPath('source-deny-mobile-en.png'), fullPage: true })
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(writes).toEqual([])
+})
+
 test('list authorization action opens a separate window with permission-specific sections and survives reload', async ({ page }) => {
   const { writes, reads } = await fixture(page, { allowed: [...permissions, 'system.engine_access_delegation.read'] })
   await page.goto('/engines')
@@ -481,6 +620,7 @@ test('English approval mode dialog fits a narrow viewport without issuing access
 })
 function historicalGrant(kind = 'user') {
   return { request_id: `history-${kind}`, engine_id: '2', catalog_path: tablePath, recipient_type: kind, recipient_id: '33',
+    item_fingerprint: createHash('sha256').update('2:outdoor.activities').digest('hex'),
     approval_mode: 'independent', expiry_mode: 'until_revoked', granted_at: '2026-10-07T00:00:00Z', revocation: null }
 }
 test('grant history resolves inactive account names without opening a grant form', async ({ page }) => {

@@ -187,6 +187,30 @@ func (p *Plugin) WriteBatch(ctx context.Context, info plugin.ConnectionInfo, pat
 	return p.protocol().WriteBatch(ctx, info, path, batch, opts)
 }
 
+// deleteTable only removes a visible ordinary leaf. Hidden or absent catalog
+// entries are idempotent no-ops; a catalog failure must never lead to DROP.
+func (p *Plugin) deleteTable(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) != 2 || segments[0].Term != plugin.EngineCatalogTermSchema || segments[1].Term != plugin.EngineCatalogTermTable || segments[1].Kind != plugin.EngineCatalogKindTable {
+		return commonapi.ErrBadRequest
+	}
+	facts, err := p.DescribeEngineCatalogFacts(ctx, info, path, plugin.EngineCatalogFactsOptions{})
+	if plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	table := plugin.EngineCatalogFactsTableInfo(facts)
+	if table == nil {
+		return commonapi.ErrBadRequest
+	}
+	if err := p.validateWrite(table.Fields, plugin.EngineCatalogFactsSpatialInfo(facts)); err != nil {
+		return err
+	}
+	return p.protocol().DeleteResource(ctx, info, path)
+}
+
 func (p *Plugin) OpenTableWriteSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
 	if opts.Replace {
 		return nil, commonapi.ErrForbidden

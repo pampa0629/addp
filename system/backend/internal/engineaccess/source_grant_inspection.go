@@ -11,7 +11,8 @@ import (
 )
 
 // SourceGrantInspection is an uncached rule observation, not actual access or
-// credential evidence. No denial identifiers or bodies are exposed.
+// credential evidence. Deny summaries contain only management anchors and
+// validity, never establishment reasons, operators or historical bodies.
 type SourceGrantInspection struct {
 	AccountID       int64                          `json:"account_id,string" swaggertype:"string"`
 	CatalogPath     engineplugin.EngineCatalogPath `json:"catalog_path"`
@@ -20,6 +21,15 @@ type SourceGrantInspection struct {
 	RuleCovered     bool                           `json:"rule_covered"`
 	Reason          string                         `json:"reason" enums:"grant,no_grant,explicit_deny,source_unavailable,target_unavailable"`
 	Sources         []SourceGrantInspectionSource  `json:"sources"`
+	Denies          []SourceGrantInspectionDeny    `json:"denies"`
+}
+
+type SourceGrantInspectionDeny struct {
+	DenyID        uuid.UUID  `json:"deny_id"`
+	RecipientType string     `json:"recipient_type"`
+	RecipientID   int64      `json:"recipient_id,string" swaggertype:"string"`
+	ExpiryMode    string     `json:"expiry_mode"`
+	ExpiresAt     *time.Time `json:"expires_at"`
 }
 
 type SourceGrantInspectionSource struct {
@@ -57,7 +67,7 @@ const inspectionSourceAggregationCTEs = `, sources AS (
 )`
 
 // One committed statement observes IAM, rules, source relations and pagination.
-// Only current grant-bearing targets are listed; an empty list is not an Allow
+// Current Grant- or Deny-bearing targets are listed; an empty list is not an Allow
 // or a denial verdict for all other engine data. No source database is queried.
 const accountGrantRelationsPrefixSQL = `WITH clock AS MATERIALIZED (SELECT clock_timestamp() AS at),
  account AS MATERIALIZED (
@@ -71,10 +81,19 @@ const accountGrantRelationsPrefixSQL = `WITH clock AS MATERIALIZED (SELECT clock
  AND (g.expires_at IS NULL OR g.expires_at > clock.at)
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = g.request_id)`
 
-const accountGrantRelationsSuffixSQL = `), input AS MATERIALIZED (
+const accountDenyCandidatesSQL = `), active_denies AS MATERIALIZED (
+ SELECT d.* FROM system.engine_access_denies d CROSS JOIN clock
+ WHERE d.tenant_id = ? AND d.engine_id = ? AND d.action = 'read'
+ AND (d.expires_at IS NULL OR d.expires_at > clock.at)
+ AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases r WHERE r.deny_id = d.deny_id)`
+
+const accountGrantRelationsSuffixSQL = `), candidate_bindings AS (
+ SELECT catalog_path, item_fingerprint, boundary_hash FROM active
+ UNION SELECT catalog_path, item_fingerprint, NULL::text AS boundary_hash FROM active_denies
+), input AS MATERIALIZED (
  SELECT account.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('native_target', catalog_path,
  'item_fingerprint', item_fingerprint, 'boundary_hash', boundary_hash) ORDER BY item_fingerprint,boundary_hash)
- FROM (SELECT DISTINCT catalog_path, item_fingerprint, boundary_hash FROM active) bindings), '[]'::jsonb) AS targets,
+ FROM candidate_bindings), '[]'::jsonb) AS targets,
  clock.at AS observed_at FROM account CROSS JOIN clock
 )` + sourceReadRuleCTEs + `, relation_targets AS (
  SELECT item_fingerprint, min(position) AS position, (array_agg(path ORDER BY position))[1] AS path
@@ -83,6 +102,19 @@ const accountGrantRelationsSuffixSQL = `), input AS MATERIALIZED (
  SELECT relation.position, g.recipient_type, g.recipient_id, g.request_id, g.granted_at, g.expiry_mode, g.expires_at, g.approval_mode
  FROM matched_grants g JOIN targets target ON target.position=g.position
  JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint
+), relation_denies AS (
+ SELECT DISTINCT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at
+ FROM matched_denies d JOIN targets target ON target.position=d.position
+ JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint
+ UNION ALL
+ SELECT relation.position, d.deny_id, d.recipient_type, d.recipient_id, d.expiry_mode, d.expires_at
+ FROM active_denies d JOIN relation_targets relation ON relation.item_fingerprint=d.item_fingerprint CROSS JOIN input
+ WHERE NOT EXISTS (SELECT 1 FROM current_source) AND d.recipient_type='user' AND d.recipient_id=input.principal_id
+), deny_sets AS (
+ SELECT position, jsonb_agg(jsonb_build_object('deny_id', deny_id,
+ 'recipient_type', recipient_type, 'recipient_id', recipient_id::text,
+ 'expiry_mode', expiry_mode, 'expires_at', expires_at) ORDER BY recipient_type,recipient_id,deny_id) AS denies
+ FROM relation_denies GROUP BY position
 ), relation_rules AS (
  SELECT relation.position, max(r.observed_at) AS observed_at,
  CASE WHEN bool_or(r.reason='source_unavailable') THEN 'source_unavailable'
@@ -97,10 +129,11 @@ const accountGrantRelationsSuffixSQL = `), input AS MATERIALIZED (
  COALESCE(s.grant_count, 0) AS grant_count, s.granted_at, s.expiry_mode, s.expires_at, s.approval_mode,
  jsonb_build_object('account_id', input.principal_id::text, 'catalog_path', target.path, 'item_fingerprint', target.item_fingerprint,
  'observed_at', rules.observed_at, 'rule_covered', rules.reason = 'grant', 'reason', rules.reason,
- 'sources', COALESCE(s.sources, '[]'::jsonb)) AS inspection
+ 'sources', COALESCE(s.sources, '[]'::jsonb), 'denies', COALESCE(d.denies, '[]'::jsonb)) AS inspection
  FROM relation_targets target CROSS JOIN input JOIN relation_rules rules ON rules.position = target.position
  LEFT JOIN source_sets s ON s.position = target.position
- WHERE s.position IS NOT NULL OR EXISTS (SELECT 1 FROM active g WHERE g.item_fingerprint = target.item_fingerprint
+ LEFT JOIN deny_sets d ON d.position = target.position
+ WHERE s.position IS NOT NULL OR d.position IS NOT NULL OR EXISTS (SELECT 1 FROM active g WHERE g.item_fingerprint = target.item_fingerprint
  AND g.recipient_type = 'user' AND g.recipient_id = input.principal_id)
 ), page AS (
  SELECT * FROM applicable ORDER BY catalog_path::text LIMIT ? OFFSET ?
@@ -118,8 +151,12 @@ func (r *Repository) listAccountGrantRelations(ctx context.Context, tenantID, en
 	}
 	predicate, args := filter.targetPredicate()
 	parameters := append([]any{tenantID, accountID, tenantID, engineID}, args...)
+	parameters = append(parameters, tenantID, engineID)
+	parameters = append(parameters, args...)
 	parameters = append(parameters, size, (page-1)*size)
-	query := accountGrantRelationsPrefixSQL + " AND " + predicate + accountGrantRelationsSuffixSQL
+	// Apply the same target filter before materializing either rule source,
+	// not only after collecting every Grant and Deny in the engine.
+	query := accountGrantRelationsPrefixSQL + " AND " + predicate + accountDenyCandidatesSQL + " AND " + predicate + accountGrantRelationsSuffixSQL
 	if err := r.db.WithContext(ctx).Raw(query, parameters...).Scan(&result).Error; err != nil {
 		return nil, 0, err
 	}

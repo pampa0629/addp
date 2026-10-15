@@ -6,10 +6,10 @@ function source(relativePath) {
 }
 
 describe('tenant member selector ownership', () => {
-  it('reuses the IAM identity renderer for grant recipients in history, revocation and inspection', () => {
+  it('reuses the IAM identity renderer for grant and Deny recipients in history, commands and inspection', () => {
     const grants = source('../src/components/engines/EngineSourceGrants.vue')
     const recipient = source('../src/components/engines/EngineGrantRecipient.vue')
-    expect(grants.match(/<EngineGrantRecipient\b/g)).toHaveLength(3)
+    expect(grants.match(/<EngineGrantRecipient\b/g)).toHaveLength(5)
     expect(recipient).toContain('<TenantMemberIdentity')
     expect(recipient).toContain("from '../iam/TenantMemberIdentity.vue'")
     expect(grants).not.toContain('revokeRow?.recipient_id')

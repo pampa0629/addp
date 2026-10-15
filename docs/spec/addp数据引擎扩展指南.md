@@ -38,6 +38,8 @@ HighGo 普通业务目录不包含安全审计系统表 `hg_t_audit_log`，也�
 
 用户已确认官方 Go 包不可取得时采用第三方路线。驱动主体固定为 ADDP 已使用的 lib/pq v1.10.9，SM3 扩展固定取自 [iwanlebron/pq](https://github.com/iwanlebron/pq) 的 `6ff687fe05e4ef24b5d3abcb9e92d5bab94a958b`，按 MIT 许可保留声明，存放于 `common/engine/internal/highgopq`。本地适配登记唯一 `highgo` 驱动名，复用现有 `github.com/lib/pq/oid`、`scram`、公开错误类型和 `github.com/emmansun/gmsm/sm3`；不引入第三方分支的存储过程改动，不全局替换 lib/pq，不引入认证代理或认证降级。可信的 `ProtocolIdentity.DriverName` 统一绑定连接检测、GORM 连接池和 SQL 会话，默认端口 5866、`sslmode=require`，显式 TLS 设置按连接配置执行。
 
+HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL DROP 实现，先按精确叶子取得当前可见表 Facts 并复用非空间定义检查；目录隐藏或不存在的叶子不执行 DROP，其他目录／权限错误不得吞掉。仅接受 schema/table 路径，不删除 schema、不使用 CASCADE，不扩大账号权限；有依赖对象时由数据库拒绝。须在本次独占 schema 验证普通表删除、重复删除、引号标识符、同级表保留和依赖拒绝，且原生认证通过后才能开放删除能力。写会话的 Replace 仍须沿共享 PostgreSQL 会话验证，不另建 HighGo COPY 路径。
+
 写入回归沿用 `scripts/test/common-postgres-gate.sh`：默认完整入口及 `--test highgo-write` 在 disposable PostgreSQL 上验证 HighGo 驱动绑定与共享 SQL/COPY 契约，现有 Common PostgreSQL CI 自动覆盖；这不等于原生瀚高认证。显式 `--test highgo-write --highgo-native` 只消费调用方注入的 `ADDP_TEST_HIGHGO_HOST/PORT/DATABASE/USER/PASSWORD`，强制 TLS、校验 V4.5，不创建／删除 database，不读取既有业务表数据；仅附加 `public` 系统审计对象的只读目录过滤核验。原生认证不得自动切换驱动或重试未知结果的写入。
 
 驱动实现标准 `driver.DriverContext`，将调用方 Context 传递到建连过程；TCP、SSL 协商、TLS 和 SM3 握手期间取消或超时必须关闭本次连接并保留 Context 错误，握手完成后解除取消监听，避免误关已交付的连接。System 手动与周期检测共用 10 秒预算，真实失败仍更新离线状态，执行授权仍核验引擎可用性。确定性 SM3、三阶段握手取消、成功后取消监听释放和登记测试由 Common T1 自动发现，探测预算一致性由 System T1 自动发现；现有 Platform CI 的 Go workspace／插件登记及 Release/T2 消费者门禁覆盖相关改动，无新增运行服务或 CI 外部依赖。

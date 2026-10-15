@@ -100,8 +100,11 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		exerciseCurrentSourceRules(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		exerciseIndependentGrantCommands(t, db, actor.TenantID, binding.Path, roles, base.Operator.PrincipalID, newOperator, seedDelegation)
 		// The following acceptance checks are a new Runtime request phase. Keep
-		// their one-minute credential independent of preceding serial exercises;
+		// their operation budget and one-minute credential independent of preceding serial exercises;
 		// explicit expired-token cases continue to supply their own expired actor.
+		cancel()
+		ctx, cancel = context.WithTimeout(t.Context(), 90*time.Second)
+		defer cancel()
 		var runtimeNow time.Time
 		if err := db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&runtimeNow).Error; err != nil {
 			t.Fatal(err)

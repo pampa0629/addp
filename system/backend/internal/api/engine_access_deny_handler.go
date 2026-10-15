@@ -28,7 +28,7 @@ type ReleaseEngineAccessDenyRequest struct {
 
 // Release godoc
 // @Summary 解除指定源读取拒绝规则 | Release a specific source read Deny
-// @Description 当前租户用户须同时具备独立解除权限和有效引擎管理委派，不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and effective engine management delegation, not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants
+// @Description 当前租户用户须同时具备独立解除权限和引擎管理资格（授权管理员或本引擎有效受托办理人），不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and engine management qualification (authorization administrator or effective delegated handler), not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants
 // @Description 自然到期后首次解除返回 409 engine_access_deny_expired，无新记录或成功审计；到期前已解除的同操作者、同成员关系及同规范化原因重试返回原历史，当前资格仍须有效。异参返回 409 engine_access_deny_release_conflict，跨租户或引擎隐藏为 404 | First release after natural expiry returns 409 engine_access_deny_expired with no history or success audit; identical operator, membership and normalized reason retries recover earlier history subject to current qualification. Changed parameters return 409 engine_access_deny_release_conflict; other tenant or engine history stays hidden as 404
 // @Tags 源数据显式拒绝 | Source Data Explicit Deny
 // @Accept json
@@ -96,7 +96,7 @@ type CreateEngineAccessDenyRequest struct {
 
 // Create godoc
 // @Summary 建立精确源读取拒绝规则 | Establish a precise source read Deny
-// @Description 当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
+// @Description 当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
 // @Description 拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback
 // @Description 必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial
 // @Tags 源数据显式拒绝 | Source Data Explicit Deny

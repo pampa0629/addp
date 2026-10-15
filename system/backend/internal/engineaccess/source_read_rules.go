@@ -201,20 +201,21 @@ const sourceReadRuleCTEs = `, targets AS (
 	  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
 	       OR (g.expiry_mode = 'at_time' AND g.expires_at > input.observed_at))
 	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations revocation WHERE revocation.request_id = g.request_id)
+), matched_denies AS MATERIALIZED (
+ SELECT d.*, target.position FROM targets target CROSS JOIN input
+ JOIN system.engine_access_denies d ON d.tenant_id = input.tenant_id
+  AND d.engine_id = target.engine_id AND d.item_fingerprint = target.item_fingerprint
+ JOIN recipients r ON r.recipient_type = d.recipient_type AND r.recipient_id = d.recipient_id
+ WHERE d.action = 'read'
+  AND ((d.expiry_mode = 'until_revoked' AND d.expires_at IS NULL)
+       OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))
+  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
 ), rules AS (
 SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
                       AND e.id = target.engine_id AND e.lifecycle_state = 'active') THEN 'target_unavailable'
-     WHEN EXISTS (
-	SELECT 1 FROM system.engine_access_denies d
-	JOIN recipients r ON r.recipient_type = d.recipient_type AND r.recipient_id = d.recipient_id
- WHERE d.tenant_id = input.tenant_id AND d.engine_id = target.engine_id AND d.item_fingerprint = target.item_fingerprint
-	  AND d.action = 'read'
-	  AND ((d.expiry_mode = 'until_revoked' AND d.expires_at IS NULL)
-	       OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))
-	  AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
-     ) THEN 'explicit_deny'
+     WHEN EXISTS (SELECT 1 FROM matched_denies d WHERE d.position = target.position) THEN 'explicit_deny'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason
 FROM targets target CROSS JOIN input)`

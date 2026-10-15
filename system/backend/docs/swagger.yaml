@@ -861,6 +861,10 @@ definitions:
         type: string
       catalog_path:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      denies:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspectionDeny'
+        type: array
       item_fingerprint:
         type: string
       observed_at:
@@ -879,6 +883,20 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource'
         type: array
+    type: object
+  github_com_addp_system_internal_engineaccess.SourceGrantInspectionDeny:
+    properties:
+      deny_id:
+        type: string
+      expires_at:
+        type: string
+      expiry_mode:
+        type: string
+      recipient_id:
+        example: ""
+        type: string
+      recipient_type:
+        type: string
     type: object
   github_com_addp_system_internal_engineaccess.SourceGrantInspectionSource:
     properties:
@@ -6530,7 +6548,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
+        当前租户用户须同时具备独立创建权限和引擎管理资格（授权管理员或本引擎有效受托办理人）；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and engine management qualification (authorization administrator or effective delegated handler); recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
         拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback
         必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial
       parameters:
@@ -6594,7 +6612,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前租户用户须同时具备独立解除权限和有效引擎管理委派，不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and effective engine management delegation, not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants
+        当前租户用户须同时具备独立解除权限和引擎管理资格（授权管理员或本引擎有效受托办理人），不要求为原建立人；停用引擎及失效接收主体不阻断解除，不访问源端或 Catalog。仅追加不可变解除记录，不创建、恢复或续期 Grant | Current tenant user needs independent release Permission and engine management qualification (authorization administrator or effective delegated handler), not original creator identity. Disabled engines and unavailable recipients permit release without source or Catalog IO. Adds immutable release history without creating, restoring or renewing Grants
         自然到期后首次解除返回 409 engine_access_deny_expired，无新记录或成功审计；到期前已解除的同操作者、同成员关系及同规范化原因重试返回原历史，当前资格仍须有效。异参返回 409 engine_access_deny_release_conflict，跨租户或引擎隐藏为 404 | First release after natural expiry returns 409 engine_access_deny_expired with no history or success audit; identical operator, membership and normalized reason retries recover earlier history subject to current qualification. Changed parameters return 409 engine_access_deny_release_conflict; other tenant or engine history stays hidden as 404
       parameters:
       - description: 引擎 ID | Engine ID
@@ -6656,6 +6674,7 @@ paths:
     get:
       description: |-
         选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
+        具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients and validity, never reasons or operators. Establishment and release retain independent permissions
         按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
       parameters:
       - description: 引擎 ID | Engine ID

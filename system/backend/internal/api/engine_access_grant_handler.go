@@ -100,6 +100,7 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 // List godoc
 // @Summary 查看当前源数据授权关系 | List current source-data authorization relations
 // @Description 选择具体用户时按表展开当前个人、部门及项目组来源；inspection 为不可缓存的源规则观察，不是实际访问许可。其他条件查询直接接收方关系，筛选后计数及分页 | A selected user expands current personal and organization sources per table; inspection is an uncached source-rule observation, not access Allow. Other filters list direct-recipient relations before counting and pagination
+// @Description 具体用户查询保留只有有效拒绝的数据项；inspection.denies 仅返回当前适用的拒绝编号、接收主体及期限，不含原因或建立人。建立和解除仍由各自独立权限校验 | Selected-user queries retain Deny-only DataItems; inspection.denies exposes only applicable Deny anchors, recipients and validity, never reasons or operators. Establishment and release retain independent permissions
 // @Description 按精确目标、接收方和动作聚合未到期、未撤销的记录；长期有效优先，否则显示最晚到期。包含存量重复数量；不是实际访问裁决，不读取源端。需读取权限及当前管理资格 | Groups unexpired, unrevoked Grants by exact target, recipient and action. Until-revoked dominates; otherwise latest expiry. Includes legacy duplicate count; not an effective access verdict and no source IO. Requires read permission and current management qualification
 // @Tags 源数据授权 | Source Data Grants
 // @Produce json

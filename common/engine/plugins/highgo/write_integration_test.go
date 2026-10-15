@@ -25,6 +25,7 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	}
 	info := highgoWriteTestConnection(t, native)
 	p := &Plugin{}
+	t.Cleanup(func() { plugin.ClosePool(987655) })
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	if native {
@@ -204,7 +205,53 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 		t.Fatal("duplicate key INSERT unexpectedly committed")
 	}
 	assertCount(3)
-	t.Log("prepare, COPY commit, INSERT/COPY batches, exact types, Abort and failed-batch atomic rollback verified")
+	keepPath := plugin.TabularItemPath(987655, plugin.EngineCatalogTermSchema, schema, `keep "quoted"`)
+	keepTable := quotedSchema + `.` + pq.QuoteIdentifier(`keep "quoted"`)
+	view := quotedSchema + `."contract_guard"`
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 30*time.Second)
+		defer done()
+		for _, statement := range []string{"DROP VIEW IF EXISTS " + view + " RESTRICT", "DROP TABLE IF EXISTS " + keepTable + " RESTRICT"} {
+			if _, err := db.ExecContext(cleanup, statement); err != nil {
+				t.Errorf("cleanup deletion fixture: %v", err)
+			}
+		}
+	})
+	keepFields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}
+	if err := p.PrepareTableWrite(ctx, info, keepPath, plugin.TableWriteOptions{Fields: keepFields}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WriteBatch(ctx, info, keepPath, &plugin.BatchData{Fields: keepFields, Rows: []map[string]interface{}{{"id": int64(42)}}}, plugin.BatchWriteOptions{Method: "insert"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "CREATE VIEW "+view+" AS SELECT id FROM "+table); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.deleteTable(ctx, info, path); err == nil {
+		t.Fatal("dependent view must prevent deletion; no CASCADE")
+	}
+	assertCount(3)
+	if _, err := db.ExecContext(ctx, "DROP VIEW "+view); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.deleteTable(ctx, info, path); err != nil {
+		t.Fatalf("delete ordinary table: %v", err)
+	}
+	if err := p.deleteTable(ctx, info, path); err != nil {
+		t.Fatalf("repeat delete: %v", err)
+	}
+	var preserved bool
+	if err := db.QueryRowContext(ctx, "SELECT count(*)=1 AND min(id)=42 FROM "+keepTable).Scan(&preserved); err != nil || !preserved {
+		t.Fatalf("sibling changed: %t %v", preserved, err)
+	}
+	if err := p.deleteTable(ctx, info, keepPath); err != nil {
+		t.Fatalf("delete quoted table: %v", err)
+	}
+	var remains bool
+	if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL OR to_regclass($2) IS NOT NULL", table, keepTable).Scan(&remains); err != nil || remains {
+		t.Fatalf("table delete not verified: %t %v", remains, err)
+	}
+	t.Log("prepare, COPY commit, INSERT/COPY batches, exact types, Abort, failed-batch rollback, restricted delete, quoted identifiers and sibling preservation verified")
 }
 
 func highgoWriteTestConnection(t *testing.T, native bool) plugin.ConnectionInfo {

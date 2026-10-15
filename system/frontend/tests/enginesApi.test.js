@@ -51,6 +51,17 @@ describe('engines API', () => {
     expect(enginesAPI).not.toHaveProperty('inspectSourceGrants')
   })
 
+  it('uses the existing Deny commands without issuing or revoking Grants', async () => {
+    const payload = '{"deny_id":"original-command","recipient_id":"9007199254740993"}'
+    await enginesAPI.createSourceDeny('2', payload)
+    await enginesAPI.releaseSourceDeny('2', 'original-command', 'Release this restriction')
+    expect(client.post.mock.calls).toEqual([
+      ['/system/engines/2/access_denies', payload, { headers: { 'Content-Type': 'application/json' } }],
+      ['/system/engines/2/access_denies/original-command/release', { reason: 'Release this restriction' }]
+    ])
+    expect(client.get).not.toHaveBeenCalled()
+  })
+
   it('separates current relations from immutable history and withdraws by an anchor', async () => {
     const params = { page: 2, page_size: 20, table_search: 'outdoor', recipient_type: 'department', recipient_id: '9007199254740993' }
     await enginesAPI.listSourceGrants('2', params)

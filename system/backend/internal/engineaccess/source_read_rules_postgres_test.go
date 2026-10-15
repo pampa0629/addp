@@ -191,6 +191,54 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 		}
+		t.Run("current account lists minimal Deny anchors without a remaining Grant", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			grantID := grant(t, "user", user.PrincipalID, nil)
+			denyID := deny(t, "user", user.PrincipalID, nil)
+			filter := SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID}
+			check := func(grantCount int64) {
+				t.Helper()
+				rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
+				if err != nil || total != 1 || len(rows) != 1 || rows[0].GrantCount != grantCount || rows[0].Inspection == nil {
+					t.Fatalf("current Deny relation: %+v total=%d err=%v", rows, total, err)
+				}
+				if (rows[0].GrantedAt == nil) != (grantCount == 0) {
+					t.Fatalf("Deny-only data manufactured a Grant timestamp: %+v", rows[0])
+				}
+				observation := rows[0].Inspection
+				if observation.Reason != "explicit_deny" || observation.RuleCovered || len(observation.Denies) != 1 || observation.Denies[0].DenyID != denyID || observation.Denies[0].RecipientID != user.PrincipalID || observation.Denies[0].RecipientType != "user" || observation.Denies[0].ExpiryMode != "until_revoked" {
+					t.Fatalf("Deny anchors lost or duplicated: %+v", observation)
+				}
+				encoded, err := json.Marshal(observation.Denies)
+				if err != nil || strings.Contains(string(encoded), "reason") || strings.Contains(string(encoded), "established_by") || strings.Contains(string(encoded), "established_at") {
+					t.Fatalf("Deny body leaked: %s %v", encoded, err)
+				}
+				filter.TableSearch = "never-match-this-path"
+				_, count, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
+				if err != nil || count != 0 {
+					t.Fatalf("Deny target filter ignored: %d %v", count, err)
+				}
+				filter.TableSearch = ""
+			}
+			check(1)
+			revoke(t, grantID)
+			check(0)
+			// Restricting/disabled recipients remain manageable; the actual rule
+			// observation still reports their invalid identity, never an Allow.
+			if err := db.Table("system.principals").Where("id=?", user.PrincipalID).Update("status", "suspended").Error; err != nil {
+				t.Fatal(err)
+			}
+			rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
+			if err != nil || total != 1 || len(rows) != 1 || rows[0].Inspection.Reason != "source_unavailable" || len(rows[0].Inspection.Denies) != 1 {
+				t.Fatalf("disabled recipient lost release anchor: %+v %d %v", rows, total, err)
+			}
+			release(t, denyID)
+			assert(t, user, "source_unavailable")
+			rows, total, err = service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, filter)
+			if err != nil || total != 0 || len(rows) != 0 {
+				t.Fatalf("released Deny survived: %+v %d %v", rows, total, err)
+			}
+		})
 		t.Run("Grant matches the approved hash while Deny survives a changed hash", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			id := grant(t, "user", user.PrincipalID, nil)
@@ -373,7 +421,21 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, user, "grant")
 			groupDeny := deny(t, "project_group", group.ID, nil)
 			assert(t, user, "explicit_deny")
+			checkDenySources := func(expected int) {
+				t.Helper()
+				rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 1, SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
+				if err != nil || total != 1 || len(rows) != 1 || len(rows[0].Inspection.Denies) != expected {
+					t.Fatalf("current organization Deny sources: %+v %d %v", rows, total, err)
+				}
+			}
+			checkDenySources(1)
+			anotherPersonalDeny := deny(t, "user", user.PrincipalID, nil)
+			checkDenySources(2)
+			release(t, anotherPersonalDeny)
+			checkDenySources(1)
+			assert(t, user, "explicit_deny") // Releasing one source leaves the group Deny.
 			release(t, groupDeny)
+			checkDenySources(0)
 			if _, err := organizations.CloseProjectGroupMembership(ctx, iam.CloseOrganizationMembershipInput{TenantID: runtime.TenantID, OrganizationID: group.ID, MembershipID: member.ID, Version: member.Version, ActorPrincipalID: adminID, Reason: "End collaboration"}); err != nil {
 				t.Fatal(err)
 			}

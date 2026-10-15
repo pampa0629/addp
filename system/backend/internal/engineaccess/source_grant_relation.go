@@ -13,6 +13,7 @@ import (
 // SourceGrantRelation is a derived management view, never a second ACL or an
 // effective-access verdict. Only direct relations have a withdrawal RequestID;
 // account observations expose each source's anchor inside Inspection.Sources.
+// Deny-only account rows have no Grant issuance time, mode or approval mode.
 type SourceGrantRelation struct {
 	RequestID       *uuid.UUID             `json:"request_id,omitempty" swaggertype:"string"`
 	CatalogPath     json.RawMessage        `json:"catalog_path" swaggertype:"object"`
@@ -20,11 +21,11 @@ type SourceGrantRelation struct {
 	RecipientType   string                 `json:"recipient_type"`
 	RecipientID     int64                  `json:"recipient_id,string" swaggertype:"string"`
 	Action          string                 `json:"action"`
-	ExpiryMode      string                 `json:"expiry_mode"`
+	ExpiryMode      string                 `json:"expiry_mode,omitempty"`
 	ExpiresAt       *time.Time             `json:"expires_at"`
-	GrantedAt       time.Time              `json:"granted_at"`
+	GrantedAt       *time.Time             `json:"granted_at,omitempty"`
 	GrantCount      int64                  `json:"grant_count"`
-	ApprovalMode    string                 `json:"approval_mode"`
+	ApprovalMode    string                 `json:"approval_mode,omitempty"`
 	Inspection      *SourceGrantInspection `json:"inspection,omitempty"`
 }
 

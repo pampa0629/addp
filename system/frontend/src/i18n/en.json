@@ -1101,8 +1101,21 @@
     },
     "engine": {
       "sourceGrants": {
+        "deny": {
+          "create": "Prohibit reading",
+          "release": "Release prohibition",
+          "sources": "Current Deny sources",
+          "validity": "Prohibition validity",
+          "untilReleased": "Valid until released",
+          "createBoundary": "Prohibit this account from reading this DataItem, overriding personal and organization Grants without revoking them. Verify the target, select validity and enter a reason before submitting.",
+          "releaseBoundary": "Release only this Deny. No Grant is created, restored or renewed. Other Denies still apply; without an effective Grant, reading remains unavailable.",
+          "organizationBoundary": "This organization Deny affects all applicable department or project-group members, not only the filtered account.",
+          "invalid": "Enter a reason (up to 2000 characters) and explicit validity. A specific expiration must be in the future.",
+          "created": "Prohibition submitted. Review current Deny sources and status; existing Grants were not revoked.",
+          "released": "This prohibition was released. Review remaining sources; no read Grant was created or restored."
+        },
         "historyBoundary": "All issuance records include currently active, revoked and expired grants. Switch to Current authorizations to review merged active relations or revoke access.",
-        "accountSourcesHint": "Personal grants and current organization sources are grouped per table. Expand to inspect or revoke one source; other sources remain. Coverage is not actual access: function, session and security checks still apply.",
+        "accountSourcesHint": "Personal and current organization Grants and Denies are grouped per table. Expand to inspect or handle one source. Revoking a Grant is not a prohibition, and releasing a Deny grants no reading. Function, session and security checks still apply.",
         "noMatchingSources": "No authorization records match these filters",
         "source": "Authorization source",
         "viewSources": "View sources ({count})",

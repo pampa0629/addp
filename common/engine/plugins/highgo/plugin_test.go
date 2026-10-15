@@ -454,3 +454,21 @@ func readMessage(r io.Reader) (byte, []byte, error) {
 	_, err := io.ReadFull(r, payload)
 	return head[0], payload, err
 }
+
+func TestHighGoDeleteTablePreservesCatalogBoundary(t *testing.T) {
+	p := &Plugin{}
+	for _, name := range []string{"hg_t_audit_log", "pg_buffercache", "pg_stat_statements"} {
+		path := plugin.TabularItemPath(29, plugin.EngineCatalogTermSchema, "public", name)
+		if err := p.deleteTable(t.Context(), nil, path); err != nil {
+			t.Fatalf("hidden object must be a no-op before connecting: %v", err)
+		}
+	}
+	for _, path := range []plugin.EngineCatalogPath{
+		plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 29),
+		plugin.TabularNamespacePath(29, plugin.EngineCatalogTermSchema, "public"),
+	} {
+		if err := p.deleteTable(t.Context(), nil, path); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("non-table delete not rejected: %v", err)
+		}
+	}
+}
