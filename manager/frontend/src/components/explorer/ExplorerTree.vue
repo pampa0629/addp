@@ -32,15 +32,20 @@
       >
         <div class="scan-status__header">
           <span class="scan-status__title">{{ activeScan.title }}</span>
-          <span class="scan-status__percent">{{ activeScan.percent }}%</span>
+          <span class="scan-status__percent" :title="t('manager.explorer.scanProgress.itemRatio')">{{ !scanView.totalKnown ? t('manager.explorer.scanProgress.totalPending') : scanView.indeterminate ? scanView.title : `${scanView.percent}%` }}</span>
         </div>
+        <div v-if="scanView.indeterminate" class="scan-status__indeterminate" role="progressbar" :aria-label="activeScan.title" />
         <el-progress
-          :percentage="activeScan.percent"
+          v-else
+          :percentage="scanView.percent"
           :status="activeScan.status"
           :stroke-width="6"
           :show-text="false"
         />
         <div class="scan-status__detail">{{ activeScan.detail }}</div>
+        <div v-for="(line, index) in scanView.lines" :key="index" class="scan-status__metric">{{ line }}</div>
+        <div v-if="scanView.timing" class="scan-status__timing">{{ scanView.timing }}</div>
+        <div v-if="scanView.stale" class="scan-status__stale">{{ t('manager.explorer.scanProgress.stale') }}</div>
       </div>
 
       <ResourceTree
@@ -93,10 +98,13 @@ import { useI18n } from 'vue-i18n'
 import { ResourceTree } from '@addp/common-frontend'
 import { parseLocator } from '@addp/common-frontend'
 import { useExplorerStore } from '@/stores/explorer'
+import { executionFailurePresentation } from '@common-ui/utils/executionFailure.mjs'
 import {
   resolveCanonicalNodeSelection,
   resourceTreeRefreshKind
 } from '@/utils/dataExplorerSelection'
+
+import { scanProgressView } from '@/utils/scanProgress'
 
 const { t } = useI18n()
 
@@ -115,6 +123,18 @@ const store = useExplorerStore()
 const resourceTreeRef = ref(null)
 const catalogRootLoadPromises = new Map()
 let scanStatusTimer = 0
+const scanClock = ref(Date.now())
+const scanRun = ref(null)
+let scanClockTimer = 0
+const scanView = computed(() => scanProgressView(scanRun.value || { progress: activeScan.value.percent }, t, scanClock.value))
+onBeforeUnmount(() => {
+  cancelScanStatusTimer()
+  window.clearInterval(scanClockTimer)
+})
+function startScanClock() {
+  scanClock.value = Date.now()
+  if (!scanClockTimer) scanClockTimer = window.setInterval(() => { scanClock.value = Date.now() }, 1000)
+}
 const activeScan = ref({
   visible: false,
   title: '',
@@ -170,9 +190,6 @@ const refreshingNodeIds = computed(() => {
 // 计算属性：当前选中的节点 key
 const currentNodeKey = computed(() => store.selectedLocator || '')
 
-onBeforeUnmount(() => {
-  cancelScanStatusTimer()
-})
 
 // 事件处理：刷新整个引擎列表
 const handleRefresh = async () => {
@@ -270,13 +287,9 @@ const handleNodeAction = async ({ node, action }) => {
   if (action === 'refresh-node' || action === 'refresh-item') {
     try {
       if (resourceTreeRefreshKind(locator) === 'node') {
-        await store.refreshNode(locator, {
-          onSubmitted: (run) => updateScanStatusFromRun(run, t('manager.explorer.scanSubmitted')),
-          onProgress: updateScanStatusFromRun,
-          onScanCompleted: (run) => updateScanStatusFromRun(run, t('manager.explorer.treeRefreshing'), 95)
-        })
+        await store.refreshNode(locator, scanHooks)
       } else {
-        startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
+        startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'))
         await store.refreshItem(locator)
         emit('item-refreshed', locator)
       }
@@ -288,7 +301,7 @@ const handleNodeAction = async ({ node, action }) => {
         return
       }
       failScanStatus(error)
-      ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.response?.data?.error || error.message }))
+      ElMessage.error(t('manager.explorer.refreshFailed', { error: scanFailureMessage(error) }))
     }
     return
   }
@@ -387,7 +400,8 @@ const engineStatusLabel = (node) => t(`common.engineStatus.${store.engineState(n
 
 const resolveNodeClassName = (node) => isNodeEngineAvailable(node) ? '' : 'engine-resource-offline'
 
-function startScanStatus(title, detail, percent = 5) {
+function startScanStatus(title, detail, percent = 0) {
+  scanRun.value = null
   cancelScanStatusTimer()
   activeScan.value = {
     visible: true,
@@ -398,34 +412,46 @@ function startScanStatus(title, detail, percent = 5) {
   }
 }
 
-function updateScanStatusFromRun(run, title = '', minPercent = 10) {
+function updateScanStatusFromRun(run, title = '') {
   cancelScanStatusTimer()
-  const progress = Number(run?.progress)
-  const percent = Number.isFinite(progress)
-    ? clampScanPercent(Math.max(progress, minPercent))
-    : clampScanPercent(minPercent)
+  scanRun.value = run
+  startScanClock()
+  const view = scanProgressView(run, t)
   activeScan.value = {
     visible: true,
-    title: title || scanTitleFromRun(run),
-    detail: scanDetailFromRun(run),
-    percent,
+    title: title || view.title || scanTitleFromRun(run),
+    detail: run?.scan_progress ? '' : scanDetailFromRun(run),
+    percent: view.percent,
     status: ''
   }
 }
 
 function failScanStatus(error) {
   cancelScanStatusTimer()
+  if (error?.execution) scanRun.value = error.execution
+  else scanRun.value = { status: 'failed', progress: activeScan.value.percent }
+  window.clearInterval(scanClockTimer)
+  scanClockTimer = 0
   activeScan.value = {
     visible: true,
     title: t('manager.explorer.scanFailed'),
-    detail: error?.response?.data?.error || error?.message || t('manager.explorer.scanFailed'),
+    detail: scanFailureMessage(error),
     percent: 100,
     status: 'exception'
   }
 }
 
+function scanFailureMessage(error) {
+  return error?.execution
+    ? executionFailurePresentation(error.execution.error_details, t).reason
+    : error?.response?.data?.error || error?.message || t('manager.explorer.scanFailed')
+}
+
 function completeScanStatus() {
   cancelScanStatusTimer()
+  scanRun.value = { ...scanRun.value, status: 'success', progress: 100 }
+  window.clearInterval(scanClockTimer)
+  scanClockTimer = 0
   activeScan.value = {
     visible: true,
     title: t('manager.explorer.scanCompleted'),
@@ -440,6 +466,9 @@ function completeScanStatus() {
 
 function clearScanStatus() {
   cancelScanStatusTimer()
+  scanRun.value = null
+  window.clearInterval(scanClockTimer)
+  scanClockTimer = 0
   activeScan.value = {
     visible: false,
     title: '',
@@ -468,15 +497,24 @@ function scanTitleFromRun(run) {
 }
 
 function scanDetailFromRun(run) {
-  return run?.current_step || run?.progress_message || run?.message || t('manager.explorer.scanWaiting')
+  return run?.current_step || t('manager.explorer.scanWaiting')
 }
 
 function clampScanPercent(value) {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
+const scanHooks = {
+  onSubmitted: (run) => updateScanStatusFromRun(run, t('manager.explorer.scanSubmitted')),
+  onProgress: updateScanStatusFromRun,
+  onScanCompleted: (run) => updateScanStatusFromRun(run, t('manager.explorer.treeRefreshing')),
+  onCompleted: completeScanStatus,
+  onFailed: failScanStatus
+}
+
 // 暴露方法供父组件调用
 defineExpose({
+  scanHooks,
   expandNode: (locator) => store.expandNode(locator),
   collapseNode: (locator) => store.collapseNode(locator),
   scrollToNode: (locator, options) => resourceTreeRef.value?.scrollToNode(locator, options)
@@ -497,7 +535,34 @@ defineExpose({
   padding: 20px;
 }
 
+.scan-status__indeterminate {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--el-border-color-light);
+}
+.scan-status__indeterminate::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 25%;
+  border-radius: inherit;
+  background: var(--el-color-primary);
+  animation: scan-indeterminate 1.6s ease-in-out infinite alternate;
+}
+@keyframes scan-indeterminate { to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .scan-status__indeterminate::after { animation: none; } }
+.scan-status__metric, .scan-status__timing, .scan-status__stale {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
+}
+.scan-status__stale { color: var(--el-color-warning); }
 .scan-status {
+  flex: 0 0 auto;
+  max-height: 45vh;
+  overflow-y: auto;
   position: sticky;
   top: 0;
   z-index: 3;

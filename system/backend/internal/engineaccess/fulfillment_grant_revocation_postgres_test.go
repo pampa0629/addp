@@ -8,6 +8,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -22,8 +23,8 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 	t.Run("specific Grant withdrawal", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		runtime.TokenExpiresAt = time.Now().Add(time.Minute)
-		service := NewService(NewRepository(db), nil) // No live-catalog capability or remote reader.
+		runtime.TokenExpiresAt = testDatabaseClock(t, db)().Add(time.Minute)
+		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}}) // No live-catalog capability or remote reader.
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: runtime.TenantID,
 			RoleKey: "custom.grant_revoker", Name: "Explicit withdrawal fixture", ScopeTypes: []string{"tenant"},
 			PermissionKeys: []string{"system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
@@ -37,7 +38,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			input := iam.CreateTenantRoleAssignmentsInput{TenantID: runtime.TenantID, MembershipID: user.MembershipID,
 				RoleIDs: []int64{role.ID}, ScopeType: "tenant", ActorPrincipalID: adminID, Reason: "Explicit fixture withdrawal"}
 			if lifetime > 0 {
-				until := time.Now().Add(lifetime)
+				until := testDatabaseClock(t, db)().Add(lifetime)
 				input.ValidUntil = &until
 			}
 			if _, err := roles.CreateAssignments(ctx, input); err != nil {
@@ -48,7 +49,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				t.Fatal(err)
 			}
 			return Actor{TenantID: runtime.TenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID,
-				AuthorizationVersion: current.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, delegation
+				AuthorizationVersion: current.AuthorizationVersion, TokenExpiresAt: testDatabaseClock(t, db)().Add(time.Minute)}, delegation
 		}
 		cleanupActor, _ := qualified(t, 0)
 		issue := func(t *testing.T, binding shared.SharingFulfillmentBinding) *sourceGrant {
@@ -129,7 +130,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				t.Fatal(err)
 			}
 			assertCount(t, g.RequestID, 0)
-			actor.TokenExpiresAt = time.Now().Add(-time.Second)
+			actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(-time.Second)
 			if row, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("expired Grant leaked before qualification: %+v %v", row, err)
 			}
@@ -154,7 +155,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				t.Fatalf("expiry masked different-parameter conflict: %v", err)
 			}
 			input.Reason = original.Reason
-			input.Actor.TokenExpiresAt = time.Now().Add(-time.Second)
+			input.Actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(-time.Second)
 			if row, err := service.RevokeGrant(ctx, input); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("expired retry bypassed current qualification: %+v %v", row, err)
 			}
@@ -333,7 +334,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			}
 			assertCount(t, g.RequestID, 1)
 			original := Actor{TenantID: runtime.TenantID, PrincipalID: base.Operator.PrincipalID, MembershipID: base.Operator.MembershipID,
-				AuthorizationVersion: base.Operator.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}
+				AuthorizationVersion: base.Operator.AuthorizationVersion, TokenExpiresAt: testDatabaseClock(t, db)().Add(time.Minute)}
 			if _, err := service.GetHandlingRequirement(ctx, original, base.Path); !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("disabled new handling=%v", err)
 			}
@@ -383,7 +384,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				case "stale version":
 					actor.AuthorizationVersion++
 				case "expired token":
-					actor.TokenExpiresAt = time.Now().Add(-time.Second)
+					actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(-time.Second)
 					want = commonapi.ErrUnauthorized
 				case "delegation revoked":
 					err = service.repository.transaction(ctx, func(tx *Repository) error {
@@ -488,7 +489,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 				t.Fatal(err)
 			}
 			defer db.Callback().Create().Remove(callback)
-			actor.TokenExpiresAt = time.Now().Add(300 * time.Millisecond)
+			actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(300 * time.Millisecond)
 			input := inputFor(actor, g.RequestID)
 			if row, err := service.RevokeGrant(ctx, input); row != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("audit wait escaped token expiry=%+v %v", row, err)
@@ -500,7 +501,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			if err := db.Callback().Create().Remove(callback); err != nil {
 				t.Fatal(err)
 			}
-			input.Actor.TokenExpiresAt = time.Now().Add(time.Minute)
+			input.Actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(time.Minute)
 			if _, err := service.RevokeGrant(ctx, input); err != nil {
 				t.Fatal(err)
 			}
@@ -583,7 +584,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			if err := NewRepository(tx).lockFulfillmentTarget(ctx, runtime.TenantID, path); err != nil {
 				t.Fatal(err)
 			}
-			actor.TokenExpiresAt = time.Now().Add(300 * time.Millisecond)
+			actor.TokenExpiresAt = testDatabaseClock(t, db)().Add(300 * time.Millisecond)
 			result := make(chan error, 1)
 			go func() { _, err := service.RevokeGrant(ctx, inputFor(actor, g.RequestID)); result <- err }()
 			if err := tx.Exec("SELECT pg_sleep(0.4)").Error; err != nil {

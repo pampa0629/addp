@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -41,7 +40,7 @@ func (p *Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo
 		if err != nil {
 			return nil, err
 		}
-		if !strings.EqualFold(schema, segments[0].Name) {
+		if schema != segments[0].Name {
 			return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, fmt.Errorf("DM8 schema %q is not visible", segments[0].Name))
 		}
 		count, err := p.tableCount(ctx, connInfo, schema)
@@ -53,11 +52,15 @@ func (p *Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo
 		return &entry, nil
 	}
 	if len(segments) == 2 {
-		facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, path, plugin.EngineCatalogFactsOptions{})
+		schema, table, err := tablePathParts(path)
 		if err != nil {
 			return nil, err
 		}
-		return &plugin.EngineCatalogEntry{Name: segments[1].Name, Path: path, Term: plugin.EngineCatalogTermTable, Kind: facts.Kind, Role: plugin.EngineCatalogRoleLeaf, Table: facts.Table, UpdatedAt: facts.UpdatedAt}, nil
+		info, err := p.tableInfo(ctx, connInfo, schema, table)
+		if err != nil {
+			return nil, err
+		}
+		return &plugin.EngineCatalogEntry{Name: info.Name, Path: path, Term: plugin.EngineCatalogTermTable, Kind: info.Kind, Role: plugin.EngineCatalogRoleLeaf, Table: info, UpdatedAt: info.UpdatedAt}, nil
 	}
 	return nil, fmt.Errorf("invalid DM8 catalog path")
 }
@@ -121,7 +124,7 @@ func (p *Plugin) requireCurrentSchema(ctx context.Context, connInfo plugin.Conne
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(current, strings.TrimSpace(schema)) {
+	if current != schema {
 		return fmt.Errorf("DM8 provider only exposes the authenticated schema %q", current)
 	}
 	return nil
@@ -152,6 +155,32 @@ type tableRow struct {
 	updatedAt sql.NullTime
 }
 
+const damengTableCatalogSelect = `
+		SELECT objects.object_name,
+		       CASE objects.object_type WHEN 'TABLE' THEN 'table' ELSE 'view' END,
+		       comments_view.comments, tables_view.num_rows, objects.created, objects.last_ddl_time
+		  FROM user_objects objects
+		  LEFT JOIN user_tab_comments comments_view ON comments_view.table_name = objects.object_name
+		  LEFT JOIN user_tables tables_view ON tables_view.table_name = objects.object_name
+		 WHERE objects.object_type IN ('TABLE', 'VIEW')`
+
+func (row tableRow) tableInfo() *datatype.TableInfo {
+	info := &datatype.TableInfo{Name: row.name, Kind: row.kind, Comment: row.comment.String}
+	if row.numRows.Valid {
+		value := row.numRows.Int64
+		info.EstimatedRowCount = &value
+	}
+	if row.createdAt.Valid {
+		value := row.createdAt.Time
+		info.CreatedAt = &value
+	}
+	if row.updatedAt.Valid {
+		value := row.updatedAt.Time
+		info.UpdatedAt = &value
+	}
+	return info
+}
+
 func (p *Plugin) listTables(ctx context.Context, connInfo plugin.ConnectionInfo, schema string) ([]tableRow, error) {
 	if err := p.requireCurrentSchema(ctx, connInfo, schema); err != nil {
 		return nil, err
@@ -161,15 +190,7 @@ func (p *Plugin) listTables(ctx context.Context, connInfo plugin.ConnectionInfo,
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.QueryContext(ctx, `
-		SELECT objects.object_name,
-		       CASE objects.object_type WHEN 'TABLE' THEN 'table' ELSE 'view' END,
-		       comments_view.comments, tables_view.num_rows, objects.created, objects.last_ddl_time
-		  FROM user_objects objects
-		  LEFT JOIN user_tab_comments comments_view ON comments_view.table_name = objects.object_name
-		  LEFT JOIN user_tables tables_view ON tables_view.table_name = objects.object_name
-		 WHERE objects.object_type IN ('TABLE', 'VIEW')
-		 ORDER BY objects.object_name`)
+	rows, err := db.QueryContext(ctx, damengTableCatalogSelect+" ORDER BY objects.object_name")
 	if err != nil {
 		return nil, fmt.Errorf("list DM8 tables: %w", err)
 	}
@@ -195,45 +216,34 @@ func (p *Plugin) listTableEntries(ctx context.Context, connInfo plugin.Connectio
 	}
 	entries := make([]plugin.EngineCatalogEntry, 0, len(tables))
 	for _, row := range tables {
-		info := &datatype.TableInfo{Name: row.name, Kind: row.kind, Comment: row.comment.String}
-		if row.numRows.Valid {
-			value := row.numRows.Int64
-			info.EstimatedRowCount = &value
-		}
-		var updatedAt *time.Time
-		if row.updatedAt.Valid {
-			value := row.updatedAt.Time
-			updatedAt = &value
-		}
-		entries = append(entries, plugin.EngineCatalogEntry{Name: row.name, Path: plugin.TabularItemPath(parent.EngineID, plugin.EngineCatalogTermSchema, schema, row.name), Term: plugin.EngineCatalogTermTable, Kind: row.kind, Role: plugin.EngineCatalogRoleLeaf, Table: info, UpdatedAt: updatedAt})
+		info := row.tableInfo()
+		entries = append(entries, plugin.EngineCatalogEntry{Name: row.name, Path: plugin.TabularItemPath(parent.EngineID, plugin.EngineCatalogTermSchema, schema, row.name), Term: plugin.EngineCatalogTermTable, Kind: row.kind, Role: plugin.EngineCatalogRoleLeaf, Table: info, UpdatedAt: info.UpdatedAt})
 	}
 	return entries, nil
 }
 
 func (p *Plugin) tableInfo(ctx context.Context, connInfo plugin.ConnectionInfo, schema, table string) (*datatype.TableInfo, error) {
-	tables, err := p.listTables(ctx, connInfo, schema)
+	if err := p.requireCurrentSchema(ctx, connInfo, schema); err != nil {
+		return nil, err
+	}
+	db, err := p.openDB(connInfo)
 	if err != nil {
 		return nil, err
 	}
-	for _, row := range tables {
-		if strings.EqualFold(row.name, table) {
-			info := &datatype.TableInfo{Name: row.name, Kind: row.kind, Comment: row.comment.String}
-			if row.numRows.Valid {
-				value := row.numRows.Int64
-				info.EstimatedRowCount = &value
-			}
-			if row.createdAt.Valid {
-				value := row.createdAt.Time
-				info.CreatedAt = &value
-			}
-			if row.updatedAt.Valid {
-				value := row.updatedAt.Time
-				info.UpdatedAt = &value
-			}
-			return info, nil
-		}
+	defer db.Close()
+	return getTableInfo(ctx, db, table)
+}
+
+func getTableInfo(ctx context.Context, db *sql.DB, table string) (*datatype.TableInfo, error) {
+	var row tableRow
+	err := db.QueryRowContext(ctx, damengTableCatalogSelect+" AND objects.object_name = ?", table).Scan(&row.name, &row.kind, &row.comment, &row.numRows, &row.createdAt, &row.updatedAt)
+	if err == sql.ErrNoRows {
+		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, fmt.Errorf("DM8 table %q not found in authenticated schema", table))
 	}
-	return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, fmt.Errorf("DM8 table %q not found in schema %q", table, schema))
+	if err != nil {
+		return nil, fmt.Errorf("get DM8 table: %w", err)
+	}
+	return row.tableInfo(), nil
 }
 
 func (p *Plugin) listColumns(ctx context.Context, connInfo plugin.ConnectionInfo, schema, table string) ([]datatype.FieldInfo, error) {
@@ -264,7 +274,7 @@ func (p *Plugin) listColumns(ctx context.Context, connInfo plugin.ConnectionInfo
 		    ON primary_keys.table_name = columns_view.table_name
 		   AND primary_keys.column_name = columns_view.column_name
 		 WHERE columns_view.table_name = ?
-		 ORDER BY columns_view.column_id`, strings.ToUpper(table))
+		 ORDER BY columns_view.column_id`, table)
 	if err != nil {
 		return nil, fmt.Errorf("list DM8 columns: %w", err)
 	}
@@ -342,7 +352,7 @@ func (p *Plugin) listConstraints(ctx context.Context, connInfo plugin.Connection
 		    ON constraint_columns.constraint_name = constraints_view.constraint_name
 		 WHERE constraints_view.table_name = ?
 		   AND constraints_view.constraint_type IN ('P', 'U')
-		 ORDER BY constraints_view.constraint_name, constraint_columns.position`, strings.ToUpper(table))
+		 ORDER BY constraints_view.constraint_name, constraint_columns.position`, table)
 	if err != nil {
 		return nil, fmt.Errorf("list DM8 constraints: %w", err)
 	}

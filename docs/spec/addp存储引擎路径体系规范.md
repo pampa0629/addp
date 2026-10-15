@@ -51,6 +51,7 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Engine Catalog�
 - root `meta_node.full_name` 固定为空字符串 `""`。
 - root 的 ResourceLocator path 为空，但必须和普通 node 一样携带 `type` 与 `node_id`，例如 `addp://engine/8/path/?type=server&node_id=99`。
 - root 不进入 `EngineCatalogPath.StringPath()`、`full_name`、`storage_ref`、ResourceLocator 业务 path 或指纹输入。
+- `EngineCatalogPath` 的结构 root segment 名称固定为空字符串。文件系统 Provider 的路径规范化、`ListChildren` 和 `ResolvePath` 必须保留这个规范表示，不能把空名称改为原生挂载根 `/`；定位转换与精确扫描校验使用同一条路径，不按字符串路径相同放宽结构校验。
 - root 原生名称如有实际价值，写入 `meta_node.attributes.catalog.native_name`；例如 NFS 挂载根为 `/`。
 - Provider 枚举第一层业务 branch 时必须使用 `ListChildren(rootPath)`，不得用 empty path 表达业务第一层。
 

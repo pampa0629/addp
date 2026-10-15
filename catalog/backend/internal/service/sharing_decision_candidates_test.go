@@ -93,6 +93,9 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 	}
 	var fields map[string]any
 	_ = json.Unmarshal(body, &fields)
+	if fields["item_fingerprint"] != decision.ItemFingerprint || fields["boundary_hash"] != decision.BoundaryHash {
+		t.Fatalf("candidate lost the immutable approved DataItem boundary: %s", body)
+	}
 	for _, field := range []string{"reason", "responsibility_id", "source_binding_id", "authorization_version", "confirmer_membership_id", "tenant_id"} {
 		if _, present := fields[field]; present {
 			t.Fatalf("history field %s leaked", field)

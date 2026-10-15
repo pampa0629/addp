@@ -52,10 +52,18 @@
     </div>
 
     <div v-else class="panel-content">
+      <ExecutionFailure
+        v-if="failedScanExecution"
+        :status="failedScanExecution.status"
+        :error-details="failedScanExecution.error_details"
+        :execution-id="failedScanExecution.execution_id"
+        show-monitor-link
+      />
       <el-descriptions :column="1" border class="meta-block">
         <el-descriptions-item :label="t('meta.itemType')">{{ typeLabel }}</el-descriptions-item>
         <el-descriptions-item :label="t('meta.fullName')">{{ fullName }}</el-descriptions-item>
         <el-descriptions-item :label="t('meta.itemCount')">{{ metadataItemCount }}</el-descriptions-item>
+        <el-descriptions-item v-if="currentScanStatus" :label="t('manager.explorer.nodeScan.currentStatusLabel')">{{ currentScanStatus }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.explorer.nodeScan.statusLabel')">{{ scanSummary.status }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.explorer.nodeScan.depthLabel')">{{ scanSummary.depth }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.explorer.nodeScan.successTimeLabel')">{{ scanSummary.scannedAt }}</el-descriptions-item>
@@ -130,7 +138,8 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { parseLocator } from '@addp/common-frontend'
+import { ExecutionFailure, parseLocator } from '@addp/common-frontend'
+import { executionFailurePresentation } from '@common-ui/utils/executionFailure.mjs'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
@@ -150,6 +159,10 @@ const props = defineProps({
   children: {
     type: Array,
     default: () => []
+  },
+  scanHooks: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -162,12 +175,14 @@ const vectorizing = ref(false)
 const importDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const resourceActions = ref(null)
+const failedScanExecution = ref(null)
 
 watch(() => props.selectedNode?.locator, () => {
   childNodePage.value = 1
   itemPage.value = 1
   importDialogVisible.value = false
   uploadDialogVisible.value = false
+  failedScanExecution.value = null
 })
 
 const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
@@ -204,6 +219,12 @@ const metadataItemCount = computed(() => {
   return props.selectedNode?.metadata?.item_count ?? 0
 })
 
+const currentScanStatus = computed(() => {
+  const execution = store.scanExecutions[props.selectedNode?.locator]
+  if (!execution) return ''
+  const status = ['pending', 'running', 'success', 'failed', 'timeout', 'cancelled'].includes(execution.status) ? execution.status : 'unknown'
+  return t(`common.executionSteps.states.${status}`)
+})
 const scanSummary = computed(() => buildNodeScanSummary(props.selectedNode?.metadata, t))
 const scanning = computed(() => store.refreshingLocators.has(props.selectedNode?.locator))
 const selectedEngineId = computed(() => {
@@ -237,15 +258,25 @@ const showImportButton = computed(() => resourceActions.value?.actions?.import?.
 const handleDeepScanNode = async () => {
   const locator = props.selectedNode?.locator
   if (!locator || scanning.value || !store.isEngineAvailable(selectedEngineId.value)) return
+  const hooks = props.scanHooks
+  failedScanExecution.value = null
   try {
-    await store.deepScanNode(locator)
+    await store.deepScanNode(locator, hooks)
+    hooks.onCompleted?.()
     ElMessage.success(t('manager.explorer.scanCompleted'))
   } catch (error) {
     if (error?.response?.status === 409 && error?.response?.data?.error_code === 'scan_scope_active') {
       ElMessage.warning(error.response.data.error)
       return
     }
-    ElMessage.error(t('manager.explorer.deepScanNodeFailed', { error: error?.response?.data?.error || error.message }))
+    hooks.onFailed?.(error)
+    if (error.execution && props.selectedNode?.locator === locator) {
+      failedScanExecution.value = error.execution
+    }
+    const message = error.execution
+      ? executionFailurePresentation(error.execution.error_details, t).reason
+      : error?.response?.data?.error || error.message
+    ElMessage.error(t('manager.explorer.deepScanNodeFailed', { error: message }))
   }
 }
 

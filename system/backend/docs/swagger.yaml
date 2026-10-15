@@ -193,6 +193,8 @@ definitions:
     properties:
       action:
         type: string
+      boundary_hash:
+        type: string
       caller_principal_id:
         example: ""
         type: string
@@ -201,6 +203,8 @@ definitions:
       expires_at:
         type: string
       expiry_mode:
+        type: string
+      item_fingerprint:
         type: string
       operator:
         $ref: '#/definitions/authorization.SharingFulfillmentOperator'
@@ -763,6 +767,8 @@ definitions:
         type: string
       id:
         type: string
+      item_fingerprint:
+        type: string
       mode:
         type: string
       updated_at:
@@ -838,6 +844,8 @@ definitions:
         type: string
       expiry_mode:
         type: string
+      item_fingerprint:
+        type: string
       reason:
         type: string
       recipient_id:
@@ -853,6 +861,8 @@ definitions:
         type: string
       catalog_path:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      item_fingerprint:
+        type: string
       observed_at:
         type: string
       reason:
@@ -906,6 +916,8 @@ definitions:
         type: string
       inspection:
         $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceGrantInspection'
+      item_fingerprint:
+        type: string
       recipient_id:
         example: ""
         type: string
@@ -920,6 +932,8 @@ definitions:
         type: string
       approval_mode:
         type: string
+      boundary_hash:
+        type: string
       catalog_path:
         type: object
       catalog_request_id:
@@ -932,6 +946,8 @@ definitions:
       expiry_mode:
         type: string
       granted_at:
+        type: string
+      item_fingerprint:
         type: string
       operator_membership_id:
         example: ""
@@ -2297,6 +2313,8 @@ definitions:
         - at_time
         - until_revoked
         type: string
+      item_fingerprint:
+        type: string
       reason:
         type: string
       recipient_id:
@@ -2307,6 +2325,8 @@ definitions:
         - department
         - project_group
         type: string
+    required:
+    - item_fingerprint
     type: object
   internal_api.CreateExecuteTaskRequest:
     properties:
@@ -2345,6 +2365,8 @@ definitions:
         type: string
       catalog_path:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      expected_boundary_hash:
+        type: string
       expires_at:
         type: string
       expiry_mode:
@@ -2354,6 +2376,8 @@ definitions:
         type: string
       initialize_approval:
         type: boolean
+      item_fingerprint:
+        type: string
       reason:
         type: string
       recipient_id:
@@ -2368,6 +2392,9 @@ definitions:
         type: string
       requirement_version:
         type: string
+    required:
+    - expected_boundary_hash
+    - item_fingerprint
     type: object
   internal_api.CreateScanTaskRequest:
     properties:
@@ -3986,6 +4013,10 @@ definitions:
     properties:
       catalog_path:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      expected_boundary_hash:
+        type: string
+      item_fingerprint:
+        type: string
       mode:
         enum:
         - catalog
@@ -3995,6 +4026,8 @@ definitions:
         type: string
     required:
     - catalog_path
+    - expected_boundary_hash
+    - item_fingerprint
     - mode
     - reason
     type: object
@@ -5327,6 +5360,10 @@ paths:
           description: 签发失败 | Issuance failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 签发失败 | Issuance failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
       summary: 签发 Manager 剖析执行授权 | Issue Manager profiling execution authorization
@@ -5598,19 +5635,33 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck'
         "400":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "401":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
@@ -5645,19 +5696,33 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_engineaccess.SourceReadCheck'
         "400":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "401":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
-          description: 请求失败 | Request failed
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency
+            validation failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
@@ -6057,8 +6122,8 @@ paths:
         name: id
         required: true
         type: string
-      - description: 精确源路径、明确批准方式与原因 | Exact source path, explicit approval mode and
-          reason
+      - description: Meta 数据项身份、精确 single 边界及预期摘要、明确批准方式与原因 | Meta DataItem identity,
+          exact single boundary, expected digest, explicit approval mode and reason
         in: body
         name: request
         required: true
@@ -6092,6 +6157,10 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
           description: 请求失败 | Request failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
@@ -6462,6 +6531,7 @@ paths:
       - application/json
       description: |-
         当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
+        拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback
         必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial
       parameters:
       - description: 引擎 ID | Engine ID
@@ -6504,6 +6574,10 @@ paths:
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
           description: 请求失败 | Request failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
@@ -6674,7 +6748,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        当前 Tenant User 需独立授予权限及管理资格（当前租户授权管理员或本引擎受托办理人）；精确普通表或集合的批准要求必须为 independent 且与原版本匹配。不要求企业 Catalog 或 Meta 编目，结构核验只读且不读取样本 | Current Tenant User needs creation permission and management qualification (current-tenant authorization administrator or delegated engine handler). Exact ordinary table or collection approval must be independent at the expected version. No enterprise Catalog or Meta cataloging; structure verification is read-only without sampling
+        当前 Tenant User 需独立授予权限及引擎管理资格；仅支持 Meta 基础识别 complete 的 schema 普通表 single 数据项，必须提交数据项身份及确认时边界摘要，批准要求为 independent 且版本匹配。不要求企业 Catalog 编目；Meta 核验及原生结构查询只读、不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports only Meta-complete schema ordinary-table single DataItems, with explicit identity, expected boundary hash and independent approval version. No enterprise Catalog curation is required; Meta and native structure checks are read-only without samples
         同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
         同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
         授权管理员不需委托自己，受托办理员需有效引擎委托。initialize_approval=true 须额外具有首次配置权限且版本为 1；首次配置与 Grant 原子提交，不覆盖已有要求 | Authorization administrators need no self-delegation; handlers need an effective engine delegation. initialize_approval=true additionally requires initialization permission and version 1; configuration and Grant commit atomically without overwriting an existing basis
@@ -6906,11 +6980,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本
-        | Read-only structured query under current human handling permission and administrator
-        or delegated engine handler qualification. No configuration enumeration, initialization
-        or access grant; the version is a lossless string and formal submission rechecks
-        the original expected version
+      description: |-
+        已通过资格核验但尚未配置批准方式时，返回 404 approval_requirement_not_configured；不自动初始化，跨租户或不存在引擎仍隐藏 | A qualified observation of an unconfigured target returns 404 approval_requirement_not_configured without initialization; cross-tenant or missing engines remain hidden
+        只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and administrator or delegated engine handler qualification. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version
       parameters:
       - description: 引擎 ID，唯一来源 | Engine ID, sole source
         in: path
@@ -7594,7 +7666,15 @@ paths:
           description: 复核失败 | Recheck failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
+          description: 复核失败 | Recheck failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
           description: 复核失败 | Recheck failed
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
@@ -10255,28 +10335,33 @@ paths:
           schema:
             $ref: '#/definitions/authorization.SharingFulfillmentGrant'
         "400":
-          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
-            include stable error codes
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "401":
-          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
-            include stable error codes
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "403":
-          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
-            include stable error codes
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "409":
-          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
-            include stable error codes
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
         "500":
-          description: 窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict
-            include stable error codes
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry,
+            closure, binding conflict and unavailable Meta validation
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:

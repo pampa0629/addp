@@ -27,9 +27,11 @@ type EngineAccessApprovalRequirementHandler struct {
 }
 
 type InitializeEngineAccessApprovalRequirementRequest struct {
-	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
-	Mode        string                         `json:"mode" binding:"required,oneof=catalog independent" enums:"catalog,independent"`
-	Reason      string                         `json:"reason" binding:"required"`
+	CatalogPath          engineplugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
+	ItemFingerprint      string                         `json:"item_fingerprint" binding:"required"`
+	ExpectedBoundaryHash string                         `json:"expected_boundary_hash" binding:"required"`
+	Mode                 string                         `json:"mode" binding:"required,oneof=catalog independent" enums:"catalog,independent"`
+	Reason               string                         `json:"reason" binding:"required"`
 }
 
 type UpdateEngineAccessApprovalRequirementRequest struct {
@@ -83,6 +85,7 @@ type EngineAccessHandlingRequirementRequest struct {
 
 // HandlingRequirement godoc
 // @Summary 观察精确目标的当前批准要求 | Observe the exact target's current approval requirement
+// @Description 已通过资格核验但尚未配置批准方式时，返回 404 approval_requirement_not_configured；不自动初始化，跨租户或不存在引擎仍隐藏 | A qualified observation of an unconfigured target returns 404 approval_requirement_not_configured without initialization; cross-tenant or missing engines remain hidden
 // @Description 只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and administrator or delegated engine handler qualification. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version
 // @Tags 源授权办理 | Source Access Fulfillment
 // @Accept json
@@ -112,7 +115,7 @@ func (h *EngineAccessApprovalRequirementHandler) HandlingRequirement(c *gin.Cont
 	}
 	row, err := h.service.GetHandlingRequirement(c.Request.Context(), actor, path)
 	if err != nil {
-		respondIAMError(c, err)
+		respondApprovalRequirementError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, row)
@@ -126,9 +129,9 @@ func (h *EngineAccessApprovalRequirementHandler) HandlingRequirement(c *gin.Cont
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "引擎 ID | Engine ID"
-// @Param request body InitializeEngineAccessApprovalRequirementRequest true "精确源路径、明确批准方式与原因 | Exact source path, explicit approval mode and reason"
+// @Param request body InitializeEngineAccessApprovalRequirementRequest true "Meta 数据项身份、精确 single 边界及预期摘要、明确批准方式与原因 | Meta DataItem identity, exact single boundary, expected digest, explicit approval mode and reason"
 // @Success 201 {object} engineaccess.ApprovalRequirementView "已初始化 | Initialized"
-// @Failure 400,401,403,404,409,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_approval_requirement.initialize"]
 // @Router /engines/{id}/access_approval_requirements [post]
@@ -144,6 +147,7 @@ func (h *EngineAccessApprovalRequirementHandler) Initialize(c *gin.Context) {
 	}
 	row, err := h.service.InitializeApprovalRequirement(c.Request.Context(), engineaccess.InitializeApprovalRequirementInput{
 		Actor: actor, EngineID: engineID, CatalogPath: request.CatalogPath, Mode: request.Mode, Reason: request.Reason,
+		ItemFingerprint: request.ItemFingerprint, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondApprovalRequirementError(c, err)
@@ -229,6 +233,11 @@ func approvalRequirementActor(c *gin.Context) (engineaccess.Actor, int64, bool) 
 }
 
 func respondApprovalRequirementError(c *gin.Context, err error) {
+	if errors.Is(err, engineaccess.ErrApprovalRequirementNotConfigured) {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "system.engine_access_approval_requirement.not_configured"),
+			"error_code": "approval_requirement_not_configured"})
+		return
+	}
 	if errors.Is(err, engineaccess.ErrApprovalRequirementVersion) {
 		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, "system.engine_access_approval_requirement.version_conflict"),
 			"error_code": "resource_version_conflict"})

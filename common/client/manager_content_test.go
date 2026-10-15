@@ -17,12 +17,12 @@ func TestManagerContentClientUsesTenantBearerAndCanonicalRoutes(t *testing.T) {
 		}
 		switch requests {
 		case 1:
-			if request.Method != http.MethodPut || request.URL.Path != "/api/v1/manager/runtime/content-documents/fingerprint-1" {
+			if request.Method != http.MethodPost || request.URL.Path != "/api/v1/manager/runtime/content-documents/batch_update" {
 				t.Fatalf("upsert request = %s %s", request.Method, request.URL.String())
 			}
-			var document ManagerContentDocument
-			if err := json.NewDecoder(request.Body).Decode(&document); err != nil || document.DocumentID != "fingerprint-1" {
-				t.Fatalf("document = %#v error=%v", document, err)
+			var batch ManagerContentBatch
+			if err := json.NewDecoder(request.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 || batch.Documents[0].DocumentID != "fingerprint-1" {
+				t.Fatalf("batch = %#v error=%v", batch, err)
 			}
 		case 2:
 			if request.Method != http.MethodDelete || request.URL.Path != "/api/v1/manager/runtime/content-documents" ||
@@ -38,10 +38,10 @@ func TestManagerContentClientUsesTenantBearerAndCanonicalRoutes(t *testing.T) {
 	client := NewManagerContentClient(server.URL, ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
 		return "tenant-7", nil
 	}), server.Client()).WithTenantID(7)
-	if err := client.UpsertDocument(context.Background(), ManagerContentDocument{
+	if err := client.UpsertDocuments(context.Background(), []ManagerContentDocument{{
 		DocumentID: "fingerprint-1", PayloadKind: ManagerContentPayloadTechnicalMetadata,
 		EngineID: 9, DataItemType: "table", Name: "orders",
-	}); err != nil {
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.DeleteDocuments(context.Background(), ManagerContentDeleteScope{EngineID: 9, DataItemType: "table", Schema: "public"}); err != nil {
@@ -84,5 +84,23 @@ func TestManagerContentDocumentRejectsCrossSnapshotFields(t *testing.T) {
 	body := ManagerContentDocument{DocumentID: "id", PayloadKind: ManagerContentPayloadExtractedContent, EngineID: 1, DataItemType: "table", Name: "context", Description: "technical comment"}
 	if body.Validate() == nil {
 		t.Fatal("body snapshot accepted technical fields")
+	}
+}
+
+func TestManagerContentBatchRejectsInvalidMembersBeforeSending(t *testing.T) {
+	doc := ManagerContentDocument{DocumentID: "item", PayloadKind: ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "table", Name: "persons"}
+	for _, documents := range [][]ManagerContentDocument{nil, {doc, doc}, make([]ManagerContentDocument, ManagerContentBatchLimit+1)} {
+		if (ManagerContentBatch{Documents: documents}).Validate() == nil {
+			t.Fatal("invalid batch accepted")
+		}
+	}
+	invalid := doc
+	invalid.DocumentID = "invalid"
+	invalid.Content = "private-value"
+	if (ManagerContentBatch{Documents: []ManagerContentDocument{doc, invalid}}).Validate() == nil {
+		t.Fatal("one invalid snapshot was accepted with a valid member")
+	}
+	if err := (ManagerContentBatch{Documents: []ManagerContentDocument{doc}}).Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

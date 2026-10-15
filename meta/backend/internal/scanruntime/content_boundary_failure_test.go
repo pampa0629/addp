@@ -33,7 +33,7 @@ func TestFilesystemFailedCompositeForceScanKeepsComponents(t *testing.T) {
 		}
 	}
 	runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-	_, _, err = runtime.scanDirectory(context.Background(), provider, provider, nil, &commonModels.Engine{ID: 26}, 1, "gis", node, false, "file", "deep", true)
+	_, _, err = runtime.scanDirectoryForTest(context.Background(), provider, provider, nil, &commonModels.Engine{ID: 26}, 1, "gis", node, false, "file", "deep", true)
 	if err == nil {
 		t.Fatal("expected invalid Shapefile failure")
 	}

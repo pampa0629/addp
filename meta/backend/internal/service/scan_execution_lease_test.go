@@ -130,3 +130,45 @@ func TestCreateTaskRunInheritsOrchestratorParentActor(t *testing.T) {
 		t.Fatalf("child actor facts were not inherited: %#v", execution)
 	}
 }
+
+func TestScanCompletionRetainsFinalProgressSnapshot(t *testing.T) {
+	for _, status := range []string{commonExecution.ExecutionStatusSuccess, commonExecution.ExecutionStatusFailed} {
+		t.Run(status, func(t *testing.T) {
+			db := openObjectCatalogScanTestDB(t)
+			createTaskExecutionTable(t, db)
+			createScanTaskTable(t, db)
+			now := time.Now().UTC()
+			execution := scantask.NewManualExecution(7, 1, 9, 0, "nfs", nil, []string{"3d"}, nil, "deep", true, "manager", now)
+			if err := db.Create(execution).Error; err != nil {
+				t.Fatal(err)
+			}
+			svc := NewScanExecutionService(db, nil, nil, nil)
+			claimed, lease, err := svc.ClaimNextBoundedExecution(context.Background(), "scan-progress-worker", now, time.Minute)
+			if err != nil || lease == nil {
+				t.Fatalf("claim: %v", err)
+			}
+			svc.BindBoundedLease(execution.ExecutionID, *lease)
+			defer svc.UnbindBoundedLease(execution.ExecutionID)
+			reporter := scantask.NewExecProgressReporter(svc, execution.ExecutionID, 7)
+			reporter.Report(models.ScanProgress{Phase: "finalizing", FilesDiscovered: 20, FilesTotalKnown: true,
+				ItemsPlanned: 2, ItemsTotalKnown: true, ItemsCompleted: 2, ItemsSucceeded: 1, ItemsFailed: 1, LastProgressAt: now})
+			response := &models.ScanResponse{ItemsScanned: 1}
+			if status == commonExecution.ExecutionStatusSuccess {
+				err = svc.completeExecutionWithSuccess(context.Background(), claimed, response, "nfs", now, 100)
+			} else {
+				err = svc.completeExecutionWithFailure(context.Background(), claimed, response, "nfs", errors.New("invalid source"), now, 100)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := svc.GetExecution(context.Background(), execution.ExecutionID, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := models.ObserveScanProgress(got.Metadata)
+			if p == nil || p.ItemsCompleted != 2 || p.FilesDiscovered != 20 || got.Metadata["items_scanned"] == nil {
+				t.Fatalf("completion lost progress or summary: %+v", got.Metadata)
+			}
+		})
+	}
+}

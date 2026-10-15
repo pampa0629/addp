@@ -95,6 +95,9 @@ func testCoordinationForwardMigration(t *testing.T, filename string, expectedVer
 	if table == "engine_access_grants" || table == "engine_access_grant_revocations" {
 		expectedTriggers = 3 // insertion window plus immutable row/truncate guards
 	}
+	if table == "engine_access_grants" && expectedVersion >= 202 {
+		expectedTriggers++ // unique active relation guard added in 202
+	}
 	if err := db.QueryRow("SELECT count(*) FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal", "system."+table).Scan(&triggers); err != nil || triggers != expectedTriggers {
 		t.Fatalf("immutable guards=%d err=%v", triggers, err)
 	}

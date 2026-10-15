@@ -52,6 +52,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	}
 
 	reporter := scantask.NewExecProgressReporter(s, executionID, exec.TenantID)
+	defer reporter.Close()
 	reporter.Message("任务开始执行")
 
 	resp, scanErr := s.scanService.ScanEngineWithOptions(scanflow.Options{
@@ -68,6 +69,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		Source:       execConfig.Source,
 		Reporter:     reporter,
 	})
+	reporter.Close()
 	completeTime := time.Now()
 	durationMs := completeTime.Sub(start).Milliseconds()
 

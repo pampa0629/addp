@@ -22,7 +22,7 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 	if err != nil {
 		return nil, fmt.Errorf("build PostgreSQL query read DSN: %w", err)
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open(p.sqlDriverName(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open PostgreSQL query read database: %w", err)
 	}

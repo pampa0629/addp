@@ -25,6 +25,8 @@ type sourceGrant struct {
 	TenantID                     int64
 	EngineID                     int64
 	CatalogPath                  json.RawMessage `gorm:"type:jsonb"`
+	ItemFingerprint              string
+	BoundaryHash                 string
 	RecipientType                string
 	RecipientID                  int64
 	Action                       string

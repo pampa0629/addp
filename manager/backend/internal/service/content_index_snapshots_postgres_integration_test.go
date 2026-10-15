@@ -107,6 +107,27 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		}
 		return doc
 	}
+	t.Run("batch_has_one_receipt_and_all_documents", func(t *testing.T) {
+		documents := make([]commonClient.ManagerContentDocument, commonClient.ManagerContentBatchLimit)
+		for i := range documents {
+			documents[i] = commonClient.ManagerContentDocument{DocumentID: fmt.Sprintf("batch-%03d", i), PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "table", Name: fmt.Sprintf("table_%03d", i)}
+		}
+		if err := svc.UpsertContentDocuments(ctx, 7, documents); err != nil {
+			t.Fatal(err)
+		}
+		var ops []models.ContentIndexDelivery
+		if err := db.Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryWrite).Find(&ops).Error; err != nil || len(ops) != 1 || len(ops[0].DocumentIDs) != len(documents) || ops[0].Status != repository.IndexDeliverySucceeded {
+			t.Fatalf("batch receipt: count=%d error=%v", len(ops), err)
+		}
+		for _, document := range documents {
+			if actual := read(t, document.DocumentID); actual["name"] != document.Name {
+				t.Fatalf("missing batch member %s", document.DocumentID)
+			}
+		}
+		if err := svc.DeleteContentDocuments(ctx, 7, ContentDocumentDeleteScope{EngineID: 9}); err != nil {
+			t.Fatal(err)
+		}
+	})
 	for _, first := range []bool{false, true} {
 		t.Run(fmt.Sprintf("content_first_%v", first), func(t *testing.T) {
 			id := fmt.Sprintf("item-%v", first)
@@ -123,7 +144,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 				{Name: "unmatched", DataType: "integer"},
 			},
 		}
-		if err := svc.UpsertContentDocument(ctx, 7, doc); err != nil {
+		if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{doc}); err != nil {
 			t.Fatal(err)
 		}
 		tenantID, engineID := uint(7), uint(11)
@@ -154,11 +175,11 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	t.Run("protection_purge_preserves_technical_projection", func(t *testing.T) {
 		id := "protected-mixed"
 		technical := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "Persons", FullName: "Outdoor.Persons", Fields: []commonClient.ManagerContentField{{Name: "userInfo.phone", DataType: "string"}}, ProjectionTime: time.Now().UTC()}
-		if err := svc.UpsertContentDocument(ctx, 7, technical); err != nil {
+		if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{technical}); err != nil {
 			t.Fatal(err)
 		}
 		content := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "collection", Name: "Persons", Content: "sensitive sentinel", Title: "sensitive title", Metadata: map[string]interface{}{"secret": "sensitive metadata"}}
-		if err := svc.UpsertContentDocument(ctx, 7, content); err != nil {
+		if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{content}); err != nil {
 			t.Fatal(err)
 		}
 		// Unknown historical fields and undeclared nested field values must disappear.
@@ -228,7 +249,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	t.Run("purge_content_only_does_not_invent_technical_facts", func(t *testing.T) {
 		id := "content-only"
 		body := commonClient.ManagerContentDocument{DocumentID: id, PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "object", Name: "body context", Content: "sensitive content only"}
-		if err := svc.UpsertContentDocument(ctx, 7, body); err != nil {
+		if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{body}); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Transaction(func(tx *gorm.DB) error { return repo.QueueProtectionPurges(ctx, tx, 7, []string{id}) }); err != nil {
@@ -250,11 +271,11 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	})
 	// A successful complete snapshot replaces the nested metadata object as well.
 	content := commonClient.ManagerContentDocument{DocumentID: "item-false", PayloadKind: commonClient.ManagerContentPayloadExtractedContent, EngineID: 9, DataItemType: "object", Name: "context", Metadata: map[string]interface{}{"old": "obsolete", "kept": "old"}}
-	if err := svc.UpsertContentDocument(ctx, 7, content); err != nil {
+	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{content}); err != nil {
 		t.Fatal(err)
 	}
 	content.Metadata = map[string]interface{}{"kept": "current"}
-	if err := svc.UpsertContentDocument(ctx, 7, content); err != nil {
+	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{content}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(read(t, "item-false")["metadata"], map[string]interface{}{"kept": "current"}) {
@@ -278,7 +299,7 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	task, err = client.DeleteIndexWithContext(ctx, index)
 	wait(ctx, task, err)
 	recreated := commonClient.ManagerContentDocument{DocumentID: "after-index-loss", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "collection", Name: "new-collection"}
-	if err := svc.UpsertContentDocument(ctx, 7, recreated); err != nil {
+	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{recreated}); err != nil {
 		t.Fatal(err)
 	}
 	if read(t, recreated.DocumentID)["name"] != recreated.Name {

@@ -61,10 +61,11 @@ export function sharingProgress({ decisionID = '', requestID = '', confirmation,
 
 // Capture one explicit confirmation. Never regenerate its ID/parameters on a
 // transport retry; never accept a rounded numeric version or manual recipient.
-export function captureSharingConfirmation(entry, form, recipientOptions, decisionID, now = Date.now()) {
+export function captureSharingConfirmation(entry, form, recipientOptions, decisionID, binding, now = Date.now()) {
   const version = typeof entry?.version === 'string' ? entry.version : Number.isSafeInteger(entry?.version) ? String(entry.version) : ''
   const recipient = recipientOptions.find(item => item.id === form.recipientID && item.recipient_type === form.recipientType && item.status === 'active')
-  if (!canonicalSharingUUID(decisionID) || !isSharingInt64(version) || !isSharingInt64(form.recipientID) || !recipient) throw new Error('invalidConfirmation')
+  if (!canonicalSharingUUID(decisionID) || !isSharingInt64(version) || !isSharingInt64(form.recipientID) || !recipient ||
+      !/^[0-9a-f]{64}$/.test(binding?.boundary_hash || '') || !/^[0-9a-f]{64}$/.test(binding?.item_fingerprint || '')) throw new Error('invalidConfirmation')
   const reason = typeof form.reason === 'string' ? form.reason.trim() : ''
   if (!reason || Array.from(reason).length > 2000 || !['user', 'project_group'].includes(form.recipientType)) throw new Error('invalidConfirmation')
   let expiresAt = null
@@ -73,7 +74,7 @@ export function captureSharingConfirmation(entry, form, recipientOptions, decisi
     if (!date || !Number.isFinite(date.getTime()) || date.getTime() <= now) throw new Error('invalidConfirmation')
     expiresAt = date.toISOString()
   } else if (form.expiryMode !== 'until_revoked' || form.expiresAt != null) throw new Error('invalidConfirmation')
-  return Object.freeze({ decision_id: decisionID, version, recipient_type: form.recipientType,
+  return Object.freeze({ decision_id: decisionID, version, expected_boundary_hash: binding.boundary_hash, recipient_type: form.recipientType,
     recipient_id: form.recipientID, expiry_mode: form.expiryMode, expires_at: expiresAt, reason })
 }
 

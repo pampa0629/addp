@@ -16,6 +16,7 @@ import (
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -25,13 +26,14 @@ import (
 )
 
 type SharingDecisionInput struct {
-	DecisionID    uuid.UUID
-	Version       int64
-	RecipientType string
-	RecipientID   int64
-	ExpiryMode    string
-	ExpiresAt     *time.Time
-	Reason        string
+	DecisionID           uuid.UUID
+	Version              int64
+	RecipientType        string
+	RecipientID          int64
+	ExpiryMode           string
+	ExpiresAt            *time.Time
+	Reason               string
+	ExpectedBoundaryHash string
 }
 
 // The API projects EngineID as a string without changing the provider contract.
@@ -59,6 +61,57 @@ func sharingDecisionResult(row models.SharingDecision) (*SharingDecisionResult, 
 func (s *EntryService) WithSharingTargetResolver(resolver SharingTargetResolver) *EntryService {
 	s.sharingTargets = resolver
 	return s
+}
+
+// Observe the exact boundary before explicit confirmation. No Grant is issued.
+// Visibility, current ownership and source identity are rechecked after RPC;
+// no Catalog lock is held while calling Meta/System through the shared client.
+func (s *EntryService) GetSharingBoundary(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, auth authorization.AuthContext) (*authorizationfacts.Binding, error) {
+	if _, _, _, err := sharingConfirmer(auth, tenantID); err != nil {
+		return nil, err
+	}
+	if s == nil || s.db == nil || s.sharingTargets == nil || entryID == uuid.Nil {
+		return nil, ErrReferenceValidationUnavailable
+	}
+	var source models.SourceBinding
+	readSource := func(local *EntryService, owner bool) error {
+		if !owner {
+			return ErrSharingConfirmationForbidden
+		}
+		var eligible int64
+		if err := local.db.WithContext(ctx).Model(&models.Entry{}).Where("tenant_id = ? AND id = ? AND entry_type = ? AND entry_status = ? AND governance_status <> ?", tenantID, entryID, models.EntryTypeDataItem, models.EntryStatusActive, models.GovernanceStatusDeprecated).Count(&eligible).Error; err != nil {
+			return err
+		}
+		if eligible != 1 {
+			return ErrSharingTargetUnsupported
+		}
+		var current models.SourceBinding
+		if err := local.db.WithContext(ctx).Where("tenant_id = ? AND catalog_entry_id = ? AND is_current = ?", tenantID, entryID, true).Take(&current).Error; err != nil {
+			return sharingBasisReadError(err)
+		}
+		if current.SourceModule != models.SourceModuleMeta || current.SourceType != models.SourceTypeDataItem || current.SourceStatus != models.SourceStatusActive {
+			return ErrSharingTargetUnsupported
+		}
+		if source.ID != uuid.Nil && (source.ID != current.ID || source.SourceVersion != current.SourceVersion || source.SourceIdentity != current.SourceIdentity) {
+			return ErrEntryVersionConflict
+		}
+		source = current
+		return nil
+	}
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, readSource); err != nil {
+		return nil, err
+	}
+	binding, readErr := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, source.SourceIdentity)
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, readSource); err != nil {
+		return nil, err
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	if binding.ItemFingerprint != source.SourceIdentity || binding.Validate() != nil {
+		return nil, ErrSharingTargetUnsupported
+	}
+	return &binding, nil
 }
 
 // No browser-supplied identity fields are accepted by this command. Its
@@ -207,7 +260,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 	input.ExpiresAt, err = authorization.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	if s == nil || s.db == nil || tenantID <= 0 || entryID == uuid.Nil || input.DecisionID == uuid.Nil || input.Version <= 0 || input.Version == math.MaxInt64 ||
 		!oneOf(input.RecipientType, "user", "project_group") || input.RecipientID <= 0 || err != nil ||
-		input.Reason == "" || !utf8.ValidString(input.Reason) || strings.ContainsRune(input.Reason, '\x00') || utf8.RuneCountInString(input.Reason) > 2000 {
+		!authorizationfacts.ValidItemFingerprint(input.ExpectedBoundaryHash) || input.Reason == "" || !utf8.ValidString(input.Reason) || strings.ContainsRune(input.Reason, '\x00') || utf8.RuneCountInString(input.Reason) > 2000 {
 		return nil, false, ErrInvalidEntryUpdate
 	}
 	// Check entry visibility before reading any remote resource metadata.
@@ -244,10 +297,14 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 	if s.sharingTargets == nil || s.system == nil {
 		return nil, false, ErrReferenceValidationUnavailable
 	}
-	path, err := s.sharingTargets.ResolveSharingTarget(ctx, tenantID, source.SourceIdentity)
+	target, err := s.GetSharingBoundary(ctx, tenantID, access, entryID, auth)
 	if err != nil {
 		return nil, false, err
 	}
+	if target.BoundaryHash != input.ExpectedBoundaryHash || target.ItemFingerprint != source.SourceIdentity || target.Validate() != nil {
+		return nil, false, ErrSharingDecisionConflict
+	}
+	path := target.NativeTarget
 	if path.Version != plugin.EngineCatalogPathVersion || path.EngineID == 0 || int64(path.EngineID) <= 0 || len(path.Segments) < 3 || len(path.Segments) > 129 ||
 		path.Segments[len(path.Segments)-1].Term != "table" {
 		return nil, false, ErrSharingTargetUnsupported
@@ -330,6 +387,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		}
 		decision = models.SharingDecision{ID: input.DecisionID, TenantID: tenantID, CatalogEntryID: entryID, EntryVersion: entry.Version + 1,
 			SourceBindingID: current.ID, SourceVersion: current.SourceVersion, ResponsibilityID: owner.ID, EngineID: int64(path.EngineID), CatalogPath: pathJSON,
+			ItemFingerprint: target.ItemFingerprint, BoundaryHash: target.BoundaryHash,
 			ConfirmedBy: principal, ConfirmerMembershipID: membership, AuthorizationVersion: authVersion,
 			RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: "read", SelfBeneficiary: input.RecipientType == "user" && input.RecipientID == principal,
 			ConfirmerInProjectGroup: inGroup, Reason: input.Reason, ExpiryMode: input.ExpiryMode, ExpiresAt: input.ExpiresAt, CreatedAt: now}
@@ -369,6 +427,7 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 
 func sameSharingInput(row models.SharingDecision, tenantID int64, entryID uuid.UUID, principal, membership int64, input SharingDecisionInput) bool {
 	return row.TenantID == tenantID && row.CatalogEntryID == entryID && row.ConfirmedBy == principal && row.ConfirmerMembershipID == membership &&
+		row.BoundaryHash == input.ExpectedBoundaryHash &&
 		row.EntryVersion == input.Version+1 && row.RecipientType == input.RecipientType && row.RecipientID == input.RecipientID && row.Action == "read" &&
 		authorization.EqualSharingExpiry(row.ExpiryMode, row.ExpiresAt, input.ExpiryMode, input.ExpiresAt) && row.Reason == input.Reason
 }

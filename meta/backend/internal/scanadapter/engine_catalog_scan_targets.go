@@ -108,7 +108,6 @@ func (d *EngineCatalogScanDispatcher) dispatchTargets(p plugin.EnginePlugin, pla
 		} else {
 			sub := req
 			sub.Targets = nil
-			sub.Reporter = nil
 			if t.entry != nil {
 				sub.CatalogPaths = []string{t.path.StringPath()}
 			}

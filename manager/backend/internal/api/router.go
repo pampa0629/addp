@@ -124,7 +124,7 @@ func SetupRouter(
 		protectionReadBoundary(readBoundary),
 	)
 	contentIndexHandler := NewContentIndexHandler(searchService)
-	runtime.PUT("/content-documents/:document_id", contentIndexHandler.UpsertDocument)
+	runtime.POST("/content-documents/batch_update", contentIndexHandler.UpsertDocuments)
 	runtime.DELETE("/content-documents", contentIndexHandler.DeleteEngineDocuments)
 
 	// API 路由组

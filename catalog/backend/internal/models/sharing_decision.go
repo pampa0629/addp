@@ -19,6 +19,8 @@ type SharingDecision struct {
 	ResponsibilityID        uuid.UUID       `gorm:"type:uuid;not null" json:"responsibility_id"`
 	EngineID                int64           `gorm:"not null" json:"engine_id,string" swaggertype:"string"`
 	CatalogPath             json.RawMessage `gorm:"type:jsonb;not null" json:"-"`
+	ItemFingerprint         string          `gorm:"size:64;not null" json:"item_fingerprint"`
+	BoundaryHash            string          `gorm:"size:64;not null" json:"boundary_hash"`
 	ConfirmedBy             int64           `gorm:"not null" json:"confirmed_by,string" swaggertype:"string"`
 	ConfirmerMembershipID   int64           `gorm:"not null" json:"confirmer_membership_id,string" swaggertype:"string"`
 	AuthorizationVersion    int64           `gorm:"not null" json:"authorization_version,string" swaggertype:"string"`

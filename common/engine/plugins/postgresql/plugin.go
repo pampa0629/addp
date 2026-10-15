@@ -28,6 +28,11 @@ type PostgreSQLPlugin struct {
 type ProtocolIdentity struct {
 	EngineType  string
 	DisplayName string
+	// DriverName binds an independently registered database/sql driver to all
+	// protocol operations. Empty preserves PostgreSQL's existing drivers.
+	DriverName     string
+	DefaultPort    int
+	DefaultSSLMode string
 	// AdditionalSystemSchemas extends PostgreSQL's built-in catalog filter for
 	// a protocol-compatible engine's own reserved schemas.
 	AdditionalSystemSchemas []string
@@ -47,6 +52,13 @@ type ProtocolIdentity struct {
 // whose prepared queries and catalog paths retain the owning engine identity.
 func NewProtocolCompatiblePlugin(identity ProtocolIdentity) *PostgreSQLPlugin {
 	return &PostgreSQLPlugin{identity: &identity}
+}
+
+func (p *PostgreSQLPlugin) sqlDriverName() string {
+	if p != nil && p.identity != nil && p.identity.DriverName != "" {
+		return p.identity.DriverName
+	}
+	return "postgres"
 }
 
 var (
@@ -126,6 +138,9 @@ func (p *PostgreSQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
 
 // DefaultPort 返回默认端口
 func (p *PostgreSQLPlugin) DefaultPort() int {
+	if p != nil && p.identity != nil && p.identity.DefaultPort > 0 {
+		return p.identity.DefaultPort
+	}
 	return p.ConnectionSpec().DefaultPortValue()
 }
 
@@ -270,6 +285,14 @@ func (p *PostgreSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo
 
 // BuildDSN 构建连接字符串
 func (p *PostgreSQLPlugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	if p.identity != nil && p.identity.DefaultSSLMode != "" && plugin.GetString(connInfo, "sslmode") == "" {
+		copyInfo := make(plugin.ConnectionInfo, len(connInfo)+1)
+		for key, value := range connInfo {
+			copyInfo[key] = value
+		}
+		copyInfo["sslmode"] = p.identity.DefaultSSLMode
+		connInfo = copyInfo
+	}
 	return plugin.BuildPostgreSQLDSN(connInfo, p.DefaultPort())
 }
 
@@ -279,7 +302,7 @@ func (p *PostgreSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.C
 	if err != nil {
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
-	return plugin.TestSQLConnection(ctx, "postgres", connStr, "SELECT version()")
+	return plugin.TestSQLConnection(ctx, p.sqlDriverName(), connStr, "SELECT version()")
 }
 
 // === ConnectionPoolPlugin 接口实现 ===
@@ -291,7 +314,11 @@ func (p *PostgreSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, 
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	return plugin.OpenGORMPool(postgres.Open(connStr), poolConfig)
+	config := postgres.Config{DSN: connStr}
+	if p.identity != nil {
+		config.DriverName = p.identity.DriverName
+	}
+	return plugin.OpenGORMPool(postgres.New(config), poolConfig)
 }
 
 // GetDialect 获取数据库方言

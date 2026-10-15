@@ -2,11 +2,14 @@ package engineaccess
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/system/internal/iam"
 )
 
 // Reference to Manager's existing Permission, not a new System Permission.
@@ -61,17 +64,13 @@ func qualifyManagerPreviewRead(current commonauth.AuthContext) error {
 // conditions and complete source rules share one read-only committed snapshot.
 // Security and the actual immutable query remain the Manager owner's gates.
 func (s *Service) CheckManagerPreviewRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
-	return s.checkSourceRead(ctx, request, func(r *Repository) (*sourceReadRules, error) {
-		return r.observeManagerPreviewSourceRules(ctx, credential, request.Targets)
-	})
+	return s.checkSourceRead(ctx, credential, request, true)
 }
 
 // Result content uses the current ordinary User, never a preview Tool delegate
 // or a historical execution identity. It does not authorize background sampling.
 func (s *Service) CheckManagerProfileResultRead(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
-	return s.checkSourceRead(ctx, request, func(r *Repository) (*sourceReadRules, error) {
-		return r.observeCurrentUserSourceRules(ctx, credential, request.Targets, qualifyManagerProfileResultRead)
-	})
+	return s.checkSourceRead(ctx, credential, request, false)
 }
 
 func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {
@@ -81,17 +80,59 @@ func qualifyManagerProfileResultRead(current commonauth.AuthContext) error {
 	return qualifyManagerPreviewRead(current)
 }
 
-func (s *Service) checkSourceRead(ctx context.Context, request SourceReadCheckRequest, observe func(*Repository) (*sourceReadRules, error)) (*SourceReadCheck, error) {
+func (s *Service) checkSourceRead(ctx context.Context, credential string, request SourceReadCheckRequest, preview bool) (*SourceReadCheck, error) {
 	if len(request.Targets) == 0 || len(request.Targets) > 200 {
 		return nil, commonapi.ErrBadRequest
 	}
-	if _, _, err := encodeSourceReadTargets(request.Targets); err != nil {
+	paths, _, err := encodeSourceReadTargets(request.Targets)
+	if err != nil {
 		return nil, commonapi.ErrBadRequest
 	}
-	if s == nil || s.repository == nil {
+	if s == nil || s.repository == nil || s.repository.db == nil {
 		return nil, errSourceReadRules
 	}
-	result, err := observe(s.repository)
+	resolve := func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
+		if preview && strings.HasPrefix(credential, "addp_dat_") {
+			return auth.ResolveDelegatedAccessToken(ctx, credential)
+		}
+		return auth.ResolveUserAccessToken(ctx, credential)
+	}
+	qualify := qualifyManagerProfileResultRead
+	if preview {
+		qualify = qualifyManagerPreviewRead
+	}
+	var tenantID int64
+	// Release the initial credential snapshot before Meta IO. The final
+	// snapshot re-resolves the same credential and current source rules.
+	err = s.repository.readCommitted(ctx, func(tx *Repository) error {
+		auth, err := iam.NewAuthContextService(tx.identity())
+		if err != nil {
+			return err
+		}
+		current, err := resolve(auth)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Context.TenantID == nil {
+			return commonapi.ErrForbidden
+		}
+		if err := qualify(*current); err != nil {
+			return err
+		}
+		tenantID, err = strconv.ParseInt(*current.Context.TenantID, 10, 64)
+		if err != nil || tenantID <= 0 || strconv.FormatInt(tenantID, 10) != *current.Context.TenantID {
+			return commonapi.ErrForbidden
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := s.resolveReadBindings(ctx, tenantID, paths)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.repository.observeSourceRules(ctx, credential, paths, bindings, tenantID, resolve, qualify)
 	if err != nil {
 		return nil, err
 	}

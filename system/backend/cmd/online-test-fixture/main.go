@@ -17,6 +17,7 @@ import (
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/iamcli"
 	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/testsupport"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -297,10 +298,14 @@ func run(args []string, environment []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	repository := iam.NewRepository(db)
+	clock, err := testsupport.FixtureDatabaseClock(ctx, db)
+	if err != nil {
+		return fmt.Errorf("read fixture authority clock: %w", err)
+	}
 	identity := iam.NewIdentityService(repository, nil)
-	tenantService := iam.NewPlatformTenantService(repository, nil)
-	membershipService := iam.NewTenantMembershipService(repository, nil)
-	roleService := iam.NewTenantRoleService(repository, nil)
+	tenantService := iam.NewPlatformTenantService(repository, clock)
+	membershipService := iam.NewTenantMembershipService(repository, clock)
+	roleService := iam.NewTenantRoleService(repository, clock)
 	tokenService, err := iam.NewTokenFamilyService(repository, fixtureSessionConfig(*suite), nil, nil)
 	if err != nil {
 		return err
@@ -375,14 +380,14 @@ func run(args []string, environment []string) error {
 		}
 	}
 
-	consumerSession, err := issueSession(ctx, selectionService, consumer.PrincipalID, "external-online-consumer-session")
+	consumerSession, err := issueSession(ctx, repository, selectionService, consumer.PrincipalID, "external-online-consumer-session")
 	if err != nil {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
 	if *suite == "transfer-relational-sql-etl" {
 		const username = "external-online-transfer-precheck"
-		original, assignmentID, password, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		original, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, username, transferConfigCheckPermissions)
 		if err != nil {
 			return err
@@ -392,7 +397,7 @@ func run(args []string, environment []string) error {
 			return fmt.Errorf("resolve precheck infrastructure role: %w", err)
 		}
 		if _, err := grantTransferConfigCheckEngineReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
-			return issueSession(ctx, selectionService, principalID, username+"-current-session")
+			return issueSession(ctx, repository, selectionService, principalID, username+"-current-session")
 		}, original, tenant.ID, administrator.PrincipalID, assignmentID, builtin.ID); err != nil {
 			return err
 		}
@@ -409,17 +414,17 @@ func run(args []string, environment []string) error {
 		}
 	}
 	if *suite == "compose-public-origin" {
-		readerSession, _, readerPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		readerSession, _, readerPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)
 		if err != nil {
 			return err
 		}
-		creatorSession, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		creatorSession, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-public-creator", publicOriginCreatePermissions)
 		if err != nil {
 			return err
 		}
-		administratorSession, err := issueSession(ctx, selectionService, administrator.PrincipalID, "external-online-administrator-session")
+		administratorSession, err := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-administrator-session")
 		if err != nil {
 			return err
 		}
@@ -466,18 +471,18 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return err
 		}
-		reader, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-monitor-only", []string{"monitor.execution.read"})
 		if err != nil {
 			return err
 		}
-		foreign, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			foreignTenant.ID, reserve.PrincipalID, "external-online-foreign-reader",
 			foreignPermissions)
 		if err != nil {
 			return err
 		}
-		peer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		peer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, peerName, peerPermissions)
 		if err != nil {
 			return err
@@ -485,18 +490,18 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PEER_USER_ACCESS_TOKEN"] = peer.AccessToken
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
-		parentReader, ownerAssignmentID, password, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		parentReader, ownerAssignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, readerName, []string{ownerPermission})
 		if err != nil {
 			return err
 		}
 		parentReader, err = grantExecutionMonitorReader(ctx, roleService, func(principalID int64) (*iam.IssuedBrowserSession, error) {
-			return issueSession(ctx, selectionService, principalID, "external-online-parent-reader-complete-session")
+			return issueSession(ctx, repository, selectionService, principalID, "external-online-parent-reader-complete-session")
 		}, parentReader, tenant.ID, administrator.PrincipalID, ownerAssignmentID, "online."+strings.ReplaceAll(readerName, "-", "_"))
 		if err != nil {
 			return err
 		}
-		administratorSession, err := issueSession(ctx, selectionService, administrator.PrincipalID, "external-online-orchestrator-iam-session")
+		administratorSession, err := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-orchestrator-iam-session")
 		if err != nil {
 			return err
 		}
@@ -507,7 +512,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
 	if *suite == "security-plaintext-access" {
-		approver, _, approverPassword, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		approver, _, approverPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-plaintext-approver", plaintextApproverPermissions)
 		if err != nil {
 			return err
@@ -517,7 +522,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_TEST_APPROVER_PASSWORD"] = approverPassword
 	}
 	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" {
-		initializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		initializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-security-initializer", securityInitializerPermissions)
 		if err != nil {
 			return err
@@ -525,7 +530,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"] = initializer.AccessToken
 	}
 	if *suite == "security-mysql-owner-protection" || *suite == "security-plaintext-access" || *suite == "hdfs-spark-consumer-flow" {
-		sourceInitializer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		sourceInitializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerPermissions)
 		if err != nil {
 			return err
@@ -533,13 +538,13 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = sourceInitializer.AccessToken
 	}
 	if *suite == "quality-dynamic-binding" {
-		preparer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		preparer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-quality-preparer", qualityPreparationPermissions)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN"] = preparer.AccessToken
-		reader, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+		reader, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-quality-monitor-only", []string{"monitor.execution.read"})
 		if err != nil {
 			return err
@@ -572,7 +577,7 @@ func run(args []string, environment []string) error {
 		}); err != nil {
 			return fmt.Errorf("assign engine provisioner role: %w", err)
 		}
-		provisionerSession, err := issueSession(ctx, selectionService, provisioner.PrincipalID, "external-online-engine-provisioner-session")
+		provisionerSession, err := issueSession(ctx, repository, selectionService, provisioner.PrincipalID, "external-online-engine-provisioner-session")
 		if err != nil {
 			return err
 		}
@@ -669,6 +674,7 @@ func createUserCredentials(ctx context.Context, service *iam.IdentityService, us
 
 func createPermissionFixture(
 	ctx context.Context,
+	repository *iam.Repository,
 	identity *iam.IdentityService,
 	memberships *iam.TenantMembershipService,
 	roles *iam.TenantRoleService,
@@ -711,7 +717,7 @@ func createPermissionFixture(
 	if len(assignments) != 1 || assignments[0].ID <= 0 {
 		return nil, 0, "", fmt.Errorf("%s role assignment was not persisted", username)
 	}
-	session, err := issueSession(ctx, selection, user.PrincipalID, username+"-session")
+	session, err := issueSession(ctx, repository, selection, user.PrincipalID, username+"-session")
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -798,12 +804,17 @@ func grantExecutionMonitorReader(ctx context.Context, roles executionReaderRoles
 	return issue(assignment.PrincipalID)
 }
 
-func issueSession(ctx context.Context, service *iam.ContextSelectionService, principalID int64, requestID string) (*iam.IssuedBrowserSession, error) {
+func issueSession(ctx context.Context, repository *iam.Repository, service *iam.ContextSelectionService, principalID int64, requestID string) (*iam.IssuedBrowserSession, error) {
+	// Session authentication and validation must use the same IAM authority clock.
+	now, err := repository.CurrentDatabaseTime(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read %s authentication time: %w", requestID, err)
+	}
 	result, err := service.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
 		PrincipalID: principalID,
 		Authentication: iam.SessionAuthentication{
 			Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1,
-			AuthenticatedAt: time.Now().UTC(),
+			AuthenticatedAt: now,
 		},
 		Audit: audit(requestID),
 	})

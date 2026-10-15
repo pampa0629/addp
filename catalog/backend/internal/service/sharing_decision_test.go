@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -22,15 +25,22 @@ type fakeSharingTargetResolver struct {
 	err    error
 }
 
-func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID int64, fingerprint string) (plugin.EngineCatalogPath, error) {
+// Each entry gets a distinct simulated Meta item; the real Catalog unique
+// source-identity constraint must remain enabled in shared PostgreSQL fixtures.
+var catalogTestBoundaries sync.Map
+
+func (r *fakeSharingTargetResolver) ResolveSharingTarget(_ context.Context, tenantID int64, fingerprint string) (authorizationfacts.Binding, error) {
 	r.calls++
 	if r.before != nil {
 		r.before()
 	}
 	if r.err != nil {
-		return plugin.EngineCatalogPath{}, r.err
+		return authorizationfacts.Binding{}, r.err
 	}
-	return plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"), nil
+	if binding, ok := catalogTestBoundaries.Load(fingerprint); ok {
+		return binding.(authorizationfacts.Binding), nil
+	}
+	return authorizationfacts.Binding{}, ErrSharingTargetUnsupported
 }
 
 func sharingAuth() authorization.AuthContext {
@@ -40,7 +50,10 @@ func sharingAuth() authorization.AuthContext {
 func seedSharingEntry(t *testing.T, db *gorm.DB) (models.Entry, SharingDecisionInput) {
 	t.Helper()
 	entry, _ := createEditableCatalogEntry(t, db, 7)
-	if err := db.Model(&models.SourceBinding{}).Where("catalog_entry_id = ?", entry.ID).Update("observed_snapshot", commonModels.JSONMap{"item_id": 21, "name": "orders"}).Error; err != nil {
+	binding := factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders_"+entry.ID.String()))
+	catalogTestBoundaries.Store(binding.ItemFingerprint, binding)
+	t.Cleanup(func() { catalogTestBoundaries.Delete(binding.ItemFingerprint) })
+	if err := db.Model(&models.SourceBinding{}).Where("catalog_entry_id = ?", entry.ID).Updates(map[string]any{"source_identity": binding.ItemFingerprint, "observed_snapshot": commonModels.JSONMap{"item_id": 21, "name": "orders"}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.Responsibility{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID,
@@ -49,7 +62,7 @@ func seedSharingEntry(t *testing.T, db *gorm.DB) (models.Entry, SharingDecisionI
 		t.Fatal(err)
 	}
 	expiresAt := time.Now().UTC().AddDate(8, 0, 0)
-	return entry, SharingDecisionInput{DecisionID: uuid.New(), Version: 1, RecipientType: "user", RecipientID: 40,
+	return entry, SharingDecisionInput{ExpectedBoundaryHash: binding.BoundaryHash, DecisionID: uuid.New(), Version: 1, RecipientType: "user", RecipientID: 40,
 		ExpiryMode: authorization.SharingExpiryAtTime, ExpiresAt: &expiresAt, Reason: "Explicit self read"}
 }
 

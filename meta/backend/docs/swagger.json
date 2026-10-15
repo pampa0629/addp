@@ -3926,6 +3926,9 @@
                 "scan_context": {
                     "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionContext"
                 },
+                "scan_progress": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanProgress"
+                },
                 "source": {
                     "type": "string"
                 },
@@ -3967,6 +3970,68 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanProgress": {
+            "type": "object",
+            "properties": {
+                "current_bytes_read": {
+                    "type": "integer"
+                },
+                "current_bytes_total": {
+                    "type": "integer"
+                },
+                "current_path": {
+                    "type": "string"
+                },
+                "directories_discovered": {
+                    "type": "integer"
+                },
+                "files_discovered": {
+                    "type": "integer"
+                },
+                "files_total_known": {
+                    "type": "boolean"
+                },
+                "items_completed": {
+                    "type": "integer"
+                },
+                "items_failed": {
+                    "type": "integer"
+                },
+                "items_planned": {
+                    "type": "integer"
+                },
+                "items_succeeded": {
+                    "type": "integer"
+                },
+                "items_total_known": {
+                    "type": "boolean"
+                },
+                "last_progress_at": {
+                    "type": "string"
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "listing",
+                        "identifying",
+                        "enriching",
+                        "hashing",
+                        "extracting",
+                        "saving",
+                        "indexing"
+                    ]
+                },
+                "phase": {
+                    "type": "string",
+                    "enum": [
+                        "discovering",
+                        "identifying",
+                        "processing",
+                        "finalizing"
+                    ]
                 }
             }
         },

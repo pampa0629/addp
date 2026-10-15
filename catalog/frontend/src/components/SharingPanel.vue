@@ -169,6 +169,7 @@ import { useAuthStore } from '../store/auth'
 import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
 import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement } from '../utils/sharingConfirmation'
 import { serializeEngineApprovalInitialization } from '@common-ui'
+import { getSharingBoundary } from '../api/catalog'
 
 const props = defineProps({ entry: { type: Object, required: true }, decisionID: { type: String, default: '' }, recordDecision: { type: Function, required: true }, requestID: { type: String, default: '' }, recordRequest: { type: Function, required: true } })
 const { t, locale } = useI18n()
@@ -244,7 +245,8 @@ async function initializeRequirement() {
   if (initializing.value || !canInitialize.value || requirement.value || requirementLoading.value || handlingAttempt.value || props.requestID) return
   const candidate = selectedCandidate.value
   let payload
-  try { payload = serializeEngineApprovalInitialization(candidate?.target, 'catalog', initializationReason.value) }
+  try { payload = serializeEngineApprovalInitialization(candidate?.target, 'catalog', initializationReason.value,
+    { item_fingerprint: candidate?.item_fingerprint, boundary_hash: candidate?.boundary_hash, native_target: candidate?.target }) }
   catch { handlingError.value = t('catalog.sharing.invalidInitialization'); return }
   const epoch = generation, decision = selectedDecision.value
   initializing.value = true; handlingError.value = ''
@@ -298,13 +300,17 @@ function changeRecipientType() { form.recipientID = ''; searchRecipients('') }
 
 async function submitConfirmation() {
   if (saving.value || !eligibility.value.create) return
+  const epoch = generation, entry = { ...props.entry }, draft = { ...form }, options = [...recipients.value]
+  saving.value = true
   confirmationError.value = ''
   if (!attempt.value) {
-    try { attempt.value = captureSharingConfirmation(props.entry, form, recipients.value, crypto.randomUUID()) }
-    catch { confirmationError.value = t('catalog.sharing.invalidConfirmation'); return }
+    try {
+      const boundary = await getSharingBoundary(entry.id)
+      if (epoch !== generation || !eligibility.value.create) { saving.value = false; return }
+      attempt.value = captureSharingConfirmation(entry, draft, options, crypto.randomUUID(), boundary)
+    }
+    catch (error) { if (epoch === generation) { confirmationError.value = message(error); saving.value = false }; return }
   }
-  const epoch = generation
-  saving.value = true
   try {
     // Persist only the opaque ID in the public route before sending. A reload
     // uses GET, never reconstructs a command from browser history or storage.

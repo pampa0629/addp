@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -265,6 +266,8 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 		}{{50, 13}, {51, 12}} {
 			other := binding
 			other.Operator.PrincipalID, other.Path.EngineID = fixture.principal, fixture.engine
+			bound := factstest.Binding(other.Path)
+			other.ItemFingerprint, other.BoundaryHash = bound.ItemFingerprint, bound.BoundaryHash
 			raw, _ := json.Marshal(other)
 			if err := db.Create(&models.FulfillmentCheck{RequestID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, RequestBinding: raw}).Error; err != nil {
 				t.Fatal(err)

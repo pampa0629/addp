@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -24,7 +25,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 	t.Run("accepted grant issuance", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		issuer := NewService(NewRepository(db), nil)
+		issuer := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}})
 		prepare := func(t *testing.T, binding shared.SharingFulfillmentBinding) uuid.UUID {
 			t.Helper()
 			id := uuid.New()
@@ -286,7 +287,10 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },
 				func(b *shared.SharingFulfillmentBinding) { b.DecisionID = uuid.New() },
 				func(b *shared.SharingFulfillmentBinding) { b.RecipientID = 9007199254740993 },
-				func(b *shared.SharingFulfillmentBinding) { b.Path.Segments[len(b.Path.Segments)-1].Name += "_other" },
+				func(b *shared.SharingFulfillmentBinding) {
+					b.Path.Segments[len(b.Path.Segments)-1].Name += "_other"
+					b.ItemFingerprint, b.BoundaryHash = testReadBindings(b.Path)[0].ItemFingerprint, testReadBindings(b.Path)[0].BoundaryHash
+				},
 			} {
 				bad := base
 				bad.Path.Segments = append(bad.Path.Segments[:0:0], bad.Path.Segments...)
@@ -492,6 +496,9 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			binding := base
 			binding.Path.Segments = append(binding.Path.Segments[:0:0], binding.Path.Segments...)
 			binding.Path.Segments[len(binding.Path.Segments)-1].Name = uuid.NewString()
+			binding.ItemFingerprint, binding.BoundaryHash = testReadBindings(binding.Path)[0].ItemFingerprint, testReadBindings(binding.Path)[0].BoundaryHash
+			acceptor.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
+			issuer.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
 			principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant
 			input := approvalRequirementChange{TenantID: actor.TenantID, Path: binding.Path, Mode: approvalModeCatalog,
 				Reason: "Explicit grant fixture arrangement", Audit: iam.AuditMetadata{PrincipalID: &adminID,

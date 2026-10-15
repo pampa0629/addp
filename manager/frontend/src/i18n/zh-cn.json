@@ -1001,6 +1001,7 @@
     },
     "explorer": {
       "nodeScan": {
+        "currentStatusLabel": "本次执行状态",
         "statusLabel": "最近范围扫描状态",
         "depthLabel": "已完成扫描深度",
         "successTimeLabel": "最近成功扫描时间",
@@ -1081,6 +1082,35 @@
       "scanSubmitting": "正在提交后台扫描",
       "scanSubmitted": "后台扫描已提交，正在等待完成",
       "scanRunning": "后台扫描进行中",
+      "scanProgress": {
+        "totalPending": "总量待确定",
+        "files": "已发现 {files} 个文件、{directories} 个目录",
+        "filesKnown": "文件总数 {files}，目录 {directories}",
+        "items": "已处理 {completed}/{total} 个数据项",
+        "itemsPending": "已处理 {completed} 个数据项，总量待确定",
+        "results": "成功 {succeeded}，失败 {failed}",
+        "current": "当前：{path}",
+        "bytes": "内容指纹读取 {read} / {total}",
+        "timing": "耗时 {elapsed}；距最近进展 {idle}",
+        "noProgress": "尚未收到实际进展",
+        "stale": "暂未收到新进展，请查看当前文件或执行监控",
+        "itemRatio": "数据项处理比例",
+        "phase": {
+          "discovering": "正在枚举文件",
+          "identifying": "正在识别数据项",
+          "processing": "正在处理数据项",
+          "finalizing": "正在保存扫描结果"
+        },
+        "operation": {
+          "listing": "枚举目录",
+          "identifying": "识别数据项",
+          "enriching": "提取深度属性",
+          "hashing": "读取内容指纹",
+          "extracting": "提取文档内容",
+          "saving": "保存元数据",
+          "indexing": "提交索引投影"
+        }
+      },
       "scanWaiting": "正在等待扫描进度更新",
       "treeRefreshing": "扫描已完成，正在刷新资源树",
       "scanCompleted": "扫描已完成，资源树已刷新",

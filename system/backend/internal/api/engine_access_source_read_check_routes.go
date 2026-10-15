@@ -62,7 +62,7 @@ func RegisterEngineAccessSourceReadCheckRoutes(api *gin.RouterGroup, runtime *IA
 // @Security BearerAuth
 // @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整读取目标，不支持 query 参数 | 1 to 200 complete read targets; no query parameters"
 // @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻，不授予访问权 | Observation time without granting access"
-// @Failure 400,401,403,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engine-access/read-checks/manager-preview [post]
@@ -80,7 +80,7 @@ func (h *EngineAccessSourceReadCheckHandler) CheckManagerPreview(c *gin.Context)
 // @Security BearerAuth
 // @Param request body engineaccess.SourceReadCheckRequest true "1 至 200 个完整历史读取目标，不支持 query 参数 | 1 to 200 complete historical read targets; no query parameters"
 // @Success 200 {object} engineaccess.SourceReadCheck "当次观察时刻 | Observation time"
-// @Failure 400,401,403,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "身份、授权边界或依赖核验失败 | Identity, authorization boundary or dependency validation failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /engine-access/read-checks/manager-profile-result [post]

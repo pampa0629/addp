@@ -6,18 +6,54 @@ import (
 
 	"github.com/addp/catalog/internal/service"
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
 type createSharingDecisionRequest struct {
-	DecisionID    string     `json:"decision_id" format:"uuid"`
-	Version       string     `json:"version"`
-	RecipientType string     `json:"recipient_type" enums:"user,project_group"`
-	RecipientID   string     `json:"recipient_id"`
-	ExpiryMode    string     `json:"expiry_mode" binding:"required" enums:"at_time,until_revoked"`
-	ExpiresAt     *time.Time `json:"expires_at" format:"date-time" extensions:"x-nullable"`
-	Reason        string     `json:"reason" maxLength:"2000"`
+	DecisionID           string     `json:"decision_id" format:"uuid"`
+	Version              string     `json:"version"`
+	RecipientType        string     `json:"recipient_type" enums:"user,project_group"`
+	RecipientID          string     `json:"recipient_id"`
+	ExpiryMode           string     `json:"expiry_mode" binding:"required" enums:"at_time,until_revoked"`
+	ExpiresAt            *time.Time `json:"expires_at" format:"date-time" extensions:"x-nullable"`
+	Reason               string     `json:"reason" maxLength:"2000"`
+	ExpectedBoundaryHash string     `json:"expected_boundary_hash" binding:"required"`
+}
+
+// GetSharingBoundary godoc
+// @Summary 核对共享确认边界 | Inspect the sharing confirmation boundary
+// @Description 当前业务负责人及条目可见性在跨模块核验前后检查；返回待确认 DataItem 边界，不扫描、不确认、不签发授权 | Rechecks current business ownership and entry visibility before and after remote validation. Returns the DataItem boundary for explicit confirmation, without scanning, confirming or granting access
+// @Tags Catalog Sharing
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "条目 UUID | Entry UUID"
+// @Success 200 {object} authorizationfacts.Binding "待确认边界 | Boundary to confirm"
+// @Failure 400,401,403,404,409,500,503 {object} map[string]interface{} "核验失败 | Validation failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.sharing_decision.create"]
+// @Router /entries/{id}/sharing_boundary [get]
+func (h *Handler) GetSharingBoundary(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tenant, ok := commonAuth.TenantIDFromGin(c)
+	auth, authenticated := commonAuth.AuthContextFromGin(c)
+	if !ok || !authenticated {
+		respondError(c, http.StatusUnauthorized, service.ErrUserPrincipalRequired)
+		return
+	}
+	id, err := parseCanonicalUUID(c.Param("id"))
+	if err != nil || c.Request.URL.RawQuery != "" || c.Request.ContentLength != 0 {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
+		return
+	}
+	var binding *authorizationfacts.Binding
+	binding, err = h.entries.GetSharingBoundary(c.Request.Context(), tenant, entryAccess(c), id, auth)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, binding)
 }
 
 // CreateSharingDecision records a business decision, not data authorization.
@@ -73,7 +109,7 @@ func (h *Handler) CreateSharingDecision(c *gin.Context) {
 		return
 	}
 	result, created, err := h.entries.CreateSharingDecision(c.Request.Context(), tenantID, entryAccess(c), id, service.SharingDecisionInput{
-		DecisionID: decisionID, Version: version, RecipientType: request.RecipientType, RecipientID: recipientID, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
+		DecisionID: decisionID, Version: version, RecipientType: request.RecipientType, RecipientID: recipientID, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
 	}, auth)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)

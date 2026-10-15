@@ -328,7 +328,7 @@ func (p *Plugin) validateUniqueFields(ctx context.Context, connInfo plugin.Conne
 
 func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
 	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = ?", strings.ToUpper(table)).Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE = 'TABLE' AND OBJECT_NAME = ?", table).Scan(&count); err != nil {
 		return false, fmt.Errorf("query DM8 table existence: %w", err)
 	}
 	return count == 1, nil

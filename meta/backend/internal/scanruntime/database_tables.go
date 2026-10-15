@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -27,6 +28,23 @@ func (s *DatabaseRuntime) scanTables(
 	target *plugin.EngineCatalogEntry,
 ) (int, int, error) {
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
+	pendingProjections := make([]*models.MetaItem, 0, commonClient.ManagerContentBatchLimit)
+	flushProjections := func() {
+		if len(pendingProjections) > 0 {
+			s.tableIndexer.IndexTechnicalMetadata(ctx, resource, tenantID, schemaNode, pendingProjections...)
+			pendingProjections = pendingProjections[:0]
+		}
+	}
+	defer flushProjections()
+	queueProjection := func(item *models.MetaItem) {
+		if s.tableIndexer == nil {
+			return
+		}
+		pendingProjections = append(pendingProjections, item)
+		if len(pendingProjections) == commonClient.ManagerContentBatchLimit {
+			flushProjections()
+		}
+	}
 
 	existingTableMap := map[string]*models.MetaItem{}
 	if target == nil {
@@ -97,9 +115,7 @@ func (s *DatabaseRuntime) scanTables(
 		}
 
 		if existingItem != nil && !needsUpdate {
-			if s.tableIndexer != nil {
-				s.tableIndexer.IndexTechnicalMetadata(ctx, resource, tenantID, schemaNode, existingItem)
-			}
+			queueProjection(existingItem)
 			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
 				"table", tableInfo.Name,
@@ -142,9 +158,7 @@ func (s *DatabaseRuntime) scanTables(
 			"item_id", item.ID,
 		)
 
-		if s.tableIndexer != nil {
-			s.tableIndexer.IndexTechnicalMetadata(ctx, resource, tenantID, schemaNode, item)
-		}
+		queueProjection(item)
 
 		totalTables++
 		totalFields += len(fields)

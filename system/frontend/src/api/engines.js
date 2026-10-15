@@ -1,6 +1,7 @@
 import client from './client'
 
 export const enginesAPI = {
+	getAuthorizationFacts: (id, fingerprint) => client.get(`/system/engines/${encodeURIComponent(id)}/data-items/${encodeURIComponent(fingerprint)}/authorization-facts`),
   createSourceGrant: (id, payload) => client.post(`/system/engines/${encodeURIComponent(id)}/access_grants`, payload, { headers: { 'Content-Type': 'application/json' } }),
   listSourceGrants: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants`, { params }),
   listSourceGrantHistory: (id, params) => client.get(`/system/engines/${encodeURIComponent(id)}/access_grants/history`, { params }),

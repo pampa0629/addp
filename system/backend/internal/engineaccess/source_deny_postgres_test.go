@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func exerciseSourceDenies(t *testing.T, db *gorm.DB, tenantID int64, path engine
 	t.Run("source Deny establishment", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		service := NewService(NewRepository(db), nil)
+		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.deny_creator", Name: "Explicit Deny fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_deny.create"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
@@ -48,7 +49,7 @@ func exerciseSourceDenies(t *testing.T, db *gorm.DB, tenantID int64, path engine
 		recipient, _ := newOperator(t, time.Hour)
 		actor, delegation := qualified(t, true, true)
 		inputFor := func() CreateDenyInput {
-			return CreateDenyInput{Actor: actor, EngineID: int64(path.EngineID), DenyID: uuid.New(), CatalogPath: path, RecipientType: "user", RecipientID: recipient.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Restrict precise reading"}
+			return CreateDenyInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, Actor: actor, EngineID: int64(path.EngineID), DenyID: uuid.New(), CatalogPath: path, RecipientType: "user", RecipientID: recipient.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Restrict precise reading"}
 		}
 		assertCount := func(t *testing.T, id uuid.UUID, want int64) {
 			t.Helper()

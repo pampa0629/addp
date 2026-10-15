@@ -10,6 +10,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
@@ -87,6 +88,9 @@ func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs m
 	if input.Detected.Layout != format.LayoutSingle {
 		return documentExtractionResult{}, nil
 	}
+	progress := scanflow.FileProgressFrom(ctx)
+	progress.Operation("hashing", input.PhysicalPath)
+	progress.Update(func(p *models.ScanProgress) { p.CurrentBytesTotal = max(int64(0), input.SizeBytes) })
 	if contentHash, err := computeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath)); err != nil {
 		if input.StrictDeepEnrich {
 			return documentExtractionResult{}, err
@@ -95,6 +99,7 @@ func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs m
 	} else {
 		setStorageContentHash(attrs, contentHash)
 	}
+	progress.Operation("extracting", input.PhysicalPath)
 	return extractCatalogDocumentText(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, catalogResource(input), input.Detected), nil
 }
 

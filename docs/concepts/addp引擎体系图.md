@@ -374,6 +374,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。
 - Kafka topic 通过 `service -> topic` Engine Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
+- HighGo V4.5 以独立 `highgo` 身份接入，固定第三方 SM3 驱动和 PostgreSQL 方言；开放非空间目录、只读能力和经隔离认证的建表准备／批量写入／COPY 事务会话，任意写 SQL 与替换删除仍拒绝。驱动来源、验收边界和未开放范围见《数据引擎扩展指南》，不将接入阶段等同于完整产品认证。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式、TiDB 和 Doris 共享 `information_schema` helper；openGauss 与 KingbaseES 只在各自真实介质门禁已认证的范围内显式转发 PostgreSQL wire/catalog 实现，未认证的厂商方言、系统 schema 和扩展能力仍由独立插件拥有。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLDialectProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
 - 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。

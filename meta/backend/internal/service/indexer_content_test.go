@@ -21,12 +21,14 @@ import (
 func TestIndexerServiceSubmitsTableProjectionToManagerOwner(t *testing.T) {
 	var received commonClient.ManagerContentDocument
 	manager := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPut || request.URL.Path != "/api/v1/manager/runtime/content-documents/fingerprint-1" || request.Header.Get("Authorization") != "Bearer meta-tenant-7" {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/manager/runtime/content-documents/batch_update" || request.Header.Get("Authorization") != "Bearer meta-tenant-7" {
 			t.Fatalf("request = %s %s authorization=%q", request.Method, request.URL.String(), request.Header.Get("Authorization"))
 		}
-		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
-			t.Fatal(err)
+		var batch commonClient.ManagerContentBatch
+		if err := json.NewDecoder(request.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 {
+			t.Fatalf("batch=%+v error=%v", batch, err)
 		}
+		received = batch.Documents[0]
 		response.WriteHeader(http.StatusNoContent)
 	}))
 	defer manager.Close()
@@ -52,12 +54,14 @@ func TestIndexerServiceSubmitsTableProjectionToManagerOwner(t *testing.T) {
 func TestIndexerServiceCollectionProjectionExcludesSampleValues(t *testing.T) {
 	var received commonClient.ManagerContentDocument
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/manager/runtime/content-documents/collection-fingerprint" || r.Header.Get("Authorization") != "Bearer tenant-7" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/manager/runtime/content-documents/batch_update" || r.Header.Get("Authorization") != "Bearer tenant-7" {
 			t.Errorf("unexpected projection request: %s %s", r.Method, r.URL)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Error(err)
+		var batch commonClient.ManagerContentBatch
+		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 {
+			t.Fatalf("invalid batch: %+v %v", batch, err)
 		}
+		received = batch.Documents[0]
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer manager.Close()
@@ -104,9 +108,11 @@ func TestCatalogContentKeepsSnapshotsSeparate(t *testing.T) {
 	var documents []commonClient.ManagerContentDocument
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var doc commonClient.ManagerContentDocument
-		if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
-			t.Error(err)
+		var batch commonClient.ManagerContentBatch
+		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 {
+			t.Fatalf("batch=%+v error=%v", batch, err)
 		}
+		doc = batch.Documents[0]
 		documents = append(documents, doc)
 		w.WriteHeader(http.StatusNoContent)
 	}))

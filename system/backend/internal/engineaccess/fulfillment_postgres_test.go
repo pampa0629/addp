@@ -157,6 +157,8 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	newRequest := func() fulfillmentRequest {
 		r := testFulfillmentRequest()
 		r.TenantID, r.CallerPrincipalID, r.Path = tenant.ID, callerID, engineplugin.TabularItemPath(engine.ID, "schema", "public", "fixture")
+		bound := testReadBindings(r.Path)[0]
+		r.ItemFingerprint, r.BoundaryHash = bound.ItemFingerprint, bound.BoundaryHash
 		r.RecipientID = user.ID
 		r.Operator = userProvenance{PrincipalID: user.ID, MembershipID: member.ID, AuthorizationVersion: currentUser.AuthorizationVersion}
 		r.RequirementVersion = 1
@@ -165,14 +167,14 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	repo := NewRepository(db)
 	exerciseFulfillmentRuntimeRecovery(t, db, newRequest())
 	confirmation, _ := newOperator(t, time.Hour)
-	confirmationRole, err := iam.NewTenantRoleService(identity, time.Now).CreateRole(ctx, iam.CreateTenantRoleInput{
+	confirmationRole, err := iam.NewTenantRoleService(identity, testDatabaseClock(t, db)).CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: "custom.fulfillment_confirmation", Name: "Explicit business confirmation fixture",
 		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read", "catalog.sharing_decision.create"},
 		ActorPrincipalID: user.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := iam.NewTenantRoleService(identity, time.Now).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+	if _, err := iam.NewTenantRoleService(identity, testDatabaseClock(t, db)).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: confirmation.MembershipID, RoleIDs: []int64{confirmationRole.ID},
 		ScopeType: "tenant", ActorPrincipalID: user.ID, Reason: "Explicit fixture confirmation permission"}); err != nil {
 		t.Fatal(err)
@@ -206,7 +208,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
 		operator, _ := newOperator(t, time.Hour)
-		roles := iam.NewTenantRoleService(identity, time.Now)
+		roles := iam.NewTenantRoleService(identity, testDatabaseClock(t, db))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID,
 			RoleKey: "custom.qualification_reader", Name: "Qualification fixture", ScopeTypes: []string{"tenant"},
 			PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: user.ID})
@@ -486,6 +488,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		}
 		r = newRequest()
 		r.Path = engineplugin.TabularItemPath(otherEngine.ID, "schema", "public", "fixture")
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		assertRejected(r)
 		// Engine lifecycle is independently required even when the delegation
 		// remains active; roll back this probe to preserve the shared fixture.
@@ -578,6 +581,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		}
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
 			t.Fatal(err)
 		}
@@ -593,6 +597,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		// A different target for the same actor must still be independently usable.
 		other := newRequest()
 		other.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
+		other.ItemFingerprint, other.BoundaryHash = testReadBindings(other.Path)[0].ItemFingerprint, testReadBindings(other.Path)[0].BoundaryHash
 		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		err := repo.transaction(bounded, func(second *Repository) error {
@@ -690,6 +695,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	t.Run("recovery retains expired receipt after explicit handoff", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "recovery_handoff")
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
 			t.Fatal(err)
 		}
@@ -760,6 +766,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	t.Run("missing or independent requirement cannot accept Catalog requests", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "no_requirement")
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		if _, err := settle(r, true); !errors.Is(err, errApprovalRequirementUnavailable) {
 			t.Fatalf("missing requirement: %v", err)
 		}
@@ -776,6 +783,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	t.Run("requirement changes are explicit and audit rolls back with them", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "explicit_versions")
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		if _, err := change(r.Path, approvalModeCatalog, 0, nil); !errors.Is(err, errApprovalRequirementInput) {
 			t.Fatalf("missing qualification verifier: %v", err)
 		}
@@ -827,13 +835,15 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	})
 	t.Run("exact long targets have separate identities and immutable version boundaries", func(t *testing.T) {
 		r := newRequest()
-		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", " 表/名 "+strings.Repeat("资源", 1400))
+		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", " 表/名 "+strings.Repeat("资源", 600))
+		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 		row, err := change(r.Path, approvalModeCatalog, 0, verified)
 		if err != nil {
 			t.Fatal(err)
 		}
 		other := r
-		other.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", "表/名"+strings.Repeat("资源", 1400))
+		other.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", "表/名"+strings.Repeat("资源", 600))
+		other.ItemFingerprint, other.BoundaryHash = testReadBindings(other.Path)[0].ItemFingerprint, testReadBindings(other.Path)[0].BoundaryHash
 		if _, err := settle(other, true); !errors.Is(err, errApprovalRequirementUnavailable) {
 			t.Fatalf("trimmed name inherited requirement: %v", err)
 		}
@@ -861,6 +871,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		for _, acceptFirst := range []bool{false, true} {
 			r := newRequest()
 			r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
+			r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
 			if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
 				t.Fatal(err)
 			}

@@ -12,7 +12,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 )
 
-// ReadAuthorizationFacts is the exact, bounded and uncached System-to-Meta contract.
+// ReadAuthorizationFacts is the exact, bounded and uncached Meta owner contract.
 func (c *MetaClient) ReadAuthorizationFacts(ctx context.Context, tenantID uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
 	if c == nil || c.httpClient == nil || c.baseURL == "" || tenantID == 0 || !authorizationfacts.ValidItemFingerprint(fingerprint) {
 		return nil, errors.New("invalid Meta authorization facts request")

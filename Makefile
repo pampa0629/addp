@@ -209,6 +209,11 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@bash -n business/highgo/entrypoint.sh business/scripts/highgo.sh
+	@python3 scripts/test/business-highgo_test.py
+	@bash business/scripts/start.sh --help | grep -Fq -- '-highgo'
+	@! bash business/scripts/start.sh -highgo -postgres >/dev/null 2>&1
+	@! bash business/scripts/stop.sh -highgo -postgres >/dev/null 2>&1
 	@bash -n business/hdfs/start.sh scripts/test/common-hdfs-gate.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; services=json.load(sys.stdin)["services"]; nn=services["hdfs-namenode"]; dn=services["hdfs-datanode"]; assert "@sha256:" in nn["image"] and nn["image"] == dn["image"]; assert all(p["host_ip"] == "127.0.0.1" for s in (nn,dn) for p in s["ports"]); assert all(s["environment"]["HDFS_DATANODE_HOST"] == "host.docker.internal" for s in (nn,dn)); assert all(str(p["target"]) == p["published"] for p in dn["ports"]); assert nn["volumes"][1]["source"] != dn["volumes"][1]["source"]'
 	@! rg -q 'HDFS_SHARED_HOST|ipconfig getifaddr|ip route get' business/docker-compose.yml business/scripts/start.sh business/.env.example
@@ -298,7 +303,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/kingbase.sh --help | grep -Fq -- 'start|stop|status'
 	@bash business/scripts/dameng.sh --help | grep -Fq -- 'start|stop|status'
 	@python3 -m unittest scripts/test/dameng-official-media-release-gate_test.py
-	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
+	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py scripts/test/common-oracle-decimal-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-business-redis
@@ -373,8 +378,8 @@ test-common-kingbase: ## 在 owner 受控 Linux x86_64 主机使用正规 Licens
 test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例验证 DM8 Provider 契约
 	@bash scripts/test/common-dameng-gate.sh
 
-test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal、JSON 与标量写入 Provider 契约
-	@bash scripts/test/common-oracle-decimal-gate.sh
+test-common-oracle-decimal: ## 验证 Oracle Provider；ORACLE_READONLY=1 时只读检查显式指定的现有实例
+	@bash scripts/test/common-oracle-decimal-gate.sh $(if $(filter 1,$(ORACLE_READONLY)),--read-only,)
 
 test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal 与 JSON 写入 Provider 契约
 	@bash scripts/test/common-doris-decimal-gate.sh

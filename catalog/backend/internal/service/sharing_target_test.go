@@ -146,11 +146,11 @@ func TestSharingTargetResolverUsesCanonicalAuthorizationFactsClient(t *testing.T
 				t.Fatalf("remote reads: meta=%d system=%d", metaCalls, systemCalls)
 			}
 			if want == nil {
-				if err != nil || result.EngineID != 12 || len(result.Segments) != 3 ||
-					result.Segments[1].Name != " team.space/一 " || result.Segments[2].Name != " orders.v2/a " {
+				if err != nil || result.NativeTarget.EngineID != 12 || len(result.NativeTarget.Segments) != 3 ||
+					result.NativeTarget.Segments[1].Name != " team.space/一 " || result.NativeTarget.Segments[2].Name != " orders.v2/a " {
 					t.Fatalf("resolved path=%+v err=%v", result, err)
 				}
-			} else if !errors.Is(err, want) || result.EngineID != 0 {
+			} else if !errors.Is(err, want) || result.NativeTarget.EngineID != 0 {
 				t.Fatalf("err=%v want=%v path=%+v", err, want, result)
 			}
 		})

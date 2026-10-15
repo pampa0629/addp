@@ -11,6 +11,7 @@ import (
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/testsupport"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
@@ -81,9 +82,13 @@ func preparePlatformMetricsIdentities(db *gorm.DB, cfg *config.Config, output st
 	if err != nil {
 		return err
 	}
-	tenants := iam.NewPlatformTenantService(repo, nil)
-	memberships := iam.NewTenantMembershipService(repo, nil)
-	roles := iam.NewTenantRoleService(repo, nil)
+	clock, err := testsupport.FixtureDatabaseClock(ctx, db)
+	if err != nil {
+		return err
+	}
+	tenants := iam.NewPlatformTenantService(repo, clock)
+	memberships := iam.NewTenantMembershipService(repo, clock)
+	roles := iam.NewTenantRoleService(repo, clock)
 	// Reserve occupies ID 1; A and B must be distinct, nondefault Tenant scopes.
 	for index, code := range []string{"reserve", "a", "b"} {
 		admin, err := createUser(ctx, identity, "online-metrics-tenant-"+code)
@@ -101,7 +106,7 @@ func preparePlatformMetricsIdentities(db *gorm.DB, cfg *config.Config, output st
 		if tenant.ID <= 1 {
 			return fmt.Errorf("metrics isolation requires nondefault Tenant")
 		}
-		session, _, _, err := createPermissionFixture(ctx, identity, memberships, roles, selection, tenant.ID, admin.PrincipalID,
+		session, _, _, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection, tenant.ID, admin.PrincipalID,
 			"online-metrics-reader-"+code, []string{"monitor.execution.read"})
 		if err != nil {
 			return err

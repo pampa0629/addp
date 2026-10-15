@@ -28,6 +28,9 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateSharingDecisionExpiry(tx); err != nil {
 			return err
 		}
+		if err := migrateSharingDataItemBindings(tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(
 			&models.Entry{},
 			&models.SourceBinding{},

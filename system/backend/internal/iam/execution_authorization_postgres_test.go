@@ -77,7 +77,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	identityService := NewIdentityService(repository, nil)
-	membershipService := NewTenantMembershipService(repository, time.Now)
+	membershipService := NewTenantMembershipService(repository, testFixtureDatabaseClock(t, db))
 	audit := AuditMetadata{RequestID: stringPointer("execution-authorization-postgres")}
 	user := createContextSelectionUser(t, ctx, identityService, "execution-authorization-user", audit)
 	tenant := createContextSelectionTenant(t, ctx, membershipService, "execution-authorization", audit)

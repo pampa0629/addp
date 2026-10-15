@@ -510,7 +510,7 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	}
 	resource := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
 
-	items, extraction, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
+	items, extraction, err := svc.scanDirectoryForTest(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
 	if err != nil {
 		t.Fatalf("scanDirectory() error = %v", err)
 	}
@@ -567,7 +567,7 @@ func TestFilesystemDeepScanPersistsDWGWithoutWorkflowRuntime(t *testing.T) {
 	}
 	resource := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
 
-	items, _, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "cad", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
+	items, _, err := svc.scanDirectoryForTest(context.Background(), provider, provider, nil, resource, 1, "cad", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
 	if err != nil {
 		t.Fatalf("scanDirectory() error = %v", err)
 	}

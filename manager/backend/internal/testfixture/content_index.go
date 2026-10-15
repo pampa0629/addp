@@ -18,7 +18,7 @@ func ContentIndexSQLite(t *testing.T, db *gorm.DB) {
 		 configured BOOLEAN NOT NULL, isolated BOOLEAN NOT NULL, updated_at DATETIME)`,
 		`CREATE TABLE manager.content_index_deliveries (
 		 id TEXT PRIMARY KEY, index_name TEXT NOT NULL, tenant_id INTEGER NOT NULL,
-		 document_id TEXT NOT NULL, kind TEXT NOT NULL, filter TEXT NOT NULL,
+		 document_id TEXT NOT NULL, document_ids TEXT NOT NULL DEFAULT '[]', kind TEXT NOT NULL, filter TEXT NOT NULL,
 		 endpoint_id TEXT NOT NULL, status TEXT NOT NULL, task_uid INTEGER,
 		 task_enqueued_at TEXT NOT NULL, task_correlation TEXT NOT NULL DEFAULT '', created_at DATETIME, updated_at DATETIME,
 		 UNIQUE (index_name, endpoint_id, task_uid))`,

@@ -97,13 +97,6 @@ func NormalizeFileCatalogPath(rawPath string) string {
 	return strings.Join(parts, "/")
 }
 
-func normalizeFileCatalogRootName(name string) string {
-	if NormalizeFileCatalogPath(name) == "" {
-		return "/"
-	}
-	return strings.Trim(name, "/")
-}
-
 func NormalizeFileCatalogSegments(path EngineCatalogPath) EngineCatalogPath {
 	if len(path.Segments) == 0 {
 		return path
@@ -115,7 +108,7 @@ func NormalizeFileCatalogSegments(path EngineCatalogPath) EngineCatalogPath {
 	}
 	for i, segment := range path.Segments {
 		if segment.Kind == EngineCatalogKindRoot || segment.Term == EngineCatalogTermRoot {
-			segment.Name = normalizeFileCatalogRootName(segment.Name)
+			segment.Name = ""
 			normalized.Segments = append(normalized.Segments, segment)
 			continue
 		}

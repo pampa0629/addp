@@ -1554,6 +1554,94 @@ const docTemplate = `{
                 ]
             }
         },
+        "/entries/{id}/sharing_boundary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前业务负责人及条目可见性在跨模块核验前后检查；返回待确认 DataItem 边界，不扫描、不确认、不签发授权 | Rechecks current business ownership and entry visibility before and after remote validation. Returns the DataItem boundary for explicit confirmation, without scanning, confirming or granting access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "核对共享确认边界 | Inspect the sharing confirmation boundary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "待确认边界 | Boundary to confirm",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.Binding"
+                        }
+                    },
+                    "400": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "核验失败 | Validation failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
+                ]
+            }
+        },
         "/entries/{id}/sharing_decision_candidates": {
             "get": {
                 "security": [
@@ -1561,7 +1649,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前 IAM 资格 | The current Tenant User needs entry read, independent source authorization handling permission and target engine management delegation. Returns paginated summaries with a current source, original owner relation and valid expiry, not purpose text or tenant-wide history. Not acceptance evidence, confirmation permission or data access; submission still rechecks the confirmer's current IAM eligibility",
+                "description": "当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前 IAM 资格 | The current Tenant User needs entry read, independent source authorization handling permission and target engine management delegation. Returns paginated summaries with a current source, original owner relation and valid expiry, not purpose text or tenant-wide history. Not acceptance evidence, confirmation permission or data access; submission still rechecks the confirmer's current IAM eligibility\nitem_fingerprint 与 boundary_hash 来自原共享确认冻结的 DataItem 边界，不以当前 Meta 边界替换；正式办理仍核验当前边界 | item_fingerprint and boundary_hash preserve the DataItem boundary frozen by the original sharing decision, not a replacement from current Meta facts; fulfillment still verifies the current boundary",
                 "produces": [
                     "application/json"
                 ],
@@ -3917,6 +4005,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "boundary_hash": {
+                    "type": "string"
+                },
                 "caller_principal_id": {
                     "type": "string",
                     "example": ""
@@ -3928,6 +4019,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "expiry_mode": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
                     "type": "string"
                 },
                 "operator": {
@@ -3987,6 +4081,20 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "string",
                     "example": ""
+                }
+            }
+        },
+        "authorizationfacts.Binding": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "native_target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 }
             }
         },
@@ -5336,6 +5444,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "boundary_hash": {
+                    "type": "string"
+                },
                 "confirmed_at": {
                     "type": "string"
                 },
@@ -5356,6 +5467,9 @@ const docTemplate = `{
                     ]
                 },
                 "id": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
                     "type": "string"
                 },
                 "recipient_code": {
@@ -5392,6 +5506,9 @@ const docTemplate = `{
                 "authorization_version": {
                     "type": "string",
                     "example": ""
+                },
+                "boundary_hash": {
+                    "type": "string"
                 },
                 "catalog_entry_id": {
                     "type": "string"
@@ -5431,6 +5548,9 @@ const docTemplate = `{
                     ]
                 },
                 "id": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
                     "type": "string"
                 },
                 "reason": {
@@ -5891,12 +6011,16 @@ const docTemplate = `{
         "internal_api.createSharingDecisionRequest": {
             "type": "object",
             "required": [
+                "expected_boundary_hash",
                 "expiry_mode"
             ],
             "properties": {
                 "decision_id": {
                     "type": "string",
                     "format": "uuid"
+                },
+                "expected_boundary_hash": {
+                    "type": "string"
                 },
                 "expires_at": {
                     "type": "string",

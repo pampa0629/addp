@@ -1,4 +1,5 @@
 import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
+import { createHash } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
 const permissions = ['system.engine.read', 'system.engine_access_approval_requirement.read',
@@ -70,6 +71,16 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       if (path.endsWith('/tenant/memberships')) return reply({ data: [{ id: '34', principal_id: '33', principal_type: 'user', display_name: 'Outdoor reader', username: 'outdoor', status: memberStatus, principal_status: memberStatus }], total_pages: 1 })
       const department = path.endsWith('/tenant/departments')
       return reply({ data: [{ id: '33', name: department ? 'Outdoor department' : 'Outdoor team', code: department ? 'outdoor_dept' : 'outdoor_stat', status: 'active' }], total_pages: 1 })
+    }
+    if (path.endsWith('/authorization-facts')) {
+      reads.push(request.url())
+      const fingerprint = path.split('/').at(-2)
+      const candidates = [tablePath, { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }]
+      const native = candidates.find(p => createHash('sha256').update(`2:${p.segments[1].name}.${p.segments[2].name}`).digest('hex') === fingerprint)
+      if (!native) return reply({error:'Missing DataItem'},404)
+      return reply({schema_version:'meta.data_item_authorization_facts/v1',engine_id:2,item_fingerprint:fingerprint,item_type:'table',
+      full_name:`${native.segments[1].name}.${native.segments[2].name}`,basis_state:'complete',observed_at:new Date().toISOString(),
+      boundary_hash:'b'.repeat(64),boundary:{layout:'single',native_target:native}})
     }
     if (path.endsWith('/access_delegations')) {
       reads.push(path)

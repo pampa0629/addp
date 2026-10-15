@@ -34,6 +34,29 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 - ✅ 模块化启动（按需启动服务）
 - ✅ Business Kafka 与 ADDP Infra Kafka 物理隔离
 
+## 瀚高 V4.5 本地业务库
+
+瀚高使用已确认的社区镜像 `qiuchenjun/hgdb-see:4.5.10.3`，固定 OCI 摘要 `sha256:e4dd0ac4877c3a8818ec4cef68108be8d54c410782a6248a01257ea66dd49725`，不是官方镜像。默认匹配 Docker Server 架构；本机已拉取 Linux ARM64 介质，其他架构尚未进行运行认证。
+
+`highgo` 为独立 Compose profile，不进入 `start.sh -all`。标准入口 `bash business/scripts/start.sh -highgo` 从 Business `.env` 读取 `HIGHGO_PASSWORD` 和 `HIGHGO_PORT`，只管理 `business-highgo`，不调用 System API。数据库固定为原生 `highgo`，业务样例在 `addp_business` schema；以独立 `engine_type=highgo` 登记，不改登记为 PostgreSQL。
+
+初始化复用固定镜像的服务启动流程，由仓库入口替换硬编码三权密码的初始化函数；三个管理角色的初始密码直接来自 `HIGHGO_PASSWORD`。仓库只挂载自己的幂等样例 SQL，不执行镜像的 `10_setup.sh`，因此不降低口令策略、关闭审计、创建高权限额外账号或用 SQL 字符串拼接密码。保留 SM3，TCP 仅接受 TLS；仅发布 `127.0.0.1:${HIGHGO_PORT:-5866}`，数据保存在独立 `highgo_data` 卷。此本地开发路线不代表生产许可或完整瀚高能力认证。
+
+```bash
+# 在 business/.env 中设置满足数据库口令策略的 HIGHGO_PASSWORD，端口默认 5866。
+bash business/scripts/start.sh -highgo
+bash business/scripts/highgo.sh status
+bash business/scripts/stop.sh -highgo
+# 如需重启，由用户执行：
+bash business/scripts/restart.sh -highgo
+```
+
+首次初始化写入密码；已有数据卷不在重启时自动改密。修改配置密码后应通过数据库正式账号管理完成轮换，不删除卷重建。停止只停止容器，保留数据。已有同名容器归属不符、端口冲突或 SQL 健康检查失败时直接报错。
+
+`make test-business-config` 覆盖 profile 隔离、固定镜像、回环端口、独立数据卷及初始化回归，已纳入 `make test-platform` 和现有 Platform CI。确定性回归验证三行密码文件、失败清理、拒绝空值／换行口令、SM3/TLS HBA 及数据卷复用；不等同于原生数据库运行验收。用户启动后需核验版本、TLS、样例及配置密码登录，再创建新的 System 引擎。
+
+2026-10-15 本机运行复核：标准入口已启动 `business-highgo`，状态 healthy，实际映射 `127.0.0.1:5866`。原生只读事务确认版本 `HighGo Database Management System 4.5 on aarch64,build on 20250227`、数据库 `highgo`、SM3、TLS 1.3 和一行样例；配置密码可登录三个管理角色。数据库保留默认口令有效期，本轮初始化的三权账号提示截止到 2026-10-22，不自动改为无限期。原生 Go 标准入口 `scripts/test/common-postgres-gate.sh --test highgo-write --highgo-native` 通过建表、COPY/INSERT、精确类型、Abort 和失败批次回滚，随机测试 schema 已清理且零残留。System 页面首轮连接被旧插件的中文版本字串检查误拒绝；共享插件已修复并通过 Common/System Go T1，页面登记仍待全部模块加载修复后复验，不能将原生门禁通过记为已完成 System 登记。
+
 ## 快速开始
 
 ### 默认启动（PostgreSQL + MinIO）

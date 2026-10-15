@@ -564,6 +564,16 @@ func respondIAMError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	var errorCode *string
 	switch {
+	case errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable):
+		status = http.StatusServiceUnavailable
+		messageID = sysi18n.MsgAuthorizationFactsUnavailable
+		code := "authorization_facts_unavailable"
+		errorCode = &code
+	case errors.Is(err, engineaccess.ErrAuthorizationBoundaryChanged):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgAuthorizationBoundaryChanged
+		code := "authorization_boundary_changed"
+		errorCode = &code
 	case errors.Is(err, engineaccess.ErrFulfillmentCapability):
 		status = http.StatusServiceUnavailable
 		messageID = sysi18n.MsgFulfillmentCapabilityUnavailable

@@ -3795,8 +3795,8 @@ const docTemplate = `{
                 ]
             }
         },
-        "/runtime/content-documents/{document_id}": {
-            "put": {
+        "/runtime/content-documents/batch_update": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -3809,22 +3809,15 @@ const docTemplate = `{
                 "tags": [
                     "Manager Runtime"
                 ],
-                "summary": "写入技术内容检索投影 | Upsert technical content search projection",
+                "summary": "批量写入内容检索投影 | Upsert content search projections in a batch",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "DataItem fingerprint",
-                        "name": "document_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "内容文档 | Content document",
+                        "description": "1–100 项完整快照；指纹不能重复 | 1–100 complete snapshots with distinct fingerprints",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/client.ManagerContentDocument"
+                            "$ref": "#/definitions/client.ManagerContentBatch"
                         }
                     }
                 ],
@@ -5697,6 +5690,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "client.ManagerContentBatch": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.ManagerContentDocument"
+                    }
+                }
+            }
+        },
         "client.ManagerContentDocument": {
             "type": "object",
             "properties": {

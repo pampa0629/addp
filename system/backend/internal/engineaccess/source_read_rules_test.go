@@ -9,18 +9,19 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
 func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 	base := testFulfillmentRequest()
 	other := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "业务.域", " 表/名")
-	request := sourceReadRequest{TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path, other, base.Path}}
+	request := sourceReadRequest{TenantID: base.TenantID, Source: base.Operator, Targets: []engineplugin.EngineCatalogPath{base.Path, other, base.Path}, Bindings: testReadBindings(base.Path, other)}
 	paths, encoded, err := request.encode()
 	if err != nil || len(paths) != 2 || paths[0].Segments[2].Name != " 表/名 " || paths[1].Segments[2].Name != " 表/名" {
 		t.Fatalf("precise dedup=%+v %s %v", paths, encoded, err)
 	}
-	var decoded []engineplugin.EngineCatalogPath
+	var decoded []authorizationfacts.Binding
 	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded) != 2 {
 		t.Fatalf("batch=%s %v", encoded, err)
 	}
@@ -33,15 +34,15 @@ func TestSourceReadSetPreservesPreciseTargets(t *testing.T) {
 func TestSourceReadCredentialRejectsIncompleteInputBeforeDatabase(t *testing.T) {
 	path := testFulfillmentRequest().Path
 	for _, targets := range [][]engineplugin.EngineCatalogPath{nil, {engineplugin.TabularNamespacePath(path.EngineID, "schema", "public")}} {
-		result, err := NewRepository(nil).readCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", targets)
+		result, err := NewRepository(nil).testReadCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", targets)
 		if result != nil || !errors.Is(err, errSourceReadRules) {
 			t.Fatalf("incomplete credential target set=%+v %v", result, err)
 		}
 	}
-	if result, err := NewRepository(nil).readCurrentUserSourceRules(context.Background(), "", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+	if result, err := NewRepository(nil).testReadCurrentUserSourceRules(context.Background(), "", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 		t.Fatalf("empty credential=%+v %v", result, err)
 	}
-	if result, err := (*Repository)(nil).readCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, errSourceReadRules) {
+	if result, err := (*Repository)(nil).testReadCurrentUserSourceRules(context.Background(), "addp_at_not_loaded", []engineplugin.EngineCatalogPath{path}); result != nil || !errors.Is(err, errSourceReadRules) {
 		t.Fatalf("missing repository=%+v %v", result, err)
 	}
 }
@@ -105,7 +106,7 @@ func TestSourceReadRulesConsumeOnlyCanonicalGrantFacts(t *testing.T) {
 	if strings.Contains(currentSourceReadRulesSQL, "fulfillment_outcomes") || strings.Contains(currentSourceReadRulesSQL, "binding->") {
 		t.Fatal("source read rules must not reconstruct authorization from Catalog receipt history")
 	}
-	for _, fact := range []string{"g.catalog_path = target.path", "g.recipient_type", "g.recipient_id", "g.action = 'read'", "g.expires_at", "engine_access_grant_revocations"} {
+	for _, fact := range []string{"g.item_fingerprint = target.item_fingerprint", "g.boundary_hash = target.boundary_hash", "g.recipient_type", "g.recipient_id", "g.action = 'read'", "g.expires_at", "engine_access_grant_revocations"} {
 		if !strings.Contains(currentSourceReadRulesSQL, fact) {
 			t.Fatalf("canonical Grant observation lost %s", fact)
 		}

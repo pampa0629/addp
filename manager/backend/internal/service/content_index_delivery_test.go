@@ -61,6 +61,45 @@ func contentDeliveryDocument() commonClient.ManagerContentDocument {
 	return commonClient.ManagerContentDocument{DocumentID: "item", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "table", Name: "persons"}
 }
 
+func TestContentBatchUsesOneDurableTaskForAllMembers(t *testing.T) {
+	var writes atomic.Int32
+	var correlation string
+	at := "2026-10-14T00:00:00Z"
+	var db *gorm.DB
+	var svc *HybridSearchService
+	svc, db = contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut && r.URL.Path == "/indexes/content/documents" {
+			writes.Add(1)
+			var batch []map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch) != 100 {
+				t.Errorf("batch size=%d error=%v", len(batch), err)
+			}
+			correlation = r.URL.Query().Get("customMetadata")
+			var durable models.ContentIndexDelivery
+			if err := db.First(&durable).Error; err != nil || durable.TaskCorrelation != correlation || len(durable.DocumentIDs) != 100 {
+				t.Errorf("batch was not registered before submission: error=%v members=%d", err, len(durable.DocumentIDs))
+			}
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprintf(w, `{"taskUid":0,"indexUid":"content","type":"documentAdditionOrUpdate","enqueuedAt":%q}`, at)
+			return
+		}
+		fmt.Fprintf(w, `{"uid":0,"indexUid":"content","type":"documentAdditionOrUpdate","status":"succeeded","enqueuedAt":%q,"customMetadata":%q}`, at, correlation)
+	}))
+	documents := make([]commonClient.ManagerContentDocument, 100)
+	for i := range documents {
+		documents[i] = contentDeliveryDocument()
+		documents[i].DocumentID = fmt.Sprintf("item-%03d", i)
+	}
+	if err := svc.UpsertContentDocuments(t.Context(), 7, documents); err != nil {
+		t.Fatal(err)
+	}
+	var ops []models.ContentIndexDelivery
+	if err := db.Find(&ops).Error; err != nil || len(ops) != 1 || writes.Load() != 1 || ops[0].Status != repository.IndexDeliverySucceeded {
+		t.Fatalf("batch did not converge as one task: ops=%d writes=%d error=%v", len(ops), writes.Load(), err)
+	}
+}
+
 func TestContentDeliveryTimeoutRecoversKnownTaskWithoutResending(t *testing.T) {
 	var writes atomic.Int32
 	var complete atomic.Bool
@@ -90,14 +129,14 @@ func TestContentDeliveryTimeoutRecoversKnownTaskWithoutResending(t *testing.T) {
 	}))
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 	defer cancel()
-	if err := svc.UpsertContentDocument(ctx, 7, contentDeliveryDocument()); !errors.Is(err, context.DeadlineExceeded) {
+	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{contentDeliveryDocument(), {DocumentID: "second", PayloadKind: commonClient.ManagerContentPayloadTechnicalMetadata, EngineID: 9, DataItemType: "table", Name: "second"}}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("enqueue treated as success: %v", err)
 	}
 	var op models.ContentIndexDelivery
 	if err := db.First(&op).Error; err != nil {
 		t.Fatal(err)
 	}
-	if op.Status != repository.IndexDeliverySubmitted || op.TaskUID == nil || *op.TaskUID != 0 {
+	if len(op.DocumentIDs) != 2 || op.Status != repository.IndexDeliverySubmitted || op.TaskUID == nil || *op.TaskUID != 0 {
 		t.Fatalf("receipt not durable: %#v", op)
 	}
 	// New startup generation resumes polling; no original payload is available.
@@ -132,7 +171,7 @@ func TestContentDeliveryLostResponseStaysUnknownAndCanAcknowledgeIsolation(t *te
 		requests.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
-	if err := svc.UpsertContentDocument(t.Context(), 7, contentDeliveryDocument()); err == nil {
+	if err := svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{contentDeliveryDocument()}); err == nil {
 		t.Fatal("lost response treated as success")
 	}
 	var op models.ContentIndexDelivery
@@ -162,7 +201,7 @@ func TestContentDeliveryLostResponseStaysUnknownAndCanAcknowledgeIsolation(t *te
 	if requests.Load() != 1 {
 		t.Fatal("isolated search contacted upstream")
 	}
-	if err := svc.UpsertContentDocument(t.Context(), 7, contentDeliveryDocument()); err == nil {
+	if err := svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{contentDeliveryDocument()}); err == nil {
 		t.Fatal("isolated outlet accepted new write")
 	}
 }
@@ -178,7 +217,7 @@ func TestContentDeliveryRejectsReusedTaskIdentityAndDifferentEndpoint(t *testing
 		}
 		fmt.Fprint(w, `{"uid":1,"indexUid":"content","type":"documentAdditionOrUpdate","status":"succeeded","enqueuedAt":"2026-10-04T00:00:01Z"}`)
 	}))
-	if err := svc.UpsertContentDocument(t.Context(), 7, contentDeliveryDocument()); err == nil {
+	if err := svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{contentDeliveryDocument()}); err == nil {
 		t.Fatal("reused UID counted as success")
 	}
 	var op models.ContentIndexDelivery
@@ -222,7 +261,7 @@ func TestContentDeliveryCanceledCallerStillPersistsReceipt(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { t.Error("receipt persistence called upstream") }))
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentID: "item", Kind: repository.IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +320,7 @@ func TestContentDeliveryPurgeWaitsForActualLateWriteAndTechnicalReplacement(t *t
 	}))
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 	defer cancel()
-	if err := svc.UpsertContentDocument(ctx, 7, contentDeliveryDocument()); !errors.Is(err, context.DeadlineExceeded) {
+	if err := svc.UpsertContentDocuments(ctx, 7, []commonClient.ManagerContentDocument{contentDeliveryDocument()}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
@@ -363,7 +402,7 @@ func TestContentDeliveryLostResponseRecoversOriginalCorrelatedTask(t *testing.T)
 			w.WriteHeader(500)
 		}
 	}))
-	if err := svc.UpsertContentDocument(t.Context(), 7, contentDeliveryDocument()); !errors.Is(err, repository.ErrContentIndexIsolated) {
+	if err := svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{contentDeliveryDocument()}); !errors.Is(err, repository.ErrContentIndexIsolated) {
 		t.Fatal(err)
 	}
 	var op models.ContentIndexDelivery
@@ -449,7 +488,7 @@ func TestContentDeliveryRecoveryRejectsInsufficientOrConflictingHistory(t *testi
 				}
 				_ = json.NewEncoder(w).Encode(page)
 			}))
-			op := &models.ContentIndexDelivery{TenantID: 7, DocumentID: "item", Kind: repository.IndexDeliveryWrite}
+			op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
 			if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 				t.Fatal(err)
 			}
@@ -553,7 +592,7 @@ func TestContentDeliveryRecoveryPaginatesThroughUIDZero(t *testing.T) {
 		task.CustomMetadata = "other"
 		_ = json.NewEncoder(w).Encode(meilisearch.TaskResult{Total: 3, Next: 0, Results: []meilisearch.Task{task}})
 	}))
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentID: "item", Kind: repository.IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 		t.Fatal(err)
 	}

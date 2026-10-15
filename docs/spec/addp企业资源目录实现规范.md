@@ -142,6 +142,8 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 #### 3.2.1 责任与实际数据授权
 
+办理候选摘要必须包含原决定冻结的 `item_fingerprint` 和 `boundary_hash`，与 `target` 一起用于显式初始化批准要求；不得从当前 Meta 事实替换原批准边界，也不得由前端猜测或补造。候选读取仍不构成 Grant；正式初始化、受理和签发继续独立核验当前事实及预期边界。
+
 已确认、待贯通实现的目标边界：上述责任不是全平台 IAM Role，不自动授予编目、源数据读取、写入或授权办理权限。业务责任人确认共享的业务合理性，数据管理员协助界定资源范围和编目，技术维护者校验技术可执行性；技术维护者不等于编目提交人。实际访问始终要求功能权限与精确资源授权同时满足。
 
 业务共享确认与源读取授权办理分别使用独立功能 Permission，首版仅通过角色显式分配，不默认加入内置管理员权限，不随编目人、责任人或管理委派自动授予；现有 `catalog.entry.update` 及 `system.engine_access_delegation.create/read/revoke` 均不能替代。具体 Permission 随真实消费入口统一发布，不登记启用的占位权限。
@@ -779,7 +781,7 @@ Manager 是技术内容全文/向量检索投影的唯一 owner。Meta 在完成
 
 运行时写入契约固定为：
 
-- `PUT /api/v1/manager/runtime/content-documents/{document_id}`：按当前 Tenant 幂等覆盖一个内容文档；
+- `POST /api/v1/manager/runtime/content-documents/batch_update`：按当前 Tenant 批量幂等覆盖 1–100 项独立快照，批内指纹唯一，整批外部任务成功后才返回 204；
 - `DELETE /api/v1/manager/runtime/content-documents?engine_id={engine_id}`：删除当前 Tenant 指定 Engine 的内容投影；可选 `data_item_type`、`schema`、`bucket`、`path_prefix` 只用于 Meta 扫描范围内的精确收敛；
 - 两个路由只接受 `addp-meta` Tenant Service Principal，并校验 `manager.content_index.update`；
 - Tenant 只来自 canonical AuthContext，请求正文不得携带或覆盖 `tenant_id`；

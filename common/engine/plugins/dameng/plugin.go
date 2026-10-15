@@ -358,7 +358,7 @@ func equalFieldSet(left, right []string) bool {
 	sort.Strings(leftCopy)
 	sort.Strings(rightCopy)
 	for index := range leftCopy {
-		if !strings.EqualFold(leftCopy[index], rightCopy[index]) {
+		if leftCopy[index] != rightCopy[index] {
 			return false
 		}
 	}

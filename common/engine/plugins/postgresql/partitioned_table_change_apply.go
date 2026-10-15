@@ -36,7 +36,7 @@ func (p *PostgreSQLPlugin) PreparePartitionedTableChangeApply(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (p *PostgreSQLPlugin) ApplyPartitionedTableChanges(ctx context.Context, con
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return nil, err
 	}

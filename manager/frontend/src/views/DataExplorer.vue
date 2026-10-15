@@ -66,6 +66,7 @@
           v-else-if="panelType === 'node'"
           :selected-node="store.selectedNode"
           :children="currentNodeChildren"
+          :scan-hooks="treeRef?.scanHooks"
           @open-node="handleOpenNode"
         />
 

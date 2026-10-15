@@ -26,7 +26,7 @@ type AssetIndexer interface {
 
 type TechnicalMetadataIndexer interface {
 	DeleteItemFromIndex(tenantID, engineID uint, fingerprint string)
-	IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, item *models.MetaItem) bool
+	IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, items ...*models.MetaItem) bool
 }
 
 type input struct {
@@ -115,9 +115,11 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 		return Result{}, err
 	}
 
+	progress := scanflow.FileProgressFrom(ctx)
 	attrs := prepareAttributes(&input)
 	isDeepScan := strings.EqualFold(input.ScanDepth, "deep")
 	if isDeepScan {
+		progress.Operation("enriching", input.PhysicalPath)
 		enrichedAttrs, err := p.enrichDeep(ctx, &input, attrs)
 		if err != nil {
 			return Result{}, err
@@ -145,6 +147,7 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	progress.Operation("saving", input.PhysicalPath)
 	var item *models.MetaItem
 	var removed []models.MetaItem
 	err = p.repo.Transaction(func(repo *metaRepo.ScanRepository) error {
@@ -170,6 +173,7 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	progress.Operation("indexing", input.PhysicalPath)
 	counts := p.indexItemProjections(ctx, &input, item, extraction, isDeepScan)
 
 	return Result{Item: item, Fields: len(input.Detected.Fields), Extraction: counts}, nil

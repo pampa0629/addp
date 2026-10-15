@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
@@ -55,7 +57,16 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		}
 		refreshActor()
 		target := engineplugin.TabularItemPath(engine.ID, "schema", "public", "governance.target")
-		input := engineaccess.InitializeApprovalRequirementInput{Actor: actor, EngineID: int64(engine.ID), CatalogPath: target, Mode: "catalog", Reason: "Explicit Catalog governance"}
+		service.WithAuthorizationFactsReader(authorizationFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+			for _, path := range []engineplugin.EngineCatalogPath{target, engineplugin.TabularItemPath(engine.ID, "schema", "other", "governance.target"), engineplugin.TabularItemPath(engine.ID, "schema", "public", "audit_failure"), engineplugin.TabularItemPath(engine.ID, "schema", "public", "independent.target"), engineplugin.TabularItemPath(engine.ID, "schema", "public", "expired_while_waiting")} {
+				facts := factstest.Single(path)
+				if facts.ItemFingerprint == fingerprint {
+					return &facts, nil
+				}
+			}
+			return nil, engineaccess.ErrAuthorizationFactsUnavailable
+		}))
+		input := engineaccess.InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(target).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(target).BoundaryHash, Actor: actor, EngineID: int64(engine.ID), CatalogPath: target, Mode: "catalog", Reason: "Explicit Catalog governance"}
 		// This fixture has engine-administrator qualification via delegation.create.
 		// It must not need a redundant self-delegation merely to manage requirements.
 		if _, _, err := service.ListApprovalRequirements(ctx, actor, int64(engine.ID), 1, 20); err != nil {
@@ -77,16 +88,16 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 			Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: &tenant}, SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Permissions: permissions}}
 		router := approvalRequirementTestRouter(t, service, &projection)
 		path := fmt.Sprintf("/api/v1/system/engines/%d/access_approval_requirements", engine.ID)
-		response := engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "catalog", "reason": input.Reason}, 201)
+		response := engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": input.ItemFingerprint, "expected_boundary_hash": input.ExpectedBoundaryHash, "catalog_path": target, "mode": "catalog", "reason": input.Reason}, 201)
 		var initialized engineaccess.ApprovalRequirementView
 		if err := json.Unmarshal(response.Body.Bytes(), &initialized); err != nil || initialized.ID == uuid.Nil || initialized.Mode != "catalog" || initialized.Version != 1 {
 			t.Fatalf("initialized=%+v err=%v", initialized, err)
 		}
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "independent", "reason": "Overwrite"}, 409)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": input.ItemFingerprint, "expected_boundary_hash": input.ExpectedBoundaryHash, "catalog_path": target, "mode": "independent", "reason": "Overwrite"}, 409)
 		engineDelegationTestRequest(t, router, "GET", path+"/"+initialized.ID.String(), nil, 200)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions[1:]
 		engineDelegationTestRequest(t, router, "GET", path, nil, 200)
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": target, "mode": "catalog", "reason": input.Reason}, 403)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": input.ItemFingerprint, "expected_boundary_hash": input.ExpectedBoundaryHash, "catalog_path": target, "mode": "catalog", "reason": input.Reason}, 403)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions[:1]
 		engineDelegationTestRequest(t, router, "GET", path, nil, 403)
 		projection.Authorization.RoleAssignments[0].Permissions = permissions
@@ -107,6 +118,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		missing := input
 		missing.EngineID++
 		missing.CatalogPath.EngineID++
+		missing.ItemFingerprint, missing.ExpectedBoundaryHash = factstest.Binding(missing.CatalogPath).ItemFingerprint, factstest.Binding(missing.CatalogPath).BoundaryHash
 		if _, err := service.InitializeApprovalRequirement(ctx, missing); !errors.Is(err, commonapi.ErrNotFound) {
 			t.Fatalf("other engine=%v", err)
 		}
@@ -119,6 +131,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		foreign := input
 		foreign.EngineID = int64(foreignEngine.ID)
 		foreign.CatalogPath = engineplugin.TabularItemPath(foreignEngine.ID, "schema", "public", "governance.target")
+		foreign.ItemFingerprint, foreign.ExpectedBoundaryHash = factstest.Binding(foreign.CatalogPath).ItemFingerprint, factstest.Binding(foreign.CatalogPath).BoundaryHash
 		if _, err := service.InitializeApprovalRequirement(ctx, foreign); !errors.Is(err, commonapi.ErrNotFound) {
 			t.Fatalf("cross tenant initialization=%v", err)
 		}
@@ -140,6 +153,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		// concurrent initialization of one target commits one fact/audit only.
 		concurrent := input
 		concurrent.CatalogPath = engineplugin.TabularItemPath(engine.ID, "schema", "other", "governance.target")
+		concurrent.ItemFingerprint, concurrent.ExpectedBoundaryHash = factstest.Binding(concurrent.CatalogPath).ItemFingerprint, factstest.Binding(concurrent.CatalogPath).BoundaryHash
 		outcomes := make(chan error, 2)
 		var wg sync.WaitGroup
 		for range 2 {
@@ -178,6 +192,7 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 		// Failure of the same-transaction audit leaves no requirement.
 		rollback := input
 		rollback.CatalogPath = engineplugin.TabularItemPath(engine.ID, "schema", "public", "audit_failure")
+		rollback.ItemFingerprint, rollback.ExpectedBoundaryHash = factstest.Binding(rollback.CatalogPath).ItemFingerprint, factstest.Binding(rollback.CatalogPath).BoundaryHash
 		invalidStatus := 99
 		rollback.Audit.HTTPStatus = &invalidStatus
 		if _, err := service.InitializeApprovalRequirement(ctx, rollback); err == nil {
@@ -196,13 +211,13 @@ func exerciseApprovalRequirementAPI(t *testing.T, db *gorm.DB, identity *iam.Rep
 			t.Fatal(err)
 		}
 		independentTarget := engineplugin.TabularItemPath(engine.ID, "schema", "public", "independent.target")
-		response = engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "mode": "independent", "reason": "No Catalog approval required"}, 201)
+		response = engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": factstest.Binding(independentTarget).ItemFingerprint, "expected_boundary_hash": factstest.Binding(independentTarget).BoundaryHash, "catalog_path": independentTarget, "mode": "independent", "reason": "No Catalog approval required"}, 201)
 		var independent engineaccess.ApprovalRequirementView
 		if err := json.Unmarshal(response.Body.Bytes(), &independent); err != nil || independent.Mode != "independent" || independent.Version != 1 {
 			t.Fatalf("independent configuration=%+v err=%v", independent, err)
 		}
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "mode": "catalog", "reason": "Must not replace independent mode"}, 409)
-		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"catalog_path": independentTarget, "reason": "Missing explicit mode"}, 400)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": factstest.Binding(independentTarget).ItemFingerprint, "expected_boundary_hash": factstest.Binding(independentTarget).BoundaryHash, "catalog_path": independentTarget, "mode": "catalog", "reason": "Must not replace independent mode"}, 409)
+		engineDelegationTestRequest(t, router, "POST", path, map[string]any{"item_fingerprint": factstest.Binding(independentTarget).ItemFingerprint, "expected_boundary_hash": factstest.Binding(independentTarget).BoundaryHash, "catalog_path": independentTarget, "reason": "Missing explicit mode"}, 400)
 		if err := db.Table("system.engine_access_grants").Count(&grantsAfter).Error; err != nil || grantsAfter != grantsBefore {
 			t.Fatalf("configuration created Grant: before=%d after=%d err=%v", grantsBefore, grantsAfter, err)
 		}
@@ -365,6 +380,7 @@ func exerciseApprovalRequirementLockExpiry(t *testing.T, db *gorm.DB, service *e
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	input.CatalogPath = engineplugin.TabularItemPath(uint(input.EngineID), "schema", "public", "expired_while_waiting")
+	input.ItemFingerprint, input.ExpectedBoundaryHash = factstest.Binding(input.CatalogPath).ItemFingerprint, factstest.Binding(input.CatalogPath).BoundaryHash
 	path, err := commonauth.EncodeSharingTarget(input.CatalogPath)
 	if err != nil {
 		t.Fatal(err)
@@ -375,7 +391,7 @@ func exerciseApprovalRequirementLockExpiry(t *testing.T, db *gorm.DB, service *e
 	defer unblock()
 	go func() {
 		holderDone <- db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			key := fmt.Sprintf("engine_access_target|%d|%s", input.Actor.TenantID, path)
+			key := fmt.Sprintf("engine_access_target|%d|%d|%s", input.Actor.TenantID, input.EngineID, input.ItemFingerprint)
 			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
 				return err
 			}

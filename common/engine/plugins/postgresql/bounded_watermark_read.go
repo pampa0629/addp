@@ -54,7 +54,7 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 	if err != nil {
 		return nil, fmt.Errorf("failed to build postgresql dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open postgresql watermark connection: %w", err)
 	}

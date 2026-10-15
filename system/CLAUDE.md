@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > Enterprise Catalog（企业资源目录）由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
 
-> 源数据授权职责扩展（已确认，表级贯通待实现）：System 的引擎访问控制领域唯一维护物理表、文件或对象的访问规则；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
+> 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；首期 schema 普通表 single 已接入，文件布局与其他消费入口尚未覆盖；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
 Manager 剖析结果的固定同步源检查 `POST /engine-access/read-checks/manager-profile-result` 只接受当前普通第一方／OAuth API User，核验固定 `manager.data_item.read` 与结果实际历史完整 ReadSet 的现行源规则；与预览共享只读快照底座，但不开放委托、Service 或 Resource Ticket。仅返回不可缓存的当次观察时刻，不授予剖析执行权限，不替代 Manager 本地 Security；缺失历史来源由 Manager 拒绝，不用当前视图依赖补造。
 
@@ -32,7 +32,7 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 ## 项目概述
 
-Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 读取 Meta，返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。首期只查询原生 schema 普通表 single，尚不替换现有签发／读取路径；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
+Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 读取 Meta，返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。首期 schema 普通表 single 的直接批准、Catalog 业务批准与 Manager 预览／剖析／结果读取统一绑定数据项指纹及边界摘要。000207 清理已获准丢弃的旧源授权测试事实，不清 IAM、角色、委派或通用审计；Grant 匹配身份与摘要，Deny 仅按同 Tenant／Engine 的稳定身份持续约束。新请求必须提交预期边界摘要，服务端独立重核，历史恢复不自动重批或续期；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
 
 Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixture` 正式 IAM Service 路径；验收 User、引擎登记 User 与治理初始化 User 分别授权。Security 分类、等级和检测绑定的创建权限仅授予准备用户，不进入四出口验收身份；凭据由 Hosted 生命周期在业务验收前移除，完整身份随当次 Infra 销毁。
 

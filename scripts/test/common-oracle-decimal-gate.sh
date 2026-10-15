@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# common-oracle-decimal-gate.sh - Verify Oracle typed JSON/decimal writes against a disposable database.
+# Verify Oracle catalog/typed writes in a disposable database, or an explicit
+# existing instance's catalog with --read-only (no fixture or business writes).
 # ADDP_T2_HOSTED_ONLY=oracle
 
 set -euo pipefail
@@ -36,6 +37,33 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+case "${1:-}" in
+    --read-only)
+        if [ "$#" -ne 1 ]; then
+            echo "read-only Oracle verification accepts no additional arguments" >&2
+            exit 2
+        fi
+        for required in ADDP_TEST_ORACLE_HOST ADDP_TEST_ORACLE_PORT ADDP_TEST_ORACLE_SERVICE_NAME ADDP_TEST_ORACLE_USER ADDP_TEST_ORACLE_PASSWORD; do
+            if [ -z "${!required:-}" ]; then
+                echo "$required is required for read-only Oracle verification" >&2
+                exit 2
+            fi
+        done
+        command -v go >/dev/null || { echo "go is required" >&2; exit 1; }
+        cd "$ROOT_DIR/common"
+        ADDP_ORACLE_READONLY_INTEGRATION=1 \
+            go test ./engine/plugins/oracle -run '^TestIntegrationOracleReadOnlyCatalog$' \
+            -count=1 -v 2>&1 | tee "$WORK_DIR/oracle-readonly.log"
+        if grep -q -- '--- SKIP:' "$WORK_DIR/oracle-readonly.log"; then
+            echo "read-only Oracle verification refuses skipped tests" >&2
+            exit 1
+        fi
+        exit 0
+        ;;
+    '') ;;
+    *) echo "unknown Oracle verification mode: $1" >&2; exit 2 ;;
+esac
 
 for command in docker go; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -87,13 +115,14 @@ cd "$ROOT_DIR/common"
 ADDP_ORACLE_DECIMAL_INTEGRATION=1 \
 ADDP_ORACLE_JSON_INTEGRATION=1 \
 ADDP_ORACLE_INTEGRATION=1 \
+ADDP_ORACLE_READONLY_INTEGRATION=1 \
 ADDP_TEST_ORACLE_HOST=127.0.0.1 \
 ADDP_TEST_ORACLE_PORT="$host_port" \
 ADDP_TEST_ORACLE_SERVICE_NAME=FREEPDB1 \
 ADDP_TEST_ORACLE_USER="$ORACLE_USER" \
 ADDP_TEST_ORACLE_PASSWORD="$ORACLE_APP_PASSWORD" \
     go test ./engine/plugins/oracle \
-    -run '^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix)$' \
+    -run '^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-oracle-decimal.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-oracle-decimal.log"; then

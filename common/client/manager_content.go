@@ -99,13 +99,37 @@ func (d ManagerContentDocument) Validate() error {
 	return nil
 }
 
-func (c *ManagerContentClient) UpsertDocument(ctx context.Context, document ManagerContentDocument) error {
-	document.DocumentID = strings.TrimSpace(document.DocumentID)
-	if err := document.Validate(); err != nil {
+const ManagerContentBatchLimit = 100
+
+type ManagerContentBatch struct {
+	Documents []ManagerContentDocument `json:"documents"`
+}
+
+func (b ManagerContentBatch) Validate() error {
+	if len(b.Documents) == 0 || len(b.Documents) > ManagerContentBatchLimit {
+		return errors.New("Manager content batch must contain 1 to 100 documents")
+	}
+	seen := make(map[string]bool, len(b.Documents))
+	for _, document := range b.Documents {
+		id := document.DocumentID
+		if id != strings.TrimSpace(id) || len(id) > 128 || strings.Contains(id, "/") || seen[id] {
+			return errors.New("Manager content batch contains an invalid or duplicate document ID")
+		}
+		if err := document.Validate(); err != nil {
+			return err
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+func (c *ManagerContentClient) UpsertDocuments(ctx context.Context, documents []ManagerContentDocument) error {
+	batch := ManagerContentBatch{Documents: documents}
+	if err := batch.Validate(); err != nil {
 		return err
 	}
-	path := "/api/v1/manager/runtime/content-documents/" + url.PathEscape(document.DocumentID)
-	if err := c.doJSON(ctx, http.MethodPut, path, document, nil); err != nil {
+	path := "/api/v1/manager/runtime/content-documents/batch_update"
+	if err := c.doJSON(ctx, http.MethodPost, path, batch, nil); err != nil {
 		return fmt.Errorf("Manager content document upsert: %w", err)
 	}
 	return nil

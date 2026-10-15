@@ -116,6 +116,16 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 	delete(fields, "completed_at")
 	delete(fields, "updated_at")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Completion owns summary counters; preserve the final typed progress snapshot.
+		var current commonExecution.TaskExecution
+		if err := tx.Select("metadata").Where("execution_id = ? AND tenant_id = ?", execution.ExecutionID, execution.TenantID).Take(&current).Error; err != nil {
+			return err
+		}
+		if progress := models.ObserveScanProgress(current.Metadata); progress != nil {
+			if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
+				metadata["scan_progress"] = progress
+			}
+		}
 		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}

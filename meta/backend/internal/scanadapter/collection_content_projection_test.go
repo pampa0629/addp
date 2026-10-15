@@ -27,14 +27,15 @@ import (
 func testCollectionContentProjection(t *testing.T, db *gorm.DB) {
 	var documents []commonClient.ManagerContentDocument
 	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.Header.Get("Authorization") != "Bearer meta-tenant-7" {
+		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer meta-tenant-7" {
 			t.Errorf("unexpected Manager request: %s %s", r.Method, r.URL)
 		}
-		var document commonClient.ManagerContentDocument
-		if err := json.NewDecoder(r.Body).Decode(&document); err != nil {
-			t.Error(err)
+		var batch commonClient.ManagerContentBatch
+		if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 {
+			t.Fatalf("invalid batch: %+v %v", batch, err)
 		}
-		if r.URL.Path != "/api/v1/manager/runtime/content-documents/"+document.DocumentID {
+		document := batch.Documents[0]
+		if r.URL.Path != "/api/v1/manager/runtime/content-documents/batch_update" {
 			t.Errorf("projection path = %s", r.URL.Path)
 		}
 		documents = append(documents, document)

@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"testing"
 	"time"
 
@@ -48,10 +49,14 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		}
 		actor := qualify(t, true)
 		path := engineplugin.TabularItemPath(base.EngineID, "schema", "public", "independent_commands")
+		reader := testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}}
+		for _, name := range []string{"unauthorized_initialization", "atomic_first_authorization", "missing_approval", "filter_%户外", "filter_X户外", "record_states", "concurrent_relation", "legacy_relation"} {
+			reader.paths = append(reader.paths, engineplugin.TabularItemPath(base.EngineID, "schema", "public", name))
+		}
 		// Source inspection must not hold any IAM lock. NOWAIT proves that an
 		// independent connection can lock the operator during Provider IO.
 		calls := 0
-		service := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
+		service := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithAuthorizationFactsReader(reader).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
 			calls++
 			if tenant != tenantID || p.EngineID != base.EngineID {
 				t.Fatal("wrong discovery scope")
@@ -67,12 +72,12 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			return engine.Version, nil
 		}))
-		basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{Actor: actor, EngineID: int64(base.EngineID), CatalogPath: path, Mode: "independent", Reason: "Explicit independent approval"})
+		basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), CatalogPath: path, Mode: "independent", Reason: "Explicit independent approval"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		receiver, _ := newUser(t, time.Hour)
-		input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, RequirementVersion: basis.Version, RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
+		input := CreateIndependentGrantInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, RequirementVersion: basis.Version, RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
 		t.Run("administrator handles without granting itself access", func(t *testing.T) {
 			administrator := qualify(t, false)
 			adminRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.engine_grant_administrator", Name: "Authorization administrator fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_delegation.create"}, ActorPrincipalID: adminID})
@@ -96,7 +101,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			if err := db.Model(&Delegation{}).Where("tenant_membership_id = ?", administrator.MembershipID).Count(&delegations).Error; err != nil || delegations != 0 {
 				t.Fatalf("manufactured self-delegation: %d %v", delegations, err)
 			}
-			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: userProvenance{PrincipalID: administrator.PrincipalID, MembershipID: administrator.MembershipID, AuthorizationVersion: administrator.AuthorizationVersion}, Targets: []engineplugin.EngineCatalogPath{path}})
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: userProvenance{PrincipalID: administrator.PrincipalID, MembershipID: administrator.MembershipID, AuthorizationVersion: administrator.AuthorizationVersion}, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
 			if err != nil || result == nil || result.Targets[0].Reason != "no_grant" {
 				t.Fatalf("administrator automatically gained read access: %+v %v", result, err)
 			}
@@ -108,7 +113,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		calls = 0
 		assertRead := func(want string) {
 			t.Helper()
-			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{path}})
+			result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{path}, Bindings: testReadBindings(path)})
 			if err != nil || result == nil || result.Targets[0].Reason != want {
 				t.Fatalf("want %s: %+v %v", want, result, err)
 			}
@@ -144,6 +149,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			first.Actor = Actor{TenantID: tenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}
 			first.RequestID, first.InitializeApproval, first.RequirementVersion = uuid.New(), true, 1
 			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "unauthorized_initialization")
+			first.ItemFingerprint, first.ExpectedBoundaryHash = testReadBindings(first.CatalogPath)[0].ItemFingerprint, testReadBindings(first.CatalogPath)[0].BoundaryHash
 			if _, err := service.CreateIndependentGrant(ctx, first); !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("missing initialization permission: %v", err)
 			}
@@ -155,6 +161,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			first := input
 			first.RequestID = uuid.New()
 			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "atomic_first_authorization")
+			first.ItemFingerprint, first.ExpectedBoundaryHash = testReadBindings(first.CatalogPath)[0].ItemFingerprint, testReadBindings(first.CatalogPath)[0].BoundaryHash
 			first.RequirementVersion, first.InitializeApproval = 1, true
 			failed := first
 			past := time.Now().Add(-time.Minute)
@@ -189,6 +196,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		})
 		for _, mutate := range []func(*CreateIndependentGrantInput){func(i *CreateIndependentGrantInput) { i.RequirementVersion++ }, func(i *CreateIndependentGrantInput) {
 			i.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "missing_approval")
+			i.ItemFingerprint, i.ExpectedBoundaryHash = testReadBindings(i.CatalogPath)[0].ItemFingerprint, testReadBindings(i.CatalogPath)[0].BoundaryHash
 		}} {
 			bad := input
 			bad.RequestID = uuid.New()
@@ -210,34 +218,14 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
-		t.Run("exact collection uses the same grant lifecycle", func(t *testing.T) {
+		t.Run("unsupported collection has no native fallback", func(t *testing.T) {
 			collection := engineplugin.EngineCatalogPath{Version: engineplugin.EngineCatalogPathVersion, EngineID: base.EngineID,
 				Segments: []engineplugin.EngineCatalogSegment{{Term: "server", Kind: "server"}, {Term: "database", Kind: "namespace", Name: "Outdoor"}, {Term: "collection", Kind: "collection", Name: "Persons"}}}
 			command := input
 			command.RequestID, command.CatalogPath = uuid.New(), collection
-			command.RequirementVersion, command.InitializeApproval = 1, true
-			grant, err := service.CreateIndependentGrant(ctx, command)
-			if err != nil || grant == nil {
-				t.Fatalf("collection grant: %+v %v", grant, err)
+			if _, err := service.CreateIndependentGrant(ctx, command); !errors.Is(err, commonapi.ErrBadRequest) {
+				t.Fatalf("unsupported layout accepted: %v", err)
 			}
-			check := func(want string) {
-				t.Helper()
-				result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{collection}})
-				if err != nil || result == nil || len(result.Targets) != 1 || result.Targets[0].Reason != want {
-					t.Fatalf("collection read want %s: %+v %v", want, result, err)
-				}
-			}
-			check("grant")
-			if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: command.EngineID, RequestID: command.RequestID, Reason: "End collection fixture"}); err != nil {
-				t.Fatal(err)
-			}
-			check("no_grant")
-			before := calls
-			replayed, err := service.CreateIndependentGrant(ctx, command)
-			if err != nil || replayed == nil || replayed.Revocation == nil || calls != before {
-				t.Fatalf("collection retry must preserve revocation without source reads: %+v %v", replayed, err)
-			}
-			check("no_grant")
 		})
 		t.Run("table and recipient filters precede pagination and preserve history", func(t *testing.T) {
 			other, _ := newUser(t, time.Hour)
@@ -245,6 +233,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			for _, table := range []string{"filter_%户外", "filter_X户外"} {
 				command := input
 				command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", table)
+				command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(command.CatalogPath)[0].ItemFingerprint, testReadBindings(command.CatalogPath)[0].BoundaryHash
 				command.RequirementVersion, command.InitializeApproval = 1, true
 				if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
 					t.Fatal(err)
@@ -330,6 +319,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		t.Run("record states combine with exact target before pagination and revocation precedes expiry", func(t *testing.T) {
 			command := input
 			command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", "record_states")
+			command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(command.CatalogPath)[0].ItemFingerprint, testReadBindings(command.CatalogPath)[0].BoundaryHash
 			command.RequirementVersion, command.InitializeApproval = 1, true
 			expires := time.Now().Add(5 * time.Second)
 			command.ExpiryMode, command.ExpiresAt = shared.SharingExpiryAtTime, &expires
@@ -399,11 +389,11 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		})
 		t.Run("concurrent new commands issue only one relation", func(t *testing.T) {
 			path := engineplugin.TabularItemPath(base.EngineID, "schema", "public", "concurrent_relation")
-			basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{Actor: actor, EngineID: input.EngineID, CatalogPath: path, Mode: "independent", Reason: "Concurrency fixture"})
+			basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: input.EngineID, CatalogPath: path, Mode: "independent", Reason: "Concurrency fixture"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			concurrent := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
+			concurrent := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithAuthorizationFactsReader(reader).WithIndependentTargetVerifier(independentVerifierFunc(func(c context.Context, tenant int64, p engineplugin.EngineCatalogPath) (int64, error) {
 				e, err := NewRepository(db).engine(c, tenant, int64(p.EngineID), false)
 				if err != nil {
 					return 0, err
@@ -418,6 +408,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			for i := 0; i < 2; i++ {
 				command := input
 				command.RequestID, command.CatalogPath, command.RequirementVersion = uuid.New(), path, basis.Version
+				command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(path)[0].ItemFingerprint, testReadBindings(path)[0].BoundaryHash
 				go func() { row, err := concurrent.CreateIndependentGrant(ctx, command); results <- outcome{row, err} }()
 			}
 			var issued *SourceGrantView
@@ -445,6 +436,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		t.Run("legacy duplicates withdraw together and old retries leave new grants intact", func(t *testing.T) {
 			original := input
 			original.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "legacy_relation")
+			original.ItemFingerprint, original.ExpectedBoundaryHash = testReadBindings(original.CatalogPath)[0].ItemFingerprint, testReadBindings(original.CatalogPath)[0].BoundaryHash
 			original.RequestID, original.RequirementVersion, original.InitializeApproval = uuid.New(), 1, true
 			first, err := service.CreateIndependentGrant(ctx, original)
 			if err != nil {

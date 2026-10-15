@@ -19,7 +19,7 @@ import (
 type contentIndexerTestService struct{ err error }
 
 func (s contentIndexerTestService) Enabled() bool { return true }
-func (s contentIndexerTestService) UpsertContentDocument(context.Context, uint, commonClient.ManagerContentDocument) error {
+func (s contentIndexerTestService) UpsertContentDocuments(context.Context, uint, []commonClient.ManagerContentDocument) error {
 	return s.err
 }
 func (s contentIndexerTestService) DeleteContentDocuments(context.Context, uint, service.ContentDocumentDeleteScope) error {
@@ -40,9 +40,9 @@ func TestContentIndexHandlerReportsDistinctProtectionAndDeliveryOutcomes(t *test
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			router := gin.New()
-			router.PUT("/content/:document_id", NewContentIndexHandler(contentIndexerTestService{tc.err}).UpsertDocument)
+			router.POST("/content/batch_update", NewContentIndexHandler(contentIndexerTestService{tc.err}).UpsertDocuments)
 			response := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPut, "/content/item", strings.NewReader(`{"document_id":"item","payload_kind":"technical_metadata","engine_id":9,"data_item_type":"table","name":"persons"}`))
+			request := httptest.NewRequest(http.MethodPost, "/content/batch_update", strings.NewReader(`{"documents":[{"document_id":"item","payload_kind":"technical_metadata","engine_id":9,"data_item_type":"table","name":"persons"}]}`))
 			request.Header.Set("Content-Type", "application/json")
 			router.ServeHTTP(response, request)
 			if response.Code != tc.status {

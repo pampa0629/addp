@@ -24,7 +24,7 @@ describe('catalog frontend API paths', () => {
 
   it('serializes the existing numeric path contract losslessly, including quoted names, under the User client', async () => {
     const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b' }] }
-    const body = serializeEngineApprovalInitialization(target, 'catalog', ' Configure "approval" ')
+    const body = serializeEngineApprovalInitialization(target, 'catalog', ' Configure "approval" ', { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: target })
     expect(body).toContain('"engine_id":9007199254740993,')
     expect(body).not.toContain('9007199254740992')
     expect(JSON.parse(body).catalog_path.segments).toEqual(target.segments)

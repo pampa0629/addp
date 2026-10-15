@@ -30,6 +30,24 @@ KingbaseES 的准入基线固定为 V9R1C10 `V009R001C010B0004` 官方 Docker ta
 
 DM8 独立登记为 `engine_type=dameng`。插件描述、连接字段、SQLDialect 和能力模板属于可由 macOS System 加载的控制面代码；官方 Go 驱动不作为 Go Module 依赖提交，而由门禁从上述固定官方介质提取、校验后只注入 Linux ARM64 Docker 构建上下文。真实 TestConnection、Engine Catalog、参数化查询、BatchRead、TableReadSession、QueryReadSession、BoundedWatermarkRead、TableWritePrepare、TableWriteSession、Delete 与基于 `MERGE` 的幂等 TableUpsert 必须在该执行边界内完成 T2。macOS System 可以创建 Engine Instance，但宿主进程不得执行连接检测或把实例伪装为 `online`；主要模块技术验证也必须把实际 Provider 调用进程放入同一 Linux ARM64 Docker 边界。Business 只拥有数据库与样例生命周期，不调用 System API；上层模块只消费 capabilities、ResourceLocator、Provider 和 SQLDialect，不增加 `dameng` 类型硬编码。
 
+HighGo V4.5 接入首期使用独立 `engine_type=highgo`，复用 PostgreSQL 方言和关系目录 Provider。开放连接、非空间实时目录与普通字段 Facts、BatchRead、TableReadSession、QueryReadSession 和参数化只读 SQL。写入扩展仅开放非空间 TableWritePrepare、BatchWrite 和 COPY TableWriteSession，继续复用同一 PostgreSQL Provider 与 `highgo` 驱动；不开放任意写 SQL、资源删除、upsert、CDC、空间、分析编译或 PostgreSQL 扩展。Facts 的可选补充不扩展已声明能力：Meta 请求的空间、索引、约束和分区补充暂不执行，普通字段正常返回。写入上线须通过隔离原生认证：随机且本次独占的测试 schema、合成数据、COPY 提交／Abort、失败批次原子回滚和精确类型往返；清理只删除本次已创建表及 schema，并核实零残留。
+
+连接探测以服务端 `version()` 的厂商标识和 4.5 版本系列为准，接受原生中文 `瀚高数据库管理系统V4.5` 和英文 `HighGo Database Management System 4.5` 表述。版本识别使用同一严格边界规则，不依赖构建架构或显示语言；PostgreSQL、其他厂商、4.50、其他主次版本以及含伪造嵌入标识的字符串均拒绝。
+
+用户已确认官方 Go 包不可取得时采用第三方路线。驱动主体固定为 ADDP 已使用的 lib/pq v1.10.9，SM3 扩展固定取自 [iwanlebron/pq](https://github.com/iwanlebron/pq) 的 `6ff687fe05e4ef24b5d3abcb9e92d5bab94a958b`，按 MIT 许可保留声明，存放于 `common/engine/internal/highgopq`。本地适配登记唯一 `highgo` 驱动名，复用现有 `github.com/lib/pq/oid`、`scram`、公开错误类型和 `github.com/emmansun/gmsm/sm3`；不引入第三方分支的存储过程改动，不全局替换 lib/pq，不引入认证代理或认证降级。可信的 `ProtocolIdentity.DriverName` 统一绑定连接检测、GORM 连接池和 SQL 会话，默认端口 5866、`sslmode=require`，显式 TLS 设置按连接配置执行。
+
+写入回归沿用 `scripts/test/common-postgres-gate.sh`：默认完整入口及 `--test highgo-write` 在 disposable PostgreSQL 上验证 HighGo 驱动绑定与共享 SQL/COPY 契约，现有 Common PostgreSQL CI 自动覆盖；这不等于原生瀚高认证。显式 `--test highgo-write --highgo-native` 只消费调用方注入的 `ADDP_TEST_HIGHGO_HOST/PORT/DATABASE/USER/PASSWORD`，强制 TLS、校验 V4.5，不创建／删除 database，不访问既有业务 schema。原生认证不得自动切换驱动或重试未知结果的写入。
+
+驱动实现标准 `driver.DriverContext`，将调用方 Context 传递到建连过程；TCP、SSL 协商、TLS 和 SM3 握手期间取消或超时必须关闭本次连接并保留 Context 错误，握手完成后解除取消监听，避免误关已交付的连接。System 手动与周期检测共用 10 秒预算，真实失败仍更新离线状态，执行授权仍核验引擎可用性。确定性 SM3、三阶段握手取消、成功后取消监听释放和登记测试由 Common T1 自动发现，探测预算一致性由 System T1 自动发现；现有 Platform CI 的 Go workspace／插件登记及 Release/T2 消费者门禁覆盖相关改动，无新增运行服务或 CI 外部依赖。
+
+2026-10-14 的接入验收确认实例为 x86_64 瀚高 V4.5（构建日期 20250227、`server_version=12.7`），保留 SM3 和 TLS。System 已登记目标为 Engine 28（`bdcdj_qd`），Manager/Meta 显示 `bdcdj_pz` 的 771 张表及基础扫描成功。修复后的原生 Go 探针完成版本与普通配置表两字段 Facts，合计约 1.48 秒。用户通过标准入口重启全部模块后，运行日志确认周期检测使用 10 秒预算；连续五次、间隔约 31 秒的持久状态采样中，Oracle Engine 27 与 HighGo Engine 28 均在线且检测时间持续更新。Develop 对 `bdcdj_pz.bdc_zd_cflx` 的 `SELECT dm, mc ... WHERE FALSE` 执行成功，耗时约 4.8 秒；版本查询返回 `bdcdj_qd`、`bdcdj` 与上述 V4.5 版本，耗时约 3.9 秒。上述只读验收未返回业务行或写入远程数据。工作台直接查询 `information_schema.columns` 被现有数据保护门禁拒绝，原因为系统目录不是可授权的 Engine Catalog 叶节点，未将其计为通过；普通字段 Facts 由 Provider 路径验证。Common/System 完整 Go T1 和插件登记检查通过；`make test-changed` 因共享工作区多 Owner T2 连接条件缺失在预检中止。以上短时观测不代表长期连接稳定性、全量字段扫描、参数化页面查询、完整产品或写入认证。
+
+2026-10-14 的写入扩展通过正式 HighGo Plugin 在 `bdcdj_qd` 的随机独占 schema 完成原生 Go 验收，约 7.6 秒；验证幂等建表准备、COPY 会话提交、INSERT/COPY 批写、COPY Abort、重复主键导致的 COPY 失败回滚，以及分块 INSERT 后续批次失败时前序批次回滚。合成数据覆盖 bigint 极值、38 位 decimal 的 18 位小数、中文／转义文本、布尔、微秒 timestamp、BYTEA、JSON 大整数、文本数组、date/time、UUID、integer、float/double 和 NULL／空值。提交标记为 `highgo.table_write_session`；两个原生测试 schema 均清理并核实零残留，未修改 `bdcdj_pz` 业务表。非空间写定义检查与 `Replace=true` 拒绝纳入 Common T1。Common/System/Transfer Go T1、完整 `make test-common-postgres`（含 HighGo 协议回归）、插件登记、24 项模块门禁测试及 T2 CI 登记检查通过。`make test-platform` 在既有 `infra-runtime-log-lifecycle_test.py` 的四项 10 秒子进程超时处失败，后续平台步骤未运行；`make test-changed` 仍因多 Owner T2 连接条件缺失而预检中止，均不计为通过。Provider 原生通过不等同于 Oracle → HighGo 端到端迁移完成，真实消费链验收另行记录。
+
+2026-10-14 重启后的真实消费链验收确认 System Engine 28 已持久化 `batch_write`、`table_write_prepare`、`table_write_session`；Transfer Console 可选择 HighGo 为原生表目标。通过正式 Manager 单数据项刷新，为 Oracle Engine 27 的 `UNIREALESTATE.CT_TRADE_KIND_T` 补齐 7 字段 Facts，随后由 Console 创建手动 bounded snapshot 任务 12，使用 append 写入此前经原生只读查询确认不存在的随机新表 `bdcdj_pz.addp_hg_probe_kind_mv7sqav2_cn10ep`。执行 `1876acf7-8d3c-4047-9c51-613a04705520` 成功，读取／写入均为 50 行、耗时 6491 毫秒；写后 Meta 数据项 44348 自动深度扫描成功，确认 50 行、7 字段。独立 JDBC 读回事先开启 Oracle 原生只读事务与 HighGo 只读事务，按 CODE 排序并规范化整数、文本、日期时间和空值后，50 行全部字段逐值一致，源与目标 SHA-256 同为 `ba8ba204dfeccb237518396c6a8a7094c1ac21937ef144728139e578fefd68c3`。验收任务与新表保留供复核，无定时调度；未修改 Oracle 源表或瀚高既有业务表。
+
+本次首次执行 `abda08a1-7097-4547-b0e5-f5e8e7367d91` 在 planner 源引擎可用性校验处因 Oracle 当次 10 秒连接检测超时而失败，未进入建表／写入；追加任务的 retry 请求按既有策略拒绝，没有生成新执行。待源库恢复在线且再次确认目标仍不存在后，通过正常执行入口发起上述成功运行。该事实表明公网源库仍存在连接抖动，不能把单次成功扩展为长期稳定性或全量迁移保证。复查成功页面时曾因本地 Console 5170 与 Gateway 8000 未监听而受阻；用户启动服务后，两者恢复访问，Console 成功执行详情页已复核任务 12 的 success 状态及读取／写入各 50 行，成功截图已补齐。执行记录、网页展示与独立数据库读回验证完成，未修改认证或可用性规则。
+
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
 System 的引擎类型列表、注册表单、默认值和校验规则均由 `GET /api/v1/system/engine-types` 返回的插件描述驱动。新增引擎时不得在 `system/frontend` 或 `common-frontend` 增加 `engine_type` 判断；若现有 `ConnectionFieldSpec` 无法表达所需交互，应先扩展通用描述协议和共享渲染器，再实现具体插件。
@@ -41,6 +59,19 @@ SQL 引擎必须通过 `SQLDialectProvider.SQLDialect()` 声明稳定方言，`S
 ---
 
 ## 二、接口选择
+
+Oracle 11g 目录扫描与较新实例共用 Oracle Provider，系统模式过滤的字典探测规则见《引擎插件接口规范》的 SQL catalog facts provider 差异矩阵。Common T1 自动发现无 `ORACLE_MAINTAINED` 列和有该列的两类字典回归；既有 `make test-common-oracle-decimal` 的 Oracle Free 23 T2 同时运行只读目录检查，现有 `release-and-t2-gates.yml` 的 Common Oracle job 已按 Common 变更命中，无需新建 workflow。
+
+对用户明确授权只读检查的现有 Oracle 实例，可复用同一标准入口的只读模式：
+
+```bash
+# 事先通过环境变量提供 ADDP_TEST_ORACLE_HOST、ADDP_TEST_ORACLE_PORT、
+# ADDP_TEST_ORACLE_SERVICE_NAME、ADDP_TEST_ORACLE_USER、ADDP_TEST_ORACLE_PASSWORD。
+# ADDP_TEST_ORACLE_SCHEMA 可选，默认为连接用户的大写模式名。
+make test-common-oracle-decimal ORACLE_READONLY=1
+```
+
+只读模式只选择 `TestIntegrationOracleReadOnlyCatalog`，强制使用原生只读事务，检查模式、表清单以及最多五张普通表的字段、索引、约束和分区事实；不读取业务行值，不创建夹具、容器、表、账号或授权，不运行同包的写入测试。凭据缺失、字典查询失败或测试跳过均为失败。它是现有实例的有界技术验收，不能替代 disposable T2，也不代表完整扫描、分页查询、写入或 CDC 已通过该版本认证。
 
 | 引擎类型 | 必选接口 | 常用可选接口 |
 | --- | --- | --- |

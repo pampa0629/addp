@@ -23,7 +23,7 @@ func exerciseFulfillmentConfirmers(t *testing.T, db *gorm.DB, identity *iam.Repo
 	defer cancel()
 	base := newRequest()
 	repo := NewRepository(db)
-	roles := iam.NewTenantRoleService(identity, time.Now)
+	roles := iam.NewTenantRoleService(identity, testDatabaseClock(t, db))
 	verified := func(*Repository) error { return nil }
 	clock := func(t *testing.T) time.Time {
 		t.Helper()

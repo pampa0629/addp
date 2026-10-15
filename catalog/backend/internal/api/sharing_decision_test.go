@@ -18,6 +18,8 @@ import (
 	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
@@ -29,8 +31,8 @@ import (
 
 type sharingRouteTarget struct{}
 
-func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, string) (plugin.EngineCatalogPath, error) {
-	return plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"), nil
+func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, string) (authorizationfacts.Binding, error) {
+	return factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")), nil
 }
 
 type sharingRouteReferences struct{}
@@ -119,7 +121,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	if err := db.Create(&models.Entry{ID: id, TenantID: 7, EntryType: models.EntryTypeDataItem, EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory, Version: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.SourceBinding{ID: uuid.New(), TenantID: 7, CatalogEntryID: id, SourceModule: models.SourceModuleMeta, SourceType: models.SourceTypeDataItem, SourceIdentity: uuid.NewString(), SourceVersion: "00000000000000000001", IsCurrent: true, SourceStatus: models.SourceStatusActive, ObservedSnapshot: commonModels.JSONMap{"item_id": 21}}).Error; err != nil {
+	if err := db.Create(&models.SourceBinding{ID: uuid.New(), TenantID: 7, CatalogEntryID: id, SourceModule: models.SourceModuleMeta, SourceType: models.SourceTypeDataItem, SourceIdentity: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).ItemFingerprint, SourceVersion: "00000000000000000001", IsCurrent: true, SourceStatus: models.SourceStatusActive, ObservedSnapshot: commonModels.JSONMap{"item_id": 21}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.Responsibility{ID: uuid.New(), TenantID: 7, CatalogEntryID: id, Role: models.ResponsibilityRoleBusinessOwner, SubjectType: "user", SubjectID: 40, Status: models.ResponsibilityStatusActive, ObservedSnapshot: commonModels.JSONMap{}, VerifiedAt: time.Now()}).Error; err != nil {
@@ -158,7 +160,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		WithSharingHandlingScopeReader(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()))
 	router := SetupRouter(system.URL, modulelifecycle.NewStandalone("catalog"), entries, nil, nil, nil, nil, nil)
 	path := "/api/v1/catalog/entries/" + id.String() + "/sharing_decisions"
-	body := fmt.Sprintf(`{"decision_id":%q,"version":"1","recipient_type":"user","recipient_id":"40","expiry_mode":"at_time","expires_at":%q,"reason":"Explicit self read"}`, decisionID.String(), time.Now().UTC().AddDate(8, 0, 0).Format(time.RFC3339Nano))
+	body := fmt.Sprintf(`{"expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"1","recipient_type":"user","recipient_id":"40","expiry_mode":"at_time","expires_at":%q,"reason":"Explicit self read"}`, decisionID.String(), time.Now().UTC().AddDate(8, 0, 0).Format(time.RFC3339Nano))
 	request := func(method, url, data string, want int) string {
 		t.Helper()
 		req := httptest.NewRequest(method, url, strings.NewReader(data))
@@ -215,7 +217,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	request(http.MethodPost, path, strings.Replace(body, "Explicit self read", "Changed", 1), http.StatusConflict)
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusOK)
 	longID := uuid.New()
-	longBody := fmt.Sprintf(`{"decision_id":%q,"version":"2","recipient_type":"user","recipient_id":"40","expiry_mode":"until_revoked","reason":"Explicit long-term read"}`, longID.String())
+	longBody := fmt.Sprintf(`{"expected_boundary_hash":"`+factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders")).BoundaryHash+`","decision_id":%q,"version":"2","recipient_type":"user","recipient_id":"40","expiry_mode":"until_revoked","reason":"Explicit long-term read"}`, longID.String())
 	longResult := request(http.MethodPost, path, longBody, http.StatusCreated)
 	var longView map[string]any
 	if err := json.Unmarshal([]byte(longResult), &longView); err != nil || longView["expiry_mode"] != "until_revoked" || longView["expires_at"] != nil {
@@ -262,6 +264,10 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	if err := json.Unmarshal([]byte(data), &summaries); err != nil || summaries.Total != 2 || len(summaries.Data) != 1 || summaries.Data[0].ConfirmedBy != 40 || strings.Contains(data, `"reason"`) || scopeCalls != 1 {
 		t.Fatalf("candidate response=%s calls=%d err=%v", data, scopeCalls, err)
 	}
+	approvedBoundary := factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "orders"))
+	if summaries.Data[0].ItemFingerprint != approvedBoundary.ItemFingerprint || summaries.Data[0].BoundaryHash != approvedBoundary.BoundaryHash {
+		t.Fatalf("candidate HTTP response lost the approved DataItem boundary: %s", data)
+	}
 	bearerHeader = "bearer\taddp_at_test"
 	request(http.MethodGet, candidatesPath, "", http.StatusOK)
 	bearerHeader = "Bearer addp_at_test"
@@ -290,7 +296,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 
 	// History uses its own read-only route, not preparation POST as refresh.
 	historyID := uuid.New()
-	binding := authorization.SharingFulfillmentBinding{
+	binding := authorization.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders")).BoundaryHash,
 		CallerPrincipalID: 60,
 		Operator:          authorization.SharingFulfillmentOperator{PrincipalID: 41, MembershipID: 51, AuthorizationVersion: 9007199254740993},
 		Path:              plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"),

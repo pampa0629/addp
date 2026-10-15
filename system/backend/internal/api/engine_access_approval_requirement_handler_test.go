@@ -3,16 +3,77 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+type missingHandlingRequirementFixture struct {
+	unusedApprovalRequirementService
+	err error
+}
+
+func (f missingHandlingRequirementFixture) GetHandlingRequirement(context.Context, engineaccess.Actor, engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error) {
+	return nil, f.err
+}
+
+func TestHandlingRequirementDistinguishesUnconfiguredTargetFromHiddenEngine(t *testing.T) {
+	auth := testIAMActorContext("tenant")
+	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.handler", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: []string{"system.engine_access_fulfillment.create"}}}
+	path := engineplugin.TabularItemPath(12, "schema", "public", "exact.table")
+	for _, test := range []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"not configured", engineaccess.ErrApprovalRequirementNotConfigured, "approval_requirement_not_configured"},
+		{"hidden engine", commonapi.ErrNotFound, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := approvalRequirementTestRouter(t, missingHandlingRequirementFixture{err: test.err}, &auth)
+			response := engineDelegationTestRequest(t, router, "POST", "/api/v1/system/engines/12/access_handling_requirement", EngineAccessHandlingRequirementRequest{Version: path.Version, Segments: path.Segments}, 404)
+			var result struct {
+				Error string `json:"error"`
+				Code  string `json:"error_code"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Code != test.code || result.Error == "" {
+				t.Fatalf("wrong missing-requirement contract: %s, error=%v", response.Body.String(), err)
+			}
+		})
+	}
+	for language, message := range map[string]string{
+		"zh-CN": "本数据项尚未配置批准方式，请由有权限的人员明确配置后再办理。",
+		"en":    "No approval mode is configured for this DataItem. An authorized operator must explicitly configure it before fulfillment.",
+	} {
+		t.Run(language, func(t *testing.T) {
+			body, err := json.Marshal(EngineAccessHandlingRequirementRequest{Version: path.Version, Segments: path.Segments})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/system/engines/12/access_handling_requirement", strings.NewReader(string(body)))
+			request.Header.Set("Authorization", "Bearer addp_at_fixture")
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept-Language", language)
+			response := httptest.NewRecorder()
+			approvalRequirementTestRouter(t, missingHandlingRequirementFixture{err: engineaccess.ErrApprovalRequirementNotConfigured}, &auth).ServeHTTP(response, request)
+			var result map[string]any
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || response.Code != http.StatusNotFound || result["error_code"] != "approval_requirement_not_configured" || result["error"] != message {
+				t.Fatalf("unconfigured requirement translation=%s error=%v", response.Body.String(), err)
+			}
+		})
+	}
+}
 
 type unusedApprovalRequirementService struct{}
 
@@ -51,6 +112,7 @@ func approvalRequirementTestRouter(t *testing.T, service engineAccessApprovalReq
 		t.Fatal(err)
 	}
 	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
 	if err := RegisterEngineAccessApprovalRequirementRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, UserAccessCredential: credential},
 		&EngineAccessApprovalRequirementHandler{service: service}); err != nil {
 		t.Fatal(err)

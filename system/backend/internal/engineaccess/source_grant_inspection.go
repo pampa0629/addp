@@ -13,12 +13,13 @@ import (
 // SourceGrantInspection is an uncached rule observation, not actual access or
 // credential evidence. No denial identifiers or bodies are exposed.
 type SourceGrantInspection struct {
-	AccountID   int64                          `json:"account_id,string" swaggertype:"string"`
-	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path"`
-	ObservedAt  time.Time                      `json:"observed_at"`
-	RuleCovered bool                           `json:"rule_covered"`
-	Reason      string                         `json:"reason" enums:"grant,no_grant,explicit_deny,source_unavailable,target_unavailable"`
-	Sources     []SourceGrantInspectionSource  `json:"sources"`
+	AccountID       int64                          `json:"account_id,string" swaggertype:"string"`
+	CatalogPath     engineplugin.EngineCatalogPath `json:"catalog_path"`
+	ItemFingerprint string                         `json:"item_fingerprint"`
+	ObservedAt      time.Time                      `json:"observed_at"`
+	RuleCovered     bool                           `json:"rule_covered"`
+	Reason          string                         `json:"reason" enums:"grant,no_grant,explicit_deny,source_unavailable,target_unavailable"`
+	Sources         []SourceGrantInspectionSource  `json:"sources"`
 }
 
 type SourceGrantInspectionSource struct {
@@ -33,14 +34,16 @@ type SourceGrantInspectionSource struct {
 
 // The current list and exact rule observer share source aggregation as well as
 // the actual-read predicates. A source anchor identifies only that relation.
-const inspectionSourceCTE = `, sources AS (
+const inspectionSourceCTE = `, observed_grants AS (SELECT * FROM matched_grants)` + inspectionSourceAggregationCTEs
+
+const inspectionSourceAggregationCTEs = `, sources AS (
  SELECT position, recipient_type, recipient_id, count(*) AS grant_count,
  (array_agg(request_id ORDER BY granted_at DESC, request_id DESC))[1] AS request_id,
  max(granted_at) AS granted_at,
  CASE WHEN count(DISTINCT approval_mode) = 1 THEN min(approval_mode) ELSE 'mixed' END AS approval_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN 'until_revoked' ELSE 'at_time' END AS expiry_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN NULL ELSE max(expires_at) END AS expires_at
- FROM matched_grants GROUP BY position, recipient_type, recipient_id
+ FROM observed_grants GROUP BY position, recipient_type, recipient_id
 ), source_sets AS (
  SELECT position, sum(grant_count) AS grant_count, max(granted_at) AS granted_at,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN 'until_revoked' ELSE 'at_time' END AS expiry_mode,
@@ -69,19 +72,35 @@ const accountGrantRelationsPrefixSQL = `WITH clock AS MATERIALIZED (SELECT clock
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = g.request_id)`
 
 const accountGrantRelationsSuffixSQL = `), input AS MATERIALIZED (
- SELECT account.*, COALESCE((SELECT jsonb_agg(path ORDER BY path::text)
- FROM (SELECT DISTINCT catalog_path AS path FROM active) paths), '[]'::jsonb) AS targets,
+ SELECT account.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('native_target', catalog_path,
+ 'item_fingerprint', item_fingerprint, 'boundary_hash', boundary_hash) ORDER BY item_fingerprint,boundary_hash)
+ FROM (SELECT DISTINCT catalog_path, item_fingerprint, boundary_hash FROM active) bindings), '[]'::jsonb) AS targets,
  clock.at AS observed_at FROM account CROSS JOIN clock
-)` + sourceReadRuleCTEs + inspectionSourceCTE + `, applicable AS (
- SELECT target.path AS catalog_path, input.principal_id AS recipient_id,
+)` + sourceReadRuleCTEs + `, relation_targets AS (
+ SELECT item_fingerprint, min(position) AS position, (array_agg(path ORDER BY position))[1] AS path
+ FROM targets GROUP BY item_fingerprint
+), observed_grants AS (
+ SELECT relation.position, g.recipient_type, g.recipient_id, g.request_id, g.granted_at, g.expiry_mode, g.expires_at, g.approval_mode
+ FROM matched_grants g JOIN targets target ON target.position=g.position
+ JOIN relation_targets relation ON relation.item_fingerprint=target.item_fingerprint
+), relation_rules AS (
+ SELECT relation.position, max(r.observed_at) AS observed_at,
+ CASE WHEN bool_or(r.reason='source_unavailable') THEN 'source_unavailable'
+ WHEN bool_or(r.reason='target_unavailable') THEN 'target_unavailable'
+ WHEN bool_or(r.reason='explicit_deny') THEN 'explicit_deny'
+ WHEN bool_or(r.reason='grant') THEN 'grant' ELSE 'no_grant' END AS reason
+ FROM relation_targets relation JOIN targets target ON target.item_fingerprint=relation.item_fingerprint
+ JOIN rules r ON r.position=target.position GROUP BY relation.position
+)` + inspectionSourceAggregationCTEs + `, applicable AS (
+ SELECT target.path AS catalog_path, target.item_fingerprint, input.principal_id AS recipient_id,
  'user'::text AS recipient_type, 'read'::text AS action,
  COALESCE(s.grant_count, 0) AS grant_count, s.granted_at, s.expiry_mode, s.expires_at, s.approval_mode,
- jsonb_build_object('account_id', input.principal_id::text, 'catalog_path', target.path,
+ jsonb_build_object('account_id', input.principal_id::text, 'catalog_path', target.path, 'item_fingerprint', target.item_fingerprint,
  'observed_at', rules.observed_at, 'rule_covered', rules.reason = 'grant', 'reason', rules.reason,
  'sources', COALESCE(s.sources, '[]'::jsonb)) AS inspection
- FROM targets target CROSS JOIN input JOIN rules ON rules.position = target.position
+ FROM relation_targets target CROSS JOIN input JOIN relation_rules rules ON rules.position = target.position
  LEFT JOIN source_sets s ON s.position = target.position
- WHERE s.position IS NOT NULL OR EXISTS (SELECT 1 FROM active g WHERE g.catalog_path = target.path
+ WHERE s.position IS NOT NULL OR EXISTS (SELECT 1 FROM active g WHERE g.item_fingerprint = target.item_fingerprint
  AND g.recipient_type = 'user' AND g.recipient_id = input.principal_id)
 ), page AS (
  SELECT * FROM applicable ORDER BY catalog_path::text LIMIT ? OFFSET ?

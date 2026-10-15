@@ -30,7 +30,7 @@ type EngineAccessFulfillmentGrantHandler struct{ service fulfillmentGrantService
 // @Param request_id path string true "原办理 UUID | Original fulfillment UUID"
 // @Param request body authorization.SharingFulfillmentBinding true "完整原绑定 | Complete original binding"
 // @Success 200 {object} authorization.SharingFulfillmentGrant "不可变签发历史，不是当前访问许可 | Immutable issuance history, not current access Allow"
-// @Failure 400,401,403,409,500 {object} IAMErrorResponse "窗口到期、关闭与绑定冲突含稳定错误码 | Window expiry, closure and binding conflict include stable error codes"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "窗口到期、关闭、绑定冲突与 Meta 核验不可用含稳定错误码 | Stable errors for window expiry, closure, binding conflict and unavailable Meta validation"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_fulfillment.execute"]
 // @Router /runtime/engine-access-fulfillments/{request_id}/grant [post]

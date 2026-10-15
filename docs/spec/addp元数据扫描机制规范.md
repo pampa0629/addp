@@ -422,11 +422,11 @@ whole 的成员约束必须能由内容 I/O／Provider 执行，包括路径范�
 
 System 在本地权威写事务外取得这一事实，事务内核验当前管理资格、规则及批准边界。新增授权的显式确认须绑定展示时的预期边界摘要；服务端从 Meta 重取可信事实，比对不同返回 409，重新展示差异后确认，不能自动换成更大的最新边界继续签发。浏览器摘要只是并发期望值，不是可信资源事实。实际读取 owner 使用同一共享边界表示核验计划与 System 当次检查的绑定；边界不一致则重新计划／核验或拒绝，不执行旧检查对应之外的入口。原生 SQL／文件 URL 到 DataItem 的归属须由 Meta 已确认的身份与组成证明，不能由消费方按名称或路径前缀猜测；该归属解析与真实 I/O 约束仍须随读取消费者单独接入。
 
-**实施与验收。** 正式事实查询、严格共享 DTO、状态投影及摘要已实现。首期支持持久化的 server → schema → 普通 table `single`，以 PostgreSQL 为首验对象；原生坐标取自父 schema 名称和表名，不拆分 `full_name`。已有身份、布局、父节点及 schema 属性须一致；缺失、矛盾或其他布局明确返回对应状态。统计、basic/deep 深度及观察时间不改变边界摘要。当前不支持文件 single、multi 或 whole，不证明源对象仍存在，也不扩展既有 Grant／Deny 的原生目标。
+**实施与验收。** 正式事实查询、严格共享 DTO、状态投影、摘要及 single 批准绑定已实现。首期支持持久化的 server → schema → 普通 table `single`，以 PostgreSQL 为首验对象；原生坐标取自父 schema 名称和表名，不拆分 `full_name`。已有身份、布局、父节点及 schema 属性须一致；缺失、矛盾或其他布局明确返回对应状态。统计、basic/deep 深度及观察时间不改变边界摘要。System 与 Catalog 均通过共享 MetaClient 消费；Manager 的预览、手工剖析和结果读取按完整原生计划反查并核验同一数据项绑定。当前不支持文件 single、multi 或 whole；Meta 事实本身不证明源对象仍存在，不代替 Provider 及 Security 核验。
 
-System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权，也尚未替换签发及实际读取链。
+System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权；新增批准及正式读取独立消费同一事实契约，不把前端展示结果当作凭据。
 
-T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致，System IAM PostgreSQL 门禁覆盖最小 Role 迁移及跨服务期间资格变化。并发快照与真实双服务调用的 Online T4、Grant 边界绑定及同一计划实际读取仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
+T1 覆盖严格 DTO、摘要稳定性、状态派生、服务凭据及错误区分；既有 Meta PostgreSQL 门禁覆盖持久身份、删除、租户隔离和 basic/deep 一致。System IAM PostgreSQL 门禁另覆盖边界变化阻断旧 Grant、Deny 持续约束同一数据项、跨边界版本聚合与撤销，以及前向迁移保留 IAM、委托和通用审计。重启后真实 PostgreSQL 调用及跨模块 Online T4 仍待验收。后续按格式补齐 multi／whole 可执行组成契约，不以接口成功宣称全平台权限贯通。相关 owner 使用 `make test-module MODULE=meta|system|common`（分别运行）；代码变更按共享依赖扩散 CI，消费者沿用对应既有跨模块入口。
 
 ### Deep 扫描
 
@@ -462,7 +462,9 @@ Manager 独占全文搜索索引。所有已登记 DataItem 均应能按技术�
 
 技术投影只通过明确字段白名单包含 fingerprint、引擎身份、catalog item 类型、名称、完整定位、所属命名空间或存储路径，以及已登记的字段名称、类型、注释和规模等事实。不传递完整 attributes、样本、原始记录、字段值或统计分布，不额外调用内容读取或采样 Provider。Meta 不再保留关系表、MongoDB 集合各自的投影构造路线；内容深度扫描使用同一技术事实构造器提交技术快照，再由既有内容路线独立提交正文快照。Manager 继续负责载荷校验、持久投递、保护出口和 Meilisearch 任务终态核查。Manager 是运行时软依赖；提交失败记录告警，不把元数据扫描完成解释为搜索索引已经完成。
 
-同一 fingerprint 的技术信息与正文信息必须并存，分别按完整快照幂等更新。正式 `PUT /api/v1/manager/runtime/content-documents/{document_id}` 以 `payload_kind` 选择字段归属；它是入站载荷类别，不是合并后文档的类别。技术快照覆盖名称、路径、类型、结构和规模字段，正文快照经原有 Security 保护后只覆盖正文、预览、内容 hash、标题、作者、关键词、标签、正文统计与正文派生 metadata。每个快照必须显式更新所属字段的空值，以清除该部分已失效的值；不得覆盖另一部分，提交顺序不得影响两部分并存的结果。身份字段固定为 fingerprint、Tenant 和 engine_id；正文请求中的名称与 catalog 类型只作为请求身份上下文，不更新技术字段。技术与正文的投影时间分别保存为 `projection_time` 和 `content_projection_time`。Meta 深度文件扫描分别提交已登记技术事实与正文，不把完整 attributes 作为正文 metadata 重复发送；basic 或未变化路径只提交技术快照。重复提交可能产生新的持久投递记录，但不能新增搜索文档或累积旧字段、旧正文。
+同一 fingerprint 的技术信息与正文信息必须并存，分别按完整快照幂等更新。唯一写入口为 `POST /api/v1/manager/runtime/content-documents/batch_update`，请求体为 `{"documents":[...]}`，每批 1–100 项，拒绝重复 fingerprint 和非法成员；单项也提交长度为 1 的批次。每项以 `payload_kind` 选择字段归属；它是入站载荷类别，不是合并后文档的类别。技术快照覆盖名称、路径、类型、结构和规模字段，正文快照经原有 Security 保护后只覆盖正文、预览、内容 hash、标题、作者、关键词、标签、正文统计与正文派生 metadata。每个快照必须显式更新所属字段的空值，以清除该部分已失效的值；不得覆盖另一部分，提交顺序不得影响两部分并存的结果。身份字段固定为 fingerprint、Tenant 和 engine_id；正文请求中的名称与 catalog 类型只作为请求身份上下文，不更新技术字段。技术与正文的投影时间分别保存为 `projection_time` 和 `content_projection_time`。Meta 深度文件扫描分别提交已登记技术事实与正文，不把完整 attributes 作为正文 metadata 重复发送；basic 或未变化路径只提交技术快照。重复提交可能产生新的持久投递记录，但不能新增搜索文档或累积旧字段、旧正文。
+
+关系数据库扫描按命名空间在当前扫描调用内聚合技术快照，满 100 项提交一次，返回前提交剩余项；未变化项同样进入该批次，不跨扫描运行共享缓冲。Manager 在同一保护 checkpoint 事务校验全部成员、登记一次批次投递，事务外只发起一次 Meilisearch 更新；所有成员共享任务标记、回执及终态。只有该任务已成功才返回 204。投递记录的 `document_ids` 只持久保存排序后的成员指纹，不保存载荷或凭据；任何成员与同租户未完成批次重叠时拒绝新写入。删除和保护清理继续等待全部既有写入终结，未知回执与超时沿既有恢复机制收敛，不重发批次。Manager 仍是扫描的软依赖；批次失败记录告警，不伪造索引成功，也不回退为逐项重发。
 
 源条目消失后的索引删除必须按 fingerprint 精确作用于目标 DataItem；删除一个关系表时不得删除整个 schema 的有效投影。范围清理只用于明确的范围删除操作，不得作为单项删除的替代路径。
 
@@ -627,7 +629,8 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 | System 定时扫描 | `scheduled` | `deep` | `false` |
 | Meta 前端手动扫描 | `manual` | 第一阶段固定 `deep`；API 支持用户选择 | 第一阶段固定 `false`；API 支持用户选择 |
 | Meta 前端定时扫描 | `scheduled` | 用户选择，默认 `deep` | 默认 `false` |
-| Manager node 刷新 | `manual` | `basic` | `true` |
+| Manager node 行内刷新 | `manual` | `basic` | `true` |
+| Manager node 详情深度扫描 | `manual` | `deep` | `true` |
 | Manager item 刷新 | `manual` | `deep` | `true` |
 | Manager 预览前 deep 补齐 | `manual` | `deep` | `false` |
 | Transfer 完成后触发 | `manual` | `basic` 或按导入结果决定 | `false` |
@@ -651,7 +654,7 @@ Manager 预览 item 前的 deep 补齐流程：
 
 Manager 不检查 `attributes.capabilities.extraction.metadata_extracted`，也不检查 `format_info`、`type_info`、`access_index` 中的格式专有字段来判断是否需要补齐。具体 provider 是否能抽取某类事实、是否因为格式不支持或成本限制而跳过，只由 Meta deep scan 结果表达。
 
-Manager node 刷新固定：
+Manager node 行内刷新固定：
 
 ```json
 {
@@ -659,6 +662,31 @@ Manager node 刷新固定：
   "force": true
 }
 ```
+
+Manager node 详情的“深度扫描”通过 `POST /api/v1/meta/scan/run/manual` 提交当前 node 的完整 ResourceLocator，扫描该节点及其全部下级资源。请求固定使用 `scan_depth=deep, force=true, source=manager`，不扩大为整个 engine；选中 root node 时，范围才与 engine 目标一致。例如：
+
+```json
+{
+  "engine_id": 1,
+  "targets": [
+    "addp://engine/1/path/public?type=schema&node_id=100"
+  ],
+  "scan_depth": "deep",
+  "force": true,
+  "source": "manager"
+}
+```
+
+node 行内刷新与 node 详情深度扫描共用执行等待和扫描后的资源树回读流程。前端等待该次 execution 成功后，重新读取目标节点及其祖先事实；扫描期间切换节点不得改变扫描目标或覆盖新的选择。提交冲突与执行失败分别展示，不能把提交成功当作扫描完成。交互细则见 [Manager 数据预览与资源树实现规范](../../manager/docs/数据预览与资源树实现规范.md)。
+
+文件系统范围扫描的执行观测通过 Meta `ScanExecutionResponse.scan_progress` 返回固定类型的快照，不开放 execution 的任意 metadata 或配置。阶段为 `discovering`（枚举）、`identifying`（识别数据项）、`processing`（处理）、`finalizing`（收尾）；当前操作为 `listing`、`identifying`、`enriching`、`hashing`、`extracting`、`saving` 或 `indexing`。当前路径仅为引擎内相对路径，不含挂载位置、连接信息或 ResourceLocator query。
+
+- `files_discovered`、`directories_discovered` 是本次清单中排除系统噪声后的物理条目数，目录数包含扫描起点；`files_total_known` 表示枚举完整。计数、组合识别与扫描复用同一清单，每个目录仅枚举一次，不额外遍历仅为计算分母。
+- `items_planned` 是识别后实际要处理的逻辑 DataItem 数；`items_total_known` 仅在全部范围识别完成且无清单/识别错误时为真。multi / whole 按逻辑数据项计数，不能以物理文件或历史 `meta_item` 数作分母。`items_completed = items_succeeded + items_failed`，复用未变化项也属于已处理；尚未进入处理的项不算成功。
+- `current_bytes_read` / `current_bytes_total` 仅表示当前文件的内容指纹读取，不累加元数据采样、解压或重复读取；切换操作时清零。内容读取过程持续上报字节变化，并检查取消。
+- `last_progress_at` 只随清单、阶段、当前操作、计数或读取字节的真实变化更新，不随 Worker 租约心跳刷新。前端分别显示耗时与距最近进展的时间；长时间未变化表示“未收到新进展”，不据此判定执行失败。
+- 总量未确定时使用不定进度，不制造最低百分比；已知分母时百分比仅表示数据项处理比例，执行成功前不显示 100%。执行终态保留最后快照，失败不伪装成 100% 完成。扫描成功后的资源树回读独立显示收尾状态。
+- 本次执行状态与 node 的历史范围扫描结果、已完成深度、最近成功时间分别展示。内容索引投影的成功与失败仍遵循其独立交付契约，不以索引依赖的可用性代替扫描进度。
 
 Manager item 刷新固定：
 
@@ -669,20 +697,21 @@ Manager item 刷新固定：
 }
 ```
 
-Manager 的刷新行为必须区分 node 和 item：
+Manager 的扫描入口必须区分操作和目标：
 
-| 刷新对象 | 行为要求 |
+| 操作与目标 | 行为要求 |
 |---|---|
-| node | 异步触发 Meta basic + force 扫描，用于重新枚举该范围并发现新 node / item；不打开 file / object 内容做深度增强。扫描完成后前端重新读取资源树。 |
-| item | 创建单个 known item refresh execution；前端对该 execution 做局部等待，完成后重新读取 item 元数据和预览。 |
+| node 行内刷新 | 异步触发 Meta basic + force 扫描，用于重新枚举该范围并发现新 node / item；不打开 file / object 内容做深度增强。扫描完成后前端重新读取资源树。 |
+| node 详情深度扫描 | 异步触发 Meta deep + force 扫描，覆盖当前 node 及全部下级资源，补充或重建各 item 的深层事实；不逐 item 派发独立刷新。扫描完成后前端重新读取资源树。 |
+| item 刷新 | 创建单个 known item refresh execution；前端对该 execution 做局部等待，完成后重新读取 item 元数据和预览。 |
 
 Manager 的 item refresh 不保留后端同步扫描入口。所谓“立等可用”是 UI 对同一条 execution 的前台等待体验，不是绕过 execution 的另一条刷新实现。
 
 item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段或空间信息被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
-Manager 预览前的 deep 补齐与 item 刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；item 刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。node 刷新不执行 deep 增强，只重新发现范围内的资源树与 data item 身份。
+Manager 预览前的 deep 补齐与 item 刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；item 刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。node 行内刷新不执行 deep 增强，只重新发现范围内的资源树与 data item 身份；对整个 node 范围的 deep 增强由节点详情的“深度扫描”显式发起。
 
-刷新按钮的语义是强制 Meta 按当前目标类型重新生成事实：node 使用 basic 重新发现身份，item 使用 deep 重建已知 item 的深层事实。内容提取的全文投影、content hash、access index 等派生事实由 item deep scan 和对应 provider 根据规则统一处理；所有 DataItem 的无值技术元数据投影也由 basic 扫描或未变化跳过路径从已登记事实提交。Manager 不应绕过 Meta 扫描链路读取源内容或写局部 attributes；搜索投影仍由 Manager 正式内容接口独占落索引。
+树行刷新按钮的语义是强制 Meta 按当前目标类型重新生成事实：node 使用 basic 重新发现身份，item 使用 deep 重建已知 item 的深层事实。内容提取的全文投影、content hash、access index 等派生事实由 item deep scan 和对应 provider 根据规则统一处理；所有 DataItem 的无值技术元数据投影也由 basic 扫描或未变化跳过路径从已登记事实提交。Manager 不应绕过 Meta 扫描链路读取源内容或写局部 attributes；搜索投影仍由 Manager 正式内容接口独占落索引。
 
 Manager 刷新目标必须是当前选中的 engine / node / item，不能默认全 engine。
 

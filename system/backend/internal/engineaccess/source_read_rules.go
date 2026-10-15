@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 )
 
@@ -19,6 +20,7 @@ type sourceReadRequest struct {
 	TenantID int64
 	Source   userProvenance
 	Targets  []engineplugin.EngineCatalogPath
+	Bindings []authorizationfacts.Binding
 }
 
 type sourceReadTargetRule struct {
@@ -40,7 +42,29 @@ func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, jso
 	if request.TenantID <= 0 || !request.Source.valid() {
 		return nil, nil, errSourceReadRules
 	}
-	return encodeSourceReadTargets(request.Targets)
+	paths, _, err := encodeSourceReadTargets(request.Targets)
+	if err != nil {
+		return nil, nil, err
+	}
+	batch, err := encodeBoundSourceTargets(paths, request.Bindings)
+	return paths, batch, err
+}
+
+func encodeBoundSourceTargets(paths []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding) (json.RawMessage, error) {
+	if len(paths) == 0 || len(paths) != len(bindings) {
+		return nil, errSourceReadRules
+	}
+	for i, b := range bindings {
+		if b.Validate() != nil {
+			return nil, errSourceReadRules
+		}
+		a, err := authorization.EncodeSharingTarget(paths[i])
+		p, otherErr := authorization.EncodeSharingTarget(b.NativeTarget)
+		if err != nil || otherErr != nil || string(a) != string(p) {
+			return nil, errSourceReadRules
+		}
+	}
+	return json.Marshal(bindings)
 }
 
 func encodeSourceReadTargets(targets []engineplugin.EngineCatalogPath) ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
@@ -143,8 +167,9 @@ WITH input AS MATERIALIZED (
 // Both actual reads and management inspection consume these exact predicates.
 // The caller supplies input from trusted credential resolution or IAM lookup.
 const sourceReadRuleCTEs = `, targets AS (
-	SELECT target.value AS path, target.ordinality AS position,
-	       (target.value->>'engine_id')::bigint AS engine_id
+ SELECT target.value->'native_target' AS path, target.ordinality AS position,
+       (target.value->'native_target'->>'engine_id')::bigint AS engine_id,
+       target.value->>'item_fingerprint' AS item_fingerprint, target.value->>'boundary_hash' AS boundary_hash
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
 ), current_source AS (
 	SELECT input.* FROM input
@@ -170,7 +195,7 @@ const sourceReadRuleCTEs = `, targets AS (
 ), matched_grants AS MATERIALIZED (
 	SELECT g.*, target.position FROM targets target CROSS JOIN input
 	JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
-	  AND g.engine_id = target.engine_id AND g.catalog_path = target.path
+  AND g.engine_id = target.engine_id AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash
 	JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
 	WHERE g.action = 'read' AND g.granted_at <= input.observed_at
 	  AND ((g.expiry_mode = 'until_revoked' AND g.expires_at IS NULL)
@@ -184,7 +209,7 @@ CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN EXISTS (
 	SELECT 1 FROM system.engine_access_denies d
 	JOIN recipients r ON r.recipient_type = d.recipient_type AND r.recipient_id = d.recipient_id
-	WHERE d.tenant_id = input.tenant_id AND d.engine_id = target.engine_id AND d.catalog_path = target.path
+ WHERE d.tenant_id = input.tenant_id AND d.engine_id = target.engine_id AND d.item_fingerprint = target.item_fingerprint
 	  AND d.action = 'read'
 	  AND ((d.expiry_mode = 'until_revoked' AND d.expires_at IS NULL)
 	       OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))

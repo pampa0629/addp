@@ -14,17 +14,18 @@ import (
 // effective-access verdict. Only direct relations have a withdrawal RequestID;
 // account observations expose each source's anchor inside Inspection.Sources.
 type SourceGrantRelation struct {
-	RequestID     *uuid.UUID             `json:"request_id,omitempty" swaggertype:"string"`
-	CatalogPath   json.RawMessage        `json:"catalog_path" swaggertype:"object"`
-	RecipientType string                 `json:"recipient_type"`
-	RecipientID   int64                  `json:"recipient_id,string" swaggertype:"string"`
-	Action        string                 `json:"action"`
-	ExpiryMode    string                 `json:"expiry_mode"`
-	ExpiresAt     *time.Time             `json:"expires_at"`
-	GrantedAt     time.Time              `json:"granted_at"`
-	GrantCount    int64                  `json:"grant_count"`
-	ApprovalMode  string                 `json:"approval_mode"`
-	Inspection    *SourceGrantInspection `json:"inspection,omitempty"`
+	RequestID       *uuid.UUID             `json:"request_id,omitempty" swaggertype:"string"`
+	CatalogPath     json.RawMessage        `json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint string                 `json:"item_fingerprint"`
+	RecipientType   string                 `json:"recipient_type"`
+	RecipientID     int64                  `json:"recipient_id,string" swaggertype:"string"`
+	Action          string                 `json:"action"`
+	ExpiryMode      string                 `json:"expiry_mode"`
+	ExpiresAt       *time.Time             `json:"expires_at"`
+	GrantedAt       time.Time              `json:"granted_at"`
+	GrantCount      int64                  `json:"grant_count"`
+	ApprovalMode    string                 `json:"approval_mode"`
+	Inspection      *SourceGrantInspection `json:"inspection,omitempty"`
 }
 
 const currentGrantRelationsSQL = `WITH now AS MATERIALIZED (SELECT clock_timestamp() AS at),
@@ -34,13 +35,13 @@ active AS MATERIALIZED (
  AND (g.expires_at IS NULL OR g.expires_at > now.at)
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = g.request_id)
 ), relations AS (
- SELECT catalog_path, recipient_type, recipient_id, action, count(*) AS grant_count,
+ SELECT item_fingerprint, (array_agg(catalog_path ORDER BY granted_at DESC, request_id DESC))[1] AS catalog_path, recipient_type, recipient_id, action, count(*) AS grant_count,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN 'until_revoked' ELSE 'at_time' END AS expiry_mode,
  CASE WHEN bool_or(expiry_mode = 'until_revoked') THEN NULL ELSE max(expires_at) END AS expires_at,
  CASE WHEN count(DISTINCT approval_mode) = 1 THEN min(approval_mode) ELSE 'mixed' END AS approval_mode,
  (array_agg(request_id ORDER BY granted_at DESC, request_id DESC))[1] AS request_id,
  max(granted_at) AS granted_at
- FROM active GROUP BY catalog_path, recipient_type, recipient_id, action
+ FROM active GROUP BY item_fingerprint, recipient_type, recipient_id, action
 )
  SELECT * FROM relations`
 
@@ -94,11 +95,11 @@ func (s *Service) ListSourceGrantRelations(ctx context.Context, actor Actor, eng
 // are never merged; approval provenance and operator do not split a relation.
 func (r *Repository) activeRelationGrants(ctx context.Context, grant sourceGrant) ([]sourceGrant, error) {
 	var rows []sourceGrant
-	err := r.db.WithContext(ctx).Where(`tenant_id = ? AND engine_id = ? AND catalog_path = ?::jsonb
+	err := r.db.WithContext(ctx).Where(`tenant_id = ? AND engine_id = ? AND item_fingerprint = ?
  AND recipient_type = ? AND recipient_id = ? AND action = ? AND granted_at <= clock_timestamp()
  AND (expires_at IS NULL OR expires_at > clock_timestamp())
  AND NOT EXISTS (SELECT 1 FROM system.engine_access_grant_revocations r WHERE r.request_id = system.engine_access_grants.request_id)`,
-		grant.TenantID, grant.EngineID, string(grant.CatalogPath), grant.RecipientType, grant.RecipientID, grant.Action).
+		grant.TenantID, grant.EngineID, grant.ItemFingerprint, grant.RecipientType, grant.RecipientID, grant.Action).
 		Order("request_id").Find(&rows).Error
 	return rows, err
 }

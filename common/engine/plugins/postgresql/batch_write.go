@@ -41,7 +41,7 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 	if err != nil {
 		return fmt.Errorf("failed to build postgresql dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open postgresql connection: %w", err)
 	}

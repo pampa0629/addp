@@ -7,33 +7,39 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	authorization "github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 var ErrApprovalRequirementExists = errors.Join(commonapi.ErrConflict, errors.New("approval requirement already initialized"))
 var ErrApprovalRequirementVersion = errors.Join(commonapi.ErrConflict, errApprovalRequirementVersion)
+var ErrApprovalRequirementNotConfigured = errors.Join(commonapi.ErrNotFound, errors.New("approval requirement not configured"))
 
 // ApprovalRequirementView is System's configuration fact, not a Grant or a
 // copy of Catalog responsibility. IAM/engine IDs retain decimal precision.
 type ApprovalRequirementView struct {
-	ID          uuid.UUID       `json:"id"`
-	EngineID    int64           `json:"engine_id,string" swaggertype:"string"`
-	CatalogPath json.RawMessage `json:"catalog_path" swaggertype:"object"`
-	Mode        string          `json:"mode"`
-	Version     int64           `json:"version"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID              uuid.UUID       `json:"id"`
+	EngineID        int64           `json:"engine_id,string" swaggertype:"string"`
+	CatalogPath     json.RawMessage `json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint string          `json:"item_fingerprint"`
+	Mode            string          `json:"mode"`
+	Version         int64           `json:"version"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type InitializeApprovalRequirementInput struct {
-	Actor       Actor
-	EngineID    int64
-	CatalogPath engineplugin.EngineCatalogPath
-	Mode        string
-	Reason      string
-	Audit       iam.AuditMetadata
+	Actor                Actor
+	EngineID             int64
+	CatalogPath          engineplugin.EngineCatalogPath
+	ItemFingerprint      string
+	ExpectedBoundaryHash string
+	Mode                 string
+	Reason               string
+	Audit                iam.AuditMetadata
 }
 
 type UpdateApprovalRequirementInput struct {
@@ -140,6 +146,9 @@ func (s *Service) GetHandlingRequirement(ctx context.Context, actor Actor, path 
 				return qualificationErr
 			}
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrApprovalRequirementNotConfigured
+				}
 				return mapError(err)
 			}
 			result = &HandlingRequirementView{Mode: row.Mode, RequirementVersion: row.Version}
@@ -149,7 +158,7 @@ func (s *Service) GetHandlingRequirement(ctx context.Context, actor Actor, path 
 }
 
 func approvalRequirementView(row *approvalRequirement) *ApprovalRequirementView {
-	return &ApprovalRequirementView{ID: row.ID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
+	return &ApprovalRequirementView{ID: row.ID, EngineID: row.EngineID, CatalogPath: row.CatalogPath, ItemFingerprint: row.ItemFingerprint,
 		Mode: row.Mode, Version: row.Version, UpdatedAt: row.UpdatedAt}
 }
 
@@ -263,6 +272,9 @@ func hasCurrentTenantPermission(rows []iam.RoleAssignmentPermissionProjection, t
 }
 
 func (s *Service) InitializeApprovalRequirement(ctx context.Context, input InitializeApprovalRequirementInput) (*ApprovalRequirementView, error) {
+	if (authorizationfacts.Binding{ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash, NativeTarget: input.CatalogPath}).Validate() != nil {
+		return nil, commonapi.ErrBadRequest
+	}
 	if input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || !validReason(input.Reason) ||
 		(input.Mode != approvalModeCatalog && input.Mode != approvalModeIndependent) {
 		return nil, commonapi.ErrBadRequest
@@ -271,6 +283,13 @@ func (s *Service) InitializeApprovalRequirement(ctx context.Context, input Initi
 		return nil, commonapi.ErrBadRequest
 	}
 	var result *ApprovalRequirementView
+	if err := s.withApprovalRequirementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessApprovalRequirementInitialize,
+		func(_ *Repository, check func() error) error { return check() }); err != nil {
+		return nil, err
+	}
+	if err := s.verifyApprovedBoundary(ctx, input.Actor.TenantID, input.CatalogPath, input.ItemFingerprint, input.ExpectedBoundaryHash); err != nil {
+		return nil, err
+	}
 	err := s.withApprovalRequirementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessApprovalRequirementInitialize,
 		func(tx *Repository, check func() error) error {
 			audit := input.Audit

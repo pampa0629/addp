@@ -32,6 +32,8 @@ func (s *EntryService) WithSharingHandlingScopeReader(reader SharingHandlingScop
 type SharingDecisionCandidate struct {
 	ID                   uuid.UUID             `json:"id"`
 	Target               SharingDecisionTarget `json:"target"`
+	ItemFingerprint      string                `json:"item_fingerprint"`
+	BoundaryHash         string                `json:"boundary_hash"`
 	RecipientType        string                `json:"recipient_type"`
 	RecipientID          int64                 `json:"recipient_id,string" swaggertype:"string"`
 	RecipientName        string                `json:"recipient_name,omitempty"`
@@ -126,7 +128,7 @@ func (s *EntryService) ListSharingDecisionCandidates(ctx context.Context, tenant
 				return err
 			}
 			var rows []models.SharingDecision
-			if err := query().Select("sharing_decisions.id, sharing_decisions.catalog_path, sharing_decisions.engine_id, sharing_decisions.recipient_type, sharing_decisions.recipient_id, sharing_decisions.action, sharing_decisions.expiry_mode, sharing_decisions.expires_at, sharing_decisions.confirmed_by, sharing_decisions.created_at").
+			if err := query().Select("sharing_decisions.id, sharing_decisions.catalog_path, sharing_decisions.engine_id, sharing_decisions.item_fingerprint, sharing_decisions.boundary_hash, sharing_decisions.recipient_type, sharing_decisions.recipient_id, sharing_decisions.action, sharing_decisions.expiry_mode, sharing_decisions.expires_at, sharing_decisions.confirmed_by, sharing_decisions.created_at").
 				Order("sharing_decisions.created_at DESC, sharing_decisions.id DESC").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
 				return err
 			}
@@ -136,6 +138,7 @@ func (s *EntryService) ListSharingDecisionCandidates(ctx context.Context, tenant
 					return err
 				}
 				result = append(result, SharingDecisionCandidate{ID: row.ID, Target: view.Target, RecipientType: row.RecipientType, RecipientID: row.RecipientID,
+					ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash,
 					Action: row.Action, ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, ConfirmedBy: row.ConfirmedBy, ConfirmedAt: row.CreatedAt})
 			}
 			return nil

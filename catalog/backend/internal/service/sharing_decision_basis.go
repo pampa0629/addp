@@ -45,6 +45,7 @@ func lockCurrentSharingDecisionBasis(ctx context.Context, tx *gorm.DB, tenantID 
 		return nil, err
 	}
 	if source.ID != decision.SourceBindingID || source.SourceVersion != decision.SourceVersion ||
+		source.SourceIdentity != decision.ItemFingerprint ||
 		source.SourceModule != models.SourceModuleMeta || source.SourceType != models.SourceTypeDataItem || source.SourceStatus != models.SourceStatusActive {
 		return nil, ErrSharingTargetUnsupported
 	}

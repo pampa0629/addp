@@ -55,7 +55,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	identityService := NewIdentityService(repository, nil)
-	membershipService := NewTenantMembershipService(repository, time.Now)
+	membershipService := NewTenantMembershipService(repository, testFixtureDatabaseClock(t, db))
 	issueAudit := AuditMetadata{RequestID: stringPointer("notebook-catalog-authorization-postgres")}
 	user := createContextSelectionUser(t, ctx, identityService, "notebook-catalog-user", issueAudit)
 	tenant := createContextSelectionTenant(t, ctx, membershipService, "notebook-catalog", issueAudit)

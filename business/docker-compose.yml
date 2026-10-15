@@ -461,6 +461,39 @@ services:
       - business-network
     restart: unless-stopped
 
+  highgo:
+    image: qiuchenjun/hgdb-see:4.5.10.3@sha256:e4dd0ac4877c3a8818ec4cef68108be8d54c410782a6248a01257ea66dd49725
+    container_name: business-highgo
+    profiles: [highgo]
+    entrypoint: ["bash", "/addp/highgo/entrypoint.sh"]
+    command: ["postgres", "-p", "5866", "-c", "listen_addresses=*", "-c", "ssl=on", "-c", "password_encryption=sm3"]
+    environment:
+      POSTGRES_PASSWORD: ${HIGHGO_PASSWORD:-}
+      POSTGRES_USER: sysdba
+      POSTGRES_DB: highgo
+      PGPORT: "5866"
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${HIGHGO_PORT:-5866}:5866"
+    volumes:
+      - ./highgo:/addp/highgo:ro
+      - ./highgo/init:/docker-entrypoint-initdb.d:ro
+      - highgo_data:/home/highgo/hgdb
+    networks: [business-network]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$POSTGRES_PASSWORD" PGSSLMODE=require
+          psql -h 127.0.0.1 -p 5866 -U sysdba -d highgo -v ON_ERROR_STOP=1
+          -Atc 'SELECT engine_name FROM addp_business.addp_engine_probe WHERE id = 1'
+          | grep -Fxq 'HighGo V4.5 Business'
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    restart: "no"
+
   kingbase:
     image: addp/kingbase:v009r001c010b0004
     container_name: business-kingbase
@@ -696,6 +729,7 @@ volumes:
     driver: local
   oceanbase_obd_data:
     driver: local
+  highgo_data:
   opengauss_data:
     driver: local
   tidb_pd_data:

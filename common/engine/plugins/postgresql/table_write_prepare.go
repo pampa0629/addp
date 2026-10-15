@@ -23,7 +23,7 @@ func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 	if err != nil {
 		return fmt.Errorf("failed to build postgresql dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open postgresql connection: %w", err)
 	}
@@ -247,7 +247,7 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	if err != nil {
 		return fmt.Errorf("failed to build postgresql dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open postgresql connection: %w", err)
 	}

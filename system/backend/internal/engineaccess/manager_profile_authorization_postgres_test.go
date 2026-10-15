@@ -27,7 +27,7 @@ func exerciseManagerProfileAuthorization(t *testing.T, db *gorm.DB, path plugin.
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
 		repo := iam.NewRepository(db)
-		service := iam.NewManagerProfileAuthorizationService(repo, VerifyExecutionSourceRead)
+		service := iam.NewManagerProfileAuthorizationService(repo, NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{path, plugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_profile_dependency")}}).PrepareExecutionSourceRead)
 		user, _ := newUser(t, time.Hour)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.profile_source", Name: "Explicit profile functions",
 			ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"manager.data_profile.execute", "manager.data_item.read"}, ActorPrincipalID: adminID})

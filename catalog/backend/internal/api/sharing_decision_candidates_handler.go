@@ -12,6 +12,7 @@ import (
 // ListSharingDecisionCandidates godoc
 // @Summary 读取可见条目的共享办理候选 | Read sharing handling candidates for a visible entry
 // @Description 当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前 IAM 资格 | The current Tenant User needs entry read, independent source authorization handling permission and target engine management delegation. Returns paginated summaries with a current source, original owner relation and valid expiry, not purpose text or tenant-wide history. Not acceptance evidence, confirmation permission or data access; submission still rechecks the confirmer's current IAM eligibility
+// @Description item_fingerprint 与 boundary_hash 来自原共享确认冻结的 DataItem 边界，不以当前 Meta 边界替换；正式办理仍核验当前边界 | item_fingerprint and boundary_hash preserve the DataItem boundary frozen by the original sharing decision, not a replacement from current Meta facts; fulfillment still verifies the current boundary
 // @Tags Catalog Sharing
 // @Produce json
 // @Param id path string true "条目 UUID | Entry UUID"

@@ -44,7 +44,7 @@ func (p *PostgreSQLPlugin) ResolveCapabilities(ctx context.Context, connInfo plu
 	if err != nil {
 		return base, fmt.Errorf("build postgresql capability probe dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open(p.sqlDriverName(), dsn)
 	if err != nil {
 		return base, fmt.Errorf("open postgresql capability probe connection: %w", err)
 	}

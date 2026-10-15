@@ -61,6 +61,9 @@ func (s *Service) AcceptFulfillment(ctx context.Context, actor FulfillmentRuntim
 	if !equalJSON(want, actual) || !confirmation.valid() {
 		return nil, commonapi.ErrForbidden
 	}
+	if err := s.verifyApprovedBoundary(ctx, request.TenantID, request.Path, request.ItemFingerprint, request.BoundaryHash); err != nil {
+		return nil, err
+	}
 	ids := []int64{binding.Operator.PrincipalID, confirmation.PrincipalID}
 	if binding.RecipientType == "user" {
 		ids = append(ids, binding.RecipientID)

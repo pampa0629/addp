@@ -9,8 +9,9 @@ import (
 // ScanExecutionResponse exposes immutable observations, never the execution model.
 type ScanExecutionResponse struct {
 	*commonExecution.Observation
-	TenantID    int                  `json:"tenant_id"`
-	ScanContext ScanExecutionContext `json:"scan_context"`
+	TenantID     int                  `json:"tenant_id"`
+	ScanContext  ScanExecutionContext `json:"scan_context"`
+	ScanProgress *ScanProgress        `json:"scan_progress,omitempty"`
 }
 
 type ScanExecutionContext struct {
@@ -32,7 +33,7 @@ func NewScanExecutionResponse(item *commonExecution.TaskExecution) *ScanExecutio
 			}
 		}
 	}
-	return &ScanExecutionResponse{Observation: commonExecution.Observe(item), TenantID: item.TenantID, ScanContext: context}
+	return &ScanExecutionResponse{Observation: commonExecution.Observe(item), TenantID: item.TenantID, ScanContext: context, ScanProgress: ObserveScanProgress(item.Metadata)}
 }
 
 func NewScanExecutionResponses(items []*commonExecution.TaskExecution) []*ScanExecutionResponse {

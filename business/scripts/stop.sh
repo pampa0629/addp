@@ -26,6 +26,10 @@ if [ -f "$(addp_business_network_override)" ]; then
 fi
 
 for arg in "$@"; do
+    if [ "$arg" = "-highgo" ]; then
+        [ "$#" -eq 1 ] || { echo "-highgo 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/highgo.sh" stop
+    fi
     if [ "$arg" = "-kingbase" ]; then
         [ "$#" -eq 1 ] || { echo "-kingbase 必须独立使用" >&2; exit 1; }
         exec bash "$SCRIPT_DIR/kingbase.sh" stop
@@ -49,8 +53,8 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-redpanda|-nfs|-hdfs|-all]"
-            echo "  -kingbase 和 -dameng 必须独立使用，且不属于 -all"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-highgo|-redpanda|-nfs|-hdfs|-all]"
+            echo "  -kingbase、-dameng 和 -highgo 必须独立使用，且不属于 -all"
             exit 0
             ;;
         -nfs)

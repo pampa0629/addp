@@ -98,7 +98,7 @@ func bindManagerProfileRequest(c *gin.Context, dst any) error {
 // @Security BearerAuth
 // @Param request body IAMIssueManagerProfileRequest true "执行 UUID 与有效期秒数，默认 900、最大 3600；正文上限 512 KiB，无 query | Execution UUID and TTL seconds, default 900, maximum 3600; 512 KiB body limit, no query"
 // @Success 201 {object} IAMIssuedManagerProfileResponse "固定只读来源范围 | Fixed read-only source boundary"
-// @Failure 400,401,403,409,500 {object} IAMErrorResponse "签发失败 | Issuance failed"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "签发失败 | Issuance failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_profile.execute","manager.data_item.read"]
 // @Router /auth/execution-authorizations/manager-profiles [post]
@@ -145,7 +145,7 @@ func (h *IAMManagerProfileAuthorizationHandler) Issue(c *gin.Context) {
 // @Param id path string true "规范正整数授权 ID | Canonical positive authorization ID"
 // @Param request body IAMManagerProfileAccessRequest true "精确执行租约与相同来源范围；正文上限 512 KiB，无 query | Exact execution lease and identical source boundary; 512 KiB body limit, no query"
 // @Success 200 {object} IAMManagerProfileAccessResponse "不可缓存的当次观察 | Non-cacheable current observation"
-// @Failure 400,401,403,500 {object} IAMErrorResponse "复核失败 | Recheck failed"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "复核失败 | Recheck failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.execute"]
 // @Router /execution-authorizations/{id}/manager-profile-accesses [post]

@@ -111,6 +111,96 @@ func TestIntegrationOracleCatalogAndRead(t *testing.T) {
 	}
 }
 
+// TestIntegrationOracleReadOnlyCatalog also runs against an explicitly supplied
+// existing instance. It never creates fixtures or reads business row values.
+func TestIntegrationOracleReadOnlyCatalog(t *testing.T) {
+	if os.Getenv("ADDP_ORACLE_READONLY_INTEGRATION") != "1" {
+		t.Skip("set ADDP_ORACLE_READONLY_INTEGRATION=1 to inspect an existing Oracle catalog")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	connInfo := oracleIntegrationConnInfo(t)
+	p := &OraclePlugin{}
+	phaseStarted := time.Now()
+	logPhase := func(name string, err error) {
+		t.Helper()
+		t.Logf("read-only phase=%s duration=%s error=%v", name, time.Since(phaseStarted), err)
+		phaseStarted = time.Now()
+	}
+	db, err := p.CreateConnectionPool(connInfo, nil)
+	logPhase("open_and_ping", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	tx := db.WithContext(ctx).Begin()
+	logPhase("begin", tx.Error)
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	err = tx.Exec("SET TRANSACTION READ ONLY").Error
+	logPhase("read_only", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var connectedService string
+	err = tx.Raw("SELECT SYS_CONTEXT('USERENV', 'SERVICE_NAME') FROM DUAL").Scan(&connectedService).Error
+	logPhase("simple_query", err)
+	if err != nil || connectedService == "" {
+		t.Fatalf("read-only connection probe: empty_service=%t err=%v", connectedService == "", err)
+	}
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 92002)
+	schemas, err := p.listNamespaces(ctx, tx, root)
+	logPhase("list_namespaces", err)
+	if err != nil {
+		t.Fatalf("read-only namespace catalog: %v", err)
+	}
+	schema := strings.ToUpper(oracleIntegrationEnv("ADDP_TEST_ORACLE_SCHEMA", "", plugin.GetString(connInfo, "user")))
+	if findOracleCatalogEntry(schemas, schema) == nil {
+		t.Fatalf("requested schema %q is not visible to this connection", schema)
+	}
+	for _, entry := range schemas {
+		if p.isSystemSchema(entry.Name) {
+			t.Fatalf("system schema %q leaked into the business catalog", entry.Name)
+		}
+	}
+	tables, err := p.listTables(ctx, tx, schema)
+	logPhase("list_tables", err)
+	if err != nil {
+		t.Fatalf("read-only table catalog: %v", err)
+	}
+	checked := 0
+	for _, table := range tables {
+		if table.Kind != plugin.EngineCatalogKindTable {
+			continue
+		}
+		fields, err := p.listColumns(ctx, tx, schema, table.Name)
+		if err != nil || len(fields) == 0 {
+			t.Fatalf("read-only fields for %s.%s: fields=%d err=%v", schema, table.Name, len(fields), err)
+		}
+		if _, err := p.listIndexes(ctx, tx, schema, table.Name); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.listConstraints(ctx, tx, schema, table.Name); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.describePartitioning(ctx, tx, schema, table.Name); err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		if checked == 5 {
+			break
+		}
+	}
+	logPhase("five_table_facts", nil)
+	t.Logf("read-only catalog: schemas=%d, requested_schema=%s, leaves=%d, ordinary_tables_checked=%d", len(schemas), schema, len(tables), checked)
+}
+
 func TestIntegrationOracleSDEWorkspaceNotDetected(t *testing.T) {
 	if os.Getenv("ADDP_ORACLE_INTEGRATION") != "1" {
 		t.Skip("set ADDP_ORACLE_INTEGRATION=1 to run Oracle integration test")

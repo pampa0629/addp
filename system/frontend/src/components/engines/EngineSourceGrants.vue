@@ -121,6 +121,7 @@ import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { approvalPathLabel, approvalTargetsEqual, approvalTargetFromSelection, isApprovalTable } from '../../utils/engineApprovalCatalog'
 import { captureIndependentGrant } from '../../utils/independentGrant'
+import { observeNativeApprovalBinding } from '@common-ui'
 import TenantMemberSelect from '../iam/TenantMemberSelect.vue'
 import EngineGrantRecipient from './EngineGrantRecipient.vue'
 
@@ -274,7 +275,10 @@ async function create() {
   saving.value = true; formError.value = ''; success.value = ''
   try {
     const recovering = !!attempt.value
-    const captured = attempt.value || props.requirements.map(requirement => captureIndependentGrant(props.engine.id, requirement, form, candidates.value))
+    const captured = attempt.value || await Promise.all(props.requirements.map(async requirement => {
+      const binding = await observeNativeApprovalBinding(requirement.catalog_path, enginesAPI.getAuthorizationFacts)
+      return captureIndependentGrant(props.engine.id, { ...requirement, binding }, form, candidates.value)
+    }))
     const first = captured[0]
     await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
     if (epoch !== generation || !canCreate.value) return

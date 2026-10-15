@@ -3,12 +3,14 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"strings"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -46,7 +48,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		actor := FulfillmentRuntimeActor{Actor: Actor{TenantID: base.TenantID, PrincipalID: principal.ID, MembershipID: member.ID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, ClientID: "addp-catalog"}
 		operator, memberExpiry := newOperator(t, time.Hour)
 		seedDelegation(t, operator.MembershipID, memberExpiry.Add(-time.Second))
-		roles := iam.NewTenantRoleService(iam.NewRepository(db), time.Now)
+		roles := iam.NewTenantRoleService(iam.NewRepository(db), testDatabaseClock(t, db))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID, RoleKey: "custom.first_acceptance", Name: "Explicit acceptance fixture", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_fulfillment.create", "system.engine_access_grant.revoke"}, ActorPrincipalID: base.Operator.PrincipalID})
 		if err != nil {
 			t.Fatal(err)
@@ -59,9 +61,9 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 			t.Fatal(err)
 		}
 		operator.AuthorizationVersion = current.AuthorizationVersion
-		binding := shared.SharingFulfillmentBinding{CallerPrincipalID: base.CallerPrincipalID, Operator: shared.SharingFulfillmentOperator{PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: operator.AuthorizationVersion},
+		binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(base.Path).ItemFingerprint, BoundaryHash: factstest.Binding(base.Path).BoundaryHash, CallerPrincipalID: base.CallerPrincipalID, Operator: shared.SharingFulfillmentOperator{PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: operator.AuthorizationVersion},
 			Path: base.Path, DecisionID: base.DecisionID, RequirementVersion: 1, RecipientType: base.RecipientType, RecipientID: base.RecipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
-		service := NewService(NewRepository(db), nil)
+		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}})
 		if _, err := service.AcceptFulfillment(ctx, actor, uuid.New(), binding); !errors.Is(err, ErrFulfillmentCapability) {
 			t.Fatalf("missing credential=%v", err)
 		}

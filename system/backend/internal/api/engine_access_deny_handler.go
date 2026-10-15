@@ -83,19 +83,21 @@ func (h *EngineAccessDenyHandler) Release(c *gin.Context) {
 type EngineAccessDenyHandler struct{ service engineAccessDenyService }
 
 type CreateEngineAccessDenyRequest struct {
-	DenyID        string                         `json:"deny_id"`
-	CatalogPath   engineplugin.EngineCatalogPath `json:"catalog_path"`
-	RecipientType string                         `json:"recipient_type" enums:"user,department,project_group"`
-	RecipientID   string                         `json:"recipient_id"`
-	Action        string                         `json:"action" enums:"read"`
-	ExpiryMode    string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
-	ExpiresAt     *time.Time                     `json:"expires_at"`
-	Reason        string                         `json:"reason"`
+	DenyID          string                         `json:"deny_id"`
+	CatalogPath     engineplugin.EngineCatalogPath `json:"catalog_path"`
+	ItemFingerprint string                         `json:"item_fingerprint" binding:"required"`
+	RecipientType   string                         `json:"recipient_type" enums:"user,department,project_group"`
+	RecipientID     string                         `json:"recipient_id"`
+	Action          string                         `json:"action" enums:"read"`
+	ExpiryMode      string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
+	ExpiresAt       *time.Time                     `json:"expires_at"`
+	Reason          string                         `json:"reason"`
 }
 
 // Create godoc
 // @Summary 建立精确源读取拒绝规则 | Establish a precise source read Deny
 // @Description 当前租户用户须同时具备独立创建权限和有效引擎管理委派；接收主体须有效，路径必须是精确叶子。停用引擎仍可建立拒绝，不访问源端或 Catalog | Current tenant user needs independent creation Permission and effective engine management delegation; recipient must be current and path a precise leaf. Disabled engines permit Deny establishment without source or Catalog IO
+// @Description 拒绝按当前 Tenant 与 Engine 内的稳定 DataItem 身份持续匹配，不绑定当前边界摘要。已存身份可以离线收权，新身份必须由 Meta 基础事实证明；不使用原生路径独立放行 | Deny continues matching the stable DataItem identity within the tenant and engine without requiring its current boundary digest. Stored identities permit offline restriction; new identities require Meta proof, never native-path access fallback
 // @Description 必须显式选择未来到期时间或长期有效；同编号同参数重试恢复原不可变记录，不延长期限或重复审计。记录不证明执行侧已经拒绝数据读取 | Explicit future expiry or until-revoked mode is required; identical command retries recover immutable history without renewal or duplicate audit. History is not proof of execution-side access denial
 // @Tags 源数据显式拒绝 | Source Data Explicit Deny
 // @Accept json
@@ -104,7 +106,7 @@ type CreateEngineAccessDenyRequest struct {
 // @Param id path string true "引擎 ID | Engine ID"
 // @Param request body CreateEngineAccessDenyRequest true "拒绝编号、精确路径、主体、动作、期限与原因 | Deny ID, precise path, subject, action, expiry and reason"
 // @Success 200 {object} engineaccess.SourceDeny "原有或新建的不可变拒绝事实 | Original or newly established immutable Deny"
-// @Failure 400,401,403,404,409,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @Failure 400,401,403,404,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_deny.create"]
 // @Router /engines/{id}/access_denies [post]
@@ -139,7 +141,8 @@ func (h *EngineAccessDenyHandler) Create(c *gin.Context) {
 	}
 	row, err := h.service.CreateDeny(c.Request.Context(), engineaccess.CreateDenyInput{Actor: actor, EngineID: engineID,
 		DenyID: id, CatalogPath: request.CatalogPath, RecipientType: request.RecipientType, RecipientID: recipientID,
-		Action: request.Action, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
+		ItemFingerprint: request.ItemFingerprint,
+		Action:          request.Action, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusOK)})
 	if errors.Is(err, engineaccess.ErrDenyConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgDenyConflict), "error_code": "engine_access_deny_conflict"})

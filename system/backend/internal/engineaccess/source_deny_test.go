@@ -2,6 +2,7 @@ package engineaccess
 
 import (
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 func TestSourceDenyCommandContract(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	future := now.Add(time.Hour)
-	input := CreateDenyInput{Actor: Actor{TenantID: 1, PrincipalID: 2, MembershipID: 3}, EngineID: 9,
+	input := CreateDenyInput{ItemFingerprint: factstest.Binding(engineplugin.TabularItemPath(9, "schema", "public", "events")).ItemFingerprint, Actor: Actor{TenantID: 1, PrincipalID: 2, MembershipID: 3}, EngineID: 9,
 		DenyID: uuid.New(), CatalogPath: engineplugin.TabularItemPath(9, "schema", "public", "events"), RecipientType: "user", RecipientID: 4,
 		Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "  Restrict reading\n"}
 	original, err := prepareSourceDeny(input)

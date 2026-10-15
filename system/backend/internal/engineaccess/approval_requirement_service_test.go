@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"testing"
 	"time"
 
@@ -38,7 +39,7 @@ func TestApprovalRequirementInitializationRejectsMissingOrUnknownModeBeforeStora
 	service := &Service{}
 	for _, mode := range []string{"", "Catalog", "unknown", " independent "} {
 		t.Run(mode, func(t *testing.T) {
-			_, err := service.InitializeApprovalRequirement(context.Background(), InitializeApprovalRequirementInput{
+			_, err := service.InitializeApprovalRequirement(context.Background(), InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(engineplugin.TabularItemPath(1, "schema", "public", "table")).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(engineplugin.TabularItemPath(1, "schema", "public", "table")).BoundaryHash,
 				EngineID: 1, CatalogPath: engineplugin.TabularItemPath(1, "schema", "public", "table"), Mode: mode, Reason: "Explicit configuration",
 			})
 			if !errors.Is(err, commonapi.ErrBadRequest) {

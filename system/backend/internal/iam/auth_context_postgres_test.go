@@ -27,6 +27,15 @@ func testDatabaseTime(clock func() time.Time) DatabaseTimeReader {
 	}
 }
 
+func testFixtureDatabaseClock(t *testing.T, db *gorm.DB) func() time.Time {
+	t.Helper()
+	clock, err := testsupport.FixtureDatabaseClock(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clock
+}
+
 // Log only validation boundaries; credentials and complete snapshots stay private.
 func logCredentialValidationBoundaries(t *testing.T, err error) {
 	t.Helper()
@@ -64,7 +73,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 	}
 
 	repository := NewRepository(db)
-	currentTime := time.Now().UTC().Add(-time.Second).Truncate(time.Microsecond)
+	currentTime := testFixtureDatabaseClock(t, db)().Add(-time.Second).Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},
@@ -143,6 +152,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 
 		resolved, err := authContextService.ResolveFirstPartyAccessToken(ctx, session.AccessToken)
 		if err != nil {
+			logCredentialValidationBoundaries(t, err)
 			t.Fatalf("resolve tenant AuthContext: %v", err)
 		}
 		if err := commonauth.ValidateAuthContext(*resolved); err != nil {

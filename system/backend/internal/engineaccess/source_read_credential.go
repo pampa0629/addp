@@ -3,43 +3,18 @@ package engineaccess
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 )
 
-// This private synchronous adapter accepts a real User credential, never an
-// HTTP-supplied identity or AuthContext. The credential remains method-scoped.
-// Covered is still a SOURCE RULE observation, not a complete execution Allow:
-// owner function/client scope, execution and Security gates remain mandatory.
-func (r *Repository) readCurrentUserSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath) (*sourceReadRules, error) {
-	return r.observeCurrentUserSourceRules(ctx, credential, targets, nil)
-}
-
-// qualify is supplied by a fixed server-side consumer, never by an HTTP body.
-// It runs against the SAME current credential projection as the source rules.
-func (r *Repository) observeCurrentUserSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
-	return r.observeSourceRules(ctx, credential, targets, func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
-		return auth.ResolveUserAccessToken(ctx, credential)
-	}, qualify)
-}
-
-// This fixed consumer resolves real delegated credentials without treating them
-// as ordinary User tokens. Every credential still uses the same source snapshot.
-func (r *Repository) observeManagerPreviewSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath) (*sourceReadRules, error) {
-	return r.observeSourceRules(ctx, credential, targets, func(auth *iam.AuthContextService) (*commonauth.AuthContext, error) {
-		if strings.HasPrefix(credential, "addp_dat_") {
-			return auth.ResolveDelegatedAccessToken(ctx, credential)
-		}
-		return auth.ResolveUserAccessToken(ctx, credential)
-	}, qualifyManagerPreviewRead)
-}
-
-func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
-	paths, batch, err := encodeSourceReadTargets(targets)
+// Every fixed consumer uses this one credential and rule snapshot after Meta
+// preparation. No caller-supplied AuthContext is accepted as identity evidence.
+func (r *Repository) observeSourceRules(ctx context.Context, credential string, targets []engineplugin.EngineCatalogPath, bindings []authorizationfacts.Binding, expectedTenantID int64, resolve func(*iam.AuthContextService) (*commonauth.AuthContext, error), qualify func(commonauth.AuthContext) error) (*sourceReadRules, error) {
+	paths, _, err := encodeSourceReadTargets(targets)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +22,10 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 		return nil, commonapi.ErrUnauthorized
 	}
 	if r == nil || r.db == nil {
+		return nil, errSourceReadRules
+	}
+	batch, err := encodeBoundSourceTargets(paths, bindings)
+	if err != nil || expectedTenantID <= 0 {
 		return nil, errSourceReadRules
 	}
 	var result *sourceReadRules
@@ -80,6 +59,9 @@ func (r *Repository) observeSourceRules(ctx context.Context, credential string, 
 		tenantID, err := parse(*current.Context.TenantID)
 		if err != nil {
 			return err
+		}
+		if tenantID != expectedTenantID {
+			return commonapi.ErrForbidden
 		}
 		principalID, err := parse(current.Principal.ID)
 		if err != nil {

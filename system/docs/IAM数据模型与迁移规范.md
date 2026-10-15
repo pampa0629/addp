@@ -10,7 +10,7 @@ System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方�
 
 业务资源和资源级授权事实仍归对应 owner。System 不复制全平台业务资源，也不建立中央资源 ACL 大表。
 
-DataItem 授权资源事实由 Meta 的 Runtime API 提供，System 不跨 schema 查询。迁移 000205 登记不可委托、不可租户定制的 `meta.authorization_facts.read` 并关联 `tenant.system_runtime`；前向迁移 000206 将同一读取 Permission 关联 `tenant.catalog_runtime`，两者均用 `common/client.MetaClient.ReadAuthorizationFacts` 及自身 Tenant Service 凭据消费唯一契约。不新增人员 Role Assignment 或数据 Grant；现有 Role Permission 触发器推进受影响服务主体的授权版本，迁移显式撤销其旧 Token Family，不重复手工推进。当前管理员核对入口在 IAM 锁外以既有 `addp-system` 服务凭据取得事实，返回后重核人类资格；首期普通表 single 的事实查询不等于 Grant 已迁移为 DataItem 边界绑定。
+DataItem 授权资源事实由 Meta 的 Runtime API 提供，System 不跨 schema 查询。迁移 000205 登记不可委托、不可租户定制的 `meta.authorization_facts.read` 并关联 `tenant.system_runtime`；前向迁移 000206 将同一读取 Permission 关联 `tenant.catalog_runtime`，两者均用 `common/client.MetaClient.ReadAuthorizationFacts` 及自身 Tenant Service 凭据消费唯一契约。不新增人员 Role Assignment 或数据 Grant；现有 Role Permission 触发器推进受影响服务主体的授权版本，迁移显式撤销其旧 Token Family，不重复手工推进。管理员核对、新批准及正式读取消费在 IAM 锁外读取 Meta，随后在本地事务中重新核验当前资格。000207 将首期 schema 普通表 single 的 Grant 改为 `item_fingerprint + boundary_hash` 绑定；`catalog_path` 仅保留实际定位与批准时边界／审计坐标，不是独立 ACL 键。
 
 System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据规则的唯一不可变签发存储。迁移 000195 将目标、接收主体、动作、期限、批准方式与操作者来源收拢到 Grant：`request_id` 唯一标识签发命令；Catalog 来源另以同编号 `catalog_request_id` 引用 `engine_access_fulfillment_outcomes`，从 accepted 回执提取规则并核验原窗口；独立来源不伪造回执，须匹配当前独立批准要求版本。既有记录保留原编号、签发时间和撤销关系，不产生新授权、Role Assignment 或授权版本变更。读取及撤销只消费 Grant 的规则参数；回执不再是读取侧授权事实来源。Grant 不复制 Catalog 责任、业务决定或 IAM Role/Permission。正式 Catalog 签发与原参反查入口保持 `POST /runtime/engine-access-fulfillments/{request_id}/grant` 及其 `/resolve`，只允许固定 `addp-catalog` Tenant Service 凭据与履约 Permission；独立授予使用公开 `POST /api/v1/system/engines/:id/access_grants`，同路径 `GET` 提供两种来源的分页历史；创建与读取分别要求 000196 的独立功能权限以及当前有效引擎管理委派，000197 仅将权限组合进专门的源数据授权办理员模板，不自动分配账号或扩张其他角色。签发命令明确只读目标、接收主体、批准要求版本、期限及原因，源端只读结构核验不持 IAM 写锁，正式事务复核当前资格及依据并原子写 Grant 与审计；原编号原参只恢复历史，不能续期或恢复撤销。签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决。
 
@@ -145,9 +145,9 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ## 六、会话与令牌
 
-源数据当前授权关系从 `engine_access_grants` 与不可变撤销事实实时派生，按 Tenant、精确目标、接收方类型／编号及动作聚合，不新增可变 ACL 表。新签发在唯一持久路径拒绝有效关系重复，Catalog 与直接批准共用该约束；历史重复不删除。关系撤销在既有精确目标事务锁内收回全部有效记录，每条撤销保存同次收回的编号集合，用于审计和原命令恢复；旧签发、到期和撤销时刻不修改。当前列表与历史列表分别承担管理和追溯职责，均不代表最终读取裁决。契约见《addp授权上下文规范》5.5.6。
+源数据当前授权关系从 `engine_access_grants` 与不可变撤销事实实时派生，按 Tenant、Engine、DataItem 身份、接收方类型／编号及动作聚合，不新增可变 ACL 表。边界版本不拆分管理关系：当前列表及来源展开保留全部未撤销、未到期的来源，关系撤销在同一数据项事务锁内收回全部有效记录，每条撤销保存同次收回的编号集合。新签发在唯一持久路径拒绝有效关系重复，Catalog 与直接批准共用该约束。账号核查是对已存批准边界的源规则观察，不声称已经复核 Meta 当前边界；最终读取必须重取可信事实并匹配批准摘要。当前与历史列表均不是最终读取裁决。契约见《addp授权上下文规范》5.5.6。
 
-迁移 `000202_source_grant_relations` 的前向升级和重复运行由既有 System IAM PostgreSQL 门禁自动发现，并纳入 `engine-access-coordination` 分组。局部验证使用 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test source-grant-relations`；仍须指定经过标准基础设施脚本验证的 `addp_iam_test` DSN，不使用开发数据库。
+迁移 `000202_source_grant_relations`、`000207_source_dataitem_boundary_bindings` 与 `000208_source_dataitem_boundary_identity` 的前向升级和重复运行由既有 System IAM PostgreSQL 门禁自动发现；`source-grant-relations` 分组同时验证三者。000207 保持已执行的原始摘要，只清理经确认可丢弃的旧源授权测试事实及依赖记录，不修改 IAM、角色、管理委派和通用审计。000208 前向修正 schema 段的 `kind=namespace` 和结构根空名称校验，并重新验证四处既有边界约束；不改写规则、历史或 checksum，存在不符合约束的记录时明确失败。局部验证使用 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test source-grant-relations`；仍须指定经过标准基础设施脚本验证的 `addp_iam_test` DSN，不使用开发数据库。
 
 ### 引擎访问控制领域的管理委派
 
@@ -183,15 +183,15 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源读取显式拒绝
 
-DataItem 边界绑定切换必须区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。该规则是已确认的切换契约，当前下述原生路径实现尚未替换，不能据此宣称已完成 DataItem 判权。
+DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。首期实现限于 schema 普通表 single，不代表文件组合或全部模块已接入。
 
 切换回归须覆盖：同一数据项边界改变后旧 Grant 不覆盖、新 Grant 仍被原有效 Deny 阻断；正常内容更新及 whole 合法成员增长不改变摘要；解除 Deny 不复活无效 Grant；其他 Tenant／Engine／数据项不误命中；Meta 不可用不回退原生 ACL，且不阻止对已存规则的合法撤销／解除。Grant、Deny、当前来源查询与正式读取消费必须同次切换，不保留按路径独立放行的第二路线。
 
-`system.engine_access_denies`（000185）是 System 引擎访问控制领域的不可变拒绝建立事实，不是 IAM 全平台中央 ACL。它保存独立 UUID、Tenant／Engine、精确结构化叶子、User／Department／Project Group 主体、`read` 动作、期限模式、原操作者引用、数据库建立时刻和原因，不复制 Catalog 责任或专业定义。指定到期必须有限且晚于真实建立时刻；长期有效必须显式为 `until_revoked` 且到期字段为空。插入触发器覆盖调用方时间，拒绝回填时间绕过到期；UPDATE、DELETE 和 TRUNCATE 都禁止。
+`system.engine_access_denies` 是 System 引擎访问控制领域的不可变拒绝建立事实，不是 IAM 全平台中央 ACL。它保存独立 UUID、Tenant／Engine、DataItem 指纹、建立时原生坐标、User／Department／Project Group 主体、`read` 动作、期限模式、原操作者引用、数据库建立时刻和原因，不复制 Catalog 责任或专业定义。指定到期必须有限且晚于真实建立时刻；长期有效必须显式为 `until_revoked` 且到期字段为空。插入触发器覆盖调用方时间，拒绝回填时间绕过到期；UPDATE、DELETE 和 TRUNCATE 都禁止。
 
 唯一建立命令 `POST /engines/:id/access_denies` 通过独立 `.create` Permission 与当前有效引擎管理委派取交集。Permission 仅 Tenant Scope、high risk、不可委托、允许租户定制，不默认给任何 Role 赋权、不增加 Assignment 或推进已有主体版本。完整账号集合先去重升序锁定，再读取成员／Tenant、当前权限、接收组织、引擎及委派，最后按命令编号与精确目标排序；规则和高风险审计同事务，锁等待后及审计后提交前复核当前资格、接收主体和数据库期限。停用引擎仍可建立限制，不访问源端或 Catalog。
 
-同编号、同租户／引擎、同原操作者及成员关系、同规范化参数重试返回原历史，即使规则后来到期或接收主体失效也不续期、不重复审计；当前操作者权限和委派仍须有效。同范围异参返回冲突，跨 Tenant／Engine 返回未找到。创建记录不是执行侧当前拒绝判定，PostgreSQL 只读执行消费仍待贯通。
+同编号、同租户／引擎、同原操作者及成员关系、同规范化参数重试返回原历史，即使规则后来到期或接收主体失效也不续期、不重复审计；当前操作者权限和委派仍须有效。同范围异参返回冲突，跨 Tenant／Engine 返回未找到。已存本地身份允许离线建立限制，新身份须先取得 Meta 证明；撤销与解除不依赖 Meta。创建记录本身不是访问裁决，Manager 上述只读入口逐次消费同一规则。
 
 迁移 000186 随真实解除命令发布独立 `.release` Permission，不默认分配角色或推进已有主体授权版本。`engine_access_deny_releases` 以原 Deny UUID 为主键及外键，仅追加解除者 Principal／Tenant Membership、数据库墙钟和必填原因；原规则继续保存目标、主体及期限。行与整表历史不可 UPDATE／DELETE／TRUNCATE。插入触发器核验解除者是原 Tenant 的 User 成员，覆盖调用方时间，并拒绝 `at_time` 原规则到期后的首次解除。服务复用当前引擎管理资格及精确目标锁，解除和高风险审计同事务，等待后和提交前核验资格与数据库期限；首次到期不写事实，已解除的原参重试优先恢复历史。历史接收主体失效或引擎停用不妨碍解除，不依赖 Catalog、不修改任何 Grant、不表示当前访问已允许。
 

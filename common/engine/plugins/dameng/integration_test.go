@@ -18,6 +18,7 @@ func TestIntegrationDM8ProviderContract(t *testing.T) {
 	if os.Getenv("ADDP_DAMENG_INTEGRATION") != "1" {
 		t.Skip("set ADDP_DAMENG_INTEGRATION=1 to run DM8 integration test")
 	}
+	t.Run("quoted_identifiers", testDM8QuotedIdentifiers)
 	const engineID uint = 98001
 	const schemaName = "ADDP_BUSINESS"
 	const tableName = "ADDP_DM8_PROVIDER_CONTRACT"

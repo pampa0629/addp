@@ -268,6 +268,7 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertBusinessResponsibilityEvidenceMigration(t, tx)
+	exerciseSharingDataItemMigration(t, tx)
 	duplicate := binding
 	duplicate.ID = uuid.New()
 	duplicate.CatalogEntryID = secondEntry.ID

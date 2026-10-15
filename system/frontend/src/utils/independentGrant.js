@@ -1,4 +1,4 @@
-import { serializeEngineCatalogTarget } from '@common-ui'
+import { serializeEngineCatalogTarget, approvedBoundaryFields } from '@common-ui'
 import { safePickerEngineID } from './engineApprovalCatalog'
 
 function decimal(value) {
@@ -22,7 +22,7 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     expiresAt = form.expiresAt.toISOString()
   }
   if (requirement.initialize_approval && String(requirement.version) !== '1') throw new Error('invalidGrant')
-  const fields = { request_id: crypto.randomUUID(), requirement_version: decimal(requirement.version), initialize_approval: requirement.initialize_approval === true, recipient_type: form.recipientType,
+  const fields = { ...approvedBoundaryFields(path, requirement.binding), request_id: crypto.randomUUID(), requirement_version: decimal(requirement.version), initialize_approval: requirement.initialize_approval === true, recipient_type: form.recipientType,
     recipient_id: decimal(candidate.id), action: 'read', expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
   const encoded = JSON.stringify(fields)
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,

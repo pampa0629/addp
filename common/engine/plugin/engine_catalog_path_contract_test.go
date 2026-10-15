@@ -2,11 +2,28 @@ package plugin
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/datatype"
 	"gorm.io/gorm"
 )
+
+func TestFileCatalogResolvedLeafPreservesCanonicalPath(t *testing.T) {
+	target := FileItemPath(14, "shp/子目录/data.csv")
+	callbacks := FileCatalogCallbacks{
+		GetFileStorageFactsFunc: func(_ context.Context, _ ConnectionInfo, path string) (*StorageObjectFacts, error) {
+			if path != "shp/子目录/data.csv" {
+				t.Fatalf("resolved a different file: %q", path)
+			}
+			return &StorageObjectFacts{Name: "data.csv", Path: path}, nil
+		},
+	}
+	entry, err := ResolveFileCatalogPath(context.Background(), callbacks, nil, 14, target)
+	if err != nil || entry == nil || !reflect.DeepEqual(entry.Path, target) || entry.Role != EngineCatalogRoleLeaf {
+		t.Fatalf("resolved file changed its canonical identity: %+v %v", entry, err)
+	}
+}
 
 func TestCatalogProviderHelpersRejectEmptyParentPath(t *testing.T) {
 	ctx := context.Background()

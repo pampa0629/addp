@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
@@ -10,6 +11,8 @@ import (
 )
 
 type StorageEngineService struct{}
+
+const engineConnectionProbeTimeout = 10 * time.Second
 
 func NewStorageEngineService() *StorageEngineService {
 	return &StorageEngineService{}
@@ -22,7 +25,14 @@ func (s *StorageEngineService) ListRegisterableEngineTypes() ([]plugin.EngineTyp
 // TestConnection 测试引擎连接。
 // 连接测试统一由插件 TestConnectionProvider 实现，且必须保持只读。
 func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
-	return dbbridge.TestConnection(context.Background(), resource)
+	return testStorageEngineConnection(resource)
+}
+
+// Manual and periodic observations share one read-only probe and time budget.
+func testStorageEngineConnection(resource *models.Engine) error {
+	ctx, cancel := context.WithTimeout(context.Background(), engineConnectionProbeTimeout)
+	defer cancel()
+	return dbbridge.TestConnection(ctx, resource)
 }
 
 // ProbeWorkflowRuntimeContract checks the workflow runtime protocol surface for

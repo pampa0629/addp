@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 )
@@ -46,6 +47,20 @@ func scanFilePaths(
 		return scanflow.DispatchResult{}, err
 	}
 
+	for i := range resolvedPaths {
+		resolvedPaths[i] = metapath.SanitizeFSPath(resolvedPaths[i])
+	}
+	ctx, progress := scanflow.WithFileProgress(ctx, reporter)
+	plan, err := runtime.prepareFileScan(ctx, contentReader, catalogProvider, connInfo, resource, resolvedPaths, scanDepth)
+	if err != nil {
+		return scanflow.DispatchResult{}, err
+	}
+	defer progress.Update(func(p *models.ScanProgress) {
+		p.Phase = "finalizing"
+		p.Operation = ""
+		p.CurrentBytesRead = 0
+		p.CurrentBytesTotal = 0
+	})
 	result := scanflow.DispatchResult{}
 	failures := &scanflow.FailedTargetCollector{}
 	for i, rootPath := range resolvedPaths {
@@ -58,8 +73,8 @@ func scanFilePaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", displayPath))
 		}
 
-		if _, _, err := runtime.listDirectory(ctx, resource, catalogProvider, connInfo, rootPath); err != nil {
-			failures.Add(rootPath, err)
+		if d := plan.directories[rootPath]; d.listingErr != nil {
+			failures.Add(rootPath, d.listingErr)
 			continue
 		}
 
@@ -76,7 +91,7 @@ func scanFilePaths(
 		}
 		result.CatalogNodes++
 
-		items, pathExtractionStats, scanErr := runtime.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
+		items, pathExtractionStats, scanErr := runtime.scanPreparedDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, itemTerm, scanDepth, force, plan)
 		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if scanErr != nil {
 			failures.Add(rootPath, scanErr)

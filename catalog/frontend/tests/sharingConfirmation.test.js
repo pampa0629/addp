@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { canonicalSharingUUID, captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, hasInvalidSharingRouteIdentity } from '../src/utils/sharingConfirmation'
 
+const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64) }
 const id = 'cc0a8000-6000-4000-8000-800000000001'
 const entry = { version: 4, entry_type: 'data_item', entry_status: 'active', governance_status: 'curated',
   source: { source_module: 'meta', source_status: 'active' },
@@ -73,24 +74,24 @@ describe('explicit human sharing confirmation', () => {
     expect(sharingEligibility(entry, another)).toMatchObject({ confirm: true, create: false })
   })
   it('captures immutable original parameters and preserves decimal ID precision', () => {
-    const captured = captureSharingConfirmation(entry, form, options, id)
-    expect(captured).toEqual({ decision_id: id, version: '4', recipient_type: 'user', recipient_id: '9007199254740993', expiry_mode: 'until_revoked', expires_at: null, reason: 'research' })
+    const captured = captureSharingConfirmation(entry, form, options, id, binding)
+    expect(captured).toEqual({ expected_boundary_hash: binding.boundary_hash, decision_id: id, version: '4', recipient_type: 'user', recipient_id: '9007199254740993', expiry_mode: 'until_revoked', expires_at: null, reason: 'research' })
     expect(Object.isFrozen(captured)).toBe(true)
-    expect(captureSharingConfirmation({ ...entry, version: '9007199254740993' }, form, options, id).version).toBe('9007199254740993')
-    expect(() => captureSharingConfirmation({ ...entry, version: 9007199254740993 }, form, options, id)).toThrow()
+    expect(captureSharingConfirmation({ ...entry, version: '9007199254740993' }, form, options, id, binding).version).toBe('9007199254740993')
+    expect(() => captureSharingConfirmation({ ...entry, version: 9007199254740993 }, form, options, id, binding)).toThrow()
   })
   it('rejects a manually entered ID, inactive or wrong-type recipient and missing purpose', () => {
     for (const candidates of [[], [{ ...options[0], status: 'disabled' }], [{ ...options[0], recipient_type: 'project_group' }]]) {
-      expect(() => captureSharingConfirmation(entry, form, candidates, id)).toThrow()
+      expect(() => captureSharingConfirmation(entry, form, candidates, id, binding)).toThrow()
     }
-    expect(() => captureSharingConfirmation(entry, { ...form, reason: ' ' }, options, id)).toThrow()
+    expect(() => captureSharingConfirmation(entry, { ...form, reason: ' ' }, options, id, binding)).toThrow()
   })
   it('requires an explicit mode and never defaults a missing date to indefinite', () => {
     const now = Date.parse('2026-10-03T00:00:00Z')
     for (const invalid of [{ expiryMode: '' }, { expiryMode: 'at_time' }, { expiryMode: 'at_time', expiresAt: new Date(now) }, { expiresAt: new Date(now + 1000) }]) {
-      expect(() => captureSharingConfirmation(entry, { ...form, ...invalid }, options, id, now)).toThrow()
+      expect(() => captureSharingConfirmation(entry, { ...form, ...invalid }, options, id, binding, now)).toThrow()
     }
-    expect(captureSharingConfirmation(entry, { ...form, expiryMode: 'at_time', expiresAt: new Date(now + 1000) }, options, id, now).expires_at).toBe('2026-10-03T00:00:01.000Z')
+    expect(captureSharingConfirmation(entry, { ...form, expiryMode: 'at_time', expiresAt: new Date(now + 1000) }, options, id, binding, now).expires_at).toBe('2026-10-03T00:00:01.000Z')
   })
   it('accepts only a nonzero canonical opaque confirmation ID from the route', () => {
     expect(canonicalSharingUUID(id)).toBe(id)

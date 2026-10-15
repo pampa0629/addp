@@ -1,5 +1,12 @@
 basePath: /api/v1/manager
 definitions:
+  client.ManagerContentBatch:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/client.ManagerContentDocument'
+        type: array
+    type: object
   client.ManagerContentDocument:
     properties:
       author:
@@ -5759,8 +5766,8 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.content_index.update
-  /runtime/content-documents/{document_id}:
-    put:
+  /runtime/content-documents/batch_update:
+    post:
       consumes:
       - application/json
       description: 仅 addp-meta 可分别覆盖当前 Tenant 的技术或正文完整快照，保留另一部分；持久登记并核验保护版本，外部任务确认成功才返回
@@ -5769,17 +5776,12 @@ paths:
         delivery and verify protection version, return 204 only for proven external
         success; timeout or uncertain submission returns 503 and does not imply cancellation
       parameters:
-      - description: DataItem fingerprint
-        in: path
-        name: document_id
-        required: true
-        type: string
-      - description: 内容文档 | Content document
+      - description: 1–100 项完整快照；指纹不能重复 | 1–100 complete snapshots with distinct fingerprints
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/client.ManagerContentDocument'
+          $ref: '#/definitions/client.ManagerContentBatch'
       responses:
         "204":
           description: No Content
@@ -5802,7 +5804,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 写入技术内容检索投影 | Upsert technical content search projection
+      summary: 批量写入内容检索投影 | Upsert content search projections in a batch
       tags:
       - Manager Runtime
       x-addp-auth-mode: permission

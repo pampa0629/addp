@@ -62,6 +62,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	sharingPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogSharingDecisionCreate)
 	api.GET("/entries/:id/sharing_recipient_candidates", readPermission, sharingPermission, handler.ListSharingRecipientCandidates)
 	api.POST("/entries/:id/sharing_decisions", readPermission, sharingPermission, handler.CreateSharingDecision)
+	api.GET("/entries/:id/sharing_boundary", readPermission, sharingPermission, handler.GetSharingBoundary)
 	api.GET("/entries/:id/sharing_decisions", readPermission, sharingPermission, handler.ListSharingDecisions)
 	api.GET("/entries/:id/sharing_decisions/:decision_id", readPermission, sharingPermission, handler.GetSharingDecision)
 	api.GET("/entries/:id/sharing_decisions/:decision_id/fulfillments", readPermission, sharingPermission, handler.ListSharingDecisionFulfillments)

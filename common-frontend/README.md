@@ -231,7 +231,7 @@ const uri = buildLocator({
 
 资源树请求统一复用 `createAPIClient()` 和宿主已绑定的 AuthStore，支持 401 刷新与单次重试；正常模块路由守卫负责先初始化会话。选择器不创建独立 AuthSession，iframe 内不直接刷新 Cookie。
 
-System 的批准方式配置通过 `adapter` 复用此组件，候选来自实时 Engine Catalog 而非 Meta 扫描；`mode="any"` 配合精确表叶子过滤，不伪造 Meta item ID。结构化源路径来自 Provider 原始事实，locator 仅用于统一选择交互。结构化目标的无损数值路径序列化统一由 `serializeEngineCatalogTarget` 提供，批准方式初始化通过 `serializeEngineApprovalInitialization` 组合调用，System 独立授予复用同一目标序列化；Catalog 和 System 不维护两套实现。
+System 的批准方式配置通过 `adapter` 复用此组件，候选来自实时 Engine Catalog，而不是授权事实；`mode="any"` 配合精确表叶子过滤，不伪造 Meta item ID。结构化源路径来自 Provider 原始事实，locator 仅用于统一选择交互。共享 `observeNativeApprovalBinding` 按既有指纹规则定位候选，经 System 读取 Meta 完整事实后严格比对类型化原生边界；候选指纹与树选择均不是归属或权限证明。目标的无损数值路径序列化由 `serializeEngineCatalogTarget` 统一提供，`serializeEngineApprovalInitialization` 强制携带已观察的数据项身份及预期边界摘要，System 独立授予复用同一绑定校验。Catalog 的业务确认通过其 owner 的 `sharing_boundary` 读取对应绑定；两端不另写序列化实现，也不在失败重试时静默换成新边界。
 
 稳定约束：
 

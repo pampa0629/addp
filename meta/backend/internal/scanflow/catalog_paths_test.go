@@ -2,6 +2,7 @@ package scanflow
 
 import (
 	"context"
+	"github.com/addp/meta/internal/models"
 	"testing"
 )
 
@@ -9,6 +10,8 @@ type catalogPathReporter struct {
 	total   int
 	message string
 }
+
+func (r *catalogPathReporter) Report(models.ScanProgress) {}
 
 func (r *catalogPathReporter) SetTotal(total int) {
 	r.total = total

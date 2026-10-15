@@ -7,6 +7,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// Old native confirmations and handlings are disposable test facts. Never
+// infer a broader DataItem approval from history without a proven boundary.
+func migrateSharingDataItemBindings(tx *gorm.DB) error {
+	if tx.Dialector.Name() != "postgres" || !tx.Migrator().HasTable(&models.SharingDecision{}) || tx.Migrator().HasColumn(&models.SharingDecision{}, "item_fingerprint") {
+		return nil
+	}
+	if err := tx.Exec(`LOCK TABLE catalog.sharing_decisions, catalog.fulfillment_checks IN ACCESS EXCLUSIVE MODE;
+ ALTER TABLE catalog.sharing_decisions DISABLE TRIGGER USER;
+ ALTER TABLE catalog.fulfillment_checks DISABLE TRIGGER USER;
+ DELETE FROM catalog.fulfillment_checks;
+ DELETE FROM catalog.sharing_decisions;
+ ALTER TABLE catalog.sharing_decisions ENABLE TRIGGER USER;
+ ALTER TABLE catalog.fulfillment_checks ENABLE TRIGGER USER;`).Error; err != nil {
+		return fmt.Errorf("replace native sharing test facts: %w", err)
+	}
+	return nil
+}
+
 // Migrate only once, under the schema transaction and exclusive table lock.
 // Existing finite history has unambiguous semantics; dates are never extended.
 func migrateSharingDecisionExpiry(tx *gorm.DB) error {
@@ -33,6 +51,7 @@ func applySharingDecisionConstraints(db *gorm.DB) error {
 			id <> '00000000-0000-0000-0000-000000000000'::uuid AND entry_version > 0 AND engine_id > 0
 			AND confirmed_by > 0 AND confirmer_membership_id > 0 AND authorization_version > 0
 			AND recipient_type IN ('user','project_group') AND recipient_id > 0 AND action = 'read'
+			AND item_fingerprint ~ '^[0-9a-f]{64}$' AND boundary_hash ~ '^[0-9a-f]{64}$'
 			AND self_beneficiary = (recipient_type = 'user' AND recipient_id = confirmed_by)
 			AND (NOT confirmer_in_project_group OR recipient_type = 'project_group')
 			AND btrim(reason) <> '' AND char_length(reason) <= 2000
@@ -52,7 +71,7 @@ func applySharingDecisionConstraints(db *gorm.DB) error {
 				RAISE EXCEPTION 'business sharing decision requires a current eligible entry' USING ERRCODE = '23514';
 			END IF;
 			IF NOT EXISTS (SELECT 1 FROM catalog.source_bindings source WHERE source.tenant_id = NEW.tenant_id AND source.catalog_entry_id = NEW.catalog_entry_id
-				AND source.id = NEW.source_binding_id AND source.is_current AND source.source_status = 'active' AND source.source_module = 'meta' AND source.source_type = 'data_item' AND source.source_version = NEW.source_version)
+				AND source.id = NEW.source_binding_id AND source.is_current AND source.source_status = 'active' AND source.source_module = 'meta' AND source.source_type = 'data_item' AND source.source_identity = NEW.item_fingerprint AND source.source_version = NEW.source_version)
 				OR NOT EXISTS (SELECT 1 FROM catalog.responsibilities owner WHERE owner.tenant_id = NEW.tenant_id AND owner.catalog_entry_id = NEW.catalog_entry_id
 				AND owner.id = NEW.responsibility_id AND owner.role = 'business_owner' AND owner.subject_type = 'user' AND owner.subject_id = NEW.confirmed_by AND owner.status = 'active') THEN
 				RAISE EXCEPTION 'business sharing decision requires current source and business ownership' USING ERRCODE = '23514';

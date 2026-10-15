@@ -68,8 +68,12 @@ func prepareSharingFulfillment(ctx context.Context, tx *gorm.DB, tenantID int64,
 	// Catalog stores the complete exact request, not a second decision or
 	// System outcome. Transport fields come from the future trusted consumer;
 	// immutable business parameters come only from owner-persisted history.
-	expected := sharingFulfillmentBinding{input.CallerPrincipalID, input.Operator, originalPath, decision.ID, input.RequirementVersion,
-		decision.RecipientType, decision.RecipientID, decision.Action, decision.ExpiryMode, decision.ExpiresAt}
+	expected := sharingFulfillmentBinding{CallerPrincipalID: input.CallerPrincipalID, Operator: input.Operator, Path: originalPath,
+		ItemFingerprint: decision.ItemFingerprint, BoundaryHash: decision.BoundaryHash, DecisionID: decision.ID, RequirementVersion: input.RequirementVersion,
+		RecipientType: decision.RecipientType, RecipientID: decision.RecipientID, Action: decision.Action, ExpiryMode: decision.ExpiryMode, ExpiresAt: decision.ExpiresAt}
+	if expected.Validate() != nil {
+		return nil, false, ErrSharingDecisionConflict
+	}
 	binding, err := json.Marshal(expected)
 	if err != nil {
 		return nil, false, err

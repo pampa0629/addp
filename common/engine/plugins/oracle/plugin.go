@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -52,13 +53,17 @@ var (
 )
 
 var oracleSystemSchemas = map[string]struct{}{
-	"ANONYMOUS": {}, "APPQOSSYS": {}, "AUDSYS": {}, "CTXSYS": {}, "DBSNMP": {},
+	"ANONYMOUS": {}, "APEX_030200": {}, "APEX_040200": {}, "APEX_PUBLIC_USER": {},
+	"APPQOSSYS": {}, "AUDSYS": {}, "CTXSYS": {}, "DBSNMP": {},
 	"DIP": {}, "DVF": {}, "DVSYS": {}, "GGSYS": {}, "GSMADMIN_INTERNAL": {},
-	"GSMCATUSER": {}, "GSMUSER": {}, "LBACSYS": {}, "MDDATA": {}, "MDSYS": {},
+	"EXFSYS": {}, "FLOWS_FILES": {}, "GSMCATUSER": {}, "GSMUSER": {},
+	"LBACSYS": {}, "MDDATA": {}, "MDSYS": {}, "MGMT_VIEW": {},
 	"OJVMSYS": {}, "OLAPSYS": {}, "ORACLE_OCM": {}, "ORDDATA": {}, "ORDPLUGINS": {},
-	"ORDSYS": {}, "OUTLN": {}, "REMOTE_SCHEDULER_AGENT": {}, "SDE": {}, "SI_INFORMTN_SCHEMA": {},
-	"SYS": {}, "SYSBACKUP": {}, "SYSDG": {}, "SYSKM": {}, "SYSRAC": {}, "SYSTEM": {},
-	"WMSYS": {}, "XDB": {}, "XS$NULL": {},
+	"ORDSYS": {}, "OUTLN": {}, "OWBSYS": {}, "OWBSYS_AUDIT": {},
+	"REMOTE_SCHEDULER_AGENT": {}, "SDE": {}, "SI_INFORMTN_SCHEMA": {},
+	"SPATIAL_CSW_ADMIN_USR": {}, "SPATIAL_WFS_ADMIN_USR": {},
+	"SYS": {}, "SYSBACKUP": {}, "SYSDG": {}, "SYSKM": {}, "SYSMAN": {}, "SYSRAC": {}, "SYSTEM": {},
+	"TSMSYS": {}, "WMSYS": {}, "XDB": {}, "XS$NULL": {},
 }
 
 var oracleTableNativeKeys = datatype.NewNativeAllowedKeys("object_type")
@@ -255,8 +260,24 @@ type oracleNamespaceRow struct {
 }
 
 func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.EngineCatalogPath) ([]plugin.EngineCatalogEntry, error) {
+	// Inspect the native dictionary before constructing the sole catalog query.
+	// Oracle 11g does not expose ALL_USERS.ORACLE_MAINTAINED. A failed probe is
+	// an error, never permission to retry without the native system-user filter.
+	var maintenanceColumnCount int
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM all_tab_columns
+		 WHERE owner = 'SYS' AND table_name = 'ALL_USERS'
+		   AND column_name = 'ORACLE_MAINTAINED'
+	`).Scan(&maintenanceColumnCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to inspect Oracle user dictionary: %w", err)
+	}
+	systemSchemas := make([]string, 0, len(oracleSystemSchemas))
+	for schema := range oracleSystemSchemas {
+		systemSchemas = append(systemSchemas, schema)
+	}
+	sort.Strings(systemSchemas)
 	var rows []oracleNamespaceRow
-	err := db.WithContext(ctx).Raw(`
+	query := `
 		SELECT u.username AS name,
 		       COUNT(o.object_name) AS leaf_count
 		  FROM all_users u
@@ -278,11 +299,17 @@ func (p *OraclePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plu
 		            AND internal_comment.table_name = o.object_name
 		            AND (internal_comment.comments LIKE ? OR internal_comment.comments = ?)
 		       )
-		 WHERE u.oracle_maintained = 'N'
+		 WHERE u.username NOT IN ?
+	`
+	if maintenanceColumnCount > 0 {
+		query += " AND u.oracle_maintained = 'N'"
+	}
+	query += `
 		 GROUP BY u.username
 		HAVING u.username = USER OR COUNT(o.object_name) > 0
 		 ORDER BY u.username
-	`, InternalCaptureTableCommentPrefix+"%", InternalTransferApplyTableComment).Scan(&rows).Error
+	`
+	err := db.WithContext(ctx).Raw(query, InternalCaptureTableCommentPrefix+"%", InternalTransferApplyTableComment, systemSchemas).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Oracle schemas: %w", err)
 	}

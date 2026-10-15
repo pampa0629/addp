@@ -432,3 +432,9 @@ other = "暂时无法核验数据项授权边界，请检查 Meta 和 System 服
 
 [system.engine_access.authorization_target_not_found]
 other = "授权目标不存在或不属于当前引擎"
+
+[system.engine_access.authorization_boundary_changed]
+other = "数据项授权边界已变化、缺失或尚未完整识别，请重新核对后明确批准。"
+
+[system.engine_access_approval_requirement.not_configured]
+other = "本数据项尚未配置批准方式，请由有权限的人员明确配置后再办理。"

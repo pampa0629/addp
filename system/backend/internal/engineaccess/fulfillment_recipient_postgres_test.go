@@ -145,7 +145,7 @@ func exerciseFulfillmentRecipients(t *testing.T, db *gorm.DB, identity *iam.Repo
 		receiver, _ := newUser(t, time.Hour)
 		operator, membershipExpiry := newUser(t, time.Hour)
 		seedDelegation(t, operator.MembershipID, membershipExpiry.Add(-time.Second))
-		roles := iam.NewTenantRoleService(identity, time.Now)
+		roles := iam.NewTenantRoleService(identity, testDatabaseClock(t, db))
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: base.TenantID,
 			RoleKey: "custom.recipient_lock_order", Name: "Recipient lock order", ScopeTypes: []string{"tenant"},
 			PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: operator.PrincipalID})

@@ -47,6 +47,7 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 正在刷新的节点
     refreshingLocators: new Set(),
+    scanExecutions: {},
 
     // 预览数据
     previewData: null,
@@ -318,8 +319,16 @@ export const useExplorerStore = defineStore('explorer', {
         const result = scanDepth === 'deep' ? { run: payload } : payload
         const run = result?.run || result?.data?.run
         if (run) {
+          this.scanExecutions[locator] = run
           notifyRefreshHook(hooks.onSubmitted, run)
-          result.run = await waitForScanRun(run, hooks)
+          result.run = await waitForScanRun(run, {
+            ...hooks,
+            onProgress: (execution) => {
+              this.scanExecutions[locator] = execution
+              notifyRefreshHook(hooks.onProgress, execution)
+            }
+          })
+          this.scanExecutions[locator] = result.run
           notifyRefreshHook(hooks.onScanCompleted, result.run)
         }
 
@@ -327,6 +336,14 @@ export const useExplorerStore = defineStore('explorer', {
 
         return result
       } catch (error) {
+        if (error.execution) {
+          this.scanExecutions[locator] = error.execution
+          try {
+            await this.loadNodeChildren(locator, true)
+          } catch (reloadError) {
+            console.error('扫描失败后回读节点事实失败:', reloadError)
+          }
+        }
         console.error('刷新节点失败:', error)
         throw error
       } finally {
@@ -1004,8 +1021,9 @@ async function waitForScanRun(run, hooks = {}) {
       return latest
     }
     if (FAILED_SCAN_STATUSES.has(status)) {
-      const message = latest?.error_message || latest?.error || latest?.progress_message || latest?.current_step || status
-      throw new Error(message)
+      const error = new Error('scan execution failed')
+      error.execution = latest
+      throw error
     }
     if (!ACTIVE_SCAN_STATUSES.has(status) && status) {
       return latest

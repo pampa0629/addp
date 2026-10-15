@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -27,6 +28,7 @@ type SourceDeny struct {
 	TenantID                  int64           `json:"-"`
 	EngineID                  int64           `json:"engine_id,string" swaggertype:"string"`
 	CatalogPath               json.RawMessage `gorm:"type:jsonb" json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint           string          `json:"item_fingerprint"`
 	RecipientType             string          `json:"recipient_type"`
 	RecipientID               int64           `json:"recipient_id,string" swaggertype:"string"`
 	Action                    string          `json:"action"`
@@ -45,6 +47,7 @@ type CreateDenyInput struct {
 	EngineID                   int64
 	DenyID                     uuid.UUID
 	CatalogPath                engineplugin.EngineCatalogPath
+	ItemFingerprint            string
 	RecipientType              string
 	RecipientID                int64
 	Action, ExpiryMode, Reason string
@@ -53,6 +56,10 @@ type CreateDenyInput struct {
 }
 
 func prepareSourceDeny(input CreateDenyInput) (*SourceDeny, error) {
+	candidate, identityErr := authorizationfacts.NativeCandidateFingerprint(input.CatalogPath)
+	if identityErr != nil || candidate != input.ItemFingerprint {
+		return nil, commonapi.ErrBadRequest
+	}
 	path, err := shared.EncodeSharingTarget(input.CatalogPath)
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	if err != nil || expiryErr != nil || input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID ||
@@ -61,13 +68,13 @@ func prepareSourceDeny(input CreateDenyInput) (*SourceDeny, error) {
 		return nil, commonapi.ErrBadRequest
 	}
 	return &SourceDeny{DenyID: input.DenyID, TenantID: input.Actor.TenantID, EngineID: input.EngineID,
-		CatalogPath: path, RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
+		CatalogPath: path, ItemFingerprint: input.ItemFingerprint, RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
 		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, Reason: strings.TrimSpace(input.Reason),
 		EstablishedByPrincipalID: input.Actor.PrincipalID, EstablishedByMembershipID: input.Actor.MembershipID}, nil
 }
 
 func sameSourceDeny(a, b *SourceDeny) bool {
-	return a.DenyID == b.DenyID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && equalJSON(a.CatalogPath, b.CatalogPath) &&
+	return a.DenyID == b.DenyID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && a.ItemFingerprint == b.ItemFingerprint && equalJSON(a.CatalogPath, b.CatalogPath) &&
 		a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID && a.Action == b.Action && a.Reason == b.Reason &&
 		a.EstablishedByPrincipalID == b.EstablishedByPrincipalID && a.EstablishedByMembershipID == b.EstablishedByMembershipID &&
 		shared.EqualSharingExpiry(a.ExpiryMode, a.ExpiresAt, b.ExpiryMode, b.ExpiresAt)
@@ -92,6 +99,30 @@ func (s *Service) CreateDeny(ctx context.Context, input CreateDenyInput) (*Sourc
 	}
 	recipient := &fulfillmentRequest{TenantID: input.Actor.TenantID, RecipientType: input.RecipientType, RecipientID: input.RecipientID}
 	var result *SourceDeny
+	// Existing identity facts allow offline restriction and historical replay.
+	// A new unknown identity must first be proven by Meta, outside IAM locks.
+	known := false
+	err = s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessDenyCreate, false,
+		func(tx *Repository, check func() error) error {
+			if err := tx.db.WithContext(ctx).Raw(`SELECT EXISTS (
+ SELECT 1 FROM system.engine_access_grants WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
+ UNION ALL SELECT 1 FROM system.engine_access_approval_requirements WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
+ UNION ALL SELECT 1 FROM system.engine_access_denies WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb)`,
+				row.TenantID, row.EngineID, row.ItemFingerprint, string(row.CatalogPath),
+				row.TenantID, row.EngineID, row.ItemFingerprint, string(row.CatalogPath),
+				row.TenantID, row.EngineID, row.ItemFingerprint, string(row.CatalogPath)).Scan(&known).Error; err != nil {
+				return err
+			}
+			return check()
+		})
+	if err != nil {
+		return nil, err
+	}
+	if !known {
+		if _, err := s.resolveReadBindings(ctx, row.TenantID, []engineplugin.EngineCatalogPath{input.CatalogPath}); err != nil {
+			return nil, err
+		}
+	}
 	err = s.withEngineManagementRecipientScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessDenyCreate,
 		false, recipient, func(tx *Repository, check func() error, subject *lockedFulfillmentRecipient) error {
 			// Command ID before target, consistent with existing fulfillment writes.

@@ -20,7 +20,7 @@ func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plug
 	if err != nil {
 		return nil, fmt.Errorf("build postgresql spatial feature dsn: %w", err)
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open postgresql spatial feature connection: %w", err)
 	}

@@ -182,7 +182,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = "PASS") -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -208,6 +208,10 @@ class ModuleGateTest(unittest.TestCase):
                 "ADDP_GATE_TEST_GO_OUTPUT": output,
             })
             environment.pop("ADDP_TEST_EXECUTION_POSTGRES_DSN", None)
+            for name in tuple(environment):
+                if name.startswith("ADDP_TEST_HIGHGO_"):
+                    environment.pop(name)
+            environment.update(extra_env or {})
             result = subprocess.run(
                 ["bash", str(repository / "scripts/test/common-postgres-gate.sh"), *arguments],
                 cwd=repository, env=environment, capture_output=True, text=True,
@@ -222,6 +226,8 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertIn("./engine/plugins/highgo", calls[0])
+        self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
         self.assertIn("./exportartifact", calls[2])
         self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
@@ -234,6 +240,38 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("-run ^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_highgo_scope_requires_explicit_native_target(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "highgo-write"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("./engine/plugins/highgo -run ^TestIntegrationHighGoTableWrite$", calls[0])
+        result, calls = self._run_common_postgres_group(["--highgo-native"])
+        self.assertEqual(2, result.returncode)
+        self.assertEqual([], calls)
+        native_args = ["--test", "highgo-write", "--highgo-native"]
+        result, calls = self._run_common_postgres_group(native_args)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("ADDP_TEST_HIGHGO_HOST", result.stderr)
+        self.assertEqual([], calls)
+        native_env = {
+            "ADDP_TEST_HIGHGO_HOST": "database.example.invalid",
+            "ADDP_TEST_HIGHGO_PORT": "5866",
+            "ADDP_TEST_HIGHGO_DATABASE": "explicit_target",
+            "ADDP_TEST_HIGHGO_USER": "fixture-user",
+            "ADDP_TEST_HIGHGO_PASSWORD": "fixture-password",
+        }
+        result, calls = self._run_common_postgres_group(native_args, extra_env=native_env)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertNotIn("./engine/plugins/postgresql", calls[0])
+        self.assertIn("Native HighGo isolated write group passed", result.stdout)
+        result, _ = self._run_common_postgres_group(native_args, "--- SKIP: fixture", native_env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("refuses skipped tests", result.stderr)
+        result, _ = self._run_common_postgres_group(native_args, "testing: warning: no tests to run\nPASS", native_env)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("requires the real write contract test", result.stderr)
 
     def test_common_postgres_group_rejects_skips_and_unknown_groups(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"], "--- SKIP: fixture")

@@ -61,6 +61,7 @@ HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh 
 - TiDB SQL: `4000`
 - openGauss SQL: `5435`（容器端口 `5432`）
 - KingbaseES SQL: `5436`（容器端口 `54321`，仅 owner-managed disposable Business 样例）
+- 瀚高 V4.5 SQL: `5866`（容器端口 `5866`，独立 `highgo` profile，仅绑定 `127.0.0.1`，配置归 Business `HIGHGO_PORT`）
 - 达梦 DM8 SQL: `5236`（容器端口 `5236`，ARM64 官方介质 disposable 数据库，以 `engine_type=dameng` 登记）
 
 来源：`business/docker-compose.yml`。常规 Business 服务可通过 `business/.env` 指定首选宿主机端口；KingbaseES 与 DM8 技术夹具不进入该文件，只分别接受调用独立 profile 时当前 shell 中的 `KINGBASE_PORT`、`DAMENG_PORT`。

@@ -76,7 +76,7 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryReadSet(
 	if err != nil {
 		return nil, fmt.Errorf("%w: build PostgreSQL connection: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open(p.sqlDriverName(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("%w: open PostgreSQL catalog connection: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}

@@ -40,7 +40,7 @@ func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plug
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Conn
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open(p.sqlDriverName(), connStr)
 	if err != nil {
 		return err
 	}

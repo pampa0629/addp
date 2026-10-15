@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func exerciseFulfillmentRuntimeRecovery(t *testing.T, db *gorm.DB, request fulfi
 			t.Fatal(err)
 		}
 		actor := FulfillmentRuntimeActor{Actor: Actor{TenantID: request.TenantID, PrincipalID: principal.ID, MembershipID: member.ID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, ClientID: "addp-catalog"}
-		binding := shared.SharingFulfillmentBinding{CallerPrincipalID: request.CallerPrincipalID,
+		binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(request.Path).ItemFingerprint, BoundaryHash: factstest.Binding(request.Path).BoundaryHash, CallerPrincipalID: request.CallerPrincipalID,
 			Operator: shared.SharingFulfillmentOperator{PrincipalID: request.Operator.PrincipalID, MembershipID: request.Operator.MembershipID, AuthorizationVersion: request.Operator.AuthorizationVersion},
 			Path:     request.Path, DecisionID: request.DecisionID, RequirementVersion: request.RequirementVersion,
 			RecipientType: request.RecipientType, RecipientID: request.RecipientID, Action: request.Action, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt}

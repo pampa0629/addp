@@ -1001,6 +1001,7 @@
     },
     "explorer": {
       "nodeScan": {
+        "currentStatusLabel": "Current execution status",
         "statusLabel": "Latest scope scan status",
         "depthLabel": "Completed scan depth",
         "successTimeLabel": "Last successful scan time",
@@ -1081,6 +1082,35 @@
       "scanSubmitting": "Submitting background scan.",
       "scanSubmitted": "Background scan submitted. Waiting for completion.",
       "scanRunning": "Background scan is running.",
+      "scanProgress": {
+        "totalPending": "Total pending",
+        "files": "Discovered {files} files and {directories} directories",
+        "filesKnown": "{files} files, {directories} directories in total",
+        "items": "Processed {completed}/{total} data items",
+        "itemsPending": "Processed {completed} data items; total pending",
+        "results": "Succeeded {succeeded}, failed {failed}",
+        "current": "Current: {path}",
+        "bytes": "Content fingerprint read {read} / {total}",
+        "timing": "Elapsed {elapsed}; since last progress {idle}",
+        "noProgress": "No work progress received yet",
+        "stale": "No new progress received; check the current file or execution monitor",
+        "itemRatio": "Data item processing ratio",
+        "phase": {
+          "discovering": "Discovering files",
+          "identifying": "Identifying data items",
+          "processing": "Processing data items",
+          "finalizing": "Saving scan results"
+        },
+        "operation": {
+          "listing": "Listing directory",
+          "identifying": "Identifying data items",
+          "enriching": "Extracting deep attributes",
+          "hashing": "Reading content fingerprint",
+          "extracting": "Extracting document content",
+          "saving": "Saving metadata",
+          "indexing": "Submitting index projection"
+        }
+      },
       "scanWaiting": "Waiting for scan progress update.",
       "treeRefreshing": "Scan completed. Refreshing the resource tree.",
       "scanCompleted": "Scan completed and the resource tree has been refreshed.",

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -28,13 +29,14 @@ var (
 // No approver allowlist or editable copy of Catalog responsibility facts.
 // A successor is verified only at handoff and recorded in its audit event.
 type approvalRequirement struct {
-	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
-	TenantID    int64
-	EngineID    int64
-	CatalogPath json.RawMessage `gorm:"type:jsonb"`
-	Mode        string
-	Version     int64
-	UpdatedAt   time.Time
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TenantID        int64
+	EngineID        int64
+	CatalogPath     json.RawMessage `gorm:"type:jsonb"`
+	ItemFingerprint string
+	Mode            string
+	Version         int64
+	UpdatedAt       time.Time
 }
 
 func (approvalRequirement) TableName() string { return "system.engine_access_approval_requirements" }
@@ -73,8 +75,16 @@ type approvalRequirementChange struct {
 
 func (r *Repository) approvalRequirement(ctx context.Context, tenantID int64, engineID int64, path json.RawMessage) (*approvalRequirement, error) {
 	var row approvalRequirement
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND engine_id = ? AND target_digest = sha256(convert_to(?::jsonb::text, 'UTF8')) AND catalog_path = ?::jsonb",
-		tenantID, engineID, string(path), string(path)).Take(&row).Error
+	var native engineplugin.EngineCatalogPath
+	if json.Unmarshal(path, &native) != nil {
+		return nil, errApprovalRequirementInput
+	}
+	fingerprint, err := authorizationfacts.NativeCandidateFingerprint(native)
+	if err != nil {
+		return nil, errApprovalRequirementInput
+	}
+	err = r.db.WithContext(ctx).Where("tenant_id = ? AND engine_id = ? AND target_digest = sha256(convert_to(?, 'UTF8')) AND item_fingerprint = ?",
+		tenantID, engineID, fingerprint, fingerprint).Take(&row).Error
 	return &row, err
 }
 
@@ -140,8 +150,12 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 		return row, nil
 	}
 	if creating {
+		fingerprint, err := authorizationfacts.NativeCandidateFingerprint(input.Path)
+		if err != nil {
+			return nil, errApprovalRequirementInput
+		}
 		row = &approvalRequirement{ID: uuid.New(), TenantID: input.TenantID, EngineID: int64(input.Path.EngineID),
-			CatalogPath: path, Mode: input.Mode, Version: 1, UpdatedAt: now}
+			CatalogPath: path, ItemFingerprint: fingerprint, Mode: input.Mode, Version: 1, UpdatedAt: now}
 		if err := r.db.WithContext(ctx).Create(row).Error; err != nil {
 			// Hash collisions never merge different exact paths into one identity.
 			var pgErr *pgconn.PgError

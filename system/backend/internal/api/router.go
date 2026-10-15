@@ -132,8 +132,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
+	var metaFacts engineaccess.AuthorizationFactsReader
 	if err := RegisterIAMManagerProfileAuthorizationRoutes(api, runtime, &IAMManagerProfileAuthorizationHandler{
-		service: iam.NewManagerProfileAuthorizationService(runtime.Repository, engineaccess.VerifyExecutionSourceRead),
+		service: iam.NewManagerProfileAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
 	}); err != nil {
 		panic(err)
 	}
@@ -146,7 +147,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			panic("invalid System fulfillment credential configuration")
 		}
 		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
-		authorizationFactsService.WithAuthorizationFactsReader(commonClient.NewMetaClient(cfg.MetaServiceURL, tokens))
+		metaFacts = commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
+		authorizationFactsService.WithAuthorizationFactsReader(metaFacts)
+		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
 	}
 	if err := RegisterEngineAccessAuthorizationFactsRoutes(api, runtime, &EngineAccessAuthorizationFactsHandler{service: authorizationFactsService}); err != nil {
 		panic(err)
@@ -158,7 +161,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(err)
 	}
 	if err := RegisterEngineAccessHandlingScopeRoutes(api, runtime, &EngineAccessHandlingScopeHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
+		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts),
 	}); err != nil {
 		panic(err)
 	}
@@ -168,7 +171,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(err)
 	}
 	if err := RegisterEngineAccessApprovalRequirementRoutes(api, runtime, &EngineAccessApprovalRequirementHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
+		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts),
 	}); err != nil {
 		panic(fmt.Errorf("register engine approval requirement routes: %w", err))
 	}
@@ -182,12 +185,13 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 	if err := RegisterEngineAccessGrantRoutes(api, runtime, &EngineAccessGrantHandler{
 		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).
+			WithAuthorizationFactsReader(metaFacts).
 			WithIndependentTargetVerifier(service.NewIndependentGrantTargetVerifier(engineService)),
 	}); err != nil {
 		panic(fmt.Errorf("register engine grant routes: %w", err))
 	}
 	if err := RegisterEngineAccessDenyRoutes(api, runtime, &EngineAccessDenyHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), nil),
+		service: engineaccess.NewService(engineaccess.NewRepository(db), nil).WithAuthorizationFactsReader(metaFacts),
 	}); err != nil {
 		panic(fmt.Errorf("register engine deny routes: %w", err))
 	}

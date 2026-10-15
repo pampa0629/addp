@@ -432,3 +432,9 @@ other = "Unable to verify the DataItem authorization boundary; check Meta and Sy
 
 [system.engine_access.authorization_target_not_found]
 other = "Authorization target does not exist or does not belong to this engine"
+
+[system.engine_access.authorization_boundary_changed]
+other = "The DataItem boundary has changed, is missing or is incomplete. Review it before explicitly approving again."
+
+[system.engine_access_approval_requirement.not_configured]
+other = "No approval mode is configured for this DataItem. An authorized operator must explicitly configure it before fulfillment."

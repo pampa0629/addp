@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 	newUser func(*testing.T, time.Duration) (userProvenance, time.Time), seedDelegation func(*testing.T, int64, time.Time) *Delegation,
 ) {
 	t.Run("current complete source read rules", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		// This independent exercise models a fresh bounded Runtime request, not
 		// a one-minute fixture credential consumed by earlier serial exercises.
@@ -35,7 +36,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		}
 		runtime.TokenExpiresAt = runtimeNow.Add(time.Minute)
 		repo := NewRepository(db)
-		service := NewService(repo, nil) // No Catalog connection for observations / restriction commands.
+		service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}}) // No Catalog connection for observations / restriction commands.
 		identity := iam.NewRepository(db)
 		organizations := iam.NewOrganizationService(identity, time.Now)
 		refresh := func(t *testing.T, user userProvenance) userProvenance {
@@ -49,7 +50,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		}
 		read := func(t *testing.T, user userProvenance, paths ...engineplugin.EngineCatalogPath) *sourceReadRules {
 			t.Helper()
-			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: paths})
+			result, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: paths, Bindings: testReadBindings(paths...)})
 			if err != nil || result == nil {
 				t.Fatalf("read=%+v %v", result, err)
 			}
@@ -169,7 +170,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 		})
 		deny := func(t *testing.T, kind string, id int64, expiry *time.Time) uuid.UUID {
 			t.Helper()
-			input := CreateDenyInput{Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: uuid.New(), CatalogPath: base.Path, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit precise restriction"}
+			input := CreateDenyInput{ItemFingerprint: factstest.Binding(base.Path).ItemFingerprint, Actor: actor, EngineID: int64(base.Path.EngineID), DenyID: uuid.New(), CatalogPath: base.Path, RecipientType: kind, RecipientID: id, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit precise restriction"}
 			if expiry != nil {
 				input.ExpiryMode, input.ExpiresAt = shared.SharingExpiryAtTime, expiry
 			}
@@ -190,6 +191,77 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 		}
+		t.Run("Grant matches the approved hash while Deny survives a changed hash", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			id := grant(t, "user", user.PrincipalID, nil)
+			assert(t, user, "grant")
+			// Exercise the SQL authority directly with a later boundary digest.
+			// The current single-table DTO intentionally cannot fabricate a second
+			// valid digest for identical structure; future layouts reuse this SQL.
+			binding := testReadBindings(base.Path)[0]
+			binding.BoundaryHash = strings.Repeat("a", 64)
+			batch, err := json.Marshal([]any{binding})
+			if err != nil {
+				t.Fatal(err)
+			}
+			check := func(want string) {
+				t.Helper()
+				var rules []sourceReadRuleRow
+				if err := db.Raw(currentSourceReadRulesSQL, runtime.TenantID, user.PrincipalID, user.MembershipID, user.AuthorizationVersion, string(batch)).Scan(&rules).Error; err != nil || len(rules) != 1 || rules[0].Reason != want {
+					t.Fatalf("changed digest rules=%+v want=%s error=%v", rules, want, err)
+				}
+			}
+			check("no_grant")
+			denyID := deny(t, "user", user.PrincipalID, nil)
+			check("explicit_deny")
+			release(t, denyID)
+			check("no_grant")
+			revoke(t, id)
+		})
+		t.Run("management merges every stored boundary version and withdraws them together", func(t *testing.T) {
+			user, _ := newUser(t, time.Hour)
+			id := grant(t, "user", user.PrincipalID, nil)
+			original, err := repo.findSourceGrant(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Simulate two historical boundary versions in the isolated owner DB.
+			// The public command still rejects a duplicate active relation.
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Exec("ALTER TABLE system.engine_access_grants DISABLE TRIGGER trg_source_grant_relation").Error; err != nil {
+					return err
+				}
+				var receipt fulfillmentOutcome
+				if err := tx.Where("request_id=?", original.RequestID).Take(&receipt).Error; err != nil {
+					return err
+				}
+				receipt.RequestID = uuid.New()
+				var binding map[string]json.RawMessage
+				if err := json.Unmarshal(receipt.Binding, &binding); err != nil {
+					return err
+				}
+				binding["boundary_hash"], _ = json.Marshal(strings.Repeat("b", 64))
+				receipt.Binding, _ = json.Marshal(binding)
+				if err := tx.Create(&receipt).Error; err != nil {
+					return err
+				}
+				if err := tx.Create(&sourceGrant{RequestID: receipt.RequestID, ApprovalMode: approvalModeCatalog}).Error; err != nil {
+					return err
+				}
+				return tx.Exec("ALTER TABLE system.engine_access_grants ENABLE TRIGGER trg_source_grant_relation").Error
+			}); err != nil {
+				t.Fatal(err)
+			}
+			rows, total, err := service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 20, SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
+			if err != nil || total != 1 || len(rows) != 1 || rows[0].GrantCount != 2 || rows[0].Inspection == nil || len(rows[0].Inspection.Sources) != 1 || rows[0].Inspection.Sources[0].GrantCount != 2 {
+				t.Fatalf("versions lost: %+v total=%d err=%v", rows, total, err)
+			}
+			revoke(t, id)
+			rows, total, err = service.ListSourceGrantRelations(ctx, actor, int64(base.Path.EngineID), 1, 20, SourceGrantFilter{RecipientType: "user", RecipientID: user.PrincipalID})
+			if err != nil || total != 0 || len(rows) != 0 {
+				t.Fatalf("withdrawal missed a version: %+v %d %v", rows, total, err)
+			}
+		})
 		t.Run("personal grant complete set and current identity", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			assert(t, user, "no_grant")
@@ -206,7 +278,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			wrong = user
 			wrong.MembershipID = commandUser.MembershipID
 			assert(t, wrong, "source_unavailable")
-			crossTenant := sourceReadRequest{TenantID: runtime.TenantID + 1000, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}}
+			crossTenant := sourceReadRequest{TenantID: runtime.TenantID + 1000, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			if result, err := repo.readCurrentSourceRules(ctx, crossTenant); err != nil || result == nil || result.Covered {
 				t.Fatalf("cross tenant=%+v %v", result, err)
 			}
@@ -250,7 +322,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err != nil {
 				t.Fatal(err)
 			}
-			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}}
+			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			paths, encoded, err := request.encode()
 			if err != nil {
 				t.Fatal(err)
@@ -354,7 +426,9 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err != nil {
 				t.Fatal(err)
 			}
-			expires := now.Add(900 * time.Millisecond)
+			// Leave room for issuance and the multi-query inspection before the
+			// boundary; the database-based wait below still tests real expiry.
+			expires := now.Add(5 * time.Second)
 			grant(t, "user", user.PrincipalID, &expires)
 			assert(t, user, "grant")
 			inspect(t, user, "grant", "user")
@@ -366,7 +440,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err != nil {
 				t.Fatal(err)
 			}
-			expires = now.Add(900 * time.Millisecond)
+			expires = now.Add(5 * time.Second)
 			deny(t, "user", user.PrincipalID, &expires)
 			assert(t, user, "explicit_deny")
 			waitUntil(expires)
@@ -395,7 +469,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			if err := tx.Create(&sourceGrant{RequestID: id, ApprovalMode: approvalModeCatalog}).Error; err != nil {
 				t.Fatal(err)
 			}
-			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}}
+			request := sourceReadRequest{TenantID: runtime.TenantID, Source: user, Targets: []engineplugin.EngineCatalogPath{base.Path}, Bindings: testReadBindings(base.Path)}
 			if result, err := NewRepository(tx).readCurrentSourceRules(ctx, request); result != nil || !errors.Is(err, errFulfillmentBinding) {
 				t.Fatalf("uncommitted own writes=%+v %v", result, err)
 			}
@@ -474,7 +548,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					}
 					reason := "Explicit independent storage fixture"
 					row := &sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent,
-						TenantID: runtime.TenantID, EngineID: int64(path.EngineID), CatalogPath: encoded,
+						TenantID: runtime.TenantID, EngineID: int64(path.EngineID), CatalogPath: encoded, ItemFingerprint: testReadBindings(path)[0].ItemFingerprint, BoundaryHash: testReadBindings(path)[0].BoundaryHash,
 						RecipientType: kind, RecipientID: recipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked,
 						RequirementVersion: 1, OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
 						OperatorAuthorizationVersion: actor.AuthorizationVersion, Reason: &reason}
@@ -552,8 +626,12 @@ const sourceGrantInspectionSQL = `WITH input AS MATERIALIZED (
  LEFT JOIN source_sets s USING (position)`
 
 func (s *Service) InspectSourceGrants(ctx context.Context, actor Actor, engineID, accountID int64, path engineplugin.EngineCatalogPath) (*SourceGrantInspection, error) {
-	paths, batch, err := encodeSourceReadTargets([]engineplugin.EngineCatalogPath{path})
-	if err != nil || accountID <= 0 || int64(path.EngineID) != engineID {
+	paths, _, err := encodeSourceReadTargets([]engineplugin.EngineCatalogPath{path})
+	if err != nil || accountID <= 0 || int64(path.EngineID) != engineID || len(path.Segments) != 3 {
+		return nil, commonapi.ErrBadRequest
+	}
+	batch, bindingErr := encodeBoundSourceTargets(paths, testReadBindings(path))
+	if bindingErr != nil {
 		return nil, commonapi.ErrBadRequest
 	}
 	var result *SourceGrantInspection

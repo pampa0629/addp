@@ -94,7 +94,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox } from 'element-plus'
-import { ResourceTreePicker, serializeEngineApprovalInitialization, openConsoleRoute } from '@common-ui'
+import { ResourceTreePicker, serializeEngineApprovalInitialization, observeNativeApprovalBinding, openConsoleRoute } from '@common-ui'
 import { enginesAPI } from '../../api/engines'
 import client from '../../api/client'
 import { useAuthStore } from '../../store/auth'
@@ -247,7 +247,8 @@ async function initializeBusiness() {
   const epoch = generation.value, paths = [...newBusinessTargets.value]
   saving.value = true; error.value = ''
   try {
-    const commands = paths.map(path => serializeEngineApprovalInitialization(path, 'catalog', reason.value))
+    const commands = await Promise.all(paths.map(async path => serializeEngineApprovalInitialization(path, 'catalog', reason.value,
+      await observeNativeApprovalBinding(path, enginesAPI.getAuthorizationFacts))))
     await ElMessageBox.confirm(t('system.engine.dataAuthorization.businessBoundary'), t('system.engine.dataAuthorization.prepareBusiness'), { confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel'), customClass: 'addp-message-box' })
     if (epoch !== generation.value) return
     for (const command of commands) {

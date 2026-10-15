@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
 )
@@ -20,6 +21,8 @@ type SharingFulfillmentBinding struct {
 	CallerPrincipalID  int64                      `json:"caller_principal_id,string" swaggertype:"string"`
 	Operator           SharingFulfillmentOperator `json:"operator"`
 	Path               plugin.EngineCatalogPath   `json:"path"`
+	ItemFingerprint    string                     `json:"item_fingerprint"`
+	BoundaryHash       string                     `json:"boundary_hash"`
 	DecisionID         uuid.UUID                  `json:"decision_id"`
 	RequirementVersion int64                      `json:"requirement_version,string" swaggertype:"string"`
 	RecipientType      string                     `json:"recipient_type"`
@@ -36,6 +39,9 @@ func (b SharingFulfillmentBinding) Validate() error {
 		return errors.New("invalid sharing fulfillment binding")
 	}
 	if _, err := EncodeSharingTarget(b.Path); err != nil {
+		return err
+	}
+	if err := (authorizationfacts.Binding{ItemFingerprint: b.ItemFingerprint, BoundaryHash: b.BoundaryHash, NativeTarget: b.Path}).Validate(); err != nil {
 		return err
 	}
 	_, err := NormalizeSharingExpiry(b.ExpiryMode, b.ExpiresAt)

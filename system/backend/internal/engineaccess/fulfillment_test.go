@@ -13,7 +13,8 @@ import (
 
 func testFulfillmentRequest() fulfillmentRequest {
 	expiresAt := time.Now().Add(time.Hour)
-	return fulfillmentRequest{RequestID: uuid.New(), TenantID: 7, CallerPrincipalID: 9,
+	binding := testReadBindings(engineplugin.TabularItemPath(12, "schema", "业务.域", " 表/名 "))[0]
+	return fulfillmentRequest{ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, RequestID: uuid.New(), TenantID: 7, CallerPrincipalID: 9,
 		Operator: userProvenance{PrincipalID: 17, MembershipID: 18, AuthorizationVersion: 2},
 		Path:     engineplugin.TabularItemPath(12, "schema", "业务.域", " 表/名 "), DecisionID: uuid.New(),
 		RequirementVersion: 3, RecipientType: "user", RecipientID: 21, Action: "read", ExpiryMode: authorization.SharingExpiryAtTime, ExpiresAt: &expiresAt}

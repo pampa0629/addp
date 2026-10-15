@@ -57,7 +57,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			return session, tokens
 		}
 		t.Run("formal preview consumer intersects function permission and source rules", func(t *testing.T) {
-			service := NewService(repo, nil)
+			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, engineplugin.TabularItemPath(path.EngineID, "schema", "public", "formal_preview_ungranted_D")}})
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
 			user, _ := newUser(t, time.Hour)
 			grantID := grant(t, "user", user.PrincipalID, nil)
@@ -132,7 +132,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 					t.Fatalf("partial C+D accepted=%+v %v", result, err)
 				}
 			}
-			if result, err := repo.readCurrentUserSourceRules(ctx, delegated, request.Targets); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
+			if result, err := repo.testReadCurrentUserSourceRules(ctx, delegated, request.Targets); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("delegate downgraded into ordinary User reader=%+v %v", result, err)
 			}
 			if result, err := service.CheckManagerPreviewRead(ctx, session.ResourceAccessTickets["manager"], request); result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
@@ -207,7 +207,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if err := db.Table("system.audit_logs").Count(&before).Error; err != nil {
 				t.Fatal(err)
 			}
-			result, err := repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err := repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if err != nil || result == nil || !result.Covered {
 				t.Fatalf("real credential=%+v %v", result, err)
 			}
@@ -215,12 +215,12 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("observation audit=%d/%d %v", before, after, err)
 			}
 			d := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "credential_ungranted_D")
-			result, err = repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path, d})
+			result, err = repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path, d})
 			if err != nil || result == nil || result.Covered || !result.Targets[0].Covered || result.Targets[1].Reason != "no_grant" {
 				t.Fatalf("credential C+D=%+v %v", result, err)
 			}
 			for _, token := range []string{"", "addp_at_unknown", "Bearer " + session.AccessToken, session.ResourceAccessTickets["manager"], "addp_dat_wrong", "addp_rt_wrong"} {
-				result, err := repo.readCurrentUserSourceRules(ctx, token, []engineplugin.EngineCatalogPath{path})
+				result, err := repo.testReadCurrentUserSourceRules(ctx, token, []engineplugin.EngineCatalogPath{path})
 				if result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 					t.Fatal("invalid/non-User credential must return nil and unauthorized")
 				}
@@ -230,7 +230,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatal(tx.Error)
 			}
 			defer tx.Rollback()
-			result, err = NewRepository(tx).readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err = NewRepository(tx).testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if result != nil || !errors.Is(err, errFulfillmentBinding) {
 				t.Fatalf("caller transaction accepted=%+v %v", result, err)
 			}
@@ -244,7 +244,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if err := logout.LogoutBrowserSession(ctx, iam.LogoutBrowserSessionInput{AccessToken: session.AccessToken, RefreshToken: session.RefreshToken}); err != nil {
 				t.Fatal(err)
 			}
-			result, err = repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err = repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if result != nil || !errors.Is(err, commonapi.ErrUnauthorized) {
 				t.Fatalf("revoked Family accepted=%+v %v", result, err)
 			}
@@ -275,14 +275,14 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { db.Callback().Row().Remove(callback) })
-			result, err := repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err := repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if err != nil || result == nil || result.Covered || !called || result.Targets[0].Reason != "no_grant" {
 				t.Fatalf("mixed credential/rule snapshot=%+v %v called=%t", result, err, called)
 			}
 			if err := db.Callback().Row().Remove(callback); err != nil {
 				t.Fatal(err)
 			}
-			result, err = repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err = repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if err != nil || result == nil || !result.Covered {
 				t.Fatalf("later committed Grant=%+v %v", result, err)
 			}
@@ -306,7 +306,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatal(err)
 			}
 			defer db.Callback().Row().Remove(callback)
-			result, err := repo.readCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
+			result, err := repo.testReadCurrentUserSourceRules(ctx, session.AccessToken, []engineplugin.EngineCatalogPath{path})
 			if result != nil || !errors.Is(err, commonapi.ErrUnauthorized) || !called {
 				t.Fatalf("expired projected credential accepted=%+v %v called=%t", result, err, called)
 			}

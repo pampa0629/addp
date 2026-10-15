@@ -1283,6 +1283,8 @@ System 会在启动时校验数据库迁移版本和已执行 SQL 的 checksum�
 
 不要手工修改 `schema_migrations` 或 `schema_migration_checksums` 来绕过校验；这会伪造迁移历史，并可能让结构或授权数据与声称版本不一致。
 
+2026-10-14 的 `000207_source_dataitem_boundary_bindings` 曾因执行后改写路径约束而阻止 System 启动。正确原文 SHA-256 为 `558122ca553b3ffdd60264186af4c531359a21bb219ce4eb233691ecd94abbb7`；恢复原文后，约束修正由 `000208_source_dataitem_boundary_identity` 前向执行。该故障发生在启动迁移校验，不是 Go 编译失败。回归固定原文摘要，并从真实 207 状态升级、重复运行至 208；使用标准 System IAM PostgreSQL 门禁的 `--package migration --test source-grant-relations` 分组验证。不要将一次性测试库从零迁移成功等同于已有开发库可重启。
+
 ### 75 号迁移的定向恢复
 
 `000075_iam_execution_audience_model_materialization` 是已发布的特殊缺陷：存在历史 `audience=addp-quality` 时，其规范化 `UPDATE` 会被 execution authorization 不可变触发器拒绝，从而留下 `75/dirty`。该迁移已在其他环境登记 checksum，不得改写原文件。

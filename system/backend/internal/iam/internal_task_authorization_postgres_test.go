@@ -70,7 +70,7 @@ func TestInternalTaskAuthorizationAgainstPostgres(t *testing.T) {
 	}
 	audit := AuditMetadata{RequestID: stringPointer("internal-task-test")}
 	user := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "ontology-publisher", audit)
-	members := NewTenantMembershipService(repo, time.Now)
+	members := NewTenantMembershipService(repo, testFixtureDatabaseClock(t, db))
 	tenant := createContextSelectionTenant(t, ctx, members, "ontology-auth", audit)
 	membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, user.PrincipalID, audit)
 	role, err := NewTenantRoleService(repo, time.Now).CreateRole(ctx, CreateTenantRoleInput{

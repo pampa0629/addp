@@ -14,8 +14,37 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 206 {
-		t.Fatalf("LatestVersion = %d, want 206", catalog.LatestVersion)
+	if catalog.LatestVersion != 208 {
+		t.Fatalf("LatestVersion = %d, want 208", catalog.LatestVersion)
+	}
+}
+
+func TestSourceDataItemBoundaryMigration207RetainsAppliedChecksum(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000207_source_dataitem_boundary_bindings.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const applied = "558122ca553b3ffdd60264186af4c531359a21bb219ce4eb233691ecd94abbb7"
+	if actual := fmt.Sprintf("%x", sha256.Sum256(data)); actual != applied {
+		t.Fatalf("already-applied migration 207 changed: got %s, want %s; use a new forward migration", actual, applied)
+	}
+}
+
+func TestSourceDataItemBoundaryIdentityMigrationOnlyCorrectsConstraints(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000208_source_dataitem_boundary_identity.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, required := range []string{"CREATE OR REPLACE FUNCTION system.valid_source_single_identity", "'kind' = 'namespace'", "->0->>'name' = ''", "source_grant_dataitem_identity", "source_approval_dataitem_identity", "source_deny_dataitem_identity", "source_fulfillment_dataitem_binding"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("identity correction lost %q", required)
+		}
+	}
+	for _, forbidden := range []string{"INSERT INTO", "UPDATE ", "DELETE ", "TRUNCATE ", "DISABLE TRIGGER", "schema_migration_checksums", "CREATE TABLE"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("identity correction must not rewrite authority or history: %q", forbidden)
+		}
 	}
 }
 

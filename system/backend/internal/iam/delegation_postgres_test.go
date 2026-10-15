@@ -59,7 +59,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	identityService := NewIdentityService(repository, nil)
-	membershipService := NewTenantMembershipService(repository, time.Now)
+	membershipService := NewTenantMembershipService(repository, testFixtureDatabaseClock(t, db))
 	audit := AuditMetadata{RequestID: stringPointer("delegation-postgres")}
 	user := createContextSelectionUser(t, ctx, identityService, "delegation-user", audit)
 	tenant := createContextSelectionTenant(t, ctx, membershipService, "delegation", audit)
@@ -164,7 +164,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("Role Permission denial error=%v", err)
 	}
 
-	currentTime := time.Now().UTC().Add(-time.Second).Truncate(time.Microsecond)
+	currentTime := testFixtureDatabaseClock(t, db)().Add(-time.Second).Truncate(time.Microsecond)
 	oauthToken := "addp_at_oauth_delegation"
 	insertOAuthSourceAccessToken(
 		t,

@@ -1523,11 +1523,8 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	fmt.Printf("[ConnectionCheck] 连接信息解密成功\n")
 
 	// 4. 测试连接
-	fmt.Printf("[ConnectionCheck] ⏱️  开始连接测试 (超时: 3秒)...\n")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	err = dbbridge.TestConnection(ctx, engine)
+	fmt.Printf("[ConnectionCheck] ⏱️  开始连接测试 (超时: %s)...\n", engineConnectionProbeTimeout)
+	err = testStorageEngineConnection(engine)
 
 	// 5. 更新状态
 	if err != nil {

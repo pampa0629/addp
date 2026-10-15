@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,28 +39,31 @@ func applyContentIndexProtection(gate projectionstore.GateReader, tenantID uint,
 	return managerprotection.ProtectContentIndexDocument(document, result, now)
 }
 
-func (s *HybridSearchService) UpsertContentDocument(ctx context.Context, tenantID uint, document commonClient.ManagerContentDocument) error {
+func (s *HybridSearchService) UpsertContentDocuments(ctx context.Context, tenantID uint, documents []commonClient.ManagerContentDocument) error {
 	if !s.Enabled() || !s.initialized.Load() {
 		return ErrSearchDisabled
 	}
-	document.DocumentID = strings.TrimSpace(document.DocumentID)
-	if tenantID == 0 || document.Validate() != nil {
+	if tenantID == 0 || (commonClient.ManagerContentBatch{Documents: documents}).Validate() != nil {
 		return errors.New("invalid Manager content document")
 	}
 	version, err := s.protectionStore.CaptureVersion(ctx, int64(tenantID), func(projectionstore.GateReader) error { return nil })
 	if err != nil {
 		return err
 	}
-	op := &models.ContentIndexDelivery{TenantID: int64(tenantID), DocumentID: document.DocumentID, Kind: repository.IndexDeliveryWrite}
-	var payload map[string]interface{}
+	op := &models.ContentIndexDelivery{TenantID: int64(tenantID), Kind: repository.IndexDeliveryWrite}
+	payload := make([]map[string]interface{}, 0, len(documents))
 	err = s.protectionStore.CommitVersion(ctx, int64(tenantID), version, func(tx *gorm.DB, gate projectionstore.GateReader) error {
-		if err := applyContentIndexProtection(gate, tenantID, &document); err != nil {
-			return err
+		for _, document := range documents {
+			if err := applyContentIndexProtection(gate, tenantID, &document); err != nil {
+				return err
+			}
+			if document.ProjectionTime.IsZero() {
+				document.ProjectionTime = time.Now().UTC()
+			}
+			payload = append(payload, contentSnapshotPayload(tenantID, document))
+			op.DocumentIDs = append(op.DocumentIDs, document.DocumentID)
 		}
-		if document.ProjectionTime.IsZero() {
-			document.ProjectionTime = time.Now().UTC()
-		}
-		payload = contentSnapshotPayload(tenantID, document)
+		sort.Strings(op.DocumentIDs)
 		return s.deliveries.Register(ctx, tx, s.epoch, op)
 	})
 	if err != nil {
@@ -68,7 +72,7 @@ func (s *HybridSearchService) UpsertContentDocument(ctx context.Context, tenantI
 	// No PostgreSQL transaction is held while calling Meilisearch.
 	// Preserve Manager's canonical document identity if the index is recreated.
 	primaryKey := "id"
-	task, err := s.client.Index(s.contentIndex).UpdateDocumentsWithContext(ctx, []map[string]interface{}{payload}, &meilisearch.DocumentOptions{PrimaryKey: &primaryKey, TaskCustomMetadata: op.TaskCorrelation})
+	task, err := s.client.Index(s.contentIndex).UpdateDocumentsWithContext(ctx, payload, &meilisearch.DocumentOptions{PrimaryKey: &primaryKey, TaskCustomMetadata: op.TaskCorrelation})
 	if err := s.recordContentReceipt(ctx, op, task, err); err != nil {
 		return err
 	}
@@ -244,6 +248,14 @@ func (s *HybridSearchService) reconcileContentDeliveries(ctx context.Context) er
 		}
 		if err := s.processContentDelivery(ctx, &op); err != nil && !errors.Is(err, repository.ErrContentIndexDeliveryConflict) && !errors.Is(err, repository.ErrContentIndexIsolated) {
 			return err
+		}
+		// Keep draining within this cycle's budget once a maintenance task has
+		// a receipt. Waiting uses the same durable terminal verification as live
+		// submissions and never resends an already submitted operation.
+		if op.Kind != repository.IndexDeliveryWrite && op.Status == repository.IndexDeliverySubmitted {
+			if err := s.waitContentDelivery(ctx, &op); err != nil && !errors.Is(err, repository.ErrContentIndexDeliveryConflict) && !errors.Is(err, repository.ErrContentIndexIsolated) {
+				return err
+			}
 		}
 	}
 	return s.deliveries.ActivateIfSettled(ctx, s.epoch)

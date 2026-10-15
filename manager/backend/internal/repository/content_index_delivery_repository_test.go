@@ -43,11 +43,64 @@ func openActiveContentIndex(t *testing.T, repo *ContentIndexDeliveryRepository) 
 
 func registerContentWrite(t *testing.T, db *gorm.DB, repo *ContentIndexDeliveryRepository, epoch string, tenant int64, document string) *models.ContentIndexDelivery {
 	t.Helper()
-	op := &models.ContentIndexDelivery{TenantID: tenant, DocumentID: document, Kind: IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: tenant, DocumentIDs: []string{document}, Kind: IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, op) }); err != nil {
 		t.Fatal(err)
 	}
 	return op
+}
+
+func TestContentBatchChecksEveryPendingMemberAndKeepsTenantBoundary(t *testing.T) {
+	db := newContentDeliveryTestDB(t)
+	repo := NewContentIndexDeliveryRepository(db, "content")
+	epoch := openActiveContentIndex(t, repo)
+	first := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"first", "last"}, Kind: IndexDeliveryWrite}
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, first) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Receipt(t.Context(), first, 1, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		tenant  int64
+		ids     []string
+		blocked bool
+	}{
+		{7, []string{"last", "new"}, true},
+		{7, []string{"unrelated"}, false},
+		{8, []string{"last"}, false},
+	} {
+		op := &models.ContentIndexDelivery{TenantID: tc.tenant, DocumentIDs: tc.ids, Kind: IndexDeliveryWrite}
+		err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, op) })
+		if tc.blocked {
+			if !errors.Is(err, ErrContentIndexIsolated) {
+				t.Fatalf("overlapping batch accepted: %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.Receipt(t.Context(), op, int64(tc.tenant), time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	forged := *first
+	forged.DocumentIDs = []string{"different"}
+	if err := repo.Finish(t.Context(), &forged, IndexDeliverySucceeded); !errors.Is(err, ErrContentIndexDeliveryConflict) {
+		t.Fatalf("receipt member identity changed: %v", err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.QueueProtectionPurges(t.Context(), tx, 7, []string{"last"}) }); err != nil {
+		t.Fatal(err)
+	}
+	var purge models.ContentIndexDelivery
+	if err := db.Where("kind = ?", IndexDeliveryPurge).First(&purge).Error; err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repo.ClaimMaintenance(t.Context(), epoch, &purge)
+	if err != nil || claimed {
+		t.Fatalf("purge overtook pending batch: claimed=%t error=%v", claimed, err)
+	}
 }
 
 func TestContentDeliveryPersistsZeroUIDAndFencesOldGeneration(t *testing.T) {
@@ -207,7 +260,7 @@ func TestContentDeliveryRequiresTransactionAndValidTerminal(t *testing.T) {
 	db := newContentDeliveryTestDB(t)
 	repo := NewContentIndexDeliveryRepository(db, "content")
 	epoch := openActiveContentIndex(t, repo)
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentID: "item", Kind: IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: IndexDeliveryWrite}
 	for _, tx := range []*gorm.DB{nil, db} {
 		if err := repo.Register(context.Background(), tx, epoch, op); err == nil {
 			t.Fatal("independent registration accepted")

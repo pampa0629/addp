@@ -89,7 +89,7 @@ func exerciseContentSnapshots(t *testing.T, svc *HybridSearchService, id string,
 	}
 	submit := func(doc commonClient.ManagerContentDocument) {
 		t.Helper()
-		if err := svc.UpsertContentDocument(t.Context(), 7, doc); err != nil {
+		if err := svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{doc}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -108,8 +108,12 @@ func exerciseContentSnapshots(t *testing.T, svc *HybridSearchService, id string,
 	}
 	assertBoth(read())
 	results := make(chan error, 2)
-	go func() { results <- svc.UpsertContentDocument(t.Context(), 7, technical) }()
-	go func() { results <- svc.UpsertContentDocument(t.Context(), 7, content) }()
+	go func() {
+		results <- svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{technical})
+	}()
+	go func() {
+		results <- svc.UpsertContentDocuments(t.Context(), 7, []commonClient.ManagerContentDocument{content})
+	}()
 	accepted := 0
 	var unexpected error
 	for range 2 {

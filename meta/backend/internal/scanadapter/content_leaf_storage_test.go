@@ -141,10 +141,11 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
 			var projections []commonClient.ManagerContentDocument
 			manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var doc commonClient.ManagerContentDocument
-				if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
-					t.Error(err)
+				var batch commonClient.ManagerContentBatch
+				if err := json.NewDecoder(r.Body).Decode(&batch); err != nil || len(batch.Documents) != 1 {
+					t.Fatalf("invalid batch: %+v %v", batch, err)
 				}
+				doc := batch.Documents[0]
 				if err := doc.Validate(); err != nil {
 					t.Error(err)
 				}

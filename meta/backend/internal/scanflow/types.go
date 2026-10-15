@@ -22,6 +22,7 @@ const (
 )
 
 type ProgressReporter interface {
+	Report(progress models.ScanProgress)
 	SetTotal(total int)
 	Advance(label string, completed, total int, meta map[string]interface{})
 	Message(message string)

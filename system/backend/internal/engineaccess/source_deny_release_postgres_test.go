@@ -3,6 +3,7 @@ package engineaccess
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 	t.Run("source Deny release", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		service := NewService(NewRepository(db), nil)
+		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 		makeRole := func(key, permission string) *iam.TenantRole {
 			row, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: key, Name: key,
 				ScopeTypes: []string{"tenant"}, PermissionKeys: []string{permission}, ActorPrincipalID: adminID})
@@ -67,7 +68,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 		create := func(t *testing.T, finite bool) *SourceDeny {
 			t.Helper()
 			recipient, _ := newOperator(t, time.Hour)
-			input := CreateDenyInput{Actor: creator, EngineID: int64(path.EngineID), DenyID: uuid.New(), CatalogPath: path,
+			input := CreateDenyInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, Actor: creator, EngineID: int64(path.EngineID), DenyID: uuid.New(), CatalogPath: path,
 				RecipientType: "user", RecipientID: recipient.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Restrict precise reading"}
 			if finite {
 				var expires time.Time
@@ -143,6 +144,7 @@ func exerciseDenyReleases(t *testing.T, db *gorm.DB, tenantID int64, path engine
 				t.Fatal(err)
 			}
 			foreign.CatalogPath = encoded
+			foreign.ItemFingerprint = factstest.Binding(engineplugin.TabularItemPath(other.ID, "schema", "public", "fixture")).ItemFingerprint
 			if err := db.Create(&foreign).Error; err != nil {
 				t.Fatal(err)
 			}

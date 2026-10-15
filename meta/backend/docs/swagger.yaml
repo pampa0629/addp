@@ -733,6 +733,8 @@ definitions:
         type: integer
       scan_context:
         $ref: '#/definitions/github_com_addp_meta_internal_models.ScanExecutionContext'
+      scan_progress:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.ScanProgress'
       source:
         type: string
       source_task_id:
@@ -760,6 +762,50 @@ definitions:
       triggered_by:
         type: integer
       updated_at:
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.ScanProgress:
+    properties:
+      current_bytes_read:
+        type: integer
+      current_bytes_total:
+        type: integer
+      current_path:
+        type: string
+      directories_discovered:
+        type: integer
+      files_discovered:
+        type: integer
+      files_total_known:
+        type: boolean
+      items_completed:
+        type: integer
+      items_failed:
+        type: integer
+      items_planned:
+        type: integer
+      items_succeeded:
+        type: integer
+      items_total_known:
+        type: boolean
+      last_progress_at:
+        type: string
+      operation:
+        enum:
+        - listing
+        - identifying
+        - enriching
+        - hashing
+        - extracting
+        - saving
+        - indexing
+        type: string
+      phase:
+        enum:
+        - discovering
+        - identifying
+        - processing
+        - finalizing
         type: string
     type: object
   github_com_addp_meta_internal_models.ScanRef:

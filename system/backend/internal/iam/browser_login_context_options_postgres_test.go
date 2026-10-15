@@ -36,7 +36,7 @@ func TestBrowserLoginAndContextOptionsAgainstPostgres(t *testing.T) {
 	}
 
 	repository := NewRepository(db)
-	currentTime := time.Now().UTC().Add(-time.Second).Truncate(time.Microsecond)
+	currentTime := testFixtureDatabaseClock(t, db)().Add(-time.Second).Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},

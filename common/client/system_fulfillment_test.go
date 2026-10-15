@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,7 +20,7 @@ func (fulfillmentTestTokens) Token(_ context.Context, tenant uint) (string, erro
 }
 
 func TestSystemFulfillmentLookupDoesNotInterpretFailuresAsMiss(t *testing.T) {
-	binding := authorization.SharingFulfillmentBinding{CallerPrincipalID: 9007199254740993,
+	binding := authorization.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).BoundaryHash, CallerPrincipalID: 9007199254740993,
 		Operator: authorization.SharingFulfillmentOperator{PrincipalID: 4, MembershipID: 5, AuthorizationVersion: 6},
 		Path:     plugin.TabularItemPath(12, "schema", "public", "源.表"), DecisionID: uuid.New(), RequirementVersion: 1,
 		RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: authorization.SharingExpiryUntilRevoked}

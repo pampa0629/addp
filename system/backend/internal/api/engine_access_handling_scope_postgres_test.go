@@ -84,7 +84,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 			t.Fatalf("exact observation=%+v err=%v", requirement, err)
 		}
 		neighbour := engineplugin.TabularItemPath(engine.ID, "schema", "other", "unknown.target")
-		if _, err := service.GetHandlingRequirement(ctx, actor, neighbour); !errors.Is(err, commonapi.ErrNotFound) {
+		if _, err := service.GetHandlingRequirement(ctx, actor, neighbour); !errors.Is(err, engineaccess.ErrApprovalRequirementNotConfigured) {
 			t.Fatalf("neighbour inherited or initialized a requirement: %v", err)
 		}
 		var afterFacts, afterAudits int64
@@ -106,6 +106,11 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		router := handlingScopeTestRouter(t, service, &auth)
 		minimalRouter := approvalRequirementTestRouter(t, service, &auth)
 		minimalRoute := fmt.Sprintf("/api/v1/system/engines/%d/access_handling_requirement", engine.ID)
+		missing := engineDelegationTestRequest(t, minimalRouter, "POST", minimalRoute, EngineAccessHandlingRequirementRequest{Version: neighbour.Version, Segments: neighbour.Segments}, 404)
+		var missingResult map[string]any
+		if err := json.Unmarshal(missing.Body.Bytes(), &missingResult); err != nil || missingResult["error_code"] != "approval_requirement_not_configured" {
+			t.Fatalf("unconfigured target response=%s error=%v", missing.Body.String(), err)
+		}
 		minimal := engineDelegationTestRequest(t, minimalRouter, "POST", minimalRoute, EngineAccessHandlingRequirementRequest{Version: target.Version, Segments: target.Segments}, 200)
 		var observation map[string]any
 		if err := json.Unmarshal(minimal.Body.Bytes(), &observation); err != nil || len(observation) != 2 || observation["mode"] != "catalog" || observation["requirement_version"] != "3" {
@@ -137,7 +142,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		if _, err := service.GetHandlingScope(ctx, other, int64(engine.ID)); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("cross-tenant provenance=%v", err)
 		}
-		if _, err := service.GetHandlingRequirement(ctx, other, target); !errors.Is(err, commonapi.ErrForbidden) {
+		if _, err := service.GetHandlingRequirement(ctx, other, target); !errors.Is(err, commonapi.ErrForbidden) || errors.Is(err, engineaccess.ErrApprovalRequirementNotConfigured) {
 			t.Fatalf("cross tenant observation=%v", err)
 		}
 		exerciseHandlingScopeLockExpiry(t, db, actor, int64(engine.ID), func(ctx context.Context, actor engineaccess.Actor) error {

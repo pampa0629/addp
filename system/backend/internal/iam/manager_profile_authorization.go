@@ -24,13 +24,17 @@ import (
 // must not write source rules or return cached observations.
 type ExecutionSourceReadVerifier func(context.Context, *gorm.DB, *ExecutionAuthorization) (time.Time, error)
 
+// ExecutionSourceReadPreparer must not be invoked inside an IAM transaction.
+// Its verifier accepts only the exact scope and identity that were prepared.
+type ExecutionSourceReadPreparer func(context.Context, *ExecutionAuthorization) (ExecutionSourceReadVerifier, error)
+
 type ManagerProfileAuthorizationService struct {
 	repository *Repository
-	verify     ExecutionSourceReadVerifier
+	prepare    ExecutionSourceReadPreparer
 }
 
-func NewManagerProfileAuthorizationService(repository *Repository, verify ExecutionSourceReadVerifier) *ManagerProfileAuthorizationService {
-	return &ManagerProfileAuthorizationService{repository: repository, verify: verify}
+func NewManagerProfileAuthorizationService(repository *Repository, prepare ExecutionSourceReadPreparer) *ManagerProfileAuthorizationService {
+	return &ManagerProfileAuthorizationService{repository: repository, prepare: prepare}
 }
 
 type IssueManagerProfileAuthorizationInput struct {
@@ -63,7 +67,7 @@ type AuthorizeManagerProfileInput struct {
 // Issue derives the source scope from the exact pending owner execution. No
 // caller-supplied actor, tenant, configuration or target list is accepted.
 func (s *ManagerProfileAuthorizationService) Issue(ctx context.Context, input IssueManagerProfileAuthorizationInput) (*IssuedManagerProfileAuthorization, error) {
-	if s == nil || s.repository == nil || s.verify == nil || input.ExecutionID == uuid.Nil {
+	if s == nil || s.repository == nil || s.prepare == nil || input.ExecutionID == uuid.Nil {
 		return nil, commonapi.ErrBadRequest
 	}
 	ttl := input.ExpiresIn
@@ -76,6 +80,35 @@ func (s *ManagerProfileAuthorizationService) Issue(ctx context.Context, input Is
 	snapshot, err := resolveDelegationSourceAccessTokenSnapshot(ctx, s.repository, input.SourceAccessToken)
 	if err != nil {
 		return nil, err
+	}
+	authService, err := NewAuthContextService(s.repository)
+	if err != nil {
+		return nil, err
+	}
+	preAuth, err := authService.ResolveUserAccessToken(ctx, input.SourceAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if !managerProfileUserCredential(preAuth) || snapshot.TenantID == nil || snapshot.TenantMembershipID == nil {
+		return nil, ErrExecutionAuthorizationPermissionDenied
+	}
+	preRow := &ExecutionAuthorization{ActorPrincipalID: snapshot.FamilyPrincipalID, TenantID: *snapshot.TenantID,
+		TenantMembershipID: *snapshot.TenantMembershipID, IssuedAuthorizationVersion: snapshot.FamilyAuthorizationVersion,
+		SourceType: executionAuthorizationSourceUser, Audience: "manager", ExecutionID: input.ExecutionID}
+	preRaw, err := s.repository.managerProfileExecutionConfig(ctx, preRow, 0, uuid.Nil, true)
+	if err != nil {
+		return nil, err
+	}
+	preRow.SourceReadScope, err = managerProfileScope(preRaw)
+	if err != nil {
+		return nil, err
+	}
+	verify, err := s.prepare(ctx, preRow)
+	if err != nil {
+		return nil, err
+	}
+	if verify == nil {
+		return nil, ErrExecutionAuthorizationUnavailable
 	}
 	var result *IssuedManagerProfileAuthorization
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
@@ -124,7 +157,7 @@ func (s *ManagerProfileAuthorizationService) Issue(ctx context.Context, input Is
 		if err != nil {
 			return err
 		}
-		observedAt, err := s.verify(ctx, tx.db, row)
+		observedAt, err := verify(ctx, tx.db, row)
 		if err != nil {
 			return err
 		}
@@ -153,7 +186,7 @@ func (s *ManagerProfileAuthorizationService) Issue(ctx context.Context, input Is
 		if !managerProfileUserCredential(auth) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
-		observedAt, err = s.verify(ctx, tx.db, row)
+		observedAt, err = verify(ctx, tx.db, row)
 		if err != nil {
 			return err
 		}
@@ -173,7 +206,7 @@ func (s *ManagerProfileAuthorizationService) Issue(ctx context.Context, input Is
 // Authorize validates current source rules and the exact active claim. The
 // result is for this owner operation, not general engine connection access.
 func (s *ManagerProfileAuthorizationService) Authorize(ctx context.Context, input AuthorizeManagerProfileInput) (time.Time, error) {
-	if s == nil || s.repository == nil || s.verify == nil || input.AuthorizationID <= 0 || input.ExecutionID == uuid.Nil ||
+	if s == nil || s.repository == nil || s.prepare == nil || input.AuthorizationID <= 0 || input.ExecutionID == uuid.Nil ||
 		input.Attempt <= 0 || input.LeaseToken == uuid.Nil || input.TenantID <= 0 || input.ServicePrincipalID <= 0 ||
 		input.ServiceClientID != "addp-manager" || input.SourceReadScope.Validate() != nil {
 		return time.Time{}, commonapi.ErrBadRequest
@@ -184,8 +217,45 @@ func (s *ManagerProfileAuthorizationService) Authorize(ctx context.Context, inpu
 		input.Audit.TenantID == nil || *input.Audit.TenantID != input.TenantID {
 		return time.Time{}, commonapi.ErrBadRequest
 	}
-	var observedAt time.Time
+	var preRow *ExecutionAuthorization
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		var err error
+		preRow, err = tx.GetExecutionAuthorization(ctx, input.AuthorizationID)
+		if err != nil {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		if preRow.Audience != "manager" || preRow.TenantID != input.TenantID || preRow.ExecutionID != input.ExecutionID ||
+			preRow.SourceType != executionAuthorizationSourceUser || !reflect.DeepEqual(preRow.SourceReadScope, &input.SourceReadScope) {
+			return ErrExecutionAuthorizationPermissionDenied
+		}
+		if _, _, _, err := lockAndValidateExecutionSource(ctx, tx, preRow); err != nil {
+			return err
+		}
+		if err := tx.currentManagerProfileConsumer(ctx, input); err != nil {
+			return err
+		}
+		raw, err := tx.managerProfileExecutionConfig(ctx, preRow, input.Attempt, input.LeaseToken, false)
+		if err != nil {
+			return err
+		}
+		scope, err := managerProfileScope(raw)
+		if err != nil || !reflect.DeepEqual(scope, preRow.SourceReadScope) {
+			return ErrExecutionAuthorizationUnavailable
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	verify, err := s.prepare(ctx, preRow)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if verify == nil {
+		return time.Time{}, ErrExecutionAuthorizationUnavailable
+	}
+	var observedAt time.Time
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		snapshot, err := tx.GetExecutionAuthorization(ctx, input.AuthorizationID)
 		if err != nil {
 			return ErrExecutionAuthorizationUnavailable
@@ -216,7 +286,7 @@ func (s *ManagerProfileAuthorizationService) Authorize(ctx context.Context, inpu
 		if err := tx.currentManagerProfileConsumer(ctx, input); err != nil {
 			return err
 		}
-		observedAt, err = s.verify(ctx, tx.db, row)
+		observedAt, err = verify(ctx, tx.db, row)
 		if err != nil {
 			return err
 		}
@@ -239,7 +309,7 @@ func (s *ManagerProfileAuthorizationService) Authorize(ctx context.Context, inpu
 			return err
 		}
 		// Auditing and lock waits may cross a deadline; never commit success then.
-		observedAt, err = s.verify(ctx, tx.db, row)
+		observedAt, err = verify(ctx, tx.db, row)
 		if err != nil {
 			return err
 		}

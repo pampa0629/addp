@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -119,12 +120,36 @@ func (r *ContentIndexDeliveryRepository) Register(ctx context.Context, tx *gorm.
 	if state.Epoch != epoch || !state.Configured || state.Isolated || op == nil || op.TenantID <= 0 || op.Kind != IndexDeliveryWrite {
 		return ErrContentIndexIsolated
 	}
+	if op.DocumentID != "" || len(op.DocumentIDs) == 0 {
+		return ErrContentIndexDeliveryConflict
+	}
+	members := make(map[string]bool, len(op.DocumentIDs))
+	for _, id := range op.DocumentIDs {
+		if strings.TrimSpace(id) == "" || members[id] {
+			return ErrContentIndexDeliveryConflict
+		}
+		members[id] = true
+	}
 	var pending int64
-	if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND status IN ? AND (kind IN ? OR status IN ? OR (tenant_id = ? AND document_id = ?))", r.index, unfinishedIndexDeliveries, []string{IndexDeliveryDelete, IndexDeliveryPurge}, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}, op.TenantID, op.DocumentID).Count(&pending).Error; err != nil {
+	if err := tx.Model(&models.ContentIndexDelivery{}).Where("index_name = ? AND status IN ? AND (kind IN ? OR status IN ?)", r.index, unfinishedIndexDeliveries, []string{IndexDeliveryDelete, IndexDeliveryPurge}, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}).Count(&pending).Error; err != nil {
 		return err
 	}
 	if pending != 0 {
 		return ErrContentIndexIsolated
+	}
+	var writes []models.ContentIndexDelivery
+	if err := tx.Where("index_name = ? AND tenant_id = ? AND kind = ? AND status = ?", r.index, op.TenantID, IndexDeliveryWrite, IndexDeliverySubmitted).Find(&writes).Error; err != nil {
+		return err
+	}
+	for _, write := range writes {
+		if len(write.DocumentIDs) == 0 {
+			return ErrContentIndexIsolated
+		}
+		for _, id := range write.DocumentIDs {
+			if members[id] {
+				return ErrContentIndexIsolated
+			}
+		}
 	}
 	op.ID, op.IndexName, op.EndpointID, op.Status = uuid.NewString(), r.index, state.EndpointID, IndexDeliverySubmitting
 	op.TaskCorrelation = op.ID
@@ -188,7 +213,9 @@ func (r *ContentIndexDeliveryRepository) QueueDelete(ctx context.Context, epoch 
 // Legacy no-UID records remain fenced, never retroactively marked or resent.
 func (r *ContentIndexDeliveryRepository) Recoverable(ctx context.Context) ([]models.ContentIndexDelivery, error) {
 	var ops []models.ContentIndexDelivery
-	err := r.db.WithContext(ctx).Where("index_name = ? AND (status IN ? OR (status IN ? AND task_correlation <> ''))", r.index, []string{IndexDeliverySubmitted, IndexDeliveryQueued}, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}).Order("created_at, id").Limit(100).Find(&ops).Error
+	// In-flight work blocks queued maintenance. Recover its receipt before the
+	// page limit, otherwise a full page of older queued rows can starve it forever.
+	err := r.db.WithContext(ctx).Where("index_name = ? AND (status IN ? OR (status IN ? AND task_correlation <> ''))", r.index, []string{IndexDeliverySubmitted, IndexDeliveryQueued}, []string{IndexDeliverySubmitting, IndexDeliveryUnknown}).Order("CASE WHEN status = 'queued' THEN 1 ELSE 0 END, created_at, id").Limit(100).Find(&ops).Error
 	return ops, err
 }
 
@@ -263,7 +290,7 @@ func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.
 		if err := tx.Where("id = ? AND index_name = ? AND tenant_id = ?", op.ID, r.index, op.TenantID).First(&actual).Error; err != nil {
 			return err
 		}
-		if actual.Kind != op.Kind || actual.Filter != op.Filter || actual.EndpointID != op.EndpointID || actual.TaskEnqueuedAt != op.TaskEnqueuedAt || actual.TaskCorrelation != op.TaskCorrelation {
+		if actual.Kind != op.Kind || actual.Filter != op.Filter || actual.EndpointID != op.EndpointID || actual.TaskEnqueuedAt != op.TaskEnqueuedAt || actual.TaskCorrelation != op.TaskCorrelation || !slices.Equal(actual.DocumentIDs, op.DocumentIDs) {
 			return ErrContentIndexDeliveryConflict
 		}
 		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND tenant_id = ? AND status = ? AND task_uid = ?", op.ID, r.index, op.TenantID, IndexDeliverySubmitted, *op.TaskUID).Update("status", status)

@@ -33,7 +33,7 @@ type boundaryIndexer struct{ deleted []string }
 func (i *boundaryIndexer) DeleteItemFromIndex(tenantID, engineID uint, fingerprint string) {
 	i.deleted = append(i.deleted, fmt.Sprintf("%d/%d/%s", tenantID, engineID, fingerprint))
 }
-func (*boundaryIndexer) IndexTechnicalMetadata(context.Context, *commonModels.Engine, uint, *models.MetaNode, *models.MetaItem) bool {
+func (*boundaryIndexer) IndexTechnicalMetadata(context.Context, *commonModels.Engine, uint, *models.MetaNode, ...*models.MetaItem) bool {
 	return true
 }
 func (*boundaryIndexer) IndexCatalogContent(context.Context, *commonModels.Engine, uint, *models.MetaItem, string, bool) bool {
@@ -174,7 +174,7 @@ func TestContentBoundaryStableAcrossScanDepths(t *testing.T) {
 								for _, f := range files {
 									provider.entriesByPath[dir] = append(provider.entriesByPath[dir], plugin.EngineCatalogEntry{Name: f.Name, Path: plugin.FileItemPath(26, f.Path), Kind: "file", Term: "file", Role: plugin.EngineCatalogRoleLeaf, Storage: &plugin.EngineCatalogStorageFacts{Path: f.Path, SizeBytes: &f.Size}})
 								}
-								_, _, err = fileRuntime.scanDirectory(context.Background(), provider, provider, nil, &commonModels.Engine{ID: 26, EngineType: provider.Type()}, 1, dir, node, dir == "", term, depth, false)
+								_, _, err = fileRuntime.scanDirectoryForTest(context.Background(), provider, provider, nil, &commonModels.Engine{ID: 26, EngineType: provider.Type()}, 1, dir, node, dir == "", term, depth, false)
 							}
 							if err != nil {
 								t.Fatal(err)

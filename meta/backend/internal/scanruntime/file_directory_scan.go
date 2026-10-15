@@ -14,8 +14,8 @@ import (
 	"github.com/addp/meta/internal/scanresource"
 )
 
-// scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
-func (s *FilesystemCatalogRuntime) scanDirectory(
+// scanPreparedDirectory consumes the shared inventory and its resolved logical items.
+func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.EngineCatalogProvider,
@@ -24,15 +24,22 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	tenantID uint,
 	dirPath string,
 	parentNode *models.MetaNode,
-	isBucketRoot bool,
 	itemTerm string,
 	scanDepth string,
 	force bool,
+	plan *fileScanPlan,
 ) (int, scanflow.ExtractionCounts, error) {
-	files, subdirs, ignoredEntries, err := s.listDirectoryWithIgnored(ctx, resource, catalogProvider, connInfo, dirPath)
-	if err != nil {
-		return 0, scanflow.ExtractionCounts{}, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
+	if err := ctx.Err(); err != nil {
+		return 0, scanflow.ExtractionCounts{}, err
 	}
+	d := plan.directories[dirPath]
+	if d == nil {
+		return 0, scanflow.ExtractionCounts{}, fmt.Errorf("directory missing from file scan inventory: %q", dirPath)
+	}
+	if d.listingErr != nil {
+		return 0, scanflow.ExtractionCounts{}, fmt.Errorf("failed to list directory %s: %w", dirPath, d.listingErr)
+	}
+	files, subdirs, ignoredEntries := d.files, d.subdirs, d.ignored
 
 	totalItems := 0
 	extractionStats := scanflow.ExtractionCounts{}
@@ -84,11 +91,17 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			}
 		}
 		for _, detected := range detection.Items {
+			if err := ctx.Err(); err != nil {
+				failures.Add(dirPath, err)
+				return
+			}
 			if detected == nil {
 				continue
 			}
+			plan.progress.Operation("saving", detected.PhysicalPath)
 			persisted, fullName, itemExtractionStats, persistErr := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 			if fullName != "" {
+				plan.progress.ItemDone(persisted && persistErr == nil)
 				scannedItemFullNames[fullName] = true
 			}
 			if persisted {
@@ -102,39 +115,25 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	}
 
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
-	detectionReader := scanflow.ContentReaderForDepth(contentReader, scanDepth)
-	if isBucketRoot {
-		detection, err := resolveNonExclusiveScopeItems(ctx, detectionReader, connInfo, resource, dirPath, files, subdirs)
-		if err != nil {
-			s.log.Warn("提取根目录组合数据项信息失败",
-				"path", dirPath,
-				"error", err,
-			)
-			failures.Add(dirPath, err)
-		}
-		applyDetection(detection)
-	} else {
-		detection, err := s.resolveFileCatalogDirectoryItems(ctx, detectionReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
-		if err != nil {
-			s.log.Warn("提取复合数据项信息失败",
-				"path", dirPath,
-				"error", err,
-			)
-			failures.Add(dirPath, err)
-		}
-		if detection != nil {
-			applyDetection(detection)
-			if detection.Exclusive {
-				reconcileScannedDirectory()
-				return totalItems, extractionStats, failures.Err()
-			}
-		}
+	if d.detectionErr != nil {
+		s.log.Warn("提取复合数据项信息失败", "path", dirPath, "error", d.detectionErr)
+		failures.Add(dirPath, d.detectionErr)
+	}
+	applyDetection(d.detection)
+	if d.detection != nil && d.detection.Exclusive {
+		reconcileScannedDirectory()
+		return totalItems, extractionStats, failures.Err()
 	}
 
 	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			failures.Add(dirPath, err)
+			return totalItems, extractionStats, failures.Err()
+		}
 		if claimedPaths[file.Path] {
 			continue
 		}
+		plan.progress.Operation("saving", file.Path)
 		fullName, persisted, fileExtractionStats, fileErr := s.scanSingleFileItem(fileSingleItemScanInput{
 			ctx:           ctx,
 			contentReader: contentReader,
@@ -148,6 +147,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			force:         force,
 			isDeepScan:    isDeepScan,
 		})
+		plan.progress.ItemDone(persisted && fileErr == nil)
 		if fullName != "" {
 			scannedItemFullNames[fullName] = true
 		}
@@ -161,6 +161,10 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	}
 
 	for _, subdir := range subdirs {
+		if err := ctx.Err(); err != nil {
+			failures.Add(dirPath, err)
+			return totalItems, extractionStats, failures.Err()
+		}
 		subdirName := subdir.Name
 		subdirAttrs := scanresource.FileDirectoryNodeAttributes(subdir.Path)
 		subdirFullName := metapath.JoinFSPath(parentNode.FullName, subdirName)
@@ -177,7 +181,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			failures.Add(subdir.Path, err)
 			nodeStateErr = err
 		}
-		items, subdirExtractionStats, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
+		items, subdirExtractionStats, scanErr := s.scanPreparedDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, itemTerm, scanDepth, force, plan)
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, subdirExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)

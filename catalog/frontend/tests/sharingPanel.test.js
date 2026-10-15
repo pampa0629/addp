@@ -4,7 +4,7 @@ import { computed, createRenderer, h, inject, nextTick, provide, reactive, ref, 
 import SharingPanel from '../src/components/SharingPanel.vue'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
-  'createSharingDecision', 'getSharingDecision', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
+  'createSharingDecision', 'getSharingDecision', 'getSharingBoundary', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
   'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
@@ -31,7 +31,7 @@ const controls = ['alert', 'card', 'form', 'form-item', 'select', 'option', 'dat
 const rowContext = Symbol('table-row')
 const mounted = []
 const id = 'cc0a8000-6000-4000-8000-800000000001'
-const decision = { id: 'cc0a8000-6000-4000-8000-800000000002', recipient_type: 'user', recipient_id: '60', recipient_name: 'B',
+const decision = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), id: 'cc0a8000-6000-4000-8000-800000000002', recipient_type: 'user', recipient_id: '60', recipient_name: 'B',
   expiry_mode: 'until_revoked', target: { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'root' }, { name: 'table' }] } }
 const entry = { id: 'entry', version: 4, entry_type: 'data_item', entry_status: 'active', governance_status: 'curated',
   source: { source_module: 'meta', source_status: 'active' },
@@ -67,6 +67,7 @@ beforeEach(() => {
   fixtures.auth = reactive({ authContext: { principal: { type: 'user', id: '50' }, context: { tenant_id: '7', tenant_membership_id: '51' } },
     permissions: ['catalog.entry.read', 'catalog.sharing_decision.create', 'system.engine_access_fulfillment.create'],
     hasPermission(permission) { return this.permissions.includes(permission) } })
+  fixtures.api.getSharingBoundary.mockResolvedValue({ item_fingerprint: decision.item_fingerprint, boundary_hash: decision.boundary_hash, native_target: decision.target })
   fixtures.api.listSharingRequests.mockResolvedValue({ data: [], total: 0 })
   fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [], total: 0 })
   fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [], total: 0 })
@@ -241,6 +242,9 @@ describe('actual sharing panel commands and recovery', () => {
     expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
     expect(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).toContain('"engine_id":9007199254740993,')
     expect(JSON.parse(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).mode).toBe('catalog')
+    expect(JSON.parse(fixtures.api.initializeSharingRequirement.mock.calls[0][1])).toMatchObject({
+      item_fingerprint: decision.item_fingerprint, expected_boundary_hash: decision.boundary_hash
+    })
     expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledTimes(2)
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()

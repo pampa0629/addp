@@ -131,6 +131,9 @@ func (s *Service) writeAcceptedGrant(ctx context.Context, actor FulfillmentRunti
 	if result != nil {
 		return result, nil
 	}
+	if err := s.verifyApprovedBoundary(ctx, request.TenantID, request.Path, request.ItemFingerprint, request.BoundaryHash); err != nil {
+		return nil, err
+	}
 	ids := []int64{request.Operator.PrincipalID}
 	if request.RecipientType == "user" {
 		ids = append(ids, request.RecipientID)

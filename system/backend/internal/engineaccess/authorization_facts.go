@@ -8,10 +8,12 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 )
 
 var ErrAuthorizationFactsUnavailable = errors.New("Meta authorization facts unavailable")
+var ErrAuthorizationBoundaryChanged = errors.Join(commonapi.ErrConflict, errors.New("DataItem authorization boundary changed or incomplete"))
 
 type AuthorizationFactsReader interface {
 	ReadAuthorizationFacts(context.Context, uint, string) (*authorizationfacts.AuthorizationFacts, error)
@@ -20,6 +22,48 @@ type AuthorizationFactsReader interface {
 func (s *Service) WithAuthorizationFactsReader(reader AuthorizationFactsReader) *Service {
 	s.authorizationFacts = reader
 	return s
+}
+
+func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths []plugin.EngineCatalogPath) ([]authorizationfacts.Binding, error) {
+	if s == nil || s.authorizationFacts == nil || tenantID <= 0 {
+		return nil, ErrAuthorizationFactsUnavailable
+	}
+	result := make([]authorizationfacts.Binding, 0, len(paths))
+	for _, path := range paths {
+		candidate, err := authorizationfacts.NativeCandidateFingerprint(path)
+		if err != nil {
+			return nil, ErrAuthorizationBoundaryChanged
+		}
+		facts, err := s.authorizationFacts.ReadAuthorizationFacts(ctx, uint(tenantID), candidate)
+		if err != nil {
+			if status, ok := client.TenantAPIStatusCode(err); ok && status == http.StatusNotFound {
+				return nil, ErrAuthorizationBoundaryChanged
+			}
+			return nil, ErrAuthorizationFactsUnavailable
+		}
+		if facts == nil || facts.Validate() != nil || facts.ItemFingerprint != candidate {
+			return nil, ErrAuthorizationFactsUnavailable
+		}
+		binding, err := facts.ProveNativeTarget(path)
+		if err != nil {
+			return nil, ErrAuthorizationBoundaryChanged
+		}
+		result = append(result, binding)
+	}
+	return result, nil
+}
+
+// Called only after local qualification has completed and released its locks.
+// The expected digest binds explicit confirmation; owner facts remain trusted.
+func (s *Service) verifyApprovedBoundary(ctx context.Context, tenantID int64, path plugin.EngineCatalogPath, fingerprint, expectedHash string) error {
+	bindings, err := s.resolveReadBindings(ctx, tenantID, []plugin.EngineCatalogPath{path})
+	if err != nil {
+		return err
+	}
+	if len(bindings) != 1 || bindings[0].ItemFingerprint != fingerprint || bindings[0].BoundaryHash != expectedHash {
+		return ErrAuthorizationBoundaryChanged
+	}
+	return nil
 }
 
 // AuthorizationFacts only observes current resources; it does not change ACLs.

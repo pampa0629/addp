@@ -36,6 +36,10 @@ export async function createSharingDecision(id, payload) {
 	return client.post(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions`, payload)
 }
 
+export async function getSharingBoundary(id) {
+  return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_boundary`)
+}
+
 export async function getSharingDecision(id, decisionID) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions/${encodeURIComponent(decisionID)}`)
 }

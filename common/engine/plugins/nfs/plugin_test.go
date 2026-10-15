@@ -3,6 +3,7 @@ package nfs
 import (
 	"context"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,28 @@ import (
 
 type testReadSeekCloser struct {
 	*strings.Reader
+}
+
+func TestNFSResolveDirectoryPreservesCanonicalPath(t *testing.T) {
+	p := &NFSPlugin{}
+	for _, target := range []plugin.EngineCatalogPath{
+		plugin.FileRootPath(14),
+		plugin.FileDirectoryPath(14, "shp"),
+		plugin.FileDirectoryPath(14, "shp/子目录"),
+	} {
+		t.Run(target.StringPath(), func(t *testing.T) {
+			entry, err := p.ResolvePath(context.Background(), nil, target)
+			if err != nil || entry == nil {
+				t.Fatalf("resolve directory: %v", err)
+			}
+			if !reflect.DeepEqual(entry.Path, target) {
+				t.Fatalf("resolved path changed: got %+v, want %+v", entry.Path, target)
+			}
+			if entry.Role != plugin.EngineCatalogRoleBranch {
+				t.Fatalf("directory role = %q", entry.Role)
+			}
+		})
+	}
 }
 
 func (r testReadSeekCloser) Close() error {

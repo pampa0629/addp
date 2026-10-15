@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
@@ -32,6 +33,8 @@ type fulfillmentRequest struct {
 	CallerPrincipalID  int64
 	Operator           userProvenance
 	Path               engineplugin.EngineCatalogPath
+	ItemFingerprint    string
+	BoundaryHash       string
 	DecisionID         uuid.UUID
 	RequirementVersion int64
 	RecipientType      string
@@ -58,6 +61,9 @@ type fulfillmentOutcome struct {
 func (fulfillmentOutcome) TableName() string { return "system.engine_access_fulfillment_outcomes" }
 
 func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, error) {
+	if err := (authorizationfacts.Binding{ItemFingerprint: request.ItemFingerprint, BoundaryHash: request.BoundaryHash, NativeTarget: request.Path}).Validate(); err != nil {
+		return nil, nil, errFulfillmentBinding
+	}
 	expiresAt, expiryErr := authorization.NormalizeSharingExpiry(request.ExpiryMode, request.ExpiresAt)
 	if request.RequestID == uuid.Nil || request.TenantID <= 0 || request.CallerPrincipalID <= 0 || !request.Operator.valid() ||
 		request.DecisionID == uuid.Nil || request.RequirementVersion <= 0 || request.RecipientID <= 0 ||
@@ -77,8 +83,10 @@ func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, er
 		Action             string         `json:"action"`
 		ExpiryMode         string         `json:"expiry_mode"`
 		ExpiresAt          *time.Time     `json:"expires_at"`
+		ItemFingerprint    string         `json:"item_fingerprint"`
+		BoundaryHash       string         `json:"boundary_hash"`
 	}{request.Operator, request.DecisionID, request.RequirementVersion, request.RecipientType,
-		request.RecipientID, request.Action, request.ExpiryMode, expiresAt})
+		request.RecipientID, request.Action, request.ExpiryMode, expiresAt, request.ItemFingerprint, request.BoundaryHash})
 	return path, binding, err
 }
 
@@ -103,11 +111,11 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 	if err := json.Unmarshal(path, &target); err != nil {
 		return errFulfillmentBinding
 	}
-	canonical, err := authorization.EncodeSharingTarget(target)
+	fingerprint, err := authorizationfacts.NativeCandidateFingerprint(target)
 	if err != nil {
 		return err
 	}
-	key := fmt.Sprintf("engine_access_target|%d|%s", tenantID, canonical)
+	key := fmt.Sprintf("engine_access_target|%d|%d|%s", tenantID, target.EngineID, fingerprint)
 	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error
 }
 

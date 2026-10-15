@@ -38,7 +38,7 @@ func (p *PostgreSQLPlugin) resolvePreparedQueryOutputLineage(
 	if err != nil {
 		return nil, fmt.Errorf("%w: build PostgreSQL lineage connection: %v", plugin.ErrQueryOutputLineageUnresolved, err)
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open(p.sqlDriverName(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("%w: open PostgreSQL lineage connection: %v", plugin.ErrQueryOutputLineageUnresolved, err)
 	}

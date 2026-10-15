@@ -13,12 +13,19 @@ import (
 )
 
 // IndexTechnicalMetadata submits the registered DataItem facts without reading source content.
-func (s *IndexerService) IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, item *models.MetaItem) bool {
-	if s.contentIndex == nil || resource == nil || item == nil {
+func (s *IndexerService) IndexTechnicalMetadata(ctx context.Context, resource *commonModels.Engine, tenantID uint, parent *models.MetaNode, items ...*models.MetaItem) bool {
+	if s.contentIndex == nil || resource == nil || len(items) == 0 {
 		return false
 	}
-	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocument(ctx, technicalMetadataDocument(resource, parent, item)); err != nil {
-		s.log.Warn("提交 DataItem 技术元数据投影失败", "fingerprint", item.Fingerprint, "item_type", item.ItemType, "error", err)
+	documents := make([]commonClient.ManagerContentDocument, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			return false
+		}
+		documents = append(documents, technicalMetadataDocument(resource, parent, item))
+	}
+	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocuments(ctx, documents); err != nil {
+		s.log.Warn("提交 DataItem 技术元数据批次失败", "items", len(documents), "error", err)
 		return false
 	}
 	return true

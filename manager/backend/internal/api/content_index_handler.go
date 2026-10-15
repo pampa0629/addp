@@ -19,7 +19,7 @@ import (
 
 type contentIndexer interface {
 	Enabled() bool
-	UpsertContentDocument(context.Context, uint, commonClient.ManagerContentDocument) error
+	UpsertContentDocuments(context.Context, uint, []commonClient.ManagerContentDocument) error
 	DeleteContentDocuments(context.Context, uint, service.ContentDocumentDeleteScope) error
 }
 
@@ -31,13 +31,12 @@ func NewContentIndexHandler(search contentIndexer) *ContentIndexHandler {
 	return &ContentIndexHandler{search: search}
 }
 
-// UpsertDocument godoc
-// @Summary 写入技术内容检索投影 | Upsert technical content search projection
+// UpsertDocuments godoc
+// @Summary 批量写入内容检索投影 | Upsert content search projections in a batch
 // @Description 仅 addp-meta 可分别覆盖当前 Tenant 的技术或正文完整快照，保留另一部分；持久登记并核验保护版本，外部任务确认成功才返回 204；超时或未决提交返回 503，不表示任务取消 | Only addp-meta may replace owned technical or extracted content snapshot fields while retaining the other snapshot; persist delivery and verify protection version, return 204 only for proven external success; timeout or uncertain submission returns 503 and does not imply cancellation
 // @Tags Manager Runtime
 // @Accept json
-// @Param document_id path string true "DataItem fingerprint"
-// @Param request body client.ManagerContentDocument true "内容文档 | Content document"
+// @Param request body client.ManagerContentBatch true "1–100 项完整快照；指纹不能重复 | 1–100 complete snapshots with distinct fingerprints"
 // @Success 204
 // @Failure 400 {object} map[string]interface{} "请求契约无效 | Invalid request contract"
 // @Failure 409 {object} map[string]interface{} "protection_version_changed：保护版本变化；manager_content_protection_required：无可执行 search_index 投影 | protection_version_changed: protection version changed; manager_content_protection_required: no executable search_index projection"
@@ -45,11 +44,10 @@ func NewContentIndexHandler(search contentIndexer) *ContentIndexHandler {
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.content_index.update"]
-// @Router /runtime/content-documents/{document_id} [put]
-func (h *ContentIndexHandler) UpsertDocument(c *gin.Context) {
-	documentID := strings.TrimSpace(c.Param("document_id"))
-	var document commonClient.ManagerContentDocument
-	if documentID == "" || len(documentID) > 128 || strings.Contains(documentID, "/") || c.ShouldBindJSON(&document) != nil || document.DocumentID != documentID || document.Validate() != nil {
+// @Router /runtime/content-documents/batch_update [post]
+func (h *ContentIndexHandler) UpsertDocuments(c *gin.Context) {
+	var batch commonClient.ManagerContentBatch
+	if c.ShouldBindJSON(&batch) != nil || batch.Validate() != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentDocumentInvalid), "error_code": "manager_content_document_invalid"})
 		return
 	}
@@ -57,7 +55,7 @@ func (h *ContentIndexHandler) UpsertDocument(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentIndexUnavailable), "error_code": "manager_content_index_unavailable"})
 		return
 	}
-	if err := h.search.UpsertContentDocument(c.Request.Context(), commonAuth.GetTenantID(c), document); err != nil {
+	if err := h.search.UpsertContentDocuments(c.Request.Context(), commonAuth.GetTenantID(c), batch.Documents); err != nil {
 		if errors.Is(err, projectionstore.ErrVersionChanged) {
 			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentProtectionVersionChanged), "error_code": "protection_version_changed"})
 			return

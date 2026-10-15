@@ -64,7 +64,7 @@ func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *comm
 		document.ModifiedDate = modified
 	}
 
-	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocument(ctx, document); err != nil {
+	if err := s.contentIndex.WithTenantID(tenantID).UpsertDocuments(ctx, []commonClient.ManagerContentDocument{document}); err != nil {
 		s.log.Warn("提交 Manager 内容投影失败", "fingerprint", item.Fingerprint, "full_name", item.FullName, "error", err)
 		return false
 	}

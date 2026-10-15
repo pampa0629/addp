@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
@@ -43,6 +44,8 @@ type SourceGrantView struct {
 	CatalogRequestID     *uuid.UUID       `json:"catalog_request_id"`
 	EngineID             int64            `json:"engine_id,string" swaggertype:"string"`
 	CatalogPath          json.RawMessage  `json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint      string           `json:"item_fingerprint"`
+	BoundaryHash         string           `json:"boundary_hash"`
 	RecipientType        string           `json:"recipient_type"`
 	RecipientID          int64            `json:"recipient_id,string" swaggertype:"string"`
 	Action               string           `json:"action"`
@@ -58,6 +61,7 @@ type SourceGrantView struct {
 func sourceGrantView(row *sourceGrant) SourceGrantView {
 	return SourceGrantView{RequestID: row.RequestID, GrantedAt: row.GrantedAt, ApprovalMode: row.ApprovalMode,
 		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
+		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, RequirementVersion: row.RequirementVersion,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason}
@@ -68,6 +72,8 @@ type CreateIndependentGrantInput struct {
 	EngineID                   int64
 	RequestID                  uuid.UUID
 	CatalogPath                engineplugin.EngineCatalogPath
+	ItemFingerprint            string
+	ExpectedBoundaryHash       string
 	RequirementVersion         int64
 	InitializeApproval         bool
 	RecipientType              string
@@ -78,6 +84,9 @@ type CreateIndependentGrantInput struct {
 }
 
 func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, error) {
+	if err := (authorizationfacts.Binding{ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash, NativeTarget: input.CatalogPath}).Validate(); err != nil {
+		return nil, commonapi.ErrBadRequest
+	}
 	path, err := shared.EncodeSharingTarget(input.CatalogPath)
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	segments := input.CatalogPath.Segments
@@ -90,6 +99,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	reason := strings.TrimSpace(input.Reason)
 	return &sourceGrant{RequestID: input.RequestID, ApprovalMode: approvalModeIndependent,
 		TenantID: input.Actor.TenantID, EngineID: input.EngineID, CatalogPath: path,
+		ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash,
 		RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
 		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, RequirementVersion: input.RequirementVersion,
 		OperatorPrincipalID: input.Actor.PrincipalID, OperatorMembershipID: input.Actor.MembershipID,
@@ -103,6 +113,7 @@ func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) boo
 func sameIndependentGrant(a, b *sourceGrant) bool {
 	return a.ApprovalMode == approvalModeIndependent && a.CatalogRequestID == nil &&
 		a.RequestID == b.RequestID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && equalJSON(a.CatalogPath, b.CatalogPath) &&
+		a.ItemFingerprint == b.ItemFingerprint && a.BoundaryHash == b.BoundaryHash &&
 		a.RequirementVersion == b.RequirementVersion && a.InitializedApproval == b.InitializedApproval && a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
 		a.Action == b.Action && a.OperatorPrincipalID == b.OperatorPrincipalID && a.OperatorMembershipID == b.OperatorMembershipID &&
 		a.Reason != nil && b.Reason != nil && *a.Reason == *b.Reason &&
@@ -168,6 +179,9 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 		})
 	if err != nil || result != nil {
 		return result, err
+	}
+	if err := s.verifyApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash); err != nil {
+		return nil, err
 	}
 	if s.independentTarget == nil {
 		return nil, ErrIndependentGrantSourceUnavailable

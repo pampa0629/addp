@@ -191,6 +191,7 @@ func openCatalogServiceTestDB(t *testing.T) *gorm.DB {
 			source_binding_id TEXT NOT NULL, source_version TEXT NOT NULL, responsibility_id TEXT NOT NULL,
 			engine_id INTEGER NOT NULL, catalog_path JSON NOT NULL, confirmed_by INTEGER NOT NULL,
 			confirmer_membership_id INTEGER NOT NULL, authorization_version INTEGER NOT NULL,
+			item_fingerprint TEXT NOT NULL, boundary_hash TEXT NOT NULL,
 			recipient_type TEXT NOT NULL, recipient_id INTEGER NOT NULL, action TEXT NOT NULL,
 			self_beneficiary BOOLEAN NOT NULL, confirmer_in_project_group BOOLEAN NOT NULL,
 			reason TEXT NOT NULL, expiry_mode TEXT NOT NULL, expires_at DATETIME, created_at DATETIME NOT NULL)`,
