@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/oceanbase"
 	"github.com/addp/common/engine/plugins/opengauss"
+	"github.com/addp/common/engine/plugins/oracle"
 	"github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/engine/plugins/tidb"
 )
@@ -29,6 +30,10 @@ func TestClickHouseDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
 
 func TestDM8DefinitionRejectsBeforeReplaceEffects(t *testing.T) {
 	testDefinitionRejectsBeforeReplaceEffects(t, &dameng.Plugin{})
+}
+
+func TestOracleDefinitionRejectsBeforeReplaceEffects(t *testing.T) {
+	testDefinitionRejectsBeforeReplaceEffects(t, &oracle.OraclePlugin{})
 }
 
 func testDefinitionRejectsBeforeReplaceEffects(t *testing.T, p engineplugin.EnginePlugin) {

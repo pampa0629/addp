@@ -290,7 +290,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 				delete(f.items, 2)
 				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "no_checker":
-				f.engines[2].EngineType = "oracle"
+				f.engines[2].EngineType = "mongodb"
 			case "bad_identity":
 				f.items[1].TenantID = 8
 				wantError = true
@@ -314,6 +314,15 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 			}
 			if err != nil || report.Status != plugin.DefinitionUnknown {
 				t.Fatalf("report=%+v err=%v", report, err)
+			}
+			if name == "no_checker" {
+				found := false
+				for _, diagnostic := range report.Diagnostics {
+					found = found || diagnostic.Code == "provider_definition_check_not_available"
+				}
+				if !found {
+					t.Fatal("missing checker was not reported")
+				}
 			}
 			if name == "upsert" {
 				if f.calls != 0 {
@@ -550,6 +559,8 @@ func TestConfigCheckBindingUsesWireObjectsAndAllSnapshotFields(t *testing.T) {
 
 func TestConfigCheckDM8Definition(t *testing.T) { testConfigCheckProviderDefinition(t, "dameng") }
 
+func TestConfigCheckOracleDefinition(t *testing.T) { testConfigCheckProviderDefinition(t, "oracle") }
+
 func TestConfigCheckDorisDefinition(t *testing.T) { testConfigCheckProviderDefinition(t, "doris") }
 func TestConfigCheckClickHouseDefinition(t *testing.T) {
 	testConfigCheckProviderDefinition(t, "clickhouse")
@@ -557,7 +568,7 @@ func TestConfigCheckClickHouseDefinition(t *testing.T) {
 
 func testConfigCheckProviderDefinition(t *testing.T, engineType string) {
 	scenarios := []string{"json", "invalid_constant", "array", "decimal", "append_json", "append_incompatible", "source_text"}
-	if engineType == "dameng" {
+	if engineType == "dameng" || engineType == "oracle" {
 		scenarios = append(scenarios, "append_not_null")
 	}
 	if engineType == "doris" {
@@ -573,6 +584,10 @@ func testConfigCheckProviderDefinition(t *testing.T, engineType string) {
 			fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "payload", Type: datatype.FieldTypeJSON, NativeType: "string", Nullable: true}}
 			if engineType == "dameng" {
 				fields[0].NativeType, fields[1].NativeType = "BIGINT", "CLOB"
+			}
+			if engineType == "oracle" {
+				fields[0].NativeType, fields[0].Precision, fields[0].Scale = "NUMBER(18,0)", 18, 0
+				fields[1].NativeType = "JSON"
 			}
 			if engineType == "clickhouse" {
 				fields[0].NativeType, fields[1].NativeType = "Int64", "Nullable(String)"

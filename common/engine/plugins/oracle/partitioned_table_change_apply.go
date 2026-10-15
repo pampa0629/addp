@@ -207,33 +207,14 @@ func validateOraclePartitionedTableChangeApplyBatch(batch *plugin.PartitionedTab
 }
 
 func validateOracleWriteFields(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) ([]datatype.FieldInfo, error) {
+	if err := (&OraclePlugin{}).CheckTableWriteDefinition(plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatialInfo})).UnsupportedError(); err != nil {
+		return nil, err
+	}
 	result := make([]datatype.FieldInfo, 0, len(fields))
-	seen := map[string]bool{}
 	for _, field := range fields {
 		field.Name = strings.TrimSpace(field.Name)
-		if field.Name == "" || seen[field.Name] {
-			return nil, fmt.Errorf("oracle table write fields must have non-empty unique names")
-		}
-		if len([]byte(field.Name)) > 128 {
-			return nil, fmt.Errorf("oracle field name %q exceeds the 128-byte identifier limit", field.Name)
-		}
-		if _, err := oracleSQLTypeForField(field); err != nil {
-			return nil, err
-		}
-		if datatype.IsSpatialFieldType(field.Type) && oracleSpatialColumnForField(spatialInfo, field.Name) == nil {
-			return nil, fmt.Errorf("oracle geometry field %q requires frozen spatial facts", field.Name)
-		}
-		if datatype.IsSpatialFieldType(field.Type) {
-			column := oracleSpatialColumnForField(spatialInfo, field.Name)
-			if column.Dimension == nil || *column.Dimension != 2 {
-				return nil, fmt.Errorf("oracle target geometry field %q requires frozen XY dimension 2", field.Name)
-			}
-		}
-		seen[field.Name] = true
+		field.Type = datatype.ParseFieldType(string(field.Type))
 		result = append(result, field)
-	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("oracle table write requires fields")
 	}
 	return result, nil
 }
@@ -332,30 +313,29 @@ func evolveOracleTable(ctx context.Context, db *sql.DB, schema, table string, fi
 	if err != nil {
 		return err
 	}
+	definition := plugin.TableWriteDefinitionFromOptions(plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatialInfo})
+	definition.Existing = &datatype.TableInfo{Fields: existing}
+	if err := (&OraclePlugin{}).CheckTableWriteDefinition(definition).UnsupportedError(); err != nil {
+		return err
+	}
 	byName := make(map[string]datatype.FieldInfo, len(existing))
 	for _, field := range existing {
 		byName[field.Name] = field
 	}
 	dialect := commonquery.ForDialect("oracle")
+	additions := make([]string, 0)
 	for _, field := range fields {
-		current, ok := byName[field.Name]
-		if ok {
-			if !oracleColumnCompatible(current, field, spatialInfo) {
-				return fmt.Errorf("oracle target column %q has type %q, expected %q", field.Name, current.NativeType, oracleExpectedType(field))
-			}
+		if _, ok := byName[field.Name]; ok {
 			continue
-		}
-		if field.PrimaryKey {
-			return fmt.Errorf("oracle schema evolution cannot add primary key column %q to existing table", field.Name)
-		}
-		if !field.Nullable {
-			return fmt.Errorf("oracle schema evolution cannot add non-null column %q", field.Name)
 		}
 		definition, err := oracleColumnDefinition(field)
 		if err != nil {
 			return err
 		}
-		if _, err := db.ExecContext(ctx, "ALTER TABLE "+dialect.QualifiedTable(schema, table)+" ADD ("+definition+")"); err != nil {
+		additions = append(additions, definition)
+	}
+	if len(additions) > 0 {
+		if _, err := db.ExecContext(ctx, "ALTER TABLE "+dialect.QualifiedTable(schema, table)+" ADD ("+strings.Join(additions, ", ")+")"); err != nil {
 			return fmt.Errorf("evolve Oracle target table %s.%s: %w", schema, table, err)
 		}
 	}
@@ -375,6 +355,9 @@ func oracleColumnDefinition(field datatype.FieldInfo) (string, error) {
 }
 
 func oracleSQLTypeForField(field datatype.FieldInfo) (string, error) {
+	if field.PrimaryKey && (field.Type == datatype.FieldTypeBytes || field.Type == datatype.FieldTypeGeometry) {
+		return "", fmt.Errorf("oracle primary key field %q has unsupported type %q", field.Name, field.Type)
+	}
 	switch datatype.ParseFieldType(string(field.Type)) {
 	case datatype.FieldTypeString:
 		return "VARCHAR2(4000 CHAR)", nil
@@ -415,22 +398,6 @@ func oracleSQLTypeForField(field datatype.FieldInfo) (string, error) {
 func oracleExpectedType(field datatype.FieldInfo) string {
 	value, _ := oracleSQLTypeForField(field)
 	return value
-}
-
-func oracleColumnCompatible(current, expected datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
-	if datatype.IsSpatialFieldType(expected.Type) {
-		return datatype.IsSpatialFieldType(current.Type) && oracleSpatialColumnForField(spatialInfo, expected.Name) != nil
-	}
-	if expected.Type == datatype.FieldTypeDecimal && current.Type == datatype.FieldTypeDecimal {
-		return expected.Precision == 0 || (current.Precision == expected.Precision && current.Scale == expected.Scale)
-	}
-	if expected.Type == datatype.FieldTypeDate {
-		return current.Type == datatype.FieldTypeTimestamp && strings.EqualFold(current.NativeType, "DATE")
-	}
-	if expected.Type == datatype.FieldTypeUUID {
-		return current.Type == datatype.FieldTypeString && current.Size == 36
-	}
-	return current.Type == expected.Type
 }
 
 func validateOracleApplyTargetKeys(ctx context.Context, db *sql.DB, schema, table string, keys []string) error {
