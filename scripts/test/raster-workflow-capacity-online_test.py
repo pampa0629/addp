@@ -314,12 +314,12 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
 
     def test_real_manager_route_sequence_four_groups_and_failure_measurements(self):
         from unittest.mock import Mock
-        for fail in (False,True):
+        for fail in (None,'parent','physical','meta'):
             with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);env={'ADDP_ONLINE_ARTIFACT_DIR':str(root),'ADDP_ONLINE_SECRET_DIR':str(root)}
                 report={'identity':{'principal_id':'33'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
                 current=dict(version=1,running=2,waiting=2,cache_mib=256,default_tenant_running=2,default_tenant_waiting=2)
-                tasks={};calls=[];executions={};scans=set()
+                tasks={};calls=[];executions={};scans=set();verification_order=[]
                 item,actual=self.item();actual.update(source_unchanged=True,rasters={'cog':{'sha256':'stable'}})
                 def request(method,path,statuses,body=None):
                     calls.append((method,path,statuses,body))
@@ -351,12 +351,18 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     for sample in samples:sample['runtime']['applied_version']=current['version']
                     return SimpleNamespace(samples=samples,before=before,after=after,start=Mock(),finish=Mock(return_value=samples))
                 def wait(client,module,identifier,timeout):
-                    if module=='meta':return {'status':'success'}
-                    if fail:raise m.scene.SuiteError('Manager execution failed')
+                    if module=='meta':
+                        verification_order.append('meta')
+                        if fail=='meta':raise m.scene.SuiteError('Meta execution returned HTTP 404')
+                        return {'status':'success'}
+                    if fail=='parent':raise m.scene.SuiteError('Manager execution failed')
                     return executions[identifier]
                 def physical(action,names):
                     if action=='seed-mosaic':return {'source_unchanged':True,'tiles':dict.fromkeys(m.fixture.mosaic_windows(),{})}
-                    if action=='verify-mosaic':return actual
+                    if action=='verify-mosaic':
+                        verification_order.append('physical')
+                        if fail=='physical':raise m.scene.SuiteError('physical pixels differ')
+                        return actual
                     if action=='purge-mosaic':return {'source_unchanged':True}
                     raise AssertionError(action)
                 with patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
@@ -364,16 +370,30 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                      patch.object(m,'restart_runtime',return_value={'Id':'fresh','State':{'Pid':17}}),patch.object(m,'cgroup_directory'), \
                      patch.object(m,'Sampler',side_effect=sampler),patch.object(m,'wait_applied'),patch.object(m.scene,'wait_execution',side_effect=wait):
                     if fail:
-                        with self.assertRaisesRegex(m.scene.SuiteError,'Manager execution failed'):
+                        message={'parent':'Manager execution failed','physical':'physical pixels differ',
+                                 'meta':'Meta execution returned HTTP 404'}[fail]
+                        with self.assertRaisesRegex(m.scene.SuiteError,message):
                             m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
                     else:m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
                 measurements=list(root.glob('*-measurements.json'))
                 self.assertEqual(len(measurements),1 if fail else 4)
                 self.assertEqual(len(report['mosaic_groups']),0 if fail else 4)
-                self.assertEqual(len(scans),0 if fail else 4)
+                self.assertEqual(len(scans),0 if fail in ('parent','physical') else 1 if fail=='meta' else 4)
                 self.assertEqual(report['result'],'failed')  # Only the outer complete suite may declare success.
                 self.assertTrue(all(call[2]==(403,) for call in calls if call[0]=='DELETE'))
                 self.assertTrue(all('manager' in call[1] for call in calls if call[0]=='POST'))
+                evidence=list(root.glob('*-verification.json'))
+                self.assertEqual(len(evidence),0 if fail=='parent' else 1 if fail else 4)
+                for path in evidence:
+                    snapshot=json.loads(path.read_text())
+                    self.assertNotIn('result',snapshot)
+                    self.assertEqual(snapshot['physical'],None if fail=='physical' else actual)
+                    self.assertEqual(snapshot['physical_verified'],fail!='physical')
+                    self.assertTrue(snapshot['execution_id'].startswith('parent-'))
+                    self.assertIn('resource_observation',snapshot['measurement'])
+                expected_order=[] if fail=='parent' else ['physical'] if fail=='physical' else ['physical','meta']*(1 if fail=='meta' else 4)
+                self.assertEqual(verification_order,expected_order)
+                if fail:self.assertFalse((root/'capacity-progress.json').exists())
                 if not fail:
                     self.assertEqual([g['leaf_concurrency'] for g in report['mosaic_groups']],[1,4,4,1])
                     self.assertEqual(json.loads((root/'capacity-progress.json').read_text())['completed_mosaic_groups'],4)

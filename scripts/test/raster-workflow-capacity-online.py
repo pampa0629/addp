@@ -291,14 +291,24 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         metrics=validate_measurement(samples,sampler.before,sampler.after,64,1,saved['version'],submitted_tasks=1)
         facts,scan=validate_directory_execution(execution,source_locator,name)
         if scan in scans:raise scene.SuiteError('capacity mosaic automatic scan reused')
-        scans.add(scan);scene.wait_execution(client,'meta',scan,600)
-        item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
-        item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
-        actual=physical('verify-mosaic',[name]);sizes=validate_directory_item(item,actual)
+        verification={'dataset_name':name,'task_id':task_id,'execution_id':identifier,
+            'leaf_concurrency':leaf_concurrency,'repetition':repetition,'elapsed_seconds':elapsed,
+            'policy_version':saved['version'],'runtime_container_id':container['Id'],
+            'measurement':metrics,'owner_facts':facts,'automatic_scan_execution_id':scan,
+            'physical_verified':False,'physical':None}
+        verification_path=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(name+'-verification.json')
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
+        actual=physical('verify-mosaic',[name])
         if actual.get('source_unchanged') is not True:raise scene.SuiteError('capacity mosaic source changed')
         hashes={key:value['sha256'] for key,value in actual['rasters'].items()}
         if expected_hashes is not None and hashes!=expected_hashes:raise scene.SuiteError('capacity mosaic raster bytes differ between runs')
         expected_hashes=hashes
+        verification.update(physical_verified=True,physical=actual)
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
+        scans.add(scan);scene.wait_execution(client,'meta',scan,600)
+        item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
+        item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sizes=validate_directory_item(item,actual)
         monitor=scene.obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mosaic Monitor')
         if monitor.get('status')!='success' or monitor.get('module')!='manager' or monitor.get('task_type')!=MOSAIC_TASK_TYPE:
             raise scene.SuiteError('capacity mosaic Monitor differs from its parent')
