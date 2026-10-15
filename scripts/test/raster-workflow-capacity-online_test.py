@@ -163,6 +163,31 @@ class CapacityEvidenceTest(unittest.TestCase):
         self.assertEqual(sampler.samples[0]['oom_kill'],1)
         self.assertIsNone(sampler.samples[0]['runtime'])
 
+    def test_sampler_failure_keeps_terminal_metrics_and_specific_reason(self):
+        from unittest.mock import Mock
+        platform=SimpleNamespace(request=Mock())
+        sampler=m.Sampler(Path('/cgroup'),platform,'/policy')
+        sampler.thread=Mock();sampler.thread.is_alive.return_value=False
+        sampler.error=m.scene.SuiteError('capacity runtime observation is missing')
+        terminal={'oom':1,'oom_kill':1,'memory_peak_bytes':2*(1<<30)}
+        with patch.object(m,'read_metrics',return_value=terminal):
+            with self.assertRaisesRegex(m.scene.SuiteError,'capacity runtime observation is missing'):
+                sampler.finish()
+        self.assertEqual(sampler.after,terminal)
+        platform.request.assert_not_called()
+
+    def test_sampler_terminal_observation_failure_still_keeps_terminal_metrics(self):
+        from unittest.mock import Mock
+        platform=SimpleNamespace(request=Mock(return_value=SimpleNamespace(payload={'runtime':None})))
+        sampler=m.Sampler(Path('/cgroup'),platform,'/policy');sampler.started=m.time.monotonic()
+        sampler.thread=Mock();sampler.thread.is_alive.return_value=False
+        terminal={'oom':0,'oom_kill':0,'memory_peak_bytes':123}
+        with patch.object(m,'read_metrics',return_value=terminal):
+            with self.assertRaisesRegex(m.scene.SuiteError,'capacity runtime observation is missing'):
+                sampler.finish()
+        self.assertEqual(sampler.after,terminal)
+        self.assertIsNone(sampler.samples[-1]['runtime'])
+
     def test_execution_failure_preserves_samples_and_restores_platform_policy(self):
         from unittest.mock import Mock
         original=dict(version=10,running=2,waiting=2,cache_mib=256,default_tenant_running=2,default_tenant_waiting=2)

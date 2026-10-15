@@ -107,8 +107,14 @@ class Sampler:
         self.started=time.monotonic();self.before=read_metrics(self.directory);self.thread.start()
     def finish(self):
         self.event.set();self.thread.join(35)
-        if self.thread.is_alive() or self.error: raise scene.SuiteError('capacity sampler failed') from self.error
-        self.sample();self.after=read_metrics(self.directory)
+        try:
+            if self.thread.is_alive(): raise scene.SuiteError('capacity sampler did not stop')
+            if self.error:
+                reason=str(self.error) if isinstance(self.error,scene.SuiteError) else type(self.error).__name__
+                raise scene.SuiteError('capacity sampler failed: '+reason) from self.error
+            self.sample()
+        finally:
+            self.after=read_metrics(self.directory)
         return self.samples
 
 
@@ -349,6 +355,7 @@ def run(env):
                 identifiers=[scene.submit(client,engine,workflow(locator,target_engine,name),execution_timeout=900) for name in names]
                 wait_applied(platform,path,cache,running,saved['version'])
                 for identifier in identifiers:executions.append(scene.wait_execution(client,'develop',identifier,1200))
+                elapsed=time.monotonic()-started
             finally:
                 try:
                     samples=sampler.finish()
@@ -359,7 +366,6 @@ def run(env):
                         'before':sampler.before,'after':getattr(sampler,'after',None),'samples':sampler.samples}
                     evidence_path=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/f'capacity-c{cache}-n{running}-r{repetition}-measurements.json'
                     evidence_path.write_text(json.dumps(evidence,sort_keys=True))
-            elapsed=time.monotonic()-started
             metrics=validate_measurement(samples,sampler.before,sampler.after,cache,running,saved['version'])
             native=physical('verify',names);cases=[]
             if native['source_unchanged'] is not True or native['source_sha256']!=report['source']['source_sha256']:
