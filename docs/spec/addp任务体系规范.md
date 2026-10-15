@@ -1054,7 +1054,7 @@ Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant�
 
 1. `common.task_executions` 是 execution 状态、错误与结果摘要的唯一事实源。Monitor 只提供显式安全 DTO，禁止序列化整个 TaskExecution；执行配置、原始 metadata、原始查询和参数值、业务样本、Notebook 输出、完整运行时响应、lease/fencing token 和执行授权引用不得进入通用诊断响应。专业结果通过 Owner 页面及其既有授权入口读取。缺少受控消息契约的旧错误只用于归类失败原因，不回显自由文本；稳定错误码及失败目标计数可保留，未知原因明确指向 Owner 领域诊断。
 2. Monitor 使用同步 BFF 授权：Tenant Context 和自身 Permission 只是入口条件，Owner 在同一 User 请求内重新核验 AuthContext 并通过唯一 `GET /execution-read-scope` 返回强类型读取范围。规则声明只存在于 Owner；Common 提供范围类型和匹配，不维护任务类型到 Permission 的中央清单。第一版仅接受 Tenant Scope，不声称支持无可信资源归属的 Department/Project Group 隔离。
-3. 第一版的 Owner 任务读取 Permission 明确包含本租户该任务类型的执行历史（包括已删除任务定义的历史），不隐含数据结果读取。一次性 execution 仅在 Owner 明确允许且当前发起主体匹配时可读；无主体证据拒绝。父 execution 可读不授予子 execution 读取权。Owner 不可用或授权响应非法时失败关闭；列表、详情、树和执行统计采用相同读取范围。
+3. 第一版的 Owner 任务读取 Permission 明确包含本租户该任务类型的执行历史（包括已删除任务定义的历史），不隐含数据结果读取。一次性 execution 仅在 Owner 明确允许且当前发起主体匹配时可读；无主体证据拒绝。父 execution 可读不授予子 execution 读取权。Owner 不可用或授权响应非法时失败关闭；列表、详情、树和执行统计采用相同读取范围。一次同步请求的 Owner 授权共用 5 秒总预算，以最多 4 个并发调用完成；任何必需 Owner 失败或响应非法时取消其余调用，整份请求失败，不返回部分范围、不缓存或跨请求复用授权。
 4. 步骤展示复用 Owner 已保存的 `metadata.step_results` 和实际子 execution 身份；只投影步骤标识、状态、时间、耗时、安全错误与子执行引用，不复制步骤 Result。没有证据时显示未记录，不以当前任务定义推断历史；同一 execution 重试后的旧步骤未标注 attempt 时必须提示不能据此认定本次进度；树达到展示预算时必须标识截断。
 5. 过程事件使用 PostgreSQL `common.execution_events`，可信 Tenant/module/task type 从 execution 派生。事件按 execution + attempt 关联；bounded 写入校验有效 lease，continuous 写入校验 Owner 既有 fencing。已有文本过程日志替换后删除旧追加路径，不长期双写；已有步骤结果和领域结果不迁入事件表。第一版不接 Alloy/Loki。
 6. 过程事件按事件时间保留 30 天（continuous 也滚动清理）。终态概览、步骤摘要及安全错误的目标保留期是 180 天；被领域历史、授权或告警依赖时必须按 Owner 引用约束延长，不能直接删除。专业结果、产物与操作审计使用各自生命周期。清理必须走标准维护入口，明确记录过期、截断、清理失败和保留原因；未接入清理前不得宣称保留策略已执行。

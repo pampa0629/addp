@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	commonclient "github.com/addp/common/client"
@@ -55,55 +56,92 @@ func (a *ExecutionReadAuthorizer) Resolve(ctx context.Context, owners []string, 
 	if err != nil {
 		return nil, ErrExecutionOwnerUnavailable
 	}
-	result := make([]execution.ReadScope, 0, len(owners))
-	for _, owner := range owners {
-		if !ownerModulePattern.MatchString(owner) {
-			return nil, ErrExecutionOwnerUnavailable
-		}
-		endpoint := ""
-		for _, module := range modules {
-			if module == nil || module.ModuleName != owner || !module.Enabled {
-				continue
-			}
-			for _, instance := range module.Instances {
-				if instance.Role != commonclient.ModuleRuntimeRoleBackend || instance.Status != "up" || !instance.LeaseExpiresAt.After(a.now()) {
-					continue
+	// Owners are independent but share one deadline and one all-or-nothing result.
+	// A worker pool bounds upstream load without accumulating serial latency.
+	result := make([]execution.ReadScope, len(owners))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	var failureOnce sync.Once
+	failed := false
+	for range min(4, len(owners)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				if ctx.Err() != nil {
+					return
 				}
-				base, parseErr := url.Parse(instance.ModuleURL)
-				if parseErr == nil && (base.Scheme == "http" || base.Scheme == "https") && base.Host != "" && base.User == nil && base.RawQuery == "" && base.Fragment == "" {
-					endpoint = strings.TrimRight(instance.ModuleURL, "/") + "/api/v1/" + owner + "/execution-read-scope"
-					break
+				scope, err := a.resolveOwner(ctx, modules, owners[index], tenantID, principalID, bearer)
+				if err != nil {
+					failureOnce.Do(func() { failed = true; cancel() })
+					return
 				}
+				result[index] = scope
 			}
+		}()
+	}
+dispatch:
+	for index := range owners {
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break dispatch
 		}
-		if endpoint == "" {
-			return nil, ErrExecutionOwnerUnavailable
-		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, ErrExecutionOwnerUnavailable
-		}
-		request.Header.Set("Authorization", bearer)
-		response, err := a.httpClient.Do(request)
-		if err != nil {
-			return nil, ErrExecutionOwnerUnavailable
-		}
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, 32*1024+1))
-		response.Body.Close()
-		var scope execution.ReadScope
-		if response.StatusCode != http.StatusOK || readErr != nil || len(body) > 32*1024 || json.Unmarshal(body, &scope) != nil || scope.Module != owner || scope.TenantID != tenantID || scope.PrincipalID != principalID || len(scope.Grants) > 100 {
-			return nil, ErrExecutionOwnerUnavailable
-		}
-		seen := map[string]bool{}
-		for _, grant := range scope.Grants {
-			if !ownerModulePattern.MatchString(grant.TaskType) || seen[grant.TaskType] {
-				return nil, ErrExecutionOwnerUnavailable
-			}
-			seen[grant.TaskType] = true
-		}
-		result = append(result, scope)
+	}
+	close(jobs)
+	workers.Wait()
+	if failed || ctx.Err() != nil {
+		return nil, ErrExecutionOwnerUnavailable
 	}
 	return result, nil
+}
+
+func (a *ExecutionReadAuthorizer) resolveOwner(ctx context.Context, modules []*commonclient.ModuleInfo, owner string, tenantID int, principalID int64, bearer string) (execution.ReadScope, error) {
+	if !ownerModulePattern.MatchString(owner) {
+		return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+	}
+	endpoint := ""
+	for _, module := range modules {
+		if module == nil || module.ModuleName != owner || !module.Enabled {
+			continue
+		}
+		for _, instance := range module.Instances {
+			if instance.Role != commonclient.ModuleRuntimeRoleBackend || instance.Status != "up" || !instance.LeaseExpiresAt.After(a.now()) {
+				continue
+			}
+			base, parseErr := url.Parse(instance.ModuleURL)
+			if parseErr == nil && (base.Scheme == "http" || base.Scheme == "https") && base.Host != "" && base.User == nil && base.RawQuery == "" && base.Fragment == "" {
+				endpoint = strings.TrimRight(instance.ModuleURL, "/") + "/api/v1/" + owner + "/execution-read-scope"
+				break
+			}
+		}
+	}
+	if endpoint == "" {
+		return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+	}
+	request.Header.Set("Authorization", bearer)
+	response, err := a.httpClient.Do(request)
+	if err != nil {
+		return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 32*1024+1))
+	response.Body.Close()
+	var scope execution.ReadScope
+	if response.StatusCode != http.StatusOK || readErr != nil || len(body) > 32*1024 || json.Unmarshal(body, &scope) != nil || scope.Module != owner || scope.TenantID != tenantID || scope.PrincipalID != principalID || len(scope.Grants) > 100 {
+		return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+	}
+	seen := map[string]bool{}
+	for _, grant := range scope.Grants {
+		if !ownerModulePattern.MatchString(grant.TaskType) || seen[grant.TaskType] {
+			return execution.ReadScope{}, ErrExecutionOwnerUnavailable
+		}
+		seen[grant.TaskType] = true
+	}
+	return scope, nil
 }
 
 func (s *ExecutionQueryService) SetReadResolver(resolver ExecutionReadResolver) {
