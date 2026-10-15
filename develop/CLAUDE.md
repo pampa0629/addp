@@ -448,3 +448,5 @@ ES DSL 查询沿用普通 query 执行及 TaskProvider 契约主路径；`POST /
 continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限、iframe、拒绝提示、无详情、无事件），断言不放宽；仅该诊断改动以 `b0765f802` 提交并推送，复验 `38337857450` 已排队。Workflow/Notebook 的本批工作区改造未提交或发布。
 
 上一批 Query 事件 Hosted T4 `38333947835`（`dcb802e4236dc32aaf82c79341430efb609504e3`）已通过：三轮各验证两个 Query execution 的 started/progress/completed 事件，浏览器与专业成果/血缘断言通过、残留 0；58 个公开归档文件未发现私有控制文件或访问令牌标记。这不替代本批 Workflow/Notebook 的 T4。
+
+2026-10-15 当前 main 状态核对：以上“工作区尚未发布”是 10 月 13 日的历史快照；共享执行监督器实现现已随 `afeb312ed` 进入 main。`ExecutionService.Execute` 的 script 分支仍固定以 `authorization_unavailable` 失败，不会派发 Notebook Runtime，因此不能将该批计为 Notebook 排队执行已完成。其运行许可契约及 System IAM 实现仍须由对应 Owner 衔接确认，Develop 消费许可并补齐真实执行验收；不得借用 Notebook Session 或数据读取授权、保存用户 Token，或恢复旧请求外 goroutine 绕过。现有 Query 与 continuous 的历史通过证据不能外推到该 Notebook 路径。
