@@ -129,7 +129,7 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
-受保护资源列表支持资源 full_name 字面子串、引擎和既有生命周期状态的服务端组合筛选，计数与分页采用相同条件。Owner 同步摘要另从既有投影派生有效期和当前有效状态；界面区分规则同步与时间有效性，过期仍保持纳管并通过现有显式重新发现续期，不新增自动续期或调度。银行卡号元数据能力 `addp.detector.bank_card_number_metadata/v1` 只对表/集合字符串字段的明确银行卡号名称进行精确识别，复用现有末级/扁平路径语义和发现、复核、四 Owner 编译；不读取业务行或推断普通账号/卡 ID。
+受保护资源列表支持资源 full_name 字面子串、引擎和既有生命周期状态的服务端组合筛选，计数与分页采用相同条件。Owner 同步摘要另从既有投影派生有效期和当前有效状态；界面区分规则同步与时间有效性，过期仍保持纳管；管理员须显式修改保护有效期才能恢复时间有效性，重新发现不延期，不新增自动续期或调度。银行卡号元数据能力 `addp.detector.bank_card_number_metadata/v1` 只对表/集合字符串字段的明确银行卡号名称进行精确识别，复用现有末级/扁平路径语义和发现、复核、四 Owner 编译；不读取业务行或推断普通账号/卡 ID。
 
 提交 `b8ce75038` 的上述扩展已通过 `make test-module MODULE=security`：Go T1、212 个前端确定性用例、25 个浏览器用例、构建及 Security PostgreSQL T2 均通过；Swagger 生成和 62 条路由覆盖核验通过。[同提交 Platform CI 38338630796](https://github.com/pampa0629/addp/actions/runs/38338630796) 已成功。2026-10-13 重启后，本地 Security 就绪且构建包含该提交；无痕 Chrome 的 outdoor 开发者账号核对 Persons 名称有匹配／无匹配／重置恢复，以及四出口截止时间、独立时间有效状态和详情起止时间。Chrome 原生自动化通道不稳定的剩余控件由内置浏览器的 ADDP 开发管理员账号只读补验：MongoDB 与同步完成的组合找到 Persons，保护中与已停止保护的交集为空，重置后恢复；银行卡号能力的版本、字符串类型、精确别名、隐私边界和号码有效性／卡种／校验位局限均在真实界面可见。查看后取消表单，现有类型仍保持一项识别方式，未保存新增绑定或改变保护、授权。此记录不计为普通账号全部组合筛选、真实银行卡字段的发现与数据出口 T4，亦未在本地改时钟制造到期场景。
 
@@ -144,3 +144,7 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 提交 `7a6476b3d` 的 [2026-10-14 Hosted T4 38477006785](https://github.com/pampa0629/addp/actions/runs/38477006785) 已真实通过 v12，场景耗时约 884 秒，并完成下载报告与七张截图的独立核对。普通 User 的九个资源筛选场景全部通过：名称、正确／错误引擎、同步完成／已停止保护状态、保护中／全部范围的交集、百分号字面匹配及重置恢复均核对实际请求、成员、分页总数和表格；四 Owner 当前回执、时间有效状态及截止时间与响应一致。筛选阶段只读，未修改纳管、策略、授权或角色；进入 Security 及返回 Manager 后，验收 API 均绑定本次浏览器成功业务响应并确认同一用户、租户和完整权限集合。既有银行卡四 Owner 五行输出、MongoDB 三算法及十个任务清理、两个 Security 停机窗口与 14 个拒绝连接时间点、四 Owner 显式重新发现继续通过。Console 客户检索、预览、五行 CSV 与 Monitor 通过，零浏览器告警、零业务请求错误；新增三张筛选截图和既有四张客户数据截图已目视核对。领域资源、Hosted 应用、业务容器、Infra 与凭据清理通过，零残留。[同提交 Platform CI 38476933899](https://github.com/pampa0629/addp/actions/runs/38476933899) 全部成功；本地 `make test-online-runner`、`make test-console-frontend` 和 `make test-security-frontend` 均通过，其中 Console 为 173 个确定性用例、134 个浏览器用例及构建，Security 为 212 个确定性用例、26 个浏览器用例及构建。该结果不计为保护投影长周期自然到期或全平台高可用验收。
 
 资源保护有效期改为 Enrollment 级配置：新纳管默认长期有效，指定截止时间必须显式选择。已有期限迁移保留，重新发现不延期，修改期限沿既有权限、version 和唯一投影编译器同步四 Owner；Projection 唯一运行协议为 v3，expires_at=null 表示长期。期限到期仍保持纳管并拒绝输出，原值授权继续限时。此次变更的验收结论须由本次门禁另行记录，历史 v12 结果不能替代。
+
+2026-10-15，提交 `061e8420f` 的 [Hosted T4 38704771989](https://github.com/pampa0629/addp/actions/runs/38704771989) 未通过：在初始化精确源读取 Grant 前，System 的 `manager-preview` 读取检查返回 `503 authorization_facts_unavailable`，尚未进入 v13 有效期或浏览器场景。该隔离环境未配置独立 `SYSTEM_SERVICE_CLIENT_SECRET`，源授权准备请求还需适配现行 DataItem 指纹与授权边界契约；本次结果不能计为自然到期或长期有效 T4 通过。Hosted 应用、夹具与 Infra 清理通过，零残留。
+
+既有资源期限迁移的同一回归由 SQLite 与 `make test-security-postgres` 共同执行：四 Owner 保留各自原截止时间、修订和 feed 位置，资源回填其中最早截止时间，重复迁移不延期且不更改资源版本。迁移仅显式读取 Enrollment 身份列，避免 PostgreSQL 在同一连接内变更表结构后复用 `SELECT *` 查询计划导致结果类型变化。

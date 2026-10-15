@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/security/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -285,14 +286,22 @@ func TestExistingEnrollmentValidityMigrationPreservesDeadline(t *testing.T) {
 	if err := Migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	assertExistingEnrollmentValidityMigration(t, db)
+}
+
+func assertExistingEnrollmentValidityMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	deadline := now.Add(time.Hour)
-	row := models.ProtectionEnrollment{ID: "existing-validity", TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: "old-validity", State: "active", Version: 3, CreatedBy: 11, CreatedAt: now, UpdatedAt: now}
+	row := models.ProtectionEnrollment{ID: uuid.NewString(), TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: "old-validity", State: "active", Version: 3, CreatedBy: 11, CreatedAt: now, UpdatedAt: now}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range []string{"manager", "develop", "service", "transfer"} {
-		projection := dataprotection.Projection{SchemaVersion: "addp.protection_projection/v2", ProjectionID: "old-validity-" + owner, Revision: "00000000000000000003", ConsumerOwner: owner, State: "enrolling", Target: row.Target(), Rules: []dataprotection.Rule{}, ValidFrom: now, ExpiresAt: &deadline}
+	ownerDeadlines := map[string]time.Time{}
+	for index, owner := range []string{"manager", "develop", "service", "transfer"} {
+		ownerDeadline := deadline.Add(time.Duration(index) * time.Minute)
+		ownerDeadlines[owner] = ownerDeadline
+		projection := dataprotection.Projection{SchemaVersion: "addp.protection_projection/v2", ProjectionID: uuid.NewString(), Revision: "00000000000000000003", ConsumerOwner: owner, State: "enrolling", Target: row.Target(), Rules: []dataprotection.Rule{}, ValidFrom: now, ExpiresAt: &ownerDeadline}
 		if err := projection.Seal(); err != nil {
 			t.Fatal(err)
 		}
@@ -317,6 +326,25 @@ func TestExistingEnrollmentValidityMigrationPreservesDeadline(t *testing.T) {
 		}
 		if migrated.ProtectionExpiresAt == nil || !migrated.ProtectionExpiresAt.Equal(deadline) || migrated.Version != row.Version {
 			t.Fatal("migration silently renewed an existing resource")
+		}
+		var records []models.ProtectionProjectionRecord
+		if err := db.Where("enrollment_id = ?", row.ID).Find(&records).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(records) != len(ownerDeadlines) {
+			t.Fatal("migration changed the Owner projection set")
+		}
+		for _, record := range records {
+			var projection dataprotection.Projection
+			if err := json.Unmarshal([]byte(record.ProjectionPayload), &projection); err != nil {
+				t.Fatal(err)
+			}
+			if err := projection.Validate(time.Time{}); err != nil {
+				t.Fatal(err)
+			}
+			if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 || projection.ExpiresAt == nil || !projection.ExpiresAt.Equal(ownerDeadlines[record.ConsumerOwner]) || projection.Revision != "00000000000000000003" || record.PublishedSequence != 1 {
+				t.Fatal("migration changed an Owner deadline, revision or feed position")
+			}
 		}
 	}
 }

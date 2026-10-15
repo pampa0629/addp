@@ -24,7 +24,9 @@ func migrateProtectionValidity(db *gorm.DB, existed bool) error {
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		var rows []models.ProtectionEnrollment
-		if err := tx.Find(&rows).Error; err != nil {
+		// Only identity is needed here. An explicit projection keeps the query
+		// result stable when this transaction has just changed the table shape.
+		if err := tx.Select("id", "tenant_id").Find(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
