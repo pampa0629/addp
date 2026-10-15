@@ -159,7 +159,10 @@ make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify
 
 2026-10-15 大写图片扩展名回归：当前 Linux SDK 读取秋树的 `hongye.PNG` 时丢失红叶贴图绑定，同一图片字节及模型引用统一为小写扩展名后可读取。所有输入统一在执行私有目录由 SDK 准备模型，业务模型和图片不改名、不改写，未增加失败重试路线。新增 `.PNG`／`.PnG` 的 NFS 与签名 S3 回归先在旧代码上复现缺图，再核对修复后的精确对象键、贴图缓冲字节、缺图／损坏／403／500 拒绝、旧产物保留和临时文件清理。标准产品镜像构建通过五项 SDK CTest，镜像 ID 为 `sha256:f33f41f2ff5a49a9bc4a39e30c1d8c5c63aa651c8cb917f298655212c1a4343b`。
 
-用户已有 iDesktopX 样例的隔离验证通过同一生产算子生成 OSGB，再通过 Model3D 正式算子生成并校验 GLB：秋树和春树均为 9589 顶点／7273 面／两张 1024² 图片，冬树为 3154 顶点／1919 面／一张 1024² 图片，汽车为 21012 顶点／11683 面／无图片。春树、冬树及汽车与修复前产物逐项比较坐标、法线、UV、索引、场景节点和绑定图片像素保持一致，不依赖无语义的 primitive 排列顺序。隔离源码副本通过根 `make test-model3d-workflow`（278 既有测试＋4 个临时真实样例测试，共 282 项）；私有样例及临时测试未进入仓库或公共镜像。同轮 `make test-module MODULE=engines` 及 `make test-build-registration test-engine-startup-isolation` 通过；首次模块门禁因 zizmor 下载网络失败，使用已校验离线 wheel 后完整复验通过。此结果属于本地转换验证，秋树重启后的 Manager 页面及 Hosted T4 尚未计为通过；PNG 透明度仍不在当前 JPEG 发布路径的认证范围内。
+用户已有 iDesktopX 样例的隔离验证通过同一生产算子生成 OSGB，再通过 Model3D 正式算子生成并校验 GLB：秋树和春树均为 9589 顶点／7273 面／两张 1024² 图片，冬树为 3154 顶点／1919 面／一张 1024² 图片，汽车为 21012 顶点／11683 面／无图片。春树、冬树及汽车与修复前产物逐项比较坐标、法线、UV、索引、场景节点和绑定图片像素保持一致，不依赖无语义的 primitive 排列顺序。隔离源码副本通过根 `make test-model3d-workflow`（278 既有测试＋4 个临时真实样例测试，共 282 项）；私有样例及临时测试未进入仓库或公共镜像。同轮 `make test-module MODULE=engines` 及 `make test-build-registration test-engine-startup-isolation` 通过；首次模块门禁因 zizmor 下载网络失败，使用已校验离线 wheel 后完整复验通过。该隔离转换验证本身不代替 Manager 页面或 Hosted T4 验收；PNG 透明度仍不在当前 JPEG 发布路径的认证范围内。
+
+
+2026-10-15 用户重启后的真实页面验收：运行镜像 `sha256:012fc2f37ed8c34dafc6742ea8e86e2bde6ff98bfca677b0f89c78dd93955961` 的源码指纹 `1d93e5f0015c3f396e17a8b1fb111ef2843f0add` 与当前 SDK 基础镜像、构建文件和源码完全一致。Business MinIO 秋树 `item_id=44563` 经 Manager 页面重新执行任务 17，于 16:53:54 成功并可用；生成 GLB 为 839688 字节，SHA-256 `d0bc31aad15f561f0c92157f2e0c5c10072fb820a16606d7dae68a12b2aeacbb`，保留 9589 顶点、7273 面和两张 1024² RGB JPEG，两张图片均实际绑定到材质及有效 UV。浏览器首次生成、重新打开缓存和旋转查看均通过；211 个业务源文件哈希不变，Manager 的当前租户 SGM 临时前缀与 SuperMap Runtime 临时目录均为空。源码 `8f17c1d8f` 的 [Platform CI 38706914360](https://github.com/pampa0629/addp/actions/runs/38706914360) 已通过。本记录是本地真实页面验收，不计为 SGM Hosted T4；叶片透明通道仍未由当前 JPEG 输出保留。
 
 健康检查：
 
