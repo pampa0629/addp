@@ -36,7 +36,8 @@ func testDM8QuotedIdentifiers(t *testing.T) {
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	upper := "ADDP_CASE_" + strings.ToUpper(suffix)
 	names := []string{upper, strings.ToLower(upper), "ADDP_Case_" + suffix, "ADDP_quote_'\"_" + suffix}
-	for _, name := range names {
+	cleanupNames := append(append([]string(nil), names...), strings.ToUpper(names[3]))
+	for _, name := range cleanupNames {
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE='TABLE' AND OBJECT_NAME=?", name).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("refusing occupied fixture name %q: count=%d error=%v", name, count, err)
@@ -45,7 +46,7 @@ func testDM8QuotedIdentifiers(t *testing.T) {
 	t.Cleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		for _, name := range names {
+		for _, name := range cleanupNames {
 			path := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, schema, name)
 			if err := p.DeleteResource(cleanup, connInfo, path); err != nil {
 				t.Errorf("Provider cleanup %q: %v", name, err)
@@ -118,12 +119,33 @@ func testDM8QuotedIdentifiers(t *testing.T) {
 				t.Fatalf("wrong constraint facts: %+v", facts.Constraints)
 			}
 			upsert := plugin.TableUpsertOptions{Fields: fields, Keys: []string{key}}
-			if err := p.PrepareTableUpsert(ctx, connInfo, path, upsert); err != nil {
-				t.Fatal(err)
-			}
 			batch := &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{key: int64(2), doc: map[string]interface{}{"updated": name}, binary: []byte{1, 255}}}}
-			if err := p.UpsertBatch(ctx, connInfo, path, batch, upsert); err != nil {
-				t.Fatal(err)
+			wantDocument, _ := json.Marshal(map[string]interface{}{"updated": name})
+			wantBytes := []byte{1, 255}
+			if index == 1 || index == 2 {
+				// Reject through both public entry points; never execute the
+				// native conflict MERGE that previously crashed this DM8 build.
+				evolving := upsert
+				evolving.Fields = append(append([]datatype.FieldInfo(nil), fields...), datatype.FieldInfo{Name: "ADDP_NEW_COL", Type: datatype.FieldTypeJSON, Nullable: true})
+				if err := p.PrepareTableUpsert(ctx, connInfo, path, evolving); err == nil || !strings.Contains(err.Error(), "merge_target_name_conflict") {
+					t.Fatalf("conflict reached upsert DDL: %v", err)
+				}
+				var added int
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_TAB_COLUMNS WHERE TABLE_NAME=? AND COLUMN_NAME='ADDP_NEW_COL'", name).Scan(&added); err != nil || added != 0 {
+					t.Fatalf("conflict changed schema: columns=%d error=%v", added, err)
+				}
+				if err := p.UpsertBatch(ctx, connInfo, path, batch, upsert); err == nil || !strings.Contains(err.Error(), "merge_target_name_conflict") {
+					t.Fatalf("conflict reached MERGE: %v", err)
+				}
+				wantDocument, _ = json.Marshal(map[string]interface{}{"table": name})
+				wantBytes = []byte{0, 255}
+			} else {
+				if err := p.PrepareTableUpsert(ctx, connInfo, path, upsert); err != nil {
+					t.Fatal(err)
+				}
+				if err := p.UpsertBatch(ctx, connInfo, path, batch, upsert); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var writtenDocument string
 			var writtenBytes []byte
@@ -131,9 +153,8 @@ func testDM8QuotedIdentifiers(t *testing.T) {
 			if err := db.QueryRowContext(ctx, statement, int64(2)).Scan(&writtenDocument, &writtenBytes); err != nil {
 				t.Fatal(err)
 			}
-			wantDocument, _ := json.Marshal(map[string]interface{}{"updated": name})
-			if writtenDocument != string(wantDocument) || !bytes.Equal(writtenBytes, []byte{1, 255}) {
-				t.Fatalf("quoted MERGE changed JSON/BLOB: document=%q bytes=%v", writtenDocument, writtenBytes)
+			if writtenDocument != string(wantDocument) || !bytes.Equal(writtenBytes, wantBytes) {
+				t.Fatalf("quoted MERGE or rejection changed JSON/BLOB: document=%q bytes=%v", writtenDocument, writtenBytes)
 			}
 			if index != 0 {
 				if err := p.validateUniqueFields(ctx, connInfo, path, []string{"KEYID"}); err == nil {
@@ -153,6 +174,26 @@ func testDM8QuotedIdentifiers(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+	// With all siblings present, protect the uppercase direction too. A missing
+	// quoted target must be rejected before creating it when a sibling exists.
+	guardFields := []datatype.FieldInfo{{Name: "ID", Type: datatype.FieldTypeBigInt, PrimaryKey: true}, {Name: "UPPER_DOC", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "UPPER_BYTES", Type: datatype.FieldTypeBytes, Nullable: true}}
+	guardOptions := plugin.TableUpsertOptions{Fields: guardFields, Keys: []string{"ID"}}
+	for _, name := range []string{upper, strings.ToUpper(names[3])} {
+		path := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, schema, name)
+		if err := p.PrepareTableUpsert(ctx, connInfo, path, guardOptions); err == nil || !strings.Contains(err.Error(), "merge_target_name_conflict") {
+			t.Fatalf("case conflict reached prepare %q: %v", name, err)
+		}
+		if name == upper {
+			if err := p.UpsertBatch(ctx, connInfo, path, &plugin.BatchData{Fields: guardFields, Rows: []map[string]interface{}{{"ID": int64(3), "UPPER_DOC": true, "UPPER_BYTES": []byte{3}}}}, guardOptions); err == nil || !strings.Contains(err.Error(), "merge_target_name_conflict") {
+				t.Fatalf("uppercase conflict reached MERGE: %v", err)
+			}
+		} else {
+			var count int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_TYPE='TABLE' AND OBJECT_NAME=?", name).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("conflict created missing target: count=%d error=%v", count, err)
+			}
+		}
 	}
 	// Removing the lowercase twin must preserve the uppercase table and its rows.
 	lowerPath := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, schema, names[1])

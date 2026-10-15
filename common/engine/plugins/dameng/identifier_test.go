@@ -3,6 +3,7 @@ package dameng
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -29,6 +30,34 @@ func TestDM8TableExistencePreservesQuotedName(t *testing.T) {
 		if err != nil || exists {
 			t.Errorf("different quoted name %q resolved: exists=%v error=%v", name, exists, err)
 		}
+	}
+}
+
+func TestDM8MergeNameConflictCheck(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE USER_OBJECTS (OBJECT_TYPE TEXT, OBJECT_NAME TEXT);
+		INSERT INTO USER_OBJECTS VALUES ('TABLE','Existing'),('TABLE','existing'),('VIEW','eXisting'),('TABLE','LONE'),('INDEX','lone')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Existing", "existing", "eXisting", "EXISTING", "lone"} {
+		if err := validateMergeTargetName(t.Context(), db, name); err == nil || !strings.Contains(err.Error(), "merge_target_name_conflict") {
+			t.Errorf("ambiguous MERGE name %q accepted: %v", name, err)
+		}
+	}
+	for _, name := range []string{"LONE", "new_table", `Existing' OR 1=1 --`} {
+		if err := validateMergeTargetName(t.Context(), db, name); err != nil {
+			t.Errorf("unambiguous name %q rejected: %v", name, err)
+		}
+	}
+	if _, err := db.Exec("DROP TABLE USER_OBJECTS"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateMergeTargetName(t.Context(), db, "new_table"); err == nil || strings.Contains(err.Error(), "merge_target_name_conflict") {
+		t.Fatalf("dictionary failure did not fail closed: %v", err)
 	}
 }
 

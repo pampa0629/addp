@@ -218,6 +218,25 @@ func (s *tableWriteSession) abort() error {
 }
 
 func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
+	if err := validateWriteFields(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
+	schema, table, err := tablePathParts(path)
+	if err != nil {
+		return err
+	}
+	if err := p.requireCurrentSchema(ctx, connInfo, schema); err != nil {
+		return err
+	}
+	db, err := p.openDB(connInfo)
+	if err != nil {
+		return err
+	}
+	err = validateMergeTargetName(ctx, db, table)
+	_ = db.Close()
+	if err != nil {
+		return err
+	}
 	if err := p.PrepareTableWrite(ctx, connInfo, path, plugin.TableWriteOptions{Fields: opts.Fields, SpatialInfo: opts.SpatialInfo}); err != nil {
 		return err
 	}
@@ -259,6 +278,9 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 		return err
 	}
 	defer db.Close()
+	if err := validateMergeTargetName(ctx, db, table); err != nil {
+		return err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin DM8 upsert transaction: %w", err)
@@ -271,6 +293,22 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit DM8 upsert: %w", err)
+	}
+	return nil
+}
+
+// The certified DM8 build has MERGE name-resolution failures with case-folded
+// siblings, even when the target is quoted, and can crash if fields coincide.
+// Query only dictionary facts; do not enter MERGE when resolution is ambiguous.
+func validateMergeTargetName(ctx context.Context, db *sql.DB, table string) error {
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM USER_OBJECTS
+		WHERE OBJECT_TYPE IN ('TABLE', 'VIEW')
+		AND UPPER(OBJECT_NAME) = UPPER(?) AND OBJECT_NAME <> ?`, table, table).Scan(&count); err != nil {
+		return fmt.Errorf("check DM8 MERGE target name: %w", err)
+	}
+	if count != 0 {
+		return fmt.Errorf("DM8 MERGE target %q: merge_target_name_conflict", table)
 	}
 	return nil
 }
