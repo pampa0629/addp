@@ -115,6 +115,9 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 - `addp/model3d-converter:linux-arm64`：基于 `fanvanzh/3dtiles` 源码构建 对应目标架构的 `_3dtile`，并应用 ADDP 的 Linux patch，同时绑定同架构 `IfcConvert`。
 - `addp/model3d-workflow:linux-arm64`：内置 Python `model3d_workflow` runtime、Linux arm64 `_3dtile`、`IfcConvert`、`assimp` 和 Blender/MAX 导入器。
 
+
+2026-10-15 [Hosted 38695122458](https://github.com/pampa0629/addp/actions/runs/38695122458) 已通过修复源码 `7a3c9a6f2006321a1eec6161d90a21380ecbde22` 的正式 Linux x86_64 产品构建和 Manager 链路。归档的 Runtime 日志核对 DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 八个正式算子均返回 200，八个浏览器缓存预览均加载成功；DAE 和 3DS 分别为 1764／1888 字节，各内嵌一张 PNG，截图均显示有色三角形。MAX 仍使用导入器 1.9.2、用户毫米换算 0.001、五个静态网格和 444 个顶点。测试使用已批准的十项权限普通 User；逐格式结果与任务删除、内容不可用和资源零残留断言通过，最终 Hosted Infra 清理为零残留。该结果补齐上一段尚未完成的完整 Runtime／x86_64 验证，不包含后续 SGM 秋树修复的页面验收。
+
 Linux 静态 OSG 显式注册 zlib compressor，以读取超图等工具导出的压缩 OSGB。Converter 镜像构建在复制生产产物前，用自建三角形生成 zlib 压缩 OSGB、调用同一 `_3dtile` 转换，再校验 GLB 2.0 及顶点/三角面数量；该构建门禁不依赖 SuperMap SDK 或许可。
 
 默认上游引用固定为 `fanvanzh/3dtiles@acbcf603f33fdfe3c34b704a8b019c4fd32a8376`。如需临时验证其他上游版本，可通过 `THREE_DTILES_REF=<commit-or-branch>` 覆盖，但生产镜像应使用固定 commit。
