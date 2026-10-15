@@ -21,7 +21,7 @@
 | 3DS / DAE | 通过 Model3D 转自包含 GLB 后显示；静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收，动画和复杂材质不在已验证范围。 |
 | FBX / OBJ | OBJ 基础预览读取源模型几何，GLB 快显调用 Model3D 的对应 mesh operator。固定 FBX 的基础预览命中现有 FBXLoader 缺陷，本轮按确认方案先验收 GLB 快显。正式 Linux ARM64 与 Linux x86_64 最终 Runtime 已验证固定 FBX 盒子和带漫反射 PNG 的 OBJ：静态几何、贴图、源不变及失败保留旧产物。已通过 [八模型 Manager Hosted 38377560103](https://github.com/pampa0629/addp/actions/runs/38377560103) 的生成入口、OBJ 基础几何、两种格式 GLB 缓存预览、两阶段主文件下载哈希及清理后主文件不变核验；不声明全部版本、动画或复杂材质保真。 |
 | MAX / SKP | 格式身份及原生静态 GLB 转换已有实现；MAX 使用 Runtime 内部 Blender，未选源单位时默认米；SKP 保留实例变换与内嵌基础贴图。Manager Hosted 已通过两种模型的原生转换、几何/贴图检查和缓存预览，MAX 覆盖手选毫米。不能声明所有版本、动画或复杂材质均支持。 |
-| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；其他真实模型、复杂材质及真实 S3 页面链路仍待验收。 |
+| SGM | 通过授权 SuperMap Runtime 转 OSGB，再由 Model3D 转 GLB；本地厂商样例的几何及基础 RGB 贴图已有页面验收。已实现按 SDK 材质引用精确搬运同目录／`Textures/` 图片，不增加手工映射；缺图、损坏图片、越界和 S3 非 404 错误拒绝发布。SDK 构建回归已覆盖 NFS 与模拟 S3；2026-10-15 已通过同一厂商样例在本地 NFS 与真实 Business MinIO 同目录贴图的完整 GLB 页面复验，136 顶点、94 三角面及 256×256 内嵌 JPEG 正常。其他真实模型、复杂材质、其他 S3 实现及受控 T4 仍待验收。 |
 
 1. JSON / GeoJSON 四源、CSV / TSV / XLSX 与八模型的同轮 Hosted 已收口，范围见上述支持矩阵及文末正式证据。只按文件格式语义验收，不从经纬度列名推断坐标系、设备标识、时间排序或轨迹连线规则。
 2. 下一优先补 SGM 的其他真实样例及 S3 外部贴图验收，保持授权 SuperMap → OSGB → Model3D GLB 的唯一路线。无 SDK 的协议门禁不替代真实转换，不把复杂材质或全部厂商版本登记为已支持。
@@ -159,3 +159,9 @@
 已定位现有 S3 外贴图缺口：SuperMap 的 `resolve_workflow_file` 只下载入口对象，`sgm_to_osgb` 随后立即生成模型节点；外部图片未搬运，引用又可能丢失。后续应依据 SDK 源材质引用与实际查找规则自动解析，在源模型限定目录内读取精确图片，缺失或越界明确失败，不递归同步整个对象前缀，不新增手工映射交互，保持 SGM → OSGB → GLB 唯一路线。当前尚未实现或验收 S3 外贴图搬运，不将本次 SDK 探测登记为该能力已支持。`make test-supermap-workflow` 的 3 项协议测试及未修改产品代码的完整 ARM64 私有 Runtime 构建／4 项 CTest 通过；最终临时源材质／布局探测的 4 项 CTest 通过。探测中一次有符号计数编译错误已修正，一次 Ubuntu HTTP 502 下载失败不计通过；最终只在临时副本复用已验证的私有 SDK 编译环境完成观测，不改产品 Dockerfile、运行镜像或用户服务，厂商文件未提交或上传。
 
 本次调查仅更新现有文档；`git diff --check` 通过，`make test-changed` 因共享工作区多 Owner 所需 T2 连接条件缺失在预检中止，未执行数据库测试，不计为整轮通过。临时探测源码已还原、探测镜像标签已清理，原始 SDK 母版、运行中的 SuperMap 镜像及用户服务未修改。
+
+2026-10-15 SGM 重启后本地产品复验：运行中的 SuperMap 镜像为 `sha256:07c257ddd86ba70a9ad4342c4b8ddb8c03f09770f274530a35817b55a86191bb`，源码指纹 `6836688bb1eac4ceab95455d65ffea7cf0cba96f` 与当前启动脚本输入一致，七项 SGM 构建／测试源码 SHA256 与已通过的 SDK 回归一致。通过正式任务入口重新执行 Business NFS 的 `3d/sgm/compass.SGM`（item 20244、task 6），08:35:10 成功；同一模型及 PNG 经现有 MinIO 客户端复制到私有 Business MinIO 的 `addp/3d/compass.SGM` 和 `addp/3d/compass.png`，未更改桶策略，目标原先不存在。源模型为 5422 字节、PNG 为 16565 字节，复制后与 NFS SHA256 一致。Meta 对 `addp/3d` 深度扫描成功并发现 item 44356；用户由 Console 的生成入口提交，08:49:16 完成，两份页面均显示黑色圆环与指南针。浏览器扩展文件上传受本地文件 URL 权限限制，本轮没有改变扩展权限，源文件准备使用既有 MinIO 客户端；不把本次结果登记为浏览器上传成功。
+
+两份实际 GLB 均为 12032 字节，复用 Model3D `validate_glb` 检查自包含 GLB 2.0，实读 136 个顶点、94 个三角面及一张 256×256 内嵌 JPEG，RGB 各通道范围 8–255；浏览器业务错误／警告为空。NFS 与 MinIO 源文件哈希在生成后均未改变，Manager infra 的 `temp/model3d-sgm/tenant_1/` 没有剩余对象，SuperMap 临时 `workflow-file`／`workflow-output` 目录为空。业务源样例、正式快显任务及 GLB 留作演示，不宣称领域全部零残留，也未改动血缘产品实现。本轮为个人开发环境中现有开发账号（页面显示“ADDP 开发管理员”）的本地产品复验，不能替代普通 User、最小权限及隔离部署的 T4。`Textures/` 查找及缺图／403／500／损坏图拒绝仍由已有 SDK 构建回归证明，本次真实 MinIO 只覆盖同目录图片。对应修复提交 `2b40557f23ee607d934167ddd26c19d7d3d9ae1d` 的 [Platform CI 38594507144](https://github.com/pampa0629/addp/actions/runs/38594507144) 和 [Release/T2 38594506657](https://github.com/pampa0629/addp/actions/runs/38594506657) 均成功，公开 SuperMap 无 SDK 门禁实际执行；条件跳过项不计作通过。
+
+本轮只更新以上验收事实；`git diff --check` 通过。共享工作区的 `make test-changed` 因其他 Owner 所需 T2 连接条件缺失在预检中止，未执行数据库门禁，不登记为通过。本轮没有修改产品代码、源授权、服务生命周期或血缘实现，已通过的 SGM 源码／SDK 构建证据保持有效。
