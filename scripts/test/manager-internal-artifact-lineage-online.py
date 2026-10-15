@@ -274,13 +274,13 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
 
 
 def wait_for_meta_scan(client: GatewayClient, engine_id: int, deadline: float,
-                       *, depth: str = "deep", scope: dict[str, object] | None = None) -> str:
+                       *, depth: str = "deep", scope: dict[str, object] | None = None, force: bool = True) -> str:
     run = _object(
         client.request(
             "POST",
             "/api/v1/meta/scan/run/manual",
             (201,),
-            {"engine_id": engine_id, "scan_depth": depth, "trigger_type": "manual", "force": True, **(scope or {})},
+            {"engine_id": engine_id, "scan_depth": depth, "trigger_type": "manual", "force": force, **(scope or {})},
         ).payload,
         "Meta scan execution",
     )
@@ -302,7 +302,7 @@ def wait_for_meta_scan(client: GatewayClient, engine_id: int, deadline: float,
 
 
 def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str, deadline: float) -> list[dict[str, object]]:
-    """Use fresh isolated scopes to prove actual worker detection, persistence and depth invariants."""
+    """Prove depth invariants for fresh scopes and convergence of existing single components."""
     def qualify(path: str) -> str:
         return f"{bucket}/{path}" if bucket else path
 
@@ -329,33 +329,57 @@ def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str
     outside_item = snapshot().get(outside)
     if outside_item is None:
         raise SuiteError("boundary outside sibling is missing")
-    for mode in ("directory", "refs"):
+    for mode in ("directory", "refs", "directory-convergence", "refs-convergence"):
+        converging = mode.endswith("-convergence")
+        entry_mode = mode.split("-", 1)[0]
         prefix = qualify(f"scan-boundary/{mode}")
         refs = [{"path": f"{prefix}/roads{extension}"} for extension in (".shp", ".shx", ".dbf", ".cpg")]
-        scope = ({"catalog_paths": [prefix]} if mode == "directory" else
+        scope = ({"catalog_paths": [prefix]} if entry_mode == "directory" else
                  {"ref_groups": [{"primary": f"{prefix}/roads.shp", "refs": refs}]})
-        expected = ({f"{prefix}/{name}" for name in ("roads.shp", "parcels.shp", "roads.qmd", "readme.txt")}
-                    if mode == "directory" else {f"{prefix}/roads.shp"})
+        managed = ({f"{prefix}/{name}" for name in ("roads.shp", "parcels.shp", "roads.qmd", "readme.txt")}
+                   if entry_mode == "directory" else {f"{prefix}/roads.shp"})
+        combined = {name for name in managed if name.endswith(".shp")}
         previous = snapshot()
         if any(name.startswith(prefix + "/") for name in previous):
             raise SuiteError("content boundary scope must be fresh before its first basic scan")
+        seeded, removed, seed_execution = {}, {}, None
+        if converging:
+            members = [f"{prefix}/{name}" for name in ("roads.shp", "roads.shx", "roads.dbf", "roads.cpg",
+                       "parcels.shp", "parcels.shx", "parcels.dbf", "parcels.prj", "roads.qmd", "readme.txt")]
+            targets = [f"addp://engine/{engine_id}/path/{urllib.parse.quote(name, safe='/')}?type={term}" for name in members]
+            seed_execution = wait_for_meta_scan(client, engine_id, deadline, depth="basic", scope={"targets": targets})
+            seeded_snapshot = snapshot()
+            if any(seeded_snapshot.get(name) != item for name, item in previous.items()):
+                raise SuiteError("convergence preparation changed an item outside its exact leaf targets")
+            previous = seeded_snapshot
+            seeded = {name: item for name, item in previous.items() if name.startswith(prefix + "/")}
+            if set(seeded) != set(members) or any(_object(_object(item.get("attributes"), "seed attributes").get("item"), "seed descriptor").get("layout") != "single" for item in seeded.values()):
+                raise SuiteError("convergence preparation must register exactly ten independent single items")
+            claimed = {name[:-4] + extension for name in combined for extension in (".shx", ".dbf", ".cpg" if name.endswith("/roads.shp") else ".prj")}
+            removed = {name: seeded[name] for name in claimed}
+        expected = managed | (set(seeded) - set(removed))
         identities, compositions, deep_facts, executions = {}, {}, {}, []
         for depth_index, depth in enumerate(("basic", "deep", "basic")):
-            executions.append(wait_for_meta_scan(client, engine_id, deadline, depth=depth, scope=scope))
+            executions.append(wait_for_meta_scan(client, engine_id, deadline, depth=depth, scope=scope, force=not converging))
             current = snapshot()
             selected = {name: item for name, item in current.items() if name.startswith(prefix + "/")}
             if set(selected) != expected:
                 raise SuiteError("boundary scan created duplicate components or claimed unrelated resources")
             for name, item in previous.items():
-                if name not in selected and current.get(name) != item:
+                if name not in managed and name not in removed and current.get(name) != item:
                     raise SuiteError("boundary scan changed an item outside its exact visible scope")
+            if depth_index == 0:
+                for item in removed.values():
+                    client.request("GET", f"/api/v1/meta/items/{positive_int(item.get('id'), 'retired component id')}", (404,))
             for name, item in selected.items():
+                if name not in managed:
+                    continue
                 identity = (item.get("id"), item.get("fingerprint"), item.get("full_name"), item.get("node_id"), item.get("item_type"))
                 if not identity[1] or item.get("item_type") != term:
                     raise SuiteError("boundary item identity or native leaf term is invalid")
                 attrs = _object(item.get("attributes"), "boundary attributes")
                 descriptor = _object(attrs.get("item"), "boundary item attributes")
-                if name.endswith(".shp"):
+                if name in combined:
                     stem = name[:-4]
                     extensions = (".shp", ".shx", ".dbf", ".cpg") if name.endswith("/roads.shp") else (".shp", ".shx", ".dbf", ".prj")
                     related = [_object(ref, "boundary ref") for ref in _array(descriptor.get("refs"), "boundary refs")]
@@ -368,22 +392,27 @@ def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str
                         raise SuiteError("boundary primary ref differs from its identity")
                 # Deep may refine a single file's format/type from its header;
                 # its identity and membership must remain stable.
-                keys = ("layout", "format", "data_type", "refs", "file_count") if name.endswith(".shp") else ("layout", "refs", "file_count")
+                keys = ("layout", "format", "data_type", "refs", "file_count") if name in combined else ("layout", "refs", "file_count")
                 composition = {key: descriptor.get(key) for key in keys}
                 if depth_index == 0:
                     if item.get("scanned_depth") != "basic" or any(key in attrs for key in ("type_info", "access_index", "format_info", "capabilities")):
                         raise SuiteError("first boundary basic scan read or wrote deep content facts")
                     identities[name], compositions[name] = identity, composition
+                    if name in seeded and identity != tuple(seeded[name].get(key) for key in ("id", "fingerprint", "full_name", "node_id", "item_type")):
+                        raise SuiteError("convergence replaced an existing primary identity or parent")
                 elif identity != identities[name] or composition != compositions[name]:
                     raise SuiteError("boundary identity or composition changed with scan depth")
                 if depth_index == 1:
                     deep_facts[name] = {key: attrs.get(key) for key in ("type_info", "format_info", "access_index", "capabilities")}
-                    if name.endswith(".shp") and not _object(attrs.get("type_info"), "deep type info").get("table", {}).get("fields"):
+                    if name in combined and not _object(attrs.get("type_info"), "deep type info").get("table", {}).get("fields"):
                         raise SuiteError("boundary deep scan did not describe Shapefile fields")
                 if depth_index == 2 and (item.get("scanned_depth") != "deep" or deep_facts[name] != {key: attrs.get(key) for key in deep_facts[name]}):
                     raise SuiteError("boundary repeated basic scan discarded deep facts or completion depth")
-        previous = current
-        reports.append({"engine_id": engine_id, "item_type": term, "mode": mode, "scope": prefix,
+        reports.append({"engine_id": engine_id, "item_type": term, "mode": entry_mode, "scope": prefix,
+                        "initial_state": "independent_components" if converging else "empty", "force": not converging,
+                        "seed_execution": seed_execution,
+                        "removed_components": [{"id": item["id"], "fingerprint": item["fingerprint"], "full_name": name} for name, item in sorted(removed.items())],
+                        "preserved_initial_items": sorted(set(seeded) - set(removed) - combined),
                         "depths": ["basic", "deep", "basic"], "executions": executions,
                         "items": [{"id": identity[0], "fingerprint": identity[1], "full_name": name,
                                    "node_id": identity[3], "composition": compositions[name]} for name, identity in identities.items()],
@@ -1852,7 +1881,7 @@ def main() -> int:
         deadline = time.monotonic() + float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
         boundaries = verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id"), "", deadline)
         boundaries += verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"), environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"], deadline)
-        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v1", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
+        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
         report = run_scenario(repository, environment, run_browser)
         report["content_boundaries"] = boundaries
     except (OSError, ValueError, SuiteError, subprocess.SubprocessError) as error:

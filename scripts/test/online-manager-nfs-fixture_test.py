@@ -20,7 +20,10 @@ class ContentBoundaryFixtureTest(unittest.TestCase):
                 generator.generate(root)
             contents = lambda root: {str(path.relative_to(root)): path.read_bytes() for path in Path(root).rglob("*") if path.is_file()}
             self.assertEqual(contents(first), contents(second))
-            self.assertEqual(len(contents(first)), 21)
+            self.assertEqual(len(contents(first)), 41)
+            for scope in ("directory-convergence", "refs-convergence"):
+                for path in (Path(first) / "scan-boundary/directory").iterdir():
+                    self.assertEqual((Path(first) / "scan-boundary" / scope / path.name).read_bytes(), path.read_bytes())
             shape = (Path(first) / "scan-boundary/directory/roads.shp").read_bytes()
             self.assertEqual(struct.unpack_from(">i", shape)[0], 9994)
             self.assertEqual(struct.unpack_from(">i", shape, 24)[0] * 2, len(shape))
@@ -87,7 +90,7 @@ if os.environ.get('TEST_DISCOVERY_FAIL') != '1': print(Path(os.environ['TEST_EXP
         root = Path(state.read_text().strip())
         descriptor = json.loads((self.secret / 'manager-nfs-engine.json').read_text())
         self.assertEqual(descriptor['connection_info'], {'server': '127.0.0.1', 'export_path': str(root)})
-        self.assertEqual(len(list((root / 'scan-boundary').rglob('*.*'))), 21)
+        self.assertEqual(len(list((root / 'scan-boundary').rglob('*.*'))), 41)
         self.assertIn('127.0.0.1(ro,sync,no_subtree_check,insecure,root_squash)', self.exports.read_text())
         self.assertEqual(self.invoke("stop").returncode, 0)
         self.assertFalse(root.exists())

@@ -218,6 +218,11 @@ esac
         for suffix in ("csv", "tsv"):
             self.assertIn(f"cp --quiet /fixture/format-samples/gbk-quoted.{suffix} fixture/addp-online/format-samples/gbk-quoted.{suffix}", commands)
             self.assertIn(f"stat fixture/addp-online/format-samples/gbk-quoted.{suffix}", commands)
+        for scope in ("directory", "refs", "directory-convergence", "refs-convergence"):
+            for name in ("roads.shp", "roads.shx", "roads.dbf", "roads.cpg", "parcels.shp", "parcels.shx", "parcels.dbf", "parcels.prj", "roads.qmd", "readme.txt"):
+                key = f"scan-boundary/{scope}/{name}"
+                self.assertIn(f"cp --quiet /fixture/{key} fixture/addp-online/{key}", commands)
+                self.assertIn(f"stat fixture/addp-online/{key}", commands)
         for directory in re.findall(r"-v (\S+):/fixture:ro", commands):
             self.assertFalse(Path(directory).exists(), "temporary generated source directory must be removed")
         self.assertIn("|59002|online-manager|manager-secret-1234", commands)

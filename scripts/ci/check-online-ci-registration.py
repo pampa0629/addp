@@ -394,6 +394,12 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "boundaries = verify_content_boundaries",
         "boundaries += verify_content_boundaries",
         "content-boundaries.json",
+        "addp.content-boundaries/v2",
+        "directory-convergence",
+        "refs-convergence",
+        '"removed_components"',
+        '"preserved_initial_items"',
+        "force=not converging",
         "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
         "addp.manager-internal-artifact-lineage/v8",
@@ -406,6 +412,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     for fragment in ("GITHUB_ACTIONS", "ADDP_ONLINE_HOSTED", "127.0.0.1(ro,sync", ".addp-online-owner", "online-content-boundary-fixture.py", "NFS export cleanup has residuals"):
         if fragment not in nfs:
             raise RegistrationError(f"Manager NFS lifecycle contract is missing {fragment}")
+    generator = (repository / "business/scripts/online-content-boundary-fixture.py").read_text(encoding="utf-8")
+    for fragment in ("directory-convergence", "refs-convergence"):
+        if fragment not in generator:
+            raise RegistrationError(f"Manager boundary fixture contract is missing {fragment}")
     browser = (
         repository
         / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"

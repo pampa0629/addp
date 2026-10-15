@@ -22,7 +22,7 @@ def point_shapefile(root: Path, name: str, x: float, y: float) -> None:
 
 
 def generate(root: Path) -> None:
-    for scope in ("directory", "refs"):
+    for scope in ("directory", "refs", "directory-convergence", "refs-convergence"):
         directory = root / "scan-boundary" / scope
         directory.mkdir(parents=True, exist_ok=False)
         point_shapefile(directory, "roads", 120, 30)

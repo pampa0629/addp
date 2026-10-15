@@ -980,7 +980,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v8 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID\n',
+            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v8 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -1006,6 +1006,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "verify_content_boundaries", "owner contract"),
             (owner, "boundaries += verify_content_boundaries", "owner contract"),
             (owner, "content-boundaries.json", "owner contract"),
+            (owner, "directory-convergence", "owner contract"),
+            (owner, "refs-convergence", "owner contract"),
+            (owner, "force=not converging", "owner contract"),
+            (owner, '"removed_components"', "owner contract"),
+            (fixture.with_name("online-content-boundary-fixture.py"), "directory-convergence", "fixture contract"),
+            (fixture.with_name("online-content-boundary-fixture.py"), "refs-convergence", "fixture contract"),
             (fixture, "texture.png", "fixture contract"),
             (fixture, "format-samples/gbk-quoted.csv", "fixture contract"),
             (fixture, "format-samples/gbk-quoted.tsv", "fixture contract"),
