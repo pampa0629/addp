@@ -446,6 +446,8 @@ Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度
 
 PLY 属性提取的无进展区间来自高斯泼溅采样：`蒙古族敖包.ply` 含 3,843,812 个高斯点，格式 provider 对 8,192 个均匀位置逐个范围读取，原扫描进度只记录调用前后的 enriching 阶段。属性读取观测应在 Meta 的同一增强入口接入实际范围流，以读取返回字节及已读取范围数持续更新；不更改采样数量或位置、不改成全量 body 读取，不把范围数当作文件完成比例。每次打开范围和读取前检查取消；空范围、EOF 和心跳不制造进展。验证使用 `make test-module MODULE=meta GO_ONLY=1`、`make test-meta-postgres`、`make test-manager-frontend` 和 Meta Swagger 生成／覆盖校验。新增观测需用户重启 Meta 后再作页面验收，不能复用上述旧执行证明新增字段已经在线生效。
 
+2026-10-15 Meta 重启后，通过同一 Manager 页面对 `3d/ply` 发起 `deep + force` 定向复验，execution 为 `147f7572-bda8-4e91-b556-63ad3ef2941c`。北京时间 23:07:25–23:08:08 成功完成，耗时 42.5 秒；3 个文件、1 个目录，计划、完成、成功均为 3，失败为 0。页面中同一份 `蒙古族敖包.ply` 的属性读取由 784 B／14 个范围增长至 307.8 KiB／5,628 个范围，距最近进展更新到 0 秒。落库仍为 3 个 gaussian_splat；普通 PLY 的采样事实仍为 `sampled_binary_vertices`、8,192 个样本，三项均有 SHA-256 内容指纹，摘要长度为 64 字符。节点状态、深度和成功时间更新，按钮恢复；切换操作后的范围计数清零。此结果证明新增观测在线生效，不代表采样请求数或耗时已经优化。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。
