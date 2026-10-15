@@ -425,7 +425,8 @@ def _translate_to_cog(
     _ensure_gdal_dir(_path_parent(target), gdal_env)
     with _gdal_config_env(gdal_env) as gdal:
         if _is_gdal_virtual_path(target):
-            gdal.Unlink(target)
+            if gdal.VSIStatL(target) is not None:
+                gdal.Unlink(target)
         elif Path(target).exists():
             Path(target).unlink()
         translate_cog(source, target, compression, blocksize, overview_resampling.lower(),

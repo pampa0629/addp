@@ -503,6 +503,36 @@ def test_write_json_uses_vsi_file_handle_for_virtual_paths(monkeypatch):
     assert b'"ok": true' in fake_gdal.payload
 
 
+@pytest.mark.parametrize('existing_target', [False, True])
+def test_translate_to_cog_virtual_target_creation_and_replacement(tmp_path, existing_target):
+    from osgeo import gdal, osr
+    import uuid
+    gdal.UseExceptions()
+    source = tmp_path / 'source.tif'
+    target = '/vsimem/addp-cog-' + uuid.uuid4().hex + '.tif'
+    projection = osr.SpatialReference(); projection.ImportFromEPSG(32617)
+    grid = (600000, 10, 0, 4000020, 0, -10)
+    dataset = gdal.GetDriverByName('GTiff').Create(str(source), 32, 16, 1, gdal.GDT_Byte)
+    dataset.SetGeoTransform(grid); dataset.SetProjection(projection.ExportToWkt())
+    dataset.GetRasterBand(1).Fill(7); dataset = None
+    try:
+        if existing_target:
+            dataset = gdal.GetDriverByName('GTiff').Create(target, 2, 2, 1, gdal.GDT_Byte)
+            dataset.GetRasterBand(1).Fill(1); dataset = None
+        _translate_to_cog(str(source), target, {}, {'blocksize': 128, 'num_threads': 1})
+        dataset = gdal.Open(target)
+        assert (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) == (32, 16, 1)
+        assert dataset.GetGeoTransform() == grid
+        assert dataset.GetSpatialRef().IsSame(projection)
+        assert dataset.GetRasterBand(1).ReadRaster() == bytes([7]) * (32 * 16)
+        assert dataset.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'
+        dataset = None
+    finally:
+        dataset = None
+        if gdal.VSIStatL(target) is not None:
+            gdal.Unlink(target)
+
+
 def test_translate_to_cog_enables_gdal_threads(monkeypatch):
     class FakeGDAL:
         def __init__(self):
