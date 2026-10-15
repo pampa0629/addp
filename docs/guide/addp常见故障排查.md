@@ -440,6 +440,10 @@ Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度
 
 验证使用 `make test-go`、`make test-meta-postgres`、`make test-manager-postgres` 与 `make test-manager-frontend`；PostgreSQL 入口按已核实端口配置 `addp_test`，Manager 门禁自行管理独占 Meilisearch fixture。历史执行只读保留，新代码不能改写 107 的历史计数，也不能把未重跑的业务扫描计为性能验收通过。
 
+2026-10-15 重启后，通过 Manager `Business NFS / 3d` 详情页发起 `deep + force` 复扫，execution 为 `916da3ed-2e68-4df9-9c92-e568c32c3504`。执行于北京时间 22:00:19–22:04:09 成功完成，耗时 229.8 秒；有效物理文件 19,229 个、目录 172 个，计划、完成、成功均为 95，失败为 0。落库同为 95 项（90 single、1 multi、4 whole），节点范围状态、深度和成功时间同步更新。页面实测可显示文件总量、逻辑数据项分母、当前文件字节读取进度，切换子目录再返回也保留原扫描进度；PLY 属性提取期间仍观察到约 41 秒没有中间进展，页面如实显示距最近进展时间。
+
+旧执行耗时 2,673.4 秒，但本次 `index_cleanup_total=0`，未覆盖遗留组件索引删除，因此不能将两次总耗时差异单独归因于批量清理，也不能据此宣称批量清理的真实业务性能已验收。批量删除的确认计数、取消边界、租户和引擎隔离继续以既有独占 fixture 集成门禁为证；业务验收未制造或重建历史散件。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。
