@@ -158,12 +158,12 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 		return nil, ErrInvalidTaskConfig
 	}
 	targetLocator := &resourcetree.ResourceLocator{EngineID: parent.EngineID, Type: resourcetree.TypeTable, Path: append(append([]string{}, parent.Path...), spec.Target.Name)}
-	sourceInfo, sourceSpatial, sourceFact, sourcePlugin, err := s.facts(ctx, uint(tenant), "source", sourceLocator, spec.Source.Query != nil)
+	sourceInfo, sourceSpatial, sourceFact, sourcePlugin, err := s.facts(ctx, uint(tenant), "source", sourceLocator, spec.Source.Query != nil, false)
 	if err != nil {
 		return nil, err
 	}
 	report.Facts = append(report.Facts, sourceFact)
-	targetInfo, _, targetFact, targetPlugin, err := s.facts(ctx, uint(tenant), "target", targetLocator, false)
+	targetInfo, _, targetFact, targetPlugin, err := s.facts(ctx, uint(tenant), "target", targetLocator, false, policy["apply_mode"] == "replace")
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,11 @@ func (s *TaskConfigCheckService) Check(ctx context.Context, subject authorizatio
 	report.Checked = append(report.Checked, "registered_engine_facts", "persisted_meta_snapshots")
 	for _, fact := range report.Facts {
 		if fact.NativeAccess != plugin.DefinitionSupported {
-			add(fact.NativeAccess, "registered_native_access_not_supported", "engine_capability", "/config/"+fact.Role)
+			path := "/config/" + fact.Role
+			if fact.Role == "target" && policy["apply_mode"] == "replace" {
+				path += "/policy/apply_mode"
+			}
+			add(fact.NativeAccess, "registered_native_access_not_supported", "engine_capability", path)
 		}
 	}
 	sourceComplete := sourceInfo != nil && sourceFact.Coverage == plugin.QuerySchemaCoverageComplete
@@ -310,7 +314,7 @@ func containsConfigNumber(value interface{}) bool {
 	return false
 }
 
-func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role string, locator *resourcetree.ResourceLocator, querySource bool) (*datatype.TableInfo, *datatype.SpatialInfo, TaskConfigCheckFact, plugin.EnginePlugin, error) {
+func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role string, locator *resourcetree.ResourceLocator, querySource, replaceTarget bool) (*datatype.TableInfo, *datatype.SpatialInfo, TaskConfigCheckFact, plugin.EnginePlugin, error) {
 	fact := TaskConfigCheckFact{Role: role, EngineID: locator.EngineID, Coverage: "unknown", NativeAccess: plugin.DefinitionUnknown}
 	if s == nil || s.engines == nil || s.metadata == nil {
 		return nil, nil, fact, nil, ErrConfigCheckDependency
@@ -335,7 +339,7 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 	} else if declared != nil && declared.Storage != nil && declared.Storage.Store != nil {
 		store := declared.Storage.Store
 		fact.NativeAccess = plugin.DefinitionUnsupported
-		if (role == "source" && (store.TableReadSession || store.BatchRead)) || (role == "target" && (store.TableWriteSession || store.BatchWrite)) {
+		if (role == "source" && (store.TableReadSession || store.BatchRead)) || (role == "target" && (store.TableWriteSession || store.BatchWrite) && (!replaceTarget || store.Delete)) {
 			fact.NativeAccess = plugin.DefinitionSupported
 		}
 	}
@@ -344,6 +348,18 @@ func (s *TaskConfigCheckService) facts(ctx context.Context, tenantID uint, role 
 	if registered != nil {
 		observed := registered.Capabilities()
 		capabilities = &observed
+	}
+	if replaceTarget {
+		// replace consumes ResourceDeleteProvider before preparing or writing the
+		// table, even when Meta has no snapshot. Check both the persisted promise
+		// and this process's implementation without opening the target.
+		if registered == nil {
+			if fact.NativeAccess == plugin.DefinitionSupported {
+				fact.NativeAccess = plugin.DefinitionUnknown
+			}
+		} else if _, ok := registered.(plugin.ResourceDeleteProvider); !ok || capabilities.Storage == nil || capabilities.Storage.Store == nil || !capabilities.Storage.Store.Delete {
+			fact.NativeAccess = plugin.DefinitionUnsupported
+		}
 	}
 	fact.EngineFactsHash = configCheckHash(struct {
 		ID             uint

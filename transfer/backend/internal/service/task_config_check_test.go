@@ -149,6 +149,87 @@ func TestConfigCheckUsesTargetProvider(t *testing.T) {
 		}
 	}
 }
+func TestConfigCheckTargetReplaceRequiresDelete(t *testing.T) {
+	for _, scenario := range []struct {
+		name          string
+		engineType    string
+		sourceType    string
+		mode          string
+		declaration   string
+		missingSource bool
+		missingTarget bool
+		want          plugin.DefinitionCheckStatus
+	}{
+		{name: "source_does_not_need_delete", sourceType: "highgo", engineType: "postgresql", mode: "replace", want: plugin.DefinitionSupported},
+		{name: "highgo_replace", engineType: "highgo", mode: "replace", want: plugin.DefinitionUnsupported},
+		{name: "highgo_replace_without_snapshots", engineType: "highgo", mode: "replace", missingSource: true, missingTarget: true, want: plugin.DefinitionUnsupported},
+		{name: "highgo_append", engineType: "highgo", mode: "append", want: plugin.DefinitionSupported},
+		{name: "highgo_append_missing_target", engineType: "highgo", mode: "append", missingTarget: true, want: plugin.DefinitionUnknown},
+		{name: "postgres_replace", engineType: "postgresql", mode: "replace", want: plugin.DefinitionSupported},
+		{name: "registered_delete_disabled", engineType: "postgresql", mode: "replace", declaration: "no_delete", want: plugin.DefinitionUnsupported},
+		{name: "append_does_not_need_delete", engineType: "postgresql", mode: "append", declaration: "no_delete", want: plugin.DefinitionSupported},
+		{name: "declaration_cannot_add_provider", engineType: "highgo", mode: "replace", declaration: "delete", want: plugin.DefinitionUnsupported},
+		{name: "missing_declaration", engineType: "postgresql", mode: "replace", declaration: "missing", want: plugin.DefinitionUnknown},
+		{name: "known_missing_provider_without_declaration", engineType: "highgo", mode: "replace", declaration: "missing", want: plugin.DefinitionUnsupported},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			svc, facts, subject, body := configCheckFixture(t)
+			if scenario.sourceType != "" {
+				source, err := plugin.Get(scenario.sourceType)
+				if err != nil {
+					t.Fatal(err)
+				}
+				encoded, err := plugin.MarshalEngineCapabilities(source.Capabilities())
+				if err != nil {
+					t.Fatal(err)
+				}
+				declared := commonmodels.JSONString(encoded)
+				facts.engines[1].EngineType, facts.engines[1].Capabilities = scenario.sourceType, &declared
+			}
+			registered, err := plugin.Get(scenario.engineType)
+			if err != nil {
+				t.Fatal(err)
+			}
+			caps := registered.Capabilities()
+			if scenario.declaration == "no_delete" {
+				caps.Storage.Store.Delete = false
+			}
+			if scenario.declaration == "delete" {
+				caps.Storage.Store.Delete = true
+			}
+			encoded, err := plugin.MarshalEngineCapabilities(caps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			declared := commonmodels.JSONString(encoded)
+			facts.engines[2].EngineType, facts.engines[2].Capabilities = scenario.engineType, &declared
+			if scenario.declaration == "missing" {
+				facts.engines[2].Capabilities = nil
+			}
+			if scenario.missingSource {
+				delete(facts.items, 1)
+			}
+			if scenario.missingTarget {
+				delete(facts.items, 2)
+			}
+			body = []byte(strings.Replace(string(body), `"apply_mode":"replace"`, `"apply_mode":"`+scenario.mode+`"`, 1))
+			report := checkFixtureReport(t, svc, subject, body)
+			if report.Status != scenario.want || facts.calls != 4 {
+				t.Fatalf("status=%s want=%s calls=%d report=%+v", report.Status, scenario.want, facts.calls, report)
+			}
+			if scenario.mode == "replace" && scenario.want != plugin.DefinitionSupported {
+				found := false
+				for _, diagnostic := range report.Diagnostics {
+					found = found || (diagnostic.Check == "engine_capability" && diagnostic.ConfigPath == "/config/target/policy/apply_mode" && diagnostic.Status == scenario.want)
+				}
+				if !found {
+					t.Fatalf("missing apply policy diagnostic: %+v", report.Diagnostics)
+				}
+			}
+		})
+	}
+}
+
 func TestConfigCheckBindsFullRequestAndStructuralFacts(t *testing.T) {
 	svc, f, subject, body := configCheckFixture(t)
 	report := checkFixtureReport(t, svc, subject, body)
@@ -291,6 +372,7 @@ func TestConfigCheckUnknownVersusDependencyFailure(t *testing.T) {
 				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "no_checker":
 				f.engines[2].EngineType = "mongodb"
+				body = []byte(strings.Replace(string(body), `"replace"`, `"append"`, 1))
 			case "bad_identity":
 				f.items[1].TenantID = 8
 				wantError = true
