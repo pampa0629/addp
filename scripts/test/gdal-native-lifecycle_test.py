@@ -1,11 +1,15 @@
+import contextlib
 import json
 import os
 import re
+import shlex
+import signal
 import socket
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -26,22 +30,20 @@ class GDALCIPreparationTests(unittest.TestCase):
 
 
 class RasterNativeLifecycleTests(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="addp-raster-lifecycle-")
-        self.addCleanup(self.temporary.cleanup)
-        self.work = Path(self.temporary.name).resolve()
-        self.runtime = self.work / "manager/raster-mosaic-runtime"
-        self.runtime.mkdir(parents=True)
-        (self.runtime / "requirements.txt").write_text("flask==3.0.0\nnumpy>=1.26,<2.3\n")
-        self.site = self.work / "site"
-        self.metadata = self.site / "fixture-1.0.dist-info"
-        self.metadata.mkdir(parents=True)
-        (self.metadata / "METADATA").write_text("Name: fixture\nVersion: 1.0\n")
-        self.python = self.runtime / "venv/bin/python"
-        self.bin = self.work / "bin"
-        self.bin.mkdir()
-        self.source_python = self.bin / "python3.12"
-        self.source_python.write_text("#!" + sys.executable + "\n" + r'''
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.launcher_directory = tempfile.TemporaryDirectory(prefix="addp-raster-dispatcher-")
+        cls.addClassCleanup(cls.launcher_directory.cleanup)
+        cls.launcher = Path(cls.launcher_directory.name) / "python"
+        dispatcher = Path(cls.launcher_directory.name) / "fake-python.py"
+        # Invoke generated Python through the existing interpreter; executing a
+        # fresh Python shebang file can spend the fixture's deadline on startup.
+        # Each simulated venv links to the same launcher instead of copying it.
+        cls.launcher.write_text(
+            "#!/bin/sh\nexec " + shlex.quote(sys.executable) + " "
+            + shlex.quote(str(dispatcher)) + ' "$@"\n')
+        dispatcher.write_text(r'''
 import json, os, shutil, sys
 from pathlib import Path
 work = Path(os.environ["ROOT_DIR"])
@@ -52,8 +54,7 @@ if sys.argv[1:3] == ["-m", "venv"]:
     runtime = Path(sys.argv[-1])
     shutil.rmtree(runtime, ignore_errors=True)
     (runtime / "bin").mkdir(parents=True, exist_ok=True)
-    (runtime / "bin/python").write_bytes(Path(__file__).read_bytes())
-    (runtime / "bin/python").chmod(0o755)
+    (runtime / "bin/python").symlink_to((work / "bin/python3.12").resolve())
     (work / "inherited").unlink(missing_ok=True)
     sys.exit(0)
 if len(sys.argv) > 2 and sys.argv[1] == "-c":
@@ -79,7 +80,24 @@ if sys.argv[1] == "-":
     sys.exit(int(os.environ.get("FAIL_DRIVERS", "0")))
 os.execv(sys.executable, [sys.executable] + sys.argv[1:])
 ''')
-        self.source_python.chmod(0o755)
+        cls.launcher.chmod(0o755)
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="addp-raster-lifecycle-")
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name).resolve()
+        self.runtime = self.work / "manager/raster-mosaic-runtime"
+        self.runtime.mkdir(parents=True)
+        (self.runtime / "requirements.txt").write_text("flask==3.0.0\nnumpy>=1.26,<2.3\n")
+        self.site = self.work / "site"
+        self.metadata = self.site / "fixture-1.0.dist-info"
+        self.metadata.mkdir(parents=True)
+        (self.metadata / "METADATA").write_text("Name: fixture\nVersion: 1.0\n")
+        self.python = self.runtime / "venv/bin/python"
+        self.bin = self.work / "bin"
+        self.bin.mkdir()
+        self.source_python = self.bin / "python3.12"
+        self.source_python.symlink_to(self.launcher)
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             self.port = str(sock.getsockname()[1])
@@ -97,9 +115,29 @@ gdal-config() { echo 3.12.1; }
 addp_prepare_raster_mosaic_runtime
 '''
 
+    @contextlib.contextmanager
+    def fixture_process(self, script, **environment):
+        process = subprocess.Popen(["bash", "-c", script], env=dict(self.environment, **environment),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   start_new_session=True)
+        try:
+            yield process
+        finally:
+            # A timed-out shell cannot run its trap. Reap only this fixture's
+            # process group, including children that outlive their parent shell.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.communicate()
+
+    def run_fixture(self, script, **environment):
+        with self.fixture_process(script, **environment) as process:
+            stdout, stderr = process.communicate(timeout=20)
+            return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
     def run_prepare(self, **environment):
-        return subprocess.run(["bash", "-c", self.prepare], env=dict(self.environment, **environment),
-                              capture_output=True, text=True, timeout=20)
+        return self.run_fixture(self.prepare, **environment)
 
     def calls(self):
         path = self.work / "calls"
@@ -176,13 +214,41 @@ addp_prepare_raster_mosaic_runtime
         self.assertEqual(self.run_prepare().returncode, 0)
         (self.runtime / "venv/.addp-dependency-fingerprint").unlink()
         (self.work / "calls").unlink()
-        processes = [subprocess.Popen(["bash", "-c", self.prepare],
-                     env=dict(self.environment, SLOW_INSTALL="1"),
-                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(3)]
-        for process in processes:
-            stdout, stderr = process.communicate(timeout=20)
-            self.assertEqual(process.returncode, 0, stdout + stderr)
+        with contextlib.ExitStack() as cleanup:
+            processes = [cleanup.enter_context(self.fixture_process(self.prepare, SLOW_INSTALL="1"))
+                         for _ in range(3)]
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=20)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
         self.assertEqual(sum(call[:3] == ["-m", "pip", "install"] for call in self.calls()), 1)
+
+    def test_timeout_and_exception_reap_fixture_listener(self):
+        listener = self.work / "listener.py"
+        ready = self.work / "listener-ready"
+        listener.write_text('''
+import http.server, os
+from pathlib import Path
+server = http.server.HTTPServer(("127.0.0.1", int(os.environ["RASTER_MOSAIC_RUNTIME_PORT"])), http.server.BaseHTTPRequestHandler)
+Path(os.environ["ROOT_DIR"], "listener-ready").touch()
+server.serve_forever()
+''')
+        script = shlex.quote(sys.executable) + " " + shlex.quote(str(listener)) + " &\nwait\n"
+        for mode, expected_error in (("timeout", subprocess.TimeoutExpired), ("exception", RuntimeError)):
+            with self.subTest(mode=mode):
+                ready.unlink(missing_ok=True)
+                with self.assertRaises(expected_error):
+                    with self.fixture_process(script) as process:
+                        deadline = time.monotonic() + 20
+                        while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                            time.sleep(0.02)
+                        self.assertTrue(ready.exists(), "fixture listener did not start")
+                        if mode == "timeout":
+                            process.communicate(timeout=0.05)
+                        else:
+                            raise RuntimeError("fixture assertion failed")
+                with socket.socket() as sock:
+                    sock.settimeout(1)
+                    self.assertNotEqual(sock.connect_ex(("127.0.0.1", int(self.port))), 0)
 
     def test_failures_do_not_publish_pid(self):
         for flag in ("FAIL_PIP", "FAIL_IMPORT", "FAIL_DRIVERS"):
@@ -232,9 +298,9 @@ addp_dev_owned_listener raster-mosaic-runtime "$RASTER_MOSAIC_RUNTIME_PORT"
 bash "$ROOT_DIR/scripts/dev/stop.sh" -manager
 [ ! -f "$ROOT_DIR/.dev-pids/raster-mosaic-runtime.pid" ]
 ''')
-        result = subprocess.run(["bash", "-c", launch], env=self.environment, capture_output=True, text=True, timeout=20)
+        result = self.run_fixture(launch)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        result = subprocess.run(["bash", "-c", launch], env=dict(self.environment, FAIL_START="1"), capture_output=True, text=True, timeout=20)
+        result = self.run_fixture(launch, FAIL_START="1")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.work / ".dev-pids/raster-mosaic-runtime.pid").exists())
 
