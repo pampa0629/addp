@@ -609,7 +609,9 @@ const emit = defineEmits(['page-change', 'navigate', 'child-change', 'item-refre
 const store = useExplorerStore()
 const previewFailureKind = computed(() => {
   const status = store.previewError?.status
-  if (status === 403) return 'forbidden'
+  if (status === 403) {
+    return store.previewError.code === 'security_protection_required' ? 'protected' : 'forbidden'
+  }
   if (status === 0 || [502, 503, 504].includes(status)) return 'unavailable'
   return 'failed'
 })

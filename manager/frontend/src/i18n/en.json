@@ -1084,6 +1084,7 @@
       "scanSubmitted": "Background scan submitted. Waiting for completion.",
       "scanRunning": "Background scan is running.",
       "scanProgress": {
+        "rangeReads": "Attribute range reads: {read} across {ranges} ranges",
         "cleanup": "Old component index cleanup: confirmed {completed}/{total}, unconfirmed {failed}",
         "totalPending": "Total pending",
         "files": "Discovered {files} files and {directories} directories",
@@ -1432,6 +1433,10 @@
         }
       },
       "previewFailure": {
+        "protected": {
+          "title": "Preview blocked by data protection",
+          "description": "Current data protection requirements are not met. Check the protection rules, synchronization status, and validity period."
+        },
         "forbidden": {
           "title": "No permission to read this data item",
           "description": "Your account does not have effective read access to this data item. Contact an authorization administrator to check functional permissions and data grants."

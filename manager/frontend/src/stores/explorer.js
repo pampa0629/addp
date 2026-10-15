@@ -505,7 +505,11 @@ export const useExplorerStore = defineStore('explorer', {
         return this.previewData
       } catch (error) {
         if (!isCurrentRequest()) return null
-        this.previewError = { status: error.response?.status || 0 }
+        const errorCode = error.response?.data?.error_code
+        this.previewError = {
+          status: error.response?.status || 0,
+          code: typeof errorCode === 'string' ? errorCode : ''
+        }
         console.error('加载预览失败:', error)
         throw error
       } finally {

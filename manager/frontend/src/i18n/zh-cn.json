@@ -1084,6 +1084,7 @@
       "scanSubmitted": "后台扫描已提交，正在等待完成",
       "scanRunning": "后台扫描进行中",
       "scanProgress": {
+        "rangeReads": "属性范围读取 {read}，已读取 {ranges} 个范围",
         "cleanup": "清理旧组件索引：成功 {completed}/{total}，未确认 {failed}",
         "totalPending": "总量待确定",
         "files": "已发现 {files} 个文件、{directories} 个目录",
@@ -1432,6 +1433,10 @@
         }
       },
       "previewFailure": {
+        "protected": {
+          "title": "数据保护阻止预览",
+          "description": "尚未满足当前数据保护要求。请核对保护规则、同步状态和有效期。"
+        },
         "forbidden": {
           "title": "无权读取此数据项",
           "description": "当前账号没有此数据项的有效读取权限。请联系授权管理员核对功能权限和数据授权。"

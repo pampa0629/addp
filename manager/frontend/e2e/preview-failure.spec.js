@@ -5,18 +5,24 @@ const itemLocator = name => `addp://engine/2/path/example/${name}?type=table&ite
 const itemNode = name => ({ id: itemLocator(name), locator: itemLocator(name), label: name, type: 'table', hasChildren: false })
 
 for (const locale of ['zh-cn', 'en']) {
-  for (const [status, zh, en] of [
-    [403, '无权读取此数据项', 'No permission to read this data item'],
-    [503, '预览服务暂时不可用', 'Preview service temporarily unavailable'],
-    [500, '数据预览失败', 'Data preview failed']
+  for (const [status, code, zh, en] of [
+    [403, '', '无权读取此数据项', 'No permission to read this data item'],
+    [403, 'security_protection_required', '数据保护阻止预览', 'Preview blocked by data protection'],
+    [403, 'another_denial', '无权读取此数据项', 'No permission to read this data item'],
+    [503, '', '预览服务暂时不可用', 'Preview service temporarily unavailable'],
+    [503, 'security_protection_required', '预览服务暂时不可用', 'Preview service temporarily unavailable'],
+    [500, '', '数据预览失败', 'Data preview failed']
   ]) {
-    test(`keeps HTTP ${status} visible instead of an empty preview in ${locale}`, async ({ page }) => {
-      await installBackend(page, locale, status)
+    test(`keeps HTTP ${status} ${code || 'without code'} visible instead of an empty preview in ${locale}`, async ({ page }) => {
+      await installBackend(page, locale, status, code)
       await page.goto(`/data-explorer?locator=${encodeURIComponent(itemLocator('first'))}`)
       const failure = page.getByTestId('preview-failure')
       await expect(failure).toBeVisible()
       await expect(failure).toContainText(locale === 'zh-cn' ? zh : en)
-      if (status === 403) {
+      if (status === 403 && code === 'security_protection_required') {
+        await expect(failure).toContainText(locale === 'zh-cn' ? '保护规则、同步状态和有效期' : 'protection rules, synchronization status, and validity period')
+        await expect(failure).not.toContainText(locale === 'zh-cn' ? '联系授权管理员' : 'authorization administrator')
+      } else if (status === 403) {
         await expect(failure).toContainText(locale === 'zh-cn' ? '核对功能权限和数据授权' : 'functional permissions and data grants')
       }
       await expect(page.getByText(locale === 'zh-cn' ? '暂无可预览数据' : 'No preview data available', { exact: true })).toHaveCount(0)
@@ -32,7 +38,7 @@ for (const locale of ['zh-cn', 'en']) {
   }
 }
 
-async function installBackend(page, locale, status) {
+async function installBackend(page, locale, status, code) {
   const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
   const root = { id: rootLocator, locator: rootLocator, label: 'Preview test engine', type: 'server', hasChildren: true, children: [itemNode('first'), itemNode('second')] }
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
@@ -47,7 +53,7 @@ async function installBackend(page, locale, status) {
     if (path.endsWith('/ancestors')) return json(route, { target_locator: itemLocator('first'), ancestors: [{ ...root, children: [] }, itemNode('first')] })
     if (path.endsWith('/meta/resource-tree/2') || path.endsWith('/meta/resource-tree/2/node')) return json(route, root)
     if (path.endsWith('/manager/preview')) {
-      if (url.searchParams.get('locator') === itemLocator('first')) return json(route, { error: 'Preview request failed' }, status)
+      if (url.searchParams.get('locator') === itemLocator('first')) return json(route, { error: 'Preview request failed', error_code: code }, status)
       return json(route, { preview_type: 'table', data: { mode: 'table', columns: ['id'], rows: [], total: 0 } })
     }
     return json(route, {})

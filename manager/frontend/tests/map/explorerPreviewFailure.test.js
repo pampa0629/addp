@@ -21,9 +21,28 @@ describe('explorer preview failure state', () => {
     store.previewData = preview
     mocks.get.mockRejectedValueOnce(failure(status))
     await expect(store.loadPreview(locator)).rejects.toMatchObject({ response: { status } })
-    expect(store.previewError).toEqual({ status })
+    expect(store.previewError).toEqual({ status, code: '' })
     expect(store.previewData).toBeNull()
     expect(store.previewLoading).toBe(false)
+  })
+
+  it('retains the protection error code without retaining response details', async () => {
+    const store = useExplorerStore()
+    mocks.get.mockRejectedValueOnce({ response: { status: 403, data: {
+      error_code: 'security_protection_required', error: 'private response detail'
+    } } })
+    await expect(store.loadPreview(locator)).rejects.toBeDefined()
+    expect(store.previewError).toEqual({ status: 403, code: 'security_protection_required' })
+    mocks.get.mockResolvedValueOnce(preview)
+    await store.loadPreview(otherLocator)
+    expect(store.previewError).toBeNull()
+  })
+
+  it.each([null, 17, { code: 'security_protection_required' }])('ignores a non-string error code %j', async code => {
+    const store = useExplorerStore()
+    mocks.get.mockRejectedValueOnce({ response: { status: 403, data: { error_code: code } } })
+    await expect(store.loadPreview(locator)).rejects.toBeDefined()
+    expect(store.previewError).toEqual({ status: 403, code: '' })
   })
 
   it('clears the failure when a new request starts, including successful empty results', async () => {
@@ -60,7 +79,7 @@ describe('explorer preview failure state', () => {
     store.activeChildPreviewData = preview
     mocks.get.mockRejectedValueOnce(failure(403))
     await expect(store.loadPreview(locator, 1, 'child')).rejects.toBeDefined()
-    expect(store.previewError).toEqual({ status: 403 })
+    expect(store.previewError).toEqual({ status: 403, code: '' })
     expect(store.activeChildPreviewData).toBeNull()
     expect(store.childPreviewLoading).toBe(false)
     store.clearPreview()

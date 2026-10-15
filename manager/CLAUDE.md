@@ -18,6 +18,8 @@ Tenant HTTP 请求与有界执行分发先登记在途生命周期，再刷新 O
 
 表格预览的 `preview=suppress` 必须同时删除行值、输出列和对应列元数据；空结果页也不得重新暴露被抑制列。响应边界复用 Common 的查询结果保护执行器，Manager 只适配预览协议；临时原值授权命中时，列契约与有效允许决策保持一致，不能按默认规则额外删除已授权列。
 
+预览失败展示保留服务端稳定错误码。HTTP 403 且 `error_code=security_protection_required` 表示当前数据保护要求阻止预览，界面应引导核对保护规则、同步状态和有效期；不能将其解释为缺少功能权限或源数据 Grant。其他 403 继续展示读取权限提示，503 继续展示依赖不可用；成功重读或切换资源时必须清除旧失败状态。该展示回归沿既有 `make test-manager-frontend` 和 Manager frontend CI 自动发现，不改后端错误契约。
+
 Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接创建 Transfer bounded `sync` ad-hoc execution，不创建临时 `transfer.transfer_tasks`。`manager.export_sessions` 只保存 Transfer 的统一 `execution_id` 和短生命周期下载会话事实，不保存 Transfer task ID；状态回查、artifact manifest、发起用户隔离与 infra 暂存清理由 `common/exportartifact` 提供唯一实现，Manager 只负责资源校验和格式能力适配。Manager 导入保留持久 `sync` 任务语义，不与一次性导出混用。
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
