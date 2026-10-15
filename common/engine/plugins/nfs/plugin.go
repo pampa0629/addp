@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/mimetype"
+	gonfs "github.com/vmware/go-nfs-client/nfs"
 )
 
 // NFSPlugin NFS 文件系统存储引擎插件
@@ -29,8 +31,9 @@ func (r *limitedReadCloser) Close() error {
 
 type nfsFileReadCloser struct {
 	io.ReadCloser
-	mu   *sync.Mutex
-	size int64
+	mu     *sync.Mutex
+	size   int64
+	closed bool
 }
 
 func (r *nfsFileReadCloser) Read(p []byte) (int, error) {
@@ -39,6 +42,9 @@ func (r *nfsFileReadCloser) Read(p []byte) (int, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return 0, io.ErrClosedPipe
+	}
 	return r.ReadCloser.Read(p)
 }
 
@@ -48,10 +54,21 @@ func (r *nfsFileReadCloser) Close() error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.ReadCloser.Close()
+	// gonfs.File.Close only sends COMMIT for previous writes. Read handles
+	// own no transport; the pooled Target owns the shared connection.
+	r.closed = true
+	return nil
 }
 
 func (r *nfsFileReadCloser) Seek(offset int64, whence int) (int64, error) {
+	if r == nil || r.ReadCloser == nil {
+		return 0, io.ErrClosedPipe
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return 0, io.ErrClosedPipe
+	}
 	seeker, ok := r.ReadCloser.(io.Seeker)
 	if !ok {
 		return 0, fmt.Errorf("NFS file reader does not support seek")
@@ -60,9 +77,7 @@ func (r *nfsFileReadCloser) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
 	case io.SeekCurrent:
-		r.mu.Lock()
 		current, err := seeker.Seek(0, io.SeekCurrent)
-		r.mu.Unlock()
 		if err != nil {
 			return 0, err
 		}
@@ -78,8 +93,6 @@ func (r *nfsFileReadCloser) Seek(offset int64, whence int) (int64, error) {
 	if target < 0 {
 		return 0, fmt.Errorf("negative seek offset: %d", target)
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	return seeker.Seek(target, io.SeekStart)
 }
 
@@ -182,7 +195,7 @@ func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionI
 	if err != nil {
 		return nil, err
 	}
-	return p.readFile(ctx, connInfo, filePath)
+	return p.readFile(ctx, connInfo, filePath, true)
 }
 
 func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -282,8 +295,38 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 	return nodes, nil
 }
 
+// nfsReadTarget uses the pinned client's Open, which already resolves the path.
+type nfsReadTarget interface {
+	Lookup(string) (os.FileInfo, []byte, error)
+	Open(string) (*gonfs.File, error)
+}
+
+func openNFSReadFile(ctx context.Context, target nfsReadTarget, mu *sync.Mutex, path string, withSize bool) (*nfsFileReadCloser, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	size := int64(-1)
+	// Only full content streams need a known size for SeekEnd. Ranges seek
+	// from the beginning; another Lookup would repeat Open's path traversal.
+	if withSize {
+		if info, _, err := target.Lookup(path); err == nil {
+			size = info.Size()
+		}
+	}
+	rc, err := target.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &nfsFileReadCloser{ReadCloser: rc, mu: mu, size: size}, nil
+}
+
 // readFile 流式读取文件内容
-func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (io.ReadCloser, error) {
+func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo, path string, withSize bool) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -296,23 +339,19 @@ func (p *NFSPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionInfo
 	}
 
 	filePath := normalizePath(path)
-	entry.mu.Lock()
-	info, _, statErr := entry.target.Lookup(filePath)
-	rc, err := entry.target.Open(filePath)
-	entry.mu.Unlock()
+	rc, err := openNFSReadFile(ctx, entry.target, &entry.mu, filePath, withSize)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("failed to open NFS file %s: %w", filePath, err)
 	}
-	size := int64(-1)
-	if statErr == nil {
-		size = info.Size()
-	}
-	return &nfsFileReadCloser{ReadCloser: rc, mu: &entry.mu, size: size}, nil
+	return rc, nil
 }
 
 func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.ConnectionInfo, path string, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	rc, err := p.readFile(ctx, connInfo, path)
+	rc, err := p.readFile(ctx, connInfo, path, false)
 	if err != nil {
 		return nil, err
 	}

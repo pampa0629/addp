@@ -448,6 +448,10 @@ PLY 属性提取的无进展区间来自高斯泼溅采样：`蒙古族敖包.pl
 
 2026-10-15 Meta 重启后，通过同一 Manager 页面对 `3d/ply` 发起 `deep + force` 定向复验，execution 为 `147f7572-bda8-4e91-b556-63ad3ef2941c`。北京时间 23:07:25–23:08:08 成功完成，耗时 42.5 秒；3 个文件、1 个目录，计划、完成、成功均为 3，失败为 0。页面中同一份 `蒙古族敖包.ply` 的属性读取由 784 B／14 个范围增长至 307.8 KiB／5,628 个范围，距最近进展更新到 0 秒。落库仍为 3 个 gaussian_splat；普通 PLY 的采样事实仍为 `sampled_binary_vertices`、8,192 个样本，三项均有 SHA-256 内容指纹，摘要长度为 64 字符。节点状态、深度和成功时间更新，按钮恢复；切换操作后的范围计数清零。此结果证明新增观测在线生效，不代表采样请求数或耗时已经优化。
 
+进一步检查 NFS 读取链路发现：原范围读取先显式 Lookup 获取大小，再调用底层 Open（内部再次 Lookup），但范围读取仅按起点定位，并不使用文件大小；每个只读范围关闭还调用底层 File.Close，发送一次 COMMIT。按照 [NFSv3 RFC 1813 §3.3.21](https://www.rfc-editor.org/rfc/rfc1813.html#section-3.3.21)，COMMIT 用于把先前 WRITE 的数据落到稳定存储；该依赖的 File 不拥有独立连接，连接由池中的 Target 持有。因此，范围读取只保留 Open 内部的路径解析，只读流关闭仅关闭本地读取状态，写入流关闭仍调用 COMMIT。普通内容流继续取得大小以支持 SeekEnd；不缓存文件句柄，不改变 8,192 个均匀采样的位置、数量或读取范围。
+
+此项优化由 Common Go T1 自动发现读取关闭、写入提交、范围打开和 Seek 回归，验证入口为 `make test-module MODULE=common GO_ONLY=1` 与共享消费方 `make test-go`，现有 platform-ci Go 门禁覆盖新增测试，无新增 API 或依赖。本轮本地两个入口均通过；全量 Go 覆盖 22 个已登记模块。涉及 Common，需要用户执行 `./scripts/dev/restart.sh -all` 后再通过同一 `3d/ply` 复扫对比 42.5 秒基线；确定性测试中的请求减少不能代替业务耗时验收。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。
