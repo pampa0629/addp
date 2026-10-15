@@ -131,16 +131,32 @@ with tempfile.TemporaryDirectory() as tmp:
                    'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
     (mesh_source / 'triangle.mtl').write_text('newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n')
     Image.new('RGB', (4, 4), (32, 180, 220)).save(mesh_source / 'texture.png')
+    def chunk(kind, data):
+        return struct.pack('<HI', kind, len(data) + 6) + data
+    material_name = b'preview\0'
+    material = chunk(0xAFFF, chunk(0xA000, material_name)
+                     + chunk(0xA200, chunk(0xA300, b'texture.png\0')))
+    vertices = chunk(0x4110, struct.pack('<H9f', 3, 0, 0, 0, 1, 0, 0, 0, 2, 0))
+    faces = chunk(0x4120, struct.pack('<5H', 1, 0, 1, 2, 0)
+                  + chunk(0x4130, material_name + struct.pack('<2H', 1, 0)))
+    uv = chunk(0x4140, struct.pack('<H6f', 3, 0, 0, 1, 0, 0, 1))
+    mesh = chunk(0x4000, b'triangle\0' + chunk(0x4100, vertices + faces + uv))
+    three_ds = mesh_source / 'model.3ds'
+    three_ds.write_bytes(chunk(0x4D4D, chunk(0x3D3D, material + mesh)))
+    if hashlib.sha256(three_ds.read_bytes()).hexdigest() != '856a75ee6a2de1be4e0cf19ed67dd49018d34486c762a115a45c173e30603bd6':
+        raise SystemExit('3DS fixture differs from the Hosted source')
     source_hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in mesh_source.iterdir()}
-    for format_name, source, triangle_count in (('fbx', fbx, 12), ('obj', obj, 1)):
+    for format_name, source, triangle_count in (('fbx', fbx, 12), ('obj', obj, 1), ('3ds', three_ds, 1)):
         target = Path(tmp) / f'{format_name}.glb'
         plan = {'schema_version': 'addp.workflow.access-plan/v1',
                 'source': {'kind': 'directory', 'format': format_name, 'entrypoint': source.name,
                            'access': {'method': 'mounted_path', 'path': str(mesh_source)}},
                 'target': {'kind': 'file', 'format': 'glb', 'name': target.name, 'write_mode': 'create',
                            'access': {'method': 'mounted_path', 'path': str(target)}}}
-        operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)
-        doc = validate_glb(target, basic_static=True)
+        for attempt in range(32 if format_name == '3ds' else 1):
+            operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)
+            doc = validate_glb(target, basic_static=True)
+            plan['target']['write_mode'] = 'replace'
         primitives = [p for mesh in doc['meshes'] for p in mesh['primitives']]
         if len(doc['meshes']) != 1 or any(p.get('mode', 4) != 4 for p in primitives):
             raise SystemExit(f'{format_name} static mesh topology differs')
@@ -153,21 +169,22 @@ with tempfile.TemporaryDirectory() as tmp:
             corners = {(x, y, z) for x in (-100.0, 100.0) for y in (-100.0, 100.0) for z in (-100.0, 100.0)}
             if len(scene.geometry) != 1 or set(map(tuple, next(iter(scene.geometry.values())).vertices)) != corners:
                 raise SystemExit('FBX box coordinates differ from the source')
-        if format_name == 'obj':
+        if format_name in {'obj', '3ds'}:
             if sum(doc['accessors'][p['attributes']['POSITION']]['count'] for p in primitives) != 3:
-                raise SystemExit('OBJ vertex count differs')
-            if any(abs(actual - expected) > 1e-6 for actual, expected in zip(scene.extents, (2, 3, 0))):
-                raise SystemExit('OBJ source coordinates changed during conversion')
+                raise SystemExit(f'{format_name} vertex count differs')
+            expected_extents = (2, 3, 0) if format_name == 'obj' else (1, 0, 2)
+            if any(abs(actual - expected) > 1e-6 for actual, expected in zip(scene.extents, expected_extents)):
+                raise SystemExit(f'{format_name} source coordinates changed during conversion')
             pbr = doc['materials'][primitives[0]['material']]['pbrMetallicRoughness']
             image_index = doc['textures'][pbr['baseColorTexture']['index']]['source']
             if len(doc.get('images', [])) != 1 or pbr.get('baseColorFactor', [1, 1, 1, 1])[3] != 1:
-                raise SystemExit('OBJ diffuse texture or opacity was lost')
+                raise SystemExit(f'{format_name} diffuse texture or opacity was lost')
             _, chunks = operators._read_glb(target)
             view = doc['bufferViews'][doc['images'][image_index]['bufferView']]
             offset = view.get('byteOffset', 0)
             with Image.open(io.BytesIO(chunks[1][1][offset:offset + view['byteLength']])) as image:
                 if image.size != (4, 4) or image.convert('RGB').tobytes() != bytes((32, 180, 220)) * 16:
-                    raise SystemExit('OBJ embedded texture pixels differ from the source')
+                    raise SystemExit(f'{format_name} embedded texture pixels differ from the source')
         previous = target.read_bytes()
         invalid = mesh_source / f'invalid.{format_name}'
         invalid.write_text('not a model')
@@ -182,8 +199,8 @@ with tempfile.TemporaryDirectory() as tmp:
             raise SystemExit(f'invalid {format_name} was silently accepted')
         invalid.unlink()
     if {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in mesh_source.iterdir()} != source_hashes:
-        raise SystemExit('FBX/OBJ source files were modified')
-    print('Final Runtime FBX static geometry, OBJ embedded PNG and failure preservation smoke passed')
+        raise SystemExit('FBX/OBJ/3DS source files were modified')
+    print('Final Runtime FBX/OBJ/3DS geometry, embedded PNG and failure preservation smoke passed')
 
     source = Path(tmp) / "tiny.splat"
     target = Path(tmp) / "tiny.ksplat"

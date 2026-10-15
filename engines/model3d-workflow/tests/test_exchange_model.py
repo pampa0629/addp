@@ -66,6 +66,7 @@ def test_invalid_mesh_output_keeps_converter_diagnostics_and_previous_artifact(t
     assert target.read_bytes() == b"previous valid artifact"
     assert "Mesh GLB validation failed" in caplog.text
     assert f"source_format={source_format}" in caplog.text
+    assert error.value.details in caplog.text
     assert "embed diagnostic" in caplog.text
     assert "texture diagnostic" in caplog.text
     assert "x" * 4097 not in caplog.text

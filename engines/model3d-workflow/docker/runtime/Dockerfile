@@ -7,7 +7,7 @@ FROM ${PYTHON_IMAGE}
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
-ENV MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
+ENV MODEL3D_MESH_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/assimp
 ENV MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
 ENV MODEL3D_BLENDER_BIN=/usr/bin/blender
 ENV MODEL3D_MAX_ADDON_PATH=/opt/addp/model3d-workflow/max-importer/source
@@ -22,7 +22,7 @@ WORKDIR /app
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
   && apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     blender=4.3.2+dfsg-2 python3-numpy=1:2.2.4+ds-1 \
-    ca-certificates assimp-utils libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 nodejs npm \
+    ca-certificates libgl1 libglu1-mesa libx11-6 libxrandr2 libxi6 libxxf86vm1 nodejs npm \
   && rm -rf /var/lib/apt/lists/*
 
 COPY engines/model3d-workflow/requirements.txt /app/requirements.txt

@@ -14,6 +14,25 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_linux_assimp_is_built_once_with_failed_stat_regression(self):
+        converter = ROOT / 'engines/model3d-workflow/docker/converter'
+        source = (converter / 'Dockerfile').read_text()
+        runtime = (converter.parent / 'runtime/Dockerfile').read_text()
+        self.assertNotIn('assimp-utils', source + runtime)
+        self.assertIn('assimp/archive/refs/tags/v5.4.3.tar.gz', source)
+        self.assertIn('66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb', source)
+        self.assertIn('sha256sum --check', source)
+        self.assertIn('-DBUILD_SHARED_LIBS=OFF', source)
+        self.assertIn('assimp_cmd addp-assimp-io-smoke', source)
+        self.assertIn('./addp-assimp-io-smoke', source)
+        self.assertIn('cp bin/assimp /out/assimp', source)
+        self.assertIn('MODEL3D_MESH_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/assimp', runtime)
+        patch = (converter / 'patches/assimp-stat-result.patch').read_text()
+        self.assertIn('+    if (stat(pFile, &statbuf) != 0)', patch)
+        smoke = SCRIPT.read_text()
+        self.assertIn("range(32 if format_name == '3ds' else 1)", smoke)
+        self.assertIn('856a75ee6a2de1be4e0cf19ed67dd49018d34486c762a115a45c173e30603bd6', smoke)
+
     def test_tinygltf_overlay_pins_verified_source_and_installs_header(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'
         dockerfile = (converter / 'Dockerfile').read_text()

@@ -98,6 +98,12 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 
 本节仅用于 Linux 产品镜像构建和 Hosted 产品验收；本机开发使用前述私有原生工具包。
 
+Linux mesh 转换器固定使用 Assimp 5.4.3 源码归档（SHA-256 `66dfbaee288f2bc43172440a55d0235dfc7bf885dda6435c038e8000e79582cb`），在 Converter 构建阶段静态编译到同一工具包的 `bin/assimp`，不再安装发行版 `assimp-utils`。唯一补丁检查 Unix `stat()` 的返回值：失败时立即返回不存在，避免读取未初始化的 `statbuf`，把当前工作目录中不存在的贴图误判为存在，继而放弃模型目录中的正确贴图。该缺陷已在原 Linux 产品镜像复现为 120 次相同 3DS 转换中的 9 次外部图片 URI 残留；保持自包含 GLB 校验，不增加重试、别名或补打包路线。
+
+同一产品构建运行文件存在性回归，模拟 `stat()` 失败但输出结构残留普通文件标志，并核对真实文件、目录及缺失路径；最终 Runtime 使用真实 Assimp 反复转换带相对 PNG 引用的 3DS，核对几何、UV、内嵌像素、源文件不变和失败时旧产物保留。原有 FBX／OBJ／OSGB／SKP／MAX 检查继续执行。Linux amd64 的 Manager 页面与对象存储完整链路仍由原 Hosted suite 验收，构建检查不能替代 T4。
+
+2026-10-15 已构建补丁后的 Linux ARM64 Converter 镜像 `sha256:efc24640b846c3be94237284a330f23e9c2ceb3859bd13792c4c3df904083fa1`，原生文件存在性回归通过。通过根 `make test-model3d-workflow` 增补临时探测，官方原函数在失败 `stat()` 的确定性输入上误判存在，仓库补丁正确拒绝；修复版转换器配合当前生产 operator、既有 Runtime 依赖镜像连续 120 次转换均通过，每次核对三顶点／一三角面、UV、自包含 PNG 及全部 2 × 2 RGB `(255,64,32)` 像素，缺图和损坏图片均拒绝且保留旧产物，源哈希不变、临时转换目录为空。合计 280 项通过，其中 278 项为现有测试、两项为临时探测。该组合验证不等同于完整新 Runtime 镜像：标准完整产品构建仍被 Debian HTTPS 软件源连接失败阻断，首次直连及临时本机代理两次失败均保留；未关闭证书验证或更换软件源。完整镜像及 x86_64 复验由既有 Platform CI 产品构建与 Manager Hosted 入口继续完成。
+
 ```bash
 make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify --jobs 1'
 ```
@@ -119,7 +125,7 @@ vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过唯一的 overl
 
 ```text
 MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
-MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
+MODEL3D_MESH_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/assimp
 MODEL3D_IFC_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/IfcConvert
 MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
 MODEL3D_BLENDER_BIN=/usr/bin/blender

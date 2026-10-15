@@ -801,10 +801,10 @@ def _mesh_model_to_glb(
 
         try:
             doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds"})
-        except ConverterError:
+        except ConverterError as error:
             logging.getLogger(__name__).error(
-                "Mesh GLB validation failed: source_format=%s stdout=%s stderr=%s",
-                source_label.lower(), result.stdout[-4096:], result.stderr[-4096:],
+                "Mesh GLB validation failed: source_format=%s details=%s stdout=%s stderr=%s",
+                source_label.lower(), error.details, result.stdout[-4096:], result.stderr[-4096:],
             )
             raise
         if source_texture_refs:
