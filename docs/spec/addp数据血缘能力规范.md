@@ -230,6 +230,12 @@ owner execution/publication fact
 4. 通知失败不得把已成功的数据执行改为失败；Meta 周期 collector 负责漏采和失败重试。
 5. Item 元数据刷新只更新资源元数据，不触发血缘采集；血缘事实的触发依据始终是 owner execution，而不是用户刷新行为。
 
+周期 collector 的批量参数只限制单次数据库分页大小，不限制一轮采集总量。每轮先冻结成功且声明 `lineage_facts`、尚无 observation 的 execution ID 上界，再按 `created_at ASC, id ASC` 使用键集游标遍历该上界内的待采集执行；禁止反复只取最早一页，也不使用 OFFSET 分页。单个执行的全部 observation 与投影在同一事务内保存，因此周期查询按 Tenant 和 execution ID 排除已有 observation 的执行，不逐轮重放已完成历史，也不新增完成标记或第二套采集状态。未能解析 DataItem 时不写 observation，下一轮从头重试，确保目标延迟扫描后能够补采；轮内新增执行或已越过游标后才成功的执行由下一轮覆盖。单条执行采集失败应汇总报告并继续处理后续执行，数据库分页失败或上下文取消则终止本轮。立即通知的重复调用仍通过同一幂等路径处理，保持旧关系关闭及字段快照时态，不得重新激活已被后续写入替代的关系。
+
+上述契约由 `make test-meta-postgres` 覆盖超过 500 条执行、同创建时间的分页边界、目标延迟扫描、重复采集幂等性、单条错误隔离及轮内新增执行的下一轮采集；沿用已有 Release/T2 的 Meta PostgreSQL 门禁，不新增部署依赖或公开 API。
+
+2026-10-15，本地 `addp_test` 的标准 PostgreSQL 回归先在原实现复现固定首批问题：600 条可解析执行仅采集 500 条，首条无效事实也会阻塞后续执行。修复后四项 collector 回归通过：同创建时间的 601 条执行中先完整采集 600 条，第 601 条在目标元数据稍后入库后自动补采；重复周期调用保持 601 条 observation 和两条资源关系不变。另覆盖错误执行隔离、轮内新执行及游标后迟到成功的下一轮处理、取消，以及重复即时通知不激活已关闭的字段关系。`make test-module MODULE=meta GO_ONLY=1` 和 `make test-meta-postgres` 通过；这属于 T1/T2 证据，不作为新的部署后 T4 验收结果。
+
 ### 5.1 固定正式表查询写入
 
 Develop Query Execution Supervisor 必须在业务写入事务成功提交后，将 `lineage_facts` 与成功终态在同一次带 lease 校验的执行记录事务中保存，再复用已有通知入口调用 Meta collector。输入采用 Provider 冻结并在写入事务中复核的完整 ReadSet，按 canonical path 稳定排序。命中 relation 参数绑定的来源保留 input.<参数名> 端口，View 展开的其他实际来源使用 read.<序号> 端口；不得仅靠调用方的绑定列表遗漏间接来源；目标采用本次实际写入的 `target_locator`。不得从 Orchestrator 的 `depends_on` 推导资源边，也不得将逻辑表建表任务作为数据来源。

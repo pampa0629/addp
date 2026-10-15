@@ -48,23 +48,63 @@ func (s *LineageService) RunCollector(ctx context.Context, interval time.Duratio
 	}
 }
 
-func (s *LineageService) CollectPendingExecutions(ctx context.Context, limit int) (int, error) {
-	if limit < 1 || limit > 5000 {
-		return 0, fmt.Errorf("limit must be between 1 and 5000")
+// CollectPendingExecutions consumes a finite sweep of pending execution facts.
+// batchSize bounds each query, not the sweep. Unresolved resources leave no
+// observations and are revisited on the next sweep.
+func (s *LineageService) CollectPendingExecutions(ctx context.Context, batchSize int) (int, error) {
+	if batchSize < 1 || batchSize > 5000 {
+		return 0, fmt.Errorf("batch size must be between 1 and 5000")
 	}
-	var executions []commonExecution.TaskExecution
-	if err := s.db.WithContext(ctx).
-		Where("status = ? AND metadata IS NOT NULL AND metadata ? 'lineage_facts'", commonExecution.ExecutionStatusSuccess).
-		Order("created_at ASC, id ASC").Limit(limit).Find(&executions).Error; err != nil {
+	eligible := func() *gorm.DB {
+		return s.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
+			Where("status = ? AND metadata IS NOT NULL AND metadata ? 'lineage_facts'", commonExecution.ExecutionStatusSuccess).
+			// CollectExecution persists all observations and projections atomically;
+			// an existing observation therefore proves consumption of that execution.
+			Where(`NOT EXISTS (SELECT 1 FROM meta.lineage_observations AS observation
+				WHERE observation.tenant_id = task_executions.tenant_id
+				AND observation.execution_id = task_executions.execution_id)`)
+	}
+	// New executions cannot keep extending this sweep indefinitely. A later
+	// success behind the cursor is also revisited by the next sweep.
+	var upper commonExecution.TaskExecution
+	if err := eligible().Select("id").Order("id DESC").Take(&upper).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	} else if err != nil {
 		return 0, err
 	}
-	collected := 0
-	for _, execution := range executions {
-		result, err := s.CollectExecution(ctx, uint(execution.TenantID), execution.ExecutionID)
-		if err != nil {
-			return collected, fmt.Errorf("collect execution %s: %w", execution.ExecutionID, err)
+	var cursor *commonExecution.TaskExecution
+	var firstError error
+	collected, failed := 0, 0
+	for {
+		query := eligible().Select("id", "tenant_id", "execution_id", "created_at").Where("id <= ?", upper.ID)
+		if cursor != nil {
+			query = query.Where("(created_at, id) > (?, ?)", cursor.CreatedAt, cursor.ID)
 		}
-		collected += result.Observed
+		var executions []commonExecution.TaskExecution
+		if err := query.Order("created_at ASC, id ASC").Limit(batchSize).Find(&executions).Error; err != nil {
+			return collected, errors.Join(firstError, err)
+		}
+		if len(executions) == 0 {
+			break
+		}
+		for _, execution := range executions {
+			if err := ctx.Err(); err != nil {
+				return collected, errors.Join(firstError, err)
+			}
+			result, err := s.CollectExecution(ctx, uint(execution.TenantID), execution.ExecutionID)
+			if err != nil {
+				failed++
+				if firstError == nil {
+					firstError = fmt.Errorf("collect execution %s: %w", execution.ExecutionID, err)
+				}
+				continue
+			}
+			collected += result.Observed
+		}
+		cursor = &executions[len(executions)-1]
+	}
+	if firstError != nil {
+		return collected, fmt.Errorf("%d execution collections failed; first error: %w", failed, firstError)
 	}
 	return collected, nil
 }
