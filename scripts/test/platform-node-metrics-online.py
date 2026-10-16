@@ -208,6 +208,12 @@ def eventually(check, message, timeout=100):
     raise SuiteError(message+" did not converge")
 
 
+def source_scrape_failed(prom, expression):
+    # Resource overview evaluates at whole seconds; its failure precondition needs the same precision.
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+    return bool(prom.query("up" + expression + " == 0", at=at))
+
+
 def owned_action(service, action):
     require(service in {"control-tls"} and action in {"stop", "start"}, "invalid fault action")
     directory = FIXTURE.boundary()
@@ -1237,7 +1243,7 @@ def run(base, directory, report):
     report["stage"] = "source-outage-recovery"
     source_action("stop")
     try:
-        eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
+        eventually(lambda: source_scrape_failed(prom, expression), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
         assert_source_process_isolation(admin, prom, processes, report)
         report["overview_source_failed"] = assert_source_overview_isolation(admin, prom, expression, node, query_policy["version"], node_input["display_name"], report)

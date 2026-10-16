@@ -102,6 +102,37 @@ class MetricsProtocolTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.assert_resource_overview(self.overview_reply(), node, 2, "Online host", source_failed=True, disconnected=True)
 
+    def test_source_outage_waits_for_failure_visible_at_the_api_whole_second_anchor(self):
+        node = {"node_id": "node-id", "version": 1, "enabled": True}
+        selector = '{job="addp_nodes",addp_node_id="node-id"}'
+        for stamp in ("2026-10-16T16:46:35Z", "2026-10-16T16:46:59Z"):
+            with self.subTest(stamp=stamp):
+                base = ONLINE.utc_timestamp(stamp)
+                failure_sample = base + 0.475
+                clock = [base + 0.836]
+                def query(expression, *, at=None):
+                    self.assertEqual(expression, "up" + selector + " == 0")
+                    evaluated = clock[0] if at is None else ONLINE.utc_timestamp(at)
+                    return [{"metric": {}, "value": [evaluated, "0"]}] if evaluated >= failure_sample else []
+                prom = unittest.mock.Mock(query=unittest.mock.Mock(side_effect=query))
+                # Real-time evidence can already fail while the API's integer anchor still sees up=1.
+                self.assertTrue(prom.query("up" + selector + " == 0"))
+                prom.query.reset_mock()
+                healthy = self.overview_reply(at=stamp)
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_resource_overview(healthy, node, 2, "Online host", source_failed=True)
+                with patch.object(ONLINE.time, "time", side_effect=lambda: clock[0]):
+                    self.assertFalse(ONLINE.source_scrape_failed(prom, selector))
+                    self.assertEqual(prom.query.call_args.kwargs, {"at": stamp})
+                    clock[0] = base + 1.05
+                    self.assertTrue(ONLINE.source_scrape_failed(prom, selector))
+                next_stamp = datetime.datetime.fromtimestamp(base + 1, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                self.assertEqual(prom.query.call_args.kwargs, {"at": next_stamp})
+                self.assertEqual(prom.query.call_count, 2)
+                failed = self.overview_reply(at=next_stamp)
+                failed["inventory"]["collection"].update(collecting=0, failed=1)
+                ONLINE.assert_resource_overview(failed, node, 2, "Online host", source_failed=True)
+
     def test_source_overview_success_keeps_the_single_request_without_diagnostics(self):
         node = {"node_id": "node-id", "version": 1, "enabled": True}
         value = self.overview_reply()

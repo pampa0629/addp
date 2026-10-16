@@ -2382,3 +2382,15 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 当前共享工作区首次 `make test-node-metrics-online-runner` 执行 57 项时，有一项原有跨 suite 语法测试被其他范围的 `test-manager-sgm-local-runner` 缺失入口提前中断，日志 `/tmp/addp-overview-source-witness-runner.log`；本批未修改该入口或处理其他 owner。为单独验证实际 Hosted 输入，从固定源码 `f93c7928072622ace61492ab58e6ecd948a9f951` 导出仓库外临时快照，仅叠加本批两项 Python 文件，继续执行同一标准 `make test-node-metrics-online-runner`：临时去掉诊断后新增十一项子场景均因缺少证据明确失败（`/tmp/addp-overview-source-witness-red-f93.log`），恢复本批诊断后退出 0，57 项回归、浏览器/Hosted shell 语法检查及 Metrics 身份夹具 Go 测试通过（`/tmp/addp-overview-source-witness-green-f93.log`）。该快照证明本批改动在本次 Hosted 固定输入上的结果，不冒充其他并行改动的整体通过。
 
 本轮默认 `make test-changed` 对六项混合变更命中 Model/Transfer，在外部测试连接预检退出 2，后续未执行、不计通过；日志 `/tmp/addp-overview-source-witness-changed.log`。本批任务范围 diff、章节与文档围栏检查通过；不新增 API、权限、角色、部署配置或 CI 入口。两轮归档均未发现凭据文件、私钥 PEM 或 JWT 模式，但此项有限检查不替代退出清理证明；零残留以各自外层 summary 为准。诊断尚未进入 Hosted 执行，当前仍保留整体失败结论，需推送后继续同一 suite 收集事实，不以重跑一次成功宣称本次未知根因已经消除。
+
+诊断版 Hosted Run `38925249864`（固定源码 `994333e534a83fc5a68fa1c7dffda42fae6e87a8`、Job `117055021182`）已完成并归档，仍失败于同一来源故障总览断言。新增诊断成功捕获：API `evaluated_at=2026-10-16T16:46:35Z`，inventory 为一台已纳管、已启用、已接入且 collecting=1/failed=0；同一时刻的原生证据为 up_count=1、up=1，sampled_at=1792169180.475，即 `16:46:20.475Z`。独立进程请求完成于 `16:46:35.836265807Z`。证据表明 API 的整秒锚点上仍是前一次成功抓取，不能要求它采纳该秒稍后才可见的失败抓取。
+
+沿既有实现核对，故障等待用未指定 time 的即时 Prometheus 查询，资源总览则统一将服务端当前时刻截断到秒后查询和归一；前置条件与被测接口读取了不同时间范围。这是测试同步条件的错误，不是该次 inventory 的产品判定错误。本批仅把来源故障等待的 `up == 0` 查询显式固定在当前 UTC 整秒，沿原 eventually 的一秒轮询与 100 秒上限，等待失败证据进入随后 API 能读取的时间范围；不固定休眠、不修改 API 锚点、不放宽 inventory/TOP5 断言，也不改变采集设施、身份、预算或其他故障步骤。原失败诊断保留。
+
+同轮浏览器仍 passed（elapsed_ms=236634，外层 duration_ms=238868，未超原时限），三项比较均为缺样保护分支；中心故障恢复、独立进程资源边界已通过，整体失败及后续未执行步骤不计通过。退出 `cleanup=passed`、`infra_cleanup=zero_residuals`；本机归档 `/tmp/addp-overview-source-witness-hosted-38925249864`、Job 日志 `/tmp/addp-overview-source-witness-hosted-job-38925249864.log`。同源码的一致性 Job `117054801321` 失败于其他范围的 PostgreSQL 门禁命令断言（`test_common_postgres_group_preserves_full_default_and_scopes_explicitly`），本会话不修复或重跑该项，也不以其顶层失败推断本批 runner 未通过。
+
+实施前验证仍为原 `make test-node-metrics-online-runner`：增加真实故障时刻处于整秒之后时，即时查询已失败但整秒评估仍成功的确定性反例，以及跨分钟边界进入下一秒后才满足等待条件的场景。原 Online runner 与 suite/CI 自动登记已覆盖，无需修改入口或工作流；默认 `make test-changed` 分别记录实际预检结果。修复提交后的真实 Hosted 结果单独记录，本地回归不替代正式复验。
+
+整秒同步修正的回归已完成。先沿原标准 runner 保留即时查询实现，新增普通秒内和分钟末两个反例均明确失败于 True is not false，58 项中的两项子场景失败，日志 `/tmp/addp-source-outage-anchor-red.log`；改为显式 UTC 整秒查询后，同一 `make test-node-metrics-online-runner` 退出 0：58 项 Python 回归、浏览器/Hosted shell 语法检查及 Metrics 身份夹具 Go 测试全部通过，日志 `/tmp/addp-source-outage-anchor-green.log`。新场景证明失败抓取虽已被实时查询看到，整秒上仍不可见时不能结束等待；推进到下一秒（含分钟切换）后才满足条件，原严格 inventory 断言继续验证真实采集失败。
+
+默认 `make test-changed` 对 18 项混合变更选中 27 个模块，在必需外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-source-outage-anchor-changed.log`。已确认原 node-metrics runner 仍进入 `test-online-runner`，原 Hosted suite 及固定源码路径覆盖本次两项 Python 文件，无新增登记；任务范围 diff、章节与文档围栏检查通过。本批只调整已有测试的失败可见性等待，旧即时谓词已移除，诊断及原断言保留；无需重启个人服务。修正后的真实 Hosted 仍待推送后执行，Run `38925249864` 保持失败记录，不把本地回归记作正式链路通过。
