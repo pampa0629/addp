@@ -179,3 +179,7 @@ Hosted 脱敏验收的 v14 扩展使用领域 v14、浏览器 v6：复用原普�
 Hosted 报告 v15 在既有 v14 场景上要求 Service 保护到期返回精确 `403/data_protection_required` 且只含本地化提示与稳定码；Transfer 的派生拒绝与到期拒绝必须各自携带准备阶段的安全保护诊断，血缘稳定码保留。真实 Hosted 运行前不计为 v15 通过。确定性回归、既有 Online 登记守卫和同一 suite 入口同步更新，原浏览器 v6 契约保持。
 
 2026-10-16，Service／Transfer 的保护拒绝说明修正已完成本地验证：Service 全模块 Go T1、PostgreSQL 与 Swagger 62 路由覆盖通过；Transfer 全模块后端、130 项前端单元／24 项浏览器及构建通过，准备和结果阶段均使用共享失败组件，中英文不显示原始错误。148 项 Security／Hosted／CI 登记回归与登记一致性通过。Transfer PostgreSQL 保护用例（含原生／查询到期拒绝与零新增写入）通过，但完整聚合在另一会话正在修改的 continuous execution origin 校验两项失败，后续 PostgreSQL API 步骤未进入，不计为全门禁通过；`make test-changed` 缺少全仓 T2 连接变量而在预检退出，Service 模块聚合在其他会话 Transfer WIP 的 Ontology provenance 守卫处退出，均不计通过，未修改这些来源或守卫。本轮真实输出沿既有 Security Hosted v15 复验；本地个人服务未重启。
+
+提交前补充核对 Provider 错误优先级：Service／Transfer 在门禁包装内遇到类型化缺表错误或 SQLSTATE 时保留既有查询失败性质，不将其解释为保护拒绝。Hosted `38885678273` 在排队阶段主动取消，避免使用缺少该反例的前置提交；未运行、不计 T4。之后本地 Transfer 全模块后端因另一会话新增的 `TestStartRejectsUnverifiedOriginBeforeCaptureOrExecutionWrite` WIP 用例失败，保留首轮全模块通过记录但不计最新工作区全门禁通过；本会话只沿标准后端入口用 GOFLAGS 限定保护／执行完成／读取隔离回归，不修改该来源校验。
+
+上述 Provider 优先级补充后，Service 全模块 Go T1 再次通过；Transfer 使用 `GOFLAGS='-run=Test(Gate|Bounded|Protected|TransferExecutionReadIsolation|FinishExecution) -count=1' make test-transfer-backend` 通过，覆盖类型化／同文案／SQLSTATE 反例、真实完成事务安全投影、保护边界与专业读取隔离。该结果只计本会话所选 T1，不计完整后端或 PostgreSQL 聚合通过。

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	protection "github.com/addp/service/internal/protection"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,7 +62,9 @@ func TestQueryProtectionRefusalUsesSafeLocalizedContract(t *testing.T) {
 			}
 		}
 	}
-	for _, cause := range []error{errors.New(protection.ErrRequired.Error()), errors.New("database connection failed")} {
+	for _, cause := range []error{errors.New(protection.ErrRequired.Error()), errors.New("database connection failed"),
+		fmt.Errorf("%w: %w", protection.ErrRequired, plugin.NewQueryError(plugin.QueryErrorCodeTableNotFound, errors.New("private-sentinel"))),
+		fmt.Errorf("%w: %w", protection.ErrRequired, &pgconn.PgError{Code: "42P01", Message: "private-sentinel"})} {
 		if queryExecutionErrorCode(cause) != "query_execution_failed" {
 			t.Fatal("ordinary error classified as protection refusal")
 		}

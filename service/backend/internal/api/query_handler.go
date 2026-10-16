@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
@@ -569,6 +570,12 @@ func writeQueryExecutionError(c *gin.Context, err error) {
 }
 
 func queryExecutionErrorCode(err error) string {
+	// Provider-confirmed query failures remain query failures even when catalog
+	// resolution happened inside a protection gate.
+	var state interface{ SQLState() string }
+	if plugin.QueryErrorCodeOf(err) != "" || errors.As(err, &state) {
+		return "query_execution_failed"
+	}
 	if errors.Is(err, protection.ErrRequired) || errors.Is(err, dataprotection.ErrDenied) {
 		return "data_protection_required"
 	}

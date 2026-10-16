@@ -546,6 +546,10 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 		} else if errors.Is(execErr, executor.ErrProtectionPreparation) {
 			stage = "preparation"
 		}
+		var state interface{ SQLState() string }
+		if commonPlugin.QueryErrorCodeOf(execErr) != "" || errors.As(execErr, &state) {
+			stage = ""
+		}
 		if stage != "" {
 			if !errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
 				next["code"] = "data_protection_required"

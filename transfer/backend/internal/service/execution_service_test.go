@@ -17,6 +17,7 @@ import (
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -693,6 +694,8 @@ func TestBoundedProtectionFailureRetainsBoundaryWithoutPrivateText(t *testing.T)
 		{"result", fmt.Errorf("%w: private-sentinel", executor.ErrProtectionResult), "data_protection_required", "result"},
 		{"lineage", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.ErrQueryOutputLineageUnresolved), "query_output_lineage_unresolved", "preparation"},
 		{"unrelated", errors.New(executor.ErrProtectionPreparation.Error()), "", ""},
+		{"provider table error", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.NewQueryError(commonPlugin.QueryErrorCodeTableNotFound, errors.New("private-sentinel"))), "", ""},
+		{"provider SQLSTATE", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, &pgconn.PgError{Code: "42P01", Message: "private-sentinel"}), "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newExecutionServiceTestDB(t)
