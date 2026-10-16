@@ -22,6 +22,8 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
   const errors = []
   const failures = []
   const gpu = createBrowserGpuDiagnostics('login')
+  let stage = 'login'
+  const mark = value => { stage = value; gpu.setStage(value) }
   page.on('request', req => {
     if (new URL(req.url()).pathname === '/api/v1/manager/quick-view/actions' && req.method() === 'POST') {
       expect(req.postDataJSON().action).toBe('generate_model_3d_glb')
@@ -35,7 +37,12 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
   page.on('pageerror', () => errors.push('pageerror'))
   page.on('response', response => {
     if (isAnonymousRefreshResponse(response, authenticated)) return
-    if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400) failures.push(response.status())
+    const path = new URL(response.url()).pathname
+    if (path.startsWith('/api/v1/') && response.status() >= 400) {
+      const category = ['manager/quick-view', 'manager/preview', 'manager/tasks', 'manager/executions', 'manager', 'meta', 'system', 'monitor']
+        .find(prefix => path.startsWith(`/api/v1/${prefix}/`) || path === `/api/v1/${prefix}`) || 'other'
+      failures.push({ category, status: response.status() })
+    }
   })
   try {
     const route = `/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`
@@ -48,16 +55,18 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     expect(identity.principal.id).toBe(apiIdentity.principal.id)
     expect(String(identity.context.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     await browserAPI.dispose()
-    gpu.setStage('generation')
+    mark('generation-entry')
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const generate = frame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })
     await expect(generate).toBeEnabled()
+    mark('original-download')
     const downloadPromise = page.waitForEvent('download')
     await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
     const download = await downloadPromise
     const bytes = readFileSync(await download.path())
     expect(bytes.length).toBe(source.size_bytes)
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.sha256)
+    mark('generation')
     const startedPromise = page.waitForResponse(response => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/v1/manager/quick-view/actions')
     await generate.click()
@@ -81,6 +90,7 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     expect(artifact.task_id).toBe(started.task_id)
     expect(artifact.last_execution_id).toBe(started.execution_id)
     expect(artifact.preview_url).toBe(`/api/v1/manager/model_3d_glb/${artifact.result_id}/content`)
+    mark('generated-preview')
     const preview = frame.locator('.model-preview')
     await expect(preview.locator('canvas')).toBeVisible({ timeout: 60_000 })
     await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
@@ -95,12 +105,12 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     const ranged = await api.get(artifact.preview_url, { headers: { Range: 'bytes=0-63' } })
     expect(ranged.status()).toBe(206)
     expect((await ranged.body()).length).toBe(64)
-    gpu.setStage('task-page')
+    mark('task-page')
     await page.goto(`/manager/tasks/quick-view?task_type=model_3d_glb_generation&task_id=${started.task_id}`)
     const taskFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(taskFrame.locator('body')).toContainText('compass')
     await expect(taskFrame.getByText(/成功|Succeeded/, { exact: true }).first()).toBeVisible()
-    gpu.setStage('cached-preview')
+    mark('cached-preview')
     const loaded = page.waitForResponse(response => new URL(response.url()).pathname === artifact.preview_url && response.status() === 200)
     await page.goto(route)
     await loaded
@@ -119,6 +129,15 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
       cached_preview_loaded: true, generation_requests: generationRequests,
       browser_errors: 0, failed_business_responses: 0, gpu_diagnostics: gpu.snapshot()
     }))
+  } catch (error) {
+    const location = String(error.stack || '').match(/manager-sgm-local\.spec\.js:(\d+):(\d+)/)
+    // Never retain error messages, DOM snapshots, model bytes or credentials.
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'sgm-browser-failure.json'), JSON.stringify({
+      stage, source_line: location ? Number(location[1]) : null,
+      generation_requests: generationRequests, browser_errors: errors.length,
+      failed_business_responses: failures
+    }))
+    throw error
   } finally {
     await api.dispose()
   }

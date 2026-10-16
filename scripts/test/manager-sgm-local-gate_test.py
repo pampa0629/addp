@@ -171,6 +171,17 @@ class LocalSGMContract(unittest.TestCase):
         self.assertEqual(trace[0]['error_code'], 'engine_type_unsupported')
         self.assertNotIn('SECRET', json.dumps(trace))
 
+    def test_failure_and_capability_diagnostics_exclude_private_payloads(self):
+        error = GATE.MANAGER.SuiteError('GET private returned HTTP 403 (permission_denied) SECRET_MODEL')
+        self.assertEqual(GATE.safe_failure(error), {'type': 'SuiteError', 'http_status': 403, 'error_code': 'permission_denied'})
+        self.assertEqual(GATE.safe_failure(ValueError('SECRET')), {'type': 'ValueError'})
+        facts = GATE.capability_facts({'status': 'unavailable', 'unavailable_reason': 'operator_unavailable',
+            'source_kind': 'model_3d', 'render_source': '', 'connection_info': {'password': 'SECRET'},
+            'available_actions': ['SECRET_MODEL', 'generate_model_3d_glb']})
+        self.assertEqual(facts, {'status': 'unavailable', 'unavailable_reason': 'operator_unavailable',
+            'source_kind': 'model_3d', 'glb_generation_available': True})
+        self.assertNotIn('SECRET', json.dumps(facts))
+
     def test_wrong_port_ownership_or_nonloopback_is_rejected(self):
         with patch.object(GATE.T2, "command"):
             life = GATE.T2.Lifecycle(prefix="local-", label=GATE.LABEL)

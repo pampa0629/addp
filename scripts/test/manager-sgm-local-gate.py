@@ -201,6 +201,20 @@ def register_engine(environment, token, descriptor, trace):
     return REGISTRATION.register_engine(environment["SYSTEM_URL"], token, descriptor, requester=requester)
 
 
+def safe_failure(error):
+    facts = {"type": type(error).__name__}
+    match = re.search(r"returned HTTP ([1-5][0-9]{2}) \(([a-z][a-z0-9_]{0,100})\)", str(error))
+    if match:
+        facts.update(http_status=int(match[1]), error_code=match[2])
+    return facts
+
+
+def capability_facts(capability):
+    return {key: value for key in ("status", "unavailable_reason", "source_kind", "render_source")
+            if isinstance(value := capability.get(key), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,100}", value)} | {
+                "glb_generation_available": "generate_model_3d_glb" in capability.get("available_actions", [])}
+
+
 def build_diagnostics(path):
     """Only fixed categories and numeric build facts leave private raw logs."""
     if not path.is_file():
@@ -380,6 +394,12 @@ print(json.dumps(facts))'''
     T2.require(not model_tasks(client, str(item["fingerprint"])), "stale SGM task")
     query = MANAGER.urllib.parse.urlencode({"locator": model_fixture.locator})
     capability = client.request("GET", "/api/v1/manager/quick-view/capability?" + query, (200,)).payload
+    result["initial_capability"] = capability_facts(capability)
+    sql = """SELECT coalesce(json_agg(json_build_object('engine_type',engine_type,'is_builtin',is_builtin,
+        'tenant_id',tenant_id,'connection_status',connection_status,'lifecycle_state',lifecycle_state)), '[]')
+        FROM system.engines WHERE engine_type IN ('model3d_workflow','supermap_workflow')"""
+    result["runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
+        environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
     model_fixture.previous_mode = capability["preferred_mode"]
     T2.require(model_fixture.previous_mode in {"basic_preview", "map_quick_view"}, "unknown initial preview mode")
     model_fixture.mode_changed = True
@@ -389,6 +409,7 @@ print(json.dumps(facts))'''
                        ADDP_SGM_SOURCE_JSON=json.dumps({"locator": model_fixture.locator, **result["fixture"]}))
     print("SGM local: ordinary User, task, browser and cache assertions", flush=True)
     try:
+        T2.require(result["initial_capability"]["glb_generation_available"], "SGM generation unavailable: " + result["initial_capability"].get("unavailable_reason", "unknown"))
         life.phase = "browser_prepare"
         T2.command(["npm", "--prefix", "console/frontend", "ci"], timeout=600, environment=environment)
         T2.command(["npm", "--prefix", "console/frontend", "exec", "--", "playwright", "install", "chromium"], timeout=600, environment=environment)
@@ -417,15 +438,30 @@ print(json.dumps(facts))'''
         result["browser"] = browser
         result["task_status"] = execution["status"]
     finally:
+        business_failed = sys.exc_info()[0] is not None
+        failure_report = artifact_dir / "sgm-browser-failure.json"
+        if failure_report.is_file():
+            result["browser_failure"] = json.loads(failure_report.read_text())
         # Recover the one task by fingerprint even if a browser failure hid the response.
-        rows = model_tasks(client, str(item["fingerprint"]))
-        if rows and model_fixture.task_id is None:
-            task = rows[0]
-            model_fixture.task_id = task["id"]
-            model_fixture.execution_id = task.get("last_execution_id")
-        MANAGER.cleanup_managed_artifact(client, model_fixture, 180)
+        cleanup_errors = []
+        try:
+            rows = model_tasks(client, str(item["fingerprint"]))
+            if rows and model_fixture.task_id is None:
+                task = rows[0]
+                model_fixture.task_id = task["id"]
+                model_fixture.execution_id = task.get("last_execution_id")
+            MANAGER.cleanup_managed_artifact(client, model_fixture, 180)
+        except Exception as error:
+            cleanup_errors.append({"stage": "domain", **safe_failure(error)})
         result["domain_cleanup"] = model_fixture.cleanup
-        result["physical_cleanup"] = worker(life, "deleted", cfg)
+        try:
+            result["physical_cleanup"] = worker(life, "deleted", cfg)
+        except Exception as error:
+            cleanup_errors.append({"stage": "physical", **safe_failure(error)})
+        if cleanup_errors:
+            result["artifact_cleanup_failures"] = cleanup_errors
+            if not business_failed:
+                raise T2.GateError("isolated SGM artifact cleanup failed")
 
 
 def main(args=None):
