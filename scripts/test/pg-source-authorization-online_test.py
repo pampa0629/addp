@@ -554,7 +554,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
                       'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
         self.requirement = {'id': 'f96cac39-7738-4b3f-b8a2-166b0a1a2e21', 'engine_id': '2',
-            'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'], 'mode': 'catalog', 'version': 1}
+            'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'], 'mode': 'catalog', 'version': 1,
+            'updated_at': '2026-10-16T09:00:01+08:00'}
         self.fulfillments = {}
         self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
@@ -586,7 +587,16 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 else:
                     if body['mode'] != self.requirement['mode'] or fault == 'same_mode_changes_version':
                         self.requirement.update(mode=body['mode'], version=self.requirement['version'] + 1)
-                    result = dict(self.requirement)
+                        self.requirement['updated_at'] = f"2026-10-16T09:00:0{self.requirement['version']}+08:00"
+                        # The write returns wallClock().UTC(); the persisted PG
+                        # timestamptz read can represent that instant in local time.
+                        result = dict(self.requirement, updated_at=f"2026-10-16T01:00:0{self.requirement['version']}Z")
+                    else:
+                        result = dict(self.requirement)
+                        if fault == 'same_mode_changes_timestamp':
+                            result['updated_at'] = '2026-10-16T09:01:03+08:00'
+                        elif fault == 'same_mode_drops_timestamp_zone':
+                            result['updated_at'] = '2026-10-16T01:00:03'
                     if fault == 'switch_rewrites_old_grant':
                         for row in self.server.grants.values():
                             row['requirement_version'] = str(self.requirement['version'])
@@ -706,6 +716,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.assertTrue(all(call[3]['recipient_id'] == '34' and not call[3]['initialize_approval'] for call in direct))
         self.assertEqual(self.report['approval_mode_handoff']['versions'], [1, 2, 3])
         self.assertEqual(self.report['approval_mode_handoff']['stale_catalog_state'], 'closed')
+        self.assertEqual(self.report['approval_mode_noop_timestamps'], {
+            'before': '2026-10-16T01:00:03Z', 'after': '2026-10-16T09:00:03+08:00'})
         self.assertEqual(self.requirement['version'], 3)
         self.assertTrue(self.report['catalog_outage']['same_credential'])
         self.assertFalse(self.server.catalog_down)
@@ -727,7 +739,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
 
     def test_approval_switch_rejects_permission_version_grant_mutation_and_silent_catalog_upgrade(self):
         for fault in ('missing_update_permission_ignored', 'switch_rewrites_old_grant', 'stale_direct_accepted',
-                      'same_mode_changes_version', 'stale_update_accepted', 'direct_replay_renews', 'direct_replay_restores_revoked',
+                      'same_mode_changes_version', 'same_mode_changes_timestamp', 'same_mode_drops_timestamp_zone',
+                      'stale_update_accepted', 'direct_replay_renews', 'direct_replay_restores_revoked',
                       'stale_catalog_auto_upgrades', 'stale_catalog_never_closes', 'closed_stale_request_reopens'):
             with self.subTest(fault=fault):
                 self.reset()

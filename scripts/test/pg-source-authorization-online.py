@@ -573,7 +573,17 @@ class Lifecycle:
         require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path) == direct_history,
                 'return to business approval rewrote the existing direct Grant')
         outsider_read(True)
-        require(switch(3, 'catalog', expected_version=3) == current, 'same-mode command mutated approval history')
+        report['phase'] = 'approval_mode_same_mode_replay'
+        repeated = switch(3, 'catalog', expected_version=3)
+        # A write uses wallClock().UTC(), while a persisted timestamptz can
+        # serialize with another offset. Compare instants, not their spelling.
+        before = datetime.fromisoformat(current['updated_at'].replace('Z', '+00:00'))
+        after = datetime.fromisoformat(repeated['updated_at'].replace('Z', '+00:00'))
+        report['approval_mode_noop_timestamps'] = {'before': current['updated_at'], 'after': repeated['updated_at']}
+        require(before.utcoffset() is not None and after.utcoffset() is not None and before == after
+                and {key: value for key, value in repeated.items() if key != 'updated_at'}
+                == {key: value for key, value in current.items() if key != 'updated_at'},
+                'same-mode command mutated approval history')
         original = self.operator.request('POST', route + '/sharing_fulfillments', (200,), command).payload
         require(original.get('request_id') == command['request_id'] and original.get('state') == 'accepted',
                 'mode change invalidated the already accepted original business command')
