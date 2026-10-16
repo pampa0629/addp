@@ -18,6 +18,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("descriptor count = %d, want 501", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
+		if descriptor.Key == "meta.inspect.execute" && (descriptor.TenantCustomizable || descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"})) {
+			t.Fatal("Infra inspection must remain a non-customizable, non-delegable Tenant runtime permission")
+		}
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
 			t.Fatalf("Security permission %q scopes = %#v, want tenant only", descriptor.Key, descriptor.AllowedScopeTypes)
 		}
@@ -34,6 +37,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.prometheus_runtime", []string{"monitor.metrics_discovery.read"})
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "meta.inspect.execute" && role.Key != "tenant.transfer_runtime" {
+				t.Fatalf("unexpected Infra inspection role %q", role.Key)
+			}
 			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("unexpected authorization facts role %q", role.Key)
 			}
@@ -363,7 +369,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.derived_artifact.update",
 		"manager.search.execute",
 		"meta.catalog.read",
-		"meta.inspect.execute",
 		"meta.lineage.read",
 		"meta.scan_task.create",
 		"meta.scan_task.delete",

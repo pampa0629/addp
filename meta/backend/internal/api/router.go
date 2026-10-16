@@ -82,7 +82,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 扫描相关
 		api.POST("/scan/run/unscanned", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.CreateUnscannedScanRuns)
 		api.POST("/scan/run/manual", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.CreateManualScanRun)
-		api.POST("/inspect", permission(metaauthorization.PermissionMetaInspectExecute), handler.InspectAttributes)
+		api.POST("/inspect", auth.MustNewServiceClientGuard("addp-transfer"), permission(metaauthorization.PermissionMetaInspectExecute), handler.InspectAttributes)
 		api.GET("/scan/runs", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanRuns)
 		api.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.GetExecution)
 		api.GET("/runtime/mosaic-scans/:execution_id/result", auth.MustNewServiceClientGuard("addp-manager"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.GetMosaicScanResult)

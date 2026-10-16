@@ -1,5 +1,7 @@
 # Meta 模块说明
 
+Infra 即时识别 `POST /inspect` 仅接受 `addp-transfer` Tenant Service 与 `meta.inspect.execute`；Transfer 先核验当前 bounded execution 的完整 User 来源、lease 及 Manager 私有上传归属，再调用 Meta。该权限仅授予 `tenant.transfer_runtime`，普通用户、其他机器身份和平台 Context 拒绝；不增加第二个识别接口。验证由 Meta Go HTTP 权限矩阵、授权目录／Swagger、System IAM PostgreSQL 迁移及既有 Transfer Hosted 导入场景覆盖。
+
 Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 返回：仅 `addp-manager` 与现有 `meta.scan_task.execute`，重核同租户、当前父执行有效 lease/attempt、精确目标、来源和持久父子关联；不借用 TaskProvider，不应用用户本人读取规则。成功收尾必须从本次 deep 扫描的 `raster_mosaic + whole` item 经既有资源树转换器取得正式身份，并与扫描终态一并持久化 `mosaic_output` 回执；进度更新不得丢弃创建时的 `produced_target` 绑定。响应只返回 UUID、父 UUID、状态及成功的 locator/item ID/fingerprint，不返回任意 metadata、配置、原始错误或授权。标准 Meta 模块 T1 和 `make test-meta-postgres` 包含直接 HTTP 权限矩阵及真实 PostgreSQL 收尾回归，既有 CI 自动登记同一入口。
 
 ## 模块定位

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 126
+manifest_version: 127
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -698,7 +698,6 @@ roles:
       - manager.derived_artifact.update
       - manager.search.execute
       - meta.catalog.read
-      - meta.inspect.execute
       - meta.lineage.read
       - meta.scan_task.create
       - meta.scan_task.delete

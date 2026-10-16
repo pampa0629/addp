@@ -123,6 +123,8 @@ Manager 导入在同步 User 请求内向 Transfer 创建并启动持久同步�
 
 Transfer 读取 Infra 导入来源前，必须持有当前 bounded lease，从同租户 running sync execution 核验完整 User 来源和真实任务 ID，再用 `addp-transfer` Tenant Service Client、`manager.import_provenance.read` 调用 Manager `POST /runtime/import-sources/verify`。Manager 严格匹配 Tenant、上传者 Principal、绑定任务和完整 source locator；未绑定、未知、其他上传者、跨租户或来源不符均拒绝。Transfer 核对响应与当前请求一致后，仍通过原有通用 content／format reader 读取；业务引擎来源继续执行 Security 保护，不把 Infra 定位符交给业务 ResourceLocator 解析器。该核验不签发 Engine Grant、不返回文件或凭据，也不代替目标引擎写入授权。其他用户可以具备任务操作权限，但不能借此读取原上传者的暂存来源。
 
+Infra 文件的即时元数据识别也属于来源读取。Meta `POST /inspect` 仅允许持有 `meta.inspect.execute` 的 `addp-transfer` Tenant Service 调用，Transfer 必须在调用前完成上述执行身份和 Manager Owner 核验。该 Permission 只授予 `tenant.transfer_runtime`，不可委托、不可租户定制，Scope 仅为 Tenant；普通 User、第三方 OAuth 和其他 Service 均不能直接识别 Infra 文件。存量普通角色及租户自定义角色的该项授权必须清除并推进受影响主体的授权版本，不保留用户读取旁路。
+
 后台产物扫描须核验真实已保存产物及其来源。结构变更扫描的来源关联本次经审批并实际应用的变更事实，独立于最初启动同步的用户，不制造父执行。扫描 `source` 统一使用 `develop`、`transfer`、`manager` 模块名，具体产物类型由已核验的来源事实决定，不使用附加类型后缀。用户同步请求可无父执行；后台 Service 提交必须有可验证的父执行或已应用结构审批事实，缺失来源必须拒绝。Transfer bounded 先在当前执行租约内保存实际输出与实际内容引用，再提交直接父执行 UUID；Meta 核对同租户 running sync 执行、完整主体和精确输出，不从任务配置推断产物。扫描失败保存明确反馈，不回滚已经写入的产物。
 
 结构审批补扫通过既有 Meta 手动扫描入口提交 `source=transfer` 与 `schema_change_source={execution_id,request_id,claim_token}`，与 `parent_execution_id` 互斥。这里的 execution 只定位触发结构阻塞的历史记录，不是补扫父执行。Transfer 在审批实际应用的同一事务中，将审批请求、task/generation/revision、实际目标表 locator、应用时间及本次审批 User 的完整来源保存为 Common execution 私有 `metadata.schema_change_scan_origin`；原执行来源保持不变。既有 `metadata.continuous.schema_change` 继续只投影安全状态，不能泄漏审批主体、claim token 或授权。

@@ -353,7 +353,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "对给定 locator 或 ref_groups 动态识别标准 attributes，但不写入 Meta item 或 node | Dynamically inspect standard attributes for a locator or ref_groups without persisting Meta item or node",
+                "description": "仅 Transfer Tenant Service 可在核验当前执行及私有来源后识别 Infra 文件 attributes，不写入 Meta item 或 node。| Only the Transfer Tenant Service may inspect Infra file attributes after verifying the current execution and private source; no Meta item or node is persisted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -384,6 +384,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "机器身份或权限不满足要求 | Service identity or permission denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

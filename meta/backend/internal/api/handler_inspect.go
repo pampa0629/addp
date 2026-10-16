@@ -10,13 +10,14 @@ import (
 
 // InspectAttributes godoc
 // @Summary 动态识别标准 attributes | Inspect standard attributes without persistence
-// @Description 对给定 locator 或 ref_groups 动态识别标准 attributes，但不写入 Meta item 或 node | Dynamically inspect standard attributes for a locator or ref_groups without persisting Meta item or node
+// @Description 仅 Transfer Tenant Service 可在核验当前执行及私有来源后识别 Infra 文件 attributes，不写入 Meta item 或 node。| Only the Transfer Tenant Service may inspect Infra file attributes after verifying the current execution and private source; no Meta item or node is persisted.
 // @Tags Meta
 // @Accept json
 // @Produce json
 // @Param request body service.InspectRequest true "识别请求 | Inspect request"
 // @Success 200 {object} service.InspectResult "识别结果 | Inspect result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "机器身份或权限不满足要求 | Service identity or permission denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.inspect.execute"]
