@@ -378,7 +378,9 @@ class MongoClient(SpatialClient):
             denied = "aggregate" in query and ((self.confirmed and not self.allow_protected_derived)
                                                or (not self.confirmed and self.fail_unprotected_derived))
             if denied:
-                execution = {"status": "failed", "metadata": {}}
+                execution = {"status": "failed", "metadata": {}, "error_details": {
+                    "category": "execution_failed", "code": "develop.query.protection_required",
+                    "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "result", "reason": "data_protection_required"}}}
             else:
                 if "find" in query:
                     rows = self.rows("develop")
@@ -590,7 +592,7 @@ class MongoAlgorithmTest(unittest.TestCase):
     def test_protected_derived_output_must_be_denied_and_state_restored(self):
         client = MongoClient()
         client.allow_protected_derived = True
-        with self.assertRaisesRegex(ONLINE.SuiteError, "derived output"):
+        with self.assertRaises(ONLINE.SuiteError):
             self.run_mongo(client)
         self.assertFalse(any(policy["state"] == "active" for policy in client.policies))
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
@@ -1392,7 +1394,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v5", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v6", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
@@ -1405,6 +1407,9 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "resource_filter_total_verified": True, "resource_filters_read_only": True,
             "owner_validity_visible": True, "resource_filter_case_count": 9,
             "browser_session_rebound_verified": True, "resource_permanent_validity_visible": True,
+            "develop_alias_protected": True, "develop_refusal_rows": 0,
+            "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
+            "develop_monitor_same_execution": True,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1426,7 +1431,10 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("resource_combination_filters_verified", False), ("resource_filters_read_only", False),
             ("resource_filter_case_count", 8), ("resource_filter_case_count", "9"),
             ("resource_filter_case_count", True), ("owner_validity_visible", False), ("resource_permanent_validity_visible", False),
-            ("browser_session_rebound_verified", False),
+            ("browser_session_rebound_verified", False), ("develop_alias_protected", False),
+            ("develop_refusal_rows", 1), ("develop_refusal_rows", False),
+            ("develop_refusal_diagnostic_verified", False), ("develop_refusal_visible", False),
+            ("develop_monitor_same_execution", False),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
@@ -1464,7 +1472,8 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 for name in ("security-manager-protected-preview.png", "security-manager-field-search.png",
                              "security-manager-export.png", "security-manager-export-monitor.png",
                              "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
-                             "security-resource-filter-reset.png"):
+                             "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
+                             "security-develop-protection-monitor.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
@@ -1472,7 +1481,8 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
             for missing in ("security-manager-protected-preview.png", "security-manager-field-search.png",
                             "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
-                            "security-resource-filter-reset.png"):
+                            "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
+                             "security-develop-protection-monitor.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)
                     (artifact / missing).unlink()
@@ -1818,6 +1828,32 @@ class ResourceValiditySnapshotTest(unittest.TestCase):
             row=value["owner_progress"][0];old=row[key];row[key]=bad
             with self.subTest(key=key),self.assertRaises(ONLINE.SuiteError): ONLINE.validity_snapshot(value,"until",expected,expired=True)
             row[key]=old
+
+
+
+class DevelopProtectionDiagnosticTest(unittest.TestCase):
+    def valid_execution(self):
+        return {"status": "failed", "metadata": {}, "error_details": {
+            "category": "execution_failed", "code": "develop.query.protection_required",
+            "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "result", "reason": "data_protection_required"}}}
+
+    def test_requires_specific_safe_diagnostic_and_absent_result(self):
+        valid = self.valid_execution()
+        self.assertEqual(ONLINE.validate_develop_protection_refusal(valid, "result")["diagnostic_reason"], "data_protection_required")
+        for target, key, value in [
+            ("execution", "status", "success"), ("execution", "metadata", {"result": {"summary": {"preview_rows": []}}}),
+            ("details", "code", "develop.query.execution_failed"), ("details", "message", "private runtime value"),
+            ("details", "diagnostic", None), ("diagnostic", "reason", "query_failed"),
+            ("diagnostic", "stage", "preparation"), ("diagnostic", "schema_version", "old"),
+            ("diagnostic", "sql", {"object": {"name": "private"}}),
+        ]:
+            value_execution = copy.deepcopy(valid)
+            destination = value_execution if target == "execution" else value_execution["error_details"]
+            if target == "diagnostic": destination = destination["diagnostic"]
+            destination[key] = value
+            with self.subTest(target=target,key=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_develop_protection_refusal(value_execution, "result")
+
 
 if __name__ == "__main__":
     unittest.main()

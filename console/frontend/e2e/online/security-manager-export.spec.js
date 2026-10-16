@@ -128,7 +128,72 @@ async function verifyResourceCombinationFilters(page, api, env, principal, navig
   }
 }
 
-test('protected Manager preview retains field search and export provenance in Monitor', async ({ page }) => {
+async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
+  const locator = env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR
+  const engineID = Number(new URL(locator).pathname.split('/')[1])
+  async function execute(query) {
+    const started = await json(await api.post('/api/v1/develop/executions', { data: {
+      dev_type: 'query', trigger_type: 'manual',
+      content: { query, query_type: 'sql', target_locator: locator, query_parameters: [] },
+      execution_config: { engine_id: engineID }, parameters: {}, timeout: 120
+    } }), 'ordinary user Develop query')
+    expect(started.execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+    let execution
+    await expect.poll(async () => {
+      execution = await json(await api.get(`/api/v1/develop/executions/${started.execution_id}`), 'Develop query outcome')
+      return execution.status
+    }, { timeout: 45_000 }).toMatch(/^(success|failed|timeout|cancelled)$/)
+    expect(execution.execution_id).toBe(started.execution_id)
+    expect(execution.source_task_id == null).toBe(true)
+    return execution
+  }
+  const allowed = await execute('SELECT id, customer_code, email AS contact_email FROM customers ORDER BY id')
+  expect(allowed.status).toBe('success')
+  const rows = allowed.metadata.result.summary.preview_rows
+  expect(rows).toHaveLength(5)
+  for (const row of rows) {
+    expect(row).not.toHaveProperty('email')
+    expect(row).not.toHaveProperty('contact_email')
+    expect(row.customer_code).toBe(`CUST-1000${row.id}`)
+  }
+  const denied = await execute("SELECT CONCAT(email, '') AS contact_email FROM customers ORDER BY id")
+  expect(denied.status).toBe('failed')
+  expect(denied.metadata || {}).not.toHaveProperty('result')
+  expect(Object.keys(denied.error_details).sort()).toEqual(['category', 'code', 'diagnostic'])
+  expect(denied.error_details.code).toBe('develop.query.protection_required')
+  expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2',
+    stage: 'preparation', reason: 'data_protection_required' })
+  const executionPath = `/api/v1/develop/executions/${denied.execution_id}`
+  const currentAPI = await navigate(`/develop/executions/${denied.execution_id}`, executionPath)
+  const rebound = await json(await currentAPI.get(executionPath), 'same-user protection refusal')
+  expect(rebound.error_details).toEqual(denied.error_details)
+  expect(rebound.metadata || {}).not.toHaveProperty('result')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  async function checkPanel(panel) {
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
+    await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
+    await expect(panel).toContainText('develop.query.protection_required')
+    await expect(panel).toContainText(denied.execution_id)
+  }
+  const ownerPanel = frame.locator('.execution-failure')
+  await checkPanel(ownerPanel)
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-develop-protection-refusal.png') })
+  const monitorLink = ownerPanel.getByRole('link', { name: /查看监控错误详情|View error details in Monitor/ })
+  const href = await monitorLink.getAttribute('href')
+  const target = new URL(href, page.url())
+  expect(target.origin).toBe(new URL(page.url()).origin)
+  expect(target.pathname).toBe('/monitor/executions')
+  expect([...target.searchParams]).toEqual([['execution_id', denied.execution_id]])
+  await navigate(target.pathname + target.search, `/api/v1/monitor/executions/by-execution-id/${denied.execution_id}/tree`)
+  await checkPanel(frame.locator('.execution-detail-content > .execution-failure'))
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-develop-protection-monitor.png') })
+  return { develop_alias_protected: true, develop_refusal_rows: 0,
+    develop_refusal_diagnostic_verified: true, develop_refusal_visible: true, develop_monitor_same_execution: true }
+}
+
+
+test('ordinary-user queries and Manager export preserve protection diagnostics and provenance in Monitor', async ({ page }) => {
   const names = [
     'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID',
     'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
@@ -162,7 +227,7 @@ test('protected Manager preview retains field search and export provenance in Mo
   try {
     const requiredPermissions = [
       'manager.content.read', 'manager.data_item.read', 'manager.search.execute', 'manager.derived_artifact.create',
-      'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read'
+      'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read', 'develop.task.read', 'develop.task.execute', 'develop.data_read.execute'
     ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
     expect(expected.principalType).toBe('user')
@@ -218,6 +283,7 @@ test('protected Manager preview retains field search and export provenance in Mo
     await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-protected-preview.png') })
 
     const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual, navigateWithBrowserSession)
+    const developProtection = await verifyDevelopProtectionRefusal(page, browserAPI, env, navigateWithBrowserSession)
     await navigateWithBrowserSession(path, '/api/v1/manager/preview')
     await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
 
@@ -323,9 +389,9 @@ test('protected Manager preview retains field search and export provenance in Mo
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
-    expect(browserSessionRebinds).toBe(2)
+    expect(browserSessionRebinds).toBe(4)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v5', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v6', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -334,7 +400,8 @@ test('protected Manager preview retains field search and export provenance in Mo
       protected_preview_verified: true, technical_field_search_verified: true,
       search_to_preview_verified: true,
       ...resourceFilters,
-      browser_session_rebound_verified: browserSessionRebinds === 2, resource_permanent_validity_visible: true,
+      ...developProtection,
+      browser_session_rebound_verified: browserSessionRebinds === 4, resource_permanent_validity_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

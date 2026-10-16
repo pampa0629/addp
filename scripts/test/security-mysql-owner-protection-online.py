@@ -1339,16 +1339,27 @@ def verify_unprotected_mongodb_derived_query(client: GatewayClient, engine_id: i
     return {"rows": 7, "source_values_verified": True}
 
 
+def validate_develop_protection_refusal(execution: Mapping[str, object], stage: str) -> dict[str, object]:
+    metadata = _object(execution.get("metadata") or {}, "denied Develop metadata")
+    details = _object(execution.get("error_details"), "Develop protection diagnostics")
+    diagnostic = _object(details.get("diagnostic"), "Develop protection diagnostic")
+    expected = {"schema_version": "addp.execution-failure/v2", "stage": stage, "reason": "data_protection_required"}
+    if (execution.get("status") != "failed" or "result" in metadata
+            or details.get("code") != "develop.query.protection_required"
+            or set(details) - {"category", "code", "diagnostic"} or diagnostic != expected):
+        raise SuiteError("Develop protection refusal must have the precise safe diagnostic and no result")
+    return {"diagnostic_code": "develop.query.protection_required", "diagnostic_stage": stage,
+            "diagnostic_reason": "data_protection_required", "denied_result_absent": True}
+
+
 def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
                                    locator: str, deadline: float) -> dict[str, object]:
     rows = develop_rows(client, engine_id, locator, deadline, MONGODB_COUNT_QUERY, "mql")
     if rows != [{"count": 7}]:
         raise SuiteError("MongoDB count must return seven without field values")
     execution = develop_execution(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
-    metadata = _object(execution.get("metadata") or {}, "denied Develop metadata")
-    if execution.get("status") != "failed" or "result" in metadata:
-        raise SuiteError("protected MongoDB derived output must fail without returning a result")
-    return {"count": 7, "derived_output_denied": True, "denied_result_absent": True}
+    evidence = validate_develop_protection_refusal(execution, "result")
+    return {"count": 7, "derived_output_denied": True, **evidence}
 
 
 def verify_mongodb_raw_export(client: GatewayClient, locator: str, identity: Mapping[str, object],
@@ -2085,7 +2096,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v13",
+            "schema_version": "addp.security-mysql-owner-protection-online/v14",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2180,7 +2191,7 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v5", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v6", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -2192,6 +2203,9 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "resource_filter_total_verified": True, "resource_filters_read_only": True,
         "owner_validity_visible": True, "resource_filter_case_count": 9,
         "browser_session_rebound_verified": True, "resource_permanent_validity_visible": True,
+        "develop_alias_protected": True, "develop_refusal_rows": 0,
+        "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
+        "develop_monitor_same_execution": True,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
@@ -2224,7 +2238,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         "security-manager-protected-preview.png", "security-manager-field-search.png",
         "security-manager-export.png", "security-manager-export-monitor.png",
         "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
-        "security-resource-filter-reset.png",
+        "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
+        "security-develop-protection-monitor.png",
     )]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
