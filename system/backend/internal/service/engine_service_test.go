@@ -933,15 +933,56 @@ func TestMergePlainConnectionInfoPreservesSensitiveValueForMaskedOverride(t *tes
 
 func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	for _, tc := range []struct {
+		name     string
+		original string
+		updated  string
+	}{
+		{name: "replace", original: "old-password", updated: "new-password"},
+		{name: "clear", original: "old-password", updated: ""},
+		{name: "set_from_empty", original: "", updated: "new-password"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			merged := service.mergePlainConnectionInfo(
+				"postgresql",
+				models.ConnectionInfo{"password": tc.original},
+				models.ConnectionInfo{"password": tc.updated},
+			)
+			if merged["password"] != tc.updated {
+				t.Fatal("explicit password update was not preserved")
+			}
+		})
+	}
+}
 
-	merged := service.mergePlainConnectionInfo(
-		"postgresql",
-		models.ConnectionInfo{"password": "old-password"},
-		models.ConnectionInfo{"password": "new-password"},
-	)
-
-	if merged["password"] != "new-password" {
-		t.Fatalf("password = %q, want new-password", merged["password"])
+func TestMergePlainConnectionInfoPreservesEmptyStoredPassword(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+	for _, placeholder := range []string{"******", "********"} {
+		t.Run(placeholder, func(t *testing.T) {
+			original := models.ConnectionInfo{"host": "localhost", "password": ""}
+			updated := service.maskSensitiveFields("doris", original)
+			updated["password"] = placeholder
+			updated["http_port"] = 8030
+			updated["_has_password"] = true
+			merged := service.mergePlainConnectionInfo("doris", original, updated)
+			if merged["password"] != "" {
+				t.Fatal("saving a non-secret field must preserve an empty stored password")
+			}
+			if merged["http_port"] != 8030 {
+				t.Fatal("the non-secret connection update was lost")
+			}
+			if _, exists := merged["_has_password"]; exists {
+				t.Fatal("presentation metadata must not become stored connection facts")
+			}
+			stored, err := service.encryptConnectionInfoForStorage("doris", merged)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plain, err := service.decryptStoredConnectionInfo("doris", stored)
+			if err != nil || plain["password"] != "" {
+				t.Fatal("empty-password connection did not survive the storage round trip")
+			}
+		})
 	}
 }
 

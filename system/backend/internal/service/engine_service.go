@@ -1215,7 +1215,7 @@ func (s *EngineService) mergePlainConnectionInfo(engineType string, original, up
 		}
 
 		currentPlain, _ := merged[k].(string)
-		if currentPlain != "" && s.isMaskedPlaceholder(strVal, currentPlain) {
+		if s.isMaskedPlaceholder(strVal, currentPlain) {
 			// 输入仍为掩码，占位符情况下保持原始明文
 			continue
 		}
@@ -1264,7 +1264,7 @@ func (s *EngineService) isConnectionInfoMetaField(field string) bool {
 
 // isMaskedPlaceholder 判断用户输入是否为掩码占位，而非真实敏感值
 func (s *EngineService) isMaskedPlaceholder(value string, originalPlain string) bool {
-	if value == "" || originalPlain == "" {
+	if value == "" {
 		return false
 	}
 
