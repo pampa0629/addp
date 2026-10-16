@@ -169,6 +169,10 @@ SPARK_WORKFLOW_PYTHON ?= engines/spark-workflow/venv/bin/python
 test-spark-workflow: ## 运行 Spark Workflow 元数据、租户身份和存储适配确定性测试
 	@cd engines/spark-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(SPARK_WORKFLOW_PYTHON)) -m unittest discover -s . -p 'test_*.py' -v
 
+.PHONY: test-common-spark-table
+test-common-spark-table: ## 使用独占 MySQL/Doris 与真实 Spark Worker 验证暂存发布
+	@bash scripts/test/common-spark-table-gate.sh
+
 RASTER_MOSAIC_RUNTIME_PYTHON ?= manager/raster-mosaic-runtime/venv/bin/python
 .PHONY: test-raster-mosaic-runtime
 test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/COG 验证
@@ -309,6 +313,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/dameng.sh --help | grep -Fq -- 'start|stop|status'
 	@python3 -m unittest scripts/test/dameng-official-media-release-gate_test.py
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py scripts/test/common-oracle-decimal-gate_test.py
+	@python3 -m unittest scripts/test/common-spark-table-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-business-redis
@@ -342,6 +347,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-workbench-postgres
 
 test-integration-hosted: test-integration ## 严格串行追加 hosted-only disposable 基础设施门禁
+	@$(MAKE) test-common-spark-table
 	@$(MAKE) test-common-opengauss
 	@$(MAKE) test-common-oracle-decimal
 	@$(MAKE) test-common-doris-decimal

@@ -278,7 +278,13 @@ Content-Type: application/json
 
 Spark `save` 保存 PostgreSQL 结果时，普通列与 Sedona Geometry 列统一走同 schema 唯一暂存表。Worker 完成 JDBC 写入后，Driver 在一个 PostgreSQL 事务中转换空间列、核对暂存行数并发布结果。目标不存在时将暂存表改名；目标已存在时锁表，校验字段和类型，`overwrite` 使用 DELETE + INSERT，`append` 只 INSERT。不得删除或重建已有目标表，表结构、约束、索引、权限、注释及依赖保持不变；约束失败或提交前异常回滚数据发布，随后清理本次暂存表。Spark JDBC 的 Worker 重试不承诺暂存记录去重；发布事务之外的外部触发器副作用和提交响应丢失也不提供恰好一次保证，不得自动重试发布。
 
-已有目标必须与结果拥有相同字段集合和 PostgreSQL 基础类型；目标类型修饰符须相同或不设限。PostGIS geometry 的子类型与 SRID 由目标约束验证；自动生成列、identity 列和非普通表目标拒绝写入。DELETE 影响行数须等于覆盖前的目标行数，INSERT 影响行数须与暂存行数相同，发布后总行数还须符合覆盖或追加预期，否则回滚，避免触发器忽略记录后仍报告完整成功。`rows` 返回已提交的实际发布行数，不能在提交后重新计算源 DataFrame。其他存储适配器的 `rows` 仍仅表示写入前的输入行数，不提供 PostgreSQL 的事务发布保证。
+已有目标必须与结果拥有相同字段集合和 PostgreSQL 基础类型；目标类型修饰符须相同或不设限。PostGIS geometry 的子类型与 SRID 由目标约束验证；自动生成列、identity 列和非普通表目标拒绝写入。DELETE 影响行数须等于覆盖前的目标行数，INSERT 影响行数须与暂存行数相同，发布后总行数还须符合覆盖或追加预期，否则回滚，避免触发器忽略记录后仍报告完整成功。`rows` 返回已提交的实际发布行数，不能在提交后重新计算源 DataFrame。
+
+Spark 写入 MySQL、Doris 同样先完成独占暂存，再发布正式目标。`overwrite` 只替换数据，不能删除重建已有目标；字段集合或类型不匹配时拒绝，不通过隐式改表迁就结果。暂存失败不修改已有目标；暂存表不进入正式 outputs 或扫描范围。Worker 重试不提供行级去重，发布响应丢失不自动重试或宣称回滚成功。
+
+MySQL 首期限定普通 InnoDB 表。已有目标在一个 SERIALIZABLE 事务内校验结构、核对行数并执行 DELETE + INSERT SELECT（覆盖）或 INSERT SELECT（追加），保留索引、约束、权限和注释。发布阶段按目标串行化 ADDP 写入；外部写入仍由数据库锁和事务裁决。生成列和自增列暂不支持，必须在修改目标前拒绝；外键、检查约束和触发器遵守数据库原生语义，约束拒绝时回滚目标事务，不承诺目标外触发器或非事务资源副作用的回滚。字符串可写入 CHAR/VARCHAR/TEXT，同族容量约束通过严格模式验证；数值类型、符号及 Decimal 精度和小数位必须匹配；时间列保留微秒精度，TIMESTAMP 使用统一 UTC JDBC 会话，DATETIME 对应无时区时间。新目标使用暂存表原子改名；DDL 与数据事务分开，不能用 TRUNCATE 或把 MySQL DDL 当作可回滚 DML。
+
+Doris 使用固定版本官方 Spark Doris Connector 写暂存表，连接的 FE HTTP 端口是 System Engine 部署事实，Driver 与 Executor 必须同时能访问 FE 和实际承载导入的 BE，不由 JDBC 端口猜测 HTTP 映射。连接器采用两阶段提交并核验可见性；正式发布使用 INSERT OVERWRITE SELECT（覆盖）或单条 INSERT INTO SELECT（追加），启用严格模式并核验提交状态。仅已确认可见的发布可报告成功并形成正式产物；已提交但尚不可见、状态未知和失败必须区分，不能盲目重放。首期限定与结果结构一致的普通 Duplicate Key OLAP 表；Unique/Aggregate 模型不得冒充普通追加语义。首次创建目标与覆盖已有目标分别验证，保留已有目标的模型、分区、分桶、索引与属性，不提供跨表事务或端到端恰好一次保证。
 
 Spark `save` 声明 `write` 和 `ddl` 效果，因为暂存表和新目标涉及 DDL。Develop 按资源分别签发授权：输入引擎与 Spark 集群只读；表目标引擎要求 write + ddl；文件或对象目标引擎只要求 write。执行 Runtime 获得算子声明的效果全集。正式输出继续使用节点命名的 `metadata.outputs` 与 `produced_targets`，由 Develop 触发 Meta 异步扫描和血缘采集，扫描失败不得改写已提交的保存事实。
 

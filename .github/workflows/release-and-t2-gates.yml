@@ -758,6 +758,26 @@ jobs:
           gate: Common typed-write Provider integration (Oracle Free 23)
           status: ${{ job.status }}
 
+  common-spark-table:
+    name: Spark staged publication (MySQL and Doris)
+    needs: selection
+    if: needs.selection.outputs.common == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run Spark table publication gate
+        run: make test-common-spark-table
+      - name: Summarize Spark table publication gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Spark staged publication (MySQL and Doris)
+          status: ${{ job.status }}
+
   common-doris-decimal:
     name: Common typed-write Provider integration (Doris 2.1.0)
     needs: selection

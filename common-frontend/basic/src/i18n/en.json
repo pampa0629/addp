@@ -528,6 +528,7 @@
     "namePlaceholder": "Enter resource name",
     "host": "Host",
     "port": "Port",
+    "httpPort": "HTTP port",
     "serviceName": "Service Name",
     "oracleCDC": "Oracle CDC (optional)",
     "oracleCDBName": "CDB Name",

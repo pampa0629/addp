@@ -57,6 +57,7 @@ func (p *DorisPlugin) ConnectionSpec() plugin.ConnectionSpec {
 	return plugin.NewConnectionSpec(
 		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
 		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 9030, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "http_port", LabelKey: "storageEngine.httpPort", Input: plugin.ConnectionFieldNumber, Default: 8030, Min: plugin.Int(1), Max: plugin.Int(65535)},
 		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
 		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "root", Placeholder: "root"},
 		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, HintKey: "storageEngine.hints.dorisPassword"},

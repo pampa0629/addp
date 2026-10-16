@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from elasticsearch_adapter import ElasticsearchAdapter
-from spark_dependencies import ensure_elasticsearch_jar, configure_spark_dependencies
+from spark_dependencies import ensure_elasticsearch_jar, ensure_doris_jar, configure_spark_dependencies
 from storage_adapters import StorageAdapter
 
 
@@ -95,7 +95,8 @@ class PinnedConnectorTest(unittest.TestCase):
             '--jars=/custom/a.jar --conf spark.jars=/custom/b.jar pyspark-shell',
         ):
             with self.subTest(inherited=inherited), patch.dict('os.environ', {'PYSPARK_SUBMIT_ARGS': inherited}), \
-                    patch('spark_dependencies.ensure_elasticsearch_jar', return_value=Path('/cache/es connector.jar')):
+                    patch('spark_dependencies.ensure_elasticsearch_jar', return_value=Path('/cache/es connector.jar')), \
+                    patch('spark_dependencies.ensure_doris_jar', return_value=Path('/cache/doris.jar')):
                 builder = MagicMock()
                 builder.config.return_value = builder
                 self.assertIs(configure_spark_dependencies(builder), builder)
@@ -105,6 +106,7 @@ class PinnedConnectorTest(unittest.TestCase):
                 arguments = shlex.split(first)
                 jars = arguments[arguments.index('--jars') + 1].split(',')
                 self.assertEqual(jars.count('/cache/es connector.jar'), 1)
+                self.assertEqual(jars.count('/cache/doris.jar'), 1)
                 if '/custom/' in inherited:
                     self.assertIn('/custom/a jar.jar' if 'a jar' in inherited else '/custom/a.jar', jars)
                 if '/custom/b.jar' in inherited:
@@ -131,3 +133,17 @@ class PinnedConnectorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch('spark_dependencies.urlopen', return_value=io.BytesIO(b'wrong')):
             with self.assertRaisesRegex(ValueError, 'checksum'): ensure_elasticsearch_jar(temporary)
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_doris_artifact_uses_its_own_checksum_and_detects_corruption(self):
+        import hashlib
+        data = b'owned-doris-connector'
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch('spark_dependencies.DORIS_JAR_SHA256', hashlib.sha256(data).hexdigest()), \
+                patch('spark_dependencies.urlopen', return_value=io.BytesIO(data)) as download:
+            artifact = ensure_doris_jar(temporary)
+            self.assertEqual(artifact.name, 'spark-doris-connector-spark-3.5-25.2.0.jar')
+            self.assertEqual(artifact, ensure_doris_jar(temporary))
+            artifact.write_bytes(b'wrong')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                ensure_doris_jar(temporary)
+            download.assert_called_once()

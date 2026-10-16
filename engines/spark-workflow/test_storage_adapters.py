@@ -321,7 +321,7 @@ class StorageAdapterTest(unittest.TestCase):
             "database": "addp",
         })
 
-        self.assertEqual("jdbc:mysql://database.example.internal:3306/addp", jdbc_url)
+        self.assertEqual("jdbc:mysql://database.example.internal:3306/addp?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true", jdbc_url)
         self.assertEqual("com.mysql.cj.jdbc.Driver", driver)
 
     def test_doris_create_table_sql_uses_native_types_and_distribution(self):
@@ -360,7 +360,7 @@ class StorageAdapterTest(unittest.TestCase):
 
         self.assertEqual(
             (
-                "CREATE TABLE IF NOT EXISTS `addp_acceptance`.`customers_copy` "
+                "CREATE TABLE `addp_acceptance`.`customers_copy` "
                 "(`id` BIGINT NOT NULL, `customer``name` VARCHAR(65533), "
                 "`active` BOOLEAN, `created_at` DATETIME) "
                 "DUPLICATE KEY(`id`) DISTRIBUTED BY HASH(`id`) BUCKETS 10"
@@ -370,52 +370,16 @@ class StorageAdapterTest(unittest.TestCase):
             ),
         )
 
-    def test_doris_save_prepares_table_then_appends(self):
+    def test_doris_save_uses_its_only_publication_path(self):
         df = MagicMock()
-        df.count.return_value = 3
-        params = {
-            "connection_info": {"engine_type": "doris"},
-            "schema": "addp_acceptance",
-            "table": "customers_copy",
-            "mode": "overwrite",
-        }
-        conn_info = {
-            "engine_type": "doris",
-            "host": "database.example.internal",
-            "port": 9030,
-            "database": "addp_acceptance",
-        }
-
-        with patch.object(
-            DatabaseAdapter, "_connection_context", return_value=("doris", conn_info)
-        ), patch.object(
-            DatabaseAdapter,
-            "_jdbc_config",
-            return_value=("jdbc:mysql://database/addp_acceptance", "driver"),
-        ), patch.object(
-            DatabaseAdapter, "_geometry_column_names", return_value=[]
-        ), patch.object(
-            DatabaseAdapter, "_prepare_doris_table"
-        ) as prepare, patch.object(DatabaseAdapter, "_write_jdbc") as write:
-            DatabaseAdapter.save(df, params)
-
-        prepare.assert_called_once_with(
-            df,
-            "jdbc:mysql://database/addp_acceptance",
-            conn_info,
-            "addp_acceptance",
-            "customers_copy",
-            "overwrite",
-        )
-        write.assert_called_once_with(
-            df,
-            "jdbc:mysql://database/addp_acceptance",
-            "driver",
-            conn_info,
-            "addp_acceptance",
-            "customers_copy",
-            "append",
-        )
+        conn = {'engine_type': 'doris', 'host': 'database.example', 'port': 9030,
+                'database': 'results', 'http_port': 8030}
+        params = {'connection_info': conn, 'schema': 'results', 'table': 'target'}
+        with patch('doris_publication.save', return_value=3) as publish:
+            self.assertEqual(DatabaseAdapter.save(df, params), 3)
+        publish.assert_called_once_with(df, params, 'jdbc:mysql://database.example:9030/results',
+                                        'com.mysql.cj.jdbc.Driver', conn, DatabaseAdapter)
+        df.count.assert_not_called()
 
 
 class PostgreSQLSaveTest(unittest.TestCase):

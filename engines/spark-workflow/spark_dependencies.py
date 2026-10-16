@@ -11,6 +11,9 @@ from urllib.request import urlopen
 ES_JAR_NAME = "elasticsearch-spark-30_2.12-9.5.4.jar"
 ES_JAR_URL = "https://repo.maven.apache.org/maven2/org/elasticsearch/elasticsearch-spark-30_2.12/9.5.4/" + ES_JAR_NAME
 ES_JAR_SHA256 = "ba21a7a39cc5133b150087a9d283f2b18ae14a76ffb2fec7c31e26d04d8d8641"
+DORIS_JAR_NAME = "spark-doris-connector-spark-3.5-25.2.0.jar"
+DORIS_JAR_URL = "https://repo.maven.apache.org/maven2/org/apache/doris/spark-doris-connector-spark-3.5/25.2.0/" + DORIS_JAR_NAME
+DORIS_JAR_SHA256 = "beb3834e7d8ae224bdb447ba36b3213c2405fe92842aa7baea1bd76742591cf8"
 _lock = threading.Lock()
 
 SPARK_MAVEN_PACKAGES = ",".join([
@@ -29,7 +32,7 @@ def configure_spark_dependencies(builder, directory=None):
     by SparkSubmit: Driver classes remain available but Executors lose them.
     Normalize inherited submit JAR declarations into one --jars argument.
     """
-    connector = str(ensure_elasticsearch_jar(directory))
+    connectors = [str(ensure_elasticsearch_jar(directory)), str(ensure_doris_jar(directory))]
     with _lock:
         arguments = shlex.split(os.environ.get('PYSPARK_SUBMIT_ARGS', 'pyspark-shell'))
         if not arguments or arguments[-1] != 'pyspark-shell':
@@ -60,7 +63,7 @@ def configure_spark_dependencies(builder, directory=None):
                 position += 1
             if value is not None:
                 jars.extend(value.split(','))
-        jars = list(dict.fromkeys([*jars, connector]))
+        jars = list(dict.fromkeys([*jars, *connectors]))
         os.environ['PYSPARK_SUBMIT_ARGS'] = shlex.join([
             *remaining, '--jars', ','.join(jars), 'pyspark-shell',
         ])
@@ -74,18 +77,26 @@ def configure_spark_dependencies(builder, directory=None):
 
 
 def ensure_elasticsearch_jar(directory=None):
+    return _ensure_jar(ES_JAR_NAME, ES_JAR_URL, ES_JAR_SHA256, directory)
+
+
+def ensure_doris_jar(directory=None):
+    return _ensure_jar(DORIS_JAR_NAME, DORIS_JAR_URL, DORIS_JAR_SHA256, directory)
+
+
+def _ensure_jar(name, url, checksum, directory):
     directory = Path(directory) if directory is not None else Path(sys.prefix) / "share" / "addp-spark"
     with _lock:
         directory.mkdir(parents=True, exist_ok=True)
-        target = directory / ES_JAR_NAME
+        target = directory / name
         if target.exists():
-            if hashlib.sha256(target.read_bytes()).hexdigest() != ES_JAR_SHA256:
-                raise ValueError("Elasticsearch connector JAR checksum mismatch")
+            if hashlib.sha256(target.read_bytes()).hexdigest() != checksum:
+                raise ValueError(f"Connector JAR checksum mismatch: {name}")
             return target.resolve()
-        with urlopen(ES_JAR_URL, timeout=30) as response:
-            data = response.read(16 * 1024 * 1024 + 1)
-        if hashlib.sha256(data).hexdigest() != ES_JAR_SHA256:
-            raise ValueError("Elasticsearch connector JAR checksum mismatch")
+        with urlopen(url, timeout=30) as response:
+            data = response.read(64 * 1024 * 1024 + 1)
+        if hashlib.sha256(data).hexdigest() != checksum:
+            raise ValueError(f"Connector JAR checksum mismatch: {name}")
         with tempfile.NamedTemporaryFile(dir=directory, suffix=".jar", delete=False) as temporary:
             temporary.write(data)
             temporary_path = Path(temporary.name)

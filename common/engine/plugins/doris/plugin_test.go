@@ -48,6 +48,16 @@ func TestDorisCapabilitiesDeclareTableWriteProviders(t *testing.T) {
 	}
 }
 
+func TestDorisConnectionDeclaresIndependentHTTPPort(t *testing.T) {
+	field, ok := (&DorisPlugin{}).ConnectionSpec().Field("http_port")
+	if !ok || field.Input != plugin.ConnectionFieldNumber || field.Default != 8030 || field.Identity || field.Sensitive {
+		t.Fatalf("Doris HTTP port must be a separate non-identity deployment fact: %#v", field)
+	}
+	if field.Min == nil || *field.Min != 1 || field.Max == nil || *field.Max != 65535 {
+		t.Fatalf("Doris HTTP port requires valid TCP bounds: %#v", field)
+	}
+}
+
 func TestDorisCatalogFactsDialectDoesNotIncludeEngine(t *testing.T) {
 	if dorisCatalogFactsDialect.IncludeEngine {
 		t.Fatal("Doris must not enable table native engine before information_schema.tables.engine is confirmed stable")

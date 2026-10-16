@@ -137,8 +137,9 @@ class DatabaseAdapter:
                 jdbc_url = f"{jdbc_url}?{urlencode({'sslmode': sslmode})}"
             return jdbc_url, "org.postgresql.Driver"
         if normalized_type in {'mysql', 'doris'}:
+            suffix = '?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true' if normalized_type == 'mysql' else ''
             return (
-                f"jdbc:mysql://{host}:{port}/{database}",
+                f"jdbc:mysql://{host}:{port}/{database}{suffix}",
                 "com.mysql.cj.jdbc.Driver",
             )
 
@@ -205,7 +206,7 @@ class DatabaseAdapter:
             f"{DatabaseAdapter._spark_identifier(table)}"
         )
         return (
-            f"CREATE TABLE IF NOT EXISTS {qualified_table} "
+            f"CREATE TABLE {qualified_table} "
             f"({', '.join(definitions)}) DUPLICATE KEY({key_identifier}) "
             f"DISTRIBUTED BY HASH({key_identifier}) BUCKETS 10"
         )
@@ -232,7 +233,8 @@ class DatabaseAdapter:
         writer = df.write.format("jdbc") \
             .option("url", jdbc_url) \
             .option("dbtable", DatabaseAdapter._postgresql_table(schema, table)
-                    if driver == "org.postgresql.Driver" else f"{schema}.{table}") \
+                    if driver == "org.postgresql.Driver" else
+                    f"{DatabaseAdapter._spark_identifier(schema)}.{DatabaseAdapter._spark_identifier(table)}") \
             .option("user", conn_info.get('user', conn_info.get('username', ''))) \
             .option("password", conn_info.get('password', '')) \
             .option("driver", driver)
@@ -249,29 +251,6 @@ class DatabaseAdapter:
         registry = jvm.org.apache.spark.sql.execution.datasources.jdbc.DriverRegistry
         registry.register(driver)
         return registry.get(driver).connect(jdbc_url, properties)
-
-    @staticmethod
-    def _prepare_doris_table(df: DataFrame, jdbc_url: str,
-                             conn_info: Dict[str, Any], schema: str,
-                             table: str, mode: str) -> None:
-        connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
-        statement = connection.createStatement()
-        qualified_table = (
-            f"{DatabaseAdapter._spark_identifier(schema)}."
-            f"{DatabaseAdapter._spark_identifier(table)}"
-        )
-        try:
-            statement.execute(
-                f"CREATE DATABASE IF NOT EXISTS {DatabaseAdapter._spark_identifier(schema)}"
-            )
-            if mode == 'overwrite':
-                statement.execute(f"DROP TABLE IF EXISTS {qualified_table}")
-            statement.execute(
-                DatabaseAdapter._doris_create_table_sql(df, schema, table)
-            )
-        finally:
-            statement.close()
-            connection.close()
 
     @staticmethod
     def _drop_postgresql_table(df: DataFrame, jdbc_url: str,
@@ -513,26 +492,15 @@ class DatabaseAdapter:
                 df, params, jdbc_url, driver, conn_info, geometry_columns
             )
 
-        row_count = df.count()
-        if engine_type.lower() == 'doris':
-            DatabaseAdapter._prepare_doris_table(
-                df, jdbc_url, conn_info, schema, table, mode
-            )
-            DatabaseAdapter._write_jdbc(
-                df, jdbc_url, driver, conn_info, schema, table, 'append'
-            )
-            return row_count
+        if engine_type.lower() == 'mysql':
+            from mysql_publication import save
+            return save(df, params, jdbc_url, driver, conn_info, DatabaseAdapter)
 
-        DatabaseAdapter._write_jdbc(
-            df,
-            jdbc_url,
-            driver,
-            conn_info,
-            schema,
-            table,
-            mode,
-        )
-        return row_count
+        if engine_type.lower() == 'doris':
+            from doris_publication import save
+            return save(df, params, jdbc_url, driver, conn_info, DatabaseAdapter)
+
+        raise ValueError(f'Unsupported table publication engine: {engine_type}')
 
 
 class FileAdapter:

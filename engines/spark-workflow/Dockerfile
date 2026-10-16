@@ -69,7 +69,7 @@ spark = spark_connector.SparkConnector().get_or_create_session(engine_id=1, tena
 try:
     assert spark.sparkContext._jvm.java.lang.System.getProperty("java.specification.version") == "11"
     distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()
-    for name in ("elasticsearch-spark-30_2.12-9.5.4.jar",
+    for name in ("spark-doris-connector-spark-3.5-25.2.0.jar", "elasticsearch-spark-30_2.12-9.5.4.jar",
                  "sedona-spark-shaded-3.5_2.12-1.5.3.jar", "geotools-wrapper-1.5.3-28.2.jar",
                  "postgresql-42.7.4.jar", "mysql-connector-j-8.4.0.jar",
                  "spark-hadoop-cloud_2.12-3.5.0.jar", "hadoop-aws-3.3.4.jar", "aws-java-sdk-bundle-"):
