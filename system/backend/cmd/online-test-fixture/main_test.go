@@ -98,6 +98,29 @@ func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testin
 	}
 }
 
+func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
+	permissions, err := suitePermissions("pg-source-authorization")
+	if err != nil || !slices.Equal(permissions, pgAuthorizationConsumerPermissions) || !needsEngineProvisioner("pg-source-authorization") {
+		t.Fatalf("PG consumer fixture is not registered: %v %v", permissions, err)
+	}
+	for _, key := range permissions {
+		if strings.HasPrefix(key, "system.") || strings.HasPrefix(key, "iam.") {
+			t.Fatalf("consumer gained control-plane permission: %s", key)
+		}
+	}
+	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 7 || len(sourceInitializerPermissions) != 4 {
+		t.Fatal("PG fixture widened shared initializer or reader permissions")
+	}
+	for _, key := range []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release"} {
+		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
+			t.Fatalf("operator lacks explicit command permission: %s", key)
+		}
+	}
+	if slices.Contains(pgAuthorizationOperatorPermissions, "manager.data_item.read") {
+		t.Fatal("operator must not be the source reader")
+	}
+}
+
 func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	repositoryRoot := filepath.Clean(filepath.Join("..", "..", "..", ".."))
 	catalog, err := commonauthorization.LoadRepositoryAuthorizationCatalog(repositoryRoot)
@@ -117,6 +140,8 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
 	allPermissions = append(allPermissions, sourceInitializerPermissions...)
+	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
+	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {

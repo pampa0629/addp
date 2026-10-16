@@ -17,6 +17,27 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_pg_authorization_requires_isolated_manual_profile(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
+                 'scripts/test/online-hosted-pg-authorization-gate.sh',
+                 'scripts/test/pg-source-authorization-online.py', 'Makefile')
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        CHECK.validate_pg_authorization_profile(self.repository, {'pg-source-authorization'})
+        for relative, fragment in ((paths[0], "inputs.suite != 'pg-source-authorization'"),
+                                   (paths[2], 'online-metric-postgres-fixture.sh stop'),
+                                   (paths[3], 'lifecycle.cleanup()'),
+                                   (paths[4], '@$(MAKE) test-pg-authorization-online-runner')):
+            path = self.repository / relative
+            original = path.read_text()
+            path.write_text(original.replace(fragment, 'removed'))
+            with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_pg_authorization_profile(self.repository, {'pg-source-authorization'})
+            path.write_text(original)
+
     def test_capacity_requires_full_scene_resource_profile_and_owner_regressions(self):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',

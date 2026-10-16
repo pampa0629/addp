@@ -1945,6 +1945,34 @@ def validate_public_origin_browser_profile(repository: Path, registered: set[str
             raise RegistrationError(f"compose-public-origin browser contract is incomplete: {relative}")
 
 
+def validate_pg_authorization_profile(repository: Path, registered: set[str]) -> None:
+    if "pg-source-authorization" not in registered:
+        return
+    suite = load_suite_registry(repository)["pg-source-authorization"]
+    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "manager"}:
+        raise RegistrationError("PG authorization requires only its four owners and manual first acceptance")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  pg-authorization-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
+        "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'pg-source-authorization'\n" not in job.group("body")
+    ) or "&& inputs.suite != 'pg-source-authorization'" not in workflow:
+        raise RegistrationError("PG authorization must use its single manual Hosted job")
+    required = {
+        "scripts/test/online-hosted-pg-authorization-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
+            'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+        "scripts/test/pg-source-authorization-online.py": (
+            "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
+            "state='expired'", "self.reader.token == reader_before"),
+        "Makefile": ('test-pg-authorization-online-runner', 'pg-source-authorization-online_test.py',
+                     'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"PG authorization owner contract is incomplete: {relative}")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1960,6 +1988,7 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_metric_engine_variant(repository, registered)
+    validate_pg_authorization_profile(repository, registered)
     validate_public_origin_browser_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
     validate_raster_capacity_profile(repository, registered)

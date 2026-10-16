@@ -45,6 +45,11 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "pg-source-authorization": Suite(
+        command=(sys.executable, "-m", "scripts.test.pg-source-authorization-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("manager", "MANAGER_URL")),
+    ),
     "platform-node-metrics": Suite(
         command=(sys.executable, "-m", "scripts.test.platform-node-metrics-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("monitor", "MONITOR_URL")),

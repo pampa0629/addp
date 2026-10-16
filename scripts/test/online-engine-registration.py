@@ -30,6 +30,23 @@ SOURCE_INITIALIZER_PERMISSIONS = {
 }
 
 
+def read_exact_record_authorization_facts(authorizer, path):
+    """Read System's trusted Meta projection; a path alone never proves ownership."""
+    engine_id = path['engine_id']
+    full_name = path['segments'][1]['name'] + '.' + path['segments'][2]['name']
+    fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
+    facts = authorizer.request('GET', f'/api/v1/system/engines/{engine_id}/data-items/{fingerprint}/authorization-facts', (200,)).payload
+    expected = {'schema_version': 'meta.data_item_authorization_facts/v1',
+                'engine_id': str(engine_id), 'item_fingerprint': fingerprint,
+                'item_type': path['segments'][2]['term'], 'full_name': full_name, 'basis_state': 'complete',
+                'boundary': {'layout': 'single', 'native_target': path}}
+    if (not isinstance(facts, dict) or any(facts.get(key) != value for key, value in expected.items())
+        or not isinstance(facts.get('boundary_hash'), str) or not re.fullmatch('[0-9a-f]{64}', facts['boundary_hash'])
+        or not facts.get('observed_at')):
+        raise RegistrationError('source Grant requires a complete matching System authorization boundary')
+    return facts
+
+
 def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, initialize_approval=True, item_term="table"):
     """Prepare precise reads with separate Users and the formal System command."""
     def identity(client):
@@ -79,15 +96,7 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
         if len(matches) != 1 or matches[0].get('fingerprint') != fingerprint:
             raise RegistrationError('source Grant requires one matching persisted DataItem identity')
-        facts = authorizer.request('GET', f'/api/v1/system/engines/{engine_id}/data-items/{fingerprint}/authorization-facts', (200,)).payload
-        expected_facts = {'schema_version': 'meta.data_item_authorization_facts/v1',
-                          'engine_id': str(engine_id), 'item_fingerprint': fingerprint,
-                          'item_type': item_term, 'full_name': full_name, 'basis_state': 'complete',
-                          'boundary': {'layout': 'single', 'native_target': body['catalog_path']}}
-        if (not isinstance(facts, dict) or any(facts.get(key) != value for key, value in expected_facts.items())
-            or not isinstance(facts.get('boundary_hash'), str) or not re.fullmatch('[0-9a-f]{64}', facts['boundary_hash'])
-            or not facts.get('observed_at')):
-            raise RegistrationError('source Grant requires a complete matching System authorization boundary')
+        facts = read_exact_record_authorization_facts(authorizer, body['catalog_path'])
         body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'])
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}

@@ -533,7 +533,15 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 	@python3 -m unittest scripts/test/transfer-continuous-events-online_test.py scripts/test/continuous-execution-faults_test.py scripts/test/online-continuous-fixture_test.py scripts/test/online-hosted-continuous-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-pg-authorization-online-runner
+test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔离和清理
+	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-pg-authorization-online-runner
 	@$(MAKE) test-transfer-continuous-online-runner
 	@$(MAKE) test-transfer-online-runner
 	@$(MAKE) test-node-metrics-online-runner

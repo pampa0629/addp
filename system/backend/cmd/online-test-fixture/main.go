@@ -68,6 +68,13 @@ var sourceInitializerPermissions = []string{
 	"system.engine_access_grant.read",
 }
 
+var pgAuthorizationConsumerPermissions = []string{
+	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+}
+
+var pgAuthorizationOperatorPermissions = append(append([]string{}, sourceInitializerPermissions...),
+	"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
+
 var plaintextApplicantPermissions = []string{
 	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"security.assessment.read", "security.enrollment.create", "security.enrollment.read",
@@ -158,6 +165,8 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case "pg-source-authorization":
+		return pgAuthorizationConsumerPermissions, nil
 	case "platform-node-metrics":
 		return nil, nil
 	case "raster-workflow":
@@ -199,6 +208,9 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
+	if suite == "pg-source-authorization" {
+		return true
+	}
 	if suite == "quality-dynamic-binding" {
 		return true
 	}
@@ -388,6 +400,14 @@ func run(args []string, environment []string) error {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
+	if *suite == "pg-source-authorization" {
+		operator, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = operator.AccessToken
+	}
 	if *suite == "transfer-relational-sql-etl" {
 		const username = "external-online-transfer-precheck"
 		original, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
