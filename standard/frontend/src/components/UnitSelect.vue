@@ -15,16 +15,18 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { presentUnitEntry } from '../utils/unitPresentation'
 
 const props = defineProps({
   modelValue: { type: Number, default: null },
   units: { type: Array, default: () => [] }
 })
 defineEmits(['update:modelValue'])
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const groups = computed(() => {
   const categories = new Map()
-  for (const unit of props.units) {
+  for (const raw of props.units) {
+    const unit = presentUnitEntry(raw, locale.value)
     if (!categories.has(unit.category_id)) {
       categories.set(unit.category_id, {
         value: `category:${unit.category_id}`,

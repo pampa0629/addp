@@ -24,7 +24,17 @@ func (r *TenantReferenceRepository) RequireDomain(tenantID int64, id *int64) err
 }
 
 func (r *TenantReferenceRepository) RequireUnit(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Unit{}, tenantID, id)
+	if id == nil {
+		return nil
+	}
+	var count int64
+	if err := r.db.Model(&models.Unit{}).Where("id = ? AND (tenant_id IS NULL OR tenant_id = ?)", *id, tenantID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrInvalidTenantReference
+	}
+	return nil
 }
 
 func (r *TenantReferenceRepository) RequireCodeSet(tenantID int64, id *int64) error {

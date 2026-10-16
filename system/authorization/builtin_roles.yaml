@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 125
+manifest_version: 126
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -321,6 +321,10 @@ roles:
       - platform.tenant.update
       - service.configuration.read
       - service.configuration.update
+      - standard.unit.create
+      - standard.unit.delete
+      - standard.unit.read
+      - standard.unit.update
       - system.engine_raster_policy.read
       - system.engine_raster_policy.update
       - transfer.configuration.read

@@ -75,7 +75,7 @@ func TestPublicCreateEntryPointsRejectInvalidStableCodes(t *testing.T) {
 			return err
 		}},
 		{name: "measurement category", call: func() error {
-			_, err := NewUnitService(nil, nil).CreateCategory(&models.CreateMeasurementCategoryRequest{Code: invalid}, 7)
+			_, err := NewUnitService(nil, nil).CreateCategory(&models.CreateMeasurementCategoryRequest{Code: invalid}, models.TenantUnitContext(7))
 			return err
 		}},
 	}

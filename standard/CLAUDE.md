@@ -226,9 +226,16 @@ standard/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | name / code | string | 类别名 / 标识 |
-| is_system | bool | 是否系统内置 |
+| tenant_id | int64? | 空为平台所有，非空为所属 Tenant |
+| translations | JSON | 平台目录的多语种名称与描述（单位含符号） |
 
-度量类别与计量单位的默认目录由 Standard 维护，按当前认证租户隔离。首次读取度量类别或单位列表时，在事务内补齐历史默认目录（10 类、31 个单位）；新部署和后续新租户无需手工 SQL。重复及并发读取不得产生重复记录，已有类别名称与自定义数据不被覆盖；缺失默认项可自动补齐。不使用固定 `tenant_id=1`，不读取 System 私有租户表。初始化回归由 Go 单元测试自动发现；真实 PostgreSQL 并发首次读取纳入已有 `make test-standard-postgres`，由 Standard T2 CI 调用，不新增部署步骤。
+度量类别和单位采用平台目录与 Tenant 自定义数据的一条资源模型：`tenant_id IS NULL` 表示平台所有，正整数表示 Tenant 所有；不使用 Tenant=0。平台目录由具备 `standard.unit.*（Platform Scope）` 权限的 Platform User 在计量单位页面维护，所有 Tenant 直接只读引用，不复制默认项。平台类别与单位以稳定 code 标识，译名保存在数据库 `translations`，按请求语言投影名称、描述和符号。Tenant 自定义名称保留原始输入。
+
+部署迁移在同一 schema lock 与事务内导入外部 JSON 初始目录，并使用已有 `standard.data_migrations` 登记一次性数据迁移；后续启动不覆盖平台用户修改，也不重新创建已删除的目录项。列表读取始终只读。历史 `is_system` 项收敛为平台共享身份，仍与初始目录完全一致的重复项合并并迁移数据元/指标修订的单位引用；已编辑的原内置项保留为 Tenant 自定义数据，自定义项与其他 Tenant 数据保持隔离。删除被引用的单位或类别由外键拒绝，不改变既有引用含义。
+
+API 使用现有 `/measurement-categories`、`/units` 资源路径，Platform 与 Tenant Context 分别按对应 Permission 访问；Tenant 写入只允许自己的自定义资源，不能修改平台项。平台写入只允许平台资源。平台译名管理要求默认中文名称与英文名称，语言切换无需刷新或重启。
+
+验证覆盖 T0 Permission/Swagger 与页面准入、T1 多语种投影及读写边界、T2 新部署导入与幂等/引用迁移/平台扩展、T3 平台新增后租户只读使用与语言切换；沿用既有 Standard 门禁及 CI 入口。
 
 ### `standard.units` — 计量单位
 
@@ -236,7 +243,8 @@ standard/
 |------|------|------|
 | category_id | int64 | 所属度量类别 |
 | name / symbol | string | 单位名 / 符号（如 kg、℃） |
-| is_system | bool | 是否系统内置 |
+| tenant_id | int64? | 空为平台所有，非空为所属 Tenant |
+| translations | JSON | 平台目录的多语种名称与描述（单位含符号） |
 
 
 > **注意**: 分级记录由系统初始化，仅支持 PUT 更新名称/描述/颜色，不支持创建和删除。

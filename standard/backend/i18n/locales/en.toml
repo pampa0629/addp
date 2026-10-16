@@ -94,14 +94,14 @@ other = "A metric category parent cannot be itself or its descendant"
 [standard.metric_category.referenced]
 other = "The metric category is still referenced by a child category or metric and cannot be deleted"
 
-[standard.measurement_category.system_immutable]
-other = "System measurement categories cannot be deleted"
+[standard.measurement_category.platform_read_only]
+other = "Platform measurement categories are read-only in tenant context"
 
 [standard.measurement_category.referenced]
 other = "The measurement category is still referenced by a unit and cannot be deleted"
 
-[standard.unit.system_immutable]
-other = "System units cannot be updated or deleted"
+[standard.unit.platform_read_only]
+other = "Platform units are read-only in tenant context"
 
 [standard.unit.referenced]
 other = "The unit is still referenced by an element or metric and cannot be deleted"

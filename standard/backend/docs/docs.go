@@ -4544,8 +4544,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MeasurementCategory"
                         }
                     },
                     "401": {
@@ -6182,6 +6181,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "平台用户提交稳定编码与多语种译名；租户只创建自定义单位。| Platform users submit a stable code and runtime translations; tenant users create tenant-owned units.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -6189,12 +6192,31 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "创建计量单位 | Create unit",
+                "parameters": [
+                    {
+                        "description": "计量单位 | Measurement unit",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateUnitRequest"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Unit"
+                        }
+                    },
+                    "400": {
+                        "description": "编码或译名无效 | Invalid code or translations",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -6208,6 +6230,15 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "平台编码重复 | Duplicate platform code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -6240,8 +6271,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Unit"
                         }
                     },
                     "401": {
@@ -6296,8 +6326,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Unit"
                         }
                     },
                     "401": {
@@ -7126,8 +7155,7 @@ const docTemplate = `{
         "github_com_addp_standard_internal_models.CreateMeasurementCategoryRequest": {
             "type": "object",
             "required": [
-                "code",
-                "name"
+                "code"
             ],
             "properties": {
                 "code": {
@@ -7141,6 +7169,9 @@ const docTemplate = `{
                 },
                 "sort_order": {
                     "type": "integer"
+                },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
                 }
             }
         },
@@ -7251,6 +7282,35 @@ const docTemplate = `{
                 "version": {
                     "type": "integer",
                     "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateUnitRequest": {
+            "type": "object",
+            "required": [
+                "category_id"
+            ],
+            "properties": {
+                "category_id": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
                 }
             }
         },
@@ -8567,17 +8627,24 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
-                "is_system": {
-                    "type": "boolean"
-                },
                 "name": {
                     "type": "string"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common"
+                    ]
                 },
                 "sort_order": {
                     "type": "integer"
                 },
                 "tenant_id": {
                     "type": "integer"
+                },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
                 },
                 "updated_at": {
                     "type": "string"
@@ -9259,6 +9326,9 @@ const docTemplate = `{
                 "category_id": {
                     "type": "integer"
                 },
+                "code": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -9268,11 +9338,15 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
-                "is_system": {
-                    "type": "boolean"
-                },
                 "name": {
                     "type": "string"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common"
+                    ]
                 },
                 "sort_order": {
                     "type": "integer"
@@ -9283,12 +9357,35 @@ const docTemplate = `{
                 "tenant_id": {
                     "type": "integer"
                 },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
+                },
                 "updated_at": {
                     "type": "string"
                 },
                 "version": {
                     "type": "integer"
                 }
+            }
+        },
+        "github_com_addp_standard_internal_models.UnitTranslation": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UnitTranslations": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslation"
             }
         },
         "github_com_addp_standard_internal_models.UpdateCodeItemRequest": {
@@ -9727,6 +9824,9 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer"
                 },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
+                },
                 "version": {
                     "type": "integer"
                 }
@@ -9861,6 +9961,9 @@ const docTemplate = `{
                 },
                 "symbol": {
                     "type": "string"
+                },
+                "translations": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.UnitTranslations"
                 },
                 "version": {
                     "type": "integer"

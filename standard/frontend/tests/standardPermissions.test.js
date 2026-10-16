@@ -51,7 +51,7 @@ describe('Standard standalone landing', () => {
       [['standard.metric.read', 'standard.unit.read'], 'tenant', '/units'],
       [['standard.document.read'], 'tenant', '/forbidden'],
       [[], 'tenant', '/forbidden'],
-      [['standard.unit.read'], 'platform', '/forbidden']
+      [['standard.unit.read'], 'platform', '/units']
     ]) {
       const router = createStandardRouter(permissions, contextType)
       await router.push('/')

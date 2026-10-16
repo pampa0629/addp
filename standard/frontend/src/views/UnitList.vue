@@ -11,7 +11,7 @@
           <template #header>
             <div class="card-header">
               <span>{{ $t('standard.unit.category') }}</span>
-              <el-button v-if="canCreate" size="small" type="primary" @click="showAddCategory = true">{{ $t('standard.unit.addCategory') }}</el-button>
+              <el-button v-if="canCreate" size="small" type="primary" @click="openAddCategory">{{ $t('standard.unit.addCategory') }}</el-button>
             </div>
           </template>
           <el-tree
@@ -26,8 +26,8 @@
                 <span class="tree-node-name">{{ data.name }}</span>
                 <span class="tree-node-meta">{{ data.code }}</span>
                 <div class="tree-node-actions">
-                  <el-button v-if="canUpdate" link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
-                  <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`unit-category:${data.id}`)" @click.stop="deleteCategory(data)" :disabled="data.is_system">{{ $t('standard.common.delete') }}</el-button>
+                  <el-button v-if="canUpdate && owns(data)" link size="small" @click.stop="editCategory(data)">{{ $t('standard.common.edit') }}</el-button>
+                  <el-button v-if="canDelete && owns(data)" link size="small" type="danger" :loading="isActionLocked(`unit-category:${data.id}`)" @click.stop="deleteCategory(data)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </div>
             </template>
@@ -40,31 +40,31 @@
         <el-card>
           <template #header>
             <div class="card-header">
-              <span>{{ selectedCategory ? $t('standard.unit.unitsOfCategory', { name: selectedCategory.name }) : $t('standard.unit.allUnits') }}</span>
+              <span>{{ selectedCategory ? $t('standard.unit.unitsOfCategory', { name: presentUnitEntry(selectedCategory, locale).name }) : $t('standard.unit.allUnits') }}</span>
               <el-button v-if="canCreate" size="small" type="primary" @click="openAddUnit">{{ $t('standard.unit.addUnit') }}</el-button>
             </div>
           </template>
-          <el-table :data="units" v-loading="loadingUnits" size="small">
-            <el-table-column :label="$t('standard.common.name')" prop="name" width="120" />
-            <el-table-column :label="$t('standard.unit.symbolLabel')" prop="symbol" width="80" />
+          <el-table :data="displayUnits" v-loading="loadingUnits" size="small">
+            <el-table-column :label="$t('standard.common.name')" prop="name" width="120" show-overflow-tooltip />
+            <el-table-column :label="$t('standard.unit.symbolLabel')" prop="symbol" width="80" show-overflow-tooltip />
             <el-table-column :label="$t('standard.unit.belongsTo')" width="100">
               <template #default="{ row }">
                 {{ row.category?.name || '-' }}
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.description')" prop="description" show-overflow-tooltip />
-            <el-table-column :label="$t('standard.unit.systemBuiltin')" width="80">
+            <el-table-column :label="isPlatform ? $t('standard.unit.scope') : $t('standard.unit.systemBuiltin')" :width="isPlatform ? 110 : 80">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.is_system ? 'info' : 'success'">
-                  {{ row.is_system ? $t('standard.unit.yes') : $t('standard.unit.no') }}
+                <el-tag size="small" :type="row.scope_type === 'platform' ? 'info' : 'success'">
+                  {{ isPlatform ? $t('standard.unit.platformScope') : (row.scope_type === 'platform' ? $t('standard.unit.yes') : $t('standard.unit.no')) }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
-                <el-button v-if="canUpdate" link size="small" @click="editUnit(row)" :disabled="row.is_system">{{ $t('standard.common.edit') }}</el-button>
-                <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`unit:${row.id}`)" @click="deleteUnit(row)" :disabled="row.is_system">{{ $t('standard.common.delete') }}</el-button>
+                <el-button v-if="canUpdate && owns(row)" link size="small" @click="editUnit(row)">{{ $t('standard.common.edit') }}</el-button>
+                <el-button v-if="canDelete && owns(row)" link size="small" type="danger" :loading="isActionLocked(`unit:${row.id}`)" @click="deleteUnit(row)">{{ $t('standard.common.delete') }}</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -74,18 +74,19 @@
     </el-row>
 
     <!-- 新增/编辑度量类别对话框 -->
-    <el-dialog v-model="showAddCategory" :title="editingCategory ? $t('standard.unit.editCategory') : $t('standard.unit.createCategory')" width="400px">
-      <el-form :model="categoryForm" label-width="80px">
-        <el-form-item :label="$t('standard.common.name')" required>
+    <el-dialog v-model="showAddCategory" :title="editingCategory ? $t('standard.unit.editCategory') : $t('standard.unit.createCategory')" width="min(560px, calc(100vw - 32px))">
+      <el-form :model="categoryForm" label-width="100px">
+        <el-form-item v-if="!isPlatform" :label="$t('standard.common.name')" required>
           <el-input v-model="categoryForm.name" />
         </el-form-item>
         <el-form-item :label="$t('standard.common.code')" :required="!editingCategory">
           <el-input v-model="categoryForm.code" :placeholder="$t('standard.common.codePlaceholder')" :disabled="!!editingCategory" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.description')">
+        <el-form-item v-if="!isPlatform" :label="$t('standard.common.description')">
           <el-input v-model="categoryForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.sort')">
+        <UnitTranslationsEditor v-if="isPlatform" v-model="categoryForm.translations" />
+        <el-form-item :label="$t('standard.common.sortOrder')">
           <el-input-number v-model="categoryForm.sort_order" :min="0" />
         </el-form-item>
       </el-form>
@@ -96,23 +97,27 @@
     </el-dialog>
 
     <!-- 新增/编辑计量单位对话框 -->
-    <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="400px">
-      <el-form :model="unitForm" label-width="80px">
+    <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="min(560px, calc(100vw - 32px))">
+      <el-form :model="unitForm" label-width="100px">
+        <el-form-item v-if="isPlatform" :label="$t('standard.common.code')" required>
+          <el-input v-model="unitForm.code" :disabled="!!editingUnit" :placeholder="$t('standard.common.codePlaceholder')" />
+        </el-form-item>
         <el-form-item :label="$t('standard.unit.categoryLabel')" :required="!editingUnit">
           <el-select v-model="unitForm.category_id" style="width:100%" :disabled="Boolean(editingUnit)">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+            <el-option v-for="c in categoryTree" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="$t('standard.common.name')" required>
+        <el-form-item v-if="!isPlatform" :label="$t('standard.common.name')" required>
           <el-input v-model="unitForm.name" />
         </el-form-item>
-        <el-form-item :label="$t('standard.unit.symbolLabel')">
+        <el-form-item v-if="!isPlatform" :label="$t('standard.unit.symbolLabel')">
           <el-input v-model="unitForm.symbol" :placeholder="$t('standard.unit.symbolPlaceholder')" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.description')">
+        <el-form-item v-if="!isPlatform" :label="$t('standard.common.description')">
           <el-input v-model="unitForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.sort')">
+        <UnitTranslationsEditor v-if="isPlatform" v-model="unitForm.translations" with-symbol />
+        <el-form-item :label="$t('standard.common.sortOrder')">
           <el-input-number v-model="unitForm.sort_order" :min="0" />
         </el-form-item>
       </el-form>
@@ -125,9 +130,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
+import UnitTranslationsEditor from '../components/UnitTranslationsEditor.vue'
+import { presentUnitEntry, copyUnitTranslations, validUnitTranslations } from '../utils/unitPresentation'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { measurementCategoryAPI, unitAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
@@ -137,7 +145,11 @@ import { createLatestRequestCoordinator } from '@common-ui'
 import { useActionLock } from '../composables/useActionLock'
 import { isValidStandardStableCode } from '../utils/standardCode'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const authStore = useAuthStore()
+const contextKey = computed(() => `${authStore.contextType}:${authStore.authContext?.context?.tenant_id ?? ''}`)
+const isPlatform = computed(() => authStore.contextType === 'platform')
+const owns = row => isPlatform.value ? row.scope_type === 'platform' : row.scope_type === 'tenant_common'
 const { canCreate, canUpdate, canDelete } = useStandardPermissions('unit')
 const { isLocked: isActionLocked, runLocked } = useActionLock()
 const route = useRoute()
@@ -148,22 +160,29 @@ const loadingUnits = ref(false)
 const saving = ref(false)
 const selectedCategory = ref(null)
 const unitRequests = createLatestRequestCoordinator()
+const categoryRequests = createLatestRequestCoordinator()
 
 const showAddCategory = ref(false)
 const showAddUnit = ref(false)
 const editingCategory = ref(null)
 const editingUnit = ref(null)
 
-const categoryForm = ref({ name: '', code: '', description: '', sort_order: 0 })
-const unitForm = ref({ category_id: null, name: '', symbol: '', description: '', sort_order: 0 })
+const categoryForm = ref({ name: '', code: '', description: '', sort_order: 0, translations: copyUnitTranslations() })
+const unitForm = ref({ category_id: null, code: '', name: '', symbol: '', description: '', sort_order: 0, translations: copyUnitTranslations() })
 
-const categoryTree = computed(() => categories.value)
+const categoryTree = computed(() => categories.value.map(entry => presentUnitEntry(entry, locale.value)))
+const displayUnits = computed(() => units.value.map(entry => presentUnitEntry(entry, locale.value)))
 
 const loadCategories = async () => {
+  const request = categoryRequests.begin(contextKey.value)
   try {
     const res = await measurementCategoryAPI.list()
+    if (!categoryRequests.isCurrent(request, contextKey.value)) return
+    const selectedID = selectedCategory.value?.id
     categories.value = res || []
+    if (selectedID) selectedCategory.value = categories.value.find(category => category.id === selectedID) || null
   } catch (e) {
+    if (!categoryRequests.isCurrent(request, contextKey.value)) return
     categories.value = []
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   }
@@ -197,12 +216,27 @@ const handleCategoryClick = (data) => {
 
 const editCategory = (data) => {
   editingCategory.value = data
-  categoryForm.value = { name: data.name, code: data.code, description: data.description, sort_order: data.sort_order, version: data.version }
+  categoryForm.value = { name: data.name, code: data.code, description: data.description, sort_order: data.sort_order, version: data.version, translations: copyUnitTranslations(data.translations) }
   showAddCategory.value = true
 }
 
+const openAddCategory = () => {
+  editingCategory.value = null
+  categoryForm.value = { name: '', code: '', description: '', sort_order: 0, translations: copyUnitTranslations() }
+  showAddCategory.value = true
+}
+const payload = form => isPlatform.value
+  ? { code: form.code, category_id: form.category_id, translations: form.translations, sort_order: form.sort_order, version: form.version }
+  : { name: form.name, code: form.category_id ? undefined : form.code, category_id: form.category_id, symbol: form.symbol, description: form.description, sort_order: form.sort_order, version: form.version }
+const translationsValid = form => {
+  if (!isPlatform.value || validUnitTranslations(form.translations)) return true
+  ElMessage.warning(t('standard.unit.translationsRequired'))
+  return false
+}
 const saveCategory = async () => {
   if (saving.value) return
+  const operationContext = contextKey.value
+  if (!translationsValid(categoryForm.value)) return
   if (!editingCategory.value && !isValidStandardStableCode(categoryForm.value.code, 50)) {
     ElMessage.warning(t('standard.common.codeFormatInvalid'))
     return
@@ -210,28 +244,33 @@ const saveCategory = async () => {
   saving.value = true
   try {
     if (editingCategory.value) {
-      await measurementCategoryAPI.update(editingCategory.value.id, categoryForm.value)
+      await measurementCategoryAPI.update(editingCategory.value.id, payload(categoryForm.value))
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.updateSuccess'))
     } else {
-      await measurementCategoryAPI.create(categoryForm.value)
+      await measurementCategoryAPI.create(payload(categoryForm.value))
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.createSuccess'))
     }
     showAddCategory.value = false
     editingCategory.value = null
-    categoryForm.value = { name: '', code: '', description: '', sort_order: 0 }
+    categoryForm.value = { name: '', code: '', description: '', sort_order: 0, translations: copyUnitTranslations() }
     await loadCategories()
   } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
+    if (operationContext === contextKey.value) ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
-    saving.value = false
+    if (operationContext === contextKey.value) saving.value = false
   }
 }
 
 const deleteCategory = async (data) => {
+  const operationContext = contextKey.value
   await runLocked(`unit-category:${data.id}`, async () => {
     try {
       await ElMessageBox.confirm(t('standard.unit.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      if (operationContext !== contextKey.value) return
       await measurementCategoryAPI.delete(data.id)
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.deleteSuccess'))
       if (selectedCategory.value?.id === data.id) {
         selectedCategory.value = null
@@ -240,57 +279,88 @@ const deleteCategory = async (data) => {
       await loadCategories()
       await loadUnits(null)
     } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+      if (operationContext === contextKey.value && !isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
     }
   })
 }
 
 const editUnit = (data) => {
   editingUnit.value = data
-  unitForm.value = { category_id: data.category_id, name: data.name, symbol: data.symbol, description: data.description, sort_order: data.sort_order, version: data.version }
+  unitForm.value = { category_id: data.category_id, code: data.code, name: data.name, symbol: data.symbol, description: data.description, sort_order: data.sort_order, version: data.version, translations: copyUnitTranslations(data.translations) }
   showAddUnit.value = true
 }
 
 const openAddUnit = () => {
   editingUnit.value = null
-  unitForm.value = { category_id: selectedCategory.value?.id || null, name: '', symbol: '', description: '', sort_order: 0 }
+  unitForm.value = { category_id: selectedCategory.value?.id || null, code: '', name: '', symbol: '', description: '', sort_order: 0, translations: copyUnitTranslations() }
   showAddUnit.value = true
 }
 
 const saveUnit = async () => {
   if (saving.value) return
+  const operationContext = contextKey.value
+  if (!translationsValid(unitForm.value)) return
+  if (isPlatform.value && !editingUnit.value && !isValidStandardStableCode(unitForm.value.code)) {
+    ElMessage.warning(t('standard.common.codeFormatInvalid'))
+    return
+  }
   saving.value = true
   try {
     if (editingUnit.value) {
-      await unitAPI.update(editingUnit.value.id, unitForm.value)
+      await unitAPI.update(editingUnit.value.id, payload(unitForm.value))
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.updateSuccess'))
     } else {
-      await unitAPI.create(unitForm.value)
+      await unitAPI.create(payload(unitForm.value))
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.createSuccess'))
     }
     showAddUnit.value = false
     editingUnit.value = null
-    unitForm.value = { category_id: selectedCategory.value?.id || null, name: '', symbol: '', description: '', sort_order: 0 }
+    unitForm.value = { category_id: selectedCategory.value?.id || null, code: '', name: '', symbol: '', description: '', sort_order: 0, translations: copyUnitTranslations() }
     await loadUnits(selectedCategory.value?.id || null)
   } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
+    if (operationContext === contextKey.value) ElMessage.error(getStandardErrorMessage(e, t))
   } finally {
-    saving.value = false
+    if (operationContext === contextKey.value) saving.value = false
   }
 }
 
 const deleteUnit = async (data) => {
+  const operationContext = contextKey.value
   await runLocked(`unit:${data.id}`, async () => {
     try {
       await ElMessageBox.confirm(t('standard.unit.confirmDeleteUnit', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
+      if (operationContext !== contextKey.value) return
       await unitAPI.delete(data.id)
+      if (operationContext !== contextKey.value) return
       ElMessage.success(t('standard.common.deleteSuccess'))
       await loadUnits(selectedCategory.value?.id || null)
     } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
+      if (operationContext === contextKey.value && !isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
     }
   })
 }
+
+watch(contextKey, async () => {
+  categoryRequests.invalidate()
+  unitRequests.invalidate()
+  categories.value = []
+  units.value = []
+  selectedCategory.value = null
+  showAddCategory.value = false
+  showAddUnit.value = false
+  editingCategory.value = null
+  editingUnit.value = null
+  saving.value = false
+  loadingUnits.value = false
+  ElMessageBox.close()
+  if (!['platform', 'tenant'].includes(authStore.contextType)) return
+  if (route.query.category_id) await navigateStandardRoute(router, '/units', { history: 'replace' })
+  await loadCategories()
+  await loadUnits(null)
+})
+onBeforeUnmount(() => { categoryRequests.invalidate(); unitRequests.invalidate() })
 
 onMounted(async () => {
   await loadCategories()

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
+Standard 平台计量目录：000212 将既有 `standard.unit.*` Permission 扩展至 Platform Scope，并只给 `platform.system_administrator` 增加平台目录读写权限；现有 Tenant 角色保留原权限。角色权限触发器推进授权版本，迁移撤销平台系统管理员的旧 Token Family。目录与译名仍归 Standard，System 不保存单位副本；精确回归入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test standard-platform-units"`。
+
 > Enterprise Catalog（企业资源目录）由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
 
 > 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；首期 schema 普通表 single 已接入，文件布局与其他消费入口尚未覆盖；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。

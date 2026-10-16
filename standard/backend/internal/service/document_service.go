@@ -902,7 +902,7 @@ func compareDocumentCandidate(document *models.Document, candidate *models.Docum
 		appendPayloadDifference(candidate.Payload.DataType, "data_type", target.DataType)
 		appendPayloadDifference(candidate.Payload.ValueDomainKind, "value_domain_kind", target.ValueDomainKind)
 		appendPayloadDifference(candidate.Payload.CodeSetCode, "code_set_code", target.CodeSetCode)
-		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol) {
+		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol, target.UnitAliases...) {
 			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(*candidate.Payload.Unit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
 		}
 	case "code_set":
@@ -913,7 +913,7 @@ func compareDocumentCandidate(document *models.Document, candidate *models.Docum
 	case "metric":
 		appendPayloadDifference(candidate.Payload.StatisticalScope, "statistical_caliber", target.StatisticalCaliber)
 		appendPayloadDifference(candidate.Payload.CalculationFormula, "semantic_formula", target.SemanticFormula)
-		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol) {
+		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol, target.UnitAliases...) {
 			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(*candidate.Payload.Unit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
 		}
 	}
@@ -985,8 +985,13 @@ func equalCandidateItems(candidateItems []models.DocumentExtractionCandidatePayl
 	return true
 }
 
-func matchesCandidateUnit(candidate, name, symbol string) bool {
-	return equalCandidateText(candidate, name) || (strings.TrimSpace(symbol) != "" && equalCandidateText(candidate, symbol))
+func matchesCandidateUnit(candidate, name, symbol string, aliases ...string) bool {
+	for _, value := range append([]string{name, symbol}, aliases...) {
+		if strings.TrimSpace(value) != "" && equalCandidateText(candidate, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func equalCandidateText(left, right string) bool {

@@ -69,12 +69,29 @@ func SetupRouter(
 			RequiredPermissions: []string{standardauthorization.PermissionStandardDocumentRead},
 		}, isStandardBrowserResourceRequest),
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
-		commonAuth.MustNewContextGuard("tenant"),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
+	mCats := api.Group("/measurement-categories")
+	{
+		mCats.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListCategories)
+		mCats.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateCategory)
+		mCats.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateCategory)
+		mCats.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteCategory)
+	}
+
+	units := api.Group("/units")
+	{
+		units.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListUnits)
+		units.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateUnit)
+		units.GET("/:id", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.GetUnit)
+		units.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateUnit)
+		units.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteUnit)
+	}
+
+	api.Use(commonAuth.MustNewContextGuard("tenant"))
 	{
 		catalogResources := api.Group("")
 		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
@@ -185,23 +202,6 @@ func SetupRouter(
 			codeSets.POST("/:id/revisions/:revision_id/items", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.CreateCodeItem)
 			codeSets.PUT("/:id/revisions/:revision_id/items/:item_id", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.UpdateCodeItem)
 			codeSets.DELETE("/:id/revisions/:revision_id/items/:item_id", permission(standardauthorization.PermissionStandardCodeSetUpdate), codeSetHandler.DeleteCodeItem)
-		}
-
-		mCats := api.Group("/measurement-categories")
-		{
-			mCats.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListCategories)
-			mCats.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateCategory)
-			mCats.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateCategory)
-			mCats.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteCategory)
-		}
-
-		units := api.Group("/units")
-		{
-			units.GET("", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.ListUnits)
-			units.POST("", permission(standardauthorization.PermissionStandardUnitCreate), unitHandler.CreateUnit)
-			units.GET("/:id", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.GetUnit)
-			units.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateUnit)
-			units.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteUnit)
 		}
 
 		metricCats := api.Group("/metric-categories")

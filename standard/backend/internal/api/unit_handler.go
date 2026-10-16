@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
@@ -33,11 +34,17 @@ func NewUnitHandler(svc *service.UnitService) *UnitHandler {
 // @Router /measurement-categories [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListCategories(c *gin.Context) {
-	tenantID := getTenantID(c)
-	cats, err := h.svc.ListCategories(tenantID)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	cats, err := h.svc.ListCategories(owner)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	for i := range cats {
+		cats[i].Localize(commoni18n.GetLang(c))
 	}
 	c.JSON(http.StatusOK, cats)
 }
@@ -60,12 +67,16 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	tenantID := getTenantID(c)
-	cat, err := h.svc.CreateCategory(&req, tenantID)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	cat, err := h.svc.CreateCategory(&req, owner)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+	cat.Localize(commoni18n.GetLang(c))
 	c.JSON(http.StatusCreated, cat)
 }
 
@@ -74,7 +85,7 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 // @Param request body models.UpdateMeasurementCategoryRequest true "更新度量类别 | Update measurement category"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.MeasurementCategory
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -92,12 +103,16 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	tenantID := getTenantID(c)
-	cat, err := h.svc.UpdateCategory(id, tenantID, &req)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	cat, err := h.svc.UpdateCategory(id, owner, &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+	cat.Localize(commoni18n.GetLang(c))
 	c.JSON(http.StatusOK, cat)
 }
 
@@ -118,8 +133,11 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	tenantID := getTenantID(c)
-	if err := h.svc.DeleteCategory(id, tenantID); err != nil {
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteCategory(id, owner); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
@@ -139,17 +157,23 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 // @Router /units [get]
 // @Security BearerAuth
 func (h *UnitHandler) ListUnits(c *gin.Context) {
-	tenantID := getTenantID(c)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
 	var categoryID *int64
 	if catIDStr := c.Query("category_id"); catIDStr != "" {
 		if id, err := strconv.ParseInt(catIDStr, 10, 64); err == nil {
 			categoryID = &id
 		}
 	}
-	units, err := h.svc.ListUnits(tenantID, categoryID)
+	units, err := h.svc.ListUnits(owner, categoryID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
+	}
+	for i := range units {
+		units[i].Localize(commoni18n.GetLang(c))
 	}
 	c.JSON(http.StatusOK, units)
 }
@@ -157,7 +181,7 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 // @Summary 获取计量单位详情 | Get unit detail
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.Unit
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -170,19 +194,28 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	tenantID := getTenantID(c)
-	unit, err := h.svc.GetUnit(id, tenantID)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	unit, err := h.svc.GetUnit(id, owner)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgUnitNotFound)})
 		return
 	}
+	unit.Localize(commoni18n.GetLang(c))
 	c.JSON(http.StatusOK, unit)
 }
 
 // @Summary 创建计量单位 | Create unit
+// @Description 平台用户提交稳定编码与多语种译名；租户只创建自定义单位。| Platform users submit a stable code and runtime translations; tenant users create tenant-owned units.
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param request body models.CreateUnitRequest true "计量单位 | Measurement unit"
+// @Success 201 {object} models.Unit
+// @Failure 400 {object} map[string]string "编码或译名无效 | Invalid code or translations"
+// @Failure 409 {object} map[string]string "平台编码重复 | Duplicate platform code"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -195,12 +228,16 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	tenantID := getTenantID(c)
-	unit, err := h.svc.CreateUnit(&req, tenantID)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	unit, err := h.svc.CreateUnit(&req, owner)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+	unit.Localize(commoni18n.GetLang(c))
 	c.JSON(http.StatusCreated, unit)
 }
 
@@ -209,7 +246,7 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 // @Param request body models.UpdateUnitRequest true "更新计量单位 | Update unit"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.Unit
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -227,12 +264,16 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	tenantID := getTenantID(c)
-	unit, err := h.svc.UpdateUnit(id, tenantID, &req)
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	unit, err := h.svc.UpdateUnit(id, owner, &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+	unit.Localize(commoni18n.GetLang(c))
 	c.JSON(http.StatusOK, unit)
 }
 
@@ -253,10 +294,28 @@ func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
-	tenantID := getTenantID(c)
-	if err := h.svc.DeleteUnit(id, tenantID); err != nil {
+	owner, ok := unitContext(c)
+	if !ok {
+		return
+	}
+	if err := h.svc.DeleteUnit(id, owner); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
+}
+
+// unitContext 只接受权威 AuthContext，不从 Tenant 缺省值推断平台身份。
+func unitContext(c *gin.Context) (models.UnitContext, bool) {
+	auth, exists := commonAuth.AuthContextFromGin(c)
+	if exists && auth.Context.Type == "platform" && auth.Principal.Type == "user" {
+		return models.UnitContext{Type: "platform"}, true
+	}
+	if exists && auth.Context.Type == "tenant" {
+		if tenantID, ok := commonAuth.TenantIDFromGin(c); ok {
+			return models.TenantUnitContext(tenantID), true
+		}
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, sysi18n.MsgOperationFailed)})
+	return models.UnitContext{}, false
 }

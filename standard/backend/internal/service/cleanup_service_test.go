@@ -142,7 +142,7 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			code TEXT NOT NULL,
 			description TEXT,
 			sort_order INTEGER,
-			is_system BOOLEAN,
+			translations TEXT,
 			created_at DATETIME,
 			updated_at DATETIME,
 			version INTEGER NOT NULL DEFAULT 1
@@ -150,12 +150,13 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.units (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
-			category_id INTEGER NOT NULL,
+			code TEXT,
+ category_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			symbol TEXT,
 			description TEXT,
 			sort_order INTEGER,
-			is_system BOOLEAN,
+			translations TEXT,
 			created_at DATETIME,
 			updated_at DATETIME,
 			version INTEGER NOT NULL DEFAULT 1
@@ -455,11 +456,11 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&codeItem).Error; err != nil {
 		t.Fatalf("create code item: %v", err)
 	}
-	measurementCategory := models.MeasurementCategory{TenantID: tenantID, Name: "Length " + suffix, Code: "length_" + suffix}
+	measurementCategory := models.MeasurementCategory{TenantID: &tenantID, Name: "Length " + suffix, Code: "length_" + suffix}
 	if err := db.Create(&measurementCategory).Error; err != nil {
 		t.Fatalf("create measurement category: %v", err)
 	}
-	unit := models.Unit{TenantID: tenantID, CategoryID: measurementCategory.ID, Name: "Meter " + suffix, Symbol: "m"}
+	unit := models.Unit{TenantID: &tenantID, CategoryID: measurementCategory.ID, Name: "Meter " + suffix, Symbol: "m"}
 	if err := db.Create(&unit).Error; err != nil {
 		t.Fatalf("create unit: %v", err)
 	}

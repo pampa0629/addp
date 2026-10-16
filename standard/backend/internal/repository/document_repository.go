@@ -467,6 +467,7 @@ type DocumentCandidateComparisonTarget struct {
 	UnitID             *int64
 	UnitName           string
 	UnitSymbol         string
+	UnitAliases        []string
 	Items              []models.DocumentExtractionCandidateComparisonItem
 }
 
@@ -504,7 +505,7 @@ func (r *DocumentRepository) ListCandidateComparisonTargets(tenantID int64, code
 	if err := r.loadComparisonCodeSets(tenantID, targets); err != nil {
 		return nil, err
 	}
-	if err := r.loadComparisonUnits(targets); err != nil {
+	if err := r.loadComparisonUnits(tenantID, targets); err != nil {
 		return nil, err
 	}
 	return targets, nil
@@ -665,7 +666,7 @@ func (r *DocumentRepository) loadMetricComparisonTargets(tenantID int64, codes [
 	return nil
 }
 
-func (r *DocumentRepository) loadComparisonUnits(targets map[string]DocumentCandidateComparisonTarget) error {
+func (r *DocumentRepository) loadComparisonUnits(tenantID int64, targets map[string]DocumentCandidateComparisonTarget) error {
 	ids := make([]int64, 0)
 	for _, target := range targets {
 		if target.UnitID != nil {
@@ -677,7 +678,7 @@ func (r *DocumentRepository) loadComparisonUnits(targets map[string]DocumentCand
 		return nil
 	}
 	var units []models.Unit
-	if err := r.db.Select("id, name, symbol").Where("id IN ?", ids).Find(&units).Error; err != nil {
+	if err := r.db.Select("id, tenant_id, code, name, symbol, translations").Where("id IN ? AND (tenant_id IS NULL OR tenant_id = ?)", ids, tenantID).Find(&units).Error; err != nil {
 		return err
 	}
 	byID := map[int64]models.Unit{}
@@ -688,6 +689,13 @@ func (r *DocumentRepository) loadComparisonUnits(targets map[string]DocumentCand
 		if target.UnitID != nil {
 			if unit, ok := byID[*target.UnitID]; ok {
 				target.UnitName, target.UnitSymbol = unit.Name, unit.Symbol
+				target.UnitAliases = []string{unit.Code}
+				for _, text := range unit.Translations {
+					target.UnitAliases = append(target.UnitAliases, text.Name, text.Symbol)
+				}
+				if unit.TenantID == nil {
+					target.UnitName, target.UnitSymbol = unit.Code, ""
+				}
 				targets[key] = target
 			}
 		}

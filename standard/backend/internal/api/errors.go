@@ -63,10 +63,10 @@ func respondError(c *gin.Context, status int, err error) {
 		useGenericMessage = false
 	case errors.Is(err, service.ErrMetricCategoryParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgMetricCategoryParentCycle)
-	case errors.Is(err, service.ErrSystemCategoryImmutable):
-		message = commoni18n.T(c, sysi18n.MsgSystemCategoryImmutable)
-	case errors.Is(err, service.ErrSystemUnitImmutable):
-		message = commoni18n.T(c, sysi18n.MsgSystemUnitImmutable)
+	case errors.Is(err, service.ErrPlatformCategoryReadOnly):
+		message = commoni18n.T(c, sysi18n.MsgPlatformCategoryReadOnly)
+	case errors.Is(err, service.ErrPlatformUnitReadOnly):
+		message = commoni18n.T(c, sysi18n.MsgPlatformUnitReadOnly)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)

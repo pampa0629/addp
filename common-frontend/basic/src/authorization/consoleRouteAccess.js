@@ -19,7 +19,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/standard/glossaries': [tenant('standard.glossary.read', 'standard.domain.read')],
   '/standard/elements': [tenant('standard.element.read', 'standard.domain.read')],
   '/standard/code-sets': [tenant('standard.code_set.read', 'standard.domain.read')],
-  '/standard/units': [tenant('standard.unit.read')],
+  '/standard/units': [platform('standard.unit.read'), tenant('standard.unit.read')],
   '/standard/metrics': [tenant('standard.metric.read', 'standard.domain.read', 'standard.unit.read')],
   '/standard/documents': [tenant('standard.document.read', 'standard.domain.read')],
   '/modeling/entities': [tenant('model.entity.read', 'standard.domain.read')],

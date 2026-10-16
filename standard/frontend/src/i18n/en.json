@@ -365,7 +365,13 @@
       "yes": "Yes",
       "no": "No",
       "confirmDeleteCategory": "Confirm delete category \"{name}\"?",
-      "confirmDeleteUnit": "Confirm delete unit \"{name}\"?"
+      "confirmDeleteUnit": "Confirm delete unit \"{name}\"?",
+      "scope": "Scope",
+      "platformScope": "Platform standard",
+      "tenantScope": "Tenant custom",
+      "languageCode": "Language code, e.g. fr, de",
+      "addLanguage": "Add translation",
+      "translationsRequired": "Provide names in Chinese, English and every added language"
     },
     "metric": {
       "recentVisitTitle": "Data Metric",

@@ -1,142 +1,213 @@
 package service
 
 import (
-	"strings"
-
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
+	"regexp"
+	"strings"
+	"unicode/utf8"
 )
 
-// UnitService 计量单位服务
 type UnitService struct {
 	catRepo  *repository.MeasurementCategoryRepository
 	unitRepo *repository.UnitRepository
 }
 
-func NewUnitService(catRepo *repository.MeasurementCategoryRepository, unitRepo *repository.UnitRepository) *UnitService {
-	return &UnitService{catRepo: catRepo, unitRepo: unitRepo}
+func NewUnitService(c *repository.MeasurementCategoryRepository, u *repository.UnitRepository) *UnitService {
+	return &UnitService{catRepo: c, unitRepo: u}
 }
 
-// --- 度量类别 ---
+var unitLocalePattern = regexp.MustCompile(`^[a-z]{2,3}(-[a-z0-9]{2,8})*$`)
 
-func (s *UnitService) ListCategories(tenantID int64) ([]models.MeasurementCategory, error) {
-	if err := s.catRepo.EnsureDefaults(tenantID); err != nil {
+func validateUnitTranslations(values models.UnitTranslations) error {
+	for _, lang := range []string{"zh-cn", "en"} {
+		if strings.TrimSpace(values[lang].Name) == "" {
+			return commonapi.ErrBadRequest
+		}
+	}
+	if len(values) > 64 {
+		return commonapi.ErrBadRequest
+	}
+	for lang, v := range values {
+		if !unitLocalePattern.MatchString(lang) || strings.TrimSpace(v.Name) == "" || utf8.RuneCountInString(v.Name) > 100 || utf8.RuneCountInString(v.Symbol) > 30 || utf8.RuneCountInString(v.Description) > 4096 {
+			return commonapi.ErrBadRequest
+		}
+	}
+	return nil
+}
+func validateUnitOwner(owner models.UnitContext) error {
+	if !owner.Valid() {
+		return commonapi.ErrForbidden
+	}
+	return nil
+}
+func (s *UnitService) ListCategories(owner models.UnitContext) ([]models.MeasurementCategory, error) {
+	if err := validateUnitOwner(owner); err != nil {
 		return nil, err
 	}
-	return s.catRepo.List(tenantID)
+	return s.catRepo.List(owner)
 }
-
-func (s *UnitService) CreateCategory(req *models.CreateMeasurementCategoryRequest, tenantID int64) (*models.MeasurementCategory, error) {
+func (s *UnitService) CreateCategory(req *models.CreateMeasurementCategoryRequest, owner models.UnitContext) (*models.MeasurementCategory, error) {
 	code, err := normalizeStandardStableCode(req.Code, maxStandardCategoryCodeLength)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.catRepo.ExistsByCode(code, tenantID, 0)
+	if err = validateUnitOwner(owner); err != nil {
+		return nil, err
+	}
+	if owner.Type == "platform" {
+		if err = validateUnitTranslations(req.Translations); err != nil {
+			return nil, err
+		}
+	} else if strings.TrimSpace(req.Name) == "" || len(req.Translations) > 0 {
+		return nil, commonapi.ErrBadRequest
+	}
+	exists, err := s.catRepo.ExistsByCode(code, owner, 0)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	cat := &models.MeasurementCategory{
-		TenantID:    tenantID,
-		Name:        strings.TrimSpace(req.Name),
-		Code:        code,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
+	row := &models.MeasurementCategory{TenantID: owner.OwnerID(), Name: strings.TrimSpace(req.Name), Code: code, Description: req.Description, SortOrder: req.SortOrder}
+	if owner.Type == "platform" {
+		row.Name = ""
+		row.Description = ""
+		row.Translations = req.Translations
 	}
-	if err := s.catRepo.Create(cat); err != nil {
+	if err = s.catRepo.Create(row); err != nil {
 		return nil, err
 	}
-	return cat, nil
+	return row, nil
 }
-
-func (s *UnitService) UpdateCategory(id, tenantID int64, req *models.UpdateMeasurementCategoryRequest) (*models.MeasurementCategory, error) {
-	cat, err := s.catRepo.GetByID(id, tenantID)
+func (s *UnitService) UpdateCategory(id int64, owner models.UnitContext, req *models.UpdateMeasurementCategoryRequest) (*models.MeasurementCategory, error) {
+	if err := validateUnitOwner(owner); err != nil {
+		return nil, err
+	}
+	row, err := s.catRepo.GetByID(id, owner)
 	if err != nil {
 		return nil, err
 	}
-	if req.Name != "" {
-		cat.Name = req.Name
+	if !owner.Owns(row.TenantID) {
+		return nil, ErrPlatformCategoryReadOnly
 	}
-	cat.Description = req.Description
-	cat.SortOrder = req.SortOrder
-	if err := s.catRepo.Update(cat, req.Version); err != nil {
+	if owner.Type == "platform" {
+		if err = validateUnitTranslations(req.Translations); err != nil {
+			return nil, err
+		}
+		row.Translations = req.Translations
+	} else {
+		if len(req.Translations) > 0 {
+			return nil, commonapi.ErrBadRequest
+		}
+		if req.Name != "" {
+			row.Name = strings.TrimSpace(req.Name)
+		}
+		row.Description = req.Description
+	}
+	row.SortOrder = req.SortOrder
+	if err = s.catRepo.Update(row, req.Version); err != nil {
 		return nil, err
 	}
-	return s.catRepo.GetByID(id, tenantID)
+	return s.catRepo.GetByID(id, owner)
 }
-
-func (s *UnitService) DeleteCategory(id, tenantID int64) error {
-	cat, err := s.catRepo.GetByID(id, tenantID)
+func (s *UnitService) DeleteCategory(id int64, owner models.UnitContext) error {
+	if err := validateUnitOwner(owner); err != nil {
+		return err
+	}
+	row, err := s.catRepo.GetByID(id, owner)
 	if err != nil {
 		return err
 	}
-	if cat.IsSystem {
-		return ErrSystemCategoryImmutable
+	if !owner.Owns(row.TenantID) {
+		return ErrPlatformCategoryReadOnly
 	}
-	return mapDeleteConflict(s.catRepo.Delete(id, tenantID), ErrMeasurementCategoryReferenced)
+	return mapDeleteConflict(s.catRepo.Delete(id, owner), ErrMeasurementCategoryReferenced)
 }
-
-// --- 计量单位 ---
-
-func (s *UnitService) ListUnits(tenantID int64, categoryID *int64) ([]models.Unit, error) {
-	if err := s.catRepo.EnsureDefaults(tenantID); err != nil {
+func (s *UnitService) ListUnits(owner models.UnitContext, categoryID *int64) ([]models.Unit, error) {
+	if err := validateUnitOwner(owner); err != nil {
 		return nil, err
 	}
-	return s.unitRepo.List(tenantID, categoryID)
+	return s.unitRepo.List(owner, categoryID)
 }
-
-func (s *UnitService) GetUnit(id, tenantID int64) (*models.Unit, error) {
-	return s.unitRepo.GetByID(id, tenantID)
-}
-
-func (s *UnitService) CreateUnit(req *models.CreateUnitRequest, tenantID int64) (*models.Unit, error) {
-	if _, err := s.catRepo.GetByID(req.CategoryID, tenantID); err != nil {
+func (s *UnitService) GetUnit(id int64, owner models.UnitContext) (*models.Unit, error) {
+	if err := validateUnitOwner(owner); err != nil {
 		return nil, err
 	}
-	unit := &models.Unit{
-		TenantID:    tenantID,
-		CategoryID:  req.CategoryID,
-		Name:        req.Name,
-		Symbol:      req.Symbol,
-		Description: req.Description,
-		SortOrder:   req.SortOrder,
-	}
-	if err := s.unitRepo.Create(unit); err != nil {
+	return s.unitRepo.GetByID(id, owner)
+}
+func (s *UnitService) CreateUnit(req *models.CreateUnitRequest, owner models.UnitContext) (*models.Unit, error) {
+	if err := validateUnitOwner(owner); err != nil {
 		return nil, err
 	}
-	return s.unitRepo.GetByID(unit.ID, tenantID)
+	row := &models.Unit{TenantID: owner.OwnerID(), CategoryID: req.CategoryID, Name: strings.TrimSpace(req.Name), Symbol: req.Symbol, Description: req.Description, SortOrder: req.SortOrder}
+	if owner.Type == "platform" {
+		code, err := normalizeStandardStableCode(req.Code, 100)
+		if err != nil {
+			return nil, err
+		}
+		if err = validateUnitTranslations(req.Translations); err != nil {
+			return nil, err
+		}
+		row.Code = code
+		row.Translations = req.Translations
+		row.Name = ""
+		row.Symbol = ""
+		row.Description = ""
+	} else if row.Name == "" || req.Code != "" || len(req.Translations) > 0 {
+		return nil, commonapi.ErrBadRequest
+	}
+	if _, err := s.catRepo.GetByID(req.CategoryID, owner); err != nil {
+		return nil, err
+	}
+	if err := s.unitRepo.Create(row); err != nil {
+		return nil, err
+	}
+	return s.unitRepo.GetByID(row.ID, owner)
 }
-
-func (s *UnitService) UpdateUnit(id, tenantID int64, req *models.UpdateUnitRequest) (*models.Unit, error) {
-	unit, err := s.unitRepo.GetByID(id, tenantID)
+func (s *UnitService) UpdateUnit(id int64, owner models.UnitContext, req *models.UpdateUnitRequest) (*models.Unit, error) {
+	if err := validateUnitOwner(owner); err != nil {
+		return nil, err
+	}
+	row, err := s.unitRepo.GetByID(id, owner)
 	if err != nil {
 		return nil, err
 	}
-	if unit.IsSystem {
-		return nil, ErrSystemUnitImmutable
+	if !owner.Owns(row.TenantID) {
+		return nil, ErrPlatformUnitReadOnly
 	}
-	if req.Name != "" {
-		unit.Name = req.Name
+	if owner.Type == "platform" {
+		if err = validateUnitTranslations(req.Translations); err != nil {
+			return nil, err
+		}
+		row.Translations = req.Translations
+	} else {
+		if len(req.Translations) > 0 {
+			return nil, commonapi.ErrBadRequest
+		}
+		if req.Name != "" {
+			row.Name = strings.TrimSpace(req.Name)
+		}
+		row.Symbol = req.Symbol
+		row.Description = req.Description
 	}
-	unit.Symbol = req.Symbol
-	unit.Description = req.Description
-	unit.SortOrder = req.SortOrder
-	if err := s.unitRepo.Update(unit, req.Version); err != nil {
+	row.SortOrder = req.SortOrder
+	if err = s.unitRepo.Update(row, req.Version); err != nil {
 		return nil, err
 	}
-	return s.unitRepo.GetByID(id, tenantID)
+	return s.unitRepo.GetByID(id, owner)
 }
-
-func (s *UnitService) DeleteUnit(id, tenantID int64) error {
-	unit, err := s.unitRepo.GetByID(id, tenantID)
+func (s *UnitService) DeleteUnit(id int64, owner models.UnitContext) error {
+	if err := validateUnitOwner(owner); err != nil {
+		return err
+	}
+	row, err := s.unitRepo.GetByID(id, owner)
 	if err != nil {
 		return err
 	}
-	if unit.IsSystem {
-		return ErrSystemUnitImmutable
+	if !owner.Owns(row.TenantID) {
+		return ErrPlatformUnitReadOnly
 	}
-	return mapDeleteConflict(s.unitRepo.Delete(id, tenantID), ErrUnitReferenced)
+	return mapDeleteConflict(s.unitRepo.Delete(id, owner), ErrUnitReferenced)
 }

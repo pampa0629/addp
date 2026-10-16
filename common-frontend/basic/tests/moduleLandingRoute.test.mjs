@@ -104,3 +104,11 @@ test('platform alerts and notification administration have independent entry rea
  assert.equal(resolveModuleLandingRoute('/monitor', ['/platform-alerts', '/alerts'], 'platform', ['monitor.platform_alert.read']), '/platform-alerts')
  assert.equal(allowsConsoleRoute('/monitor/alerts', 'platform', ['monitor.platform_alert.read']), false)
 })
+
+test('measurement units have one entry in both verified contexts', () => {
+  for (const context of ['platform', 'tenant']) {
+    assert.equal(allowsConsoleRoute('/standard/units', context, ['standard.unit.read']), true)
+    assert.equal(allowsConsoleRoute('/standard/units', context, ['standard.unit.update']), false)
+  }
+  assert.equal(allowsConsoleRoute('/standard/domains', 'platform', ['standard.domain.read']), false)
+})

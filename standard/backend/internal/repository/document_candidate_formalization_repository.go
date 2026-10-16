@@ -497,13 +497,19 @@ func resolveCandidateUnit(tx *gorm.DB, tenantID int64, candidate *string) (*int6
 		return nil, nil
 	}
 	var units []models.Unit
-	if err := tx.Where("tenant_id = ?", tenantID).Find(&units).Error; err != nil {
+	if err := tx.Where("tenant_id IS NULL OR tenant_id = ?", tenantID).Find(&units).Error; err != nil {
 		return nil, err
 	}
 	normalized := normalizeCandidateReference(*candidate)
 	matches := make([]int64, 0, 1)
 	for _, unit := range units {
-		if normalizeCandidateReference(unit.Name) == normalized || (strings.TrimSpace(unit.Symbol) != "" && normalizeCandidateReference(unit.Symbol) == normalized) {
+		matched := normalizeCandidateReference(unit.Name) == normalized || (strings.TrimSpace(unit.Symbol) != "" && normalizeCandidateReference(unit.Symbol) == normalized) || (unit.Code != "" && normalizeCandidateReference(unit.Code) == normalized)
+		for _, text := range unit.Translations {
+			if normalizeCandidateReference(text.Name) == normalized || (text.Symbol != "" && normalizeCandidateReference(text.Symbol) == normalized) {
+				matched = true
+			}
+		}
+		if matched {
 			matches = append(matches, unit.ID)
 		}
 	}

@@ -24,6 +24,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         *)
             echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
+            echo "Standard platform units: --package migration --test standard-platform-units" >&2
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
@@ -109,6 +110,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    standard-platform-units)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "standard-platform-units requires --package migration" >&2; exit 2; }
+        test_pattern='^TestStandardPlatformUnitsForwardMigrationAgainstPostgres$'
+        ;;
     resource-alert-rules)
         [ "$PACKAGE_FILTER" = migration ] || { echo "resource-alert-rules requires --package migration" >&2; exit 2; }
         test_pattern='^Test(PlatformResourceAlertRulesForwardMigration|Runner)AgainstPostgres$'

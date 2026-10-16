@@ -93,6 +93,13 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertTrue(self.started.exists(), "holder did not reach its first database command")
         return process
 
+    def test_standard_unit_publication_filter_is_bound_to_migration(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "standard-platform-units"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^TestStandardPlatformUnitsForwardMigrationAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "standard-platform-units"))
+        self.assertEqual(result.returncode, 2)
+
     def test_resource_alert_rule_publication_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "resource-alert-rules"))
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -6,94 +6,111 @@ import (
 	"gorm.io/gorm"
 )
 
-// MeasurementCategoryRepository 度量类别仓库
-type MeasurementCategoryRepository struct {
-	db *gorm.DB
-}
+type MeasurementCategoryRepository struct{ db *gorm.DB }
 
 func NewMeasurementCategoryRepository(db *gorm.DB) *MeasurementCategoryRepository {
 	return &MeasurementCategoryRepository{db: db}
 }
 
-func (r *MeasurementCategoryRepository) List(tenantID int64) ([]models.MeasurementCategory, error) {
-	var categories []models.MeasurementCategory
-	err := r.db.Where("tenant_id = ?", tenantID).Order("sort_order ASC, id ASC").Find(&categories).Error
-	return categories, err
-}
-
-func (r *MeasurementCategoryRepository) GetByID(id, tenantID int64) (*models.MeasurementCategory, error) {
-	var cat models.MeasurementCategory
-	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&cat).Error
-	return &cat, commonrepo.WrapDBError(err)
-}
-
-func (r *MeasurementCategoryRepository) Create(cat *models.MeasurementCategory) error {
-	return wrapDBError(r.db.Create(cat).Error)
-}
-
-func (r *MeasurementCategoryRepository) Update(cat *models.MeasurementCategory, expectedVersion int64) error {
-	if err := updateVersioned(r.db, cat, cat.ID, cat.TenantID, expectedVersion, map[string]interface{}{
-		"name": cat.Name, "description": cat.Description, "sort_order": cat.SortOrder,
-	}); err != nil {
-		return err
+// unitOwnerQuery 表达平台目录与当前 Tenant 自定义资源的唯一可见性规则。
+func unitOwnerQuery(db *gorm.DB, owner models.UnitContext, includePlatform bool) *gorm.DB {
+	if owner.Type == "platform" {
+		return db.Where("tenant_id IS NULL")
 	}
-	cat.Version = expectedVersion + 1
+	if includePlatform {
+		return db.Where("(tenant_id IS NULL OR tenant_id = ?)", owner.TenantID)
+	}
+	return db.Where("tenant_id = ?", owner.TenantID)
+}
+func (r *MeasurementCategoryRepository) List(owner models.UnitContext) ([]models.MeasurementCategory, error) {
+	var rows []models.MeasurementCategory
+	err := unitOwnerQuery(r.db, owner, true).Order("sort_order ASC, id ASC").Find(&rows).Error
+	return rows, err
+}
+func (r *MeasurementCategoryRepository) GetByID(id int64, owner models.UnitContext) (*models.MeasurementCategory, error) {
+	var row models.MeasurementCategory
+	err := unitOwnerQuery(r.db, owner, true).Where("id = ?", id).First(&row).Error
+	return &row, commonrepo.WrapDBError(err)
+}
+func (r *MeasurementCategoryRepository) Create(row *models.MeasurementCategory) error {
+	return wrapDBError(r.db.Create(row).Error)
+}
+func updateUnitVersioned(db *gorm.DB, model interface{}, id int64, tenantID *int64, version int64, updates map[string]interface{}) error {
+	if tenantID != nil {
+		return updateVersioned(db, model, id, *tenantID, version, updates)
+	}
+	updates["version"] = gorm.Expr("version + 1")
+	result := db.Model(model).Where("id = ? AND tenant_id IS NULL AND version = ?", id, version).Updates(updates)
+	if result.Error != nil {
+		return wrapDBError(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return ErrVersionConflict
+	}
 	return nil
 }
-
-func (r *MeasurementCategoryRepository) Delete(id, tenantID int64) error {
-	return deleteInTransaction(r.db, &models.MeasurementCategory{}, "id = ? AND tenant_id = ? AND is_system = false", id, tenantID)
-}
-
-func (r *MeasurementCategoryRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
-	var count int64
-	query := r.db.Model(&models.MeasurementCategory{}).Where("code = ? AND tenant_id = ?", code, tenantID)
-	if excludeID > 0 {
-		query = query.Where("id != ?", excludeID)
+func (r *MeasurementCategoryRepository) Update(row *models.MeasurementCategory, version int64) error {
+	updates := map[string]interface{}{"name": row.Name, "description": row.Description, "sort_order": row.SortOrder}
+	if row.TenantID == nil {
+		updates["name"] = ""
+		updates["description"] = ""
+		updates["translations"] = mustUnitTranslationsJSON(row.Translations)
 	}
-	err := query.Count(&count).Error
+	if err := updateUnitVersioned(r.db, row, row.ID, row.TenantID, version, updates); err != nil {
+		return err
+	}
+	row.Version = version + 1
+	return nil
+}
+func (r *MeasurementCategoryRepository) Delete(id int64, owner models.UnitContext) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		return requireAffectedRow(unitOwnerQuery(tx, owner, false).Where("id = ?", id).Delete(&models.MeasurementCategory{}))
+	}))
+}
+func (r *MeasurementCategoryRepository) ExistsByCode(code string, owner models.UnitContext, excludeID int64) (bool, error) {
+	var count int64
+	q := unitOwnerQuery(r.db.Model(&models.MeasurementCategory{}), owner, false).Where("code = ?", code)
+	if excludeID > 0 {
+		q = q.Where("id <> ?", excludeID)
+	}
+	err := q.Count(&count).Error
 	return count > 0, err
 }
 
-// UnitRepository 计量单位仓库
-type UnitRepository struct {
-	db *gorm.DB
-}
+type UnitRepository struct{ db *gorm.DB }
 
-func NewUnitRepository(db *gorm.DB) *UnitRepository {
-	return &UnitRepository{db: db}
-}
-
-func (r *UnitRepository) List(tenantID int64, categoryID *int64) ([]models.Unit, error) {
-	query := r.db.Where("tenant_id = ?", tenantID)
+func NewUnitRepository(db *gorm.DB) *UnitRepository { return &UnitRepository{db: db} }
+func (r *UnitRepository) List(owner models.UnitContext, categoryID *int64) ([]models.Unit, error) {
+	var rows []models.Unit
+	q := unitOwnerQuery(r.db, owner, true)
 	if categoryID != nil {
-		query = query.Where("category_id = ?", *categoryID)
+		q = q.Where("category_id = ?", *categoryID)
 	}
-	var units []models.Unit
-	err := query.Preload("Category").Order("sort_order ASC, id ASC").Find(&units).Error
-	return units, err
+	err := q.Preload("Category").Order("sort_order ASC,id ASC").Find(&rows).Error
+	return rows, err
 }
-
-func (r *UnitRepository) GetByID(id, tenantID int64) (*models.Unit, error) {
-	var unit models.Unit
-	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Preload("Category").First(&unit).Error
-	return &unit, commonrepo.WrapDBError(err)
+func (r *UnitRepository) GetByID(id int64, owner models.UnitContext) (*models.Unit, error) {
+	var row models.Unit
+	err := unitOwnerQuery(r.db, owner, true).Where("id = ?", id).Preload("Category").First(&row).Error
+	return &row, commonrepo.WrapDBError(err)
 }
-
-func (r *UnitRepository) Create(unit *models.Unit) error {
-	return wrapDBError(r.db.Create(unit).Error)
-}
-
-func (r *UnitRepository) Update(unit *models.Unit, expectedVersion int64) error {
-	if err := updateVersioned(r.db, unit, unit.ID, unit.TenantID, expectedVersion, map[string]interface{}{
-		"name": unit.Name, "symbol": unit.Symbol, "description": unit.Description, "sort_order": unit.SortOrder,
-	}); err != nil {
+func (r *UnitRepository) Create(row *models.Unit) error { return wrapDBError(r.db.Create(row).Error) }
+func (r *UnitRepository) Update(row *models.Unit, version int64) error {
+	updates := map[string]interface{}{"name": row.Name, "symbol": row.Symbol, "description": row.Description, "sort_order": row.SortOrder}
+	if row.TenantID == nil {
+		updates["name"] = ""
+		updates["description"] = ""
+		updates["symbol"] = ""
+		updates["translations"] = mustUnitTranslationsJSON(row.Translations)
+	}
+	if err := updateUnitVersioned(r.db, row, row.ID, row.TenantID, version, updates); err != nil {
 		return err
 	}
-	unit.Version = expectedVersion + 1
+	row.Version = version + 1
 	return nil
 }
-
-func (r *UnitRepository) Delete(id, tenantID int64) error {
-	return deleteInTransaction(r.db, &models.Unit{}, "id = ? AND tenant_id = ? AND is_system = false", id, tenantID)
+func (r *UnitRepository) Delete(id int64, owner models.UnitContext) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		return requireAffectedRow(unitOwnerQuery(tx, owner, false).Where("id = ?", id).Delete(&models.Unit{}))
+	}))
 }

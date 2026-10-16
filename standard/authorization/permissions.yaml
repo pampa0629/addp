@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 10
+manifest_version: 11
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -251,7 +251,7 @@ permissions:
     name_i18n_key: permissions.standard.metric.update.name
     description_i18n_key: permissions.standard.metric.update.description
   - key: standard.unit.create
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [platform, tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
@@ -259,7 +259,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.create.name
     description_i18n_key: permissions.standard.unit.create.description
   - key: standard.unit.delete
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [platform, tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
@@ -267,7 +267,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.delete.name
     description_i18n_key: permissions.standard.unit.delete.description
   - key: standard.unit.read
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [platform, tenant, department, project_group]
     risk_level: low
     tenant_customizable: true
     delegable: false
@@ -275,7 +275,7 @@ permissions:
     name_i18n_key: permissions.standard.unit.read.name
     description_i18n_key: permissions.standard.unit.read.description
   - key: standard.unit.update
-    allowed_scope_types: [tenant, department, project_group]
+    allowed_scope_types: [platform, tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false

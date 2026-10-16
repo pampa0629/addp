@@ -364,7 +364,13 @@
       "yes": "是",
       "no": "否",
       "confirmDeleteCategory": "确认删除度量类别\"{name}\"？",
-      "confirmDeleteUnit": "确认删除计量单位\"{name}\"？"
+      "confirmDeleteUnit": "确认删除计量单位\"{name}\"？",
+      "scope": "适用范围",
+      "platformScope": "平台标准",
+      "tenantScope": "租户自定义",
+      "languageCode": "语言代码，如 fr、de",
+      "addLanguage": "添加译名",
+      "translationsRequired": "请填写中文、英文及所有已添加语种的名称"
     },
     "metric": {
       "recentVisitTitle": "数据指标",

@@ -86,7 +86,7 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 			createSQL: `CREATE TABLE standard.measurement_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, description TEXT, sort_order INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
 			insertSQL: `INSERT INTO standard.measurement_categories (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,
 			update: func(db *gorm.DB, value string, version int64) error {
-				return NewMeasurementCategoryRepository(db).Update(&models.MeasurementCategory{ID: 1, TenantID: 7, Name: value}, version)
+				return NewMeasurementCategoryRepository(db).Update(&models.MeasurementCategory{ID: 1, TenantID: models.TenantUnitContext(7).OwnerID(), Name: value}, version)
 			},
 		},
 		{
@@ -94,7 +94,7 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 			createSQL: `CREATE TABLE standard.units (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, symbol TEXT, description TEXT, sort_order INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
 			insertSQL: `INSERT INTO standard.units (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,
 			update: func(db *gorm.DB, value string, version int64) error {
-				return NewUnitRepository(db).Update(&models.Unit{ID: 1, TenantID: 7, Name: value}, version)
+				return NewUnitRepository(db).Update(&models.Unit{ID: 1, TenantID: models.TenantUnitContext(7).OwnerID(), Name: value}, version)
 			},
 		},
 		{

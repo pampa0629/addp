@@ -1,0 +1,758 @@
+{
+  "categories": [
+    {
+      "code": "count",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "计数",
+          "description": "表示数量、个数、次数等无量纲单位"
+        },
+        "en": {
+          "name": "Count",
+          "description": "Count"
+        }
+      }
+    },
+    {
+      "code": "currency",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "货币",
+          "description": "表示金额、价格等货币值"
+        },
+        "en": {
+          "name": "Currency",
+          "description": "Currency"
+        }
+      }
+    },
+    {
+      "code": "mass",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "质量",
+          "description": "表示物体质量"
+        },
+        "en": {
+          "name": "Mass",
+          "description": "Mass"
+        }
+      }
+    },
+    {
+      "code": "length",
+      "sort_order": 4,
+      "translations": {
+        "zh-cn": {
+          "name": "长度",
+          "description": "表示距离、长度"
+        },
+        "en": {
+          "name": "Length",
+          "description": "Length"
+        }
+      }
+    },
+    {
+      "code": "area",
+      "sort_order": 5,
+      "translations": {
+        "zh-cn": {
+          "name": "面积",
+          "description": "表示面积大小"
+        },
+        "en": {
+          "name": "Area",
+          "description": "Area"
+        }
+      }
+    },
+    {
+      "code": "volume",
+      "sort_order": 6,
+      "translations": {
+        "zh-cn": {
+          "name": "体积",
+          "description": "表示体积或容积"
+        },
+        "en": {
+          "name": "Volume",
+          "description": "Volume"
+        }
+      }
+    },
+    {
+      "code": "time",
+      "sort_order": 7,
+      "translations": {
+        "zh-cn": {
+          "name": "时间",
+          "description": "表示时间长度"
+        },
+        "en": {
+          "name": "Time",
+          "description": "Time"
+        }
+      }
+    },
+    {
+      "code": "temperature",
+      "sort_order": 8,
+      "translations": {
+        "zh-cn": {
+          "name": "温度",
+          "description": "表示温度"
+        },
+        "en": {
+          "name": "Temperature",
+          "description": "Temperature"
+        }
+      }
+    },
+    {
+      "code": "percentage",
+      "sort_order": 9,
+      "translations": {
+        "zh-cn": {
+          "name": "百分比",
+          "description": "表示比率、百分比"
+        },
+        "en": {
+          "name": "Percentage",
+          "description": "Percentage"
+        }
+      }
+    },
+    {
+      "code": "storage",
+      "sort_order": 10,
+      "translations": {
+        "zh-cn": {
+          "name": "存储",
+          "description": "表示数据存储大小"
+        },
+        "en": {
+          "name": "Storage",
+          "description": "Storage"
+        }
+      }
+    }
+  ],
+  "units": [
+    {
+      "code": "item",
+      "category_code": "count",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "个",
+          "symbol": "个",
+          "description": "计量个体数量"
+        },
+        "en": {
+          "name": "Item",
+          "symbol": "item",
+          "description": "Item"
+        }
+      }
+    },
+    {
+      "code": "piece",
+      "category_code": "count",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "件",
+          "symbol": "件",
+          "description": "计量件数"
+        },
+        "en": {
+          "name": "Piece",
+          "symbol": "piece",
+          "description": "Piece"
+        }
+      }
+    },
+    {
+      "code": "occurrence",
+      "category_code": "count",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "次",
+          "symbol": "次",
+          "description": "计量操作次数"
+        },
+        "en": {
+          "name": "Occurrence",
+          "symbol": "times",
+          "description": "Occurrence"
+        }
+      }
+    },
+    {
+      "code": "record",
+      "category_code": "count",
+      "sort_order": 4,
+      "translations": {
+        "zh-cn": {
+          "name": "条",
+          "symbol": "条",
+          "description": "计量记录条数"
+        },
+        "en": {
+          "name": "Record",
+          "symbol": "record",
+          "description": "Record"
+        }
+      }
+    },
+    {
+      "code": "batch",
+      "category_code": "count",
+      "sort_order": 5,
+      "translations": {
+        "zh-cn": {
+          "name": "批",
+          "symbol": "批",
+          "description": "计量批次"
+        },
+        "en": {
+          "name": "Batch",
+          "symbol": "batch",
+          "description": "Batch"
+        }
+      }
+    },
+    {
+      "code": "person",
+      "category_code": "count",
+      "sort_order": 6,
+      "translations": {
+        "zh-cn": {
+          "name": "人",
+          "symbol": "人",
+          "description": "计量人数"
+        },
+        "en": {
+          "name": "Person",
+          "symbol": "person",
+          "description": "Person"
+        }
+      }
+    },
+    {
+      "code": "household",
+      "category_code": "count",
+      "sort_order": 7,
+      "translations": {
+        "zh-cn": {
+          "name": "户",
+          "symbol": "户",
+          "description": "计量户数"
+        },
+        "en": {
+          "name": "Household",
+          "symbol": "household",
+          "description": "Household"
+        }
+      }
+    },
+    {
+      "code": "cny",
+      "category_code": "currency",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "元",
+          "symbol": "¥",
+          "description": "人民币元"
+        },
+        "en": {
+          "name": "Chinese yuan",
+          "symbol": "CNY",
+          "description": "Chinese yuan"
+        }
+      }
+    },
+    {
+      "code": "ten_thousand_cny",
+      "category_code": "currency",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "万元",
+          "symbol": "万¥",
+          "description": "人民币万元"
+        },
+        "en": {
+          "name": "Ten thousand Chinese yuan",
+          "symbol": "10k CNY",
+          "description": "Ten thousand Chinese yuan"
+        }
+      }
+    },
+    {
+      "code": "hundred_million_cny",
+      "category_code": "currency",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "亿元",
+          "symbol": "亿¥",
+          "description": "人民币亿元"
+        },
+        "en": {
+          "name": "Hundred million Chinese yuan",
+          "symbol": "100m CNY",
+          "description": "Hundred million Chinese yuan"
+        }
+      }
+    },
+    {
+      "code": "usd",
+      "category_code": "currency",
+      "sort_order": 4,
+      "translations": {
+        "zh-cn": {
+          "name": "美元",
+          "symbol": "$",
+          "description": "美元"
+        },
+        "en": {
+          "name": "US dollar",
+          "symbol": "USD",
+          "description": "US dollar"
+        }
+      }
+    },
+    {
+      "code": "gram",
+      "category_code": "mass",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "克",
+          "symbol": "g",
+          "description": "克"
+        },
+        "en": {
+          "name": "Gram",
+          "symbol": "g",
+          "description": "Gram"
+        }
+      }
+    },
+    {
+      "code": "kilogram",
+      "category_code": "mass",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "千克",
+          "symbol": "kg",
+          "description": "千克"
+        },
+        "en": {
+          "name": "Kilogram",
+          "symbol": "kg",
+          "description": "Kilogram"
+        }
+      }
+    },
+    {
+      "code": "tonne",
+      "category_code": "mass",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "吨",
+          "symbol": "t",
+          "description": "吨"
+        },
+        "en": {
+          "name": "Tonne",
+          "symbol": "t",
+          "description": "Tonne"
+        }
+      }
+    },
+    {
+      "code": "millimetre",
+      "category_code": "length",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "毫米",
+          "symbol": "mm",
+          "description": "毫米"
+        },
+        "en": {
+          "name": "Millimetre",
+          "symbol": "mm",
+          "description": "Millimetre"
+        }
+      }
+    },
+    {
+      "code": "centimetre",
+      "category_code": "length",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "厘米",
+          "symbol": "cm",
+          "description": "厘米"
+        },
+        "en": {
+          "name": "Centimetre",
+          "symbol": "cm",
+          "description": "Centimetre"
+        }
+      }
+    },
+    {
+      "code": "metre",
+      "category_code": "length",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "米",
+          "symbol": "m",
+          "description": "米"
+        },
+        "en": {
+          "name": "Metre",
+          "symbol": "m",
+          "description": "Metre"
+        }
+      }
+    },
+    {
+      "code": "kilometre",
+      "category_code": "length",
+      "sort_order": 4,
+      "translations": {
+        "zh-cn": {
+          "name": "千米",
+          "symbol": "km",
+          "description": "千米"
+        },
+        "en": {
+          "name": "Kilometre",
+          "symbol": "km",
+          "description": "Kilometre"
+        }
+      }
+    },
+    {
+      "code": "square_metre",
+      "category_code": "area",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "平方米",
+          "symbol": "m²",
+          "description": "平方米"
+        },
+        "en": {
+          "name": "Square metre",
+          "symbol": "m²",
+          "description": "Square metre"
+        }
+      }
+    },
+    {
+      "code": "mu",
+      "category_code": "area",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "亩",
+          "symbol": "亩",
+          "description": "亩"
+        },
+        "en": {
+          "name": "Mu",
+          "symbol": "mu",
+          "description": "Mu"
+        }
+      }
+    },
+    {
+      "code": "hectare",
+      "category_code": "area",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "公顷",
+          "symbol": "ha",
+          "description": "公顷"
+        },
+        "en": {
+          "name": "Hectare",
+          "symbol": "ha",
+          "description": "Hectare"
+        }
+      }
+    },
+    {
+      "code": "second",
+      "category_code": "time",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "秒",
+          "symbol": "s",
+          "description": "秒"
+        },
+        "en": {
+          "name": "Second",
+          "symbol": "s",
+          "description": "Second"
+        }
+      }
+    },
+    {
+      "code": "minute",
+      "category_code": "time",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "分钟",
+          "symbol": "min",
+          "description": "分钟"
+        },
+        "en": {
+          "name": "Minute",
+          "symbol": "min",
+          "description": "Minute"
+        }
+      }
+    },
+    {
+      "code": "hour",
+      "category_code": "time",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "小时",
+          "symbol": "h",
+          "description": "小时"
+        },
+        "en": {
+          "name": "Hour",
+          "symbol": "h",
+          "description": "Hour"
+        }
+      }
+    },
+    {
+      "code": "day",
+      "category_code": "time",
+      "sort_order": 4,
+      "translations": {
+        "zh-cn": {
+          "name": "天",
+          "symbol": "d",
+          "description": "天"
+        },
+        "en": {
+          "name": "Day",
+          "symbol": "d",
+          "description": "Day"
+        }
+      }
+    },
+    {
+      "code": "month",
+      "category_code": "time",
+      "sort_order": 5,
+      "translations": {
+        "zh-cn": {
+          "name": "月",
+          "symbol": "mo",
+          "description": "月"
+        },
+        "en": {
+          "name": "Month",
+          "symbol": "mo",
+          "description": "Month"
+        }
+      }
+    },
+    {
+      "code": "year",
+      "category_code": "time",
+      "sort_order": 6,
+      "translations": {
+        "zh-cn": {
+          "name": "年",
+          "symbol": "yr",
+          "description": "年"
+        },
+        "en": {
+          "name": "Year",
+          "symbol": "yr",
+          "description": "Year"
+        }
+      }
+    },
+    {
+      "code": "percent",
+      "category_code": "percentage",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "百分比",
+          "symbol": "%",
+          "description": "百分比"
+        },
+        "en": {
+          "name": "Percent",
+          "symbol": "%",
+          "description": "Percent"
+        }
+      }
+    },
+    {
+      "code": "megabyte",
+      "category_code": "storage",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "MB",
+          "symbol": "MB",
+          "description": "兆字节"
+        },
+        "en": {
+          "name": "Megabyte",
+          "symbol": "MB",
+          "description": "Megabyte"
+        }
+      }
+    },
+    {
+      "code": "gigabyte",
+      "category_code": "storage",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "GB",
+          "symbol": "GB",
+          "description": "吉字节"
+        },
+        "en": {
+          "name": "Gigabyte",
+          "symbol": "GB",
+          "description": "Gigabyte"
+        }
+      }
+    },
+    {
+      "code": "terabyte",
+      "category_code": "storage",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "TB",
+          "symbol": "TB",
+          "description": "太字节"
+        },
+        "en": {
+          "name": "Terabyte",
+          "symbol": "TB",
+          "description": "Terabyte"
+        }
+      }
+    },
+    {
+      "code": "cubic_metre",
+      "category_code": "volume",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "立方米",
+          "symbol": "m³",
+          "description": "立方米"
+        },
+        "en": {
+          "name": "Cubic metre",
+          "symbol": "m³",
+          "description": "Cubic metre"
+        }
+      }
+    },
+    {
+      "code": "litre",
+      "category_code": "volume",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "升",
+          "symbol": "L",
+          "description": "升"
+        },
+        "en": {
+          "name": "Litre",
+          "symbol": "L",
+          "description": "Litre"
+        }
+      }
+    },
+    {
+      "code": "millilitre",
+      "category_code": "volume",
+      "sort_order": 3,
+      "translations": {
+        "zh-cn": {
+          "name": "毫升",
+          "symbol": "mL",
+          "description": "毫升"
+        },
+        "en": {
+          "name": "Millilitre",
+          "symbol": "mL",
+          "description": "Millilitre"
+        }
+      }
+    },
+    {
+      "code": "kelvin",
+      "category_code": "temperature",
+      "sort_order": 1,
+      "translations": {
+        "zh-cn": {
+          "name": "开尔文",
+          "symbol": "K",
+          "description": "开尔文"
+        },
+        "en": {
+          "name": "Kelvin",
+          "symbol": "K",
+          "description": "Kelvin"
+        }
+      }
+    },
+    {
+      "code": "degree_celsius",
+      "category_code": "temperature",
+      "sort_order": 2,
+      "translations": {
+        "zh-cn": {
+          "name": "摄氏度",
+          "symbol": "°C",
+          "description": "摄氏度"
+        },
+        "en": {
+          "name": "Degree Celsius",
+          "symbol": "°C",
+          "description": "Degree Celsius"
+        }
+      }
+    }
+  ]
+}

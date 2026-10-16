@@ -509,9 +509,10 @@ definitions:
         type: string
       sort_order:
         type: integer
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
     required:
     - code
-    - name
     type: object
   github_com_addp_standard_internal_models.CreateMetricCategoryRequest:
     properties:
@@ -588,6 +589,25 @@ definitions:
     required:
     - change_summary
     - version
+    type: object
+  github_com_addp_standard_internal_models.CreateUnitRequest:
+    properties:
+      category_id:
+        type: integer
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+      symbol:
+        type: string
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
+    required:
+    - category_id
     type: object
   github_com_addp_standard_internal_models.DecideDocumentCandidateFamilyRequest:
     properties:
@@ -1481,14 +1501,19 @@ definitions:
         type: string
       id:
         type: integer
-      is_system:
-        type: boolean
       name:
+        type: string
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
         type: string
       sort_order:
         type: integer
       tenant_id:
         type: integer
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
       updated_at:
         type: string
       version:
@@ -1936,15 +1961,20 @@ definitions:
         $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
       category_id:
         type: integer
+      code:
+        type: string
       created_at:
         type: string
       description:
         type: string
       id:
         type: integer
-      is_system:
-        type: boolean
       name:
+        type: string
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
         type: string
       sort_order:
         type: integer
@@ -1952,10 +1982,25 @@ definitions:
         type: string
       tenant_id:
         type: integer
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
       updated_at:
         type: string
       version:
         type: integer
+    type: object
+  github_com_addp_standard_internal_models.UnitTranslation:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      symbol:
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.UnitTranslations:
+    additionalProperties:
+      $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslation'
     type: object
   github_com_addp_standard_internal_models.UpdateCodeItemRequest:
     properties:
@@ -2258,6 +2303,8 @@ definitions:
         type: string
       sort_order:
         type: integer
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
       version:
         type: integer
     required:
@@ -2351,6 +2398,8 @@ definitions:
         type: integer
       symbol:
         type: string
+      translations:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.UnitTranslations'
       version:
         type: integer
     required:
@@ -5804,8 +5853,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -6856,13 +6904,29 @@ paths:
       x-addp-required-permissions:
       - standard.unit.read
     post:
+      consumes:
+      - application/json
+      description: 平台用户提交稳定编码与多语种译名；租户只创建自定义单位。| Platform users submit a stable code
+        and runtime translations; tenant users create tenant-owned units.
+      parameters:
+      - description: 计量单位 | Measurement unit
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateUnitRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Unit'
+        "400":
+          description: 编码或译名无效 | Invalid code or translations
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required
@@ -6872,6 +6936,12 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 平台编码重复 | Duplicate platform code
           schema:
             additionalProperties:
               type: string
@@ -6927,8 +6997,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Unit'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -6963,8 +7032,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Unit'
         "401":
           description: 需要登录 | Authentication required
           schema:

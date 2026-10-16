@@ -25,11 +25,11 @@ func TestPostgresDocumentCandidateComparisonTargets(t *testing.T) {
 	}
 	tenantID := time.Now().UnixNano()
 	code := fmt.Sprintf("outdoor_comparison_%d", tenantID)
-	category := models.MeasurementCategory{TenantID: tenantID, Name: "次数", Code: code, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}
+	category := models.MeasurementCategory{TenantID: &tenantID, Name: "次数", Code: code, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), Version: 1}
 	if err := db.Create(&category).Error; err != nil {
 		t.Fatal(err)
 	}
-	unit := models.Unit{TenantID: tenantID, CategoryID: category.ID, Name: "次", Symbol: "次", Version: 1}
+	unit := models.Unit{TenantID: &tenantID, CategoryID: category.ID, Name: "次", Symbol: "次", Version: 1}
 	if err := db.Create(&unit).Error; err != nil {
 		t.Fatal(err)
 	}

@@ -2152,7 +2152,75 @@ test('updates Standard controls immediately when the authorization context chang
   await expect(page.getByRole('button', { name: '新建术语' })).toHaveCount(0)
 })
 
+function measurementDirectoryFixture() {
+  return {
+    unitCategories: [{ id: 901, code: 'length', scope_type: 'platform', translations: { 'zh-cn': { name: '长度' }, en: { name: 'Length' } } }],
+    unitDirectory: [{ id: 902, category_id: 901, code: 'metre', scope_type: 'platform', translations: { 'zh-cn': { name: '米', symbol: 'm' }, en: { name: 'Metre', symbol: 'm' } } }]
+  }
+}
+
+test('tenant reads the shared unit directory and follows the current interface language', async ({ page }) => {
+  await installMockBackend(page, { ...measurementDirectoryFixture(), permissions: ['standard.unit.read', 'standard.unit.update', 'standard.unit.delete'] })
+  await page.goto('/units')
+  await expect(page.getByRole('cell', { name: '米', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+  const reads = []
+  page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/units')) reads.push(request.method()) })
+  // The shared Console language transport is tested by its owner; exercise this page's reactive rendering.
+  await page.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$i18n.locale = 'en' })
+  await expect(page.getByRole('cell', { name: 'Metre', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Length', exact: true })).toBeVisible()
+  expect(reads).toEqual([])
+})
+
+test('platform user extends the unit directory with runtime translations', async ({ page }) => {
+  await installMockBackend(page, { ...measurementDirectoryFixture(), contextType: 'platform', permissions: ['standard.unit.read', 'standard.unit.create', 'standard.unit.update'] })
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/units$/)
+  await page.getByRole('button', { name: '新增单位', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('编码', { exact: true }).fill('furlong')
+  await dialog.locator('.el-select').click()
+  await page.getByRole('option', { name: '长度', exact: true }).click()
+  await dialog.getByLabel('名称', { exact: true }).filter({ visible: true }).fill('弗隆')
+  await dialog.getByRole('tab', { name: 'en', exact: true }).click()
+  await dialog.getByLabel('名称', { exact: true }).filter({ visible: true }).fill('Furlong')
+  const request = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/units'))
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  const created = (await request).postDataJSON()
+  expect(created).toMatchObject({ code: 'furlong', category_id: 901, translations: { 'zh-cn': { name: '弗隆' }, en: { name: 'Furlong' } } })
+  expect(created).not.toHaveProperty('name')
+  await expect(page.getByRole('cell', { name: '弗隆', exact: true })).toBeVisible()
+  await page.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$i18n.locale = 'en' })
+  await expect(page.getByRole('cell', { name: 'Furlong', exact: true })).toBeVisible()
+})
+
+test('unit directory clears tenant state and rejects late responses when entering platform context', async ({ page }) => {
+  const fixture = measurementDirectoryFixture()
+  fixture.unitDirectory.push({ id: 904, category_id: 901, scope_type: 'tenant_common', name: '租户私有箱', symbol: '箱' })
+  await installMockBackend(page, { ...fixture, permissions: ['standard.unit.read'], delayedTenantUnitRead: true,
+    authContextTypesByToken: { 'standard-e2e-platform-token': 'platform' } })
+  await page.goto('/units')
+  await expect(page.getByRole('cell', { name: '租户私有箱', exact: true })).toBeVisible()
+  const delayedRead = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/units') && new URL(request.url()).searchParams.has('category_id'))
+  await page.locator('.el-tree-node__content').filter({ hasText: '长度' }).click()
+  await delayedRead
+  await page.evaluate(() => {
+    const channel = new BroadcastChannel('addp-auth-session')
+    channel.postMessage({ type: 'token', token: 'standard-e2e-platform-token', expiresAt: Date.now() + 900_000 })
+    channel.close()
+  })
+  await expect(page.getByRole('cell', { name: '米', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/units$/)
+  await expect(page.getByRole('cell', { name: '租户私有箱', exact: true })).toHaveCount(0)
+  await page.waitForTimeout(400)
+  await expect(page.getByRole('cell', { name: '租户私有箱', exact: true })).toHaveCount(0)
+})
+
 async function installMockBackend(page, options = {}) {
+  const unitCategories = options.unitCategories ?? []
+  const unitDirectory = options.unitDirectory ?? []
   const deleteRequests = []
   const actionRequests = []
   let metricDocumentListRequests = 0
@@ -2306,6 +2374,8 @@ async function installMockBackend(page, options = {}) {
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
+    const requestToken = request.headers().authorization?.replace(/^Bearer\s+/i, '')
+    const requestContextType = options.authContextTypesByToken?.[requestToken] ?? options.contextType ?? 'tenant'
     const path = url.pathname
 
     if (request.method() === 'DELETE' && path === '/api/v1/standard/domains/2' && options.domainDeleteConflict) {
@@ -2524,8 +2594,8 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/system/auth/context') {
       const token = request.headers().authorization?.replace(/^Bearer\s+/i, '')
       return fulfillJSON(route, {
-        context: { type: 'tenant', tenant_id: '1' },
-        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: authContextPermissionsByToken[token] ?? permissions }] }
+        context: requestContextType === 'platform' ? { type: 'platform' } : { type: 'tenant', tenant_id: '1' },
+        authorization: { role_assignments: [{ scope: requestContextType === 'platform' ? { type: 'platform' } : { type: 'tenant', tenant_id: '1' }, permissions: authContextPermissionsByToken[token] ?? permissions }] }
       })
     }
     if (path === '/api/v1/standard/domains') return fulfillJSON(route, domains)
@@ -2627,8 +2697,18 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/code-sets/31') return fulfillJSON(route, codeSetAggregate)
     if (path === '/api/v1/standard/code-sets/31/revisions') return fulfillJSON(route, fixtureRevisions(codeSetAggregate))
     if (path === '/api/v1/standard/code-sets/31/documents') return fulfillJSON(route, [])
-    if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, [])
-    if (path === '/api/v1/standard/units') return fulfillJSON(route, [])
+    if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, unitCategories)
+    if (path === '/api/v1/standard/units') {
+      if (request.method() === 'POST') {
+        const row = { ...request.postDataJSON(), id: 903, version: 1, scope_type: requestContextType === 'platform' ? 'platform' : 'tenant_common' }
+        unitDirectory.push(row)
+        return fulfillJSON(route, row, 201)
+      }
+      const rows = unitDirectory.filter(unit => requestContextType !== 'platform' || unit.scope_type === 'platform')
+        .map(unit => ({ ...unit, category: unitCategories.find(category => category.id === unit.category_id) }))
+      if (options.delayedTenantUnitRead && requestContextType === 'tenant' && url.searchParams.has('category_id')) await new Promise(resolve => setTimeout(resolve, 350))
+      return fulfillJSON(route, rows)
+    }
     if (path === '/api/v1/standard/metric-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: metrics, total: metrics.length })
     if (path === '/api/v1/standard/metrics/51') return fulfillJSON(route, metrics.find(item => item.id === 51) || {})

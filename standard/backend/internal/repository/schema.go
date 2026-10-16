@@ -17,13 +17,13 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	return db.Transaction(func(tx *gorm.DB) error {
+		if err := acquireStandardSchemaLock(tx); err != nil {
+			return err
+		}
 		if tx.Dialector.Name() == "postgres" {
 			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS standard").Error; err != nil {
 				return fmt.Errorf("create standard schema: %w", err)
 			}
-		}
-		if err := acquireStandardSchemaLock(tx); err != nil {
-			return err
 		}
 		if err := removeRetiredCollectionTables(tx); err != nil {
 			return err
@@ -99,7 +99,10 @@ func Migrate(db *gorm.DB) error {
 		if err := simplifyStandardDefinitions(tx); err != nil {
 			return err
 		}
-		return applyStandardSchemaStatements(tx)
+		if err := applyStandardSchemaStatements(tx); err != nil {
+			return err
+		}
+		return migrateMeasurementCatalog(tx)
 	})
 }
 

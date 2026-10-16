@@ -37,7 +37,7 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "glossary publication history", err: service.ErrGlossaryPublicationHistory, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "A glossary with publication history cannot be deleted"},
 		{name: "dependency cycle", err: repository.ErrMetricDependencyCycle, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Metric dependencies cannot form a cycle"},
 		{name: "domain parent cycle", err: service.ErrDomainParentCycle, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "A domain parent cannot be itself or its descendant"},
-		{name: "system unit", err: service.ErrSystemUnitImmutable, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "System units cannot be updated or deleted"},
+		{name: "system unit", err: service.ErrPlatformUnitReadOnly, fallback: http.StatusBadRequest, wantStatus: http.StatusForbidden, wantBody: "Platform units are read-only in tenant context"},
 		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
 		{name: "invalid standard scope", err: service.ErrInvalidStandardScope, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "The scope and owning domain are inconsistent"},
 		{name: "invalid standard code", err: service.ErrInvalidStandardCode, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "lowercase snake_case"},
