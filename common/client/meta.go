@@ -431,8 +431,7 @@ func (c *MetaClient) GetNodeByCatalogPath(engineID uint, catalogPath string) (*m
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+		return nil, &TenantAPIError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode}
 	}
 
 	var result models.MetaNode
@@ -462,8 +461,7 @@ func (c *MetaClient) GetItemByCatalogPath(engineID uint, catalogPath string) (*m
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+		return nil, &TenantAPIError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode}
 	}
 
 	var result models.MetaItem
@@ -552,8 +550,7 @@ func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+		return nil, &TenantAPIError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode}
 	}
 
 	var result models.MetaNode
@@ -612,8 +609,7 @@ func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+		return nil, &TenantAPIError{Method: req.Method, Path: req.URL.Path, StatusCode: resp.StatusCode}
 	}
 
 	var result models.MetaItem

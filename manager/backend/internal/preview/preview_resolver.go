@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -25,7 +26,17 @@ import (
 )
 
 var ErrPreviewRequiresScannedMeta = errors.New("preview requires scanned meta item or node")
+var ErrPreviewMetadataUnavailable = errors.New("preview metadata dependency unavailable")
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
+
+func previewMetadataLookupError(err error) error {
+	if err != nil {
+		if status, ok := commonClient.TenantAPIStatusCode(err); !ok || status != http.StatusNotFound {
+			return ErrPreviewMetadataUnavailable
+		}
+	}
+	return ErrPreviewRequiresScannedMeta
+}
 
 // PreviewResolver 数据预览解析器
 // 职责：
@@ -389,7 +400,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 				logger.L().Debug("未从 Meta 通过 item_id 获取到 MetaItem",
 					"item_id", itemID,
 					"error", err)
-				return nil, ErrPreviewRequiresScannedMeta
+				return nil, previewMetadataLookupError(err)
 			}
 		} else if loc.NodeID != nil && *loc.NodeID > 0 {
 			nodeID := *loc.NodeID
@@ -405,7 +416,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 				logger.L().Debug("未从 Meta 通过 node_id 获取到节点元数据",
 					"node_id", nodeID,
 					"error", err)
-				return nil, ErrPreviewRequiresScannedMeta
+				return nil, previewMetadataLookupError(err)
 			}
 		}
 	}
@@ -424,6 +435,7 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 					logger.L().Debug("未从 Meta 获取到数据项元数据",
 						"catalog_path", catalogPath,
 						"error", err)
+					return nil, previewMetadataLookupError(err)
 				}
 			} else {
 				// Bucket 或 Prefix 路径
@@ -433,6 +445,8 @@ func (r *PreviewResolver) ResolveRequestFromURIWithSelection(ctx context.Context
 					logger.L().Debug("从 Meta 获取到节点元数据",
 						"catalog_path", catalogPath,
 						"total_size_bytes", node.TotalSizeBytes)
+				} else {
+					return nil, previewMetadataLookupError(err)
 				}
 			}
 		}

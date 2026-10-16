@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 ONLINE = importlib.import_module('scripts.test.pg-source-authorization-online')
 REAL_BASIC_SCAN = ONLINE.basic_scan
 REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
+REAL_META_OUTAGE = ONLINE.MetaOutage
 
 
 class Server:
@@ -19,6 +20,7 @@ class Server:
         self.expired, self.fault = False, fault
         self.memberships = {'department': '41', 'project_group': '51'}
         self.version, self.current_reader_token = 1, 'reader-private-token'
+        self.meta_down = False
 
     def context(self, kind):
         reader = kind.startswith('reader')
@@ -58,6 +60,8 @@ class Server:
                 elif path == '/api/v1/system/login':
                     server.current_reader_token = f'reader-{server.version}-private-token'
                     result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
+                elif path.endswith('/authorization-facts'):
+                    status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_facts_unavailable'}
                 elif '/memberships' in path:
                     membership_kind = 'department' if '/departments/' in path else 'project_group'
                     row = {'id': '81' if membership_kind == 'department' else '91', 'version': 1,
@@ -155,6 +159,14 @@ class Server:
                         result['data']['rows'][1]['person_id'] = 'wrong'
                     if server.fault == 'leaked_denial' and not allowed:
                         result['data'] = {'rows': []}
+                    if server.meta_down:
+                        status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_service_unavailable'}
+                        if server.fault == 'outage_fallback':
+                            status, result = 200, {'data': {'rows': []}}
+                        elif server.fault == 'outage_masquerades_as_missing':
+                            status = 404
+                        elif server.fault == 'outage_leaks':
+                            result['data'] = {'rows': []}
                 else:
                     raise AssertionError('unexpected request ' + path)
                 if status not in expected:
@@ -174,6 +186,17 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         patch.object(ONLINE.time, 'sleep').start()
         self.browser = patch.object(ONLINE, 'BrowserObservation').start().return_value.__enter__.return_value
         self.browser.finish.return_value = {'result': 'passed'}
+        self.outage = patch.object(ONLINE, 'MetaOutage').start().return_value
+        self.outage.before, self.outage.after = {}, {}
+        def down():
+            self.server.meta_down = True
+            return self.outage
+        def restored(*_):
+            self.server.meta_down = False
+            if self.server.fault == 'recovery_loses_deny':
+                self.server.denies = dict.fromkeys(self.server.denies, False)
+        self.outage.__enter__.side_effect = down
+        self.outage.__exit__.side_effect = restored
         patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout:
                      self.server.client(token.removesuffix('-private-token'))).start()
 
@@ -190,8 +213,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 22)
-        self.assertEqual(len(server.grants), 7)
+        self.assertEqual(len(report['checks']), 27)
+        self.assertEqual(len(server.grants), 8)
         self.assertTrue(report['same_credential_through_grant_expiry'])
         self.assertIn(lifecycle.expiry_grant, server.expired_grants)
         self.assertIsNone(server.grants[lifecycle.expiry_grant]['revocation'])
@@ -212,6 +235,20 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(server.memberships, {})
         self.assertEqual([call.args[0] for call in self.browser.wait.call_args_list], ['department', 'project_group'])
         self.assertEqual([call.args[0] for call in self.browser.release.call_args_list], ['department', 'project_group'])
+        self.assertTrue(report['meta_recovery']['verified_without_rescan'])
+        self.assertEqual(self.scans.call_count, 2)
+
+    def test_meta_recovery_rejects_fallback_wrong_status_lost_deny_and_leaks(self):
+        for fault in ('outage_fallback', 'outage_masquerades_as_missing', 'outage_leaks', 'recovery_loses_deny'):
+            with self.subTest(fault=fault):
+                server, lifecycle = self.lifecycle(fault)
+                with self.assertRaises(ONLINE.SuiteError):
+                    lifecycle.meta_recovery_flow({}, self.facts, ONLINE.locator(2, 'metric_people', 10),
+                                                  ONLINE.locator(2, 'metric_events', 11))
+                lifecycle.cleanup()
+                self.assertFalse(server.meta_down)
+                self.assertFalse(any(server.denies.values()))
+                self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_browser_failure_still_withdraws_both_organization_grants(self):
         server, lifecycle = self.lifecycle()
@@ -456,6 +493,102 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 self.assertFalse(any(server.denies.values()))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
                 self.assertNotIn('private-token', json.dumps(report))
+
+
+class PGMetaOutageTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.env = {'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
+            'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'POSTGRES_DB': 'addp_online',
+            'META_URL': 'http://127.0.0.1:8082', 'MANAGER_URL': 'http://127.0.0.1:8081',
+            'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000',
+            'ADDP_ONLINE_SECRET_DIR': self.directory.name,
+            'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'must-not-inherit',
+            'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'must-not-inherit',
+            'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'must-not-inherit'}
+        patch.dict(ONLINE.os.environ, self.env, clear=True).start()
+        patch.object(ONLINE.sys, 'platform', 'linux').start()
+        patch.object(ONLINE.os, 'uname', return_value=SimpleNamespace(machine='x86_64')).start()
+        patch.object(ONLINE.Path, 'exists', return_value=False).start()
+        patch.object(ONLINE.PREFLIGHT, 'git', return_value='commit').start()
+        self.addCleanup(patch.stopall)
+
+    def identity(self, module, recovered=False):
+        return {'instance_id': 'new' if recovered and module == 'meta' else 'original-' + module,
+                'started_at': '2026-10-16T01:01:00+00:00' if recovered and module == 'meta' else '2026-10-16T01:00:00+00:00',
+                'build_id': module + '-build', 'git_commit': 'commit', 'source_fingerprint': module + '-source'}
+
+    def test_unsafe_host_is_refused_before_lifecycle(self):
+        with patch.dict(ONLINE.os.environ, {'GITHUB_ACTIONS': 'false'}), patch.object(ONLINE.subprocess, 'run') as run:
+            with self.assertRaises(ONLINE.SuiteError):
+                REAL_META_OUTAGE()
+            run.assert_not_called()
+
+    def test_health_uses_shared_client_and_the_actual_gateway_standalone_contract(self):
+        outage = REAL_META_OUTAGE()
+        payload = {'module': 'meta', 'status': 'ready', 'role': 'backend', 'registration_state': 'registered',
+            'instance_id': 'ca8c0683-5f9f-4d15-9c97-f00bb74ba05c', 'started_at': '2026-10-16T01:00:00+00:00',
+            'built_at': '2026-10-16T00:00:00+00:00', 'build_id': 'build', 'git_commit': 'commit', 'source_fingerprint': 'sha256:source'}
+        with patch.object(ONLINE.API, 'GatewayClient') as client:
+            client.return_value.request.return_value.payload = payload
+            self.assertEqual(outage.snapshot('meta')['instance_id'], payload['instance_id'])
+            self.assertEqual(client.call_args.args, ('http://127.0.0.1:8082', '', 10))
+            self.assertEqual(client.return_value.request.call_args.args, ('GET', '/health/ready', (200,)))
+            payload['module'] = 'gateway'
+            for key in ('role', 'registration_state', 'instance_id'):
+                payload.pop(key)
+            self.assertNotIn('instance_id', outage.snapshot('gateway'))
+            payload['git_commit'] = 'different-build'
+            with self.assertRaises(ONLINE.PREFLIGHT.PreflightError):
+                outage.snapshot('gateway')
+
+    def test_standard_stop_start_private_output_and_identity_verification(self):
+        outage = REAL_META_OUTAGE()
+        snapshots = lambda module: self.identity(module, run.call_count == 2)
+        with patch.object(outage, 'snapshot', side_effect=snapshots), \
+             patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run, \
+             patch.object(ONLINE.socket, 'create_connection', side_effect=ConnectionRefusedError):
+            with outage:
+                self.assertTrue(outage.stopped)
+            self.assertEqual([call.args[0] for call in run.call_args_list], [
+                ['bash', 'scripts/dev/stop.sh', '-meta'], ['bash', 'scripts/dev/start.sh', '-meta']])
+            for call in run.call_args_list:
+                self.assertFalse(any(key.startswith(('ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_ADMIN_USER_',
+                                                     'ADDP_ONLINE_FIXTURE_')) for key in call.kwargs['env']))
+                self.assertEqual(call.kwargs['timeout'], 120)
+                self.assertTrue(Path(call.kwargs['stdout'].name).resolve().is_relative_to(Path(self.directory.name).resolve()))
+
+    def test_failure_and_live_listener_still_attempt_recovery(self):
+        for cause in ('body', 'listener', 'stop', 'timeout'):
+            with self.subTest(cause=cause):
+                outage = REAL_META_OUTAGE()
+                snapshots = lambda module: self.identity(module, run.call_count == 2)
+                failure = ONLINE.subprocess.TimeoutExpired('stop', 120) if cause == 'timeout' else SimpleNamespace(returncode=1)
+                with patch.object(outage, 'snapshot', side_effect=snapshots), \
+                     patch.object(ONLINE.subprocess, 'run', side_effect=[failure if cause in {'stop', 'timeout'} else SimpleNamespace(returncode=0),
+                                                                       SimpleNamespace(returncode=0)]) as run, \
+                     patch.object(ONLINE.socket, 'create_connection', side_effect=None if cause == 'listener' else ConnectionRefusedError):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        with outage:
+                            raise ONLINE.SuiteError('injected body failure')
+                    self.assertEqual(run.call_count, 2)
+
+    def test_recovery_rejects_noop_changed_build_or_another_owner_restart(self):
+        for fault in ('noop', 'build', 'other_owner'):
+            with self.subTest(fault=fault):
+                outage = REAL_META_OUTAGE()
+                def snapshot(module):
+                    result = self.identity(module, run.call_count == 2 and fault != 'noop')
+                    if run.call_count == 2 and ((fault == 'build' and module == 'meta') or (fault == 'other_owner' and module == 'system')):
+                        result['build_id'] = 'changed'
+                    return result
+                with patch.object(outage, 'snapshot', side_effect=snapshot), \
+                     patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run, \
+                     patch.object(ONLINE.socket, 'create_connection', side_effect=ConnectionRefusedError):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        with outage:
+                            pass
 
 
 class PGBrowserObservationTest(unittest.TestCase):

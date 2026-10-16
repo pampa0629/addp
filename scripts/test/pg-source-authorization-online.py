@@ -7,6 +7,7 @@ import math
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 API = import_module('scripts.utils.online-api')
+PREFLIGHT = import_module('scripts.test.online-preflight')
 REGISTRATION = import_module('scripts.test.online-engine-registration')
 SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
@@ -121,6 +123,80 @@ def preview(reader, target, allowed, expected=None):
             'Manager did not read the deterministic PG source')
     if expected is not None:
         require(data.get('total') == expected, 'PG source row count changed')
+
+
+class MetaOutage:
+    """Fault only the Meta dependency in the existing disposable Hosted deployment."""
+
+    def __init__(self):
+        self.repository = Path(__file__).resolve().parents[2]
+        required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
+                    'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online',
+                    'META_URL': 'http://127.0.0.1:8082', 'MANAGER_URL': 'http://127.0.0.1:8081',
+                    'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000'}
+        require(all(os.environ.get(key) == value for key, value in required.items()) and sys.platform == 'linux'
+                and os.uname().machine == 'x86_64' and not (self.repository / '.env').exists(),
+                'Meta outage requires the isolated Hosted PG deployment')
+        self.secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+        require(self.secret.is_absolute() and self.secret.is_dir() and not self.secret.resolve().is_relative_to(self.repository),
+                'Meta outage requires an external Hosted Secret directory')
+        self.secret = self.secret.resolve()
+        self.commit = PREFLIGHT.git(self.repository, 'rev-parse', 'HEAD')
+        self.stopped = False
+
+    def snapshot(self, module):
+        service = PREFLIGHT.parse_service(module + '=' + os.environ[module.upper() + '_URL'])
+        payload = API.GatewayClient(service.base_url, '', 10).request('GET', '/health/ready', (200,)).payload
+        PREFLIGHT.validate_health(service, payload, self.commit, 'ready')
+        fields = ('started_at', 'build_id', 'git_commit', 'source_fingerprint')
+        # System/Gateway standalone health publishes build/start identity, not registration identity.
+        if module in {'meta', 'manager'}:
+            require(payload.get('role') == 'backend' and payload.get('registration_state') == 'registered'
+                    and str(uuid.UUID(payload['instance_id'])) == payload['instance_id'], 'invalid Hosted backend identity')
+            fields += ('instance_id',)
+        return {key: payload[key] for key in fields}
+
+    def run(self, operation):
+        require(operation in {'stop', 'start'}, 'Meta outage permits only standard stop/start')
+        environment = {key: value for key, value in os.environ.items() if not key.startswith((
+            'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_FIXTURE_', 'ADDP_ONLINE_ADMIN_USER_'))}
+        environment['SKIP_MODTIDY'] = '1'
+        with (self.secret / 'pg-meta-lifecycle.log').open('a') as log:
+            os.chmod(log.name, 0o600)
+            try:
+                result = subprocess.run(['bash', f'scripts/dev/{operation}.sh', '-meta'], cwd=self.repository,
+                    env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=120, check=False)
+            except subprocess.TimeoutExpired as error:
+                raise SuiteError('Meta fault lifecycle exceeded its bounded deadline') from error
+        require(result.returncode == 0, 'Meta fault lifecycle failed')
+
+    def __enter__(self):
+        self.before = {module: self.snapshot(module) for module in ('meta', 'system', 'gateway', 'manager')}
+        self.stopped = True  # Also restore an unknown stop outcome.
+        try:
+            self.run('stop')
+            try:
+                with socket.create_connection(('127.0.0.1', 8082), timeout=3):
+                    raise SuiteError('Meta Backend still accepts connections')
+            except ConnectionRefusedError:
+                pass
+            return self
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *_):
+        if self.stopped:
+            self.run('start')
+            self.stopped = False
+            self.after = {module: self.snapshot(module) for module in self.before}
+            before, after = self.before['meta'], self.after['meta']
+            require(before['instance_id'] != after['instance_id']
+                    and datetime.fromisoformat(after['started_at']) > datetime.fromisoformat(before['started_at'])
+                    and all(before[key] == after[key] for key in ('build_id', 'git_commit', 'source_fingerprint')),
+                    'Meta recovery did not prove a new process with identical build inputs')
+            require(all(self.before[module] == self.after[module] for module in ('system', 'gateway', 'manager')),
+                    'Meta outage changed another running owner')
 
 
 class BrowserObservation:
@@ -464,6 +540,53 @@ class Lifecycle:
             report['checks'].extend(BROWSER_CHECKS)
         report['checks'].append('organization_grants_and_history_survive_member_exit')
 
+    def meta_recovery_flow(self, report, facts, target, ungranted):
+        report['phase'] = 'meta_dependency_recovery'
+        token = self.reader.token
+        grant, _ = self.grant(facts)
+        evidence = report['meta_recovery'] = {'grant_id': grant}
+        preview(self.reader, target, True, 2)
+        with MetaOutage() as outage:
+            evidence['before'] = outage.before
+            report['phase'] = 'meta_outage_facts_probe'
+            response = self.operator.request('GET', self.base + '/data-items/' + facts['item_fingerprint']
+                                             + '/authorization-facts', (503,)).payload
+            require(set(response) == {'error', 'error_code'} and response['error_code'] == 'authorization_facts_unavailable',
+                    'Meta outage was not a bounded facts dependency failure')
+            report['phase'] = 'meta_outage_preview_probe'
+            response = self.reader.request('GET', '/api/v1/manager/preview?' + urlencode({
+                'locator': target, 'page': 1, 'page_size': 20}), (503,)).payload
+            require(set(response) == {'error', 'error_code'} and response['error_code'] == 'authorization_service_unavailable',
+                    'Meta outage leaked content or masqueraded as an absent scan')
+            report['phase'] = 'meta_outage_known_target_deny'
+            deny = self.deny(facts)
+            evidence['deny_id'] = deny
+            report['phase'] = 'meta_dependency_restart'
+        # No scan, re-login, new Grant, or rule repair is permitted during recovery.
+        evidence['after'] = outage.after
+        report['phase'] = 'meta_recovery_binding_and_history'
+        after = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        require(after['item_fingerprint'] == facts['item_fingerprint'] and after['boundary_hash'] == facts['boundary_hash']
+                and self.reader.token == token, 'Meta recovery changed the resource binding or reader credential')
+        active = self.listing(history=True, state='active')['data']
+        require(len(active) == 1 and active[0]['request_id'] == grant and active[0].get('revocation') is None
+                and active[0]['boundary_hash'] == facts['boundary_hash'], 'recovery altered the original Grant')
+        report['phase'] = 'meta_recovered_deny_still_blocks'
+        preview(self.reader, target, False)
+        preview(self.reader, ungranted, False)
+        report['phase'] = 'meta_recovery_explicit_release_and_withdrawal'
+        self.release(deny)
+        preview(self.reader, target, True, 2)
+        self.revoke(grant)
+        preview(self.reader, target, False)
+        evidence.update({
+            'facts_status': 503, 'unavailable_preview_status': 503, 'recovered_preview_status': 403,
+            'released_preview_status': 200, 'same_credential': True, 'verified_without_rescan': True,
+            'grant_id': grant, 'deny_id': deny})
+        report['checks'].extend(['meta_outage_blocks_existing_grant', 'known_target_deny_created_offline',
+            'meta_recovery_preserves_identity_boundary_and_grant', 'deny_survives_meta_recovery_without_rescan',
+            'explicit_release_restores_original_grant_then_withdrawal_denies'])
+
     def run(self, report):
         reader_before = self.reader.token
         report['phase'] = 'initial_basic_scan'
@@ -523,6 +646,7 @@ class Lifecycle:
                               'deny_overrides_grant', 'release_restores_read', 'revoke_denies_read', 'natural_expiry_denies_read'])
         self.organization_flow(report, facts, target, ungranted)
         self.membership_flow(report, facts, target, ungranted)
+        self.meta_recovery_flow(report, facts, target, ungranted)
 
 
 def main():
@@ -574,7 +698,7 @@ def main():
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
         report['result'] = 'passed'
-    except (SuiteError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError):
+    except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
     finally:
         if lifecycle is not None:

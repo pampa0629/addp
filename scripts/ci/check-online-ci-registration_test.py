@@ -33,7 +33,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'lifecycle.cleanup()'),
                                    (paths[4], '@$(MAKE) test-pg-authorization-online-runner'),
                                    (paths[2], 'playwright install --with-deps chromium'),
-                                   (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin')):
+                                   (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin'),
+                                   (paths[3], 'self.meta_recovery_flow('), (paths[3], 'with MetaOutage()')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))

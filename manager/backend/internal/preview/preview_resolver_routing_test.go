@@ -277,6 +277,36 @@ func TestResolvePreviewRequestRejectsOfflineEngineBeforeMetaLookup(t *testing.T)
 	}
 }
 
+func TestPGPreviewDoesNotTreatMetaOutageAsMissingScan(t *testing.T) {
+	for _, status := range []int{404, 403, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Path == "/api/v1/system/engines/26" {
+				_, _ = w.Write([]byte(`{"id":26,"tenant_id":1,"engine_type":"postgresql","connection_info":{},"lifecycle_state":"active","connection_status":"online"}`))
+				return
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":"private-dependency-body"}`))
+		}))
+		resolver := NewPreviewResolver(NewPreviewRegistry(),
+			client.NewSystemClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "system-token", nil })),
+			client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "meta-token", nil })))
+		tenant := uint(1)
+		for _, locator := range []string{
+			"addp://engine/26/path/public/users?type=table", "addp://engine/26/path/public/users?type=table&item_id=1831",
+			"addp://engine/26/path/public?type=schema", "addp://engine/26/path/public?type=schema&node_id=1830",
+		} {
+			_, err := resolver.ResolveRequestFromURIWithSelection(t.Context(), locator,
+				1, 20, "", "", "", plugin.GraphSampleFilter{}, &tenant)
+			if err == nil || errors.Is(err, ErrPreviewRequiresScannedMeta) != (status == 404) ||
+				errors.Is(err, ErrPreviewMetadataUnavailable) != (status != 404) {
+				t.Fatalf("Meta HTTP %d incorrectly classified as missing scan: %v", status, err)
+			}
+		}
+		server.Close()
+	}
+}
+
 func TestPreviewResolverScopesRuntimeDescriptorClientByTenant(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer tenant-runtime-token" {

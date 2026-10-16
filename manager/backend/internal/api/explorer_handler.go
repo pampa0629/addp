@@ -269,7 +269,7 @@ func writePreviewAuthorizationError(c *gin.Context, err error) bool {
 		managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
 	case errors.Is(err, commonClient.ErrManagerPreviewReadDenied), errors.Is(err, preview.ErrSourceAuthorizationRequired):
 		accessDeniedToEngine(c)
-	case errors.Is(err, commonClient.ErrManagerPreviewReadUnavailable):
+	case errors.Is(err, commonClient.ErrManagerPreviewReadUnavailable), errors.Is(err, preview.ErrPreviewMetadataUnavailable):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable), "error_code": "authorization_service_unavailable"})
 	case errors.Is(err, managerprotection.ErrRequired):
 		protectionRequired(c)

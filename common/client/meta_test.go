@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,28 @@ func newTestMetaClient(baseURL string) *MetaClient {
 	return NewMetaClient(baseURL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "test-token", nil
 	}))
+}
+
+func TestMetaCatalogLookupsPreserveTypedErrorsWithoutResponseBodies(t *testing.T) {
+	for _, status := range []int{404, 403, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":"private-upstream-body","error_code":"lookup_failure"}`))
+		}))
+		c := newTestMetaClient(server.URL).WithTenantID(7)
+		for _, lookup := range []func() error{
+			func() error { _, err := c.GetItemByID(1); return err },
+			func() error { _, err := c.GetNodeByID(1); return err },
+			func() error { _, err := c.GetItemByCatalogPath(2, "public.people"); return err },
+			func() error { _, err := c.GetNodeByCatalogPath(2, "public"); return err },
+		} {
+			err := lookup()
+			if got, ok := TenantAPIStatusCode(err); !ok || got != status || strings.Contains(err.Error(), "private-upstream-body") {
+				t.Fatalf("lookup lost safe typed HTTP status: %v", err)
+			}
+		}
+		server.Close()
+	}
 }
 
 func TestMetaClientGetDataItemSecurityFactsUsesExactRuntimeContract(t *testing.T) {

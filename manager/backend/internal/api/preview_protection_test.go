@@ -104,6 +104,7 @@ func TestPreviewAuthorizationErrorsAreStableAndDoNotExposeUpstreamDetails(t *tes
 		{commonClient.ErrManagerPreviewCredentialRejected, 401},
 		{commonClient.ErrManagerPreviewReadDenied, 403},
 		{commonClient.ErrManagerPreviewReadUnavailable, 503},
+		{preview.ErrPreviewMetadataUnavailable, 503},
 		{preview.ErrSourceAuthorizationRequired, 403},
 		{managerprotection.ErrRequired, 403},
 	} {
