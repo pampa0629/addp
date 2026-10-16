@@ -539,12 +539,14 @@ test('ER entry starts scoped and restores domain and related edges from the URL'
   await expect(page.getByText('导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入按当前租户精确解析业务域与数据元编码，先预览且只增量创建缺失项，不删除或覆盖现有实体与关系。')).toBeVisible()
 })
 
-test('entity list opens the ER diagram in its current business domain', async ({ page }) => {
+test('entity list leaves ER diagram navigation to the sidebar', async ({ page }) => {
   await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.entity_relation.read'] })
   await page.goto('/entities?domain_id=2')
-  await page.getByRole('button', { name: '实体关系图（ER图）', exact: true }).click()
-  await expect(page).toHaveURL(/er-diagram\?domain_id=2$/)
-  await expect(page.locator('.domain-filter')).toContainText('户外域')
+  await expect(page.locator('.search-card')).toBeVisible()
+  await expect(page.getByRole('button', { name: '实体关系图（ER图）', exact: true })).toHaveCount(0)
+  await page.getByRole('menuitem', { name: '实体关系图', exact: true }).click()
+  await expect(page).toHaveURL(/\/er-diagram$/)
+  await expect(page.getByText('请先选择业务域，或主动选择全部业务域查看总览')).toBeVisible()
 })
 
 test('dimensional modeling filters facts by domain and restores selection with cross-domain dimensions', async ({ page }) => {

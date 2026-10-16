@@ -43,6 +43,7 @@
       },
       "title": "元数据扫描",
       "storageEngineList": "存储引擎列表",
+      "hideOfflineEngines": "隐藏离线引擎",
       "unscannedScan": "一键补扫未扫描引擎",
       "engineInfo": "引擎信息",
       "statusOverview": "状态概览",

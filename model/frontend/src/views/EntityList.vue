@@ -1,8 +1,5 @@
 <template>
   <div class="entity-list">
-    <div class="diagram-entry">
-      <el-button v-if="can('model.entity.read') && can('model.entity_relation.read')" @click="openERDiagram">{{ t('model.er_diagram.title') }}</el-button>
-    </div>
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
@@ -125,7 +122,6 @@
 
 <script setup>
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
-import { buildERDiagramRouteQuery } from '../utils/routeState'
 
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -141,7 +137,6 @@ import { buildEntityListRouteQuery, resolveEntityListRouteState } from '../utils
 const { t } = useI18n()
 
 const router = useRouter()
-const openERDiagram = () => navigateModelRoute(router, { path: '/er-diagram', query: buildERDiagramRouteQuery({ domainId: searchForm.domain_id }) })
 const route = useRoute()
 const authStore = useAuthStore()
 const can = permission => authStore.hasPermission(permission)
@@ -319,7 +314,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.diagram-entry { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .entity-list {
   padding: 20px;
 }

@@ -42,6 +42,9 @@
         <div class="left-panel" :style="{ width: leftPanelWidth + 'px' }">
           <div class="panel-header">
             <h3>{{ t('meta.scan.storageEngineList') }}</h3>
+            <el-checkbox v-model="hideOfflineEngines">
+              {{ t('meta.scan.hideOfflineEngines') }}
+            </el-checkbox>
             <el-button
               v-if="canExecuteScan"
               type="primary"
@@ -434,6 +437,7 @@ const FAILED_SCAN_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'cancele
 
 // 引擎列表
 const engines = ref([])
+const hideOfflineEngines = ref(true)
 const resourceTableRef = ref(null)
 const loadingResources = ref(false)
 const selectedResource = ref(null)
@@ -483,10 +487,9 @@ let resizeStartWidth = leftPanelWidth.value
 let disposed = false
 let scanStatusTimer = 0
 
-// 计算属性：过滤后的引擎列表（当前不进行筛选，直接返回所有引擎）
-const filteredEngines = computed(() => {
-  return engines.value
-})
+const filteredEngines = computed(() => hideOfflineEngines.value
+  ? engines.value.filter(engine => engine.connection_status !== 'offline')
+  : engines.value)
 
 const selectedCatalogIsDirectLeaf = computed(() => isDirectLeafCatalog(selectedResource.value))
 

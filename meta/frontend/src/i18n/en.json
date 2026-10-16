@@ -43,6 +43,7 @@
       },
       "title": "Metadata Scan",
       "storageEngineList": "Storage Engines",
+      "hideOfflineEngines": "Hide offline engines",
       "unscannedScan": "Scan Unscanned Engines",
       "engineInfo": "Engine Info",
       "statusOverview": "Status Overview",
