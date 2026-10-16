@@ -281,13 +281,13 @@ Schema change 公共观测只通过触发阻塞的 execution metadata 投影。M
 启用 `auto_scan_metadata` 后：
 
 - bounded execution 成功写入后扫描一次。
-- 普通业务 Kafka continuous 目标首次成功建立结构后提交一次目标父 catalog deep scan，不等待任务结束。
+- 普通业务 Kafka continuous 目标首次成功建立结构后提交一次目标表的精确 deep scan，不等待任务结束。
 - 数据库 CDC 通过同一 generation-owned 单分区 data topic 中的 Debezium `Initial Snapshot` 通知推进目标 `skip`；只有严格匹配当前 connector 的 `COMPLETED` 通知在目标 ledger 和 Transfer position 提交后才触发首次扫描，空源表同样触发，不依赖数据事件或 `source.snapshot=last`。
 - continuous 首次扫描使用持久化 claim，避免 recovery、resume 或并发实例重复提交；失败或过期 claim 由后续 runtime session 重新领取。
 - 人工 additive schema migration 成功后再次扫描。
 - 普通 DML、单条事件和单个 batch 不触发扫描。
 
-Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发扫描，不直接写目标 Meta attributes。
+Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发扫描，不直接写目标 Meta attributes。原生表扫描必须提交完整表 locator 的 `targets`，bounded 写后、continuous 首次扫描和 additive migration 补扫均不得扩大到所属 schema／database。
 
 ## 九、Infra Kafka 与业务 Kafka
 

@@ -448,18 +448,20 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 `auto_scan_metadata=true` 时，Transfer 按 runtime boundary 触发 Meta deep scan：
 
 - bounded execution 在成功写入后扫描一次。
-- 普通业务 Kafka continuous execution 不等待任务结束；目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交一次目标父 catalog 扫描。
+- 普通业务 Kafka continuous execution 不等待任务结束；目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 提交一次目标表的精确扫描。
 - 数据库 CDC connector 把 Debezium `Initial Snapshot` 通知写入当前 generation-owned 单分区 data topic；所有合法通知作为目标 `skip` 推进，只有严格匹配当前 connector 的 `COMPLETED` 所在 offset 在目标 ledger 和 Transfer position 提交后才触发扫描。空源表同样触发，不依赖数据事件或 `source.snapshot=last`。
 - continuous 首次扫描使用持久化 claim 防止 worker recovery、resume 或并发实例重复提交；Meta 提交失败不阻断数据面，失败或过期 claim 由后续 runtime session 重新领取。
 - 目标 schema 经正式审批发生变化后再次扫描；普通 DML、单条事件和单个 batch 不扫描。持续变化的行数等统计由低频计划扫描或手动刷新维护。
 
 Transfer 不直接推导目标文件 attributes。GeoJSON 导出目标使用独立 `format=geojson` 写出；写后扫描由 Meta 按统一格式探测和 GeoJSON provider 解析目标内容，负责写入 `type_info.table`、`format_info.geojson` 和实际存在的 `capabilities.spatial`。
 
+bounded 写后、continuous 首次建表／CDC 初始快照完成及结构变更审批后的扫描都遵守同一范围约束：缺少精确目标时不得提交父范围或全引擎扫描。
+
 Transfer 只提交本次实际写出的目标边界；encoded/raw content 目标使用 `ref_groups`，不扩大为父目录扫描：
 
 | 目标类型 | 扫描目标 |
 |---|---|
-| native table | schema 或 database。 |
+| native table | 完整 `targets` 表 locator，保留 schema／database 和表名；不扫描父范围。 |
 | NFS encoded/raw file | 单文件 `ref_groups`。 |
 | MinIO / S3 encoded/raw object | 单对象 `ref_groups`。 |
 | Shapefile refs | 本次实际生成的 refs group，不补不存在的 sidecar refs。 |
