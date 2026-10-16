@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 24 复核 `ebe4ebb99` 的当前用户来源固化与产物扫描归属变更，更新 handler/service 的已提交来源及摘要。人工启动、恢复和重放使用当前用户，创建能力仍只保存停止态定义，不创建执行或扫描；选定覆盖、权限及确认条件不变。沿用平台来源审查、Ontology Go 与 PostgreSQL/FalkorDB 发布门禁，无新增入口或依赖。
+
 平台 Transfer 修订 23 复核 `001b0a4db` 的运行后扫描范围修正：bounded、continuous 和结构变更后的扫描只提交目标表 locator，不扩大到 schema／database。这里只更新两份规范来源冻结；创建能力仍禁止自动扫描，不改变条件、权限、确认或选定覆盖范围。现有平台来源审查、Ontology Go、PG／FalkorDB 发布门禁覆盖修订，无新增入口或依赖。
 
 平台 User 的 Console `/ontology/platform/definitions` 与 `/:capability` 只读核实当前 active 定义，展示概念关系、条件/效果/排除效果、事实入口、选定覆盖范围及逐项冻结依据。目录/详情 API 为 `GET /platform/definitions` 与 `/{capability}`，详情从一次 PG active 读取恢复同一快照的 context/review，不读仓库文件或业务实例。独立 `ontology.platform_definition.read` 仅 Platform Scope、不可委托，System 向前迁移 000203 默认组合进平台系统管理员；不扩张 Tenant 或机器 Runtime。原 Agent 精简消费契约及权限不变。前端直接复用 common-frontend 的 OntologyView 和锁定的 G6 4.8.24，模块仅适配已发布成员；无在线编辑或任意图查询。已有 Go、IAM PostgreSQL、Ontology PostgreSQL、共享前端、Console 和 Ontology 前端标准入口覆盖 API/迁移/鉴权及确定性浏览器；CI 自动发现覆盖同一入口，无新增 Job。个人环境须由用户重启 System/Ontology 才加载权限及 API，不把受控 T3 当作正式 T4。

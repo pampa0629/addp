@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "091391c54da947501bdc5010bc94e765ab43077e",
-      "sha256": "e6445c07e0c51fdd59cb0b26f92a71a4fc4fd97b521be49736fa958a1b653306",
+      "commit": "ebe4ebb999f142010653d6eb33d4691b50a60703",
+      "sha256": "1805918e90a9bd994205a544c11c1b64428917d1a7bf9ed3c136195bd570e0c8",
       "use": {
-        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检按写入策略检查删除能力的双语注释，创建条件与权限不变",
-        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed bilingual precheck annotations for apply-policy delete capability checks, without changing creation conditions or permissions"
+        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检按写入策略检查删除能力的双语注释，创建条件与权限不变；复核人工启动、恢复与重放固化当前用户来源，创建仍仅保存停止态定义，不创建执行或扫描",
+        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed bilingual precheck annotations for apply-policy delete capability checks, without changing creation conditions or permissions; reviewed current User origin capture for manual start, resume and replay; creation still persists a stopped definition without an execution or scan"
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "6e30cd0d5cbcffb362cdc240ba75aba9401a56d8",
-      "sha256": "18cda9a7ac7f84639537157ede432f90e815dc67dd7cc697616ab60c39fb8741",
+      "commit": "ebe4ebb999f142010653d6eb33d4691b50a60703",
+      "sha256": "d605e68e12a017db1ed24adbf4c799a8ba37d890f84f3bee27ba6a2d3d8db72f",
       "use": {
-        "zh-cn": "持久化任务定义及初始状态，不启动 execution",
-        "en": "Persist task definition and initial state without starting execution"
+        "zh-cn": "持久化任务定义及初始状态，不启动 execution；复核人工启动、恢复与重放固化当前用户来源，创建仍仅保存停止态定义，不创建执行或扫描",
+        "en": "Persist task definition and initial state without starting execution; reviewed current User origin capture for manual start, resume and replay; creation still persists a stopped definition without an execution or scan"
       }
     },
     {
