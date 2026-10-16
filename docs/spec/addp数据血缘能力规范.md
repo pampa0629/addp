@@ -182,6 +182,8 @@ Service 仍由 Service 模块拥有，Meta 只保存用于血缘查询的关系�
 - 只有真实读写 owner 可以产生资源级 lineage facts。
 - Orchestrator 只通过 `parent_execution_id` 提供父执行上下文，不重复生成资源边。
 
+Develop 算子工作流按本次 execution 冻结并应用执行参数后的工作流生成资源血缘。每个读取节点使用独立的 `input.<节点ID>` 端口，每个实际产出节点使用独立的 `output.<节点ID>` 端口；同一节点的批量产物共用该节点输出端口并逐项保留真实 ResourceLocator 和写入模式。每个产出节点单独声明 `derive` operation，只关联该节点直接读取的资源，以及沿参数中的标准 `$ref` 数据引用追溯到的读取节点。数组与嵌套对象中的引用同样参与追溯，重复来源去重；未参与该产物计算的读取节点不产生该产物的来源边。`depends_on` 只约束执行顺序，不证明资源来源；不得把整个工作流的所有输入和输出做交叉配对。Meta 继续只消费既有 `lineage_facts` 端口和 operations，不解析 Develop 私有 DAG，不登记运行时内存对象。
+
 ### 4.2 服务发布事实
 
 Service 发布或变更一个版本时，必须向 Meta collector 提供等价的发布事实：

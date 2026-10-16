@@ -683,11 +683,10 @@ func developLineageFacts(devTask *models.DevTask, outputs commonModels.JSONMap) 
 	if devTask == nil {
 		return nil
 	}
-	inputSource := devTask.Content["inputs"]
 	if devTask.DevType == commonExecution.TaskTypeWorkflow {
-		inputSource = devTask.Content["workflow_definition"]
+		return workflowLineageFacts(devTask.Content["workflow_definition"], outputs)
 	}
-	inputs := collectLineageRefs(inputSource, "input")
+	inputs := collectLineageRefs(devTask.Content["inputs"], "input")
 	outputRefs := collectLineageRefs(outputs, "output")
 	if targetLocator := devTask.GetTargetLocator(); strings.TrimSpace(targetLocator) != "" {
 		outputRefs = append(outputRefs, commonExecution.LineageResourceRef{Port: "output", Locator: targetLocator})
@@ -728,8 +727,8 @@ func collectLineageRefs(value interface{}, port string) []commonExecution.Lineag
 				}
 				refs = append(refs, ref)
 			}
-			for _, item := range typed {
-				visit(item)
+			for _, key := range workflowLineageMapKeys(typed) {
+				visit(typed[key])
 			}
 		}
 	}

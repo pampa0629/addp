@@ -51,6 +51,10 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 							"locator": "addp://engine/1/path/public/source?type=table&item_id=11",
 						},
 					},
+					map[string]interface{}{
+						"id": "save_3", "operator": "save",
+						"params": map[string]interface{}{"input": map[string]interface{}{"$ref": "load_1", "port": "default"}},
+					},
 				},
 			},
 		},
@@ -69,7 +73,7 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 	if facts.Outputs[0].WriteMode != "replace" {
 		t.Fatalf("output write_mode = %q, want replace", facts.Outputs[0].WriteMode)
 	}
-	if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || facts.Operations[0].Operator != "develop" {
+	if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || facts.Operations[0].Operator != "save" {
 		t.Fatalf("facts = %#v", facts)
 	}
 }

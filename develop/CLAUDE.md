@@ -74,6 +74,8 @@ Spark MinIO 保存固定普通 Parquet + create，由执行 UUID 和节点身份
 
 文件、对象或目录型持久化转换算子使用 `addp.workflow.access-plan/v1`。工作流定义只保存 `locator`、`target_parent_locator + target_name`、`write_mode` 和公开转换选项；Develop 必须分别解析源、目标存储引擎并构造执行期访问计划，不能用一个共享 `engine_id/connection_info` 覆盖两端资源。转换成功后由 Develop 根据目标生成 `produced_targets` 并提交 Meta 深度扫描。
 
+工作流资源血缘由 Develop 根据本次 execution 冻结并应用参数后的 DAG 生成。读取、实际输出分别使用节点专属端口，每个产出节点只关联直接读取及沿标准 `$ref` 数据流追溯到的来源；嵌套数组、串联节点和批量产物复用同一路径。`depends_on` 只表示执行顺序，独立分支不得互连。Meta 继续消费既有 `lineage_facts`，不反向解析工作流。回归由现有 `make test-module MODULE=develop` 的 Go T1 自动发现；无需新增 CI 入口。
+
 Model3D 的 DAE、3DS、MAX 转 GLB，SuperMap 的 SGM 转 OSGB，以及 Document 的 PPTX 转 PDF 均通过显式 Adapter 接入。DAE、3DS、MAX 从所选主文件定位父目录并保留 entrypoint，以供运行时读取相邻资源；SGM 和 PPTX 使用单文件源。MAX 公开 `source_unit` 与 `texture_files`，PPTX 公开 `strip_embedded_media`；选项的名称和说明使用 Develop 国际化消息，算子发现按请求语言返回。输出只写用户选择的业务存储，复用现有授权、稳定输出与 Meta 扫描，不登记 Manager 私有快显结果，也不在单引擎工作流中隐式调用另一运行时。验证沿用 `make test-module MODULE=develop`，新增 Go 测试由现有 Go CI 自动发现，无新增依赖或门禁。
 
 参数面板中的公开 `array/object/json` 参数统一以 JSON 文本编辑，保存时还原结构化值；重新打开已保存节点必须保留数组和对象内容，不得显示 `[object Object]` 或将数组退化为逗号拼接的字符串。浏览器回归由既有 `make test-develop-frontend` 和 Frontend CI 自动发现。
