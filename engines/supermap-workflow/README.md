@@ -106,6 +106,8 @@ SGM_LOCAL_REPORT=/tmp/sgm-local-report.json make test-manager-sgm-local
 
 SuperMap 通过 System 现有扩展工作流登记契约提交完整能力声明；System 验证声明并探测真实健康与算子接口，测试不新增登记路径。
 
+仓库外临时目录保持 `0700`，内部 Git 检出使用标准文件权限（普通文件 `0644`、跟踪的可执行文件 `0755`）。不能把保密文件使用的 `umask 077` 传播到源码检出，否则 Docker COPY／Vite 会保留公开插件的 `0600` 权限，导致 Nginx 非 root 用户读取清单时返回 403；SDK、凭据和原始日志仍受外层私有目录与各自的保密权限保护。
+
 SDK、许可、厂商 SGM／PNG、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
 
 ### 许可边界

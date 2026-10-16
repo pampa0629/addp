@@ -105,6 +105,14 @@ def snapshot_module(checkout, name):
     return module
 
 
+def clone_source(source, checkout):
+    # The enclosing lifecycle directory remains private (0700). Git's tracked
+    # source must retain ordinary checkout modes inside it: Docker COPY/Vite
+    # preserve public-file modes, and nginx must read those files as non-root.
+    T2.command(["bash", "-c", 'umask 022; exec "$@"', "_", "git", "clone", "--local", "--no-hardlinks",
+                "--single-branch", "--branch", "main", str(source), str(checkout)], timeout=180)
+
+
 def published_port(life, service, port):
     info = json.loads(life.docker("inspect", life.run_id + "-" + service))[0]
     T2.require(info["Config"]["Labels"].get(LABEL) == life.run_id, "service ownership mismatch")
@@ -323,7 +331,7 @@ def run(life, result):
         expected = T2.command(["git", "show", f"{commit}:{relative}"])
         T2.require((ROOT / relative).read_text() == expected, "commit the local SGM harness before real acceptance")
     checkout = life.work / "checkout"
-    T2.command(["git", "clone", "--local", "--no-hardlinks", "--single-branch", "--branch", "main", str(ROOT), str(checkout)], timeout=180)
+    clone_source(ROOT, checkout)
     T2.ROOT = checkout
     T2.require(T2.command(["git", "rev-parse", "HEAD"]).strip() == commit, "main changed while snapshotting")
     MANAGER = snapshot_module(checkout, "manager-internal-artifact-lineage-online")

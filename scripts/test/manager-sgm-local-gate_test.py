@@ -20,6 +20,32 @@ WORKER = importlib.import_module("scripts.test.manager-sgm-local-worker")
 
 
 class LocalSGMContract(unittest.TestCase):
+    def test_private_snapshot_keeps_normal_git_public_and_executable_modes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            source, checkout = parent / 'source', parent / 'checkout'
+            source.mkdir()
+            (source / 'manifest.json').write_text('{"scripts":[]}')
+            executable = source / 'run.sh'
+            executable.write_text('#!/bin/sh\nexit 0\n')
+            executable.chmod(0o755)
+            for args in (("init", "--initial-branch=main"), ("add", "."),
+                         ("-c", "user.name=SGM test", "-c", "user.email=sgm@example.invalid", "commit", "-m", "fixture")):
+                subprocess.run(['git', '-C', str(source), *args], check=True, capture_output=True)
+            previous = os.umask(0o077)
+            try:
+                denied = parent / 'denied-checkout'
+                subprocess.run(['git', 'clone', '--local', '--no-hardlinks', str(source), str(denied)],
+                               check=True, capture_output=True)
+                self.assertEqual((denied / 'manifest.json').stat().st_mode & 0o777, 0o600)
+                GATE.clone_source(source, checkout)
+            finally:
+                os.umask(previous)
+            self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
+            self.assertEqual((checkout / 'manifest.json').stat().st_mode & 0o777, 0o644)
+            self.assertEqual((checkout / 'run.sh').stat().st_mode & 0o777, 0o755)
+            self.assertEqual(checkout.stat().st_mode & 0o777, 0o755)
+
     def test_no_github_profile_is_admitted_before_mutation(self):
         for environment in ({"GITHUB_ACTIONS": "true"}, {"GITHUB_ACTIONS": "false"},
                             {"ADDP_ONLINE_HOSTED": "1"}, {"ADDP_ONLINE_OWNER_MANAGED": "1"}):
