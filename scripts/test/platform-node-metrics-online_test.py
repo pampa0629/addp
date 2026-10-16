@@ -768,6 +768,105 @@ class MetricsProtocolTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.assert_resources(value, node, target, keys=ONLINE.DISK_METRICS)
 
+    def add_period_comparison_evidence(self, report, artifacts, gap_state=None):
+        report["period_comparisons"] = []
+        stamp = lambda at: at.isoformat().replace("+00:00", "Z")
+        for phase, key in (("cpu", "node.cpu.busy_percent"), ("memory", "node.memory.used_percent"), ("restored", "node.memory.used_percent")):
+            before = len(report["resources"])
+            for family in (ONLINE.METRICS, ONLINE.FILESYSTEM_METRICS, ONLINE.INODE_METRICS, ONLINE.DISK_METRICS, ONLINE.NETWORK_METRICS):
+                report["resources"].append({"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(family)}, "value": self.resource_reply(family)})
+            response = self.resource_reply([key], trend=True)
+            end = datetime.datetime.fromisoformat(response["end"].replace("Z", "+00:00"))
+            start, boundary = end - datetime.timedelta(seconds=600), end - datetime.timedelta(seconds=300)
+            response["start"] = stamp(start)
+            points = [{"evaluated_at": stamp(start + datetime.timedelta(seconds=index*15)),
+                       "sampled_at": stamp(start + datetime.timedelta(seconds=index*15)), "value": 100 if index == 0 else 30 if index <= 20 else 40,
+                       "data_state": "valid"} for index in range(41)]
+            if gap_state:
+                points[1].update(data_state=gap_state, value=30 if gap_state == "stale" else None,
+                                 sampled_at=stamp(start - datetime.timedelta(seconds=46)) if gap_state == "stale" else None)
+            response["series"][0]["points"] = points
+            query = {"node_id": "node-id", "metrics": key, "start": response["start"], "end": response["end"]}
+            report["resources"].append({"path": ONLINE.TRENDS, "query": query, "value": response})
+            statistics = {"previous": {"start": stamp(start), "end": stamp(boundary), "valid": 19 if gap_state else 20, "total": 20, "mean": None if gap_state else 30},
+                          "current": {"start": stamp(boundary), "end": stamp(end), "valid": 20, "total": 20, "mean": None if gap_state else 40},
+                          "complete": not bool(gap_state), "delta": None if gap_state else 10, "stepSeconds": 15}
+            report["period_comparisons"].append({"phase": phase, "before_index": before, "resource_index": len(report["resources"]) - 1,
+                                                "page_path": "/monitor/node-resources/node-id", "page_query": {"range": "5m", "compare": "previous", "refresh": "off", **({"metric": key} if phase == "cpu" else {})},
+                                                "statistics": statistics})
+            (artifacts / ("node-resources-comparison-" + phase + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
+
+    def test_period_comparison_independently_recomputes_full_and_incomplete_evidence(self):
+        expected = {"node": {"node_id": "node-id", "version": 1}, "target": {"id": "target-id", "version": 2}, "policy_version": 0}
+        for gap in (None, "no_data", "stale"):
+            with self.subTest(gap=gap), tempfile.TemporaryDirectory() as directory:
+                report, artifacts = {"resources": []}, Path(directory)
+                self.add_period_comparison_evidence(report, artifacts, gap)
+                indices, summary = ONLINE.validate_resource_comparison_browser(report, expected, artifacts)
+                self.assertEqual(indices, {5, 11, 17})
+                self.assertEqual(summary, {"result": "passed", "cases": 3, "complete_cases": 0 if gap else 3,
+                                           "incomplete_cases": 3 if gap else 0, "single_query_each": True, "url_restore": True})
+
+    def test_period_comparison_rejects_wrong_binding_grid_periods_statistics_and_extra_reads(self):
+        expected = {"node": {"node_id": "node-id", "version": 1}, "target": {"id": "target-id", "version": 2}, "policy_version": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts, report = Path(directory), {"resources": []}
+            self.add_period_comparison_evidence(report, artifacts)
+            mutations = [lambda v: v.pop("period_comparisons"), lambda v: v["period_comparisons"].pop(),
+                         lambda v: v["period_comparisons"][0].update(resource_index=True),
+                         lambda v: v["period_comparisons"][0].update(before_index=1),
+                         lambda v: v["period_comparisons"][1].update(before_index=0, resource_index=5),
+                         lambda v: v["period_comparisons"][2]["page_query"].update(compare="unknown"),
+                         lambda v: v["period_comparisons"][0].update(page_path="/monitor/node-resources/foreign"),
+                         lambda v: v["resources"][5]["query"].update(node_id="foreign"),
+                         lambda v: v["resources"][5]["query"].update(metrics="node.memory.used_percent"),
+                         lambda v: v["resources"][5]["query"].update(start="2026-10-05T23:56:00Z"),
+                         lambda v: v["resources"][5]["query"].update(arbitrary="query"),
+                         lambda v: v["resources"][0]["value"].update(end="2026-10-06T00:00:45Z"),
+                         lambda v: v["resources"][5]["value"].update(node_version=2),
+                         lambda v: v["resources"][5]["value"].update(target_saved_version=1),
+                         lambda v: v["resources"][5]["value"].update(policy_version=1),
+                         lambda v: v["resources"][5]["value"]["series"][0]["points"].pop(),
+                         lambda v: v["resources"][5]["value"]["series"][0]["points"][1].update(sampled_at="2026-10-06T00:01:00Z"),
+                         lambda v: v["period_comparisons"][0]["statistics"]["previous"].update(total=21),
+                         lambda v: v["period_comparisons"][0]["statistics"]["current"].update(valid=True),
+                         lambda v: v["period_comparisons"][0]["statistics"]["previous"].update(mean=30.01),
+                         lambda v: v["period_comparisons"][0]["statistics"].update(delta=100/3),
+                         lambda v: v["period_comparisons"][0]["statistics"].update(stepSeconds=30),
+                         lambda v: v["period_comparisons"][0]["statistics"]["current"].update(start="2026-10-05T23:55:00Z"),
+                         lambda v: v["resources"][0].update(path=ONLINE.TRENDS)]
+            for mutation in mutations:
+                invalid = copy.deepcopy(report); mutation(invalid)
+                with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_resource_comparison_browser(invalid, expected, artifacts)
+            (artifacts / "node-resources-comparison-restored.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_resource_comparison_browser(report, expected, artifacts)
+
+    def test_period_comparison_accepts_a_valid_zero_baseline_without_a_division(self):
+        expected = {"node": {"node_id": "node-id", "version": 1}, "target": {"id": "target-id", "version": 2}, "policy_version": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts, report = Path(directory), {"resources": []}
+            self.add_period_comparison_evidence(report, artifacts)
+            for case in report["period_comparisons"]:
+                points = report["resources"][case["resource_index"]]["value"]["series"][0]["points"]
+                for point in points[1:21]: point["value"] = 0
+                case["statistics"]["previous"]["mean"] = 0
+                case["statistics"]["delta"] = 40
+            self.assertEqual(ONLINE.validate_resource_comparison_browser(report, expected, artifacts)[1]["complete_cases"], 3)
+
+    def test_period_comparison_rejects_means_and_change_when_any_period_has_a_gap(self):
+        expected = {"node": {"node_id": "node-id", "version": 1}, "target": {"id": "target-id", "version": 2}, "policy_version": 0}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts, report = Path(directory), {"resources": []}
+            self.add_period_comparison_evidence(report, artifacts, "no_data")
+            for change in ({"complete": True}, {"delta": 0}, {"delta": 10}, {"previous": {"mean": 30}}, {"current": {"mean": 40}}):
+                invalid = copy.deepcopy(report)
+                for key, value in change.items():
+                    if isinstance(value, dict): invalid["period_comparisons"][0]["statistics"][key].update(value)
+                    else: invalid["period_comparisons"][0]["statistics"][key] = value
+                with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_resource_comparison_browser(invalid, expected, artifacts)
+
     def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
         expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
                     "target": {"id": "target-id", "version": 2}, "policy_version": 0,
@@ -812,6 +911,7 @@ class MetricsProtocolTest(unittest.TestCase):
             artifacts = Path(directory)
             for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
+            self.add_period_comparison_evidence(report, artifacts)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
             for family in ONLINE.DEVICE_RATE_FAMILIES:
                 with self.subTest(counter_family=list(family)):
@@ -846,7 +946,7 @@ class MetricsProtocolTest(unittest.TestCase):
                          lambda v: v["resources"][1]["query"].update(end="2026-10-06T00:01:01Z"),
                          lambda v: v["resources"][1]["value"]["series"][0]["points"].pop(),
                          lambda v: v["resources"][0]["value"]["series"][0]["points"][0].update(value=float("nan")),
-                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*157), lambda v: v.pop("auto_refresh"),
+                         lambda v: v.update(resources=[]), lambda v: v.update(resources=[v["resources"][0]]*175), lambda v: v.pop("auto_refresh"),
                          lambda v: v["auto_refresh"].update(off_no_requests=False),
                          lambda v: v.pop("host_list_auto_refresh"),
                          lambda v: v["host_list_auto_refresh"].update(off_no_requests=False),

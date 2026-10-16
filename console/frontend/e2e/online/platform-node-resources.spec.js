@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { summaryMetrics, resourceMetrics, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceTrendComparison } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
@@ -187,6 +188,51 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(resources.filter(item => item.path.endsWith('resource_observations')).length).toBe(offCount)
     report.auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true, off_restored: true, off_no_requests: true }
     await page.screenshot({ path: resolve(artifact, 'node-resources-restored.png'), animations: 'disabled' })
+    save('adjacent-resource-period-comparison')
+    report.period_comparisons = []
+    const comparePeriod = async (phase, metric, action) => {
+      await Promise.all(pending)
+      const before = resources.length
+      await action()
+      await expect(monitor.getByTestId('resource-comparison')).toBeVisible()
+      await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+      await expect(monitor.getByTestId('resource-compare').getByRole('checkbox')).toBeChecked()
+      await expect(monitor.getByTestId('resource-refresh')).toContainText('关闭自动刷新')
+      await expect(page).toHaveURL(url => url.pathname === `/monitor/node-resources/${expected.node.node_id}` && url.searchParams.get('compare') === 'previous' && url.searchParams.get('range') === '5m' && url.searchParams.get('refresh') === 'off' && (url.searchParams.get('metric') || 'node.memory.used_percent') === metric)
+      await Promise.all(pending)
+      const batch = resources.slice(before), curves = batch.filter(row => row.path.endsWith('resource_trends'))
+      expect(batch).toHaveLength(6)
+      expect(curves).toHaveLength(1)
+      const curve = curves[0], statistics = resourceTrendComparison(curve.value, '5m')
+      expect(curve.query.metrics).toBe(metric)
+      expect(Date.parse(curve.query.end) - Date.parse(curve.query.start)).toBe(600_000)
+      for (const period of ['current', 'previous']) {
+        const card = monitor.getByTestId(`resource-compare-${period}`)
+        await expect(card.locator('strong')).toHaveText(formatFieldPresentationValue(statistics[period].mean, { precision: 2, unit: '%' }, 'zh-cn'))
+        await expect(card).toContainText(`有效评估点：${statistics[period].valid} / ${statistics[period].total}`)
+      }
+      if (statistics.complete) {
+        await expect(monitor.getByTestId('resource-compare-change')).toBeVisible()
+        await expect(monitor.getByTestId('resource-compare-incomplete')).toHaveCount(0)
+        const delta = statistics.delta
+        const change = delta === 0 ? '与上期持平' : Math.round(Math.abs(delta) * 100) === 0 ? '较上期变化不足 0.01 个百分点' : `较上期${delta > 0 ? '上升' : '下降'} ${formatFieldPresentationValue(Math.abs(delta), { precision: 2 }, 'zh-cn')} 个百分点`
+        await expect(monitor.getByTestId('resource-compare-change')).toHaveText(change)
+      } else {
+        await expect(monitor.getByTestId('resource-compare-incomplete')).toContainText('样本不足，暂不比较')
+        await expect(monitor.getByTestId('resource-compare-change')).toHaveCount(0)
+      }
+      await monitor.getByTestId('resource-comparison').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: resolve(artifact, `node-resources-comparison-${phase}.png`), animations: 'disabled' })
+      report.period_comparisons.push({ phase, before_index: before, resource_index: resources.indexOf(curve),
+        page_path: new URL(page.url()).pathname, page_query: Object.fromEntries(new URL(page.url()).searchParams), statistics })
+    }
+    await comparePeriod('cpu', 'node.cpu.busy_percent', () => monitor.getByTestId('resource-compare').getByRole('checkbox').check())
+    await comparePeriod('memory', 'node.memory.used_percent', async () => {
+      await monitor.getByTestId('resource-metric').click()
+      await monitor.getByRole('option', { name: '内存使用率', exact: true }).click()
+    })
+    await comparePeriod('restored', 'node.memory.used_percent', () => page.reload())
+    expect(report.period_comparisons[2].page_query).toEqual(report.period_comparisons[1].page_query)
     save('filesystem-mount-trend-restore')
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()

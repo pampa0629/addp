@@ -2340,3 +2340,19 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 实现与本地验证已完成：最终 `make test-monitor-frontend` 退出 0，72 项单测、201 项确定性浏览器回归及生产构建全部通过，日志 `/tmp/addp-period-comparison-frontend-final.log`。新增 4 项单测组覆盖完整网格、分界点只计一次、预算收紧后步长不能整除窗口时的预期点数、无基期、缺样/陈旧、未舍入差值及零基期；新增 17 项浏览器场景覆盖本节已识别交互。缺少实现时的首轮单测明确失败；首次完整浏览器回归为 198/201，三处新增断言分别误写既有英文词条、URL 冒号编码和撤权后的错误层级，修正为正确词条、解析后的精确 query 值及顶层拒绝后内容清空断言，再完整通过，未放宽生产授权或观测条件。
 
 两种语言的 620px 比较区截图均已目视确认，日期与统计说明可换行，未溢出；截图位于本机临时目录的 `addp-resource-comparison-zh-cn.png`、`addp-resource-comparison-en.png`。前端 CI 登记检查退出 0，21 个前端仍由已有入口覆盖，日志 `/tmp/addp-period-comparison-registration.log`；本节、术语及新增中英文键、文档围栏和任务范围 diff 检查通过。默认 `make test-changed` 对 26 个混合文件选中 7 个 owner，在外部测试连接预检退出 2，后续门禁未执行、不计通过，日志 `/tmp/addp-period-comparison-changed-final.log`；本批实际前端通过范围由独立标准入口证明。此次没有后端、API、权限或部署变更，不重复运行无关数据库门禁。个人 Safari 已检查；本批新增交互的远端 CI 和 Hosted T4 尚未执行，不以 10.72–10.74 的既有 CI 结果替代。
+
+### 10.76 时段对比沿既有节点监控 Hosted 链路验收
+
+用户继续推进 10.75 的自动化真实链路验证。本批只扩展原 `platform-node-metrics` suite：既有临时平台系统管理员通过正式密码/MFA 登录 Console，在 Monitor iframe 里为 CPU、内存分别打开 5 分钟时段对比，并刷新恢复内存比较。沿用已确认的当次主机资源趋势读取用途，不增加接口、身份、角色权限、预算配置或通知操作，不改变生产代码及部署。仍使用当前来源的自然采样与时钟，不注入 Token、不拦截业务 API、不补写十分钟历史、不把确定性夹具当作 Hosted。
+
+三次交互各自只允许一次十分钟趋势读取，沿原服务端即时查询结束锚点；报告以有界索引引用实际收到的原始响应，并记录当前 URL 选择、两期统计和截图。Python 验收器独立从响应网格重算区间归属、有效点数、完整度、未舍入均值和百分点差，核对浏览器所验证的统计；缺少比较报告、索引错绑、错误主体或版本、窗口变化、越过预算、坏网格及伪造缺样均失败，不扩大其他指标的可接受窗口或放宽原有安全管理员拒绝断言。仅增加三个完整页面轮次的十八次资源读取上界，并逐轮验证单次趋势和五组即时读取，不通过泛化放宽总预算容纳重复请求。
+
+一次性部署不保证已积累完整十分钟历史，也不保证 CPU 的每个一分钟计数窗口均有效。Hosted 因此必须按实际网格验证完整时的数值、或不完整时的空值与样本不足提示，报告分别计量完整与不完整用例，不把未出现的分支记作已验收。已有确定性 T3 已覆盖两种分支及中英文；本批不延长既有 240 秒浏览器、300 秒外层进程或 60 分钟 Job 时限来等待完整历史，也不新增压力或破坏来源的场景。
+
+实施前门禁：现有 `make test-node-metrics-online-runner` 解析同一浏览器文件并执行报告校验、Hosted 清理及 System Metrics 身份夹具回归；补齐原报告夹具和畸形证据拒绝测试。原 Online CI 登记检查及 Hosted workflow 均已有路径覆盖，继续使用原 suite 和根入口。默认工作区 `make test-changed` 单独记录混合改动的实际结果；不调查其他会话门禁。实现完成后、本地 runner 通过与真实 Hosted 执行分开记录，未实际运行的 Hosted 不计通过。
+
+本批已接线并完成本地 runner 验证。最终 `make test-node-metrics-online-runner` 退出 0：55 项 Python 回归、浏览器语法检查、Hosted shell 语法检查及 System Metrics 身份夹具 Go 测试通过，日志 `/tmp/addp-comparison-hosted-runner-final.log`。新增四组测试覆盖完整/缺样/陈旧证据、有效零基期、索引与主体/来源版本/预算错绑、当前轮服务端锚点、网格和边界、错误均值或相对百分比、缺样伪造均值/差值及缺失截图；原整体浏览器报告夹具同次加入比较证据，不保留旧报告的免检路径。截图清理清单同步扩展，沿原 Hosted 失败与退出清理。
+
+`python3 scripts/ci/check-online-ci-registration.py --repository .` 退出 0，原 root runner、Online suite、部署和工作流登记保持一致，日志 `/tmp/addp-comparison-hosted-registration.log`，无需增加 Makefile 或 workflow。任务范围 diff 与文档检查通过；默认 `make test-changed` 对 12 个混合文件选中 6 个 owner，在外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-comparison-hosted-changed.log`。本批只改验收接线和文档，没有产品代码、角色权限或部署变更，不重启个人服务；真实 Hosted 待本批推送后从同一 suite 发起，当前不计通过。
+
+10.75 的产品实现 `fd44bc552` 已包含在用户推送的 main `6d31c1f51621131c70a25cdbf41b1331b62f7395`；只核对该源码的 Monitor frontend Job `116977426244`（Platform CI Run `38902354031`），当前快照为 queued、conclusion=null，不计通过。没有重跑或调查其他 owner 的 Job；本批 runner 的本地通过也不替代该产品 CI 或新 Hosted 结果。

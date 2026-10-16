@@ -726,6 +726,73 @@ def validate_overview_browser(value, expected, artifacts):
     return {"result": "passed", "real_hosts": 1, **{key: True for key in flags}}
 
 
+def validate_resource_comparison_browser(value, expected, artifacts):
+    cases, resources = value.get("period_comparisons"), value.get("resources")
+    require(isinstance(cases, list) and len(cases) == 3 and isinstance(resources, list), "browser period comparison evidence missing")
+    phases = (("cpu", "node.cpu.busy_percent"), ("memory", "node.memory.used_percent"), ("restored", "node.memory.used_percent"))
+    indices, complete_count = set(), 0
+    for position, (case, (phase, key)) in enumerate(zip(cases, phases)):
+        require(isinstance(case, dict) and case.get("phase") == phase, "comparison phase mismatch")
+        before, index = case.get("before_index"), case.get("resource_index")
+        require(type(before) is int and type(index) is int and 0 <= before <= index < len(resources)
+                and index == before + 5 and index not in indices, "comparison resource reference invalid")
+        if position:
+            require(before == cases[position - 1]["resource_index"] + 1, "comparison rounds overlap or have extra reads")
+        indices.add(index)
+        batch = resources[before:index + 1]
+        require(sum(row.get("path") == TRENDS for row in batch) == 1 and batch[-1].get("path") == TRENDS
+                and {frozenset(row.get("query", {}).get("metrics", "").split(",")) for row in batch[:-1]} == {
+                    frozenset(family) for family in (METRICS, FILESYSTEM_METRICS, INODE_METRICS, DISK_METRICS, NETWORK_METRICS)}
+                and all(row.get("path") == OBSERVATIONS for row in batch[:-1]), "comparison used duplicate or fallback queries")
+        page_query = case.get("page_query", {})
+        require(case.get("page_path") == "/monitor/node-resources/" + expected["node"]["node_id"]
+                and page_query == {"range": "5m", "compare": "previous", "refresh": "off", **({"metric": key} if key == "node.cpu.busy_percent" else {})}, "comparison page scope changed")
+        row = resources[index]
+        query, response = row.get("query", {}), row.get("value", {})
+        require(set(query) == {"node_id", "metrics", "start", "end"} and query["node_id"] == expected["node"]["node_id"]
+                and query["metrics"] == key and utc_timestamp(query["end"]) - utc_timestamp(query["start"]) == 600, "comparison trend scope changed")
+        anchor = next(item["value"] for item in batch[:-1] if set(item["query"]["metrics"].split(",")) == set(METRICS))
+        require(utc_timestamp(query["end"]) == utc_timestamp(anchor["end"]), "comparison lost its own server anchor")
+        assert_resources(response, expected["node"], expected["target"], True, [key], range_seconds=600)
+        require(response["policy_version"] == expected["policy_version"], "comparison ignored current query budget")
+        statistics = case.get("statistics", {})
+        require(isinstance(statistics, dict) and set(statistics) == {"previous", "current", "complete", "delta", "stepSeconds"}
+                and type(statistics["complete"]) is bool and type(statistics["stepSeconds"]) is int
+                and statistics["stepSeconds"] == response["step_seconds"], "comparison statistics contract mismatch")
+        start, end = utc_timestamp(response["start"]), utc_timestamp(response["end"])
+        boundary = end - 300
+        periods = {"previous": (start, boundary), "current": (boundary, end)}
+        observations = response["series"][0]["points"]
+        periods = {name: {"start": left, "end": right, "points": [point for point in observations if left < utc_timestamp(point["evaluated_at"]) <= right]} for name, (left, right) in periods.items()}
+        complete = all(period["points"] and all(point["data_state"] == "valid" for point in period["points"]) for period in periods.values())
+        require(statistics["complete"] == complete, "comparison concealed missing evidence")
+        complete_count += int(complete)
+        means = {}
+        for name, period in periods.items():
+            summary = statistics[name]
+            require(isinstance(summary, dict) and set(summary) == {"start", "end", "valid", "total", "mean"}, "comparison period contract mismatch")
+            require(utc_timestamp(summary["start"]) == period["start"] and utc_timestamp(summary["end"]) == period["end"], "comparison period boundary mismatch")
+            count = sum(point["data_state"] == "valid" for point in period["points"])
+            require(type(summary["valid"]) is int and type(summary["total"]) is int
+                    and summary["valid"] == count and summary["total"] == len(period["points"]), "comparison coverage mismatch")
+            if complete:
+                means[name] = math.fsum(point["value"] for point in period["points"]) / len(period["points"])
+                require(type(summary["mean"]) in {int, float} and math.isfinite(summary["mean"])
+                        and math.isclose(summary["mean"], means[name], rel_tol=1e-12, abs_tol=1e-9), "comparison point mean mismatch")
+            else:
+                require(summary["mean"] is None, "comparison invented a partial-period mean")
+        if complete:
+            require(type(statistics["delta"]) in {int, float} and math.isfinite(statistics["delta"])
+                    and math.isclose(statistics["delta"], means["current"] - means["previous"], rel_tol=1e-12, abs_tol=1e-9), "comparison percentage-point change mismatch")
+        else:
+            require(statistics["delta"] is None, "comparison invented a change with incomplete samples")
+        screenshot = artifacts / ("node-resources-comparison-" + phase + ".png")
+        require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "comparison screenshot missing or invalid")
+    require(cases[1]["page_query"] == cases[2]["page_query"], "comparison URL did not survive reload")
+    return indices, {"result": "passed", "cases": 3, "complete_cases": complete_count, "incomplete_cases": 3 - complete_count,
+                     "single_query_each": True, "url_restore": True}
+
+
 def validate_resource_browser(value, expected, artifacts):
     require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
             and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "browser result mismatch")
@@ -754,10 +821,11 @@ def validate_resource_browser(value, expected, artifacts):
             and after == before + 1, "host list auto refresh batch references invalid")
     require(utc_timestamp(summaries[after]["value"]["data"][0]["end"]) > utc_timestamp(summaries[before]["value"]["data"][0]["end"]), "host list automatic server window did not advance")
     rows = value.get("resources")
-    # Six reads per complete round; 22 navigation/refresh rounds plus four bounded timer rounds.
-    require(isinstance(rows, list) and 8 <= len(rows) <= 156, "browser resource evidence missing or unbounded")
+    # The original 26 rounds plus exactly three comparison rounds, each with six reads.
+    require(isinstance(rows, list) and 8 <= len(rows) <= 174, "browser resource evidence missing or unbounded")
+    comparison_indices, comparison = validate_resource_comparison_browser(value, expected, artifacts)
     instants, trends = [], []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         query, resource = row.get("query", {}), row.get("value", {})
         require(query.get("node_id") == expected["node"]["node_id"], "browser requested another node")
         trend = row.get("path") == TRENDS
@@ -768,7 +836,7 @@ def validate_resource_browser(value, expected, artifacts):
         require((trend and len(keys) == 1 and keys[0] in {"node.memory.used_percent", "node.cpu.busy_percent", "node.filesystem.used_percent", "node.filesystem.inodes_used_percent", *DISK_METRICS, *NETWORK_METRICS})
                 or (not trend and set(keys) in (set(METRICS), set(FILESYSTEM_METRICS), set(INODE_METRICS), set(DISK_METRICS), set(NETWORK_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
         duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
-        require(not trend or duration in {300, 3600}, "browser range mismatch")
+        require(not trend or duration in ({600} if row_index in comparison_indices else {300, 3600}), "browser range mismatch")
         dims = {key: query[key] for key in ("device", "mountpoint", "fstype") if key in query}
         required_dimensions = ({"device"} if keys[0] in DISK_METRICS or keys[0] in NETWORK_METRICS else {"device", "mountpoint", "fstype"} if keys[0].startswith("node.filesystem.") else set()) if trend else set()
         require(set(dims) == required_dimensions, "browser selector mismatch")
@@ -798,7 +866,8 @@ def validate_resource_browser(value, expected, artifacts):
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True, "host_list_auto_refresh": True,
-            "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True}
+            "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True,
+            "period_comparison": comparison}
 
 
 def validate_process_browser(value, expected, artifacts):
@@ -896,7 +965,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
     evidence = artifacts / "node-resources-browser.json"
     evidence.unlink(missing_ok=True)
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services", "overview"):
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     started = time.monotonic()
     runtime = {"schema_version": "addp.node-resources-browser-runtime/v1", "result": "failed", "duration_ms": 0,
