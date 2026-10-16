@@ -45,7 +45,7 @@ func TestFalkorIntegration(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	observer := redis.NewClient(&redis.Options{Addr: address, Password: password, Protocol: 2, DisableIdentity: true, MaxRetries: -1, ReadTimeout: 3 * time.Second})
+	observer := redis.NewClient(&redis.Options{Addr: address, Password: password, Protocol: 2, DisableIdentity: true, MaxRetries: -1, ReadTimeout: 3 * time.Second, ContextTimeoutEnabled: true})
 	if err := c.Health(ctx); err != nil {
 		value, probeErr := observer.Do(ctx, "GRAPH.CONFIG", "GET", "TIMEOUT_MAX").Result()
 		t.Fatalf("graph readiness contract: %v; timeout configuration=%#v probe=%v", err, value, probeErr)
@@ -66,14 +66,149 @@ func TestFalkorIntegration(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
 		defer done()
-		for _, key := range keys {
-			if err := observer.Do(cleanupCtx, "GRAPH.DELETE", key).Err(); err != nil {
-				t.Errorf("graph cleanup failed: %v", err)
+		if err := cleanupDisposableGraphs(cleanupCtx, observer, keys); err != nil {
+			t.Error(err)
+		}
+	})
+	const expensive = "UNWIND range(1,1000) AS a UNWIND range(1,1000) AS b UNWIND range(1,1000) AS d WITH a+b+d AS s WHERE s>0 RETURN sum(s)"
+	t.Run("async_delete_reclaims_owned_telemetry", func(t *testing.T) {
+		// Occupy both configured query workers so graph reclamation cannot run
+		// before GRAPH.DELETE replies. This exposes the cleanup race reliably.
+		var localKeys []string
+		var queries []chan error
+		t.Cleanup(func() {
+			cleanupCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
+			defer done()
+			if err := cleanupDisposableGraphs(cleanupCtx, observer, localKeys); err != nil {
+				t.Error(err)
+			} else {
+				t.Log("graph keys and server-owned telemetry reclaimed before the cleanup deadline")
+			}
+			for _, result := range queries {
+				select {
+				case err := <-result:
+					if !errors.Is(err, ErrTimeout) {
+						t.Errorf("blocking read must end at its server budget: %v", err)
+					}
+				case <-cleanupCtx.Done():
+					t.Fatal("blocking read did not finish")
+				}
+			}
+		})
+		for i := 0; i < 2; i++ {
+			p, _ := Plan(fixture(t), uuid.NewString())
+			localKeys = append(localKeys, p.key)
+			if _, err := c.query(ctx, p.key, "CREATE (:Probe) RETURN 1", nil, false, MaxQueryTime); err != nil {
+				t.Fatal(err)
 			}
 		}
-		remaining, err := observer.DBSize(cleanupCtx).Result()
-		if err != nil || remaining != 0 {
-			t.Errorf("disposable graph residual: %d %v", remaining, err)
+		// Query telemetry is flushed by the server cron (at most 3 seconds),
+		// independently of command completion. Observe it before blocking work.
+		for _, key := range localKeys {
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				kind, err := observer.Type(ctx, "telemetry{"+key+"}").Result()
+				if err != nil || (kind != "none" && kind != "stream") {
+					t.Fatalf("unexpected telemetry type: %s %v", kind, err)
+				}
+				if kind == "stream" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("server did not flush query telemetry")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		for _, key := range localKeys {
+			result := make(chan error, 1)
+			queries = append(queries, result)
+			go func() {
+				_, err := c.query(ctx, key, expensive, nil, true, MaxQueryTime)
+				result <- err
+			}()
+		}
+		deadline := time.Now().Add(time.Second)
+		for {
+			clients, err := observer.ClientList(ctx).Result()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Count(strings.ToLower(clients), "cmd=graph.ro_query") == len(queries) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("blocking reads not observed in server")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+	t.Run("cleanup_rejects_unexpected_and_permanent_residuals", func(t *testing.T) {
+		for _, scenario := range []string{"foreign_key", "foreign_stream", "owned_graph", "wrong_telemetry_type", "permanent_telemetry"} {
+			t.Run(scenario, func(t *testing.T) {
+				p, _ := Plan(fixture(t), uuid.NewString())
+				key := "telemetry{" + p.key + "}"
+				switch scenario {
+				case "foreign_key", "foreign_stream":
+					key = "foreign:" + uuid.NewString()
+				case "owned_graph":
+					key = p.key
+				}
+				t.Cleanup(func() {
+					cleanupCtx, done := context.WithTimeout(context.Background(), 10*time.Second)
+					defer done()
+					if scenario == "owned_graph" {
+						if err := cleanupDisposableGraphs(cleanupCtx, observer, []string{p.key}); err != nil {
+							t.Error(err)
+						}
+						return
+					}
+					if err := observer.Del(cleanupCtx, key).Err(); err != nil {
+						t.Error(err)
+					}
+					if err := waitDisposableGraphCleanup(cleanupCtx, observer, nil); err != nil {
+						t.Error(err)
+					}
+				})
+				var err error
+				switch scenario {
+				case "owned_graph":
+					_, err = c.query(ctx, key, "CREATE (:Probe) RETURN 1", nil, false, MaxQueryTime)
+				case "foreign_stream", "permanent_telemetry":
+					err = observer.XAdd(ctx, &redis.XAddArgs{Stream: key, Values: map[string]any{"probe": "test"}}).Err()
+				default:
+					err = observer.Set(ctx, key, "test", 0).Err()
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				budget := time.Second
+				if scenario == "permanent_telemetry" {
+					budget = 50 * time.Millisecond
+				}
+				request, stop := context.WithTimeout(ctx, budget)
+				defer stop()
+				deadline, _ := request.Deadline()
+				err = waitDisposableGraphCleanup(request, observer, []string{p.key})
+				// A Redis command at the context deadline may return a socket
+				// i/o timeout before the context timer callback runs. Both are
+				// failures; compare against the actual monotonic caller deadline.
+				if err == nil || !time.Now().Before(deadline) != (scenario == "permanent_telemetry") {
+					t.Fatalf("cleanup accepted residual or waited for an unexpected key: %v", err)
+				}
+				if n, err := observer.Exists(ctx, key).Result(); err != nil || n != 1 {
+					t.Fatalf("residual verification must not delete keys: %d %v", n, err)
+				}
+			})
+		}
+		closed := redis.NewClient(&redis.Options{Addr: address, Password: password, MaxRetries: -1})
+		_ = closed.Close()
+		if err := waitDisposableGraphCleanup(ctx, closed, nil); err == nil {
+			t.Fatal("cleanup accepted an observer command error")
+		}
+		missing, _ := Plan(fixture(t), uuid.NewString())
+		if err := cleanupDisposableGraphs(ctx, observer, []string{missing.key}); err == nil {
+			t.Fatal("cleanup accepted a GRAPH.DELETE error")
 		}
 	})
 	t.Run("projection_round_trip_and_no_overwrite", func(t *testing.T) {
@@ -247,7 +382,6 @@ func TestFalkorIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	const expensive = "UNWIND range(1,1000) AS a UNWIND range(1,1000) AS b UNWIND range(1,1000) AS d WITH a+b+d AS s WHERE s>0 RETURN sum(s)"
 	t.Run("server_timeout_and_write_rollback", func(t *testing.T) {
 		key := newKey()
 		if _, err := c.query(ctx, key, "CREATE (:Probe) RETURN 1", nil, false, MaxQueryTime); err != nil {
@@ -349,4 +483,62 @@ func TestFalkorIntegration(t *testing.T) {
 		}
 		wg.Wait()
 	})
+}
+
+// cleanupDisposableGraphs is test-only: the endpoint is an exclusively owned
+// database. Never use this whole-database verification on shared Infra.
+func cleanupDisposableGraphs(ctx context.Context, observer *redis.Client, keys []string) error {
+	for _, key := range keys {
+		if err := observer.Do(ctx, "GRAPH.DELETE", key).Err(); err != nil {
+			return fmt.Errorf("graph cleanup failed: %w", err)
+		}
+	}
+	return waitDisposableGraphCleanup(ctx, observer, keys)
+}
+
+func waitDisposableGraphCleanup(ctx context.Context, observer *redis.Client, keys []string) error {
+	// GRAPH.DELETE removes graph keys synchronously, but graph contexts and
+	// their telemetry streams are released asynchronously in FalkorDB 4.20.6.
+	// Never replay deletion, delete streams manually, or tolerate graph keys.
+	ownedStreams := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		ownedStreams["telemetry{"+key+"}"] = true
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("disposable graph cleanup deadline: %w", err)
+		}
+		remaining, err := observer.DBSize(ctx).Result()
+		if err != nil {
+			return fmt.Errorf("disposable graph residual check failed: %w", err)
+		}
+		if remaining == 0 {
+			return nil
+		}
+		residual, err := observer.Keys(ctx, "*").Result()
+		if err != nil {
+			return fmt.Errorf("disposable graph residual inspection failed: %w", err)
+		}
+		types := make(map[string]string, len(residual))
+		for _, key := range residual {
+			kind, err := observer.Type(ctx, key).Result()
+			if err != nil {
+				return fmt.Errorf("disposable graph residual type failed: %w", err)
+			}
+			if kind == "none" { // Reclaimed since KEYS; still require DBSIZE=0.
+				continue
+			}
+			types[key] = kind
+			if !ownedStreams[key] || kind != "stream" {
+				return fmt.Errorf("unexpected disposable graph residual: key=%s type=%s", key, kind)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("disposable graph residual: %d keys=%v: %w", remaining, types, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }

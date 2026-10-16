@@ -161,6 +161,8 @@ make test-go
 
 FalkorDB T2 固定 4.20.6 多架构镜像 digest，每轮独立 Compose Project、随机密码、动态回环端口、资源上限与非零服务端超时；不读取根 `.env`，不使用个人 Redis 或图实例。正常退出、失败和可捕获中断都删除自有容器/卷/网络并核验零残留。T2 覆盖投影往返/防覆盖/篡改检测/最大定义、参数转义与大整数、服务端读写超时/回滚、重复取消后的客户端关闭和服务端回收、并发结果隔离；同一门禁再连接 PG 验证发布、真实图构建、激活、失败保留旧版本及新 generation 重建恢复，使用可控授权夹具，不宣称正式 HTTP/IAM 端到端验收。PG owner 状态门禁另覆盖并发激活、ABA、授权失效、撤回、租约恢复、重建去重/祖先分叉拒绝、新主体授权、旧授权拒绝、审计回滚与 v1/v2 向前迁移。清理核对本轮修订及全部投影的 execution，不遗漏重建任务。服务端 TCP FIN 回收允许有界异步收敛，不以一次 CLIENT LIST 快照冒充泄漏判断。
 
+2026-10-16 图残留门禁补充确定性回归：[固定版本的图释放实现](https://github.com/FalkorDB/FalkorDB/blob/v4.20.6/src/graph/graphcontext.c)在 `GRAPH.DELETE` 同步移除图键后，异步删除关联 `telemetry{graph}` stream，不能将命令应答等同于全库已清空。两个受服务端预算限制的读查询保留图引用，旧清理在删图后实际报出两个 telemetry stream 残留；修复仅在原有 10 秒清理预算内观察本轮已删除图的精确 stream，最终仍要求 `DBSIZE=0`。图键、未知键、错误类型、命令失败及永久 stream 残留均拒绝，不重试删图、不手工删除真实 telemetry、不改变取消和回滚断言。串行完整 `make test-ontology-falkor`（配置自检、11 组图子例及其中 5 个反向场景、PG 发布联动）与 `GOFLAGS='-race -count=1' make test-module MODULE=ontology GO_ONLY=1` 通过；无新入口、CI Job、依赖或运行行为，不新增本体修订。完整入口曾在脚本夹具的 10 秒／5 秒等待处失败，后续原阈值串行自检通过；新增永久残留回归曾错误地只按 context 错误分类，已改为核对单调时钟截止与残留仍存在，socket 超时同样失败。不宣称脚本夹具超时根因、完整模块 T0/T3 或真实 T4 已验证。
+
 本地只允许回环地址的 `addp_test`，CI 只允许 Job 独占的 `addp_ontology_test`。门禁拒绝清空已存在的 ontology schema；当次新建 schema 带随机 Run ID 所有权标记，正常退出、失败及可捕获中断都通过同一 owner 清理函数删除本轮 execution 与 schema 并检查残留，不清空 common。强制 SIGKILL 无法运行退出钩子；若残留，核对原 Run ID 后显式使用 `make test-ontology-postgres-cleanup ONTOLOGY_POSTGRES_CLEANUP_RUN_ID=<UUID>`，并提供安全测试 DSN。此入口只恢复指定轮次，复用同一清理函数及 advisory lock，标记不符或锁占用均拒绝；不能直接删除未知 schema，也不放宽正常门禁的拒绝规则。CLI 策略归平台 T0，真实标记和并发锁拒绝归原 PG T2/CI，无新增依赖。
 
 新增 CEL 依赖同时由 T0 的 `make test-go-dependency-policy` 检查；该入口覆盖单行/块状 `require`、错误版本拒绝和注释/排除声明不误识别，不能靠固定 go.mod 排版才能识别依赖。
