@@ -83,6 +83,19 @@ def run(engine):
                 T.StructType([T.StructField('at', T.TimestampType(), False)]))
             assert save(temporal, 'mysql_temporal') == 1
             assert query(connection, "SELECT DATE_FORMAT(at, '%Y-%m-%d %H:%i:%s.%f') FROM spark_results.mysql_temporal") == [('2024-01-02 03:04:05.123456',)]
+            original_mode = query(connection, 'SELECT @@GLOBAL.sql_mode')[0][0]
+            sql("SET GLOBAL sql_mode = ''")
+            try:
+                out_of_range = spark.createDataFrame([(datetime(2075, 1, 1),)], temporal.schema)
+                try:
+                    save(out_of_range, 'mysql_temporal')
+                except Exception:
+                    pass
+                else:
+                    raise AssertionError('non-strict server silently coerced a timestamp')
+                assert query(connection, "SELECT DATE_FORMAT(at, '%Y-%m-%d %H:%i:%s.%f') FROM spark_results.mysql_temporal") == [('2024-01-02 03:04:05.123456',)]
+            finally:
+                sql("SET GLOBAL sql_mode = '" + original_mode.replace("'", "''") + "'")
             unusual = spark.createDataFrame([(1, '精确😀')], ['a`b', '中文列'])
             assert save(unusual, 'mysql_quoted') == 1
             assert query(connection, 'SELECT `a``b`, `中文列` FROM spark_results.mysql_quoted') == [('1', '精确😀')]

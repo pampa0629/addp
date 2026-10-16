@@ -55,9 +55,20 @@ docker network create --label "addp.spark.table.owner=$OWNER" "$OWNER" >/dev/nul
 docker run -d --name "$MYSQL" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias mysql \
     --tmpfs /var/lib/mysql --memory 1g -e MYSQL_ROOT_PASSWORD=owned-spark-only -e MYSQL_DATABASE=spark_results "$MYSQL_IMAGE" >/dev/null
 if [ "$test_engine" != mysql ]; then
+DORIS_BOOTSTRAP=$(cat <<'BOOTSTRAP'
+set -euo pipefail
+doris_address=$(hostname -i | awk '{print $1}')
+sed -i "s#127.0.0.1/24#${doris_address}/32#g; s#CURRENT_BE_IP=\"127.0.0.1\"#CURRENT_BE_IP=\"doris\"#" /usr/local/bin/entry_point.sh
+grep -q 'CURRENT_BE_IP="doris"' /usr/local/bin/entry_point.sh
+sed -i 's/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g' /opt/apache-doris/fe/conf/fe.conf
+echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
+echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf
+echo 'mem_limit = 1024m' >> /opt/apache-doris/be/conf/be.conf
+exec bash /usr/local/bin/entry_point.sh
+BOOTSTRAP
+)
     docker run -d --name "$DORIS" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias doris \
-        --memory 3g -e BUILD_TYPE=production --entrypoint bash "$DORIS_IMAGE" -c \
-        "sed -i 's/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g' /opt/apache-doris/fe/conf/fe.conf; echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf; echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf; echo 'mem_limit = 1024m' >> /opt/apache-doris/be/conf/be.conf; exec bash /usr/local/bin/entry_point.sh" >/dev/null
+        --hostname doris --memory 3g -e BUILD_TYPE=production --entrypoint bash "$DORIS_IMAGE" -c "$DORIS_BOOTSTRAP" >/dev/null
 fi
 docker run -d --name "$MASTER" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias spark-master --user root --memory 2g \
     -v "$ROOT_DIR/engines/spark-workflow:/addp/spark-workflow:ro" -v "$ROOT_DIR/scripts/test/spark-table-publication-contract.py:/addp/contract.py:ro" -v "$WORK_DIR:/gate" \

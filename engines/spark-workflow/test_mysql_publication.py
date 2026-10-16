@@ -6,6 +6,20 @@ import mysql_publication as publication
 
 
 class MySQLPublicationTest(unittest.TestCase):
+    def test_worker_strict_mode_is_independent_of_driver_session(self):
+        from urllib.parse import parse_qs, urlsplit
+        frame = MagicMock(columns=['id'])
+        adapter = MagicMock()
+        adapter._geometry_column_names.return_value = []
+        with patch.object(publication, 'stage_definition', return_value='CREATE TABLE stage(id BIGINT)'), \
+                patch.object(publication, 'finalize', return_value=1):
+            self.assertEqual(publication.save(frame, {'table': 'target'}, 'jdbc:mysql://host/db', 'driver',
+                                             {'database': 'db'}, adapter), 1)
+        worker_url = adapter._write_jdbc.call_args.args[1]
+        self.assertEqual(parse_qs(urlsplit(worker_url).query)['sessionVariables'], ["sql_mode='STRICT_ALL_TABLES'"])
+        driver_url = adapter._open_jdbc_connection.call_args_list[0].args[1]
+        self.assertNotIn('sessionVariables', driver_url)
+
     def test_failed_stage_creation_never_drops_an_unowned_existing_table(self):
         frame = MagicMock(columns=['id'])
         adapter = MagicMock()

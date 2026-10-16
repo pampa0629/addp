@@ -2,6 +2,7 @@
 import hashlib
 import logging
 import uuid
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +183,11 @@ def save(df, params, jdbc_url, driver, conn_info, adapter):
         try:
             statement.execute(stage_definition(df, schema, stage, aliases))
             stage_created = True
-            adapter._write_jdbc(df.toDF(*aliases), jdbc_url, driver, conn_info, schema, stage, 'append')
+            # Each Worker opens its own session. Do not depend on a server's
+            # optional strict mode, or out-of-range values can be coerced before
+            # the Driver ever validates/publishes the completed stage.
+            worker_url = jdbc_url + '&' + urlencode({'sessionVariables': "sql_mode='STRICT_ALL_TABLES'"})
+            adapter._write_jdbc(df.toDF(*aliases), worker_url, driver, conn_info, schema, stage, 'append')
             # Alias first to avoid Spark's unescaped MySQL column identifiers.
             for alias, name in zip(aliases, df.columns):
                 statement.execute(f'ALTER TABLE {table_ref(schema, stage)} RENAME COLUMN {identifier(alias)} TO {identifier(name)}')
