@@ -1477,6 +1477,36 @@ class ManagerExportBrowserTest(unittest.TestCase):
             capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_browser_transfer_uses_professional_initiator_contract(self):
+        # Execute the real browser helper against the professional HTTP shape;
+        # Monitor's triggered_by field must not substitute for trigger_by.
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const helper = source.slice(source.indexOf('  async function runTransfer(status) {'), source.indexOf('  async function updateValidity('))
+assert.ok(helper.includes('async function runTransfer'))
+const expect = value => ({ toBe: expected => assert.equal(value, expected), toMatch: expected => assert.match(value, expected) })
+expect.poll = callback => ({ toMatch: async expected => assert.match(await callback(), expected) })
+const executionID = '53834320-203b-4d8c-838e-15e01024d484'
+let execution
+const api = { post: async () => ({ execution_id: executionID }), get: async () => execution }
+const run = new Function('json', 'getAPI', 'expect', 'input', 'taskID', helper + '; return runTransfer')(
+  async value => value, () => api, expect, { principal_id: '33' }, 42)
+for (const status of ['success', 'failed']) {
+  execution = { execution_id: executionID, task_id: 42, status, trigger_by: 33 }
+  assert.equal(await run(status), execution)
+  for (const actor of [{ trigger_by: 34 }, {}, { triggered_by: 33 }]) {
+    execution = { execution_id: executionID, task_id: 42, status, ...actor }
+    await assert.rejects(() => run(status), { code: 'ERR_ASSERTION' })
+  }
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe],
+            input=(SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_browser_failure_and_missing_report_cannot_reuse_previous_success(self):
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory)

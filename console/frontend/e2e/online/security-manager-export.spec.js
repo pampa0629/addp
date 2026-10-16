@@ -232,7 +232,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     }, { timeout: 45_000 }).toMatch(/^(success|failed|timeout|cancelled)$/)
     expect(execution.status).toBe(status)
     expect(String(execution.task_id)).toBe(String(taskID))
-    expect(String(execution.triggered_by)).toBe(input.principal_id)
+    expect(String(execution.trigger_by)).toBe(input.principal_id)
     return execution
   }
   async function updateValidity(mode, until) {
