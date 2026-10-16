@@ -1970,12 +1970,18 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
     required = {
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
+            'playwright install --with-deps chromium', 'export CONSOLE_URL=',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
-            "state='expired'", "self.reader.token == reader_before"),
+            "state='expired'", "self.reader.token == reader_before", 'with BrowserObservation(', 'browser.finish()',
+            'pg-source-authorization.spec.js'),
+        "console/frontend/e2e/online/pg-source-authorization.spec.js": (
+            'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
+            'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value'),
         "Makefile": ('test-pg-authorization-online-runner', 'pg-source-authorization-online_test.py',
-                     'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner'),
+                     'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner',
+                     '@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js'),
     }
     for relative, fragments in required.items():
         path = repository / relative

@@ -12,6 +12,7 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-metric-postgres-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+export CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/pg-authorization-engine.json"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
@@ -21,6 +22,7 @@ application_owned=1
 for start_target in -meta -manager; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite pg-source-authorization --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

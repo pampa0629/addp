@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 ONLINE = importlib.import_module('scripts.test.pg-source-authorization-online')
 REAL_BASIC_SCAN = ONLINE.basic_scan
+REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
 
 
 class Server:
@@ -171,6 +172,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             'id': 10 if name == 'metric_people' else 11, 'fingerprint': 'a' * 64}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
         patch.object(ONLINE.time, 'sleep').start()
+        self.browser = patch.object(ONLINE, 'BrowserObservation').start().return_value.__enter__.return_value
+        self.browser.finish.return_value = {'result': 'passed'}
         patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout:
                      self.server.client(token.removesuffix('-private-token'))).start()
 
@@ -187,7 +190,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 18)
+        self.assertEqual(len(report['checks']), 22)
         self.assertEqual(len(server.grants), 7)
         self.assertTrue(report['same_credential_through_grant_expiry'])
         self.assertIn(lifecycle.expiry_grant, server.expired_grants)
@@ -207,6 +210,18 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             {'closed_type': 'department', 'old_token_status': 401, 'remaining_sources': 1, 'preview_status': 200},
             {'closed_type': 'project_group', 'old_token_status': 401, 'remaining_sources': 0, 'preview_status': 403}])
         self.assertEqual(server.memberships, {})
+        self.assertEqual([call.args[0] for call in self.browser.wait.call_args_list], ['department', 'project_group'])
+        self.assertEqual([call.args[0] for call in self.browser.release.call_args_list], ['department', 'project_group'])
+
+    def test_browser_failure_still_withdraws_both_organization_grants(self):
+        server, lifecycle = self.lifecycle()
+        self.browser.wait.side_effect = ONLINE.SuiteError('browser did not reach its authorized observation')
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'browser'):
+            lifecycle.run({})
+        lifecycle.cleanup()
+        self.assertTrue(all(row['revocation'] is not None or key in server.expired_grants
+                            for key, row in server.grants.items()))
+        self.assertEqual(server.memberships, {'department': '41', 'project_group': '51'})
 
     def test_member_exit_oracles_reject_stale_tokens_inheritance_and_grant_deletion(self):
         for fault in ('stale_token_accepted', 'inherit_after_exit', 'exit_revokes_organization',
@@ -441,6 +456,84 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 self.assertFalse(any(server.denies.values()))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
                 self.assertNotIn('private-token', json.dumps(report))
+
+
+class PGBrowserObservationTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.environment = {'ADDP_ONLINE_ARTIFACT_DIR': self.directory.name,
+            'ADDP_ONLINE_SECRET_DIR': self.directory.name, 'ADDP_ONLINE_TEST_RUN_ID': 'pg-browser-test',
+            'ADDP_ONLINE_HOSTED': '1', 'ADDP_ONLINE_TEST': '1', 'CONSOLE_URL': 'http://127.0.0.1:5170',
+            'ADDP_ONLINE_TEST_USER_USERNAME': 'external-online-consumer',
+            'ADDP_ONLINE_TEST_USER_PASSWORD': 'reader-private-password',
+            'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'must-not-reach-browser',
+            'SYSTEM_SERVICE_CLIENT_SECRET': 'must-not-reach-browser'}
+        self.process = Mock(pid=12345)
+        self.process.poll.return_value = None
+        self.process.wait.return_value = 0
+
+    def expected(self, browser):
+        return dict(browser.binding, schema_version='addp.pg-source-authorization-browser/v1', result='passed',
+                    checks=ONLINE.BROWSER_CHECKS, login_requests=1, anonymous_refreshes=1,
+                    observations=[{'closed_type': 'department', 'refreshes': 1, 'preview_status': 200},
+                                  {'closed_type': 'project_group', 'refreshes': 1, 'preview_status': 403}])
+
+    def test_control_binding_private_process_scope_and_exact_report(self):
+        with patch.dict(ONLINE.os.environ, self.environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
+             patch.object(ONLINE.os, 'killpg') as kill:
+            with REAL_BROWSER_OBSERVATION(2, '33', 'addp://engine/1/path/public/metric_people?type=table&item_id=10') as browser:
+                control = browser.control
+                for kind in ('department', 'project_group'):
+                    (control / f'ready-{kind}.json').write_text(json.dumps(browser.marker(kind)))
+                    browser.wait(kind)
+                    browser.release(kind)
+                    self.assertEqual(json.loads((control / f'release-{kind}.json').read_text()), browser.marker(kind))
+                browser.evidence.write_text(json.dumps(self.expected(browser)))
+                self.assertEqual(browser.finish(), self.expected(browser))
+                env = popen.call_args.kwargs['env']
+                self.assertNotIn('ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN', env)
+                self.assertNotIn('SYSTEM_SERVICE_CLIENT_SECRET', env)
+                self.assertEqual(env['ADDP_ONLINE_TEST_USER_PASSWORD'], 'reader-private-password')
+                self.assertTrue(popen.call_args.kwargs['start_new_session'])
+                self.assertTrue(popen.call_args.args[0][-2].startswith('--output=' + str(control)))
+                self.process.poll.return_value = 0
+            kill.assert_not_called()
+            self.assertFalse(control.exists())
+
+    def test_report_missing_relogin_or_duplicate_refresh_cannot_pass(self):
+        with patch.dict(ONLINE.os.environ, self.environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process), \
+             patch.object(ONLINE.os, 'killpg'):
+            with REAL_BROWSER_OBSERVATION(2, '33', 'target') as browser:
+                for field in ('missing', 'relogin', 'duplicate_refresh', 'wrong_principal', 'incomplete_checks'):
+                    with self.subTest(field=field):
+                        value = self.expected(browser)
+                        if field == 'missing':
+                            browser.evidence.unlink(missing_ok=True)
+                        else:
+                            if field == 'relogin': value['login_requests'] = 2
+                            if field == 'duplicate_refresh': value['observations'][0]['refreshes'] = 2
+                            if field == 'wrong_principal': value['principal_id'] = 'other'
+                            if field == 'incomplete_checks': value['checks'] = value['checks'][:-1]
+                            browser.evidence.write_text(json.dumps(value))
+                        with self.assertRaises(ONLINE.SuiteError):
+                            browser.finish()
+                (browser.control / 'ready-department.json').write_text(json.dumps({'run_id': 'wrong'}))
+                with self.assertRaisesRegex(ONLINE.SuiteError, 'binding'):
+                    browser.wait('department')
+
+    def test_early_exit_and_deadline_stop_private_browser_process(self):
+        with patch.dict(ONLINE.os.environ, self.environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process), \
+             patch.object(ONLINE.os, 'killpg') as kill:
+            with REAL_BROWSER_OBSERVATION(2, '33', 'target') as browser:
+                control = browser.control
+                self.process.poll.return_value = 1
+                with self.assertRaisesRegex(ONLINE.SuiteError, 'observation'):
+                    browser.wait('department')
+                self.process.poll.return_value = None
+                self.process.wait.side_effect = [ONLINE.subprocess.TimeoutExpired('playwright', 180), 0]
+            self.assertEqual([call.args[1] for call in kill.call_args_list], [ONLINE.signal.SIGTERM, ONLINE.signal.SIGKILL])
+            self.assertFalse(control.exists())
 
 
 if __name__ == '__main__':

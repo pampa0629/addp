@@ -7,7 +7,9 @@ import math
 import os
 import re
 import signal
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,6 +26,8 @@ OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release'}
 ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_membership.close',
                             'iam.project_group_membership.read', 'iam.project_group_membership.close'}
+BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh',
+                  'same_iframe_without_relogin', 'denied_preview_clears_old_rows']
 
 
 def require(condition, message):
@@ -117,6 +121,90 @@ def preview(reader, target, allowed, expected=None):
             'Manager did not read the deterministic PG source')
     if expected is not None:
         require(data.get('total') == expected, 'PG source row count changed')
+
+
+class BrowserObservation:
+    """Keep the real UI open while the owner performs its existing IAM commands."""
+
+    def __init__(self, tenant, principal, target):
+        self.binding = {'run_id': os.environ['ADDP_ONLINE_TEST_RUN_ID'], 'tenant_id': str(tenant),
+                        'principal_id': str(principal), 'locator': target}
+        self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-authorization-browser.json'
+        self.secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+        require(self.secret.is_absolute() and self.secret.is_dir(), 'browser requires the Hosted Secret directory')
+        self.process = self.output = self.temporary = None
+
+    def __enter__(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pg-browser-', dir=self.secret)
+        self.control = Path(self.temporary.name)
+        self.evidence.unlink(missing_ok=True)
+        # The browser must log in as the reader, not inherit the API fixture or administrator Token.
+        environment = {key: value for key, value in os.environ.items() if key in {
+            'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'CI', 'PLAYWRIGHT_BROWSERS_PATH', 'NODE_EXTRA_CA_CERTS'}}
+        environment.update({key: os.environ[key] for key in (
+            'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_TEST', 'ADDP_ONLINE_ARTIFACT_DIR', 'CONSOLE_URL',
+            'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD')})
+        environment.update(ADDP_PG_BROWSER_BINDING=json.dumps(self.binding), ADDP_PG_BROWSER_CONTROL=str(self.control))
+        try:
+            self.output = (self.control / 'output.log').open('w')
+            self.process = subprocess.Popen(['npm', 'exec', '--', 'playwright', 'test',
+                '--config=playwright.online.config.js', '--output=' + str(self.control / 'playwright'),
+                'e2e/online/pg-source-authorization.spec.js'],
+                cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment,
+                stdout=self.output, stderr=subprocess.STDOUT, start_new_session=True)
+            return self
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+    def marker(self, kind):
+        require(kind in {'department', 'project_group'}, 'invalid browser member-exit phase')
+        return dict(self.binding, phase=kind)
+
+    def wait(self, kind):
+        ready = self.control / ('ready-' + kind + '.json')
+        deadline = time.monotonic() + 120
+        while not ready.exists():
+            require(self.process.poll() is None and time.monotonic() < deadline,
+                    'browser did not reach its member-exit observation: ' + kind)
+            time.sleep(.2)
+        require(json.loads(ready.read_text()) == self.marker(kind), 'browser control binding changed')
+
+    def release(self, kind):
+        path = self.control / ('release-' + kind + '.tmp')
+        path.write_text(json.dumps(self.marker(kind)))
+        path.replace(self.control / ('release-' + kind + '.json'))
+
+    def finish(self):
+        try:
+            require(self.process.wait(timeout=180) == 0, 'PG browser member-exit acceptance failed')
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError('PG browser member-exit acceptance timed out') from error
+        require(self.evidence.is_file(), 'PG browser report missing')
+        result = json.loads(self.evidence.read_text())
+        anonymous = result.pop('anonymous_refreshes', None)
+        expected = dict(self.binding, schema_version='addp.pg-source-authorization-browser/v1', result='passed',
+                        checks=BROWSER_CHECKS, login_requests=1,
+                        observations=[{'closed_type': 'department', 'refreshes': 1, 'preview_status': 200},
+                                      {'closed_type': 'project_group', 'refreshes': 1, 'preview_status': 403}])
+        require(result == expected and type(anonymous) is int and anonymous in {0, 1},
+                'PG browser evidence does not prove the exact member-exit flow')
+        return dict(result, anonymous_refreshes=anonymous)
+
+    def __exit__(self, *_):
+        try:
+            if self.process is not None and self.process.poll() is None:
+                os.killpg(self.process.pid, signal.SIGTERM)
+                try:
+                    self.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                    self.process.wait(timeout=5)
+        finally:
+            if self.output is not None:
+                self.output.close()
+            if self.temporary is not None:
+                self.temporary.cleanup()
 
 
 class Lifecycle:
@@ -346,29 +434,34 @@ class Lifecycle:
         preview(self.reader, target, True, 2)
         remaining = dict(self.organizations)
         observations = report['membership_observations'] = []
-        for kind in ('department', 'project_group'):
-            before = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
-            self.close_membership(kind, before)
-            remaining.pop(kind)
-            self.relogin_reader(before, target, remaining)
-            sources.pop((kind, self.organizations[kind]))
-            self.inspect_sources(facts, sources, {})
-            preview(self.reader, target, bool(sources), 2)
-            preview(self.reader, ungranted, False)
-            preview(self.outsider, target, False)
-            # Leaving an organization removes inheritance, not that organization's Grant.
-            for recipient_type, recipient_id in self.organizations.items():
-                history = self.listing(history=True, state='active', recipient_type=recipient_type, recipient_id=recipient_id)
-                require(history['total'] == 1 and len(history['data']) == 1
-                        and history['data'][0]['request_id'] == issued_sources[(recipient_type, recipient_id)]
-                        and history['data'][0].get('revocation') is None,
-                        'member exit revoked or lost an organization Grant')
-                require(self.listing(recipient_type=recipient_type, recipient_id=recipient_id)['total'] == 1,
-                        'member exit removed the direct organization relation')
-            observations.append({'closed_type': kind, 'old_token_status': 401,
-                                 'remaining_sources': len(sources), 'preview_status': 200 if sources else 403})
-            report['checks'].append('department_exit_invalidates_old_token_and_preserves_project_read' if sources else
-                                    'last_organization_exit_invalidates_old_token_and_denies_read')
+        with BrowserObservation(self.tenant, self.recipient, target) as browser:
+            for kind in ('department', 'project_group'):
+                browser.wait(kind)
+                before = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
+                self.close_membership(kind, before)
+                remaining.pop(kind)
+                self.relogin_reader(before, target, remaining)
+                sources.pop((kind, self.organizations[kind]))
+                self.inspect_sources(facts, sources, {})
+                preview(self.reader, target, bool(sources), 2)
+                preview(self.reader, ungranted, False)
+                preview(self.outsider, target, False)
+                # Leaving an organization removes inheritance, not that organization's Grant.
+                for recipient_type, recipient_id in self.organizations.items():
+                    history = self.listing(history=True, state='active', recipient_type=recipient_type, recipient_id=recipient_id)
+                    require(history['total'] == 1 and len(history['data']) == 1
+                            and history['data'][0]['request_id'] == issued_sources[(recipient_type, recipient_id)]
+                            and history['data'][0].get('revocation') is None,
+                            'member exit revoked or lost an organization Grant')
+                    require(self.listing(recipient_type=recipient_type, recipient_id=recipient_id)['total'] == 1,
+                            'member exit removed the direct organization relation')
+                observations.append({'closed_type': kind, 'old_token_status': 401,
+                                     'remaining_sources': len(sources), 'preview_status': 200 if sources else 403})
+                report['checks'].append('department_exit_invalidates_old_token_and_preserves_project_read' if sources else
+                                        'last_organization_exit_invalidates_old_token_and_denies_read')
+                browser.release(kind)
+            report['browser'] = browser.finish()
+            report['checks'].extend(BROWSER_CHECKS)
         report['checks'].append('organization_grants_and_history_survive_member_exit')
 
     def run(self, report):

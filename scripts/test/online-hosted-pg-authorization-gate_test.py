@@ -30,6 +30,12 @@ class HostedPGAuthorizationTest(unittest.TestCase):
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
+        self.host._executable('npm', '''
+            #!/usr/bin/env bash
+            [ "$*" = '--prefix console/frontend exec -- playwright install --with-deps chromium' ] || exit 2
+            echo 'browser-install' >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_BROWSER_INSTALL_FAIL:-0}" != 1 ]
+        ''')
         subprocess.run(['git', 'add', '.'], cwd=self.host.repository, check=True)
         subprocess.run(['git', 'commit', '-qm', 'PG fixture'], cwd=self.host.repository, check=True)
 
@@ -56,7 +62,8 @@ class HostedPGAuthorizationTest(unittest.TestCase):
 
     def test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources(self):
         # Each call needs a new secret directory; the lifecycle removes it on exit.
-        for overrides in ({}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_SOURCE_FAIL': '1'}):
+        for overrides in ({}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_SOURCE_FAIL': '1'},
+                          {'ADDP_TEST_BROWSER_INSTALL_FAIL': '1'}):
             with self.subTest(overrides=overrides):
                 result = self.run_gate(**overrides)
                 self.assertEqual(result.returncode == 0, not bool(overrides), result.stderr)
@@ -68,6 +75,8 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 if not overrides:
                     self.assertIn('start:-meta', trace)
                     self.assertIn('start:-manager', trace)
+                    self.assertIn('browser-install', trace)
+                    self.assertLess(trace.index('browser-install'), trace.index('make:test-online'))
                     self.assertIn('make:test-online ONLINE_SUITE=pg-source-authorization', trace)
                     self.assertLess(trace.index('application-stop'), trace.index('pg-fixture:stop'))
                     self.assertNotIn('start:-develop', trace)

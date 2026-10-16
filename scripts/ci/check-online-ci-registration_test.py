@@ -21,7 +21,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
                  'scripts/test/online-hosted-pg-authorization-gate.sh',
-                 'scripts/test/pg-source-authorization-online.py', 'Makefile')
+                 'scripts/test/pg-source-authorization-online.py', 'Makefile',
+                 'console/frontend/e2e/online/pg-source-authorization.spec.js')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +31,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "inputs.suite != 'pg-source-authorization'"),
                                    (paths[2], 'online-metric-postgres-fixture.sh stop'),
                                    (paths[3], 'lifecycle.cleanup()'),
-                                   (paths[4], '@$(MAKE) test-pg-authorization-online-runner')):
+                                   (paths[4], '@$(MAKE) test-pg-authorization-online-runner'),
+                                   (paths[2], 'playwright install --with-deps chromium'),
+                                   (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))
