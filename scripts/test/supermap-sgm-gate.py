@@ -248,12 +248,14 @@ def provision(life, base_id, images):
                                "sha256sum /opt/supermap/bin/bin/*.lic12").splitlines()
     license_hashes = sorted(line.split()[0] for line in license_lines)
     require(license_hashes and all(re.fullmatch("[0-9a-f]{64}", item) for item in license_hashes), "license SHA evidence missing")
+    life.docker("exec", supermap, "mkdir", "-m", "700", "/tmp/sgm-baseline-source")
     for name in ("compass.SGM", "compass.png"):
         life.copy(life.work / name, f"{model}:/tmp/{name}")
+        life.copy(life.work / name, f"{supermap}:/tmp/sgm-baseline-source/{name}")
     config = {"root_user": root_user, "root_secret": root_secret, "user": user, "secret": secret}
     life.copy(life.private_json("probe.json", config), f"{model}:/tmp/sgm-probe.json")
     life.trace_file = (life.work / "minio-trace.jsonl").open("wb")
-    life.trace = subprocess.Popen(["docker", "exec", minio, "mc", "admin", "trace", "--json", "--all", "--verbose", "local"],
+    life.trace = subprocess.Popen(["docker", "exec", minio, "mc", "admin", "trace", "--json", "--call", "s3", "--verbose", "local"],
                                   stdout=life.trace_file, stderr=subprocess.DEVNULL)
     time.sleep(1)
     require(life.trace.poll() is None, "MinIO request trace did not start")
@@ -263,12 +265,17 @@ def provision(life, base_id, images):
 def audit_trace(path):
     """Allowlist only non-secret fields; raw headers/bodies are never returned."""
     events = []
-    for line in path.read_text().splitlines():
-        entry = json.loads(line)
-        call = entry.get("api", {})
+    # Pinned mc emits successive indented JSON objects, not JSON Lines.
+    text, cursor, decoder = path.read_text(), 0, json.JSONDecoder()
+    while cursor < len(text):
+        if text[cursor].isspace():
+            cursor += 1
+            continue
+        entry, cursor = decoder.raw_decode(text, cursor)
+        require(isinstance(entry, dict) and isinstance(entry.get("api"), str), "invalid fixed mc trace schema")
+        name = entry["api"]
         request = entry.get("request", {})
         response = entry.get("response", {})
-        name = call.get("name", "") if isinstance(call, dict) else str(call)
         method, resource = request.get("method", ""), request.get("path", "")
         authorization = json.dumps(request.get("headers", {}))
         runtime_read = "Credential=runtime-" in authorization

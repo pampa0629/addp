@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 import sys
 import time
+import re
 import urllib.error
 import urllib.request
 
@@ -14,9 +15,45 @@ class ProbeAssertion(RuntimeError):
     pass
 
 
+PROBE_PHASE = "import_dependencies"
+
+
+def checkpoint(name):
+    global PROBE_PHASE
+    PROBE_PHASE = name
+
+
 def require(condition, label):
     if not condition:
         raise ProbeAssertion(label)
+
+
+def operator_result(runtime, body):
+    # workflow/v1 permits top-level extension fields (result is optional).
+    # Pin each product's actual wire contract, never guess an alternate shape.
+    if runtime == "supermap":
+        require("result" not in body, "SuperMap direct result must be top level")
+        return body
+    return body["result"]
+
+
+def texture_bindings(doc, primitives):
+    textured = 0
+    for primitive in primitives:
+        # glTF permits primitives without a material (the default material).
+        if "material" not in primitive:
+            continue
+        material = doc["materials"][primitive["material"]]
+        pbr = material.get("pbrMetallicRoughness", {})
+        if "baseColorTexture" not in pbr:
+            continue
+        require("TEXCOORD_0" in primitive["attributes"], "textured primitive UV lost")
+        require(material.get("alphaMode") == "BLEND", "transparent texture material must use BLEND")
+        image_index = doc["textures"][pbr["baseColorTexture"]["index"]]["source"]
+        require(image_index == 0, "material does not use the embedded texture")
+        textured += 1
+    require(textured > 0, "embedded texture is not bound to any primitive")
+    return textured
 
 
 def main():
@@ -26,6 +63,7 @@ def main():
     from PIL import Image
     from glb_validation import validate_glb
 
+    checkpoint("load_fixture")
     config = json.loads(Path("/tmp/sgm-probe.json").read_text())
     Path("/tmp/sgm-probe.json").unlink()
     root = Minio("minio:9000", access_key=config["root_user"], secret_key=config["root_secret"], secure=False)
@@ -62,14 +100,17 @@ def main():
                     "source/adjacent/Textures/compass.png": b"invalid fallback must not be read",
                     "source/denied/compass.png": texture_bytes,
                     "source/corrupt/compass.png": b"corrupt image"})
+    checkpoint("upload_fixture")
     for key, data in sources.items():
         put(key, data)
     # Independent IAM assertions: source write/delete and unrelated objects denied.
+    checkpoint("restricted_storage_permissions")
     put("forbidden/private.txt", b"never readable")
     denied(lambda: get("forbidden/private.txt", client))
     denied(lambda: client.put_object(bucket, "source/forbidden.txt", io.BytesIO(b"x"), 1))
     denied(lambda: client.remove_object(bucket, "source/adjacent/compass.SGM"))
 
+    checkpoint("runtime_readiness")
     urls = {"supermap": "http://supermap:8103", "model3d": "http://127.0.0.1:8101"}
     for url in urls.values():
         for _ in range(120):
@@ -87,10 +128,12 @@ def main():
                 "region": "us-east-1", "access_key": config["user"], "secret_key": config["secret"],
                 "bucket": bucket, "object": key}
 
-    def invoke(runtime, operator, source_key, output_key, mode="replace", expect=True):
+    def invoke(runtime, operator, source_key, output_key, mode="replace", expect=True, source_access=None):
+        checkpoint(f"{operator}_{Path(source_key).parent.name}")
         source_format, target_format = ("sgm", "osgb") if runtime == "supermap" else ("osgb", "glb")
         plan = {"schema_version": "addp.workflow.access-plan/v1",
-                "source": {"kind": "file", "format": source_format, "access": access(source_key)},
+                "source": {"kind": "file", "format": source_format,
+                           "access": access(source_key) if source_access is None else source_access},
                 "target": {"kind": "file", "format": target_format, "name": Path(output_key).name,
                            "write_mode": mode, "access": access(output_key)}}
         request = urllib.request.Request(urls[runtime] + f"/api/operators/{operator}/invoke",
@@ -104,10 +147,11 @@ def main():
         require((status == 200 and body.get("status") == "success") == expect,
                 f"{runtime}/{operator} unexpected result for {Path(source_key).parent.name}")
         if expect:
-            return body["result"]
+            return operator_result(runtime, body)
         require(status >= 400 and body.get("status") in {"failed", "error"}, "expected explicit conversion failure")
 
-    def verify_glb(key):
+    def verify_glb(key, reference_pixels=None, reference_textured=None):
+        checkpoint("verify_glb")
         data = get(key)
         path = Path("/tmp/sgm-probe.glb")
         path.write_bytes(data)
@@ -127,22 +171,37 @@ def main():
         view = doc["bufferViews"][doc["images"][0]["bufferView"]]
         start = bin_offset + 8 + view.get("byteOffset", 0)
         image = Image.open(io.BytesIO(data[start:start + view["byteLength"]])).convert("RGBA")
-        require(image.size == original.size and image.tobytes() == original.tobytes(), "embedded texture pixels changed")
-        for primitive in primitives:
-            pbr = doc["materials"][primitive["material"]]["pbrMetallicRoughness"]
-            image_index = doc["textures"][pbr["baseColorTexture"]["index"]]["source"]
-            require(image_index == 0, "material does not use the embedded texture")
+        pixels = image.tobytes()
+        require(image.size == original.size and all(lo < hi for lo, hi in image.getextrema()[:3]),
+                "texture dimensions or nonempty colors changed")
+        require(doc["images"][0]["mimeType"] == "image/png", "transparent compass texture must use PNG")
+        require(image.getextrema()[3] == original.getextrema()[3] == (0, 255), "texture alpha coverage lost")
+        if reference_pixels is not None:
+            require(pixels == reference_pixels, "S3 texture pixels differ from mounted-path reference")
+        textured = texture_bindings(doc, primitives)
+        if reference_textured is not None:
+            require(textured == reference_textured, "S3 texture bindings differ from mounted-path reference")
         path.unlink()
-        return {"vertices": vertices, "triangles": triangles, "uv": True, "embedded_pixel_match": True,
-                "texture_rgba_sha256": hashlib.sha256(original.tobytes()).hexdigest(),
-                "glb_sha256": hashlib.sha256(data).hexdigest()}
+        return {"vertices": vertices, "triangles": triangles, "uv": True, "textured_primitives": textured,
+                **({"pixel_match_to_mounted_path": True} if reference_pixels is not None else {}),
+                "texture_rgba_sha256": hashlib.sha256(pixels).hexdigest(),
+                "source_png_pixels_identical": pixels == original.tobytes(),
+                "image_mime_type": "image/png", "alpha_range": [0, 255], "alpha_mode": "BLEND",
+                "glb_sha256": hashlib.sha256(data).hexdigest()}, pixels
 
-    checks = {"restricted_storage_permissions": True, "layouts": {}}
+    checks = {"restricted_storage_permissions": True, "layouts": {}, "fixture_sha256": {
+        "sgm": hashlib.sha256(model_bytes).hexdigest(), "png": hashlib.sha256(texture_bytes).hexdigest()}}
+    invoke("supermap", "sgm_to_osgb", "mounted/compass.SGM", "stage/baseline.osgb", "create",
+           source_access={"method": "mounted_path", "path": "/tmp/sgm-baseline-source/compass.SGM"})
+    invoke("model3d", "osgb_to_glb", "stage/baseline.osgb", "result/baseline.glb", "create")
+    checks["mounted_path_reference"], reference_pixels = verify_glb("result/baseline.glb")
+    checks["source_png_rgba_sha256"] = hashlib.sha256(original.tobytes()).hexdigest()
     for case in ("adjacent", "fallback"):
         result = invoke("supermap", "sgm_to_osgb", f"source/{case}/compass.SGM", "stage/compass.osgb", "create" if case == "adjacent" else "replace")
         require((result["vertex_count"], result["triangle_count"]) == (136, 94), "native geometry counts changed")
         invoke("model3d", "osgb_to_glb", "stage/compass.osgb", "result/compass.glb")
-        checks["layouts"][case] = verify_glb("result/compass.glb")
+        checks["layouts"][case], _ = verify_glb("result/compass.glb", reference_pixels,
+                                               checks["mounted_path_reference"]["textured_primitives"])
 
     stable_osgb, stable_glb = get("stage/compass.osgb"), get("result/compass.glb")
     for case in ("denied", "corrupt", "missing"):
@@ -156,6 +215,7 @@ def main():
     put("stage/invalid.osgb", b"invalid OSGB")
     invoke("model3d", "osgb_to_glb", "stage/invalid.osgb", "result/compass.glb", expect=False)
     require(get("result/compass.glb") == stable_glb, "invalid OSGB replaced GLB")
+    checkpoint("verify_source_bytes")
     require(all(get(key) == value for key, value in sources.items()), "source bytes changed")
     checks.update({"source_bytes_unchanged": True, "denied_missing_corrupt_preserve": True,
                    "create_conflict_preserves": True, "invalid_osgb_preserves": True})
@@ -170,5 +230,10 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as error:
         # Never print exception values: S3/HTTP errors can contain signed headers.
-        print("SGM private probe assertion failed: " + type(error).__name__, file=sys.stderr)
+        code = getattr(error, "code", "")
+        suffix = "_" + code if isinstance(code, str) and re.fullmatch("[A-Za-z][A-Za-z0-9]{0,63}", code) else ""
+        if isinstance(error, KeyError) and error.args and error.args[0] in {
+            "pbrMetallicRoughness", "baseColorTexture", "source", "material", "index", "attributes", "POSITION", "TEXCOORD_0", "indices"}:
+            suffix = "_" + error.args[0]
+        print("SGM_PROBE_CHECK:" + PROBE_PHASE + "_" + type(error).__name__ + suffix, file=sys.stderr)
         sys.exit(1)

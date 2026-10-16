@@ -12,9 +12,40 @@ from unittest.mock import patch
 SPEC = importlib.util.spec_from_file_location("sgm_t2_gate", Path(__file__).with_name("supermap-sgm-gate.py"))
 GATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GATE)
+PROBE_SPEC = importlib.util.spec_from_file_location("sgm_t2_probe", Path(__file__).with_name("supermap-sgm-probe.py"))
+PROBE = importlib.util.module_from_spec(PROBE_SPEC)
+PROBE_SPEC.loader.exec_module(PROBE)
 
 
 class IsolationContract(unittest.TestCase):
+    def test_default_material_geometry_and_textured_geometry_can_coexist(self):
+        doc = {"materials": [{"alphaMode": "BLEND", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+               "textures": [{"source": 0}]}
+        primitives = [{"attributes": {"POSITION": 0}}, {"material": 0, "attributes": {"POSITION": 1, "TEXCOORD_0": 2}}]
+        self.assertEqual(PROBE.texture_bindings(doc, primitives), 1)
+        with self.assertRaises(PROBE.ProbeAssertion):
+            PROBE.texture_bindings(doc, primitives[:1])
+        with self.assertRaises(PROBE.ProbeAssertion):
+            PROBE.texture_bindings(doc, [{"material": 0, "attributes": {"POSITION": 1}}])
+
+    def test_texture_must_retain_alpha_and_reference_the_embedded_image(self):
+        primitive = {"material": 0, "attributes": {"TEXCOORD_0": 1}}
+        for alpha_mode, image in (("OPAQUE", 0), ("BLEND", 1)):
+            doc = {"materials": [{"alphaMode": alpha_mode, "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+                   "textures": [{"source": image}]}
+            with self.subTest(alpha=alpha_mode, image=image), self.assertRaises(PROBE.ProbeAssertion):
+                PROBE.texture_bindings(doc, [primitive])
+
+    def test_each_runtime_uses_its_actual_direct_response_contract(self):
+        facts = {"vertex_count": 136, "triangle_count": 94}
+        supermap = {"status": "success", **facts}
+        self.assertEqual(PROBE.operator_result("supermap", supermap), supermap)
+        self.assertEqual(PROBE.operator_result("model3d", {"status": "success", "result": facts}), facts)
+        with self.assertRaises(PROBE.ProbeAssertion):
+            PROBE.operator_result("supermap", {"status": "success", "result": facts})
+        with self.assertRaises(KeyError):
+            PROBE.operator_result("model3d", supermap)
+
     def test_wrong_architecture_rejected_before_start(self):
         for os_name, arch in (("linux", "amd64"), ("darwin", "arm64")):
             with self.subTest(os=os_name, arch=arch), patch.object(GATE, "command", return_value=json.dumps([
@@ -108,14 +139,30 @@ class IsolationContract(unittest.TestCase):
     def test_trace_drops_headers_and_rejects_directory_listing(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "trace"
-            event = {"api": {"name": "GetObject"}, "request": {
+            event = {"api": "s3.GetObject", "request": {
                 "method": "GET", "path": "/sgm-t2/source/denied/compass.png", "headers": {"Authorization": "Credential=runtime-123/SECRET"}},
                 "response": {"statusCode": 403}}
             path.write_text(json.dumps(event) + "\n")
             self.assertNotIn("SECRET", json.dumps(GATE.audit_trace(path)))
-            path.write_text(json.dumps({"api": {"name": "ListObjectsV2"}}) + "\n")
+            path.write_text(json.dumps({"api": "s3.ListObjectsV2"}) + "\n")
             with self.assertRaisesRegex(GATE.GateError, "listed"):
                 GATE.audit_trace(path)
+
+    def test_fixed_mc_verbose_trace_is_a_stream_of_indented_json_objects(self):
+        # mc 7394ce0d cmd/admin-trace.go:772-829 uses Encoder.SetIndent.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "trace"
+            first = {"type": "s3", "api": "s3.GetObject", "request": {
+                "method": "GET", "path": "/sgm-t2/source/fallback/compass.png",
+                "headers": {"Authorization": "AWS4-HMAC-SHA256 Credential=runtime-123/SECRET"}},
+                "response": {"statusCode": 404}}
+            second = {**first, "response": {"statusCode": 200}}
+            second["request"] = {**first["request"], "path": "/sgm-t2/source/fallback/Textures/compass.png"}
+            path.write_text(json.dumps(first, indent=1) + "\n" + json.dumps(second, indent=1) + "\n")
+            events = GATE.audit_trace(path)
+            self.assertEqual([event["status"] for event in events], [404, 200])
+            self.assertEqual([event["api"] for event in events], ["s3.GetObject", "s3.GetObject"])
+            self.assertNotIn("SECRET", json.dumps(events))
 
     def test_extra_fallback_after_denial_is_rejected(self):
         with self.assertRaisesRegex(GATE.GateError, "candidate"):
