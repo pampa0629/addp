@@ -46,8 +46,25 @@
 当前未决范围：
 
 1. 用户已确认先做设备静态轨迹，暂不做回放。首版实现显式字段与 CRS 配置、设备分组、时间排序，以及完整文件不超过 2000 个点的受控读取；具体契约和验证记录见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。超过上限的文件不绘制不完整路线；公开真实浮标子集已补验；设备与时间范围已完成 NOAA 2928 点真实文件的本地页面补验：两设备 88 点、单设备 44 点和超限清空路线通过；每次所选范围仍不超过 2000 点。重新生成并排除地图内滚轮操作后，两条路线自动完整显示；另补窄视口与高像素密度的自动适配检查，不涉及产品实现变更。
-2. FBX 基础预览缺陷仍在，Three.js 升级须评估 COPC/3D Tiles 等实际消费者影响；GLB 快显通过不等于该缺陷修复。
+2. FBX 基础预览缺陷仍在，Three.js 升级影响已完成下述依赖声明与源码核对：CAD 与 Giro3D 尚无共同满足已发布稳定版 peer 约束的修复版本组合，当前不升级；GLB 快显通过不等于该缺陷修复。
 3. SGM 需在合法 SDK/许可环境补受控跨模块验收；现有私有样例不上传到公开 Hosted。静态模型、基础贴图以外的版本、材质和动画能力继续按真实需求与样例单独认证，不再把已解决的 3DS 丢图或秋树 alpha 列为当前故障。
+
+### FBX 基础预览的 Three.js 升级评估（2026-10-16）
+
+本次仅核对官方发布元数据、上游修复及本地实际消费者，未安装或升级依赖，也未认证新版本运行兼容性。Three.js 的 [PR 31248](https://github.com/mrdoob/three.js/pull/31248) 在 r178 修复空颜色层，但引入有效顶点颜色读取回归；[PR 31420](https://github.com/mrdoob/three.js/pull/31420) 在 r179 修正后者。因此候选至少须同时包含两次修复，不能把仅升到 r178 作为完成条件。
+
+| 实际消费者 | 当前安装及官方依赖声明 | 升级影响与必须验证的范围 |
+| --- | --- | --- |
+| Model3D 基础预览／GLB 缓存 | Three.js 0.172.0；FBX、GLTF、OBJ、PLY、STL loader 及 OrbitControls 均来自同一包 | 空颜色层与有效顶点颜色分别验证；保留源变换、GLB 贴图、透明材质、相机适配、切换与资源释放，不能只验证 FBX 不抛错。 |
+| COPC／Giro3D | 1.0.1 声明 Three.js `^0.170.0`、OL `10`；现有 override 固定 Three.js 0.172.0 | 当前 override 本就超出上游 peer 范围，不构成更高版本兼容证据。当前稳定版 2.0.5 改为 Three.js `^0.180.0`、OL `~10.8.0`，会连带升级地图栈；须验真实 COPC、Range、点颜色、深度、相机与卸载。 |
+| CAD | cad-simple-viewer／three-renderer 1.6.3 均声明 Three.js `^0.172.0`；截至本次核对，最新稳定版 1.7.5 仍为此约束 | r179／r180 不在声明范围内；新版 CAD 本身不能解除约束。实际 renderer 有自定义 shader 和 onBeforeCompile，须在获支持的统一版本组合上补 DWG／DXF、文字、线型、填充、缩放与拾取验收。 |
+| 3D Tiles、Gaussian、S3M | 3d-tiles-renderer 0.4.28 声明 Three.js `>=0.167.0`；Gaussian 0.4.7 为 `>=0.160.0`；活动 S3MThreeLayer／Content 直接消费 Three.js | peer 范围允许不代表实际渲染通过；须验瓦片加载与变换、Gaussian 深度／透明混合、SGM 转换后树叶 alpha 及相机。S3M 保留现行 Three.js 唯一路线。 |
+
+官方发布约束按 [Giro3D registry](https://registry.npmjs.org/@giro3d%2fgiro3d)、[CAD viewer registry](https://registry.npmjs.org/@mlightcad%2fcad-simple-viewer) 及 [CAD renderer registry](https://registry.npmjs.org/@mlightcad%2fthree-renderer) 的稳定版本逐项核对；预发布版不作为可升级结论。按 Three.js [迁移指南](https://github.com/mrdoob/three.js/wiki/Migration-Guide)，r177 有颜色空间方法改名、r178 改乘法／减法透明混合要求、r179 改反向深度参数、r180 改深度 shader 宏名；当前 Giro3D 源码仍使用 `USE_LOGDEPTHBUF`，自定义 shader 消费须纳入真实渲染验证，不能只看构建成功。
+
+当前决策是保留已验收的 GLB 快显和技术栈规约中的单实例依赖组合；不强行追加 override、不复制 FBXLoader 补丁、不引入第二份 Three.js。下一步若推进基础预览升级，应先取得 CAD 与 Giro3D 可共同支持的版本组合，再修订技术栈规约并实施统一升级。届时最小门禁为 `make test-manager-frontend`、共享地图实际消费者的前端门禁和 `make test-changed`；既有 Manager Hosted suite 须增加 FBX 基础预览的正反颜色样例，同时保留现有 GLB、COPC／COG 及清理验证，CAD／S3M／Gaussian／3D Tiles 另按已有标准入口补实际渲染证据。此处列出待执行范围，不登记任何新版本门禁通过。
+
+本次仅更新既有矩阵，`git diff --check` 通过；工作区 `make test-changed` 因并行多 Owner 变更所需的 T2 连接条件未注入，在预检中止，后续测试未执行，不登记整轮通过。没有产品、依赖、权限或 CI 编排变更，不要求重启服务。
 
 2026-10-10 本地页面复核：Business NFS `doc/twosheet.xlsx` 的两个工作表切换正常，均显示 5 行、10 列；`gis-data/sample.csv` 显示与源文件一致的 3 行、5 列；`doc/test.json` 显示普通 JSON 文档；`gis-data/sample.geojson` 的两个点及属性表正常显示。`gis-data/converted-data.json` 的 records array 显示总数 73090，第二、第三页的首条 BSM 分别为 21、41，与独立读取源文件一致；该样例缺少可可靠转换的坐标事实，页面明确跳过地图，不猜坐标系。复核发现窄面板的横向分页滚动区遮挡下一页按钮，已改为共享分页控件分组换行，并删除与真实分页矛盾的固定 50 行提示；新增 Manager 浏览器回归覆盖按钮实际命中、第二页请求与返回第一页。以上只证明这些样例的本地页面行为，不替代 Hosted T4，也不证明所有 XLSX sheet 结构、大文件或轨迹业务语义均已支持。
 
