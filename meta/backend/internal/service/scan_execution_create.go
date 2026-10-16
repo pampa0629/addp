@@ -38,8 +38,8 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, err
 	}
 	req.Source = strings.TrimSpace(req.Source)
-	if req.ParentExecutionID != "" || req.Source == commonClient.MetaScanSourceDevelopProducedTarget {
-		if req.Source != commonClient.MetaScanSourceDevelopProducedTarget || req.ParentExecutionID == "" {
+	if req.ParentExecutionID != "" || req.Source == commonClient.MetaScanSourceDevelopProducedTarget || req.Source == commonClient.MetaScanSourceManagerMosaicProducedTarget {
+		if (req.Source != commonClient.MetaScanSourceDevelopProducedTarget && req.Source != commonClient.MetaScanSourceManagerMosaicProducedTarget) || req.ParentExecutionID == "" {
 			return nil, commonAPI.ErrBadRequest
 		}
 	}
@@ -117,7 +117,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	}
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := inheritDevelopProducedTargetActor(tx, execution, req); err != nil {
+		if err := inheritProducedTargetActor(tx, execution, req); err != nil {
 			return err
 		}
 		return tx.Create(execution).Error

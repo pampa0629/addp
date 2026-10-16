@@ -119,6 +119,12 @@ Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、
 
 该扫描没有 ScanTask 定义，读取仍遵守 Meta Owner Permission 加本人一次性执行条件；父执行可读不能自动授予 Meta 读取权限。其他 User、跨 Tenant、无主体来源的历史继续不可见，不回填历史身份。自动扫描提交失败只作为工作流产物的扫描反馈，不回滚已生成产物或把成功工作流改为失败。Monitor 复用直接父子关系、Common Observation 与现有事件接口展示该扫描，配置、任意 metadata 和执行授权信息不得进入通用诊断响应。
 
+### Manager 栅格 mosaic 产物自动扫描的执行归属
+
+仅 `manager/raster_mosaic_generation` 使用 `source=manager.raster_mosaic_generation.produced_target`。普通用户提交时由 Manager 从已验证的当前 User AuthContext 固化 Principal、Tenant Membership、授权版本和一致的 `triggered_by`；TaskProvider 继续沿已验证的 Orchestrator 父执行继承，不接受客户端自报主体。Runtime 实际生成成功后，Manager 在当前有效 lease 下先持久化产物事实及 `metadata.produced_target`（`engine_id/catalog_path/manifest_ref/attempt`），再经现有 Meta 手动扫描接口携带直接父 execution UUID 提交。该事实仅描述本次生成成功的 dataset 根和 manifest，不是任务定义中的预期产物或新的授权。
+
+Meta 仅接受有 `meta.scan_task.execute` 的 `addp-manager` Service Principal 使用该来源；在创建事务中锁定同 Tenant、Manager mosaic 类型、running 且 lease 有效的父执行，核验完整主体、产物 attempt 与父执行一致、实际 manifest 及请求的唯一目录精确匹配。请求固定 `deep + force`，不得追加 targets、ref_groups、node/item 或其他目录，不扩大到父目录或其他产物。继承发起人与直接父 UUID，不复制执行授权或租约凭据。子扫描无任务定义，用户读取仍需 Meta Owner 读取权限及本人一次性执行归属；父执行读取权不传递给子扫描，既有无主体历史不回填。Manager 当前扫描提交失败的业务状态语义保持不变。该契约不替代后续源数据访问授权及 Worker 重核。
+
 ### 任务语义身份与重复执行
 
 持久任务定义的 owner 模块必须明确该 `task_type` 的任务语义身份，不得仅依赖自增 `id`、最近 execution 或输出路径判断是否重复。

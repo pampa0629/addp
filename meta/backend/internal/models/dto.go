@@ -13,7 +13,7 @@ type JSONMap = commonModels.JSONMap
 // ScanRequest 扫描请求
 type ScanRequest struct {
 	Encoding          string         `json:"encoding,omitempty" enums:"utf-8,gbk,utf-16le,utf-16be"` // 单个 CSV/TSV item 深度刷新编码 | Encoding for a single CSV/TSV item deep refresh
-	ParentExecutionID string         `json:"parent_execution_id"`                                    // Develop 产物扫描的直接父执行 UUID
+	ParentExecutionID string         `json:"parent_execution_id"`                                    // Develop／Manager 产物扫描的直接父执行 UUID | Direct parent execution UUID for Develop/Manager output scans
 	EngineID          uint           `json:"engine_id"`                                              // 存储引擎 ID
 	CatalogPaths      []string       `json:"catalog_paths"`                                          // 要扫描的 catalog 路径列表（空则全部）
 	RefGroups         []ScanRefGroup `json:"ref_groups"`                                             // 内容引用组

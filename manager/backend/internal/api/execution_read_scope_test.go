@@ -39,6 +39,7 @@ func TestManagerExecutionReadIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	testManagerExecutionReadIsolation(t, db)
+	testManagerMosaicExecutionActor(t, db)
 }
 
 func TestIntegrationPostgresManagerExecutionReadIsolation(t *testing.T) {
@@ -63,6 +64,7 @@ func TestIntegrationPostgresManagerExecutionReadIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	testManagerExecutionReadIsolation(t, tx)
+	testManagerMosaicExecutionActor(t, tx)
 }
 
 func testManagerExecutionReadIsolation(t *testing.T, db *gorm.DB) {

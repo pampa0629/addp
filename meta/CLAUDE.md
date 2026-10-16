@@ -40,6 +40,10 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 专业扫描执行读取按 Tenant + meta/scan 限定；当前 `meta.scan_task.read` 可读有定义的历史（含已删除定义），一次性执行只允许发起 User 读取。专业入口保留既有合法 User 凭据与 Client Scope 守卫，不套用 Monitor 的第一方令牌限制；TaskProvider 继续独立使用专用机器认证和权限。用户读取响应复用 Common Observation，仅增加固定 `scan_context.engine_id/scan_depth`，不得序列化完整 TaskExecution。详见平台任务体系规范；直接 Meta 入口已在提交 `60faf18da` 的 [Hosted T4 37166379368](https://github.com/pampa0629/addp/actions/runs/37166379368) 通过，完整证据见任务体系规范。
 
+Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager.raster_mosaic_generation.produced_target` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
+
+2026-10-16 mosaic 来源修复的最终 Meta Go T1 与标准 Meta PostgreSQL 18 项通过、0 失败/0 跳过；临时移除 Manager 主体继承可复现“扫描创建成功、本人读取 404”，恢复后通过。新增夹具已遵守 lease token UUID 与执行授权唯一索引，不放松真实存储约束；首次失败不计为通过。共享 Go、Manager PostgreSQL 及 Swagger/夹具验证见 Manager 模块记录。该结果仅为 T1/T2，不包含待栅格会话复跑的容量 T4。
+
 2026-10-15 补强同一 User Token 的动态撤权与恢复：专业执行详情、全局列表及任务历史列表撤权后立即 403，拒绝响应不含执行记录或总数；另一有权 User 的任务历史仍可读，但不能读取该用户的一次性执行；专用 TaskProvider 仍使用独立机器权限。恢复授权后本人详情和原隔离列表恢复。场景复用 `TestMetaScanExecutionReadIsolation` 与 `TestMetaScanExecutionReadAgainstPostgres`，由已有 Go T1、Meta PostgreSQL T2 及相应 CI 自动发现。标准 `make test-module MODULE=meta GO_ONLY=1` 与 `make test-meta-postgres` 通过，后者 18 项通过、0 失败、0 跳过，使用已核实的本地 `25432/addp_test`，不创建新库。临时令身份夹具忽略撤权时回归按预期失败于应 403 实际 200；恢复后 Go T1 再次通过。该补强不修改生产权限或 Swagger，不代表新的 Hosted T4、完整模块门禁或 System IAM 门禁验收。
 
 ## Meta 扫描分层约定

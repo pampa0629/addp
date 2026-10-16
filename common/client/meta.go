@@ -28,6 +28,16 @@ type MetaClient struct {
 }
 
 const MetaScanSourceDevelopProducedTarget = "develop.workflow.produced_target"
+const MetaScanSourceManagerMosaicProducedTarget = "manager.raster_mosaic_generation.produced_target"
+
+// MetaScanProducedTarget is a persisted Owner receipt for one generated mosaic.
+// It carries no identity, authorization, credential or runtime access plan.
+type MetaScanProducedTarget struct {
+	EngineID    uint   `json:"engine_id"`
+	CatalogPath string `json:"catalog_path"`
+	ManifestRef string `json:"manifest_ref"`
+	Attempt     int    `json:"attempt"`
+}
 
 type MetaScanOptions struct {
 	Encoding          string

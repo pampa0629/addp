@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -421,6 +422,17 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 	}
 	startedAt := time.Now().Add(-time.Minute)
 	executionCtx := startRasterMosaicTestExecution(t, db, mosaicRepo, task, "mosaic-exec-scan", startedAt)
+	scanSubmitter.before = func() {
+		stored, err := taskExecRepo.GetByExecutionID(t.Context(), "mosaic-exec-scan", 7)
+		if err != nil || stored.Status != commonExecution.ExecutionStatusRunning || stored.Metadata["produced_target"] == nil || stored.Metadata["manifest_ref"] != "mosaic.addp.json" {
+			t.Fatalf("scan was submitted before durable running output: %+v err=%v", stored, err)
+		}
+		var target commonClient.MetaScanProducedTarget
+		encoded, _ := json.Marshal(stored.Metadata["produced_target"])
+		if err := json.Unmarshal(encoded, &target); err != nil || target.Attempt != stored.Attempt || target.CatalogPath != "mosaics/srtm_mosaic" || target.EngineID != 27 {
+			t.Fatalf("wrong durable scan target=%+v err=%v", target, err)
+		}
+	}
 	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan", startedAt)
 
 	if scanSubmitter.tenantID == nil || *scanSubmitter.tenantID != 7 {
@@ -435,7 +447,7 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 	if scanSubmitter.opts.ScanDepth != "deep" || !scanSubmitter.opts.Force {
 		t.Fatalf("scan options = %#v, want deep force", scanSubmitter.opts)
 	}
-	if scanSubmitter.opts.TriggerType != commonExecution.TriggerTypeManual || scanSubmitter.opts.Source != commonExecution.ModuleManager {
+	if scanSubmitter.opts.TriggerType != commonExecution.TriggerTypeManual || scanSubmitter.opts.Source != commonClient.MetaScanSourceManagerMosaicProducedTarget || scanSubmitter.opts.ParentExecutionID != "mosaic-exec-scan" {
 		t.Fatalf("scan trigger/source = %#v", scanSubmitter.opts)
 	}
 
@@ -462,8 +474,9 @@ func TestRasterMosaicGenerationFailsWhenMetaScanSubmitFails(t *testing.T) {
 	taskSvc := NewRasterMosaicTaskService(mosaicRepo, taskExecRepo)
 	taskSvc.SetExecutor(fakeRasterMosaicExecutor{
 		result: &RasterMosaicExecutionResult{
-			ManifestRef: "mosaic.addp.json",
-			Metadata:    commonModels.JSONMap{},
+			ManifestRef:     "mosaic.addp.json",
+			ManifestLocator: "/vsis3/rasters/mosaic.addp.json",
+			Metadata:        commonModels.JSONMap{},
 		},
 	})
 	taskSvc.SetMetaScanSubmitter(&fakeRasterMosaicMetaScanSubmitter{err: errors.New("meta unavailable")})
@@ -496,6 +509,50 @@ func TestRasterMosaicGenerationFailsWhenMetaScanSubmitFails(t *testing.T) {
 	}
 	if got.ErrorDetails == nil || !strings.Contains(stringFromConfig(got.ErrorDetails["message"]), "meta unavailable") {
 		t.Fatalf("error_details = %#v, want meta unavailable", got.ErrorDetails)
+	}
+}
+
+func TestRasterMosaicProducedTargetRequiresCurrentLease(t *testing.T) {
+	for _, mode := range []string{"missing", "wrong_token", "expired"} {
+		t.Run(mode, func(t *testing.T) {
+			db := newRasterMosaicTaskServiceTestDB(t)
+			repo := repository.NewRasterMosaicRepository(db)
+			svc := NewRasterMosaicTaskService(repo, commonExecution.NewTaskExecutionRepository(db))
+			called := false
+			svc.SetMetaScanSubmitter(&fakeRasterMosaicMetaScanSubmitter{before: func() { called = true }})
+			task := &models.RasterMosaicTask{TenantID: 7, Name: "fenced mosaic", Enabled: true, Config: commonModels.JSONMap{
+				"source":    commonModels.JSONMap{"node_locator": "addp://engine/26/path/rasters?type=node", "source_engine_id": uint(26)},
+				"placement": commonModels.JSONMap{"mode": "in_place"},
+			}}
+			if err := svc.Create(t.Context(), task); err != nil {
+				t.Fatal(err)
+			}
+			ctx := startRasterMosaicTestExecution(t, db, repo, task, "fenced-mosaic", time.Now())
+			switch mode {
+			case "missing":
+				ctx = t.Context()
+			case "wrong_token":
+				lease, _ := commonExecution.LeaseFromContext(ctx)
+				lease.Token = "stale-token"
+				ctx = commonExecution.ContextWithLease(ctx, lease)
+			case "expired":
+				if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", "fenced-mosaic").Update("lease_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := readRasterMosaicExecutionConfig(task.Config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = svc.submitRasterMosaicMetaScan(ctx, "fenced-mosaic", 7, cfg, commonModels.JSONMap{"manifest_ref": "mosaic.addp.json", "manifest_locator": "/vsis3/rasters/mosaic.addp.json"})
+			if err == nil || called {
+				t.Fatalf("%s lease persisted or submitted an unowned target", mode)
+			}
+			stored, err := svc.taskExecRepo.GetByExecutionID(t.Context(), "fenced-mosaic", 7)
+			if err != nil || stored.Metadata["produced_target"] != nil {
+				t.Fatalf("%s lease changed stored output: %+v err=%v", mode, stored, err)
+			}
+		})
 	}
 }
 
@@ -596,6 +653,7 @@ func (f fakeRasterMosaicExecutor) BuildRasterMosaic(ctx context.Context, req Ras
 }
 
 type fakeRasterMosaicMetaScanSubmitter struct {
+	before   func()
 	opts     commonClient.MetaScanOptions
 	tenantID *uint
 	run      *commonExecution.TaskExecution
@@ -603,6 +661,9 @@ type fakeRasterMosaicMetaScanSubmitter struct {
 }
 
 func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {
+	if f.before != nil {
+		f.before()
+	}
 	f.tenantID = &tenantID
 	f.opts = opts
 	return f.run, f.err

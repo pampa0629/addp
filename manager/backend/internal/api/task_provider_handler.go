@@ -12,6 +12,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
+	commonauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
@@ -1711,7 +1712,19 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeRasterMosaicGeneration:
-		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+		var actor *service.RasterMosaicExecutionActor
+		if !taskProvider {
+			facts, ok := commonauth.AuthContextFromGin(c)
+			if !ok || facts.Principal.Type != "user" || facts.Context.Type != "tenant" || facts.Context.TenantID == nil || *facts.Context.TenantID != strconv.FormatUint(uint64(tenantID), 10) || facts.Context.TenantMembershipID == nil {
+				c.JSON(http.StatusForbidden, gin.H{"error_code": "permission_denied", "error": commoni18n.T(c, commoni18n.MsgForbidden)})
+				return
+			}
+			principal, _ := strconv.ParseInt(facts.Principal.ID, 10, 64)
+			membership, _ := strconv.ParseInt(*facts.Context.TenantMembershipID, 10, 64)
+			version, _ := strconv.ParseInt(facts.Authorization.AuthorizationVersion, 10, 64)
+			actor = &service.RasterMosaicExecutionActor{PrincipalID: principal, TenantMembershipID: membership, AuthorizationVersion: version}
+		}
+		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, actor)
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeModel3DGLBGeneration:

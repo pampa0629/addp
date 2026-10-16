@@ -76,7 +76,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	tenant := strconv.Itoa(scanReadTenant)
 	contexts := map[string]authorization.AuthContext{}
-	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied"} {
+	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied", "manager-machine", "manager-machine-denied"} {
 		principal, targetTenant := "31", tenant
 		if token == "peer" {
 			principal = "32"
@@ -105,12 +105,15 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 			if strings.HasPrefix(token, "develop-machine") {
 				client = "addp-develop"
 			}
+			if strings.HasPrefix(token, "manager-machine") {
+				client = "addp-manager"
+			}
 			if token == "wrong-machine" {
 				client = "addp-other"
 			}
 			a.Client.ClientID = &client
 			a.Authorization.RoleAssignments[0].Permissions = []string{"meta.scan_task.execute", "meta.scan_task.read", "meta.task_provider.read"}
-			if token == "machine-denied" || token == "develop-machine-denied" {
+			if strings.HasSuffix(token, "-denied") {
 				a.Authorization.RoleAssignments[0].Permissions = []string{"meta.scan_task.read"}
 			}
 		}
@@ -305,6 +308,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	request("wrong-machine", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	request("machine-denied", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	testMetaDevelopProducedScan(t, db, router, request)
+	testMetaManagerMosaicProducedScan(t, db, router, request)
 
 	// A synchronous Manager BFF submission must keep the actual User, rather than
 	// introducing a service-created execution that the browser cannot read.

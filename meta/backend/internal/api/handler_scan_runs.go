@@ -54,7 +54,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 // CreateManualScanRun 创建异步扫描运行
 // @Summary 创建手动扫描运行 | Create manual scan run
-// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；创建异步扫描；Develop 产物来源仅允许 addp-develop 服务携带父 execution，原子校验已保存产物并继承发起主体 | Leaf locators scan only the selected item; root and branch scopes must be explicit. Create an async scan; Develop output scans require addp-develop service provenance, a verified parent execution and persisted output
+// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop 和 Manager mosaic 产物来源仅允许对应专用服务携带父 execution，原子校验持久产物与主体；Manager 还须验证当前 lease 和精确目录 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop and Manager mosaic output scans require the matching service, verified parent identity and persisted output; Manager also requires a valid lease and exact dataset directory
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -95,9 +95,20 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	if req.ParentExecutionID != "" || req.Source == commonclient.MetaScanSourceDevelopProducedTarget {
+	producedClient := ""
+	switch req.Source {
+	case commonclient.MetaScanSourceDevelopProducedTarget:
+		producedClient = "addp-develop"
+	case commonclient.MetaScanSourceManagerMosaicProducedTarget:
+		producedClient = "addp-manager"
+	}
+	if req.ParentExecutionID != "" || producedClient != "" {
+		if producedClient == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
+			return
+		}
 		principal, exists := commonAuth.PrincipalFromGin(c)
-		if !exists || principal.Type != "service_principal" || commonAuth.GetClientID(c) != "addp-develop" {
+		if !exists || principal.Type != "service_principal" || commonAuth.GetClientID(c) != producedClient {
 			c.JSON(http.StatusForbidden, gin.H{"error_code": "scan_provenance_denied", "error": commoni18n.T(c, metai18n.MsgScanProvenanceDenied)})
 			return
 		}

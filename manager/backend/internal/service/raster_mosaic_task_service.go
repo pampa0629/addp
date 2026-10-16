@@ -12,6 +12,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format/rastermosaic"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -157,7 +158,13 @@ func (s *RasterMosaicTaskService) Delete(ctx context.Context, id uint, tenantID 
 	return s.repo.DeleteTask(ctx, id, tenantID)
 }
 
-func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
+type RasterMosaicExecutionActor struct {
+	PrincipalID          int64
+	TenantMembershipID   int64
+	AuthorizationVersion int64
+}
+
+func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, actor *RasterMosaicExecutionActor) (string, error) {
 	if s.taskExecRepo == nil {
 		return "", errors.New("task execution repository is required")
 	}
@@ -186,6 +193,16 @@ func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tena
 		TriggerType:       normalizedTriggerType,
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}
+	if parentExecutionID == nil {
+		if normalizedSource != commonExecution.ModuleManager || actor == nil || actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 {
+			return "", fmt.Errorf("%w: verified mosaic execution actor is required", commonAPI.ErrBadRequest)
+		}
+		principal, membership, version := actor.PrincipalID, actor.TenantMembershipID, actor.AuthorizationVersion
+		by := int(principal)
+		exec.TriggeredBy, exec.ActorPrincipalID, exec.ActorTenantMembershipID, exec.IssuedAuthorizationVersion = &by, &principal, &membership, &version
+	} else if actor != nil {
+		return "", fmt.Errorf("%w: machine execution cannot declare a user actor", commonAPI.ErrBadRequest)
 	}
 	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
 	if err != nil {
@@ -305,7 +322,7 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 		metadata["overview_ref"] = result.OverviewRef
 		metadata["leaf_count"] = result.LeafCount
 		var scanRun *commonExecution.TaskExecution
-		scanRun, err = s.submitRasterMosaicMetaScan(task.TenantID, cfg)
+		scanRun, err = s.submitRasterMosaicMetaScan(ctx, executionID, task.TenantID, cfg, metadata)
 		if err == nil && scanRun != nil {
 			metaScanExecutionID = scanRun.ExecutionID
 			metadata["meta_scan"] = commonModels.JSONMap{
@@ -381,7 +398,7 @@ func (s *RasterMosaicTaskService) rasterMosaicExistingExecutionProgress(ctx cont
 	return exec.Progress
 }
 
-func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(tenantID uint, cfg RasterMosaicExecutionConfig) (*commonExecution.TaskExecution, error) {
+func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(ctx context.Context, executionID string, tenantID uint, cfg RasterMosaicExecutionConfig, metadata commonModels.JSONMap) (*commonExecution.TaskExecution, error) {
 	if s == nil || s.metaScanSubmitter == nil {
 		return nil, errors.New("raster mosaic meta scan submitter is not configured")
 	}
@@ -392,13 +409,26 @@ func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(tenantID uint, cfg 
 	if catalogPath == "" {
 		return nil, errors.New("raster mosaic dataset catalog path is required for meta scan")
 	}
+	lease, err := requireManagerExecutionLease(ctx, tenantID, executionID)
+	if err != nil {
+		return nil, err
+	}
+	if stringFromConfig(metadata["manifest_ref"]) != rastermosaic.ManifestFileName || stringFromConfig(metadata["manifest_locator"]) == "" {
+		return nil, errors.New("raster mosaic generation returned no confirmed manifest")
+	}
+	metadata["produced_target"] = commonClient.MetaScanProducedTarget{EngineID: cfg.Target.TargetEngineID, CatalogPath: catalogPath, ManifestRef: rastermosaic.ManifestFileName, Attempt: lease.Attempt}
+	persisted := s.mergeRasterMosaicExistingExecutionMetadata(ctx, executionID, int(tenantID), metadata)
+	if err := s.taskExecRepo.UpdateWithLease(ctx, lease, map[string]interface{}{"metadata": persisted}); err != nil {
+		return nil, err
+	}
 	return s.metaScanSubmitter.CreateManualScanRunForTenant(tenantID, commonClient.MetaScanOptions{
-		EngineID:     cfg.Target.TargetEngineID,
-		CatalogPaths: []string{catalogPath},
-		ScanDepth:    commonClient.MetaScanDepthDeep,
-		Force:        true,
-		TriggerType:  commonExecution.TriggerTypeManual,
-		Source:       commonExecution.ModuleManager,
+		ParentExecutionID: executionID,
+		EngineID:          cfg.Target.TargetEngineID,
+		CatalogPaths:      []string{catalogPath},
+		ScanDepth:         commonClient.MetaScanDepthDeep,
+		Force:             true,
+		TriggerType:       commonExecution.TriggerTypeManual,
+		Source:            commonClient.MetaScanSourceManagerMosaicProducedTarget,
 	})
 }
 
