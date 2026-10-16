@@ -13,6 +13,7 @@ const render = new Function('Vue', code)(Vue)
 
 // Render the actual page template with API-shaped data. No live task or API is invoked.
 async function renderExecution(execution, language) {
+  const failureProps = []
   const commonMessages = JSON.parse(readFileSync(new URL(`../../../common-frontend/basic/src/i18n/${language}.json`, import.meta.url), 'utf8'))
   const messages = JSON.parse(readFileSync(new URL(`../src/i18n/${language}.json`, import.meta.url), 'utf8'))
   const app = Vue.createSSRApp({
@@ -28,24 +29,32 @@ async function renderExecution(execution, language) {
   const container = { setup: (_, { slots }) => () => Vue.h('div', slots.default?.()) }
   for (const name of ['ElCard', 'ElDescriptions', 'ElDescriptionsItem', 'ElTag']) app.component(name, container)
   app.component('ExecutionEvents', { render: () => null })
+  app.component('ExecutionFailure', { props: ['status', 'errorDetails', 'executionId', 'showMonitorLink'], setup(props) { failureProps.push({ ...props }); return () => null } })
   app.component('MonitorExecutionsButton', { render: () => null })
   app.directive('loading', {})
-  return renderToString(app)
+  return { html: await renderToString(app), failureProps }
 }
 
-test('execution detail renders safe failure categories in both languages without raw errors', async () => {
+test('execution detail delegates the exact safe API contract to the sole shared failure panel', async () => {
   for (const language of ['zh-cn', 'en']) {
-    const html = await renderExecution({ execution_id: 'fixture', status: 'failed', error_details: { category: 'execution_failed' }, error_msg: 'private-sentinel<script>alert(1)</script>' }, language)
-    assert.match(html, /data-testid="execution-error-message"/)
-    const messages = JSON.parse(readFileSync(new URL(`../../../common-frontend/basic/src/i18n/${language}.json`, import.meta.url), 'utf8'))
-    assert.ok(html.includes(messages.common.executionFailure.execution_failed))
+    const details = { category: 'execution_failed', code: 'data_protection_required', diagnostic: {
+      schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'data_protection_required'
+    } }
+    const { html, failureProps } = await renderExecution({ execution_id: 'fixture', status: 'failed', error_details: details,
+      error_msg: 'private-sentinel<script>alert(1)</script>' }, language)
+    assert.equal(failureProps.length, 1)
+    assert.deepEqual(failureProps[0], { status: 'failed', executionId: 'fixture', errorDetails: details, showMonitorLink: false })
     assert.doesNotMatch(html, /private-sentinel|<script>/)
+    assert.equal((descriptor.template.content.match(/<ExecutionFailure\b/g) || []).length, 1)
+    assert.doesNotMatch(descriptor.template.content, /execution-error-message|common\.executionFailure\./)
   }
 })
 
-test('execution detail omits the error section when no backend error is present', async () => {
+test('execution detail leaves non-failed visibility and absent diagnostics to the shared component', async () => {
   for (const execution of [{ status: 'running' }, { status: 'success', error_details: {} }]) {
-    assert.doesNotMatch(await renderExecution(execution, 'zh-cn'), /data-testid="execution-error-message"/)
+    const { failureProps } = await renderExecution(execution, 'zh-cn')
+    assert.equal(failureProps[0].status, execution.status)
+    assert.deepEqual(failureProps[0].errorDetails, {})
   }
 })
 

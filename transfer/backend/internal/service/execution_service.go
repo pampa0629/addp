@@ -14,6 +14,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -538,6 +539,18 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 		next["message"] = execErr.Error()
 		if errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
 			next["code"] = "query_output_lineage_unresolved"
+		}
+		stage := ""
+		if errors.Is(execErr, executor.ErrProtectionResult) {
+			stage = "result"
+		} else if errors.Is(execErr, executor.ErrProtectionPreparation) {
+			stage = "preparation"
+		}
+		if stage != "" {
+			if !errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
+				next["code"] = "data_protection_required"
+			}
+			next["diagnostic"] = commonExecution.NewFailureDiagnostic(stage, "data_protection_required")
 		}
 		return next, true
 	}

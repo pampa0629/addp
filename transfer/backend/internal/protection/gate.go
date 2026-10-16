@@ -2,7 +2,6 @@ package protection
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,7 +15,7 @@ import (
 	"github.com/addp/transfer/internal/executor"
 )
 
-var ErrSourceRequired = errors.New("transfer source protection gate is required")
+var ErrSourceRequired = fmt.Errorf("%w: source protection gate is required", executor.ErrProtectionPreparation)
 
 const exportAction = "export"
 
@@ -93,11 +92,14 @@ func (g *Gate) PrepareBoundedEncodedRecordProtection(
 	}
 	protect, err := g.store.PrepareTableProtection(ctx, int64(tenantID), model, path, fields, exportAction, time.Now().UTC())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
 	}
 	return func(document map[string]interface{}) error {
 		result := &engineplugin.QueryResult{Rows: []map[string]interface{}{document}}
-		return protect.Apply(result)
+		if err := protect.Apply(result); err != nil {
+			return fmt.Errorf("%w: %w", executor.ErrProtectionResult, err)
+		}
+		return nil
 	}, nil
 }
 

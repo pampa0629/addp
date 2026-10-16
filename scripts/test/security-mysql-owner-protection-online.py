@@ -1352,6 +1352,23 @@ def validate_develop_protection_refusal(execution: Mapping[str, object], stage: 
             "diagnostic_reason": "data_protection_required", "denied_result_absent": True}
 
 
+def validate_transfer_protection_refusal(execution: Mapping[str, object], stage: str, code: str) -> dict[str, object]:
+    details = _object(execution.get("error_details"), "Transfer protection diagnostics")
+    expected = {"schema_version": "addp.execution-failure/v2", "stage": stage, "reason": "data_protection_required"}
+    if (execution.get("status") != "failed" or details.get("code") != code
+            or set(details) - {"category", "code", "diagnostic"} or details.get("diagnostic") != expected):
+        raise SuiteError("Transfer protection refusal must have the precise safe diagnostic")
+    return {"diagnostic_code": code, "diagnostic_stage": stage, "diagnostic_reason": "data_protection_required"}
+
+
+def validate_service_protection_refusal(response: SUPPORT.Response) -> None:
+    payload = _object(response.payload, "Service protection refusal")
+    if (response.status != 403 or set(payload) != {"error", "error_code"}
+            or payload.get("error_code") != "data_protection_required"
+            or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+        raise SuiteError("Service protection refusal must use its safe localized 403 contract")
+
+
 def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
                                    locator: str, deadline: float) -> dict[str, object]:
     rows = develop_rows(client, engine_id, locator, deadline, MONGODB_COUNT_QUERY, "mql")
@@ -1515,6 +1532,7 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             raise SuiteError("MongoDB query execution identity or terminal status differs")
         written = nonnegative_int(execution.get("records_written"), "query records written")
         if denied:
+            protection_diagnostic = validate_transfer_protection_refusal(execution, "preparation", "query_output_lineage_unresolved")
             diagnostics = _object(execution.get("error_details"), "query failure diagnostics")
             if (written != 0 or nonnegative_int(execution.get("bytes_written"), "query bytes written") != 0
                     or diagnostics.get("category") != "execution_failed"
@@ -1525,7 +1543,7 @@ def verify_mongodb_query_transfer(client: GatewayClient, locator: str, targets: 
             if columns != list(MONGODB_TRANSFER_FIELDS) or rows:
                 raise SuiteError("MongoDB denied query wrote target rows")
             evidence = {"derived_output_denied": True, "protection_failure": "query_output_lineage_unresolved",
-                        "target_empty_before_and_after": True, "bytes_written": 0}
+                        "target_empty_before_and_after": True, "bytes_written": 0, **protection_diagnostic}
         else:
             if written != 7 or nonnegative_int(execution.get("records_read"), "query records read") != 7:
                 raise SuiteError("MongoDB query execution must read and write all seven rows")
@@ -1944,16 +1962,15 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
             "SELECT id, customer_code, email FROM customers ORDER BY id", "sql")
         if develop.get("status") != "failed" or "result" in (develop.get("metadata") or {}):
             raise SuiteError("expired Develop query returned a result")
-        service = client.request("POST", "/api/query/" + urllib.parse.quote(service_name, safe="") + "/query", (500,), {
+        service = client.request("POST", "/api/query/" + urllib.parse.quote(service_name, safe="") + "/query", (403,), {
             "select": ["id", "customer_code", "email"], "order_by": [{"field": "id", "direction": "asc"}],
             "page": {"limit": 100}, "format": "json",
         })
-        service_error = _object(service.payload, "expired Service error")
-        if service_error.get("error_code") != "query_execution_failed" or "data" in service_error:
-            raise SuiteError("expired Service did not fail without output")
+        validate_service_protection_refusal(service)
         columns_before, rows_before = preview_rows(client, target_locator)
         _, transfer = create_and_run_task(client, transfer_payload(task_name + "_validity_expired", locator, parent_locator),
                                           deadline, tasks, expected_status="failed")
+        transfer_diagnostic = validate_transfer_protection_refusal(transfer, "preparation", "data_protection_required")
         if (nonnegative_int(transfer.get("records_written"), "expired Transfer writes") != 0
                 or nonnegative_int(transfer.get("bytes_written"), "expired Transfer bytes") != 0
                 or positive_int(transfer.get("trigger_by"), "expired Transfer initiator") != positive_int(identity["principal_id"], "ordinary User")):
@@ -1976,7 +1993,8 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
                   "same_user_verified": True, "owner_processes_unchanged": True,
                   "natural_expiry_verified": True, "stale_version_rejected": True,
                   "expiry_observed_at": expiry_observed_at, "owner_processes": processes,
-                  "expired_outputs": {"manager_http_status": 403, "develop_status": "failed", "service_http_status": 500,
+                  "expired_outputs": {"manager_http_status": 403, "develop_status": "failed", "service_http_status": 403,
+                    "service_error_code": "data_protection_required", "transfer_diagnostic": transfer_diagnostic,
                     "transfer_execution_id": transfer["execution_id"], "records_written": 0, "bytes_written": 0,
                     "target_unchanged": True, "result_absent": True}, "permanent_restored": True}
     finally:
@@ -2096,7 +2114,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v14",
+            "schema_version": "addp.security-mysql-owner-protection-online/v15",
             "result": "passed",
             "identity": identity,
             "governance": governance,

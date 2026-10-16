@@ -93,6 +93,7 @@ const docTemplate = `{
         },
         "/api/query/{serviceName}/query": {
             "post": {
+                "description": "保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data",
                 "consumes": [
                     "application/json"
                 ],
@@ -1178,6 +1179,7 @@ const docTemplate = `{
         },
         "/ogc/features/{serviceName}/collections/{collectionId}/items": {
             "get": {
+                "description": "保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data",
                 "produces": [
                     "application/json"
                 ],
@@ -1237,6 +1239,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -1270,6 +1281,7 @@ const docTemplate = `{
         },
         "/ogc/features/{serviceName}/collections/{collectionId}/items/{featureId}": {
             "get": {
+                "description": "保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data",
                 "produces": [
                     "application/json"
                 ],
@@ -1310,6 +1322,15 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

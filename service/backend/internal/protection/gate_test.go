@@ -93,6 +93,10 @@ func TestGateMasksManagedMongoQueryForServiceExecute(t *testing.T) {
 	if got := result.Rows[0]["userInfo"].(map[string]interface{})["phone"]; got != "136****4499" {
 		t.Fatalf("masked phone = %#v", got)
 	}
+
+	if err := protect(nil); !errors.Is(err, ErrRequired) {
+		t.Fatalf("result protection cause lost: %v", err)
+	}
 }
 
 func TestGateAllowsUnmanagedPostgresQueryWithoutOutputLineage(t *testing.T) {
@@ -282,7 +286,7 @@ func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
 	}
 	gate := NewGate(store)
 	protect, end, err := gate.BeginPreparedQuery(t.Context(), 7, provider, prepared)
-	if !errors.Is(err, dataprotection.ErrDenied) || protect != nil || end != nil || executions != 0 || gate.HasActiveExecutionsForTenant(7) {
+	if !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, ErrRequired) || protect != nil || end != nil || executions != 0 || gate.HasActiveExecutionsForTenant(7) {
 		t.Fatalf("expired query admission: error=%v, protector=%t, end=%t, executions=%d, active=%t", err, protect != nil, end != nil, executions, gate.HasActiveExecutionsForTenant(7))
 	}
 	if !store.Gate(7, dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: models.GenerateItemFingerprint(11, "Outdoor.Persons")}, time.Now().UTC()).Managed {

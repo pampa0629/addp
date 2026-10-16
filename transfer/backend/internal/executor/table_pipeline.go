@@ -285,7 +285,7 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 	if s.protector != nil {
 		protect, err = s.protector.PrepareQueryProtection(ctx, prepared)
 		if err != nil {
-			return nil, fmt.Errorf("prepare query source protection: %w", err)
+			return nil, fmt.Errorf("%w: query: %w", ErrProtectionPreparation, err)
 		}
 	}
 	session, err := s.provider.OpenQueryReadSession(ctx, prepared)
@@ -408,7 +408,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 			derivedFields = prepared.DerivedFields
 		}
 		if err != nil {
-			return nil, fmt.Errorf("prepare native table source protection: %w", err)
+			return nil, fmt.Errorf("%w: native table: %w", ErrProtectionPreparation, err)
 		}
 	}
 	if s.tableSessionProvider != nil {

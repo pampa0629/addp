@@ -102,3 +102,6 @@ other = "参数选项或取值无效，请检查允许值、默认值及中英�
 
 [service.err.execution_query_failed]
 other = "无法生成执行查询，请检查指标修订、依赖和引擎状态。"
+
+[service.err.data_protection_required]
+other = "数据保护要求未满足，本次查询已被阻止。请联系安全管理员核对保护规则、有效期和同步状态；使用受支持的直接字段或字段别名后重试。"

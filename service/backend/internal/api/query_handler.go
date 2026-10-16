@@ -10,9 +10,11 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/protection"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -378,6 +380,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 
 // QueryData 查询服务数据
 // @Summary 执行查询服务 | Execute query service
+// @Description 保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection refusals return 403, data_protection_required and a localized explanation without raw errors or data
 // @Tags QueryExecution
 // @Accept json
 // @Produce json
@@ -549,6 +552,10 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 }
 
 func writeQueryExecutionError(c *gin.Context, err error) {
+	if queryExecutionErrorCode(err) == "data_protection_required" {
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, servicei18n.MsgDataProtectionRequired), "error_code": "data_protection_required"})
+		return
+	}
 	if errors.Is(err, svc.ErrInvalidParameterOptions) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidParameterOptions), "error_code": queryExecutionErrorCode(err)})
 		return
@@ -562,6 +569,9 @@ func writeQueryExecutionError(c *gin.Context, err error) {
 }
 
 func queryExecutionErrorCode(err error) string {
+	if errors.Is(err, protection.ErrRequired) || errors.Is(err, dataprotection.ErrDenied) {
+		return "data_protection_required"
+	}
 	if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidQueryCursor) || errors.Is(err, svc.ErrInvalidFeatureID) {
 		return "invalid_structured_query"
 	}

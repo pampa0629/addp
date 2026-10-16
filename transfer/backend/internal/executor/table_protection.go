@@ -2,12 +2,19 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resume"
+)
+
+// These markers retain the actual protection boundary through pipeline wrappers.
+var (
+	ErrProtectionPreparation = errors.New("transfer source protection preparation failed")
+	ErrProtectionResult      = errors.New("transfer source result protection failed")
 )
 
 type protectedTableBatchReader struct {
@@ -53,7 +60,7 @@ func (r *protectedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*
 	}
 	result := &engineplugin.QueryResult{Columns: columns, Rows: batch.Rows}
 	if err := r.protect(result); err != nil {
-		return nil, fmt.Errorf("protect source batch: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrProtectionResult, err)
 	}
 	batch.Rows = result.Rows
 	batch.Fields = filterProtectedFields(batch.Fields, result.Columns)
@@ -75,7 +82,7 @@ func protectTableInfo(info *datatype.TableInfo, protect func(*engineplugin.Query
 	}
 	result := &engineplugin.QueryResult{Columns: info.FieldNames()}
 	if err := protect(result); err != nil {
-		return nil, nil, fmt.Errorf("protect source table schema: %w", err)
+		return nil, nil, fmt.Errorf("%w: source table schema: %w", ErrProtectionPreparation, err)
 	}
 	visible := stringSet(result.Columns)
 	protected := info.Clone()

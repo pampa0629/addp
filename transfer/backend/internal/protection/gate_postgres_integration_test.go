@@ -180,7 +180,7 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 				plan.Target.Path = queryTargetPath
 			}
 			metrics, err := export.Execute(ctx, plan)
-			if !errors.Is(err, dataprotection.ErrDenied) || metrics != nil && metrics.RecordsWritten != 0 {
+			if !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, executor.ErrProtectionPreparation) || metrics != nil && metrics.RecordsWritten != 0 {
 				t.Fatalf("expired export must deny with zero writes: error=%v, metrics=%+v", err, metrics)
 			}
 			target := targetTable

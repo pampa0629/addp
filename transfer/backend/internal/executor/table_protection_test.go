@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 
@@ -95,4 +96,30 @@ func (r *protectionTestBatchReader) ReadBatch(context.Context, int) (*engineplug
 	}
 	r.read = true
 	return r.batch, nil
+}
+
+func TestProtectedReaderReportsActualProtectionBoundary(t *testing.T) {
+	cause := errors.New("private-sentinel")
+	for _, atSchema := range []bool{true, false} {
+		inner := &protectionTestBatchReader{info: &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "phone", Type: datatype.FieldTypeString}}}, batch: &engineplugin.BatchData{Rows: []map[string]interface{}{{"phone": "private-sentinel"}}}}
+		reader, err := protectTableBatchReader(inner, func(result *engineplugin.QueryResult) error {
+			if atSchema || len(result.Rows) > 0 {
+				return cause
+			}
+			return nil
+		}, nil)
+		if atSchema {
+			if reader != nil || !errors.Is(err, ErrProtectionPreparation) || !errors.Is(err, cause) {
+				t.Fatalf("preparation boundary: %v", err)
+			}
+		} else {
+			if err != nil {
+				t.Fatal(err)
+			}
+			batch, err := reader.ReadBatch(t.Context(), 10)
+			if batch != nil || !errors.Is(err, ErrProtectionResult) || !errors.Is(err, cause) {
+				t.Fatalf("result boundary: %v", err)
+			}
+		}
+	}
 }

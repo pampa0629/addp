@@ -204,6 +204,7 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 
 // GetItems 获取 Collection 中的 Items（即查询数据）
 // @Summary OGC API Features Items | OGC API Features Items
+// @Description 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data
 // @Tags OGC Features
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
@@ -213,6 +214,7 @@ func (h *OGCFeaturesHandler) GetCollections(c *gin.Context) {
 // @Param bbox query string false "空间范围 | Bounding box"
 // @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection | GeoJSON FeatureCollection"
 // @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string
@@ -317,6 +319,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 
 // GetItem 获取单个 Feature
 // @Summary OGC API Features Item | OGC API Features Item
+// @Description 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals return 403 and data_protection_required without data
 // @Tags OGC Features
 // @Produce json
 // @Param serviceName path string true "服务名称 | Service name"
@@ -324,6 +327,7 @@ func (h *OGCFeaturesHandler) GetItems(c *gin.Context) {
 // @Param featureId path string true "要素ID | Feature ID"
 // @Success 200 {object} map[string]interface{} "GeoJSON Feature | GeoJSON Feature"
 // @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Failure 501 {object} map[string]string

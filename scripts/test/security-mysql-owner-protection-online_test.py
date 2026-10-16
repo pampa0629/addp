@@ -281,7 +281,7 @@ class MongoClient(SpatialClient):
                 execution = {"execution_id": execution_id, "task_id": task_id, "trigger_by": 7,
                     "status": "failed" if denied else "success", "records_read": 0 if denied else 7,
                     "records_written": 0 if denied else 7, "bytes_written": 0 if denied else 500,
-                    "error_details": {"category": "execution_failed", "code": "query_output_lineage_unresolved"} if denied else {}}
+                    "error_details": {"category": "execution_failed", "code": "query_output_lineage_unresolved", "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "data_protection_required"}} if denied else {}}
                 target = config["target"]["name"]
                 if not denied:
                     values = {key: {"_id": key, "userInfo": {"phone": ONLINE.SOURCE_VALUES.get(key)}} for key in "1234567"} if derived else {row["_id"]: row for row in self.rows("transfer")}
@@ -1856,6 +1856,27 @@ class DevelopProtectionDiagnosticTest(unittest.TestCase):
             with self.subTest(target=target,key=key), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_develop_protection_refusal(value_execution, "result")
 
+
+
+class TransferProtectionDiagnosticContractTests(unittest.TestCase):
+    def test_service_refusal_has_only_safe_403_contract(self):
+        response = ONLINE.SUPPORT.Response(403, {"error":"localized protection explanation", "error_code":"data_protection_required"})
+        ONLINE.validate_service_protection_refusal(response)
+        for status, payload in [(500,response.payload), (403,{"error":"generic", "error_code":"query_execution_failed"}), (403,{**response.payload,"data":[]}), (403,{**response.payload,"details":"private"}), (403,{**response.payload,"error":""})]:
+            with self.subTest(status=status,payload=payload), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_service_protection_refusal(ONLINE.SUPPORT.Response(status,payload))
+
+    def test_precise_diagnostic_rejects_generic_or_private_failures(self):
+        import copy
+        value = {"status": "failed", "error_details": {"category": "execution_failed", "code": "data_protection_required", "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "data_protection_required"}}}
+        ONLINE.validate_transfer_protection_refusal(value, "preparation", "data_protection_required")
+        for target, key, bad in [("details", "diagnostic", None), ("details", "message", "private"), ("details", "code", "query_execution_failed"), ("diagnostic", "reason", "query_failed"), ("diagnostic", "stage", "result"), ("diagnostic", "sql", {"object": {"name": "private"}})]:
+            mutated = copy.deepcopy(value)
+            destination = mutated["error_details"]
+            if target == "diagnostic": destination = destination["diagnostic"]
+            destination[key] = bad
+            with self.subTest(key=key), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_transfer_protection_refusal(mutated, "preparation", "data_protection_required")
 
 if __name__ == "__main__":
     unittest.main()

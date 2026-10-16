@@ -102,3 +102,6 @@ other = "Invalid parameter options or value. Check allowed values, defaults, and
 
 [service.err.execution_query_failed]
 other = "Unable to compile the query. Check the metric revision, dependencies and engine status."
+
+[service.err.data_protection_required]
+other = "The query was blocked because data protection requirements could not be verified. Ask a security administrator to check protection rules, validity and synchronization; retry with supported direct fields or column aliases."

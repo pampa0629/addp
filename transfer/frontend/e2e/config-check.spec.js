@@ -237,3 +237,33 @@ for (const querySupported of [true, false]) {
     await expect(page.getByTestId('fixture-submits')).toHaveText('0')
   })
 }
+
+for (const language of ['zh-cn', 'en']) {
+ for (const stage of ['preparation', 'result']) {
+  test(`protection refusal uses the shared safe panel in ${language} at ${stage}`, async ({ page }) => {
+   const id = '11111111-1111-4111-8111-111111111111'
+   await page.addInitScript(lang => localStorage.setItem('addp-lang',lang), language)
+   const unexpected = []
+   await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method()==='GET' && path===`/api/v1/transfer/executions/${id}`) return route.fulfill({json:{
+     execution_id:id, task_id:900001, status:'failed', execution_boundary:'bounded', records_read:0,records_written:0,
+     error_details:{category:'execution_failed',code:'data_protection_required',diagnostic:{schema_version:'addp.execution-failure/v2',stage,reason:'data_protection_required'},message:'private-sentinel'},
+     error_msg:'private-sentinel'
+    }})
+    if (route.request().method()==='GET' && path===`/api/v1/transfer/executions/${id}/events`) return route.fulfill({json:{items:[],has_more:false,next_cursor:0,retained_after:'2026-01-01T00:00:00Z'}})
+    unexpected.push(path); return route.abort('blockedbyclient')
+   })
+   await page.goto('/e2e/fixtures/config-check.html?execution=1')
+   const panel = page.getByRole('alert', {name:language==='en'?'Execution failure diagnostics':'执行失败诊断'})
+   await expect(panel).toContainText(language==='en'?'data protection requirements':'数据保护要求')
+   await expect(panel).toContainText(language==='en'?'security administrator':'安全管理员')
+   await expect(panel).toContainText(language==='en'?(stage==='preparation'?'Prepare query':'Save execution result'):(stage==='preparation'?'准备查询':'保存执行结果'))
+   await expect(panel).toContainText('data_protection_required')
+   await expect(panel).toContainText(id)
+   await expect(page.locator('body')).not.toContainText('private-sentinel')
+   await expect(page.getByRole('link', {name:language==='en'?'View error details in Monitor':'查看监控错误详情'})).toHaveCount(0)
+   expect(unexpected).toEqual([])
+  })
+ }
+}

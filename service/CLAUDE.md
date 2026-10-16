@@ -79,6 +79,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 指标执行经既有 QueryRuntimeProvider.PrepareQuery、完整 ReadSet/OutputLineage 和 Service 数据保护门禁。编译期 SourceBindings 不是权限证明；受保护聚合来源不能证明允许输出时仍拒绝。新发布计划包和 Consumer Descriptor 必须同步验证，Workbench 不解析引擎、计划或原生查询。
 - Query Service 普通查询与单次有界导出使用同一 operation；可选 `X-ADDP-Query-Intent: query | export` 只表达审计用途，不改变授权与上限。CSV 和 GeoJSON 都必须返回 `X-ADDP-Has-More`、`X-ADDP-Next-Cursor` 和 `X-ADDP-Service-Version`，审计不得记录筛选字面值、cursor、原始 Body、SQL 或返回数据。
 - 已发布 QueryService 的 REST Query 与 OGC API Features 通过同一 PreparedQuery 执行 `service_execute` 保护；命中纳管资源后必须使用完整 ReadSet、OutputLineage 和 Security 下发的 Service 独立规则在服务端格式化前保护结果。分页 cursor 与 feature ID 使用 AEAD 不透明令牌，不能暴露稳定键或排序值。联邦、图、旧 Data API、查询样例和瓦片在独立动作执行器完成前继续资源级拒绝，不复用 `service_execute`。
+- QueryService REST Query 与 OGC Features 共用唯一错误出口：保护门禁拒绝返回 HTTP 403、`error_code=data_protection_required` 和本地化原因及处理建议，不返回原始错误、源结构或数据；普通查询错误仍保留各自错误分类。该响应只解释已有保护拒绝，不改变规则、有效期或读取授权。
 - 表模式 QueryService 的直接查询必须从发布快照的输出契约枚举完整源字段，不得生成 `SELECT *`；请求选择字段仍由结构化查询计划在外层收窄。这样 PreparedQuery 可以证明完整输出血缘，并对被抑制或遮盖的字段执行统一保护。
 - 联邦 SQL 发布时冻结实际引用的 Source Engine ID 并纳入 `dependency_hash`。每次请求由 Service 基于发布快照签发 `service_definition` Execution Authorization，独立 DuckDB Runtime 消费授权并取得连接；Service 不链接 DuckDB 原生库。
 - 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。

@@ -2269,6 +2269,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: 保护门禁拒绝返回 403、data_protection_required 和本地化提示，不返回原始错误或数据 | Protection
+        refusals return 403, data_protection_required and a localized explanation
+        without raw errors or data
       parameters:
       - description: 服务名称 | Service name
         in: path
@@ -2983,6 +2986,8 @@ paths:
       x-addp-auth-mode: public
   /ogc/features/{serviceName}/collections/{collectionId}/items:
     get:
+      description: 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals
+        return 403 and data_protection_required without data
       parameters:
       - description: 服务名称 | Service name
         in: path
@@ -3021,6 +3026,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "404":
           description: Not Found
           schema:
@@ -3045,6 +3056,8 @@ paths:
       x-addp-auth-mode: public
   /ogc/features/{serviceName}/collections/{collectionId}/items/{featureId}:
     get:
+      description: 保护门禁拒绝返回 403 和 data_protection_required，不返回数据 | Protection refusals
+        return 403 and data_protection_required without data
       parameters:
       - description: 服务名称 | Service name
         in: path
@@ -3071,6 +3084,12 @@ paths:
             type: object
         "401":
           description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
           schema:
             additionalProperties:
               type: string

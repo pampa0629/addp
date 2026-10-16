@@ -37,6 +37,7 @@ const (
 	MsgInvalidQueryFormat          = "service.err.invalid_query_format"
 	MsgInvalidQueryIntent          = "service.err.invalid_query_intent"
 	MsgInvalidStructuredQuery      = "service.err.invalid_structured_query"
+	MsgDataProtectionRequired      = "service.err.data_protection_required"
 	MsgQueryExecutionFailed        = "service.err.query_execution_failed"
 	MsgQueryFormatFailed           = "service.err.query_format_failed"
 	MsgInvalidFeatureID            = "service.err.invalid_feature_id"

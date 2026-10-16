@@ -1,5 +1,7 @@
 <script setup>
 import { ref } from 'vue'
+import ExecutionDetail from '../../src/views/ExecutionDetail.vue'
+const executionMode = new URLSearchParams(window.location.search).has('execution')
 import { useI18n } from 'vue-i18n'
 import Step5Review from '../../src/views/TaskWizard/Step5Review.vue'
 import Step1SelectSource from '../../src/views/TaskWizard/Step1SelectSource.vue'
@@ -47,7 +49,8 @@ function queryDraft(language) {
 }
 </script>
 <template>
-  <div>
+  <ExecutionDetail v-if="executionMode" />
+  <div v-else>
     <label>Name <input data-testid="fixture-name" v-model="wizard.taskName.value"></label>
     <button v-for="permission in taskConfigCheckPermissions" :key="permission" :data-testid="`revoke-${permission}`"
       @click="setContext(taskConfigCheckPermissions.filter(item => item !== permission))">Revoke {{ permission }}</button>

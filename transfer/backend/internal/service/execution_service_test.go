@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -675,6 +677,62 @@ func TestBoundedCompletionRetainsTypedLineageFailureWithoutPrivateText(t *testin
 				t.Fatalf("diagnostic code=%q want %q", got, tc.code)
 			}
 			if _, exists := observed.ErrorDetails["message"]; exists {
+				t.Fatal("private text leaked")
+			}
+		})
+	}
+}
+
+func TestBoundedProtectionFailureRetainsBoundaryWithoutPrivateText(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cause       error
+		code, stage string
+	}{
+		{"preparation", fmt.Errorf("%w: private-sentinel: %w", executor.ErrProtectionPreparation, errors.New("projection expired")), "data_protection_required", "preparation"},
+		{"result", fmt.Errorf("%w: private-sentinel", executor.ErrProtectionResult), "data_protection_required", "result"},
+		{"lineage", fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, commonPlugin.ErrQueryOutputLineageUnresolved), "query_output_lineage_unresolved", "preparation"},
+		{"unrelated", errors.New(executor.ErrProtectionPreparation.Error()), "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newExecutionServiceTestDB(t)
+			task := createExecutionServiceTestTask(t, db)
+			item := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+			item.SourceTaskID = nil
+			svc := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+			bindExecutionServiceTestLease(t, db, svc, &item)
+			if err := svc.FinishIfRunning(context.Background(), uint(item.ID), tc.cause); err != nil {
+				t.Fatal(err)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.First(&stored, item.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			observed := commonExecution.Observe(&stored)
+			code, _ := observed.ErrorDetails["code"].(string)
+			if code != tc.code {
+				t.Fatalf("code=%q want %q", code, tc.code)
+			}
+			if tc.stage == "" {
+				if observed.ErrorDetails["diagnostic"] != nil {
+					t.Fatal("ordinary error has protection diagnostic")
+				}
+				return
+			}
+			payload, err := json.Marshal(observed.ErrorDetails)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var details struct {
+				Diagnostic commonExecution.FailureDiagnostic `json:"diagnostic"`
+			}
+			if err := json.Unmarshal(payload, &details); err != nil {
+				t.Fatal(err)
+			}
+			if details.Diagnostic.Stage != tc.stage || details.Diagnostic.Reason != "data_protection_required" || details.Diagnostic.SchemaVersion != commonExecution.FailureDiagnosticSchemaVersion {
+				t.Fatalf("diagnostic=%+v", details.Diagnostic)
+			}
+			if strings.Contains(string(payload), "private-sentinel") || strings.Contains(string(payload), "projection expired") {
 				t.Fatal("private text leaked")
 			}
 		})
