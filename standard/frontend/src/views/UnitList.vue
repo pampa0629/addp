@@ -74,7 +74,7 @@
     </el-row>
 
     <!-- 新增/编辑度量类别对话框 -->
-    <el-dialog v-model="showAddCategory" :title="editingCategory ? $t('standard.unit.editCategory') : $t('standard.unit.createCategory')" width="min(560px, calc(100vw - 32px))">
+    <el-dialog v-model="showAddCategory" :title="editingCategory ? $t('standard.unit.editCategory') : $t('standard.unit.createCategory')" width="min(560px, calc(100vw - 32px))" destroy-on-close>
       <el-form :model="categoryForm" label-width="100px">
         <el-form-item v-if="!isPlatform" :label="$t('standard.common.name')" required>
           <el-input v-model="categoryForm.name" />
@@ -97,7 +97,7 @@
     </el-dialog>
 
     <!-- 新增/编辑计量单位对话框 -->
-    <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="min(560px, calc(100vw - 32px))">
+    <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="min(560px, calc(100vw - 32px))" destroy-on-close>
       <el-form :model="unitForm" label-width="100px">
         <el-form-item v-if="isPlatform" :label="$t('standard.common.code')" required>
           <el-input v-model="unitForm.code" :disabled="!!editingUnit" :placeholder="$t('standard.common.codePlaceholder')" />

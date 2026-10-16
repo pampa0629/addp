@@ -1064,6 +1064,33 @@ test('opens the saved measurement unit category and clears its reference', async
   expect((await savedRequest).postDataJSON().unit_id).toBeNull()
 })
 
+for (const [resource, id] of [['elements', 41], ['metrics', 51]]) {
+  test(`saves and reopens the shared platform unit in ${resource}`, async ({ page }) => {
+    const directory = measurementDirectoryFixture()
+    directory.unitDirectory.push({ id: 37, code: 'micrometre', category_id: 901, scope_type: 'platform', translations: {
+      'zh-cn': { name: '微米', symbol: 'µm' }, en: { name: 'Micrometre', symbol: 'µm' }, fr: { name: 'Micromètre', symbol: 'µm' }
+    } })
+    await installMockBackend(page, { ...directory, [resource]: [{ id, code: 'measurement', name: '测量值', data_type: 'float', status: 'draft' }] })
+    const writes = []
+    page.on('request', request => { if (request.method() === 'PUT') writes.push(request.postDataJSON()) })
+    await page.goto(`/${resource}/${id}`)
+    await page.locator('.unit-select .el-select__wrapper').click()
+    await page.locator('.unit-select input').fill('微米')
+    await page.getByRole('option', { name: '微米 (µm)', exact: true }).click()
+    const saved = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname.endsWith(`/${resource}/${id}/revisions/${id * 10 + 1}`))
+    await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+    expect((await saved).ok()).toBe(true)
+    expect(writes).toHaveLength(1)
+    expect(writes[0].unit_id).toBe(37)
+    await expect(page.locator('.el-message__content').filter({ hasText: '保存成功' })).toBeVisible()
+    await page.reload()
+    await expect(page.locator('.el-select.unit-select')).toContainText('微米 (µm)')
+    await page.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$i18n.locale = 'en' })
+    await expect(page.locator('.el-select.unit-select')).toContainText('Micrometre (µm)')
+    expect(writes).toHaveLength(1)
+  })
+}
+
 for (const language of ['zh-cn', 'en']) {
   test(`explains type choices with two-line options and contextual guidance in ${language}`, async ({ page }) => {
     await installMockBackend(page, { language, elements: [{ id: 41, code: 'phone', name: 'Phone', data_type: 'string', status: 'draft' }] })
@@ -2186,15 +2213,45 @@ test('platform user extends the unit directory with runtime translations', async
   await dialog.getByLabel('名称', { exact: true }).filter({ visible: true }).fill('弗隆')
   await dialog.getByRole('tab', { name: 'en', exact: true }).click()
   await dialog.getByLabel('名称', { exact: true }).filter({ visible: true }).fill('Furlong')
+  await dialog.getByPlaceholder('语言代码，如 fr、de').fill('fr')
+  await dialog.getByRole('button', { name: '添加译名', exact: true }).click()
+  await dialog.getByLabel('名称', { exact: true }).filter({ visible: true }).fill('Furlong français')
   const request = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/units'))
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   const created = (await request).postDataJSON()
-  expect(created).toMatchObject({ code: 'furlong', category_id: 901, translations: { 'zh-cn': { name: '弗隆' }, en: { name: 'Furlong' } } })
+  expect(created).toMatchObject({ code: 'furlong', category_id: 901, translations: { 'zh-cn': { name: '弗隆' }, en: { name: 'Furlong' }, fr: { name: 'Furlong français' } } })
   expect(created).not.toHaveProperty('name')
   await expect(page.getByRole('cell', { name: '弗隆', exact: true })).toBeVisible()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: '新增单位', exact: true }).click()
+  await expect(dialog.getByRole('tab', { name: 'zh-cn', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByLabel('名称', { exact: true }).filter({ visible: true })).toBeVisible()
+  await expect(dialog.getByRole('tab', { name: 'fr', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await page.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$i18n.locale = 'en' })
   await expect(page.getByRole('cell', { name: 'Furlong', exact: true })).toBeVisible()
 })
+
+for (const [kind, buttonName] of [['category', '新增'], ['unit', '新增单位']]) {
+  test(`resets ${kind} translation editor after canceling an additional language`, async ({ page }) => {
+    await installMockBackend(page, { ...measurementDirectoryFixture(), contextType: 'platform', permissions: ['standard.unit.read', 'standard.unit.create'] })
+    await page.goto('/units')
+    const open = page.getByRole('button', { name: buttonName, exact: true })
+    const dialog = page.getByRole('dialog')
+    await open.click()
+    await dialog.getByPlaceholder('语言代码，如 fr、de').fill('fr')
+    await dialog.getByRole('button', { name: '添加译名', exact: true }).click()
+    await expect(dialog.getByRole('tab', { name: 'fr', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await dialog.getByPlaceholder('语言代码，如 fr、de').fill('de')
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await open.click()
+    await expect(dialog.getByRole('tab', { name: 'zh-cn', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(dialog.getByRole('tab', { name: 'fr', exact: true })).toHaveCount(0)
+    await expect(dialog.getByLabel('名称', { exact: true }).filter({ visible: true })).toBeVisible()
+    await expect(dialog.getByPlaceholder('语言代码，如 fr、de')).toHaveValue('')
+  })
+}
 
 test('unit directory clears tenant state and rejects late responses when entering platform context', async ({ page }) => {
   const fixture = measurementDirectoryFixture()
@@ -2712,6 +2769,13 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/metric-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: metrics, total: metrics.length })
     if (path === '/api/v1/standard/metrics/51') return fulfillJSON(route, metrics.find(item => item.id === 51) || {})
+    if (request.method() === 'PUT' && path === '/api/v1/standard/metrics/51/revisions/511') {
+      const metric = metrics.find(item => item.id === 51)
+      const { version, ...payload } = request.postDataJSON()
+      Object.assign(metric.draft_revision, payload)
+      metric.version += 1
+      return fulfillJSON(route, metric)
+    }
     if (path === '/api/v1/standard/metrics/51/revisions') {
       const metric = metrics.find(item => item.id === 51)
       return fulfillJSON(route, fixtureRevisions(metric))

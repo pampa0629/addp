@@ -1,12 +1,14 @@
 package service
 
 import (
+	"errors"
+	"os"
+	"testing"
+
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"os"
-	"testing"
 )
 
 func TestPostgresUnitCatalogDeploymentAndPlatformExtension(t *testing.T) {
@@ -78,6 +80,64 @@ func TestPostgresUnitCatalogDeploymentAndPlatformExtension(t *testing.T) {
 	got.Localize("en")
 	if got.Name != "Joule energy" {
 		t.Fatal(got.Name)
+	}
+	for _, consumer := range []string{"element", "metric"} {
+		t.Run(consumer+"_reference", func(t *testing.T) {
+			referenced, err := svc.CreateUnit(&models.CreateUnitRequest{Code: "joule_" + consumer, CategoryID: category.ID, Translations: unitTestTranslations("焦耳", "Joule")}, platform)
+			if err != nil {
+				t.Fatal(err)
+			}
+			refs := repository.NewTenantReferenceRepository(tx)
+			var savedUnitID *int64
+			if consumer == "element" {
+				elements := NewElementService(repository.NewElementRepository(tx), nil, refs, nil)
+				created, err := elements.CreateElement(&models.CreateElementRequest{ScopeType: models.StandardScopeTenantCommon, Code: "energy_element", Name: "Energy", Definition: "Energy measurement", DataType: "float", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &referenced.ID}, tenant.TenantID, 1, "Create shared unit reference")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := elements.UpdateRevision(created.ID, created.DraftRevision.ID, tenant.TenantID, 1, &models.UpdateElementRevisionRequest{Version: created.Version, Name: "Energy", Definition: "Updated energy measurement", DataType: "float", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &referenced.ID, ChangeSummary: "Save shared unit reference"}); err != nil {
+					t.Fatal(err)
+				}
+				reopened, err := elements.GetElement(created.ID, tenant.TenantID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				savedUnitID = reopened.DraftRevision.UnitID
+			} else {
+				metrics := NewMetricService(repository.NewMetricCategoryRepository(tx), repository.NewMetricRepository(tx), refs, nil)
+				created, err := metrics.CreateMetric(&models.CreateMetricRequest{ScopeType: models.StandardScopeTenantCommon, Code: "energy_metric", MetricType: models.MetricTypeAtomic, Name: "Energy", Definition: "Energy measurement", StatisticalCaliber: "All measurements", UnitID: &referenced.ID}, tenant.TenantID, 1, "Create shared unit reference")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := metrics.UpdateRevision(created.ID, created.DraftRevision.ID, tenant.TenantID, 1, &models.UpdateMetricRevisionRequest{Version: created.Version, MetricType: models.MetricTypeAtomic, Name: "Energy", Definition: "Updated energy measurement", StatisticalCaliber: "All measurements", UnitID: &referenced.ID, ChangeSummary: "Save shared unit reference"}); err != nil {
+					t.Fatal(err)
+				}
+				reopened, err := metrics.GetMetric(created.ID, tenant.TenantID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				savedUnitID = reopened.DraftRevision.UnitID
+			}
+			if savedUnitID == nil || *savedUnitID != referenced.ID {
+				t.Fatalf("saved unit identity changed: %v", savedUnitID)
+			}
+			for lang, expected := range map[string]string{"zh-cn": "焦耳", "en": "Joule"} {
+				localized, err := svc.GetUnit(*savedUnitID, tenant)
+				if err != nil {
+					t.Fatal(err)
+				}
+				localized.Localize(lang)
+				if localized.ID != referenced.ID || localized.Name != expected {
+					t.Fatalf("localized reference changed: %+v", localized)
+				}
+			}
+			if err := svc.DeleteUnit(referenced.ID, platform); !errors.Is(err, ErrUnitReferenced) {
+				t.Fatalf("referenced unit deletion: %v", err)
+			}
+			if _, err := svc.GetUnit(referenced.ID, tenant); err != nil {
+				t.Fatalf("referenced unit lost after rejected deletion: %v", err)
+			}
+		})
 	}
 	var duplicated int64
 	if err := tx.Model(&models.Unit{}).Where("tenant_id IS NOT NULL").Count(&duplicated).Error; err != nil || duplicated != 0 {
