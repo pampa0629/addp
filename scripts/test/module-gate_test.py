@@ -226,6 +226,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertIn("TestIntegrationPostgresQueryReadSession", calls[0])
         self.assertIn("./engine/plugins/highgo", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
@@ -237,7 +238,7 @@ class ModuleGateTest(unittest.TestCase):
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(1, len(calls))
-        self.assertIn("-run ^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)|TestIntegrationPostgresQueryReadSession)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
 
