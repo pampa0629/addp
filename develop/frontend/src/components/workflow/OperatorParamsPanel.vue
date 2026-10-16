@@ -53,6 +53,10 @@
                 <el-option v-for="option in availableCollectionInputs(param)" :key="option.key"
                   :label="inputConnectionOptionLabel(option)" :value="option.key" :disabled="option.disabled" />
               </el-select>
+              <el-button v-if="resourceInputOperator" class="select-input-resources"
+                @click="openInputResourcePicker(param)">
+                {{ t('develop.operatorParams.selectImages') }}
+              </el-button>
             </template>
             <el-select
               v-else
@@ -252,6 +256,7 @@
       <ResourceTreePicker
         v-if="resourcePickerDialogParam"
         ref="resourcePickerRef"
+        :multiple="Boolean(resourcePickerInputParam)"
         :api-base-url="resourcePickerDialogParam.ui_config?.api_base_url || '/api/v1/meta'"
         :engine-families="resourcePickerEngineFamilies(resourcePickerDialogParam)"
         :engine-filter="engine => isResourceEngineSupported(resourcePickerDialogParam, engine)"
@@ -266,12 +271,14 @@
         :show-disabled-label="false"
         :show-count="false"
         tree-height="clamp(240px, 44vh, 420px)"
-        :initial-locator="resourcePickerInitialLocator(resourcePickerDialogParam)"
+        :initial-locator="resourcePickerInputParam ? '' : resourcePickerInitialLocator(resourcePickerDialogParam)"
         @update:model-value="selection => resourcePickerDraftSelection = selection"
       />
       <template #footer>
         <el-button @click="resourcePickerDialogVisible = false">{{ t('develop.operatorParams.cancel') }}</el-button>
-        <el-button type="primary" :disabled="!resourcePickerDraftSelection" @click="confirmResourceSelection">
+        <el-button type="primary"
+          :disabled="resourcePickerInputParam ? !resourcePickerDraftSelection?.length : !resourcePickerDraftSelection"
+          @click="confirmResourceSelection">
           {{ t('develop.operatorParams.confirm') }}
         </el-button>
       </template>
@@ -335,13 +342,17 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  resourceInputOperator: {
+    type: Object,
+    default: null
+  },
   resourceEnginesById: {
     type: Object,
     default: () => ({})
   }
 })
 
-const emit = defineEmits(['update', 'update-connection'])
+const emit = defineEmits(['update', 'update-connection', 'add-resource-inputs'])
 
 const formData = ref({})
 const panelRef = ref(null)
@@ -349,8 +360,10 @@ const resourcePickerRef = ref(null)
 const highlightedParamName = ref('')
 const resourcePickerDialogVisible = ref(false)
 const resourcePickerDialogParam = ref(null)
+const resourcePickerInputParam = ref('')
 const resourcePickerDraftSelection = ref(null)
 const resourcePickerDialogTitle = computed(() => {
+  if (resourcePickerInputParam.value) return t('develop.operatorParams.selectImages')
   const name = resourcePickerDialogParam.value?.display_name || resourcePickerDialogParam.value?.name
   return name
     ? t('develop.operatorParams.resourceDialogTitle', { name })
@@ -646,8 +659,20 @@ const resourceGeometryColumns = (param) => {
 }
 
 const openResourcePicker = (param) => {
+  resourcePickerInputParam.value = ''
   resourcePickerDialogParam.value = param
   resourcePickerDraftSelection.value = null
+  resourcePickerDialogVisible.value = true
+}
+
+const openInputResourcePicker = (param) => {
+  const source = props.resourceInputOperator?.public_parameters?.find(parameter => (
+    parameter.ui_type === 'resource_tree_picker' && getResourceBinding(parameter)?.mode === 'existing'
+  ))
+  if (!source) return
+  resourcePickerDialogParam.value = source
+  resourcePickerInputParam.value = param.name
+  resourcePickerDraftSelection.value = []
   resourcePickerDialogVisible.value = true
 }
 
@@ -657,6 +682,17 @@ const focusResourcePicker = () => {
 
 const confirmResourceSelection = () => {
   if (!resourcePickerDialogParam.value || !resourcePickerDraftSelection.value) return
+  if (resourcePickerInputParam.value) {
+    if (!resourcePickerDraftSelection.value.length) return
+    emit('add-resource-inputs', {
+      nodeId: props.nodeId,
+      targetParam: resourcePickerInputParam.value,
+      operator: props.resourceInputOperator,
+      selections: resourcePickerDraftSelection.value
+    })
+    resourcePickerDialogVisible.value = false
+    return
+  }
   const geometryParam = resourceBindingGeometryColumnParam(resourcePickerDialogParam.value)
   if (geometryParam) {
     const facts = geometryColumnFactsFromSelection(resourcePickerDraftSelection.value)

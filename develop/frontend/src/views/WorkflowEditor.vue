@@ -307,9 +307,11 @@
             :validation-issues="selectedNodeValidationIssues"
             :input-connections="selectedNode.inputConnections"
             :input-connection-options="selectedNode.inputConnectionOptions"
+            :resource-input-operator="selectedNode.operator === 'raster_mosaic' ? rasterLoadOperator : null"
             :resource-engines-by-id="resourceEnginesById"
             @update="handleParamsUpdate"
             @update-connection="handleInputConnectionUpdate"
+            @add-resource-inputs="handleResourceInputsAdd"
           />
         </div>
       </aside>
@@ -737,6 +739,7 @@ const selectedEngine = ref(null)
 const sparkRuntimes = ref([])
 const sparkRuntimeId = ref(null)
 const operators = ref([])
+const rasterLoadOperator = computed(() => operators.value.find(operator => operator.name === 'raster_load') || null)
 const operatorsLoading = ref(false)
 const operatorLoadError = ref('')
 const resourceEngines = ref([])
@@ -977,6 +980,10 @@ function handleParamsUpdate(data) {
 
 function handleInputConnectionUpdate(connection) {
   canvasRef.value?.updateInputConnection(connection)
+}
+
+function handleResourceInputsAdd(batch) {
+  canvasRef.value?.addResourceInputs(batch)
 }
 
 function handleOperatorClick(operator) {

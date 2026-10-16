@@ -2,7 +2,20 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { formatLocatorDisplayPath, getParentLocator, parseLocator } from '../src/types/resourceLocator.js'
-import { geometryColumnFactsFromSelection, selectionFromResourceTreeNode } from '../src/utils/resourceSelection.js'
+import { geometryColumnFactsFromSelection, selectionFromResourceTreeNode, toggleResourceSelection } from '../src/utils/resourceSelection.js'
+
+test('multiple resource selection preserves click order and uses locator identity across tree and search', () => {
+  const first = { identity: { locator: 'addp://engine/1/path/a.tif?type=object&item_id=1' } }
+  const second = { identity: { locator: 'addp://engine/2/path/b.tif?type=object&item_id=2' } }
+  const initial = [first]
+  const both = toggleResourceSelection(initial, second)
+  assert.deepEqual(initial, [first])
+  assert.deepEqual(both, [first, second])
+  const removed = toggleResourceSelection(both, { ...first, display: { label: 'Search result' } })
+  assert.deepEqual(removed, [second])
+  assert.deepEqual(toggleResourceSelection(removed, first), [second, first])
+  assert.deepEqual(toggleResourceSelection(removed, null), [second])
+})
 
 test('resource selection carries engine identity, native database path, and spatial facts', () => {
   const selection = selectionFromResourceTreeNode({

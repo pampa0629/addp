@@ -272,7 +272,7 @@ assert.match(editor, /:aria-label="t\('develop\.workflow\.collapseParamsPanel'\)
 assert.match(editor, /class="open-inspector"[\s\S]*:aria-label="t\('develop\.workflow\.openParamsPanel'\)"/)
 assert.doesNotMatch(editor, /createTemporaryWorkflowTask|tempWorkflowPrefix/)
 
-assert.match(paramsPanel, /defineEmits\(\['update', 'update-connection'\]\)/)
+assert.match(paramsPanel, /defineEmits\(\['update', 'update-connection', 'add-resource-inputs'\]\)/)
 assert.match(paramsPanel, /watch\(formData/)
 assert.match(paramsPanel, /normalizeParamValue\(param, paramValue\)/)
 assert.match(paramsPanel, /JSON\.parse\(value\)/)

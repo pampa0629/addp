@@ -1,5 +1,13 @@
 import { formatLocatorDisplayPath, parseLocator } from '../types/resourceLocator.js'
 
+export function toggleResourceSelection(selections, selection) {
+  const locator = selection?.identity?.locator
+  if (!locator) return [...selections]
+  return selections.some(item => item.identity.locator === locator)
+    ? selections.filter(item => item.identity.locator !== locator)
+    : [...selections, selection]
+}
+
 function geometryColumnName(column) {
   return String(typeof column === 'string' ? column : column?.name || '').trim()
 }

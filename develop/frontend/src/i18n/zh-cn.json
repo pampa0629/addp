@@ -387,6 +387,8 @@
       "addLabel": "添加“{name}”算子"
     },
     "workflowCanvas": {
+      "resourceInputsInvalid": "无法添加影像，请重新选择有效的已登记影像。",
+      "resourceInputsAdded": "已添加 {count} 个影像输入",
       "canvasAriaLabel": "工作流 DAG 画布",
       "navigationStatusLabel": "工作流画布选择状态",
       "nodeSelected": "已选择节点“{name}”",
@@ -432,6 +434,7 @@
       "loadTreeFailed": "加载文件树失败"
     },
     "operatorParams": {
+      "selectImages": "选择影像",
       "selectNode": "请从画布中选择一个节点",
       "nodeInfo": "节点信息",
       "readOnly": "只读",

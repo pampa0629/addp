@@ -25,6 +25,17 @@ const RESOURCE_ENGINE = {
   connection_status: 'online'
 }
 const RESOURCE_LOCATOR = `addp://engine/${RESOURCE_ENGINE.id}/path/public/roads?type=table&item_id=701`
+const RASTER_ENGINES = [7, 8].map(id => ({
+  id, name: `Raster storage ${id}`, engine_type: 'minio', engine_family: 'object',
+  lifecycle_state: 'active', connection_status: 'online',
+  capabilities: { storage: { store: { stream_read: true } } }
+}))
+const rasterResource = (engineId, name, itemId, type = 'object') => ({
+  id: `addp://engine/${engineId}/path/rasters/${name}?type=${type}&item_id=${itemId}`,
+  locator: `addp://engine/${engineId}/path/rasters/${name}?type=${type}&item_id=${itemId}`,
+  label: name, type, hasChildren: false, children: []
+})
+const RASTER_RESOURCES = [rasterResource(7, 'first.tif', 701), rasterResource(7, 'second.tif', 702), rasterResource(8, 'third.tif', 801)]
 
 test.describe('responsive workflow dialogs', () => {
   test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
@@ -332,6 +343,103 @@ test('renders a visible gap where workflow edges cross', async ({ page }) => {
     edge.casingPath === edge.keyPath
   ))).toBe(true)
   expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
+})
+
+test('selects registered images across tree and search and adds one undoable raster input batch', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeInputConnections: true, includeCollectionInputs: true, includeRasterResourceBatch: true, portType: 'raster'
+  })
+  await openSavedWorkflow(page)
+  const canvasBox = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+  await page.mouse.click(canvasBox.x + 520, canvasBox.y + 180)
+  await page.getByRole('button', { name: '选择影像', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '选择影像', exact: true })
+  const confirm = dialog.getByRole('button', { name: '确定', exact: true })
+  await expect(confirm).toBeDisabled()
+  await expect(dialog.getByRole('checkbox', { name: 'notes.txt', exact: true })).toHaveCount(0)
+  await expect(dialog.getByRole('checkbox', { name: 'directory-whole', exact: true })).toHaveCount(0)
+  await dialog.getByText('second.tif', { exact: true }).click()
+  const search = dialog.locator('.picker-search input')
+  await search.fill('third')
+  const result = dialog.getByRole('button').filter({ hasText: 'third.tif' })
+  await result.click()
+  await expect(result).toHaveAttribute('aria-pressed', 'true')
+  await search.clear()
+  await dialog.getByText('third.tif', { exact: true }).click()
+  await dialog.getByText('first.tif', { exact: true }).click()
+  await dialog.getByText('third.tif', { exact: true }).click()
+  await expect(dialog.locator('.selected-resources li')).toHaveText([
+    'second.tif · Raster storage 7', 'first.tif · Raster storage 7', 'third.tif · Raster storage 8'
+  ])
+  await confirm.click()
+  const rows = page.locator('.ordered-input-label')
+  await expect(rows).toHaveCount(6)
+  await expect(rows.nth(3)).toContainText('second.tif')
+  await expect(rows.nth(4)).toContainText('first.tif')
+  await expect(rows.nth(5)).toContainText('third.tif')
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  const graphCount = () => page.locator('#workflow-dag-container').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graph
+    return { nodes: graph.getNodes().length, edges: graph.getEdges().length }
+  })
+  await expect.poll(graphCount).toEqual({ nodes: 4, edges: 3 })
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect.poll(graphCount).toEqual({ nodes: 7, edges: 6 })
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const definition = backend.updates[0].payload.content.workflow_definition
+  const mosaic = definition.tasks.find(task => task.id === 'operator_input_1')
+  expect(mosaic.params.input_rasters.slice(0, 3)).toEqual([3, 1, 2].map(index => ({ $ref: `operator_a_${index}` })))
+  const sources = mosaic.params.input_rasters.slice(3).map(ref => definition.tasks.find(task => task.id === ref.$ref))
+  expect(sources.map(task => task.operator)).toEqual(['raster_load', 'raster_load', 'raster_load'])
+  expect(sources.map(task => task.params)).toEqual([1, 0, 2].map(index => ({ source_locator: RASTER_RESOURCES[index].locator })))
+  expect(sources.every(task => task.depends_on.length === 0)).toBe(true)
+  await page.reload()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  const reloaded = await page.locator('#workflow-dag-container').evaluate(element => (
+    element.__vueParentComponent.setupState.graph.getNodes().map(node => node.getModel())
+  ))
+  expect(reloaded.filter(node => sources.some(source => source.id === node.id)).map(node => node.params)).toEqual(sources.map(source => source.params))
+  const reloadedBox = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+  await page.mouse.click(reloadedBox.x + 520, reloadedBox.y + 180)
+  await expect(rows).toHaveCount(6)
+  await expect(rows.nth(3)).toContainText('second.tif')
+  await expect(rows.nth(4)).toContainText('first.tif')
+  await expect(rows.nth(5)).toContainText('third.tif')
+})
+
+test('cancels raster resource batches without graph changes and keeps the picker usable in a narrow window', async ({ page }) => {
+  await installMockBackend(page, {
+    includeInputConnections: true, includeCollectionInputs: true, includeRasterResourceBatch: true, portType: 'raster'
+  })
+  await openSavedWorkflow(page)
+  const canvasBox = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+  await page.mouse.click(canvasBox.x + 520, canvasBox.y + 180)
+  await page.getByRole('button', { name: '选择影像', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 560 })
+  const dialog = page.getByRole('dialog', { name: '选择影像', exact: true })
+  await dialog.getByText('first.tif', { exact: true }).click()
+  await dialog.getByRole('button', { name: '移除 first.tif', exact: true }).click()
+  await expect(dialog.getByRole('checkbox', { name: 'first.tif', exact: true })).not.toBeChecked()
+  await expect(dialog.getByRole('button', { name: '确定', exact: true })).toBeDisabled()
+  await dialog.getByText('third.tif', { exact: true }).click()
+  await expectDialogWithinViewport(page, visibleDialogSurface(page))
+  await dialog.locator('.el-select__wrapper').click()
+  await page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Raster storage 8' }).click()
+  await page.keyboard.press('Escape')
+  await expect(dialog.locator('.selected-resources li')).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: '确定', exact: true })).toBeDisabled()
+  await dialog.getByText('first.tif', { exact: true }).click()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  const counts = await page.locator('#workflow-dag-container').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graph
+    return [graph.getNodes().length, graph.getEdges().length]
+  })
+  expect(counts).toEqual([4, 3])
+  await page.getByRole('button', { name: '选择影像', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '确定', exact: true })).toBeDisabled()
+  await expect(dialog.locator('.selected-resources li')).toHaveCount(0)
 })
 
 test('preserves ordered raster collection inputs through editing, saving and reload', async ({ page }) => {
@@ -820,6 +928,7 @@ async function installMockBackend(page, {
   includeConnectedEdge = false,
   includeCrossingEdges = false,
   includeCollectionInputs = false,
+  includeRasterResourceBatch = false,
   portType = 'number'
 } = {}) {
   const updates = []
@@ -901,6 +1010,27 @@ async function installMockBackend(page, {
 
   operatorsByEngine[ENGINE_A.id][0].output_ports[0].type = portType
 
+  if (includeRasterResourceBatch) {
+    resourceEngines = RASTER_ENGINES
+    const load = operatorsByEngine[ENGINE_A.id][0]
+    load.name = load.id = 'raster_load'
+    load.display_name = '加载栅格'
+    load.public_parameters = [{
+      name: '数据源', type: 'ui', ui_type: 'resource_tree_picker',
+      ui_config: {
+        engine_families: ['object'], engine_types: ['minio'], storage_operation: 'read',
+        selectable_node_types: ['object', 'file'], file_formats: ['tif', 'tiff'],
+        resource_binding: { mode: 'existing', locator_param: 'source_locator' }
+      }
+    }, { name: 'source_locator', type: 'string', param_type: 'resource', required: true }]
+    const mosaic = operatorsByEngine[ENGINE_A.id][1]
+    mosaic.name = mosaic.id = 'raster_mosaic'
+    task.content.workflow_definition.tasks.forEach(node => {
+      node.operator = node.operator === 'operator_a' ? 'raster_load' : 'raster_mosaic'
+      if (node.operator === 'raster_load') node.params = { source_locator: RASTER_RESOURCES[0].locator }
+    })
+  }
+
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -920,6 +1050,21 @@ async function installMockBackend(page, {
     }
     if (path === '/api/v1/meta/engines') {
       return fulfillJSON(route, resourceEngines)
+    }
+    if (includeRasterResourceBatch && path.startsWith('/api/v1/meta/resource-tree/')) {
+      const engineId = Number(path.split('/')[5])
+      if (path.endsWith('/search')) {
+        return fulfillJSON(route, { results: RASTER_RESOURCES.filter(node => node.locator.includes(`/engine/${engineId}/`) && node.label.includes(url.searchParams.get('q'))) })
+      }
+      const locator = `addp://engine/${engineId}/path/rasters?type=bucket`
+      return fulfillJSON(route, {
+        id: locator, locator, label: `rasters-${engineId}`, type: 'bucket', hasChildren: true,
+        children: [
+          ...RASTER_RESOURCES.filter(node => node.locator.includes(`/engine/${engineId}/`)),
+          rasterResource(engineId, 'notes.txt', engineId * 1000),
+          rasterResource(engineId, 'directory-whole', engineId * 1000 + 1, 'directory')
+        ]
+      })
     }
     if (path === `/api/v1/meta/resource-tree/${RESOURCE_ENGINE.id}`) {
       return fulfillJSON(route, {

@@ -26,6 +26,14 @@ test('ResourceTreePicker is the single form-level resource tree implementation',
   assert.doesNotMatch(picker, /<el-tree(?:\s|>)/)
 })
 
+test('multiple resource input composition retains the shared picker and standard DAG owner', () => {
+  const panel = source('develop/frontend/src/components/workflow/OperatorParamsPanel.vue')
+  assert.match(panel, /:multiple="Boolean\(resourcePickerInputParam\)"/)
+  assert.doesNotMatch(panel, /<el-tree\b|<ResourceTree\s|dataExplorerAPI|uploadFiles/)
+  const editor = source('develop/frontend/src/views/WorkflowEditor.vue')
+  assert.match(editor, /canvasRef\.value\?\.addResourceInputs\(batch\)/)
+})
+
 test('compact resource selection has one shared input and tree owner across System authorization views', () => {
   const select = source('common-frontend/basic/src/components/ResourceTreeSelect.vue')
   assert.match(select, /<ResourceTreePicker\s/)

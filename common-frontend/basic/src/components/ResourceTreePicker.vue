@@ -43,8 +43,10 @@
             type="button"
             class="search-result"
             :class="{ 'is-disabled': !isSelectableNode(result.node, result.engine) }"
+            :aria-pressed="multiple ? isResourceSelected(result.node) : undefined"
             @click="handleSearchResultClick(result)"
           >
+            <el-icon v-if="multiple && isResourceSelected(result.node)"><Check /></el-icon>
             <span class="search-result-main">
               <span class="search-result-label">{{ result.node.label }}</span>
               <span class="search-result-path">{{ searchResultPath(result.node, result.engine) }}</span>
@@ -81,7 +83,15 @@
             :class="{ 'is-disabled': !isSelectableTreeNode(data) }"
             @dblclick.stop="handleNodeDblclick(data)"
           >
-            <span class="picker-node-label">{{ data.label }}</span>
+            <el-checkbox
+              v-if="multiple && isSelectableTreeNode(data)"
+              :model-value="isResourceSelected(data)"
+              :aria-label="data.label"
+              @click.stop
+              @dblclick.stop
+              @change="selectNode(data, engineForNode(data))"
+            >{{ data.label }}</el-checkbox>
+            <span v-else class="picker-node-label">{{ data.label }}</span>
             <el-tag v-if="showDisabledLabel && disabledLabel && !isSelectableTreeNode(data)" size="small" type="info">
               {{ disabledLabel }}
             </el-tag>
@@ -90,8 +100,16 @@
       </ResourceTree>
     </div>
 
+    <ol v-if="showSelectionSummary && multiple && selectedResources.length" class="selected-resources">
+      <li v-for="selection in selectedResources" :key="selection.identity.locator">
+        <span :title="selection.display.path">{{ selection.display.label }} · {{ selection.display.engine_name }}</span>
+        <el-button text :icon="Close"
+          :aria-label="t('resourcePicker.removeSelection', { name: selection.display.label })"
+          @click="toggleSelectedResource(selection)" />
+      </li>
+    </ol>
     <el-alert
-      v-if="showSelectionSummary && currentSelection"
+      v-else-if="showSelectionSummary && !multiple && currentSelection"
       class="selection-summary"
       type="success"
       :closable="false"
@@ -108,7 +126,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { Search } from '@element-plus/icons-vue'
+import { Check, Close, Search } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath, parseLocatorSafe } from '../types/resourceLocator.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 import { engineSelectionState, isEngineSelectable } from '../utils/engineAvailability.js'
@@ -126,7 +144,7 @@ import {
   listResourceTreeEngines,
   searchResourceTree
 } from '../api/resourceTree.js'
-import { selectionFromResourceTreeNode } from '../utils/resourceSelection.js'
+import { selectionFromResourceTreeNode, toggleResourceSelection } from '../utils/resourceSelection.js'
 import { isResourceTreeSearchReady } from '../utils/resourceTreeSearch.mjs'
 import ResourceTree from './ResourceTree.vue'
 
@@ -142,8 +160,12 @@ const props = defineProps({
     default: null
   },
   modelValue: {
-    type: Object,
+    type: [Object, Array],
     default: null
+  },
+  multiple: {
+    type: Boolean,
+    default: false
   },
   engineId: {
     type: [Number, String, Array],
@@ -262,7 +284,8 @@ const engineSelectRef = ref(null)
 const searchInputRef = ref(null)
 const currentNodeKey = ref(null)
 const expandedKeys = ref([])
-const currentSelection = ref(props.modelValue)
+const currentSelection = ref(props.multiple ? null : props.modelValue)
+const selectedResources = ref(props.multiple && Array.isArray(props.modelValue) ? [...props.modelValue] : [])
 const loadingEngines = ref(false)
 const loadingTree = ref(false)
 const searching = ref(false)
@@ -435,7 +458,11 @@ const handleEngineChange = async () => {
   if (!shouldKeepSelection) {
     currentNodeKey.value = null
     currentSelection.value = null
-    emit('update:modelValue', null)
+    if (!props.multiple) emit('update:modelValue', null)
+  }
+  if (props.multiple) {
+    selectedResources.value = selectedResources.value.filter(selection => selectedEngineIds.value.includes(normalizeEngineId(selection.identity.engine_id)))
+    emit('update:modelValue', [...selectedResources.value])
   }
   emit('engine-change', props.engineMultiple ? selectedEngines.value : selectedEngine.value)
   await loadSelectedTrees()
@@ -479,6 +506,8 @@ const handleNodeExpand = (node) => {
 const handleNodeDblclick = (node) => {
   const engine = engineForNode(node)
   if (!isSelectableNode(node, engine)) return
+  // 多选使用勾选动作；双击不能再次切换已选状态或确认整批。
+  if (props.multiple) return
   const selection = selectionFromResourceTreeNode(node, engine)
   if (!selection) return
   currentSelection.value = selection
@@ -502,6 +531,7 @@ const handleSearchResultClick = async (result) => {
     await loadSelectedTrees()
   }
   selectNode(result.node, result.engine || selectedEngine.value)
+  if (props.multiple) return
   searchRequestSeq += 1
   searching.value = false
   searchKeyword.value = ''
@@ -512,8 +542,20 @@ const selectNode = (node, engine = selectedEngine.value) => {
   const selection = selectionFromResourceTreeNode(node, engine)
   currentSelection.value = selection
   currentNodeKey.value = node.id
+  if (props.multiple) {
+    toggleSelectedResource(selection)
+    return
+  }
   emit('update:modelValue', selection)
   emit('select', selection)
+}
+
+const isResourceSelected = node => selectedResources.value.some(selection => selection.identity.locator === node.locator)
+
+const toggleSelectedResource = selection => {
+  selectedResources.value = toggleResourceSelection(selectedResources.value, selection)
+  emit('update:modelValue', [...selectedResources.value])
+  emit('select', [...selectedResources.value])
 }
 
 const isSelectableNode = (node, engine = selectedEngine.value) => {
@@ -684,7 +726,7 @@ const restoreInitialLocator = async (locator) => {
     if (ancestors.length === 0) {
       currentNodeKey.value = null
       currentSelection.value = null
-      emit('update:modelValue', null)
+      if (!props.multiple) emit('update:modelValue', null)
       return
     }
     mergeAncestorChain(ancestors)
@@ -694,11 +736,15 @@ const restoreInitialLocator = async (locator) => {
     const targetEngine = engineForNode(target)
     if (isSelectableNode(target, targetEngine)) {
       currentSelection.value = selectionFromResourceTreeNode(target, targetEngine)
-      emit('update:modelValue', currentSelection.value)
-      emit('select', currentSelection.value)
+      if (props.multiple) {
+        if (!isResourceSelected(target)) toggleSelectedResource(currentSelection.value)
+      } else {
+        emit('update:modelValue', currentSelection.value)
+        emit('select', currentSelection.value)
+      }
     } else {
       currentSelection.value = null
-      emit('update:modelValue', null)
+      if (!props.multiple) emit('update:modelValue', null)
     }
     await nextTick()
   } catch (error) {
@@ -720,7 +766,10 @@ const loadExternalEngine = async (engineId) => {
     treeData.value = []
     currentNodeKey.value = null
     currentSelection.value = null
-    emit('update:modelValue', null)
+    if (props.multiple) {
+      selectedResources.value = []
+      emit('update:modelValue', [])
+    } else emit('update:modelValue', null)
     return
   }
   const loadedEngineIds = new Set(
@@ -739,7 +788,10 @@ const loadExternalEngine = async (engineId) => {
   treeData.value = []
   currentNodeKey.value = null
   currentSelection.value = null
-  emit('update:modelValue', null)
+  if (props.multiple) {
+    selectedResources.value = selectedResources.value.filter(selection => normalizedEngineIds.includes(normalizeEngineId(selection.identity.engine_id)))
+    emit('update:modelValue', [...selectedResources.value])
+  } else emit('update:modelValue', null)
   await loadSelectedTrees()
   if (searchKeyword.value.trim()) {
     runSearch()
@@ -936,8 +988,12 @@ const scheduleSearch = () => {
 watch(() => props.searchQuery, value => { searchKeyword.value = value }, { immediate: true })
 
 watch(() => props.modelValue, value => {
-  currentSelection.value = value
-  currentNodeKey.value = value?.raw?.node?.id || value?.identity?.locator || null
+  if (props.multiple) {
+    selectedResources.value = Array.isArray(value) ? [...value] : []
+  } else {
+    currentSelection.value = value
+    currentNodeKey.value = value?.raw?.node?.id || value?.identity?.locator || null
+  }
 })
 
 watch(
@@ -974,7 +1030,7 @@ defineExpose({
     const target = props.showSearch ? searchInputRef.value : engineSelectRef.value
     target?.focus?.()
   },
-  getSelection: () => currentSelection.value
+  getSelection: () => props.multiple ? [...selectedResources.value] : currentSelection.value
 })
 </script>
 
@@ -983,6 +1039,27 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.selected-resources {
+  margin: 0;
+  padding-left: 24px;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.selected-resources li > span {
+  overflow-wrap: anywhere;
+}
+
+.picker-node .el-checkbox {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.picker-node :deep(.el-checkbox__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-panel {

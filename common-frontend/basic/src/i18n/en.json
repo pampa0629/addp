@@ -773,5 +773,8 @@
     "summary": "Summary",
     "bytes": "{count} bytes",
     "elements": "{count} entries"
+  },
+  "resourcePicker": {
+    "removeSelection": "Remove {name}"
   }
 }

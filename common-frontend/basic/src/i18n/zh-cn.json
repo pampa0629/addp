@@ -773,5 +773,8 @@
     "summary": "内容摘要",
     "bytes": "{count} 字节",
     "elements": "{count} 个元素"
+  },
+  "resourcePicker": {
+    "removeSelection": "移除 {name}"
   }
 }

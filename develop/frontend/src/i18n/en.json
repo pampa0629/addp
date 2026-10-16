@@ -385,6 +385,8 @@
       "addLabel": "Add the {name} operator"
     },
     "workflowCanvas": {
+      "resourceInputsInvalid": "Unable to add images. Select valid registered images again.",
+      "resourceInputsAdded": "Added {count} image inputs",
       "canvasAriaLabel": "Workflow DAG canvas",
       "navigationStatusLabel": "Workflow canvas selection status",
       "nodeSelected": "Selected node \"{name}\"",
@@ -421,6 +423,7 @@
       "loadFailed": "Failed to load engine list"
     },
     "operatorParams": {
+      "selectImages": "Select images",
       "selectNode": "Please select a node from the canvas",
       "nodeInfo": "Node Info",
       "readOnly": "Read only",

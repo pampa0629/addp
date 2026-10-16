@@ -112,6 +112,11 @@ import {
   workflowReferenceBindings
 } from '@/utils/workflowInputBindings'
 import {
+  applyResourceBindingSelection,
+  getResourceBinding,
+  isResourceEngineSupported,
+  isResourceFormatSupported,
+  isResourceDataTypeSupported,
   isTargetResourceBinding,
   missingResourceBindingParams,
   resourceBindingNameParam,
@@ -785,6 +790,69 @@ function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort 
   return true
 }
 
+function addResourceInputs({ nodeId, targetParam, operator, selections }) {
+  const reject = () => {
+    ElMessage.error(t('develop.workflowCanvas.resourceInputsInvalid'))
+    return false
+  }
+  const targetItem = graph.value?.findById(nodeId)
+  const targetModel = targetItem?.getModel?.()
+  const targetPort = targetModel?.inputPorts?.find(port => port.name === targetParam)
+  const sourceParameter = operator?.public_parameters?.find(parameter => (
+    parameter.ui_type === 'resource_tree_picker' && getResourceBinding(parameter)?.mode === 'existing'
+  ))
+  const outputPort = operator?.output_ports?.find(port => port.is_default) || operator?.output_ports?.[0]
+  if (!isWorkflowCollectionInput(targetPort) || !sourceParameter || !outputPort ||
+      !areWorkflowTypesCompatible(outputPort.type, targetPort) || !selections?.length) return reject()
+
+  // 先核对整批事实，再改变图；不允许半批新增或把目录展开为隐式输入。
+  const locators = new Set()
+  const models = []
+  let nextCounter = nodeCounter.value
+  const sourceX = (targetModel.x || 0) - 320
+  const occupiedYs = graph.value.getNodes().map(node => node.getModel())
+    .filter(model => Math.abs(model.x - sourceX) < 180).map(model => model.y || 0)
+  const sourceY = occupiedYs.length ? Math.max(targetModel.y || 0, Math.max(...occupiedYs) + 140) : (targetModel.y || 0)
+  for (const selection of selections) {
+    const locator = selection.identity?.locator
+    const node = selection.raw?.node
+    if (!locator || locators.has(locator) || !['file', 'object'].includes(selection.resource?.type) ||
+        !selection.identity?.item_id || !node || node.locator !== locator ||
+        !isResourceEngineSupported(sourceParameter, selection.raw?.engine) ||
+        !isResourceFormatSupported(sourceParameter, node) || !isResourceDataTypeSupported(sourceParameter, node)) return reject()
+    locators.add(locator)
+    let id
+    do { id = `${operator.name}_${++nextCounter}` } while (graph.value.findById(id))
+    const params = applyResourceBindingSelection(sourceParameter, defaultOperatorParams(operator), locator, selection.resource.type)
+    const index = models.length
+    models.push(buildNodeModel(operator, id, {
+      x: sourceX,
+      y: sourceY + index * 140
+    }, params))
+  }
+  const currentIndexes = inputConnectionsForNode(nodeId)
+    .filter(connection => connection.targetParam === targetParam)
+    .map(connection => connection.targetIndex ?? 0)
+  const startIndex = currentIndexes.length ? Math.max(...currentIndexes) + 1 : 0
+  models.forEach((model, index) => {
+    const sourceItem = graph.value.addItem('node', model)
+    graph.value.addItem('edge', {
+      source: model.id,
+      target: nodeId,
+      ...buildEdgeConfig({ sourceItem, targetItem, sourcePort: outputPort, targetPort }),
+      targetIndex: startIndex + index
+    })
+  })
+  nodeCounter.value = nextCounter
+  graph.value.paint()
+  recordHistory()
+  emitWorkflow()
+  emitLayout()
+  refreshInspectedNode(nodeId)
+  ElMessage.success(t('develop.workflowCanvas.resourceInputsAdded', { count: models.length }))
+  return true
+}
+
 function clearGraph() {
   graph.value?.clear()
   nodeCounter.value = 0
@@ -935,10 +1003,16 @@ function inputConnectionsForNode(nodeId) {
         targetParam: edge.targetParam,
         targetIndex: edge.targetIndex,
         sourceId: edge.source,
-        sourceLabel: source.displayName || source.label || source.operator || edge.source,
+        sourceLabel: inputSourceLabel(source) || edge.source,
         sourcePort: edge.sourcePort || 'default'
       }
     })
+}
+
+function inputSourceLabel(source) {
+  const label = source.displayName || source.label || source.operator || ''
+  const resource = source.parameterSummaries?.find(summary => summary.kind === 'resource' && summary.configured)
+  return resource?.resourceName ? `${label} · ${resource.resourceName}` : label
 }
 
 function inputConnectionOptionsForNode(targetModel) {
@@ -956,7 +1030,7 @@ function inputConnectionOptionsForNode(targetModel) {
         key: JSON.stringify([source.id, outputPort.name]),
         targetParam: inputPort.name,
         sourceId: source.id,
-        sourceLabel: source.displayName || source.label || source.operator || source.id,
+        sourceLabel: inputSourceLabel(source) || source.id,
         sourcePort: outputPort.name,
         sourcePortLabel: outputPort.name,
         disabled: candidate.disabled
@@ -1069,6 +1143,7 @@ defineExpose({
   addOperator,
   updateNodeParams,
   updateInputConnection,
+  addResourceInputs,
   clearGraph,
   getWorkflow: buildWorkflowFromGraph,
   getClientValidationIssues,
