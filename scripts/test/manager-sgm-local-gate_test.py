@@ -143,6 +143,34 @@ class LocalSGMContract(unittest.TestCase):
             self.assertNotIn("SECRET", json.dumps(facts))
             self.assertNotIn("PASSWORD", json.dumps(facts))
 
+    def test_runtime_registration_declares_extension_workflow_and_uses_real_create_test_contract(self):
+        descriptor = GATE.sgm_runtime_descriptor()
+        trace = []
+        def request(method, path, expected, body):
+            if path == '/api/v1/system/engines':
+                self.assertEqual(body['engine_origin'], 'extension')
+                capabilities = body['capabilities']
+                self.assertEqual(capabilities['schema_version'], 'engine.capabilities/v1')
+                self.assertEqual(capabilities['engine_type'], body['engine_type'])
+                self.assertEqual(capabilities['compute']['workflow']['runtime_api'], 'addp.workflow/v1')
+                self.assertIn('direct', capabilities['compute']['workflow']['supported_operator_mode'])
+                return SimpleNamespace(status=201, payload={'id': 12, 'engine_type': 'supermap_workflow'})
+            self.assertEqual((method, path), ('POST', '/api/v1/system/engines/12/test'))
+            return SimpleNamespace(status=200, payload={'success': True})
+        with patch.object(GATE.MANAGER, 'GatewayClient', return_value=SimpleNamespace(request=request)):
+            self.assertEqual(GATE.register_engine({'SYSTEM_URL': 'http://127.0.0.1:12345'}, 'private-token', descriptor, trace), 12)
+        self.assertEqual([event['http_status'] for event in trace], [201, 200])
+        self.assertNotIn('private-token', json.dumps(trace))
+
+    def test_registration_failure_keeps_status_code_but_no_response_body_or_secrets(self):
+        trace = []
+        response = SimpleNamespace(status=400, payload={'error_code': 'engine_type_unsupported', 'error': 'SECRET SDK BODY'})
+        with patch.object(GATE.MANAGER, 'GatewayClient', return_value=SimpleNamespace(request=lambda *args: response)):
+            with self.assertRaises(GATE.T2.GateError):
+                GATE.register_engine({'SYSTEM_URL': 'http://127.0.0.1:12345'}, 'PRIVATE', GATE.sgm_runtime_descriptor(), trace)
+        self.assertEqual(trace[0]['error_code'], 'engine_type_unsupported')
+        self.assertNotIn('SECRET', json.dumps(trace))
+
     def test_wrong_port_ownership_or_nonloopback_is_rejected(self):
         with patch.object(GATE.T2, "command"):
             life = GATE.T2.Lifecycle(prefix="local-", label=GATE.LABEL)

@@ -167,6 +167,40 @@ def model_tasks(client, fingerprint):
     return selected
 
 
+def sgm_runtime_descriptor():
+    # Same declared extension contract as System's workflow registration form.
+    # System validates this declaration and probes the real health/operator APIs.
+    return {"name": "Isolated SuperMap", "engine_type": "supermap_workflow", "engine_origin": "extension",
+            "description": "Disposable local licensed Runtime",
+            "connection_info": {"protocol": "http", "host": "supermap-workflow-engine", "port": 8103},
+            "capabilities": {"schema_version": "engine.capabilities/v1", "engine_type": "supermap_workflow",
+                "engine_family": "workflow", "compute": {"workflow": {"supported": True,
+                    "runtime_api": "addp.workflow/v1", "dynamic_operators": True,
+                    "supported_operator_mode": ["workflow", "direct"]}}}}
+
+
+def register_engine(environment, token, descriptor, trace):
+    client = MANAGER.GatewayClient(environment["SYSTEM_URL"], token, 30)
+
+    def requester(base, bearer, method, path, body, expected):
+        T2.require(base == environment["SYSTEM_URL"] and bearer == token, "registration identity changed")
+        response = client.request(method, path, range(100, 600), body)
+        event = {"engine_type": descriptor["engine_type"], "operation": "create" if path == "/api/v1/system/engines" else "test",
+                 "http_status": response.status}
+        payload = response.payload
+        if isinstance(payload, dict):
+            code = payload.get("error_code")
+            if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,100}", code):
+                event["error_code"] = code
+            if isinstance(payload.get("success"), bool):
+                event["connection_success"] = payload["success"]
+        trace.append(event)
+        T2.require(response.status in expected, "isolated engine registration failed with HTTP " + str(response.status))
+        return payload
+
+    return REGISTRATION.register_engine(environment["SYSTEM_URL"], token, descriptor, requester=requester)
+
+
 def build_diagnostics(path):
     """Only fixed categories and numeric build facts leave private raw logs."""
     if not path.is_file():
@@ -328,12 +362,11 @@ print(json.dumps(facts))'''
     environment.update(dict(item.split("=", 1) for item in exports.rstrip("\0").split("\0") if item.startswith("ADDP_ONLINE_") and "=" in item))
     life.phase = "engine_registration"
     provisioner = environment.pop("ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN")
-    engine_id = REGISTRATION.register_engine(environment["SYSTEM_URL"], provisioner, {
+    result["registration_requests"] = []
+    engine_id = register_engine(environment, provisioner, {
         "name": "Isolated SGM source", "engine_type": "minio", "engine_origin": "general", "description": "Disposable local SGM source",
-        "connection_info": {"endpoint": "business-minio:9000", "access_key": cfg["source_user"], "secret_key": cfg["source_secret"], "use_ssl": False}})
-    supermap_id = REGISTRATION.register_engine(environment["SYSTEM_URL"], provisioner, {
-        "name": "Isolated SuperMap", "engine_type": "supermap_workflow", "engine_origin": "general", "description": "Disposable local licensed Runtime",
-        "connection_info": {"protocol": "http", "host": "supermap-workflow-engine", "port": 8103}})
+        "connection_info": {"endpoint": "business-minio:9000", "access_key": cfg["source_user"], "secret_key": cfg["source_secret"], "use_ssl": False}}, result["registration_requests"])
+    supermap_id = register_engine(environment, provisioner, sgm_runtime_descriptor(), result["registration_requests"])
     del provisioner
     client = MANAGER.GatewayClient(environment["GATEWAY_URL"], environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 30)
     result["identity"] = MANAGER.validate_user_identity(client, int(environment["ADDP_ONLINE_TEST_TENANT_ID"]))

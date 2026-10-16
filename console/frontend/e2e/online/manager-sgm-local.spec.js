@@ -5,6 +5,8 @@ import { resolve } from 'node:path'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
+test.use({ locale: 'zh-CN' })
+
 test('isolated SGM ordinary User generation, task page and cached GLB', async ({ page }) => {
   test.setTimeout(300_000)
   const env = process.env
@@ -72,8 +74,8 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
       if (['failed', 'timeout', 'cancelled'].includes(execution.status)) throw new Error('SGM execution failed')
       if (execution.status !== 'success') return execution.status
       ready = await json(await api.get(`/api/v1/manager/quick-view/capability?${query}`), 'SGM capability')
-      return ready.model_3d?.status
-    }, { timeout: 180_000, intervals: [500, 1000, 2000] }).toBe('ready')
+      return ready.can_use_quick_view === true && ready.render_source === 'model_3d_glb'
+    }, { timeout: 180_000, intervals: [500, 1000, 2000] }).toBe(true)
     const artifact = ready.model_3d
     expect(ready.render_source).toBe('model_3d_glb')
     expect(artifact.task_id).toBe(started.task_id)
@@ -97,7 +99,7 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     await page.goto(`/manager/tasks/quick-view?task_type=model_3d_glb_generation&task_id=${started.task_id}`)
     const taskFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
     await expect(taskFrame.locator('body')).toContainText('compass')
-    await expect(taskFrame.getByText(/成功|Success/, { exact: true }).first()).toBeVisible()
+    await expect(taskFrame.getByText(/成功|Succeeded/, { exact: true }).first()).toBeVisible()
     gpu.setStage('cached-preview')
     const loaded = page.waitForResponse(response => new URL(response.url()).pathname === artifact.preview_url && response.status() === 200)
     await page.goto(route)
