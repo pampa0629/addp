@@ -280,22 +280,39 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
             'metadata':{'workflow_runtime':{'engine_type':'geopython_workflow','operator':'build_raster_mosaic','mode':'direct'},
                 'lineage_facts':{'schema_version':'addp.lineage-facts/v1',
                     'inputs':[{'locator':'addp://engine/8/path/raster-source/mosaic-source?type=prefix'}],
-                    'outputs':[{'locator':'/vsis3/raster-target/capacity-mosaic-l1-r1/mosaic.addp.json'}],
+                    'outputs':[{'locator':'addp://engine/9/path/raster-target/capacity-mosaic-l1-r1?item_id=88&type=object',
+                                'item_id':88,'item_fingerprint':'whole-fingerprint'}],
                     'operations':[{'kind':'derive','operator':m.MOSAIC_TASK_TYPE}], 'meta_scan_refs':['new-scan']}}}
 
     def test_directory_owner_runtime_source_output_and_new_automatic_scan_are_required(self):
         original=self.execution();source=original['metadata']['lineage_facts']['inputs'][0]['locator']
-        self.assertEqual(m.validate_directory_execution(original,source,'capacity-mosaic-l1-r1')[1],'new-scan')
+        self.assertEqual(m.validate_directory_execution(original,source,'capacity-mosaic-l1-r1',9)[1],'new-scan')
         mutations=[('owner',lambda e:e.update(module='develop')),('status',lambda e:e.update(status='failed')),
             ('runtime',lambda e:e['metadata']['workflow_runtime'].update(mode='workflow')),
             ('operator',lambda e:e['metadata']['workflow_runtime'].update(operator='raster_mosaic')),
             ('source',lambda e:e['metadata']['lineage_facts']['inputs'][0].update(locator='other')),
-            ('output',lambda e:e['metadata']['lineage_facts']['outputs'][0].update(locator='/vsis3/raster-target/other/mosaic.addp.json')),
+            ('output',lambda e:e['metadata']['lineage_facts']['outputs'][0].update(locator='addp://engine/9/path/raster-target/other?item_id=88&type=object')),
             ('scan',lambda e:e['metadata']['lineage_facts'].update(meta_scan_refs=[])),
             ('schema',lambda e:e['metadata']['lineage_facts'].update(schema_version='other'))]
         for name,mutate in mutations:
             e=copy.deepcopy(original);mutate(e)
-            with self.subTest(name=name),self.assertRaises(m.scene.SuiteError):m.validate_directory_execution(e,source,'capacity-mosaic-l1-r1')
+            with self.subTest(name=name),self.assertRaises(m.scene.SuiteError):m.validate_directory_execution(e,source,'capacity-mosaic-l1-r1',9)
+        output=original['metadata']['lineage_facts']['outputs'][0]
+        for locator in ('/vsis3/raster-target/capacity-mosaic-l1-r1/mosaic.addp.json',
+                        'addp://engine/9/path/raster-target/capacity-mosaic-l1-r1/mosaic.addp.json?item_id=88&type=object',
+                        output['locator'].replace('/9/path/','/10/path/'),
+                        output['locator'].replace('item_id=88','item_id=89'),
+                        output['locator'].replace('item_id=88&',''),
+                        output['locator'].replace('type=object','type=prefix'),
+                        output['locator']+'&private=sentinel',output['locator']+'#fragment'):
+            e=copy.deepcopy(original);e['metadata']['lineage_facts']['outputs'][0]['locator']=locator
+            with self.subTest(locator=locator),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_execution(e,source,'capacity-mosaic-l1-r1',9)
+        for field,value in [('item_id',True),('item_id','88'),('item_id',None),('item_id',0),
+                            ('item_fingerprint',''),('item_fingerprint',None)]:
+            e=copy.deepcopy(original);e['metadata']['lineage_facts']['outputs'][0][field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_execution(e,source,'capacity-mosaic-l1-r1',9)
 
     def item(self):
         summary=dict(extent=[600000,3890220,709800,4000020],leaf_count=4,source_count=4,failed_count=0,
@@ -305,7 +322,18 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                'capabilities':{'spatial':{'srid':32617,'extent':summary['extent']}},
                'format_info':{'raster_mosaic':{**{k:v for k,v in summary.items() if k!='extent'},
                    'manifest_ref':'mosaic.addp.json','index_ref':'index/source-index.json','overview_ref':'overviews/overview.cog.tif'}}}
-        return {'id':88,'size_bytes':123,'attributes':attrs},physical
+        return {'id':88,'engine_id':9,'full_name':'raster-target/capacity-mosaic-l1-r1',
+                'fingerprint':'whole-fingerprint','size_bytes':123,'attributes':attrs},physical
+
+    def test_whole_identity_matches_actual_meta_item_without_manifest_or_stale_receipt(self):
+        item,_=self.item();output=self.execution()['metadata']['lineage_facts']['outputs'][0]
+        m.validate_directory_item_identity(item,output,9,'capacity-mosaic-l1-r1')
+        for field,value in [('id',89),('id','88'),('id',True),('engine_id',8),('engine_id','9'),
+                            ('full_name','raster-target/other'),('full_name',item['full_name']+'/mosaic.addp.json'),
+                            ('fingerprint','stale-fingerprint'),('fingerprint',None)]:
+            invalid=copy.deepcopy(item);invalid[field]=value
+            with self.subTest(field=field,value=value),self.assertRaises(m.scene.SuiteError):
+                m.validate_directory_item_identity(invalid,output,9,'capacity-mosaic-l1-r1')
 
     def test_whole_dataset_sizes_use_physical_and_object_totals_not_manifest_bytes(self):
         item,physical=self.item()
@@ -339,12 +367,13 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
 
     def test_real_manager_route_sequence_four_groups_and_failure_measurements(self):
         from unittest.mock import Mock
+        timing_method='submit-one-Manager-task-through-parent-terminal-includes-automatic-scan-excludes-oracle'
         for fail in (None,'parent','physical','meta','monitor'):
             with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);env={'ADDP_ONLINE_ARTIFACT_DIR':str(root),'ADDP_ONLINE_SECRET_DIR':str(root)}
                 report={'identity':{'principal_id':'33','tenant_id':'2'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
                 current=dict(version=1,running=2,waiting=2,cache_mib=256,default_tenant_running=2,default_tenant_waiting=2)
-                tasks={};calls=[];executions={};scans=set();verification_order=[]
+                tasks={};items={};calls=[];executions={};scans=set();verification_order=[]
                 item,actual=self.item();actual.update(source_unchanged=True,rasters={'cog':{'sha256':'stable'}})
                 def request(method,path,statuses,body=None):
                     calls.append((method,path,statuses,body))
@@ -359,13 +388,17 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                         task_id=int(path.split('/')[-2]);name=tasks[task_id]['name'];identifier='parent-'+str(task_id)
                         e=self.execution();e['execution_id']=identifier
                         e['triggered_by']=33
-                        e['metadata']['lineage_facts']['outputs'][0]['locator']=f'/vsis3/raster-target/{name}/mosaic.addp.json'
+                        target={**copy.deepcopy(item),'id':88+task_id,'full_name':'raster-target/'+name,'fingerprint':'whole-'+name}
+                        items[target['id']]=target
+                        e['metadata']['lineage_facts']['outputs'][0].update(
+                            locator=f'addp://engine/9/path/raster-target/{name}?item_id={target["id"]}&type=object',
+                            item_id=target['id'],item_fingerprint=target['fingerprint'])
                         e['metadata']['lineage_facts']['meta_scan_refs']=['scan-'+str(task_id)]
                         executions[identifier]=e;return SimpleNamespace(payload={'execution_id':identifier})
                     if '/tasks/' in path:
                         task=tasks[int(path.rsplit('/',1)[1])]
                         return SimpleNamespace(payload={**task,'task_type':m.MOSAIC_TASK_TYPE,'created_by':33})
-                    if '/meta/items/' in path:return SimpleNamespace(payload=item)
+                    if '/meta/items/' in path:return SimpleNamespace(payload=items[int(path.rsplit('/',1)[1])])
                     if '/monitor/' in path:
                         e=executions[path.rsplit('/',1)[1]]
                         payload=copy.deepcopy({**e,'metadata':{'lineage_facts':{k:v for k,v in e['metadata']['lineage_facts'].items() if k!='operations'}}})
@@ -396,7 +429,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     if action=='purge-mosaic':return {'source_unchanged':True}
                     raise AssertionError(action)
                 with patch.object(m,'physical',side_effect=physical),patch.object(m.scene.support,'wait_for_meta_scan'), \
-                     patch.object(m.scene.support,'find_fixture_item',return_value=item),patch.object(m.fixture,'require_disk'), \
+                     patch.object(m.scene.support,'find_fixture_item',side_effect=lambda client,engine,full_name,label:next(v for v in items.values() if v['full_name']==full_name)),patch.object(m.fixture,'require_disk'), \
                      patch.object(m,'restart_runtime',return_value={'Id':'fresh','State':{'Pid':17}}),patch.object(m,'cgroup_directory'), \
                      patch.object(m,'Sampler',side_effect=sampler),patch.object(m,'wait_applied'),patch.object(m.scene,'wait_execution',side_effect=wait):
                     if fail:
@@ -417,6 +450,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                 for path in evidence:
                     snapshot=json.loads(path.read_text())
                     self.assertNotIn('result',snapshot)
+                    self.assertEqual(snapshot.get('timing_method'),timing_method)
                     self.assertEqual(snapshot['physical'],None if fail=='physical' else actual)
                     self.assertEqual(snapshot['physical_verified'],fail!='physical')
                     self.assertTrue(snapshot['execution_id'].startswith('parent-'))
@@ -425,7 +459,8 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                         self.assertNotIn('size_evidence',snapshot)
                         self.assertNotIn('monitor_verified',snapshot)
                     else:
-                        self.assertEqual(snapshot['target_item_id'],item['id'])
+                        self.assertEqual(snapshot['target_item_id'],88+snapshot['task_id'])
+                        self.assertEqual(snapshot['target_item_fingerprint'],'whole-'+snapshot['dataset_name'])
                         self.assertEqual(snapshot['size_evidence'],m.validate_directory_item(item,actual))
                         self.assertEqual(snapshot['monitor_verified'],fail!='monitor')
                 expected_order=[] if fail=='parent' else ['physical'] if fail=='physical' else ['physical','meta']*(1 if fail in ('meta','monitor') else 4)
@@ -434,6 +469,8 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                 if not fail:
                     self.assertEqual([g['leaf_concurrency'] for g in report['mosaic_groups']],[1,4,4,1])
                     for group in report['mosaic_groups']:
+                        self.assertEqual(group['timing_method'],timing_method)
+                        self.assertEqual(group['target_item_fingerprint'],'whole-'+group['dataset_name'])
                         proof=group['automatic_scan_observation']
                         self.assertEqual(proof['parent_execution_id'],group['execution_id'])
                         snapshot=json.loads((root/(group['dataset_name']+'-verification.json')).read_text())

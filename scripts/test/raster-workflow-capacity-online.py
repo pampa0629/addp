@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import urllib.parse
 
 scene=importlib.import_module('scripts.test.raster-workflow-online')
 fixture=importlib.import_module('business.scripts.online-raster-capacity-fixture')
@@ -194,6 +195,7 @@ def physical(action,names):
 
 MANAGER_PERMISSIONS={'manager.derived_artifact.create','manager.derived_artifact.read'}
 MOSAIC_TASK_TYPE='raster_mosaic_generation'
+DIRECTORY_TIMING_METHOD='submit-one-Manager-task-through-parent-terminal-includes-automatic-scan-excludes-oracle'
 
 
 def directory_matrix():
@@ -215,7 +217,7 @@ def directory_task(source_engine,target_engine,name,leaf_concurrency):
         'tiles':{'enabled':False,'min_zoom':0,'max_zoom':0,'format':'webp'}}}
 
 
-def validate_directory_execution(execution,source_locator,name):
+def validate_directory_execution(execution,source_locator,name,target_engine):
     if execution.get('module')!='manager' or execution.get('task_type')!=MOSAIC_TASK_TYPE or execution.get('status')!='success':
         raise scene.SuiteError('capacity mosaic parent execution owner/type/status differ')
     metadata=scene.obj(execution.get('metadata'),'mosaic metadata')
@@ -226,10 +228,25 @@ def validate_directory_execution(execution,source_locator,name):
     inputs=scene.array(facts.get('inputs'),'mosaic inputs');outputs=scene.array(facts.get('outputs'),'mosaic outputs')
     operations=scene.array(facts.get('operations'),'mosaic operations');scans=scene.array(facts.get('meta_scan_refs'),'mosaic auto scans')
     if (facts.get('schema_version')!='addp.lineage-facts/v1' or len(inputs)!=1 or inputs[0].get('locator')!=source_locator
-        or len(outputs)!=1 or outputs[0].get('locator')!=f'/vsis3/raster-target/{name}/mosaic.addp.json'
+        or len(outputs)!=1
         or len(operations)!=1 or operations[0].get('kind')!='derive' or operations[0].get('operator')!=MOSAIC_TASK_TYPE
         or len(scans)!=1 or not isinstance(scans[0],str) or not scans[0]):
         raise scene.SuiteError('capacity mosaic scope/output/automatic scan facts differ')
+    output=scene.obj(outputs[0],'mosaic whole output')
+    if type(output.get('item_id')) is not int:
+        raise scene.SuiteError('capacity mosaic whole output item id is not an integer')
+    item_id=scene.positive(output.get('item_id'),'mosaic whole output item id')
+    fingerprint=output.get('item_fingerprint');locator=output.get('locator')
+    if not isinstance(fingerprint,str) or not fingerprint or not isinstance(locator,str):
+        raise scene.SuiteError('capacity mosaic whole output identity is missing')
+    try:
+        uri=urllib.parse.urlsplit(locator)
+        query=urllib.parse.parse_qs(uri.query,keep_blank_values=True,strict_parsing=True)
+    except ValueError as error:
+        raise scene.SuiteError('capacity mosaic whole output locator is invalid') from error
+    if ((uri.scheme,uri.netloc,uri.path)!=('addp','engine',f'/{target_engine}/path/raster-target/{name}')
+        or uri.fragment or query!={'type':['object'],'item_id':[str(item_id)]}):
+        raise scene.SuiteError('capacity mosaic whole output locator differs from its exact item scope')
     return facts,scans[0]
 
 
@@ -250,6 +267,15 @@ def validate_directory_scan(parent,scan,scan_id,identity,target_engine):
         raise scene.SuiteError('capacity mosaic automatic scan actor, parent, Tenant or target differ')
     return {**{key:scan[key] for key in ('execution_id','parent_execution_id','module','task_type','status','triggered_by','tenant_id')},
             'scan_context':{'engine_id':context['engine_id'],'scan_depth':context['scan_depth']}}
+
+
+def validate_directory_item_identity(item,output,target_engine,name):
+    if (type(item.get('id')) is not int or item['id']!=output.get('item_id')
+        or type(item.get('engine_id')) is not int or item['engine_id']!=target_engine
+        or item.get('full_name')!='raster-target/'+name
+        or not isinstance(item.get('fingerprint'),str) or not item['fingerprint']
+        or item['fingerprint']!=output.get('item_fingerprint')):
+        raise scene.SuiteError('capacity mosaic whole output differs from the actual Meta item identity')
 
 
 def validate_directory_item(item,physical):
@@ -308,10 +334,11 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
                           'before':sampler.before,'after':getattr(sampler,'after',None)}
                 (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/(name+'-measurements.json')).write_text(json.dumps(evidence,sort_keys=True))
         metrics=validate_measurement(samples,sampler.before,sampler.after,64,1,saved['version'],submitted_tasks=1)
-        facts,scan=validate_directory_execution(execution,source_locator,name)
+        facts,scan=validate_directory_execution(execution,source_locator,name,target_engine)
         if scan in scans:raise scene.SuiteError('capacity mosaic automatic scan reused')
         verification={'dataset_name':name,'task_id':task_id,'execution_id':identifier,
             'leaf_concurrency':leaf_concurrency,'repetition':repetition,'elapsed_seconds':elapsed,
+            'timing_method':DIRECTORY_TIMING_METHOD,
             'policy_version':saved['version'],'runtime_container_id':container['Id'],
             'measurement':metrics,'owner_facts':facts,'automatic_scan_execution_id':scan,
             'physical_verified':False,'physical':None}
@@ -330,8 +357,9 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         verification_path.write_text(json.dumps(verification,sort_keys=True))
         item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
         item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        validate_directory_item_identity(item,facts['outputs'][0],target_engine,name)
         sizes=validate_directory_item(item,actual)
-        verification.update(target_item_id=item['id'],size_evidence=sizes,monitor_verified=False)
+        verification.update(target_item_id=item['id'],target_item_fingerprint=item['fingerprint'],size_evidence=sizes,monitor_verified=False)
         verification_path.write_text(json.dumps(verification,sort_keys=True))
         monitor=scene.obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mosaic Monitor')
         if monitor.get('status')!='success' or monitor.get('module')!='manager' or monitor.get('task_type')!=MOSAIC_TASK_TYPE:
@@ -343,9 +371,10 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
             raise scene.SuiteError('capacity mosaic purge changed source')
         report['mosaic_groups'].append({'dataset_name':name,'task_id':task_id,'execution_id':identifier,
             'leaf_concurrency':leaf_concurrency,'repetition':repetition,'configured_cache_mib':64,'running_limit':1,
-            'elapsed_seconds':elapsed,'timing_method':'submit-one-Manager-task-through-parent-terminal-excludes-oracle-and-scan',
+            'elapsed_seconds':elapsed,'timing_method':DIRECTORY_TIMING_METHOD,
             'policy_version':saved['version'],'runtime_container_id':container['Id'],'runtime_pid':container['State']['Pid'],
-            'measurement':metrics,'samples':samples,'target_item_id':item['id'],'automatic_scan_execution_id':scan,
+            'measurement':metrics,'samples':samples,'target_item_id':item['id'],'target_item_fingerprint':item['fingerprint'],
+            'automatic_scan_execution_id':scan,
             'automatic_scan_observation':scan_observation,
             'owner_facts':facts,'size_evidence':sizes,'physical':actual,'purge':'passed'})
         save_progress(Path(env['ADDP_ONLINE_ARTIFACT_DIR']),report)
