@@ -1,4 +1,5 @@
 import importlib
+import itertools
 import json
 import tempfile
 import unittest
@@ -120,7 +121,7 @@ class Server:
                         matches = (row.get('recipient_type', 'user'), row.get('recipient_id', '33')) == recipient
                         if server.fault == 'history_expands_organizations' and history and recipient == ('user', '33'):
                             matches = True
-                        if current == (state or 'active') and (matches or (account and server.inherited(row))):
+                        if row['catalog_path'] == json.loads(query['catalog_path'][0]) and current == (state or 'active') and (matches or (account and server.inherited(row))):
                             rows.append(dict(row))
                     if account:
                         sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
@@ -142,19 +143,24 @@ class Server:
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
                     active = any(row['revocation'] is None and key not in server.expired_grants and server.inherited(row)
+                                 and row['catalog_path']['segments'][-1]['name'] + '?' in target
                                  for key, row in server.grants.items())
-                    allowed = kind.startswith('reader') and active and not any(server.denies.values()) and 'metric_people?' in target
+                    allowed = kind.startswith('reader') and active and not any(server.denies.values())
                     if server.fault == 'nonmember_granted' and kind == 'outsider' and active:
                         allowed = True
                     if server.fault == 'deny_ignored' and any(server.denies.values()):
                         allowed = True
                     if server.fault == 'expired_ignored' and server.expired:
                         allowed = True
-                    if server.fault == 'adjacent_granted' and active and 'metric_events?' in target:
+                    if server.fault == 'adjacent_granted' and 'metric_events?' in target and any(
+                            row['revocation'] is None for row in server.grants.values()):
                         allowed = True
                     status = 200 if allowed else 403
                     result = {'preview_type': 'table', 'data': {'columns': ['person_id'], 'rows': [
                         {'person_id': 'A'}, {'person_id': 'B'}], 'total': 2}} if allowed else {'error': 'denied'}
+                    if allowed and 'metric_events?' in target:
+                        result['data'] = {'columns': ['event_id', 'event_date'],
+                            'rows': [{'event_id': value, 'event_date': '2026-01-01'} for value in ('e1', 'e2', 'e3', 'old')], 'total': 4}
                     if server.fault == 'wrong_rows' and allowed:
                         result['data']['rows'][1]['person_id'] = 'wrong'
                     if server.fault == 'leaked_denial' and not allowed:
@@ -431,7 +437,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_cleanup_never_revokes_an_unowned_grant_and_reports_failure(self):
         server, lifecycle = self.lifecycle()
-        server.grants['unowned'] = {'request_id': 'unowned', 'revocation': None}
+        server.grants['unowned'] = {'request_id': 'unowned', 'revocation': None, 'catalog_path': lifecycle.path}
         with self.assertRaises(ONLINE.SuiteError):
             lifecycle.cleanup()
         self.assertIsNone(server.grants['unowned']['revocation'])
@@ -440,7 +446,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         server, lifecycle = self.lifecycle()
         lifecycle.grant(self.facts, recipient_type='department', recipient_id='41')
         lifecycle.grant(self.facts, recipient_type='project_group', recipient_id='51')
-        server.grants['unowned'] = {'request_id': 'unowned', 'revocation': None, 'recipient_type': 'department', 'recipient_id': '41'}
+        server.grants['unowned'] = {'request_id': 'unowned', 'revocation': None, 'catalog_path': lifecycle.path,
+                                    'recipient_type': 'department', 'recipient_id': '41'}
         with self.assertRaises(ONLINE.SuiteError):
             lifecycle.cleanup()
         self.assertIsNone(server.grants['unowned']['revocation'])
@@ -495,6 +502,141 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 self.assertNotIn('private-token', json.dumps(report))
 
 
+class PGCatalogApprovalTest(unittest.TestCase):
+    def setUp(self):
+        self.reset()
+        self.clock = itertools.count()
+        patch.object(ONLINE.time, 'monotonic', side_effect=lambda: next(self.clock) * 10).start()
+        patch.object(ONLINE.time, 'sleep').start()
+        patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
+        patch.object(ONLINE, 'item', return_value={'id': 11, 'fingerprint': 'c' * 64}).start()
+        self.addCleanup(patch.stopall)
+
+    def reset(self):
+        self.server = Server()
+        self.path = ONLINE.table_path(2, 'metric_events')
+        self.facts = {'item_fingerprint': 'c' * 64, 'boundary_hash': 'd' * 64}
+        self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
+                      'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
+        self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
+            {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
+            self.client('login'), 'external-online-consumer', 'private-password')
+        self.report = {'checks': [], 'principals': {'operator': '35'}}
+
+    def client(self, kind):
+        client = self.server.client(kind)
+        original = client.request
+        def request(method, url, expected, body=None, **kwargs):
+            path = urlsplit(url).path
+            if '/catalog/' not in path and not path.endswith('/access_approval_requirements'):
+                return original(method, url, expected, body, **kwargs)
+            self.server.calls.append((kind, method, path, body))
+            status, result = 200, {}
+            fault = self.server.fault
+            if path.endswith('/access_approval_requirements'):
+                result, status = dict(body, version='1'), 201
+            elif path == '/api/v1/catalog/entries':
+                result = {'data': [] if fault == 'missing_catalog_source' else [dict(self.entry)], 'total': 1}
+            elif path.endswith('/sharing_boundary'):
+                result = dict(self.facts, native_target=self.path)
+                if fault == 'wrong_boundary':
+                    result['boundary_hash'] = 'e' * 64
+            elif path.endswith('/sharing_decisions'):
+                self.decision = dict(body)
+                result, status = dict(body, id=body['decision_id'], confirmed_by='36', self_beneficiary=False,
+                    item_fingerprint=self.facts['item_fingerprint'], boundary_hash=self.facts['boundary_hash']), 201
+                if fault == 'wrong_confirmer':
+                    result['confirmed_by'] = '33'
+                if fault == 'confirmation_grants':
+                    self.issue('unrequested')
+            elif path.endswith('/sharing_fulfillments'):
+                self.request_id = body['request_id']
+                if self.request_id not in self.server.grants and fault != 'never_issue':
+                    self.issue(self.request_id)
+                    if fault == 'lost_issuance_response':
+                        raise ONLINE.SuiteError('private upstream response must not enter the public report')
+                elif self.request_id in self.server.grants:
+                    grant = self.server.grants[self.request_id]
+                    if fault == 'replay_renews':
+                        grant['granted_at'] = '2026-10-16T02:00:00Z'
+                    if fault == 'replay_restores_revoked':
+                        grant['revocation'] = None
+                result = {'request_id': self.request_id, 'state': 'accepted'}
+            elif '/sharing_fulfillments/' in path:
+                grant = self.server.grants[path.rsplit('/', 1)[-1]]
+                result = {'request_id': grant['request_id'], 'state': 'accepted', 'granted_at': grant['granted_at'],
+                          'decision_id': self.decision['decision_id'], 'requirement_version': '1',
+                          'recipient_id': '33', 'action': 'read'}
+            elif method == 'PUT':
+                self.entry.update(body, version='2')
+                result = dict(self.entry)
+            else:
+                result = dict(self.entry)
+            if status not in expected:
+                raise ONLINE.SuiteError('unexpected Catalog test status')
+            return SimpleNamespace(status=status, payload=result)
+        client.request = request
+        return client
+
+    def issue(self, request_id):
+        decision = self.decision
+        grant = {'request_id': request_id, 'catalog_request_id': request_id, 'approval_mode': 'catalog',
+                 'engine_id': '2', 'operator_principal_id': '35', 'requirement_version': '1',
+                 'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'],
+                 'boundary_hash': self.facts['boundary_hash'], 'recipient_type': 'user', 'recipient_id': '33',
+                 'action': 'read', 'expiry_mode': 'at_time', 'expires_at': decision['expires_at'],
+                 'granted_at': '2026-10-16T01:00:00Z', 'revocation': None}
+        if self.server.fault == 'wrong_grant_boundary':
+            grant['boundary_hash'] = 'e' * 64
+        if self.server.fault == 'wrong_grant_recipient':
+            grant['recipient_id'] = '34'
+        self.server.grants[request_id] = grant
+
+    def run_flow(self):
+        self.lifecycle.catalog_flow(self.report, self.client('business'), '36')
+
+    def test_business_approval_uses_formal_human_commands_and_system_history_not_runtime_credentials(self):
+        self.run_flow()
+        self.assertEqual(len(self.report['checks']), 6)
+        self.assertEqual(self.report['catalog_approval']['rows'], 4)
+        self.assertTrue(self.report['catalog_approval']['revoked_replay_denied'])
+        decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
+        requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
+        self.assertEqual([call[0] for call in decisions], ['business'])
+        self.assertEqual([call[0] for call in requests], ['operator'] * 3)
+        self.assertEqual(requests[0][3], requests[-1][3])
+        self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id', 'requirement_version'})
+        self.assertFalse(any('/runtime/' in call[2] or call[2].endswith('/access_grants') and call[1] == 'POST'
+                             for call in self.server.calls))
+        self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
+        self.lifecycle.cleanup()
+        self.assertFalse(any(self.server.denies.values()))
+        self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
+
+    def test_wrong_confirmation_binding_issuance_scope_replay_or_missing_convergence_cannot_pass(self):
+        for fault in ('missing_catalog_source', 'wrong_boundary', 'wrong_confirmer',
+                      'wrong_grant_boundary', 'wrong_grant_recipient', 'never_issue',
+                      'replay_renews', 'replay_restores_revoked'):
+            with self.subTest(fault=fault):
+                self.reset()
+                self.server.fault = fault
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_flow()
+                self.assertNotEqual(len(self.report['checks']), 6)
+
+    def test_unknown_issuance_outcome_is_owned_before_send_and_cleanup_checks_both_targets(self):
+        self.server.fault = 'lost_issuance_response'
+        with self.assertRaises(ONLINE.SuiteError):
+            self.run_flow()
+        self.assertIn(self.request_id, self.lifecycle.grants)
+        with patch.object(self.lifecycle, 'listing', wraps=self.lifecycle.listing) as listing:
+            self.lifecycle.cleanup()
+            targets = {call.kwargs['catalog_path']['segments'][-1]['name'] for call in listing.call_args_list}
+            self.assertEqual(targets, {'metric_people', 'metric_events'})
+        self.assertIsNotNone(self.server.grants[self.request_id]['revocation'])
+        self.assertEqual(len(self.lifecycle.paths), 2)
+
+
 class PGMetaOutageTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -503,6 +645,7 @@ class PGMetaOutageTest(unittest.TestCase):
             'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'POSTGRES_DB': 'addp_online',
             'META_URL': 'http://127.0.0.1:8082', 'MANAGER_URL': 'http://127.0.0.1:8081',
             'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000',
+            'CATALOG_URL': 'http://127.0.0.1:8192',
             'ADDP_ONLINE_SECRET_DIR': self.directory.name,
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'must-not-inherit',
             'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'must-not-inherit',

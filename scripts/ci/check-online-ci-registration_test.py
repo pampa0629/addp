@@ -34,7 +34,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[4], '@$(MAKE) test-pg-authorization-online-runner'),
                                    (paths[2], 'playwright install --with-deps chromium'),
                                    (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin'),
-                                   (paths[3], 'self.meta_recovery_flow('), (paths[3], 'with MetaOutage()')):
+                                   (paths[3], 'self.meta_recovery_flow('), (paths[3], 'with MetaOutage()'),
+                                   (paths[3], 'lifecycle.catalog_flow('), (paths[2], '-meta -manager -catalog'),
+                                   (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):
             path = self.repository / relative
             original = path.read_text()
             path.write_text(original.replace(fragment, 'removed'))

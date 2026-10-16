@@ -75,6 +75,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 if not overrides:
                     self.assertIn('start:-meta', trace)
                     self.assertIn('start:-manager', trace)
+                    self.assertIn('start:-catalog', trace)
                     self.assertIn('browser-install', trace)
                     self.assertLess(trace.index('browser-install'), trace.index('make:test-online'))
                     self.assertIn('make:test-online ONLINE_SUITE=pg-source-authorization', trace)

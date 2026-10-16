@@ -48,7 +48,7 @@ SUITES: Mapping[str, Suite] = {
     "pg-source-authorization": Suite(
         command=(sys.executable, "-m", "scripts.test.pg-source-authorization-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
-                  ("meta", "META_URL"), ("manager", "MANAGER_URL")),
+                  ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("catalog", "CATALOG_URL")),
     ),
     "platform-node-metrics": Suite(
         command=(sys.executable, "-m", "scripts.test.platform-node-metrics-online"),

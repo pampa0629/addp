@@ -1960,8 +1960,8 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
     if "pg-source-authorization" not in registered:
         return
     suite = load_suite_registry(repository)["pg-source-authorization"]
-    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "manager"}:
-        raise RegistrationError("PG authorization requires only its four owners and manual first acceptance")
+    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "manager", "catalog"}:
+        raise RegistrationError("PG authorization requires its five owners and manual first acceptance")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  pg-authorization-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
@@ -1972,12 +1972,15 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
             'playwright install --with-deps chromium', 'export CONSOLE_URL=',
+            'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', '-meta -manager -catalog',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
             "state='expired'", "self.reader.token == reader_before", 'with BrowserObservation(', 'browser.finish()',
             'pg-source-authorization.spec.js', 'self.meta_recovery_flow(', 'with MetaOutage()',
-            'deny_survives_meta_recovery_without_rescan', "'authorization_service_unavailable'"),
+            'deny_survives_meta_recovery_without_rescan', "'authorization_service_unavailable'",
+            'lifecycle.catalog_flow(', 'catalog_confirmation_alone_denied',
+            'catalog_replay_does_not_restore_revoked_grant'),
         "console/frontend/e2e/online/pg-source-authorization.spec.js": (
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value'),

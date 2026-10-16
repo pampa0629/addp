@@ -74,7 +74,12 @@ var pgAuthorizationConsumerPermissions = []string{
 }
 
 var pgAuthorizationOperatorPermissions = append(append([]string{}, sourceInitializerPermissions...),
-	"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
+	"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release",
+	"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create")
+
+var pgAuthorizationConfirmerPermissions = []string{
+	"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read", "catalog.sharing_decision.create",
+}
 
 var plaintextApplicantPermissions = []string{
 	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
@@ -423,6 +428,12 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = operator.AccessToken
+		confirmer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-pg-business-owner", pgAuthorizationConfirmerPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN"] = confirmer.AccessToken
 		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-pg-outsider", pgAuthorizationConsumerPermissions)
 		if err != nil {

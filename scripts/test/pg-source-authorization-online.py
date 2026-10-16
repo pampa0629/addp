@@ -25,7 +25,10 @@ SuiteError = API.SuiteError
 SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
-    'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release'}
+    'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
+    'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create'}
+CONFIRMER_PERMISSIONS = {'catalog.entry.read', 'catalog.entry.update', 'catalog.inventory.read',
+                        'catalog.sharing_decision.create'}
 ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_membership.close',
                             'iam.project_group_membership.read', 'iam.project_group_membership.close'}
 BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh',
@@ -109,7 +112,7 @@ def item(reader, engine, name):
     return matches[0]
 
 
-def preview(reader, target, allowed, expected=None):
+def preview(reader, target, allowed, expected=None, *, columns=('person_id',), values=('A', 'B')):
     result = reader.request('GET', '/api/v1/manager/preview?' + urlencode({
         'locator': target, 'page': 1, 'page_size': 20}), (200,) if allowed else (403,)).payload
     if not allowed:
@@ -118,8 +121,8 @@ def preview(reader, target, allowed, expected=None):
         require(result.get('error_code') != 'security_protection_required', 'Security failure is not source denial')
         return
     data = result.get('data', {})
-    require(result.get('preview_type') == 'table' and data.get('columns') == ['person_id']
-            and sorted(row.get('person_id') for row in data.get('rows', [])) == ['A', 'B'],
+    require(result.get('preview_type') == 'table' and data.get('columns') == list(columns)
+            and sorted(row.get(columns[0]) for row in data.get('rows', [])) == list(values),
             'Manager did not read the deterministic PG source')
     if expected is not None:
         require(data.get('total') == expected, 'PG source row count changed')
@@ -133,6 +136,7 @@ class MetaOutage:
         required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
                     'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online',
                     'META_URL': 'http://127.0.0.1:8082', 'MANAGER_URL': 'http://127.0.0.1:8081',
+                    'CATALOG_URL': 'http://127.0.0.1:8192',
                     'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000'}
         require(all(os.environ.get(key) == value for key, value in required.items()) and sys.platform == 'linux'
                 and os.uname().machine == 'x86_64' and not (self.repository / '.env').exists(),
@@ -150,7 +154,7 @@ class MetaOutage:
         PREFLIGHT.validate_health(service, payload, self.commit, 'ready')
         fields = ('started_at', 'build_id', 'git_commit', 'source_fingerprint')
         # System/Gateway standalone health publishes build/start identity, not registration identity.
-        if module in {'meta', 'manager'}:
+        if module in {'meta', 'manager', 'catalog'}:
             require(payload.get('role') == 'backend' and payload.get('registration_state') == 'registered'
                     and str(uuid.UUID(payload['instance_id'])) == payload['instance_id'], 'invalid Hosted backend identity')
             fields += ('instance_id',)
@@ -171,7 +175,7 @@ class MetaOutage:
         require(result.returncode == 0, 'Meta fault lifecycle failed')
 
     def __enter__(self):
-        self.before = {module: self.snapshot(module) for module in ('meta', 'system', 'gateway', 'manager')}
+        self.before = {module: self.snapshot(module) for module in ('meta', 'system', 'gateway', 'manager', 'catalog')}
         self.stopped = True  # Also restore an unknown stop outcome.
         try:
             self.run('stop')
@@ -195,7 +199,7 @@ class MetaOutage:
                     and datetime.fromisoformat(after['started_at']) > datetime.fromisoformat(before['started_at'])
                     and all(before[key] == after[key] for key in ('build_id', 'git_commit', 'source_fingerprint')),
                     'Meta recovery did not prove a new process with identical build inputs')
-            require(all(self.before[module] == self.after[module] for module in ('system', 'gateway', 'manager')),
+            require(all(self.before[module] == self.after[module] for module in ('system', 'gateway', 'manager', 'catalog')),
                     'Meta outage changed another running owner')
 
 
@@ -292,14 +296,15 @@ class Lifecycle:
         require(username == 'external-online-consumer' and bool(password), 'dedicated reader login required')
         self.username, self.password = username, password
         self.path = table_path(engine, 'metric_people')
+        self.paths = [self.path]
         self.base = f'/api/v1/system/engines/{engine}'
         self.grants, self.denies = [], []
         self.recipients = {('user', recipient)}
         self.source_observations = []
         self.expiry_grant = None
 
-    def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None):
-        query = {'catalog_path': json.dumps(self.path, separators=(',', ':')),
+    def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None, catalog_path=None):
+        query = {'catalog_path': json.dumps(self.path if catalog_path is None else catalog_path, separators=(',', ':')),
                  'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
                  'page_size': 100}
         if state:
@@ -330,10 +335,10 @@ class Lifecycle:
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
 
-    def deny(self, facts, *, recipient_type='user', recipient_id=None):
+    def deny(self, facts, *, recipient_type='user', recipient_id=None, catalog_path=None):
         command = str(uuid.uuid4())
         self.denies.append(command)
-        body = {'deny_id': command, 'catalog_path': self.path, 'item_fingerprint': facts['item_fingerprint'],
+        body = {'deny_id': command, 'catalog_path': self.path if catalog_path is None else catalog_path, 'item_fingerprint': facts['item_fingerprint'],
                 'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
                 'action': 'read', 'expiry_mode': 'at_time',
                 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=180)).isoformat(),
@@ -358,9 +363,9 @@ class Lifecycle:
                 self.release(command, cleanup=True)
             except Exception:
                 errors.append('Deny release failed')
-        for kind, recipient in sorted(self.recipients):
+        for path, kind, recipient in ((path, kind, recipient) for path in self.paths for kind, recipient in sorted(self.recipients)):
             try:
-                active = self.listing(history=True, state='active', recipient_type=kind, recipient_id=recipient)
+                active = self.listing(history=True, state='active', recipient_type=kind, recipient_id=recipient, catalog_path=path)
                 for row in active['data']:
                     if row['request_id'] not in self.grants:
                         errors.append('refusing to revoke an unowned Grant')
@@ -368,13 +373,130 @@ class Lifecycle:
                     self.revoke(row['request_id'])
             except Exception:
                 errors.append('Grant cleanup failed')
-        for kind, recipient in sorted(self.recipients):
+        for path, kind, recipient in ((path, kind, recipient) for path in self.paths for kind, recipient in sorted(self.recipients)):
             try:
-                require(self.listing(recipient_type=kind, recipient_id=recipient)['total'] == 0,
+                require(self.listing(recipient_type=kind, recipient_id=recipient, catalog_path=path)['total'] == 0,
                         'current source rules remain after cleanup')
             except Exception:
                 errors.append('residual verification failed')
         require(not errors, '; '.join(errors))
+
+    def catalog_flow(self, report, business, confirmer):
+        report['phase'] = 'catalog_source_convergence'
+        token = self.reader.token
+        path = table_path(self.engine, 'metric_events')
+        self.paths.append(path)  # Cleanup owns every target before any possible write.
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, path)
+        row = item(self.reader, self.engine, 'metric_events')
+        require(row['fingerprint'] == facts['item_fingerprint'], 'business target differs from persisted DataItem')
+        target = locator(self.engine, 'metric_events', row['id'])
+        def read(allowed):
+            preview(self.reader, target, allowed, 4 if allowed else None,
+                    columns=('event_id', 'event_date'), values=('e1', 'e2', 'e3', 'old'))
+        read(False)
+        query = urlencode({'view': 'inventory', 'source_identity': facts['item_fingerprint'], 'page_size': 2})
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            listing = business.request('GET', '/api/v1/catalog/entries?' + query, (200,)).payload
+            require(isinstance(listing.get('data'), list) and len(listing['data']) <= 1,
+                    'one DataItem must resolve to at most one Catalog entry')
+            if listing['data']:
+                break
+            time.sleep(1)
+        else:
+            raise SuiteError('Catalog did not consume the basic scan before its deadline')
+        entry_id = listing['data'][0]['id']
+        require(str(uuid.UUID(entry_id)) == entry_id, 'Catalog entry identity is not canonical')
+        route = '/api/v1/catalog/entries/' + entry_id
+        entry = business.request('GET', route, (200,)).payload
+        require(entry.get('governance_status') == 'discovered' and not entry.get('responsibilities')
+                and not entry.get('semantic_links'), 'refusing to replace pre-existing curation')
+        report['phase'] = 'catalog_business_responsibility'
+        entry = business.request('PUT', route, (200,), {
+            'version': entry['version'], 'business_name': 'Disposable PG business approval',
+            'business_description': 'Single DataItem authorization acceptance', 'governance_status': 'discovered',
+            'visibility': entry['visibility'], 'domains': [], 'glossary_ids': [],
+            'responsibilities': [{'role': 'business_owner', 'subject_type': 'user', 'subject_id': confirmer}]}).payload
+        require(any(value.get('role') == 'business_owner' and value.get('subject_id') == confirmer
+                    for value in entry.get('responsibilities', [])), 'business ownership was not saved')
+        boundary = business.request('GET', route + '/sharing_boundary', (200,)).payload
+        require(boundary == {'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash'],
+                             'native_target': path}, 'Catalog and System disagree on the Meta boundary')
+        requirement = self.operator.request('POST', self.base + '/access_approval_requirements', (201,), {
+            'catalog_path': path, 'item_fingerprint': facts['item_fingerprint'],
+            'expected_boundary_hash': facts['boundary_hash'], 'mode': 'catalog',
+            'reason': 'Disposable PG explicit business approval'}).payload
+        require(requirement.get('mode') == 'catalog' and requirement.get('catalog_path') == path
+                and str(requirement.get('version')) == '1', 'business approval requirement changed')
+        decision_id, request_id = str(uuid.uuid4()), str(uuid.uuid4())
+        evidence = report['catalog_approval'] = {'entry_id': entry_id, 'decision_id': decision_id,
+            'request_id': request_id, 'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash']}
+        decision_body = {'decision_id': decision_id, 'version': str(entry['version']), 'recipient_type': 'user',
+            'recipient_id': self.recipient, 'expiry_mode': 'at_time',
+            'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+            'expected_boundary_hash': facts['boundary_hash'], 'reason': 'Disposable PG business read approval'}
+        report['phase'] = 'catalog_confirmation_does_not_grant'
+        decision = business.request('POST', route + '/sharing_decisions', (201,), decision_body).payload
+        require(decision.get('id') == decision_id and decision.get('confirmed_by') == confirmer
+                and decision.get('recipient_id') == self.recipient and decision.get('self_beneficiary') is False
+                and decision.get('item_fingerprint') == facts['item_fingerprint']
+                and decision.get('boundary_hash') == facts['boundary_hash'], 'business confirmation binding changed')
+        read(False)
+        require(self.listing(catalog_path=path)['total'] == 0, 'confirmation alone created a source Grant')
+        self.grants.append(request_id)  # Includes an unknown outcome after acceptance or automatic issuance.
+        command = {'request_id': request_id, 'decision_id': decision_id, 'requirement_version': '1'}
+        report['phase'] = 'catalog_automatic_issuance'
+        first = self.operator.request('POST', route + '/sharing_fulfillments', (200, 202), command).payload
+        require(first.get('request_id') == request_id and first.get('state') in {'pending', 'accepted'},
+                'Catalog did not retain the exact fulfillment request')
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            history = self.listing(history=True, state='active', catalog_path=path)
+            if history['total']:
+                break
+            time.sleep(1)
+        else:
+            raise SuiteError('Catalog did not automatically issue the PG Grant')
+        require(history['total'] == 1 and len(history['data']) == 1, 'business approval duplicated source Grants')
+        grant = history['data'][0]
+        require(grant.get('request_id') == request_id and grant.get('catalog_request_id') == request_id
+                and grant.get('approval_mode') == 'catalog' and grant.get('catalog_path') == path
+                and grant.get('engine_id') == str(self.engine) and grant.get('action') == 'read'
+                and grant.get('requirement_version') == '1' and bool(grant.get('granted_at'))
+                and grant.get('operator_principal_id') == report['principals']['operator']
+                and grant.get('item_fingerprint') == facts['item_fingerprint'] and grant.get('boundary_hash') == facts['boundary_hash']
+                and grant.get('recipient_type') == 'user' and grant.get('recipient_id') == self.recipient
+                and grant.get('expiry_mode') == 'at_time' and grant.get('revocation') is None
+                and datetime.fromisoformat(grant['expires_at'].replace('Z', '+00:00')) == datetime.fromisoformat(decision_body['expires_at']),
+                'business Grant does not preserve its decision and Meta boundary')
+        settled = self.operator.request('GET', route + '/sharing_fulfillments/' + request_id, (200,)).payload
+        require(settled.get('request_id') == request_id and settled.get('state') == 'accepted'
+                and settled.get('decision_id') == decision_id and settled.get('requirement_version') == '1'
+                and settled.get('recipient_id') == self.recipient and settled.get('action') == 'read'
+                and settled.get('granted_at') == grant.get('granted_at'), 'Catalog cannot observe the original issuance')
+        self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
+        require(self.listing(history=True, state='active', catalog_path=path) == history,
+                'same-parameter fulfillment replay changed issuance history')
+        read(True)
+        preview(self.outsider, target, False)
+        report['phase'] = 'catalog_deny_release_and_withdrawal'
+        deny = self.deny(facts, catalog_path=path)
+        read(False)
+        self.release(deny)
+        read(True)
+        self.revoke(request_id)
+        read(False)
+        self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
+        read(False)
+        revoked = self.listing(history=True, state='revoked', catalog_path=path)
+        require(revoked['total'] == 1 and revoked['data'][0]['request_id'] == request_id
+                and revoked['data'][0]['granted_at'] == grant['granted_at'] and self.reader.token == token,
+                'historical replay restored, renewed or replaced the revoked Grant')
+        evidence.update({'rows': 4, 'approval_mode': 'catalog', 'same_credential': True,
+                         'grant_replay_unchanged': True, 'revoked_replay_denied': True})
+        report['checks'].extend(['catalog_confirmation_alone_denied', 'catalog_automatic_grant_bound_to_dataitem',
+            'catalog_grant_actual_preview_readable', 'catalog_replay_preserves_issuance',
+            'catalog_grant_deny_release_and_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
 
     def inspect_sources(self, facts, sources, denies, reason='grant'):
         current = self.listing()
@@ -697,6 +819,13 @@ def main():
                               organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
+        business = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN'], timeout)
+        confirmer, report['confirmer'] = identity(business, tenant, CONFIRMER_PERMISSIONS)
+        require(confirmer not in report['principals'].values()
+                and business.token not in {reader.token, operator.token, outsider.token, organization_operator.token},
+                'business confirmation requires a distinct minimum-permission User')
+        report['principals']['confirmer'] = confirmer
+        lifecycle.catalog_flow(report, business, confirmer)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)
