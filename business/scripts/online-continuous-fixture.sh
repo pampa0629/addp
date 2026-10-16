@@ -40,7 +40,18 @@ case "$action" in
     docker run -d --name "$pg" --network addp-network --label com.addp.online-fixture=continuous \
       --label "com.addp.online-run=$owner" -e POSTGRES_PASSWORD -e POSTGRES_DB=continuous_fixture \
       addp-postgres-pgvector:latest postgres -c wal_level=logical -c max_replication_slots=10 -c max_wal_senders=10 >/dev/null
-    for _ in $(seq 1 60); do if docker exec "$pg" pg_isready -U postgres -d continuous_fixture >/dev/null 2>&1; then break; fi; sleep 1; done
+    ready=0
+    for _ in $(seq 1 60); do
+      # The socket-only bootstrap server can accept probes before its shutdown.
+      # Require the final TCP server and a query against the intended database.
+      if [ "$(PGPASSWORD="$POSTGRES_PASSWORD" PGCONNECT_TIMEOUT=2 docker exec -e PGPASSWORD -e PGCONNECT_TIMEOUT \
+          "$pg" psql -h 127.0.0.1 -U postgres -d continuous_fixture -Atqc 'SELECT current_database()' 2>/dev/null)" = continuous_fixture ]; then
+        ready=1
+        break
+      fi
+      sleep 1
+    done
+    [ "$ready" = 1 ] || fail 'source PostgreSQL did not become ready'
     psql_owned >/dev/null <<'SQL'
 CREATE TABLE public.continuous_source (id bigint PRIMARY KEY, label text NOT NULL);
 INSERT INTO public.continuous_source VALUES (1,'business-value-sentinel-initial'),(2,'business-value-sentinel-delete');

@@ -22,6 +22,7 @@ class ContinuousPhysicalFixtureTest(unittest.TestCase):
         self.trace = self.root / 'trace.jsonl'
         self.executable('uname', '#!/bin/sh\n[ "$1" = -s ] && echo Linux || echo x86_64\n')
         self.executable('stat', '#!/usr/bin/env python3\nimport os,sys\nprint(oct(os.stat(sys.argv[-1]).st_mode & 0o777)[2:])\n')
+        self.executable('sleep', '#!/bin/sh\nexit 0\n')
         self.executable('docker', '''#!/usr/bin/env python3
 import json,os,sys
 from pathlib import Path
@@ -39,11 +40,23 @@ elif args[0]=='run':
 elif args[0]=='rm':
     (root / args[-1]).unlink()
 elif args[0]=='exec' and 'psql' in args:
-    if '-c' in args:
+    if '-Atqc' in args and 'SELECT current_database()' in args:
+        attempts=root / 'pg-ready-attempts'
+        count=int(attempts.read_text())+1 if attempts.exists() else 1
+        attempts.write_text(str(count))
+        if os.environ.get('PG_NEVER_READY') or count <= int(os.environ.get('PG_TCP_FAILURES','0')):
+            raise SystemExit(1)
+        (root / 'pg-final-ready').touch()
+        print('continuous_fixture')
+    elif '-c' in args:
         sql=args[args.index('-c')+1]
         if 'pg_replication_slots' in sql: print(os.environ.get('RESIDUAL_CAPTURE','0'))
         elif 'SELECT id,label' in sql: print(os.environ.get('PHYSICAL_ROWS',''))
-    else: sys.stdin.read()
+    else:
+        sql=sys.stdin.read()
+        if os.environ.get('REQUIRE_FINAL_PG') and not (root / 'pg-final-ready').exists():
+            raise SystemExit('database system is shutting down')
+        if 'CREATE TABLE' in sql: (root / 'sources-created').touch()
 elif args[0]=='exec' and 'produce' in args:
     sys.stdin.read()
 ''')
@@ -82,6 +95,28 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertIn('wal_level=logical', trace)
         self.assertIn('com.addp.online-run=addp-online-secret-test', trace)
         self.assertNotIn('createdb', trace)
+
+    def test_start_waits_for_final_tcp_database_before_creating_source_tables(self):
+        result = self.run_fixture('start', REQUIRE_FINAL_PG='1', PG_TCP_FAILURES='2')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / 'pg-ready-attempts').read_text(), '3')
+        self.assertTrue((self.root / 'sources-created').exists())
+        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        probes = [call for call in calls if 'SELECT current_database()' in call]
+        self.assertEqual(len(probes), 3)
+        for call in probes:
+            self.assertIn('127.0.0.1', call)
+            self.assertIn('continuous_fixture', call)
+            self.assertIn('PGPASSWORD', call)
+            self.assertIn('PGCONNECT_TIMEOUT', call)
+
+    def test_exhausted_pg_readiness_refuses_seed_and_kafka_start(self):
+        result = self.run_fixture('start', REQUIRE_FINAL_PG='1', PG_NEVER_READY='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('source PostgreSQL did not become ready', result.stderr)
+        self.assertEqual((self.root / 'pg-ready-attempts').read_text(), '60')
+        self.assertFalse((self.root / 'sources-created').exists())
+        self.assertFalse((self.root / 'addp-continuous-kafka-online-disposable').exists())
 
     def test_physical_rows_must_match_exactly_and_are_not_printed(self):
         rows = '1|business-value-sentinel-updated\n3|business-value-sentinel-inserted'
