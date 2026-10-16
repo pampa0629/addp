@@ -183,3 +183,11 @@ Hosted 报告 v15 在既有 v14 场景上要求 Service 保护到期返回精确
 提交前补充核对 Provider 错误优先级：Service／Transfer 在门禁包装内遇到类型化缺表错误或 SQLSTATE 时保留既有查询失败性质，不将其解释为保护拒绝。Hosted `38885678273` 在排队阶段主动取消，避免使用缺少该反例的前置提交；未运行、不计 T4。之后本地 Transfer 全模块后端因另一会话新增的 `TestStartRejectsUnverifiedOriginBeforeCaptureOrExecutionWrite` WIP 用例失败，保留首轮全模块通过记录但不计最新工作区全门禁通过；本会话只沿标准后端入口用 GOFLAGS 限定保护／执行完成／读取隔离回归，不修改该来源校验。
 
 上述 Provider 优先级补充后，Service 全模块 Go T1 再次通过；Transfer 使用 `GOFLAGS='-run=Test(Gate|Bounded|Protected|TransferExecutionReadIsolation|FinishExecution) -count=1' make test-transfer-backend` 通过，覆盖类型化／同文案／SQLSTATE 反例、真实完成事务安全投影、保护边界与专业读取隔离。该结果只计本会话所选 T1，不计完整后端或 PostgreSQL 聚合通过。
+
+本轮根 `make test-online-runner` 在 `test-orchestrator-online-runner` 的既有 Hosted 生命周期夹具 20 秒超时处退出（61 项中 1 error），未进入最后的综合 Security 测试组，不计完整聚合通过；未调整 Orchestrator 入口、超时或回归。本范围已单独完成的 148 项 Security／Hosted／登记回归保持独立通过记录。最新补充源码 `6e31b58175d0c022f575480873e3197ff6622428` 已推送，Hosted v15 `38886293712` 已触发；运行完成前不计为 T4。
+
+随后从 Git 精确导出已提交的 `6e31b58175d0c022f575480873e3197ff6622428` 到仓库外临时目录，不带共享工作区 WIP，沿相同 `make test-transfer-backend` 完成完整后端 T1，退出码 0；这是本轮已提交源码的全后端通过证据，不覆盖其他会话的未提交 origin 修改或 PostgreSQL T2。临时导出不含 `.git`，额外尝试的 Service `test-module` 自动发现无法运行，未计通过；Service 全模块 Go T1 仍以上述原工作区标准入口的成功结果为证据。
+
+同提交 `6e31b58175d0c022f575480873e3197ff6622428` 的 Release/T2 [38886250264](https://github.com/pampa0629/addp/actions/runs/38886250264) 中，Service PostgreSQL 15 Job `116927119726`、Transfer 受保护导出 PostgreSQL 15 Job `116927119915` 均已完成且成功。该证据覆盖本轮正式提交的两个完整 T2 入口，不把共享工作区早先失败或未执行的步骤改记为通过，也不代表整条含其他 Owner 的 workflow 均通过。
+
+Platform CI `38886250158` 的 Go workspace Job `116924589251` 首次未通过：新增 SQLSTATE 测试直接导入既有 pgx，但 Service／Transfer 的 go.mod 仍标记为 indirect，`go mod tidy -diff` 检出了漂移。已按 tidy 同步两处直接依赖标记；版本集合、go.sum、产品代码与运行配置均不变，两模块 `GOWORK=off go mod tidy -diff` 均退出 0。该失败属于本会话遗漏，保留首次失败记录；修正不改变正在运行的 Hosted 产品行为，T4 仍精确记录其实际源码 `6e31b58175d0c022f575480873e3197ff6622428`。同提交 Service／Transfer 前端 CI 均已成功。
