@@ -1,6 +1,8 @@
 package oracle
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -12,6 +14,49 @@ import (
 	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
 )
+
+func TestOracleTableWriteSessionRetainsWriteFailure(t *testing.T) {
+	for _, failure := range []string{"json", "missing", "not_null", "canceled"} {
+		t.Run(failure, func(t *testing.T) {
+			ctx := context.Background()
+			row := map[string]interface{}{"DOCUMENT": "{"}
+			switch failure {
+			case "missing":
+				delete(row, "DOCUMENT")
+			case "not_null":
+				row["DOCUMENT"] = nil
+			case "canceled":
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			}
+			session := &oracleTableWriteSession{fields: []datatype.FieldInfo{{Name: "DOCUMENT", Type: datatype.FieldTypeJSON}}}
+			firstErr := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row}})
+			if firstErr == nil {
+				t.Fatal("expected failure before database access")
+			}
+			if failure == "canceled" && !errors.Is(firstErr, context.Canceled) {
+				t.Fatalf("cancellation cause lost: %v", firstErr)
+			}
+			for _, batch := range []*plugin.BatchData{nil, {Rows: []map[string]interface{}{{"DOCUMENT": true}}}} {
+				if err := session.WriteBatch(context.Background(), batch); !errors.Is(err, firstErr) {
+					t.Fatalf("subsequent write lost first failure: %v", err)
+				}
+			}
+			for range 2 {
+				if err := session.Close(context.Background()); !errors.Is(err, firstErr) {
+					t.Fatalf("Close lost first failure: %v", err)
+				}
+			}
+			if err := session.Abort(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if session.rowsWritten != 0 || session.batchesWritten != 0 || session.CommitMarker() != nil {
+				t.Fatal("failed session advanced committed state")
+			}
+		})
+	}
+}
 
 func TestBuildOracleInsertSQLUsesFrozenSpatialConstructor(t *testing.T) {
 	srid, dimension := 3424, 2

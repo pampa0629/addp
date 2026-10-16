@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -147,12 +148,23 @@ type oracleTableWriteSession struct {
 	rowsWritten    int64
 	commitMarker   *resume.Marker
 	closed         bool
+	writeErr       error
 }
 
-func (s *oracleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *oracleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("oracle table write session is closed")
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// Oracle can keep a transaction usable after an INSERT error, and local
+	// encoding errors never reach the driver. Neither may permit partial commit.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -181,14 +193,24 @@ func (s *oracleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.
 	return nil
 }
 
-func (s *oracleTableWriteSession) Close(ctx context.Context) error {
+func (s *oracleTableWriteSession) Close(ctx context.Context) (err error) {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
+	if s.writeErr != nil {
+		return errors.Join(s.writeErr, s.abort())
+	}
 	if err := s.stmt.Close(); err != nil {
-		_ = s.abort()
-		return fmt.Errorf("close Oracle table write statement: %w", err)
+		return errors.Join(fmt.Errorf("close Oracle table write statement: %w", err), s.abort())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, s.abort())
 	}
 	if err := s.tx.Commit(); err != nil {
 		_ = s.db.Close()

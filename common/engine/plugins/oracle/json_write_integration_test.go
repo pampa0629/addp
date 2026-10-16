@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"reflect"
@@ -16,12 +17,15 @@ import (
 	pluginshared "github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 	"github.com/google/uuid"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 )
 
 func TestIntegrationOracleTypedJSONWrites(t *testing.T) {
 	if os.Getenv("ADDP_ORACLE_JSON_INTEGRATION") != "1" {
 		t.Skip("set ADDP_ORACLE_JSON_INTEGRATION=1 to run Oracle JSON integration test")
 	}
+	t.Run("session_failure_close", testOracleSessionFailureClose)
 	for _, method := range []string{"session", "partitioned_apply"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -152,6 +156,183 @@ func TestIntegrationOracleTypedJSONWrites(t *testing.T) {
 			// Recovery at the same offset must remain possible after rejected JSON.
 			if err := write([]map[string]interface{}{{"ID": int64(999), "DOCUMENT": []interface{}{true}, "PAYLOAD": []byte{1}}}); err != nil {
 				t.Fatalf("write after rejection: %v", err)
+			}
+		})
+	}
+}
+
+// Exercise the Provider directly: a caller's deferred Close must never turn a
+// failed write into a partial commit, even without Transfer's explicit Abort.
+func testOracleSessionFailureClose(t *testing.T) {
+	profiles := []bool{false}
+	if os.Getenv("ADDP_ORACLE_SPATIAL_INTEGRATION") == "1" {
+		profiles = append(profiles, true)
+	}
+	for _, spatial := range profiles {
+		name := "scalar"
+		if spatial {
+			name = "spatial"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			defer cancel()
+			info := oracleIntegrationConnInfo(t)
+			p := &OraclePlugin{}
+			dsn, err := p.BuildDSN(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("oracle", dsn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			schema := strings.ToUpper(info["user"].(string))
+			table := "ADDP_FAIL_" + strings.ToUpper(uuid.NewString()[:8])
+			path := oracleApplyIntegrationPath(schema, table)
+			qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
+			var count int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", table).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("fixture already occupied: count=%d err=%v", count, err)
+			}
+			defer func() {
+				cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				if err := p.DeleteResource(cleanup, info, path); err != nil {
+					t.Error(err)
+				}
+				if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=:1", table).Scan(&count); err != nil || count != 0 {
+					t.Errorf("fixture residue: count=%d err=%v", count, err)
+				}
+				if spatial {
+					if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM USER_SDO_GEOM_METADATA WHERE TABLE_NAME=:1", table).Scan(&count); err != nil || count != 0 {
+						t.Errorf("spatial fixture residue: count=%d err=%v", count, err)
+					}
+				}
+			}()
+			fields := []datatype.FieldInfo{
+				{Name: "ID", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
+				{Name: "DOCUMENT", Type: datatype.FieldTypeJSON},
+				{Name: "PAYLOAD", Type: datatype.FieldTypeBytes},
+			}
+			var spatialInfo *datatype.SpatialInfo
+			if spatial {
+				srid, dimension := 4326, 2
+				extent := datatype.NewBoundingBox(-180, -90, 180, 90)
+				spatialInfo = &datatype.SpatialInfo{
+					GeometryColumns:       []datatype.GeometryColumnInfo{{Name: "LOCATION", GeometryType: "Point", SRID: &srid, Dimension: &dimension}},
+					PrimaryGeometryColumn: "LOCATION", Extent: &extent,
+				}
+				fields = append(fields, datatype.FieldInfo{Name: "LOCATION", Type: datatype.FieldTypeGeometry})
+			}
+			if err := p.PrepareTableWrite(ctx, info, path, plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatialInfo}); err != nil {
+				t.Fatal(err)
+			}
+			var geometry []byte
+			if spatial {
+				geometry, err = ewkb.Marshal(geom.NewPointFlat(geom.XY, []float64{116, 39}).SetSRID(4326), ewkb.NDR)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			row := func(id int64) map[string]interface{} {
+				value := map[string]interface{}{"ID": id, "DOCUMENT": map[string]interface{}{"sentinel": true}, "PAYLOAD": []byte{0, 1, 255}}
+				if spatial {
+					value["LOCATION"] = geometry
+				}
+				return value
+			}
+			open := func(t *testing.T) plugin.TableWriteSession {
+				t.Helper()
+				session, err := p.OpenTableWriteSession(ctx, info, path, plugin.TableWriteSessionOptions{Fields: fields, SpatialInfo: spatialInfo})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = session.Abort(context.Background()) })
+				return session
+			}
+			sentinel := open(t)
+			if err := sentinel.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(1)}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := sentinel.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			for index, failure := range []string{"invalid_json", "missing_field", "not_null", "duplicate_key", "canceled_write", "canceled_close"} {
+				base := int64(10 + index*10)
+				t.Run(failure, func(t *testing.T) {
+					session := open(t)
+					if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(base)}}); err != nil {
+						t.Fatal(err)
+					}
+					bad := row(base + 2)
+					switch failure {
+					case "invalid_json":
+						bad["DOCUMENT"] = "{"
+					case "missing_field":
+						delete(bad, "DOCUMENT")
+					case "not_null":
+						bad["DOCUMENT"] = nil
+					case "duplicate_key":
+						bad["ID"] = int64(1)
+					}
+					writeCtx, closeCtx := ctx, ctx
+					canceled, cancel := context.WithCancel(ctx)
+					cancel()
+					if failure == "canceled_write" {
+						writeCtx = canceled
+					}
+					if failure == "canceled_close" {
+						closeCtx = canceled
+					}
+					var firstErr error
+					if failure != "canceled_close" {
+						firstErr = session.WriteBatch(writeCtx, &plugin.BatchData{Rows: []map[string]interface{}{row(base + 1), bad}})
+						if firstErr == nil {
+							t.Fatal("expected write failure")
+						}
+						if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(base + 3)}}); !errors.Is(err, firstErr) {
+							t.Errorf("write after failure lost original error: got=%v first=%v", err, firstErr)
+						}
+					} else {
+						firstErr = context.Canceled
+					}
+					closeErr := session.Close(closeCtx)
+					if !errors.Is(closeErr, firstErr) {
+						t.Errorf("Close lost failure: got=%v first=%v", closeErr, firstErr)
+					}
+					if err := session.Close(ctx); !errors.Is(err, firstErr) {
+						t.Errorf("repeated Close lost failure: %v", err)
+					}
+					if session.(plugin.CommitMarkerProvider).CommitMarker() != nil {
+						t.Error("failed session published success marker")
+					}
+					if err := session.Abort(ctx); err != nil {
+						t.Error(err)
+					}
+					if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 1 {
+						t.Fatalf("failed session changed committed rows: count=%d want=1 err=%v", count, err)
+					}
+				})
+			}
+			assertOracleJSONRows(t, ctx, db, qualified, []interface{}{map[string]interface{}{"sentinel": true}})
+			// A new session can commit after the failed sessions have rolled back.
+			recovered := open(t)
+			if err := recovered.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(2)}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := recovered.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if err := recovered.Close(ctx); err != nil || recovered.(plugin.CommitMarkerProvider).CommitMarker() == nil {
+				t.Fatalf("successful session Close/marker: %v", err)
+			}
+			assertOracleJSONRows(t, ctx, db, qualified, []interface{}{map[string]interface{}{"sentinel": true}, map[string]interface{}{"sentinel": true}})
+			if spatial {
+				var minType, maxType, minSRID, maxSRID int
+				if err := db.QueryRowContext(ctx, "SELECT MIN(r.\"LOCATION\".SDO_GTYPE), MAX(r.\"LOCATION\".SDO_GTYPE), MIN(r.\"LOCATION\".SDO_SRID), MAX(r.\"LOCATION\".SDO_SRID) FROM "+qualified+" r").Scan(&minType, &maxType, &minSRID, &maxSRID); err != nil || minType != 2001 || maxType != 2001 || minSRID != 4326 || maxSRID != 4326 {
+					t.Fatalf("geometry changed: types=%d/%d srids=%d/%d err=%v", minType, maxType, minSRID, maxSRID, err)
+				}
 			}
 		})
 	}
