@@ -2259,3 +2259,11 @@ Safari 表格行内操作未能响应本次原生自动化点击，已请用户�
 显示修正的验证入口为 `make test-monitor-frontend`，已确认现有 Platform CI 的 Monitor 前端 owner 调用同一入口并覆盖这些路径，无须新增编排。修正前新增宽度断言确实失败，证据为 `/tmp/addp-resource-rules-width-before.log`；修正后完整入口退出 0，62 项单测、154 项浏览器回归及生产构建均通过，证据为 `/tmp/addp-resource-rules-width-final.log`。本轮仅修改 Monitor 前端与上述既有文档，复用 10.70 中对应后台实现未变的分层证据，不重复数据库或真实采集部署门禁。
 
 本批代码的远端 CI 核对到 Platform CI Run `38851966963` 的 Monitor/System/Console 前端、Go、平台一致性及构建 Job 均为 queued；Release and T2 Run `38851966990` 的 selection Job 亦为 queued，尚未生成本批 Monitor PostgreSQL/metrics 和 System IAM 下游结果。排队不计通过；不取消、重跑或调查其他会话任务。
+
+**当日后续验收：** 用户要求重试 Safari 后，依据新截图中的实际按钮位置，已成功打开临时规则编辑框，不再需要用户代点。将触发阈值改为 100% 并明确启用，保存后显示“是”；随后将本条临时规则的触发持续时间由 300 秒改为 15 秒，保留恢复条件 80% / 120 秒，重新积累 CPU 一分钟计算窗口及连续采样。后台先返回“正在积累连续有效采样”，完整窗口后返回“无资源压力告警”，最新 CPU 忙碌率 `6.020133781%`，原始采样时间为北京时间 15:40:09。再次编辑并保存停用后，列表显示“否 / 已暂停”。这些是真实 User、配置数据库、后台最小服务身份及本机采集链路的实际回执；未人为制造资源压力告警，不将此正常样本路径扩大为真实告警触发、恢复和外部通知的一体验收。
+
+随后按 `category=resource&status=all&subject_id=755953df-488c-410a-88d4-0ecc47eb1351` 查询该主机全部状态的资源告警，列表为空。用户允许自行决定清理后，已仅删除上述临时规则，确认对话框明确告警历史保留；删除后及再次刷新均显示“暂无数据”。真实创建、读取、修改、启停、正常评估与删除路径至此完成本轮验证，未留下启用或停用的验收规则，也未新增资源通知订阅。
+
+CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38851258344` 中，Monitor PostgreSQL Job `116820156434`、metrics Job `116820156534`、System IAM verification Job `116820156051` 和 IAM gate Job `116829689314` 均 success。已进一步读取相关日志，确认七组新增 ResourceRule PostgreSQL 测试、`TestIntegrationMetricsResourcePressureEvidence` 及 `TestPlatformResourceAlertRulesForwardMigrationAgainstPostgres` 实际执行并通过，metrics 退出时确认自有容器、网络、卷及临时文件零残留；不以该 Run 的其他 Job 结论扩大或否定本会话门禁结果。
+
+源码 `6b977c59c` 的 Platform CI Run `38851966963` 中，Monitor/System/Console 前端、Go 和平台一致性均 success。主机选择框修正 `62440879e` 已进入后续源码 `f2296c1bd`，对应 Platform CI Run `38853433400` 的 Monitor 前端 Job `116819514983` 与平台一致性 Job `116819514875` 均 success。后续 Run 因路径选择而 skipped 的 Monitor PostgreSQL/metrics 或 IAM verification 不作为新通过证据；本轮只补既有文档中的实际回执，不更改实现，也不重复已覆盖的测试部署。
