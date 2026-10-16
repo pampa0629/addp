@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    environment:
+      POSTGRES_DB: addp_test
+      POSTGRES_USER: addp
+      POSTGRES_PASSWORD_FILE: /run/secrets/metrics-postgres-password
+    secrets: [metrics-postgres-password]
+    ports: ["127.0.0.1::5432"]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 256m
+    tmpfs: ["/var/lib/postgresql/data:size=256m"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U addp -d addp_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 45
   node-exporter:
     extends:
       file: ../infra/node-metrics.yml
@@ -37,3 +54,6 @@ services:
       - ${ADDP_METRICS_TLS_DIR}:/tls:ro
 volumes:
   prometheus_data:
+secrets:
+  metrics-postgres-password:
+    file: ${METRICS_T2_WORK}/postgres-password

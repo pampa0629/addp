@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go monitor/backend/internal/service/resource_alert_evaluation.go monitor/backend/internal/service/resource_alert_rules.go monitor/backend/internal/service/resource_pressure_evaluator.go monitor/backend/internal/service/resource_pressure_evaluator_test.go monitor/backend/internal/service/resource_pressure_prometheus_test.go monitor/backend/internal/models/resource_alert_rule.go monitor/backend/internal/models/resource_query_policy.go monitor/backend/internal/repository/resource_query_policy.go monitor/backend/internal/service/resource_observation.go monitor/backend/internal/service/resource_observation_test.go monitor/backend/internal/service/resource_summary.go monitor/backend/internal/service/resource_overview.go monitor/backend/internal/service/resource_overview_test.go monitor/backend/internal/service/resource_overview_prometheus_test.go monitor/backend/internal/service/monitoring_target_test.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example
+# ADDP_T2_INPUT_FILES=scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/process-metrics-launch.py scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/config/process_metrics.go common/models/process_metrics.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -20,6 +20,7 @@ export PROMETHEUS_SYSTEM_URL=https://metrics-control:9444 PROMETHEUS_MONITOR_URL
 export ADDP_METRICS_CONTROL_ENABLED=true ADDP_METRICS_CONTROL_DIR="$WORK_DIR/control"
 export ADDP_METRICS_CONTROL_GATEWAY_URL=http://metrics-source:8081
 export PROMETHEUS_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export METRICS_T2_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup(){
   local result=$?
@@ -45,6 +46,10 @@ cleanup(){
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# The private work directory owns this mandatory startup secret. Rendering only
+# the shared source transport (Hosted T4) does not need a database credential.
+printf '%s' "$METRICS_T2_POSTGRES_PASSWORD" >"$WORK_DIR/postgres-password"
+chmod 644 "$WORK_DIR/postgres-password"
 mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control"
 # A one-run CA and deployer client; never install these in a personal environment.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
@@ -177,7 +182,7 @@ echo '[]' >"$WORK_DIR/source/discovery.json"
 echo 'Metrics T2: validate fixed-version configuration and mutual TLS'
 compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/addp.yml
 compose run --rm --no-deps --entrypoint /bin/promtool prometheus check web-config /etc/prometheus/web.yml
-compose up -d --wait --wait-timeout 90 metrics-source node-exporter
+compose up -d --wait --wait-timeout 90 metrics-source node-exporter postgres
 node_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q node-exporter)")
 printf 'subjectAltName=DNS:localhost,IP:%s\nextendedKeyUsage=serverAuth\n' "$node_ip" >"$WORK_DIR/node-extensions"
 openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -days 1 -extfile "$WORK_DIR/node-extensions" -out "$WORK_DIR/node-tls/server.crt" >/dev/null 2>&1

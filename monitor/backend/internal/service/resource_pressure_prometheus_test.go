@@ -17,23 +17,7 @@ func TestIntegrationMetricsResourcePressureEvidence(t *testing.T) {
 	if os.Getenv("ADDP_METRICS_QUERY_INTEGRATION") != "1" {
 		t.Skip("requires standard Monitor metrics T2 gate")
 	}
-	read := func(name string) []byte {
-		t.Helper()
-		b, e := os.ReadFile(os.Getenv(name))
-		if e != nil {
-			t.Fatal(e)
-		}
-		return b
-	}
-	cert, e := tls.X509KeyPair(read("MONITOR_PROMETHEUS_CLIENT_CERT_FILE"), read("MONITOR_PROMETHEUS_CLIENT_KEY_FILE"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	backend, e := resourcequery.NewClient(os.Getenv("MONITOR_PROMETHEUS_URL"), read("MONITOR_PROMETHEUS_CA_FILE"), cert)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer backend.Close()
+	backend := metricsIntegrationBackend(t)
 	scope := resourcequery.Scope{NodeID: os.Getenv("ADDP_METRICS_QUERY_NODE_ID"), Instance: os.Getenv("ADDP_METRICS_QUERY_INSTANCE")}
 	down := os.Getenv("ADDP_RESOURCE_RULE_SOURCE_DOWN") == "1"
 	deadline := time.Now().Add(45 * time.Second)
@@ -95,4 +79,26 @@ func TestIntegrationMetricsResourcePressureEvidence(t *testing.T) {
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+func metricsIntegrationBackend(t *testing.T) *resourcequery.Client {
+	t.Helper()
+	read := func(name string) []byte {
+		t.Helper()
+		b, e := os.ReadFile(os.Getenv(name))
+		if e != nil {
+			t.Fatal(e)
+		}
+		return b
+	}
+	cert, e := tls.X509KeyPair(read("MONITOR_PROMETHEUS_CLIENT_CERT_FILE"), read("MONITOR_PROMETHEUS_CLIENT_KEY_FILE"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	backend, e := resourcequery.NewClient(os.Getenv("MONITOR_PROMETHEUS_URL"), read("MONITOR_PROMETHEUS_CA_FILE"), cert)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(backend.Close)
+	return backend
 }

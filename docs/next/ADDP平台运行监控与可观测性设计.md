@@ -2267,3 +2267,17 @@ Safari 表格行内操作未能响应本次原生自动化点击，已请用户�
 CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38851258344` 中，Monitor PostgreSQL Job `116820156434`、metrics Job `116820156534`、System IAM verification Job `116820156051` 和 IAM gate Job `116829689314` 均 success。已进一步读取相关日志，确认七组新增 ResourceRule PostgreSQL 测试、`TestIntegrationMetricsResourcePressureEvidence` 及 `TestPlatformResourceAlertRulesForwardMigrationAgainstPostgres` 实际执行并通过，metrics 退出时确认自有容器、网络、卷及临时文件零残留；不以该 Run 的其他 Job 结论扩大或否定本会话门禁结果。
 
 源码 `6b977c59c` 的 Platform CI Run `38851966963` 中，Monitor/System/Console 前端、Go 和平台一致性均 success。主机选择框修正 `62440879e` 已进入后续源码 `f2296c1bd`，对应 Platform CI Run `38853433400` 的 Monitor 前端 Job `116819514983` 与平台一致性 Job `116819514875` 均 success。后续 Run 因路径选择而 skipped 的 Monitor PostgreSQL/metrics 或 IAM verification 不作为新通过证据；本轮只补既有文档中的实际回执，不更改实现，也不重复已覆盖的测试部署。
+
+### 10.72 资源告警采样、生命周期与通知接收的 T2 联合验收
+
+用户继续推进 10.71 尚未贯通的异常链路。先扩展既有 `make test-monitor-metrics` 的模块集成范围：同一 disposable Compose 加入固定官方镜像的 PostgreSQL，只初始化 `addp_test`，随机回环映射与临时密码由标准门禁拥有，退出连同自有卷和网络销毁；不连接共享开发库或个人运行环境。现有受控 mTLS 指标源、真实 Prometheus、固定查询目录、规则服务、事件/outbox 与正式签名 Webhook sender 组成一条测试链路，通知只投递到进程内临时 TLS 接收端。
+
+受控源使用同一主机身份和固定启动时间，依次提供高内存使用率、缺失内存指标、低内存使用率；不对宿主机实际加压，不修改判定时钟或手写告警事件。规则必须先停用创建，再显式启用，按实际采样时间积累连续窗口；高值触发一次 opened，缺样不得恢复，低值经过原恢复窗口后产生一次 resolved。核对两次通知的签名、同一 incident 与不同 event/delivery 身份、原始规则证据、数据库 delivered 状态及无重复发送，并验证默认日志订阅不收到资源事件。所有输入变化和清理只限本轮临时文件、测试数据及服务。
+
+该场景为 T2：System 当前主机/身份读取仍使用既有模块夹具，不使用管理员 Token，不覆盖真实密码/MFA、Gateway 或正式 System 控制面，也不自动扩展 Hosted 临时管理员的限定用途。生产 API、权限与通知协议保持现状。受影响门禁为 Monitor Go T1、既有 metrics T2、metrics 部署静态回归与 T2 CI 登记；同次补齐 owned-services、输入路径与清理核对，既有 Monitor metrics workflow 继续调用唯一根入口，不新增 suite 或旁路。
+
+共享 Compose 同时被 Hosted 节点准备用于提取指标源服务。数据库采用本轮私有工作目录中的必需密码文件，只在实际启动数据库时挂载，避免配置渲染无端依赖数据库凭据；Hosted 准备保持只生成 `control-tls`，回归确认不创建该密码文件。标准 `make test-node-metrics-online-runner` 的 51 项回归及 System 身份夹具测试已通过。联合场景首轮约 150 秒，包含两条事件、两条 delivered 和三次 HTTP 请求；整轮约 14 分 25 秒，因此原 Monitor metrics CI Job 的总预算由 15 调为 20 分钟，新增 Go 场景自身限制 210 秒、外层子进程限制 240 秒。业务采样和查询预算不变。首轮数据库仍由修正前的环境变量方式启动，最终配置另从零执行完整门禁，待其结束后记录结果。
+
+最终配置的 `make test-monitor-metrics` 已从零运行并退出 0，日志 `/tmp/addp-resource-alert-lifecycle-metrics-final.log`。原有进程、原生与 Desktop 节点来源、故障恢复、中心 WAL 和六源 TOP5 场景均保留通过；新增 `TestIntegrationMetricsResourceAlertLifecycle` 用时 150.82 秒，真实高值窗口打开一次事件，首次 HTTP 503 后同一投递重试成功，缺样超过 30 秒恢复窗口不恢复，真实低值窗口随后恢复同一 incident。最终只有 opened/resolved 两条事件、两条 delivered 和三次 HTTP 请求；接收的 event ID、delivery ID 与完整证据逐条匹配已提交数据库，打开证据不被恢复覆盖，日志订阅未收到资源事件。退出确认自有容器、网络、卷与临时文件零残留。
+
+最终 Monitor Go T1（`make test-module MODULE=monitor GO_ONLY=1`）退出 0，日志 `/tmp/addp-resource-alert-lifecycle-go-final.log`；23 项部署静态检查、T2 CI 登记和脚本语法验证通过，日志 `/tmp/addp-resource-alert-lifecycle-static-final.log`；既有 Hosted 准备回归日志 `/tmp/addp-resource-alert-lifecycle-node-runner.log`。本轮只扩展测试、CI 总预算与既有文档，无需重启个人服务。尚未推送的新提交不借用 10.71 的旧 CI；本场景的正式 System 密码/MFA、Gateway 及真实主机压力闭环 Hosted T4 仍未执行，真实群、邮件或企业微信通知也未发送。

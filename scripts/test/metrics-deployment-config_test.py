@@ -61,6 +61,10 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'monitor/backend/internal/service/resource_alert_evaluation.go',
                      'monitor/backend/internal/service/resource_pressure_evaluator.go',
                      'monitor/backend/internal/service/resource_pressure_prometheus_test.go',
+                     'monitor/backend/internal/service/resource_alert_lifecycle_prometheus_test.go',
+                     'monitor/backend/internal/service/platform_log_retry_postgres_test.go',
+                     'monitor/backend/internal/service/platform_alert_notifications.go',
+                     'monitor/backend/internal/service/webhook_sender.go',
                      'monitor/backend/internal/models/resource_alert_rule.go',
                      'monitor/backend/internal/models/resource_query_policy.go',
                      'monitor/backend/internal/repository/resource_query_policy.go',
@@ -80,6 +84,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
         self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
         self.assertEqual(probe.count("'^TestIntegrationMetricsResourcePressureEvidence$'"), 2)
+        self.assertIn("'^TestIntegrationMetricsResourceAlertLifecycle$'", probe)
+        self.assertIn('postgres', re.search(r'^# ADDP_T2_OWNED_SERVICES=(.+)$', script, re.M).group(1).split(','))
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)

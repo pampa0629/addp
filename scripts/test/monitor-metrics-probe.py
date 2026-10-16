@@ -579,6 +579,22 @@ try:
                     '^TestIntegrationMetricsResourceOverview$', '-count=1', '-v'],
                    cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                    env=query_env, check=True, timeout=180)
+    # One controlled source now drives the real rule/database/HTTP delivery path.
+    # The other five sources and the native exporter checks remain unchanged.
+    group = overview_groups[0]
+    subprocess.run(['go', 'test', './internal/service', '-run',
+                    '^TestIntegrationMetricsResourceAlertLifecycle$', '-count=1', '-timeout=210s', '-v'],
+                   cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+                   env=dict(query_env, ADDP_RESOURCE_RULE_LIFECYCLE_INTEGRATION='1',
+                            ADDP_POSTGRES_INTEGRATION='1', ADDP_TEST_POSTGRES_HOST='127.0.0.1',
+                            ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
+                            ADDP_TEST_POSTGRES_DATABASE='addp_test', ADDP_TEST_POSTGRES_USER='addp',
+                            ADDP_TEST_POSTGRES_PASSWORD=os.environ['METRICS_T2_POSTGRES_PASSWORD'],
+                            ADDP_TEST_POSTGRES_SSLMODE='disable',
+                            ADDP_RESOURCE_RULE_SOURCE_FILE=str(WORK / 'source/overview-0.prom'),
+                            ADDP_METRICS_QUERY_NODE_ID=group['labels']['addp_node_id'],
+                            ADDP_METRICS_QUERY_INSTANCE=group['targets'][0]),
+                   check=True, timeout=240)
 finally:
     discovery_text(original_discovery)
 print('Metrics T2: six-source overview ranks, independent coverage, target exclusion and pre-query budget passed', flush=True)

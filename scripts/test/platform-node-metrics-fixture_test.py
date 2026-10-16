@@ -41,6 +41,7 @@ class MetricsFixtureTest(unittest.TestCase):
             return original(args)
         with patch.dict(os.environ, self.env), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
             FIXTURE.prepare(self.secret)
+        self.assertFalse((self.secret / "postgres-password").exists())
         spec = json.loads((self.secret / "metrics-compose.json").read_text())
         self.assertEqual(set(spec["services"]), {"control-tls"})
         self.assertNotIn("volumes", spec)
