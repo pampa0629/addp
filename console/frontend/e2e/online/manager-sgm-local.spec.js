@@ -1,0 +1,123 @@
+import { expect, request, test } from '@playwright/test'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
+import { isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
+
+test('isolated SGM ordinary User generation, task page and cached GLB', async ({ page }) => {
+  test.setTimeout(300_000)
+  const env = process.env
+  expect(env.ADDP_ONLINE_LOCAL_SGM).toBe('1')
+  expect(env.GITHUB_ACTIONS).toBeUndefined()
+  expect(env.ADDP_ONLINE_HOSTED).toBeUndefined()
+  expect(env.ADDP_ONLINE_OWNER_MANAGED).toBeUndefined()
+  const source = JSON.parse(env.ADDP_SGM_SOURCE_JSON)
+  const api = await request.newContext({ baseURL: env.GATEWAY_URL,
+    extraHTTPHeaders: { Authorization: `Bearer ${env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}` } })
+  let authenticated = false
+  let generationRequests = 0
+  const errors = []
+  const failures = []
+  const gpu = createBrowserGpuDiagnostics('login')
+  page.on('request', req => {
+    if (new URL(req.url()).pathname === '/api/v1/manager/quick-view/actions' && req.method() === 'POST') {
+      expect(req.postDataJSON().action).toBe('generate_model_3d_glb')
+      generationRequests += 1
+    }
+  })
+  page.on('console', message => {
+    if (isAnonymousRefreshConsoleError(message, authenticated) || gpu.record(message)) return
+    if (['warning', 'error'].includes(message.type())) errors.push(message.type())
+  })
+  page.on('pageerror', () => errors.push('pageerror'))
+  page.on('response', response => {
+    if (isAnonymousRefreshResponse(response, authenticated)) return
+    if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400) failures.push(response.status())
+  })
+  try {
+    const route = `/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`
+    const token = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, route)
+    authenticated = true
+    const browserAPI = await request.newContext({ baseURL: env.GATEWAY_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
+    const identity = await json(await browserAPI.get('/api/v1/system/auth/context'), 'browser identity')
+    const apiIdentity = await json(await api.get('/api/v1/system/auth/context'), 'API identity')
+    expect(identity.principal.type).toBe('user')
+    expect(identity.principal.id).toBe(apiIdentity.principal.id)
+    expect(String(identity.context.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
+    await browserAPI.dispose()
+    gpu.setStage('generation')
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const generate = frame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })
+    await expect(generate).toBeEnabled()
+    const downloadPromise = page.waitForEvent('download')
+    await frame.getByRole('button', { name: /下载|Download/, exact: true }).click()
+    const download = await downloadPromise
+    const bytes = readFileSync(await download.path())
+    expect(bytes.length).toBe(source.size_bytes)
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.sha256)
+    const startedPromise = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v1/manager/quick-view/actions')
+    await generate.click()
+    const startedResponse = await startedPromise
+    expect(startedResponse.status()).toBe(202)
+    const started = await startedResponse.json()
+    expect(started.task_type).toBe('model_3d_glb_generation')
+    expect(started.task_id).toBeGreaterThan(0)
+    expect(started.execution_id).toMatch(/^[0-9a-f-]{36}$/)
+    const query = new URLSearchParams({ locator: source.locator })
+    let ready
+    await expect.poll(async () => {
+      const execution = await json(await api.get(`/api/v1/manager/executions/${started.execution_id}`), 'SGM execution')
+      if (['failed', 'timeout', 'cancelled'].includes(execution.status)) throw new Error('SGM execution failed')
+      if (execution.status !== 'success') return execution.status
+      ready = await json(await api.get(`/api/v1/manager/quick-view/capability?${query}`), 'SGM capability')
+      return ready.model_3d?.status
+    }, { timeout: 180_000, intervals: [500, 1000, 2000] }).toBe('ready')
+    const artifact = ready.model_3d
+    expect(ready.render_source).toBe('model_3d_glb')
+    expect(artifact.task_id).toBe(started.task_id)
+    expect(artifact.last_execution_id).toBe(started.execution_id)
+    expect(artifact.preview_url).toBe(`/api/v1/manager/model_3d_glb/${artifact.result_id}/content`)
+    const preview = frame.locator('.model-preview')
+    await expect(preview.locator('canvas')).toBeVisible({ timeout: 60_000 })
+    await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+    // Persist the product's existing preference before testing a fresh navigation.
+    const preference = await api.patch('/api/v1/manager/preview-state/preferred-mode', {
+      data: { locator: source.locator, preferred_mode: 'map_quick_view' }
+    })
+    expect(preference.status()).toBe(200)
+    const content = await api.get(artifact.preview_url)
+    expect(content.status()).toBe(200)
+    expect((await content.body()).subarray(0, 4).toString()).toBe('glTF')
+    const ranged = await api.get(artifact.preview_url, { headers: { Range: 'bytes=0-63' } })
+    expect(ranged.status()).toBe(206)
+    expect((await ranged.body()).length).toBe(64)
+    gpu.setStage('task-page')
+    await page.goto(`/manager/tasks/quick-view?task_type=model_3d_glb_generation&task_id=${started.task_id}`)
+    const taskFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(taskFrame.locator('body')).toContainText('compass')
+    await expect(taskFrame.getByText(/成功|Success/, { exact: true }).first()).toBeVisible()
+    gpu.setStage('cached-preview')
+    const loaded = page.waitForResponse(response => new URL(response.url()).pathname === artifact.preview_url && response.status() === 200)
+    await page.goto(route)
+    await loaded
+    await expect(preview.locator('canvas')).toBeVisible()
+    await expect(preview.locator('.three-status')).toHaveCount(0)
+    const cached = await json(await api.get(`/api/v1/manager/quick-view/capability?${query}`), 'cached capability')
+    expect(cached.model_3d.result_id).toBe(artifact.result_id)
+    expect(cached.model_3d.last_execution_id).toBe(started.execution_id)
+    expect(generationRequests).toBe(1)
+    expect(errors).toEqual([])
+    expect(failures).toEqual([])
+    writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'sgm-browser.json'), JSON.stringify({
+      result: 'passed', run_id: env.ADDP_ONLINE_TEST_RUN_ID, task_id: started.task_id,
+      execution_id: started.execution_id, result_id: artifact.result_id, preview_url: artifact.preview_url,
+      original_download_sha256: source.sha256, ordinary_user: true, task_page_loaded: true,
+      cached_preview_loaded: true, generation_requests: generationRequests,
+      browser_errors: 0, failed_business_responses: 0, gpu_diagnostics: gpu.snapshot()
+    }))
+  } finally {
+    await api.dispose()
+  }
+})

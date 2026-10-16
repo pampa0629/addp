@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -388,11 +389,11 @@ func TestComposePublicOriginBrowserReaderCanEnterManagerWithoutWritePrivileges(t
 
 func TestValidateExternalEnvironment(t *testing.T) {
 	valid := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1"}
-	if err := validateExternalEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env")); err != nil {
+	if err := validateExternalEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env"), "manager-internal-artifact-lineage"); err != nil {
 		t.Fatal(err)
 	}
 	ownerManaged := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_OWNER_MANAGED=1"}
-	if err := validateExternalEnvironment(ownerManaged, filepath.Join(t.TempDir(), "fixture.env")); err != nil {
+	if err := validateExternalEnvironment(ownerManaged, filepath.Join(t.TempDir(), "fixture.env"), "manager-internal-artifact-lineage"); err != nil {
 		t.Fatal(err)
 	}
 	for _, invalid := range [][]string{
@@ -400,16 +401,34 @@ func TestValidateExternalEnvironment(t *testing.T) {
 		{"GITHUB_ACTIONS=true", "RUNNER_OS=macOS", "ADDP_ONLINE_HOSTED=1"},
 		{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=0"},
 	} {
-		if err := validateExternalEnvironment(invalid, filepath.Join(t.TempDir(), "fixture.env")); err == nil {
+		if err := validateExternalEnvironment(invalid, filepath.Join(t.TempDir(), "fixture.env"), "manager-internal-artifact-lineage"); err == nil {
 			t.Fatalf("environment %#v was accepted", invalid)
 		}
 	}
 	both := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1", "ADDP_ONLINE_OWNER_MANAGED=1"}
-	if err := validateExternalEnvironment(both, filepath.Join(t.TempDir(), "fixture.env")); err == nil {
+	if err := validateExternalEnvironment(both, filepath.Join(t.TempDir(), "fixture.env"), "manager-internal-artifact-lineage"); err == nil {
 		t.Fatal("multiple external profiles were accepted")
 	}
-	if err := validateExternalEnvironment(valid, "relative.env"); err == nil {
+	if err := validateExternalEnvironment(valid, "relative.env", "manager-internal-artifact-lineage"); err == nil {
 		t.Fatal("relative output path was accepted")
+	}
+}
+
+func TestLocalSGMFixtureRequiresItsOwnIsolatedProfileAndManagerSuite(t *testing.T) {
+	base := []string{"ADDP_ONLINE_LOCAL_SGM=1", "POSTGRES_DB=addp_online", "POSTGRES_HOST=127.0.0.1"}
+	output := filepath.Join(t.TempDir(), "identity.env")
+	err := validateExternalEnvironment(base, output, "manager-internal-artifact-lineage")
+	allowedHost := runtime.GOARCH == "arm64" && (runtime.GOOS == "darwin" || runtime.GOOS == "linux")
+	if allowedHost != (err == nil) {
+		t.Fatalf("local ARM64 admission mismatch: %v", err)
+	}
+	for _, extra := range []string{"GITHUB_ACTIONS=true", "GITHUB_ACTIONS=false", "ADDP_ONLINE_HOSTED=1", "ADDP_ONLINE_OWNER_MANAGED=1", "POSTGRES_DB=addp", "POSTGRES_HOST=192.168.1.1"} {
+		if err := validateExternalEnvironment(append(slices.Clone(base), extra), output, "manager-internal-artifact-lineage"); err == nil {
+			t.Fatalf("local SGM accepted unsafe input %q", extra)
+		}
+	}
+	if err := validateExternalEnvironment(base, output, "kingbase-consumer-flow"); err == nil {
+		t.Fatal("local SGM opened another suite")
 	}
 }
 

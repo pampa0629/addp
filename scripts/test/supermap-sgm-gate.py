@@ -86,8 +86,9 @@ def report_path(value):
 
 
 class Lifecycle:
-    def __init__(self):
-        self.run_id = "addp-sgm-t2-" + uuid.uuid4().hex
+    def __init__(self, prefix="addp-sgm-t2-", label=LABEL):
+        self.label = label
+        self.run_id = prefix + uuid.uuid4().hex
         self.work = Path(tempfile.mkdtemp(prefix=self.run_id + "-"))
         if self.work.resolve() == ROOT or ROOT in self.work.resolve().parents:
             self.work.rmdir()
@@ -103,7 +104,7 @@ class Lifecycle:
 
     def create(self, image, name, *args, cmd=()):
         full_name = self.run_id + "-" + name
-        return self.docker("create", "--name", full_name, "--label", f"{LABEL}={self.run_id}",
+        return self.docker("create", "--name", full_name, "--label", f"{self.label}={self.run_id}",
                            *args, image, *cmd).strip()
 
     def copy(self, source, target):
@@ -117,7 +118,7 @@ class Lifecycle:
 
     def owned(self, kind):
         flags = ("--all",) if kind == "container" else ()
-        return self.docker(kind, "ls", *flags, "-q", "--filter", f"label={LABEL}={self.run_id}").split()
+        return self.docker(kind, "ls", *flags, "-q", "--filter", f"label={self.label}={self.run_id}").split()
 
     def cleanup(self):
         failures = []

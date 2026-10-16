@@ -16,6 +16,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
+COMPOSE_FILE="docker-compose.infra.yml"
+if [ "$#" -gt 0 ]; then
+  [ "$#" -eq 2 ] && [ "$1" = --compose-file ] && [[ "$2" = /* ]] && [ -f "$2" ] || {
+    echo 'Usage: init-minio.sh [--compose-file /absolute/owned-compose.json]' >&2
+    exit 1
+  }
+  COMPOSE_FILE="$2"
+fi
+
+compose_minio() {
+  docker compose -f "$COMPOSE_FILE" "$@"
+}
+
 # Optional: load env overrides if present
 if [ "${ADDP_INFRA_RESOLVED:-0}" != "1" ] && [ -f ./.env ]; then
   set -a
@@ -40,7 +53,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 # 确认 MinIO 容器正在运行
-if ! docker compose -f docker-compose.infra.yml ps --status running minio >/dev/null 2>&1; then
+if ! compose_minio ps --status running minio >/dev/null 2>&1; then
   echo -e "${RED}✗ MinIO 容器未运行，无法初始化 buckets${NC}"
   echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
   exit 1
@@ -54,7 +67,7 @@ echo ""
 # 配置 MinIO alias（使用容器内的 mc 命令）
 # 注意：容器内部使用 9000 端口
 echo -e "${YELLOW}▶ 配置 MinIO 连接...${NC}"
-if ! docker compose -f docker-compose.infra.yml exec -T minio mc alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
+if ! compose_minio exec -T minio mc alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
   echo -e "${RED}✗ MinIO 连接配置失败${NC}"
   exit 1
 fi
@@ -78,11 +91,11 @@ for bucket_info in "${BUCKETS[@]}"; do
   IFS=':' read -r bucket_name bucket_desc <<< "$bucket_info"
 
   # 检查 bucket 是否存在
-  if docker compose -f docker-compose.infra.yml exec -T minio mc ls "local/${bucket_name}" >/dev/null 2>&1; then
+  if compose_minio exec -T minio mc ls "local/${bucket_name}" >/dev/null 2>&1; then
     echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 已存在"
   else
     echo -e "  ${BLUE}▸ ${bucket_name}${NC} - 创建中..."
-    if docker compose -f docker-compose.infra.yml exec -T minio mc mb "local/${bucket_name}" >/dev/null 2>&1; then
+    if compose_minio exec -T minio mc mb "local/${bucket_name}" >/dev/null 2>&1; then
       echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 创建成功"
     else
       echo -e "  ${RED}✗ ${bucket_name}${NC} - 创建失败"
@@ -96,7 +109,7 @@ echo -e "${YELLOW}▶ 设置 Bucket 访问策略...${NC}"
 
 # Manager 产物统一通过 Manager API 访问，bucket 保持私有。
 echo -e "  ${BLUE}▸ manager - 设置为私有（预览缓存、瓦片缓存对象通过 Manager API 访问）${NC}"
-if docker compose -f docker-compose.infra.yml exec -T minio mc anonymous set private "local/manager" >/dev/null 2>&1; then
+if compose_minio exec -T minio mc anonymous set private "local/manager" >/dev/null 2>&1; then
   echo -e "  ${GREEN}✓ manager - 访问策略设置完成${NC}"
 else
   echo -e "  ${YELLOW}⚠️  manager - 访问策略设置失败（可能已设置）${NC}"
@@ -106,7 +119,7 @@ echo ""
 
 # 设置 manager 桶 temp/ 前缀的 Lifecycle Policy（7天后自动过期删除）
 echo -e "${YELLOW}▶ 配置 manager 桶 Lifecycle Policy（临时文件 7 天后自动清理）...${NC}"
-if docker compose -f docker-compose.infra.yml exec -T minio mc ilm rule add \
+if compose_minio exec -T minio mc ilm rule add \
   --prefix "temp/" \
   --expire-days 7 \
   "local/manager" >/dev/null 2>&1; then

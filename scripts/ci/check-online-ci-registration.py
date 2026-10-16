@@ -2050,6 +2050,29 @@ def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
         raise RegistrationError("highgo-consumer-flow must not also run on self-hosted")
 
 
+def validate_local_sgm_profile(repository: Path) -> None:
+    """The approved technical page gate must never become a public T4 choice."""
+    make_path = repository / "Makefile"
+    make = make_path.read_text() if make_path.is_file() else ""
+    script = repository / "scripts/test/manager-sgm-local-gate.py"
+    if "test-manager-sgm-local:" not in make and not script.exists():
+        return
+    if not script.is_file() or "@python3 scripts/test/manager-sgm-local-gate.py" not in make:
+        raise RegistrationError("local SGM requires its manual Make entry")
+    if ("@python3 -m unittest scripts/test/manager-sgm-local-gate_test.py" not in make
+            or "@$(MAKE) test-manager-sgm-local-runner" not in make):
+        raise RegistrationError("local SGM lifecycle tests must join the existing Manager runner")
+    text = script.read_text()
+    for fragment in ('"local-isolated-technical-page-acceptance"', '"formal_t4": False',
+                     '"com.addp.sgm-local"', '"--no-hardlinks"', 'life.cleanup()', 'preflight()',
+                     'MANAGER.cleanup_managed_artifact(', '"--env-file", "/dev/null"'):
+        if fragment not in text:
+            raise RegistrationError("local SGM lifecycle is missing " + fragment)
+    for workflow in (repository / ".github/workflows").glob("*.y*ml"):
+        if re.search(r"(?:make\s+test-manager-sgm-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/manager-sgm-local-gate.py)", workflow.read_text()):
+            raise RegistrationError("private local SGM must not execute in GitHub Actions")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -2080,6 +2103,7 @@ def check_registration(repository: Path) -> None:
     validate_enterprise_catalog_publishing_profile(repository, registered)
     validate_workbench_service_consumption_profile(repository, registered)
     validate_manager_internal_artifact_lineage_profile(repository, registered)
+    validate_local_sgm_profile(repository)
     validate_manager_hybrid_search_profile(repository, registered)
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)

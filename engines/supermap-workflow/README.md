@@ -92,6 +92,17 @@ NFS 正式调用时，`connection_info.engine_type` 必须为 `nfs`，`path` 必
 
 SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载完整 C++ SDK 和系统依赖，代码镜像在构建阶段编译 ADDP C++ 源码。不得恢复 Java/GPA 回退、胖镜像/瘦镜像判断、源码 bind mount、运行时编译或 `SUPERMAP_WORKFLOW_REBUILD` 等并行路径。
 
+### 本机隔离技术页面验收
+
+用户批准的 `make test-manager-sgm-local` 在同一台 macOS/Linux ARM64 主机的本地 Docker 中启动本轮独占平台与双 Runtime，验证 SGM 的普通 User、正式生成入口、任务页面、GLB 加载、缓存复用、原文件下载及领域／物理清理。它从已提交的 `main` 建立仓库外临时副本，调用根 `make build`、`make build-images --verify`，按正式 Compose 定义派生独立容器名、内部网络和卷，只发布随机回环端口；不读取个人 `.env`，不重启或连接开发服务。测试身份沿用 Manager 现有十项权限，由 System 自有夹具在本轮独占 `addp_online` 创建，不使用开发管理员。
+
+```bash
+make test-manager-sgm-local-runner
+SGM_LOCAL_REPORT=/tmp/sgm-local-report.json make test-manager-sgm-local
+```
+
+SDK、许可、厂商 SGM／PNG、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
+
 ### 许可边界
 
 当前开发与验证环境接受 `supermap_any_2026.lic12` 试用许可。该许可可被 iObjects C++ Runtime 正常识别，二维空间分析和 OSGB Scene 转 S3M 均可执行；不增加正式许可与试用许可双轨判断。

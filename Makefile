@@ -165,6 +165,16 @@ test-supermap-workflow: ## 运行不加载厂商 SDK 的 SuperMap 协议、算�
 test-engines-supermap-sgm: ## 人工运行私有 SDK、独立 MinIO 和双 Runtime 的本机 SGM T2
 	@bash scripts/test/engines-supermap-sgm-gate.sh
 
+.PHONY: test-manager-sgm-local
+test-manager-sgm-local: ## 人工运行本机隔离 ARM64 SGM 页面验收（非正式 T4）
+	@python3 scripts/test/manager-sgm-local-gate.py
+
+.PHONY: test-manager-sgm-local-runner
+test-manager-sgm-local-runner: ## 验证 SGM 本机隔离准入、Compose 所有权及清理契约
+	@node --check --input-type=module < console/frontend/e2e/online/manager-sgm-local.spec.js
+	@python3 -m unittest scripts/test/manager-sgm-local-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 .PHONY: test-model3d-workflow
 test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
 	@cd engines/model3d-workflow && $(abspath $(MODEL3D_WORKFLOW_PYTHON)) -m pytest -q tests
@@ -943,10 +953,10 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
+	@$(MAKE) test-manager-sgm-local-runner
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@bash -n scripts/test/online-hosted-manager-gate.sh business/scripts/online-manager-nfs-fixture.sh
 	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
-	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-highgo-online-runner
 test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理

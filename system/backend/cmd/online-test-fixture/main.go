@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -282,7 +283,7 @@ func run(args []string, environment []string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateExternalEnvironment(environment, *output); err != nil {
+	if err := validateExternalEnvironment(environment, *output, *suite); err != nil {
 		return err
 	}
 
@@ -651,7 +652,7 @@ func run(args []string, environment []string) error {
 	return nil
 }
 
-func validateExternalEnvironment(environment []string, output string) error {
+func validateExternalEnvironment(environment []string, output, suite string) error {
 	values := make(map[string]string, len(environment))
 	for _, entry := range environment {
 		key, value, found := strings.Cut(entry, "=")
@@ -665,7 +666,16 @@ func validateExternalEnvironment(environment []string, output string) error {
 			profileCount++
 		}
 	}
-	if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || profileCount != 1 {
+	if values["ADDP_ONLINE_LOCAL_SGM"] == "1" {
+		if suite != "manager-internal-artifact-lineage" {
+			return errors.New("local SGM fixture only supports the existing Manager permissions")
+		}
+		if values["GITHUB_ACTIONS"] != "" || profileCount != 0 || runtime.GOARCH != "arm64" ||
+			(runtime.GOOS != "darwin" && runtime.GOOS != "linux") || values["POSTGRES_DB"] != onlineDatabase ||
+			(values["POSTGRES_HOST"] != "127.0.0.1" && values["POSTGRES_HOST"] != "localhost") {
+			return errors.New("local SGM fixture requires isolated loopback PostgreSQL on a local ARM64 host without GitHub profiles")
+		}
+	} else if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || profileCount != 1 {
 		return errors.New("fixture requires exactly one GitHub Hosted or owner-managed Linux Online profile")
 	}
 	if !filepath.IsAbs(output) {
