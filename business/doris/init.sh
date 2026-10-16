@@ -7,7 +7,8 @@ doris_sql() {
 }
 
 doris_backend_facts() {
-    doris_sql -e 'SHOW BACKENDS;' | awk -F '\t' '
+    # PROC is served by FE itself, before any Backend is registered/alive.
+    doris_sql -e "SHOW PROC '/backends';" | awk -F '\t' '
         NR == 1 {
             for (i=1; i<=NF; i++) index_by_name[$i]=i
             if (!index_by_name["BackendId"] || !index_by_name["Host"] ||

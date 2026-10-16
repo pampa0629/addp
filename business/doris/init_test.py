@@ -39,7 +39,7 @@ import json, os, sys
 from pathlib import Path
 p = Path(os.environ['DORIS_FIXTURE_STATE']); s = json.loads(p.read_text())
 sql = sys.argv[-1]
-if sql == 'SHOW BACKENDS;':
+if sql == "SHOW PROC '/backends';":
     print('Host\tAlive\tBackendId\tHeartbeatPort')
     for identifier, host, alive in s['rows']:
         print(f'{host}\t{alive}\t{identifier}\t9050')
