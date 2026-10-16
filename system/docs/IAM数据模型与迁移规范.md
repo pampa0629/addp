@@ -147,7 +147,7 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 源数据当前授权关系从 `engine_access_grants` 与不可变撤销事实实时派生，按 Tenant、Engine、DataItem 身份、接收方类型／编号及动作聚合，不新增可变 ACL 表。边界版本不拆分管理关系：当前列表及来源展开保留全部未撤销、未到期的来源，关系撤销在同一数据项事务锁内收回全部有效记录，每条撤销保存同次收回的编号集合。新签发在唯一持久路径拒绝有效关系重复，Catalog 与直接批准共用该约束。账号核查是对已存批准边界的源规则观察，不声称已经复核 Meta 当前边界；最终读取必须重取可信事实并匹配批准摘要。当前与历史列表均不是最终读取裁决。契约见《addp授权上下文规范》5.5.6。
 
-迁移 `000202_source_grant_relations`、`000207_source_dataitem_boundary_bindings` 与 `000208_source_dataitem_boundary_identity` 的前向升级和重复运行由既有 System IAM PostgreSQL 门禁自动发现；`source-grant-relations` 分组同时验证三者。000207 保持已执行的原始摘要，只清理经确认可丢弃的旧源授权测试事实及依赖记录，不修改 IAM、角色、管理委派和通用审计。000208 前向修正 schema 段的 `kind=namespace` 和结构根空名称校验，并重新验证四处既有边界约束；不改写规则、历史或 checksum，存在不符合约束的记录时明确失败。局部验证使用 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test source-grant-relations`；仍须指定经过标准基础设施脚本验证的 `addp_iam_test` DSN，不使用开发数据库。
+迁移 `000202_source_grant_relations`、`000207_source_dataitem_boundary_bindings` 与 `000208_source_dataitem_boundary_identity` 的前向升级和重复运行由既有 System IAM PostgreSQL 门禁自动发现；`source-grant-relations` 分组还覆盖 `000210_source_single_record_targets`，验证三类单项目标和既有授权历史保留。000207 保持已执行的原始摘要，只清理经确认可丢弃的旧源授权测试事实及依赖记录，不修改 IAM、角色、管理委派和通用审计。000208 前向修正 schema 段的 `kind=namespace` 和结构根空名称校验，并重新验证四处既有边界约束；不改写规则、历史或 checksum，存在不符合约束的记录时明确失败。000210 在同一 `valid_source_single_identity` 函数内扩展 MySQL 单表和 MongoDB 单集合，保留既有 Grant、批准要求、Deny、受理回执、IAM 与审计记录，不复制授权、不改历史迁移或 checksum。局部验证使用 `bash scripts/test/system-iam-postgres-gate.sh --package migration --test source-grant-relations`；仍须指定经过标准基础设施脚本验证的 `addp_iam_test` DSN，不使用开发数据库。
 
 ### 引擎访问控制领域的管理委派
 
@@ -183,7 +183,7 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源读取显式拒绝
 
-DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。首期实现限于 schema 普通表 single，不代表文件组合或全部模块已接入。
+DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。当前单项范围为 server → schema → 普通 table、server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），不代表文件组合或全部模块已接入。三个目标形态共用数据库身份约束；namespace 与 leaf 类型必须成对合法，不能把 schema 下的 collection 或 view 当作已支持目标。
 
 切换回归须覆盖：同一数据项边界改变后旧 Grant 不覆盖、新 Grant 仍被原有效 Deny 阻断；正常内容更新及 whole 合法成员增长不改变摘要；解除 Deny 不复活无效 Grant；其他 Tenant／Engine／数据项不误命中；Meta 不可用不回退原生 ACL，且不阻止对已存规则的合法撤销／解除。Grant、Deny、当前来源查询与正式读取消费必须同次切换，不保留按路径独立放行的第二路线。
 

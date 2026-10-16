@@ -32,7 +32,7 @@ Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与
 
 ## 项目概述
 
-Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 读取 Meta，返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。首期 schema 普通表 single 的直接批准、Catalog 业务批准与 Manager 预览／剖析／结果读取统一绑定数据项指纹及边界摘要。000207 清理已获准丢弃的旧源授权测试事实，不清 IAM、角色、委派或通用审计；Grant 匹配身份与摘要，Deny 仅按同 Tenant／Engine 的稳定身份持续约束。新请求必须提交预期边界摘要，服务端独立重核，历史恢复不自动重批或续期；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
+Meta 授权资源事实核对使用 `GET /api/v1/system/engines/:id/data-items/:fingerprint/authorization-facts`：当前 User 须同时具备 `system.engine_access_grant.read` 及本引擎管理资格。System 在 IAM 事务外以独立 `addp-system` Tenant Service 读取 Meta，返回后重核 User 资格及 Engine；只读、不签发 Grant。迁移 000205 仅向 `tenant.system_runtime` 增加 `meta.authorization_facts.read`，复用可选 `SYSTEM_SERVICE_CLIENT_SECRET`；缺失或依赖故障明确 503，不影响 Ready。schema 普通表、MySQL database 普通单表与 MongoDB database 单集合三类 single 的直接批准、Catalog 业务批准与 Manager 预览／剖析／结果读取统一绑定数据项指纹及边界摘要；三类目标共用数据库身份检查函数，仍逐一校验原生 namespace／leaf 类型。000207 清理已获准丢弃的旧源授权测试事实，不清 IAM、角色、委派或通用审计；Grant 匹配身份与摘要，Deny 仅按同 Tenant／Engine 的稳定身份持续约束。新请求必须提交预期边界摘要，服务端独立重核，历史恢复不自动重批或续期；共享协议和未完成范围见平台《元数据扫描机制规范》的“授权资源描述契约”。
 
 Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixture` 正式 IAM Service 路径；验收 User、引擎登记 User 与治理初始化 User 分别授权。Security 分类、等级和检测绑定的创建权限仅授予准备用户，不进入四出口验收身份；凭据由 Hosted 生命周期在业务验收前移除，完整身份随当次 Infra 销毁。
 
