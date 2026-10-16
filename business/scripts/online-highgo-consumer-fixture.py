@@ -76,6 +76,26 @@ def highgo_image():
     return match[1]
 
 
+def startup_diagnostics(values):
+    for name in (HIGHGO, POSTGRES):
+        evidence = {'container': name}
+        try:
+            if owned(name):
+                data = json.loads(command('docker', 'container', 'inspect', name).stdout)[0]
+                state = {key: data['State'].get(key) for key in ('Status', 'ExitCode', 'OOMKilled', 'Error')}
+                logs = command('docker', 'logs', '--tail', '80', name, allow_failure=True)
+                text = logs.stdout + '\n' + logs.stderr
+                for secret in values.values():
+                    text = text.replace(secret, '[REDACTED]')
+                    state['Error'] = (state['Error'] or '').replace(secret, '[REDACTED]')
+                evidence.update(state=state, log_exit_code=logs.returncode, log_tail=text[-8192:])
+            else:
+                evidence['state'] = {'Status': 'absent'}
+        except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            evidence['diagnostic_error'] = type(error).__name__
+        print(json.dumps(evidence), file=sys.stderr)
+
+
 def sql(name, statement, secrets_path, *, admin=False):
     values = json.loads((secrets_path / 'highgo-fixture.json').read_text())
     if name == HIGHGO:
@@ -120,12 +140,16 @@ def start():
             'addp-postgres-pgvector:latest', env=env)
     deadline = time.monotonic() + 180
     while True:
+        probing = HIGHGO
         try:
             require('HighGo V4.5 Business' in sql(HIGHGO, 'SELECT engine_name FROM addp_business.addp_engine_probe WHERE id=1;', directory), 'HighGo not ready')
+            probing = POSTGRES
             sql(POSTGRES, 'SELECT 1;', directory)
             break
         except RuntimeError:
-            require(time.monotonic() < deadline, 'database startup deadline exceeded')
+            if time.monotonic() >= deadline:
+                startup_diagnostics(values)
+                raise RuntimeError('database startup deadline exceeded: ' + probing) from None
             time.sleep(2)
     version = sql(HIGHGO, 'SELECT version();', directory)
     require('HighGo Database Management System 4.5' in version, 'native HighGo V4.5 required')

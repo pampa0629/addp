@@ -1,4 +1,6 @@
 from importlib import import_module
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -11,6 +13,45 @@ FIXTURE = import_module('business.scripts.online-highgo-consumer-fixture')
 
 
 class HighGoFixtureTest(unittest.TestCase):
+    def test_startup_diagnostics_keep_owned_state_and_redact_all_credentials(self):
+        values = {'admin': 'private-admin', 'business': 'private-business', 'postgres': 'private-postgres'}
+        state = {'Status': 'exited', 'ExitCode': 1, 'OOMKilled': False, 'Error': ''}
+        def answer(*args, **kwargs):
+            if args[1:3] == ('container', 'inspect'):
+                return SimpleNamespace(stdout=json.dumps([{'State': state, 'Config': {'Env': ['DO_NOT_ARCHIVE']}}]), returncode=0)
+            return SimpleNamespace(stdout='startup FATAL private-admin private-business', stderr='private-postgres', returncode=0)
+        output = io.StringIO()
+        with patch.object(FIXTURE, 'owned', return_value=True), patch.object(FIXTURE, 'command', side_effect=answer), contextlib.redirect_stderr(output):
+            FIXTURE.startup_diagnostics(values)
+        evidence = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([row['container'] for row in evidence], [FIXTURE.HIGHGO, FIXTURE.POSTGRES])
+        self.assertTrue(all(row['state'] == state for row in evidence))
+        self.assertIn('FATAL', output.getvalue())
+        for secret in [*values.values(), 'DO_NOT_ARCHIVE']:
+            self.assertNotIn(secret, output.getvalue())
+
+    def test_startup_deadline_names_failed_source_and_collects_diagnostics_without_extending_budget(self):
+        for failed in (FIXTURE.HIGHGO, FIXTURE.POSTGRES):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temp:
+                def query(name, *args, **kwargs):
+                    if name == failed:
+                        raise RuntimeError('not ready')
+                    return 'HighGo V4.5 Business'
+                with patch.object(FIXTURE, 'secret_directory', return_value=Path(temp)), patch.object(FIXTURE, 'owned', return_value=False), patch.object(FIXTURE, 'command'), patch.object(FIXTURE, 'sql', side_effect=query), patch.object(FIXTURE.time, 'monotonic', side_effect=[0, 181]), patch.object(FIXTURE.time, 'sleep') as sleep, patch.object(FIXTURE, 'startup_diagnostics', create=True) as diagnostics:
+                    with self.assertRaisesRegex(RuntimeError, 'database startup deadline exceeded: ' + failed):
+                        FIXTURE.start()
+                    diagnostics.assert_called_once()
+                    sleep.assert_not_called()
+
+    def test_startup_diagnostics_never_read_foreign_container_logs(self):
+        output = io.StringIO()
+        with patch.object(FIXTURE, 'owned', side_effect=[RuntimeError('container ownership mismatch'), False]), patch.object(FIXTURE, 'command') as command, contextlib.redirect_stderr(output):
+            FIXTURE.startup_diagnostics({'admin': 'private-value'})
+        command.assert_not_called()
+        evidence = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(evidence[0]['diagnostic_error'], 'RuntimeError')
+        self.assertEqual(evidence[1]['state'], {'Status': 'absent'})
+
     def test_preflight_rejects_personal_and_conflicting_host_before_docker(self):
         valid = dict(GITHUB_ACTIONS='true', RUNNER_OS='Linux', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ONLINE_SUITE='highgo-consumer-flow', POSTGRES_DB='addp_online')
         for key, wrong in [('GITHUB_ACTIONS', 'false'), ('RUNNER_OS', 'macOS'), ('ADDP_ONLINE_HOST', '0'),
