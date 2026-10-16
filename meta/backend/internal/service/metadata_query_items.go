@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -79,17 +80,19 @@ func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]mod
 }
 
 func (s *MetadataQueryService) ListItemsByBranch(engineID, tenantID uint, branch string) ([]models.MetaItemLite, error) {
+	rootIDs := s.db.Model(&models.MetaNode{}).Select("id").
+		Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL AND full_name = ? AND node_type IN ? AND deleted_at IS NULL",
+			tenantID, engineID, "", []string{plugin.EngineCatalogTermServer, plugin.EngineCatalogTermService, plugin.EngineCatalogTermRoot})
 	var node models.MetaNode
-	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL AND deleted_at IS NULL",
-		tenantID, engineID, branch).
-		First(&node).Error
+	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IN (?) AND deleted_at IS NULL",
+		tenantID, engineID, branch, rootIDs).First(&node).Error
 	if err != nil {
 		return nil, err
 	}
 
 	var items []models.MetaItem
 	err = s.db.Select("*").
-		Where("tenant_id = ? AND node_id = ? AND deleted_at IS NULL", tenantID, node.ID).
+		Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND deleted_at IS NULL", tenantID, engineID, node.ID).
 		Order("name").
 		Find(&items).Error
 	if err != nil {

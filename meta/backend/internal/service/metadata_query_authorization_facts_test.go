@@ -54,6 +54,41 @@ func exerciseSingleAuthorizationFacts(t *testing.T, db *gorm.DB, namespaceTerm, 
 		}
 	}
 	s := NewMetadataQueryService(db)
+	items, branchErr := s.ListItemsByBranch(engineID, 7, "Out.door")
+	if branchErr != nil || len(items) != 1 || items[0].Fingerprint != item.Fingerprint {
+		t.Fatalf("branch lookup must use the structural root's direct child: items=%+v err=%v", items, branchErr)
+	}
+	// A legacy orphan and a nested same-name branch must not broaden the filter.
+	orphan := models.MetaNode{TenantID: 7, EngineID: engineID, NodeType: namespaceTerm, Name: "Out.door", FullName: "Out.door"}
+	if err := db.Create(&orphan).Error; err != nil {
+		t.Fatal(err)
+	}
+	nested := models.MetaNode{TenantID: 7, EngineID: engineID, ParentNodeID: &item.NodeID, NodeType: namespaceTerm, Name: "Out.door", FullName: "Out.door.Out.door"}
+	if err := db.Create(&nested).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index, decoy := range []models.MetaItem{
+		{TenantID: 7, EngineID: engineID, NodeID: orphan.ID, Name: "orphan"},
+		{TenantID: 7, EngineID: engineID, NodeID: nested.ID, Name: "nested"},
+		{TenantID: 8, EngineID: engineID, NodeID: item.NodeID, Name: "other_tenant"},
+		{TenantID: 7, EngineID: engineID + 100, NodeID: item.NodeID, Name: "other_engine"},
+		{TenantID: 7, EngineID: engineID, NodeID: item.NodeID, Name: "deleted"},
+	} {
+		decoy.ItemType, decoy.FullName = itemType, "Out.door."+decoy.Name
+		decoy.Fingerprint = commonModels.GenerateItemFingerprint(decoy.EngineID, decoy.FullName)
+		if err := db.Create(&decoy).Error; err != nil {
+			t.Fatal(err)
+		}
+		if index == 4 {
+			if err := db.Delete(&decoy).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	items, branchErr = s.ListItemsByBranch(engineID, 7, "Out.door")
+	if branchErr != nil || len(items) != 1 || items[0].Fingerprint != item.Fingerprint {
+		t.Fatalf("branch filter included a different owner, nested, legacy or deleted item: %+v %v", items, branchErr)
+	}
 	facts, err := s.GetDataItemAuthorizationFacts(context.Background(), 7, item.Fingerprint)
 	if err != nil || facts.BasisState != authorizationfacts.AuthorizationBasisComplete {
 		t.Fatalf("facts=%+v err=%v", facts, err)
