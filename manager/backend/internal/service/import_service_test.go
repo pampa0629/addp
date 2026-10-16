@@ -4,7 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
 	"strings"
 	"testing"
 	"time"
@@ -303,5 +308,105 @@ func completeImportShapefileUploadFiles(base string) []ImportUploadFile {
 		{FileName: base + ".shp", Content: []byte("shp")},
 		{FileName: base + ".shx", Content: []byte("shx")},
 		{FileName: base + ".dbf", Content: []byte("dbf")},
+	}
+}
+
+// Exercise the real Common HTTP client after staging, so a stale Manager task
+// contract cannot pass merely because a fake Transfer client accepts any map.
+func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
+	uploads := map[string][]byte{}
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("unexpected storage method %s", r.Method)
+			w.WriteHeader(400)
+			return
+		}
+		var body io.Reader = r.Body
+		if strings.HasPrefix(r.Header.Get("X-Amz-Content-Sha256"), "STREAMING-AWS4-") {
+			body = httputil.NewChunkedReader(body)
+		}
+		data, err := io.ReadAll(body)
+		if err != nil {
+			t.Error(err)
+		}
+		uploads[r.URL.Path] = data
+		w.Header().Set("ETag", `"fixture-etag"`)
+		w.WriteHeader(200)
+	}))
+	defer storage.Close()
+	calls := 0
+	transfer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") != "Bearer current-user" || r.Method != http.MethodPost {
+			t.Error("Transfer did not receive the current User POST")
+			w.WriteHeader(403)
+			return
+		}
+		if len(uploads) != 3 {
+			t.Errorf("staged files = %d, want 3 before submission", len(uploads))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/transfer/task-definitions":
+			var request client.CreateTransferTaskRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				w.WriteHeader(400)
+				return
+			}
+			raw, _ := json.Marshal(request.Config)
+			var config client.TransferExecutionConfig
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&config); err != nil {
+				t.Errorf("invalid current Transfer contract: %v", err)
+				w.WriteHeader(400)
+				return
+			}
+			if config.Runtime.Boundary != "bounded" || config.Load.Mode != "snapshot" || config.Target.Policy["apply_mode"] != "replace" {
+				t.Errorf("unexpected execution/write semantics: %#v", config)
+				w.WriteHeader(400)
+				return
+			}
+			if _, ok := config.Target.Policy["write_mode"]; ok {
+				t.Error("legacy write_mode submitted")
+			}
+			if request.TaskType != "sync" || request.AutoScanMetadata == nil || !*request.AutoScanMetadata || request.TenantID != 0 {
+				t.Error("task identity, automatic scan or trusted tenant contract differs")
+			}
+			if config.Source.Format != "shapefile" || config.Source.Representation != "encoded" || !strings.HasPrefix(config.Source.Locator, "addp-infra://minio/manager/tenant_7/import/") || config.Target.ParentLocator != "addp://engine/8/path/public?type=schema" || config.Target.Name != "roads" {
+				t.Errorf("wrong submitted source/target: %#v", config)
+			}
+			w.WriteHeader(201)
+			_, _ = w.Write([]byte(`{"id":42}`))
+		case "/api/v1/transfer/task-definitions/42/start":
+			if calls != 2 {
+				t.Error("task must be created exactly once before start")
+			}
+			w.WriteHeader(202)
+			_, _ = w.Write([]byte(`{"execution_id":"694c4422-56b1-45f5-b367-9f7525760a23","status":"pending"}`))
+		default:
+			t.Errorf("unexpected Transfer path %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer transfer.Close()
+	minioClient, err := minio.New(strings.TrimPrefix(storage.URL, "http://"), &minio.Options{Region: "us-east-1", Creds: credentials.NewStaticV4("fixture", "fixture-secret", "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewImportService(minioClient, "manager", client.NewTransferClient(transfer.URL, nil), nil)
+	result, err := service.ImportShapefile(context.Background(), &ImportShapefileRequest{Files: completeImportShapefileUploadFiles("roads"), TargetEngineID: 8, TargetSchema: "public", TargetTable: "roads", TenantID: 7}, "current-user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || result.TransferTaskID != 42 || result.TransferExecutionID != "694c4422-56b1-45f5-b367-9f7525760a23" {
+		t.Fatalf("submission result = %#v, calls=%d", result, calls)
+	}
+	for _, file := range completeImportShapefileUploadFiles("roads") {
+		key := "/manager/" + managerImportStagingPrefix(7, result.UploadUUID, time.Now()) + file.FileName
+		if !bytes.Equal(uploads[key], file.Content) {
+			t.Errorf("staged content differs for %s", file.FileName)
+		}
 	}
 }

@@ -91,6 +91,9 @@ case "$1" in
       *" -Atc "*|*" -c "*) printf 'query:%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG" ;;
       *) input=$(cat)
          printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
+         if [[ "$input" == *"Manager import rows or geometry differ"* ]] && [ "${ADDP_TEST_IMPORT_GEOMETRY_FAIL:-0}" = 1 ]; then
+           echo 'Manager import rows or geometry differ' >&2; exit 1
+         fi
          if [[ "$input" == *"ALTER TABLE"* ]]; then
            [ "${ADDP_TEST_EVOLVE_FAIL:-0}" != 1 ] || exit 1
            touch "$ADDP_TEST_SCHEMA_STATE"
@@ -152,6 +155,13 @@ esac
         environment.update(overrides)
         return subprocess.run(['bash', 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', action],
                               cwd=self.root, env=environment, capture_output=True, text=True, timeout=20)
+
+    def test_rejects_import_physical_geometry_failure(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        result = self.run_fixture('verify', ADDP_TEST_IMPORT_GEOMETRY_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Manager import rows or geometry differ', result.stderr)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
 
     def test_rejects_incomplete_wide_schema_or_rows(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

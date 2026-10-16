@@ -88,6 +88,75 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 with self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
                     ONLINE.assert_transfer_execution_projection(changed)
 
+    def test_import_upload_contains_complete_two_point_shapefile_and_current_user(self):
+        from email import policy
+        from email.parser import BytesParser
+        client = ONLINE.GatewayClient("http://127.0.0.1:8000", "fixture-user-token", 30)
+        response = Mock(status=202)
+        response.read.return_value = b'{"transfer_task_id":42}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch.object(ONLINE.urllib.request, "urlopen", return_value=response) as send:
+            self.assertEqual(ONLINE.submit_manager_import(client, 7), {"transfer_task_id": 42})
+        request = send.call_args.args[0]
+        self.assertEqual(request.full_url, client.base_url + "/api/v1/manager/imports")
+        self.assertEqual(request.get_header("Authorization"), "Bearer fixture-user-token")
+        message = BytesParser(policy=policy.default).parsebytes(
+            ("Content-Type: " + request.get_header("Content-type") + "\r\n\r\n").encode() + request.data)
+        parts = {part.get_param("name", header="Content-Disposition"): part for part in message.iter_parts()}
+        self.assertEqual(parts["target_node_locator"].get_content(), "addp://engine/7/path/public?type=schema")
+        self.assertEqual(parts["target_table"].get_content(), ONLINE.IMPORT_TARGET)
+        with ONLINE.zipfile.ZipFile(io.BytesIO(parts["files"].get_payload(decode=True))) as archive:
+            self.assertEqual(set(archive.namelist()), {"points." + ext for ext in ("shp", "shx", "dbf", "prj", "cpg")})
+            shp, shx, dbf = (archive.read("points." + ext) for ext in ("shp", "shx", "dbf"))
+            self.assertEqual(ONLINE.struct.unpack_from(">i", shp, 24)[0] * 2, len(shp))
+            self.assertEqual(ONLINE.struct.unpack_from(">i", shx, 24)[0] * 2, len(shx))
+            for index, expected in enumerate(((1, 10.0, 20.0), (1, 30.0, 40.0))):
+                offset, size = ONLINE.struct.unpack_from(">ii", shx, 100 + index * 8)
+                self.assertEqual(size, 10)
+                self.assertEqual(ONLINE.struct.unpack_from("<idd", shp, offset * 2 + 8), expected)
+            count, header, size = ONLINE.struct.unpack_from("<IHH", dbf, 4)
+            self.assertEqual((count, header, size), (2, 97, 17))
+            self.assertEqual(len(dbf), header + count * size + 1)
+            self.assertEqual([dbf[header + i * size:header + (i + 1) * size].decode() for i in range(count)],
+                             ["        1alpha   ", "        2beta    "])
+
+    def test_import_requires_actual_parent_and_current_user_without_manual_rescan(self):
+        parent, child_id = str(uuid.uuid4()), str(uuid.uuid4())
+        task = {"task_type": "sync", "auto_scan_metadata": True, "config": {
+            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "target": {"policy": {"apply_mode": "replace"}}}}
+        transfer = {"records_read": 2, "records_written": 2, "metadata": {
+            "metadata_scan": {"status": "submitted", "attempt": 0, "execution_id": child_id}}}
+        child = {"module": "meta", "source": "transfer", "parent_execution_id": parent,
+                 "triggered_by": 31, "tenant_id": 7, "scan_context": {"engine_id": 8}}
+        client = Mock()
+        client.request.return_value.payload = task
+        with patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual:
+            owned = []
+            report = ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned)
+            self.assertEqual(owned, [42])
+            self.assertEqual(report["meta_scan_execution_id"], child_id)
+            self.assertEqual(wait.call_args_list[1].args, (client, "meta", child_id, 30))
+            manual.assert_not_called()
+        for change in ({"parent_execution_id": str(uuid.uuid4())}, {"source": "manager"},
+                       {"triggered_by": 32}, {"tenant_id": 8}, {"scan_context": {"engine_id": 9}}):
+            with self.subTest(change=change), patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(child, **change)]):
+                owned = []
+                with self.assertRaisesRegex(ONLINE.SuiteError, "actual parent, current User or Tenant"):
+                    ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned)
+                self.assertEqual(owned, [42], "failed verification must still leave the task available to cleanup")
+
+    def test_metadata_scan_allows_only_safe_public_feedback(self):
+        for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4())},
+                     {"status": "failed", "attempt": 1, "error_code": "metadata_scan_failed"}):
+            execution = {"metadata": {"metadata_scan": scan}}
+            ONLINE.assert_transfer_execution_projection(execution)
+            for private in ("error", "message", "lease_token", "actor_principal_id", "execution_authorization_id"):
+                changed = copy.deepcopy(execution)
+                changed["metadata"]["metadata_scan"][private] = "private"
+                with self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
+                    ONLINE.assert_transfer_execution_projection(changed)
+
     def test_physical_verification_has_one_owner_after_all_scenarios(self):
         repository = SCRIPT.parents[2]
         browser = (repository / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js").read_text()
@@ -482,13 +551,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(full_name, item["full_name"])
             return item
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v8")
-        self.assertEqual(report["created_resources"], 11)
-        self.assertEqual(report["deleted_resources"], 11)
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v9")
+        self.assertEqual(report["created_resources"], 12)
+        self.assertEqual(report["deleted_resources"], 12)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 

@@ -587,7 +587,7 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 
 func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 	permissions, err := suitePermissions("transfer-relational-sql-etl")
-	if err != nil || len(permissions) != 22 || !needsEngineProvisioner("transfer-relational-sql-etl") {
+	if err != nil || len(permissions) != 23 || !needsEngineProvisioner("transfer-relational-sql-etl") {
 		t.Fatalf("invalid transfer identity contract: %v %v", permissions, err)
 	}
 	for _, required := range []string{
@@ -595,7 +595,7 @@ func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
 		"develop.task.create", "develop.task.read", "develop.task.execute", "develop.task.delete",
 		"develop.data_read.execute", "develop.data_write.execute", "system.execution_authorization.create",
 		"orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.execute", "orchestrator.workflow.delete",
-		"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.lineage.read",
+		"manager.content.read", "manager.data_item.read", "manager.data_item.create", "meta.catalog.read", "meta.lineage.read",
 		"meta.scan_task.execute", "meta.scan_task.read",
 		"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
 	} {

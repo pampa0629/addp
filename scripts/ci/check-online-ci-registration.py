@@ -1365,7 +1365,8 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     contracts = {
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v8",
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v9",
+            "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", '"manager.data_item.create"',
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_multi_source_lineage", "validate_multi_source_execution", "multiple_origins_verified", "cte_join_union_verified",
             "run_orchestrated_lineage", "validate_orchestrated_child", "canonical_table_locator", "validate_query_facts", "wait_resource_chain", "cleanup_definitions", "three_hop_verified",

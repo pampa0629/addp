@@ -199,15 +199,16 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceObjectPath string, 
 		source["options"] = options
 	}
 	return map[string]interface{}{
-		"mode":   "batch",
-		"source": source,
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source":  source,
 		"target": map[string]interface{}{
 			"parent_locator": importTargetParentLocator(req, targetSchema),
 			"name":           tableName,
 			"data_type":      "table",
 			"representation": "native",
 			"policy": map[string]interface{}{
-				"write_mode": "overwrite",
+				"apply_mode": "replace",
 			},
 		},
 	}

@@ -6,6 +6,7 @@ umask 077
 
 SOURCE_TABLE=addp_online_transfer_sql_etl_source
 TARGET_TABLE=addp_online_transfer_sql_etl_target
+IMPORT_TARGET=addp_online_manager_import_points
 NATIVE_TARGET=addp_online_transfer_field_lineage_target
 MULTI_TARGET=addp_online_transfer_multi_query_target
 NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
@@ -130,6 +131,8 @@ PY_DESCRIPTOR
 
 reset_fixture() {
   postgres_sql <<SQL >/dev/null
+CREATE EXTENSION IF NOT EXISTS postgis;
+DROP TABLE IF EXISTS public.${IMPORT_TARGET};
 DROP TABLE IF EXISTS public.${WIDE_DOWNSTREAM};
 DROP TABLE IF EXISTS public.${WIDE_TARGET};
 DROP TABLE IF EXISTS public.${WIDE_SOURCE};
@@ -169,6 +172,20 @@ SQL
 
 verify_fixture() {
   local values columns
+  # Discover the geometry column from PostGIS; no storage field-name assumption.
+  postgres_sql <<'SQL' >/dev/null
+DO $import$
+DECLARE geometry_field text; geometry_count int; actual text;
+BEGIN
+  SELECT min(f_geometry_column), count(*) INTO geometry_field, geometry_count
+    FROM public.geometry_columns WHERE f_table_schema='public' AND f_table_name='addp_online_manager_import_points';
+  IF geometry_count <> 1 THEN RAISE EXCEPTION 'Manager import must create one geometry column'; END IF;
+  EXECUTE format('SELECT string_agg(concat_ws(''|'', id, label, ST_AsText(%1$I), ST_SRID(%1$I)), '';'' ORDER BY id) FROM public.addp_online_manager_import_points', geometry_field) INTO actual;
+  IF actual IS DISTINCT FROM '1|alpha|POINT(10 20)|4326;2|beta|POINT(30 40)|4326' THEN
+    RAISE EXCEPTION 'Manager import rows or geometry differ';
+  END IF;
+END; $import$;
+SQL
   for wide_table in "$WIDE_TARGET" "$WIDE_DOWNSTREAM"; do
     columns=$(postgres_sql -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='$wide_table' AND data_type='bigint' AND is_nullable='NO'")
     [ "$columns" = 500 ] || fail "wide target must retain 500 non-null bigint columns: $wide_table"

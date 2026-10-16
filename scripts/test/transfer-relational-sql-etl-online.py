@@ -4,6 +4,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import struct
+import zipfile
+import urllib.request
+import urllib.error
 from datetime import datetime
 import importlib.util
 import json
@@ -43,6 +48,7 @@ cleanup_tasks = SUPPORT.cleanup_tasks
 
 SOURCE_TABLE = "addp_online_transfer_sql_etl_source"
 TARGET_TABLE = "addp_online_transfer_sql_etl_target"
+IMPORT_TARGET = "addp_online_manager_import_points"
 NATIVE_TARGET = "addp_online_transfer_field_lineage_target"
 MULTI_TARGET = "addp_online_transfer_multi_query_target"
 NATIVE_DOWNSTREAM = "addp_online_transfer_field_lineage_downstream"
@@ -65,6 +71,7 @@ REQUIRED_PERMISSIONS = {
     "orchestrator.workflow.create", "orchestrator.workflow.read", "orchestrator.workflow.execute", "orchestrator.workflow.delete",
     "monitor.execution.read",
     "manager.content.read",
+    "manager.data_item.create",
     "manager.data_item.read",
     "meta.catalog.read",
     "meta.lineage.read",
@@ -174,7 +181,9 @@ def assert_transfer_execution_projection(execution):
 
     fields(execution, "id execution_id task_id status start_time end_time records_read records_written bytes_read bytes_written error_details metadata trigger_type trigger_by", "Transfer execution")
     fields(execution.get("error_details", {}), "category code error_code failed_targets_count", "Transfer failure")
-    metadata = fields(execution.get("metadata", {}), "lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
+    metadata = fields(execution.get("metadata", {}), "metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
+    if "metadata_scan" in metadata:
+        fields(metadata["metadata_scan"], "status attempt execution_id error_code", "Transfer metadata scan")
     if "lineage_facts" in metadata:
         facts = fields(metadata["lineage_facts"], "schema_version inputs outputs operations runtime_execution_id meta_scan_refs", "Transfer lineage")
         for direction in ("inputs", "outputs"):
@@ -188,6 +197,85 @@ def assert_transfer_execution_projection(execution):
             operation = fields(value, "kind operator input_ports output_ports field_lineage_status field_mappings", "Transfer lineage operation")
             for mapping in _array(operation.get("field_mappings", []), "Transfer field mappings"):
                 fields(mapping, "input_port output_port source_field target_field transformation", "Transfer field mapping")
+
+
+def import_shapefile_zip() -> bytes:
+    """Two WGS84 points; keep the upload fixture independent of GDAL installation."""
+    def header(length):
+        return struct.pack(">7i", 9994, 0, 0, 0, 0, 0, length // 2) + struct.pack(
+            "<ii8d", 1000, 1, 10, 20, 30, 40, 0, 0, 0, 0)
+    shp = header(156) + b"".join(struct.pack(">ii", i, 10) + struct.pack("<idd", 1, x, y)
+                                for i, x, y in ((1, 10, 20), (2, 30, 40)))
+    shx = header(116) + struct.pack(">4i", 50, 10, 64, 10)
+    dbf = struct.pack("<BBBBIHH20x", 3, 126, 1, 1, 2, 97, 17)
+    for name, kind in ((b"id", b"N"), (b"label", b"C")):
+        dbf += struct.pack("<11sc4xBB14x", name, kind, 8, 0)
+    dbf += b"\r" + b"        1alpha   " + b"        2beta    " + b"\x1a"
+    files = {"shp": shp, "shx": shx, "dbf": dbf, "cpg": b"UTF-8",
+             "prj": b'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]'}
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for extension, content in files.items():
+            archive.writestr("points." + extension, content)
+    return output.getvalue()
+
+
+def submit_manager_import(client, engine_id):
+    boundary = "addp-import-" + uuid.uuid4().hex
+    body = bytearray()
+    for field, value in (("target_node_locator", f"addp://engine/{engine_id}/path/public?type=schema"),
+                         ("target_table", IMPORT_TARGET)):
+        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode())
+    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="points.zip"\r\nContent-Type: application/zip\r\n\r\n'.encode())
+    body.extend(import_shapefile_zip())
+    body.extend(f"\r\n--{boundary}--\r\n".encode())
+    request = urllib.request.Request(client.base_url + "/api/v1/manager/imports", data=bytes(body), method="POST",
+        headers={"Authorization": f"Bearer {client.token}", "Accept": "application/json",
+                 "Content-Type": "multipart/form-data; boundary=" + boundary})
+    try:
+        with urllib.request.urlopen(request, timeout=client.timeout) as response:
+            if response.status != 202:
+                raise SuiteError("Manager import did not return HTTP 202")
+            return _object(json.loads(response.read()), "Manager import")
+    except urllib.error.HTTPError as error:
+        with error:
+            raise SuiteError(f"Manager import returned HTTP {error.code}") from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise SuiteError("Manager import transport failed") from error
+
+
+def run_manager_import(client, engine_id, identity, timeout, owned_ids):
+    submitted = submit_manager_import(client, engine_id)
+    task_id = positive_int(submitted.get("transfer_task_id"), "import task id")
+    owned_ids.append(task_id)
+    identifier = submitted.get("transfer_execution_id")
+    if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
+        raise SuiteError("Manager import must return the actual Transfer execution UUID")
+    task = _object(client.request("GET", f"/api/v1/transfer/task-definitions/{task_id}", (200,)).payload, "import task")
+    config = _object(task.get("config"), "import config")
+    if (task.get("task_type") != "sync" or task.get("auto_scan_metadata") is not True
+            or config.get("runtime") != {"boundary": "bounded"} or config.get("load") != {"mode": "snapshot"}
+            or _object(config.get("target"), "import target").get("policy") != {"apply_mode": "replace"}
+            or "mode" in config):
+        raise SuiteError("Manager import did not persist the current bounded snapshot contract")
+    execution = wait_owner_execution(client, "transfer", identifier, timeout)
+    if execution.get("records_read") != 2 or execution.get("records_written") != 2:
+        raise SuiteError("Manager import must transfer both uploaded points")
+    scan = _object(_object(execution.get("metadata"), "import metadata").get("metadata_scan"), "automatic scan")
+    if scan.get("status") != "submitted" or not scan.get("execution_id"):
+        raise SuiteError("Manager import automatic scan was not submitted successfully")
+    child = wait_owner_execution(client, "meta", scan["execution_id"], timeout)
+    if (child.get("module") != "meta" or child.get("source") != "transfer"
+            or child.get("parent_execution_id") != identifier
+            or str(child.get("triggered_by")) != identity["principal_id"]
+            or str(child.get("tenant_id")) != identity["tenant_id"]
+            or child.get("scan_context", {}).get("engine_id") != engine_id):
+        raise SuiteError("automatic Meta scan lost its actual parent, current User or Tenant")
+    item = wait_transfer_target(client, engine_id, "public." + IMPORT_TARGET, timeout)
+    return {"transfer_task_id": task_id, "transfer_execution_id": identifier,
+            "meta_scan_execution_id": scan["execution_id"], "target_item_id": item["id"],
+            "records_read": 2, "records_written": 2, "current_user_origin_verified": True,
+            "automatic_scan_verified": True}
 
 
 def execution_schema_hashes(execution: dict[str, object]) -> tuple[str, str]:
@@ -981,9 +1069,9 @@ def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list
         for raw in items:
             item = _object(raw, "Transfer task list item")
             name = item.get("name")
-            if not isinstance(name, str) or not name.startswith(TASK_PREFIX):
+            if not isinstance(name, str) or not (name.startswith(TASK_PREFIX) or name.startswith("import_" + IMPORT_TARGET + "_")):
                 continue
-            if exact_name is not None and name not in owned_task_names(exact_name):
+            if exact_name is not None and name not in owned_task_names(exact_name) and not name.startswith("import_" + IMPORT_TARGET + "_"):
                 continue
             result.append(positive_int(item.get("id"), "Transfer task id"))
         total = int(listing.get("total", 0))
@@ -1127,6 +1215,7 @@ def main() -> int:
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
+        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -1134,7 +1223,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v8",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v9",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -1149,8 +1238,9 @@ def main() -> int:
             "orchestrated_field_lineage": chain,
             "multi_source_field_lineage": multi,
             "wide_field_lineage": wide,
-            "created_resources": 11,
-            "deleted_resources": 11,
+            "manager_import": manager_import,
+            "created_resources": 12,
+            "deleted_resources": 12,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))
