@@ -32,7 +32,7 @@ def require(condition, message):
         raise GateError(message)
 
 
-def command(args, *, data=None, timeout=180, environment=None):
+def command(args, *, data=None, timeout=180, environment=None, failure_log=None):
     """Never expose arguments/output: either can contain credentials or SDK data."""
     try:
         process = subprocess.Popen(args, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
@@ -51,6 +51,10 @@ def command(args, *, data=None, timeout=180, environment=None):
     except (subprocess.SubprocessError, OSError) as error:
         raise GateError(f"{args[0]} invocation failed ({type(error).__name__})") from None
     if process.returncode:
+        if failure_log is not None:
+            # Optional private diagnostic, always owned/deleted by the caller's lifecycle.
+            with open(failure_log, "xb", opener=lambda p, f: os.open(p, f, 0o600)) as stream:
+                stream.write(stdout + b"\n" + stderr)
         check = re.search(rb"SGM_PROBE_CHECK:([a-zA-Z0-9_ /.-]{1,160})", stderr)
         suffix = f"; probe check: {check[1].decode()}" if check else ""
         raise GateError(f"{args[0]} failed (exit {process.returncode}); private output discarded{suffix}")
@@ -158,7 +162,7 @@ class Lifecycle:
         return failures
 
 
-def build_images(life):
+def build_images(life, *, failure_log=None):
     require(platform.system() in {"Darwin", "Linux"} and platform.machine() in {"arm64", "aarch64"},
             "SGM local T2 requires a macOS/Linux ARM64 host")
     endpoint = os.environ.get("DOCKER_HOST") or json.loads(command(["docker", "context", "inspect"]))[0]["Endpoints"]["docker"]["Host"]
@@ -180,7 +184,7 @@ def build_images(life):
     environment = dict(os.environ, SUPERMAP_WORKFLOW_BASE_IMAGE=BASE)
     environment.pop("THREE_DTILES_REF", None)
     command(["make", "build-images", "IMAGE_BUILD_ARGS=--services supermap-workflow-engine,model3d-workflow-engine "
-             f"--verify --jobs 1 --registry localhost:5001 --tag {tag}"], timeout=3600, environment=environment)
+             f"--verify --jobs 1 --registry localhost:5001 --tag {tag}"], timeout=3600, environment=environment, failure_log=failure_log)
     life.docker("build", "-f", str(ROOT / "scripts/infra/Dockerfile.minio"), "-t", references[3],
                 str(ROOT / "scripts/infra"), timeout=900)
     identities = [image_identity(reference)["Id"] for reference in references]

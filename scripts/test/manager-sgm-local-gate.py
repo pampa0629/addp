@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -140,6 +141,26 @@ def model_tasks(client, fingerprint):
     return selected
 
 
+def build_diagnostics(path):
+    """Only fixed categories and numeric build facts leave private raw logs."""
+    if not path.is_file():
+        return {}
+    raw = path.read_bytes()
+    text = raw.decode(errors="replace")
+    categories = [code for pattern, code in (
+        ("Failed to fetch", "apt_fetch_failed"), ("502 Bad Gateway", "http_502"),
+        ("503 Service Unavailable", "http_503"), ("CMake Error", "cmake_configuration_failed"),
+        ("The following tests FAILED", "native_ctest_failed"),
+        ("failed to solve", "docker_build_failed"), ("no space left on device", "disk_full"),
+        ("i/o timeout", "network_timeout"), ("TLS handshake timeout", "tls_timeout"),
+        ("cannot locate source identity fingerprint", "build_source_identity_missing"),
+    ) if pattern in text]
+    services = [{"service": name, "exit": int(code)} for name, code in re.findall(
+        r"Image result: (supermap-workflow-engine|model3d-workflow-engine), exit=(\d+)", text)]
+    return {"categories": categories or ["unclassified"], "services": services,
+            "raw_log_sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def setup(life, environment, images):
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -213,7 +234,7 @@ def run(life, result):
     environment.update(IMAGE_TAG=life.run_id, REGISTRY="localhost:5001", SUPERMAP_WORKFLOW_BASE_IMAGE=T2.BASE,
                        ADDP_BUILD_GOMODCACHE=str(source / ".gomodcache"), ADDP_BUILD_GOCACHE=str(source / ".cache/go-build"))
     life.phase = "runtime_build"
-    base_id, runtime_images, inputs = T2.build_images(life)
+    base_id, runtime_images, inputs = T2.build_images(life, failure_log=life.work / "runtime-build.log")
     result.update(source_commit=commit, source_input_sha256=inputs, MEDIA_SHA256=base_id.removeprefix("sha256:"))
     services = BACKENDS + FRONTENDS
     references = {name: f"localhost:5001/addp-{name}:{life.run_id}" for name in services}
@@ -362,6 +383,10 @@ def main():
         # Browser/SDK/backend errors can contain model data and credentials.
         result["failure_type"] = type(error).__name__
         result["failure_stage"] = getattr(life, "phase", "preflight")
+        diagnostics = build_diagnostics(life.work / "runtime-build.log")
+        if diagnostics:
+            result["build_diagnostics"] = diagnostics
+            print("SGM local build categories: " + ",".join(diagnostics["categories"]), file=sys.stderr)
         print("SGM local failed (" + type(error).__name__ + "); private output discarded", file=sys.stderr)
         if isinstance(error, T2.GateError):
             print(str(error), file=sys.stderr)

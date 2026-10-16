@@ -122,6 +122,22 @@ class LocalSGMContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 WORKER.glb_summary(raw, broken, lambda _: image)
 
+    def test_failed_build_diagnostics_expose_only_categories_not_private_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private.log"
+            with patch.object(GATE.T2.subprocess, "Popen") as popen:
+                popen.return_value.communicate.return_value = (
+                    b"SECRET_PRIVATE_MODEL Image result: supermap-workflow-engine, exit=1", b"Failed to fetch 502 Bad Gateway PASSWORD")
+                popen.return_value.returncode = 1
+                with self.assertRaises(GATE.T2.GateError):
+                    GATE.T2.command(["make"], failure_log=path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            facts = GATE.build_diagnostics(path)
+            self.assertEqual(facts["categories"], ["apt_fetch_failed", "http_502"])
+            self.assertEqual(facts["services"], [{"service": "supermap-workflow-engine", "exit": 1}])
+            self.assertNotIn("SECRET", json.dumps(facts))
+            self.assertNotIn("PASSWORD", json.dumps(facts))
+
     def test_wrong_port_ownership_or_nonloopback_is_rejected(self):
         with patch.object(GATE.T2, "command"):
             life = GATE.T2.Lifecycle(prefix="local-", label=GATE.LABEL)
