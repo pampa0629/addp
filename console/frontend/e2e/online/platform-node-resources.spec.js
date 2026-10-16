@@ -226,7 +226,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       report.period_comparisons.push({ phase, before_index: before, resource_index: resources.indexOf(curve),
         page_path: new URL(page.url()).pathname, page_query: Object.fromEntries(new URL(page.url()).searchParams), statistics })
     }
-    await comparePeriod('cpu', 'node.cpu.busy_percent', () => monitor.getByTestId('resource-compare').getByRole('checkbox').check())
+    await comparePeriod('cpu', 'node.cpu.busy_percent', () => monitor.getByTestId('resource-compare').check())
     await comparePeriod('memory', 'node.memory.used_percent', async () => {
       await monitor.getByTestId('resource-metric').click()
       await monitor.getByRole('option', { name: '内存使用率', exact: true }).click()

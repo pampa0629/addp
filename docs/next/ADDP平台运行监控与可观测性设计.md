@@ -2356,3 +2356,13 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 `python3 scripts/ci/check-online-ci-registration.py --repository .` 退出 0，原 root runner、Online suite、部署和工作流登记保持一致，日志 `/tmp/addp-comparison-hosted-registration.log`，无需增加 Makefile 或 workflow。任务范围 diff 与文档检查通过；默认 `make test-changed` 对 12 个混合文件选中 6 个 owner，在外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-comparison-hosted-changed.log`。本批只改验收接线和文档，没有产品代码、角色权限或部署变更，不重启个人服务；真实 Hosted 待本批推送后从同一 suite 发起，当前不计通过。
 
 10.75 的产品实现 `fd44bc552` 已包含在用户推送的 main `6d31c1f51621131c70a25cdbf41b1331b62f7395`；只核对该源码的 Monitor frontend Job `116977426244`（Platform CI Run `38902354031`），当前快照为 queued、conclusion=null，不计通过。没有重跑或调查其他 owner 的 Job；本批 runner 的本地通过也不替代该产品 CI 或新 Hosted 结果。
+
+后续核对确认，上述 Job `116977426244` 虽然最终 success，日志实际为路径未命中而跳过，不能作为产品门禁通过证据。产品改动在 main `0ebdb287f5142a35abdb9e23da7df132947c8480` 的 Platform CI Run `38901685861`、Monitor frontend Job `116975208893` 实际运行：72 项单测、201 项浏览器回归及构建全部通过；日志 `/tmp/addp-period-comparison-product-ci-executed.log`。该源码与后续 Hosted 选定源码的 Monitor 前端无差异，保留跳过与实际执行的区别，不借用顶层 success 推断测试通过。
+
+用户继续推进后，已确认验收提交 `93bf0969a` 包含在远端 main `44ca59a5b977a7b7c6e02ae0cd9b5105816a4f3e`，本批浏览器与 Python 验收文件也无后续差异；已沿唯一 `online-t4-gates.yml`、`suite=platform-node-metrics` 发起 Hosted Run `38917707937`，对应 Job `117029371864`。本次未自行推送或重启个人服务；执行尚未结束，实际结果、分支覆盖和清理待归档核对后记录，不提前计为 Hosted 通过。
+
+运行期间复核新增点击操作，确认 Element Plus 的复选框原生输入尺寸为零；Hosted 新增动作错误地对该输入执行 `check()`，与既有 T3 的可见标签动作不同。本地沿 `scripts/test/frontend-browser-gate.mjs` 暂时以同一隐藏输入动作运行原有 opt-in 用例，明确失败于 element is not visible（两秒诊断时限），随后恢复原测试文件，未保留临时测试或修改其他会话文件；日志 `/tmp/addp-comparison-checkbox-red.log`。Hosted 动作改为原 `data-testid=resource-compare` 可见标签，保留对子输入已选状态的断言，不修改产品控件、不使用强制点击、不延长正式时限。
+
+修正后沿同一标准浏览器入口运行原 opt-in/刷新恢复/退出比较场景，1/1 通过，日志 `/tmp/addp-comparison-checkbox-green.log`；完整 `make test-node-metrics-online-runner` 再次退出 0，55 项 Python 回归、两项语法检查及 Metrics 身份夹具 Go 测试通过，日志 `/tmp/addp-comparison-hosted-click-runner.log`。临时替换的 T3 文件已精确恢复且无工作区差异。该修正尚未进入正在运行的 Hosted 固定源码，不能用本地通过把该次 Hosted 改记为成功；需在推送后以新源码复验。
+
+本次默认 `make test-changed` 在 86 个混合文件、27 个 owner 的外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-comparison-hosted-click-changed.log`。本批点击修正的最小充分验证为上述标准浏览器入口及原 node-metrics runner，不修复或重跑其他会话的数据库门禁。
