@@ -676,7 +676,7 @@ function clientValidationIssue(taskIndex, parameterName, code) {
 }
 
 function isMissingValue(value) {
-  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
+  return value === undefined || value === null || value === ''
 }
 
 function removeStaleInputRefs(params = {}, parameters = []) {
