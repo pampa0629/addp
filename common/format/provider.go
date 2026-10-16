@@ -370,7 +370,10 @@ type PointCloudDescribeInput struct {
 // GaussianSplatDescribeInput carries both sequential and optional range access
 // for one Gaussian splatting resource. Providers use Reader for low-cost header
 // and exact small-file parsing; RangeReader/Ref/SizeBytes allow approximate
-// sampled bounds without scanning a large body.
+// sampled bounds without scanning a large body. Reader may expose io.ReaderAt
+// for the complete resource (absolute offsets, independent sequential cursor);
+// PLY sampling reuses it before adapting RangeReader. Prefix-only
+// streams must not expose a ReaderAt for a different or truncated resource.
 type GaussianSplatDescribeInput struct {
 	Reader      io.Reader
 	RangeReader contentio.RangeReader

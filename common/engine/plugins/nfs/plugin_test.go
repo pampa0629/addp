@@ -306,3 +306,64 @@ func TestNFSReadSeekCloseSerialized(t *testing.T) {
 		t.Fatal("read close committed writes")
 	}
 }
+
+func TestNFSReaderAtReusesHandleAndPreservesCursor(t *testing.T) {
+	stream := &testCommitStream{Reader: strings.NewReader("0123456789")}
+	reader := &nfsFileReadCloser{ReadCloser: stream, mu: &sync.Mutex{}, size: 10}
+	at, ok := any(reader).(io.ReaderAt)
+	if !ok {
+		t.Fatal("opened NFS stream lacks ReaderAt; sampling would reopen the file")
+	}
+	if _, err := reader.Seek(2, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	for _, offset := range []int64{7, 0, 4} {
+		buf := make([]byte, 2)
+		if n, err := at.ReadAt(buf, offset); n != 2 || err != nil || string(buf) != "0123456789"[offset:offset+2] {
+			t.Fatalf("ReadAt(%d)=%d,%q,%v", offset, n, buf, err)
+		}
+		if pos, err := reader.Seek(0, io.SeekCurrent); pos != 2 || err != nil {
+			t.Fatalf("cursor changed: %d,%v", pos, err)
+		}
+	}
+	buf := make([]byte, 3)
+	if n, err := at.ReadAt(buf, 9); n != 1 || err != io.EOF {
+		t.Fatalf("short read=%d,%v", n, err)
+	}
+	if _, err := at.ReadAt(buf, -1); err == nil {
+		t.Fatal("negative offset accepted")
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := at.ReadAt(buf, 0); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("closed ReadAt=%v", err)
+	}
+	if stream.commits != 0 {
+		t.Fatal("read handle committed writes")
+	}
+}
+
+func TestNFSConcurrentReadAtPreservesSequentialCursor(t *testing.T) {
+	stream := &testCommitStream{Reader: strings.NewReader("0123456789")}
+	reader := &nfsFileReadCloser{ReadCloser: stream, mu: &sync.Mutex{}, size: 10}
+	defer reader.Close()
+	if _, err := reader.Seek(3, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(offset int64) {
+			defer wg.Done()
+			p := make([]byte, 1)
+			if n, err := reader.ReadAt(p, offset); n != 1 || err != nil || p[0] != byte('0'+offset) {
+				t.Errorf("ReadAt(%d)=%d,%q,%v", offset, n, p, err)
+			}
+		}(int64(i % 10))
+	}
+	wg.Wait()
+	if position, err := reader.Seek(0, io.SeekCurrent); position != 3 || err != nil {
+		t.Fatalf("cursor=%d,%v", position, err)
+	}
+}

@@ -616,7 +616,9 @@ LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree、E57 等都归一为 `dat
 - 可选的同级横切事实，例如源数据带有空间定位时解析得到的 `SpatialInfo`。
 - 可选的格式私有事实，例如 PLY header 属性列表、`.splat` / `.ksplat` / `.spz` 编码摘要。
 
-`bounds_3d` 表示精确范围。`GaussianSplatInfoProvider` 使用结构化输入，既包含顺序 reader，也可携带 engine range reader、ref 和 size。对大规模 PLY / SPLAT，Meta scan 不得为了精确 `bounds_3d` 全量扫描 body；provider 应在同一次 `DescribeGaussianSplat` 中基于 range reader 写入 `sampled_bounds_3d`、`sampled_bounds_method` 和 `sampled_bounds_sample_count`。`sampled_bounds_3d` 是采样事实，可用于前端初始定位，不得用于空间检索、质量治理或精确范围判断。
+`bounds_3d` 表示精确范围。`GaussianSplatInfoProvider` 使用结构化输入，既包含顺序 reader，也可携带 engine range reader、ref 和 size。对大规模 PLY / SPLAT，Meta scan 不得为了精确 `bounds_3d` 全量扫描 body；provider 应在同一次 `DescribeGaussianSplat` 中通过统一的随机定位读取写入 `sampled_bounds_3d`、`sampled_bounds_method` 和 `sampled_bounds_sample_count`。`sampled_bounds_3d` 是采样事实，可用于前端初始定位，不得用于空间检索、质量治理或精确范围判断。
+
+大规模 PLY 的同一文件多次采样必须复用本次属性提取已打开的完整内容流所提供的原生 `io.ReaderAt`；该能力的偏移以完整内容起点为基准，读取不得改变顺序游标。没有原生定位读取能力的引擎，由 `common/contentio` 将既有 `RangeReader` 适配为同一 `io.ReaderAt` 读取契约；格式层只保留一套采样算法，不在原生读取失败后改走另一条路径。前缀流不得冒充完整资源的 `io.ReaderAt`。文件流由本次调用的打开方关闭，不引入跨任务句柄缓存。NFS 复用该流中的文件句柄完成定位读取，不为每个采样点重新解析路径；写入提交行为保持独立。Meta 必须保留流的原生 `io.ReaderAt` / `io.Seeker` 能力，只按实际返回的范围字节及正字节读取次数更新属性读取进度，顺序头部解析不计入范围计数。采样数量、位置、结果语义与取消要求保持不变。
 
 3D Gaussian Splatting PLY、`.splat`、`.ksplat`、`.spz` 等都归一为 `data_type=gaussian_splat`。高斯泼溅不得仅因底层记录形似点集合而归为 `point_cloud`，也不得因为可以三维渲染而走 `model_3d` 的 mesh / GLB 路线；真实高斯基元内容、排序结果、压缩产物、前端渲染协议或派生 splat artifact 应由 content reader、Manager 预览 DTO 或后续派生产物表达，不写入 `datatype.GaussianSplatInfo`。
 

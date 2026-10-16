@@ -322,11 +322,7 @@ func (p *Plugin) openTableReaderFromContent(ctx context.Context, reader contenti
 	if rangeReader, ok := reader.(contentio.RangeReader); ok {
 		stat, err := reader.Stat(ctx, ref)
 		if err == nil && stat != nil && stat.Exists && stat.Size > 0 {
-			file, openErr := parquetgo.OpenFile(rangeContentReaderAt{
-				ctx:    ctx,
-				reader: rangeReader,
-				ref:    ref,
-			}, stat.Size)
+			file, openErr := parquetgo.OpenFile(contentio.NewReaderAt(ctx, rangeReader, ref), stat.Size)
 			if openErr != nil {
 				return nil, nil, fmt.Errorf("failed to open parquet file with range reader: %w", openErr)
 			}
@@ -398,31 +394,6 @@ func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.Fi
 		projectionSchema:     projectionSchema,
 		projectionConversion: projectionConversion,
 	}, nil
-}
-
-type rangeContentReaderAt struct {
-	ctx    context.Context
-	reader contentio.RangeReader
-	ref    contentio.Ref
-}
-
-func (r rangeContentReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if off < 0 {
-		return 0, fmt.Errorf("parquet range read offset cannot be negative")
-	}
-	rc, err := r.reader.OpenRange(r.ctx, r.ref, off, int64(len(p)))
-	if err != nil {
-		return 0, err
-	}
-	defer rc.Close()
-	n, readErr := io.ReadFull(rc, p)
-	if readErr == io.ErrUnexpectedEOF {
-		return n, io.EOF
-	}
-	return n, readErr
 }
 
 // DescribeTable 从 Parquet 文件中提取 TableInfo 和行数。

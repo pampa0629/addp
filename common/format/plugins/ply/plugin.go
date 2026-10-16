@@ -136,7 +136,13 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 		return nil, err
 	}
 	if gaussian.Bounds3D == nil {
-		sampled, err := describePLYGaussianSampledBounds(ctx, input.RangeReader, input.Ref, input.SizeBytes, header)
+		var sampleReader io.ReaderAt
+		if native, ok := reader.(io.ReaderAt); ok {
+			sampleReader = native
+		} else if input.RangeReader != nil {
+			sampleReader = contentio.NewReaderAt(ctx, input.RangeReader, input.Ref)
+		}
+		sampled, err := describePLYGaussianSampledBounds(ctx, sampleReader, input.SizeBytes, header)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +158,7 @@ func (p *Plugin) DescribeGaussianSplat(ctx context.Context, input format.Gaussia
 	}, nil
 }
 
-func describePLYGaussianSampledBounds(ctx context.Context, reader contentio.RangeReader, ref contentio.Ref, sizeBytes int64, header *plyHeader) (*datatype.GaussianSplatInfo, error) {
+func describePLYGaussianSampledBounds(ctx context.Context, reader io.ReaderAt, sizeBytes int64, header *plyHeader) (*datatype.GaussianSplatInfo, error) {
 	if reader == nil || sizeBytes <= 0 {
 		return nil, nil
 	}
@@ -184,24 +190,20 @@ func describePLYGaussianSampledBounds(ctx context.Context, reader contentio.Rang
 	yType := plyPropertyType(properties, "y")
 	zType := plyPropertyType(properties, "z")
 	var bounds plyBounds
+	row := make([]byte, rowSize)
 	for _, index := range sampleIndexes {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		offset := header.HeaderBytes + index*int64(rowSize)
 		if offset < 0 || offset >= sizeBytes {
 			continue
 		}
-		rc, err := reader.OpenRange(ctx, ref, offset, int64(rowSize))
-		if err != nil {
-			return nil, err
-		}
-		row, readErr := io.ReadAll(rc)
-		closeErr := rc.Close()
-		if readErr != nil {
+		n, readErr := reader.ReadAt(row, offset)
+		if readErr != nil && readErr != io.EOF {
 			return nil, readErr
 		}
-		if closeErr != nil {
-			return nil, closeErr
-		}
-		if len(row) < rowSize {
+		if n < rowSize {
 			continue
 		}
 		x, okX := readPLYBinaryFloat(row[xOffset:], xType)

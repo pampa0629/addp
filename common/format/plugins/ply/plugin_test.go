@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 	"testing"
@@ -186,7 +187,7 @@ end_header
 	}
 }
 
-func TestDescribeGaussianSplatSamplesLargeBinaryPLYBounds(t *testing.T) {
+func largeBinaryPLYContent() []byte {
 	var content bytes.Buffer
 	content.WriteString(`ply
 format binary_little_endian 1.0
@@ -213,13 +214,18 @@ end_header
 		writePLYGaussianVertex(&content, 0, 0, 110)
 	}
 	writePLYGaussianVertex(&content, 5, -7, 120)
-	reader := plyMemoryRangeReader{content: content.Bytes()}
+	return content.Bytes()
+}
+
+func TestDescribeGaussianSplatSamplesLargeBinaryPLYBounds(t *testing.T) {
+	content := largeBinaryPLYContent()
+	reader := plyMemoryRangeReader{content: content}
 
 	result, err := NewPlugin().DescribeGaussianSplat(context.Background(), format.GaussianSplatDescribeInput{
-		Reader:      bytes.NewReader(content.Bytes()),
+		Reader:      struct{ io.Reader }{bytes.NewReader(content)},
 		RangeReader: reader,
 		Ref:         contentio.NewRef("site.ply", contentio.RoleMain),
-		SizeBytes:   int64(content.Len()),
+		SizeBytes:   int64(len(content)),
 	}, nil)
 	if err != nil {
 		t.Fatalf("DescribeGaussianSplat() error = %v", err)
@@ -401,5 +407,94 @@ func assertPLYBounds(t *testing.T, bounds *datatype.Bounds3D, minX, minY, minZ, 
 		if math.Abs(got[i]-want[i]) > 0.000001 {
 			t.Fatalf("Bounds3D = %#v, want [%v %v %v]-[%v %v %v]", bounds, minX, minY, minZ, maxX, maxY, maxZ)
 		}
+	}
+}
+
+type countingPLYReaderAt struct {
+	*bytes.Reader
+	offsets         []int64
+	lengths         []int
+	sequentialBytes int
+	afterRead       func()
+	failure         error
+}
+
+func (r *countingPLYReaderAt) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.sequentialBytes += n
+	return n, err
+}
+func (r *countingPLYReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	r.offsets = append(r.offsets, off)
+	r.lengths = append(r.lengths, len(p))
+	if r.failure != nil {
+		return 0, r.failure
+	}
+	n, err := r.Reader.ReadAt(p, off)
+	if r.afterRead != nil {
+		r.afterRead()
+	}
+	return n, err
+}
+
+type rejectingPLYRanges struct {
+	plyMemoryRangeReader
+	calls int
+}
+
+func (r *rejectingPLYRanges) OpenRange(context.Context, contentio.Ref, int64, int64) (io.ReadCloser, error) {
+	r.calls++
+	return nil, errors.New("native sampling reopened content")
+}
+func TestPLYNativeReaderAtKeepsSamplePlanAndDoesNotReopen(t *testing.T) {
+	data := largeBinaryPLYContent()
+	header, err := readPLYHeader(context.Background(), bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"complete", "cancel", "error"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			native := &countingPLYReaderAt{Reader: bytes.NewReader(data)}
+			ranges := &rejectingPLYRanges{plyMemoryRangeReader: plyMemoryRangeReader{content: data}}
+			failure := errors.New("native read failed")
+			if mode == "cancel" {
+				native.afterRead = cancel
+			}
+			if mode == "error" {
+				native.failure = failure
+			}
+			result, err := NewPlugin().DescribeGaussianSplat(ctx, format.GaussianSplatDescribeInput{Reader: native, RangeReader: ranges, Ref: contentio.NewRef("site.ply", contentio.RoleMain), SizeBytes: int64(len(data))}, nil)
+			if ranges.calls != 0 {
+				t.Fatalf("reopened %d ranges despite native access", ranges.calls)
+			}
+			if mode != "complete" {
+				want := failure
+				if mode == "cancel" {
+					want = context.Canceled
+				}
+				if !errors.Is(err, want) || len(native.offsets) != 1 {
+					t.Fatalf("native failure=%v reads=%d", err, len(native.offsets))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			indexes := uniformPLYSampleIndexes(header.VertexCount, plySampledBoundsSampleCount)
+			if len(native.offsets) != len(indexes) {
+				t.Fatalf("native sample count=%d", len(native.offsets))
+			}
+			for i, index := range indexes {
+				if native.offsets[i] != header.HeaderBytes+index*56 || native.lengths[i] != 56 {
+					t.Fatalf("sample %d changed: %d/%d", i, native.offsets[i], native.lengths[i])
+				}
+			}
+			assertPLYBounds(t, result.GaussianSplat.SampledBounds3D, -2, -7, 100, 5, 3, 120)
+			if result.GaussianSplat.SampledBoundsMethod != "sampled_binary_vertices" || *result.GaussianSplat.SampledBoundsSampleCount != 8192 || native.sequentialBytes >= len(data) {
+				t.Fatal("sampling facts or read budget changed")
+			}
+		})
 	}
 }

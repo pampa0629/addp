@@ -10,6 +10,7 @@
 - `Reader` / `Writer`：按 `Ref` 打开输入流或创建输出流。
 - `Lister`：按 scope `Ref` 列举子 content。
 - `RangeReader`：按 `Ref` 打开字节范围流。
+- `NewReaderAt`：将绑定单一 `Ref` 的 `RangeReader` 适配为标准 `io.ReaderAt`，每次请求关闭自己的范围流；已打开完整内容流的原生 `io.ReaderAt` 由调用方直接复用。该适配不拥有或缓存完整文件流。
 - `Stat`：`Reader.Stat` 返回的轻量内容状态，只包含存在性、大小、MIME、修改时间等单 content I/O 事实，不承载 ADDP Meta 或 scope 统计语义。
 
 多个 content 共同构成一个 format item 时，由 format / dataitem / 调用编排层显式传递上层相关引用集合；`contentio` 不定义 `multi` 组织模型。

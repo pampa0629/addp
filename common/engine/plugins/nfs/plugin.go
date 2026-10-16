@@ -2,6 +2,7 @@ package nfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -46,6 +47,47 @@ func (r *nfsFileReadCloser) Read(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	}
 	return r.ReadCloser.Read(p)
+}
+
+// ReadAt reuses the opened NFS handle and preserves the sequential cursor.
+// The pooled transport is shared, so the seek/read/restore sequence is atomic.
+func (r *nfsFileReadCloser) ReadAt(p []byte, offset int64) (n int, err error) {
+	if r == nil || r.ReadCloser == nil {
+		return 0, io.ErrClosedPipe
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return 0, io.ErrClosedPipe
+	}
+	if offset < 0 {
+		return 0, fmt.Errorf("range read offset cannot be negative")
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	seeker, ok := r.ReadCloser.(io.Seeker)
+	if !ok {
+		return 0, fmt.Errorf("NFS file reader does not support seek")
+	}
+	current, err := seeker.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_, restoreErr := seeker.Seek(current, io.SeekStart)
+		if restoreErr != nil {
+			err = errors.Join(err, restoreErr)
+		}
+	}()
+	if _, err = seeker.Seek(offset, io.SeekStart); err != nil {
+		return 0, err
+	}
+	n, err = io.ReadFull(r.ReadCloser, p)
+	if err == io.ErrUnexpectedEOF {
+		err = io.EOF
+	}
+	return n, err
 }
 
 func (r *nfsFileReadCloser) Close() error {
