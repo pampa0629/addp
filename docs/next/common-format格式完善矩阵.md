@@ -37,7 +37,7 @@
 - [SuperMap 验收记录](../../engines/supermap-workflow/README.md)：SDK 大写贴图引用修复、真实厂商模型及业务源不变检查；不能把无 SDK 协议门禁或其他模型 Hosted 通过计为 SGM Hosted 通过。
 - 图片、CSV BOM/UTF-16、大文件分页等本地验收范围保留在本文后文；不外推全部格式变体。
 
-2026-10-16 静态轨迹首版已按用户确认的范围实现：CSV、records JSON 和 Point FeatureCollection 通过既有受控 `/preview` 重新获取完整且不超过 2000 点的文件结果，再显式配置设备／时间／坐标及 CRS，按设备分组、时间排序绘图；配置和图形不回写 Meta、不建立任务或产物。共享 196 项、Manager 单元 327 项与轨迹专项 9 项通过，实际绘图及 Unix 秒毫秒精度已核对，Manager 正式构建通过；共享样式的实际消费者 Workbench 123 项单元、64 项浏览器及构建通过。Manager 全量浏览器仍有两项血缘失败，全工作区门禁缺少其他 Owner T2 条件，均不计整轮通过，也不扩展本会话处理范围。新增轨迹的真实设备文件及 Hosted T4 尚未验证，详细范围见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。
+2026-10-16 静态轨迹首版已按用户确认的范围实现：CSV、records JSON 和 Point FeatureCollection 通过既有受控 `/preview` 重新获取完整且不超过 2000 点的文件结果，再显式配置设备／时间／坐标及 CRS，按设备分组、时间排序绘图；配置和图形不回写 Meta、不建立任务或产物。共享 196 项、Manager 单元 327 项与轨迹专项 9 项通过，实际绘图及 Unix 秒毫秒精度已核对，Manager 正式构建通过；共享样式的实际消费者 Workbench 123 项单元、64 项浏览器及构建通过。Manager 全量浏览器仍有两项血缘失败，全工作区门禁缺少其他 Owner T2 条件，均不计整轮通过，也不扩展本会话处理范围。三份 Business NFS 合成 CSV／JSON／GeoJSON 文件的真实页面均已绘出 2 台设备、3 个采样点，源文件哈希保持不变；真实设备生产文件及 Hosted T4 尚未验证，详细范围见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。
 
 当前未决范围：
 
