@@ -3,8 +3,10 @@ import os
 import hashlib
 import json
 import re
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +16,32 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_compose_inherits_image_owned_native_bindings(self):
+        compose = (ROOT / 'docker-compose.runtimes.yml').read_text()
+        block = re.search(r'^  model3d-workflow-engine:\n(.*?)(?=^  [a-zA-Z]|\Z)', compose, re.M | re.S).group(1)
+        image = (ROOT / 'engines/model3d-workflow/docker/runtime/Dockerfile').read_text()
+        bindings = re.findall(r'^ENV ((?:MODEL3D_\w+(?:BIN|PATH)|GDAL_DATA|PROJ_DATA|OSG_LIBRARY_PATH))=', image, re.M)
+        self.assertGreaterEqual(len(bindings), 9)
+        for key in bindings:
+            with self.subTest(binding=key):
+                self.assertNotRegex(block, r'(?m)^\s+- ' + key + '=')
+
+    def test_compose_health_executes_real_probe_and_rejects_degraded_or_unready_body(self):
+        compose = (ROOT / 'docker-compose.runtimes.yml').read_text()
+        block = re.search(r'^  model3d-workflow-engine:\n(.*?)(?=^  [a-zA-Z]|\Z)', compose, re.M | re.S).group(1)
+        command = json.loads(re.search(r'^\s+test: (\[.*\])$', block, re.M).group(1))
+        self.assertEqual(command[0], 'CMD-SHELL')
+        executable, flag, code = shlex.split(command[1])
+        self.assertEqual((executable, flag), ('python', '-c'))
+        for body, expected in (({'status': 'healthy', 'conversion_ready': True}, 0),
+                               ({'status': 'degraded', 'conversion_ready': False}, 1),
+                               ({'status': 'healthy'}, 1),
+                               ({'status': 'healthy', 'conversion_ready': False}, 1)):
+            with self.subTest(body=body):
+                setup = 'import io,json,urllib.request\nurllib.request.urlopen=lambda *a,**kw: io.StringIO(' + repr(json.dumps(body)) + ')\n'
+                checked = subprocess.run([sys.executable, '-c', setup + code], capture_output=True, text=True)
+                self.assertEqual(checked.returncode, expected, checked.stderr)
+
     def test_linux_assimp_is_built_once_with_failed_stat_regression(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'
         source = (converter / 'Dockerfile').read_text()

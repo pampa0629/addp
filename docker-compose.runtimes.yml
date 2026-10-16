@@ -117,12 +117,6 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET=${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
-      - MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
-      - MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
-      - GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
-      - PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
-      - OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
     volumes:
       - ./logs:/app/logs
       - ${MODEL3D_DATA_HOST_PATH:-./business/nfs/data}:${MODEL3D_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
@@ -130,7 +124,7 @@ services:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=3)\""]
+      test: ["CMD-SHELL", "python -c \"import json, urllib.request; body=json.load(urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=3)); raise SystemExit(0 if body.get('status') == 'healthy' and body.get('conversion_ready') is True else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 30

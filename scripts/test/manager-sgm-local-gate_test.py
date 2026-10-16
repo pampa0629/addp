@@ -182,6 +182,36 @@ class LocalSGMContract(unittest.TestCase):
             'source_kind': 'model_3d', 'glb_generation_available': True})
         self.assertNotIn('SECRET', json.dumps(facts))
 
+    def test_discovery_readiness_only_polls_reads_and_never_repeats_business_commands(self):
+        unavailable = {'unavailable_reason': 'operator_unavailable', 'available_actions': []}
+        ready = {'available_actions': ['generate_model_3d_glb']}
+        requests = []
+        def request(method, path, expected):
+            requests.append((method, path, expected))
+            return SimpleNamespace(payload=ready)
+        client = SimpleNamespace(request=request)
+        with patch.object(GATE.time, 'sleep'):
+            self.assertEqual(GATE.wait_for_generation_capability(client, 'locator=private', unavailable), ready)
+        self.assertEqual(requests, [('GET', '/api/v1/manager/quick-view/capability?locator=private', (200,))])
+        with self.assertRaises(GATE.T2.GateError):
+            GATE.wait_for_generation_capability(client, '', unavailable, timeout=0)
+        with self.assertRaises(GATE.T2.GateError):
+            GATE.wait_for_generation_capability(client, '', {'unavailable_reason': 'invalid_source'})
+
+    def test_unchanged_unavailable_default_mode_is_verified_without_redundant_switch(self):
+        def request(method, path, expected):
+            self.assertEqual(method, 'GET')
+            return SimpleNamespace(payload={'preferred_mode': 'map_quick_view'})
+        client = SimpleNamespace(request=request)
+        fixture = GATE.MANAGER.ArtifactFixture('sgm', {}, 'addp://engine/1/path/source?type=object')
+        fixture.previous_mode, fixture.mode_changed = 'map_quick_view', True
+        GATE.prepare_preview_restore(client, fixture)
+        GATE.MANAGER.cleanup_managed_artifact(client, fixture, 1)
+        self.assertTrue(fixture.cleanup['preview_mode_restored'])
+        fixture.previous_mode = 'basic_preview'
+        GATE.prepare_preview_restore(client, fixture)
+        self.assertTrue(fixture.mode_changed)
+
     def test_wrong_port_ownership_or_nonloopback_is_rejected(self):
         with patch.object(GATE.T2, "command"):
             life = GATE.T2.Lifecycle(prefix="local-", label=GATE.LABEL)

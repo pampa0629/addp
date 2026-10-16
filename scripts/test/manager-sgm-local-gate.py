@@ -215,6 +215,30 @@ def capability_facts(capability):
                 "glb_generation_available": "generate_model_3d_glb" in capability.get("available_actions", [])}
 
 
+def wait_for_generation_capability(client, query, initial, timeout=180):
+    capability = initial
+    deadline = time.monotonic() + timeout
+    while "generate_model_3d_glb" not in capability.get("available_actions", []):
+        reason = capability_facts(capability).get("unavailable_reason", "unknown")
+        T2.require(reason in {"operator_unavailable", "workflow_engine_list_failed"} and time.monotonic() < deadline,
+                   "SGM generation unavailable: " + reason)
+        # Registration is asynchronous. Poll only its read-only user-facing readiness,
+        # never repeat a conversion or issue an alternate registration command.
+        time.sleep(1)
+        capability = client.request("GET", "/api/v1/manager/quick-view/capability?" + query, (200,)).payload
+    return capability
+
+
+def prepare_preview_restore(client, fixture):
+    query = MANAGER.urllib.parse.urlencode({"locator": fixture.locator})
+    state = client.request("GET", "/api/v1/manager/preview-state?" + query, (200,)).payload
+    mode = state.get("preferred_mode")
+    T2.require(mode in {"basic_preview", "map_quick_view"}, "unknown cleanup preview mode")
+    # An unchanged default quick-view mode may have no artifact yet. Do not try
+    # to switch into that unavailable mode just to restore an identical value.
+    fixture.mode_changed = mode != fixture.previous_mode
+
+
 def build_diagnostics(path):
     """Only fixed categories and numeric build facts leave private raw logs."""
     if not path.is_file():
@@ -398,18 +422,21 @@ print(json.dumps(facts))'''
     sql = """SELECT coalesce(json_agg(json_build_object('engine_type',engine_type,'is_builtin',is_builtin,
         'tenant_id',tenant_id,'connection_status',connection_status,'lifecycle_state',lifecycle_state)), '[]')
         FROM system.engines WHERE engine_type IN ('model3d_workflow','supermap_workflow')"""
-    result["runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
+    result["initial_runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
         environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
     model_fixture.previous_mode = capability["preferred_mode"]
     T2.require(model_fixture.previous_mode in {"basic_preview", "map_quick_view"}, "unknown initial preview mode")
-    model_fixture.mode_changed = True
     artifact_dir = life.work / "browser"
     artifact_dir.mkdir(mode=0o700)
     environment.update(ADDP_ONLINE_TEST_RUN_ID=life.run_id, ADDP_ONLINE_ARTIFACT_DIR=str(artifact_dir),
                        ADDP_SGM_SOURCE_JSON=json.dumps({"locator": model_fixture.locator, **result["fixture"]}))
     print("SGM local: ordinary User, task, browser and cache assertions", flush=True)
     try:
-        T2.require(result["initial_capability"]["glb_generation_available"], "SGM generation unavailable: " + result["initial_capability"].get("unavailable_reason", "unknown"))
+        life.phase = "runtime_discovery_readiness"
+        capability = wait_for_generation_capability(client, query, capability)
+        result["generation_capability"] = capability_facts(capability)
+        result["runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
+            environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
         life.phase = "browser_prepare"
         T2.command(["npm", "--prefix", "console/frontend", "ci"], timeout=600, environment=environment)
         T2.command(["npm", "--prefix", "console/frontend", "exec", "--", "playwright", "install", "chromium"], timeout=600, environment=environment)
@@ -445,6 +472,7 @@ print(json.dumps(facts))'''
         # Recover the one task by fingerprint even if a browser failure hid the response.
         cleanup_errors = []
         try:
+            prepare_preview_restore(client, model_fixture)
             rows = model_tasks(client, str(item["fingerprint"]))
             if rows and model_fixture.task_id is None:
                 task = rows[0]

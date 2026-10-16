@@ -149,6 +149,8 @@ PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
 OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
 ```
 
+这些工具与资源路径由 Runtime 镜像唯一定义，正式 Compose 直接继承，不重复覆盖。容器健康检查必须同时确认 `status=healthy` 与 `conversion_ready=true`；HTTP 200 的 `degraded` 响应不算就绪，不能据此进入依赖 Runtime 自注册的页面验收。
+
 本机验证：
 
 ```bash
