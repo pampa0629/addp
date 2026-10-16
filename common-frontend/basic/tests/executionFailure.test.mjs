@@ -76,3 +76,16 @@ test('shared ExecutionFailure is the sole failure panel for Workbench, Owner and
     assert.doesNotMatch(source, /executionErrorSummary|executionErrorMessage|error-traceback|name="error"/)
   }
 })
+
+test('protection refusals remain distinct from data permissions without exposing runtime text', () => {
+  for (const stage of ['preparation', 'result']) {
+    const presentation = executionFailurePresentation({ code: 'develop.query.protection_required',
+      category: 'permission_denied', message: 'private-value SELECT phone',
+      diagnostic: { schema_version: 'addp.execution-failure/v2', stage, reason: 'data_protection_required' }
+    }, key => key)
+    assert.equal(presentation.stage, `common.executionFailure.stages.${stage}`)
+    assert.equal(presentation.reason, 'common.executionFailure.reasons.data_protection_required')
+    assert.equal(presentation.action, 'common.executionFailure.actions.data_protection_required')
+    assert.doesNotMatch(JSON.stringify(presentation), /private-value|SELECT/)
+  }
+})

@@ -28,7 +28,7 @@ func TestGateDeniesExactManagedPreparedQueryAndAllowsNeighbor(t *testing.T) {
 	model := enginePlugin.(plugin.EngineCatalogModelProvider).EngineCatalogModel()
 
 	persons := preparedMongoRead(t, model, "Persons")
-	if _, _, err := gate.BeginPreparedQuery(t.Context(), 7, enginePlugin, persons); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, _, err := gate.BeginPreparedQuery(t.Context(), 7, enginePlugin, persons); !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, ErrRequired) {
 		t.Fatalf("Persons query gate error = %v, want ErrDenied", err)
 	}
 	if gate.HasActiveExecutionsForTenant(7) {
@@ -157,7 +157,7 @@ func TestGateRejectsDerivedProtectedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer end()
-	if err := protect(&plugin.QueryResult{Columns: []string{"prefix"}, Rows: []map[string]interface{}{{"prefix": "136"}}}); !errors.Is(err, dataprotection.ErrDenied) {
+	if err := protect(&plugin.QueryResult{Columns: []string{"prefix"}, Rows: []map[string]interface{}{{"prefix": "136"}}}); !errors.Is(err, dataprotection.ErrDenied) || !errors.Is(err, ErrResultRequired) || !errors.Is(err, ErrRequired) {
 		t.Fatalf("derived output protection error = %v", err)
 	}
 }

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
+	"github.com/addp/develop/backend/internal/protection"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
@@ -80,5 +82,35 @@ func TestQuerySnapshotFailuresReportActualValidationBoundary(t *testing.T) {
 		if diagnostic.Stage != "validation" || diagnostic.Reason != test.reason {
 			t.Fatalf("diagnostic: %#v", diagnostic)
 		}
+	}
+}
+
+func TestQueryProtectionFailureUsesTypedBoundary(t *testing.T) {
+	for _, scenario := range []struct {
+		cause error
+		stage string
+	}{
+		{fmt.Errorf("wrapped: %w: private-runtime-value", protection.ErrRequired), "preparation"},
+		{fmt.Errorf("wrapped: %w: private-runtime-value", protection.ErrResultRequired), "result"},
+	} {
+		code := queryErrorCode(scenario.cause)
+		diagnostic := queryFailureDiagnostic(code, scenario.cause.Error(), scenario.cause)
+		if code != "develop.query.protection_required" || diagnostic == nil || diagnostic.Stage != scenario.stage || diagnostic.Reason != "data_protection_required" {
+			t.Fatalf("protection failure classified as %s, %+v", code, diagnostic)
+		}
+	}
+
+	// Catalog resolution can fail while the protection gate resolves ReadSet.
+	// Preserve the provider's proven cause rather than masking it as protection.
+	for _, providerCode := range []plugin.QueryErrorCode{plugin.QueryErrorCodeTableNotFound, plugin.QueryErrorCodeFunctionNotFound} {
+		cause := fmt.Errorf("%w: %w", protection.ErrRequired, plugin.NewQueryError(providerCode, errors.New("private runtime body")))
+		if code := queryErrorCode(cause); code != string(providerCode) {
+			t.Fatalf("lost provider cause %s: %s", providerCode, code)
+		}
+	}
+	// Runtime text alone cannot prove a protection failure.
+	fake := errors.New("develop data protection gate is required")
+	if code := queryErrorCode(fake); code == "develop.query.protection_required" {
+		t.Fatal("inferred protection from free text")
 	}
 }

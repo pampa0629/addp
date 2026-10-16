@@ -15,6 +15,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +36,7 @@ type SQLEngineService struct {
 	cfg                     *config.Config
 	systemService           *commonClient.SystemServiceClient
 	executionAuthorizations *commonClient.SystemExecutionAuthorizationClient
-	executionPolicy             interface {
+	executionPolicy         interface {
 		ResolveRuntime(context.Context, uint) (int, int, int, error)
 	}
 	protectionGate interface {
@@ -452,7 +453,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	}
 	if executionEffect == SQLExecutionEffectRead {
 		if s.protectionGate == nil {
-			return nil, fmt.Errorf("Develop 查询保护门禁未配置")
+			return nil, protection.ErrRequired
 		}
 		enginePlugin, err := plugin.Get(engine.EngineType)
 		if err != nil {
@@ -614,7 +615,7 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 		selectedPath = &path
 	}
 	if s.protectionGate == nil {
-		return "", "", fmt.Errorf("Develop 查询保护门禁未配置")
+		return "", "", protection.ErrRequired
 	}
 	enginePlugin, err := plugin.Get(engine.EngineType)
 	if err != nil {
@@ -743,7 +744,7 @@ func (s *SQLEngineService) normalizedTimeoutForTenant(ctx context.Context, tenan
 // existing unmanaged gate active until the provider's transaction finishes.
 func (s *SQLEngineService) executeTableResult(ctx context.Context, tenantID uint, engine *commonModels.Engine, target *resourcetree.ResourceLocator, query string, parameters map[string]interface{}, mode string) (*plugin.TableResult, error) {
 	if s.protectionGate == nil || tenantID == 0 {
-		return nil, fmt.Errorf("Develop 查询保护门禁未配置")
+		return nil, protection.ErrRequired
 	}
 	prepared, err := dbbridge.PrepareTableResult(ctx, engine, target, query, parameters, mode)
 	if err != nil {

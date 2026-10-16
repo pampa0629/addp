@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -21,6 +22,7 @@ import (
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -396,6 +398,8 @@ func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *test
 		{"sqlstate_42703", "failed", "execution", "column_not_found"},
 		{"timeout", "timeout", "execution", "timeout"},
 		{"cancelled", "cancelled", "execution", "cancelled"},
+		{"develop.query.protection_required", "failed", "preparation", "data_protection_required"},
+		{"develop.query.protection_required", "failed", "result", "data_protection_required"},
 	} {
 		t.Run(scenario.code, func(t *testing.T) {
 			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -419,7 +423,15 @@ func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *test
 			if scenario.code == "develop.query.snapshot_invalid" {
 				err = service.Execute(t.Context(), item, lease)
 			} else {
-				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, plugin.NewQueryError(plugin.QueryErrorCode(scenario.code), errors.New("runtime private-value password=credential-sentinel")))
+				cause := error(plugin.NewQueryError(plugin.QueryErrorCode(scenario.code), errors.New("runtime private-value password=credential-sentinel")))
+				if scenario.code == "develop.query.protection_required" {
+					boundary := protection.ErrRequired
+					if scenario.stage == "result" {
+						boundary = protection.ErrResultRequired
+					}
+					cause = fmt.Errorf("%w: runtime private-value password=credential-sentinel", boundary)
+				}
+				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, cause)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -430,7 +442,7 @@ func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *test
 			}
 			observation := commonExecution.Observe(&stored)
 			diagnostic, ok := observation.ErrorDetails["diagnostic"].(*commonExecution.FailureDiagnostic)
-			if !ok || stored.Status != scenario.status || diagnostic.Stage != scenario.stage || diagnostic.Reason != scenario.reason {
+			if !ok || stored.Status != scenario.status || diagnostic.Stage != scenario.stage || diagnostic.Reason != scenario.reason || stored.Metadata["result"] != nil {
 				t.Fatalf("persisted failure: %#v, diagnostic=%#v", stored, diagnostic)
 			}
 			encoded, _ := json.Marshal(observation.ErrorDetails)

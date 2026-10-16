@@ -114,6 +114,27 @@ for (const [code, reason, explanation, action] of [
   await expect(diagnostic).toContainText(code)
 })
 
+for (const [locale, explanation, action] of [
+  ['zh-cn', '本次查询已被阻止', '请直接选择受保护字段或使用字段别名'],
+  ['en', 'The query was blocked', 'Select protected fields directly or with column aliases']
+]) for (const stage of ['preparation', 'result']) test(`explains protection refusal in ${locale} at ${stage} without runtime values`, async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table', locale, errorDetails: {
+    category: 'execution_failed', code: 'develop.query.protection_required', message: 'private-value SELECT phone',
+    diagnostic: { schema_version: 'addp.execution-failure/v2', stage, reason: 'data_protection_required' }
+  } })
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  const diagnostic = page.locator('.execution-failure')
+  await expect(diagnostic).toContainText(explanation)
+  await expect(diagnostic).toContainText(action)
+  await expect(diagnostic).toContainText('develop.query.protection_required')
+  await expect(diagnostic).not.toContainText('private-value')
+  await expect(diagnostic).not.toContainText('SELECT phone')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(diagnostic).toBeVisible()
+  const width = await diagnostic.evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }))
+  expect(width.scroll).toBeLessThanOrEqual(width.client + 1)
+})
+
 for (const embedded of [false, true]) test(`keeps the query draft and opens the same failure in a new Monitor tab (${embedded ? 'Console iframe' : 'standalone'})`, async ({ page }) => {
   const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
     schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid'
@@ -530,9 +551,10 @@ async function installMockBackend(page, {
   resultRows,
   errorDetails,
   executionType = 'query',
+  locale = 'zh-cn',
   executionMetadata = {}
 }) {
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.addInitScript(language => localStorage.setItem('addp-lang', language), locale)
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname

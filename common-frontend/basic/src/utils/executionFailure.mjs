@@ -5,7 +5,7 @@ export const failureReasons = Object.freeze([
   'engine_unavailable', 'engine_mismatch', 'query_syntax_invalid', 'column_not_found',
   'table_not_found', 'ambiguous_column', 'function_or_operator_not_found', 'division_by_zero',
   'type_mismatch', 'permission_denied', 'connection_failed',
-  'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required'
+  'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required'
 ])
 
 const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 'connection_failed',

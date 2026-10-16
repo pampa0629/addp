@@ -11,7 +11,10 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-var ErrRequired = errors.New("develop data protection gate is required")
+var (
+	ErrRequired       = errors.New("develop data protection gate is required")
+	ErrResultRequired = fmt.Errorf("%w: query result protection failed", ErrRequired)
+)
 
 type Gate struct {
 	store *projectionstore.Store
@@ -37,7 +40,12 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
 	}
-	return protect.Apply, end, nil
+	return func(result *plugin.QueryResult) error {
+		if err := protect.Apply(result); err != nil {
+			return fmt.Errorf("%w: %w", ErrResultRequired, err)
+		}
+		return nil
+	}, end, nil
 }
 
 func (g *Gate) BeginCatalogPath(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, path plugin.EngineCatalogPath) (func(), error) {

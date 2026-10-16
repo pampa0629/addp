@@ -77,6 +77,7 @@ dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; m
 dt { color: var(--el-text-color-secondary); }
 dd { margin: 0; white-space: pre-wrap; user-select: text; }
 .execution-failure-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.execution-failure-actions :deep(.el-button) { max-width: 100%; height: auto; min-height: var(--el-component-size-small); white-space: normal; }
 .execution-failure-actions :deep(.el-button + .el-button) { margin-left: 0; }
 @media (max-width: 600px) { dl { grid-template-columns: minmax(0, 1fr); gap: 4px; } dd { margin-bottom: 8px; } }
 </style>

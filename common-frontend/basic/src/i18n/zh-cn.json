@@ -163,7 +163,8 @@
         "resource_exhausted": "引擎可用内存、连接数或存储资源不足。",
         "query_failed": "查询执行失败，尚未记录可展示的具体原因。",
         "result_invalid": "查询结果无法保存或不符合结果契约。",
-        "database_required": "查询缺少数据库定位。"
+        "database_required": "查询缺少数据库定位。",
+        "data_protection_required": "无法确认查询结果满足数据保护要求，本次查询已被阻止。"
       },
       "actions": {
         "configuration_missing": "重新发起执行；若仍失败，请联系管理员检查执行配置生成过程。",
@@ -189,7 +190,8 @@
         "resource_exhausted": "减少查询规模或请管理员检查引擎资源后重新执行。",
         "query_failed": "复制诊断信息交给管理员，按执行 ID 排查；不要仅凭本提示修改查询。",
         "result_invalid": "复制诊断信息交给管理员检查结果处理过程。",
-        "database_required": "在数据资源中选择目标数据库或集合后重新执行。"
+        "database_required": "在数据资源中选择目标数据库或集合后重新执行。",
+        "data_protection_required": "请直接选择受保护字段或使用字段别名，避免对其拼接或计算；若仍被拒绝，请联系安全管理员核对保护规则、有效期和同步状态。"
       }
     },
     "executionSteps": {

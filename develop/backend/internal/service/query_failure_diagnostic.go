@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/protection"
 )
 
 type querySnapshotError struct {
@@ -40,12 +41,20 @@ func queryErrorCode(err error) string {
 	if errors.As(err, &network) {
 		return "connection_failed"
 	}
+	if errors.Is(err, protection.ErrRequired) {
+		return "develop.query.protection_required"
+	}
 	return "develop.query.execution_failed"
 }
 
 func queryFailureDiagnostic(code, message string, cause error) *commonExecution.FailureDiagnostic {
 	stage, reason := "validation", "configuration_invalid"
 	switch code {
+	case "develop.query.protection_required":
+		stage, reason = "preparation", "data_protection_required"
+		if errors.Is(cause, protection.ErrResultRequired) {
+			stage = "result"
+		}
 	case "develop.query.snapshot_invalid":
 		var snapshot *querySnapshotError
 		if errors.As(cause, &snapshot) {
