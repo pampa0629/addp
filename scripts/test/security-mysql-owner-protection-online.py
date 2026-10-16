@@ -2114,7 +2114,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v15",
+            "schema_version": "addp.security-mysql-owner-protection-online/v16",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2209,7 +2209,7 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v6", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v7", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -2224,11 +2224,17 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "develop_alias_protected": True, "develop_refusal_rows": 0,
         "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
         "develop_monitor_same_execution": True,
+        "service_normal_output_verified": True, "service_refusal_http_status": 403,
+        "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
+        "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
+        "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
+        "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
+        "expected_service_refusal_403": 1,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
                   if type(report.get(key)) is not type(value) or report.get(key) != value]
-    if set(report) != set(expected) | {"execution_id"}:
+    if set(report) != set(expected) | {"execution_id", "protection_transfer_execution_id"}:
         mismatches.append("report_fields")
     execution_id = report.get("execution_id")
     try:
@@ -2238,12 +2244,21 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         valid_uuid = False
     if not valid_uuid:
         mismatches.append("execution_id")
+    refusal_id = report.get("protection_transfer_execution_id")
+    try:
+        valid_refusal_id = (isinstance(refusal_id, str) and str(uuid.UUID(refusal_id)) == refusal_id
+                            and uuid.UUID(refusal_id).int != 0 and refusal_id != execution_id)
+    except ValueError:
+        valid_refusal_id = False
+    if not valid_refusal_id:
+        mismatches.append("protection_transfer_execution_id")
     if mismatches:
         raise SuiteError("Manager export browser report mismatch: " + ", ".join(mismatches))
     return report
 
 
-def run_export_browser(repository: Path, environment: Mapping[str, str], locator: str) -> dict[str, object]:
+def run_export_browser(repository: Path, environment: Mapping[str, str], locator: str,
+                       output_context: Mapping[str, object]) -> dict[str, object]:
     required = ("ADDP_ONLINE_ARTIFACT_DIR", "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_TEST_TENANT_ID",
                 "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_USER_USERNAME",
                 "ADDP_ONLINE_TEST_USER_PASSWORD", "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID", "GATEWAY_URL", "CONSOLE_URL")
@@ -2257,11 +2272,14 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         "security-manager-export.png", "security-manager-export-monitor.png",
         "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
         "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
-        "security-develop-protection-monitor.png",
+        "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
+        "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+        "security-transfer-protection-monitor.png",
     )]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
-    browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator)
+    browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator,
+                               ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT=json.dumps(output_context, ensure_ascii=False))
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
          "e2e/online/security-manager-export.spec.js"],
@@ -2349,8 +2367,18 @@ def main() -> int:
     # Require the final protected field to be searchable before browser entry.
     report["manager_export_search_readiness"] = wait_for_technical_field(
         client, source_engine_id, source_item, "email", time.monotonic() + min(timeout, 120))
+    target_item = find_item(client, target_engine_id, f"{TARGET_SCHEMA}.{TARGET_TABLE}", "table")
+    source_locator = build_item_locator(source_engine_id, source_item)
+    browser_name = "online-security-browser-" + run_suffix(required_environment("ADDP_ONLINE_TEST_RUN_ID"), "-")
+    output_context = {
+        "principal_id": report["identity"]["principal_id"],
+        "enrollment_id": report["fixture"]["security_enrollment_id"],
+        "target_locator": build_item_locator(target_engine_id, target_item),
+        "service_payload": service_payload(browser_name, source_engine_id, source_locator),
+        "transfer_payload": transfer_payload(browser_name, source_locator, build_schema_locator(target_engine_id, target_item)),
+    }
     report["manager_export_browser"] = run_export_browser(
-        Path(__file__).resolve().parents[2], dict(os.environ), build_item_locator(source_engine_id, source_item))
+        Path(__file__).resolve().parents[2], dict(os.environ), source_locator, output_context)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0
 

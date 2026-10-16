@@ -1366,9 +1366,9 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared'}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
-                patch.object(ONLINE, 'run_scenario', return_value={}) as scenario,
+                patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}}) as scenario,
                 patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': []}),
-                patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source'}),
+                patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}),
                 patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
                 patch.object(ONLINE, 'wait_for_technical_field') as readiness,
                 patch.object(ONLINE, 'run_export_browser') as browser,
@@ -1388,17 +1388,25 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 else:
                     def launch(*args):
                         readiness.assert_called_once()
+                        context = args[3]
+                        self.assertEqual(context["principal_id"], "7")
+                        self.assertEqual(context["enrollment_id"], "enrollment")
+                        self.assertFalse(context["service_payload"]["public_access"])
+                        self.assertFalse(context["transfer_payload"]["enabled"])
+                        self.assertEqual(context["transfer_payload"]["config"]["source"]["locator"], args[2])
+                        self.assertEqual(context["transfer_payload"]["config"]["runtime"], {"boundary": "bounded"})
                         return self.report()
                     browser.side_effect = launch
                     self.assertEqual(ONLINE.main(), 0)
                     self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'prepare', 'targets', 'scenario'])
-                    self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source'}, 'email'))
+                    self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source', 'node_id': 12}, 'email'))
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v6", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v7", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
+            "protection_transfer_execution_id": "64834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
             "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
             "manager_source_verified": True, "monitor_detail_visible": True,
@@ -1412,6 +1420,12 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "develop_alias_protected": True, "develop_refusal_rows": 0,
             "develop_refusal_diagnostic_verified": True, "develop_refusal_visible": True,
             "develop_monitor_same_execution": True,
+            "service_normal_output_verified": True, "service_refusal_http_status": 403,
+            "service_refusal_visible": True, "service_old_preview_cleared": True, "service_restored_output_verified": True,
+            "transfer_refusal_diagnostic_verified": True, "transfer_refusal_visible": True, "transfer_monitor_same_execution": True,
+            "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
+            "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
+            "expected_service_refusal_403": 1,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1437,6 +1451,17 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("develop_refusal_rows", 1), ("develop_refusal_rows", False),
             ("develop_refusal_diagnostic_verified", False), ("develop_refusal_visible", False),
             ("develop_monitor_same_execution", False),
+            ("service_refusal_http_status", 500), ("service_refusal_visible", False),
+            ("service_old_preview_cleared", False), ("service_restored_output_verified", False),
+            ("transfer_refusal_diagnostic_verified", False), ("transfer_refusal_visible", False),
+            ("transfer_monitor_same_execution", False), ("transfer_target_unchanged", False),
+            ("output_protection_permanent_restored", False), ("output_browser_created_resources", 0),
+            ("output_browser_deleted_resources", 1), ("output_browser_residual_resources", 1),
+            ("expected_service_refusal_403", 0), ("expected_service_refusal_403", 2),
+            ("expected_service_refusal_403", True), ("protection_transfer_execution_id", "bad"),
+            ("protection_transfer_execution_id", None), ("protection_transfer_execution_id", True),
+            ("protection_transfer_execution_id", "00000000-0000-0000-0000-000000000000"),
+            ("protection_transfer_execution_id", "53834320-203b-4d8c-838e-15e01024d484"),
             ("initiator_verified", 1), ("browser_warning_errors", False),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
@@ -1465,33 +1490,38 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 path.write_text(json.dumps(self.report()))
                 with patch.object(ONLINE.subprocess, "run", return_value=Mock(returncode=exit_code, stdout="", stderr="")):
                     with self.subTest(exit_code=exit_code), self.assertRaises(ONLINE.SuiteError):
-                        ONLINE.run_export_browser(artifact, environment, "source")
+                        ONLINE.run_export_browser(artifact, environment, "source", {"enrollment_id": "fixture"})
                 self.assertFalse(path.exists())
             def browser(command, **kwargs):
                 self.assertIn("e2e/online/security-manager-export.spec.js", command)
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT"]), {"enrollment_id": "fixture"})
                 path.write_text(json.dumps(self.report()))
                 for name in ("security-manager-protected-preview.png", "security-manager-field-search.png",
                              "security-manager-export.png", "security-manager-export-monitor.png",
                              "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
                              "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
-                             "security-develop-protection-monitor.png"):
+                             "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
+                             "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+                             "security-transfer-protection-monitor.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
-                self.assertEqual(ONLINE.run_export_browser(artifact, environment, "source"), self.report())
+                self.assertEqual(ONLINE.run_export_browser(artifact, environment, "source", {"enrollment_id": "fixture"}), self.report())
 
             for missing in ("security-manager-protected-preview.png", "security-manager-field-search.png",
                             "security-resource-combination-filters.png", "security-resource-empty-intersection.png",
                             "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
-                             "security-develop-protection-monitor.png"):
+                             "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
+                             "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
+                             "security-transfer-protection-monitor.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)
                     (artifact / missing).unlink()
                     return result
                 with self.subTest(missing=missing), patch.object(ONLINE.subprocess, "run", side_effect=incomplete_browser):
                     with self.assertRaisesRegex(ONLINE.SuiteError, "screenshots"):
-                        ONLINE.run_export_browser(artifact, environment, "source")
+                        ONLINE.run_export_browser(artifact, environment, "source", {"enrollment_id": "fixture"})
 
 
 class HostedGovernanceInitializationTest(unittest.TestCase):

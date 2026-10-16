@@ -193,12 +193,203 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 }
 
 
+async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal) {
+  const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const enrollmentPath = `/api/v1/security/protection-enrollments/${input.enrollment_id}`
+  const original = await json(await getAPI().get(enrollmentPath), 'browser source protection')
+  expect(original.validity_mode).toBe('permanent')
+  expect(original.expires_at).toBeNull()
+  let serviceID
+  let taskID
+  let validityChanged = false
+  let outcome
+  const servicePath = `/api/query/${encodeURIComponent(input.service_payload.service_name)}/query`
+  const serviceRequest = { select: ['id', 'customer_code', 'email'], order_by: [{ field: 'id', direction: 'asc' }], page: { limit: 100 }, format: 'json' }
+  function checkRows(rows) {
+    expect(rows).toHaveLength(5)
+    expect(rows.map(row => String(row.id)).sort()).toEqual(['1', '2', '3', '4', '5'])
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(['customer_code', 'id'])
+      expect(row.customer_code).toBe(`CUST-1000${row.id}`)
+    }
+  }
+  async function targetRows() {
+    const response = await json(await getAPI().get('/api/v1/manager/preview', { params: {
+      locator: input.target_locator, page: 1, page_size: 100
+    } }), 'browser Transfer target')
+    expect([...response.data.columns].sort()).toEqual(['customer_code', 'id'])
+    checkRows(response.data.rows)
+    return [...response.data.rows].sort((a, b) => Number(a.id) - Number(b.id))
+  }
+  async function runTransfer(status) {
+    const started = await json(await getAPI().post(`/api/v1/transfer/task-definitions/${taskID}/start`), 'browser Transfer start')
+    expect(started.execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+    let execution
+    await expect.poll(async () => {
+      execution = await json(await getAPI().get(`/api/v1/transfer/executions/${started.execution_id}`), 'browser Transfer outcome')
+      return execution.status
+    }, { timeout: 45_000 }).toMatch(/^(success|failed|timeout|cancelled)$/)
+    expect(execution.status).toBe(status)
+    expect(String(execution.task_id)).toBe(String(taskID))
+    expect(String(execution.triggered_by)).toBe(input.principal_id)
+    return execution
+  }
+  async function updateValidity(mode, until) {
+    const current = await json(await getAPI().get(enrollmentPath), 'browser current validity')
+    await json(await getAPI().put(`${enrollmentPath}/validity`, { data: {
+      version: current.version, validity_mode: mode, expires_at: until
+    } }), 'browser update validity')
+    let synchronized
+    await expect.poll(async () => {
+      synchronized = await json(await getAPI().get(enrollmentPath), 'browser synchronized validity')
+      const progress = synchronized.owner_progress
+      return Array.isArray(progress) && progress.length === 4 &&
+        progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,manager,service,transfer' &&
+        progress.every(owner => owner.acknowledged === true && owner.validity === 'valid' &&
+          (until === null ? owner.expires_at === null : Date.parse(owner.expires_at) === Date.parse(until)))
+    }, { timeout: 45_000 }).toBe(true)
+    expect(synchronized.validity_mode).toBe(mode)
+    return synchronized
+  }
+  async function previewService(status) {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === servicePath && response.request().method() === 'POST')
+    await frame.locator('.preview-controls').getByRole('button', { name: /加载数据|刷新数据|Load Data|Refresh Data/ }).click()
+    const received = await response
+    expect(received.status()).toBe(status)
+    return received.json()
+  }
+  try {
+    const service = await json(await getAPI().post('/api/v1/service/query', { data: input.service_payload }), 'browser private Service creation')
+    serviceID = service.id
+    expect(Number(serviceID)).toBeGreaterThan(0)
+    expect(service.public_access).toBe(false)
+    expect(service.status).toBe('active')
+    const task = await json(await getAPI().post('/api/v1/transfer/task-definitions', { data: input.transfer_payload }), 'browser manual Transfer creation')
+    taskID = task.id
+    expect(Number(taskID)).toBeGreaterThan(0)
+    const baseline = await runTransfer('success')
+    expect(Number(baseline.records_read)).toBe(5)
+    expect(Number(baseline.records_written)).toBe(5)
+    const before = await targetRows()
+    await navigate(`/service/query-services/${serviceID}`, `/api/v1/service/query/${serviceID}`)
+    checkRows((await previewService(200)).data)
+    await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    const until = new Date(Date.now() + 90_000).toISOString()
+    validityChanged = true
+    const installed = await updateValidity('until', until)
+    const revisions = installed.owner_progress.map(owner => [owner.consumer_owner, owner.projection_id, owner.revision, owner.published_cursor])
+    // Observe real wall-clock expiry without changing clocks or refreshing rules.
+    await expect.poll(() => Date.now(), { timeout: 100_000, intervals: [1000] }).toBeGreaterThan(Date.parse(until) + 1000)
+    const expired = await json(await getAPI().get(enrollmentPath), 'browser naturally expired protection')
+    expect(expired.owner_progress.every(owner => owner.validity === 'expired')).toBe(true)
+    expect(expired.owner_progress.map(owner => [owner.consumer_owner, owner.projection_id, owner.revision, owner.published_cursor])).toEqual(revisions)
+    expectServiceRefusal(servicePath)
+    const refusal = await previewService(403)
+    expect(Object.keys(refusal).sort()).toEqual(['error', 'error_code'])
+    expect(refusal.error_code).toBe('data_protection_required')
+    expect(refusal.error).toMatch(/数据保护要求未满足|data protection requirements/i)
+    await expect(frame.locator('.el-message--error').filter({ hasText: refusal.error })).toBeVisible()
+    await expect(frame.locator('.preview-content')).toHaveCount(0)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-refusal.png') })
+    const denied = await runTransfer('failed')
+    expect(denied.execution_id).not.toBe(baseline.execution_id)
+    const details = denied.error_details
+    expect(Object.keys(details).every(key => ['category', 'code', 'diagnostic'].includes(key))).toBe(true)
+    expect(details.code).toBe('data_protection_required')
+    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'data_protection_required' })
+    expect(Number(denied.records_written || 0)).toBe(0)
+    expect(Number(denied.bytes_written || 0)).toBe(0)
+    expect(await targetRows()).toEqual(before)
+    const executionPath = `/api/v1/transfer/executions/${denied.execution_id}`
+    await navigate(`/transfer/executions/${denied.execution_id}`, executionPath)
+    const rebound = await json(await getAPI().get(executionPath), 'browser same Transfer refusal')
+    expect(rebound.error_details).toEqual(details)
+    async function checkPanel(panel) {
+      await expect(panel).toBeVisible()
+      await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
+      await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
+      await expect(panel).toContainText(/准备查询|Prepare query/)
+      await expect(panel).toContainText('data_protection_required')
+      await expect(panel).toContainText(denied.execution_id)
+    }
+    const panel = frame.locator('.execution-failure')
+    await checkPanel(panel)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-protection-refusal.png') })
+    const link = new URL(await panel.getByRole('link', { name: /查看监控错误详情|View error details in Monitor/ }).getAttribute('href'), page.url())
+    expect(link.origin).toBe(new URL(page.url()).origin)
+    expect(link.pathname).toBe('/monitor/executions')
+    expect([...link.searchParams]).toEqual([['execution_id', denied.execution_id]])
+    await navigate(link.pathname + link.search, `/api/v1/monitor/executions/by-execution-id/${denied.execution_id}/tree`)
+    await checkPanel(frame.locator('.execution-detail-content > .execution-failure'))
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-protection-monitor.png') })
+    await updateValidity('permanent', null)
+    validityChanged = false
+    const restored = await runTransfer('success')
+    expect(restored.execution_id).not.toBe(denied.execution_id)
+    expect(Number(restored.records_read)).toBe(5)
+    expect(Number(restored.records_written)).toBe(5)
+    expect(await targetRows()).toEqual(before)
+    await navigate(`/service/query-services/${serviceID}`, `/api/v1/service/query/${serviceID}`)
+    checkRows((await previewService(200)).data)
+    await expect(frame.locator('.preview-content .el-table__body tbody tr')).toHaveCount(5)
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-service-protection-restored.png') })
+    outcome = { service_normal_output_verified: true, service_refusal_http_status: 403,
+      service_refusal_visible: true, service_old_preview_cleared: true, service_restored_output_verified: true,
+      transfer_refusal_diagnostic_verified: true, transfer_refusal_visible: true, transfer_monitor_same_execution: true,
+      protection_transfer_execution_id: denied.execution_id, transfer_target_unchanged: true,
+      output_protection_permanent_restored: true }
+  } finally {
+    const failures = []
+    const cleanup = []
+    if (validityChanged) cleanup.push(async () => { await updateValidity('permanent', null) })
+    if (taskID) cleanup.push(async () => {
+      const response = await getAPI().delete(`/api/v1/transfer/task-definitions/${taskID}`)
+      expect(response.ok()).toBe(true)
+      expect((await getAPI().get(`/api/v1/transfer/task-definitions/${taskID}`)).status()).toBe(404)
+    })
+    if (serviceID) cleanup.push(async () => {
+      const current = await json(await getAPI().get(`/api/v1/service/query/${serviceID}`), 'browser Service cleanup version')
+      const response = await getAPI().delete(`/api/v1/service/query/${serviceID}`, { data: { version: current.version } })
+      expect(response.ok()).toBe(true)
+      expect((await getAPI().get(`/api/v1/service/query/${serviceID}`)).status()).toBe(404)
+    })
+    for (const action of cleanup) {
+      try { await action() } catch { failures.push('owned output browser cleanup failed') }
+    }
+    expect(failures).toEqual([])
+  }
+  // Validity changes and definition cleanup can isolate the technical index.
+  // Require the same source field to be searchable again before the UI search.
+  const source = new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)
+  source.searchParams.sort()
+  await expect.poll(async () => {
+    const response = await getAPI().get('/api/v1/manager/search', { params: {
+      q: 'email', engine_id: Number(source.pathname.split('/')[1]), page_size: 100
+    } })
+    if (response.status() === 503) {
+      expect((await response.json()).error_code).toBe('manager_search_isolated')
+      return false
+    }
+    const search = await json(response, 'browser restored technical field readiness')
+    const matches = search.data.results.filter(hit => {
+      const locator = new URL(hit.locator)
+      locator.searchParams.sort()
+      return locator.href === source.href
+    })
+    expect(matches.length).toBeLessThanOrEqual(1)
+    return matches.length === 1 && matches[0].field_matches.some(field => field.name === 'email' && field.data_type === 'string')
+  }, { timeout: 120_000 }).toBe(true)
+  return { ...outcome, output_browser_created_resources: 2, output_browser_deleted_resources: 2, output_browser_residual_resources: 0 }
+}
+
 test('ordinary-user queries and Manager export preserve protection diagnostics and provenance in Monitor', async ({ page }) => {
+  test.setTimeout(300_000)
   const names = [
     'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID',
     'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
     'ADDP_ONLINE_TEST_USER_PASSWORD', 'ADDP_ONLINE_SECURITY_EXPORT_LOCATOR',
-    'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID', 'GATEWAY_URL'
+    'ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID', 'ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT', 'GATEWAY_URL'
   ]
   for (const name of names) if (!process.env[name]) throw new Error(`${name} is required`)
   const env = process.env
@@ -211,23 +402,34 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
   let businessStarted = false
   let anonymousRefresh401 = 0
   let browserAPI
+  let expectedServiceRefusalPath = ''
+  let serviceRefusal403 = 0
   let download
   page.on('pageerror', error => browserErrors.push(error.message))
   page.on('console', message => {
     if (isAnonymousRefreshConsoleError(message, businessStarted)) return
+    if (message.type() === 'error' && expectedServiceRefusalPath &&
+        message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)' &&
+        new URL(message.location().url || '/', page.url()).pathname === expectedServiceRefusalPath) return
     if (['warning', 'error'].includes(message.type())) browserErrors.push(message.text())
   })
   page.on('response', response => {
     const path = new URL(response.url()).pathname
     if (isAnonymousRefreshResponse(response, businessStarted)) anonymousRefresh401 += 1
-    if (businessStarted && path.startsWith('/api/v1/') && response.status() >= 400) {
+    if (businessStarted && path === expectedServiceRefusalPath && response.request().method() === 'POST' && response.status() === 403) {
+      serviceRefusal403 += 1
+      return
+    }
+    if (businessStarted && (path.startsWith('/api/v1/') || path.startsWith('/api/query/')) && response.status() >= 400) {
       failedResponses.push({ path, status: response.status() })
     }
   })
   try {
     const requiredPermissions = [
       'manager.content.read', 'manager.data_item.read', 'manager.search.execute', 'manager.derived_artifact.create',
-      'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read', 'develop.task.read', 'develop.task.execute', 'develop.data_read.execute'
+      'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read', 'develop.task.read', 'develop.task.execute', 'develop.data_read.execute',
+      'security.enrollment.update', 'service.definition.create', 'service.definition.read', 'service.definition.delete',
+      'service.data_read.execute', 'transfer.task.create', 'transfer.task.read', 'transfer.task.execute', 'transfer.task.delete'
     ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
     expect(expected.principalType).toBe('user')
@@ -284,6 +486,8 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
 
     const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual, navigateWithBrowserSession)
     const developProtection = await verifyDevelopProtectionRefusal(page, browserAPI, env, navigateWithBrowserSession)
+    const outputProtection = await verifyServiceTransferProtectionRefusal(page, env, navigateWithBrowserSession, () => browserAPI,
+      value => { expectedServiceRefusalPath = value })
     await navigateWithBrowserSession(path, '/api/v1/manager/preview')
     await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
 
@@ -389,9 +593,10 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
-    expect(browserSessionRebinds).toBe(4)
+    expect(browserSessionRebinds).toBe(8)
+    expect(serviceRefusal403).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v6', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v7', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -401,7 +606,9 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
       search_to_preview_verified: true,
       ...resourceFilters,
       ...developProtection,
-      browser_session_rebound_verified: browserSessionRebinds === 4, resource_permanent_validity_visible: true,
+      ...outputProtection,
+      expected_service_refusal_403: serviceRefusal403,
+      browser_session_rebound_verified: browserSessionRebinds === 8, resource_permanent_validity_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {
