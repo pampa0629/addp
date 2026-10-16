@@ -27,7 +27,13 @@ docker run -d --name "$container" --label com.addp.online-fixture=metric \
   addp-postgres-pgvector:latest >/dev/null
 ready=0
 for _ in $(seq 1 60); do
-  if docker exec "$container" pg_isready -U postgres -d metric_fixture >/dev/null 2>&1; then ready=1; break; fi
+  # The entrypoint first starts a socket-only bootstrap server before creating
+  # POSTGRES_DB. Require the final TCP server and an actual database query.
+  if [ "$(PGPASSWORD="$POSTGRES_PASSWORD" PGCONNECT_TIMEOUT=2 docker exec -e PGPASSWORD -e PGCONNECT_TIMEOUT \
+      "$container" psql -h 127.0.0.1 -U postgres -d metric_fixture -Atqc 'SELECT current_database()' 2>/dev/null)" = metric_fixture ]; then
+    ready=1
+    break
+  fi
   sleep 1
 done
 [ "$ready" = 1 ] || fail "source PostgreSQL did not become ready"

@@ -60,6 +60,61 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.host.trace.exists())
 
+    def test_source_waits_for_final_tcp_database_not_temporary_socket_readiness(self):
+        source = SCRIPT.parents[2] / 'business/scripts/online-metric-postgres-fixture.sh'
+        destination = self.host.repository / 'business/scripts' / source.name
+        shutil.copy2(source, destination)
+        self.host.secrets.mkdir(exist_ok=True)
+        self.host._executable('sleep', '#!/usr/bin/env bash\nexit 0\n')
+        self.host._executable('docker', '''
+            #!/usr/bin/env python3
+            import os, pathlib, sys
+            args = sys.argv[1:]
+            counter = pathlib.Path(os.environ['ADDP_TEST_DATABASE_PROBES'])
+            if args[:2] == ['container', 'inspect']:
+                sys.exit(1)
+            if args[0] == 'run':
+                sys.exit(0)
+            if 'pg_isready' in args:
+                sys.exit(0)  # The socket-only bootstrap server accepts connections.
+            if args[0] == 'exec' and 'psql' in args:
+                if 'SELECT current_database()' in args:
+                    assert args[1:3] == ['-e', 'PGPASSWORD']
+                    assert args[args.index('-h') + 1] == '127.0.0.1'
+                    assert args[args.index('-d') + 1] == 'metric_fixture'
+                    assert os.environ['PGPASSWORD'] and all(os.environ['PGPASSWORD'] not in value for value in args)
+                    count = int(counter.read_text()) + 1 if counter.exists() else 1
+                    counter.write_text(str(count))
+                    if count == 1 or os.environ.get('ADDP_TEST_DATABASE_NEVER_READY') == '1':
+                        sys.exit(1)
+                    print('metric_fixture')
+                    sys.exit(0)
+                if not counter.exists() or int(counter.read_text()) < 2:
+                    sys.exit(2)  # Reproduce seed-before-CREATE DATABASE.
+                pathlib.Path(os.environ['ADDP_TEST_DATABASE_SEEDED']).write_text('seeded')
+                sys.exit(0)
+            sys.exit(3)
+        ''')
+        for never_ready in (False, True):
+            with self.subTest(never_ready=never_ready):
+                counter = self.host.root / 'database-probes'
+                seed = self.host.root / 'database-seeded'
+                descriptor = self.host.secrets / 'source.json'
+                for path in (counter, seed, descriptor):
+                    path.unlink(missing_ok=True)
+                env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true',
+                    RUNNER_OS='Linux', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
+                    ADDP_ONLINE_SECRET_DIR=str(self.host.secrets), ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(descriptor),
+                    ADDP_TEST_DATABASE_PROBES=str(counter), ADDP_TEST_DATABASE_SEEDED=str(seed),
+                    ADDP_TEST_DATABASE_NEVER_READY='1' if never_ready else '0')
+                result = subprocess.run(['bash', str(destination), 'start'], cwd=self.host.repository,
+                    env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode == 0, not never_ready, result.stderr)
+                self.assertEqual(seed.exists(), not never_ready)
+                self.assertEqual(descriptor.exists(), not never_ready)
+                if counter.exists():
+                    self.assertEqual(int(counter.read_text()), 60 if never_ready else 2)
+
     def test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources(self):
         # Each call needs a new secret directory; the lifecycle removes it on exit.
         for overrides in ({}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_SOURCE_FAIL': '1'},
