@@ -150,6 +150,8 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 
 同一 ETL Hosted 套件在三次原生表写入前后，通过 Meta 正式只读接口验证源表这一兄弟项的身份、扫描时间／深度及数据统计不变，schema 到根节点的扫描状态、时间和深度不变；父节点当前子树统计允许随目标创建变化。秒精度读 DTO 的基线先跨过已观察时间刻度再启动任务，避免同秒截断掩盖扩大扫描。结果记录在 `field_lineage.precise_scan_scope`，确定性反例由现有 `make test-transfer-online-runner` 和 CI 自动发现；真实 Hosted 通过前不计为 T4 证据。
 
+2026-10-16，提交 `dcd74b58c` 的 [Hosted T4 38884014630](https://github.com/pampa0629/addp/actions/runs/38884014630) 已通过并下载报告独立核对：`field_lineage.precise_scan_scope` 验证三次原生表写入后，源表这一兄弟项及 schema／root 两级祖先的扫描事实和状态均不变；实际 Worker 日志的 12 次自动扫描全部提交完整表 locator，无父范围 `catalog_paths`。8 个服务构建提交一致，11 个领域资源全部删除，应用清理 passed、Infra zero_residuals；既有浏览器与血缘场景通过。此 T4 证明 bounded 原生表写后范围，continuous 初始化及结构变更补扫仍以现有 HTTP／Go 回归为依据，未扩大表述为已完成真实 CDC 扫描验收。
+
 `make test-transfer-postgres` 使用普通 PostgreSQL 验证 schema、受保护导出和非空间既有表目标覆盖，不依赖 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
 
 ```bash
