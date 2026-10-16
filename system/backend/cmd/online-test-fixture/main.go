@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -395,18 +396,37 @@ func run(args []string, environment []string) error {
 		}
 	}
 
+	var pgRecipients map[string]string
+	if *suite == "pg-source-authorization" {
+		pgRecipients, err = preparePGAuthorizationMemberships(ctx, iam.NewOrganizationService(repository, clock),
+			tenant.ID, administrator.PrincipalID, membership.Membership.ID)
+		if err != nil {
+			return err
+		}
+	}
+	// Organization changes advance authorization versions; issue the reader only
+	// after its exact fixture memberships have been committed.
 	consumerSession, err := issueSession(ctx, repository, selectionService, consumer.PrincipalID, "external-online-consumer-session")
 	if err != nil {
 		return err
 	}
 	values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
 	if *suite == "pg-source-authorization" {
+		for key, value := range pgRecipients {
+			values[key] = value
+		}
 		operator, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = operator.AccessToken
+		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-pg-outsider", pgAuthorizationConsumerPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
 	}
 	if *suite == "transfer-relational-sql-etl" {
 		const username = "external-online-transfer-precheck"
@@ -693,6 +713,31 @@ func createUserCredentials(ctx context.Context, service *iam.IdentityService, us
 		return nil, "", fmt.Errorf("create %s: %w", username, err)
 	}
 	return created, password, nil
+}
+
+func preparePGAuthorizationMemberships(ctx context.Context, organizations *iam.OrganizationService, tenantID, actorID, membershipID int64) (map[string]string, error) {
+	department, err := organizations.CreateDepartment(ctx, iam.CreateDepartmentInput{TenantID: tenantID,
+		ActorPrincipalID: actorID, Code: "pg_authorization", Name: "PG authorization department", Audit: audit("pg-department")})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := organizations.CreateDepartmentMembership(ctx, iam.CreateDepartmentMembershipInput{TenantID: tenantID,
+		DepartmentID: department.ID, TenantMembershipID: membershipID, ActorPrincipalID: actorID,
+		MembershipType: "primary", RelationRole: "member", Audit: audit("pg-department-member")}); err != nil {
+		return nil, err
+	}
+	group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: tenantID,
+		ActorPrincipalID: actorID, Code: "pg_authorization", Name: "PG authorization project", Audit: audit("pg-project")})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: tenantID,
+		ProjectGroupID: group.ID, TenantMembershipID: membershipID, ActorPrincipalID: actorID,
+		RelationRole: "member", Audit: audit("pg-project-member")}); err != nil {
+		return nil, err
+	}
+	return map[string]string{"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID": strconv.FormatInt(department.ID, 10),
+		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID": strconv.FormatInt(group.ID, 10)}, nil
 }
 
 func createPermissionFixture(

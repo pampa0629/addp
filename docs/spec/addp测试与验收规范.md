@@ -28,6 +28,8 @@ T0-T3 证明确定性代码与模块集成；T4 证明真实运行拓扑；T5 �
 
 PG 源数据授权生命周期使用独立 `pg-source-authorization` T4 suite，经 `make test-online ONLINE_SUITE=pg-source-authorization` 在 GitHub Hosted disposable 部署执行。复用正式 IAM 夹具、共享 Hosted 生命周期及已有 PostgreSQL 业务源，不连接个人开发库。办理 User 与消费 User 分离，前者仅具备本场景办理资格，后者只具备 Meta 基础扫描／目录和 Manager 读取功能权限；消费 User 不获得签发或委托资格。对单张普通表验证未授权拒绝、有限期 Grant、重复签发拒绝、精确 basic 强制重扫后身份与边界不变、Deny 优先及解除、撤销和自然到期；相邻已扫描表始终未授权。读取须经过真实 Manager 预览，不用 System read-check 成功替代；同一消费凭据跨自然到期前后使用，不调整时钟或手工撤销代替到期。失败或中断按原命令编号收权、解除本轮 Deny，核对无当前来源，并由 Hosted 生命周期销毁本轮账号、源容器和 Infra。报告仅保存身份引用、状态、行数和边界摘要，不保存凭据或原始数据。确定性反例与生命周期清理由 `make test-pg-authorization-online-runner` 验证并纳入 Online/Platform 门禁；首次真实 Hosted 通过前保持手工触发，不计为已完成 T4，不加入夜间调度。
 
+同一 PG suite 还验证同一 DataItem 上的个人、部门和项目组三种独立来源：普通成员与无成员关系的同权限旁观 User 分离，组织成员关系在正式 IAM 夹具中先建立、再签发会话，不扩大办理或消费 Permission。当前授权查询须准确合并三种来源，全部记录按直接接收主体筛选；逐项撤销个人／部门来源不能误删项目组来源，个人和组织 Deny 分别解除，最后一个 Grant 撤销后仍保留 Deny-only 解除入口。每个阶段均与真实 Manager 预览对照，旁观 User 和相邻表始终拒绝；失败或中断按本轮全部接收主体清理，不能只清个人 Grant。此验收不包含组织成员动态变更、Catalog 业务批准或其他引擎。
+
 平台公共入口为：
 
 ```bash

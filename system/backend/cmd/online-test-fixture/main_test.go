@@ -7,12 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	commonauthorization "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/testsupport"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T) {
@@ -118,6 +124,119 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 	}
 	if slices.Contains(pgAuthorizationOperatorPermissions, "manager.data_item.read") {
 		t.Fatal("operator must not be the source reader")
+	}
+}
+
+func TestPGAuthorizationMembershipsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("requires standard System PostgreSQL gate")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reset := func() {
+		if err := db.Exec("DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE").Error; err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { reset(); connection.Close() })
+	reset()
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	repo := iam.NewRepository(db)
+	clock, err := testsupport.FixtureDatabaseClock(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := iam.NewIdentityService(repo, nil)
+	admin, err := createUser(ctx, identity, "pg-fixture-admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := iam.NewPlatformTenantService(repo, clock).Create(ctx, iam.CreateTenantInput{
+		Code: "pg_fixture", Name: "PG fixture", InitialAdministratorPrincipalID: admin.PrincipalID,
+		ActorPrincipalID: admin.PrincipalID, Audit: audit("pg-fixture-tenant")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := iam.NewTokenFamilyService(repo, fixtureSessionConfig("pg-source-authorization"), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := iam.NewContextSelectionService(repo, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberships, roles := iam.NewTenantMembershipService(repo, clock), iam.NewTenantRoleService(repo, clock)
+	reader, assignmentID, _, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection,
+		tenant.ID, admin.PrincipalID, "pg-fixture-reader", pgAuthorizationConsumerPermissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := preparePGAuthorizationMemberships(ctx, iam.NewOrganizationService(repo, clock),
+		tenant.ID, admin.PrincipalID, *reader.Context.TenantMembershipID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contexts, err := iam.NewAuthContextService(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := contexts.ResolveAccessToken(ctx, reader.AccessToken); err == nil {
+		t.Fatal("membership changes kept a stale reader credential valid")
+	}
+	assignment, err := roles.GetAssignment(ctx, tenant.ID, assignmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := issueSession(ctx, repo, selection, assignment.PrincipalID, "pg-fixture-reader-current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := contexts.ResolveAccessToken(ctx, refreshed.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current.Organization.Departments) != 1 || len(current.Organization.ProjectGroups) != 1 ||
+		current.Organization.Departments[0].DepartmentID != values["ADDP_ONLINE_FIXTURE_DEPARTMENT_ID"] ||
+		current.Organization.ProjectGroups[0].ProjectGroupID != values["ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID"] {
+		t.Fatal("reader organizations differ from the declared fixture")
+	}
+	for _, value := range values {
+		if id, err := strconv.ParseInt(value, 10, 64); err != nil || id <= 0 {
+			t.Fatal("invalid organization identity", value)
+		}
+	}
+	outsider, _, _, err := createPermissionFixture(ctx, repo, identity, memberships, roles, selection,
+		tenant.ID, admin.PrincipalID, "pg-fixture-outsider", pgAuthorizationConsumerPermissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := contexts.ResolveAccessToken(ctx, outsider.AccessToken)
+	if err != nil || len(other.Organization.Departments) != 0 || len(other.Organization.ProjectGroups) != 0 {
+		t.Fatal("outsider gained fixture organization membership", err)
+	}
+	for _, projection := range []*commonauthorization.AuthContext{current, other} {
+		actual := []string{}
+		for _, role := range projection.Authorization.RoleAssignments {
+			actual = append(actual, role.Permissions...)
+		}
+		want := slices.Clone(pgAuthorizationConsumerPermissions)
+		slices.Sort(actual)
+		slices.Sort(want)
+		if !slices.Equal(actual, want) {
+			t.Fatal("organization preparation changed reader permissions", actual)
+		}
 	}
 }
 

@@ -37,6 +37,13 @@ def identity(client, tenant, permissions):
     return str(current['principal']['id']), summary
 
 
+def organization_memberships(client, expected):
+    current = client.request('GET', '/api/v1/system/auth/context', (200,)).payload['organization']
+    actual = {('department', row['department_id']) for row in current['departments']}
+    actual |= {('project_group', row['project_group_id']) for row in current['project_groups']}
+    require(actual == set(expected.items()), 'fixture organization membership differs from its declared recipients')
+
+
 def table_path(engine, name):
     return {'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
         {'term': 'server', 'kind': 'server', 'name': ''},
@@ -97,30 +104,36 @@ def preview(reader, target, allowed, expected=None):
 
 
 class Lifecycle:
-    def __init__(self, operator, reader, tenant, engine, recipient):
+    def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider):
         self.operator, self.reader, self.tenant, self.engine, self.recipient = operator, reader, tenant, engine, recipient
+        self.organizations, self.outsider = organizations, outsider
         self.path = table_path(engine, 'metric_people')
         self.base = f'/api/v1/system/engines/{engine}'
         self.grants, self.denies = [], []
+        self.recipients = {('user', recipient)}
+        self.source_observations = []
         self.expiry_grant = None
 
-    def listing(self, *, history=False, state=None):
+    def listing(self, *, history=False, state=None, recipient_type='user', recipient_id=None):
         query = {'catalog_path': json.dumps(self.path, separators=(',', ':')),
-                 'recipient_type': 'user', 'recipient_id': self.recipient, 'page_size': 100}
+                 'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
+                 'page_size': 100}
         if state:
             query['state'] = state
         return self.operator.request('GET', self.base + '/access_grants' + ('/history' if history else '')
                                      + '?' + urlencode(query), (200,)).payload
 
-    def grant(self, facts, *, initialize=False, seconds=300):
+    def grant(self, facts, *, initialize=False, seconds=300, recipient_type='user', recipient_id=None):
         command = str(uuid.uuid4())
         expires = datetime.now(timezone.utc) + timedelta(seconds=seconds)
         body = {'request_id': command, 'catalog_path': self.path, 'item_fingerprint': facts['item_fingerprint'],
                 'expected_boundary_hash': facts['boundary_hash'], 'requirement_version': '1',
-                'initialize_approval': initialize, 'recipient_type': 'user', 'recipient_id': self.recipient,
+                'initialize_approval': initialize, 'recipient_type': recipient_type,
+                'recipient_id': self.recipient if recipient_id is None else recipient_id,
                 'action': 'read', 'expiry_mode': 'at_time', 'expires_at': expires.isoformat(),
                 'reason': 'Disposable PG source authorization lifecycle'}
         self.grants.append(command)  # Track before the write, including unknown outcomes.
+        self.recipients.add((body['recipient_type'], body['recipient_id']))
         receipt = self.operator.request('POST', self.base + '/access_grants', (201,), body).payload
         for key in ('request_id', 'catalog_path', 'item_fingerprint', 'recipient_type', 'recipient_id', 'action', 'expiry_mode'):
             require(receipt.get(key) == body[key], 'Grant receipt changed its bound target or recipient')
@@ -133,13 +146,15 @@ class Lifecycle:
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
 
-    def deny(self, facts):
+    def deny(self, facts, *, recipient_type='user', recipient_id=None):
         command = str(uuid.uuid4())
         self.denies.append(command)
         body = {'deny_id': command, 'catalog_path': self.path, 'item_fingerprint': facts['item_fingerprint'],
-                'recipient_type': 'user', 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'at_time',
+                'recipient_type': recipient_type, 'recipient_id': self.recipient if recipient_id is None else recipient_id,
+                'action': 'read', 'expiry_mode': 'at_time',
                 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=180)).isoformat(),
                 'reason': 'Disposable PG lifecycle Deny priority'}
+        self.recipients.add((body['recipient_type'], body['recipient_id']))
         receipt = self.operator.request('POST', self.base + '/access_denies', (200,), body).payload
         require(receipt.get('deny_id') == command, 'Deny receipt identity changed')
         return command
@@ -159,15 +174,102 @@ class Lifecycle:
                 self.release(command, cleanup=True)
             except Exception:
                 errors.append('Deny release failed')
-        try:
-            active = self.listing(history=True, state='active')
-            for row in active['data']:
-                require(row['request_id'] in self.grants, 'refusing to revoke an unowned Grant')
-                self.revoke(row['request_id'])
-            require(self.listing()['total'] == 0, 'current source rules remain after cleanup')
-        except Exception:
-            errors.append('Grant cleanup or residual verification failed')
+        for kind, recipient in sorted(self.recipients):
+            try:
+                active = self.listing(history=True, state='active', recipient_type=kind, recipient_id=recipient)
+                for row in active['data']:
+                    if row['request_id'] not in self.grants:
+                        errors.append('refusing to revoke an unowned Grant')
+                        continue
+                    self.revoke(row['request_id'])
+            except Exception:
+                errors.append('Grant cleanup failed')
+        for kind, recipient in sorted(self.recipients):
+            try:
+                require(self.listing(recipient_type=kind, recipient_id=recipient)['total'] == 0,
+                        'current source rules remain after cleanup')
+            except Exception:
+                errors.append('residual verification failed')
         require(not errors, '; '.join(errors))
+
+    def inspect_sources(self, facts, sources, denies, reason='grant'):
+        current = self.listing()
+        if not sources and not denies:
+            require(current['total'] == 0 and current['data'] == [], 'source-free account still has a current relation')
+            self.source_observations.append({'reason': 'no_grant', 'sources': [], 'denies': []})
+            return
+        require(current['total'] == 1 and len(current['data']) == 1, 'current sources were not merged to one DataItem')
+        row = current['data'][0]
+        require(row['catalog_path'] == self.path and row['item_fingerprint'] == facts['item_fingerprint']
+                and row['recipient_type'] == 'user' and row['recipient_id'] == self.recipient
+                and row['grant_count'] == len(sources) and 'request_id' not in row,
+                'current relation target, recipient or grant count differs')
+        observed = row['inspection']
+        require(observed['account_id'] == self.recipient and observed['catalog_path'] == self.path
+                and observed['item_fingerprint'] == facts['item_fingerprint'] and bool(observed['observed_at'])
+                and observed['reason'] == reason and observed['rule_covered'] == (reason == 'grant'),
+                'current source verdict differs from the expected rules')
+        actual = {(source['recipient_type'], source['recipient_id']): source['request_id'] for source in observed['sources']}
+        require(actual == sources and len(observed['sources']) == len(sources)
+                and all(source['grant_count'] == 1 for source in observed['sources']), 'Grant source anchors differ')
+        actual_denies = {(deny['recipient_type'], deny['recipient_id']): deny['deny_id'] for deny in observed['denies']}
+        require(actual_denies == denies and len(observed['denies']) == len(denies), 'Deny source anchors differ')
+        require(all(set(deny) == {'deny_id', 'recipient_type', 'recipient_id', 'expiry_mode', 'expires_at'}
+                    for deny in observed['denies']), 'Deny summary exposed establishment details')
+        self.source_observations.append({key: observed[key] for key in ('reason', 'sources', 'denies')})
+
+    def organization_flow(self, report, facts, target, ungranted):
+        report['phase'] = 'organization_sources'
+        report['source_observations'] = self.source_observations
+        report['organization_recipients'] = self.organizations
+        before = self.reader.token
+        preview(self.outsider, target, False)
+        sources, denies = {}, {}
+        personal = ('user', self.recipient)
+        department = ('department', self.organizations['department'])
+        project = ('project_group', self.organizations['project_group'])
+        for source in (department, project, personal):
+            sources[source], _ = self.grant(facts, recipient_type=source[0], recipient_id=source[1])
+            self.inspect_sources(facts, sources, denies)
+            preview(self.reader, target, True, 2)
+            preview(self.outsider, target, False)
+            preview(self.reader, ungranted, False)
+        report['checks'].append('three_sources_merged_and_nonmember_denied')
+        personal_id = sources.pop(personal)
+        self.revoke(personal_id)
+        self.inspect_sources(facts, sources, denies)
+        require(self.listing(history=True, state='active')['total'] == 0,
+                'history expanded current organization sources into personal Grants')
+        preview(self.reader, target, True, 2)
+        report['checks'].append('personal_withdrawal_preserves_organizations')
+        for source in (personal, project):
+            denies[source] = self.deny(facts, recipient_type=source[0], recipient_id=source[1])
+            self.inspect_sources(facts, sources, denies, 'explicit_deny')
+            preview(self.reader, target, False)
+        self.release(denies.pop(personal))
+        self.inspect_sources(facts, sources, denies, 'explicit_deny')
+        preview(self.reader, target, False)
+        report['checks'].append('one_deny_release_preserves_other_deny')
+        self.release(denies.pop(project))
+        self.inspect_sources(facts, sources, denies)
+        preview(self.reader, target, True, 2)
+        report['checks'].append('all_denies_released_restore_organization_read')
+        self.revoke(sources.pop(department))
+        self.inspect_sources(facts, sources, denies)
+        preview(self.reader, target, True, 2)
+        report['checks'].append('department_withdrawal_preserves_project')
+        denies[personal] = self.deny(facts)
+        self.revoke(sources.pop(project))
+        self.inspect_sources(facts, sources, denies, 'explicit_deny')
+        preview(self.reader, target, False)
+        report['checks'].append('last_grant_withdrawn_preserves_deny_only_anchor')
+        self.release(denies.pop(personal))
+        self.inspect_sources(facts, sources, denies)
+        preview(self.reader, target, False)
+        preview(self.outsider, target, False)
+        preview(self.reader, ungranted, False)
+        require(self.reader.token == before, 'organization authorization changed the reader credential')
+        report['checks'].append('all_sources_withdrawn_and_release_does_not_grant')
 
     def run(self, report):
         reader_before = self.reader.token
@@ -226,6 +328,7 @@ class Lifecycle:
                       rows=2, same_credential=True, exact_target_only=True,
                       checks=['ungranted_denied', 'granted_readable', 'duplicate_rejected', 'basic_rescan_readable',
                               'deny_overrides_grant', 'release_restores_read', 'revoke_denies_read', 'natural_expiry_denies_read'])
+        self.organization_flow(report, facts, target, ungranted)
 
 
 def main():
@@ -253,13 +356,22 @@ def main():
         require(math.isfinite(timeout) and 0 < timeout <= 30, 'invalid HTTP timeout')
         reader = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], timeout)
         operator = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], timeout)
+        outsider = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], timeout)
+        organizations = {kind: os.environ[key] for kind, key in (
+            ('department', 'ADDP_ONLINE_FIXTURE_DEPARTMENT_ID'), ('project_group', 'ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID'))}
+        require(all(re.fullmatch(r'[1-9][0-9]*', value) for value in organizations.values()), 'invalid organization fixture IDs')
         recipient, report['reader'] = identity(reader, tenant, READER_PERMISSIONS)
         issuer, report['operator'] = identity(operator, tenant, OPERATOR_PERMISSIONS)
-        require(issuer != recipient and reader.token != operator.token, 'operator and reader must be distinct Users')
+        observer, report['outsider'] = identity(outsider, tenant, READER_PERMISSIONS)
+        require(len({issuer, recipient, observer}) == 3 and len({reader.token, operator.token, outsider.token}) == 3,
+                'operator, reader and outsider must be distinct Users')
+        organization_memberships(reader, organizations)
+        organization_memberships(outsider, {})
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, interrupted)
         report.update(run_id=run_id, tenant_id=str(tenant), engine_id=engine)
-        lifecycle = Lifecycle(operator, reader, tenant, engine, recipient)
+        report['principals'] = {'reader': recipient, 'operator': issuer, 'outsider': observer}
+        lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider)
         lifecycle.run(report)
         report['result'] = 'passed'
     except (SuiteError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError):

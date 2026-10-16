@@ -14,6 +14,7 @@ REAL_BASIC_SCAN = ONLINE.basic_scan
 class Server:
     def __init__(self, fault=None):
         self.grants, self.denies, self.calls = {}, {}, []
+        self.deny_bodies, self.expired_grants = {}, set()
         self.expired, self.fault = False, fault
 
     def client(self, kind):
@@ -25,7 +26,9 @@ class Server:
                 server.calls.append((kind, method, path, body))
                 status, result = 200, {}
                 if path.endswith('/access_grants') and method == 'POST':
-                    if any(row['revocation'] is None and not server.expired for row in server.grants.values()):
+                    if any(row['revocation'] is None and key not in server.expired_grants
+                           and (row['recipient_type'], row['recipient_id']) == (body['recipient_type'], body['recipient_id'])
+                           for key, row in server.grants.items()):
                         status, result = 409, {'error_code': 'engine_access_grant_relation_exists'}
                     else:
                         result = dict(body, engine_id='2', boundary_hash=body['expected_boundary_hash'], revocation=None)
@@ -34,27 +37,58 @@ class Server:
                         status = 201
                 elif '/access_grants/' in path and path.endswith('/revoke'):
                     server.grants[path.split('/')[-2]]['revocation'] = {'reason': body['reason']}
+                    if server.fault == 'withdrawal_overreach' and any(row['recipient_type'] != 'user' for row in server.grants.values()):
+                        for row in server.grants.values():
+                            row['revocation'] = {'reason': body['reason']}
                 elif path.endswith('/access_denies'):
                     server.denies[body['deny_id']] = True
+                    server.deny_bodies[body['deny_id']] = dict(body)
                     status, result = 200, dict(body)
                 elif path.endswith('/release'):
                     server.denies[path.split('/')[-2]] = False
+                    if server.fault == 'release_all_denies':
+                        server.denies = dict.fromkeys(server.denies, False)
                     result = {'deny_id': path.split('/')[-2]}
                 elif path.endswith('/history') or path.endswith('/access_grants'):
                     state = query.get('state', [''])[0]
                     if state == 'expired' and server.fault != 'never_expire':
                         server.expired = True
+                        server.expired_grants.update(key for key, row in server.grants.items() if row['revocation'] is None)
+                    history = path.endswith('/history')
+                    recipient = (query['recipient_type'][0], query['recipient_id'][0])
+                    account = recipient == ('user', '33') and not history
                     rows = []
-                    for row in server.grants.values():
+                    for key, row in server.grants.items():
                         revoked = row['revocation'] is not None
-                        current = 'revoked' if revoked else 'expired' if server.expired else 'active'
-                        if current == (state or 'active'):
+                        current = 'revoked' if revoked else 'expired' if key in server.expired_grants else 'active'
+                        matches = (row.get('recipient_type', 'user'), row.get('recipient_id', '33')) == recipient
+                        if server.fault == 'history_expands_organizations' and history and recipient == ('user', '33'):
+                            matches = True
+                        if current == (state or 'active') and (matches or account):
                             rows.append(dict(row))
+                    if account:
+                        sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
+                                   | {'grant_count': 1} for row in rows]
+                        denies = [{key: body[key] for key in ('recipient_type', 'recipient_id', 'deny_id', 'expiry_mode', 'expires_at')}
+                                  for command, body in server.deny_bodies.items() if server.denies[command]]
+                        if server.fault == 'wrong_source_anchor' and any(row['recipient_type'] == 'project_group' for row in sources):
+                            sources[-1]['request_id'] = 'wrong'
+                        rows = []
+                        if (sources or denies) and not (server.fault == 'hide_deny_only' and not sources):
+                            reason = 'explicit_deny' if denies else 'grant'
+                            target = json.loads(query['catalog_path'][0])
+                            rows = [{'catalog_path': target, 'item_fingerprint': 'a' * 64, 'recipient_type': 'user',
+                                     'recipient_id': '33', 'grant_count': len(sources), 'inspection': {
+                                         'account_id': '33', 'catalog_path': target, 'item_fingerprint': 'a' * 64,
+                                         'observed_at': '2026-10-16T03:00:00Z', 'rule_covered': reason == 'grant',
+                                         'reason': reason, 'sources': sources, 'denies': denies}}]
                     result = {'data': rows, 'total': len(rows)}
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
-                    active = any(row['revocation'] is None for row in server.grants.values())
-                    allowed = active and not server.expired and not any(server.denies.values()) and 'metric_people?' in target
+                    active = any(row['revocation'] is None and key not in server.expired_grants for key, row in server.grants.items())
+                    allowed = kind == 'reader' and active and not any(server.denies.values()) and 'metric_people?' in target
+                    if server.fault == 'nonmember_granted' and kind == 'outsider' and active:
+                        allowed = True
                     if server.fault == 'deny_ignored' and any(server.denies.values()):
                         allowed = True
                     if server.fault == 'expired_ignored' and server.expired:
@@ -88,7 +122,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def lifecycle(self, fault=None):
         server = Server(fault)
-        lifecycle = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33')
+        lifecycle = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
+                                     {'department': '41', 'project_group': '51'}, server.client('outsider'))
         return server, lifecycle
 
     def test_full_flow_keeps_one_table_same_credential_and_natural_expiry(self):
@@ -96,9 +131,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 8)
-        self.assertEqual(len(server.grants), 2)
-        self.assertTrue(server.expired)
+        self.assertEqual(len(report['checks']), 15)
+        self.assertEqual(len(server.grants), 5)
+        self.assertIn(lifecycle.expiry_grant, server.expired_grants)
         self.assertIsNone(server.grants[lifecycle.expiry_grant]['revocation'])
         self.assertFalse(any(server.denies.values()))
         self.assertEqual(self.scans.call_args_list[0].args[2], ['metric_people', 'metric_events'])
@@ -109,6 +144,47 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                             for call in writes if 'catalog_path' in call[3]))
         self.assertNotIn('private-token', json.dumps(report))
         self.assertNotIn('person_id', json.dumps(report))
+        self.assertEqual([len(row['sources']) for row in report['source_observations']], [1, 2, 3, 2, 2, 2, 2, 2, 1, 0, 0])
+
+    def test_organization_projection_history_and_nonmember_oracles(self):
+        for fault in ('wrong_source_anchor', 'nonmember_granted', 'release_all_denies', 'hide_deny_only',
+                      'history_expands_organizations', 'withdrawal_overreach'):
+            with self.subTest(fault=fault):
+                self.scans.side_effect = ['initial-basic', 'exact-basic']
+                server, lifecycle = self.lifecycle(fault)
+                with self.assertRaises(ONLINE.SuiteError):
+                    lifecycle.run({})
+                lifecycle.cleanup()
+                self.assertFalse(any(server.denies.values()))
+                self.assertTrue(all(row['revocation'] is not None or key in server.expired_grants
+                                    for key, row in server.grants.items()))
+
+    def test_cleanup_tracks_organization_unknown_write_outcomes(self):
+        for kind, recipient in (('department', '41'), ('project_group', '51')):
+            with self.subTest(kind=kind):
+                server, lifecycle = self.lifecycle()
+                original = lifecycle.operator.request
+                def interrupted(method, path, expected, body=None):
+                    response = original(method, path, expected, body)
+                    if method == 'POST' and path.endswith('/access_grants'):
+                        raise ONLINE.SuiteError('response lost')
+                    return response
+                lifecycle.operator.request = interrupted
+                with self.assertRaises(ONLINE.SuiteError):
+                    lifecycle.grant(self.facts, recipient_type=kind, recipient_id=recipient)
+                lifecycle.operator.request = original
+                lifecycle.cleanup()
+                self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
+
+    def test_organization_memberships_must_match_current_context(self):
+        client = Mock()
+        client.request.return_value.payload = {'organization': {'departments': [{'department_id': '41'}],
+                                                               'project_groups': [{'project_group_id': '51'}]}}
+        ONLINE.organization_memberships(client, {'department': '41', 'project_group': '51'})
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.organization_memberships(client, {})
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.organization_memberships(client, {'department': '42', 'project_group': '51'})
 
     def test_deny_success_status_matches_published_contract(self):
         swagger = json.loads((Path(__file__).resolve().parents[2] /
@@ -192,6 +268,16 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             lifecycle.cleanup()
         self.assertIsNone(server.grants['unowned']['revocation'])
 
+    def test_cleanup_continues_other_recipients_without_touching_unowned_grants(self):
+        server, lifecycle = self.lifecycle()
+        lifecycle.grant(self.facts, recipient_type='department', recipient_id='41')
+        lifecycle.grant(self.facts, recipient_type='project_group', recipient_id='51')
+        server.grants['unowned'] = {'request_id': 'unowned', 'revocation': None, 'recipient_type': 'department', 'recipient_id': '41'}
+        with self.assertRaises(ONLINE.SuiteError):
+            lifecycle.cleanup()
+        self.assertIsNone(server.grants['unowned']['revocation'])
+        self.assertTrue(all(row['revocation'] is not None for key, row in server.grants.items() if key != 'unowned'))
+
     def test_cleanup_attempts_grants_even_if_deny_release_fails(self):
         server, lifecycle = self.lifecycle()
         lifecycle.grant(self.facts)
@@ -215,7 +301,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                        'ADDP_ONLINE_TEST_TENANT_ID': '3', 'ADDP_ONLINE_CONSUMER_ENGINE_ID': '2',
                        'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'pg-fixture',
                        'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'reader',
-                       'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'operator'}
+                       'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'operator',
+                       'ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN': 'outsider',
+                       'ADDP_ONLINE_FIXTURE_DEPARTMENT_ID': '41', 'ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID': '51'}
                 def failed_run(lifecycle, report):
                     lifecycle.grant(self.facts)
                     if after_deny:
@@ -223,7 +311,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     raise ONLINE.SuiteError('injected interruption')
                 with patch.dict(ONLINE.os.environ, env, clear=True), \
                      patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout: server.client(token)), \
-                     patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {})]), \
+                     patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {}), ('34', {})]), \
+                     patch.object(ONLINE, 'organization_memberships'), \
                      patch.object(ONLINE.Lifecycle, 'run', autospec=True, side_effect=failed_run):
                     self.assertEqual(ONLINE.main(), 1)
                 report = json.loads((Path(directory) / (ONLINE.SUITE + '.json')).read_text())
