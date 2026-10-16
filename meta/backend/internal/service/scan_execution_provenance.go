@@ -6,6 +6,7 @@ import (
 	"path"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,9 @@ import (
 // Caller authentication is enforced at the HTTP boundary; this verifies durable
 // provenance and copies identity facts, never an execution authorization grant.
 func inheritProducedTargetActor(tx *gorm.DB, child *execution.TaskExecution, req *models.ScanRequest) error {
+	if req.SchemaChangeSource != nil {
+		return inheritAppliedSchemaChangeActor(tx, child, req)
+	}
 	if req.ParentExecutionID == "" {
 		return nil
 	}
@@ -242,4 +246,62 @@ func matchesManagerProducedTarget(parent execution.TaskExecution, req *models.Sc
 		return false
 	}
 	return target.CatalogPath != "" && target.CatalogPath != "." && !path.IsAbs(target.CatalogPath) && !strings.HasPrefix(target.CatalogPath, "../") && !strings.Contains(target.CatalogPath, "\\") && path.Clean(target.CatalogPath) == target.CatalogPath && parent.Metadata["catalog_path"] == target.CatalogPath && req.RefGroups[0].Primary == target.CatalogPath
+}
+
+func inheritAppliedSchemaChangeActor(tx *gorm.DB, child *execution.TaskExecution, req *models.ScanRequest) error {
+	ref := req.SchemaChangeSource
+	id, err := uuid.Parse(ref.ExecutionID)
+	if err != nil || id == uuid.Nil || id.String() != ref.ExecutionID || ref.RequestID == 0 || ref.ClaimToken == "" {
+		return commonapi.ErrBadRequest
+	}
+	var historical execution.TaskExecution
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND execution_boundary = ? AND status = ?", child.TenantID, ref.ExecutionID, execution.ModuleTransfer, execution.TaskTypeSync, execution.ExecutionBoundaryContinuous, execution.ExecutionStatusFailed).First(&historical).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return commonapi.ErrNotFound
+		}
+		return err
+	}
+	var fact execution.AppliedSchemaChangeScanOrigin
+	encoded, err := json.Marshal(historical.Metadata[execution.SchemaChangeScanOriginKey])
+	if err != nil || json.Unmarshal(encoded, &fact) != nil {
+		return commonapi.ErrNotFound
+	}
+	now := time.Now().UTC()
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			return err
+		}
+	}
+	if fact.RequestID != ref.RequestID || fact.TaskID == 0 || historical.SourceTaskID == nil || *historical.SourceTaskID != strconv.FormatUint(uint64(fact.TaskID), 10) || fact.Generation == 0 || fact.FromRevision == 0 || fact.ToRevision != fact.FromRevision+1 || fact.AppliedAt.IsZero() || fact.AppliedAt.After(now) || fact.Attempt == 0 || fact.ClaimToken != ref.ClaimToken || fact.LeaseUntil == nil || !fact.LeaseUntil.After(now) || historical.Metadata["stop_reason"] != "schema_change_blocked" {
+		return commonapi.ErrNotFound
+	}
+	continuous, _ := historical.Metadata["continuous"].(map[string]interface{})
+	var projection struct {
+		RequestID    uint   `json:"request_id"`
+		Status       string `json:"status"`
+		Generation   uint64 `json:"generation"`
+		FromRevision uint64 `json:"from_revision"`
+		ToRevision   uint64 `json:"to_revision"`
+		MetadataScan struct {
+			Status  string `json:"status"`
+			Attempt uint64 `json:"attempt"`
+		} `json:"metadata_scan"`
+	}
+	encoded, err = json.Marshal(continuous["schema_change"])
+	if err != nil || json.Unmarshal(encoded, &projection) != nil || projection.Status != "applied" || projection.MetadataScan.Status != "running" || projection.MetadataScan.Attempt != fact.Attempt || projection.RequestID != fact.RequestID || projection.Generation != fact.Generation || projection.FromRevision != fact.FromRevision || projection.ToRevision != fact.ToRevision {
+		return commonapi.ErrNotFound
+	}
+	locator, err := resourcetree.ParseURI(fact.TargetLocator)
+	if err != nil || locator.Type != resourcetree.TypeTable || len(locator.Path) < 2 || locator.EngineID != req.EngineID || len(req.Targets) != 1 || req.Targets[0] != fact.TargetLocator {
+		return commonapi.ErrBadRequest
+	}
+	source := execution.TaskExecution{TenantID: child.TenantID, TriggeredBy: &fact.TriggeredBy, ActorPrincipalID: &fact.ActorPrincipalID, ActorTenantMembershipID: &fact.ActorTenantMembershipID, IssuedAuthorizationVersion: &fact.IssuedAuthorizationVersion}
+	if err := execution.CopyActorOrigin(child, &source); err != nil {
+		return commonapi.ErrNotFound
+	}
+	if child.Metadata == nil {
+		child.Metadata = map[string]interface{}{}
+	}
+	child.Metadata["schema_change_source"] = map[string]interface{}{"execution_id": ref.ExecutionID, "request_id": ref.RequestID}
+	return nil
 }

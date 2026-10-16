@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -194,5 +195,79 @@ func assertSchemaChangeProjection(t *testing.T, db *gorm.DB, executionID, status
 	scan, _ := change["metadata_scan"].(map[string]interface{})
 	if change["status"] != status || scan["status"] != string(scanStatus) || scan["attempt"] != float64(attempt) {
 		t.Fatalf("schema change projection=%#v", change)
+	}
+}
+
+func TestSchemaChangeScanOriginClaimIsAtomic(t *testing.T) {
+	db := newSchemaChangeRepositoryTestDB(t)
+	seedSchemaChangeMetadataScanRequest(t, db, 87)
+	var request models.SchemaChangeRequest
+	if err := db.First(&request, 87).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertAppliedScanOriginClaimRoundTrip(t, db, request)
+}
+
+func assertAppliedScanOriginClaimRoundTrip(t *testing.T, db *gorm.DB, request models.SchemaChangeRequest) {
+	t.Helper()
+	request.Status = models.SchemaChangeRequestApplied
+	request.MetadataScanStatus = models.SchemaChangeMetadataScanPending
+	if err := db.Model(&request).Updates(map[string]interface{}{"status": request.Status, "metadata_scan_status": request.MetadataScanStatus}).Error; err != nil {
+		t.Fatal(err)
+	}
+	origin := commonExecution.AppliedSchemaChangeScanOrigin{RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: "addp://engine/9/path/public/changed?type=table", AppliedAt: time.Now(), TriggeredBy: 83, ActorPrincipalID: 83, ActorTenantMembershipID: 84, IssuedAuthorizationVersion: 7}
+	publish := func(tx *gorm.DB) error {
+		if err := UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
+			return err
+		}
+		return PublishAppliedSchemaChangeScanOriginTx(tx, &request, origin)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := publish(tx); err != nil {
+			return err
+		}
+		return fmt.Errorf("rollback applied fact")
+	}); err == nil {
+		t.Fatal("rollback not exercised")
+	}
+	read := func() commonExecution.TaskExecution {
+		var record commonExecution.TaskExecution
+		if err := db.Where("execution_id = ?", request.ExecutionID).First(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	if read().Metadata[commonExecution.SchemaChangeScanOriginKey] != nil {
+		t.Fatal("rolled back approval published origin")
+	}
+	if err := db.Transaction(publish); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSchemaChangeRequestRepository(db)
+	claimed, owned, err := repo.ClaimMetadataScan(context.Background(), request.ID, time.Now(), time.Minute)
+	if err != nil || !owned {
+		t.Fatalf("claim=%#v owned=%v err=%v", claimed, owned, err)
+	}
+	record := read()
+	data, _ := json.Marshal(record.Metadata[commonExecution.SchemaChangeScanOriginKey])
+	var stored commonExecution.AppliedSchemaChangeScanOrigin
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.ClaimToken != claimed.MetadataScanClaimToken || stored.Attempt != 1 || stored.LeaseUntil == nil || stored.ActorPrincipalID != 83 || stored.TargetLocator != origin.TargetLocator {
+		t.Fatalf("origin not updated atomically: %#v", stored)
+	}
+	projected, _ := json.Marshal(commonExecution.Observe(&record))
+	if strings.Contains(string(projected), claimed.MetadataScanClaimToken) || strings.Contains(string(projected), commonExecution.SchemaChangeScanOriginKey) {
+		t.Fatal("professional observation exposed private approval source")
+	}
+	if _, owned, err := repo.CompleteMetadataScan(context.Background(), request.ID, claimed.MetadataScanClaimToken, models.SchemaChangeMetadataScanSuccess, "meta-approved-scan", "", time.Now()); err != nil || !owned {
+		t.Fatalf("complete owned=%v err=%v", owned, err)
+	}
+	data, _ = json.Marshal(read().Metadata[commonExecution.SchemaChangeScanOriginKey])
+	stored = commonExecution.AppliedSchemaChangeScanOrigin{}
+	_ = json.Unmarshal(data, &stored)
+	if stored.ClaimToken != "" || stored.LeaseUntil != nil || stored.ActorPrincipalID != 83 {
+		t.Fatalf("completion lost origin or retained active claim: %#v", stored)
 	}
 }

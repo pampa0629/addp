@@ -103,7 +103,8 @@ func TestOwnerReadScopeReauthenticatesUserAndRejectsService(t *testing.T) {
 func TestObservationExcludesPayloadsAndSanitizesErrors(t *testing.T) {
 	secret := "sensitive-sentinel"
 	item := &execution.TaskExecution{ExecutionID: "observed", Status: "failed", ExecutionConfig: map[string]interface{}{"password": secret}, Metadata: map[string]interface{}{
-		"execution_logs": secret, "result": map[string]interface{}{"final_result": secret, "traceback": secret, "runtime_status": map[string]interface{}{"error_code": "EXECUTION_FAILED", "details": secret}},
+		execution.SchemaChangeScanOriginKey: map[string]interface{}{"claim_token": secret, "actor_principal_id": 31},
+		"execution_logs":                    secret, "result": map[string]interface{}{"final_result": secret, "traceback": secret, "runtime_status": map[string]interface{}{"error_code": "EXECUTION_FAILED", "details": secret}},
 		"step_results": map[string]interface{}{"read": map[string]interface{}{"status": "failed", "error": "password=" + secret, "result": map[string]interface{}{"row": secret}, "duration": int64(12)}},
 		"continuous": map[string]interface{}{"owner_instance_id": secret, "fencing_token": 7, "lease_until": secret,
 			"diagnostics": map[string]interface{}{"health": "healthy", "credentials": secret}},

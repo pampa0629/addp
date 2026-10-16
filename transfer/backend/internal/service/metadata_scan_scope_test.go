@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -31,13 +32,14 @@ func TestNativeTargetMetadataScanSubmitsOnlyTableLeaf(t *testing.T) {
 		} {
 			t.Run(entry+"/"+tc.name, func(t *testing.T) {
 				var body struct {
-					EngineID     uint                            `json:"engine_id"`
-					Targets      []string                        `json:"targets"`
-					CatalogPaths []string                        `json:"catalog_paths"`
-					RefGroups    []commonClient.MetaScanRefGroup `json:"ref_groups"`
-					ScanDepth    string                          `json:"scan_depth"`
-					Force        bool                            `json:"force"`
-					Source       string                          `json:"source"`
+					SchemaChangeSource *commonExecution.SchemaChangeScanSource `json:"schema_change_source"`
+					EngineID           uint                                    `json:"engine_id"`
+					Targets            []string                                `json:"targets"`
+					CatalogPaths       []string                                `json:"catalog_paths"`
+					RefGroups          []commonClient.MetaScanRefGroup         `json:"ref_groups"`
+					ScanDepth          string                                  `json:"scan_depth"`
+					Force              bool                                    `json:"force"`
+					Source             string                                  `json:"source"`
 				}
 				calls := 0
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +63,7 @@ func TestNativeTargetMetadataScanSubmitsOnlyTableLeaf(t *testing.T) {
 						planner.TableExportTaskSpec{Target: endpoint}, executor.TableTargetPlan{Kind: executor.TableEndpointNative}, nil)
 				} else {
 					svc := &TaskService{metaClient: client, logger: logger}
-					svc.runClaimedSchemaChangeMetaScan(context.Background(), 7, &models.SchemaChangeRequest{}, planner.DatabaseCDCTaskSpec{Target: endpoint})
+					svc.runClaimedSchemaChangeMetaScan(context.Background(), 7, &models.SchemaChangeRequest{ID: 61, ExecutionID: "blocked-execution", MetadataScanClaimToken: "current-claim"}, planner.DatabaseCDCTaskSpec{Target: endpoint})
 				}
 				if tc.target == "" {
 					if calls != 0 {
@@ -71,6 +73,9 @@ func TestNativeTargetMetadataScanSubmitsOnlyTableLeaf(t *testing.T) {
 				}
 				if calls != 1 || body.EngineID != 9 || !reflect.DeepEqual(body.Targets, []string{tc.target}) {
 					t.Fatalf("scan requests=%d payload=%#v", calls, body)
+				}
+				if entry == "schema_change" && (body.SchemaChangeSource == nil || body.SchemaChangeSource.RequestID != 61 || body.SchemaChangeSource.ExecutionID != "blocked-execution" || body.SchemaChangeSource.ClaimToken != "current-claim") {
+					t.Fatalf("missing approval reference: %#v", body.SchemaChangeSource)
 				}
 				if len(body.CatalogPaths) != 0 || len(body.RefGroups) != 0 || body.ScanDepth != "deep" || !body.Force || body.Source != "transfer" {
 					t.Fatalf("unexpected scan scope/options: %#v", body)

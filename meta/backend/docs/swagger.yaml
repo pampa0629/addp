@@ -226,6 +226,15 @@ definitions:
       tenant_id:
         type: integer
     type: object
+  execution.SchemaChangeScanSource:
+    properties:
+      claim_token:
+        type: string
+      execution_id:
+        type: string
+      request_id:
+        type: integer
+    type: object
   github_com_addp_common_models.JSONMap:
     additionalProperties: true
     type: object
@@ -899,6 +908,10 @@ definitions:
       scan_depth:
         description: basic/deep
         type: string
+      schema_change_source:
+        allOf:
+        - $ref: '#/definitions/execution.SchemaChangeScanSource'
+        description: 已应用结构审批的来源关联 | Applied schema approval source
       source:
         description: 扫描来源
         type: string

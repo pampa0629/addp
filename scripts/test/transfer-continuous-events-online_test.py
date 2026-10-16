@@ -117,6 +117,22 @@ class ContinuousRunnerTest(unittest.TestCase):
         self.assertTrue(all(method == 'GET' or path.endswith('/manual') for method, path, _ in before))
         self.assertEqual(sum(path.endswith('/items') for _, path, _ in before), 3)
 
+    def test_schema_approval_requires_applied_current_revision_and_owned_completed_scan(self):
+        fields = [{'source': 'scan_extra', 'target': 'scan_extra', 'target_type': 'string', 'nullable': True}]
+        pending = {'id': 61, 'task_id': 57, 'execution_id': UUID, 'status': 'pending',
+                   'approvable': True, 'suggested_fields': fields, 'from_revision': 1}
+        applied = {'id': 61, 'status': 'applied', 'metadata_scan_status': 'success',
+                   'metadata_scan_attempt': 1, 'to_revision': 2, 'metadata_scan_execution_id': UUID}
+        scan = {'execution_id': UUID, 'status': 'success'}
+        path, approval, identity = M.apply_cdc_schema_approval(Client([pending, scan]), 57, UUID, lambda *args: applied)
+        self.assertEqual(approval, {'fields': fields})
+        self.assertEqual(identity, UUID)
+        for change in [{'metadata_scan_status': 'failed'}, {'metadata_scan_attempt': 2}, {'to_revision': 1}, {'id': 62}]:
+            with self.subTest(change=change), self.assertRaises(M.SuiteError):
+                M.apply_cdc_schema_approval(Client([pending]), 57, UUID, lambda *args: {**applied, **change})
+        with self.assertRaises(M.SuiteError):
+            M.apply_cdc_schema_approval(Client([pending, {**scan, 'parent_execution_id': UUID}]), 57, UUID, lambda *args: applied)
+
     def test_scan_clock_crosses_latest_ancestor_tick_and_has_bounded_wait(self):
         stamps = [{'scanned_at': '1970-01-01T00:00:01Z'}, {'scanned_at': '1970-01-01T00:00:02Z'}]
         with patch.object(M.API.time, 'time', side_effect=[2.5, 3]), \

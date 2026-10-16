@@ -582,6 +582,12 @@ func TestIntegrationPostgresPendingSchemaChangePreventsLeaseExpiryRecovery(t *te
 	if events := continuousStoredEvents(t, db, execution.ExecutionID); len(events) != 1 || events[0].Kind != "failed" {
 		t.Fatalf("schema-blocked terminal events=%#v", events)
 	}
+	var appliedRequest models.SchemaChangeRequest
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&appliedRequest).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertAppliedScanOriginClaimRoundTrip(t, db, appliedRequest)
+
 }
 
 func seedPendingSchemaChangeRuntime(t *testing.T, db *gorm.DB, tenantID uint, now, leaseUntil time.Time) (models.TransferTask, commonExecution.TaskExecution, models.RuntimeLease) {

@@ -93,6 +93,12 @@ PY
     printf '%s\n' "$records" | docker exec -i "$kafka" rpk topic produce continuous_events -X brokers=127.0.0.1:29094 >/dev/null
     ;;
   mutate-cdc) psql_owned -c "UPDATE public.continuous_source SET label='business-value-sentinel-updated' WHERE id=1; DELETE FROM public.continuous_source WHERE id=2; INSERT INTO public.continuous_source VALUES (3,'business-value-sentinel-inserted');" >/dev/null ;;
+  alter-cdc) psql_owned -c "ALTER TABLE public.continuous_source ADD COLUMN scan_extra text; UPDATE public.continuous_source SET scan_extra='business-value-sentinel-added' WHERE id=1;" >/dev/null ;;
+  verify-cdc-altered)
+    actual=$(psql_owned -c "SELECT id,label,scan_extra FROM public.continuous_cdc_target ORDER BY id" 2>/dev/null) || exit 1
+    [ "$actual" = '1|business-value-sentinel-updated|business-value-sentinel-added
+3|business-value-sentinel-inserted|' ] || exit 1
+    ;;
   verify-kafka-initial|verify-kafka-recovered|verify-cdc-initial|verify-cdc-mutated)
     case "$action" in
       verify-kafka-initial) expected='1|business-value-sentinel-first

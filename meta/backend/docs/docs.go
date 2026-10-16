@@ -3254,6 +3254,20 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.SchemaChangeScanSource": {
+            "type": "object",
+            "properties": {
+                "claim_token": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_common_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -4250,6 +4264,14 @@ const docTemplate = `{
                 "scan_depth": {
                     "description": "basic/deep",
                     "type": "string"
+                },
+                "schema_change_source": {
+                    "description": "已应用结构审批的来源关联 | Applied schema approval source",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/execution.SchemaChangeScanSource"
+                        }
+                    ]
                 },
                 "source": {
                     "description": "扫描来源",

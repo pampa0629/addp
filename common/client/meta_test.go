@@ -397,3 +397,23 @@ func TestMetaClientManualItemRunCarriesEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMetaSchemaChangeScanSourceIsAReferenceNotAnActor(t *testing.T) {
+	opts := MetaScanOptions{EngineID: 9, Targets: []string{"addp://engine/9/path/public/changed?type=table"}, Source: "transfer", ScanDepth: "deep", Force: true, SchemaChangeSource: &commonExecution.SchemaChangeScanSource{ExecutionID: "blocked-execution", RequestID: 61, ClaimToken: "current-claim"}}
+	body, err := manualMetaScanBody(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]interface{}
+	if err = json.Unmarshal(body, &data); err != nil {
+		t.Fatal(err)
+	}
+	ref, ok := data["schema_change_source"].(map[string]interface{})
+	if !ok || len(ref) != 3 || ref["execution_id"] != "blocked-execution" || ref["request_id"] != float64(61) || ref["claim_token"] != "current-claim" {
+		t.Fatalf("source=%#v", data)
+	}
+	opts.ParentExecutionID = "unrelated-parent"
+	if _, err = manualMetaScanBody(opts); err == nil {
+		t.Fatal("mutually exclusive origins were accepted")
+	}
+}

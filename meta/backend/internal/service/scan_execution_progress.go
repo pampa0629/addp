@@ -31,6 +31,11 @@ func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenan
 			if err := tx.Select("source", "parent_execution_id", "metadata").Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&current).Error; err != nil {
 				return err
 			}
+			if origin, exists := current.Metadata["schema_change_source"]; exists {
+				metadata = metadata.Clone()
+				metadata["schema_change_source"] = origin
+				fields["metadata"] = metadata
+			}
 			if isMosaicProducedScan(&current) {
 				metadata = metadata.Clone()
 				metadata["produced_target"] = current.Metadata["produced_target"]

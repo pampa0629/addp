@@ -94,4 +94,5 @@ func testTransferAndVectorProducedScans(t *testing.T, db *gorm.DB, router http.H
 			read("foreign", "/executions/"+childID, 404)
 		})
 	}
+	t.Run("applied_schema_change", func(t *testing.T) { testAppliedSchemaChangeScan(t, db, router, read) })
 }

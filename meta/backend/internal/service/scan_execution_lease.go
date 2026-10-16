@@ -126,6 +126,11 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 				metadata["scan_progress"] = progress
 			}
 		}
+		if origin, exists := current.Metadata["schema_change_source"]; exists {
+			if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
+				metadata["schema_change_source"] = origin
+			}
+		}
 		if isMosaicProducedScan(execution) {
 			if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
 				metadata["produced_target"] = current.Metadata["produced_target"]

@@ -780,3 +780,5 @@ Manager 的 `raster_mosaic_generation` 自动扫描沿用同一手动入口，�
 该来源的成功扫描在受当前扫描 lease 保护的收尾事务内保存 whole DataItem 身份回执。回执只来自本次精确目录扫描形成的、deep 且扫描时间不早于本次开始时间的 `raster_mosaic + whole` item，复用 Meta 资源树转换器生成 locator；缺少正式身份不得标扫描成功。专用结果读取只允许 Manager 查询与仍有效的父执行及其持久扫描关联一致的回执，不接受调用方自报目标或主体，不读取任意其他执行。Manager 等待和失败语义见任务体系规范；通用诊断与用户专业执行读取边界不变。
 
 Transfer 产物扫描使用 `source=transfer` 与直接父 execution UUID，核对同租户 running sync、完整主体及已持久化实际输出。持续同步初次扫描的目标结构准备事实由 Transfer 在有效 runtime lease 内保存；Meta 不跨读 Transfer 私有表。Manager 矢量瓦片集使用 `source=manager`、直接父 execution UUID 和精确 PMTiles 内容引用，核对当前 lease、attempt 及实际路径，不套用 mosaic whole 完成回执。服务提交缺失来源时拒绝；Transfer 保存明确失败反馈。具体范围和未接入路径见任务体系规范“生产执行与后台扫描的来源”。
+
+Transfer 结构审批补扫的独立来源为 `schema_change_source`（阻塞 execution UUID、审批 request ID、当前 claim token），只能由 `addp-transfer` 使用，不能同时提供父 execution。Meta 在创建事务中核验 Transfer 已在 Common execution 保存的已应用审批事实、独立审批主体、当前 claim 及精确目标表；保留 table leaf `targets`，拒绝所属 schema／database 和附加范围。新扫描归属于审批人，不成为已失败 CDC execution 的子执行；专业读取继续按 Meta Permission 与本人一次性执行范围。完整契约见任务体系规范“生产执行与后台扫描的来源”。

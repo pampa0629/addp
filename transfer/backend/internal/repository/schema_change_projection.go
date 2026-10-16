@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -47,6 +48,23 @@ func updateSchemaChangeExecutionProjectionTx(tx *gorm.DB, request *models.Schema
 		return err
 	}
 	metadata := schemaChangeProjectionMetadata(execution.Metadata, request, status, now)
+	if value, exists := metadata[commonExecution.SchemaChangeScanOriginKey]; exists {
+		var origin commonExecution.AppliedSchemaChangeScanOrigin
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, &origin); err != nil {
+			return err
+		}
+		if origin.RequestID != request.ID {
+			return ErrSchemaChangeRequestConflict
+		}
+		origin.ClaimToken = request.MetadataScanClaimToken
+		origin.Attempt = request.MetadataScanAttempt
+		origin.LeaseUntil = request.MetadataScanLeaseUntil
+		metadata[commonExecution.SchemaChangeScanOriginKey] = origin
+	}
 	return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now}).Error
 }
 
@@ -98,4 +116,18 @@ func schemaChangeProjectionMetadata(metadata commonModels.JSONMap, request *mode
 	continuous["schema_change"] = projection
 	metadata["continuous"] = continuous
 	return metadata
+}
+
+// PublishAppliedSchemaChangeScanOriginTx is called only after target DDL and the
+// applied request/projection have been saved in this approval transaction.
+func PublishAppliedSchemaChangeScanOriginTx(tx *gorm.DB, request *models.SchemaChangeRequest, origin commonExecution.AppliedSchemaChangeScanOrigin) error {
+	var record commonExecution.TaskExecution
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ?", request.ExecutionID, request.TenantID, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync).First(&record).Error; err != nil {
+		return err
+	}
+	if record.Metadata == nil {
+		record.Metadata = commonModels.JSONMap{}
+	}
+	record.Metadata[commonExecution.SchemaChangeScanOriginKey] = origin
+	return tx.Model(&record).Update("metadata", record.Metadata).Error
 }

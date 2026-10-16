@@ -37,11 +37,14 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, err
 	}
 	req.Source = strings.TrimSpace(req.Source)
+	if req.SchemaChangeSource != nil && (req.ParentExecutionID != "" || req.Source != commonExecution.ModuleTransfer || req.EngineID == 0 || req.ItemID != 0 || req.NodeID != 0 || len(req.CatalogPaths) != 0 || len(req.RefGroups) != 0 || len(req.Targets) != 1 || req.ScanDepth != "deep" || !req.Force) {
+		return nil, commonAPI.ErrBadRequest
+	}
 	if req.ParentExecutionID != "" {
 		if req.Source != commonExecution.ModuleDevelop && req.Source != commonExecution.ModuleManager && req.Source != commonExecution.ModuleTransfer {
 			return nil, commonAPI.ErrBadRequest
 		}
-	} else if userID == 0 {
+	} else if userID == 0 && req.SchemaChangeSource == nil {
 		return nil, commonAPI.ErrForbidden
 	}
 	scope, err := s.scanService.ResolveScanScope(tenantID, scanflow.Options{

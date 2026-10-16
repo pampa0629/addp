@@ -44,7 +44,7 @@ OWNER_FIELDS = set('id execution_id task_id status start_time end_time records_r
                    'bytes_written error_details metadata trigger_type trigger_by'.split())
 OWNER_METADATA = set('lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
                      'recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state'.split())
-PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc',
+PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
                     'verify-cdc-mutated', 'verify-clean'}
 
@@ -229,6 +229,27 @@ def wait_target_scan(client, engine_id, tenant, name, expected_fields, sibling, 
         return {'target_locator': f'addp://engine/{engine_id}/path/public/{name}?type=table',
                 'item_id': item['id'], 'scanned_at': item['scanned_at'], 'fields': sorted(names)}
     return until(scanned)
+
+
+def apply_cdc_schema_approval(client, task_id, blocked_execution, mutate):
+    path = f'{OWNER}/task-definitions/{task_id}/schema-change'
+    change = client.request('GET', path, (200,)).payload
+    approval = {'fields': [{'source': 'scan_extra', 'target': 'scan_extra', 'target_type': 'string', 'nullable': True}]}
+    require(change.get('task_id') == task_id and change.get('execution_id') == blocked_execution
+            and change.get('status') == 'pending' and change.get('approvable') is True
+            and change.get('suggested_fields') == approval['fields'], 'CDC additive approval facts changed')
+    applied = mutate(client, path + '/approve', approval)
+    require(applied.get('id') == change.get('id') and applied.get('status') == 'applied'
+            and applied.get('metadata_scan_status') == 'success' and applied.get('metadata_scan_attempt') == 1
+            and applied.get('to_revision') == change.get('from_revision', 0) + 1, 'CDC approval scan did not submit exactly once')
+    scan_id = canonical_uuid(applied.get('metadata_scan_execution_id'))
+    def scanned():
+        result = client.request('GET', f'/api/v1/meta/executions/{scan_id}', (200,)).payload
+        require(result.get('execution_id') == scan_id and not result.get('parent_execution_id'), 'approval scan invented a parent execution')
+        require(result.get('status') not in {'failed', 'cancelled', 'timeout'}, 'approval target scan failed')
+        return result.get('status') == 'success'
+    until(scanned)
+    return path, approval, scan_id
 
 
 def detail(client, execution_id):
@@ -534,12 +555,36 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
                           for e in events(client, f'{OWNER}/executions', cdc)))
         require(target_scan('cdc') == cdc_scan, 'ordinary CDC events repeated the initial target scan')
         require(target_scan('kafka') == kafka_scan, 'CDC scans changed the Kafka sibling target')
+        require(physical('alter-cdc'), 'CDC additive schema fixture failed')
+        blocked = wait_status(client, cdc, 'failed')
+        require(blocked.get('error_details', {}).get('code') == 'schema_change_blocked', 'CDC schema drift did not block')
+        compare(cdc, 'failed')
+        assert_scan_boundary(client, pg, sibling, boundary)
+        API.wait_meta_scan_tick([cdc_scan])
+        path, approval, scan_id = apply_cdc_schema_approval(client, cdc_task, cdc, mutate)
+        migrated = target_scan('cdc', {'id', 'label', 'scan_extra'})
+        require(migrated['scanned_at'] != cdc_scan['scanned_at'], 'approval reused old target metadata')
+        report['precise_scan_scope']['scans'].append({'phase': 'cdc_schema_approval',
+            'metadata_scan_execution_id': scan_id, **migrated})
+        API.wait_meta_scan_tick([migrated])
+        repeated = mutate(client, path + '/approve', approval)
+        require(repeated.get('metadata_scan_attempt') == 1 and repeated.get('metadata_scan_execution_id') == scan_id,
+                'repeated approval submitted another scan')
+        cdc_resumed = launch(cdc_task, 'resume')
+        require(cdc_resumed != cdc, 'schema approval resume reused execution identity')
+        until(lambda: physical('verify-cdc-altered'))
+        until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) > 0
+                          for e in events(client, f'{OWNER}/executions', cdc_resumed)))
+        require(target_scan('cdc', {'id', 'label', 'scan_extra'}) == migrated,
+                'CDC resume or repeated approval repeated metadata scanning')
+        require(target_scan('kafka') == kafka_scan, 'approval scan changed the Kafka sibling target')
+        report['checks'].append('cdc_additive_approval_target_scan_and_committed_resume')
         report['precise_scan_scope']['target_only_verified'] = True
         report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
         mutate(client, f'{OWNER}/task-definitions/{cdc_task}/stop', {'confirmed': True, 'confirmation_text': name})
-        wait_status(client, cdc, 'cancelled')
-        compare(cdc, 'cancelled')
+        wait_status(client, cdc_resumed, 'cancelled')
+        compare(cdc_resumed, 'cancelled')
         require(physical('verify-clean'), 'CDC capture resources survived confirmed stop')
         report['checks'].append('cdc_snapshot_update_delete_insert_safe_events_and_confirmed_cleanup')
     finally:

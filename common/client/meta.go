@@ -38,12 +38,13 @@ type MetaScanProducedTarget struct {
 }
 
 type MetaScanOptions struct {
-	Encoding          string
-	ParentExecutionID string
-	EngineID          uint
-	NodeID            uint
-	ItemID            uint
-	Targets           []string
+	SchemaChangeSource *commonExecution.SchemaChangeScanSource
+	Encoding           string
+	ParentExecutionID  string
+	EngineID           uint
+	NodeID             uint
+	ItemID             uint
+	Targets            []string
 
 	CatalogPaths []string
 	RefGroups    []MetaScanRefGroup
@@ -650,6 +651,12 @@ func (c *MetaClient) GetItemAncestors(itemID uint) (*models.MetaItemAncestors, e
 
 func manualMetaScanBody(opts MetaScanOptions) ([]byte, error) {
 	scanReq := map[string]interface{}{}
+	if opts.SchemaChangeSource != nil {
+		if opts.ParentExecutionID != "" {
+			return nil, fmt.Errorf("schema approval and parent scan sources are mutually exclusive")
+		}
+		scanReq["schema_change_source"] = opts.SchemaChangeSource
+	}
 	if opts.ParentExecutionID != "" {
 		scanReq["parent_execution_id"] = opts.ParentExecutionID
 	}

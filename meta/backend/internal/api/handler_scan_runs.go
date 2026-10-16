@@ -99,7 +99,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		commonapi.ForbiddenError(c, commoni18n.T(c, metai18n.MsgScanProvenanceDenied))
 		return
 	}
-	if principal.Type == "service_principal" || req.ParentExecutionID != "" {
+	if principal.Type == "service_principal" || req.ParentExecutionID != "" || req.SchemaChangeSource != nil {
 		producedClient := ""
 		switch req.Source {
 		case commonExecution.ModuleDevelop, commonExecution.ModuleManager, commonExecution.ModuleTransfer:
@@ -113,7 +113,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error_code": "scan_provenance_denied", "error": commoni18n.T(c, metai18n.MsgScanProvenanceDenied)})
 			return
 		}
-		if req.ParentExecutionID == "" {
+		if req.ParentExecutionID == "" && req.SchemaChangeSource == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
 			return
 		}

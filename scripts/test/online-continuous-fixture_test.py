@@ -127,6 +127,16 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertNotEqual(self.run_fixture('verify-cdc-mutated', PHYSICAL_ROWS=rows + '\n4|unexpected').returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-cdc-mutated', PHYSICAL_ROWS='').returncode, 0)
 
+    def test_additive_schema_and_values_have_exact_physical_oracle(self):
+        self.assertEqual(self.run_fixture('alter-cdc').returncode, 0)
+        self.assertIn('ALTER TABLE public.continuous_source ADD COLUMN scan_extra text', self.trace.read_text())
+        rows = '1|business-value-sentinel-updated|business-value-sentinel-added\n3|business-value-sentinel-inserted|'
+        result = self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows.replace('sentinel-added', 'sentinel-wrong')).returncode, 0)
+        self.assertNotEqual(self.run_fixture('verify-cdc-altered', PHYSICAL_ROWS=rows + '\n4|extra|').returncode, 0)
+
     def test_nonzero_capture_residual_fails(self):
         self.assertEqual(self.run_fixture('verify-clean').returncode, 0)
         self.assertNotEqual(self.run_fixture('verify-clean', RESIDUAL_CAPTURE='1').returncode, 0)

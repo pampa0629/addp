@@ -121,7 +121,11 @@ Manager 导入在同步 User 请求内向 Transfer 创建并启动持久同步�
 
 后台产物扫描须核验真实已保存产物及其来源。结构变更扫描的来源关联本次经审批并实际应用的变更事实，独立于最初启动同步的用户，不制造父执行。扫描 `source` 统一使用 `develop`、`transfer`、`manager` 模块名，具体产物类型由已核验的来源事实决定，不使用附加类型后缀。用户同步请求可无父执行；后台 Service 提交必须有可验证的父执行或已应用结构审批事实，缺失来源必须拒绝。Transfer bounded 先在当前执行租约内保存实际输出与实际内容引用，再提交直接父执行 UUID；Meta 核对同租户 running sync 执行、完整主体和精确输出，不从任务配置推断产物。扫描失败保存明确反馈，不回滚已经写入的产物。
 
-当前实施边界：Transfer 自有定时调度尚未接入 Task Authorization Subject，结构审批尚未提供 Owner 核验已应用事实的跨模块契约；前者无法创建缺少当前 User 或正式任务授权主体的根执行；后者提交无来源扫描时由 Meta 拒绝，Transfer 保留明确失败反馈。不借任务创建者或旧执行补齐，不把扫描反馈失败改成数据写入失败。后续补齐这两条来源后再开放提交。
+结构审批补扫通过既有 Meta 手动扫描入口提交 `source=transfer` 与 `schema_change_source={execution_id,request_id,claim_token}`，与 `parent_execution_id` 互斥。这里的 execution 只定位触发结构阻塞的历史记录，不是补扫父执行。Transfer 在审批实际应用的同一事务中，将审批请求、task/generation/revision、实际目标表 locator、应用时间及本次审批 User 的完整来源保存为 Common execution 私有 `metadata.schema_change_scan_origin`；原执行来源保持不变。既有 `metadata.continuous.schema_change` 继续只投影安全状态，不能泄漏审批主体、claim token 或授权。
+
+Transfer 在既有扫描 claim 状态变化事务中同步这份来源的 claim token、attempt 和期限。Meta 仅允许 `addp-transfer` 提交该来源，在扫描创建事务内锁定同租户 Transfer continuous sync 的结构阻塞历史记录，核验已应用请求及 revision、完整审批主体、有效且匹配的 claim、唯一精确目标表和 `deep + force`，然后只复制审批来源并记录结构审批关联，不复制旧执行身份、授权或 lease，不设置父 execution。缺失事实、过期 claim、错 Tenant、错请求、父范围或额外目标均拒绝；Meta 不跨读 Transfer 私有表。重复审批及 claim 接管仍由 Transfer 原有单一路径裁决，扫描反馈失败不回滚已经应用的结构变更。
+
+当前实施边界：Transfer 自有定时调度尚未接入 Task Authorization Subject，无法创建缺少当前 User 或正式任务授权主体的根执行。不借任务创建者或旧执行补齐。
 
 持续同步初次扫描在实际目标结构准备完成后，由 Transfer 在当前私有 runtime lease 的 fencing 校验事务内保存目标 locator 和当前 execution 关联，再携带该父 execution 提交。Meta 只读取 Common 中的已保存来源及 running 状态，不跨读 Transfer 私有租约表。Manager 矢量瓦片集同样在当前 Common lease 内保存实际 PMTiles 路径和 attempt，再按精确文件内容引用提交；它不使用 mosaic 的 whole 回执与完成语义。
 

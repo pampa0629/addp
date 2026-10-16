@@ -139,6 +139,7 @@ func TestScanCompletionRetainsFinalProgressSnapshot(t *testing.T) {
 			createScanTaskTable(t, db)
 			now := time.Now().UTC()
 			execution := scantask.NewManualExecution(7, 1, 9, 0, "nfs", nil, []string{"3d"}, nil, "deep", true, "manager", now)
+			execution.Metadata = models.JSONMap{"schema_change_source": map[string]interface{}{"execution_id": "blocked", "request_id": float64(61)}}
 			if err := db.Create(execution).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -164,6 +165,9 @@ func TestScanCompletionRetainsFinalProgressSnapshot(t *testing.T) {
 			got, err := svc.GetExecution(context.Background(), execution.ExecutionID, 7)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if link, ok := got.Metadata["schema_change_source"].(map[string]interface{}); !ok || link["execution_id"] != "blocked" || link["request_id"] != float64(61) {
+				t.Fatal("worker overwrote applied approval association")
 			}
 			p := models.ObserveScanProgress(got.Metadata)
 			if p == nil || p.ItemsCompleted != 2 || p.FilesDiscovered != 20 || got.Metadata["items_scanned"] == nil {

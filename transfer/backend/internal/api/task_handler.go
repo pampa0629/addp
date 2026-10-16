@@ -418,7 +418,7 @@ func (h *TaskHandler) ApproveSchemaChange(c *gin.Context) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgSchemaChangeInvalid))
 		return
 	}
-	result, err := h.taskService.ApproveSchemaChange(c.Request.Context(), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), request)
+	result, err := h.taskService.ApproveSchemaChange(transferUserOriginContext(c), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), request)
 	if err != nil {
 		respondSchemaChangeError(c, err)
 		return

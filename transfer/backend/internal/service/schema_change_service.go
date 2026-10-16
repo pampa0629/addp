@@ -70,6 +70,13 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 	if s == nil || s.db == nil || s.schemaInspector == nil || s.engineResolver == nil {
 		return nil, ErrSchemaChangeControlUnavailable
 	}
+	actor := commonExecution.TaskExecution{TenantID: int(tenantID)}
+	if err := commonExecution.ApplyUserOrigin(ctx, &actor); err != nil {
+		return nil, err
+	}
+	if actor.TriggeredBy == nil || uint(*actor.TriggeredBy) != userID {
+		return nil, commonAPI.ErrForbidden
+	}
 	var applied models.SchemaChangeRequest
 	var updatedSpec planner.DatabaseCDCTaskSpec
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -221,6 +228,16 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		request.MetadataScanError = ""
 		request.UpdatedAt = now
 		if err := repository.UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
+			return err
+		}
+		targets := nativeTargetScanTargets(updatedSpec.Target)
+		if len(targets) != 1 {
+			return ErrSchemaChangeApprovalConflict
+		}
+		if err := repository.PublishAppliedSchemaChangeScanOriginTx(tx, &request, commonExecution.AppliedSchemaChangeScanOrigin{
+			RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: targets[0], AppliedAt: now,
+			TriggeredBy: *actor.TriggeredBy, ActorPrincipalID: *actor.ActorPrincipalID, ActorTenantMembershipID: *actor.ActorTenantMembershipID, IssuedAuthorizationVersion: *actor.IssuedAuthorizationVersion,
+		}); err != nil {
 			return err
 		}
 		applied = request
@@ -440,7 +457,7 @@ func (s *TaskService) runClaimedSchemaChangeMetaScan(ctx context.Context, tenant
 		return
 	}
 	run, err := s.metaClient.WithTenantID(tenantID).CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID: target.ID, Targets: targets,
+		EngineID: target.ID, Targets: targets, SchemaChangeSource: &commonExecution.SchemaChangeScanSource{ExecutionID: request.ExecutionID, RequestID: request.ID, ClaimToken: request.MetadataScanClaimToken},
 		ScanDepth: "deep", Force: true, TriggerType: commonExecution.TriggerTypeManual, Source: commonExecution.ModuleTransfer,
 	})
 	if err != nil {
