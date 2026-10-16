@@ -28,7 +28,8 @@ class DorisInitializationTest(unittest.TestCase):
         self.assertIn('/opt/apache-doris/fe/doris-meta', {v['target'] for v in doris['volumes']})
         self.assertIn('/opt/apache-doris/be/storage', {v['target'] for v in doris['volumes']})
 
-    def run_fixture(self, rows, command, *, change_identity=False, reject_mutation=False):
+    def run_fixture(self, rows, command, *, change_identity=False, reject_mutation=False,
+                    reject_query=False):
         with tempfile.TemporaryDirectory() as work:
             directory = Path(work)
             state = directory / 'state.json'
@@ -40,7 +41,8 @@ from pathlib import Path
 p = Path(os.environ['DORIS_FIXTURE_STATE']); s = json.loads(p.read_text())
 sql = sys.argv[-1]
 if sql == "SHOW PROC '/backends';":
-    print('Host\tAlive\tBackendId\tHeartbeatPort')
+    if os.environ.get('DORIS_REJECT_QUERY'): sys.exit(1)
+    if s['rows']: print('Host\tAlive\tBackendId\tHeartbeatPort')
     for identifier, host, alive in s['rows']:
         print(f'{host}\t{alive}\t{identifier}\t9050')
 elif sql == 'SHOW FRONTENDS;': print('FE')
@@ -59,8 +61,10 @@ p.write_text(json.dumps(s))
             mysql.chmod(0o755)
             env = dict(os.environ, PATH=work + os.pathsep + os.environ['PATH'], DORIS_FIXTURE_STATE=str(state))
             env.pop('DORIS_CHANGE_ID', None); env.pop('DORIS_REJECT_MUTATION', None)
+            env.pop('DORIS_REJECT_QUERY', None)
             if change_identity: env['DORIS_CHANGE_ID'] = '1'
             if reject_mutation: env['DORIS_REJECT_MUTATION'] = '1'
+            if reject_query: env['DORIS_REJECT_QUERY'] = '1'
             result = subprocess.run(['bash', '-c', 'source "$1"; ' + command,
                                      'fixture', str(ROOT / 'business/doris/init.sh')],
                                     env=env, text=True, capture_output=True, timeout=30)
@@ -79,6 +83,15 @@ p.write_text(json.dumps(s))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(state['mutations']), 1)
         self.assertIn('ADD BACKEND', state['mutations'][0])
+
+    def test_empty_batch_output_is_a_successful_empty_backend_directory(self):
+        result, state = self.run_fixture([], 'doris_backend_facts')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(state['mutations'], [])
+        failed, state = self.run_fixture([], 'doris_backend_facts', reject_query=True)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(state['mutations'], [])
 
     def test_unexpected_topology_and_identity_changes_are_rejected(self):
         for rows in ([[10004, 'foreign.example', 'true']],

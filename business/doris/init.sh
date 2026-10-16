@@ -8,6 +8,8 @@ doris_sql() {
 
 doris_backend_facts() {
     # PROC is served by FE itself, before any Backend is registered/alive.
+    # mysql --batch emits no header for an empty result. pipefail still rejects
+    # query errors; successful empty output means no Backend is registered yet.
     doris_sql -e "SHOW PROC '/backends';" | awk -F '\t' '
         NR == 1 {
             for (i=1; i<=NF; i++) index_by_name[$i]=i
@@ -17,7 +19,6 @@ doris_backend_facts() {
         }
         { print $index_by_name["BackendId"] "\t" $index_by_name["Host"] "\t" \
                 $index_by_name["HeartbeatPort"] "\t" $index_by_name["Alive"] }
-        END { if (NR == 0) exit 1 }
     '
 }
 
