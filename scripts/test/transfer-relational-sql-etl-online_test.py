@@ -626,7 +626,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
                        "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture", "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170",
                        "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token",
-                       "ADDP_ONLINE_TEST_USER_USERNAME": "fixture", "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only",
+                       "ADDP_ONLINE_TEST_USER_USERNAME": "fixture", "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN": "fixture-outsider",
                        "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30"}
         client = object()
         def interrupt(*args):
@@ -636,6 +636,17 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
         cleanup.assert_called_once_with(client, [10, 11])
+
+    def test_missing_private_import_token_fails_before_network_or_task_creation(self):
+        environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
+                       "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "CONSOLE_URL": "http://127.0.0.1:5170",
+                       "GATEWAY_URL": "http://127.0.0.1:8000", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
+                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
+        error = io.StringIO()
+        with patch.dict(ONLINE.os.environ, environment, clear=True), patch.object(ONLINE, "GatewayClient") as client, patch.object(ONLINE.signal, "signal"), patch.object(ONLINE.sys, "stderr", error):
+            self.assertEqual(ONLINE.main(), 1)
+        client.assert_not_called()
+        self.assertIn("ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN is required", error.getvalue())
 
     def test_main_accepts_mongodb_collection_identity_and_reports_both_engines(self):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",

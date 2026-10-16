@@ -1083,3 +1083,22 @@ func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
 		t.Fatal("ordinary browser consumer required")
 	}
 }
+
+func TestPrivateImportOutsiderTokenIsExportedToOwnerOnlyEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fixture.env")
+	token := "private-import-outsider'quoted"
+	if err := writeEnvironmentFile(path, map[string]string{"ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN": token}); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "export ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN='private-import-outsider'\"'\"'quoted'\n" {
+		t.Fatal("private import outsider token was not exported with shell quoting")
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("private import fixture token must remain owner-only")
+	}
+}
