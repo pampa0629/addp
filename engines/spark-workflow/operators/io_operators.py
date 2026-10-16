@@ -355,7 +355,7 @@ SAVE_METADATA = OperatorMetadata(
     ],
     notes=[
         "MinIO 普通 Parquet 以每次执行独立目录创建；真实行数取自提交后的分片 footer；不保证目录原子可见性",
-        "PostgreSQL overwrite 只替换数据，提交前失败回滚；其他存储不保证事务发布",
+        "PostgreSQL/MySQL overwrite 保留已有表定义并事务发布；Doris 核验暂存可见后原生发布，不提供跨表事务",
         "保存到 PostgreSQL 时,几何列自动转换为 PostGIS geometry 类型",
         "大数据量保存建议使用 Parquet 格式,压缩比高且查询快",
         "append 模式不检查重复,需自行去重",

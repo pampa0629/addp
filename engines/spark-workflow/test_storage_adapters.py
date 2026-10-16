@@ -6,6 +6,36 @@ from unittest.mock import MagicMock
 
 
 class StorageAdapterTest(unittest.TestCase):
+    def test_doris_reads_use_the_official_connector_without_jdbc_or_trimming(self):
+        spark = MagicMock()
+        reader = spark.read.format.return_value
+        reader.options.return_value = reader
+        connection = {'engine_type': 'doris', 'host': 'fe.example', 'port': 9030,
+                      'http_port': 18030, 'database': 'data', 'user': 'reader', 'password': ''}
+        result = DatabaseAdapter.load(spark, {'connection_info': connection, 'table': 'customers'})
+        spark.read.format.assert_called_once_with('doris')
+        reader.options.assert_called_once_with(**{
+            'doris.fenodes': 'fe.example:18030', 'doris.table.identifier': 'data.customers',
+            'user': 'reader', 'password': '',
+        })
+        self.assertIs(result, reader.load.return_value)
+        result.withColumn.assert_not_called()
+
+    def test_doris_read_requires_unambiguous_table_and_explicit_http_port(self):
+        connection = {'engine_type': 'doris', 'host': 'fe.example', 'port': 9030,
+                      'database': 'data', 'user': 'reader', 'password': ''}
+        for changed in ({}, {'http_port': 0}, {'http_port': True}, {'http_port': '8030'}):
+            spark = MagicMock()
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'http_port'):
+                DatabaseAdapter.load(spark, {'connection_info': dict(connection, **changed), 'schema': 'data', 'table': 't'})
+            spark.read.format.assert_not_called()
+        for schema, table in [('a.b', 't'), ('a', 'b.t'), ('', 't'), ('a', '')]:
+            spark = MagicMock()
+            with self.subTest(schema=schema, table=table), self.assertRaises(ValueError):
+                DatabaseAdapter.load(spark, {'connection_info': dict(connection, http_port=8030),
+                                            'schema': schema, 'table': table})
+            spark.read.format.assert_not_called()
+
     def test_native_access_rejects_undeclared_connectors_before_spark_actions(self):
         for engine_type in ('nfs', 'hdfs', 'elasticsearch', 'oracle', None):
             with self.subTest(engine_type=engine_type):

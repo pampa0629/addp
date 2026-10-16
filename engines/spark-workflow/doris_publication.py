@@ -13,7 +13,7 @@ VISIBILITY_TIMEOUT_SECONDS = 60
 def http_endpoint(conn_info):
     port = conn_info.get('http_port')
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
-        raise ValueError('Doris Spark save requires an explicit FE http_port in the Engine connection')
+        raise ValueError('Doris Spark access requires an explicit FE http_port in the Engine connection')
     host = conn_info['host']
     return ('[' + host + ']' if ':' in host else host) + ':' + str(port)
 

@@ -25,7 +25,7 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 
 Doris 的 BE 公布稳定主机名 `host.docker.internal`，宿主机须配置 `127.0.0.1 host.docker.internal`，仅 Doris 容器将该名称解析到自身回环地址，其他容器使用 Docker Desktop 宿主网关解析；笔记本换网不修改引擎地址。FE 的 MySQL/HTTP 端口继续由 `DORIS_FE_PORT`/`DORIS_FE_HTTP_PORT` 指定，BE 四个端口固定内外一致，不能自动改选。`doris/init.sh` 复用官方启停入口，已有单 BE 通过 `MODIFY BACKEND ... HOSTNAME` 原地迁移，保留 Backend ID、已有表与数据卷；不使用 DROP/ADD 重建已有节点。健康检查必须确认 FE 可查询、唯一 BE 的地址正确且 Alive。应用部署调整由用户执行 `bash business/scripts/restart.sh -doris`；普通 `start` 不接管已运行的旧配置容器。
 
-首次初始化通过 FE 自身提供的 [PROC 节点目录](https://doris.apache.org/docs/2.1/sql-manual/sql-statements/system-info-and-help/SHOW-PROC/) 读取 Backend 登记事实，不能在注册 BE 前依赖需要可用 BE 执行的元数据查询。MySQL 批处理客户端在空结果时不输出表头；以查询退出状态区分失败与空目录，只有查询成功且目录为空时才首次登记 BE。新库、已有地址迁移及连接器写入统一由独占 Hosted Spark 表发布门禁验证。
+首次初始化通过 FE 自身提供的 [PROC 节点目录](https://doris.apache.org/docs/2.1/sql-manual/sql-statements/system-info-and-help/SHOW-PROC/) 读取 Backend 登记事实，不能在注册 BE 前依赖需要可用 BE 执行的元数据查询。MySQL 批处理客户端在空结果时不输出表头；以查询退出状态区分失败与空目录，只有查询成功且目录为空时才首次登记 BE。独占 Hosted Spark 表发布门禁验证新库初始化、重复登记保留 Backend ID 和连接器写入；历史 IP 地址迁移与反例由 `make test-business-config` 的确定性夹具覆盖。本机已有 Backend 10004 的迁移另已完成真实重启验证，不把它计为 Hosted 迁移覆盖。
 
 **关键特性**：
 - ✅ 独立部署，无依赖

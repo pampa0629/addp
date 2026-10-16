@@ -1,6 +1,6 @@
 """
 Storage Adapters - 统一存储访问适配器
-支持: 数据库(JDBC) + 文件(S3/HDFS) + 湖仓(Iceberg/Delta) + Catalog
+支持: 数据库(JDBC、Doris 官方连接器) + 文件(S3/HDFS) + 湖仓(Iceberg/Delta) + Catalog
 """
 
 from __future__ import annotations
@@ -426,12 +426,12 @@ class DatabaseAdapter:
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
         """从数据库加载数据"""
         engine_type, conn_info = DatabaseAdapter._connection_context(params)
-        schema = params.get('schema', 'public')
+        schema = params.get('schema', conn_info['database'] if engine_type.lower() == 'doris' else 'public')
         table = params['table']
 
         jdbc_url, driver = DatabaseAdapter._jdbc_config(engine_type, conn_info)
 
-        logger.info(f"Loading from database: {jdbc_url}, table: {schema}.{table}")
+        logger.info('Loading %s table: %s.%s', engine_type, schema, table)
 
         table_ref = f"{schema}.{table}"
         columns = []
@@ -451,13 +451,26 @@ class DatabaseAdapter:
                 for index, name in enumerate(columns)
             )
             table_ref = f'(SELECT {projection} FROM {table_ref}) AS addp_source'
-        df = spark.read.format("jdbc") \
-            .option("url", jdbc_url) \
-            .option("dbtable", table_ref) \
-            .option("user", conn_info.get('user', conn_info.get('username', ''))) \
-            .option("password", conn_info.get('password', '')) \
-            .option("driver", driver) \
-            .load()
+        if engine_type.lower() == 'doris':
+            from doris_publication import http_endpoint
+            endpoint = http_endpoint(conn_info)
+            if any(not isinstance(name, str) or not name or '.' in name or '\x00' in name
+                   for name in (schema, table)):
+                raise ValueError('Doris connector requires unambiguous database and table identifiers')
+            df = spark.read.format('doris').options(**{
+                'doris.fenodes': endpoint,
+                'doris.table.identifier': schema + '.' + table,
+                'user': conn_info.get('user', conn_info.get('username', '')),
+                'password': conn_info.get('password', ''),
+            }).load()
+        else:
+            df = spark.read.format("jdbc") \
+                .option("url", jdbc_url) \
+                .option("dbtable", table_ref) \
+                .option("user", conn_info.get('user', conn_info.get('username', ''))) \
+                .option("password", conn_info.get('password', '')) \
+                .option("driver", driver) \
+                .load()
         if columns:
             df = df.toDF(*columns)
 

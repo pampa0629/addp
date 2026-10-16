@@ -79,14 +79,15 @@ for _ in $(seq 1 120); do
         if [ "$(docker inspect --format '{{.State.Running}}' "$DORIS")" != true ]; then echo 'Doris disposable container exited before readiness' >&2; exit 1; fi
         if ! docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot --batch -e 'SHOW BACKENDS;' 2>/dev/null |
             awk -F '\t' 'NR == 1 { for (i=1;i<=NF;i++) if ($i=="Alive") alive=i; next } alive && tolower($alive)=="true" { found=1 } END { exit !found }'; then sleep 5; continue; fi
-        # Exercise the real entrypoint for a new cluster, then migrate a legacy
-        # loopback identity in place, keeping the same Backend throughout.
+        # Exercise first registration and repeated production initialization.
+        # Doris HOSTNAME accepts names, not IP literals: the historical IP-to-
+        # hostname migration is covered by the Business fixture, not a fake
+        # reverse migration which the server rejects before our code runs.
         docker exec -i "$DORIS" bash <<'VERIFY'
 set -euo pipefail
 source /addp/doris/init.sh
 before=$(doris_backend_facts)
 before_id=${before%%$'\t'*}
-doris_sql -e 'ALTER SYSTEM MODIFY BACKEND "host.docker.internal:9050" HOSTNAME "127.0.0.1";'
 doris_register_backend
 after=$(doris_backend_facts)
 [ "${after%%$'\t'*}" = "$before_id" ]
@@ -106,5 +107,8 @@ docker exec "$MASTER" /opt/spark/bin/spark-submit --master spark://spark-master:
     --packages com.mysql:mysql-connector-j:8.4.0 --jars /gate/spark-doris-connector-spark-3.5-25.2.0.jar \
     /addp/contract.py "$test_engine" 2>&1 | tee "$WORK_DIR/contract.log"
 if [ "$test_engine" != doris ]; then grep -q '^SPARK_MYSQL_PUBLICATION_PASS ' "$WORK_DIR/contract.log"; fi
-if [ "$test_engine" != mysql ]; then grep -q '^SPARK_DORIS_PUBLICATION_PASS ' "$WORK_DIR/contract.log"; fi
+if [ "$test_engine" != mysql ]; then
+    grep -q '^SPARK_DORIS_PUBLICATION_PASS ' "$WORK_DIR/contract.log"
+    grep -q '^SPARK_DORIS_READ_ROUNDTRIP_PASS ' "$WORK_DIR/contract.log"
+fi
 echo "SPARK_TABLE_T2_PASS engines=$test_engine staged publication; real Worker"

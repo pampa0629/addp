@@ -80,6 +80,29 @@ def run(engine):
         assert not stages(), 'failed staging left tables'
         assert save(frame, engine + '_new') == 2
         assert read(engine + '_new') == read_target_baseline
+        if engine == 'doris':
+            string_schema = T.StructType([
+                T.StructField('id', T.LongType(), False),
+                T.StructField('label', T.StringType(), True),
+                T.StructField('value', T.DecimalType(38, 18), True),
+            ])
+            string_rows = [
+                (-9007199254740993, None, Decimal('-100.123456789012345678')),
+                (1, '', None),
+                (2, '尾随😀  ', Decimal('0.000000000000000001')),
+                (3, 'x' * 100, Decimal('999.987654321098765432')),
+                (9007199254740993, '原始文本', Decimal('100.123456789012345678')),
+            ]
+            assert save(spark.createDataFrame(string_rows, string_schema).repartition(2), 'doris_strings') == 5
+            loaded = DatabaseAdapter.load(spark, {'connection_info': conn_info,
+                'schema': 'spark_results', 'table': 'doris_strings'})
+            assert loaded.schema['value'].dataType == T.DecimalType(38, 18)
+            assert [tuple(row) for row in loaded.orderBy('id').collect()] == string_rows
+            assert save(loaded, 'doris_strings_roundtrip') == 5
+            physical = query(connection, 'SELECT id, label, value FROM spark_results.doris_strings_roundtrip ORDER BY id')
+            assert [(int(i), label, Decimal(value) if value is not None else None)
+                    for i, label, value in physical] == string_rows
+            print('SPARK_DORIS_READ_ROUNDTRIP_PASS exact strings trailing spaces null bigint decimal', flush=True)
         if engine == 'mysql':
             temporal = spark.createDataFrame([(datetime(2024, 1, 2, 3, 4, 5, 123456),)],
                 T.StructType([T.StructField('at', T.TimestampType(), False)]))

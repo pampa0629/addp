@@ -33,7 +33,7 @@ elif a[0] == 'exec':
     if 'SHOW BACKENDS;' in a: print('BackendId\tAlive\n1\ttrue')
     if '/opt/spark/bin/spark-submit' in a:
         if os.environ.get('FAIL_SUBMIT'): status=42
-        else: print('SPARK_MYSQL_PUBLICATION_PASS fake\nSPARK_DORIS_PUBLICATION_PASS fake')
+        else: print('SPARK_MYSQL_PUBLICATION_PASS fake\nSPARK_DORIS_PUBLICATION_PASS fake\nSPARK_DORIS_READ_ROUNDTRIP_PASS fake')
 elif a[0] == 'rm':
     s['containers'].remove(a[-1])
     if not os.environ.get('LEAK_VOLUME'): s['volumes'].remove('v-' + a[-1])
@@ -78,13 +78,15 @@ p.write_text(json.dumps(s)); sys.exit(status)
         self.assertIn('--add-host host.docker.internal:127.0.0.1', source)
         self.assertIn('exec bash /addp/doris/init.sh', source)
         self.assertIn('doris_register_backend', source)
+        self.assertNotIn('HOSTNAME "127.0.0.1"', source)
 
     def test_physical_oracle_checks_failure_and_commit_evidence(self):
         source = (ROOT / 'scripts/test/spark-table-publication-contract.py').read_text()
         compile(source, 'spark-table-publication-contract.py', 'exec')
         for required in ('SPARK_TABLE_REAL_WORKER', 'injected Worker failure', 'SHOW CREATE TABLE',
                          'injected commit acknowledgement loss', '9007199254740993', 'decimal(38,18)',
-                         'frame.limit(0)', 'assert not stages()'):
+                         'frame.limit(0)', 'assert not stages()', 'SPARK_DORIS_READ_ROUNDTRIP_PASS',
+                         "DatabaseAdapter.load(spark", "'尾随😀  '"):
             self.assertIn(required, source)
 
 
