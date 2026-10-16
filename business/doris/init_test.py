@@ -11,6 +11,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class DorisInitializationTest(unittest.TestCase):
+    def test_compose_keeps_self_resolution_and_external_ports_consistent(self):
+        result = subprocess.run(['docker', 'compose', '-f', str(ROOT / 'business/docker-compose.yml'),
+                                 'config', '--format', 'json'], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = json.loads(result.stdout)['services']
+        doris = services['doris-fe']
+        self.assertEqual(doris['extra_hosts'], ['host.docker.internal=127.0.0.1'])
+        self.assertEqual(doris['entrypoint'], ['/bin/bash', '/addp/doris/init.sh'])
+        self.assertEqual(doris['healthcheck']['test'], ['CMD', 'bash', '/addp/doris/init.sh', '--health'])
+        self.assertEqual({port['target'] for port in doris['ports']}, {9030, 8030, 8040, 9050, 9060, 8060})
+        self.assertTrue(all(port['host_ip'] == '127.0.0.1' for port in doris['ports']))
+        for port in doris['ports']:
+            if port['target'] in {8040, 9050, 9060, 8060}:
+                self.assertEqual(str(port['published']), str(port['target']))
+        self.assertIn('/opt/apache-doris/fe/doris-meta', {v['target'] for v in doris['volumes']})
+        self.assertIn('/opt/apache-doris/be/storage', {v['target'] for v in doris['volumes']})
+
     def run_fixture(self, rows, command, *, change_identity=False, reject_mutation=False):
         with tempfile.TemporaryDirectory() as work:
             directory = Path(work)

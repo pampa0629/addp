@@ -24,7 +24,7 @@
 - MinIO：业务对象存储。
 - HDFS 3.5.0：独立 NameNode/DataNode，Simple 开发实验模式，`/addp/samples` 下 CSV、JSON、Parquet 各 20 条订单，金额合计 2100。通过 `bash scripts/start.sh -hdfs` 启动和幂等初始化；只创建样例，不登记 System 引擎。本机 Docker Desktop 实例的四个端口均绑定 `127.0.0.1`，DataNode 广播稳定主机名 `host.docker.internal`；宿主机须配置对应回环映射，启动前验证。WebHDFS 使用回环端点，System RPC 登记 `hdfs://host.docker.internal:<实际端口>`，换网无需修改连接。不再检测局域网 IP 或使用 `HDFS_SHARED_HOST`。端口为显式部署配置，冲突直接失败，不自动漂移。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
-- 本机 Doris all-in-one 只发布回环 FE 9030/8030 与 BE 8040/9050/9060/8060，BE 公布 `host.docker.internal`。`doris/init.sh` 是唯一初始化与 FE/BE 健康检查入口，复用官方启停；已有回环 BE 必须以原生 HOSTNAME 修改保留 Backend ID 和数据，不删除后重建。确定性迁移反例归 `make test-business-config`，原生迁移和真实 Worker 写入归 Hosted `make test-common-spark-table`。
+- 本机 Doris all-in-one 只发布回环 FE 9030/8030 与 BE 8040/9050/9060/8060，BE 公布 `host.docker.internal`，仅 Doris 容器将其解析到自身回环地址，其他容器使用宿主网关解析。`doris/init.sh` 是唯一初始化与 FE/BE 健康检查入口，复用官方启停；已有回环 BE 必须以原生 HOSTNAME 修改保留 Backend ID 和数据，不删除后重建。确定性迁移反例归 `make test-business-config`，原生迁移和真实 Worker 写入归 Hosted `make test-common-spark-table`。
 - Neo4j：图业务数据测试环境。
 - Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → keyspace 目录、Meta 键值数据集身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
 

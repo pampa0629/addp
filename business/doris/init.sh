@@ -65,6 +65,9 @@ if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
     getent ahostsv4 host.docker.internal >/dev/null || {
         echo 'Docker Desktop host.docker.internal resolution is required' >&2; exit 1;
     }
+    getent ahostsv4 host.docker.internal | awk '$1 != "127.0.0.1" { bad=1 } END { exit bad }' || {
+        echo 'Doris must resolve its advertised hostname to its own loopback interface' >&2; exit 1;
+    }
     sed -i '/^[[:space:]]*enable_fqdn_mode[[:space:]]*=/d; /^[[:space:]]*force_olap_table_replication_num[[:space:]]*=/d' /opt/apache-doris/fe/conf/fe.conf
     printf '\nenable_fqdn_mode = true\nforce_olap_table_replication_num = 1\n' >> /opt/apache-doris/fe/conf/fe.conf
     # Source the official lifecycle once; replace only its loopback registration.

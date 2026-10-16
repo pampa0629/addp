@@ -63,7 +63,8 @@ exec bash /addp/doris/init.sh
 BOOTSTRAP
 )
     docker run -d --name "$DORIS" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias doris \
-        --network-alias host.docker.internal -v "$ROOT_DIR/business/doris/init.sh:/addp/doris/init.sh:ro" \
+        --network-alias host.docker.internal --add-host host.docker.internal:127.0.0.1 \
+        -v "$ROOT_DIR/business/doris/init.sh:/addp/doris/init.sh:ro" \
         --hostname doris --memory 3g -e BUILD_TYPE=production --entrypoint bash "$DORIS_IMAGE" -c "$DORIS_BOOTSTRAP" >/dev/null
 fi
 docker run -d --name "$MASTER" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias spark-master --user root --memory 2g \

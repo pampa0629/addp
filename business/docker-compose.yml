@@ -244,6 +244,8 @@ services:
     image: apache/doris:doris-all-in-one-2.1.0
     container_name: business-doris-fe
     hostname: business-doris-fe
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1"
     environment:
       - BUILD_TYPE=production
       - RECOVERY=${DORIS_RECOVERY:-false}

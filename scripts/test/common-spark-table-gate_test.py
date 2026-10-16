@@ -75,6 +75,7 @@ p.write_text(json.dumps(s)); sys.exit(status)
         self.assertEqual(source.count('@sha256:'), 3)
         self.assertIn('requires native Linux x86_64 Docker', source)
         self.assertIn('--network-alias host.docker.internal', source)
+        self.assertIn('--add-host host.docker.internal:127.0.0.1', source)
         self.assertIn('exec bash /addp/doris/init.sh', source)
         self.assertIn('doris_register_backend', source)
 
