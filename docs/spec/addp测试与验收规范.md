@@ -119,6 +119,8 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；同一门禁的 Service 用例依赖 PostGIS，验证生成目标的 3857 类型声明、2D／Z／M／ZM 保留、空目标校验、未声明旧目标拒绝及无内容 SELECT 权限的目录核验，清理自建 Schema 与事务内角色并核对零残留。该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database；CI 复用固定摘要的 PostGIS 15-3.4 镜像。同一门禁使用独占 Meilisearch 验证技术与正文快照任意顺序并存、重复提交、空值清除及单指纹删除；本地标准脚本自动创建临时容器并在退出时删除，CI 使用随 Job 销毁的固定摘要 Service，禁止连接开发内容索引。
 - Orchestrator 的独立进程故障回归归入既有 `make test-orchestrator-postgres`：测试进程运行正式监督器，在提交与等待阶段分别强制终止持有租约的运行者，再由新进程验证过期失败收敛、不重发请求、旧租约写入拒绝、子执行引用保留及唯一终态事件。HTTP Provider 是受控夹具，因此不作为 T4 真实拓扑验收。Go 测试自动发现和现有 Hosted PostgreSQL Job 覆盖同一入口，无新增基础设施依赖；子进程和当次数据库事实必须在成功、失败路径清理并核对残留。
 
+Doris／ClickHouse 会话失败回归分别沿用 `make test-common-doris-decimal`、`make test-common-clickhouse-decimal` 和现有 Release/T2 Job；T1 使用同一断言矩阵验证会话状态和参数绑定，不能代替原生 T2。每个引擎必须覆盖非法 JSON、后续 chunk 执行失败、写入取消、关闭取消、Abort、正常关闭和空会话七个场景，核对首次错误保留、失败后拒绝续写（含空批次）、重复关闭及提交标记。原生 T2 须从独立连接核对实际数据：先成功写入一行，再让下一批的前 1000 行提交、后一个 chunk 执行失败，必须保留已提交的 1001 行，同时会话失败且无成功标记；此前提交行的 JSON、bytes 与普通文本须保持原值。每个合成表先确认名称未占用，退出逐表清理并验证零残留；门禁独占固定摘要容器、随机回环端口及全部退出路径的容器／卷清理，不连接业务实例、不运行已保存的 Transfer 任务或触发扫描。ClickHouse 就绪检查必须等待镜像初始化结束后的正式服务，不能以初始化临时服务响应成功作为就绪证明。
+
 Oracle 的既有 `make test-common-oracle-decimal` 默认使用 Slim 一次性容器验证非空间类型写入及删除；`make test-common-oracle-decimal ORACLE_SPATIAL=1` 使用固定摘要的完整镜像，额外验证原生 SDO_GEOMETRY、空间索引、DROP 后的登记状态、存在／缺失表的精确登记清理、重复删除及其他表登记保留。两种配置均由既有 Hosted Oracle Job 执行，容器只绑定随机回环端口，退出销毁容器及卷；不得连接业务 Oracle 或以模拟视图代替原生空间认证。
 
 ### 4.3 T3

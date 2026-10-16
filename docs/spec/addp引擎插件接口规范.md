@@ -349,6 +349,8 @@ Transfer 的正式只读配置检查入口为 `POST /api/v1/transfer/task-config
 
 统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB、OceanBase、Oracle、Doris、ClickHouse 与达梦的表格写入使用该入口；Oracle 的 INSERT session 与分区变更 MERGE 共用此编码，编码后的 SQL NULL 仍须遵守字段非空约束。Doris 的 `json` 沿用现有 `STRING` 映射，ClickHouse 沿用 `String`／`Nullable(String)` 映射，不因此开放原生 JSON 列写入。ClickHouse 的 bytes 字节切片按原始二进制字符串绑定到 String 存储，避免驱动解释为 SQL 数组；nil、空字节与非 UTF-8 字节分别保留，不改变原生 array 或空间值的解释。两者的结构校验依据同一建表映射比较物理类型，不拿逻辑 `json` 与物理 `string` 直接比较；session 与批量 INSERT 在当前批次第一条 SQL 前完成全部值编码与校验。其 chunk 自动提交，`Abort` 不撤销此前提交的 chunk 或批次，数据库执行失败也不保证整批回滚。
 
+Doris／ClickHouse 表写会话必须保留首次编码、执行或取消错误，随后拒绝继续写入，包括空批次；`Close` 及重复关闭必须返回失败，不得生成成功提交标记。关闭时 Context 已取消或连接关闭失败时，同样不得生成成功标记；仅无写入错误、关闭时未取消且连接成功关闭的会话才能发布标记。成功空会话的标记行数和批次数均为零；`Abort` 不发布成功标记。失败或无标记不证明零写入、整批回滚或 replace 前的目标恢复；此前自动提交的 chunk 和会话外 DDL 可能保留。此约束不新增 capability，也不声明写侧可恢复或 exactly-once。
+
 openGauss 的 COPY／INSERT 复用 PostgreSQL 写入，独立原生 MERGE 也必须使用同一协议值编码；字段类型只来自 upsert options，不由批次声明补全或覆盖。JSON、原生一维 TEXT[] 与 BYTEA 沿用 PostgreSQL 的编码边界，整批参数编码及非空校验须在连接／事务写入之前完成；空间写入仍拒绝。
 
 达梦的 INSERT session 与 MERGE upsert 共用该编码，沿用 CLOB 存储；按打开会话或 upsert options 的字段声明编码，在当前批次第一条写入 SQL 前完成全部行校验，编码后的 SQL NULL 仍遵守非空约束。原生 array 与空间类型继续拒绝，bytes 沿用 BLOB 驱动绑定。会话的 DELETE replace 与 INSERT 在同一事务中，Abort 撤销未提交数据；Prepare 的 DDL 不属于该事务。其他已有 Provider 必须按同一契约收敛，不能以仅接受预编码字符串作为最终实现。
