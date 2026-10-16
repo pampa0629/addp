@@ -105,7 +105,8 @@ def list_operators():
         'raster': 'raster',
     }
 
-    for name, meta in OPERATORS.items():
+    category_order = {category.value: index for index, category in enumerate(OperatorCategory)}
+    for name, meta in sorted(OPERATORS.items(), key=lambda item: category_order[tuple(item[1]["category_path"])]):
         # 使用内部 param_schema 生成 addp.workflow/v1 参数元数据
         parameters = []
         if 'param_schema' in meta:
@@ -159,7 +160,7 @@ def list_operators():
             "type": meta.get('type', 'general'),  # 从元数据读取类型，默认为 general
             "engine_type": "geopython_workflow",
             "category": meta['category'],
-            "category_path": meta.get('category_path') or [meta['category']],
+            "category_path": meta['category_path'],
             "description": meta['description'],
             "execution_modes": meta['execution_modes'],
             "effects": meta['effects'],

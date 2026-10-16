@@ -36,8 +36,27 @@ test('keeps every task action on one line', async ({ page }) => {
   }
 })
 
-async function installMockBackend(page) {
-  const tasks = [
+for (const [locale, labels] of [
+  ['zh-cn', ['活跃', '停用', '归档']],
+  ['en', ['Active', 'Inactive', 'Archived']]
+]) {
+  test(`translates task status cells and filter options in ${locale}`, async ({ page }) => {
+    await installMockBackend(page, { locale, statuses: ['active', 'inactive', 'archived'] })
+    await page.goto('/tasks')
+
+    const rows = page.locator('.el-table__body-wrapper tbody tr')
+    await expect(rows).toHaveCount(3)
+    for (let index = 0; index < labels.length; index += 1) {
+      await expect(rows.nth(index).getByRole('cell').nth(4)).toHaveText(labels[index])
+    }
+    await page.locator('.toolbar-right .el-select').last().click()
+    await expect(page.getByRole('option')).toHaveText(labels)
+    await expect(page.locator('body')).not.toContainText('develop.taskManagement.')
+  })
+}
+
+async function installMockBackend(page, { locale = 'zh-cn', statuses } = {}) {
+  let tasks = [
     {
       id: 41,
       name: 'farm_buffer',
@@ -58,7 +77,13 @@ async function installMockBackend(page) {
     }
   ]
 
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  if (statuses) {
+    tasks = statuses.map((status, index) => ({
+      ...tasks[0], id: 100 + index, name: `status_${status}`, status
+    }))
+  }
+
+  await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
 

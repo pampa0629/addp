@@ -169,7 +169,7 @@ def _matches_epsg_definition(source_crs: CRS, canonical_crs: CRS) -> bool:
 VECTOR_REPROJECT_METADATA = OperatorMetadata(
     name="vector_reproject",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.SPATIAL_TRANSFORM,
+    category=OperatorCategory.VECTOR_PROJECTION,
     description="空间坐标参考转换",
     brief_description="将几何批从源 CRS 重投影到目标 CRS",
     execution_modes=["workflow", "direct"],
@@ -237,7 +237,7 @@ VECTOR_REPROJECT_METADATA = OperatorMetadata(
 CRS_TO_PROJJSON_METADATA = OperatorMetadata(
     name="crs_to_projjson",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.SPATIAL_TRANSFORM,
+    category=OperatorCategory.VECTOR_PROJECTION,
     description="CRS 定义转换为 PROJJSON",
     brief_description="在不改变坐标的前提下规范化 CRS 定义表达",
     execution_modes=["direct"],

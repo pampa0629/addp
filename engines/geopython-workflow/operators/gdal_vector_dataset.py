@@ -744,7 +744,7 @@ def _metadata(name: str, effects: list[str], params: list[OperatorParam]) -> Ope
     return OperatorMetadata(
         name=name,
         type=OperatorType.GENERAL,
-        category=OperatorCategory.DATA_IO,
+        category=OperatorCategory.COMMON_IO,
         description=name,
         brief_description="GDAL vector dataset batch protocol",
         execution_modes=["direct"],

@@ -271,8 +271,8 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.develop.label', icon: Edit,
     items: [
       { index: '/develop/sql',       icon: Monitor,    label: 'console.menus.develop.sql' },
-      { index: '/develop/notebook',  icon: Notebook,   label: 'console.menus.develop.notebook' },
       { index: '/develop/workflow',  icon: Connection, label: 'console.menus.develop.workflow' },
+      { index: '/develop/notebook',  icon: Notebook,   label: 'console.menus.develop.notebook' },
       { index: '/develop/tasks',     icon: List,       label: 'console.menus.develop.tasks', recentLabel: 'console.menus.develop.recentTasks' },
     ],
   },

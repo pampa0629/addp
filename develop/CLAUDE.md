@@ -64,6 +64,8 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 前端工作流编辑器只消费 `public_parameters`，保存的 workflow definition 只包含公开参数。执行前由 Develop Adapter 派生运行时参数，再把纯 Runtime Operator Spec 参数发送给运行时。
 
+算子面板按 Runtime 的 `category_path` 递归显示目录，同名末级组以完整路径区分，父组显示后代算子总数；搜索展开匹配算子的全部祖先，点击与拖拽共用唯一算子卡片实现。GeoPython 的两级四字分类由 Runtime 拥有，不在 Develop 按引擎类型或算子名称维护分类表。最小验证运行 `make test-develop-frontend` 和 `make test-geopython-workflow`，现有 Frontend / GeoPython CI 已覆盖。
+
 直接连接资源的选择范围与执行校验唯一来自当前 Runtime Instance 的 `compute.workflow.storage_access`，不按计算引擎类型生成名单，不在算子 Adapter 保存名单。缺少声明时没有直接连接候选。输入读取与输出写入分别与存储实例的 `storage.store` 能力取交集。受控 access-plan 选择范围复用 Common 解析器的方法映射；操作只声明挂载目录等所需访问方法。标准验证使用 `make test-module MODULE=develop`，Common 契约变更另运行 `make test-go`。
 
 Spark 保存表结果时，Develop 根据目标 schema/database locator 和算子的 ddl 声明，将 write + ddl 授权绑定到目标引擎，源引擎与 Spark 集群仍只读。保存摘要的行数由 Runtime 发布事务返回；命名 outputs、Meta 异步扫描与 lineage_facts 继续复用既有工作流结果主线。
@@ -87,6 +89,8 @@ Develop 在模块定义中声明 TaskProvider 角色，发布 `query`、`workflo
 具体任务详情必须返回任务级 `execution_contract`。工作流契约根据当前保存的 workflow definition 和目标运行时算子动态生成：未被内部连线占用的公开参数默认可覆盖，内部 `$ref` 连线、DAG 和 Runtime/Adapter 派生参数不得暴露；保存算子只声明可持久化的 ResourceLocator 稳定输出。查询契约根据 `content.query_parameters[]` 动态生成，每个参数只保存 `name + type + default? + description?`；参数定义必须与 SQL `:name`、Cypher `$name`、MQL `{\"$param\":\"name\"}` 或 PostgreSQL 裸关系名引用完全一致。所有类型的 `default` 都是可选字段；缺少默认值的参数统一由 `input_schema.required` 声明为执行必填，有默认值的参数进入 `input_defaults`，本次执行或 Orchestrator 均可覆盖。参数分组按稳定 DAG 拓扑顺序声明 `input_ui_schema.order`，查询参数按定义数组顺序声明字段 `order`。资源参数展示统一消费共享资源树 selection：摘要展示引擎实例名称、引擎原生路径和本地化资源类型，geometry 字段由资源空间事实自动回填，单字段直接确定、多字段使用选择控件，不提供自由文本输入。手动执行和 Orchestrator 调用都只提交本次 `parameters` 部分覆盖，未提交字段使用任务保存值，且不得改写任务定义。`script` 当前返回空的闭合输入/输出契约。
 
 ### 前端任务路由
+
+工作流编辑器的引擎展示顺序为 GeoPython、Model3D、PointCloud、SuperMap、Spark、Document；其他扩展类型排在其后，同类型实例保留发现顺序。新建工作流默认选择此顺序中第一个可用实例，优先 GeoPython；编辑已有任务保留其保存的引擎绑定，刷新候选列表不改绑。
 
 Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。Console URL 必须能够恢复当前 `dev_tasks.id`，canonical 路由固定为 `/develop/{sql|workflow|notebook}?action={create|edit}&id={id}`：创建动作不带 `id`，编辑动作只使用 `id`。`/develop/tasks` 只表示任务列表，`taskId` 旧参数不得保留。
 

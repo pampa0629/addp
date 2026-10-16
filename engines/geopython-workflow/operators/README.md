@@ -32,51 +32,43 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 operators/
 ├── base.py                     # Pydantic 基础模型和工具函数
 ├── __init__.py                 # 统一导出接口
-├── io_operators.py             # 数据 I/O (2个)
-├── geometric_operators.py      # 几何处理 (8个)
-├── spatial_relations.py        # 空间关系 (3个)
-├── properties_operators.py     # 几何属性 (3个)
-├── format_operators.py         # 格式转换 (2个)
-└── data_operations.py          # 数据操作 (6个)
+├── io_operators.py             # 数据 I/O
+├── geometric_operators.py      # 几何处理
+├── spatial_relations.py        # 空间关系
+├── properties_operators.py     # 几何属性
+├── format_operators.py         # 格式转换
+└── data_operations.py          # 数据操作
 ```
 
-## 算子列表
+## 算子分类
 
-### 数据 I/O (2个)
-- `load` - 数据加载（按 `schema/table` 或 `path` 自动读取数据库表或受支持文件）
-- `save` - 数据保存（支持 table/file）
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 67 个算子：通用处理 18 个、矢量处理 26 个、栅格处理 23 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
-### 几何处理 (8个)
-- `buffer` - 缓冲区分析
-- `intersection` - 几何相交
-- `union` - 几何合并
-- `centroid` - 计算质心
-- `difference` - 几何差集
-- `simplify` - 简化几何
-- `convex_hull` - 凸包
-- `envelope` - 最小外接矩形
+| 一级分组 | 二级分组 | 数量 | 算子 |
+|---|---|---:|---|
+| 通用处理 | 数据读写 | 2 | `load`、`save` |
+| 通用处理 | 字段处理 | 5 | `add_field`、`calculate_field`、`rename_fields`、`drop_fields`、`type_cast` |
+| 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
+| 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
+| 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
+| 矢量处理 | 几何处理 | 9 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve` |
+| 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
+| 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
+| 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
+| 矢量处理 | 要素筛选 | 3 | `filter_by_geometry_type`、`drop_null_geometry`、`split_by_area` |
+| 矢量处理 | 坐标转换 | 1 | `vector_reproject` |
+| 矢量处理 | 格式转换 | 2 | `load_from_wkt`、`export_to_wkt` |
+| 矢量处理 | 成果生成 | 1 | `vector_to_pmtiles` |
+| 栅格处理 | 数据读写 | 3 | `raster_load`、`raster_save`、`raster_save_tiles` |
+| 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
+| 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
+| 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
+| 栅格处理 | 像元计算 | 3 | `raster_band_math`、`raster_reclassify`、`raster_aggregate` |
+| 栅格处理 | 栅格统计 | 2 | `raster_statistics`、`raster_histogram` |
+| 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
+| 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
-### 空间关系 (3个)
-- `contains` - 包含关系判断
-- `intersects` - 相交关系判断
-- `distance_to` - 距离计算
-
-### 几何属性 (3个)
-- `get_area` - 计算面积
-- `get_length` - 计算长度/周长
-- `get_bounds` - 获取边界框
-
-### 格式转换 (2个)
-- `load_from_wkt` - WKT → GeoDataFrame
-- `export_to_wkt` - GeoDataFrame → WKT
-
-### 数据操作 (6个)
-- `clip` - 裁剪几何
-- `voronoi` - 泰森多边形
-- `split_by_area` - 按面积分割（多输出端口）
-- `dissolve` - 融合几何
-- `batch_buffer` - 批量缓冲
-- `batch_centroid` - 批量质心
+`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义。
 
 ## 使用方式
 
@@ -165,7 +157,7 @@ from .base import OperatorMetadata, OperatorParam, OperatorCategory, register_op
 
 MY_OPERATOR_METADATA = OperatorMetadata(
     name="my_operator",
-    category=OperatorCategory.GEOMETRIC,
+    category=OperatorCategory.VECTOR_GEOMETRY,
     description="简短描述",
     brief_description="一句话说明，常用于XX场景",
 
@@ -260,12 +252,13 @@ __all__ = [
 
 ### OperatorCategory 枚举
 
-- `DATA_IO` - "数据I/O"
-- `GEOMETRIC` - "几何处理"
-- `SPATIAL_RELATION` - "空间关系"
-- `PROPERTIES` - "几何属性"
-- `FORMAT_CONVERSION` - "格式转换"
-- `DATA_OPERATION` - "数据操作"
+枚举值为完整的两级分类元组，例如：
+
+- `COMMON_IO`：`("通用处理", "数据读写")`。
+- `VECTOR_GEOMETRY`：`("矢量处理", "几何处理")`。
+- `RASTER_IO`：`("栅格处理", "数据读写")`。
+
+注册时选择唯一枚举，序列化时由该枚举同时生成末级 `category` 和完整 `category_path`。完整分类与算子归属见前文“算子分类”，不再维护旧的平铺分类表。
 
 ## 技术特性
 

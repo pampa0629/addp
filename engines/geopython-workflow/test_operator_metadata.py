@@ -1056,3 +1056,42 @@ def test_vector_to_pmtiles_indexes_gdal_pbf_output(tmp_path):
     indexed = _index_generated_tiles(tmp_path)
 
     assert indexed[(18, 219155, 107332)] == tile_path
+
+
+def test_workflow_categories_have_one_explicit_two_level_owner():
+    expected_groups = [
+        (("通用处理", "数据读写"), "load save"),
+        (("通用处理", "字段处理"), "add_field calculate_field rename_fields drop_fields type_cast"),
+        (("通用处理", "数据清洗"), "fill_null drop_duplicates"),
+        (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
+        (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
+        (("矢量处理", "几何处理"), "buffer centroid simplify convex_hull envelope voronoi batch_buffer batch_centroid dissolve"),
+        (("矢量处理", "叠加分析"), "intersection union difference clip"),
+        (("矢量处理", "空间关系"), "contains intersects distance_to"),
+        (("矢量处理", "几何量测"), "get_area get_length get_bounds"),
+        (("矢量处理", "要素筛选"), "filter_by_geometry_type drop_null_geometry split_by_area"),
+        (("矢量处理", "坐标转换"), "vector_reproject"),
+        (("矢量处理", "格式转换"), "load_from_wkt export_to_wkt"),
+        (("矢量处理", "成果生成"), "vector_to_pmtiles"),
+        (("栅格处理", "数据读写"), "raster_load raster_save raster_save_tiles"),
+        (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
+        (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
+        (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
+        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_aggregate"),
+        (("栅格处理", "栅格统计"), "raster_statistics raster_histogram"),
+        (("栅格处理", "栅格检查"), "raster_info validate_cog"),
+        (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
+    ]
+    expected = {name: list(path) for path, names in expected_groups for name in names.split()}
+    workflow_operators = [operator for operator in list_operators() if "workflow" in operator["execution_modes"]]
+    assert len(expected) == len(workflow_operators) == 67
+    assert {operator["name"]: operator["category_path"] for operator in workflow_operators} == expected
+    assert list(dict.fromkeys(tuple(operator["category_path"]) for operator in workflow_operators)) == [
+        path for path, _ in expected_groups
+    ]
+    for operator in list_operators():
+        path = operator["category_path"]
+        assert len(path) == 2
+        assert all(len(name) == 4 for name in path)
+        assert operator["category"] == path[-1]
+    assert "crs_to_projjson" not in expected

@@ -16,18 +16,29 @@ class OperatorType(str, Enum):
     GENERAL = "general"          # 通用算子（I/O、格式转换）
 
 
-class OperatorCategory(str, Enum):
-    """算子分类枚举"""
-    DATA_IO = "数据I/O"
-    RASTER = "栅格计算"
-    GEOMETRIC = "几何处理"
-    SPATIAL_TRANSFORM = "空间转换"
-    SPATIAL_RELATION = "空间关系"
-    PROPERTIES = "几何属性"
-    FORMAT_CONVERSION = "格式转换"
-    DATA_OPERATION = "数据操作"
-    ATTRIBUTE_CALCULATION = "属性计算"
-    FILTER_OPERATION = "数据筛选"
+class OperatorCategory(Enum):
+    """Runtime 拥有的两级算子分类：处理对象、操作能力。"""
+    COMMON_IO = ("通用处理", "数据读写")
+    COMMON_FIELDS = ("通用处理", "字段处理")
+    COMMON_CLEAN = ("通用处理", "数据清洗")
+    COMMON_FILTER = ("通用处理", "数据筛选")
+    COMMON_NUMERIC = ("通用处理", "数值统计")
+    VECTOR_GEOMETRY = ("矢量处理", "几何处理")
+    VECTOR_OVERLAY = ("矢量处理", "叠加分析")
+    VECTOR_RELATION = ("矢量处理", "空间关系")
+    VECTOR_MEASUREMENT = ("矢量处理", "几何量测")
+    VECTOR_SELECTION = ("矢量处理", "要素筛选")
+    VECTOR_PROJECTION = ("矢量处理", "坐标转换")
+    VECTOR_FORMAT = ("矢量处理", "格式转换")
+    VECTOR_OUTPUT = ("矢量处理", "成果生成")
+    RASTER_IO = ("栅格处理", "数据读写")
+    RASTER_GRID = ("栅格处理", "网格处理")
+    RASTER_EXTENT = ("栅格处理", "范围处理")
+    RASTER_BAND = ("栅格处理", "波段处理")
+    RASTER_CELL = ("栅格处理", "像元计算")
+    RASTER_STATISTICS = ("栅格处理", "栅格统计")
+    RASTER_INSPECTION = ("栅格处理", "栅格检查")
+    RASTER_OUTPUT = ("栅格处理", "成果生成")
 
 
 class OperatorParam(BaseModel):
@@ -120,7 +131,8 @@ class OperatorMetadata(BaseModel):
             'function': self.function,
             'type': self.type.value,  # 添加算子类型
             'param_schema': param_schema,
-            'category': self.category.value,
+            'category': self.category.value[-1],
+            'category_path': list(self.category.value),
             'execution_modes': list(self.execution_modes),
             'effects': list(self.effects),
             'description': self.description,

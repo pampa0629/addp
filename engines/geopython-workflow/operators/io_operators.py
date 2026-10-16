@@ -380,7 +380,7 @@ def save(
 LOAD_METADATA = OperatorMetadata(
     name="load",
     type=OperatorType.GENERAL,
-    category=OperatorCategory.DATA_IO,
+    category=OperatorCategory.COMMON_IO,
     description="数据加载",
     brief_description="从数据库表、MongoDB collection 或文件资源加载数据",
     execution_modes=["workflow"],
@@ -470,7 +470,7 @@ LOAD_METADATA = OperatorMetadata(
 SAVE_METADATA = OperatorMetadata(
     name="save",
     type=OperatorType.GENERAL,
-    category=OperatorCategory.DATA_IO,
+    category=OperatorCategory.COMMON_IO,
     description="数据保存",
     brief_description="将数据保存到数据库表或文件,支持普通表和空间表",
     execution_modes=["workflow"],

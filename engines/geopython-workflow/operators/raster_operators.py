@@ -1087,7 +1087,7 @@ def build_raster_mosaic(
 BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 	name="build_raster_mosaic",
 	type=OperatorType.GENERAL,
-	category=OperatorCategory.FORMAT_CONVERSION,
+	category=OperatorCategory.RASTER_OUTPUT,
 	description="栅格 mosaic 数据集生成",
 	brief_description="从资源树 node 批量生成业务存储中的 raster_mosaic 数据集",
 	attributes={"resource_groups": ["raster"]},

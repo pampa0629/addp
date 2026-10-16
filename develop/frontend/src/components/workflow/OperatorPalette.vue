@@ -12,76 +12,14 @@
     <!-- 算子分类列表 -->
     <div class="operator-categories" v-loading="loading">
       <el-collapse v-model="activeCategories" v-if="!loading && categorizedOperators.length > 0">
-        <el-collapse-item
+        <OperatorPaletteCategory
           v-for="category in filteredCategories"
-          :key="category.name"
-          :name="category.name"
-        >
-          <template #title>
-            <div class="category-header">
-              <span class="category-icon">{{ category.icon }}</span>
-              <span class="category-name">{{ category.name }}</span>
-              <el-tag size="small" type="info" class="category-count">
-                {{ category.operators.length }}
-              </el-tag>
-            </div>
-          </template>
-
-          <!-- 算子列表 -->
-          <div class="operator-list">
-            <div
-              v-for="operator in category.operators"
-              :key="operator.name"
-              class="operator-item"
-              draggable="true"
-              @dragstart="handleDragStart($event, operator)"
-            >
-              <button
-                type="button"
-                class="operator-add-button"
-                :aria-label="t('develop.operatorPalette.addLabel', { name: operator.displayName })"
-                @click="handleOperatorClick(operator)"
-              >
-                <span class="operator-name">{{ operator.displayName }}</span>
-                <span
-                  v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
-                  class="operator-description"
-                >
-                  {{ operator.description }}
-                </span>
-              </button>
-              <el-tooltip effect="light" placement="right" :show-after="300">
-                <template #content>
-                  <div class="operator-help">
-                    <h4>{{ operator.displayName }}</h4>
-                    <p
-                      v-if="hasDistinctText(operator.description, operator.displayName, operator.name)"
-                      class="description"
-                    >
-                      {{ operator.description }}
-                    </p>
-                    <div class="params-section" v-if="operator.params && Object.keys(operator.params).length > 0">
-                      <h5>{{ t('develop.operatorPalette.params') }}:</h5>
-                      <ul>
-                        <li v-for="(desc, paramName) in operator.params" :key="paramName">
-                          <strong>{{ paramName }}</strong>: {{ desc }}
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                </template>
-                <button
-                  type="button"
-                  class="info-button"
-                  :aria-label="t('develop.operatorPalette.helpLabel', { name: operator.displayName })"
-                  @click.stop
-                >
-                  <el-icon class="info-icon"><InfoFilled /></el-icon>
-                </button>
-              </el-tooltip>
-            </div>
-          </div>
-        </el-collapse-item>
+          :key="category.key"
+          v-model:active-categories="activeCategories"
+          :category="category"
+          @operator-click="handleOperatorClick"
+          @operator-drag-start="handleDragStart"
+        />
       </el-collapse>
 
       <!-- 空状态 -->
@@ -106,8 +44,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { InfoFilled } from '@element-plus/icons-vue'
-import { hasDistinctText } from '@/utils/displayText'
+import OperatorPaletteCategory from './OperatorPaletteCategory.vue'
+import { buildOperatorCategories, filterOperatorCategories, operatorCategoryKeys } from '@/utils/operatorCategories'
 
 const { t } = useI18n()
 
@@ -135,110 +73,49 @@ const emit = defineEmits(['operator-click', 'operator-drag'])
 
 // Data
 const searchQuery = ref('')
-// 默认收拢所有分类，用户可以按需展开
+// 初次加载时展开第一条目录路径，其余目录由用户展开。
 const activeCategories = ref([])
 
-// 分类映射：后端的分类名称已经是中文，直接使用即可
-// 这里只是为每个分类添加图标
-const categoryIcons = {
-  // 通用分类（Python 和 Spark 共用）
-  '数据I/O': '💾',
-  '空间分析': '🗺️',
-  '数据转换': '🔄',
-  '聚合分析': '📊',
-  'SQL查询': '🔎',
-
-  // GeoPython Workflow 特有分类
-  '几何处理': '📐',
-  '空间关系': '🔗',
-  '几何属性': '📏',
-  '格式转换': '🔄',
-  '数据操作': '🛠️',
-  '属性计算': '🧮',
-  '数据筛选': '🔍'
-}
-
-// 分类后的算子列表
-const categorizedOperators = computed(() => {
-  const categories = {}
-
-  // 按工作流引擎声明的分组目录组织算子。
-  props.operators.forEach((op) => {
-    const categoryPath = op.category_path
-    const categoryName = categoryPath.join(' / ')
-    const categoryIcon = categoryIcons[categoryPath[0]] || '📝'
-
-    if (!categories[categoryName]) {
-      categories[categoryName] = {
-        name: categoryName,
-        path: categoryPath,
-        icon: categoryIcon,
-        operators: []
-      }
-    }
-
-    // 工具提示和画布只消费 Develop 聚合的 Public Operator Spec。
-    const params = {}
-    op.public_parameters.forEach(param => {
-      params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
-    })
-
-    categories[categoryName].operators.push({
-      name: op.name,
-      displayName: op.display_name || op.name,
-      description: op.description,
-      params: params,
-      category: categoryName,
-      categoryPath,
-      publicParameters: op.public_parameters,
-      outputPorts: op.output_ports
-    })
+// 目录及顺序由 Runtime 声明，卡片只消费 Public Operator Spec。
+const categorizedOperators = computed(() => buildOperatorCategories(props.operators.map(op => {
+  const params = {}
+  op.public_parameters.forEach(param => {
+    params[param.name] = param.description || t('develop.operatorPalette.paramDesc', { name: param.name })
   })
-
-  // 返回所有分类，按名称排序
-  return Object.values(categories).sort((a, b) => {
-    // 定义分类顺序权重（可选）
-    const order = ['数据I/O', '空间分析', '几何处理', '空间关系', '几何属性',
-                   '数据转换', '数据操作', '数据筛选', '聚合分析', 'SQL查询', '格式转换', '属性计算']
-    const aIndex = order.indexOf(a.path[0])
-    const bIndex = order.indexOf(b.path[0])
-    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-    if (aIndex !== -1) return -1
-    if (bIndex !== -1) return 1
-    return a.name.localeCompare(b.name)
-  })
-})
-
-// 过滤后的分类列表 (基于搜索)
-const filteredCategories = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return categorizedOperators.value
+  return {
+    name: op.name,
+    displayName: op.display_name || op.name,
+    description: op.description,
+    params,
+    categoryPath: op.category_path,
+    publicParameters: op.public_parameters,
+    outputPorts: op.output_ports
   }
+})))
 
-  const query = searchQuery.value.toLowerCase()
-  return categorizedOperators.value
-    .map(category => ({
-      ...category,
-      operators: category.operators.filter(op =>
-        op.name.toLowerCase().includes(query) ||
-        op.displayName.toLowerCase().includes(query) ||
-        op.description.toLowerCase().includes(query)
-      )
-    }))
-    .filter(category => category.operators.length > 0)
-})
+const filteredCategories = computed(() => (
+  filterOperatorCategories(categorizedOperators.value, searchQuery.value)
+))
 
-watch(categorizedOperators, categories => {
-  if (activeCategories.value.length === 0 && categories.length > 0) {
-    activeCategories.value = [categories[0].name]
+watch([filteredCategories, () => props.workflowEngineId], ([categories, engineId], previous) => {
+  const keys = operatorCategoryKeys(categories)
+  if (searchQuery.value.trim()) {
+    activeCategories.value = keys
+    return
   }
+  const retained = previous?.[1] === engineId
+    ? activeCategories.value.filter(key => keys.includes(key))
+    : []
+  if (retained.length) {
+    activeCategories.value = retained
+    return
+  }
+  const initial = []
+  for (let category = categories[0]; category; category = category.children[0]) {
+    initial.push(category.key)
+  }
+  activeCategories.value = initial
 }, { immediate: true })
-
-watch(searchQuery, query => {
-  if (query.trim()) {
-    activeCategories.value = filteredCategories.value.map(category => category.name)
-  }
-})
 
 // 拖拽开始
 const handleDragStart = (event, operator) => {
@@ -270,7 +147,7 @@ const handleOperatorClick = (operator) => {
 }
 
 .search-input {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   flex-shrink: 0;
 }
 
@@ -279,163 +156,8 @@ const handleOperatorClick = (operator) => {
   overflow-y: auto;
 }
 
-.category-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.category-icon {
-  font-size: 18px;
-}
-
-.category-name {
-  font-weight: 600;
-  color: var(--addp-text-primary);
-  flex: 1;
-}
-
-.category-count {
-  margin-left: auto;
-}
-
-.operator-list {
-  padding: 8px 0;
-}
-
-.operator-item {
-  padding: 12px;
-  margin: 4px 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
-  align-items: start;
-  gap: 8px;
-  background: var(--addp-bg-secondary);
-  border: 1px solid var(--addp-border-color);
-  border-radius: 4px;
-  cursor: grab;
-  transition: all 0.2s;
-}
-
-.operator-item:hover {
-  background: var(--addp-bg-secondary);
-  border-color: var(--el-color-primary);
-  transform: translateX(4px);
-}
-
-.operator-item:active {
-  cursor: grabbing;
-}
-
-.operator-add-button {
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  background: transparent;
+.operator-categories > :deep(.el-collapse) {
   border: 0;
-  border-radius: 2px;
-  cursor: pointer;
-}
-
-.operator-add-button:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 3px;
-}
-
-.operator-name {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.info-button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--addp-text-tertiary);
-  font: inherit;
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  cursor: help;
-}
-
-.info-button:hover {
-  color: var(--el-color-primary);
-  background: var(--addp-bg-primary);
-}
-
-.info-button:focus-visible {
-  color: var(--el-color-primary);
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 1px;
-}
-
-.info-icon {
-  font-size: 16px;
-  pointer-events: none;
-}
-
-.operator-description {
-  margin-top: 4px;
-  display: block;
-  font-size: 12px;
-  color: var(--addp-text-secondary);
-  line-height: 1.4;
-}
-
-/* Tooltip 帮助内容 */
-.operator-help {
-  max-width: 400px;
-}
-
-.operator-help h4 {
-  margin: 0 0 8px 0;
-  font-size: 16px;
-  color: var(--addp-text-primary);
-}
-
-.operator-help .description {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  color: var(--addp-text-secondary);
-  line-height: 1.5;
-}
-
-.operator-help .params-section h5 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-}
-
-.operator-help .params-section ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.operator-help .params-section li {
-  margin: 4px 0;
-  font-size: 13px;
-  color: var(--addp-text-secondary);
-  line-height: 1.4;
-}
-
-.operator-help .params-section strong {
-  color: var(--el-color-primary);
 }
 
 /* 自定义滚动条 */

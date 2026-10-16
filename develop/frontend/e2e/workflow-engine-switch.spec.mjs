@@ -37,6 +37,108 @@ const rasterResource = (engineId, name, itemId, type = 'object') => ({
 })
 const RASTER_RESOURCES = [rasterResource(7, 'first.tif', 701), rasterResource(7, 'second.tif', 702), rasterResource(8, 'third.tif', 801)]
 
+const orderedWorkflowEngines = [
+  'geopython', 'model3d', 'pointcloud', 'supermap', 'spark', 'document'
+].map((type, index) => ({ ...ENGINE_A, id: index + 11, name: type, engine_type: `${type}_workflow` }))
+
+for (const width of [1280, 620]) {
+  test(`nested operator groups preserve ownership, counts, search, click and drag at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.emulateMedia({ colorScheme: width === 1280 ? 'dark' : 'light' })
+    await installMockBackend(page, { includeNestedCategories: true })
+    await openNewWorkflow(page)
+    const category = path => page.locator(`[data-category-path='${JSON.stringify(path)}']`)
+    const header = path => category(path).locator('.el-collapse-item__header').first()
+
+    await expect(header(['通用处理']).locator('.category-count')).toHaveText('2')
+    await expect(header(['矢量处理']).locator('.category-count')).toHaveText('1')
+    await expect(header(['栅格处理']).locator('.category-count')).toHaveText('2')
+    await expect(category(['通用处理', '数据读写']).getByRole('button', { name: '添加“Operator A”算子', exact: true })).toBeVisible()
+    await expect(category(['栅格处理', '数据读写']).getByRole('button', { name: '添加“Raster Leaf”算子', exact: true })).not.toBeVisible()
+
+    const parentName = header(['通用处理']).locator('.category-name')
+    const childName = header(['通用处理', '数据读写']).locator('.category-name')
+    await expect(parentName).toHaveCSS('text-align', 'left')
+    await expect(childName).toHaveCSS('text-align', 'left')
+    const parentLabelBounds = await parentName.boundingBox()
+    const childLabelBounds = await childName.boundingBox()
+    expect(childLabelBounds.x - parentLabelBounds.x).toBeGreaterThanOrEqual(20)
+    const parentWeight = await parentName.evaluate(element => Number(getComputedStyle(element).fontWeight))
+    const childWeight = await childName.evaluate(element => Number(getComputedStyle(element).fontWeight))
+    expect(parentWeight).toBeGreaterThan(childWeight)
+    const countBounds = await header(['通用处理']).locator('.category-count').boundingBox()
+    expect(countBounds.x - parentLabelBounds.x - parentLabelBounds.width).toBeLessThanOrEqual(12)
+    const childContainer = category(['通用处理']).locator('.nested-categories').first()
+    await expect(childContainer).toHaveCSS('border-left-style', 'solid')
+    await expect(childContainer).toHaveCSS('border-left-width', '1px')
+    const hierarchyScreenshot = testInfo.outputPath(`operator-hierarchy-${width}.png`)
+    await page.locator('.operator-palette').screenshot({ path: hierarchyScreenshot, animations: 'disabled' })
+    await testInfo.attach(`operator-hierarchy-${width}`, {
+      path: hierarchyScreenshot,
+      contentType: 'image/png'
+    })
+
+    const search = page.getByPlaceholder('搜索算子...')
+    await search.fill('raster_leaf')
+    await expect(category(['通用处理'])).toHaveCount(0)
+    await expect(header(['栅格处理'])).toHaveAttribute('aria-expanded', 'true')
+    await expect(header(['栅格处理', '数据读写'])).toHaveAttribute('aria-expanded', 'true')
+    const item = page.locator('.operator-item').filter({ hasText: 'Raster Leaf' })
+    const bounds = await item.boundingBox()
+    const panelBounds = await page.locator('.operator-palette').boundingBox()
+    expect(bounds.x).toBeGreaterThanOrEqual(panelBounds.x)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(panelBounds.x + panelBounds.width)
+    const payload = await item.evaluate(element => {
+      const dataTransfer = new DataTransfer()
+      element.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }))
+      return JSON.parse(dataTransfer.getData('application/json'))
+    })
+    expect(payload.type).toBe('operator')
+    expect(payload.name).toBe('raster_leaf')
+    expect(payload.output_ports).toEqual([{ name: 'default', type: 'number', is_default: true }])
+    await item.getByRole('button', { name: '添加“Raster Leaf”算子', exact: true }).click()
+    await expect(primarySaveButton(page)).toBeEnabled()
+
+    await search.fill('not_an_operator')
+    await expect(page.locator('.operator-palette .el-empty')).toBeVisible()
+    await search.clear()
+    await expect(category(['通用处理'])).toHaveCount(1)
+    await expect(category(['栅格处理'])).toHaveCount(1)
+  })
+}
+
+test('new workflow prefers GeoPython and orders all runtime types before extensions', async ({ page }) => {
+  const secondGeoPython = { ...orderedWorkflowEngines[0], id: 21, name: 'second GeoPython' }
+  await installMockBackend(page, {
+    workflowEngines: [ENGINE_A, ...orderedWorkflowEngines.toReversed(), secondGeoPython, ENGINE_B]
+  })
+  await page.goto('/workflow?action=create')
+  await expect(selectedEngine(page)).toContainText('geopython')
+  await page.locator('.engine-select .el-select__wrapper').click()
+  await expect(page.getByRole('option')).toHaveText([
+    orderedWorkflowEngines[0], secondGeoPython, ...orderedWorkflowEngines.slice(1), ENGINE_A, ENGINE_B
+  ].map(engine => `${engine.name}${engine.engine_type}在线`))
+})
+
+test('saved workflow keeps its binding when GeoPython is available', async ({ page }) => {
+  await installMockBackend(page, { workflowEngines: [...orderedWorkflowEngines, ENGINE_A, ENGINE_B] })
+  await openSavedWorkflow(page)
+  await page.locator('.engine-select .el-select__wrapper').click()
+  await page.keyboard.press('Escape')
+  await expect(selectedEngine(page)).toContainText(ENGINE_A.name)
+})
+
+test('new workflow skips unavailable GeoPython and follows the runtime display order', async ({ page }) => {
+  await installMockBackend(page, {
+    workflowEngines: [
+      ...orderedWorkflowEngines.slice(1).toReversed(),
+      { ...orderedWorkflowEngines[0], connection_status: 'offline' }
+    ]
+  })
+  await page.goto('/workflow?action=create')
+  await expect(selectedEngine(page)).toContainText('model3d')
+})
+
 test.describe('responsive workflow dialogs', () => {
   test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
 
@@ -913,6 +1015,8 @@ function visibleDialogSurface(page) {
 }
 
 async function installMockBackend(page, {
+  workflowEngines = [ENGINE_A, ENGINE_B],
+  includeNestedCategories = false,
   validationErrors = [],
   deferValidation = false,
   deferUpdate = false,
@@ -1010,6 +1114,17 @@ async function installMockBackend(page, {
 
   operatorsByEngine[ENGINE_A.id][0].output_ports[0].type = portType
 
+  if (includeNestedCategories) {
+    operatorsByEngine[ENGINE_A.id][0].category_path = ['通用处理', '数据读写']
+    operatorsByEngine[ENGINE_A.id][0].category = '数据读写'
+    operatorsByEngine[ENGINE_A.id].push(
+      { ...createOperator('vector_leaf', 'Vector Leaf', '几何处理', ENGINE_A.engine_type), category_path: ['矢量处理', '几何处理'] },
+      { ...createOperator('raster_leaf', 'Raster Leaf', '数据读写', ENGINE_A.engine_type), category_path: ['栅格处理', '数据读写'] },
+      { ...createOperator('field_leaf', 'Field Leaf', '字段处理', ENGINE_A.engine_type), category_path: ['通用处理', '字段处理'] },
+      { ...createOperator('raster_math', 'Raster Math', '像元计算', ENGINE_A.engine_type), category_path: ['栅格处理', '像元计算'] }
+    )
+  }
+
   if (includeRasterResourceBatch) {
     resourceEngines = RASTER_ENGINES
     const load = operatorsByEngine[ENGINE_A.id][0]
@@ -1046,7 +1161,7 @@ async function installMockBackend(page, {
     }
     if (path === '/api/v1/system/auth/context') return fulfillJSON(route, developAuthContext)
     if (path === '/api/v1/develop/workflow-engines') {
-      return fulfillJSON(route, [ENGINE_A, ENGINE_B])
+      return fulfillJSON(route, workflowEngines)
     }
     if (path === '/api/v1/meta/engines') {
       return fulfillJSON(route, resourceEngines)

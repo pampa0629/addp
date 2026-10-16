@@ -703,7 +703,7 @@ def vector_to_pmtiles(
 VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
     name="vector_to_pmtiles",
     type=OperatorType.GENERAL,
-    category=OperatorCategory.FORMAT_CONVERSION,
+    category=OperatorCategory.VECTOR_OUTPUT,
     description="PMTiles v3 矢量瓦片集生成",
     brief_description="从空间数据生成单文件 PMTiles v3 矢量瓦片集",
     execution_modes=["workflow", "direct"],

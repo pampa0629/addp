@@ -1092,10 +1092,22 @@ function formatStorageEngineLabel(engine) {
   return `${engine.name} (${engine.engine_type || '-'}) · ${engineStatusLabel(engine)}`
 }
 
+const workflowEngineTypeOrder = new Map([
+  'geopython_workflow',
+  'model3d_workflow',
+  'pointcloud_workflow',
+  'supermap_workflow',
+  'spark_workflow',
+  'document_workflow'
+].map((type, index) => [type, index]))
+
 async function loadWorkflowEngines() {
   try {
     const response = await getWorkflowEngines()
-    workflowEngines.value = response.data || response
+    workflowEngines.value = [...(response.data || response)].sort((a, b) => (
+      (workflowEngineTypeOrder.get(a.engine_type) ?? workflowEngineTypeOrder.size) -
+      (workflowEngineTypeOrder.get(b.engine_type) ?? workflowEngineTypeOrder.size)
+    ))
     if (workflowEngineId.value) {
       selectedEngine.value = workflowEngines.value.find(engine => engine.id === workflowEngineId.value) || null
     }
