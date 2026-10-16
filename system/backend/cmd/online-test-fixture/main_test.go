@@ -365,6 +365,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":   "addp_at_engine",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "addp_at_security_initializer",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN":   "addp_at_source_initializer",
+		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN": "addp_at_pg_outsider",
+		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID":         "41",
+		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID":      "51",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
 		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":  "addp_at_raster_platform",
@@ -399,6 +402,11 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	}
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
 		t.Fatal("fixture environment omitted the separate source initialization token")
+	}
+	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID"} {
+		if !strings.Contains(string(content), "export "+key+"='"+values[key]+"'\n") {
+			t.Fatalf("owner-only environment omitted PG authorization fixture field %s", key)
+		}
 	}
 	if !strings.Contains(string(content), "export ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN='addp_at_approver'\"'\"'quoted'\n") {
 		t.Fatal("fixture environment omitted the shell-quoted plaintext approver token")
