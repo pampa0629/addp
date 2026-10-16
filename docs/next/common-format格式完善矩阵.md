@@ -24,7 +24,7 @@
 | OBJ | 无人机航测 | 已接入：基础几何预览及 Model3D GLB 快显 | Hosted 已验证源几何、GLB 内嵌漫反射贴图及下载；引用的 MTL/图片须可访问，不声明复杂材质保真。 |
 | MAX | 无人机航测 | 限定支持：Model3D 内部 Blender 与固定导入器转换静态 GLB | Hosted 已验证五个网格、444 个顶点、基础贴图与毫米换算。识别不了单位且用户未选时默认米；外部 bitmap 须显式映射。不新增 Blender 服务，不声明动画、骨架、修改器或全部版本。 |
 | SKP | 无人机航测 | 限定支持：OpenSKP 转静态 GLB，保留组件实例与内嵌基础贴图 | Hosted 已验证单位换算及两个共享实例；隐藏组件、隐藏面、关闭图层及解析器不支持的输入明确拒绝，不声明动态组件、场景动画或全部版本。 |
-| SGM（SuperMap Global Model） | 无人机航测 | 限定支持：授权 SuperMap → OSGB → Model3D GLB | 本地 NFS/真实 Business MinIO 样例已通过；秋树缺图及叶片 alpha 已修复并完成页面复验。2026-10-16 本机隔离 T2 的真实 MinIO 权限、双 Runtime 转换及清理通过。自动读取同目录或 `Textures/` 贴图，缺图/损坏/越界明确失败；需 SuperMap SDK 与有效许可，不声明所有材质、版本或其他目录布局，仍缺正式跨模块 T4。 |
+| SGM（SuperMap Global Model） | 无人机航测 | 限定支持：授权 SuperMap → OSGB → Model3D GLB | 本地 NFS/真实 Business MinIO 样例已通过；秋树缺图及叶片 alpha 已修复并完成页面复验。2026-10-16 本机隔离 T2 通过；2026-10-17 指南针样例的隔离普通 User 技术页面验收通过，覆盖十项权限、生成／任务页／GLB 加载、缓存、下载和领域／物理／环境清理。自动读取同目录或 `Textures/` 贴图，缺图/损坏/越界明确失败；需 SuperMap SDK 与有效许可，不声明所有材质、版本或其他目录布局，仍缺正式 Linux Runner T4。 |
 | GeoJSON | 设备轨迹 | 已接入：FeatureCollection 的地图＋属性表、几何查看、刷新及完整下载；静态轨迹范围读取已通过 Hosted | Hosted 已验证 Point/LineString 及 `.geojson`/`.json` 两种后缀；Point FeatureCollection 的 3000 点合成源完成显式设备／时间范围读取与静态连线，所选范围最多 2000 点。内置 table 主线不覆盖单个 Feature 或 GeometryCollection；既有 LineString 仍走普通地图预览，未提供轨迹回放。 |
 | JSON（`.json`） | 设备轨迹 | 已接入：普通对象文档、records array/JSON Lines 表格；records array 静态轨迹范围读取已通过 Hosted | Hosted 已验证普通文档、25 行 records array 和 FeatureCollection，另验证 3000 点 records array 的显式设备／时间范围及静态连线；内容确认为 GeoJSON 时按 GeoJSON 展示。任意嵌套 JSON 不保证可转表，JSON Lines 的全部变体不由这些 Hosted 样例认证。 |
 
