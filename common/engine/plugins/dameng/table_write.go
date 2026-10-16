@@ -3,6 +3,7 @@ package dameng
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -147,12 +148,23 @@ type tableWriteSession struct {
 	batchesWritten int64
 	marker         *resume.Marker
 	closed         bool
+	writeErr       error
 }
 
-func (s *tableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *tableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("DM8 table write session is closed")
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// Encoding failures never reach DM8, and an individual INSERT error need
+	// not abort the transaction. Close must not commit prior rows or DELETE.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -170,14 +182,24 @@ func (s *tableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchD
 	return nil
 }
 
-func (s *tableWriteSession) Close(context.Context) error {
+func (s *tableWriteSession) Close(ctx context.Context) (err error) {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
+	if s.writeErr != nil {
+		return errors.Join(s.writeErr, s.abort())
+	}
 	if err := s.stmt.Close(); err != nil {
-		_ = s.abort()
-		return fmt.Errorf("close DM8 insert statement: %w", err)
+		return errors.Join(fmt.Errorf("close DM8 insert statement: %w", err), s.abort())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, s.abort())
 	}
 	if err := s.tx.Commit(); err != nil {
 		_ = s.db.Close()

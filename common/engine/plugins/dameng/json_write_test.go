@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,120 @@ import (
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var dm8SessionFailureCases = []string{"invalid_json", "missing_field", "not_null_json", "not_null_blob", "duplicate_key", "canceled_write", "canceled_close"}
+
+// This checks session state and transaction effects without certifying the DM
+// driver; the same failure assertions also run against native DM8 in T2.
+func TestDM8SessionFailureClose(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		for _, failure := range dm8SessionFailureCases {
+			t.Run(fmt.Sprintf("replace=%t/%s", replace, failure), func(t *testing.T) {
+				dsn := filepath.Join(t.TempDir(), "session.db")
+				db, err := sql.Open("sqlite3", dsn)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				observer, err := sql.Open("sqlite3", dsn)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer observer.Close()
+				if _, err := db.Exec(`CREATE TABLE target (ID INTEGER PRIMARY KEY, DOC TEXT NOT NULL, PAYLOAD BLOB NOT NULL, LABEL TEXT)`); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec(`INSERT INTO target VALUES (1,'{"sentinel":true}',?,?)`, []byte{0, 1, 255}, "sentinel"); err != nil {
+					t.Fatal(err)
+				}
+				tx, err := db.BeginTx(t.Context(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+				if replace {
+					if _, err := tx.Exec(`DELETE FROM target`); err != nil {
+						t.Fatal(err)
+					}
+				}
+				stmt, err := tx.Prepare(`INSERT INTO target VALUES (?,?,?,?)`)
+				if err != nil {
+					t.Fatal(err)
+				}
+				session := &tableWriteSession{db: db, tx: tx, stmt: stmt, fields: dm8FailureFields()}
+				defer session.Abort(context.Background())
+				assertDM8SessionFailureClose(t, t.Context(), session, failure)
+				var count int
+				if err := observer.QueryRow(`SELECT COUNT(*) FROM target`).Scan(&count); err != nil || count != 1 {
+					t.Fatalf("failed session changed committed rows: count=%d err=%v", count, err)
+				}
+				var document string
+				if err := observer.QueryRow(`SELECT DOC FROM target WHERE ID=1`).Scan(&document); err != nil || document != `{"sentinel":true}` {
+					t.Fatalf("sentinel changed: %q err=%v", document, err)
+				}
+			})
+		}
+	}
+}
+
+func dm8FailureFields() []datatype.FieldInfo {
+	return []datatype.FieldInfo{
+		{Name: "ID", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
+		{Name: "DOC", Type: datatype.FieldTypeJSON},
+		{Name: "PAYLOAD", Type: datatype.FieldTypeBytes},
+		{Name: "LABEL", Type: datatype.FieldTypeString, Nullable: true},
+	}
+}
+
+func assertDM8SessionFailureClose(t *testing.T, ctx context.Context, session plugin.TableWriteSession, failure string) {
+	t.Helper()
+	if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(10, true)}}); err != nil {
+		t.Fatal(err)
+	}
+	bad := jsonUnitRow(30, true)
+	switch failure {
+	case "invalid_json":
+		bad["DOC"] = "{"
+	case "missing_field":
+		delete(bad, "DOC")
+	case "not_null_json":
+		bad["DOC"] = json.RawMessage(nil)
+	case "not_null_blob":
+		bad["PAYLOAD"] = []byte(nil)
+	case "duplicate_key":
+		bad["ID"] = int64(10)
+	}
+	writeCtx, closeCtx := ctx, ctx
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if failure == "canceled_write" {
+		writeCtx = canceled
+	}
+	var firstErr error
+	if failure == "canceled_close" {
+		closeCtx, firstErr = canceled, context.Canceled
+	} else {
+		firstErr = session.WriteBatch(writeCtx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(20, true), bad}})
+		if firstErr == nil {
+			t.Fatal("expected write failure")
+		}
+		if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(40, true)}}); !errors.Is(err, firstErr) {
+			t.Errorf("write after failure lost first error: got=%v first=%v", err, firstErr)
+		}
+	}
+	if err := session.Close(closeCtx); !errors.Is(err, firstErr) {
+		t.Errorf("Close lost failure: got=%v first=%v", err, firstErr)
+	}
+	if err := session.Close(ctx); !errors.Is(err, firstErr) {
+		t.Errorf("repeated Close lost failure: %v", err)
+	}
+	if session.(plugin.CommitMarkerProvider).CommitMarker() != nil {
+		t.Error("failed session published success marker")
+	}
+	if err := session.Abort(ctx); err != nil {
+		t.Error(err)
+	}
+}
 
 // SQLite observes the INSERT session's bound values without loading or
 // pretending to certify the official DM driver. Real CLOB/MERGE coverage is T2.
@@ -125,6 +241,8 @@ func TestDM8SessionEncodedNullAndRequiredFields(t *testing.T) {
 	if err := s.tx.QueryRow(`SELECT COUNT(*) FROM target`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("missing field batch wrote rows: count=%d error=%v", count, err)
 	}
+	// The missing-field failure is terminal; test cancellation independently.
+	s = jsonUnitSession(t, false)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := s.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(4, true)}}); err != context.Canceled {

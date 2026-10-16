@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -23,6 +24,7 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 		t.Skip("set ADDP_DAMENG_INTEGRATION=1 to run DM8 integration test")
 	}
 	t.Run("definition_before_ddl", testDM8DefinitionBeforeDDL)
+	t.Run("session_failure_close", testDM8SessionFailureClose)
 	for _, method := range []string{"session", "upsert"} {
 		t.Run(method, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
@@ -164,6 +166,82 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func testDM8SessionFailureClose(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		for _, failure := range dm8SessionFailureCases {
+			t.Run(fmt.Sprintf("replace=%t/%s", replace, failure), func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+				defer cancel()
+				p := &Plugin{}
+				info := integrationConnInfo()
+				db, err := p.openDB(info)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer db.Close()
+				schema := plugin.GetString(info, "user")
+				table := "ADDP_FAIL_" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:12])
+				path := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, schema, table)
+				qualified := `"` + strings.ReplaceAll(schema, `"`, `""`) + `"."` + table + `"`
+				var count int
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=?", table).Scan(&count); err != nil || count != 0 {
+					t.Fatalf("occupied fixture: count=%d err=%v", count, err)
+				}
+				defer func() {
+					cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer cancel()
+					if err := p.DeleteResource(cleanup, info, path); err != nil {
+						t.Error(err)
+					}
+					if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=?", table).Scan(&count); err != nil || count != 0 {
+						t.Errorf("fixture cleanup not proven: count=%d err=%v", count, err)
+					}
+				}()
+				fields := dm8FailureFields()
+				if err := p.PrepareTableWrite(ctx, info, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+					t.Fatal(err)
+				}
+				open := func(replace bool) plugin.TableWriteSession {
+					session, err := p.OpenTableWriteSession(ctx, info, path, plugin.TableWriteSessionOptions{Fields: fields, Replace: replace})
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = session.Abort(context.Background()) })
+					return session
+				}
+				commit := func(id int64) {
+					session := open(false)
+					if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(id, map[string]interface{}{"sentinel": true})}}); err != nil {
+						t.Fatal(err)
+					}
+					if err := session.Close(ctx); err != nil {
+						t.Fatal(err)
+					}
+					if err := session.Close(ctx); err != nil || session.(plugin.CommitMarkerProvider).CommitMarker() == nil {
+						t.Fatalf("successful session Close/marker: %v", err)
+					}
+				}
+				commit(1)
+				assertDM8SessionFailureClose(t, ctx, open(replace), failure)
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 1 {
+					t.Fatalf("failed session changed committed rows: count=%d want=1 err=%v", count, err)
+				}
+				commit(2)
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 2 {
+					t.Fatalf("new session recovery: count=%d want=2 err=%v", count, err)
+				}
+				for _, id := range []int64{1, 2} {
+					var document, label string
+					var payload []byte
+					if err := db.QueryRowContext(ctx, `SELECT "DOC","PAYLOAD","LABEL" FROM `+qualified+` WHERE "ID"=?`, id).Scan(&document, &payload, &label); err != nil || document != `{"sentinel":true}` || !bytes.Equal(payload, []byte{0, 1, 255}) || label != "plain {" {
+						t.Fatalf("JSON/BLOB/sentinel changed: doc=%q payload=%v label=%q err=%v", document, payload, label, err)
+					}
+				}
+			})
+		}
 	}
 }
 
