@@ -167,7 +167,7 @@ test-engines-supermap-sgm: ## 人工运行私有 SDK、独立 MinIO 和双 Runti
 
 .PHONY: test-manager-sgm-local
 test-manager-sgm-local: ## 人工运行本机隔离 ARM64 SGM 页面验收（非正式 T4）
-	@python3 scripts/test/manager-sgm-local-gate.py
+	@python3 scripts/test/manager-sgm-local-gate.py $(SGM_LOCAL_ARGS)
 
 .PHONY: test-manager-sgm-local-runner
 test-manager-sgm-local-runner: ## 验证 SGM 本机隔离准入、Compose 所有权及清理契约

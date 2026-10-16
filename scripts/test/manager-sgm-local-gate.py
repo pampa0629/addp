@@ -49,7 +49,8 @@ def preflight():
 def isolate_compose(document, selected, run_id, images):
     """Adapt ownership only. Retain the official service environment/entry/health."""
     result = {"name": run_id, "services": {}, "networks": {"isolated": {
-        "name": run_id, "internal": True, "labels": {LABEL: run_id}}}, "volumes": {}}
+        "name": run_id, "internal": True, "labels": {LABEL: run_id}}, "ingress": {
+        "name": run_id + "-ingress", "labels": {LABEL: run_id}}}, "volumes": {}}
     for name in selected:
         service = copy.deepcopy(document["services"][name])
         T2.require("network_mode" not in service and not service.get("privileged"), "unexpected product network/privilege contract")
@@ -71,6 +72,7 @@ def isolate_compose(document, selected, run_id, images):
         result["services"][name] = service
     for name, port in (("postgres", 5432), ("system-backend", 8180), ("gateway", 8000), ("nginx", 80)):
         if name in result["services"]:
+            result["services"][name]["networks"]["ingress"] = {}
             result["services"][name]["ports"] = [{"target": port, "host_ip": "127.0.0.1", "published": "0", "protocol": "tcp"}]
     return result
 
@@ -123,6 +125,30 @@ def wait_url(url, timeout=180):
             pass
         time.sleep(1)
     raise T2.GateError("isolated service readiness timed out")
+
+
+def check_network_transport(life):
+    """Exercise real Docker port publication before expensive licensed builds."""
+    if not life.docker("image", "ls", "-q", "nginx:alpine").strip():
+        life.docker("pull", "--platform", "linux/arm64", "nginx:alpine", timeout=900)
+    image = T2.image_identity("nginx:alpine")["Id"]
+    internal, ingress = life.run_id + "-transport-data", life.run_id + "-transport-ingress"
+    life.docker("network", "create", "--internal", "--label", f"{LABEL}={life.run_id}", internal)
+    life.docker("network", "create", "--label", f"{LABEL}={life.run_id}", ingress)
+    observations = {}
+    for name, dual in (("transport-internal", False), ("transport-control", True)):
+        container = life.create(image, name, "--network", internal, "--publish", "127.0.0.1::80")
+        if dual:
+            life.docker("network", "connect", ingress, container)
+        life.docker("start", container)
+        info = json.loads(life.docker("inspect", container))[0]
+        observations[name] = {"requested": info["HostConfig"]["PortBindings"], "actual": info["NetworkSettings"]["Ports"]}
+        if dual:
+            port = published_port(life, name, 80)
+            wait_url(f"http://127.0.0.1:{port}/", timeout=30)
+        life.docker("rm", "-fv", container)
+    life.docker("network", "rm", internal, ingress)
+    return {"image": image, "observations": observations, "control_loopback_http": True}
 
 
 def worker(life, action, config):
@@ -369,7 +395,9 @@ print(json.dumps(facts))'''
         result["physical_cleanup"] = worker(life, "deleted", cfg)
 
 
-def main():
+def main(args=None):
+    args = [] if args is None else args
+    T2.require(args in ([], ["--check-network"]), "usage: local SGM [--check-network]")
     os.umask(0o077)
     preflight()  # No mutation, even temporary files, before deployment admission.
     destination = T2.report_path(os.environ["SGM_LOCAL_REPORT"]) if os.environ.get("SGM_LOCAL_REPORT") else None
@@ -377,7 +405,12 @@ def main():
     result = {"schema_version": "addp.manager-sgm-local/v1", "scope": "local-isolated-technical-page-acceptance",
               "formal_t4": False, "run_id": life.run_id, "result": "failed"}
     try:
-        run(life, result)
+        life.phase = "network_preflight"
+        result["network_probe"] = check_network_transport(life)
+        if args:
+            result["scope"] = "local-network-diagnostic"
+        else:
+            run(life, result)
         result["result"] = "passed"
     except (Exception, KeyboardInterrupt) as error:
         # Browser/SDK/backend errors can contain model data and credentials.
@@ -399,10 +432,10 @@ def main():
             with open(destination, "x", opener=lambda p, f: os.open(p, f, 0o600)) as stream:
                 json.dump(result, stream, indent=2)
                 stream.write("\n")
-    print(f"SGM local: {result['result']}; zero residue={result['zero_residue']}; formal T4=false", flush=True)
+    print(f"SGM local ({result['scope']}): {result['result']}; zero residue={result['zero_residue']}; formal T4=false", flush=True)
     return 0 if result["result"] == "passed" else 1
 
 
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

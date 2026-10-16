@@ -66,6 +66,9 @@ class LocalSGMContract(unittest.TestCase):
         self.assertEqual(runtime["entrypoint"], original["services"]["model3d-workflow-engine"]["entrypoint"])
         self.assertEqual(runtime["environment"], original["services"]["model3d-workflow-engine"]["environment"])
         self.assertNotIn("ports", runtime)
+        self.assertEqual(set(runtime["networks"]), {"isolated"})
+        self.assertEqual(set(config["services"]["postgres"]["networks"]), {"isolated", "ingress"})
+        self.assertNotIn("internal", config["networks"]["ingress"])
         self.assertEqual(config["services"]["postgres"]["ports"], [{"target": 5432, "host_ip": "127.0.0.1", "published": "0", "protocol": "tcp"}])
 
     def test_host_network_or_privileged_product_change_requires_review(self):
@@ -76,6 +79,7 @@ class LocalSGMContract(unittest.TestCase):
     def test_all_failures_cleanup_owned_resources_and_discard_private_logs(self):
         output = io.StringIO()
         with patch.object(GATE, "preflight"), patch.object(GATE, "run", side_effect=ValueError("SECRET_MODEL_BYTES")), \
+             patch.object(GATE, "check_network_transport", return_value={}), \
              patch.dict(os.environ, {}, clear=True), patch.object(GATE.T2.Lifecycle, "docker", return_value=""), \
              contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
             self.assertEqual(GATE.main(), 1)
@@ -98,6 +102,7 @@ class LocalSGMContract(unittest.TestCase):
     def test_cleanup_failure_never_reports_a_pass(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(GATE, "preflight"), patch.object(GATE, "run"), patch.dict(os.environ, {}, clear=True), \
+                 patch.object(GATE, "check_network_transport", return_value={}), \
                  patch.object(GATE.T2.Lifecycle, "cleanup", return_value=["network"]), \
                  patch.object(GATE.T2.tempfile, "mkdtemp", return_value=directory), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(GATE.main(), 1)
