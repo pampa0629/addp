@@ -594,7 +594,7 @@
       "node": "Host",
       "kind": "Monitoring category",
       "endpoint": "Collection address",
-      "configState": "Collection configuration",
+      "configState": "Collection",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "version": "Configuration version",
@@ -638,6 +638,15 @@
           "failed": "Latest scrape failed",
           "stale": "Collection evidence is stale"
         }
+      },
+      "listCollection": {
+        "disabled": "Collection disabled",
+        "unsupported": "Container results unsupported",
+        "hostUnavailable": "Host unavailable",
+        "unavailable": "Collection result unavailable",
+        "changed": "Configuration changed; refresh the list",
+        "budget": "This page exceeds the observation budget. Reduce the page size and retry. Collection settings remain manageable.",
+        "queried": "Queried at {time}. List results update on refresh."
       }
     },
     "resources": {

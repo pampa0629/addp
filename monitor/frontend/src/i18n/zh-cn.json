@@ -638,6 +638,15 @@
           "failed": "最近抓取失败",
           "stale": "采集证据已过期"
         }
+      },
+      "listCollection": {
+        "disabled": "已停用采集",
+        "unsupported": "暂不支持容器采集结果",
+        "hostUnavailable": "主机不可读取",
+        "unavailable": "采集结果不可用",
+        "changed": "配置已变化，请刷新列表",
+        "budget": "当页观测超出查询预算。请减少每页数量后重试；采集配置仍可管理。",
+        "queried": "查询时间：{time}。列表结果在刷新时更新。"
       }
     },
     "resources": {

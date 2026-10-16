@@ -6,17 +6,27 @@
       <el-button v-if="canCreate" type="primary" @click="navigate('/monitoring-targets/new')">{{ t('monitor.targets.create') }}</el-button>
     </header>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
+    <el-alert v-if="!dialogOpen && listCollectionError" :title="t(listCollectionError)" type="warning" :closable="false" show-icon data-testid="target-list-collection-error" />
     <el-table v-loading="loading" :data="rows" border stripe>
-      <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
-      <el-table-column :label="t('monitor.targets.node')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
+      <el-table-column :label="t('monitor.targets.node')" min-width="170" show-overflow-tooltip><template #default="{ row }">{{ nodeNames[row.subject.node_id] || t('monitor.targets.nodeMissing') }}</template></el-table-column>
+      <el-table-column :label="t('monitor.targets.configState')" width="100"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
+      <el-table-column v-if="!dialogOpen" :label="t('monitor.targets.collection.title')" min-width="210">
+        <template #header><span>{{ t('monitor.targets.collection.title') }}</span><el-tooltip :content="t('monitor.targets.collection.metricHint')"><el-icon :aria-label="t('monitor.targets.collection.metricHint')" tabindex="0"><InfoFilled /></el-icon></el-tooltip></template>
+        <template #default="{ row }">
+          <div :data-testid="`target-list-collection-${row.id}`">
+            <el-tag class="target-collection-status" :type="listCollectionType(row)">{{ t(listCollectionKey(row)) }}</el-tag>
+            <p v-if="listCollections.get(row.id)?.collection?.sampled_at" class="target-sample-time" :title="t('monitor.targets.listCollection.queried', { time: listDate(listCollections.get(row.id).queried_at) })">{{ t('monitor.resources.sampledAt') }}: {{ listDate(listCollections.get(row.id).collection.sampled_at) }}</p>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column :label="t('monitor.targets.kind')" min-width="160"><template #default="{ row }">{{ t(`monitor.targets.kinds.${row.monitor_kind}`) }}</template></el-table-column>
       <el-table-column :label="t('monitor.targets.endpoint')" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.source.endpoint }}</template></el-table-column>
-      <el-table-column :label="t('monitor.targets.configState')" width="160"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ t(row.enabled ? 'monitor.targets.enabled' : 'monitor.targets.disabled') }}</el-tag></template></el-table-column>
+      <el-table-column prop="id" :label="t('monitor.targets.id')" min-width="220" show-overflow-tooltip />
       <el-table-column prop="version" :label="t('monitor.targets.version')" width="140" />
       <el-table-column :label="t('monitor.targets.details')" fixed="right" width="100"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/monitoring-targets/${row.id}`)">{{ t('monitor.targets.details') }}</el-button></template></el-table-column>
       <template #empty><el-empty :description="t(loaded ? 'monitor.targets.empty' : 'monitor.targets.notLoaded')" :image-size="64" /></template>
     </el-table>
-    <div class="target-pagination"><el-pagination v-if="loaded" :current-page="state.page" :page-size="state.pageSize" :total="total" layout="total, prev, pager, next" @current-change="changePage" /></div>
+    <div class="target-pagination"><el-pagination v-if="loaded" :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
     <el-dialog :model-value="dialogOpen" :title="t(creating ? 'monitor.targets.create' : 'monitor.targets.details')" width="min(680px, calc(100vw - 24px))"
       :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @update:model-value="value => !value && closeDialog()" @opened="focusForm" @closed="restoreFocus">
       <div v-loading="detailLoading">
@@ -73,6 +83,7 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { useAuthStore } from '../store/auth'
@@ -80,12 +91,13 @@ import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import HostNodeSelect from '../components/HostNodeSelect.vue'
 import { loadHostReferences } from '../utils/hostReferences'
-import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds } from '../utils/monitoringTargets'
+import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds, validateTargetCollectionReference } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
-import { validateCollection, validateResourceResponse, resourceErrorKey } from '../utils/nodeResources'
+import { validateCollection, validateResourceResponse, validateResourceSummaries, resourceErrorKey } from '../utils/nodeResources'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 
-const { t } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
+const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('platform.host_node.read'))
 const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.create'))
 const canObserve = computed(() => canRead.value && auth.hasPermission('monitor.resource_observation.read'))
@@ -100,7 +112,11 @@ const target = ref(null), formReady = ref(false), detailLoading = ref(false), de
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
 let collectionTicket = 0, collectionController = null
 const selectedNode = ref(null)
-const nodeNames = ref({})
+const hostReferences = ref({})
+const nodeNames = computed(() => Object.fromEntries(Object.entries(hostReferences.value).map(([id, host]) => [id, host.display_name])))
+const listCollections = ref(new Map()), listCollectionLoading = ref(false), listCollectionError = ref('')
+let listCollectionController = null
+const listDate = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const nodeInput = ref(null), endpointInput = ref(null), closeButton = ref(null), pageHeading = ref(null)
 const form = reactive({ node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true })
 const draftChanged = computed(() => target.value && (form.endpoint !== target.value.source.endpoint || form.enabled !== target.value.enabled))
@@ -120,9 +136,30 @@ async function request(work) {
   finally { pending.delete(controller) }
 }
 function navigate(path, query = state.value.query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function changeSize(size) { return navigate('/monitoring-targets', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function closeDialog() { if (!saving.value) return navigate('/monitoring-targets', state.value.query, 'replace') }
 function openNodes() { return openConsoleRoute('/system/host-nodes') }
+function clearListCollections() {
+  listCollectionController?.abort(); listCollectionController = null
+  listCollections.value = new Map(); listCollectionLoading.value = false; listCollectionError.value = ''
+}
+function collectionFailure(error) { return error.message === 'target_collection_changed' ? 'monitor.targets.collection.changed' : resourceErrorKey(error) }
+function listCollectionKey(row) {
+  if (!canObserve.value) return 'monitor.targets.collection.denied'
+  if (row.monitor_kind !== 'host_resources') return 'monitor.targets.listCollection.unsupported'
+  if (!row.enabled) return 'monitor.targets.listCollection.disabled'
+  if (loading.value) return 'monitor.targets.collection.loading'
+  if (!hostReferences.value[row.subject.node_id]) return 'monitor.targets.listCollection.hostUnavailable'
+  if (listCollectionLoading.value) return 'monitor.targets.collection.loading'
+  if (listCollectionError.value) return 'monitor.targets.listCollection.unavailable'
+  const observed = listCollections.value.get(row.id)
+  return observed ? observed.error || `monitor.targets.collection.states.${observed.collection.state}` : 'monitor.targets.listCollection.unavailable'
+}
+function listCollectionType(row) {
+  const key = listCollectionKey(row)
+  return key.endsWith('.collecting') ? 'success' : key.endsWith('.failed') ? 'danger' : key.endsWith('.stale') ? 'warning' : 'info'
+}
 function clearCollection() {
   collectionTicket++; collectionController?.abort(); collectionController = null
   collection.value = null; collectionError.value = ''; collectionLoading.value = false
@@ -148,16 +185,51 @@ async function readNode(id) {
 async function loadList() {
   if (!canRead.value) return
   const generation = epoch, ticket = ++listTicket
-  loading.value = true; loaded.value = false; rows.value = []; nodeNames.value = {}; listError.value = ''
+  clearListCollections()
+  loading.value = true; loaded.value = false; rows.value = []; hostReferences.value = {}; listError.value = ''
   try {
     const value = await request(config => api.list({ page: state.value.page, page_size: state.value.pageSize }, config))
     if (generation !== epoch || ticket !== listTicket) return
     rows.value = value.data; total.value = value.total; loaded.value = true
     const hosts = await loadHostReferences(value.data.map(row => row.subject.node_id), readNode, () => generation === epoch && ticket === listTicket)
     if (generation !== epoch || ticket !== listTicket) return
-    nodeNames.value = Object.fromEntries(Object.entries(hosts).map(([id, host]) => [id, host.display_name]))
+    hostReferences.value = hosts
+    loading.value = false
+    await loadListCollections(value.data, hosts, generation, ticket)
   } catch { if (generation === epoch && ticket === listTicket) listError.value = t('monitor.targets.loadFailed') }
   finally { if (generation === epoch && ticket === listTicket) loading.value = false }
+}
+async function loadListCollections(savedTargets, hosts, generation, ticket) {
+  if (route.name !== 'MonitoringTargets' || !canObserve.value) return
+  const targets = savedTargets.filter(row => row.enabled && row.monitor_kind === 'host_resources' && hosts[row.subject.node_id])
+  const nodes = [...new Set(targets.map(row => row.subject.node_id))].map(id => hosts[id])
+  if (!nodes.length) return
+  const controller = new AbortController()
+  listCollectionController = controller; pending.add(controller); listCollectionLoading.value = true
+  try {
+    const response = await hostsAPI.summaries(nodes.map(row => row.node_id), { signal: controller.signal })
+    if (generation !== epoch || ticket !== listTicket) return
+    const observations = validateResourceSummaries(response, nodes), next = new Map()
+    for (const target of targets) {
+      const value = observations.get(target.subject.node_id)
+      try {
+        validateTargetCollectionReference(value, target)
+        next.set(target.id, { collection: value.collection, queried_at: value.queried_at })
+      } catch (error) {
+        if (error.message !== 'target_collection_changed') throw error
+        next.set(target.id, { error: 'monitor.targets.listCollection.changed' })
+      }
+    }
+    listCollections.value = next
+  } catch (error) {
+    if (generation === epoch && ticket === listTicket) {
+      listCollections.value = new Map()
+      listCollectionError.value = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.targets.listCollection.budget' : collectionFailure(error)
+    }
+  } finally {
+    pending.delete(controller)
+    if (generation === epoch && ticket === listTicket) { listCollectionLoading.value = false; listCollectionController = null }
+  }
 }
 async function loadDetail() {
   if (!canRead.value || !targetID.value) return
@@ -188,12 +260,9 @@ async function loadCollection() {
     if (generation !== epoch || ticket !== collectionTicket) return
     validateCollection(value.collection, value.queried_at)
     validateResourceResponse(value, saved.subject.node_id, metrics)
-    if (value.target_id && (value.target_id !== saved.id || value.target_saved_version !== saved.version)) {
-      collectionError.value = 'monitor.targets.collection.changed'; return
-    }
-    if (!value.target_id && value.collection.state !== 'not_connected') throw new Error('invalid_resource_response')
+    validateTargetCollectionReference(value, saved)
     collection.value = value
-  } catch (error) { if (generation === epoch && ticket === collectionTicket) collectionError.value = resourceErrorKey(error) }
+  } catch (error) { if (generation === epoch && ticket === collectionTicket) collectionError.value = collectionFailure(error) }
   finally {
     pending.delete(controller)
     if (generation === epoch && ticket === collectionTicket) { collectionLoading.value = false; collectionController = null }
@@ -230,7 +299,7 @@ async function remove() {
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
 watch([() => route.fullPath, identity], async () => {
-  invalidate(); resetForm(); nodeNames.value = {}
+  invalidate(); clearListCollections(); resetForm(); hostReferences.value = {}
   rows.value = []; total.value = 0; loaded.value = false; loading.value = false; detailLoading.value = false
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
   if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
@@ -252,6 +321,8 @@ onBeforeUnmount(invalidate)
 .target-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .target-toolbar h2 { flex: 1; }
 .target-pagination { margin-top: 16px; overflow-x: auto; }
+.target-collection-status { max-width: 100%; height: auto; white-space: normal; line-height: 1.6; }
+.target-sample-time { margin: 8px 0 0; color: var(--addp-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .target-hint { color: var(--addp-text-secondary); margin: 12px 0; }
 .target-collection { margin: 12px 0; padding: 12px; border: 1px solid var(--addp-border-color); border-radius: 4px; }
 .target-collection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

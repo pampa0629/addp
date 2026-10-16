@@ -191,14 +191,16 @@ for (const [name, options, text] of [
   await expect(page.getByTestId('target-endpoint')).toHaveValue('https://node.test:9443/metrics')
 })
 
-test('list and new settings never request collection evidence', async ({ page }) => {
+test('only the list requests batch evidence while a new settings draft requests none', async ({ page }) => {
   const state = await backend(page, { identity: observingIdentity() })
   await page.goto('/monitoring-targets')
   await expect(page.locator('.el-pagination__total')).toBeVisible()
+  await expect.poll(() => state.summaryReads.length).toBe(1)
   await page.getByRole('button', { name: '新增采集配置', exact: true }).click()
   await expect(page.getByTestId('target-endpoint')).toBeVisible()
   await expect(page.getByTestId('target-collection')).toHaveCount(0)
   expect(state.collectionReads).toHaveLength(0)
+  expect(state.summaryReads).toHaveLength(1)
 })
 
 test('revoked observation access cancels a delayed result without blocking settings', async ({ page }) => {

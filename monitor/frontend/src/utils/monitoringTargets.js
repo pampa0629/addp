@@ -16,3 +16,12 @@ export function targetInput(form, target) {
   return { ...(target ? { version: target.version } : {}), subject: { kind: 'node', node_id: node }, monitor_kind: kind,
     source: { type: targetKinds[kind], endpoint: form.endpoint.trim() }, enabled: form.enabled }
 }
+
+// A node observation is not evidence for a different saved target revision.
+export function validateTargetCollectionReference(value, target) {
+  if (!isTargetUUID(target?.id) || !Number.isSafeInteger(target.version) || target.version < 1) throw new Error('invalid_resource_response')
+  if (value.target_id) {
+    if (value.target_id !== target.id || value.target_saved_version !== target.version) throw new Error('target_collection_changed')
+  } else if (value.collection.state !== 'not_connected') throw new Error('invalid_resource_response')
+  return value
+}

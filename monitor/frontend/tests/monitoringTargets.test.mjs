@@ -17,3 +17,16 @@ test('edits preserve the saved subject, category and CAS version', () => {
   assert.equal(Object.hasOwn(targetInput(form), 'version'), false)
   for (const bad of ['invalid', node.toUpperCase(), '00000000-0000-0000-0000-000000000000']) assert.equal(targetInput({ ...form, node_id: bad }), null)
 })
+
+test('saved target evidence requires the same identity and version, including list summaries', async () => {
+  const { validateTargetCollectionReference } = await import('../src/utils/monitoringTargets.js')
+  const target = { id: '1621bb62-cb0e-40e1-b988-0d4d36683e51', version: 2 }
+  const evidence = { target_id: target.id, target_saved_version: 2, collection: { state: 'collecting' } }
+  assert.equal(validateTargetCollectionReference(evidence, target), evidence)
+  assert.throws(() => validateTargetCollectionReference({ ...evidence, target_saved_version: 1 }, target), /target_collection_changed/)
+  assert.throws(() => validateTargetCollectionReference({ ...evidence, target_id: node }, target), /target_collection_changed/)
+  assert.throws(() => validateTargetCollectionReference({ collection: { state: 'collecting' } }, target), /invalid_resource_response/)
+  assert.throws(() => validateTargetCollectionReference(evidence, { ...target, version: 0 }), /invalid_resource_response/)
+  const disconnected = { collection: { state: 'not_connected' } }
+  assert.equal(validateTargetCollectionReference(disconnected, target), disconnected)
+})

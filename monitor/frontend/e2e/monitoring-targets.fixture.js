@@ -1,3 +1,6 @@
+import { summaryMetrics } from '../src/utils/nodeResources'
+import { observations } from './resource-observations.fixture'
+
 export const id = '1621bb62-cb0e-40e1-b988-0d4d36683e51'
 export const node = 'f83e9874-2164-4411-a5c0-650d143006cf'
 export const permissions = ['platform.host_node.read', ...['read', 'create', 'update', 'delete'].map(action => `monitor.monitoring_target.${action}`)]
@@ -5,9 +8,11 @@ export function identity(keys = permissions, context = { type: 'platform' }, pri
   return { principal: { id: 'fixture-user', type: principal }, context, delegation, authorization: { role_assignments: [{ scope: context, permissions: keys }] } }
 }
 export async function backend(page, options = {}) {
-  let target = { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: options.kind || 'host_resources', source: { type: options.kind === 'container_resources' ? 'cadvisor' : 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: options.enabled !== false }
+  let target = options.empty ? null : { id, version: 1, subject: { kind: 'node', node_id: node }, monitor_kind: options.kind || 'host_resources', source: { type: options.kind === 'container_resources' ? 'cadvisor' : 'node_exporter', endpoint: 'https://node.test:9443/metrics' }, enabled: options.enabled !== false }
   const writes = [], reads = []
-  const collectionReads = []
+  const collectionReads = [], summaryReads = []
+  let summaryMode = options.summaryMode || 'collecting', summaryRelease
+  const summaryHeld = options.holdSummary ? new Promise(resolve => { summaryRelease = resolve }) : null
   let collectionMode = options.collectionMode || 'collecting', collectionRelease
   const collectionHeld = options.holdCollection ? new Promise(resolve => { collectionRelease = resolve }) : null
   let conflict = options.conflict, release = null
@@ -21,9 +26,36 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity()
     else if (path.startsWith('/api/v1/system/platform/host_nodes')) {
-      const host = { node_id: node, display_name: '测试主机', addresses: ['node.test'], enabled: true, version: 1 }
-      body = path.endsWith('/host_nodes') ? { data: [host], total: 1, page: 1, page_size: 20 } : host
+      const hosts = options.hosts || [{ node_id: node, display_name: '测试主机', addresses: ['node.test'], enabled: true, version: 1 }]
+      body = path.endsWith('/host_nodes') ? { data: hosts, total: hosts.length, page: 1, page_size: 20 } : hosts.find(host => path.endsWith(host.node_id))
+      if (!body) { status = 404; body = { error: 'not found' } }
       if (options.hostUnavailable) { status = 503; body = { error: 'host unavailable' } }
+    }
+    else if (path === '/api/v1/monitor/platform/resource_summaries') {
+      summaryReads.push(Object.fromEntries(url.searchParams))
+      const mode = summaryMode, queried_at = '2026-10-09T00:00:00Z'
+      const targets = [target, ...(options.additionalTargets || [])].filter(Boolean)
+      body = { data: url.searchParams.get('node_ids').split(',').map(node_id => {
+        const saved = targets.find(row => row.subject.node_id === node_id && row.monitor_kind === 'host_resources' && row.enabled)
+        const value = observations(node_id, summaryMetrics.map(row => row.key), false, mode === 'failed' ? 'collection-failed' : mode === 'not_connected' ? 'disconnected' : '', queried_at)
+        if (saved && mode !== 'not_connected') { value.target_id = mode === 'wrong-target' ? node : saved.id; value.target_saved_version = saved.version + (mode === 'wrong-version' ? 1 : 0) }
+        if (mode === 'no_sample') {
+          value.collection = { state: 'no_sample', sampled_at: null, filesystem: 'unknown', network: 'unknown' }
+          for (const series of value.series) Object.assign(series.points[0], { data_state: 'no_data', value: null, sampled_at: null })
+        }
+        if (mode === 'stale') {
+          const old = '2026-10-08T23:58:00Z'
+          value.collection = { state: 'stale', sampled_at: old, filesystem: 'unknown', network: 'unknown' }
+          for (const series of value.series) Object.assign(series.points[0], { data_state: 'stale', sampled_at: old })
+        }
+        if (mode === 'invalid') value.node_version++
+        return value
+      }) }
+      if (['unavailable','denied','budget'].includes(mode)) {
+        status = mode === 'denied' ? 403 : mode === 'budget' ? 422 : 503
+        body = { error_code: mode === 'denied' ? 'permission_denied' : mode === 'budget' ? 'observability_query_budget_exceeded' : 'observability_backend_unavailable' }
+      }
+      if (summaryHeld) await summaryHeld
     }
     else if (path === '/api/v1/monitor/platform/resource_observations') {
       collectionReads.push(Object.fromEntries(url.searchParams))
@@ -42,7 +74,7 @@ export async function backend(page, options = {}) {
         reads.push(path)
         if (path.endsWith('/monitoring_targets')) {
           if (held) await held
-          body = { data: target ? [target] : [], total: target ? options.total || 1 : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: 1 }
+          body = { data: target ? [target, ...(options.additionalTargets || [])] : [], total: target ? options.total || 1 : 0, page: Number(url.searchParams.get('page')), page_size: Number(url.searchParams.get('page_size')), total_pages: 1 }
           if (options.unavailable) { status = 503; body = { error: 'unavailable' } }
         } else body = target
       } else {
@@ -54,7 +86,7 @@ export async function backend(page, options = {}) {
     } else throw new Error(`Unexpected target fixture API ${path}`)
     await route.fulfill({ status, contentType: 'application/json', ...(status === 204 ? {} : { body: JSON.stringify(body) }) })
   })
-  return { writes, reads, collectionReads, setCollectionMode: value => { collectionMode = value }, releaseCollection: () => collectionRelease?.(), release: () => release?.() }
+  return { writes, reads, collectionReads, summaryReads, setSummaryMode: value => { summaryMode = value }, releaseSummary: () => summaryRelease?.(), setCollectionMode: value => { collectionMode = value }, releaseCollection: () => collectionRelease?.(), release: () => release?.() }
 }
 export async function setIdentity(page, value) {
   await page.evaluate(next => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').authContext = next }, value)
