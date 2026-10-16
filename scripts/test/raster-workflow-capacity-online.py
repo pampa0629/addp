@@ -331,10 +331,14 @@ def run_directories(env,client,platform,path,image,source_engine,target_engine,r
         item=scene.support.find_fixture_item(client,target_engine,'raster-target/'+name,'mosaic whole target')
         item=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
         sizes=validate_directory_item(item,actual)
+        verification.update(target_item_id=item['id'],size_evidence=sizes,monitor_verified=False)
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
         monitor=scene.obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'mosaic Monitor')
         if monitor.get('status')!='success' or monitor.get('module')!='manager' or monitor.get('task_type')!=MOSAIC_TASK_TYPE:
             raise scene.SuiteError('capacity mosaic Monitor differs from its parent')
         scene.support.validate_monitor_lineage(monitor,facts)
+        verification['monitor_verified']=True
+        verification_path.write_text(json.dumps(verification,sort_keys=True))
         if physical('purge-mosaic',[name]).get('source_unchanged') is not True:
             raise scene.SuiteError('capacity mosaic purge changed source')
         report['mosaic_groups'].append({'dataset_name':name,'task_id':task_id,'execution_id':identifier,

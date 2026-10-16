@@ -339,7 +339,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
 
     def test_real_manager_route_sequence_four_groups_and_failure_measurements(self):
         from unittest.mock import Mock
-        for fail in (None,'parent','physical','meta'):
+        for fail in (None,'parent','physical','meta','monitor'):
             with self.subTest(fail=fail),tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary);env={'ADDP_ONLINE_ARTIFACT_DIR':str(root),'ADDP_ONLINE_SECRET_DIR':str(root)}
                 report={'identity':{'principal_id':'33','tenant_id':'2'},'run_id':'run','groups':[{}]*12,'mosaic_groups':[],'result':'failed'}
@@ -368,7 +368,9 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     if '/meta/items/' in path:return SimpleNamespace(payload=item)
                     if '/monitor/' in path:
                         e=executions[path.rsplit('/',1)[1]]
-                        return SimpleNamespace(payload={**e,'metadata':{'lineage_facts':{k:v for k,v in e['metadata']['lineage_facts'].items() if k!='operations'}}})
+                        payload=copy.deepcopy({**e,'metadata':{'lineage_facts':{k:v for k,v in e['metadata']['lineage_facts'].items() if k!='operations'}}})
+                        if fail=='monitor':payload['metadata']['lineage_facts']['outputs'][0].pop('locator')
+                        return SimpleNamespace(payload=payload)
                     raise AssertionError((method,path))
                 client=SimpleNamespace(request=request)
                 def sampler(*args):
@@ -399,14 +401,14 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                      patch.object(m,'Sampler',side_effect=sampler),patch.object(m,'wait_applied'),patch.object(m.scene,'wait_execution',side_effect=wait):
                     if fail:
                         message={'parent':'Manager execution failed','physical':'physical pixels differ',
-                                 'meta':'Meta execution returned HTTP 404'}[fail]
+                                 'meta':'Meta execution returned HTTP 404','monitor':'Monitor lineage resource locator is missing'}[fail]
                         with self.assertRaisesRegex(m.scene.SuiteError,message):
                             m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
                     else:m.run_directories(env,client,client,'/policy','image',8,9,report,scans)
                 measurements=list(root.glob('*-measurements.json'))
                 self.assertEqual(len(measurements),1 if fail else 4)
                 self.assertEqual(len(report['mosaic_groups']),0 if fail else 4)
-                self.assertEqual(len(scans),0 if fail in ('parent','physical') else 1 if fail=='meta' else 4)
+                self.assertEqual(len(scans),0 if fail in ('parent','physical') else 1 if fail in ('meta','monitor') else 4)
                 self.assertEqual(report['result'],'failed')  # Only the outer complete suite may declare success.
                 self.assertTrue(all(call[2]==(403,) for call in calls if call[0]=='DELETE'))
                 self.assertTrue(all('manager' in call[1] for call in calls if call[0]=='POST'))
@@ -419,7 +421,14 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
                     self.assertEqual(snapshot['physical_verified'],fail!='physical')
                     self.assertTrue(snapshot['execution_id'].startswith('parent-'))
                     self.assertIn('resource_observation',snapshot['measurement'])
-                expected_order=[] if fail=='parent' else ['physical'] if fail=='physical' else ['physical','meta']*(1 if fail=='meta' else 4)
+                    if fail in ('physical','meta'):
+                        self.assertNotIn('size_evidence',snapshot)
+                        self.assertNotIn('monitor_verified',snapshot)
+                    else:
+                        self.assertEqual(snapshot['target_item_id'],item['id'])
+                        self.assertEqual(snapshot['size_evidence'],m.validate_directory_item(item,actual))
+                        self.assertEqual(snapshot['monitor_verified'],fail!='monitor')
+                expected_order=[] if fail=='parent' else ['physical'] if fail=='physical' else ['physical','meta']*(1 if fail in ('meta','monitor') else 4)
                 self.assertEqual(verification_order,expected_order)
                 if fail:self.assertFalse((root/'capacity-progress.json').exists())
                 if not fail:
