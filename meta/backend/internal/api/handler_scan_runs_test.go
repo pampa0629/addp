@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -52,15 +53,47 @@ func TestMetaScanExecutionReadAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
+	// Record relation identities, not shared data counts: the fixture's rollback
+	// must restore the pre-existing store even when a contract assertion fails.
+	type storeRelation struct {
+		Name string
+		OID  int64 `gorm:"column:oid"`
+	}
+	storeRelations := func() []storeRelation {
+		t.Helper()
+		var relations []storeRelation
+		if err := db.Raw(`SELECT relname AS name, oid::bigint AS oid FROM pg_class
+			WHERE relnamespace = to_regnamespace('common') AND relname IN
+			('task_executions', 'execution_events', 'execution_schema_migrations') ORDER BY relname`).Scan(&relations).Error; err != nil {
+			t.Fatal(err)
+		}
+		return relations
+	}
+	before := storeRelations()
 	tx := db.Begin()
 	if tx.Error != nil {
 		t.Fatal(tx.Error)
 	}
-	t.Cleanup(func() { tx.Rollback() })
+	t.Cleanup(func() {
+		if err := tx.Rollback().Error; err != nil {
+			t.Error(err)
+			return
+		}
+		if after := storeRelations(); !reflect.DeepEqual(before, after) {
+			t.Errorf("execution store relations not restored: before=%+v after=%+v", before, after)
+		}
+	})
 	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS common").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.AutoMigrate(&execution.TaskExecution{}); err != nil {
+	// Always prove the production initializer on empty relations. AutoMigrate
+	// alone omits SQL constraints, and a developer database may hide that gap.
+	// The surrounding rollback restores the shared test store and dependencies.
+	if err := tx.Exec(`DROP TABLE IF EXISTS common.execution_events,
+		common.task_executions, common.execution_schema_migrations CASCADE`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := execution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
