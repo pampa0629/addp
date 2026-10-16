@@ -233,3 +233,31 @@ test('per-section explanations use collection evidence without claiming why a co
   for (const network of [undefined, null, 'unsupported', 'available']) assert.throws(() => validateCollection({ state: 'failed', sampled_at: at, filesystem: 'unknown', network }, at))
   assert.equal(resourceMissingMessage(null, 'network'), '')
 })
+
+test('historical trend anchors are canonical, explicit and never auto-refresh', () => {
+ const end = '2026-10-07T00:00:00.000Z'
+ const value = resolveResourceRoute({ end, refresh: '15', metric: 'node.cpu.busy_percent' }, true)
+ assert.equal(value.end, end); assert.equal(value.refresh, 'off'); assert.equal(value.invalidEnd, false)
+ assert.deepEqual(value.query, { metric: 'node.cpu.busy_percent', end, refresh: 'off' })
+ assert.equal(resolveResourceRoute(value.query, true).changed, false)
+ for (const end of ['', 'bad', ['2026-10-07T00:00:00Z'], '2026-02-30T00:00:00Z', '2026-10-07T00:00:00.123Z']) {
+   assert.equal(resolveResourceRoute({ end }, true).invalidEnd, true)
+ }
+ assert.deepEqual(resolveResourceRoute({ end }).query, {})
+})
+
+test('a historical curve cannot contain a different window, future sample or reordered points', async () => {
+ const { validateResourceTrendWindow } = await import('../src/utils/nodeResources.js')
+ const window = { start: '2026-10-06T23:00:00Z', end: '2026-10-07T00:00:00Z' }
+ const response = { ...window, queried_at: '2026-10-07T00:15:00Z', series: [{ points: [
+   { evaluated_at: '2026-10-06T23:59:45Z', sampled_at: '2026-10-06T23:59:45Z' },
+   { evaluated_at: window.end, sampled_at: null }
+ ] }] }
+ assert.equal(validateResourceTrendWindow(response, window), response)
+ for (const mutate of [r => r.end = r.queried_at, r => r.start = 'bad', r => r.queried_at = window.start,
+  r => r.series[0].points.reverse(), r => r.series[0].points[0].sampled_at = window.end,
+  r => r.series[0].points[0].evaluated_at = '2026-10-06T22:00:00Z']) {
+   const bad = structuredClone(response); mutate(bad)
+   assert.throws(() => validateResourceTrendWindow(bad, window))
+ }
+})

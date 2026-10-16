@@ -28,3 +28,52 @@ test('resource rules retain a canonical independent page and reuse the only host
  }
  assert.match(read('../src/components/HostNodeSelect.vue'), /platform\.host_node\.read/u)
 })
+
+test('resource evidence stays frozen and only valid host signals build historical navigation', async () => {
+ const { resourceAlertEvidence, resourceAlertHostID, resourceAlertTrendRoute } = await import('../src/utils/platformAlerts.js')
+ const row = { category: 'resource', subject_kind: 'host_node', subject_id: 'f83e9874-2164-4411-a5c0-650d143006cf', signal: 'node.memory.used_percent', resource_evidence: {
+  rule_id: 'a0e9964c-e2d3-46ba-b151-52249cff528e', rule_version: 2, node_version: 1, target_id: '1621bb62-cb0e-40e1-b988-0d4d36683e51', target_version: 1, query_policy_version: 1,
+  policy: { trigger_percent: 80, recovery_percent: 75, trigger_seconds: 300, recovery_seconds: 120 },
+  evaluated_at: '2026-10-07T00:00:00.789Z', sampled_from: '2026-10-06T23:55:00Z', sampled_to: '2026-10-07T00:00:00Z', samples: 21, minimum: 81, maximum: 96, latest: 90
+ } }
+ assert.equal(resourceAlertEvidence(row), row.resource_evidence)
+ assert.equal(resourceAlertHostID(row), row.subject_id)
+ const defaults = structuredClone(row); defaults.resource_evidence.query_policy_version = 0
+ assert.equal(resourceAlertEvidence(defaults), defaults.resource_evidence)
+ assert.deepEqual(resourceAlertTrendRoute(row), { path: `/node-resources/${row.subject_id}`, query: { metric: row.signal, end: '2026-10-07T00:00:00.000Z', refresh: 'off' } })
+ for (const mutate of [r => r.category = 'log_pipeline', r => r.subject_kind = 'process', r => r.subject_id = '../unsafe', r => r.signal = 'arbitrary', r => r.resource_evidence = null,
+  r => r.resource_evidence.latest = NaN, r => r.resource_evidence.minimum = 97, r => r.resource_evidence.samples = 0,
+  r => r.resource_evidence.policy.trigger_percent = 74, r => r.resource_evidence.sampled_to = '2026-10-07T00:00:01Z', r => r.resource_evidence.policy.trigger_seconds = 14]) {
+   const bad = structuredClone(row); mutate(bad)
+   assert.equal(resourceAlertEvidence(bad), null)
+   assert.equal(resourceAlertTrendRoute(bad), null)
+ }
+})
+
+test('host references deduplicate, bound concurrent reads and stop after invalidation', async () => {
+ const { loadHostReferences } = await import('../src/utils/hostReferences.js')
+ const ids = Array.from({ length: 9 }, (_, i) => `f83e9874-2164-4411-a5c0-${String(i).padStart(12, '0')}`)
+ let active = 0, maximum = 0, current = true
+ const seen = []
+ const read = async id => {
+   seen.push(id); maximum = Math.max(maximum, ++active)
+   await new Promise(resolve => setImmediate(resolve)); active--
+   if (id === ids[1]) throw new Error('denied')
+   return { node_id: id === ids[2] ? ids[0] : id, display_name: 'Host' }
+ }
+ const result = await loadHostReferences([...ids, ids[0], 'invalid'], read, () => current)
+ assert.equal(maximum, 4); assert.deepEqual(seen, ids)
+ assert.deepEqual(Object.keys(result), ids.filter(id => id !== ids[1] && id !== ids[2]))
+ seen.length = 0
+ const stale = await loadHostReferences(ids, async id => { seen.push(id); current = false; return { node_id: id, display_name: 'late' } }, () => current)
+ assert.deepEqual(stale, {}); assert.equal(seen.length, 4)
+})
+
+
+test('monitor management views share the sole bounded host-reference resolver', () => {
+ for (const path of ['../src/views/PlatformAlerts.vue', '../src/views/MonitoringTargets.vue', '../src/components/ResourceAlertRules.vue']) {
+   const source = readFileSync(new URL(path, import.meta.url), 'utf8')
+   assert.match(source, /loadHostReferences/u)
+   assert.doesNotMatch(source, /Promise\.allSettled/u)
+ }
+})

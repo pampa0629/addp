@@ -2280,4 +2280,24 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 
 最终配置的 `make test-monitor-metrics` 已从零运行并退出 0，日志 `/tmp/addp-resource-alert-lifecycle-metrics-final.log`。原有进程、原生与 Desktop 节点来源、故障恢复、中心 WAL 和六源 TOP5 场景均保留通过；新增 `TestIntegrationMetricsResourceAlertLifecycle` 用时 150.82 秒，真实高值窗口打开一次事件，首次 HTTP 503 后同一投递重试成功，缺样超过 30 秒恢复窗口不恢复，真实低值窗口随后恢复同一 incident。最终只有 opened/resolved 两条事件、两条 delivered 和三次 HTTP 请求；接收的 event ID、delivery ID 与完整证据逐条匹配已提交数据库，打开证据不被恢复覆盖，日志订阅未收到资源事件。退出确认自有容器、网络、卷与临时文件零残留。
 
-最终 Monitor Go T1（`make test-module MODULE=monitor GO_ONLY=1`）退出 0，日志 `/tmp/addp-resource-alert-lifecycle-go-final.log`；23 项部署静态检查、T2 CI 登记和脚本语法验证通过，日志 `/tmp/addp-resource-alert-lifecycle-static-final.log`；既有 Hosted 准备回归日志 `/tmp/addp-resource-alert-lifecycle-node-runner.log`。本轮只扩展测试、CI 总预算与既有文档，无需重启个人服务。尚未推送的新提交不借用 10.71 的旧 CI；本场景的正式 System 密码/MFA、Gateway 及真实主机压力闭环 Hosted T4 仍未执行，真实群、邮件或企业微信通知也未发送。
+最终 Monitor Go T1（`make test-module MODULE=monitor GO_ONLY=1`）退出 0，日志 `/tmp/addp-resource-alert-lifecycle-go-final.log`；23 项部署静态检查、T2 CI 登记和脚本语法验证通过，日志 `/tmp/addp-resource-alert-lifecycle-static-final.log`；既有 Hosted 准备回归日志 `/tmp/addp-resource-alert-lifecycle-node-runner.log`。本轮只扩展测试、CI 总预算与既有文档，无需重启个人服务。提交 `8ff514477` 的 CI 单独核对，不借用 10.71 的旧 CI；本场景的正式 System 密码/MFA、Gateway 及真实主机压力闭环 Hosted T4 仍未执行，真实群、邮件或企业微信通知也未发送。
+
+
+`8ff514477` 已由用户推送。Release/T2 Run `38873840343` 的 Monitor PostgreSQL Job `116887676970` success；metrics Job `116887677286` 在 23 项部署静态回归中的正式 Compose 渲染检查超过原 15 秒时限，新联合场景尚未执行，不能计为 CI 通过。本地同组 23 项复跑退出 0，尚不能据此确认远端超时原因，未放宽断言或时限。所属工作流结束后已只重跑该 metrics Job，第二次 Job `116922435470` 当前 queued；未重跑其他会话的 Job。
+
+
+### 10.73 主机、资源告警与触发时段趋势的关联（2026-10-16，实施契约）
+
+用户确认继续优先补齐主机与告警的页面关联。本批只消费既有 Platform 告警列表、System 主机详情及 Monitor 资源趋势接口：主机详情提供按 `category=resource`、当前 `subject_id` 筛选的相关告警入口，保留活动状态默认值；告警列表按当前用户的独立主机读取权限解析当页主机名称，不能从地址、规则或历史显示名推断当前身份。读取拒绝或对象移除时只保留告警已有主体 ID，清除旧名称和跳转能力。名称解析复用单一有界主机引用读取实现，每页去重、最多四个并发；身份、路由或请求代次变化后停止后续批次并丢弃迟到结果。
+
+资源告警行可展开查看不可变触发证据：触发与恢复阈值、持续时间、触发窗口内最小/最大/末次值、采样区间和评估时间。使用 incident 已保存的 `resource_evidence`，不请求当前规则补写历史条件，不把触发证据称为恢复证据或完整事件时间线。证据缺失或结构不合法时明确说明不可用，不用零或当前资源值补齐。仅有告警读取权限仍可读已授权告警证据；主机名称和资源趋势必须分别满足既有主机读取及资源观测权限。
+
+“查看触发时段趋势”沿唯一主机详情路由携带固定目录指标、`end`（触发评估时刻向下取整到秒）与 `refresh=off`，不新增历史查询接口。历史时段固定结束时间，保留既有范围与预算；非法或晚于服务端当前查询时刻的 end 明确拒绝，不退回实时曲线。图表旁显示固定历史时刻、缺样/保留期及当前来源约束，提供“返回实时趋势”；页面当前资源卡片明确仍属当前观测。历史模式禁止自动刷新，手工刷新或改变范围也不推进结束时间。主机详情、规则和告警仍按原权限裁决；本批不修改 IAM、API、数据库、告警生命周期、采集配置、TOP5 或真实通知。
+
+实施前识别门禁：标准 `make test-monitor-frontend` 覆盖路由/证据/有界引用单测、确定性浏览器的双向导航、历史结束时刻、缺样、权限撤销和迟到响应、中文/英文及窄屏、最终构建。既有 Platform CI 的 Monitor 前端路径自动发现已覆盖；不新增入口或工作流。生产接口与 Swagger 无变化，无需后端重启；个人 Safari 和正式身份 Hosted T4 若未执行分别标为未验证。
+
+本批实现及本地验证已完成：`make test-monitor-frontend` 退出 0，67 项单测、165 项确定性浏览器回归和生产构建全部通过，日志 `/tmp/addp-alert-links-frontend-final.log`。新增 11 项浏览器场景覆盖中英文双向导航、固定结束时刻、自动刷新关闭、手工刷新与范围切换保留历史锚点、返回实时、未知或不完整证据、主机与资源权限分开、读取拒绝及迟到响应、历史缺样、错时段响应拒绝；既有采集配置、资源规则、主机/进程及总览回归保留。引用解析与历史证据的新增单测先记录缺少实现的失败，再经同一前端测试入口通过；默认查询预算版本 0 沿正式后端契约保留有效，不将未持久化的默认预算误判为坏证据。
+
+已目视检查中文/英文 620px 视口的触发依据弹窗及历史趋势截图，无页面横向溢出，说明贴近相应证据和图表。历史趋势响应还必须精确匹配所请求的 start/end，采样点按时间递增且不越界；不能用当前时段响应冒充历史。所有当页主机名称在新请求开始时清空，主机读取失败保留已授权告警的主体和触发证据，移除主机名称与监控跳转。
+
+`python3 scripts/ci/check-frontend-ci-registration.py` 退出 0，21 个已登记前端的标准入口覆盖本批，日志 `/tmp/addp-alert-links-frontend-registration.log`；章节/围栏、增加的中英文词条键一致性及任务范围 `git diff --check` 通过。默认 `make test-changed` 对 48 个混合文件选中 24 个 owner，在外部测试连接缺失预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-alert-links-changed.log`；本批前端实际门禁以上述独立入口为准。没有修改 API、Swagger、数据库、IAM 或观测部署，不需后端重启；本批尚未进行真实 Safari 或新增 Hosted T4，远端 CI 待推送后单独核对，不把此前 `8ff514477` 的 metrics 重跑当作本批前端证据。

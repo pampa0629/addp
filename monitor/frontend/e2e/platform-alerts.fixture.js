@@ -1,5 +1,6 @@
 import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 import { expect } from '@playwright/test'
+import { resourceBackend } from './node-resources.fixture'
 import { backend as mockBase, identity, setIdentity } from './monitoring-targets.fixture'
 
 export const deliveryView = {
@@ -9,8 +10,9 @@ export const deliveryView = {
   event_type: 'opened', occurred_at: '2026-10-01T08:00:00Z', incident_id: 9, incident_status: 'resolved',
   created_at: '2026-10-01T08:00:01Z', last_error: 'notification_attempt_limit'
 }
-export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, rules = [], ruleTotal = rules.length, ruleConflict = false, path = '/platform-alerts' } = {}) {
-  await mockBase(page, { locale, identity: identity(keys || ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', ...(management ? ['monitor.platform_alert.update', 'monitor.platform_alert_notification.update'] : [])]) })
+export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, rules = [], ruleTotal = rules.length, ruleConflict = false, resources = false, path = '/platform-alerts' } = {}) {
+  const setupBackend = resources ? resourceBackend : mockBase
+  const resourceState = await setupBackend(page, { locale, identity: identity(keys || ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', ...(management ? ['monitor.platform_alert.update', 'monitor.platform_alert_notification.update'] : [])]) })
   destinations = destinations.map(row => ({ categories: ['log_pipeline'], recipients: [], event_types: ['opened', 'resolved'], ...row }))
   const requests = []
   let failure = false, acknowledged = false, held = false, release
@@ -21,6 +23,7 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const reply = (json, status = 200) => route.fulfill({ headers, json, status })
     const body = req.postDataJSON(); requests.push({ path, query: Object.fromEntries(new URL(req.url()).searchParams), method: req.method(), body })
+    if (path.includes('/resource_')) return route.fallback()
     if (path.includes('/resource-alert-rules')) {
       if (req.method() === 'GET') {
         if (held) await barrier
@@ -57,5 +60,15 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
   if (!keys || keys.includes('monitor.platform_alert.read')) await expect(page.getByTestId('pipeline-incidents')).toBeVisible()
   else if (keys.includes('monitor.platform_alert_notification.read')) await expect(page.getByTestId('platform-notifications')).toBeVisible()
   else if (keys.includes('monitor.platform_resource_rule.read')) await expect(page.getByTestId('resource-rules')).toBeVisible()
-  return { requests, fail: () => { failure = true }, hold: () => { held = true }, release: () => release() }
+  return { requests, resourceState, fail: () => { failure = true }, hold: () => { held = true }, release: () => release() }
+}
+
+export const resourceIncident = {
+  id: 42, version: 3, category: 'resource', subject_kind: 'host_node', subject_id: 'f83e9874-2164-4411-a5c0-650d143006cf',
+  signal: 'node.memory.used_percent', severity: 'warning', status: 'resolved', opened_at: '2026-10-06T23:50:00Z', resolved_at: '2026-10-06T23:59:00Z',
+  resource_evidence: {
+    rule_id: 'a0e9964c-e2d3-46ba-b151-52249cff528e', rule_version: 2, node_version: 1, target_id: '1621bb62-cb0e-40e1-b988-0d4d36683e51', target_version: 1, query_policy_version: 1,
+    policy: { trigger_percent: 80, recovery_percent: 75, trigger_seconds: 300, recovery_seconds: 120 },
+    evaluated_at: '2026-10-06T23:50:00.789Z', sampled_from: '2026-10-06T23:45:00Z', sampled_to: '2026-10-06T23:50:00Z', samples: 21, minimum: 81, maximum: 96, latest: 90
+  }
 }

@@ -64,7 +64,8 @@ export async function resourceBackend(page, options = {}) {
       state.reads.push({ path, query: Object.fromEntries(url.searchParams), method: req.method() })
       const id = url.searchParams.get('node_id'), keys = url.searchParams.get('metrics').split(',')
       if (!trend && held && id === node) await held
-      body = observations(id, keys, trend, mode, state.serverEnd)
+      body = observations(id, keys, trend, mode, trend ? url.searchParams.get('end') : state.serverEnd)
+      if (trend) { body.start = url.searchParams.get('start'); body.queried_at = state.serverEnd }
       if (!trend && state.targetID) body.target_id = state.targetID
       const family = keys[0].startsWith('node.network.') ? 'network' : keys[0].startsWith('node.filesystem.') ? 'filesystem' : null
       if (!trend && family && state[`${family}Collection`]) body.collection = { ...body.collection, ...state[`${family}Collection`] }

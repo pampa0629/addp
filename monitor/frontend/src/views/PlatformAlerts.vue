@@ -22,7 +22,8 @@
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.signal')" min-width="180"><template #default="{ row }">{{ signalLabel(row.signal) }}</template></el-table-column>
-        <el-table-column prop="subject_id" :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip />
+        <el-table-column :label="t('monitor.platformAlerts.subject')" min-width="220" show-overflow-tooltip><template #default="{ row }"><span :title="row.subject_id">{{ hosts[resourceAlertHostID(row)]?.display_name || row.subject_id }}</span></template></el-table-column>
+        <el-table-column :label="t('monitor.platformAlerts.details')" width="130"><template #default="{ row }"><el-button v-if="resourceAlertHostID(row)" size="small" @click="selectedIncident = row">{{ t('monitor.platformAlerts.openEvidence') }}</el-button></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.severity')" width="100"><template #default="{ row }"><el-tag :type="row.severity === 'critical' ? 'danger' : 'warning'">{{ t(`monitor.platformAlerts.severities.${row.severity}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.status')" width="130"><template #default="{ row }">{{ t(`monitor.platformAlerts.statuses.${row.status}`) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.openedAt')" min-width="160"><template #default="{ row }">{{ date(row.opened_at) }}</template></el-table-column>
@@ -82,6 +83,31 @@
       </el-table>
       <el-pagination v-if="!loading && deliveries.total > 0" layout="total, prev, pager, next" :total="deliveries.total" :page-size="20" :current-page="deliveryPage" @current-change="changeDeliveryPage" />
     </section>
+    <el-dialog :model-value="Boolean(selectedIncident)" :title="t('monitor.platformAlerts.evidence.title')" width="min(720px, calc(100vw - 32px))" @close="selectedIncident = null">
+      <section v-if="selectedIncident" data-testid="resource-alert-evidence">
+        <h3 class="alert-subject">{{ hosts[selectedIncident.subject_id]?.display_name || selectedIncident.subject_id }}</h3>
+        <p>{{ signalLabel(selectedIncident.signal) }}</p>
+        <p v-if="canReadHosts && !hosts[selectedIncident.subject_id]">{{ t('monitor.platformAlerts.evidence.hostUnavailable') }}</p>
+        <template v-if="selectedEvidence">
+          <p>{{ t('monitor.platformAlerts.evidence.frozen') }}</p>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item :label="t('monitor.resourceRules.trigger')">{{ t('monitor.platformAlerts.evidence.above', { percent: number(selectedEvidence.policy.trigger_percent), duration: duration(selectedEvidence.policy.trigger_seconds) }) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.resourceRules.recovery')">{{ t('monitor.platformAlerts.evidence.below', { percent: number(selectedEvidence.policy.recovery_percent), duration: duration(selectedEvidence.policy.recovery_seconds) }) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.latest')">{{ percent(selectedEvidence.latest) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.minimum')">{{ percent(selectedEvidence.minimum) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.maximum')">{{ percent(selectedEvidence.maximum) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.samples')">{{ selectedEvidence.samples }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.sampleWindow')">{{ evidenceDate(selectedEvidence.sampled_from) }} — {{ evidenceDate(selectedEvidence.sampled_to) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('monitor.platformAlerts.evidence.evaluatedAt')">{{ evidenceDate(selectedEvidence.evaluated_at) }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+        <el-alert v-else :title="t('monitor.platformAlerts.evidence.unavailable')" type="warning" :closable="false" />
+        <div class="alert-toolbar" v-if="canObserveHost(selectedIncident)">
+          <el-button v-if="selectedEvidence" type="primary" @click="openHost(selectedIncident, true)">{{ t('monitor.platformAlerts.evidence.trend') }}</el-button>
+          <el-button @click="openHost(selectedIncident)">{{ t('monitor.platformAlerts.evidence.current') }}</el-button>
+        </div>
+      </section>
+    </el-dialog>
     <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :page="state.rule_page" @page="change({ rule_page: $event })" />
     <el-dialog v-model="destinationOpen" :title="t('monitor.platformAlerts.destination')" width="min(640px, 95vw)" :close-on-click-modal="false">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
@@ -107,9 +133,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
-import { platformAlertState, platformAlertQuery } from '../utils/platformAlerts'
+import { platformAlertState, platformAlertQuery, resourceAlertHostID, resourceAlertEvidence, resourceAlertTrendRoute } from '../utils/platformAlerts'
+import { loadHostReferences } from '../utils/hostReferences'
+import { nodeResourcesAPI } from '../api/nodeResources'
+import { formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
+import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import ResourceAlertRules from '../components/ResourceAlertRules.vue'
-const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t } = useI18n()
+const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
 const platformUser = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation)
 const canRead = computed(() => platformUser.value && auth.hasPermission('monitor.platform_alert.read'))
@@ -117,6 +147,19 @@ const canUpdate = computed(() => canRead.value && auth.hasPermission('monitor.pl
 const canReadNotifications = computed(() => platformUser.value && auth.hasPermission('monitor.platform_alert_notification.read'))
 const canUpdateNotifications = computed(() => canReadNotifications.value && auth.hasPermission('monitor.platform_alert_notification.update'))
 const canReadRules = computed(() => platformUser.value && auth.hasPermission('monitor.platform_resource_rule.read'))
+const canReadHosts = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
+const hosts = ref({}), selectedIncident = ref(null)
+const selectedEvidence = computed(() => resourceAlertEvidence(selectedIncident.value))
+const evidenceDate = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
+const number = value => formatFieldPresentationValue(value, { precision: 2 }, locale.value)
+const percent = value => formatFieldPresentationValue(value, { precision: 2, unit: '%' }, locale.value)
+const duration = value => formatDurationSeconds(value, locale.value)
+function canObserveHost(row) { return canReadHosts.value && auth.hasPermission('monitor.resource_observation.read') && Boolean(hosts.value[resourceAlertHostID(row)]) }
+function openHost(row, historical = false) {
+  if (!canObserveHost(row)) return
+  const target = historical ? resourceAlertTrendRoute(row) : { path: `/node-resources/${row.subject_id}`, query: {} }
+  if (target) navigateMonitorRoute(router, target)
+}
 const rulesPanel = ref(null)
 const ruleIdentity = computed(() => JSON.stringify([auth.authContext, auth.permissions]))
 const incidents = ref([]), total = ref(0), loading = ref(false), busy = ref(false), error = ref('')
@@ -139,7 +182,7 @@ let epoch = 0, request = 0, controller, disposed = false
 const abandoned = Symbol('abandoned platform operation')
 function check(lease) { if (lease !== epoch || disposed) throw abandoned }
 function clear() {
-  epoch++; request++; controller?.abort(); incidents.value = []; total.value = 0
+  epoch++; request++; controller?.abort(); incidents.value = []; total.value = 0; hosts.value = {}; selectedIncident.value = null
   destinations.value = []; deliveries.value = { data: [], total: 0 }; error.value = ''; notificationError.value = ''; loading.value = false
   busy.value = false; destinationOpen.value = false; secret.value = ''; destinationDraft.value = { categories: [], recipients: [], event_types: [] }; editError.value = ''
 }
@@ -152,7 +195,7 @@ async function load() {
   if (state.value.tab === 'rules') return
   controller?.abort(); controller = new AbortController(); const own = ++request, lease = epoch
   if (state.value.tab === 'notifications' ? !canReadNotifications.value : !canRead.value) return
-  loading.value = true; error.value = ''; notificationError.value = ''
+  loading.value = true; error.value = ''; notificationError.value = ''; hosts.value = {}; selectedIncident.value = null; incidents.value = []
   try {
     if (state.value.tab === 'notifications') {
       const [targets, attempts] = await Promise.all([api.destinations(controller.signal), api.deliveries(deliveryPage.value, controller.signal)])
@@ -163,6 +206,12 @@ async function load() {
       const result = await api.incidents({ page, page_size: 20, ...(category ? { category } : {}), ...(status ? { status } : {}), ...(subject_id ? { subject_id } : {}) }, controller.signal)
       check(lease); if (own !== request) return
       incidents.value = result.data; total.value = result.total
+      if (canReadHosts.value) {
+        const signal = controller.signal
+        const names = await loadHostReferences(result.data.map(resourceAlertHostID), id => nodeResourcesAPI.node(id, { signal }), () => !disposed && lease === epoch && own === request)
+        check(lease); if (own !== request) return
+        hosts.value = names
+      }
     }
   } catch (value) {
     if (lease !== epoch || own !== request || value === abandoned || value.code === 'ERR_CANCELED') return
@@ -241,6 +290,7 @@ onUnmounted(() => { disposed = true; clear() })
 watch(destinationOpen, value => { if (!value) secret.value = '' })
 </script>
 <style scoped>
+.alert-subject { overflow-wrap: anywhere; }
 .platform-alerts { padding: 20px; color: var(--addp-text-primary); }
 .alert-toolbar { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
 .alert-toolbar .el-select { width: 180px; }

@@ -3,7 +3,7 @@
     <header class="resource-toolbar">
       <h2>{{ t('monitor.resources.title') }}</h2>
       <el-button v-if="nodeID" @click="navigate('/node-resources', listQuery)">{{ t('monitor.resources.back') }}</el-button>
-      <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="resource-refresh" @update:model-value="value => selectTrend('refresh', value)" />
+      <AutoRefreshControl v-if="!state.end" :model-value="state.refresh" :status="refreshStatus" test-id="resource-refresh" @update:model-value="value => selectTrend('refresh', value)" />
       <el-button :loading="loading" @click="reload()">{{ t('common.refresh') }}</el-button>
     </header>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" show-icon :closable="false" data-testid="resource-error" />
@@ -33,7 +33,9 @@
       </section>
       <el-alert v-if="instant && collectionMessage" :title="t(collectionMessage)" :type="instant.collection.state === 'failed' ? 'error' : 'warning'" show-icon :closable="false" data-testid="resource-collection-status" />
       <el-button v-if="canConfigure && instant" @click="configureCollection">{{ t('monitor.resources.configure') }}</el-button>
+      <el-button v-if="node && canReadAlerts" @click="openRelatedAlerts" data-testid="host-related-alerts">{{ t('monitor.platformAlerts.related') }}</el-button>
       <p v-if="loading" role="status">{{ t('common.loading') }}</p>
+      <h3 v-if="instant && state.end">{{ t('monitor.resources.current') }}</h3>
       <section v-if="instant" class="resource-cards" :aria-label="t('monitor.resources.current')">
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
@@ -107,9 +109,10 @@
           </el-table>
         </section>
       </template>
-      <section v-if="instant" class="resource-trend">
+      <section v-if="instant" ref="trendSection" tabindex="-1" class="resource-trend">
         <div class="resource-toolbar">
           <h3>{{ t('monitor.resources.trend') }}</h3>
+          <el-button v-if="state.end" @click="resumeLiveTrend" data-testid="resource-live-trend">{{ t('monitor.resources.history.live') }}</el-button>
           <span v-if="state.dimensions.mountpoint" class="resource-hint" data-testid="resource-selected-mount">{{ state.dimensions.mountpoint }} · {{ state.dimensions.fstype }} · {{ state.dimensions.device }}</span>
           <span v-if="state.dimensions.device && !state.dimensions.mountpoint" class="resource-hint" data-testid="resource-selected-device">{{ state.dimensions.device }}</span>
           <el-select :model-value="state.metric" :aria-label="t('monitor.resources.metric')" data-testid="resource-metric" @update:model-value="value => selectTrend('metric', value)">
@@ -119,6 +122,7 @@
             <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
           </el-select>
         </div>
+        <p v-if="state.end" class="resource-hint" data-testid="resource-history">{{ t('monitor.resources.history.fixed', { time: date(state.end) }) }}</p>
         <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="error" show-icon :closable="false" data-testid="resource-trend-error" />
         <template v-if="trend">
           <p class="resource-hint">{{ t('monitor.resources.window', { start: date(trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
@@ -148,7 +152,7 @@
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
@@ -159,20 +163,21 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse } from '../utils/nodeResources'
+import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.host_node.read'))
+const canReadAlerts = computed(() => canRead.value && auth.hasPermission('monitor.platform_alert.read'))
 const canConfigure = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.read') && (instant.value?.target_id || auth.hasPermission('monitor.monitoring_target.create')))
 const collectionMessage = computed(() => !instant.value ? '' : instant.value.collection.state !== 'collecting' ? `monitor.resources.collection.${instant.value.collection.state}` : instant.value.series.some(series => series.points[0].data_state === 'no_data') ? 'monitor.resources.collection.waiting' : '')
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
-const listQuery = computed(() => { const { range, metric, device, mountpoint, fstype, ...query } = state.value.query; return query })
+const listQuery = computed(() => { const { range, metric, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
-const showAllDisks = ref(false)
+const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref('')
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
@@ -207,6 +212,13 @@ function formatValue(value, metric) {
   return metric.unit === 'load' ? t('monitor.resources.loadValue', { value: formatted }) : formatted
 }
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function openRelatedAlerts() {
+  if (node.value && canReadAlerts.value) navigate('/platform-alerts', { category: 'resource', subject_id: nodeID.value })
+}
+function resumeLiveTrend() {
+  const { end, refresh, ...query } = state.value.query
+  return navigate(route.path, query, 'replace')
+}
 function configureCollection() {
   return instant.value.target_id ? navigate(`/monitoring-targets/${instant.value.target_id}`, {}) : navigate('/monitoring-targets/new', { node_id: nodeID.value })
 }
@@ -243,6 +255,7 @@ async function reload({ automatic = false } = {}) {
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
   if (!automatic) searchText.value = state.value.search
   const id = nodeID.value
+  if (state.value.invalidEnd) { errorKey.value = 'monitor.resources.history.invalid'; return }
   if (state.value.invalidDimensions) { errorKey.value = 'monitor.resources.errors.invalidDimensions'; return }
   if (id && !isTargetUUID(id)) { errorKey.value = 'monitor.resources.errors.invalidID'; return }
   loading.value = true
@@ -274,6 +287,7 @@ async function reload({ automatic = false } = {}) {
       if (!requestScope.current(ticket)) return
       validateCollection(current.collection, current.queried_at)
       instant.value = validateResourceResponse(current, id, keys)
+      if (state.value.end && Date.parse(state.value.end) > Date.parse(current.end)) { errorKey.value = 'monitor.resources.history.invalid'; return }
       filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
@@ -313,10 +327,17 @@ async function reload({ automatic = false } = {}) {
       }
       trend.value = null
       try {
-        const params = trendParameters(id, state.value.metric, state.value.range, current.end, state.value.dimensions)
+        const params = trendParameters(id, state.value.metric, state.value.range, state.value.end || current.end, state.value.dimensions)
         const history = await request(config => api.trend(params, config))
         if (!requestScope.current(ticket)) return
-        trend.value = validateResourceResponse(history, id, [state.value.metric], true, state.value.dimensions)
+        validateResourceResponse(history, id, [state.value.metric], true, state.value.dimensions)
+        trend.value = validateResourceTrendWindow(history, params)
+        if (state.value.end) {
+          await nextTick()
+          if (!requestScope.current(ticket)) return
+          trendSection.value?.scrollIntoView({ block: 'start' })
+          trendSection.value?.focus({ preventScroll: true })
+        }
       } catch (error) {
         if (!requestScope.current(ticket)) return
         trend.value = null

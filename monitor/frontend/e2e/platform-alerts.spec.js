@@ -214,7 +214,7 @@ for (const [locale, title, category, signal] of [['zh-cn', '平台告警', '主�
   const table = page.getByTestId('pipeline-incidents')
   await expect(table).toContainText(category)
   await expect(table).toContainText(signal)
-  for (const button of await table.getByRole('button').all()) await expect(button).toBeDisabled()
+  for (const label of locale === 'en' ? ['Acknowledge', 'Suppress'] : ['确认', '抑制']) for (const button of await table.getByRole('button', { name: label, exact: true }).all()) await expect(button).toBeDisabled()
   expect(hostReads).toHaveLength(0)
  })
 }

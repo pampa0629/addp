@@ -45,6 +45,7 @@ import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { nodeResourcesAPI } from '../api/nodeResources'
 import HostNodeSelect from './HostNodeSelect.vue'
+import { loadHostReferences } from '../utils/hostReferences'
 const props = defineProps({ page: { type: Number, required: true } })
 defineEmits(['page'])
 const auth = useAuthStore(), { t } = useI18n()
@@ -64,7 +65,7 @@ function check(lease) { if (disposed || lease !== epoch) throw abandoned }
 function clear() { epoch++; ticket++; controller?.abort(); rows.value = []; total.value = 0; presets.value = []; hosts.value = {}; error.value = ''; open.value = false; draft.value = {}; selected.value = null; loading.value = false; busy.value = false }
 async function load() {
   controller?.abort(); controller = new AbortController(); const own = ++ticket, lease = epoch
-  rows.value = []; total.value = 0; error.value = ''
+  rows.value = []; total.value = 0; hosts.value = {}; error.value = ''
   if (!canRead.value) return
   loading.value = true
   try {
@@ -72,13 +73,9 @@ async function load() {
     if (!Array.isArray(result.data) || !Array.isArray(result.presets) || !Number.isSafeInteger(result.total)) throw new Error('invalid_rules')
     rows.value = result.data; total.value = result.total; presets.value = result.presets
     if (canReadHosts.value) {
-      const names = {}
-      for (let i = 0; i < result.data.length; i += 5) {
-        const batch = result.data.slice(i, i + 5)
-        const refs = await Promise.allSettled(batch.map(row => nodeResourcesAPI.node(row.node_id, { signal: controller.signal })))
-        check(lease); if (own !== ticket) return
-        refs.forEach((ref, j) => { if (ref.status === 'fulfilled' && ref.value.node_id === batch[j].node_id) names[ref.value.node_id] = ref.value })
-      }
+      const signal = controller.signal
+      const names = await loadHostReferences(result.data.map(row => row.node_id), id => nodeResourcesAPI.node(id, { signal }), () => !disposed && lease === epoch && own === ticket)
+      check(lease); if (own !== ticket) return
       hosts.value = names
     }
   } catch (e) { if (lease === epoch && own === ticket && e !== abandoned && e.code !== 'ERR_CANCELED') { rows.value = []; total.value = 0; error.value = errorText(e) } }

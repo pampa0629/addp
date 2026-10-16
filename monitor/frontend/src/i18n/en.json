@@ -806,6 +806,11 @@
           "not_connected": "Collection not enabled"
         },
         "budget": "This page exceeds the resource query budget. Reduce the page size or ask an administrator to adjust the budget."
+      },
+      "history": {
+        "fixed": "Historical trend ending at {time}. Refresh keeps this time fixed. Resource cards above still show current values. Retention and the current source constrain the curve; missing samples remain gaps.",
+        "live": "Return to live trend",
+        "invalid": "The historical end time is invalid or later than the current server query time."
       }
     },
     "process": {
@@ -1037,7 +1042,26 @@
       "sourceCategories": "Subscribed alert categories",
       "cpuPressure": "CPU busy rate",
       "memoryPressure": "Memory usage",
-      "categoryRequired": "Select at least one alert category"
+      "categoryRequired": "Select at least one alert category",
+      "details": "Details",
+      "openEvidence": "Trigger evidence",
+      "related": "Related alerts",
+      "evidence": {
+        "title": "Resource alert details",
+        "frozen": "These conditions and values were saved when the alert opened. Later rule changes do not alter this evidence.",
+        "above": "Above {percent}% continuously for {duration}",
+        "below": "Below {percent}% continuously for {duration}",
+        "latest": "Last value in trigger window",
+        "minimum": "Minimum in trigger window",
+        "maximum": "Maximum in trigger window",
+        "samples": "Valid samples",
+        "sampleWindow": "Sample window",
+        "evaluatedAt": "Trigger evaluation time",
+        "unavailable": "Complete trigger evidence is unavailable; historical conditions cannot be displayed.",
+        "hostUnavailable": "This host cannot currently be read. Resource monitoring is unavailable.",
+        "trend": "View trigger-period trend",
+        "current": "View current host resources"
+      }
     },
     "resourceRules": {
       "title": "Resource rules",

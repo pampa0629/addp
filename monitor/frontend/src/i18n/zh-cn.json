@@ -806,6 +806,11 @@
           "not_connected": "未启用采集"
         },
         "budget": "当前页主机数超出资源查询预算，请减少每页数量或联系管理员调整预算。"
+      },
+      "history": {
+        "fixed": "历史趋势：结束时间固定为 {time}，不会随刷新推进。上方资源卡片仍是当前值；曲线受指标保留期及当前采集来源约束，缺失样本保留为空。",
+        "live": "返回实时趋势",
+        "invalid": "历史结束时间无效，或晚于当前服务端查询时间。"
       }
     },
     "process": {
@@ -1037,7 +1042,26 @@
       "sourceCategories": "订阅告警类别",
       "cpuPressure": "CPU 忙碌率",
       "memoryPressure": "内存使用率",
-      "categoryRequired": "请选择至少一种告警类别"
+      "categoryRequired": "请选择至少一种告警类别",
+      "details": "详情",
+      "openEvidence": "触发依据",
+      "related": "相关告警",
+      "evidence": {
+        "title": "资源告警详情",
+        "frozen": "以下条件和值保存于告警触发时，后续修改规则不会改变这些记录。",
+        "above": "连续 {duration} 高于 {percent}%",
+        "below": "连续 {duration} 低于 {percent}%",
+        "latest": "触发窗口末次值",
+        "minimum": "触发窗口最小值",
+        "maximum": "触发窗口最大值",
+        "samples": "有效样本数",
+        "sampleWindow": "采样区间",
+        "evaluatedAt": "触发评估时间",
+        "unavailable": "没有完整的触发依据，无法展示历史条件。",
+        "hostUnavailable": "当前无法读取此主机，暂不能打开资源监控。",
+        "trend": "查看触发时段趋势",
+        "current": "查看当前主机资源"
+      }
     },
     "resourceRules": {
       "title": "资源规则",

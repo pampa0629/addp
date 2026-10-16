@@ -79,6 +79,7 @@ import { useAuthStore } from '../store/auth'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import HostNodeSelect from '../components/HostNodeSelect.vue'
+import { loadHostReferences } from '../utils/hostReferences'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 import { validateCollection, validateResourceResponse, resourceErrorKey } from '../utils/nodeResources'
@@ -147,18 +148,14 @@ async function readNode(id) {
 async function loadList() {
   if (!canRead.value) return
   const generation = epoch, ticket = ++listTicket
-  loading.value = true; loaded.value = false; rows.value = []; listError.value = ''
+  loading.value = true; loaded.value = false; rows.value = []; nodeNames.value = {}; listError.value = ''
   try {
     const value = await request(config => api.list({ page: state.value.page, page_size: state.value.pageSize }, config))
     if (generation !== epoch || ticket !== listTicket) return
     rows.value = value.data; total.value = value.total; loaded.value = true
-    const names = {}
-    for (let i = 0; i < value.data.length; i += 4) {
-      const batch = await Promise.allSettled(value.data.slice(i, i + 4).map(row => readNode(row.subject.node_id)))
-      if (generation !== epoch || ticket !== listTicket) return
-      batch.forEach((result, index) => { if (result.status === 'fulfilled') names[value.data[i + index].subject.node_id] = result.value.display_name })
-    }
-    nodeNames.value = names
+    const hosts = await loadHostReferences(value.data.map(row => row.subject.node_id), readNode, () => generation === epoch && ticket === listTicket)
+    if (generation !== epoch || ticket !== listTicket) return
+    nodeNames.value = Object.fromEntries(Object.entries(hosts).map(([id, host]) => [id, host.display_name]))
   } catch { if (generation === epoch && ticket === listTicket) listError.value = t('monitor.targets.loadFailed') }
   finally { if (generation === epoch && ticket === listTicket) loading.value = false }
 }
