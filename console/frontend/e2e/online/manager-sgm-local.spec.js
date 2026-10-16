@@ -32,7 +32,25 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
   })
   page.on('console', message => {
     if (isAnonymousRefreshConsoleError(message, authenticated) || gpu.record(message)) return
-    if (['warning', 'error'].includes(message.type())) errors.push(message.type())
+    if (['warning', 'error'].includes(message.type())) {
+      const text = message.text()
+      const category = text.startsWith('[intlify]') ? 'i18n'
+        : text.includes('GPU stall due to ReadPixels') ? 'webgl_read_pixels'
+          : text.startsWith('THREE.') ? 'three'
+            : text.includes('WebGL') ? 'webgl'
+              : text.includes('未找到匹配的预览插件') ? 'missing_preview_plugin'
+                : text.startsWith('DataExplorer:') ? 'preview_plugin'
+                  : text.startsWith('[Vue warn]') ? 'vue' : 'other'
+      const location = message.location()
+      let path = ''
+      try { path = new URL(location.url).pathname } catch {}
+      const publicAsset = /^\/(?:module-ui\/(?:manager|console|system)\/)?assets\/[a-zA-Z0-9_.-]+\.js$/.test(path) ? path : undefined
+      const missingKey = text.match(/'((?:common|manager|system|console)\.[a-zA-Z0-9_.]+)' key/)
+      errors.push({ type: message.type(), category, stage,
+        message_sha256: createHash('sha256').update(text).digest('hex'),
+        source_asset: publicAsset, source_line: location.lineNumber, source_column: location.columnNumber,
+        ...(missingKey ? { i18n_key: missingKey[1] } : {}) })
+    }
   })
   page.on('pageerror', () => errors.push('pageerror'))
   page.on('response', response => {
@@ -135,7 +153,7 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'sgm-browser-failure.json'), JSON.stringify({
       stage, source_line: location ? Number(location[1]) : null,
       generation_requests: generationRequests, browser_errors: errors.length,
-      failed_business_responses: failures
+      console_diagnostics: errors.slice(0, 20), failed_business_responses: failures
     }))
     throw error
   } finally {
