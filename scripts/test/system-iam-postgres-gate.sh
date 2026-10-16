@@ -111,7 +111,7 @@ test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     platform-alert-management)
         [ "$PACKAGE_FILTER" = migration ] || { echo "platform-alert-management requires --package migration" >&2; exit 2; }
-        test_pattern='^TestPlatformAlertManagementForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(PlatformAlertManagementForwardMigration|Runner)AgainstPostgres$'
         ;;
     engine-address)
         [ "$PACKAGE_FILTER" = repository ] || { echo "engine-address requires --package repository" >&2; exit 2; }

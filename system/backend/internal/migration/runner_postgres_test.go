@@ -4928,8 +4928,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 111 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 111", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 113 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 113", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string

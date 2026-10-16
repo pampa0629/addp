@@ -2116,7 +2116,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 
 本地 `make test-module MODULE=monitor GO_ONLY=1` 最终退出 0，覆盖两项指标的打开/恢复阈值、等值与滞回、有效零、缺失/非有限值、重复/未来/过期采样、采样与网格缺口、重启及错配启动证据、输入点数上限、原始时长不足、CPU 计算窗口跨生命周期边界和停用。四组确定性测试自动由 Monitor 既有 `go test ./...` 发现；日志 `/tmp/addp-resource-pressure-go.log`。本批未运行 PostgreSQL、metrics、前端或 Online 门禁，不把 10.62 的 CI 结果计作此新内核的 CI 证据；无运行接线，不需要重启。
 
-### 10.65 统一入口切换的实施契约（实现完成，运行验收待执行）
+### 10.65 统一入口切换的实施契约（实现完成，运行验证见 10.67）
 
 本节细化 10.61、10.63 已确认范围，不发布尚无消费者的权限或占位路由。后端、前端、权限发布与门禁适配须在同一可运行批次完成；此前日志专用入口在该批次一次删除，没有地址别名或旧权限回退。
 
@@ -2164,6 +2164,21 @@ Monitor 页面唯一入口为 `/platform-alerts`，与租户告警页分开；�
 | `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test platform-alert-management'` | 通过，真实运行到 208 后发布 209，验证四项绑定、旧键停用、其他授权事实快照不变、版本推进、refresh family 撤销和重复执行不变。 |
 | `make test-system-iam-runner`、`make test-frontend-ci-registration` | 分别 13 项、20 项测试通过，21 个前端登记一致。新增迁移测试遵循既有 `AgainstPostgres$` 默认发现；新增浏览器用例进入既有模块门禁，无需新增 workflow。 |
 
-System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务内默认创建时间而失败；已按既有夹具方式修正时间，再通过上述正式入口复验 209。其余未变更迁移用例复用首轮成功结果，不将首轮整包记为通过。授权目录首轮的旧版本/数量断言及 Console 跨模块夹具的旧 Principal 字段也已修正，最终结果以上表为准。
+System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务内默认创建时间而失败；已按既有夹具方式修正时间，再通过上述正式入口复验 209。首轮还存在通用 Runner 的停用权限数量断言失败，上轮未完整核对该失败；修订和复验见 10.67，不将首轮整包记为通过。授权目录首轮的旧版本/数量断言及 Console 跨模块夹具的旧 Principal 字段也已修正，最终结果以上表为准。
 
-默认 `make test-changed` 已执行，但共享工作区包含其他会话变更，影响矩阵选中 24 个 owner，在缺少各外部测试连接的预检阶段退出 2，后续门禁未执行，不计通过；本批实际影响范围由上表标准入口分别验证。未执行个人环境运行验收、Hosted T4/T5 或真实群通知，相关项不计通过。本批没有自动重启服务。
+默认 `make test-changed` 已执行，但共享工作区包含其他会话变更，影响矩阵选中 24 个 owner，在缺少各外部测试连接的预检阶段退出 2，后续门禁未执行，不计通过；本批实际影响范围由上表标准入口分别验证。本批提交时尚未执行个人环境运行验收、Hosted T4/T5 或真实群通知，相关项当时不计通过；后续用户重启后的读取与导航验收见 10.67。本批没有自动重启服务。
+
+
+### 10.67 告警权限退役数量回归补验（2026-10-16）
+
+包含 `000209` 的 CI 提交 `05ea0c789` 中，Platform CI、Monitor 执行及通知 PostgreSQL、System 日志链路均通过；`TestPlatformAlertManagementForwardMigrationAgainstPostgres` 同样通过。System IAM 门禁的通用 `TestRunnerAgainstPostgres` 则失败：本批停用旧通知两项权限后，实际停用总数为 113，而通用目录退役断言仍为 111。该断言在此前本地整包运行中也已失败，上轮只复验 209 专项，漏核了此项；10.66 已修正记录。
+
+本轮仅同步通用目录的精确停用数量为 113，保持既有活跃权限下限、角色约束和其他目录校验不变。已有 `platform-alert-management` 标准筛选同时运行 209 前向发布和从空库执行全部正式迁移的通用 Runner，入口自检同步断言两项均被选择。默认 CI 的 `AgainstPostgres$` 已覆盖二者，无需变更 workflow、IAM 实现、生产迁移或权限范围。本轮无需重启个人服务。
+
+最小验证命令为 `make test-system-iam-runner`、`make test-module MODULE=system GO_ONLY=1`，以及配置已核实端口与允许测试库后的 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test platform-alert-management'`。上述三项入口已通过：13 项门禁入口自检、System Go T1，以及真实 PostgreSQL 中的 209 前向发布与通用 Runner（共 2 项业务测试，另有隔离库重置检查）。仅调整测试和筛选器，未改变产品代码或生产迁移。
+
+用户标准重启并重新完成密码/MFA 登录后，System 与 Monitor `/health/ready` 均为 ready，运行提交为 `302117ca2`，包含入口实现 `33dd5c84d`。Safari 实测 System 来源诊断只显示健康、策略与活动数量；点击链接进入唯一 Monitor 页面，来源类别与观察器 ID 正确进入 URL，真实显示一条“源容量接近额度”警告。通知页读取原日志类别的企业微信目标（仅固定无 key 端点）及 497 条投递历史；第二页刷新后页签、来源上下文与页码保持，浏览器返回恢复 System 原诊断页。新增草稿两类均未勾选、启用为关闭，查看后关闭且未保存；未触发真实测试发送、失败重投、告警确认或抑制。上述是个人运行环境的读取和导航验收，不替代 Hosted T4/T5、后台资源规则运行或消息接收验收。
+
+本轮 CI 修复提交尚待推送验证，不能将前一提交失败的 System IAM Job 记为通过；前一提交其他已通过且输入未变的告警入口验证继续有效。
+
+本轮默认 `make test-changed` 对共享工作区 35 个变更选中 24 个 owner，在外部 T2 连接缺失预检退出 2，后续未执行，不计通过；上述三项标准入口已分别验证本次修正的实际范围。
