@@ -251,8 +251,11 @@ test.describe('栅格真实编辑器', () => {
       expect(execution.module).toBe('develop')
       expect(execution.metadata.lineage_facts.inputs.map(input => input.locator).sort()).toEqual([...evidence.source_locators].sort())
       const monitorRead = page.waitForResponse(response => response.ok() && response.request().method() === 'GET' &&
-        new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${receipt.execution_id}`)
+        new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${receipt.execution_id}/tree`)
       await page.goto(`${process.env.CONSOLE_URL}/monitor/executions?execution_id=${encodeURIComponent(receipt.execution_id)}`)
+      const monitorAPI = await browserAPIFromResponse(await monitorRead, process.env.GATEWAY_URL, auth)
+      await api.dispose()
+      api = monitorAPI
       const detail = page.frameLocator('iframe[data-testid="module-iframe"]').locator('.execution-detail-content')
       await expect(detail).toBeVisible()
       await expect(detail).toContainText(receipt.execution_id)
@@ -264,9 +267,6 @@ test.describe('栅格真实编辑器', () => {
       for (const name of evidence.source_names) await expect(groups.nth(0)).toContainText(name)
       await expect(groups.nth(1)).toContainText(evidence.target_name)
       await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-editor-monitor.png`) })
-      const monitorAPI = await browserAPIFromResponse(await monitorRead, process.env.GATEWAY_URL, auth)
-      await api.dispose()
-      api = monitorAPI
       expect(counts).toEqual({ create: 1, update: 0, execute: 1 })
       expect(pageErrors).toBe(0)
       expect(requestErrors).toEqual([])
