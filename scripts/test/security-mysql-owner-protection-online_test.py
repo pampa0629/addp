@@ -1507,6 +1507,38 @@ for (const status of ['success', 'failed']) {
             capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_browser_native_transfer_preserves_all_protected_source_columns(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const helper = source.slice(source.indexOf('  function checkRows('), source.indexOf('  async function runTransfer('))
+assert.ok(helper.includes('async function targetRows'))
+const expect = value => ({ toBe: expected => assert.equal(value, expected),
+  toHaveLength: expected => assert.equal(value.length, expected), toEqual: expected => assert.deepEqual(value, expected) })
+const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1, customer_code: `CUST-1000${i + 1}`, city: 'fixture-city' }))
+const columns = ['city', 'customer_code', 'id']
+let payload = { data: { columns, rows } }
+const methods = new Function('json', 'getAPI', 'expect', 'input', 'targetColumns', 'serviceColumns', helper + '; return { targetRows, checkRows }')(
+  async value => value, () => ({ get: async () => payload }), expect, { target_locator: 'fixture' }, columns, ['customer_code', 'id'])
+assert.deepEqual(await methods.targetRows(), rows)
+methods.checkRows(rows.map(({ id, customer_code }) => ({ id, customer_code })))
+for (const data of [
+  { columns: ['customer_code', 'id'], rows: rows.map(({ id, customer_code }) => ({ id, customer_code })) },
+  { columns: [...columns, 'email'], rows: rows.map(row => ({ ...row, email: 'sensitive' })) },
+  { columns, rows: rows.map(row => ({ ...row, email: 'hidden-sensitive' })) },
+  { columns, rows: rows.slice(1) },
+  { columns, rows: rows.map(row => ({ ...row, customer_code: 'changed' })) }
+]) {
+  payload = { data }
+  await assert.rejects(() => methods.targetRows(), { code: 'ERR_ASSERTION' })
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe],
+            input=(SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_browser_failure_and_missing_report_cannot_reuse_previous_success(self):
         with tempfile.TemporaryDirectory() as directory:
             artifact = Path(directory)

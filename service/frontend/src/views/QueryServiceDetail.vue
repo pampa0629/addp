@@ -882,7 +882,9 @@ const loadPreviewData = async () => {
       ElMessage.warning(t('service.query.noDataWarning'))
     }
   } catch (error) {
-    console.error('加载数据预览失败:', error)
+    if (error.response?.status !== 403 || error.response?.data?.error_code !== 'data_protection_required') {
+      console.error('加载数据预览失败:', error)
+    }
     ElMessage.error(t('service.query.loadPreviewFailed') + ': ' + (error.response?.data?.error || error.message))
   } finally {
     previewLoading.value = false

@@ -39,6 +39,36 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
   }
 })
 
+test('a handled protection refusal stays visible without a runtime console error', async () => {
+  const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
+  const method = source.slice(source.indexOf('const loadPreviewData = async'), source.indexOf('const handlePreviewPageChange'))
+  for (const [status, code, expectedLogs] of [
+    [403, 'data_protection_required', 0], [403, 'permission_denied', 1],
+    [500, 'data_protection_required', 1], [undefined, undefined, 1]
+  ]) {
+    const logs = []
+    const messages = []
+    const error = { message: 'request failed', response: status ? { status, data: { error_code: code, error: 'controlled reason' } } : undefined }
+    const state = {
+      service: { value: { service_name: 'protected', named_parameters: [] } },
+      previewData: { value: [{ id: 'old-result' }] }, previewLoading: { value: false },
+      previewPagination: { value: { hasMore: true, nextCursor: 'old-cursor' } },
+      queryUnavailable: { value: false }, previewNamedParameterValues: {},
+      buildPreviewRequest: () => ({}), queryServiceAPI: { testQuery: async () => { throw error } },
+      ElMessage: { error: message => messages.push(message) }, t: key => key,
+      console: { error: (...args) => logs.push(args) }
+    }
+    const load = vm.runInContext(`${method}\nloadPreviewData`, vm.createContext(state))
+    await load()
+    assert.equal(logs.length, expectedLogs, `${status}/${code}`)
+    assert.deepEqual(messages, [`service.query.loadPreviewFailed: ${error.response?.data.error || error.message}`])
+    assert.equal(state.previewData.value.length, 0)
+    assert.equal(state.previewLoading.value, false)
+    assert.equal(state.previewPagination.value.hasMore, false)
+    assert.equal(state.previewPagination.value.nextCursor, '')
+  }
+})
+
 test('uses published geometry metadata for map preview', () => {
   const rows = [{ id: 1, custom_shape: '{"type":"Point","coordinates":[120,30]}' }]
   const result = buildQueryServicePreview({

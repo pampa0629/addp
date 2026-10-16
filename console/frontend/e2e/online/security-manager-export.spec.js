@@ -193,7 +193,7 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 }
 
 
-async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal) {
+async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal, sourceColumns) {
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const enrollmentPath = `/api/v1/security/protection-enrollments/${input.enrollment_id}`
@@ -205,12 +205,16 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
   let validityChanged = false
   let outcome
   const servicePath = `/api/query/${encodeURIComponent(input.service_payload.service_name)}/query`
-  const serviceRequest = { select: ['id', 'customer_code', 'email'], order_by: [{ field: 'id', direction: 'asc' }], page: { limit: 100 }, format: 'json' }
-  function checkRows(rows) {
+  const serviceColumns = input.service_payload.data_config.default_fields.filter(field => field !== 'email').sort()
+  const targetColumns = [...sourceColumns].sort()
+  expect(targetColumns).not.toContain('email')
+  expect(targetColumns).toContain('id')
+  expect(targetColumns).toContain('customer_code')
+  function checkRows(rows, columns = serviceColumns) {
     expect(rows).toHaveLength(5)
     expect(rows.map(row => String(row.id)).sort()).toEqual(['1', '2', '3', '4', '5'])
     for (const row of rows) {
-      expect(Object.keys(row).sort()).toEqual(['customer_code', 'id'])
+      expect(Object.keys(row).sort()).toEqual(columns)
       expect(row.customer_code).toBe(`CUST-1000${row.id}`)
     }
   }
@@ -218,8 +222,8 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const response = await json(await getAPI().get('/api/v1/manager/preview', { params: {
       locator: input.target_locator, page: 1, page_size: 100
     } }), 'browser Transfer target')
-    expect([...response.data.columns].sort()).toEqual(['customer_code', 'id'])
-    checkRows(response.data.rows)
+    expect([...response.data.columns].sort()).toEqual(targetColumns)
+    checkRows(response.data.rows, targetColumns)
     return [...response.data.rows].sort((a, b) => Number(a.id) - Number(b.id))
   }
   async function runTransfer(status) {
@@ -487,7 +491,7 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
     const resourceFilters = await verifyResourceCombinationFilters(page, browserAPI, env, actual, navigateWithBrowserSession)
     const developProtection = await verifyDevelopProtectionRefusal(page, browserAPI, env, navigateWithBrowserSession)
     const outputProtection = await verifyServiceTransferProtectionRefusal(page, env, navigateWithBrowserSession, () => browserAPI,
-      value => { expectedServiceRefusalPath = value })
+      value => { expectedServiceRefusalPath = value }, preview.data.columns)
     await navigateWithBrowserSession(path, '/api/v1/manager/preview')
     await expect(frame.getByRole('columnheader', { name: 'customer_code', exact: true })).toBeVisible()
 
