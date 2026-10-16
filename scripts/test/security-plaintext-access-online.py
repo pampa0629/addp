@@ -686,6 +686,7 @@ def initialize_hosted(tenant_id: int, engine_id: int, gateway_url: str) -> None:
                 "allowed_algorithms": ["addp.mask.keep_prefix_suffix/v2"], "invalid_value_effect": "suppress",
             },
         }])
+    wait_for_scan(applicant, engine_id, time.monotonic() + 180)
     authorizer = GatewayClient(gateway_url, required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30)
     try:
         for index, consumer in enumerate((applicant, approver)):

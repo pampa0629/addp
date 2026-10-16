@@ -177,21 +177,13 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	if err := f.validateIdentity(); err != nil {
 		return "", err
 	}
-	if f.Boundary == nil || f.Boundary.Layout != "single" || f.ItemType != "table" {
+	if f.Boundary == nil || f.Boundary.Layout != "single" {
 		return "", errors.New("unsupported authorization boundary")
 	}
 	p := f.Boundary.NativeTarget
-	if len(p.Segments) != 3 || p.EngineID != f.EngineID || p.Segments[1].Name == "" || p.Segments[2].Name == "" {
-		return "", errors.New("invalid native table boundary")
-	}
-	expected := plugin.TabularItemPath(f.EngineID, plugin.EngineCatalogTermSchema, p.Segments[1].Name, p.Segments[2].Name)
-	if !reflect.DeepEqual(p, expected) || f.FullName != p.Segments[1].Name+"."+p.Segments[2].Name {
-		return "", errors.New("native table boundary does not match data item")
-	}
-	for _, segment := range p.Segments {
-		if !utf8.ValidString(segment.Name) || strings.ContainsRune(segment.Name, 0) {
-			return "", errors.New("invalid native name")
-		}
+	itemType, fullName, err := nativeSingleIdentity(p)
+	if err != nil || p.EngineID != f.EngineID || f.ItemType != itemType || f.FullName != fullName {
+		return "", errors.New("native boundary does not match data item")
 	}
 	canonical := struct {
 		SchemaVersion   string                 `json:"schema_version"`
@@ -207,4 +199,32 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// nativeSingleIdentity validates exact typed coordinates. A dotted full name is
+// an identity input, never a substitute for comparing the complete native path.
+func nativeSingleIdentity(p plugin.EngineCatalogPath) (string, string, error) {
+	invalid := errors.New("unsupported native authorization target")
+	if p.EngineID == 0 || len(p.Segments) != 3 || p.Segments[1].Name == "" || p.Segments[2].Name == "" {
+		return "", "", invalid
+	}
+	namespace, leaf := p.Segments[1], p.Segments[2]
+	var expected plugin.EngineCatalogPath
+	switch {
+	case leaf.Term == plugin.EngineCatalogTermTable && (namespace.Term == plugin.EngineCatalogTermSchema || namespace.Term == plugin.EngineCatalogTermDatabase):
+		expected = plugin.TabularItemPath(p.EngineID, namespace.Term, namespace.Name, leaf.Name)
+	case leaf.Term == plugin.EngineCatalogTermCollection && namespace.Term == plugin.EngineCatalogTermDatabase:
+		expected = plugin.EngineCatalogBranchLeafPath(plugin.DynamicSchemaCatalogModel(), p.EngineID, namespace.Term, namespace.Name, leaf.Term, plugin.EngineCatalogKindCollection, leaf.Name)
+	default:
+		return "", "", invalid
+	}
+	if !reflect.DeepEqual(p, expected) {
+		return "", "", invalid
+	}
+	for _, segment := range p.Segments {
+		if !utf8.ValidString(segment.Name) || strings.ContainsRune(segment.Name, 0) {
+			return "", "", invalid
+		}
+	}
+	return leaf.Term, namespace.Name + "." + leaf.Name, nil
 }

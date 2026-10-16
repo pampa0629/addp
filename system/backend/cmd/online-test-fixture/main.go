@@ -65,6 +65,7 @@ var sourceInitializerPermissions = []string{
 	"system.engine_access_approval_requirement.initialize",
 	"system.engine_access_delegation.create",
 	"system.engine_access_grant.create",
+	"system.engine_access_grant.read",
 }
 
 var plaintextApplicantPermissions = []string{

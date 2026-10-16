@@ -1483,27 +1483,57 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
 
 class HostedGovernanceInitializationTest(unittest.TestCase):
+    def setUp(self):
+        self.scan = patch.object(ONLINE, "wait_for_scan", return_value="preparation-scan").start()
+        self.addCleanup(patch.stopall)
+
     def source_clients(self):
-        authorizer = Mock()
-        authorizer.request.side_effect = lambda method, path, expected, body=None: ONLINE.SUPPORT.Response(
-            200, {"principal": {"type": "user", "id": "8"},
-                  "context": {"type": "tenant", "tenant_id": "2"},
-                  "authorization": {"role_assignments": [{"permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}}) if method == "GET" else ONLINE.SUPPORT.Response(
-                      201, dict(body, engine_id=str(body["catalog_path"]["engine_id"]), approval_mode="independent", revocation=None))
-        consumer = Mock()
-        consumer.request.return_value = ONLINE.SUPPORT.Response(200, {
-            "principal": {"type": "user", "id": "7"},
-            "context": {"type": "tenant", "tenant_id": "2"},
+        import hashlib
+        authorizer, consumer = Mock(), Mock()
+        context = ONLINE.SUPPORT.Response(200, {
+            "principal": {"type": "user", "id": "7"}, "context": {"type": "tenant", "tenant_id": "2"},
             "token": {"type": "first_party_access_token"},
             "authorization": {"role_assignments": [{"role_key": "online.security", "permissions": sorted(ONLINE.REQUIRED_PERMISSIONS)}]}})
-        context = consumer.request.return_value
-        consumer.request.side_effect = lambda method, path, expected, body=None: context if method == 'GET' else ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
+        def prepare(method, path, expected, body=None):
+            if path == '/api/v1/system/auth/context':
+                return ONLINE.SUPPORT.Response(200, {"principal": {"type": "user", "id": "8"},
+                    "context": {"type": "tenant", "tenant_id": "2"},
+                    "authorization": {"role_assignments": [{"permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}})
+            if method == 'GET':
+                fingerprint = path.split('/')[-2]
+                engine = int(path.split('/')[5])
+                namespace = 'Outdoor' if engine == 29 else 'security_fixture' if engine == 23 else ONLINE.TARGET_SCHEMA
+                names = ['Persons'] if engine == 29 else [ONLINE.SOURCE_TABLE, ONLINE.BANK_SOURCE] if engine == 23 else list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
+                name = next(name for name in names if hashlib.sha256(f'{engine}:{namespace}.{name}'.encode()).hexdigest() == fingerprint)
+                term = 'collection' if engine == 29 else 'table'
+                return ONLINE.SUPPORT.Response(200, {'schema_version': 'meta.data_item_authorization_facts/v1',
+                    'item_fingerprint': fingerprint, 'engine_id': str(engine), 'item_type': term,
+                    'full_name': namespace + '.' + name, 'basis_state': 'complete', 'observed_at': '2026-10-16T00:00:00Z',
+                    'boundary_hash': 'a' * 64, 'boundary': {'layout': 'single', 'native_target': {
+                        'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
+                            {'term': 'server', 'kind': 'server', 'name': ''},
+                            {'term': 'database' if engine in (23, 29) else 'schema', 'kind': 'namespace', 'name': namespace},
+                            {'term': term, 'kind': term, 'name': name}]}}})
+            return ONLINE.SUPPORT.Response(201, dict(body, engine_id=str(body['catalog_path']['engine_id']),
+                approval_mode='independent', revocation=None, boundary_hash=body['expected_boundary_hash']))
+        def read(method, path, expected, body=None):
+            if path == '/api/v1/system/auth/context': return context
+            if method == 'GET':
+                engine = int(path.split('/')[5])
+                namespace = 'Outdoor' if engine == 29 else 'security_fixture' if engine == 23 else ONLINE.TARGET_SCHEMA
+                names = ['Persons'] if engine == 29 else [ONLINE.SOURCE_TABLE, ONLINE.BANK_SOURCE] if engine == 23 else list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
+                return ONLINE.SUPPORT.Response(200, [{'full_name': namespace + '.' + name,
+                    'item_type': 'collection' if engine == 29 else 'table',
+                    'fingerprint': hashlib.sha256(f'{engine}:{namespace}.{name}'.encode()).hexdigest()} for name in names])
+            return ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
+        authorizer.request.side_effect, consumer.request.side_effect = prepare, read
         return authorizer, consumer
 
     def test_source_grants_cover_only_ten_exact_record_datasets_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
         ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
+        self.assertEqual([call.args[1] for call in self.scan.call_args_list], [17, 23, 29])
         self.assertEqual(len(writes), 10)
         self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 10)
         actual = set()
@@ -1551,9 +1581,11 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
 
     def test_source_preparation_rejects_a_mismatched_issuance_without_continuing(self):
         authorizer, consumer = self.source_clients()
-        context = authorizer.request("GET", "unused", (200,))
-        authorizer.reset_mock()
-        authorizer.request.side_effect = [context, ONLINE.SUPPORT.Response(201, {"recipient_id": "8"})]
+        original = authorizer.request.side_effect
+        def wrong_receipt(method, path, expected, body=None):
+            if method == 'POST': return ONLINE.SUPPORT.Response(201, {"recipient_id": "8"})
+            return original(method, path, expected, body)
+        authorizer.request.side_effect = wrong_receipt
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
         self.assertEqual(sum(call.args[0] == "POST" for call in authorizer.request.call_args_list), 1)

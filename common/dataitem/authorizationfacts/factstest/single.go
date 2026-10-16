@@ -1,11 +1,12 @@
-// Package factstest creates complete, canonical single-table test facts.
+// Package factstest creates complete, canonical single-item test facts.
 // It is not a production facts reader or a native authorization fallback.
 package factstest
 
 import (
+	"time"
+
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
-	"time"
 )
 
 func Single(path plugin.EngineCatalogPath) authorizationfacts.AuthorizationFacts {
@@ -14,7 +15,7 @@ func Single(path plugin.EngineCatalogPath) authorizationfacts.AuthorizationFacts
 		panic(err)
 	}
 	facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
-		EngineID: path.EngineID, ItemFingerprint: fingerprint, ItemType: "table", FullName: path.Segments[1].Name + "." + path.Segments[2].Name,
+		EngineID: path.EngineID, ItemFingerprint: fingerprint, ItemType: path.Segments[2].Term, FullName: path.Segments[1].Name + "." + path.Segments[2].Name,
 		BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(),
 		Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: path}}
 	hash, err := facts.ComputeBoundaryHash()

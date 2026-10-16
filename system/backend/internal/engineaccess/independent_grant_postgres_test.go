@@ -268,13 +268,42 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			t.Fatalf("issue=%+v %v", issued, err)
 		}
 		assertRead("grant")
-		t.Run("unsupported collection has no native fallback", func(t *testing.T) {
+		t.Run("another collection cannot reuse table approval", func(t *testing.T) {
 			collection := engineplugin.EngineCatalogPath{Version: engineplugin.EngineCatalogPathVersion, EngineID: base.EngineID,
 				Segments: []engineplugin.EngineCatalogSegment{{Term: "server", Kind: "server"}, {Term: "database", Kind: "namespace", Name: "Outdoor"}, {Term: "collection", Kind: "collection", Name: "Persons"}}}
 			command := input
 			command.RequestID, command.CatalogPath = uuid.New(), collection
 			if _, err := service.CreateIndependentGrant(ctx, command); !errors.Is(err, commonapi.ErrBadRequest) {
-				t.Fatalf("unsupported layout accepted: %v", err)
+				t.Fatalf("collection reused unrelated table approval: %v", err)
+			}
+		})
+		t.Run("database single tables and collections bind formal grants", func(t *testing.T) {
+			for _, target := range []engineplugin.EngineCatalogPath{
+				engineplugin.TabularItemPath(base.EngineID, "database", "business", "customers"),
+				engineplugin.EngineCatalogBranchLeafPath(engineplugin.DynamicSchemaCatalogModel(), base.EngineID, "database", "Outdoor", "collection", "collection", "Persons"),
+			} {
+				binding := factstest.Binding(target)
+				typedService := NewService(NewRepository(db), func(*models.Engine) bool { return true }).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{target}}).WithIndependentTargetVerifier(service.independentTarget)
+				command := input
+				command.RequestID, command.CatalogPath = uuid.New(), target
+				command.ItemFingerprint, command.ExpectedBoundaryHash = binding.ItemFingerprint, binding.BoundaryHash
+				command.InitializeApproval = true
+				command.RequirementVersion = 1
+				row, err := typedService.CreateIndependentGrant(ctx, command)
+				if err != nil || row == nil || row.ItemFingerprint != binding.ItemFingerprint || row.BoundaryHash != binding.BoundaryHash {
+					t.Fatalf("typed grant=%+v err=%v", row, err)
+				}
+				result, err := NewRepository(db).readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{target}, Bindings: testReadBindings(target)})
+				if err != nil || result == nil || result.Targets[0].Reason != "grant" {
+					t.Fatalf("typed read denied after exact grant: %+v %v", result, err)
+				}
+				changed := command
+				changed.RequestID = uuid.New()
+				changed.CatalogPath.Segments = append([]engineplugin.EngineCatalogSegment(nil), target.Segments...)
+				changed.CatalogPath.Segments[2].Name = "unapproved"
+				if _, err := typedService.CreateIndependentGrant(ctx, changed); !errors.Is(err, commonapi.ErrBadRequest) {
+					t.Fatalf("changed target reused approved binding: %v", err)
+				}
 			}
 		})
 		t.Run("table and recipient filters precede pagination and preserve history", func(t *testing.T) {

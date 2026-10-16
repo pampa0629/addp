@@ -153,6 +153,29 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
 
+    def test_system_has_independent_meta_fact_credentials_before_any_application_start(self):
+        self.host._write_repository_script('scripts/dev/start.sh', '''
+            #!/usr/bin/env bash
+            set -euo pipefail
+            [[ "${SYSTEM_SERVICE_CLIENT_SECRET:-}" =~ ^[a-f0-9]{64}$ ]] || exit 2
+            for credential in META_SERVICE_CLIENT_SECRET SECURITY_SERVICE_CLIENT_SECRET; do
+              [ "$SYSTEM_SERVICE_CLIENT_SECRET" != "${!credential:-}" ] || exit 2
+            done
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+        ''')
+        subprocess.run(['git', 'add', 'scripts/dev/start.sh'], cwd=self.host.repository, check=True)
+        subprocess.run(['git', 'commit', '-qm', 'verify independent System credential'], cwd=self.host.repository, check=True)
+        for suite in ('security-mysql-owner-protection', 'security-plaintext-access'):
+            with self.subTest(suite=suite):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ONLINE_SUITE_INPUT=suite)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn('start:-meta', trace)
+                self.assertIn('make:test-online ONLINE_SUITE=' + suite, trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
+
     def test_plaintext_suite_reuses_hosted_lifecycle_with_two_users_and_browser_setup(self):
         result = self.run_gate(ONLINE_SUITE_INPUT='security-plaintext-access')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

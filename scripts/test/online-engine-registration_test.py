@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import hashlib
 import stat
 import sys
 import tempfile
@@ -26,13 +27,33 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         consumer_current = {'principal': {'type': 'user', 'id': '7'}, 'context': {'type': 'tenant', 'tenant_id': '2'}}
         authorizer, consumer = Mock(), Mock()
         def prepare(method, path, expected, body=None):
-            if method == 'GET':
+            if path == '/api/v1/system/auth/context':
                 return SimpleNamespace(payload=current)
-            self.assertEqual(expected, (201,))
-            return SimpleNamespace(payload=dict(body, engine_id=str(body['catalog_path']['engine_id']), approval_mode='independent', revocation=None))
-        def read(method, path, expected, body=None):
             if method == 'GET':
+                fingerprint = path.split('/')[-2]
+                item = self.target
+                return SimpleNamespace(payload={'schema_version': 'meta.data_item_authorization_facts/v1',
+                    'item_fingerprint': fingerprint, 'engine_id': str(item['engine_id']), 'item_type': item['term'],
+                    'full_name': item['full_name'], 'basis_state': 'complete', 'observed_at': '2026-10-16T00:00:00Z',
+                    'boundary_hash': 'a' * 64, 'boundary': {'layout': 'single', 'native_target': item['path']}})
+            self.assertEqual(expected, (201,))
+            return SimpleNamespace(payload=dict(body, engine_id=str(body['catalog_path']['engine_id']), approval_mode='independent', revocation=None, boundary_hash=body['expected_boundary_hash']))
+        def read(method, path, expected, body=None):
+            if path == '/api/v1/system/auth/context':
                 return SimpleNamespace(payload=consumer_current)
+            if method == 'GET':
+                engine = int(path.split('/')[5])
+                namespace = urllib.parse.unquote(path.split('branch=')[1])
+                name = {'results': 'hdfs_totals', 'Outdoor': 'Persons', 'business': 'customers'}[namespace]
+                term = 'collection' if namespace == 'Outdoor' else 'table'
+                full_name = namespace + '.' + name
+                self.target = {'engine_id': engine, 'term': term, 'full_name': full_name, 'path': {
+                    'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
+                        {'term': 'server', 'kind': 'server', 'name': ''},
+                        {'term': 'schema' if namespace == 'results' else 'database', 'kind': 'namespace', 'name': namespace},
+                        {'term': term, 'kind': term, 'name': name}]}}
+                return SimpleNamespace(payload=[{'full_name': full_name, 'item_type': term,
+                    'fingerprint': hashlib.sha256(f'{engine}:{full_name}'.encode()).hexdigest()}])
             self.assertEqual(path, '/api/v1/system/engine-access/read-checks/manager-preview')
             self.assertEqual(len(body['targets']), 1)
             return SimpleNamespace(payload={'observed_at': '2026-10-10T00:00:00Z'} if expected == (200,) else {})
@@ -49,6 +70,8 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         self.assertEqual(body['recipient_id'], '7')
         self.assertEqual(body['action'], 'read')
         self.assertIs(body['initialize_approval'], True)
+        self.assertEqual(body['item_fingerprint'], hashlib.sha256(b'4:results.hdfs_totals').hexdigest())
+        self.assertEqual(body['expected_boundary_hash'], 'a' * 64)
         self.assertEqual(body['catalog_path']['segments'][-1], {'term': 'table', 'kind': 'table', 'name': 'hdfs_totals'})
         checks = [call for call in consumer.request.call_args_list if call.args[0] == 'POST']
         self.assertEqual([call.args[2] for call in checks], [(403,), (200,)])
@@ -82,6 +105,42 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
                     [(29, namespace, 'Outdoor', 'Persons')], item_term=term)
             authorizer.request.assert_not_called()
             consumer.request.assert_not_called()
+
+    def test_mysql_table_uses_database_namespace_and_bound_receipt(self):
+        _, authorizer, consumer = self.grant_clients()
+        receipts = REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(23, 'database', 'business', 'customers')])
+        self.assertEqual(receipts[0]['boundary_hash'], 'a' * 64)
+        self.assertEqual(receipts[0]['catalog_path']['segments'][1]['term'], 'database')
+
+    def test_unresolved_or_substituted_facts_cannot_issue_a_grant(self):
+        for corruption in ('basis_state', 'engine_id', 'item_type', 'boundary', 'boundary_hash'):
+            _, authorizer, consumer = self.grant_clients()
+            original = authorizer.request.side_effect
+            def corrupted(method, path, expected, body=None):
+                response = original(method, path, expected, body)
+                if path.endswith('/authorization-facts'):
+                    response.payload[corruption] = 'invalid'
+                return response
+            authorizer.request.side_effect = corrupted
+            with self.subTest(corruption=corruption), self.assertRaises(REGISTRATION.RegistrationError):
+                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+            self.assertFalse(any(call.args[0] == 'POST' for call in authorizer.request.call_args_list))
+
+    def test_missing_duplicate_or_wrong_persisted_identity_stops_before_grant(self):
+        for corruption in ('missing', 'duplicate', 'fingerprint'):
+            _, authorizer, consumer = self.grant_clients()
+            original = consumer.request.side_effect
+            def corrupted(method, path, expected, body=None):
+                response = original(method, path, expected, body)
+                if '/items?branch=' in path:
+                    if corruption == 'missing': response.payload = []
+                    if corruption == 'duplicate': response.payload *= 2
+                    if corruption == 'fingerprint': response.payload[0]['fingerprint'] = 'b' * 64
+                return response
+            consumer.request.side_effect = corrupted
+            with self.subTest(corruption=corruption), self.assertRaises(REGISTRATION.RegistrationError):
+                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
+            self.assertFalse(any(call.args[0] == 'POST' for call in authorizer.request.call_args_list))
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(

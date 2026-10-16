@@ -2160,6 +2160,9 @@ def initialize_source_grants(
         (mysql_engine_id, "database", mysql_database, BANK_SOURCE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, BANK_TARGET),
     ]
+    deadline = time.monotonic() + 180
+    for engine in (postgres_engine_id, mysql_engine_id, mongodb_engine_id):
+        wait_for_scan(consumer, engine, deadline)
     try:
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,

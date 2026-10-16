@@ -500,8 +500,8 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
 		}
 	}
-	if len(sourceInitializerPermissions) != 3 {
-		t.Fatal("source initializer must have only its three formal command qualifications")
+	if len(sourceInitializerPermissions) != 4 {
+		t.Fatal("source initializer must have only its four formal preparation qualifications")
 	}
 	for _, key := range sourceInitializerPermissions {
 		if contains(permissions, key) || contains(securityInitializerPermissions, key) || contains(consumerPermissions, key) {

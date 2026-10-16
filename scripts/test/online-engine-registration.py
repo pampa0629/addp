@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import json
 import os
 import stat
@@ -24,6 +26,7 @@ SOURCE_INITIALIZER_PERMISSIONS = {
     'system.engine_access_approval_requirement.initialize',
     'system.engine_access_delegation.create',
     'system.engine_access_grant.create',
+    'system.engine_access_grant.read',
 }
 
 
@@ -51,7 +54,7 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
     permissions = {permission for role in current.get('authorization', {}).get('role_assignments', [])
                    for permission in role.get('permissions', [])}
     if initializer_id == recipient_id or permissions != SOURCE_INITIALIZER_PERMISSIONS:
-        raise RegistrationError('source initializer must be separate and have only its three preparation permissions')
+        raise RegistrationError('source initializer must be separate and have only its four preparation permissions')
     receipts = []
     for engine_id, namespace_term, namespace, table in targets:
         body = {
@@ -66,13 +69,34 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
             'action': 'read', 'expiry_mode': 'until_revoked',
             'reason': 'Disposable Online exact record read acceptance',
         }
+        # Meta owns persisted identity; System re-reads the trusted boundary with
+        # its own Service credential. Neither the browser nor native names prove it.
+        full_name = namespace + '.' + table
+        items = consumer.request('GET', f'/api/v1/meta/engines/{engine_id}/items?branch=' + urllib.parse.quote(namespace, safe=''), (200,)).payload
+        if not isinstance(items, list):
+            raise RegistrationError('source Grant requires a scanned Meta item list')
+        matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == full_name and item.get('item_type') == item_term]
+        fingerprint = hashlib.sha256(f'{engine_id}:{full_name}'.encode()).hexdigest()
+        if len(matches) != 1 or matches[0].get('fingerprint') != fingerprint:
+            raise RegistrationError('source Grant requires one matching persisted DataItem identity')
+        facts = authorizer.request('GET', f'/api/v1/system/engines/{engine_id}/data-items/{fingerprint}/authorization-facts', (200,)).payload
+        expected_facts = {'schema_version': 'meta.data_item_authorization_facts/v1',
+                          'engine_id': str(engine_id), 'item_fingerprint': fingerprint,
+                          'item_type': item_term, 'full_name': full_name, 'basis_state': 'complete',
+                          'boundary': {'layout': 'single', 'native_target': body['catalog_path']}}
+        if (not isinstance(facts, dict) or any(facts.get(key) != value for key, value in expected_facts.items())
+            or not isinstance(facts.get('boundary_hash'), str) or not re.fullmatch('[0-9a-f]{64}', facts['boundary_hash'])
+            or not facts.get('observed_at')):
+            raise RegistrationError('source Grant requires a complete matching System authorization boundary')
+        body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'])
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}
         consumer.request('POST', check_path, (403,), check_body)
         issued = authorizer.request('POST', f'/api/v1/system/engines/{engine_id}/access_grants', (201,), body).payload
         expected = {key: body[key] for key in (
             'request_id', 'catalog_path', 'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
-        expected.update(engine_id=str(engine_id), approval_mode='independent', revocation=None)
+        expected.update(engine_id=str(engine_id), approval_mode='independent', revocation=None,
+                        item_fingerprint=fingerprint, boundary_hash=facts['boundary_hash'])
         if not isinstance(issued, dict) or any(issued.get(key) != value for key, value in expected.items()):
             raise RegistrationError('source Grant receipt differs from its exact consumer and record dataset')
         observed = consumer.request('POST', check_path, (200,), check_body).payload

@@ -283,6 +283,8 @@ set -a
 # Non-production defaults, only inside a verified disposable Hosted deployment.
 source "$ROOT_DIR/.env.example"
 set +a
+# System reads Meta facts as its own Service, never as a preparation or consumer User.
+export SYSTEM_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export INFRA_BIND_HOST=127.0.0.1
 export ADDP_ONLINE_HOST=1 ADDP_ONLINE_HOSTED=1 ADDP_ONLINE_TEST=1
 export ONLINE_SUITE POSTGRES_DB=addp_online SERVICE_HOST=127.0.0.1

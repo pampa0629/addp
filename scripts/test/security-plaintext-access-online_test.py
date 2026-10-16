@@ -160,12 +160,14 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
 
     def test_initializer_prepares_exact_table_for_each_distinct_user_and_initializes_requirement_once(self):
         with patch.object(ONLINE.SUPPORT, 'require_hosted_initialization'), \
+             patch.object(ONLINE, 'wait_for_scan') as scan, \
              patch.object(ONLINE, 'required_environment', return_value='fixture-token'), \
              patch.object(ONLINE, 'GatewayClient') as clients, \
              patch.object(ONLINE, 'validate_user_identity', side_effect=[{"principal_id": "41"}, {"principal_id": "42"}]), \
              patch.object(ONLINE.SUPPORT, 'initialize_fresh_governance') as governance, \
              patch.object(ONLINE.REGISTRATION, 'initialize_exact_record_read_grants') as grants:
             ONLINE.initialize_hosted(2, 17, 'http://gateway')
+        scan.assert_called_once()
         self.assertEqual(grants.call_count, 2)
         self.assertEqual(grants.call_args_list[0].args[3], [(17, 'schema', 'addp_online_security', 'exemption_source')])
         self.assertTrue(grants.call_args_list[0].kwargs['initialize_approval'])

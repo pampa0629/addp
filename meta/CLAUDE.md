@@ -178,7 +178,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `meta.task_provider.read|execute`，不得复用用户扫描任务权限。
 - 引擎数据项：`GET /engines/:engine_id/items`。
-- 授权资源事实：`GET /runtime/data-items/:fingerprint/authorization-facts`，仅允许固定 `addp-system`、`addp-catalog` Tenant Service 及 `meta.authorization_facts.read`；调用方复用 `common/client.MetaClient.ReadAuthorizationFacts`，不另建 HTTP 或祖先链拼装路线。在只读快照中精确查询，不回源、扫描或写回。首期支持原生 schema 普通表 `single`，其余布局明确不支持；DTO／摘要归轻量纯值包 `common/dataitem/authorizationfacts`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
+- 授权资源事实：`GET /runtime/data-items/:fingerprint/authorization-facts`，仅允许固定 `addp-system`、`addp-catalog` Tenant Service 及 `meta.authorization_facts.read`；调用方复用 `common/client.MetaClient.ReadAuthorizationFacts`，不另建 HTTP 或祖先链拼装路线。在只读快照中精确查询，不回源、扫描或写回。支持原生 schema 普通单表、MySQL database 普通单表和 MongoDB database 单集合 `single`，其余布局明确不支持；DTO／摘要归轻量纯值包 `common/dataitem/authorizationfacts`，状态派生归 Meta，权限裁决仍归 System。契约与未完成范围见平台《元数据扫描机制规范》。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - `resource.children.list` Tool 复用 `GET /resource-tree/:engine_id/node` 返回父资源及直接子资源，并使用独立 Delegated Tool scope；不新增第二条 Catalog HTTP 路由。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
@@ -258,3 +258,5 @@ cd meta/frontend && npm test && npm run build
 Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop.workflow.produced_target` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
 
 `GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。
+
+单项授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。

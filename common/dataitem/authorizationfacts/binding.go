@@ -9,7 +9,7 @@ import (
 )
 
 // Binding is the immutable, minimal approved boundary for the supported native
-// single-table slice. NativeTarget locates the actual read; it is not an ACL key.
+// single-table or single-collection slice. NativeTarget locates the actual read; it is not an ACL key.
 // Observation time and mutable metadata never belong to an approval binding.
 type Binding struct {
 	ItemFingerprint string                   `json:"item_fingerprint"`
@@ -22,8 +22,12 @@ func (b Binding) Validate() error {
 	if len(p.Segments) != 3 || !ValidItemFingerprint(b.ItemFingerprint) || !ValidItemFingerprint(b.BoundaryHash) {
 		return errors.New("invalid DataItem authorization binding")
 	}
+	itemType, fullName, err := nativeSingleIdentity(p)
+	if err != nil {
+		return err
+	}
 	f := AuthorizationFacts{SchemaVersion: AuthorizationFactsSchemaV1, EngineID: p.EngineID,
-		ItemFingerprint: b.ItemFingerprint, ItemType: "table", FullName: p.Segments[1].Name + "." + p.Segments[2].Name,
+		ItemFingerprint: b.ItemFingerprint, ItemType: itemType, FullName: fullName,
 		Boundary: &AuthorizationBoundary{Layout: "single", NativeTarget: p}}
 	hash, err := f.ComputeBoundaryHash()
 	if err != nil || hash != b.BoundaryHash {
@@ -45,17 +49,13 @@ func (f AuthorizationFacts) ApprovedBinding() (Binding, error) {
 // is established by reading that record from Meta and comparing its complete
 // typed boundary; a candidate (including a dotted-name collision) is no proof.
 func NativeCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) {
-	if len(path.Segments) != 3 {
-		return "", errors.New("unsupported native authorization target")
+	itemType, fullName, err := nativeSingleIdentity(path)
+	if err != nil {
+		return "", err
 	}
-	canonical := plugin.TabularItemPath(path.EngineID, plugin.EngineCatalogTermSchema, path.Segments[1].Name, path.Segments[2].Name)
-	if path.EngineID == 0 || path.Segments[1].Name == "" || path.Segments[2].Name == "" || !reflect.DeepEqual(canonical, path) {
-		return "", errors.New("unsupported native authorization target")
-	}
-	fullName := path.Segments[1].Name + "." + path.Segments[2].Name
 	fingerprint := models.GenerateItemFingerprint(path.EngineID, fullName)
 	f := AuthorizationFacts{SchemaVersion: AuthorizationFactsSchemaV1, EngineID: path.EngineID,
-		ItemFingerprint: fingerprint, ItemType: "table", FullName: fullName,
+		ItemFingerprint: fingerprint, ItemType: itemType, FullName: fullName,
 		Boundary: &AuthorizationBoundary{Layout: "single", NativeTarget: path}}
 	if _, err := f.ComputeBoundaryHash(); err != nil {
 		return "", err

@@ -163,7 +163,7 @@ IAM 环境密钥边界：
 
 - ADDP 只签发随机 opaque Token，不签发或解析用户 JWT，因此禁止配置 `JWT_SECRET`。
 - 三员账号只能通过离线 IAM Bootstrap 建立；Bootstrap Secret、三员密码、TOTP Secret 和验证码均不得进入环境变量。
-- `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和各业务模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是明确的可选项：仅用于 System 以独立 `addp-system` Tenant Service 身份反查 Catalog 的持久办理依据；未配置不阻断 System Ready 或历史核清，但新受理返回 `503 fulfillment_capability_unavailable`。不借用其他 Secret，不改变目标批准要求，不推导 Catalog 已退出。
+- `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和各业务模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是明确的可选项：用于 System 以独立 `addp-system` Tenant Service 身份读取 Meta 授权边界事实及反查 Catalog 的持久办理依据；未配置不阻断 System Ready 或历史核清，但依赖 Meta 的授权事实／源读取核验返回 `503 authorization_facts_unavailable`，Catalog 新受理返回 `503 fulfillment_capability_unavailable`。不借用其他 Secret，不改变目标批准要求，不推导 Catalog 已退出。
 - 全新生产配置生成独立 System Secret；已有配置只校验，缺失时不静默增加或轮换。非空值同样必须为独立的 32–72 字节 Secret。移除配置时，启动 Provisioner 将该 OAuth Client 停用并撤销其旧会话；重新配置走同一凭据路线。Catalog URL 来自 `CATALOG_URL`，不作为 System Ready 探测前置。
 - `OAUTH_PREVIOUS_USER_CODE_PEPPER` 只能在受控轮换窗口临时设置，轮换完成后必须删除。
 - `ENCRYPTION_KEY` 用于引擎连接信息等平台数据加密，不是 Token 签名密钥，不得与上述 IAM Secret 复用。

@@ -28,7 +28,7 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 			ItemFingerprint: item.Fingerprint, EngineID: item.EngineID, ItemType: item.ItemType, FullName: item.FullName,
 			ObservedAt: tx.NowFunc().UTC(), BasisState: authorizationfacts.AuthorizationBasisIncomplete}
 		layout := commonjson.String(item.Attributes, "item", "layout")
-		if item.ItemType != "table" || (layout != "" && layout != "single") {
+		if (item.ItemType != "table" && item.ItemType != "collection") || (layout != "" && layout != "single") {
 			facts.BasisState = authorizationfacts.AuthorizationBasisUnsupported
 			return facts.Validate()
 		}
@@ -43,7 +43,8 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 		if err != nil {
 			return err
 		}
-		if parent.NodeType != plugin.EngineCatalogTermSchema {
+		if (parent.NodeType != plugin.EngineCatalogTermSchema && parent.NodeType != plugin.EngineCatalogTermDatabase) ||
+			(item.ItemType == "collection" && parent.NodeType != plugin.EngineCatalogTermDatabase) {
 			facts.BasisState = authorizationfacts.AuthorizationBasisUnsupported
 			return facts.Validate()
 		}
@@ -60,11 +61,15 @@ func (s *MetadataQueryService) GetDataItemAuthorizationFacts(ctx context.Context
 		}
 		if root.NodeType != plugin.EngineCatalogTermServer || root.ParentNodeID != nil || root.FullName != "" ||
 			parent.FullName != parent.Name || item.FullName != parent.Name+"."+item.Name ||
-			commonjson.String(item.Attributes, "storage", "schema_name") != parent.Name {
+			(item.ItemType == "table" && commonjson.String(item.Attributes, "storage", "schema_name") != parent.Name) {
 			facts.BasisState = authorizationfacts.AuthorizationBasisNeedsRefresh
 			return facts.Validate()
 		}
-		facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(item.EngineID, parent.NodeType, parent.Name, item.Name)}
+		target := plugin.TabularItemPath(item.EngineID, parent.NodeType, parent.Name, item.Name)
+		if item.ItemType == "collection" {
+			target = plugin.EngineCatalogBranchLeafPath(plugin.DynamicSchemaCatalogModel(), item.EngineID, parent.NodeType, parent.Name, plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, item.Name)
+		}
+		facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: target}
 		hash, err := facts.ComputeBoundaryHash()
 		if err != nil {
 			return err

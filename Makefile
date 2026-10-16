@@ -409,7 +409,7 @@ test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权�
 	@bash scripts/test/asset-postgres-gate.sh
 
 test-meta-postgres: ## 使用测试 PostgreSQL 数据库运行 Meta 迁移、目录统计与字段血缘取证集成门禁
-	@bash scripts/test/meta-postgres-gate.sh
+	@bash scripts/test/meta-postgres-gate.sh $(META_POSTGRES_TEST_ARGS)
 
 test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁
 	@bash scripts/test/catalog-postgres-gate.sh
