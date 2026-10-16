@@ -1,7 +1,7 @@
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { identity, json, login } from './transfer-browser-support.js'
+import { browserAPIFromResponse, identity, json, login } from './transfer-browser-support.js'
 
 test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE || '{}')
@@ -110,13 +110,14 @@ test('栅格页面多选、首次保存、重载与真实执行', async ({ page 
   const token = await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
     process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/develop/workflow?action=create')
   businessStarted = true
-  const api = await request.newContext({ baseURL: process.env.GATEWAY_URL,
+  let api = await request.newContext({ baseURL: process.env.GATEWAY_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
   let taskId
   let report
   try {
     const auth = identity(await json(await api.get('/api/v1/system/auth/context'), 'editor AuthContext'))
     expect(auth.principalType).toBe('user')
+    expect(auth.contextType).toBe('tenant')
     expect(auth.principalID).toBe(evidence.principal_id)
     expect(auth.tenantID).toBe(evidence.tenant_id)
     expect([...auth.permissions].sort()).toEqual(evidence.permissions_verified)
@@ -211,9 +212,15 @@ test('栅格页面多选、首次保存、重载与真实执行', async ({ page 
     expect(created.name).toBe(evidence.task_name)
     expect(created.execution_config.engine_id).toBe(evidence.workflow_engine_id)
     await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBe(String(taskId))
+    const reloadedTask = page.waitForResponse(response => response.ok() && response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === `/api/v1/develop/task-definitions/${taskId}`)
     await page.reload()
     await expect(frame.locator('.primary-actions').getByRole('button', { name: '执行', exact: true })).toBeEnabled()
-    const saved = await json(await api.get(`/api/v1/develop/task-definitions/${taskId}`), 'reloaded editor task')
+    const reloadedResponse = await reloadedTask
+    const saved = await json(reloadedResponse, 'reloaded editor task')
+    const reloadedAPI = await browserAPIFromResponse(reloadedResponse, process.env.GATEWAY_URL, auth)
+    await api.dispose()
+    api = reloadedAPI
     expect(saved.name).toBe(evidence.task_name)
     expect(saved.content.workflow_definition).toEqual(created.content.workflow_definition)
     expect(saved.execution_config.engine_id).toBe(evidence.workflow_engine_id)
@@ -238,6 +245,24 @@ test('栅格页面多选、首次保存、重载与真实执行', async ({ page 
     }, { timeout: 90_000 }).toBe('success')
     expect(execution.source_task_id).toBe(String(taskId))
     expect(execution.module).toBe('develop')
+    expect(execution.metadata.lineage_facts.inputs.map(input => input.locator).sort()).toEqual([...evidence.source_locators].sort())
+    const monitorRead = page.waitForResponse(response => response.ok() && response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${receipt.execution_id}`)
+    await page.goto(`${process.env.CONSOLE_URL}/monitor/executions?execution_id=${encodeURIComponent(receipt.execution_id)}`)
+    const detail = page.frameLocator('iframe[data-testid="module-iframe"]').locator('.execution-detail-content')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText(receipt.execution_id)
+    await expect(detail.locator('.el-tag').filter({ hasText: /成功|Success/i }).first()).toBeVisible()
+    const groups = detail.locator('.execution-lineage__group')
+    await expect(groups).toHaveCount(2)
+    await expect(groups.nth(0).locator('.execution-lineage__card')).toHaveCount(3)
+    await expect(groups.nth(1).locator('.execution-lineage__card')).toHaveCount(1)
+    for (const name of evidence.source_names) await expect(groups.nth(0)).toContainText(name)
+    await expect(groups.nth(1)).toContainText(evidence.target_name)
+    await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-editor-monitor.png`) })
+    const monitorAPI = await browserAPIFromResponse(await monitorRead, process.env.GATEWAY_URL, auth)
+    await api.dispose()
+    api = monitorAPI
     expect(counts).toEqual({ create: 1, update: 0, execute: 1 })
     expect(pageErrors).toBe(0)
     expect(requestErrors).toEqual([])
