@@ -1988,7 +1988,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 
 ### 10.61 平台资源告警的迁移范围（2026-10-15 已确认，分批实施）
 
-2026-10-15 用户已同意本节原则，并进一步确认：告警统一归 Monitor；Platform 与 Tenant 分开；首期平台告警由平台系统管理员管理，按查看、处理、规则配置及通知管理区分功能权限。本节从待确认转为分批实施契约，不把确认视为代码、迁移或验收已完成。IAM 内核及角色授权不在本任务实现范围，Monitor 负责自身权限声明及校验。
+2026-10-15 用户已同意本节原则，并进一步确认：告警统一归 Monitor；Platform 与 Tenant 分开；首期平台告警由平台系统管理员管理，按查看、处理、规则配置及通知管理区分功能权限。本节从待确认转为分批实施契约，不把确认视为代码、迁移或验收已完成。IAM 内核不在本任务实现范围；2026-10-16 用户允许本会话同步入口切换所需的限定权限发布，具体边界见 10.63，其余角色与授权行为仍不修改。
 
 #### 已核实的事实与建议边界
 
@@ -2026,7 +2026,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 
 后台已可通过 Monitor 专用服务身份取得 System 的启用节点 ID/版本投影；结合当前启用采集目标及来源策略评估，不保存管理员 Token、不直接查询 System 私有表。规则配置请求沿当前 Platform User 核验主机；后台服务链路不能冒充用户链路。该投影没有主机名称，显示名称由当前用户获授权的查询解析，不为文案扩大服务权限。
 
-原日志权限不能自动获得资源告警范围，日志正文权限继续独立。跨类别通知目标的地址、凭据或订阅修改必须核验所有受影响类别的管理能力，避免仅能管理日志的主体改变资源通知。所需能力及拒绝行为由本方案给出契约；IAM 内核、角色授权和 System 权限发布由对应 owner 承接，本任务不自行修改。若发布所需权限尚未就绪，相关实现保持待验收，不借管理员默认放行或宣称完成。
+原日志权限不能自动获得资源告警范围，日志正文权限继续独立。跨类别通知目标的地址、凭据或订阅修改必须核验所有受影响类别的管理能力，避免仅能管理日志的主体改变资源通知。所需能力及拒绝行为由本方案给出契约；IAM 内核仍由对应 owner 承接，入口切换所需的限定功能权限与 System 内置系统管理员角色引用按 10.63 的用户确认范围同批发布。若发布所需权限尚未就绪，相关实现保持待验收，不借管理员默认放行或宣称完成。
 
 #### 历史与外部通知保持可核对
 
@@ -2085,7 +2085,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 2026-10-16 推送后复核：上述批次提交 `0d8393b81e29b7c43035147c385b969ea8a6385d` 的 [Platform CI 38824874199](https://github.com/pampa0629/addp/actions/runs/38824874199) 中，Go workspace、Monitor frontend、Product binary build 和 Platform consistency 均通过；[Release and T2 gates 38824874420](https://github.com/pampa0629/addp/actions/runs/38824874420) 的 Monitor PostgreSQL 与 Monitor metrics 两项均通过。已读取两项 Monitor T2 日志，新增三项原位迁移、来源隔离和通知权限边界用例实际执行成功；指标门禁包含真实进程、节点查询与六来源总览，最终报告自有容器/网络/卷及临时文件零残留。只记录本批相关分项，不据此宣称其他提交、全部工作流或 T4/T5 通过；个人环境未由本会话重启或迁移。
 
 
-### 10.63 统一管理入口的权限发布依赖（范围待确认）
+### 10.63 统一管理入口的权限发布依赖（2026-10-16 范围已确认）
 
 入口归 Monitor、平台/租户分层及平台系统管理员职责已按 10.61 确认，不重复确认。只读核实发现，公开接口切换还要求同次处理 System 拥有的内置角色声明：`system/authorization/builtin_roles.yaml` 的 `platform.system_administrator` 显式引用 `monitor.log_notification.read/update`；Common 的内置角色解析器拒绝未知或非 active Permission，授权门禁同时校验生成的 SQL seed。因此，不能只在 Monitor 删除旧键/接口而保留失效角色引用，也不能为绕过发布校验留两套接口或借旧日志权限开放资源范围。
 
@@ -2098,11 +2098,11 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 | 平台告警通知查看 | `monitor.log_notification.read` | `monitor.platform_alert_notification.read` |
 | 平台告警通知配置/测试/重投 | `monitor.log_notification.update` | `monitor.platform_alert_notification.update` |
 
-`monitor.log_pipeline.read/update` 继续服务日志诊断及其来源策略，不删除仍有职责的权限；旧 `monitor.log_notification.read/update` 在通知接口切换时移除。新权限只向既有平台系统管理员角色作显式声明，不新建角色、不改其他角色或账号的授权、不授予 Tenant 业务数据访问。资源规则的独立 read/create/update/delete 权限在相应接口实际实施时同次声明，不预先发布无消费者占位键。平台日志正文权限仍独立。
+`monitor.log_pipeline.read/update` 继续服务日志诊断及其来源策略，不删除仍有职责的权限；旧 `monitor.log_notification.read/update` 在通知接口切换时退出所有运行入口与系统管理员角色。按《权限与角色发布规范》，已发布旧键在 Manifest/目录标记 disabled，保留必要的历史目录记录；这不是权限回退或兼容入口，不继续接受旧键访问新能力。新权限只向既有平台系统管理员角色作显式声明，不新建角色、不改其他角色或账号的授权、不授予 Tenant 业务数据访问。资源规则的独立 read/create/update/delete 权限在相应接口实际实施时同次声明，不预先发布无消费者占位键。平台日志正文权限仍独立。
 
-必要的发布差异仅包括：Monitor Permission Manifest、生成常量、权限名称/描述、公开接口及 Swagger 的真实消费者；System 内置角色对新键的显式引用与旧通知键移除；既有标准生成入口要求的目录/SQL seed 及相应正式发布迁移。必须由既有发布机制保持授权版本/会话撤销语义，不手工修改运行库或绕过内置角色不可变规则。新权限未实际发布前，不能宣称平台系统管理员已能使用新入口。
+必要的发布差异仅包括：Monitor Permission Manifest、生成常量、权限名称/描述、公开接口及 Swagger 的真实消费者；System 内置角色对新键的显式引用与旧通知键移除；目录校验及相应正式前向发布迁移。已核实初始 `000006_iam_catalog_seed.up.sql` 按固定摘要保护，不能重新生成或修改；新目录差异必须通过新迁移发布，并运行既有 seed 不变性校验。必须由既有发布机制保持授权版本/会话撤销语义，不手工修改运行库或绕过内置角色不可变规则。新权限未实际发布前，不能宣称平台系统管理员已能使用新入口。
 
-这部分涉及此前明确排除的“角色授权”声明文件，待用户确认由本会话同步限定的告警功能权限发布，还是由 IAM 负责方承接同一发布批次。确认前不实施依赖它的公开接口切换，也不改 System 角色文件；独立的资源告警判定与测试继续。
+2026-10-16 用户明确选择“允许本会话同步这部分权限发布”。本会话可按上述限定范围同步入口真实消费者、四项告警功能权限、既有平台系统管理员的显式引用和正式前向迁移；不修改 IAM 内核、其他角色/账号或 Tenant 权限。该确认不代表权限已发布或个人会话已生效，实施与验收结果另记。
 
 ### 10.64 资源压力窗口判定内核（实施中）
 
@@ -2115,3 +2115,28 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 本批先实现纯判定及确定性测试，不注册资源规则、调度器、API 或通知；不能计作资源告警已运行。实施前识别门禁为 Monitor Go T1，现有 `make test-module MODULE=monitor GO_ONLY=1` 及 CI 的 Monitor Go 自动发现覆盖新增 Go 文件。本批无数据库、API、前端或部署变更；真实 Prometheus 接线时再同次扩展已有 metrics T2，持久规则与事件接线时再扩展 PostgreSQL T2。
 
 本地 `make test-module MODULE=monitor GO_ONLY=1` 最终退出 0，覆盖两项指标的打开/恢复阈值、等值与滞回、有效零、缺失/非有限值、重复/未来/过期采样、采样与网格缺口、重启及错配启动证据、输入点数上限、原始时长不足、CPU 计算窗口跨生命周期边界和停用。四组确定性测试自动由 Monitor 既有 `go test ./...` 发现；日志 `/tmp/addp-resource-pressure-go.log`。本批未运行 PostgreSQL、metrics、前端或 Online 门禁，不把 10.62 的 CI 结果计作此新内核的 CI 证据；无运行接线，不需要重启。
+
+### 10.65 统一入口切换的实施契约（待实现）
+
+本节细化 10.61、10.63 已确认范围，不发布尚无消费者的权限或占位路由。后端、前端、权限发布与门禁适配须在同一可运行批次完成；此前日志专用入口在该批次一次删除，没有地址别名或旧权限回退。
+
+| 正式管理能力 | 切换后的唯一 API（前缀 `/api/v1/monitor`） | 功能权限 |
+| --- | --- | --- |
+| 平台事件列表 | `GET /platform/alerts` | `monitor.platform_alert.read` |
+| 确认 / 限时抑制 | `POST /platform/alerts/:id/acknowledge`、`POST /platform/alerts/:id/suppress` | 查看及 `monitor.platform_alert.update` |
+| 通知目标列表 | `GET /platform/alert-notification-destinations` | `monitor.platform_alert_notification.read` |
+| 目标创建、更新、删除及凭据设置 | `POST /platform/alert-notification-destinations`、`PUT/DELETE /platform/alert-notification-destinations/:id`、`PUT /platform/alert-notification-destinations/:id/credential` | 通知查看及 `monitor.platform_alert_notification.update` |
+| 测试及失败重投 | `POST /platform/alert-notification-destinations/:id/test`、`POST /platform/alert-notification-deliveries/:id/retry` | 同上 |
+| 投递列表 | `GET /platform/alert-notification-deliveries` | `monitor.platform_alert_notification.read` |
+
+以上入口只接受非委托 Platform User。新权限明确覆盖日志与主机资源两个平台类别，旧日志权限不满足新接口；Tenant、Service 与委托身份均不借平台角色名放行。租户 `/alerts`、规则和通知 API 继续按原 Tenant 及 Owner 裁决，不从平台入口跳转或合并数据。
+
+事件及投递列表使用管理列表的 `page/page_size`（默认 1/20，上限 100）与固定稳定排序。事件主体返回 `category/subject_kind/subject_id`，不再把观察器或主机统称为 `node`；类别仅 `log_pipeline/resource`。确认和抑制沿用版本 CAS，抑制截止时间必须晚于当前且不超过 24 小时，已恢复事件不能再处理；确认与抑制不改变判定事实。日志诊断 Summary 仅保留来源健康与活动事件数量，不再返回可绕过新查看权限的事件明细。通知类别按原事件连接查询，不从当前目标订阅猜历史类别。
+
+目标输入和安全输出显式包含非空、无重复的 `categories`，仅允许上述两个类别。原目标仍只订日志，创建或编辑资源订阅必须显式选择。渠道、凭据专用接口、Secret 不回显、CAS、至少一次投递、失败重投身份及原载荷均沿既有契约；同一目标涵盖两个类别时，使用明确覆盖两类的新通知管理权限。日志消息继续使用 `addp.platform-log-alert/v1`，资源消息使用独立的 `addp.platform-resource-alert/v1`，共同消费唯一事件/outbox，不互相解释或重造历史消息。
+
+Monitor 页面唯一入口为 `/platform-alerts`，与租户告警页分开；提供事件和通知管理，类别、分页及非默认页签进入 canonical URL。System 移除原确认/抑制与通知管理表单，只保留日志健康、来源策略和带日志类别/观察器上下文的 Monitor 跳转。主机名称只在当前用户另有主机读取权限时解析；没有该权限仍可看到事件已授权的主体 ID，不额外调用 System 主机详情。事件查看、处理、通知查看和修改分别控制请求与交互，迟到请求不能恢复已撤权或已离开的内容。
+
+实施门禁：Monitor Go/前端、System/Console/共享前端、授权目录/常量/覆盖与不可变 seed 检查、Swagger 生成/覆盖、System 正式前向迁移的 PostgreSQL 验证，以及 Monitor PostgreSQL 中跨类别事件/订阅/重投与旧权限拒绝。根标准入口和 CI 路径发现须在实施前逐项确认；需要新增输入登记时与消费者同批提交。个人运行环境须由用户标准重启后另行验证，不以确定性前端或 T2 替代真实运行及 T4/T5。
+
+本轮仅同步用户已确认的发布范围与实施契约，未改变 Permission Manifest、角色目录、SQL migration、公开 API 或前端页面。文档章节、围栏、本地链接与任务差异检查通过。默认 `make test-changed` 对当时 30 个混合变更、24 个 owner 在外部测试连接预检退出 2，后续未执行，不计通过；日志 `/tmp/addp-alert-permission-scope-changed.log`。这不替代上表未来实现门禁，也不构成重新要求用户确认范围的理由。
