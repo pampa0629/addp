@@ -74,6 +74,8 @@ bash business/scripts/restart.sh -highgo
 
 2026-10-16 覆盖运行复验：用户重启共享代码后，Engine 29 连接检测成功且能力声明 `delete=true`。Console 创建独立合成任务 14，目标为 `addp_business.orders_replace_20261016_2f83c643`；只读配置预检返回受支持，正式执行 `de0fdd08-41d3-4fce-8458-592b826a5dc1` 成功，读取／写入各 3 行。原 1 行哨兵已被替换，七字段与 PostgreSQL 源逐值一致，金额合计 `6795.50`；Meta 自动发现数据项 44581，Manager 预览显示 3 行、7 字段。原任务 13 未重新执行，原追加表仍为 3 行。此记录只证明本机 Console／原生链路，不代替隔离 Hosted T4 或完整模块门禁。
 
+2026-10-16 关系元数据运行复验：用户重启全部模块后，在 Console 对 Engine 29 执行连接检测成功，能力声明中的 `storage.facts.indexes`、`constraints`、`partitioning` 均为 `true`，覆盖所需 `storage.store.delete` 仍为 `true`。分别深度刷新 `customers`、`products`、`orders`、`order_items`，从 Manager 正式属性 JSON 取得的 11 个具名约束和 10 个索引与原生目录逐项一致，包括主键字段标记、订单 `updated_at, id` 索引顺序、明细 `order_id, product_id` 复合唯一键及三条外键的引用 schema／表／字段。四表预览分别为 3 行 6 字段、3 行 7 字段、3 行 7 字段、4 行 5 字段。本机样例均为普通表，不生成分区事实；RANGE／LIST／HASH 和子分区边界由已有原生 HighGo 标准测试入口覆盖，此处不计为分区表页面验收、隔离 Hosted T4 或完整 Transfer 模块门禁。
+
 ## 快速开始
 
 ### 默认启动（PostgreSQL + MinIO）
