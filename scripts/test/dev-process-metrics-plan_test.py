@@ -2,10 +2,12 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 LAUNCH = importlib.import_module("scripts.dev.process-metrics-launch")
 ROOT = Path(__file__).resolve().parents[2]
@@ -90,7 +92,7 @@ class ProcessMetricsPlanTest(unittest.TestCase):
             directory = Path(folder)
             output = directory / "received.json"
             receiver = directory / "receiver.py"
-            receiver.write_text(f"#!{sys.executable}\n" + """import json, os, sys
+            receiver.write_text("""import json, os, sys
 from pathlib import Path
 Path(os.environ['TEST_OUTPUT']).write_text(json.dumps({
     'args': sys.argv[1:], 'pid': os.getpid(),
@@ -99,14 +101,26 @@ Path(os.environ['TEST_OUTPUT']).write_text(json.dumps({
     'has_plan': 'ADDP_DEV_PROCESS_METRICS_PLAN' in os.environ,
     'business': os.environ.get('TEST_BUSINESS_VALUE')}))
 """)
-            receiver.chmod(0o700)
+            # Execute the existing shell/interpreter, not a fresh executable
+            # shebang file whose startup can consume the 10s deadline. The
+            # shell reads the real action argument as its script name; $0
+            # forwards that same argument so the exact argv assertion remains.
+            (directory / "launch").write_text(
+                "exec " + shlex.quote(sys.executable) + " "
+                + shlex.quote(str(receiver)) + ' "$0" "$@"\n')
             env = dict(os.environ, ADDP_DEV_PROCESS_METRICS_PLAN=plan,
                        ADDP_PROCESS_METRICS_DEPLOYMENTS=inherited,
                        TEST_OUTPUT=str(output), TEST_BUSINESS_VALUE="unchanged")
-            process = subprocess.Popen([sys.executable, str(ROOT / "scripts/dev/process-metrics-launch.py"),
-                                        unit, module, role, str(receiver), "/owned/program", "argument with spaces"],
-                                       env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = process.communicate(timeout=10)
+            with subprocess.Popen([sys.executable, str(ROOT / "scripts/dev/process-metrics-launch.py"),
+                                   unit, module, role, "/bin/sh", "/owned/program", "argument with spaces"],
+                                  cwd=directory, env=env, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True) as process:
+                try:
+                    stdout, stderr = process.communicate(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate()
             self.assertEqual(process.returncode, 0, stderr)
             self.assertEqual(stdout, "")
             result = json.loads(output.read_text())
@@ -117,6 +131,32 @@ Path(os.environ['TEST_OUTPUT']).write_text(json.dumps({
             self.assertFalse(result["has_plan"])
             self.assertEqual(result["business"], "unchanged")
             return result, stderr
+
+    def test_receiver_timeout_reaps_owned_process_and_closes_pipes(self):
+        communicate = subprocess.Popen.communicate
+        processes = []
+
+        def timeout_once(process, *args, **kwargs):
+            if not processes:
+                processes.append(process)
+                self.assertEqual(kwargs["timeout"], 10)
+                raise subprocess.TimeoutExpired(process.args, kwargs["timeout"])
+            return communicate(process, *args, **kwargs)
+
+        try:
+            with mock.patch.object(subprocess.Popen, "communicate", timeout_once):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    self.run_receiver("meta", "meta", "backend", self.raw)
+            self.assertEqual(len(processes), 1)
+            self.assertIsNotNone(processes[0].poll())
+            self.assertTrue(processes[0].stdout.closed)
+            self.assertTrue(processes[0].stderr.closed)
+        finally:
+            # Keep the regression itself isolated even if cleanup regresses.
+            for process in processes:
+                if process.poll() is None:
+                    process.kill()
+                communicate(process)
 
     def test_real_exec_preserves_receiver_pid_arguments_and_business_environment(self):
         for unit, entry in self.plan.items():
