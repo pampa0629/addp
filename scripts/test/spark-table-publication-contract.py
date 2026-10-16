@@ -33,7 +33,9 @@ def run(engine):
     def read(table):
         return query(connection, f'SELECT id, value FROM {table_ref("spark_results", table)} ORDER BY id')
     def stages():
-        return query(connection, "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'spark_results' AND LEFT(TABLE_NAME, 19) = '__addp_spark_stage_'")
+        prefix = 'addp_spark_stage_' if engine == 'doris' else '__addp_spark_stage_'
+        return query(connection, "SELECT TABLE_NAME FROM information_schema.TABLES "
+                     f"WHERE TABLE_SCHEMA = 'spark_results' AND LEFT(TABLE_NAME, {len(prefix)}) = ?", (prefix,))
     def clear_evidence():
         for (name,) in stages():
             sql(f'DROP TABLE {table_ref("spark_results", name)}')

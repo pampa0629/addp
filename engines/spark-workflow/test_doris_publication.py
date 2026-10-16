@@ -65,6 +65,17 @@ class DorisPublicationTest(unittest.TestCase):
         commands = [call.args[0] for call in self.connection.createStatement.return_value.execute.call_args_list]
         self.assertFalse(any(command.startswith('INSERT') or command.startswith('ALTER') for command in commands))
 
+    def test_staging_table_matches_doris_native_identifier_grammar(self):
+        with patch.object(publication, 'validate_target', return_value=True), \
+                patch.object(publication, 'write_stage') as write, \
+                patch.object(publication, 'wait_stage', return_value=2), \
+                patch.object(publication, 'wait_publication'):
+            publication.save(self.frame, self.params, 'url', 'driver', self.conn, self.adapter)
+        stage = write.call_args.args[3]
+        self.assertRegex(stage, r'^[a-zA-Z][a-zA-Z0-9_-]*$')
+        self.assertNotEqual(stage, self.params['table'])
+        self.adapter._doris_create_table_sql.assert_called_once_with(self.frame, 'results', stage)
+
     def test_unconfirmed_publication_is_not_replayed_or_cleaned(self):
         with patch.object(publication, 'validate_target', return_value=True), \
                 patch.object(publication, 'write_stage'), patch.object(publication, 'wait_stage', return_value=2), \

@@ -106,7 +106,7 @@ def save(df, params, jdbc_url, driver, conn_info, adapter):
     http_endpoint(conn_info)  # Reject incomplete deployment facts before Spark actions.
     if adapter._geometry_column_names(df):
         raise ValueError('Doris Spark save does not support geometry columns')
-    stage = '__addp_spark_stage_' + uuid.uuid4().hex
+    stage = 'addp_spark_stage_' + uuid.uuid4().hex
     stage_ref, target_ref = table_ref(schema, stage), table_ref(schema, target)
     connection = adapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
     statement = None
