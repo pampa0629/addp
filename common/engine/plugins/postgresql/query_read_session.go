@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/engine/plugin"
 )
@@ -37,14 +38,20 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		_ = db.Close()
 		return nil, fmt.Errorf("execute PostgreSQL query read session: %w", err)
 	}
-	columns, err := rows.Columns()
+	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
 		_ = rows.Close()
 		_ = tx.Rollback()
 		_ = db.Close()
-		return nil, fmt.Errorf("read PostgreSQL query columns: %w", err)
+		return nil, fmt.Errorf("read PostgreSQL query column types: %w", err)
 	}
-	return &postgresQueryReadSession{db: db, tx: tx, rows: rows, columns: columns}, nil
+	columns := make([]string, len(columnTypes))
+	binaryColumns := make([]bool, len(columnTypes))
+	for index, columnType := range columnTypes {
+		columns[index] = columnType.Name()
+		binaryColumns[index] = strings.EqualFold(columnType.DatabaseTypeName(), "BYTEA")
+	}
+	return &postgresQueryReadSession{db: db, tx: tx, rows: rows, columns: columns, binaryColumns: binaryColumns}, nil
 }
 
 func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
@@ -58,12 +65,13 @@ func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
 }
 
 type postgresQueryReadSession struct {
-	db      *sql.DB
-	tx      *sql.Tx
-	rows    *sql.Rows
-	columns []string
-	offset  int64
-	closed  bool
+	db            *sql.DB
+	tx            *sql.Tx
+	rows          *sql.Rows
+	columns       []string
+	binaryColumns []bool
+	offset        int64
+	closed        bool
 }
 
 func (s *postgresQueryReadSession) ReadBatch(_ context.Context, limit int) (*plugin.BatchData, error) {
@@ -88,7 +96,14 @@ func (s *postgresQueryReadSession) ReadBatch(_ context.Context, limit int) (*plu
 		for index, column := range s.columns {
 			value := values[index]
 			if bytes, ok := value.([]byte); ok {
-				value = string(bytes)
+				if s.binaryColumns[index] {
+					// SQL NULL is a nil interface; an empty BYTEA remains non-nil.
+					copied := make([]byte, len(bytes))
+					copy(copied, bytes)
+					value = copied
+				} else {
+					value = string(bytes)
+				}
 			}
 			row[column] = value
 		}

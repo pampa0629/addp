@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Disposable PostgreSQL and MongoDB owner for Hosted Transfer lineage acceptance.
+# Disposable source and write-failure target owner for Hosted Transfer acceptance.
 
 set -euo pipefail
 umask 077
@@ -29,12 +29,14 @@ fail() {
 
 container=addp-transfer-online-disposable
 mongodb_container=addp-transfer-mongodb-online-disposable
+doris_container=addp-transfer-doris-online-disposable
+clickhouse_container=addp-transfer-clickhouse-online-disposable
 database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|verify|stop|status" ;;
+  start|evolve|write-failures|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
@@ -129,9 +131,97 @@ PY_DESCRIPTOR
   unset TRANSFER_MONGODB_PASSWORD MONGO_INITDB_ROOT_PASSWORD
 }
 
+
+doris_sql() {
+  docker exec -i "$doris_container" mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 --batch --skip-column-names "$@"
+}
+clickhouse_sql() {
+  docker exec -i "$clickhouse_container" sh -c 'exec clickhouse-client --user default --password "$CLICKHOUSE_PASSWORD" "$@"' _ "$@"
+}
+
+start_write_failure_targets() {
+  local business_dir ready=0
+  business_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+  # Reuse the Business-owned FE/BE lifecycle, including stable Backend identity.
+  docker run -d --name "$doris_container" --label "com.addp.online-fixture=$owner" \
+    --add-host host.docker.internal:127.0.0.1 -p 127.0.0.1::9030 -e BUILD_TYPE=production \
+    --mount "type=bind,src=$business_dir/doris/init.sh,dst=/addp-doris-init.sh,readonly" \
+    --entrypoint /bin/bash \
+    apache/doris:doris-all-in-one-2.1.0@sha256:83538f071c8ea22134b8151d8b751cdf36da9e1a5da315443ba461909ee11835 \
+    /addp-doris-init.sh >/dev/null
+  for _ in $(seq 1 120); do
+    if docker exec "$doris_container" bash /addp-doris-init.sh --health > /dev/null 2>&1; then ready=1; break; fi
+    sleep 2
+  done
+  [ "$ready" = 1 ] || fail "Doris write-failure target did not become ready"
+  export TRANSFER_DORIS_PORT
+  TRANSFER_DORIS_PORT=$(docker port "$doris_container" 9030/tcp); TRANSFER_DORIS_PORT=${TRANSFER_DORIS_PORT##*:}
+  export CLICKHOUSE_PASSWORD TRANSFER_CLICKHOUSE_PORT
+  CLICKHOUSE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  docker run -d --name "$clickhouse_container" --label "com.addp.online-fixture=$owner" \
+    -p 127.0.0.1::9000 -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD \
+    -e CLICKHOUSE_DB=transfer_fixture -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+    clickhouse/clickhouse-server:25.12.1.649@sha256:7234d193fbeb3a375f21f0bb99040396f68bb2e82cada4f4947d7fcf9638bbf3 >/dev/null
+  ready=0
+  for _ in $(seq 1 120); do
+    if docker exec "$clickhouse_container" sh -c 'test "$(tr "\000" "\n" < /proc/1/cmdline | head -n 1)" = clickhouse-server' &&
+        clickhouse_sql --query 'SELECT 1' 2>/dev/null | grep -qx '1'; then ready=1; break; fi
+    sleep 2
+  done
+  [ "$ready" = 1 ] || fail "ClickHouse write-failure target did not become ready"
+  TRANSFER_CLICKHOUSE_PORT=$(docker port "$clickhouse_container" 9000/tcp); TRANSFER_CLICKHOUSE_PORT=${TRANSFER_CLICKHOUSE_PORT##*:}
+  doris_sql -e 'CREATE DATABASE transfer_fixture; SET GLOBAL enable_insert_strict=true;' >/dev/null
+  for target in addp_online_transfer_write_failure addp_online_transfer_json_failure; do
+    doris_sql -e "CREATE TABLE transfer_fixture.$target (id BIGINT NOT NULL, document STRING NULL, payload STRING NULL, label STRING NULL) DUPLICATE KEY(id) PARTITION BY RANGE(id) (PARTITION bounded_write VALUES LESS THAN (\"1001\")) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES (\"replication_num\"=\"1\"); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', UNHEX('00ff41'), 'plain {');" >/dev/null
+    clickhouse_sql --multiquery --query "CREATE TABLE transfer_fixture.$target (id Int64, document Nullable(String), payload Nullable(String), label Nullable(String), CONSTRAINT fixture_label_length CHECK length(label) <= 8) ENGINE=MergeTree ORDER BY tuple(); INSERT INTO transfer_fixture.$target VALUES (0, '{\"sentinel\":true}', unhex('00ff41'), 'plain {');" >/dev/null
+  done
+  python3 - <<'PY_DESCRIPTOR_FAILURES'
+import json, os
+from pathlib import Path
+for engine_type, port, user, password in (
+    ('doris', os.environ['TRANSFER_DORIS_PORT'], 'root', ''),
+    ('clickhouse', os.environ['TRANSFER_CLICKHOUSE_PORT'], 'default', os.environ['CLICKHOUSE_PASSWORD']),
+):
+    path = Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / f'transfer-{engine_type}-engine.json'
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as output:
+        json.dump({'name': f'Hosted Transfer {engine_type}', 'engine_type': engine_type, 'engine_origin': 'general',
+                   'description': 'Disposable bounded write-failure acceptance', 'connection_info': {
+                       'host': '127.0.0.1', 'port': int(port), 'database': 'transfer_fixture', 'user': user, 'password': password}}, output)
+PY_DESCRIPTOR_FAILURES
+  unset CLICKHOUSE_PASSWORD TRANSFER_DORIS_PORT TRANSFER_CLICKHOUSE_PORT
+}
+
+verify_write_failures() {
+  local engine target scenario want values separator=''
+  printf '{'
+  for engine in doris clickhouse; do
+    if [ "$engine" = doris ]; then assert_owned "$doris_container"; else assert_owned "$clickhouse_container"; fi
+    printf '%s"%s":{' "$separator" "$engine"
+    separator=','
+    local case_separator=''
+    for scenario in late_execute_failure invalid_json; do
+      if [ "$scenario" = late_execute_failure ]; then target=addp_online_transfer_write_failure; want='1001\t1\t1000\t0'; else target=addp_online_transfer_json_failure; want='1\t1\t0\t0'; fi
+      query="SELECT COUNT(*), COALESCE(SUM(CASE WHEN id=0 AND document='{\"sentinel\":true}' AND HEX(payload)='00FF41' AND label='plain {' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN id BETWEEN 1 AND 1000 AND document='{\"ok\":true}' AND HEX(payload)='00FF41' AND label='plain {' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN id=1001 THEN 1 ELSE 0 END),0) FROM transfer_fixture.$target"
+      if [ "$engine" = doris ]; then values=$(doris_sql -e "$query"); else values=$(clickhouse_sql --query "$query"); fi
+      [ "$values" = "$(printf "$want")" ] || fail "write-failure physical row evidence mismatch: $engine/$scenario"
+      printf '%s"%s":{"rows":%s,"sentinel_rows":1,"valid_rows":%s,"failed_row_absent":true}' "$case_separator" "$scenario" "$(cut -f1 <<< "$values")" "$(cut -f3 <<< "$values")"
+      case_separator=','
+    done
+    printf '}'
+  done
+  printf '}\n'
+}
+
 reset_fixture() {
   postgres_sql <<SQL >/dev/null
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE TABLE public.addp_online_transfer_failure_source (id bigint PRIMARY KEY, document text NOT NULL, payload bytea NOT NULL, label text NOT NULL);
+INSERT INTO public.addp_online_transfer_failure_source
+SELECT i, '{"ok":true}', decode('00ff41','hex'), CASE WHEN i=1001 THEN 'synthetic constraint failure' ELSE 'plain {' END FROM generate_series(1,1001) i;
+CREATE TABLE public.addp_online_transfer_invalid_json_source (LIKE public.addp_online_transfer_failure_source INCLUDING ALL);
+INSERT INTO public.addp_online_transfer_invalid_json_source
+SELECT i, CASE WHEN i=1001 THEN '{' ELSE '{"ok":true}' END, decode('00ff41','hex'), 'plain {' FROM generate_series(1,1001) i;
 DROP TABLE IF EXISTS public.${IMPORT_TARGET};
 DROP TABLE IF EXISTS public.${WIDE_DOWNSTREAM};
 DROP TABLE IF EXISTS public.${WIDE_TARGET};
@@ -228,7 +318,7 @@ SQL
 
 case "$action" in
   start)
-    for candidate in "$container" "$mongodb_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
       ! docker container inspect "$candidate" >/dev/null 2>&1 || fail "refusing an existing source container"
     done
     [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
@@ -255,7 +345,7 @@ case "$action" in
 CREATE ROLE transfer_writer LOGIN PASSWORD :'writer_password';
 GRANT CONNECT ON DATABASE transfer_fixture TO transfer_writer;
 GRANT USAGE, CREATE ON SCHEMA public TO transfer_writer;
-GRANT SELECT ON public.addp_online_transfer_sql_etl_source, public.addp_wide_source TO transfer_writer;
+GRANT SELECT ON public.addp_online_transfer_sql_etl_source, public.addp_wide_source, public.addp_online_transfer_failure_source, public.addp_online_transfer_invalid_json_source TO transfer_writer;
 GRANT SELECT, INSERT, DELETE ON public.addp_online_transfer_dim_activity, public.addp_online_transfer_dwd_activity TO transfer_writer;
 SQL
     then
@@ -273,7 +363,11 @@ with os.fdopen(fd, 'w') as output:
 PY_DESCRIPTOR
     unset TRANSFER_FIXTURE_PASSWORD
     start_mongodb
+    start_write_failure_targets
     echo "Online Transfer relational SQL ETL fixture is ready"
+    ;;
+  write-failures)
+    verify_write_failures
     ;;
   evolve)
     assert_owned
@@ -296,15 +390,16 @@ SQL_EVOLVE
     assert_owned "$mongodb_container"
     postgres_sql -Atc "SELECT to_regclass('public.addp_online_transfer_config_check') IS NULL" | grep -qx 't' || fail "read-only configuration check created a target table"
     verify_fixture
+    verify_write_failures >/dev/null
     echo "Online Transfer relational SQL ETL target is verified"
     ;;
   stop)
     # Check ownership before deleting either container; cleanup also covers partial startup.
-    for candidate in "$container" "$mongodb_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then assert_owned "$candidate"; fi
     done
     cleanup_failed=0
-    for candidate in "$container" "$mongodb_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then
         if ! docker rm -fv "$candidate" >/dev/null; then cleanup_failed=1; fi
       fi

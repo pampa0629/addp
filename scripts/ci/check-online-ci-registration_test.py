@@ -905,6 +905,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in (
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_mongodb_execution"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "validate_write_failure_physical"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "run_write_failures"),
+            ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "PARTITION BY RANGE(id)"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "write_failure_details_verified: writeFailureDetailsVerified"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-online/v10"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "run_manager_import"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "non_uploader_rejected"),

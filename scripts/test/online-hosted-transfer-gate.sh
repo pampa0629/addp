@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=transfer-relational-sql-etl
-HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable)
+HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable addp-transfer-doris-online-disposable addp-transfer-clickhouse-online-disposable)
 stop_online_fixture() {
   run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop
 }
@@ -37,6 +37,17 @@ run_logged python3 scripts/test/online-engine-registration.py \
 source "$MONGODB_ENGINE_RESULT_ENV"
 export ADDP_ONLINE_TEST_MONGODB_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 export ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME='Hosted Transfer MongoDB'
+for target_type in doris clickhouse; do
+  target_result="$ADDP_ONLINE_SECRET_DIR/transfer-$target_type-engine.env"
+  run_logged python3 scripts/test/online-engine-registration.py \
+    --descriptor "$ADDP_ONLINE_SECRET_DIR/transfer-$target_type-engine.json" --output "$target_result"
+  source "$target_result"
+  if [ "$target_type" = doris ]; then
+    export ADDP_ONLINE_TEST_DORIS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  else
+    export ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  fi
+done
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
 run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify

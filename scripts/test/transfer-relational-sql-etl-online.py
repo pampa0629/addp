@@ -89,7 +89,92 @@ def task_name(run_id: str) -> str:
 
 
 def owned_task_names(name: str) -> set[str]:
-    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"}
+    return {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"} | {name + "_" + engine + "_" + scenario for engine in WRITE_FAILURE_ENGINES for scenario in WRITE_FAILURE_CASES}
+
+
+WRITE_FAILURE_CASES = ("late_execute_failure", "invalid_json")
+WRITE_FAILURE_ENGINES = ("doris", "clickhouse")
+
+
+def validate_write_failure_execution(execution, task_id):
+    assert_transfer_execution_projection(execution)
+    identifier = execution.get("execution_id")
+    if not isinstance(identifier, str) or len(identifier) != 36:
+        raise SuiteError("write failure must identify the actual execution")
+    try:
+        if str(uuid.UUID(identifier)) != identifier: raise ValueError()
+    except ValueError as error:
+        raise SuiteError("write failure execution id is not a canonical UUID") from error
+    if execution.get("task_id") != task_id or execution.get("status") != "failed":
+        raise SuiteError("write failure must preserve its task and failed terminal status")
+    for key in ("records_read", "records_written"):
+        if type(execution.get(key)) is not int or execution[key] != 0:
+            raise SuiteError("failed first batch must not advertise completed batch progress")
+    failure = _object(execution.get("error_details"), "write failure details")
+    if failure.get("category") != "execution_failed" or not execution.get("end_time"):
+        raise SuiteError("write failure must expose a safe failure category and terminal time")
+    if execution.get("metadata", {}).get("metadata_scan"):
+        raise SuiteError("write failure unexpectedly triggered metadata scanning")
+    return {"task_id": task_id, "execution_id": identifier, "status": "failed", "records_written": 0, "error_details": failure}
+
+
+def validate_write_failure_physical(payload):
+    if not isinstance(payload, dict) or set(payload) != set(WRITE_FAILURE_ENGINES):
+        raise SuiteError("write failure physical evidence must cover both engines")
+    for engine in WRITE_FAILURE_ENGINES:
+        cases = _object(payload[engine], "write failure physical cases")
+        if set(cases) != set(WRITE_FAILURE_CASES):
+            raise SuiteError("write failure physical evidence is incomplete")
+        for scenario in WRITE_FAILURE_CASES:
+            expected = {"rows": 1001 if scenario == "late_execute_failure" else 1, "sentinel_rows": 1,
+                        "valid_rows": 1000 if scenario == "late_execute_failure" else 0, "failed_row_absent": True}
+            if cases[scenario] != expected or cases[scenario].get("failed_row_absent") is not True or any(type(cases[scenario].get(key)) is not int for key in ("rows", "sentinel_rows", "valid_rows")):
+                raise SuiteError("write failure physical evidence contradicts autocommit boundaries")
+    return payload
+
+
+def write_failure_task(name, source_locator, source_table, target_engine_id, scenario):
+    target = "addp_online_transfer_write_failure" if scenario == "late_execute_failure" else "addp_online_transfer_json_failure"
+    return {"name": name, "task_type": "sync", "enabled": False, "schedule": "", "auto_scan_metadata": False,
+            "config": {"runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"},
+                       "source": {"locator": source_locator, "data_type": "table", "representation": "native",
+                                  "query": {"language": "sql", "statement": f'SELECT id,document,payload,label FROM public.{source_table} ORDER BY id'}},
+                       "target": {"locator": f"addp://engine/{target_engine_id}/path/transfer_fixture/{target}?type=table", "data_type": "table", "representation": "native", "policy": {"apply_mode": "append"}},
+                       "transforms": [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
+                           {"source": field, "target": field, "target_type": field_type, "nullable": False}
+                           for field, field_type in (("id", "bigint"), ("document", "json"), ("payload", "bytes"), ("label", "string"))]}],
+                       "batch_size": 1001}}
+
+
+def run_write_failures(client, source_engine_id, name, timeout, owned_ids):
+    report = {}
+    for engine in WRITE_FAILURE_ENGINES:
+        engine_id = positive_int(required_environment("ADDP_ONLINE_TEST_" + engine.upper() + "_ENGINE_ID"), "write failure Engine id")
+        if engine_id == source_engine_id or any(proof["engine_id"] == engine_id for proof in report.values()):
+            raise SuiteError("write failure engine identities must be distinct")
+        validate_engine(client, engine_id, "Hosted Transfer " + engine, engine, time.monotonic() + timeout)
+        # This fixture has no target scan at all. Saving and failing these tasks
+        # must not make an unscanned target appear in Meta.
+        before = client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload
+        if before != []:
+            raise SuiteError("write failure target must start unscanned")
+        report[engine] = {"engine_id": engine_id, "cases": {}}
+        for scenario in WRITE_FAILURE_CASES:
+            source_table = "addp_online_transfer_failure_source" if scenario == "late_execute_failure" else "addp_online_transfer_invalid_json_source"
+            source = find_item(client, source_engine_id, "public." + source_table, "table")
+            task = write_failure_task(name + "_" + engine + "_" + scenario, SUPPORT.build_item_locator(source_engine_id, source), source_table, engine_id, scenario)
+            task_id, execution = SUPPORT.create_and_run_task(client, task, time.monotonic() + timeout, owned_ids, expected_status="failed")
+            report[engine]["cases"][scenario] = validate_write_failure_execution(execution, task_id)
+        if client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload != before:
+            raise SuiteError("failed writes unexpectedly produced target metadata")
+    repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+    checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "write-failures"], cwd=repository, capture_output=True, text=True, timeout=60)
+    if checked.returncode != 0:
+        raise SuiteError("write failure independent physical verification failed")
+    physical = validate_write_failure_physical(json.loads(checked.stdout))
+    for engine in WRITE_FAILURE_ENGINES:
+        report[engine]["physical"] = physical[engine]
+    return report
 
 
 def native_task(name: str, source_locator: str, parent_locator: str, target: str, region_source: str, region_target: str) -> dict[str, object]:
@@ -1143,6 +1228,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
         "manager_orchestrated_field_graph_verified": True,
         "manager_evolved_schema_verified": True,
         "manager_wide_field_graph_verified": True,
+        "write_failure_details_verified": 4,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
@@ -1150,7 +1236,7 @@ def validate_browser_report(report: object, run_id: str, tenant_id: str, expecte
     return payload
 
 
-def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object], orchestrated_lineage: dict[str, object], wide_lineage: dict[str, object]) -> dict[str, object]:
+def run_browser(repository: Path, environment: Mapping[str, str], expected_task_name: str, lineage: dict[str, object], mongodb_lineage: dict[str, object], orchestrated_lineage: dict[str, object], wide_lineage: dict[str, object], write_failures: dict[str, object]) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "transfer-relational-sql-etl-browser.json"
     report_path.unlink(missing_ok=True)
@@ -1165,6 +1251,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE": json.dumps(mongodb_lineage),
             "ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE": json.dumps(orchestrated_lineage),
             "ADDP_ONLINE_WIDE_FIELD_LINEAGE": json.dumps(wide_lineage),
+            "ADDP_ONLINE_TRANSFER_WRITE_FAILURES": json.dumps(write_failures),
         }
     )
     result = subprocess.run(
@@ -1247,7 +1334,8 @@ def main() -> int:
 
         wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
-        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide)
+        write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
+        browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
         outsider = GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN"), timeout)
         manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
@@ -1274,8 +1362,9 @@ def main() -> int:
             "multi_source_field_lineage": multi,
             "wide_field_lineage": wide,
             "manager_import": manager_import,
-            "created_resources": 12,
-            "deleted_resources": 12,
+            "write_failures": write_failures,
+            "created_resources": 16,
+            "deleted_resources": 16,
             "residual_resources": 0,
         }
         print(json.dumps(report, sort_keys=True))

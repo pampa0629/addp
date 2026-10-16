@@ -643,6 +643,8 @@ type QueryReadSession interface {
 
 查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。PostgreSQL 从同一 PreparedQuery 取出已绑定 SQL 与参数，使用数据库强制的 repeatable-read 只读事务和流式 `Rows` 游标返回批次；不得为打开会话重新绑定或重新准备 SQL。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
 
+PostgreSQL 查询读取会话按实际结果列的数据库类型保留值表示：BYTEA（包括别名和返回 BYTEA 的表达式）必须返回独立的 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节不得混同；文本、精确 numeric、JSON 和空间结果沿用各自原有表示，不能把所有驱动字节切片一律转为字符串。字段映射仅声明目标类型，不能修复读取时已丢失的二进制语义。
+
 联邦查询运行时使用独立 Provider，不把多数据源连接塞入普通 `QueryRequest`：
 
 ```go

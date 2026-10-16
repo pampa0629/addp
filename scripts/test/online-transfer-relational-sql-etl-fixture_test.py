@@ -17,6 +17,8 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.postgres_state = self.root / 'postgres-running'
         self.mongodb_state = self.root / 'mongodb-running'
+        self.doris_state = self.root / 'doris-running'
+        self.clickhouse_state = self.root / 'clickhouse-running'
         self.schema_state = self.root / 'evolved-schema'
         self.log = self.root / 'fixture.log'
         self.secrets = self.root / 'addp-online-secret-test'
@@ -29,7 +31,11 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self._executable('docker', '''#!/bin/bash
 printf 'docker:%s:%s\n' "$1" "${2:-}" >> "$ADDP_TEST_FIXTURE_LOG"
 state=$ADDP_TEST_POSTGRES_STATE
-case "$*" in *addp-transfer-mongodb-online-disposable*) state=$ADDP_TEST_MONGODB_STATE ;; esac
+case "$*" in
+ *addp-transfer-mongodb-online-disposable*) state=$ADDP_TEST_MONGODB_STATE ;;
+ *addp-transfer-doris-online-disposable*) state=$ADDP_TEST_DORIS_STATE ;;
+ *addp-transfer-clickhouse-online-disposable*) state=$ADDP_TEST_CLICKHOUSE_STATE ;;
+esac
 case "$1" in
   container)
     [ -f "$state" ]
@@ -54,6 +60,7 @@ case "$1" in
     if [ "$state" = "$ADDP_TEST_MONGODB_STATE" ] && [ "${ADDP_TEST_MONGODB_REMOVE_FAIL:-0}" = 1 ]; then exit 0; fi
     [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$state"
     ;;
+  port) echo 127.0.0.1:55435 ;;
   logs)
     echo 'WiredTiger error: SECRET_MARKER'
     ;;
@@ -61,6 +68,16 @@ case "$1" in
     [ -f "$state" ] || exit 1
     case " $* " in
       *pg_isready*) exit 0 ;;
+      */addp-doris-init.sh*) [ "${ADDP_TEST_DORIS_READY_FAIL:-0}" != 1 ]; exit $? ;;
+      */proc/1/cmdline*) [ "${ADDP_TEST_CLICKHOUSE_READY_FAIL:-0}" != 1 ]; exit $? ;;
+      *clickhouse-client*|*mysql*)
+        printf 'native-target:%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
+        case "$*" in
+          *"SELECT 1"*) echo 1 ;;
+          *"SELECT COUNT(*)"*"write_failure"*) printf "${ADDP_TEST_COMMITTED_ROWS:-1001}\t1\t1000\t0\n" ;;
+          *"SELECT COUNT(*)"*"json_failure"*) printf "1\t1\t0\t0\n" ;;
+        esac
+        exit 0 ;;
       */proc/1/comm*)
         printf 'mongodb-process-probe\n' >> "$ADDP_TEST_FIXTURE_LOG"
         if [ "${ADDP_TEST_MONGODB_BOOTSTRAP_STUCK:-0}" = 1 ]; then exit 1; fi
@@ -139,7 +156,7 @@ esac
                                 ADDP_ONLINE_SECRET_DIR=str(self.secrets),
                                 ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-engine.json'),
                                 ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-mongodb-engine.json'),
-                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
+                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_DORIS_STATE=str(self.doris_state), ADDP_TEST_CLICKHOUSE_STATE=str(self.clickhouse_state), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
                                 ADDP_TEST_POSTGRES_STATE=str(self.postgres_state), ADDP_TEST_FIXTURE_LOG=str(self.log))
 
     def tearDown(self):
@@ -212,6 +229,36 @@ esac
         self.assertEqual(engine['connection_info']['database'], 'transfer_fixture')
         self.assertEqual(engine['connection_info']['host'], '127.0.0.1')
         self.assertNotIn(engine['connection_info']['password'], commands)
+
+    def test_write_failures_verify_physical_rows_and_clean_all_targets(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        checked = self.run_fixture('write-failures')
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        evidence = json.loads(checked.stdout)
+        self.assertEqual(set(evidence), {'doris', 'clickhouse'})
+        for engine in evidence.values():
+            self.assertEqual(engine['late_execute_failure']['rows'], 1001)
+            self.assertEqual(engine['invalid_json']['rows'], 1)
+        bad = self.run_fixture('write-failures', ADDP_TEST_COMMITTED_ROWS='0')
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn('physical row evidence mismatch', bad.stderr)
+        for engine in ('doris', 'clickhouse'):
+            descriptor = self.secrets / f'transfer-{engine}-engine.json'
+            self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
+            self.assertEqual(json.loads(descriptor.read_text())['engine_type'], engine)
+        self.assertEqual(self.run_fixture('stop').returncode, 0)
+        self.assertFalse(self.doris_state.exists())
+        self.assertFalse(self.clickhouse_state.exists())
+
+    def test_partial_native_target_initialization_still_cleans_owned_containers(self):
+        for key in ('ADDP_TEST_DORIS_READY_FAIL', 'ADDP_TEST_CLICKHOUSE_READY_FAIL'):
+            result = self.run_fixture('start', **{key: '1'})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.run_fixture('stop').returncode, 0)
+            for state in (self.postgres_state, self.mongodb_state, self.doris_state, self.clickhouse_state):
+                self.assertFalse(state.exists())
+            for descriptor in self.secrets.glob('*.json'):
+                descriptor.unlink()
 
     def test_requires_github_hosted_linux_before_docker(self):
         for flags in ({'ADDP_ONLINE_HOST': '0'}, {'ADDP_ONLINE_HOSTED': '0'},

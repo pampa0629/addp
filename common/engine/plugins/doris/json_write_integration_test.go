@@ -259,6 +259,15 @@ func openDorisFailureIntegrationSession(t *testing.T) (plugin.TableWriteSession,
 		{Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true},
 		{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
 	}
+	qualified := dorisDialect().QualifiedTable(database, table)
+	// This disposable fixture must reject filtered rows rather than silently
+	// accept them. Newly opened writer sessions inherit the global setting.
+	if _, err := db.ExecContext(ctx, "SET GLOBAL enable_insert_strict=true"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+` (id BIGINT NOT NULL, document STRING NULL, payload STRING NULL, label STRING NULL) DUPLICATE KEY(id) PARTITION BY RANGE(id) (PARTITION bounded_write VALUES LESS THAN ("1002")) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES ("replication_num"="1")`); err != nil {
+		t.Fatal(err)
+	}
 	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
 		t.Fatal(err)
 	}

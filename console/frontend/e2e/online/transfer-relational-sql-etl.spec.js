@@ -2,7 +2,8 @@ import { observeLineageCanvas, lineageCanvasText, lineageCanvasSnapshot, dragLin
 import { lineageFieldConnections, FIELD_FONT_SIZE } from '../../../../common-frontend/graph/src/lineageFields.js'
 import { lineageNodeId } from '../../../../common-frontend/graph/src/lineageApi.js'
 import { expect, request, test } from '@playwright/test'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { executionFailurePresentation } from '../../../../common-frontend/basic/src/utils/executionFailure.mjs'
 import { resolve } from 'node:path'
 import {
   identity,
@@ -36,6 +37,7 @@ const requiredNames = [
   'ADDP_ONLINE_TRANSFER_MONGODB_FIELD_LINEAGE',
   'ADDP_ONLINE_ORCHESTRATED_FIELD_LINEAGE',
   'ADDP_ONLINE_WIDE_FIELD_LINEAGE',
+  'ADDP_ONLINE_TRANSFER_WRITE_FAILURES',
   'GATEWAY_URL'
 ]
 
@@ -601,6 +603,47 @@ async function verifyTaskConfigChecks(page, api, env, browserIdentity) {
   }
 }
 
+async function verifyWriteFailureDetails(page, api, env) {
+  const failures = JSON.parse(env.ADDP_ONLINE_TRANSFER_WRITE_FAILURES)
+  expect(Object.keys(failures).sort()).toEqual(['clickhouse', 'doris'])
+  const translations = JSON.parse(readFileSync(resolve(env.ADDP_ONLINE_REPOSITORY, 'common-frontend/basic/src/i18n/zh-cn.json'), 'utf8'))
+  const translate = key => key.split('.').reduce((value, part) => value?.[part], translations)
+  let verified = 0
+  for (const engine of ['doris', 'clickhouse']) {
+    expect(Object.keys(failures[engine].cases).sort()).toEqual(['invalid_json', 'late_execute_failure'])
+    for (const scenario of ['late_execute_failure', 'invalid_json']) {
+      const proof = failures[engine].cases[scenario]
+      const execution = await json(await api.get(`/api/v1/transfer/executions/${proof.execution_id}`), 'read failed Transfer execution')
+      expect(execution.execution_id).toBe(proof.execution_id)
+      expect(execution.task_id).toBe(proof.task_id)
+      expect(execution.status).toBe('failed')
+      expect(execution.records_written).toBe(0)
+      expect(execution.error_details).toEqual(proof.error_details)
+      expect(execution.error_msg).toBeUndefined()
+      expect(execution.error_details.message).toBeUndefined()
+      expect(failures[engine].physical[scenario].rows).toBe(scenario === 'late_execute_failure' ? 1001 : 1)
+      const presentation = executionFailurePresentation(execution.error_details, translate)
+      expect(typeof presentation.reason).toBe('string')
+      expect(presentation.reason.length).toBeGreaterThan(0)
+      await page.goto(`/transfer/executions/${proof.execution_id}`)
+      const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+      await expect(frame.locator('.execution-detail .el-tag').first()).toHaveText('failed')
+      const alert = frame.locator('.execution-failure')
+      await expect(alert).toBeVisible()
+      await expect(alert.locator('h4')).toHaveText(presentation.reason)
+      await expect(alert).toContainText(presentation.action)
+      await expect(alert).toContainText(proof.execution_id)
+      if (presentation.code) await expect(alert).toContainText(presentation.code)
+      await expect(alert).not.toContainText('synthetic constraint failure')
+      await expect(alert).not.toContainText('INSERT INTO')
+      await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `transfer-${engine}-${scenario}.png`), fullPage: true })
+      verified++
+    }
+  }
+  expect(verified).toBe(4)
+  return verified
+}
+
 test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page, browser }) => {
   test.setTimeout(360_000)
   await observeLineageCanvas(page)
@@ -785,6 +828,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     expect(deleted.status()).toBe(404)
     taskDeleted = true
 
+    const writeFailureDetailsVerified = await verifyWriteFailureDetails(page, api, env)
+
     const unexpectedResponses = failedResponses.filter(response => !(
       taskDeleted && response.status === 404 && response.pathname === `/api/v1/transfer/task-definitions/${taskID}`
     ))
@@ -814,7 +859,8 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
         manager_mongodb_field_graph_verified: true,
         manager_orchestrated_field_graph_verified: true,
         manager_evolved_schema_verified: true,
-        manager_wide_field_graph_verified: true
+        manager_wide_field_graph_verified: true,
+        write_failure_details_verified: writeFailureDetailsVerified
       })}\n`,
       'utf8'
     )

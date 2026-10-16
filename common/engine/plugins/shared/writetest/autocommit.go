@@ -30,7 +30,7 @@ func AutoCommitSQLite(t *testing.T) (writer, observer *sql.DB, qualified string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = observer.Close() })
-	if _, err := writer.Exec(`CREATE TABLE target (id INTEGER, document TEXT, payload BLOB, label TEXT)`); err != nil {
+	if _, err := writer.Exec(`CREATE TABLE target (id INTEGER, document TEXT, payload BLOB, label TEXT CHECK (length(label) <= 8))`); err != nil {
 		t.Fatal(err)
 	}
 	return writer, observer, "main.target"
@@ -67,9 +67,9 @@ func AutoCommitSessionFailures(t *testing.T, setup func(*testing.T) (plugin.Tabl
 				if scenario == "invalid_json" {
 					rows[1000]["document"] = "{"
 				} else {
-					// Encoding passes this non-JSON value through. database/sql
-					// or the native engine rejects the later chunk's invalid bind.
-					rows[1000]["id"] = struct{ Invalid string }{"synthetic bind failure"}
+					// The final row violates a fixture constraint in the real
+					// database after the first chunk has committed.
+					rows[1000]["label"] = "synthetic constraint failure"
 					wantRows += 1000
 				}
 				firstErr = session.WriteBatch(ctx, &plugin.BatchData{Rows: rows})

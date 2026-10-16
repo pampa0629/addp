@@ -22,6 +22,61 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    @staticmethod
+    def write_failure_execution():
+        return {"task_id": 10, "execution_id": str(uuid.uuid4()), "status": "failed", "records_read": 0, "records_written": 0,
+                "end_time": "2026-10-16T00:00:01Z", "error_details": {"category": "execution_failed"}, "metadata": {}}
+
+    @staticmethod
+    def write_failure_physical():
+        return {engine: {"late_execute_failure": {"rows": 1001, "sentinel_rows": 1, "valid_rows": 1000, "failed_row_absent": True},
+                         "invalid_json": {"rows": 1, "sentinel_rows": 1, "valid_rows": 0, "failed_row_absent": True}}
+                for engine in ("doris", "clickhouse")}
+
+    def test_write_failure_rejects_success_private_diagnostics_and_false_zero_write_proofs(self):
+        execution = self.write_failure_execution()
+        ONLINE.validate_write_failure_execution(execution, 10)
+        mutations = [lambda p: p.update(status="success"), lambda p: p.update(task_id=11),
+                     lambda p: p.update(execution_id="invalid"), lambda p: p.update(records_written=1),
+                     lambda p: p.update(records_read=False), lambda p: p.update(end_time=None),
+                     lambda p: p.update(checkpoint_state={"commit_marker": {}}),
+                     lambda p: p["error_details"].update(message="private runtime text"),
+                     lambda p: p["error_details"].update(category="permission_denied"),
+                     lambda p: p["metadata"].update(metadata_scan={"status": "pending"})]
+        for mutate in mutations:
+            changed = copy.deepcopy(execution); mutate(changed)
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_write_failure_execution(changed, 10)
+        physical = self.write_failure_physical()
+        ONLINE.validate_write_failure_physical(physical)
+        for changed in ({}, {"doris": physical["doris"]}, copy.deepcopy(physical), copy.deepcopy(physical)):
+            if len(changed) == 2:
+                changed["doris"]["late_execute_failure"]["rows"] = 0
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_write_failure_physical(changed)
+        changed = copy.deepcopy(physical); changed['clickhouse']['invalid_json']['failed_row_absent'] = 1
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_write_failure_physical(changed)
+
+    def test_write_failure_scenario_uses_real_execution_and_independent_physical_counts(self):
+        client = Mock()
+        client.request.return_value = SimpleNamespace(payload=[])
+        executions = []
+        owned = []
+        def create(client, task, deadline, ids, expected_status):
+            self.assertEqual(expected_status, 'failed')
+            self.assertFalse(task['auto_scan_metadata'])
+            self.assertEqual(task['config']['batch_size'], 1001)
+            self.assertEqual(task['config']['target']['policy']['apply_mode'], 'append')
+            self.assertIn('ORDER BY id', task['config']['source']['query']['statement'])
+            execution = self.write_failure_execution(); execution['task_id'] = 10 + len(executions)
+            ids.append(execution['task_id']); executions.append(execution)
+            return execution['task_id'], execution
+        environment = {'ADDP_ONLINE_TEST_DORIS_ENGINE_ID': '8', 'ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID': '9'}
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, 'validate_engine'), patch.object(ONLINE, 'find_item', return_value={'id': 1}), patch.object(ONLINE.SUPPORT, 'build_item_locator', return_value='addp://source'), patch.object(ONLINE.SUPPORT, 'create_and_run_task', side_effect=create), patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(self.write_failure_physical()))):
+            proof = ONLINE.run_write_failures(client, 7, 'fixture', 30, owned)
+        self.assertEqual(len(owned), 4)
+        self.assertEqual(proof['doris']['physical']['late_execute_failure']['rows'], 1001)
+        self.assertEqual(proof['clickhouse']['cases']['invalid_json']['records_written'], 0)
+        self.assertEqual(len({value['execution_id'] for value in executions}), 4)
+
     def test_direct_suite_entry_loads_shared_helpers_without_pythonpath(self):
         result = subprocess.run([sys.executable, str(SCRIPT.resolve())], cwd=SCRIPT.resolve().parents[2],
                                 env={'PATH': os.environ['PATH']}, capture_output=True, text=True, timeout=10)
@@ -370,7 +425,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with patch.dict(ONLINE.os.environ, environment, clear=False), patch.object(
                 ONLINE.subprocess, "run", side_effect=fake_run
             ):
-                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}, {"target_item_id": 13}, {"target_item_id": 14}), payload)
+                self.assertEqual(ONLINE.run_browser(root, environment, name, {"target_item_id": 11}, {"target_item_id": 12}, {"target_item_id": 13}, {"target_item_id": 14}, {"proof": "failures"}), payload)
 
     @staticmethod
     def browser_report(name: str) -> dict[str, object]:
@@ -401,6 +456,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             "manager_orchestrated_field_graph_verified": True,
             "manager_evolved_schema_verified": True,
             "manager_wide_field_graph_verified": True,
+            "write_failure_details_verified": 4,
         }
 
     def test_browser_proofs_and_current_report_version_are_required(self):
@@ -543,13 +599,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual((fields[1]["source"], fields[1]["target"]), ("region", "region_name"))
         self.assertEqual((fields[2]["precision"], fields[2]["scale"]), (8, 2))
         self.assertEqual((fields[3]["source"], fields[3]["default"]), ("", "online"))
-        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop"})
+        self.assertEqual(ONLINE.owned_task_names(name), {name, name + "_native", name + "_replace", name + "_hop", name + "_mongodb", name + "_multi", name + "_wide", name + "_wide_hop", name + "_doris_late_execute_failure", name + "_doris_invalid_json", name + "_clickhouse_late_execute_failure", name + "_clickhouse_invalid_json"})
 
     def test_cleanup_selection_is_limited_to_the_exact_run_family(self):
         name = ONLINE.task_name("run-123")
         names = sorted(ONLINE.owned_task_names(name)) + [ONLINE.task_name("another-run"), name + "_unrelated"]
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload={"items": [{"id": index + 1, "name": value} for index, value in enumerate(names)], "total": len(names)}))
-        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4, 5, 6, 7, 8])
+        self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), list(range(1, 13)))
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
         self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
@@ -596,13 +652,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(full_name, item["full_name"])
             return item
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
         self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v10")
-        self.assertEqual(report["created_resources"], 12)
-        self.assertEqual(report["deleted_resources"], 12)
+        self.assertEqual(report["created_resources"], 16)
+        self.assertEqual(report["deleted_resources"], 16)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
         self.assertEqual(report["mongodb_engine"]["engine_type"], "mongodb")
 
