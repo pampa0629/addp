@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -237,6 +238,57 @@ func TestPGAuthorizationMembershipsAgainstPostgres(t *testing.T) {
 		if !slices.Equal(actual, want) {
 			t.Fatal("organization preparation changed reader permissions", actual)
 		}
+	}
+	coordinator, err := issueSession(ctx, repo, selection, admin.PrincipalID, "pg-fixture-membership-operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinatorContext, err := contexts.ResolveAccessToken(ctx, coordinator.AccessToken)
+	if err != nil || len(coordinatorContext.Organization.Departments) != 0 || len(coordinatorContext.Organization.ProjectGroups) != 0 {
+		t.Fatal("membership operator must be independent of reader organizations", err)
+	}
+	if len(coordinatorContext.Authorization.RoleAssignments) != 1 || coordinatorContext.Authorization.RoleAssignments[0].RoleKey != "tenant.administrator" {
+		t.Fatal("membership operator must use the existing fixture Tenant administrator")
+	}
+	coordinatorID, err := strconv.ParseInt(coordinatorContext.Principal.ID, 10, 64)
+	if err != nil || coordinatorID <= 0 {
+		t.Fatal("membership operator identity is invalid", err)
+	}
+	organizations := iam.NewOrganizationService(repo, clock)
+	for _, department := range []bool{true, false} {
+		var organizationID, membershipID int64
+		if department {
+			organizationID, _ = strconv.ParseInt(current.Organization.Departments[0].DepartmentID, 10, 64)
+			membershipID, _ = strconv.ParseInt(current.Organization.Departments[0].MembershipID, 10, 64)
+		} else {
+			organizationID, _ = strconv.ParseInt(current.Organization.ProjectGroups[0].ProjectGroupID, 10, 64)
+			membershipID, _ = strconv.ParseInt(current.Organization.ProjectGroups[0].MembershipID, 10, 64)
+		}
+		close := iam.CloseOrganizationMembershipInput{TenantID: tenant.ID, OrganizationID: organizationID,
+			MembershipID: membershipID, Version: 1, ActorPrincipalID: coordinatorID,
+			Reason: "Disposable PG member exit", Audit: audit("pg-fixture-member-exit")}
+		if department {
+			_, err = organizations.CloseDepartmentMembership(ctx, close)
+		} else {
+			_, err = organizations.CloseProjectGroupMembership(ctx, close)
+		}
+		if err != nil {
+			t.Fatal("close PG fixture membership", err)
+		}
+		if _, err := contexts.ResolveAccessToken(ctx, refreshed.AccessToken); err == nil {
+			t.Fatal("member exit kept old reader credential valid")
+		}
+		fresh, err := issueSession(ctx, repo, selection, assignment.PrincipalID, "pg-fixture-reader-after-exit")
+		if err != nil {
+			t.Fatal(err)
+		}
+		projection, err := contexts.ResolveAccessToken(ctx, fresh.AccessToken)
+		if err != nil || projection.Principal != current.Principal || !reflect.DeepEqual(projection.Context, current.Context) ||
+			!reflect.DeepEqual(projection.Authorization.RoleAssignments, current.Authorization.RoleAssignments) ||
+			len(projection.Organization.Departments) != 0 || len(projection.Organization.ProjectGroups) != map[bool]int{true: 1, false: 0}[department] {
+			t.Fatal("member exit did not preserve reader identity and remaining memberships", err)
+		}
+		refreshed, current = fresh, projection
 	}
 }
 
@@ -663,7 +715,7 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 }
 
 func TestConsumerEnvironmentPublishesOnlyRequiredBrowserCredentials(t *testing.T) {
-	for _, suite := range []string{"security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
+	for _, suite := range []string{"pg-source-authorization", "security-plaintext-access", "security-mysql-owner-protection", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl"} {
 		t.Run(suite, func(t *testing.T) {
 			values := consumerEnvironment(suite, 2, "consumer-token", "private'password")
 			if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private'password" || values["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"] != "consumer-token" || values["ADDP_ONLINE_TEST_TENANT_ID"] != "2" || len(values) != 4 {

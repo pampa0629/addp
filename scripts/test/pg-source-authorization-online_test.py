@@ -16,16 +16,67 @@ class Server:
         self.grants, self.denies, self.calls = {}, {}, []
         self.deny_bodies, self.expired_grants = {}, set()
         self.expired, self.fault = False, fault
+        self.memberships = {'department': '41', 'project_group': '51'}
+        self.version, self.current_reader_token = 1, 'reader-private-token'
+
+    def context(self, kind):
+        reader = kind.startswith('reader')
+        permissions = ONLINE.READER_PERMISSIONS if reader or kind == 'outsider' else (
+            ONLINE.ORGANIZATION_PERMISSIONS if kind == 'coordinator' else ONLINE.OPERATOR_PERMISSIONS)
+        return {'principal': {'id': '33' if reader else '34' if kind == 'outsider' else '35', 'type': 'user'},
+                'context': {'type': 'tenant', 'tenant_id': '3', 'tenant_membership_id': '71'},
+                'token': {'type': 'first_party_access_token'},
+                'authorization': {'authorization_version': str(self.version), 'role_assignments': [
+                    {'role_key': 'online.reader', 'permissions': sorted(permissions)}]},
+                'organization': {'departments': [{'department_id': '41'}] if reader and 'department' in self.memberships else [],
+                                 'project_groups': [{'project_group_id': '51'}] if reader and 'project_group' in self.memberships else []}}
+
+    def inherited(self, row):
+        kind = row['recipient_type']
+        return kind == 'user' or kind in self.memberships or self.fault == 'inherit_after_exit'
 
     def client(self, kind):
         server = self
         class Client:
             token = kind + '-private-token'
+            base_url, timeout = 'http://127.0.0.1:8000', 10
             def request(self, method, url, expected, body=None, **kwargs):
                 path, query = urlsplit(url).path, parse_qs(urlsplit(url).query)
                 server.calls.append((kind, method, path, body))
                 status, result = 200, {}
-                if path.endswith('/access_grants') and method == 'POST':
+                if kind.startswith('reader') and self.token != server.current_reader_token and server.fault != 'stale_token_accepted':
+                    status, result = 401, {'error': 'authentication required'}
+                elif path == '/api/v1/system/auth/context':
+                    result = server.context(kind)
+                    if server.fault == 'changed_login_identity' and '-' in kind:
+                        result['principal']['id'] = '999'
+                    if server.fault == 'changed_login_permissions' and '-' in kind:
+                        result['authorization']['role_assignments'][0]['permissions'].append('system.engine_access_grant.create')
+                    if server.fault == 'same_authorization_version' and '-' in kind:
+                        result['authorization']['authorization_version'] = '1'
+                elif path == '/api/v1/system/login':
+                    server.current_reader_token = f'reader-{server.version}-private-token'
+                    result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
+                elif '/memberships' in path:
+                    membership_kind = 'department' if '/departments/' in path else 'project_group'
+                    row = {'id': '81' if membership_kind == 'department' else '91', 'version': 1,
+                           'principal_id': '33', 'tenant_membership_id': '71', 'status': 'active'}
+                    if method == 'GET':
+                        rows = [row] if membership_kind in server.memberships else []
+                        result = {'data': rows, 'total': len(rows)}
+                    else:
+                        assert kind == 'coordinator' and body['version'] == 1
+                        server.memberships.pop(membership_kind)
+                        server.version += 1
+                        server.current_reader_token = None
+                        if server.fault == 'exit_revokes_organization':
+                            for grant in server.grants.values():
+                                if grant['recipient_type'] == membership_kind:
+                                    grant['revocation'] = {'reason': 'wrong member exit'}
+                        result = dict(row, status='ended', version=2, ended_at='2026-10-16T04:00:00Z')
+                        if server.fault == 'wrong_membership_closed':
+                            result['principal_id'] = '999'
+                elif path.endswith('/access_grants') and method == 'POST':
                     if any(row['revocation'] is None and key not in server.expired_grants
                            and (row['recipient_type'], row['recipient_id']) == (body['recipient_type'], body['recipient_id'])
                            for key, row in server.grants.items()):
@@ -64,7 +115,7 @@ class Server:
                         matches = (row.get('recipient_type', 'user'), row.get('recipient_id', '33')) == recipient
                         if server.fault == 'history_expands_organizations' and history and recipient == ('user', '33'):
                             matches = True
-                        if current == (state or 'active') and (matches or account):
+                        if current == (state or 'active') and (matches or (account and server.inherited(row))):
                             rows.append(dict(row))
                     if account:
                         sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
@@ -85,8 +136,9 @@ class Server:
                     result = {'data': rows, 'total': len(rows)}
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
-                    active = any(row['revocation'] is None and key not in server.expired_grants for key, row in server.grants.items())
-                    allowed = kind == 'reader' and active and not any(server.denies.values()) and 'metric_people?' in target
+                    active = any(row['revocation'] is None and key not in server.expired_grants and server.inherited(row)
+                                 for key, row in server.grants.items())
+                    allowed = kind.startswith('reader') and active and not any(server.denies.values()) and 'metric_people?' in target
                     if server.fault == 'nonmember_granted' and kind == 'outsider' and active:
                         allowed = True
                     if server.fault == 'deny_ignored' and any(server.denies.values()):
@@ -119,11 +171,15 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             'id': 10 if name == 'metric_people' else 11, 'fingerprint': 'a' * 64}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
         patch.object(ONLINE.time, 'sleep').start()
+        patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout:
+                     self.server.client(token.removesuffix('-private-token'))).start()
 
     def lifecycle(self, fault=None):
         server = Server(fault)
+        self.server = server
         lifecycle = ONLINE.Lifecycle(server.client('operator'), server.client('reader'), 3, 2, '33',
-                                     {'department': '41', 'project_group': '51'}, server.client('outsider'))
+                                     {'department': '41', 'project_group': '51'}, server.client('outsider'),
+                                     server.client('coordinator'), server.client('login'), 'external-online-consumer', 'private-password')
         return server, lifecycle
 
     def test_full_flow_keeps_one_table_same_credential_and_natural_expiry(self):
@@ -131,20 +187,56 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 15)
-        self.assertEqual(len(server.grants), 5)
+        self.assertEqual(len(report['checks']), 18)
+        self.assertEqual(len(server.grants), 7)
+        self.assertTrue(report['same_credential_through_grant_expiry'])
         self.assertIn(lifecycle.expiry_grant, server.expired_grants)
         self.assertIsNone(server.grants[lifecycle.expiry_grant]['revocation'])
         self.assertFalse(any(server.denies.values()))
         self.assertEqual(self.scans.call_args_list[0].args[2], ['metric_people', 'metric_events'])
         self.assertEqual(self.scans.call_args_list[1].args[2], ['metric_people'])
         writes = [call for call in server.calls if call[1] == 'POST']
-        self.assertTrue(all(call[0] == 'operator' for call in writes))
+        self.assertTrue(all(call[0] == ('login' if call[2].endswith('/login') else
+                                      'coordinator' if '/memberships/' in call[2] else 'operator') for call in writes))
         self.assertTrue(all(call[3]['catalog_path']['segments'][-1]['name'] == 'metric_people'
                             for call in writes if 'catalog_path' in call[3]))
         self.assertNotIn('private-token', json.dumps(report))
         self.assertNotIn('person_id', json.dumps(report))
-        self.assertEqual([len(row['sources']) for row in report['source_observations']], [1, 2, 3, 2, 2, 2, 2, 2, 1, 0, 0])
+        self.assertEqual([len(row['sources']) for row in report['source_observations']], [1, 2, 3, 2, 2, 2, 2, 2, 1, 0, 0, 2, 1, 0])
+        self.assertEqual(report['membership_observations'], [
+            {'closed_type': 'department', 'old_token_status': 401, 'remaining_sources': 1, 'preview_status': 200},
+            {'closed_type': 'project_group', 'old_token_status': 401, 'remaining_sources': 0, 'preview_status': 403}])
+        self.assertEqual(server.memberships, {})
+
+    def test_member_exit_oracles_reject_stale_tokens_inheritance_and_grant_deletion(self):
+        for fault in ('stale_token_accepted', 'inherit_after_exit', 'exit_revokes_organization',
+                      'changed_login_identity', 'changed_login_permissions', 'same_authorization_version',
+                      'wrong_membership_closed'):
+            with self.subTest(fault=fault):
+                self.scans.side_effect = ['initial-basic', 'exact-basic']
+                server, lifecycle = self.lifecycle(fault)
+                with self.assertRaises(ONLINE.SuiteError):
+                    lifecycle.run({})
+                lifecycle.cleanup()
+                self.assertTrue(all(row['revocation'] is not None or key in server.expired_grants
+                                    for key, row in server.grants.items()))
+
+    def test_member_exit_interruption_still_cleans_organization_grants(self):
+        server, lifecycle = self.lifecycle()
+        original = lifecycle.organization_operator.request
+        def interrupted(method, path, expected, body=None):
+            response = original(method, path, expected, body)
+            if method == 'POST':
+                raise ONLINE.SuiteError('membership response lost')
+            return response
+        lifecycle.organization_operator.request = interrupted
+        with self.assertRaisesRegex(ONLINE.SuiteError, 'response lost'):
+            lifecycle.run({})
+        lifecycle.cleanup()
+        self.assertNotIn('department', server.memberships)
+        self.assertIn('project_group', server.memberships)
+        self.assertTrue(all(row['revocation'] is not None or key in server.expired_grants
+                            for key, row in server.grants.items()))
 
     def test_organization_projection_history_and_nonmember_oracles(self):
         for fault in ('wrong_source_anchor', 'nonmember_granted', 'release_all_denies', 'hide_deny_only',
@@ -185,6 +277,30 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             ONLINE.organization_memberships(client, {})
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.organization_memberships(client, {'department': '42', 'project_group': '51'})
+
+    def test_membership_actor_requires_existing_same_tenant_administrator(self):
+        client = Mock()
+        context = Server().context('coordinator')
+        context['authorization']['role_assignments'][0]['role_key'] = 'tenant.administrator'
+        client.request.return_value.payload = context
+        actor, _ = ONLINE.organization_administrator(client, 3)
+        self.assertEqual(actor, '35')
+        for change in ('tenant', 'principal', 'permissions', 'role', 'token'):
+            with self.subTest(change=change):
+                invalid = json.loads(json.dumps(context))
+                if change == 'tenant':
+                    invalid['context']['tenant_id'] = '4'
+                elif change == 'principal':
+                    invalid['principal']['type'] = 'service_principal'
+                elif change == 'permissions':
+                    invalid['authorization']['role_assignments'][0]['permissions'].pop()
+                elif change == 'role':
+                    invalid['authorization']['role_assignments'][0]['role_key'] = 'online.reader'
+                else:
+                    invalid['token']['type'] = 'oauth_access_token'
+                client.request.return_value.payload = invalid
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.organization_administrator(client, 3)
 
     def test_deny_success_status_matches_published_contract(self):
         swagger = json.loads((Path(__file__).resolve().parents[2] /
@@ -303,6 +419,9 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                        'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'reader',
                        'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'operator',
                        'ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN': 'outsider',
+                       'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'coordinator',
+                       'ADDP_ONLINE_TEST_USER_USERNAME': 'external-online-consumer',
+                       'ADDP_ONLINE_TEST_USER_PASSWORD': 'private-password',
                        'ADDP_ONLINE_FIXTURE_DEPARTMENT_ID': '41', 'ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID': '51'}
                 def failed_run(lifecycle, report):
                     lifecycle.grant(self.facts)
@@ -312,6 +431,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 with patch.dict(ONLINE.os.environ, env, clear=True), \
                      patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout: server.client(token)), \
                      patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {}), ('34', {})]), \
+                     patch.object(ONLINE, 'organization_administrator', return_value=('35', {})), \
                      patch.object(ONLINE, 'organization_memberships'), \
                      patch.object(ONLINE.Lifecycle, 'run', autospec=True, side_effect=failed_run):
                     self.assertEqual(ONLINE.main(), 1)

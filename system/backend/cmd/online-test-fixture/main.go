@@ -224,7 +224,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
+	case "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}
@@ -427,6 +427,11 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
+		organizationOperator, err := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-pg-membership-operator")
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = organizationOperator.AccessToken
 	}
 	if *suite == "transfer-relational-sql-etl" {
 		const username = "external-online-transfer-precheck"

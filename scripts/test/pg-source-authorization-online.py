@@ -22,6 +22,8 @@ SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release'}
+ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_membership.close',
+                            'iam.project_group_membership.read', 'iam.project_group_membership.close'}
 
 
 def require(condition, message):
@@ -42,6 +44,20 @@ def organization_memberships(client, expected):
     actual = {('department', row['department_id']) for row in current['departments']}
     actual |= {('project_group', row['project_group_id']) for row in current['project_groups']}
     require(actual == set(expected.items()), 'fixture organization membership differs from its declared recipients')
+
+
+def organization_administrator(client, tenant):
+    current = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    roles = current['authorization']['role_assignments']
+    permissions = {key for role in roles for key in role['permissions']}
+    require(current['principal']['type'] == 'user' and current['context']['type'] == 'tenant'
+            and current['context']['tenant_id'] == str(tenant)
+            and current['token']['type'] == 'first_party_access_token'
+            and {role['role_key'] for role in roles} == {'tenant.administrator'}
+            and ORGANIZATION_PERMISSIONS <= permissions,
+            'membership mutations require the existing dedicated fixture Tenant administrator')
+    return current['principal']['id'], {'role': 'tenant.administrator', 'tenant_id': str(tenant),
+                                       'permissions_verified': sorted(ORGANIZATION_PERMISSIONS)}
 
 
 def table_path(engine, name):
@@ -104,9 +120,13 @@ def preview(reader, target, allowed, expected=None):
 
 
 class Lifecycle:
-    def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider):
+    def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider,
+                 organization_operator, login, username, password):
         self.operator, self.reader, self.tenant, self.engine, self.recipient = operator, reader, tenant, engine, recipient
         self.organizations, self.outsider = organizations, outsider
+        self.organization_operator, self.login = organization_operator, login
+        require(username == 'external-online-consumer' and bool(password), 'dedicated reader login required')
+        self.username, self.password = username, password
         self.path = table_path(engine, 'metric_people')
         self.base = f'/api/v1/system/engines/{engine}'
         self.grants, self.denies = [], []
@@ -271,6 +291,86 @@ class Lifecycle:
         require(self.reader.token == before, 'organization authorization changed the reader credential')
         report['checks'].append('all_sources_withdrawn_and_release_does_not_grant')
 
+    def close_membership(self, kind, before):
+        collection = 'departments' if kind == 'department' else 'project_groups'
+        base = f'/api/v1/system/tenant/{collection}/{self.organizations[kind]}/memberships'
+        listing = self.organization_operator.request('GET', base + '?page_size=100&status=active', (200,)).payload
+        rows = listing['data']
+        require(listing['total'] == 1 and len(rows) == 1, 'fixture organization must contain only its reader')
+        row = rows[0]
+        membership_id = row.get('id')
+        version = row.get('version')
+        require(isinstance(membership_id, str) and re.fullmatch(r'[1-9][0-9]*', membership_id)
+                and type(version) is int and version > 0 and row.get('status') == 'active'
+                and row.get('principal_id') == self.recipient
+                and row.get('tenant_membership_id') == before['context']['tenant_membership_id'],
+                'organization mutation does not identify the current reader membership')
+        response = self.organization_operator.request('POST', base + f'/{membership_id}/close', (200,), {
+            'version': version, 'reason': 'Disposable PG member-exit acceptance'}).payload
+        require(all(response.get(key) == row[key] for key in ('id', 'principal_id', 'tenant_membership_id'))
+                and response.get('status') == 'ended' and response.get('ended_at')
+                and response.get('version') == version + 1, 'membership close receipt changed its binding')
+        remaining = self.organization_operator.request('GET', base + '?page_size=100&status=active', (200,)).payload
+        require(remaining['total'] == 0 and remaining['data'] == [], 'closed membership remains active')
+
+    def relogin_reader(self, before, target, expected_organizations):
+        # Deliberately keep the old token for both probes; do not auto-refresh it.
+        for path in ('/api/v1/system/auth/context', '/api/v1/manager/preview?' + urlencode({
+                'locator': target, 'page': 1, 'page_size': 20})):
+            denied = self.reader.request('GET', path, (401,)).payload
+            require(set(denied) <= {'error', 'error_code'} and bool(denied.get('error')),
+                    'stale credential exposed content or identity')
+        issued = self.login.request('POST', '/api/v1/system/login', (200,), {
+            'username': self.username, 'password': self.password}).payload
+        token = (issued.get('session') or {}).get('access_token')
+        require(issued.get('next_action') == 'session_issued' and isinstance(token, str)
+                and token and token != self.reader.token, 'formal reader login did not issue a fresh credential')
+        fresh = API.GatewayClient(self.reader.base_url, token, self.reader.timeout)
+        principal, _ = identity(fresh, self.tenant, READER_PERMISSIONS)
+        current = fresh.request('GET', '/api/v1/system/auth/context', (200,)).payload
+        require(principal == self.recipient and current['principal'] == before['principal']
+                and current['context'] == before['context']
+                and current['authorization']['role_assignments'] == before['authorization']['role_assignments']
+                and int(current['authorization']['authorization_version']) > int(before['authorization']['authorization_version']),
+                'reader login changed identity, roles, membership or failed to advance authorization version')
+        organization_memberships(fresh, expected_organizations)
+        self.reader = fresh
+
+    def membership_flow(self, report, facts, target, ungranted):
+        report['phase'] = 'organization_membership_changes'
+        sources = {}
+        for kind, recipient in self.organizations.items():
+            sources[(kind, recipient)], _ = self.grant(facts, recipient_type=kind, recipient_id=recipient)
+        issued_sources = dict(sources)
+        self.inspect_sources(facts, sources, {})
+        preview(self.reader, target, True, 2)
+        remaining = dict(self.organizations)
+        observations = report['membership_observations'] = []
+        for kind in ('department', 'project_group'):
+            before = self.reader.request('GET', '/api/v1/system/auth/context', (200,)).payload
+            self.close_membership(kind, before)
+            remaining.pop(kind)
+            self.relogin_reader(before, target, remaining)
+            sources.pop((kind, self.organizations[kind]))
+            self.inspect_sources(facts, sources, {})
+            preview(self.reader, target, bool(sources), 2)
+            preview(self.reader, ungranted, False)
+            preview(self.outsider, target, False)
+            # Leaving an organization removes inheritance, not that organization's Grant.
+            for recipient_type, recipient_id in self.organizations.items():
+                history = self.listing(history=True, state='active', recipient_type=recipient_type, recipient_id=recipient_id)
+                require(history['total'] == 1 and len(history['data']) == 1
+                        and history['data'][0]['request_id'] == issued_sources[(recipient_type, recipient_id)]
+                        and history['data'][0].get('revocation') is None,
+                        'member exit revoked or lost an organization Grant')
+                require(self.listing(recipient_type=recipient_type, recipient_id=recipient_id)['total'] == 1,
+                        'member exit removed the direct organization relation')
+            observations.append({'closed_type': kind, 'old_token_status': 401,
+                                 'remaining_sources': len(sources), 'preview_status': 200 if sources else 403})
+            report['checks'].append('department_exit_invalidates_old_token_and_preserves_project_read' if sources else
+                                    'last_organization_exit_invalidates_old_token_and_denies_read')
+        report['checks'].append('organization_grants_and_history_survive_member_exit')
+
     def run(self, report):
         reader_before = self.reader.token
         report['phase'] = 'initial_basic_scan'
@@ -325,10 +425,11 @@ class Lifecycle:
         row = next(row for row in expired['data'] if row.get('request_id') == self.expiry_grant)
         require(row.get('revocation') is None, 'manual withdrawal replaced natural expiry')
         report.update(grant_commands=self.grants, item_fingerprint=facts['item_fingerprint'], boundary_hash=facts['boundary_hash'],
-                      rows=2, same_credential=True, exact_target_only=True,
+                      rows=2, same_credential_through_grant_expiry=True, exact_target_only=True,
                       checks=['ungranted_denied', 'granted_readable', 'duplicate_rejected', 'basic_rescan_readable',
                               'deny_overrides_grant', 'release_restores_read', 'revoke_denies_read', 'natural_expiry_denies_read'])
         self.organization_flow(report, facts, target, ungranted)
+        self.membership_flow(report, facts, target, ungranted)
 
 
 def main():
@@ -357,21 +458,27 @@ def main():
         reader = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], timeout)
         operator = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], timeout)
         outsider = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], timeout)
+        organization_operator = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN'], timeout)
+        login = API.GatewayClient(os.environ['GATEWAY_URL'], '', timeout)
         organizations = {kind: os.environ[key] for kind, key in (
             ('department', 'ADDP_ONLINE_FIXTURE_DEPARTMENT_ID'), ('project_group', 'ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID'))}
         require(all(re.fullmatch(r'[1-9][0-9]*', value) for value in organizations.values()), 'invalid organization fixture IDs')
         recipient, report['reader'] = identity(reader, tenant, READER_PERMISSIONS)
         issuer, report['operator'] = identity(operator, tenant, OPERATOR_PERMISSIONS)
         observer, report['outsider'] = identity(outsider, tenant, READER_PERMISSIONS)
-        require(len({issuer, recipient, observer}) == 3 and len({reader.token, operator.token, outsider.token}) == 3,
-                'operator, reader and outsider must be distinct Users')
+        coordinator, report['organization_operator'] = organization_administrator(organization_operator, tenant)
+        require(len({issuer, recipient, observer, coordinator}) == 4
+                and len({reader.token, operator.token, outsider.token, organization_operator.token}) == 4,
+                'source operator, reader, outsider and membership operator must be distinct Users')
         organization_memberships(reader, organizations)
         organization_memberships(outsider, {})
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, interrupted)
         report.update(run_id=run_id, tenant_id=str(tenant), engine_id=engine)
-        report['principals'] = {'reader': recipient, 'operator': issuer, 'outsider': observer}
-        lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider)
+        report['principals'] = {'reader': recipient, 'operator': issuer, 'outsider': observer, 'organization_operator': coordinator}
+        lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider,
+                              organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
+                              os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
         report['result'] = 'passed'
     except (SuiteError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError):
