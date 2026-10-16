@@ -116,10 +116,10 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 10 || len(sourceInitializerPermissions) != 4 {
+	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 11 || len(sourceInitializerPermissions) != 4 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
-	for _, key := range []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release"} {
+	for _, key := range []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_approval_requirement.update"} {
 		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
 			t.Fatalf("operator lacks explicit command permission: %s", key)
 		}

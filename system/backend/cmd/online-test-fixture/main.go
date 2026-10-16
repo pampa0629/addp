@@ -76,7 +76,8 @@ var pgAuthorizationConsumerPermissions = []string{
 
 var pgAuthorizationOperatorPermissions = append(append([]string{}, sourceInitializerPermissions...),
 	"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release",
-	"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create")
+	"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create",
+	"system.engine_access_approval_requirement.update")
 
 var pgAuthorizationConfirmerPermissions = []string{
 	"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read", "catalog.sharing_decision.create",

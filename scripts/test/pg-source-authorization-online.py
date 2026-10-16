@@ -26,7 +26,8 @@ SUITE = 'pg-source-authorization'
 READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read'}
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
-    'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create'}
+    'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
+    'system.engine_access_approval_requirement.update'}
 CONFIRMER_PERMISSIONS = {'catalog.entry.read', 'catalog.entry.update', 'catalog.inventory.read',
                         'catalog.sharing_decision.create'}
 ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_membership.close',
@@ -315,23 +316,30 @@ class Lifecycle:
         return self.operator.request('GET', self.base + '/access_grants' + ('/history' if history else '')
                                      + '?' + urlencode(query), (200,)).payload
 
-    def grant(self, facts, *, initialize=False, seconds=300, recipient_type='user', recipient_id=None):
+    def grant_command(self, facts, *, initialize=False, seconds=300, recipient_type='user', recipient_id=None,
+                      catalog_path=None, requirement_version='1'):
         command = str(uuid.uuid4())
         expires = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-        body = {'request_id': command, 'catalog_path': self.path, 'item_fingerprint': facts['item_fingerprint'],
-                'expected_boundary_hash': facts['boundary_hash'], 'requirement_version': '1',
+        body = {'request_id': command, 'catalog_path': self.path if catalog_path is None else catalog_path,
+                'item_fingerprint': facts['item_fingerprint'],
+                'expected_boundary_hash': facts['boundary_hash'], 'requirement_version': requirement_version,
                 'initialize_approval': initialize, 'recipient_type': recipient_type,
                 'recipient_id': self.recipient if recipient_id is None else recipient_id,
                 'action': 'read', 'expiry_mode': 'at_time', 'expires_at': expires.isoformat(),
                 'reason': 'Disposable PG source authorization lifecycle'}
         self.grants.append(command)  # Track before the write, including unknown outcomes.
         self.recipients.add((body['recipient_type'], body['recipient_id']))
+        return command, body
+
+    def grant(self, facts, **options):
+        command, body = self.grant_command(facts, **options)
         receipt = self.operator.request('POST', self.base + '/access_grants', (201,), body).payload
         for key in ('request_id', 'catalog_path', 'item_fingerprint', 'recipient_type', 'recipient_id', 'action', 'expiry_mode'):
             require(receipt.get(key) == body[key], 'Grant receipt changed its bound target or recipient')
         require(receipt.get('boundary_hash') == facts['boundary_hash'] and receipt.get('revocation') is None,
                 'Grant receipt changed its approved boundary')
-        require(datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00')) == expires, 'Grant expiry changed')
+        require(datetime.fromisoformat(receipt['expires_at'].replace('Z', '+00:00'))
+                == datetime.fromisoformat(body['expires_at']), 'Grant expiry changed')
         return command, body
 
     def revoke(self, command):
@@ -482,8 +490,10 @@ class Lifecycle:
                 'same-parameter fulfillment replay changed issuance history')
         read(True)
         preview(self.outsider, target, False)
+        stale = self.approval_mode_flow(report, business=business, path=path, facts=facts, route=route,
+            requirement=requirement, command=command, history=history, read=read, target=target)
         self.catalog_outage_flow(report, path=path, facts=facts, route=route, command=command,
-                                 history=history, read=read, target=target)
+                                 history=history, read=read, target=target, requirement_version='3')
         self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
         read(False)
         revoked = self.listing(history=True, state='revoked', catalog_path=path)
@@ -495,14 +505,136 @@ class Lifecycle:
         report['checks'].extend(['catalog_confirmation_alone_denied', 'catalog_automatic_grant_bound_to_dataitem',
             'catalog_grant_actual_preview_readable', 'catalog_replay_preserves_issuance',
             'catalog_grant_deny_release_and_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
+        self.closed_stale_fulfillment(report, route, stale, path)
 
-    def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target):
+    def approval_mode_flow(self, report, *, business, path, facts, route, requirement, command, history, read, target):
+        report['phase'] = 'approval_mode_explicit_handoff'
+        requirement_id = requirement.get('id')
+        require(isinstance(requirement_id, str) and str(uuid.UUID(requirement_id)) == requirement_id,
+                'approval requirement UUID is missing')
+        update_route = self.base + '/access_approval_requirements/' + requirement_id
+        outsider = self.outsider.request('GET', '/api/v1/system/auth/context', (200,)).payload['principal']['id']
+        token = self.outsider.token
+        def outsider_read(allowed):
+            preview(self.outsider, target, allowed, 4 if allowed else None,
+                    columns=('event_id', 'event_date'), values=('e1', 'e2', 'e3', 'old'))
+        def observe(mode, version):
+            current = self.operator.request('POST', self.base + '/access_handling_requirement', (200,),
+                {key: path[key] for key in ('version', 'segments')}).payload
+            require(current.get('mode') == mode and current.get('requirement_version') == str(version),
+                    'approval observation changed mode or version')
+            require(self.listing(history=True, state='active', catalog_path=path) == history,
+                    'approval mode change rewrote the original business Grant')
+            read(True)
+        def switch(version, mode, *, expected_version):
+            result = self.operator.request('PUT', update_route, (200,), {
+                'version': version, 'mode': mode, 'reason': 'Disposable PG explicit approval handoff'}).payload
+            require(all(result.get(key) == requirement.get(key) for key in ('id', 'engine_id', 'catalog_path', 'item_fingerprint'))
+                    and result.get('mode') == mode and result.get('version') == expected_version,
+                    'approval handoff changed its target or unexpected version')
+            observe(mode, expected_version)
+            return result
+        def rejected_grant(version):
+            request_id, body = self.grant_command(facts, catalog_path=path, recipient_id=outsider,
+                                                  requirement_version=str(version))
+            rejected = self.operator.request('POST', self.base + '/access_grants', (409,), body).payload
+            require(rejected.get('error_code') == 'engine_access_grant_approval_changed',
+                    'new direct approval did not reject its stale or business basis')
+            require(not any(row.get('request_id') == request_id for row in self.listing(
+                history=True, recipient_id=outsider, catalog_path=path)['data']), 'rejected handoff command issued a Grant')
+            outsider_read(False)
+            return request_id
+        forbidden = business.request('PUT', update_route, (403,), {
+            'version': 1, 'mode': 'independent', 'reason': 'Disposable PG independent update permission check'}).payload
+        require(bool(forbidden.get('error')), 'missing update permission did not return a denial')
+        observe('catalog', 1)
+        switch(1, 'independent', expected_version=2)
+        outsider_read(False)
+        stale_direct = rejected_grant(1)
+        # This is a new command, not the already accepted v1 request above.
+        stale = dict(command, request_id=str(uuid.uuid4()))
+        self.grants.append(stale['request_id'])
+        pending = self.operator.request('POST', route + '/sharing_fulfillments', (200, 202), stale).payload
+        require(pending.get('request_id') == stale['request_id'] and pending.get('state') in {'pending', 'closed'},
+                'stale business request was accepted or silently replaced')
+        require(self.listing(history=True, state='active', catalog_path=path) == history,
+                'stale business request issued another Grant')
+        report['phase'] = 'approval_mode_current_direct_grant'
+        direct_id, direct_body = self.grant(facts, catalog_path=path, recipient_id=outsider, requirement_version='2')
+        direct_history = self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)
+        require(direct_history['total'] == 1 and direct_history['data'][0].get('request_id') == direct_id
+                and direct_history['data'][0].get('requirement_version') == '2'
+                and direct_history['data'][0].get('approval_mode') == 'independent',
+                'current-version direct approval changed its issuance basis')
+        outsider_read(True)
+        observe('independent', 2)
+        report['phase'] = 'approval_mode_return_to_business'
+        current = switch(2, 'catalog', expected_version=3)
+        require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path) == direct_history,
+                'return to business approval rewrote the existing direct Grant')
+        outsider_read(True)
+        require(switch(3, 'catalog', expected_version=3) == current, 'same-mode command mutated approval history')
+        original = self.operator.request('POST', route + '/sharing_fulfillments', (200,), command).payload
+        require(original.get('request_id') == command['request_id'] and original.get('state') == 'accepted',
+                'mode change invalidated the already accepted original business command')
+        observe('catalog', 3)
+        stale_update = self.operator.request('PUT', update_route, (409,), {
+            'version': 2, 'mode': 'independent', 'reason': 'Disposable PG stale handoff version'}).payload
+        require(stale_update.get('error_code') == 'resource_version_conflict', 'stale switch did not conflict explicitly')
+        observe('catalog', 3)
+        self.operator.request('POST', self.base + '/access_grants', (201,), direct_body)
+        require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path) == direct_history,
+                'original direct command replay renewed or replaced its issuance')
+        self.revoke(direct_id)
+        outsider_read(False)
+        revoked = self.listing(history=True, state='revoked', recipient_id=outsider, catalog_path=path)
+        rejected_grant(3)
+        self.operator.request('POST', self.base + '/access_grants', (201,), direct_body)
+        outsider_read(False)
+        require(self.listing(history=True, state='revoked', recipient_id=outsider, catalog_path=path) == revoked,
+                'revoked original direct replay changed withdrawal or issuance history')
+        report['approval_mode_handoff'] = {'requirement_id': requirement_id, 'versions': [1, 2, 3],
+            'direct_request_id': direct_id, 'stale_direct_request_id': stale_direct,
+            'stale_catalog_request_id': stale['request_id'], 'same_consumer_credentials': self.outsider.token == token,
+            'old_business_grant_unchanged': True, 'old_direct_grant_unchanged': True}
+        require(self.outsider.token == token, 'handoff changed the separately granted consumer credential')
+        report['checks'].extend(['approval_update_permission_required', 'approval_switch_preserves_business_grant',
+            'old_version_new_direct_grant_rejected', 'current_version_direct_grant_actual_read',
+            'return_to_business_preserves_direct_grant', 'same_mode_update_preserves_version',
+            'stale_switch_version_rejected', 'original_direct_replay_preserves_issuance_and_withdrawal',
+            'new_direct_grant_blocked_after_return_to_business'])
+        return stale
+
+    def closed_stale_fulfillment(self, report, route, command, path):
+        report['phase'] = 'approval_mode_stale_business_closure'
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            current = self.operator.request('GET', route + '/sharing_fulfillments/' + command['request_id'], (200,)).payload
+            require(all(current.get(key) == command[key] for key in command)
+                    and current.get('state') in {'pending', 'closed'} and current.get('granted_at') is None,
+                    'stale business request was accepted, issued or rebound to a newer version')
+            if current['state'] == 'closed':
+                break
+            time.sleep(2)
+        else:
+            raise SuiteError('stale business request did not close through the existing recovery path')
+        replay = self.operator.request('POST', route + '/sharing_fulfillments', (200,), command).payload
+        require(replay.get('request_id') == command['request_id'] and replay.get('state') == 'closed',
+                'closed stale request was reopened or automatically upgraded')
+        require(not any(row.get('request_id') == command['request_id']
+                        for row in self.listing(history=True, catalog_path=path)['data']), 'stale business request issued a Grant')
+        report['approval_mode_handoff']['stale_catalog_state'] = 'closed'
+        report['checks'].append('old_version_new_catalog_request_closed_without_upgrade')
+
+    def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target, requirement_version):
         report['phase'] = 'catalog_outage_existing_grant'
         token = self.reader.token
         outsider = self.outsider.request('GET', '/api/v1/system/auth/context', (200,)).payload['principal']['id']
         self.recipients.add(('user', outsider))
-        blocked_request, direct_request = str(uuid.uuid4()), str(uuid.uuid4())
-        self.grants.extend((blocked_request, direct_request))  # Own even an unexpected issuance before sending.
+        blocked_request = str(uuid.uuid4())
+        self.grants.append(blocked_request)
+        direct_request, direct_body = self.grant_command(facts, catalog_path=path, recipient_id=outsider,
+                                                        requirement_version=requirement_version, seconds=180)
         evidence = report['catalog_outage'] = {'unaccepted_request_id': blocked_request,
                                              'direct_request_id': direct_request}
         with DependencyOutage('catalog') as outage:
@@ -515,19 +647,13 @@ class Lifecycle:
             require(set(unavailable.payload) == {'error'} and bool(unavailable.payload['error']),
                     'offline business request did not return the Gateway dependency error')
             # Use an ungranted recipient so a duplicate-relation conflict cannot mask the approval check.
-            direct = self.operator.request('POST', self.base + '/access_grants', (409,), {
-                'request_id': direct_request, 'catalog_path': path, 'item_fingerprint': facts['item_fingerprint'],
-                'expected_boundary_hash': facts['boundary_hash'], 'requirement_version': '1',
-                'initialize_approval': False, 'recipient_type': 'user', 'recipient_id': outsider,
-                'action': 'read', 'expiry_mode': 'at_time',
-                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat(),
-                'reason': 'Disposable PG no implicit Catalog approval fallback'}).payload
+            direct = self.operator.request('POST', self.base + '/access_grants', (409,), direct_body).payload
             require(set(direct) == {'error', 'error_code'} and bool(direct['error'])
                     and direct['error_code'] == 'engine_access_grant_approval_changed',
                     'direct approval bypassed or failed to check the business approval requirement')
             requirement = self.operator.request('POST', self.base + '/access_handling_requirement', (200,),
                 {key: path[key] for key in ('version', 'segments')}).payload
-            require(requirement.get('mode') == 'catalog' and requirement.get('requirement_version') == '1',
+            require(requirement.get('mode') == 'catalog' and requirement.get('requirement_version') == requirement_version,
                     'Catalog outage implicitly changed the approval requirement')
             require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)['total'] == 0
                     and self.listing(history=True, state='active', catalog_path=path) == history,

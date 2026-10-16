@@ -39,6 +39,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], "with DependencyOutage('catalog')"),
                                    (paths[3], 'catalog_offline_no_direct_approval_fallback'),
                                    (paths[3], 'catalog_recovery_preserves_original_rules'),
+                                   (paths[3], 'self.approval_mode_flow('),
+                                   (paths[3], 'old_version_new_catalog_request_closed_without_upgrade'),
                                    (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):
             path = self.repository / relative
             original = path.read_text()

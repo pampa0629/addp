@@ -36,9 +36,10 @@ class Server:
                 'organization': {'departments': [{'department_id': '41'}] if reader and 'department' in self.memberships else [],
                                  'project_groups': [{'project_group_id': '51'}] if reader and 'project_group' in self.memberships else []}}
 
-    def inherited(self, row):
+    def inherited(self, row, principal='33'):
         kind = row['recipient_type']
-        return kind == 'user' or kind in self.memberships or self.fault == 'inherit_after_exit'
+        return (kind == 'user' and row['recipient_id'] == principal) or (kind != 'user' and principal == '33'
+                and (kind in self.memberships or self.fault == 'inherit_after_exit'))
 
     def client(self, kind):
         server = self
@@ -86,12 +87,19 @@ class Server:
                 elif server.catalog_down and server.fault == 'catalog_blocks_rule_writes' and method == 'POST':
                     status, result = 503, {'error': 'wrong rule dependency'}
                 elif path.endswith('/access_grants') and method == 'POST':
-                    if any(row['revocation'] is None and key not in server.expired_grants
+                    if body['request_id'] in server.grants:
+                        result, status = dict(server.grants[body['request_id']]), 201
+                        if server.fault == 'direct_replay_renews':
+                            server.grants[body['request_id']]['granted_at'] = '2026-10-16T02:00:00Z'
+                        if server.fault == 'direct_replay_restores_revoked':
+                            server.grants[body['request_id']]['revocation'] = None
+                    elif any(row['revocation'] is None and key not in server.expired_grants
                            and (row['recipient_type'], row['recipient_id']) == (body['recipient_type'], body['recipient_id'])
                            for key, row in server.grants.items()):
                         status, result = 409, {'error_code': 'engine_access_grant_relation_exists'}
                     else:
-                        result = dict(body, engine_id='2', boundary_hash=body['expected_boundary_hash'], revocation=None)
+                        result = dict(body, engine_id='2', boundary_hash=body['expected_boundary_hash'], revocation=None,
+                                      approval_mode='independent', granted_at='2026-10-16T01:00:00Z')
                         server.grants[body['request_id']] = result
                         server.expired = False
                         status = 201
@@ -146,11 +154,12 @@ class Server:
                     result = {'data': rows, 'total': len(rows)}
                 elif path == '/api/v1/manager/preview':
                     target = query['locator'][0]
-                    active = any(row['revocation'] is None and key not in server.expired_grants and server.inherited(row)
-                                 and row['catalog_path']['segments'][-1]['name'] + '?' in target
-                                 for key, row in server.grants.items())
-                    allowed = kind.startswith('reader') and active and not any(server.denies.values())
-                    if server.fault == 'nonmember_granted' and kind == 'outsider' and active:
+                    matching = [row for key, row in server.grants.items()
+                                if row['revocation'] is None and key not in server.expired_grants
+                                and row['catalog_path']['segments'][-1]['name'] + '?' in target]
+                    active = any(server.inherited(row, '33' if kind.startswith('reader') else '34') for row in matching)
+                    allowed = (kind.startswith('reader') or kind == 'outsider') and active and not any(server.denies.values())
+                    if server.fault == 'nonmember_granted' and kind == 'outsider' and matching:
                         allowed = True
                     if server.fault == 'deny_ignored' and any(server.denies.values()):
                         allowed = True
@@ -544,6 +553,9 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.facts = {'item_fingerprint': 'c' * 64, 'boundary_hash': 'd' * 64}
         self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
                       'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
+        self.requirement = {'id': 'f96cac39-7738-4b3f-b8a2-166b0a1a2e21', 'engine_id': '2',
+            'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'], 'mode': 'catalog', 'version': 1}
+        self.fulfillments = {}
         self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
             self.client('login'), 'external-online-consumer', 'private-password')
@@ -554,14 +566,31 @@ class PGCatalogApprovalTest(unittest.TestCase):
         original = client.request
         def request(method, url, expected, body=None, **kwargs):
             path = urlsplit(url).path
-            direct = path.endswith('/access_grants') and method == 'POST' and self.server.catalog_down
-            if ('/catalog/' not in path and not path.endswith(('/access_approval_requirements', '/access_handling_requirement'))
-                    and not direct):
+            direct = path.endswith('/access_grants') and method == 'POST'
+            update = '/access_approval_requirements/' in path and method == 'PUT'
+            fault = self.server.fault
+            valid_direct = direct and (body['request_id'] in self.server.grants or (
+                self.requirement['mode'] == 'independent' and (body['requirement_version'] == str(self.requirement['version'])
+                                                            or fault == 'stale_direct_accepted')))
+            if (valid_direct or ('/catalog/' not in path and not update
+                    and not path.endswith(('/access_approval_requirements', '/access_handling_requirement'))
+                    and not direct)):
                 return original(method, url, expected, body, **kwargs)
             self.server.calls.append((kind, method, path, body))
             status, result = 200, {}
-            fault = self.server.fault
-            if direct:
+            if update:
+                if kind != 'operator' and fault != 'missing_update_permission_ignored':
+                    result, status = {'error': 'update forbidden'}, 403
+                elif body['version'] != self.requirement['version'] and fault != 'stale_update_accepted':
+                    result, status = {'error': 'stale update', 'error_code': 'resource_version_conflict'}, 409
+                else:
+                    if body['mode'] != self.requirement['mode'] or fault == 'same_mode_changes_version':
+                        self.requirement.update(mode=body['mode'], version=self.requirement['version'] + 1)
+                    result = dict(self.requirement)
+                    if fault == 'switch_rewrites_old_grant':
+                        for row in self.server.grants.values():
+                            row['requirement_version'] = str(self.requirement['version'])
+            elif direct:
                 status, result = 409, {'error': 'wrong approval mode', 'error_code': 'engine_access_grant_approval_changed'}
                 if fault == 'direct_fallback':
                     result, status = dict(body, revocation=None), 201
@@ -569,7 +598,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 elif fault == 'duplicate_masks_approval':
                     result['error_code'] = 'engine_access_grant_relation_exists'
             elif path.endswith('/access_handling_requirement'):
-                result = {'mode': 'independent' if fault == 'implicit_mode_change' else 'catalog', 'requirement_version': '1'}
+                result = {'mode': 'independent' if self.server.catalog_down and fault == 'implicit_mode_change'
+                          else self.requirement['mode'], 'requirement_version': str(self.requirement['version'])}
             elif '/catalog/' in path and self.server.catalog_down:
                 status, result = 503, {'error': 'module unavailable'}
                 if fault == 'offline_fulfillment_issued':
@@ -578,7 +608,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 elif fault == 'outage_wrong_status':
                     status = 404
             elif path.endswith('/access_approval_requirements'):
-                result, status = dict(body, version='1'), 201
+                result, status = dict(self.requirement), 201
             elif path == '/api/v1/catalog/entries':
                 result = {'data': [] if fault == 'missing_catalog_source' else [dict(self.entry)], 'total': 1}
             elif path.endswith('/sharing_boundary'):
@@ -594,6 +624,19 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 if fault == 'confirmation_grants':
                     self.issue('unrequested')
             elif path.endswith('/sharing_fulfillments'):
+                if body['request_id'] in self.fulfillments:
+                    row = self.fulfillments[body['request_id']]
+                    result = {'request_id': body['request_id'], 'state': row['state']}
+                    if result['state'] == 'closed' and fault == 'closed_stale_request_reopens':
+                        result['state'] = 'pending'
+                    return SimpleNamespace(status=200, payload=result)
+                if body['request_id'] not in self.server.grants and (self.requirement['mode'] != 'catalog'
+                        or body['requirement_version'] != str(self.requirement['version'])):
+                    self.fulfillments[body['request_id']] = dict(body, state='pending' if fault == 'stale_catalog_never_closes'
+                                                               else 'closed', granted_at=None)
+                    if fault == 'stale_catalog_auto_upgrades':
+                        self.fulfillments[body['request_id']].update(state='accepted', requirement_version=str(self.requirement['version']))
+                    return SimpleNamespace(status=202, payload={'request_id': body['request_id'], 'state': 'pending'})
                 self.request_id = body['request_id']
                 if self.request_id not in self.server.grants and fault != 'never_issue':
                     self.issue(self.request_id)
@@ -607,6 +650,9 @@ class PGCatalogApprovalTest(unittest.TestCase):
                         grant['revocation'] = None
                 result = {'request_id': self.request_id, 'state': 'accepted'}
             elif '/sharing_fulfillments/' in path:
+                pending = self.fulfillments.get(path.rsplit('/', 1)[-1])
+                if pending is not None:
+                    return SimpleNamespace(status=200, payload=dict(pending))
                 grant = self.server.grants.get(path.rsplit('/', 1)[-1])
                 if grant is None:
                     result, status = {'error': 'not found'}, 404
@@ -644,21 +690,23 @@ class PGCatalogApprovalTest(unittest.TestCase):
 
     def test_business_approval_uses_formal_human_commands_and_system_history_not_runtime_credentials(self):
         self.run_flow()
-        self.assertEqual(len(self.report['checks']), 11)
+        self.assertEqual(len(self.report['checks']), 21)
         self.assertEqual(self.report['catalog_approval']['rows'], 4)
         self.assertTrue(self.report['catalog_approval']['revoked_replay_denied'])
         decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
         requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
         self.assertEqual([call[0] for call in decisions], ['business'])
-        self.assertEqual([call[0] for call in requests], ['operator'] * 4)
-        self.assertEqual(requests[0][3], requests[-1][3])
-        self.assertNotEqual(requests[0][3]['request_id'], requests[-2][3]['request_id'])
+        self.assertEqual([call[0] for call in requests], ['operator'] * 7)
+        self.assertEqual(requests[0][3], requests[-2][3])
+        self.assertNotEqual(requests[0][3]['request_id'], requests[-3][3]['request_id'])
         self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id', 'requirement_version'})
         self.assertFalse(any('/runtime/' in call[2] for call in self.server.calls))
         direct = [call for call in self.server.calls if call[2].endswith('/access_grants') and call[1] == 'POST']
-        self.assertEqual(len(direct), 1)
-        self.assertEqual(direct[0][3]['recipient_id'], '34')
-        self.assertFalse(direct[0][3]['initialize_approval'])
+        self.assertEqual(len(direct), 6)
+        self.assertTrue(all(call[3]['recipient_id'] == '34' and not call[3]['initialize_approval'] for call in direct))
+        self.assertEqual(self.report['approval_mode_handoff']['versions'], [1, 2, 3])
+        self.assertEqual(self.report['approval_mode_handoff']['stale_catalog_state'], 'closed')
+        self.assertEqual(self.requirement['version'], 3)
         self.assertTrue(self.report['catalog_outage']['same_credential'])
         self.assertFalse(self.server.catalog_down)
         self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
@@ -675,7 +723,20 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 self.server.fault = fault
                 with self.assertRaises(ONLINE.SuiteError):
                     self.run_flow()
-                self.assertNotEqual(len(self.report['checks']), 11)
+                self.assertNotEqual(len(self.report['checks']), 21)
+
+    def test_approval_switch_rejects_permission_version_grant_mutation_and_silent_catalog_upgrade(self):
+        for fault in ('missing_update_permission_ignored', 'switch_rewrites_old_grant', 'stale_direct_accepted',
+                      'same_mode_changes_version', 'stale_update_accepted', 'direct_replay_renews', 'direct_replay_restores_revoked',
+                      'stale_catalog_auto_upgrades', 'stale_catalog_never_closes', 'closed_stale_request_reopens'):
+            with self.subTest(fault=fault):
+                self.reset()
+                self.server.fault = fault
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_flow()
+                self.assertFalse(self.server.catalog_down)
+                self.lifecycle.cleanup()
+                self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
 
     def test_catalog_outage_cannot_mask_read_dependency_fallback_mode_change_or_recovery_regrant(self):
         for fault in ('catalog_blocks_existing_read', 'direct_fallback', 'duplicate_masks_approval',
