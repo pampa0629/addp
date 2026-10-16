@@ -117,21 +117,64 @@ class ContinuousRunnerTest(unittest.TestCase):
         self.assertTrue(all(method == 'GET' or path.endswith('/manual') for method, path, _ in before))
         self.assertEqual(sum(path.endswith('/items') for _, path, _ in before), 3)
 
-    def test_schema_approval_requires_applied_current_revision_and_owned_completed_scan(self):
+    def test_schema_approval_preserves_distinct_users_and_rejects_cross_reads(self):
+        initial_id = '00000000-0000-4000-8000-000000000002'
+        scan_id = '00000000-0000-4000-8000-000000000003'
         fields = [{'source': 'scan_extra', 'target': 'scan_extra', 'target_type': 'string', 'nullable': True}]
         pending = {'id': 61, 'task_id': 57, 'execution_id': UUID, 'status': 'pending',
                    'approvable': True, 'suggested_fields': fields, 'from_revision': 1}
         applied = {'id': 61, 'status': 'applied', 'metadata_scan_status': 'success',
-                   'metadata_scan_attempt': 1, 'to_revision': 2, 'metadata_scan_execution_id': UUID}
-        scan = {'execution_id': UUID, 'status': 'success'}
-        path, approval, identity = M.apply_cdc_schema_approval(Client([pending, scan]), 57, UUID, lambda *args: applied)
-        self.assertEqual(approval, {'fields': fields})
-        self.assertEqual(identity, UUID)
+                   'metadata_scan_attempt': 1, 'to_revision': 2, 'metadata_scan_execution_id': scan_id}
+        scan = {'execution_id': scan_id, 'status': 'success', 'triggered_by': 32}
+        original = {'execution_id': UUID, 'status': 'failed', 'metadata': {}, 'trigger_by': 31}
+        def scenario(*, result=None, scan_change=None, initial_actor=31, historical_actor=31,
+                     historical_actor_after=31, source_visible_to_approver=False, approval_visible_to_initiator=False):
+            calls = []
+            class Actor:
+                def __init__(self, principal): self.principal = principal
+                def request(self, method, path, expected, body=None):
+                    calls.append((self.principal, method, path, expected))
+                    status = 200
+                    if path == '/api/v1/meta/executions/' + initial_id:
+                        status = 200 if self.principal == 31 or source_visible_to_approver else 404
+                        payload = {'triggered_by': initial_actor}
+                    elif path == '/api/v1/meta/executions/' + scan_id:
+                        status = 200 if self.principal == 32 or approval_visible_to_initiator else 404
+                        payload = {**scan, **(scan_change or {})}
+                    elif path == M.OWNER + '/executions/' + UUID:
+                        reads = sum(p == path for _, _, p, _ in calls)
+                        payload = {**original, 'trigger_by': historical_actor if reads == 1 else historical_actor_after}
+                    elif path == M.OWNER + '/task-definitions/57/schema-change':
+                        payload = pending
+                    else: raise AssertionError(path)
+                    if status not in expected: raise M.SuiteError('unexpected cross-user read result')
+                    return SimpleNamespace(payload=payload)
+            initiator, approver = Actor(31), Actor(32)
+            def approve(actor, path, body):
+                self.assertIs(actor, approver)
+                self.assertEqual(body, {'fields': fields})
+                return {**applied, **(result or {})}
+            output = M.apply_cdc_schema_approval(approver, 57, UUID, approve, initiator=initiator,
+                initial_scan_id=initial_id, initiator_id='31', approver_id='32')
+            return output, calls
+        output, calls = scenario()
+        self.assertEqual(output[2], scan_id)
+        self.assertIn((32, 'GET', '/api/v1/meta/executions/' + initial_id, (404,)), calls)
+        self.assertIn((31, 'GET', '/api/v1/meta/executions/' + scan_id, (404,)), calls)
+        self.assertEqual(sum(path == M.OWNER + '/executions/' + UUID for _, _, path, _ in calls), 2)
         for change in [{'metadata_scan_status': 'failed'}, {'metadata_scan_attempt': 2}, {'to_revision': 1}, {'id': 62}]:
-            with self.subTest(change=change), self.assertRaises(M.SuiteError):
-                M.apply_cdc_schema_approval(Client([pending]), 57, UUID, lambda *args: {**applied, **change})
-        with self.assertRaises(M.SuiteError):
-            M.apply_cdc_schema_approval(Client([pending, {**scan, 'parent_execution_id': UUID}]), 57, UUID, lambda *args: applied)
+            with self.subTest(change=change), self.assertRaises(M.SuiteError): scenario(result=change)
+        for change in [{'parent_execution_id': UUID}, {'triggered_by': 31}, {'status': 'failed'}]:
+            with self.subTest(change=change), self.assertRaises(M.SuiteError): scenario(scan_change=change)
+        for kwargs in [{'initial_actor': 32}, {'historical_actor': 32}, {'historical_actor_after': 32},
+                       {'source_visible_to_approver': True}, {'approval_visible_to_initiator': True}]:
+            with self.subTest(change=kwargs), self.assertRaises(M.SuiteError): scenario(**kwargs)
+
+    def test_schema_approval_refuses_reusing_the_initiating_user(self):
+        for approver in ('31', 31):
+            with self.subTest(approver=approver), self.assertRaisesRegex(M.SuiteError, 'two distinct User'):
+                M.apply_cdc_schema_approval(None, 57, UUID, None, initiator=None,
+                    initial_scan_id=UUID, initiator_id='31', approver_id=approver)
 
     def test_scan_clock_crosses_latest_ancestor_tick_and_has_bounded_wait(self):
         stamps = [{'scanned_at': '1970-01-01T00:00:01Z'}, {'scanned_at': '1970-01-01T00:00:02Z'}]

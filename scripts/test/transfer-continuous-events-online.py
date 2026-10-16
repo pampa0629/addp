@@ -231,7 +231,26 @@ def wait_target_scan(client, engine_id, tenant, name, expected_fields, sibling, 
     return until(scanned)
 
 
-def apply_cdc_schema_approval(client, task_id, blocked_execution, mutate):
+def assert_schema_scan_origin(initiator, approver, scan_id, approver_id):
+    result = approver.request('GET', f'/api/v1/meta/executions/{scan_id}', (200,)).payload
+    require(result.get('execution_id') == scan_id and not result.get('parent_execution_id'),
+            'approval scan invented a parent execution')
+    require(result.get('triggered_by') == int(approver_id), 'approval scan changed its approving User')
+    require(result.get('status') not in {'failed', 'cancelled', 'timeout'}, 'approval target scan failed')
+    assert_safe(result)
+    initiator.request('GET', f'/api/v1/meta/executions/{scan_id}', (404,))
+    return result
+
+
+def apply_cdc_schema_approval(client, task_id, blocked_execution, mutate, *, initiator,
+                              initial_scan_id, initiator_id, approver_id):
+    require(int(initiator_id) > 0 and int(approver_id) > 0 and int(initiator_id) != int(approver_id),
+            'schema approval requires two distinct User Principals')
+    initial = initiator.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (200,)).payload
+    require(initial.get('triggered_by') == int(initiator_id), 'initial scan changed its initiating User')
+    client.request('GET', f'/api/v1/meta/executions/{initial_scan_id}', (404,))
+    historical = detail(initiator, blocked_execution)
+    require(historical.get('trigger_by') == int(initiator_id), 'blocked CDC changed its initiating User')
     path = f'{OWNER}/task-definitions/{task_id}/schema-change'
     change = client.request('GET', path, (200,)).payload
     approval = {'fields': [{'source': 'scan_extra', 'target': 'scan_extra', 'target_type': 'string', 'nullable': True}]}
@@ -244,11 +263,11 @@ def apply_cdc_schema_approval(client, task_id, blocked_execution, mutate):
             and applied.get('to_revision') == change.get('from_revision', 0) + 1, 'CDC approval scan did not submit exactly once')
     scan_id = canonical_uuid(applied.get('metadata_scan_execution_id'))
     def scanned():
-        result = client.request('GET', f'/api/v1/meta/executions/{scan_id}', (200,)).payload
-        require(result.get('execution_id') == scan_id and not result.get('parent_execution_id'), 'approval scan invented a parent execution')
-        require(result.get('status') not in {'failed', 'cancelled', 'timeout'}, 'approval target scan failed')
+        result = assert_schema_scan_origin(initiator, client, scan_id, approver_id)
         return result.get('status') == 'success'
     until(scanned)
+    require(detail(initiator, blocked_execution).get('trigger_by') == historical['trigger_by'],
+            'approval rewrote the historical CDC User')
     return path, approval, scan_id
 
 
@@ -447,9 +466,9 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         # Scan physical PostgreSQL facts through Meta; no fabricated catalog/task/runtime rows.
         scan = mutate(client, '/api/v1/meta/scan/run/manual',
                       {'engine_id': pg, 'scan_depth': 'deep', 'trigger_type': 'manual', 'force': True}, (201,))
-        scan_id = canonical_uuid(scan.get('execution_id'))
+        formal_source_scan_id = canonical_uuid(scan.get('execution_id'))
         def scanned():
-            item = client.request('GET', f'/api/v1/meta/executions/{scan_id}', (200,)).payload
+            item = client.request('GET', f'/api/v1/meta/executions/{formal_source_scan_id}', (200,)).payload
             require(item.get('status') not in {'failed', 'cancelled', 'timeout'}, 'physical source metadata scan failed')
             return item.get('status') == 'success'
         until(scanned)
@@ -561,7 +580,10 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         compare(cdc, 'failed')
         assert_scan_boundary(client, pg, sibling, boundary)
         API.wait_meta_scan_tick([cdc_scan])
-        path, approval, scan_id = apply_cdc_schema_approval(client, cdc_task, cdc, mutate)
+        initiating_user = report['consumer_identity']['principal_id']
+        approving_user = report['peer_identity']['principal_id']
+        path, approval, scan_id = apply_cdc_schema_approval(peer, cdc_task, cdc, mutate, initiator=client,
+            initial_scan_id=formal_source_scan_id, initiator_id=initiating_user, approver_id=approving_user)
         migrated = target_scan('cdc', {'id', 'label', 'scan_extra'})
         require(migrated['scanned_at'] != cdc_scan['scanned_at'], 'approval reused old target metadata')
         report['precise_scan_scope']['scans'].append({'phase': 'cdc_schema_approval',
@@ -570,8 +592,17 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         repeated = mutate(client, path + '/approve', approval)
         require(repeated.get('metadata_scan_attempt') == 1 and repeated.get('metadata_scan_execution_id') == scan_id,
                 'repeated approval submitted another scan')
+        require(assert_schema_scan_origin(client, peer, scan_id, approving_user).get('status') == 'success',
+                'repeated approval changed the completed scan')
+        report['schema_approval_ownership'] = {'initiator_principal_id': initiating_user,
+            'approver_principal_id': approving_user, 'original_execution_id': cdc,
+            'initial_scan_execution_id': formal_source_scan_id, 'approval_scan_execution_id': scan_id,
+            'bidirectional_read_isolation_verified': True, 'original_execution_actor_preserved': True,
+            'repeat_by_initiator_preserves_approver': True}
+        report['checks'].append('cdc_distinct_approver_scan_origin_and_bidirectional_read_isolation')
         cdc_resumed = launch(cdc_task, 'resume')
-        require(cdc_resumed != cdc, 'schema approval resume reused execution identity')
+        require(cdc_resumed != cdc and detail(client, cdc_resumed).get('trigger_by') == int(initiating_user),
+                'schema approval resume reused execution identity or changed its User')
         until(lambda: physical('verify-cdc-altered'))
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) > 0
                           for e in events(client, f'{OWNER}/executions', cdc_resumed)))
@@ -647,7 +678,8 @@ def main():
         client, denied, foreign, peer, reader, admin = [API.GatewayClient(gateway, token, timeout) for token in tokens]
         identities = []
         for name, actor, permissions in [('consumer', client, REQUIRED), ('monitor_only', denied, {'monitor.execution.read'}),
-                                         ('peer', peer, {'monitor.execution.read', 'transfer.task.read'}),
+                                         ('peer', peer, {'monitor.execution.read', 'transfer.task.read',
+                                                         'transfer.task.update', 'meta.scan_task.read'}),
                                          ('reader', reader, {'monitor.execution.read', 'transfer.task.read'})]:
             summary, binding = identity(actor, tenant, permissions)
             identities.append(binding[0])

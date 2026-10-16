@@ -1061,6 +1061,13 @@ func TestContinuousEventFixtureUsesMinimalTenantPermissions(t *testing.T) {
 	}
 }
 
+func TestContinuousApproverUsesMinimalTenantPermissions(t *testing.T) {
+	want := []string{"monitor.execution.read", "transfer.task.read", "transfer.task.update", "meta.scan_task.read"}
+	if strings.Join(transferContinuousPeerPermissions, ",") != strings.Join(want, ",") {
+		t.Fatalf("expanded continuous approver permissions=%v", transferContinuousPeerPermissions)
+	}
+}
+
 func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
 	permissions, err := suitePermissions("highgo-consumer-flow")
 	if err != nil {

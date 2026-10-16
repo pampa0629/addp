@@ -137,6 +137,10 @@ var orchestratorPermissions = []string{
 
 var orchestratorPeerPermissions = []string{"monitor.execution.read", "meta.scan_task.read"}
 
+var transferContinuousPeerPermissions = []string{
+	"monitor.execution.read", "transfer.task.read", "transfer.task.update", "meta.scan_task.read",
+}
+
 var managerArtifactPermissions = []string{
 	"manager.content.read",
 	"manager.data_item.update",
@@ -534,8 +538,8 @@ func run(args []string, environment []string) error {
 			ownerPermission = "transfer.task.read"
 			readerName = "external-online-transfer-reader"
 			peerName = "external-online-transfer-peer"
-			peerPermissions = []string{"monitor.execution.read", "transfer.task.read"}
-			foreignPermissions = peerPermissions
+			peerPermissions = transferContinuousPeerPermissions
+			foreignPermissions = []string{"monitor.execution.read", "transfer.task.read"}
 		}
 		foreignTenant, err := createOrchestratorForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
 		if err != nil {
