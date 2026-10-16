@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -45,7 +46,7 @@ func TestIntegrationPostgresPlatformAlertSourceIsolationAndAtomicity(t *testing.
 		}
 	})
 	logEvaluation := PlatformAlertEvaluation{Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver, SubjectID: subject, Signal: "delivery_probe", Severity: "warning", Verdict: PlatformAlertRisk}
-	evaluate := func(e PlatformAlertEvaluation, n *PlatformAlertNotifications, at time.Time) error {
+	evaluate := func(e PlatformAlertEvaluation, n *PlatformAlertService, at time.Time) error {
 		return db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, n, e, at) })
 	}
 	abort := errors.New("rollback evaluation source state")
@@ -102,17 +103,21 @@ func TestIntegrationPostgresPlatformAlertSourceIsolationAndAtomicity(t *testing.
 		t.Fatal(err)
 	}
 	zero := 0
-	if _, err := f.n.Retry(ctx, resourceDelivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogNotFound) {
-		t.Fatal("log-only retry exposed resource event", err)
+	if _, err := f.n.Retry(ctx, resourceDelivery.ID, PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogRetryUnavailable) {
+		t.Fatal("unsubscribed resource retry accepted", err)
 	}
 	deliveries, err := f.n.Deliveries(ctx, 1, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundResource := false
 	for _, delivery := range deliveries.Data {
 		if delivery.ID == resourceDelivery.ID {
-			t.Fatal("log delivery list exposed resource event")
+			foundResource = delivery.Category == models.PlatformAlertCategoryResource
 		}
+	}
+	if !foundResource {
+		t.Fatal("generic delivery list omitted original resource category")
 	}
 	for _, verdict := range []PlatformAlertVerdict{PlatformAlertUnknown, PlatformAlertPaused} {
 		resource.Verdict = verdict
@@ -129,11 +134,11 @@ func TestIntegrationPostgresPlatformAlertSourceIsolationAndAtomicity(t *testing.
 		t.Fatal(err)
 	}
 	summary, err := pipeline.Summary(ctx, now.Add(2*time.Minute))
-	if err != nil || len(summary.Incidents) != 1 || summary.Incidents[0].ID != logIncident.ID || summary.Incidents[0].Status != "open" || summary.Incidents[0].Node != subject {
+	if err != nil || summary.ActiveIncidents != 1 || activeLogTestIncident(t, db, subject).ID != logIncident.ID {
 		t.Fatal("resource recovery leaked into log view", err)
 	}
-	if _, err := pipeline.ManageIncident(ctx, resourceIncident.ID, 1, "acknowledge", nil, 1, now); !errors.Is(err, ErrLogNotFound) {
-		t.Fatal("log management crossed source boundary", err)
+	if _, err := f.n.ManageIncident(ctx, resourceIncident.ID, 1, "acknowledge", nil, 1, now); !errors.Is(err, ErrLogConflict) {
+		t.Fatal("resolved resource did not enforce generic management CAS", err)
 	}
 	logEvaluation.Severity = "critical"
 	if err := evaluate(logEvaluation, f.n, now.Add(time.Minute)); !errors.Is(err, ErrLogConflict) {
@@ -145,40 +150,121 @@ func TestIntegrationPostgresPlatformAlertSourceIsolationAndAtomicity(t *testing.
 	}
 }
 
-func TestIntegrationPostgresPlatformLogAPICannotManageResourceSubscriptions(t *testing.T) {
+func TestIntegrationPostgresPlatformAlertExplicitCategoriesAndCAS(t *testing.T) {
 	f := newLogRetryFixture(t, "webhook")
-	ctx, now := context.Background(), time.Now().UTC()
-	for _, categories := range []models.StringList{{models.PlatformAlertCategoryResource}, {models.PlatformAlertCategoryLog, models.PlatformAlertCategoryResource}} {
-		if err := f.db.Model(&f.target).Update("categories", categories).Error; err != nil {
-			t.Fatal(err)
-		}
-		targets, err := f.n.List(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, target := range targets {
-			if target.ID == f.target.ID {
-				t.Fatal("log-only list exposed broader subscription")
-			}
-		}
-		if _, err := f.n.Save(ctx, f.target.ID, LogDestinationInput{Version: f.target.Version, Name: f.target.Name, Channel: f.target.Channel, URL: f.target.URL, EventTypes: []string{"opened"}}); !errors.Is(err, ErrLogNotFound) {
-			t.Fatal("log-only update replaced broader subscription", err)
-		}
-		if _, err := f.n.SetSecret(ctx, f.target.ID, f.target.Version, "fixture-secret-123456789"); !errors.Is(err, ErrLogNotFound) {
-			t.Fatal("log-only credential mutation accepted", err)
-		}
-		if err := f.n.Delete(ctx, f.target.ID, f.target.Version); !errors.Is(err, ErrLogNotFound) {
-			t.Fatal("log-only delete accepted", err)
-		}
-		if err := f.n.Test(ctx, f.target.ID, now); !errors.Is(err, ErrLogNotFound) {
-			t.Fatal("log-only test delivery accepted", err)
-		}
-		zero := 0
-		if _, err := f.n.Retry(ctx, f.delivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogRetryUnavailable) {
-			t.Fatal("log-only retry accepted broader subscription", err)
+	ctx := context.Background()
+	for _, categories := range [][]string{nil, {}, {"resource", "resource"}, {"unknown"}} {
+		_, err := f.n.Save(ctx, 0, PlatformAlertDestinationInput{Name: uuid.NewString(), Channel: "webhook", URL: f.target.URL, Categories: categories, EventTypes: []string{"opened"}})
+		if !errors.Is(err, ErrLogInvalid) {
+			t.Fatal("invalid/implicit categories accepted", categories, err)
 		}
 	}
-	if len(f.webhook.messages) != 0 {
-		t.Fatal("rejected cross-category operation sent external notification")
+	input := PlatformAlertDestinationInput{Name: f.target.Name, Channel: f.target.Channel, URL: f.target.URL, Categories: []string{"resource", "log_pipeline"}, EventTypes: []string{"opened"}, Version: f.target.Version}
+	target, err := f.n.Save(ctx, f.target.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(target.Categories) != 2 || target.Categories[0] != "log_pipeline" {
+		t.Fatal("categories not explicit and canonical", target)
+	}
+	if _, err = f.n.Save(ctx, f.target.ID, input); !errors.Is(err, ErrLogConflict) {
+		t.Fatal("stale category mutation accepted", err)
+	}
+	rows, err := f.n.Destinations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.ID == target.ID {
+			found = len(row.Categories) == 2 && row.SecretCiphertext == target.SecretCiphertext
+		}
+	}
+	if !found {
+		t.Fatal("generic management omitted subscribed target")
+	}
+}
+
+func TestIntegrationPostgresPlatformAlertResourceRoutingAndManagement(t *testing.T) {
+	f := newLogRetryFixture(t, "webhook")
+	db, ctx := f.db, context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	target, err := f.n.Save(ctx, 0, PlatformAlertDestinationInput{Categories: []string{"resource"}, Name: "resource-" + uuid.NewString(), Channel: "webhook", URL: f.target.URL, EventTypes: []string{"opened", "resolved"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Where("destination_id=?", target.ID).Delete(&models.PlatformAlertDelivery{})
+		db.Delete(&models.PlatformAlertDestination{}, target.ID)
+	})
+	target, err = f.n.SetSecret(ctx, target.ID, target.Version, "fixture-secret-resource-123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = f.n.Save(ctx, target.ID, PlatformAlertDestinationInput{Version: target.Version, Categories: []string{"resource"}, Name: target.Name, Channel: "webhook", URL: target.URL, EventTypes: []string{"opened", "resolved"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := uuid.NewString()
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM monitor.platform_alert_deliveries WHERE event_id IN (SELECT id FROM monitor.platform_alert_events WHERE incident_id IN (SELECT id FROM monitor.platform_alert_incidents WHERE subject_id=?))`, subject)
+		db.Exec(`DELETE FROM monitor.platform_alert_events WHERE incident_id IN (SELECT id FROM monitor.platform_alert_incidents WHERE subject_id=?)`, subject)
+		db.Where("subject_id=?", subject).Delete(&models.PlatformAlertIncident{})
+	})
+	e := PlatformAlertEvaluation{Category: models.PlatformAlertCategoryResource, SubjectKind: models.PlatformAlertSubjectHostNode, SubjectID: subject, Signal: "node.memory.used_percent", Severity: "warning", Verdict: PlatformAlertRisk}
+	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now) }); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.n.Incidents(ctx, 1, 20, "resource", "active", subject)
+	if err != nil || list.Total != 1 {
+		t.Fatal("resource list", list, err)
+	}
+	incident := list.Data[0]
+	row, err := f.n.ManageIncident(ctx, incident.ID, incident.Version, "acknowledge", nil, 1, now)
+	if err != nil || row.Status != "acknowledged" {
+		t.Fatal("acknowledge", row, err)
+	}
+	if _, err := f.n.ManageIncident(ctx, incident.ID, incident.Version, "acknowledge", nil, 1, now); !errors.Is(err, ErrLogConflict) {
+		t.Fatal("stale action accepted", err)
+	}
+	until := now.Add(time.Hour)
+	row, err = f.n.ManageIncident(ctx, row.ID, row.Version, "suppress", &until, 1, now)
+	if err != nil || row.SuppressedUntil == nil {
+		t.Fatal("suppress", row, err)
+	}
+	var delivery models.PlatformAlertDelivery
+	if err := db.Joins("JOIN monitor.platform_alert_events e ON e.id=platform_alert_deliveries.event_id").Where("e.incident_id=?", incident.ID).Take(&delivery).Error; err != nil {
+		t.Fatal(err)
+	}
+	if delivery.DestinationID != target.ID {
+		t.Fatal("resource sent to pre-existing log subscriber", delivery.DestinationID)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(delivery.Payload), &payload); err != nil || payload["schema"] != "addp.platform-resource-alert/v1" || payload["subject_id"] != subject || payload["node"] != nil {
+		t.Fatal("wrong formal resource payload", payload, err)
+	}
+	if _, err := wecomPlatformAlertPayload(delivery.Payload, delivery.ID); err != nil {
+		t.Fatal("resource WeCom formatter", err)
+	}
+	if err := f.n.send(ctx, delivery, now); err != nil {
+		t.Fatal("resource webhook formatter", err)
+	}
+	// Recovery records one same-source event. Active suppression applies to its
+	// notification without rewriting the opened event or its original payload.
+	e.Verdict = PlatformAlertNormal
+	if err := db.Transaction(func(tx *gorm.DB) error { return reconcilePlatformAlert(tx, f.n, e, now.Add(time.Minute)) }); err != nil {
+		t.Fatal(err)
+	}
+	list, err = f.n.Incidents(ctx, 1, 20, "resource", "resolved", subject)
+	if err != nil || list.Total != 1 {
+		t.Fatal("recovery", err)
+	}
+	if _, err := f.n.ManageIncident(ctx, row.ID, list.Data[0].Version, "acknowledge", nil, 1, now.Add(time.Minute)); !errors.Is(err, ErrLogConflict) {
+		t.Fatal("resolved event handled", err)
+	}
+	var events int64
+	db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", incident.ID).Count(&events)
+	if events != 2 {
+		t.Fatal("lifecycle duplicated", events)
 	}
 }

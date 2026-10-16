@@ -17,8 +17,8 @@ export async function mockModuleQueryAPI(page, { logPermission = false, pipeline
     if (url.pathname.endsWith('/refresh')) return reply({ access_token: 'module-query-fixture', expires_in: 3600 })
     if (url.pathname.endsWith('/users/me')) return reply({ id: '1', display_name: 'Module reader' })
     if (url.pathname.endsWith('/auth/context')) return reply({
-      principal: { id: '1', principal_type: 'user' }, context: { type: 'platform' },
-      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', ...(logPermission ? ['platform.module_log.read'] : []), ...(pipelinePermission ? ['monitor.log_pipeline.read', 'monitor.log_notification.read', ...(pipelineManagement ? ['monitor.log_pipeline.update', 'monitor.log_notification.update'] : [])] : [])] }] }
+      principal: { id: '1', type: 'user' }, context: { type: 'platform' },
+      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', ...(logPermission ? ['platform.module_log.read'] : []), ...(pipelinePermission ? ['monitor.log_pipeline.read', 'monitor.platform_alert.read', 'monitor.platform_alert_notification.read', ...(pipelineManagement ? ['monitor.log_pipeline.update', 'monitor.platform_alert.update', 'monitor.platform_alert_notification.update'] : [])] : [])] }] }
     })
     if (url.pathname.endsWith('/platform/modules')) return reply({ modules: [
       { id: 1, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [] }

@@ -207,7 +207,7 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	n := NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), false, sender, nil, 3, 30*time.Second, time.Second, 5*time.Second)
+	n := NewPlatformAlertService(db, []byte("addp-dev-encryption-key-2025!!!!"), false, sender, nil, 3, 30*time.Second, time.Second, 5*time.Second)
 	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, n)
 	var destination models.PlatformAlertDestination
 	t.Cleanup(func() {
@@ -239,7 +239,7 @@ func TestIntegrationPostgresPlatformLogWeComLifecycleAndDedup(t *testing.T) {
 	if err = pipeline.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	input := LogDestinationInput{Name: nodeID, Channel: "wecom", EventTypes: []string{"opened", "resolved"}}
+	input := PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Name: nodeID, Channel: "wecom", EventTypes: []string{"opened", "resolved"}}
 	destination, err = n.Save(ctx, 0, input)
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +434,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		w.WriteHeader(202)
 	}))
 	defer server.Close()
-	notifications := NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, NewHTTPWebhookSender(time.Second, true), nil, 3, 30*time.Second, time.Second, 5*time.Second)
+	notifications := NewPlatformAlertService(db, []byte("addp-dev-encryption-key-2025!!!!"), true, NewHTTPWebhookSender(time.Second, true), nil, 3, 30*time.Second, time.Second, 5*time.Second)
 	pipeline := NewLogPipelineService(db, nodeID, emptyLogRegistry{}, notifications)
 	if err = pipeline.Initialize(ctx, now); err != nil {
 		t.Fatal(err)
@@ -459,7 +459,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 			t.Errorf("cleanup remaining=%d err=%v", remaining, err)
 		}
 	})
-	input := LogDestinationInput{Name: nodeID, Channel: "webhook", URL: server.URL, EventTypes: []string{"opened", "resolved"}, Enabled: false}
+	input := PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Name: nodeID, Channel: "webhook", URL: server.URL, EventTypes: []string{"opened", "resolved"}, Enabled: false}
 	destination, err = notifications.Save(ctx, 0, input)
 	if err != nil {
 		t.Fatal(err)
@@ -485,7 +485,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		t.Fatal(err)
 	}
 	summary, err := pipeline.Summary(ctx, now)
-	if err != nil || summary.Health != "healthy" || len(summary.Incidents) != 0 {
+	if err != nil || summary.Health != "healthy" || summary.ActiveIncidents != 0 {
 		t.Fatalf("initial summary %#v err %v", summary, err)
 	}
 	now = now.Add(30 * time.Second)
@@ -504,10 +504,10 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	}
 	wg.Wait()
 	summary, err = pipeline.Summary(ctx, now)
-	if err != nil || len(summary.Incidents) != 1 || summary.Health != "alert" {
+	if err != nil || summary.ActiveIncidents != 1 || summary.Health != "alert" {
 		t.Fatalf("dedup %#v err %v", summary, err)
 	}
-	incident := summary.Incidents[0]
+	incident := activeLogTestIncident(t, db, nodeID)
 	var events int64
 	if err = db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", incident.ID).Count(&events).Error; err != nil || events != 1 {
 		t.Fatalf("opened events=%d err=%v", events, err)
@@ -549,7 +549,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		}
 	}
 	summary, err = pipeline.Summary(ctx, now)
-	if err != nil || len(summary.Incidents) != 0 {
+	if err != nil || summary.ActiveIncidents != 0 {
 		t.Fatalf("recovery %#v err %v", summary, err)
 	}
 	if processed, err := notifications.DispatchOnce(ctx, now); err != nil || !processed {
@@ -613,7 +613,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 		t.Fatal(err)
 	}
 	summary, err = pipeline.Summary(ctx, now.Add(136*time.Second))
-	if err != nil || summary.Health != "unknown" || len(summary.Incidents) != 1 || summary.Incidents[0].Signal != "observation_missing" {
+	if err != nil || summary.Health != "unknown" || summary.ActiveIncidents != 1 || activeLogTestIncident(t, db, nodeID).Signal != "observation_missing" {
 		t.Fatalf("stale summary %#v err=%v", summary, err)
 	}
 	// Changing boots rebuilds baselines; a retired boot cannot replace the new one.
@@ -689,7 +689,7 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 			t.Fatal(err)
 		}
 		summary, err := paused.Summary(ctx, now.Add(24*time.Hour))
-		if err != nil || summary.Health != "unknown" || len(summary.Incidents) != 1 || summary.Incidents[0].Status != "open" {
+		if err != nil || summary.Health != "unknown" || summary.ActiveIncidents != 1 || activeLogTestIncident(t, f.db, f.incident.SubjectID).Status != "open" {
 			t.Fatalf("pause summary=%#v err=%v", summary, err)
 		}
 		if err := paused.Ingest(ctx, healthyLogObservation(now, 1), now); err == nil {
@@ -709,7 +709,7 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary, err := resumed.Summary(ctx, now)
-	if err != nil || len(summary.Incidents) != 1 || summary.Incidents[0].Status != "open" {
+	if err != nil || summary.ActiveIncidents != 1 || activeLogTestIncident(t, f.db, f.incident.SubjectID).Status != "open" {
 		t.Fatalf("resume synthesized recovery: %#v %v", summary, err)
 	}
 	observation := healthyLogObservation(now, 1)
@@ -718,7 +718,16 @@ func TestIntegrationPostgresLogDeploymentPausePreservesIncidents(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary, err = resumed.Summary(ctx, now)
-	if err != nil || len(summary.Incidents) != 1 || summary.Node.Signals["delivery_probe"].Successes != 1 {
+	if err != nil || summary.ActiveIncidents != 1 || summary.Node.Signals["delivery_probe"].Successes != 1 {
 		t.Fatalf("recovery counted samples from before the pause: %#v %v", summary, err)
 	}
+}
+
+func activeLogTestIncident(t *testing.T, db *gorm.DB, node string) models.PlatformAlertIncident {
+	t.Helper()
+	var rows []models.PlatformAlertIncident
+	if err := db.Where("category=? AND subject_id=? AND status IN ?", models.PlatformAlertCategoryLog, node, []string{"open", "acknowledged"}).Find(&rows).Error; err != nil || len(rows) != 1 {
+		t.Fatalf("expected one active log incident, rows=%v error=%v", rows, err)
+	}
+	return rows[0]
 }

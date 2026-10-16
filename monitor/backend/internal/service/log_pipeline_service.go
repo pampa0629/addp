@@ -30,11 +30,11 @@ type LogPipelineService struct {
 	db              *gorm.DB
 	node            string
 	registry        logModuleLister
-	notifications   *PlatformAlertNotifications
+	notifications   *PlatformAlertService
 	deploymentState string
 }
 
-func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformAlertNotifications) *LogPipelineService {
+func NewLogPipelineService(db *gorm.DB, node string, registry logModuleLister, n *PlatformAlertService) *LogPipelineService {
 	return &LogPipelineService{db: db, node: node, registry: registry, notifications: n, deploymentState: commonconfig.RuntimeLogDeploymentState()}
 }
 func (s *LogPipelineService) Initialize(ctx context.Context, now time.Time) error {
@@ -240,12 +240,12 @@ type LogPipelineSummary struct {
 	Configured      bool                    `json:"configured"`
 	Health          string                  `json:"health"`
 	Node            *models.LogPipelineNode `json:"node,omitempty"`
-	Incidents       []LogIncidentView       `json:"incidents"`
+	ActiveIncidents int64                   `json:"active_incidents"`
 	Notifications   string                  `json:"notifications"`
 }
 
 func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPipelineSummary, error) {
-	result := LogPipelineSummary{DeploymentState: s.deploymentState, Configured: s.node != "", Health: "unknown", Notifications: "unconfigured", Incidents: []LogIncidentView{}}
+	result := LogPipelineSummary{DeploymentState: s.deploymentState, Configured: s.node != "", Health: "unknown", Notifications: "unconfigured"}
 	if s.node == "" {
 		return result, nil
 	}
@@ -261,11 +261,11 @@ func (s *LogPipelineService) Summary(ctx context.Context, now time.Time) (LogPip
 		return result, err
 	}
 	result.Node = &node
-	if err = s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{}).Select(logIncidentColumns).Where("category=? AND subject_kind=? AND subject_id=? AND status IN ?", models.PlatformAlertCategoryLog, models.PlatformAlertSubjectLogObserver, s.node, []string{"open", "acknowledged"}).Order("opened_at DESC,id DESC").Scan(&result.Incidents).Error; err != nil {
+	if err = s.db.WithContext(ctx).Model(&models.PlatformAlertIncident{}).Where("category=? AND subject_kind=? AND subject_id=? AND status IN ?", models.PlatformAlertCategoryLog, models.PlatformAlertSubjectLogObserver, s.node, []string{"open", "acknowledged"}).Count(&result.ActiveIncidents).Error; err != nil {
 		return result, err
 	}
 	if s.deploymentState == "enabled" {
-		result.Health = logPipelineHealth(node, p, len(result.Incidents), now)
+		result.Health = logPipelineHealth(node, p, int(result.ActiveIncidents), now)
 	}
 	if s.notifications != nil {
 		result.Notifications, err = s.notifications.Status(ctx)
@@ -286,35 +286,6 @@ func logPipelineHealth(node models.LogPipelineNode, p models.LogPipelinePolicy, 
 	return "unknown"
 }
 
-func (s *LogPipelineService) ManageIncident(ctx context.Context, id uint, version uint64, action string, until *time.Time, principal int64, now time.Time) (LogIncidentView, error) {
-	var i models.PlatformAlertIncident
-	if version == 0 || principal <= 0 || (action != "acknowledge" && action != "suppress") || (action == "suppress" && (until == nil || !until.After(now) || until.After(now.Add(24*time.Hour)))) {
-		return logIncidentView(i), ErrLogInvalid
-	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND category=? AND subject_kind=? AND subject_id=?", id, models.PlatformAlertCategoryLog, models.PlatformAlertSubjectLogObserver, s.node).Take(&i).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrLogNotFound
-		} else if err != nil {
-			return err
-		}
-		if i.Version != version {
-			return ErrLogConflict
-		}
-		if i.Status == "resolved" {
-			return ErrLogConflict
-		}
-		i.Version++
-		if action == "acknowledge" {
-			i.Status = "acknowledged"
-			i.AcknowledgedAt = &now
-			i.AcknowledgedBy = &principal
-		} else {
-			i.SuppressedUntil = until
-		}
-		return tx.Save(&i).Error
-	})
-	return logIncidentView(i), err
-}
 func (s *LogPipelineService) Run(ctx context.Context) {
 	if s.deploymentState != "enabled" {
 		return

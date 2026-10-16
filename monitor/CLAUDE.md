@@ -2,9 +2,9 @@
 
 ## 模块定位
 
-Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
+Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 运行观测与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入，真实 Hosted 实例链路及默认服务范围已验收（设计 10.49、10.51）；节点基础资源查询首批已接入（见文末范围），统一告警域收敛已于 2026-10-15 确认；首批已收敛平台内部事实与事务并通过本地分项验证，资源规则和统一页面尚未交付。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入，真实 Hosted 实例链路及默认服务范围已验收（设计 10.49、10.51）；节点基础资源查询首批已接入（见文末范围），统一告警域收敛已于 2026-10-15 确认；首批已收敛平台内部事实与事务并通过本地分项验证，主机资源规则尚未接入后台调度，统一管理入口本批切换。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
 节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；资源查询的生效状态查询、后续指标与生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 10.15–10.20 节记录边界与接线门禁。
 
@@ -107,13 +107,13 @@ bash scripts/swagger/check-route-coverage.sh monitor
 ## 平台日志链路
 
 - Infra 使用独立 `addp-log-observer` Service Principal 上报有界安全观测；Monitor 只接收绑定节点的非委托 Platform 服务令牌。不上传日志正文，不访问接收器宿主机文件，不使用虚构租户或任务身份。
-- 唯一路由位于 `/api/v1/monitor/platform/log-*`。`monitor.log_pipeline.read/update`、`monitor.log_notification.read/update` 只用于 Platform；`monitor.log_observation.create` 仅授予观测器。System 模块管理提供页面，正文读取仍由 `platform.module_log.read` 独立控制。
+- 日志专用观测、策略和健康诊断位于 `/api/v1/monitor/platform/log-*`，沿 `monitor.log_pipeline.read/update` 与仅授予观测器的 `monitor.log_observation.create`。通用事件及通知管理位于 `/platform/alerts` 与 `/platform/alert-notification-*`，仅接受非委托 Platform User，分别使用 `monitor.platform_alert.read/update` 与 `monitor.platform_alert_notification.read/update`；写操作同时核验对应读取权限。旧通知权限已停用、旧管理路由删除，完整页面唯一归 Monitor `/platform-alerts`；System 保留日志诊断、来源策略、活动数量及上下文跳转，正文读取仍由 `platform.module_log.read` 独立控制。
 - 持久表为 `monitor.log_pipeline_policy/log_pipeline_nodes`、`log_observer_boots`、`platform_alert_incidents/events/destinations/deliveries`。单一活动告警按来源类别、主体类型、主体 ID 和信号去重；日志实例信号保留有证据的实例身份，各信号固定严重级别、独立恢复，事件和通知订阅仅为 `opened/resolved`，与通知 outbox 同事务；未知事实不能恢复告警，首次累计计数只建立基线。
 - Webhook/SMTP 复用中立发送接口和统一重试算法，至少一次投递；确认/抑制不改写业务实例状态。读取与管理通过 Monitor 服务账号向 System 独立 Platform 审计接口追加最小操作事实。
-- 最终失败的平台通知通过单条 `POST /platform/log-notification-deliveries/{id}/retry` 重新入队，仅 Platform User 与 `monitor.log_notification.update` 可操作。保留原投递/事件/正文和发生时间，使用原目标当前配置；目标版本与预期人工次数拒绝并发或延迟重复请求，抑制不能绕过。累计次数保留，本轮上限和退避从 `retry_base_attempt_count` 重新计算；历史恢复告警允许补发，界面必须明确提示。
+- 最终失败的平台通知通过单条 `POST /platform/alert-notification-deliveries/{id}/retry` 重新入队，仅 Platform User 与 `monitor.platform_alert_notification.read/update` 可操作。保留原投递/事件/正文和发生时间，使用原目标当前配置；目标版本与预期人工次数拒绝并发或延迟重复请求，抑制不能绕过。累计次数保留，本轮上限和退避从 `retry_base_attempt_count` 重新计算；历史恢复告警允许补发，界面必须明确提示。
 - 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。完整设计见 `docs/next/ADDP模块服务运行日志设计.md` 第十一节。
 
-平台日志通知支持明确的 `wecom` 渠道：固定官方端点、通过既有凭据接口写入完整机器人地址并仅加密保存 key；复用受控 HTTP 客户端，HTTP 2xx 与整数 errcode=0 同时成立才算发送成功。平台 outbox、重试及安全诊断保持同一主路径，租户通知不扩展。Go/PostgreSQL 回归由现有 Monitor owner gate 自动发现，System 配置交互由既有前端门禁覆盖。
+平台日志通知支持明确的 `wecom` 渠道：固定官方端点、通过既有凭据接口写入完整机器人地址并仅加密保存 key；复用受控 HTTP 客户端，HTTP 2xx 与整数 errcode=0 同时成立才算发送成功。平台 outbox、重试及安全诊断保持同一主路径，租户通知不扩展。Go/PostgreSQL 回归由现有 Monitor owner gate 自动发现，Monitor 配置交互及 System 诊断跳转由两模块既有前端门禁覆盖。
 
 ## 节点监测目标与认证发现
 
@@ -210,6 +210,6 @@ Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通�
 
 ## 平台告警内核收敛（本地分项已验证，待 CI）
 
-2026-10-15 已确认告警归 Monitor、Platform/Tenant 隔离及首期平台系统管理员职责，见运行监控设计 10.61–10.62。平台日志告警四表原位收敛为 `platform_alert_incidents/events/destinations/deliveries`，统一事务协调器按来源主体与信号处理，不从另一来源的缺失推断恢复。日志观测器标识不是 System 主机 UUID；日志诊断 API 通过显式 DTO 投影原日志语义，并拒绝处理其他类别或修改更广订阅的通知目标。日志源观测、策略与外部消息协议保持日志专用，旧目标初始只订阅日志。
+2026-10-15 已确认告警归 Monitor、Platform/Tenant 隔离及首期平台系统管理员职责，见运行监控设计 10.61–10.62。平台日志告警四表原位收敛为 `platform_alert_incidents/events/destinations/deliveries`，统一事务协调器按来源主体与信号处理，不从另一来源的缺失推断恢复。日志观测器标识不是 System 主机 UUID；日志诊断只返回来源健康和活动事件数量，不能绕过通用事件读取权限。原位迁移的旧目标只订日志，新入口通过明确类别管理订阅，资源类别使用独立正式消息格式；两者沿唯一事件/outbox。日志源观测、策略与外部消息协议保持日志专用，旧目标初始只订阅日志。
 
 本批尚未新增统一管理 API/页面或接入资源规则，不改 IAM 内核、角色和租户告警；原日志页面仍是该日志功能的唯一入口，不另建资源告警旁路。后续接口/页面切换须删除被替换路径。新增 Go 回归由既有 `make test-module MODULE=monitor` 和 `make test-monitor-postgres` 自动发现，CI 复用现有 Monitor 门禁；迁移夹具只在标准测试库内使用随机自有 schema 并清理，不创建/删除 database。

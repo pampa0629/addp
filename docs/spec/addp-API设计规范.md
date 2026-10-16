@@ -270,11 +270,15 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 
 `error_type` 和 `retry_after` 继续遵守第 13.2 节；同一个 `error_code` 的重试类别必须稳定。简单 CRUD 接口不需要为包装一致性强行增加 `error_code`。
 
-### 平台日志企业微信通知契约
+### 平台告警通知契约
 
-平台通知沿用 Monitor `/api/v1/monitor/platform/log-notification-destinations` 与 `/{id}/credential`，需要 Platform User 与 `monitor.log_notification.read/update`。`channel` 为 `webhook|email|wecom`；`wecom` 创建/更新要求 `url` 空、`recipients` 空，新建目标不得直接启用。凭据接口 `{version, secret}` 的 `secret` 在企业微信渠道中为完整官方机器人 Webhook 地址；仅提取 key 加密保存，普通读取返回固定无 query 端点和 `secret_configured`，不返回完整机器人地址或 key。
+平台通知使用 Monitor `/api/v1/monitor/platform/alert-notification-destinations` 与 `/{id}/credential`。只接受非委托 Platform User，读取需要 `monitor.platform_alert_notification.read`，写入、凭据设置、测试与重投同时需要该读取权限和 `monitor.platform_alert_notification.update`。目标输入与安全输出显式包含非空、无重复的 `categories`，仅允许 `log_pipeline/resource`；旧目标只订日志，不自动扩大资源订阅。旧日志通知接口已删除，旧功能键按发布规范停用，不作为新接口的权限回退。`channel` 为 `webhook|email|wecom`；`wecom` 创建/更新要求 `url` 空、`recipients` 空，新建目标不得直接启用。凭据接口 `{version, secret}` 的 `secret` 在企业微信渠道中为完整官方机器人 Webhook 地址；仅提取 key 加密保存，普通读取返回固定无 query 端点和 `secret_configured`，不返回完整机器人地址或 key。
 
 测试发送仍使用 `POST /{id}/test`；企业微信 HTTP 与业务响应同时成功才返回成功，测试不建立正式 outbox。发送失败返回安全双语错误和 `wecom_test_failed`，不回显企业微信响应正文。正式投递沿用 outbox 与原重投接口，读取安全失败码 `wecom_rejected|wecom_rate_limited|wecom_invalid_response|wecom_network_failed|wecom_http_failed`，不包含接收地址参数或凭据。企业微信群消息可能重复/乱序，不能承诺接收方按投递 ID 自动去重。
+
+平台事件使用 `GET /api/v1/monitor/platform/alerts`，只接受非委托 Platform User 与 `monitor.platform_alert.read`；确认/抑制另需 `monitor.platform_alert.update`。列表按 `category/status/subject_id` 过滤并使用管理分页，返回明确的 `category/subject_kind/subject_id`。确认与抑制沿用版本 CAS，已恢复事件返回 409；抑制截止不超过 24 小时。System 日志诊断只返回健康与活动事件数量，不返回事件明细。租户告警接口保持独立。
+
+日志正式消息继续使用 `addp.platform-log-alert/v1`；主机资源消息使用 `addp.platform-resource-alert/v1`，显式携带类别、主体与固定指标键，不把主机 UUID 当作日志观察器。两类消息消费同一平台事件/outbox，历史载荷和投递身份不改写。当前入口支持管理两类事件与显式通知订阅，主机资源规则的后台评估仍需另行接线，不能把订阅保存成功解释为规则已启用。
 
 ### 2.4 分页响应格式
 

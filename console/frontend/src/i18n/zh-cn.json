@@ -570,7 +570,8 @@
         "monitoringTargets": "采集配置",
         "resourceOverview": "资源总览",
         "nodeResources": "主机监控",
-        "serviceResources": "服务监控"
+        "serviceResources": "服务监控",
+        "platformAlerts": "平台告警"
       },
       "catalog": {
         "label": "企业资源目录",

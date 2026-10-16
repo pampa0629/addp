@@ -1321,7 +1321,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/platform/log-notification-deliveries": {
+        "/platform/alert-notification-deliveries": {
             "get": {
                 "security": [
                     {
@@ -1332,9 +1332,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "查询平台日志通知投递记录 | List platform log notification deliveries",
+                "summary": "查询平台告警通知投递记录 | List platform alert notification deliveries",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1355,7 +1355,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryList"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDeliveryList"
                         }
                     },
                     "400": {
@@ -1379,11 +1379,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.read"
+                    "monitor.platform_alert_notification.read"
                 ]
             }
         },
-        "/platform/log-notification-deliveries/{id}/retry": {
+        "/platform/alert-notification-deliveries/{id}/retry": {
             "post": {
                 "security": [
                     {
@@ -1398,9 +1398,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "重新入队最终失败的平台日志通知 | Requeue a failed platform log notification",
+                "summary": "重新入队最终失败的平台告警通知 | Requeue a failed platform alert notification",
                 "parameters": [
                     {
                         "type": "string",
@@ -1415,7 +1415,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryRetryInput"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDeliveryRetryInput"
                         }
                     }
                 ],
@@ -1423,7 +1423,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryView"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDeliveryView"
                         }
                     },
                     "400": {
@@ -1465,11 +1465,12 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
                 ]
             }
         },
-        "/platform/log-notification-destinations": {
+        "/platform/alert-notification-destinations": {
             "get": {
                 "security": [
                     {
@@ -1480,9 +1481,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "查询平台日志通知目标 | List platform log notification destinations",
+                "summary": "查询平台告警通知目标 | List platform alert notification destinations",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1514,7 +1515,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.read"
+                    "monitor.platform_alert_notification.read"
                 ]
             },
             "post": {
@@ -1531,9 +1532,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "创建平台日志通知目标 | Create platform log notification destination",
+                "summary": "创建平台告警通知目标 | Create platform alert notification destination",
                 "parameters": [
                     {
                         "description": "请求 | Request",
@@ -1541,7 +1542,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDestinationInput"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDestinationInput"
                         }
                     }
                 ],
@@ -1573,18 +1574,19 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
                 ]
             }
         },
-        "/platform/log-notification-destinations/{id}": {
+        "/platform/alert-notification-destinations/{id}": {
             "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "平台日志订阅仅支持 opened/resolved | Platform log subscriptions only support opened/resolved",
+                "description": "订阅类别必须显式选择；事件仅支持 opened/resolved | Categories must be selected explicitly; events only support opened/resolved",
                 "consumes": [
                     "application/json"
                 ],
@@ -1592,9 +1594,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "更新平台日志通知目标 | Update platform log notification destination",
+                "summary": "更新平台告警通知目标 | Update platform alert notification destination",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1609,7 +1611,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDestinationInput"
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDestinationInput"
                         }
                     }
                 ],
@@ -1641,7 +1643,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
                 ]
             },
             "delete": {
@@ -1657,9 +1660,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "删除平台日志通知目标 | Delete platform log notification destination",
+                "summary": "删除平台告警通知目标 | Delete platform alert notification destination",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1674,7 +1677,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.LogIncidentAction"
+                            "$ref": "#/definitions/internal_api.PlatformAlertAction"
                         }
                     }
                 ],
@@ -1706,11 +1709,12 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
                 ]
             }
         },
-        "/platform/log-notification-destinations/{id}/credential": {
+        "/platform/alert-notification-destinations/{id}/credential": {
             "put": {
                 "security": [
                     {
@@ -1725,9 +1729,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "设置平台日志通知渠道凭据 | Set platform log notification channel credential",
+                "summary": "设置平台告警通知渠道凭据 | Set platform alert notification channel credential",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1742,7 +1746,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.LogCredentialInput"
+                            "$ref": "#/definitions/internal_api.PlatformAlertCredentialInput"
                         }
                     }
                 ],
@@ -1774,11 +1778,12 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
                 ]
             }
         },
-        "/platform/log-notification-destinations/{id}/test": {
+        "/platform/alert-notification-destinations/{id}/test": {
             "post": {
                 "security": [
                     {
@@ -1789,9 +1794,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
+                    "平台告警 | Platform Alerts"
                 ],
-                "summary": "测试平台日志通知目标 | Test platform log notification destination",
+                "summary": "测试平台告警通知目标 | Test platform alert notification destination",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1835,7 +1840,240 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.log_notification.update"
+                    "monitor.platform_alert_notification.read",
+                    "monitor.platform_alert_notification.update"
+                ]
+            }
+        },
+        "/platform/alerts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "查询平台告警 | List platform alerts",
+                "parameters": [
+                    {
+                        "enum": [
+                            "log_pipeline",
+                            "resource"
+                        ],
+                        "type": "string",
+                        "description": "类别 | Category",
+                        "name": "category",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "open",
+                            "acknowledged",
+                            "resolved"
+                        ],
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主体 ID | Subject ID",
+                        "name": "subject_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_alert.read"
+                ]
+            }
+        },
+        "/platform/alerts/{id}/acknowledge": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "确认平台告警 | Acknowledge platform alert incident",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资源 ID | Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PlatformAlertAction"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_alert.read",
+                    "monitor.platform_alert.update"
+                ]
+            }
+        },
+        "/platform/alerts/{id}/suppress": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "限时抑制平台告警通知 | Suppress platform alert notifications",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资源 ID | Resource ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PlatformAlertAction"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_alert.read",
+                    "monitor.platform_alert.update"
                 ]
             }
         },
@@ -1948,140 +2186,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "monitor.log_pipeline.read"
-                ]
-            }
-        },
-        "/platform/log-pipeline/incidents/{id}/acknowledge": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
-                ],
-                "summary": "确认平台日志链路告警 | Acknowledge platform log incident",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "资源 ID | Resource ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "请求 | Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.LogIncidentAction"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "monitor.log_pipeline.update"
-                ]
-            }
-        },
-        "/platform/log-pipeline/incidents/{id}/suppress": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "平台日志链路 | Platform Log Pipeline"
-                ],
-                "summary": "限时抑制平台日志告警通知 | Suppress platform log notifications",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "资源 ID | Resource ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "请求 | Request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.LogIncidentAction"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "monitor.log_pipeline.update"
                 ]
             }
         },
@@ -4681,6 +4785,12 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_models.PlatformAlertDestination": {
             "type": "object",
             "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "channel": {
                     "type": "string"
                 },
@@ -4715,6 +4825,56 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "url": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.PlatformAlertIncident": {
+            "type": "object",
+            "properties": {
+                "acknowledged_at": {
+                    "type": "string"
+                },
+                "acknowledged_by": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "last_observed_at": {
+                    "type": "string"
+                },
+                "opened_at": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "signal": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_kind": {
+                    "type": "string"
+                },
+                "suppressed_until": {
                     "type": "string"
                 },
                 "version": {
@@ -5250,13 +5410,64 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_monitor_internal_service.LogDeliveryList": {
+        "github_com_addp_monitor_internal_service.LogPipelineSummary": {
+            "type": "object",
+            "properties": {
+                "active_incidents": {
+                    "type": "integer"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "deployment_state": {
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled",
+                        "unconfigured"
+                    ]
+                },
+                "health": {
+                    "type": "string"
+                },
+                "node": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.LogPipelineNode"
+                },
+                "notifications": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.MonitoringTargetInput": {
+            "type": "object",
+            "required": [
+                "enabled"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "monitor_kind": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSource"
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSubject"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.MonitoringTargetPage": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryView"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget"
                     }
                 },
                 "page": {
@@ -5273,7 +5484,30 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_monitor_internal_service.LogDeliveryRetryInput": {
+        "github_com_addp_monitor_internal_service.PlatformAlertDeliveryList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.PlatformAlertDeliveryView"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.PlatformAlertDeliveryRetryInput": {
             "type": "object",
             "required": [
                 "destination_version",
@@ -5288,11 +5522,14 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_monitor_internal_service.LogDeliveryView": {
+        "github_com_addp_monitor_internal_service.PlatformAlertDeliveryView": {
             "type": "object",
             "properties": {
                 "attempt_count": {
                     "type": "integer"
+                },
+                "category": {
+                    "type": "string"
                 },
                 "channel": {
                     "type": "string"
@@ -5345,19 +5582,36 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_kind": {
+                    "type": "string"
+                },
                 "suppressed_until": {
                     "type": "string"
                 }
             }
         },
-        "github_com_addp_monitor_internal_service.LogDestinationInput": {
+        "github_com_addp_monitor_internal_service.PlatformAlertDestinationInput": {
             "type": "object",
             "required": [
+                "categories",
                 "channel",
                 "event_types",
                 "name"
             ],
             "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "log_pipeline",
+                            "resource"
+                        ]
+                    }
+                },
                 "channel": {
                     "type": "string",
                     "enum": [
@@ -5396,111 +5650,13 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_monitor_internal_service.LogIncidentView": {
-            "type": "object",
-            "properties": {
-                "acknowledged_at": {
-                    "type": "string"
-                },
-                "acknowledged_by": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "last_observed_at": {
-                    "type": "string"
-                },
-                "node": {
-                    "type": "string"
-                },
-                "opened_at": {
-                    "type": "string"
-                },
-                "resolved_at": {
-                    "type": "string"
-                },
-                "severity": {
-                    "type": "string"
-                },
-                "signal": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "suppressed_until": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_service.LogPipelineSummary": {
-            "type": "object",
-            "properties": {
-                "configured": {
-                    "type": "boolean"
-                },
-                "deployment_state": {
-                    "type": "string",
-                    "enum": [
-                        "enabled",
-                        "disabled",
-                        "unconfigured"
-                    ]
-                },
-                "health": {
-                    "type": "string"
-                },
-                "incidents": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogIncidentView"
-                    }
-                },
-                "node": {
-                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.LogPipelineNode"
-                },
-                "notifications": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_service.MonitoringTargetInput": {
-            "type": "object",
-            "required": [
-                "enabled"
-            ],
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                },
-                "monitor_kind": {
-                    "type": "string"
-                },
-                "source": {
-                    "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSource"
-                },
-                "subject": {
-                    "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeSubject"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_service.MonitoringTargetPage": {
+        "github_com_addp_monitor_internal_service.PlatformAlertList": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_metricsdiscovery.NodeTarget"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformAlertIncident"
                     }
                 },
                 "page": {
@@ -6671,23 +6827,19 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.LogCredentialInput": {
+        "internal_api.MonitoringTargetVersion": {
             "type": "object",
             "required": [
-                "secret",
                 "version"
             ],
             "properties": {
-                "secret": {
-                    "description": "Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.",
-                    "type": "string"
-                },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
-        "internal_api.LogIncidentAction": {
+        "internal_api.PlatformAlertAction": {
             "type": "object",
             "required": [
                 "version"
@@ -6701,15 +6853,19 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.MonitoringTargetVersion": {
+        "internal_api.PlatformAlertCredentialInput": {
             "type": "object",
             "required": [
+                "secret",
                 "version"
             ],
             "properties": {
+                "secret": {
+                    "description": "Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.",
+                    "type": "string"
+                },
                 "version": {
-                    "type": "integer",
-                    "minimum": 1
+                    "type": "integer"
                 }
             }
         },

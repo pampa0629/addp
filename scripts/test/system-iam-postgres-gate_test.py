@@ -93,6 +93,14 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertTrue(self.started.exists(), "holder did not reach its first database command")
         return process
 
+    def test_platform_alert_publication_filter_is_bound_to_migration(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "platform-alert-management"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^TestPlatformAlertManagementForwardMigrationAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "platform-alert-management"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --package migration", result.stderr)
+
     def test_concurrent_checkout_is_rejected_before_reset_and_lock_is_reusable(self):
         first = self.start_holder()
         second = self.run_gate()

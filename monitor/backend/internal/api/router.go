@@ -31,7 +31,7 @@ func SetupRouter(
 	systemClient *commonClient.SystemServiceClient,
 	lifecycle *modulelifecycle.Controller,
 	logPipeline *service.LogPipelineService,
-	logNotifications *service.PlatformAlertNotifications,
+	platformAlerts *service.PlatformAlertService,
 	runtimeHealthService *service.RuntimeHealthService,
 	monitoringTargets *service.MonitoringTargetService,
 	resourceObservations *service.ResourceObservationService,
@@ -97,23 +97,26 @@ func SetupRouter(
 		platform.DELETE("/settings/smtp-relay/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.DeleteCredential)
 	}
 
-	if logPipeline != nil && logNotifications != nil {
-		handler := NewLogPipelineHandler(logPipeline, logNotifications)
+	if logPipeline != nil {
+		handler := NewLogPipelineHandler(logPipeline)
 		platform.GET("/platform/log-pipeline", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Summary)
 		platform.GET("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Policy)
 		platform.PUT("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.UpdatePolicy)
 		platform.POST("/platform/log-observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogObservationCreate), commonAuth.MustNewServiceClientGuard("addp-log-observer"), handler.Observe)
-		platform.POST("/platform/log-pipeline/incidents/:id/acknowledge", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.Acknowledge)
-		platform.POST("/platform/log-pipeline/incidents/:id/suppress", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.Suppress)
-		platform.GET("/platform/log-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationRead), handler.Destinations)
-		platform.POST("/platform/log-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.CreateDestination)
-		platform.PUT("/platform/log-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.UpdateDestination)
-		platform.PUT("/platform/log-notification-destinations/:id/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.SetCredential)
-		platform.DELETE("/platform/log-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.DeleteDestination)
-		platform.POST("/platform/log-notification-destinations/:id/test", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.TestDestination)
-		platform.GET("/platform/log-notification-deliveries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationRead), handler.Deliveries)
-		platform.POST("/platform/log-notification-deliveries/:id/retry", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.RetryDelivery)
-
+	}
+	if platformAlerts != nil {
+		handler := NewPlatformAlertHandler(platformAlerts)
+		platform.GET("/platform/alerts", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertRead), platformObservationIdentity(false), handler.Incidents)
+		platform.POST("/platform/alerts/:id/acknowledge", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertRead, monitorauthorization.PermissionMonitorPlatformAlertUpdate), platformObservationIdentity(false), handler.Acknowledge)
+		platform.POST("/platform/alerts/:id/suppress", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertRead, monitorauthorization.PermissionMonitorPlatformAlertUpdate), platformObservationIdentity(false), handler.Suppress)
+		platform.GET("/platform/alert-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead), platformObservationIdentity(false), handler.Destinations)
+		platform.POST("/platform/alert-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.CreateDestination)
+		platform.PUT("/platform/alert-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.UpdateDestination)
+		platform.PUT("/platform/alert-notification-destinations/:id/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.SetCredential)
+		platform.DELETE("/platform/alert-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.DeleteDestination)
+		platform.POST("/platform/alert-notification-destinations/:id/test", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.TestDestination)
+		platform.GET("/platform/alert-notification-deliveries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead), platformObservationIdentity(false), handler.Deliveries)
+		platform.POST("/platform/alert-notification-deliveries/:id/retry", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.RetryDelivery)
 	}
 
 	targetHandler := NewMonitoringTargetHandler(monitoringTargets)

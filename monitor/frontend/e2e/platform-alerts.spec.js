@@ -1,0 +1,220 @@
+import { expect, test } from '@playwright/test'
+import { fixture, deliveryView } from './platform-alerts.fixture'
+import { identity, setIdentity } from './monitoring-targets.fixture'
+
+test('alert acknowledgement uses current version and failed refresh becomes unknown', async ({ page }) => {
+  const state = await fixture(page)
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page.getByTestId('pipeline-incidents')).toContainText('已确认')
+  expect(state.requests.find(r => r.path.endsWith('/acknowledge')).body).toEqual({ version: 3 })
+  state.fail()
+  await page.locator('.platform-alerts').getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('pipeline-incidents')).not.toContainText('已确认')
+  await expect(page.getByText('观测不可用', { exact: true })).toBeVisible()
+})
+
+test('webhook signing credential precedes enabling and stays out of target payload', async ({ page }) => {
+  const state = await fixture(page)
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  await page.getByRole('button', { name: '新增通知目标', exact: true }).click()
+  const dialog = page.getByRole('dialog').filter({ has: page.getByRole('textbox') })
+  await dialog.locator('label.el-checkbox').filter({ hasText: '日志链路' }).click()
+  await dialog.getByRole('textbox').nth(0).fill('Local receiver')
+  await dialog.getByRole('textbox').nth(1).fill('https://notify.example.test/hook')
+  await dialog.locator('input[type=password]').fill('fixture-signing-secret')
+  await dialog.locator('.el-switch').click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const writes = state.requests.filter(r => r.method !== 'GET')
+  expect(writes.map(r => r.method)).toEqual(['POST', 'PUT', 'PUT'])
+  expect(writes[0].body.enabled).toBe(false)
+  expect(writes[0].body.secret).toBeUndefined()
+  expect(writes[1].body).toEqual({ version: 1, secret: 'fixture-signing-secret' })
+  expect(writes[2].body.version).toBe(2)
+  expect(writes[2].body.enabled).toBe(true)
+  expect(writes[2].body.secret).toBeUndefined()
+})
+
+test('delivery diagnostics identify targets and retry times without exposing unknown error text', async ({ page }) => {
+  const nextAttempt = new Date(Date.now() + 60_000).toISOString()
+  const deliveredAt = new Date(Date.now() - 60_000).toISOString()
+  await fixture(page, {
+    destinations: [{ id: 7, name: '平台值班接收端', channel: 'webhook', url: 'https://notify.example.test/hook', enabled: true }],
+    deliveries: [
+      { ...deliveryView, id: 'delivery-retry', event_id: 'event-opened', destination_id: 7, channel: 'webhook', status: 'pending', attempt_count: 2, last_error: 'notification_send_failed', next_attempt_at: nextAttempt },
+      { ...deliveryView, destination_name: '', destination_version: 0, id: 'delivery-dead', event_id: 'event-expired', destination_id: 9, channel: 'webhook', status: 'dead', attempt_count: 8, last_error: 'notification_attempt_limit' },
+      { ...deliveryView, id: 'delivery-unknown', event_id: 'event-other', destination_id: 7, channel: 'webhook', status: 'dead', attempt_count: 8, last_error: 'https://receiver.invalid/?secret=must-not-be-shown' },
+      { ...deliveryView, id: 'delivery-success', event_id: 'event-resolved', destination_id: 7, channel: 'webhook', status: 'delivered', attempt_count: 1, last_error: '', delivered_at: deliveredAt }
+    ]
+  })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const table = page.getByTestId('pipeline-deliveries')
+  const rows = table.locator('tbody > tr.el-table__row')
+  await expect(rows).toHaveCount(4)
+  await expect(rows.nth(0)).toContainText('平台值班接收端')
+  await expect(rows.nth(0)).toContainText('发送失败，请检查接收端和渠道配置')
+  await expect(rows.nth(1)).toContainText('目标 ID 9（当前不可用）')
+  await expect(rows.nth(1)).toContainText('尝试次数已达上限')
+  await expect(rows.nth(2)).toContainText('投递失败，原因未识别')
+  await expect(table).not.toContainText('must-not-be-shown')
+  await rows.nth(0).locator('.el-table__expand-icon').click()
+  const diagnostics = table.getByTestId('delivery-diagnostics')
+  await expect(diagnostics).toContainText('event-opened')
+  await expect(diagnostics).toContainText('下次尝试时间')
+  const retryText = await page.evaluate(time => new Date(time).toLocaleString(), nextAttempt)
+  await expect(diagnostics).toContainText(retryText)
+  await rows.nth(0).locator('.el-table__expand-icon').click()
+  await rows.nth(3).locator('.el-table__expand-icon').click()
+  await expect(diagnostics).toContainText('event-resolved')
+  const deliveredText = await page.evaluate(time => new Date(time).toLocaleString(), deliveredAt)
+  await expect(diagnostics).toContainText(deliveredText)
+})
+
+
+test('manual retry confirms historical identity and enqueues only once with current versions', async ({ page }) => {
+  const state = await fixture(page, { deliveries: [{ ...deliveryView }], deliveryTotal: 45 })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const table = page.getByTestId('pipeline-deliveries')
+  await expect(table).toContainText('本轮尝试次数')
+  await expect(table).toContainText('人工重投次数')
+  await page.locator('[data-testid=platform-notifications] .el-pagination .btn-next').click()
+  await expect.poll(() => state.requests.filter(r => r.path.endsWith('/alert-notification-deliveries')).at(-1)?.query.page).toBe('2')
+  await table.getByRole('button', { name: '重新投递', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: '重新投递', exact: true })
+  await expect(confirm).toContainText('历史事件，告警已恢复')
+  await expect(confirm).toContainText('平台值班接收端')
+  const eventTime = await page.evaluate(time => new Date(time).toLocaleString(), deliveryView.occurred_at)
+  await expect(confirm).toContainText(eventTime)
+  await confirm.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('已重新入队，送达结果请查看投递记录', { exact: true })).toBeVisible()
+  await expect(table).toContainText('待投递')
+  await expect(table.getByRole('button', { name: '重新投递', exact: true })).toHaveCount(0)
+  const writes = state.requests.filter(r => r.path.endsWith('/retry'))
+  expect(writes).toHaveLength(1)
+  expect(writes[0].path).toContain(deliveryView.id)
+  expect(writes[0].body).toEqual({ expected_manual_retry_count: 0, destination_version: 3 })
+  expect(state.requests.filter(r => r.path.endsWith('/alert-notification-deliveries')).at(-1).query.page).toBe('2')
+})
+
+test('manual retry conflict preserves failed row and exposes safe actionable feedback', async ({ page }) => {
+  const state = await fixture(page, { deliveries: [{ ...deliveryView }], retryConflict: true })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const table = page.getByTestId('pipeline-deliveries')
+  await table.getByRole('button', { name: '重新投递', exact: true }).click()
+  await page.getByRole('dialog', { name: '重新投递', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('投递状态或通知目标已变化，请刷新后重新确认', { exact: true })).toBeVisible()
+  await expect(table).toContainText('最终失败')
+  await expect(table.getByRole('button', { name: '重新投递', exact: true })).toBeEnabled()
+  await expect(page.getByText('已重新入队，送达结果请查看投递记录', { exact: true })).toHaveCount(0)
+  expect(state.requests.filter(r => r.path.endsWith('/retry'))).toHaveLength(1)
+})
+
+test('read only notification permission hides mutation actions', async ({ page }) => {
+  await fixture(page, { deliveries: [{ ...deliveryView }], management: false })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  await expect(page.getByTestId('pipeline-deliveries')).toContainText('最终失败')
+  await expect(page.getByRole('button', { name: '重新投递', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '新增通知目标', exact: true })).toHaveCount(0)
+})
+
+test('completed historical delivery shows the immutable protocol event type without offering a subscription', async ({ page }) => {
+  await fixture(page, { deliveries: [{ ...deliveryView, status: 'delivered', event_type: 'escalated' }] })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const table = page.getByTestId('pipeline-deliveries')
+  await table.locator('.el-table__expand-icon').click()
+  await expect(table.getByTestId('delivery-diagnostics')).toContainText('escalated')
+  await expect(table).not.toContainText('eventsLabel.')
+  await expect(table.getByRole('button', { name: '重新投递', exact: true })).toHaveCount(0)
+})
+
+test('missing target and active suppression disable retry; pending delivery has no retry action', async ({ page }) => {
+  await fixture(page, { deliveries: [
+    { ...deliveryView, destination_name: '', destination_version: 0 },
+    { ...deliveryView, id: '172b64ab-6256-4d83-b261-5a70dc84c279', suppressed_until: new Date(Date.now() + 60_000).toISOString(), incident_status: 'suppressed' },
+    { ...deliveryView, id: '688834d8-5a62-46d7-9b6e-1669868b9b29', status: 'pending' }
+  ] })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  const buttons = page.getByTestId('pipeline-deliveries').getByRole('button', { name: '重新投递', exact: true })
+  await expect(buttons).toHaveCount(2)
+  await expect(buttons.nth(0)).toBeDisabled()
+  await expect(buttons.nth(1)).toBeDisabled()
+})
+
+
+test('WeCom URL is written only as a credential before enabling and stays blank on edit', async ({ page }) => {
+  const baseURL = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send'
+  const robotURL = `${baseURL}?key=12345678-1234-1234-1234-123456789abc`
+  const state = await fixture(page, { destinations: [{ id: 1, version: 3, name: '企微值班群', channel: 'wecom', url: baseURL, recipients: [], event_types: ['opened', 'resolved'], enabled: true, secret_configured: true }] })
+  await page.getByRole('button', { name: '通知管理', exact: true }).click()
+  await page.getByRole('button', { name: '新增通知目标', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '通知目标配置', exact: true })
+  await expect(dialog.getByRole('checkbox', { name: '打开', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: '恢复', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: '升级', exact: true })).toHaveCount(0)
+  await dialog.locator('label.el-checkbox').filter({ hasText: '日志链路' }).click()
+  await dialog.getByRole('textbox').first().fill('企微值班群')
+  await dialog.locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '企业微信', exact: true }).click()
+  await expect(dialog.getByText('签名密钥（留空保持当前值）', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('收件地址（逗号分隔）', { exact: true })).toHaveCount(0)
+  await dialog.locator('input[type=password]').fill(robotURL)
+  await dialog.locator('.el-switch').click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const writes = state.requests.filter(r => r.method !== 'GET')
+  expect(writes.map(r => r.method)).toEqual(['POST', 'PUT', 'PUT'])
+  expect(writes[0].body).toMatchObject({ channel: 'wecom', url: '', recipients: [], event_types: ['opened', 'resolved'], enabled: false })
+  expect(writes[1].body).toEqual({ version: 1, secret: robotURL })
+  expect(writes[2].body).toMatchObject({ channel: 'wecom', url: '', event_types: ['opened', 'resolved'], enabled: true, version: 2 })
+  for (const request of [writes[0], writes[2]]) expect(JSON.stringify(request.body)).not.toContain('12345678-1234')
+  await page.getByTestId('platform-notifications').getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(dialog.locator('input[type=password]')).toHaveValue('')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect(state.requests.filter(r => r.path.endsWith('/credential'))).toHaveLength(1)
+  await expect(page.getByTestId('platform-notifications')).not.toContainText('12345678-1234')
+})
+
+
+test('notification-only reader requests no incidents and cannot mutate', async ({ page }) => {
+ const state = await fixture(page, { keys: ['monitor.platform_alert_notification.read'] })
+ await expect(page).toHaveURL(/\/platform-alerts\?tab=notifications$/)
+ expect(state.requests.some(row => row.path.endsWith('/alerts'))).toBe(false)
+ await expect(page.getByRole('button', { name: '告警事件', exact: true })).toHaveCount(0)
+ await expect(page.getByRole('button', { name: '新增通知目标', exact: true })).toHaveCount(0)
+})
+test('new notification target requires an explicit category before the first write', async ({ page }) => {
+ const state = await fixture(page)
+ await page.getByRole('button', { name: '通知管理', exact: true }).click()
+ await page.getByRole('button', { name: '新增通知目标', exact: true }).click()
+ const dialog = page.getByRole('dialog', { name: '通知目标配置', exact: true })
+ await expect(dialog.getByRole('checkbox', { name: '日志链路', exact: true })).not.toBeChecked()
+ await expect(dialog.getByRole('checkbox', { name: '主机资源', exact: true })).not.toBeChecked()
+ await dialog.getByRole('button', { name: '保存', exact: true }).click()
+ await expect(dialog).toContainText('请选择至少一种告警类别')
+ expect(state.requests.filter(row => row.method !== 'GET')).toHaveLength(0)
+})
+test('revocation clears a pending event response and all event details', async ({ page }) => {
+ const state = await fixture(page)
+ await expect(page.getByTestId('pipeline-incidents')).toContainText('host-a')
+ state.hold()
+ await page.locator('.platform-alerts').getByRole('button', { name: '刷新', exact: true }).click()
+ await expect.poll(() => state.requests.filter(row => row.path.endsWith('/alerts')).length).toBe(2)
+ await setIdentity(page, identity([]))
+ await expect(page.getByText('host-a', { exact: true })).toHaveCount(0)
+ state.release()
+ await expect(page.getByText('host-a', { exact: true })).toHaveCount(0)
+ await expect(page.getByTestId('platform-notifications')).toHaveCount(0)
+})
+for (const [locale, title, category, signal] of [['zh-cn', '平台告警', '主机资源', '内存使用率'], ['en', 'Platform alerts', 'Host resources', 'Memory usage']]) {
+ test(`resource incident identity and signal are clear without host lookups (${locale})`, async ({ page }) => {
+  const hostReads = []; page.on('request', request => { if (new URL(request.url()).pathname.includes('/host_nodes')) hostReads.push(new URL(request.url()).pathname) })
+  const state = await fixture(page, { locale, entries: [{ id: 1, version: 1, category: 'resource', subject_kind: 'host_node', subject_id: 'aeeab3de-4f60-432a-a019-86284ab1ecf5', signal: 'node.memory.used_percent', severity: 'warning', status: 'resolved' }] })
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+  const table = page.getByTestId('pipeline-incidents')
+  await expect(table).toContainText(category)
+  await expect(table).toContainText(signal)
+  for (const button of await table.getByRole('button').all()) await expect(button).toBeDisabled()
+  expect(hostReads).toHaveLength(0)
+ })
+}

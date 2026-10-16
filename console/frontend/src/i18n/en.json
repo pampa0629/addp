@@ -570,7 +570,8 @@
         "monitoringTargets": "Collection settings",
         "resourceOverview": "Resource overview",
         "nodeResources": "Host monitoring",
-        "serviceResources": "Service monitoring"
+        "serviceResources": "Service monitoring",
+        "platformAlerts": "Platform alerts"
       },
       "catalog": {
         "label": "Enterprise Catalog",

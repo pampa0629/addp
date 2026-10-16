@@ -77,7 +77,7 @@ func TestWeComSenderChecksBusinessResultAndNeverLeaksCredentials(t *testing.T) {
 				}
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: http.Header{}}, nil
 			})
-			payload, _ := wecomLogPayload(`{"schema":"addp.platform-log-notification-test/v1","test":true}`, "delivery-1")
+			payload, _ := wecomPlatformAlertPayload(`{"schema":"addp.platform-alert-notification-test/v1","test":true}`, "delivery-1")
 			_, err := sender.SendWeComMessage(context.Background(), WebhookMessage{RequestURL: wecomEndpoint, Payload: payload}, fixtureWeComKey, time.Now())
 			if !called || !errors.Is(err, tc.want) {
 				t.Fatalf("err=%v want=%v", err, tc.want)
@@ -94,8 +94,8 @@ func TestWeComSenderChecksBusinessResultAndNeverLeaksCredentials(t *testing.T) {
 
 func TestWeComMessagePreservesOriginalEventAndRejectsMarkdownInjection(t *testing.T) {
 	for _, eventType := range []string{"opened", "resolved"} {
-		body, _ := json.Marshal(platformLogMessage{Schema: "addp.platform-log-alert/v1", EventID: "event-1", EventType: eventType, IncidentID: 7, Node: "host\n<@all>", Signal: "receiver_loss", InstanceID: "instance-1", Severity: "critical", OccurredAt: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)})
-		payload, err := wecomLogPayload(string(body), "delivery-1")
+		body, _ := json.Marshal(platformAlertMessage{Schema: "addp.platform-log-alert/v1", EventID: "event-1", EventType: eventType, IncidentID: 7, Node: "host\n<@all>", Signal: "receiver_loss", InstanceID: "instance-1", Severity: "critical", OccurredAt: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)})
+		payload, err := wecomPlatformAlertPayload(string(body), "delivery-1")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,17 +110,17 @@ func TestWeComMessagePreservesOriginalEventAndRejectsMarkdownInjection(t *testin
 			t.Fatal("untrusted node mentions group")
 		}
 	}
-	unsupported, _ := json.Marshal(platformLogMessage{Schema: "addp.platform-log-alert/v1", EventID: "event-1", EventType: "escalated", IncidentID: 7, Node: "host", Signal: "source_quota", Severity: "critical", OccurredAt: time.Now().UTC()})
-	if _, err := wecomLogPayload(string(unsupported), "d"); !errors.Is(err, ErrLogInvalid) {
+	unsupported, _ := json.Marshal(platformAlertMessage{Schema: "addp.platform-log-alert/v1", EventID: "event-1", EventType: "escalated", IncidentID: 7, Node: "host", Signal: "source_quota", Severity: "critical", OccurredAt: time.Now().UTC()})
+	if _, err := wecomPlatformAlertPayload(string(unsupported), "d"); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("platform escalation accepted")
 	}
-	if _, err := wecomLogPayload(`{"schema":"other","test":true}`, "d"); !errors.Is(err, ErrLogInvalid) {
+	if _, err := wecomPlatformAlertPayload(`{"schema":"other","test":true}`, "d"); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("unknown event accepted")
 	}
 }
 
 func TestPlatformLogOutboxRejectsUnsupportedEvents(t *testing.T) {
-	n := NewPlatformAlertNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
+	n := NewPlatformAlertService(nil, nil, false, nil, nil, 3, 0, 0, 0)
 	if err := n.RecordTx(nil, models.PlatformAlertEvent{Type: "escalated"}, models.PlatformAlertIncident{}, time.Now()); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("platform outbox accepted an unsupported lifecycle event")
 	}

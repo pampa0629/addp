@@ -57,7 +57,7 @@ func (e PlatformAlertEvaluation) valid() bool {
 // The caller supplies the transaction that owns the source evaluation state.
 // The advisory lock also protects a previously absent incident across competing
 // evaluators; the partial unique index remains the durable invariant.
-func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertNotifications, e PlatformAlertEvaluation, now time.Time) error {
+func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e PlatformAlertEvaluation, now time.Time) error {
 	if !e.valid() || now.IsZero() {
 		return ErrLogInvalid
 	}

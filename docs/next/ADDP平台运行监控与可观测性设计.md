@@ -2116,7 +2116,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 
 本地 `make test-module MODULE=monitor GO_ONLY=1` 最终退出 0，覆盖两项指标的打开/恢复阈值、等值与滞回、有效零、缺失/非有限值、重复/未来/过期采样、采样与网格缺口、重启及错配启动证据、输入点数上限、原始时长不足、CPU 计算窗口跨生命周期边界和停用。四组确定性测试自动由 Monitor 既有 `go test ./...` 发现；日志 `/tmp/addp-resource-pressure-go.log`。本批未运行 PostgreSQL、metrics、前端或 Online 门禁，不把 10.62 的 CI 结果计作此新内核的 CI 证据；无运行接线，不需要重启。
 
-### 10.65 统一入口切换的实施契约（待实现）
+### 10.65 统一入口切换的实施契约（实现完成，运行验收待执行）
 
 本节细化 10.61、10.63 已确认范围，不发布尚无消费者的权限或占位路由。后端、前端、权限发布与门禁适配须在同一可运行批次完成；此前日志专用入口在该批次一次删除，没有地址别名或旧权限回退。
 
@@ -2139,4 +2139,31 @@ Monitor 页面唯一入口为 `/platform-alerts`，与租户告警页分开；�
 
 实施门禁：Monitor Go/前端、System/Console/共享前端、授权目录/常量/覆盖与不可变 seed 检查、Swagger 生成/覆盖、System 正式前向迁移的 PostgreSQL 验证，以及 Monitor PostgreSQL 中跨类别事件/订阅/重投与旧权限拒绝。根标准入口和 CI 路径发现须在实施前逐项确认；需要新增输入登记时与消费者同批提交。个人运行环境须由用户标准重启后另行验证，不以确定性前端或 T2 替代真实运行及 T4/T5。
 
-本轮仅同步用户已确认的发布范围与实施契约，未改变 Permission Manifest、角色目录、SQL migration、公开 API 或前端页面。文档章节、围栏、本地链接与任务差异检查通过。默认 `make test-changed` 对当时 30 个混合变更、24 个 owner 在外部测试连接预检退出 2，后续未执行，不计通过；日志 `/tmp/addp-alert-permission-scope-changed.log`。这不替代上表未来实现门禁，也不构成重新要求用户确认范围的理由。
+此前设计确认阶段仅同步用户已确认的发布范围与实施契约，未改变 Permission Manifest、角色目录、SQL migration、公开 API 或前端页面。文档章节、围栏、本地链接与任务差异检查通过。默认 `make test-changed` 对当时 30 个混合变更、24 个 owner 在外部测试连接预检退出 2，后续未执行，不计通过；日志 `/tmp/addp-alert-permission-scope-changed.log`。这不替代上表未来实现门禁，也不构成重新要求用户确认范围的理由。
+
+
+### 10.66 统一平台告警入口实现与本地验证（2026-10-16）
+
+10.61、10.63、10.65 的入口切换已经实现。Monitor 的 `/platform-alerts` 统一提供平台事件列表、确认、限时抑制、通知目标、渠道凭据与失败重投；System 只保留日志健康、来源策略、活动事件数和带来源上下文的跳转。原日志管理 API、System 表单及专用事件 DTO 已删除，未保留地址别名或旧权限回退。仅通知查看者直接进入通知页签，不读取事件列表；撤权、路由离开和迟到响应均清空旧内容及凭据草稿。
+
+权限通过前向迁移 `000209_platform_alert_management.up.sql` 发布，与 Manifest、唯一接口和消费者同批交付。四项新权限仅绑定已有平台系统管理员；旧两项日志通知权限保留历史定义并停用，移除该角色的旧绑定。既有授权版本触发器推进受影响账号的版本，撤销其旧 refresh family；没有修改 IAM 裁决逻辑、角色分配、其他角色或租户权限。迁移编号已与源授权会话协调，后者在本批提交后使用 `000210`。
+
+原通知目标仍只订阅日志。新增目标的类别草稿为空，用户必须明确选择日志、主机资源或两者；类别与版本一起提交，派发及重投按原事件类别核对当前订阅。日志正式协议保持不变，主机资源使用独立协议。资源 CPU、内存事件已在隔离数据库中验证路由、处理与恢复，但默认停用规则的持久化、后台评估和个人环境运行验收尚未完成，不能把通知订阅保存解释为资源规则已经运行。
+
+| 本批标准验证入口 | 结果与范围 |
+| --- | --- |
+| `make test-module MODULE=monitor GO_ONLY=1`、`make test-module MODULE=system GO_ONLY=1` | Go T1 通过，包括新接口的权限拆分、旧权限拒绝、平台与租户隔离、委托/服务身份拒绝、通用错误不泄露内部细节。 |
+| `make test-monitor-frontend` | 61 项确定性用例、148 项浏览器用例及构建通过，覆盖两类事件、显式类别、凭据写入顺序、重投身份、页码保持及撤权迟到响应。 |
+| `make test-system-frontend` | 131 项确定性用例、153 项浏览器用例及构建通过。 |
+| `make test-console-frontend` | 137 项浏览器用例、确定性测试及构建通过，包括真实 System→Monitor iframe 跳转、保留来源筛选、返回和刷新恢复。 |
+| `make test-common-frontend` | 197 项用例通过，含新平台页面的独立读取权限和租户拒绝。 |
+| `make test-workbench-frontend` | 确定性测试、64 项浏览器用例及构建通过，验证 Console 菜单配置的既有实际消费者。 |
+| `make test-authorization` | Manifest、生成常量、Tool Catalog、不可变初始 seed、授权覆盖及全部公开 Swagger 路由覆盖通过；未改写初始 SQL。 |
+| `bash scripts/swagger/gen-swagger.sh monitor` | 生成通过，新接口与通用事件/目标/投递 DTO 同步到三份 Swagger 产物。 |
+| `make test-monitor-postgres` | 通过，包含两类事件隔离、明确订阅、正式资源载荷、目标 CAS、确认/抑制、恢复及历史重投。 |
+| `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package migration --test platform-alert-management'` | 通过，真实运行到 208 后发布 209，验证四项绑定、旧键停用、其他授权事实快照不变、版本推进、refresh family 撤销和重复执行不变。 |
+| `make test-system-iam-runner`、`make test-frontend-ci-registration` | 分别 13 项、20 项测试通过，21 个前端登记一致。新增迁移测试遵循既有 `AgainstPostgres$` 默认发现；新增浏览器用例进入既有模块门禁，无需新增 workflow。 |
+
+System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务内默认创建时间而失败；已按既有夹具方式修正时间，再通过上述正式入口复验 209。其余未变更迁移用例复用首轮成功结果，不将首轮整包记为通过。授权目录首轮的旧版本/数量断言及 Console 跨模块夹具的旧 Principal 字段也已修正，最终结果以上表为准。
+
+默认 `make test-changed` 已执行，但共享工作区包含其他会话变更，影响矩阵选中 24 个 owner，在缺少各外部测试连接的预检阶段退出 2，后续门禁未执行，不计通过；本批实际影响范围由上表标准入口分别验证。未执行个人环境运行验收、Hosted T4/T5 或真实群通知，相关项不计通过。本批没有自动重启服务。

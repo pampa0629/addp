@@ -79,26 +79,28 @@ func checkWeComResponse(reader io.Reader) error {
 	return nil
 }
 
-type platformLogMessage struct {
-	Schema     string    `json:"schema"`
-	EventID    string    `json:"event_id"`
-	EventType  string    `json:"event_type"`
-	IncidentID uint      `json:"incident_id"`
-	Node       string    `json:"node"`
-	Signal     string    `json:"signal"`
-	InstanceID string    `json:"instance_id"`
-	Severity   string    `json:"severity"`
-	OccurredAt time.Time `json:"occurred_at"`
-	Test       bool      `json:"test"`
+type platformAlertMessage struct {
+	Schema      string    `json:"schema"`
+	EventID     string    `json:"event_id"`
+	EventType   string    `json:"event_type"`
+	IncidentID  uint      `json:"incident_id"`
+	Node        string    `json:"node"`
+	Signal      string    `json:"signal"`
+	InstanceID  string    `json:"instance_id"`
+	Severity    string    `json:"severity"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	SubjectKind string    `json:"subject_kind"`
+	SubjectID   string    `json:"subject_id"`
+	Test        bool      `json:"test"`
 }
 
-func wecomLogPayload(raw, deliveryID string) (any, error) {
-	var event platformLogMessage
+func wecomPlatformAlertPayload(raw, deliveryID string) (any, error) {
+	var event platformAlertMessage
 	if json.Unmarshal([]byte(raw), &event) != nil {
 		return nil, ErrLogInvalid
 	}
 	content := ""
-	if event.Schema == "addp.platform-log-notification-test/v1" && event.Test {
+	if event.Schema == "addp.platform-alert-notification-test/v1" && event.Test {
 		content = "**ADDP 平台告警接入测试（无需处理）**\n企业微信通知渠道连接测试。"
 	} else if event.Schema == "addp.platform-log-alert/v1" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
 		label := map[string]string{"opened": "异常告警", "resolved": "告警恢复"}[event.EventType]
@@ -114,6 +116,13 @@ func wecomLogPayload(raw, deliveryID string) (any, error) {
 			content += "\n> 实例 ID：" + wecomText(event.InstanceID)
 		}
 		content += "\n\n此消息记录原事件，当前状态请查看平台日志链路。"
+	} else if event.Schema == "addp.platform-resource-alert/v1" && event.SubjectKind == "host_node" && event.SubjectID != "" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
+		label := map[string]string{"opened": "资源压力告警", "resolved": "资源压力恢复"}[event.EventType]
+		signal := map[string]string{"node.cpu.busy_percent": "CPU 忙碌率", "node.memory.used_percent": "内存使用率"}[event.Signal]
+		if label == "" || signal == "" || event.Severity != "warning" {
+			return nil, ErrLogInvalid
+		}
+		content = fmt.Sprintf("**ADDP 平台主机：%s**\n> 主机 ID：%s\n> 指标：%s\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(event.SubjectID), signal, event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
 	} else {
 		return nil, ErrLogInvalid
 	}

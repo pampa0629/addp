@@ -28,8 +28,9 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		route := c.FullPath()
 		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_") || strings.HasPrefix(route, "/api/v1/monitor/platform/process_resource_")
 		isQueryPolicy := route == "/api/v1/monitor/settings/resource-query-policy"
+		isAlert := strings.HasPrefix(route, "/api/v1/monitor/platform/alerts") || strings.HasPrefix(route, "/api/v1/monitor/platform/alert-notification-")
 		isTarget := strings.HasPrefix(route, "/api/v1/monitor/platform/monitoring_targets")
-		if system == nil || (!isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
+		if system == nil || (!isAlert && !isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
 			return
 		}
 		identity, ok := commonauth.AuthContextFromGin(c)
@@ -49,6 +50,14 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		}
 		path, method, id := c.Request.URL.Path, c.Request.Method, uuid.NewString()
 		request := &models.AuditLogCreateRequest{EventName: event, ModuleName: "monitor", Result: result, RiskLevel: "medium", EntityType: "log_pipeline", EntityID: "platform", ResourcePath: &path, HTTPMethod: &method, HTTPStatus: &status, RequestID: &id, Details: map[string]any{"source_principal_id": identity.Principal.ID, "source_principal_type": "user"}}
+		if isAlert {
+			request.EntityType = "platform_alert"
+			request.EventName = "platform.alert.manage"
+			if c.Request.Method == http.MethodGet {
+				request.EventName = "platform.alert.read"
+				request.RiskLevel = "low"
+			}
+		}
 		if isResource || isQueryPolicy {
 			request.RiskLevel = "low"
 			request.EntityType = "resource_observation"
@@ -84,10 +93,10 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 				request.EntityID = id.String()
 			}
 		}
-		if strings.HasSuffix(route, "/log-notification-deliveries/:id/retry") {
+		if strings.HasSuffix(route, "/alert-notification-deliveries/:id/retry") {
 			request.Details["operation"] = "retry"
 			if parsed, err := uuid.Parse(c.Param("id")); err == nil && parsed.String() == c.Param("id") {
-				request.EntityType = "platform_log_delivery"
+				request.EntityType = "platform_alert_delivery"
 				request.EntityID = parsed.String()
 			}
 			if value, ok := c.Get(logRetryAuditKey); ok {

@@ -143,13 +143,13 @@ func main() {
 		},
 	)
 
-	logNotifications := service.NewPlatformAlertNotifications(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, webhookSender, platformMail, cfg.WebhookMaxAttempts, cfg.WebhookLeaseDuration, cfg.WebhookRetryInitial, cfg.WebhookRetryMax)
-	logPipeline := service.NewLogPipelineService(db, cfg.LogObserverNode, systemServiceClient, logNotifications)
+	platformAlerts := service.NewPlatformAlertService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, webhookSender, platformMail, cfg.WebhookMaxAttempts, cfg.WebhookLeaseDuration, cfg.WebhookRetryInitial, cfg.WebhookRetryMax)
+	logPipeline := service.NewLogPipelineService(db, cfg.LogObserverNode, systemServiceClient, platformAlerts)
 	if err := logPipeline.Initialize(runtimeContext, time.Now().UTC()); err != nil {
 		log.Fatalf("Failed to initialize platform log pipeline: %v", err)
 	}
 	go logPipeline.Run(runtimeContext)
-	go logNotifications.Run(runtimeContext)
+	go platformAlerts.Run(runtimeContext)
 
 	var resourceBackend service.ResourceBackend
 	if cfg.MetricsQueryClient != nil {
@@ -172,7 +172,7 @@ func main() {
 		redisClient,
 		systemServiceClient,
 		lifecycleController,
-		logPipeline, logNotifications,
+		logPipeline, platformAlerts,
 		runtimeHealthService,
 		service.NewMonitoringTargetService(repository.NewMonitoringTargetRepository(db), systemServiceClient, systemServiceClient, cfg.MetricsEnabled, cfg.MetricsPolicy),
 		service.NewResourceObservationService(repository.NewResourceQueryPolicyRepository(db), repository.NewMonitoringTargetRepository(db), systemServiceClient, resourceBackend, cfg.MetricsEnabled, cfg.MetricsPolicy, service.ProcessObservationDependencies{Users: systemServiceClient, Identities: systemServiceClient, Backend: cfg.MetricsQueryClient}),

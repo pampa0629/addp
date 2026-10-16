@@ -49,7 +49,7 @@ func (s *retryTestEmail) SendMessage(_ context.Context, m EmailMessage, _ time.T
 
 type logRetryFixture struct {
 	db       *gorm.DB
-	n        *PlatformAlertNotifications
+	n        *PlatformAlertService
 	target   models.PlatformAlertDestination
 	incident models.PlatformAlertIncident
 	event    models.PlatformAlertEvent
@@ -71,7 +71,7 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 		t.Fatal(err)
 	}
 	f := &logRetryFixture{db: db, webhook: &retryTestWebhook{}, email: &retryTestEmail{}}
-	f.n = NewPlatformAlertNotifications(db, []byte("addp-dev-encryption-key-2025!!!!"), true, f.webhook, f.email, 3, 30*time.Second, time.Second, 5*time.Second)
+	f.n = NewPlatformAlertService(db, []byte("addp-dev-encryption-key-2025!!!!"), true, f.webhook, f.email, 3, 30*time.Second, time.Second, 5*time.Second)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	f.incident = models.PlatformAlertIncident{Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver, SubjectID: "retry-" + uuid.NewString(), Signal: "delivery_probe", Severity: "critical", Status: "resolved", OpenedAt: now.Add(-time.Hour), LastObservedAt: now, ResolvedAt: &now}
 	f.event = models.PlatformAlertEvent{ID: uuid.NewString(), Type: "opened", Severity: "critical", OccurredAt: f.incident.OpenedAt}
@@ -102,7 +102,7 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 	if err := db.Create(&f.event).Error; err != nil {
 		t.Fatal(err)
 	}
-	input := LogDestinationInput{Name: f.incident.SubjectID, Channel: channel, EventTypes: []string{"opened", "resolved"}}
+	input := PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Name: f.incident.SubjectID, Channel: channel, EventTypes: []string{"opened", "resolved"}}
 	if channel == "webhook" {
 		input.URL = "http://127.0.0.1:18080/original"
 	} else if channel == "email" {
@@ -140,10 +140,10 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 	}
 	return f
 }
-func (f *logRetryFixture) read(t *testing.T) LogDeliveryView {
+func (f *logRetryFixture) read(t *testing.T) PlatformAlertDeliveryView {
 	t.Helper()
-	var view LogDeliveryView
-	if err := logDeliveryQuery(f.db).Where("d.id=?", f.delivery.ID).Scan(&view).Error; err != nil {
+	var view PlatformAlertDeliveryView
+	if err := platformAlertDeliveryQuery(f.db).Where("d.id=?", f.delivery.ID).Scan(&view).Error; err != nil {
 		t.Fatal(err)
 	}
 	return view
@@ -157,12 +157,12 @@ func TestIntegrationPostgresPlatformLogManualRetryCyclesAndConcurrency(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.target, err = f.n.Save(ctx, f.target.ID, LogDestinationInput{Version: f.target.Version, Name: f.target.Name, Channel: "webhook", URL: "http://127.0.0.1:18080/current", Enabled: true, EventTypes: []string{"opened", "resolved"}})
+	f.target, err = f.n.Save(ctx, f.target.ID, PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Version: f.target.Version, Name: f.target.Name, Channel: "webhook", URL: "http://127.0.0.1:18080/current", Enabled: true, EventTypes: []string{"opened", "resolved"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	zero := 0
-	input := LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
+	input := PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
 	var success atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
@@ -231,7 +231,7 @@ func TestIntegrationPostgresPlatformLogManualRetryCyclesAndConcurrency(t *testin
 	if err := f.db.Model(&models.PlatformAlertEvent{}).Where("incident_id=?", f.incident.ID).Count(&events).Error; err != nil || events != 1 {
 		t.Fatal("retry manufactured lifecycle events")
 	}
-	if _, err := f.n.Retry(ctx, f.delivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &view.ManualRetryCount, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogConflict) {
+	if _, err := f.n.Retry(ctx, f.delivery.ID, PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &view.ManualRetryCount, DestinationVersion: f.target.Version}, now); !errors.Is(err, ErrLogConflict) {
 		t.Fatal("delivered message accepted for retry")
 	}
 }
@@ -240,7 +240,7 @@ func TestIntegrationPostgresPlatformLogManualRetryGuards(t *testing.T) {
 	f := newLogRetryFixture(t, "webhook")
 	ctx, now := context.Background(), time.Now().UTC().Truncate(time.Microsecond)
 	zero := 0
-	input := LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
+	input := PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
 	for _, status := range []string{"pending", "delivering", "delivered", "suppressed", "cancelled"} {
 		if err := f.db.Model(&f.delivery).Update("status", status).Error; err != nil {
 			t.Fatal(err)
@@ -252,7 +252,7 @@ func TestIntegrationPostgresPlatformLogManualRetryGuards(t *testing.T) {
 	if err := f.db.Model(&f.delivery).Update("status", "dead").Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, invalid := range []LogDeliveryRetryInput{{DestinationVersion: f.target.Version}, {ExpectedManualRetryCount: &zero}} {
+	for _, invalid := range []PlatformAlertDeliveryRetryInput{{DestinationVersion: f.target.Version}, {ExpectedManualRetryCount: &zero}} {
 		if _, err := f.n.Retry(ctx, f.delivery.ID, invalid, now); !errors.Is(err, ErrLogInvalid) {
 			t.Fatal("missing concurrency input accepted")
 		}
@@ -312,7 +312,7 @@ func TestIntegrationPostgresPlatformLogRetryExpiredClaimAndEmail(t *testing.T) {
 		f := newLogRetryFixture(t, "webhook")
 		zero := 0
 		now := time.Now().UTC().Truncate(time.Microsecond)
-		if _, err := f.n.Retry(context.Background(), f.delivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); err != nil {
+		if _, err := f.n.Retry(context.Background(), f.delivery.ID, PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); err != nil {
 			t.Fatal(err)
 		}
 		if err := f.db.Model(&f.delivery).Updates(map[string]any{"status": "delivering", "attempt_count": 6, "lease_expires_at": now.Add(-time.Second)}).Error; err != nil {
@@ -332,13 +332,13 @@ func TestIntegrationPostgresPlatformLogRetryExpiredClaimAndEmail(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Microsecond)
 		ctx := context.Background()
 		f.n.email = nil
-		input := LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
+		input := PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}
 		if _, err := f.n.Retry(ctx, f.delivery.ID, input, now); !errors.Is(err, ErrLogRetryUnavailable) {
 			t.Fatal("unconfigured SMTP accepted")
 		}
 		f.n.email = f.email
 		var err error
-		f.target, err = f.n.Save(ctx, f.target.ID, LogDestinationInput{Version: f.target.Version, Name: f.target.Name, Channel: "email", Enabled: true, Recipients: []string{"current@example.test"}, EventTypes: []string{"opened", "resolved"}})
+		f.target, err = f.n.Save(ctx, f.target.ID, PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Version: f.target.Version, Name: f.target.Name, Channel: "email", Enabled: true, Recipients: []string{"current@example.test"}, EventTypes: []string{"opened", "resolved"}})
 		if err != nil {
 			t.Fatal(err)
 		}

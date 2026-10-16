@@ -40,9 +40,9 @@ func TestPlatformLogRetryRequiresPlatformUserAndStrictInput(t *testing.T) {
 				identity.Authorization.RoleAssignments[0].Scope = authorization.AssignmentScope{Type: "platform"}
 				identity.Authorization.RoleAssignments[0].RoleKey = "platform.system_administrator"
 			}
-			identity.Authorization.RoleAssignments[0].Permissions = []string{"monitor.log_notification.read"}
+			identity.Authorization.RoleAssignments[0].Permissions = []string{"monitor.platform_alert_notification.read"}
 			if tc.permission {
-				identity.Authorization.RoleAssignments[0].Permissions = append(identity.Authorization.RoleAssignments[0].Permissions, "monitor.log_notification.update")
+				identity.Authorization.RoleAssignments[0].Permissions = append(identity.Authorization.RoleAssignments[0].Permissions, "monitor.platform_alert_notification.update")
 			}
 			if !tc.user {
 				identity.Principal.Type = "service_principal"
@@ -60,9 +60,9 @@ func TestPlatformLogRetryRequiresPlatformUserAndStrictInput(t *testing.T) {
 			}))
 			defer server.Close()
 			pipeline := service.NewLogPipelineService(nil, "node", nil, nil)
-			notifications := service.NewPlatformAlertNotifications(nil, nil, false, nil, nil, 3, 0, 0, 0)
+			notifications := service.NewPlatformAlertService(nil, nil, false, nil, nil, 3, 0, 0, 0)
 			router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, server.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), pipeline, notifications, nil, nil, nil)
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/log-notification-deliveries/"+uuid.NewString()+"/retry", bytes.NewBufferString(tc.body))
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/alert-notification-deliveries/"+uuid.NewString()+"/retry", bytes.NewBufferString(tc.body))
 			request.Header.Set("Authorization", "Bearer addp_at_fixture")
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
@@ -96,7 +96,7 @@ func TestPlatformLogRetryAuditIncludesOnlySafeFacts(t *testing.T) {
 	identity.Authentication.AssuranceLevel = "aal2"
 	identity.Authorization.RoleAssignments[0].Scope = authorization.AssignmentScope{Type: "platform"}
 	identity.Authorization.RoleAssignments[0].RoleKey = "platform.system_administrator"
-	identity.Authorization.RoleAssignments[0].Permissions = []string{"monitor.log_notification.update"}
+	identity.Authorization.RoleAssignments[0].Permissions = []string{"monitor.platform_alert_notification.update"}
 	deliveryID, eventID := uuid.NewString(), uuid.NewString()
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -105,13 +105,13 @@ func TestPlatformLogRetryAuditIncludesOnlySafeFacts(t *testing.T) {
 		}
 		c.Next()
 	}, logPipelineAudit(client.NewSystemServiceClient(server.URL, retryAuditTokens{}, server.Client())))
-	router.POST("/api/v1/monitor/platform/log-notification-deliveries/:id/retry", func(c *gin.Context) {
+	router.POST("/api/v1/monitor/platform/alert-notification-deliveries/:id/retry", func(c *gin.Context) {
 		c.Set(logRetryAuditKey, logRetryAuditFacts{DeliveryID: deliveryID, EventID: eventID, DestinationID: 7, Before: 0, After: 1})
 		c.JSON(200, gin.H{"status": "pending"})
 	})
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/log-notification-deliveries/"+deliveryID+"/retry", bytes.NewBufferString(`{"secret":"do-not-audit","payload":"do-not-audit"}`)))
-	if response.Code != 200 || received.Result != "succeeded" || received.EntityID != deliveryID || received.EntityType != "platform_log_delivery" || received.Details["source_principal_id"] != identity.Principal.ID || received.Details["event_id"] != eventID || received.Details["manual_retry_count_before"] != float64(0) || received.Details["manual_retry_count_after"] != float64(1) || len(received.Details) != 8 {
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/monitor/platform/alert-notification-deliveries/"+deliveryID+"/retry", bytes.NewBufferString(`{"secret":"do-not-audit","payload":"do-not-audit"}`)))
+	if response.Code != 200 || received.Result != "succeeded" || received.EntityID != deliveryID || received.EntityType != "platform_alert_delivery" || received.Details["source_principal_id"] != identity.Principal.ID || received.Details["event_id"] != eventID || received.Details["manual_retry_count_before"] != float64(0) || received.Details["manual_retry_count_after"] != float64(1) || len(received.Details) != 8 {
 		t.Fatalf("unexpected audit metadata %#v", received)
 	}
 	for _, field := range []string{"secret", "payload", "url", "recipients"} {

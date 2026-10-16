@@ -24,10 +24,10 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 	if err != nil || key != fixtureWeComKey || strings.Contains(f.target.URL, "key=") {
 		t.Fatal("robot token not isolated")
 	}
-	if _, err = f.n.Save(ctx, 0, LogDestinationInput{Name: uuid.NewString(), Channel: "wecom", EventTypes: []string{"opened"}, Enabled: true}); !errors.Is(err, ErrLogInvalid) {
+	if _, err = f.n.Save(ctx, 0, PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Name: uuid.NewString(), Channel: "wecom", EventTypes: []string{"opened"}, Enabled: true}); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("enabled create accepted without credential")
 	}
-	if _, err = f.n.Save(ctx, 0, LogDestinationInput{Name: uuid.NewString(), Channel: "wecom", URL: wecomEndpoint + "?key=" + fixtureWeComKey, EventTypes: []string{"opened"}}); !errors.Is(err, ErrLogInvalid) {
+	if _, err = f.n.Save(ctx, 0, PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Name: uuid.NewString(), Channel: "wecom", URL: wecomEndpoint + "?key=" + fixtureWeComKey, EventTypes: []string{"opened"}}); !errors.Is(err, ErrLogInvalid) {
 		t.Fatal("credential accepted in ordinary target")
 	}
 	if _, err = f.n.SetSecret(ctx, f.target.ID, f.target.Version, wecomEndpoint+"?key="+fixtureWeComKey+"&extra=1"); !errors.Is(err, ErrLogInvalid) {
@@ -41,7 +41,7 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed, err := f.n.List(ctx)
+	listed, err := f.n.Destinations(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestIntegrationPostgresPlatformLogWeComCredentialRetryAndRecovery(t *testin
 	f.n.wecom = sender
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	zero := 0
-	if _, err = f.n.Retry(ctx, f.delivery.ID, LogDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); err != nil {
+	if _, err = f.n.Retry(ctx, f.delivery.ID, PlatformAlertDeliveryRetryInput{ExpectedManualRetryCount: &zero, DestinationVersion: f.target.Version}, now); err != nil {
 		t.Fatal(err)
 	}
 	if processed, err := f.n.DispatchOnce(ctx, now); err != nil || !processed {
@@ -147,7 +147,7 @@ func TestIntegrationPostgresPlatformLogSubscriptionsRejectEscalation(t *testing.
 	for _, channel := range []string{"webhook", "wecom", "email"} {
 		t.Run(channel, func(t *testing.T) {
 			f := newLogRetryFixture(t, channel)
-			input := LogDestinationInput{Version: f.target.Version, Name: f.target.Name, Channel: channel, EventTypes: []string{"opened", "escalated", "resolved"}, Enabled: true}
+			input := PlatformAlertDestinationInput{Categories: []string{"log_pipeline"}, Version: f.target.Version, Name: f.target.Name, Channel: channel, EventTypes: []string{"opened", "escalated", "resolved"}, Enabled: true}
 			if channel == "webhook" {
 				input.URL = f.target.URL
 			}

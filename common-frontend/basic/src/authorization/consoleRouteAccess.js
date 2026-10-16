@@ -54,6 +54,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/monitor/monitoring-targets': [platform('monitor.monitoring_target.read', 'platform.host_node.read')],
   '/monitor/monitoring-targets/new': [platform('monitor.monitoring_target.read', 'platform.host_node.read', 'monitor.monitoring_target.create')],
   '/monitor/executions': [tenant('monitor.execution.read')],
+  '/monitor/platform-alerts': [anyOf('platform', 'monitor.platform_alert.read', 'monitor.platform_alert_notification.read')],
   '/monitor/alerts': [tenant('monitor.alert_rule.read', 'monitor.alert_incident.read')],
   '/monitor/notifications': [tenant('monitor.notification_destination.read', 'monitor.notification_delivery.read')],
   '/catalog/entries': [tenant('catalog.entry.read')],
