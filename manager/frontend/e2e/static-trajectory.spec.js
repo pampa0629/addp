@@ -222,3 +222,31 @@ test('a late selected-range response cannot refill a reopened configuration', as
   expect(state.errors).toEqual([])
 })
 function json(route, body, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) }) }
+
+test.describe('trajectory initial map view', () => {
+  test.use({ viewport: { width: 630, height: 1100 }, deviceScaleFactor: 1.6 })
+  test('southern routes fit the narrow high-density map without manual zoom', async ({ page }, testInfo) => {
+    const rows = [
+      { unit: 'A', at: '2026-10-16T01:00:00Z', east: -71, north: -61 },
+      { unit: 'A', at: '2026-10-16T02:00:00Z', east: -70, north: -62 },
+      { unit: 'B', at: '2026-10-16T01:00:00Z', east: -65, north: -60 },
+      { unit: 'B', at: '2026-10-16T02:00:00Z', east: -64, north: -61 }
+    ]
+    await fixture(page, 'zh-cn', (route, data) => json(route, { preview_type: 'table', data }), 'csv', data => ({ ...data, rows, total: rows.length }))
+    await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
+    await configure(page, 'zh-cn')
+    const dialog = page.getByRole('dialog')
+    await expectMapPaint(dialog)
+    await expect.poll(() => dialog.locator('canvas').evaluate(element => {
+      const pixels = element.getContext('2d').getImageData(0, 0, element.width, element.height).data
+      let minX = element.width, minY = element.height, maxX = -1, maxY = -1
+      for (let y = 0; y < element.height; y++) for (let x = 0; x < element.width; x++) {
+        if (pixels[(y * element.width + x) * 4 + 3] <= 20) continue
+        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+      }
+      return maxX > minX && minX > 5 && minY > 5 && maxX < element.width - 5 && maxY < element.height - 5 &&
+        Math.abs((minX + maxX) / element.width - 1) < 0.08 && Math.abs((minY + maxY) / element.height - 1) < 0.08
+    })).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath('trajectory-narrow-initial.png'), fullPage: true })
+  })
+})
