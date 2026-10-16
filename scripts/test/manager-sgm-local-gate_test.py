@@ -11,6 +11,7 @@ import subprocess
 import struct
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -20,6 +21,63 @@ WORKER = importlib.import_module("scripts.test.manager-sgm-local-worker")
 
 
 class LocalSGMContract(unittest.TestCase):
+    def test_official_autumn_archive_extracts_only_pinned_members_and_preserves_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / 'private.zip'
+            files = {'AutumnTree.SGM': b'model', 'Textures/hongye.PNG': b'leaves', 'Textures/shugan.jpg': b'trunk'}
+            with zipfile.ZipFile(archive, 'w') as bundle:
+                for name, raw in files.items():
+                    bundle.writestr('resources/RealspaceEditor/3D/Model/' + name, raw)
+                bundle.writestr('../never-extract', b'private')
+            with patch.dict(GATE.AUTUMN_FILES, {name: GATE.hashlib.sha256(raw).hexdigest() for name, raw in files.items()}, clear=True):
+                GATE.extract_autumn(archive, root / 'extracted')
+                self.assertEqual({p.relative_to(root / 'extracted').as_posix() for p in (root / 'extracted').rglob('*') if p.is_file()}, set(files))
+                self.assertTrue(all((root / 'extracted' / name).read_bytes() == raw for name, raw in files.items()))
+                self.assertTrue(all((root / 'extracted' / name).stat().st_mode & 0o777 == 0o600 for name in files))
+            with self.assertRaises(GATE.T2.GateError):
+                GATE.extract_autumn(archive, root / 'rejected')
+            with self.assertRaises(GATE.T2.GateError):
+                GATE.extract_autumn(root / 'missing', root / 'missing-output')
+
+    def test_autumn_oracle_requires_both_used_images_and_exact_leaf_alpha_pixels(self):
+        doc = {'meshes': [{'primitives': [
+            {'attributes': {'POSITION': 0, 'TEXCOORD_0': 4}, 'indices': 1, 'material': 0},
+            {'attributes': {'POSITION': 2, 'TEXCOORD_0': 5}, 'indices': 3, 'material': 1}]}],
+            'accessors': [{'count': 1000}, {'count': 3000}, {'count': 8589}, {'count': 18819}],
+            'images': [{'mimeType': 'image/jpeg', 'bufferView': 0}, {'mimeType': 'image/png', 'bufferView': 1}],
+            'bufferViews': [{'byteOffset': 0, 'byteLength': 1}, {'byteOffset': 1, 'byteLength': 1}],
+            'textures': [{'source': 0}, {'source': 1}], 'materials': [
+                {'pbrMetallicRoughness': {'baseColorTexture': {'index': 0}}},
+                {'alphaMode': 'BLEND', 'pbrMetallicRoughness': {'baseColorTexture': {'index': 1}}}]}
+        raw = bytearray(30)
+        struct.pack_into('<I', raw, 12, 0)
+        raw[29] = 1
+        histogram = [774205, 126685] + [0] * 253 + [147686]
+        def image_open(stream):
+            leaf = stream.read() == b'\1'
+            image = SimpleNamespace(size=(1024, 1024), mode='RGBA' if leaf else 'RGB',
+                getextrema=lambda: [(0, 255)] * 3 + [(0, 255) if leaf else (255, 255)], tobytes=lambda: b'decoded',
+                getchannel=lambda _: SimpleNamespace(histogram=lambda: histogram if leaf else [0] * 255 + [1048576]))
+            image.convert = lambda _: image
+            return image
+        summary = WORKER.glb_summary(raw, doc, image_open, 'autumn-tree')
+        self.assertEqual((summary['vertices'], summary['triangles'], len(summary['images'])), (9589, 7273, 2))
+        self.assertEqual(summary['images'][1]['alpha_pixel_counts'], [774205, 126685, 147686])
+        for corrupt in (lambda d: d['images'].pop(),
+                        lambda d: d['textures'][1].update(source=0),
+                        lambda d: d['materials'][0].update(alphaMode='BLEND'),
+                        lambda d: d['materials'][1].update(alphaMode='OPAQUE'),
+                        lambda d: d['meshes'][0]['primitives'][1]['attributes'].pop('TEXCOORD_0')):
+            broken = copy.deepcopy(doc)
+            corrupt(broken)
+            with self.assertRaises(ValueError):
+                WORKER.glb_summary(raw, broken, image_open, 'autumn-tree')
+        histogram[1] -= 1
+        histogram[255] += 1
+        with self.assertRaisesRegex(ValueError, 'alpha pixels'):
+            WORKER.glb_summary(raw, doc, image_open, 'autumn-tree')
+
     def test_private_snapshot_keeps_normal_git_public_and_executable_modes(self):
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
@@ -140,9 +198,10 @@ class LocalSGMContract(unittest.TestCase):
                "materials": [{"alphaMode": "BLEND", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}]}
         raw = bytearray(29)
         struct.pack_into("<I", raw, 12, 0)
-        image = SimpleNamespace(size=(256, 256), getextrema=lambda: [(0, 255)] * 4, tobytes=lambda: b"decoded")
+        image = SimpleNamespace(size=(256, 256), mode='RGBA', getextrema=lambda: [(0, 255)] * 4, tobytes=lambda: b"decoded",
+            getchannel=lambda _: SimpleNamespace(histogram=lambda: [1] + [0] * 254 + [65535]))
         image.convert = lambda _: image
-        self.assertEqual(WORKER.glb_summary(raw, doc, lambda _: image)["triangles"], 94)
+        self.assertEqual(WORKER.glb_summary(raw, doc, lambda _: image, 'compass')["triangles"], 94)
         for corrupt in (lambda d: d["accessors"][0].update(count=0),
                         lambda d: d["meshes"][0]["primitives"][0]["attributes"].pop("TEXCOORD_0"),
                         lambda d: d["materials"][0].update(alphaMode="OPAQUE"),
@@ -151,7 +210,7 @@ class LocalSGMContract(unittest.TestCase):
             broken = copy.deepcopy(doc)
             corrupt(broken)
             with self.assertRaises(ValueError):
-                WORKER.glb_summary(raw, broken, lambda _: image)
+                WORKER.glb_summary(raw, broken, lambda _: image, 'compass')
 
     def test_failed_build_diagnostics_expose_only_categories_not_private_output(self):
         with tempfile.TemporaryDirectory() as directory:

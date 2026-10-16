@@ -12,34 +12,59 @@ def require(value, message):
         raise ValueError(message)
 
 
-def glb_summary(raw, doc, image_open):
+SAMPLES = {"compass": {"name": "compass.SGM", "geometry": (136, 94), "image_size": 256,
+                       "mime_types": ["image/png"]},
+           "autumn-tree": {"name": "AutumnTree.SGM", "geometry": (9589, 7273), "image_size": 1024,
+                           "mime_types": ["image/jpeg", "image/png"]}}
+
+
+def glb_summary(raw, doc, image_open, sample_id):
+    expected = SAMPLES[sample_id]
     primitives = [p for mesh in doc["meshes"] for p in mesh["primitives"]]
     require(primitives and all(p.get("mode", 4) == 4 for p in primitives), "triangle primitives required")
     vertices = sum(doc["accessors"][p["attributes"]["POSITION"]]["count"] for p in primitives)
     triangles = sum(doc["accessors"][p["indices"]]["count"] for p in primitives) // 3
-    require((vertices, triangles) == (136, 94), "compass geometry changed")
-    require(len(doc.get("images", [])) == 1 and doc["images"][0].get("mimeType") == "image/png", "embedded PNG required")
-    textured = 0
+    require((vertices, triangles) == expected["geometry"], "fixture geometry changed")
+    images = doc.get("images", [])
+    require(sorted(i.get("mimeType", "") for i in images) == expected["mime_types"], "embedded images changed")
+    bindings = {index: [] for index in range(len(images))}
     for primitive in primitives:
-        if "material" not in primitive:
-            continue
+        require("material" in primitive, "primitive material lost")
         material = doc["materials"][primitive["material"]]
         texture = material.get("pbrMetallicRoughness", {}).get("baseColorTexture")
-        if texture is None:
-            continue
-        require("TEXCOORD_0" in primitive["attributes"] and material.get("alphaMode") == "BLEND", "UV/alpha binding lost")
-        require(doc["textures"][texture["index"]]["source"] == 0, "wrong embedded image")
-        textured += 1
-    require(textured > 0, "image is not used")
+        require(texture is not None, "untextured primitive")
+        require(texture.get("texCoord", 0) == 0 and "TEXCOORD_0" in primitive["attributes"], "UV binding lost")
+        index = doc["textures"][texture["index"]]["source"]
+        require(index in bindings, "wrong embedded image")
+        alpha_mode = material.get("alphaMode", "OPAQUE")
+        require(alpha_mode == ("BLEND" if images[index]["mimeType"] == "image/png" else "OPAQUE"), "alpha binding lost")
+        bindings[index].append(alpha_mode)
+    require(all(bindings.values()), "image is not used")
     binary_offset = 28 + struct.unpack_from("<I", raw, 12)[0]
-    view = doc["bufferViews"][doc["images"][0]["bufferView"]]
-    start = binary_offset + view.get("byteOffset", 0)
-    image = image_open(io.BytesIO(raw[start:start + view["byteLength"]])).convert("RGBA")
-    require(image.size == (256, 256) and image.getextrema()[3] == (0, 255), "texture dimensions/alpha changed")
-    require(all(lo < hi for lo, hi in image.getextrema()[:3]), "empty RGB texture")
-    return {"vertices": vertices, "triangles": triangles, "textured_primitives": textured,
-            "image_mime_type": "image/png", "alpha_range": [0, 255], "alpha_mode": "BLEND",
-            "glb_sha256": hashlib.sha256(raw).hexdigest(), "texture_rgba_sha256": hashlib.sha256(image.tobytes()).hexdigest()}
+    summaries = []
+    for index, embedded in enumerate(images):
+        view = doc["bufferViews"][embedded["bufferView"]]
+        start = binary_offset + view.get("byteOffset", 0)
+        image = image_open(io.BytesIO(raw[start:start + view["byteLength"]]))
+        require(image.mode == ("RGBA" if embedded["mimeType"] == "image/png" else "RGB"), "image channels changed")
+        image = image.convert("RGBA")
+        require(image.size == (expected["image_size"],) * 2, "texture dimensions changed")
+        require(all(lo < hi for lo, hi in image.getextrema()[:3]), "empty RGB texture")
+        histogram = image.getchannel("A").histogram()
+        counts = [histogram[0], sum(histogram[1:255]), histogram[255]]
+        if embedded["mimeType"] == "image/png":
+            require(image.getextrema()[3] == (0, 255), "texture alpha lost")
+            if sample_id == "autumn-tree":
+                require(counts == [774205, 126685, 147686], "autumn leaf alpha pixels changed")
+        else:
+            require(counts == [0, 0, expected["image_size"] ** 2], "trunk opacity changed")
+        summaries.append({"mime_type": embedded["mimeType"], "size": list(image.size),
+            "alpha_pixel_counts": counts, "alpha_modes": sorted(set(bindings[index])),
+            "textured_primitives": len(bindings[index]),
+            "rgba_sha256": hashlib.sha256(image.tobytes()).hexdigest()})
+    return {"vertices": vertices, "triangles": triangles, "images": summaries,
+            "textured_primitives": sum(len(values) for values in bindings.values()),
+            "glb_sha256": hashlib.sha256(raw).hexdigest()}
 
 
 def run(action):
@@ -52,7 +77,10 @@ def run(action):
     Path("/tmp/manager-sgm.json").unlink()
     business = Minio("business-minio:9000", access_key=cfg["root_user"], secret_key=cfg["root_secret"], secure=False)
     infra = Minio("minio:9000", access_key=cfg["root_user"], secret_key=cfg["root_secret"], secure=False)
-    fixture = {name: Path("/tmp/" + name).read_bytes() for name in ("compass.SGM", "compass.png")}
+    root = Path("/tmp/sgm-fixtures")
+    fixture = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    require(set(fixture) == {"compass/compass.SGM", "compass/compass.png", "autumn-tree/AutumnTree.SGM",
+                             "autumn-tree/Textures/hongye.PNG", "autumn-tree/Textures/shugan.jpg"}, "fixture file set changed")
 
     def get(client, bucket, key):
         response = client.get_object(bucket, key)
@@ -76,8 +104,10 @@ def run(action):
             {"Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::sgm-local"]},
             {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": ["arn:aws:s3:::sgm-local/source/*"]}]}
         # Root management stays on the host's MinIO container, not in browser or consumer identity.
-        return {"size_bytes": len(fixture["compass.SGM"]), "sha256": hashlib.sha256(fixture["compass.SGM"]).hexdigest(),
-                "texture_sha256": hashlib.sha256(fixture["compass.png"]).hexdigest(), "policy": policy}
+        return {"samples": [{"id": key, "name": spec["name"],
+                "size_bytes": len(fixture[key + "/" + spec["name"]]),
+                "sha256": hashlib.sha256(fixture[key + "/" + spec["name"]]).hexdigest()} for key, spec in SAMPLES.items()],
+                "source_file_sha256": {key: hashlib.sha256(raw).hexdigest() for key, raw in fixture.items()}, "policy": policy}
     require(all(get(business, "sgm-local", "source/" + name) == raw for name, raw in fixture.items()), "source bytes changed")
     require(not list(infra.list_objects("manager", prefix="temp/model3d-sgm/", recursive=True)), "intermediate OSGB residue")
     objects = list(infra.list_objects("manager", recursive=True))
@@ -87,7 +117,7 @@ def run(action):
         raw = get(infra, "manager", glbs[0].object_name)
         require(raw == Path("/tmp/manager-sgm.glb").read_bytes(), "API and physical GLB differ")
         doc = validate_glb(Path("/tmp/manager-sgm.glb"))
-        return {**glb_summary(raw, doc, Image.open), "source_unchanged": True, "intermediate_osgb_absent": True,
+        return {**glb_summary(raw, doc, Image.open, cfg["sample_id"]), "source_unchanged": True, "intermediate_osgb_absent": True,
                 "physical_content_matches_api": True}
     require(action == "deleted", "unknown storage observer action")
     require(not objects, "managed object residue after domain deletion")

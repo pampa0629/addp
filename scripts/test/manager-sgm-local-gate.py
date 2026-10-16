@@ -18,6 +18,7 @@ import socket
 import sys
 import time
 import urllib.request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -31,6 +32,11 @@ FRONTENDS = ("console", "system-frontend", "manager-frontend", "meta-frontend", 
 RUNTIMES = ("supermap-workflow-engine", "model3d-workflow-engine")
 INFRA = ("postgres", "redis", "minio", "meilisearch")
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+AUTUMN_FILES = {
+    "AutumnTree.SGM": "e8a726f161fba931236aaed76a77d220200643a927bd2c2faf818129d4687340",
+    "Textures/hongye.PNG": "ab8d70d47d2b6fcaf41c11475969751a46efef19f904cfd43cc38160e5ab9550",
+    "Textures/shugan.jpg": "b8513b9140f7ef4ffb34b2bb8c4a7c97e8840e9e75ce2a3042aaf9d608fb5ccf",
+}
 
 
 def preflight():
@@ -111,6 +117,23 @@ def clone_source(source, checkout):
     # preserve public-file modes, and nginx must read those files as non-root.
     T2.command(["bash", "-c", 'umask 022; exec "$@"', "_", "git", "clone", "--local", "--no-hardlinks",
                 "--single-branch", "--branch", "main", str(source), str(checkout)], timeout=180)
+
+
+def extract_autumn(archive, destination):
+    """Read only the three pinned official members; never unpack a vendor tree."""
+    T2.require(archive.is_file(), "private iDesktopX archive unavailable")
+    with zipfile.ZipFile(archive) as bundle:
+        for relative, digest in AUTUMN_FILES.items():
+            member = "resources/RealspaceEditor/3D/Model/" + relative
+            entries = [info for info in bundle.infolist() if info.filename == member]
+            T2.require(len(entries) == 1 and entries[0].file_size <= 2_000_000,
+                       "private autumn fixture member missing, duplicated or oversized")
+            raw = bundle.read(entries[0])
+            T2.require(hashlib.sha256(raw).hexdigest() == digest, "private autumn fixture digest mismatch")
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            target.write_bytes(raw)
+            target.chmod(0o600)
 
 
 def published_port(life, service, port):
@@ -339,12 +362,15 @@ def setup(life, environment, images):
 
 def run(life, result):
     global MANAGER, REGISTRATION
+    life.phase = "private_fixture_admission"
+    archive = Path(os.environ.get("SGM_LOCAL_IDESKTOP_ARCHIVE", ""))
+    extract_autumn(archive, life.work / "sgm-fixtures/autumn-tree")
     life.phase = "source_snapshot"
     source = ROOT
     commit = T2.command(["git", "rev-parse", "HEAD"]).strip()
     # Never build other sessions' uncommitted source or touch their lifecycle state.
-    for name in ("manager-sgm-local-gate.py", "manager-sgm-local-worker.py"):
-        relative = "scripts/test/" + name
+    for relative in ("scripts/test/manager-sgm-local-gate.py", "scripts/test/manager-sgm-local-worker.py",
+                     "console/frontend/e2e/online/manager-sgm-local.spec.js"):
         expected = T2.command(["git", "show", f"{commit}:{relative}"])
         T2.require((ROOT / relative).read_text() == expected, "commit the local SGM harness before real acceptance")
     checkout = life.work / "checkout"
@@ -396,10 +422,12 @@ print(json.dumps(facts))'''
     life.phase = "private_fixture"
     fixture = life.create(base_id, "private-fixture", "--network", "none")
     model = life.run_id + "-model3d-workflow-engine"
+    compass = life.work / "sgm-fixtures/compass"
+    compass.mkdir(parents=True, mode=0o700)
     for remote, name in (("Resource/compass.SGM", "compass.SGM"), ("Resource/Textures/compass.png", "compass.png")):
-        life.copy(fixture + ":/opt/supermap/bin/bin/" + remote, life.work / name)
-        os.chmod(life.work / name, 0o600)
-        life.copy(life.work / name, model + ":/tmp/" + name)
+        life.copy(fixture + ":/opt/supermap/bin/bin/" + remote, compass / name)
+        os.chmod(compass / name, 0o600)
+    life.copy(life.work / "sgm-fixtures", model + ":/tmp/sgm-fixtures")
     cfg = {"root_user": environment["MINIO_ROOT_USER"], "root_secret": environment["MINIO_ROOT_PASSWORD"],
            "source_user": "sgm-source-" + secrets.token_hex(8), "source_secret": secrets.token_hex(32)}
     result["fixture"] = worker(life, "seed", cfg)
@@ -435,7 +463,24 @@ print(json.dumps(facts))'''
     result["identity"] = MANAGER.validate_user_identity(client, int(environment["ADDP_ONLINE_TEST_TENANT_ID"]))
     life.phase = "source_scan"
     MANAGER.wait_for_meta_scan(client, engine_id, time.monotonic() + 180)
-    item = MANAGER.find_fixture_item(client, engine_id, "sgm-local/source/compass.SGM", "SGM")
+    sql = """SELECT coalesce(json_agg(json_build_object('engine_type',engine_type,'is_builtin',is_builtin,
+        'tenant_id',tenant_id,'connection_status',connection_status,'lifecycle_state',lifecycle_state)), '[]')
+        FROM system.engines WHERE engine_type IN ('model3d_workflow','supermap_workflow')"""
+    result["initial_runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
+        environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
+    life.phase = "browser_prepare"
+    T2.command(["npm", "--prefix", "console/frontend", "ci"], timeout=600, environment=environment)
+    T2.command(["npm", "--prefix", "console/frontend", "exec", "--", "playwright", "install", "chromium"], timeout=600, environment=environment)
+    result["samples"] = []
+    for sample in result["fixture"]["samples"]:
+        evidence = {"id": sample["id"]}
+        result["samples"].append(evidence)
+        verify_sample(life, evidence, sample, client, engine_id, supermap_id, environment, cfg, sql)
+
+
+def verify_sample(life, result, sample, client, engine_id, supermap_id, environment, cfg, sql):
+    model = life.run_id + "-model3d-workflow-engine"
+    item = MANAGER.find_fixture_item(client, engine_id, "sgm-local/source/" + sample["id"] + "/" + sample["name"], "SGM")
     identity_facts = item.get("attributes", {}).get("item", {})
     T2.require(all(identity_facts.get(key) == value for key, value in {
         "data_type": "model_3d", "format": "sgm", "layout": "single"}.items()), "SGM scan identity mismatch")
@@ -444,32 +489,25 @@ print(json.dumps(facts))'''
     query = MANAGER.urllib.parse.urlencode({"locator": model_fixture.locator})
     capability = client.request("GET", "/api/v1/manager/quick-view/capability?" + query, (200,)).payload
     result["initial_capability"] = capability_facts(capability)
-    sql = """SELECT coalesce(json_agg(json_build_object('engine_type',engine_type,'is_builtin',is_builtin,
-        'tenant_id',tenant_id,'connection_status',connection_status,'lifecycle_state',lifecycle_state)), '[]')
-        FROM system.engines WHERE engine_type IN ('model3d_workflow','supermap_workflow')"""
-    result["initial_runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
-        environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
     model_fixture.previous_mode = capability["preferred_mode"]
     T2.require(model_fixture.previous_mode in {"basic_preview", "map_quick_view"}, "unknown initial preview mode")
-    artifact_dir = life.work / "browser"
+    artifact_dir = life.work / ("browser-" + sample["id"])
     artifact_dir.mkdir(mode=0o700)
     environment.update(ADDP_ONLINE_TEST_RUN_ID=life.run_id, ADDP_ONLINE_ARTIFACT_DIR=str(artifact_dir),
-                       ADDP_SGM_SOURCE_JSON=json.dumps({"locator": model_fixture.locator, **result["fixture"]}))
-    print("SGM local: ordinary User, task, browser and cache assertions", flush=True)
+                       ADDP_SGM_SOURCE_JSON=json.dumps({"locator": model_fixture.locator, **sample}))
+    print("SGM local: " + sample["id"] + " ordinary User, task, browser and cache assertions", flush=True)
     try:
         life.phase = "runtime_discovery_readiness"
         capability = wait_for_generation_capability(client, query, capability)
         result["generation_capability"] = capability_facts(capability)
         result["runtime_registrations"] = json.loads(life.docker("exec", life.run_id + "-postgres", "psql", "-U",
             environment["POSTGRES_USER"], "-d", "addp_online", "-At", "-c", sql))
-        life.phase = "browser_prepare"
-        T2.command(["npm", "--prefix", "console/frontend", "ci"], timeout=600, environment=environment)
-        T2.command(["npm", "--prefix", "console/frontend", "exec", "--", "playwright", "install", "chromium"], timeout=600, environment=environment)
         life.phase = "browser_assertions"
         T2.command(["npm", "exec", "--prefix", "console/frontend", "--", "playwright", "test", "--config", "console/frontend/playwright.online.config.js",
                     "manager-sgm-local.spec.js"], timeout=600, environment=environment)
         browser = json.loads((artifact_dir / "sgm-browser.json").read_text())
-        T2.require(browser.get("result") == "passed" and browser.get("run_id") == life.run_id, "browser evidence mismatch")
+        T2.require(browser.get("result") == "passed" and browser.get("run_id") == life.run_id
+                   and browser.get("sample_id") == sample["id"], "browser evidence mismatch")
         result["browser"] = browser
         model_fixture.task_id, model_fixture.execution_id = browser["task_id"], browser["execution_id"]
         model_fixture.result_id = browser["result_id"]
@@ -485,7 +523,7 @@ print(json.dumps(facts))'''
         glb = life.work / "result.glb"
         glb.write_bytes(content.raw)
         life.copy(glb, model + ":/tmp/manager-sgm.glb")
-        result["conversion"] = worker(life, "verify", cfg)
+        result["conversion"] = worker(life, "verify", {**cfg, "sample_id": sample["id"]})
     finally:
         business_failed = sys.exc_info()[0] is not None
         failure_report = artifact_dir / "sgm-browser-failure.json"
@@ -521,7 +559,7 @@ def main(args=None):
     preflight()  # No mutation, even temporary files, before deployment admission.
     destination = T2.report_path(os.environ["SGM_LOCAL_REPORT"]) if os.environ.get("SGM_LOCAL_REPORT") else None
     life = T2.Lifecycle(prefix="addp-sgm-local-", label=LABEL)
-    result = {"schema_version": "addp.manager-sgm-local/v1", "scope": "local-isolated-technical-page-acceptance",
+    result = {"schema_version": "addp.manager-sgm-local/v2", "scope": "local-isolated-technical-page-acceptance",
               "formal_t4": False, "run_id": life.run_id, "result": "failed"}
     try:
         life.phase = "network_preflight"

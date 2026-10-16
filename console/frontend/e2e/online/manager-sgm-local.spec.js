@@ -126,7 +126,7 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     mark('task-page')
     await page.goto(`/manager/tasks/quick-view?task_type=model_3d_glb_generation&task_id=${started.task_id}`)
     const taskFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(taskFrame.locator('body')).toContainText('compass')
+    await expect(taskFrame.locator('body')).toContainText(source.name)
     await expect(taskFrame.getByText(/成功|Succeeded/, { exact: true }).first()).toBeVisible()
     mark('cached-preview')
     const loaded = page.waitForResponse(response => new URL(response.url()).pathname === artifact.preview_url && response.status() === 200)
@@ -141,7 +141,7 @@ test('isolated SGM ordinary User generation, task page and cached GLB', async ({
     expect(errors).toEqual([])
     expect(failures).toEqual([])
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'sgm-browser.json'), JSON.stringify({
-      result: 'passed', run_id: env.ADDP_ONLINE_TEST_RUN_ID, task_id: started.task_id,
+      result: 'passed', sample_id: source.id, run_id: env.ADDP_ONLINE_TEST_RUN_ID, task_id: started.task_id,
       execution_id: started.execution_id, result_id: artifact.result_id, preview_url: artifact.preview_url,
       original_download_sha256: source.sha256, ordinary_user: true, task_page_loaded: true,
       cached_preview_loaded: true, generation_requests: generationRequests,

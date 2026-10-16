@@ -99,8 +99,11 @@ SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载�
 ```bash
 make test-manager-sgm-local-runner
 make test-manager-sgm-local SGM_LOCAL_ARGS=--check-network
-SGM_LOCAL_REPORT=/tmp/sgm-local-report.json make test-manager-sgm-local
+SGM_LOCAL_IDESKTOP_ARCHIVE=/本机私有路径/idesktopx.zip \
+  SGM_LOCAL_REPORT=/tmp/sgm-local-report.json make test-manager-sgm-local
 ```
+
+完整页面门禁顺序验证指南针与秋树。执行时通过 `SGM_LOCAL_IDESKTOP_ARCHIVE` 指定本机私有的 iDesktopX 11.2 安装 ZIP；只提取固定哈希的 `AutumnTree.SGM`、`Textures/hongye.PNG` 与 `Textures/shugan.jpg`，保留官方目录与大小写，不从个人业务存储读取样例。每个模型均独立验证生成、任务、下载、缓存及删除，再验证下一个；秋树额外要求 9589 顶点、7273 面、两张实际绑定的 1024² 图片、不透明 JPEG 树干和 `BLEND` RGBA PNG 叶片，透明／半透明／不透明像素数分别为 774205／126685／147686。报告使用 `addp.manager-sgm-local/v2` 的逐样例摘要；私有安装包路径不进入报告。仅 `--check-network` 不需要该安装包。
 
 `--check-network` 只验证实际 Docker 网络与回环入口，不运行 SDK、身份或页面验收，不计作页面通过。
 
@@ -110,7 +113,7 @@ SuperMap 通过 System 现有扩展工作流登记契约提交完整能力声明
 
 两阶段转换审计通过普通 User 现有权限读取 GLB 成果详情，核对其任务、执行、来源和 Runtime 身份；执行查询仍保持 Owner 声明的摘要投影，不为验收增加审计字段或权限。执行前须选择 `.node-version` 声明的 Node 主版本。
 
-SDK、许可、厂商 SGM／PNG、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
+SDK、许可、厂商模型及贴图、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
 
 2026-10-17，已提交源码 `1bd2563c0ac3085d1c7ba2c5a6fe1e0a5e0d29a0` 经上述正式入口完成本机隔离技术页面验收，run 为 `addp-sgm-local-34d6ab1758624a9c9b2b99da210ba8f7`。五个后端的健康构建身份均与源码提交一致，双 Runtime 保持产品默认入口。普通 User 的原十项权限、生成入口、成功任务页、原文件下载 SHA-256、GLB 加载及重开后的缓存复用全部通过；只发起一次生成，浏览器业务告警／错误及失败业务响应均为 0，四次 Chromium ReadPixels 性能提示按既有规则单独记录。成果详情确认 `sgm_to_osgb` → `osgb_to_glb` 两个实际生产阶段；最终 GLB 经 Runtime `validate_glb` 及物理对象比对通过，136 顶点、94 三角面、一张 256×256 内嵌 PNG、有效 UV 与 `BLEND` 材质绑定、alpha 范围 0–255。转换后 RGBA 像素 SHA-256 为 `58a36001c39e50073891d69000112e5b301d9e8bfa9903c0f18c752a85895942`，与此前隔离 T2 参照一致。
 
