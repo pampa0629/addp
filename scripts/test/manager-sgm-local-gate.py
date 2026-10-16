@@ -247,6 +247,23 @@ def prepare_preview_restore(client, fixture):
     fixture.mode_changed = mode != fixture.previous_mode
 
 
+def verify_conversion_stages(client, fixture, tenant_id, supermap_id):
+    # Execution observations expose the Owner's public summary. Existing result
+    # detail owns conversion audit facts; do not expand the execution projection.
+    artifact = client.request("GET", f"/api/v1/manager/model_3d_glb/{fixture.result_id}", (200,)).payload
+    T2.require(all(artifact.get(key) == value for key, value in {
+        "id": fixture.result_id, "tenant_id": tenant_id, "task_id": fixture.task_id,
+        "last_execution_id": fixture.execution_id, "item_fingerprint": fixture.item["fingerprint"],
+        "source_format": "sgm", "status": "ready"}.items()), "SGM result identity mismatch")
+    facts = artifact.get("metadata", {})
+    sgm, glb = facts.get("sgm_conversion", {}), facts.get("workflow_runtime", {})
+    T2.require(sgm.get("operator") == "sgm_to_osgb" and sgm.get("engine_id") == supermap_id
+               and glb.get("operator") == "osgb_to_glb" and glb.get("engine_type") == "model3d_workflow",
+               "Manager result must use both production stages")
+    return artifact, {"sgm_operator": "sgm_to_osgb", "sgm_engine_id": supermap_id,
+                      "glb_operator": "osgb_to_glb", "glb_engine_id": glb["engine_id"]}
+
+
 def build_diagnostics(path):
     """Only fixed categories and numeric build facts leave private raw logs."""
     if not path.is_file():
@@ -453,16 +470,15 @@ print(json.dumps(facts))'''
                     "manager-sgm-local.spec.js"], timeout=600, environment=environment)
         browser = json.loads((artifact_dir / "sgm-browser.json").read_text())
         T2.require(browser.get("result") == "passed" and browser.get("run_id") == life.run_id, "browser evidence mismatch")
+        result["browser"] = browser
         model_fixture.task_id, model_fixture.execution_id = browser["task_id"], browser["execution_id"]
         model_fixture.result_id = browser["result_id"]
         life.phase = "artifact_assertions"
         execution = MANAGER.wait_for_manager_execution(client, model_fixture.execution_id, time.monotonic() + 180, "SGM")
-        facts = execution.get("metadata", {})
-        T2.require(facts.get("sgm_conversion", {}).get("operator") == "sgm_to_osgb"
-                   and facts["sgm_conversion"].get("engine_id") == supermap_id
-                   and facts.get("workflow_runtime", {}).get("operator") == "osgb_to_glb",
-                   "Manager execution must use both production stages")
-        serialized = json.dumps(execution)
+        result["task_status"] = execution["status"]
+        artifact, result["production_stages"] = verify_conversion_stages(client, model_fixture,
+            int(environment["ADDP_ONLINE_TEST_TENANT_ID"]), supermap_id)
+        serialized = json.dumps([execution, artifact])
         T2.require(all(value not in serialized for value in (cfg["root_secret"], cfg["source_secret"])),
                    "execution metadata leaked storage credentials")
         content = client.request("GET", browser["preview_url"], (200,), headers={"Accept": "model/gltf-binary"})
@@ -470,8 +486,6 @@ print(json.dumps(facts))'''
         glb.write_bytes(content.raw)
         life.copy(glb, model + ":/tmp/manager-sgm.glb")
         result["conversion"] = worker(life, "verify", cfg)
-        result["browser"] = browser
-        result["task_status"] = execution["status"]
     finally:
         business_failed = sys.exc_info()[0] is not None
         failure_report = artifact_dir / "sgm-browser-failure.json"

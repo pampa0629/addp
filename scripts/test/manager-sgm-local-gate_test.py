@@ -238,6 +238,28 @@ class LocalSGMContract(unittest.TestCase):
         GATE.prepare_preview_restore(client, fixture)
         self.assertTrue(fixture.mode_changed)
 
+    def test_conversion_audit_uses_owned_result_detail_without_expanding_execution_projection(self):
+        fixture = GATE.MANAGER.ArtifactFixture('sgm', {'fingerprint': 'owned'}, 'addp://engine/2/path/source')
+        fixture.result_id, fixture.task_id, fixture.execution_id = 8, 9, 'execution-id'
+        artifact = {'id': 8, 'tenant_id': 2, 'task_id': 9, 'last_execution_id': 'execution-id',
+            'item_fingerprint': 'owned', 'source_format': 'sgm', 'status': 'ready', 'metadata': {
+                'sgm_conversion': {'engine_id': 3, 'operator': 'sgm_to_osgb'},
+                'workflow_runtime': {'engine_id': 1, 'engine_type': 'model3d_workflow', 'operator': 'osgb_to_glb'}}}
+        def request(method, path, expected):
+            self.assertEqual((method, path, expected), ('GET', '/api/v1/manager/model_3d_glb/8', (200,)))
+            return SimpleNamespace(payload=artifact)
+        client = SimpleNamespace(request=request)
+        _, stages = GATE.verify_conversion_stages(client, fixture, 2, 3)
+        self.assertEqual(stages, {'sgm_operator': 'sgm_to_osgb', 'sgm_engine_id': 3, 'glb_operator': 'osgb_to_glb', 'glb_engine_id': 1})
+        for mutate in (lambda a: a.update(tenant_id=4),
+                       lambda a: a['metadata']['sgm_conversion'].update(engine_id=4),
+                       lambda a: a['metadata']['workflow_runtime'].update(operator='other')):
+            original = copy.deepcopy(artifact)
+            mutate(artifact)
+            with self.assertRaises(GATE.T2.GateError):
+                GATE.verify_conversion_stages(client, fixture, 2, 3)
+            artifact = original
+
     def test_wrong_port_ownership_or_nonloopback_is_rejected(self):
         with patch.object(GATE.T2, "command"):
             life = GATE.T2.Lifecycle(prefix="local-", label=GATE.LABEL)
