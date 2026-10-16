@@ -1502,17 +1502,18 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             if method == 'GET':
                 fingerprint = path.split('/')[-2]
                 engine = int(path.split('/')[5])
-                namespace = 'Outdoor' if engine == 29 else 'security_fixture' if engine == 23 else ONLINE.TARGET_SCHEMA
-                names = ['Persons'] if engine == 29 else [ONLINE.SOURCE_TABLE, ONLINE.BANK_SOURCE] if engine == 23 else list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
+                self.assertEqual(engine, 17, 'Security preparation must not call MySQL/MongoDB source authorization')
+                namespace = ONLINE.TARGET_SCHEMA
+                names = list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
                 name = next(name for name in names if hashlib.sha256(f'{engine}:{namespace}.{name}'.encode()).hexdigest() == fingerprint)
-                term = 'collection' if engine == 29 else 'table'
+                term = 'table'
                 return ONLINE.SUPPORT.Response(200, {'schema_version': 'meta.data_item_authorization_facts/v1',
                     'item_fingerprint': fingerprint, 'engine_id': str(engine), 'item_type': term,
                     'full_name': namespace + '.' + name, 'basis_state': 'complete', 'observed_at': '2026-10-16T00:00:00Z',
                     'boundary_hash': 'a' * 64, 'boundary': {'layout': 'single', 'native_target': {
                         'version': 'catalog.path/v1', 'engine_id': engine, 'segments': [
                             {'term': 'server', 'kind': 'server', 'name': ''},
-                            {'term': 'database' if engine in (23, 29) else 'schema', 'kind': 'namespace', 'name': namespace},
+                            {'term': 'schema', 'kind': 'namespace', 'name': namespace},
                             {'term': term, 'kind': term, 'name': name}]}}})
             return ONLINE.SUPPORT.Response(201, dict(body, engine_id=str(body['catalog_path']['engine_id']),
                 approval_mode='independent', revocation=None, boundary_hash=body['expected_boundary_hash']))
@@ -1520,22 +1521,23 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             if path == '/api/v1/system/auth/context': return context
             if method == 'GET':
                 engine = int(path.split('/')[5])
-                namespace = 'Outdoor' if engine == 29 else 'security_fixture' if engine == 23 else ONLINE.TARGET_SCHEMA
-                names = ['Persons'] if engine == 29 else [ONLINE.SOURCE_TABLE, ONLINE.BANK_SOURCE] if engine == 23 else list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
+                self.assertEqual(engine, 17, 'Security preparation must not call MySQL/MongoDB source authorization')
+                namespace = ONLINE.TARGET_SCHEMA
+                names = list(ONLINE.MONGODB_TRANSFER_TARGETS) + [ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET, ONLINE.TARGET_TABLE, ONLINE.BANK_TARGET]
                 return ONLINE.SUPPORT.Response(200, [{'full_name': namespace + '.' + name,
-                    'item_type': 'collection' if engine == 29 else 'table',
+                    'item_type': 'table',
                     'fingerprint': hashlib.sha256(f'{engine}:{namespace}.{name}'.encode()).hexdigest()} for name in names])
             return ONLINE.SUPPORT.Response(expected[0], {'observed_at': '2026-10-10T00:00:00Z'})
         authorizer.request.side_effect, consumer.request.side_effect = prepare, read
         return authorizer, consumer
 
-    def test_source_grants_cover_only_ten_exact_record_datasets_for_the_consumer(self):
+    def test_source_grants_cover_only_seven_postgres_tables_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
-        ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
+        ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
-        self.assertEqual([call.args[1] for call in self.scan.call_args_list], [17, 23, 29])
-        self.assertEqual(len(writes), 10)
-        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 10)
+        self.assertEqual([call.args[1] for call in self.scan.call_args_list], [17])
+        self.assertEqual(len(writes), 7)
+        self.assertEqual(len({call.args[3]["request_id"] for call in writes}), 7)
         actual = set()
         for call in writes:
             body = call.args[3]
@@ -1546,7 +1548,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             root, namespace, table = body["catalog_path"]["segments"]
             self.assertEqual(root, {"term": "server", "kind": "server", "name": ""})
             self.assertEqual(namespace["kind"], "namespace")
-            self.assertEqual(table["term"], "collection" if engine == 29 else "table")
+            self.assertEqual(table["term"], "table")
             self.assertEqual(table["kind"], table["term"])
             self.assertEqual(body["recipient_type"], "user")
             self.assertEqual(body["recipient_id"], "7")
@@ -1562,11 +1564,29 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "mongodb_query_transfer"),
             (17, "schema", "addp_online_security", "mongodb_query_control"),
             (17, "schema", "addp_online_security", "mongodb_query_denied"),
-            (23, "database", "security_fixture", "customers"),
-            (23, "database", "security_fixture", "bank_card_accounts"),
             (17, "schema", "addp_online_security", "bank_card_transfer"),
-            (29, "database", "Outdoor", "Persons"),
         })
+
+    def test_initializer_does_not_require_mysql_or_mongodb_authorization_inputs(self):
+        environment = {
+            "GATEWAY_URL": "http://gateway", "ADDP_ONLINE_TEST_TENANT_ID": "2",
+            "ADDP_ONLINE_TEST_ENGINE_ID": "17",
+            "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "governance-token",
+            "ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN": "source-token",
+            "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "consumer-token",
+        }
+        with patch.dict(os.environ, environment, clear=True), \
+             patch.object(sys, "argv", [str(SCRIPT), "--initialize"]), \
+             patch.object(ONLINE.signal, "signal"), \
+             patch.object(ONLINE, "require_hosted_initialization"), \
+             patch.object(ONLINE, "GatewayClient", side_effect=["governance-user", "source-user", "consumer"]), \
+             patch.object(ONLINE, "initialize_governance") as governance, \
+             patch.object(ONLINE, "initialize_postgres_read_grants") as grants, \
+             patch("builtins.print") as notice:
+            self.assertEqual(ONLINE.main(), 0)
+        governance.assert_called_once_with("governance-user", 2)
+        grants.assert_called_once_with("source-user", "consumer", 2, 17)
+        notice.assert_called_once_with("Disposable Security governance and PostgreSQL table read Grants are ready")
 
     def test_source_preparation_rejects_wrong_tenant_and_self_grant_before_writing(self):
         for tenant, principal in (("9", "8"), ("2", "7")):
@@ -1576,7 +1596,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
                 "principal": {"type": "user", "id": principal},
                 "context": {"type": "tenant", "tenant_id": tenant}})
             with self.subTest(tenant=tenant, principal=principal), self.assertRaises(ONLINE.SuiteError):
-                ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
+                ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
             self.assertTrue(all(call.args[0] == "GET" for call in authorizer.request.call_args_list))
 
     def test_source_preparation_rejects_a_mismatched_issuance_without_continuing(self):
@@ -1587,7 +1607,7 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             return original(method, path, expected, body)
         authorizer.request.side_effect = wrong_receipt
         with self.assertRaises(ONLINE.SuiteError):
-            ONLINE.initialize_source_grants(authorizer, consumer, 2, 17, 23, "security_fixture", 29)
+            ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
         self.assertEqual(sum(call.args[0] == "POST" for call in authorizer.request.call_args_list), 1)
 
     def test_initialization_rejects_personal_environment(self):

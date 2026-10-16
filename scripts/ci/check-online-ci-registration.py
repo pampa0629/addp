@@ -692,7 +692,7 @@ def validate_security_mysql_owner_protection_profile(
         raise RegistrationError("security-mysql-owner-protection must not also dispatch on self-hosted")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
-    for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py"):
+    for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py", "security-mysql-owner-protection-online_test.py"):
         if aggregate is None or test not in aggregate.group("body"):
             raise RegistrationError("security-mysql-owner-protection regression must enter test-online-runner")
     for relative in (
@@ -737,7 +737,7 @@ def validate_security_mysql_owner_protection_profile(
         "addp.detector.bank_card_number_metadata/v1", '"bank_card_metadata"', '"negative_fields_not_detected"',
         '"temporary_execution_resource_residuals": 0',
         "exercise_mongodb_algorithms(", "assert_mongodb_rows(", '"mongodb_algorithms"', '"sparse_objects_verified"',
-        "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID", 'item_term="collection"',
+        "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID", "def initialize_postgres_read_grants(",
         "/api/v1/security/protection-baselines",
         "/api/v1/security/protection-enrollments",
         "/api/v1/develop/executions",
@@ -751,6 +751,14 @@ def validate_security_mysql_owner_protection_profile(
                 "security-mysql-owner-protection owner contract is missing "
                 + fragment
             )
+
+    initializer = re.search(
+        r"(?ms)^def initialize_postgres_read_grants\((?P<parameters>.*?)\) -> None:\n(?P<body>.*?)(?=^def |\Z)", owner)
+    if (initializer is None
+            or any(engine in initializer.group("parameters").lower() for engine in ("mysql", "mongodb"))
+            or re.search(r"item_term\s*=\s*['\"]collection['\"]", initializer.group("body"))
+            or initializer.group("body").count("REGISTRATION.initialize_exact_record_read_grants(") != 1):
+        raise RegistrationError("security-mysql-owner-protection must prepare only PostgreSQL table read Grants")
 
     for fragment in ("run_export_browser(", "validate_export_browser_report(", "e2e/online/security-manager-export.spec.js",
                      "wait_for_technical_field(", '"technical_field_search"', '"manager.search.execute"',

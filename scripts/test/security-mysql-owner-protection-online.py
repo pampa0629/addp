@@ -2146,27 +2146,20 @@ def handle_termination(signum: int, frame: object) -> None:
 require_hosted_initialization = SUPPORT.require_hosted_initialization
 
 
-def initialize_source_grants(
-    authorizer: GatewayClient, consumer: GatewayClient, tenant_id: int,
-    postgres_engine_id: int, mysql_engine_id: int, mysql_database: str, mongodb_engine_id: int,
+def initialize_postgres_read_grants(
+    authorizer: GatewayClient, consumer: GatewayClient, tenant_id: int, postgres_engine_id: int,
 ) -> None:
-    """Prepare precise reads through System's sole independent Grant command."""
+    """Prepare only the PostgreSQL reads consumed by the protection scenario."""
     validate_user_identity(consumer, tenant_id)
     targets = [(postgres_engine_id, "schema", TARGET_SCHEMA, name) for name in MONGODB_TRANSFER_TARGETS] + [
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_SOURCE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, SPATIAL_TARGET),
         (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
-        (mysql_engine_id, "database", mysql_database, SOURCE_TABLE),
-        (mysql_engine_id, "database", mysql_database, BANK_SOURCE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, BANK_TARGET),
     ]
-    deadline = time.monotonic() + 180
-    for engine in (postgres_engine_id, mysql_engine_id, mongodb_engine_id):
-        wait_for_scan(consumer, engine, deadline)
+    wait_for_scan(consumer, postgres_engine_id, time.monotonic() + 180)
     try:
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
-        REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
-            [(mongodb_engine_id, "database", "Outdoor", "Persons")], item_term="collection")
     except REGISTRATION.RegistrationError as error:
         raise SuiteError(str(error)) from error
 
@@ -2261,7 +2254,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--initialize", action="store_true", help="initialize fresh Hosted governance and exact table read Grants through formal APIs")
+    parser.add_argument("--initialize", action="store_true", help="initialize fresh Hosted governance and PostgreSQL table read Grants through formal APIs")
     arguments = parser.parse_args()
     signal.signal(signal.SIGTERM, handle_termination)
     if arguments.initialize:
@@ -2269,16 +2262,13 @@ def main() -> int:
         initialize_governance(GatewayClient(required_environment("GATEWAY_URL"),
             required_environment("ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN"), 30),
             positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"))
-        initialize_source_grants(
+        initialize_postgres_read_grants(
             GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), 30),
             GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"), 30),
             positive_int(required_environment("ADDP_ONLINE_TEST_TENANT_ID"), "Tenant id"),
             positive_int(required_environment("ADDP_ONLINE_TEST_ENGINE_ID"), "PostgreSQL Engine id"),
-            positive_int(required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID"), "MySQL Engine id"),
-            required_environment("ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE"),
-            positive_int(required_environment("ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID"), "MongoDB Engine id"),
         )
-        print("Disposable Security governance and exact record read Grants are ready")
+        print("Disposable Security governance and PostgreSQL table read Grants are ready")
         return 0
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise SuiteError("ADDP_ONLINE_TEST must be exactly 1")

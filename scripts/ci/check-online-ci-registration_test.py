@@ -807,7 +807,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/security-mysql-owner-protection-online.py", 'SUPPORT.run_security_lifecycle(repository, "stop", deadline)', "must dispatch and validate"),
 
             ("business/scripts/online-security-owner-fixture.sh", 'sourceVersion: NumberLong("9007199254740993")', "fixture contract is missing"),
-            ("scripts/test/security-mysql-owner-protection-online.py", 'item_term="collection"', "owner contract is missing"),
+            ("scripts/test/security-mysql-owner-protection-online.py", "def initialize_postgres_read_grants(", "owner contract is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN", "Hosted profile is missing"),
             ("scripts/test/online-hosted-security-gate.sh", "security-mongodb.json", "Hosted profile is missing"),
             (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'security-mysql-owner-protection'", "must not also dispatch"),
@@ -822,6 +822,22 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                         CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
                 finally:
                     path.write_text(original)
+        owner = self.repository / "scripts/test/security-mysql-owner-protection-online.py"
+        original = owner.read_text()
+        for before, after in (
+            ("postgres_engine_id: int,\n", "postgres_engine_id: int, mysql_engine_id: int,\n"),
+            ("postgres_engine_id: int,\n", "postgres_engine_id: int, mongodb_engine_id: int,\n"),
+            ("REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)",
+             "REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, item_term='collection')"),
+        ):
+            with self.subTest(reintroduced_source_dependency=after):
+                self.assertIn(before, original)
+                owner.write_text(original.replace(before, after, 1))
+                try:
+                    with self.assertRaisesRegex(CHECK.RegistrationError, "must prepare only PostgreSQL"):
+                        CHECK.validate_security_mysql_owner_protection_profile(self.repository, registered)
+                finally:
+                    owner.write_text(original)
         host = self.repository / "scripts/test/online-host-gate.sh"
         host.write_text(host.read_text() + "\nsecurity-mysql-owner-protection)\n")
         with self.assertRaisesRegex(CHECK.RegistrationError, "self-hosted route"):
