@@ -2056,7 +2056,7 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 2026-10-15 本节提案验证：章节唯一、代码围栏配对、本地链接及任务范围 `git diff --check` 通过。默认 `make test-changed` 识别 65 个混合变更文件及 27 个 Owner，缺少相应 PostgreSQL/MySQL/OceanBase 测试连接参数，在门禁执行前预检退出 2；后续未执行、不计通过，日志 `/tmp/addp-platform-alert-scope-changed.log`。本批仅文档，无产品代码、API/Swagger、IAM 或运行环境变更，不需要重启；未来实现须沿上表既有 CI 门禁验证，不能以此文档检查代替产品验收。
 
 
-### 10.62 平台告警内核原位收敛（本地分项已验证，待 CI）
+### 10.62 平台告警内核原位收敛（本地及 CI 分项已验证）
 
 按 10.61 先收敛 Monitor 内部事实与事务主链：四张平台日志告警表原位迁移为平台告警表，主体显式区分类别与类型；日志专用观测、策略和诊断协议保持自身职责。高频指标不写此存储，租户告警表不参与迁移。原日志 API 在本内部批次仍是唯一的日志专用入口，通过显式 DTO 投影现有日志字段；没有新增通用管理 API 或第二套页面，不把本批计为统一入口或资源告警已完成。后续公开接口/页面切换须同次删除被替换路径。
 
@@ -2081,3 +2081,37 @@ Hosted 当前只有一台真实 Linux 主机：验证完整授权范围计数、
 最终日志位于 `/tmp/addp-platform-alert-core-` 的 `go-verified.log`、`postgres-verified.log`、`frontend.log`、`metrics-serial.log`、`swagger-verified.log`、`coverage-verified.log` 和 `module.log`；接口精确比较回执为 `wire-proof.json`。任务范围差异、章节唯一、围栏及本地链接检查通过。原标准入口自动发现新增 Go/T2 测试，既有 Monitor CI 与公开 API 覆盖检查已覆盖本批，无新增 suite、组件或工作流。推送后只核对本批及实际共享影响范围内的 CI 分项，不将其他 owner 的失败当成交付阻碍。
 
 本批未推送、未重启或迁移个人运行环境，未发送真实群通知，未修改 IAM 内核、角色或租户告警。统一管理 API/页面、主机 CPU/内存规则及其新权限发布尚未实施，不能把内核验收计为完整平台资源告警；本批没有 T4/T5 新证据。下一批优先完成 Monitor 平台告警管理入口与分类授权契约，在同一主路径继续接入两项资源规则。
+
+2026-10-16 推送后复核：上述批次提交 `0d8393b81e29b7c43035147c385b969ea8a6385d` 的 [Platform CI 38824874199](https://github.com/pampa0629/addp/actions/runs/38824874199) 中，Go workspace、Monitor frontend、Product binary build 和 Platform consistency 均通过；[Release and T2 gates 38824874420](https://github.com/pampa0629/addp/actions/runs/38824874420) 的 Monitor PostgreSQL 与 Monitor metrics 两项均通过。已读取两项 Monitor T2 日志，新增三项原位迁移、来源隔离和通知权限边界用例实际执行成功；指标门禁包含真实进程、节点查询与六来源总览，最终报告自有容器/网络/卷及临时文件零残留。只记录本批相关分项，不据此宣称其他提交、全部工作流或 T4/T5 通过；个人环境未由本会话重启或迁移。
+
+
+### 10.63 统一管理入口的权限发布依赖（范围待确认）
+
+入口归 Monitor、平台/租户分层及平台系统管理员职责已按 10.61 确认，不重复确认。只读核实发现，公开接口切换还要求同次处理 System 拥有的内置角色声明：`system/authorization/builtin_roles.yaml` 的 `platform.system_administrator` 显式引用 `monitor.log_notification.read/update`；Common 的内置角色解析器拒绝未知或非 active Permission，授权门禁同时校验生成的 SQL seed。因此，不能只在 Monitor 删除旧键/接口而保留失效角色引用，也不能为绕过发布校验留两套接口或借旧日志权限开放资源范围。
+
+本次入口切换拟使用四项新的 Platform User 功能权限；新权限显式表示已确认的平台告警范围，不从旧日志键隐式继承，不改变 Tenant 告警权限：
+
+| 功能 | 当前声明 | 切换后的声明 |
+| --- | --- | --- |
+| 平台告警查看 | 与 `monitor.log_pipeline.read` 的诊断读取合用 | `monitor.platform_alert.read` |
+| 平台告警确认/抑制 | 与 `monitor.log_pipeline.update` 的日志策略修改合用 | `monitor.platform_alert.update` |
+| 平台告警通知查看 | `monitor.log_notification.read` | `monitor.platform_alert_notification.read` |
+| 平台告警通知配置/测试/重投 | `monitor.log_notification.update` | `monitor.platform_alert_notification.update` |
+
+`monitor.log_pipeline.read/update` 继续服务日志诊断及其来源策略，不删除仍有职责的权限；旧 `monitor.log_notification.read/update` 在通知接口切换时移除。新权限只向既有平台系统管理员角色作显式声明，不新建角色、不改其他角色或账号的授权、不授予 Tenant 业务数据访问。资源规则的独立 read/create/update/delete 权限在相应接口实际实施时同次声明，不预先发布无消费者占位键。平台日志正文权限仍独立。
+
+必要的发布差异仅包括：Monitor Permission Manifest、生成常量、权限名称/描述、公开接口及 Swagger 的真实消费者；System 内置角色对新键的显式引用与旧通知键移除；既有标准生成入口要求的目录/SQL seed 及相应正式发布迁移。必须由既有发布机制保持授权版本/会话撤销语义，不手工修改运行库或绕过内置角色不可变规则。新权限未实际发布前，不能宣称平台系统管理员已能使用新入口。
+
+这部分涉及此前明确排除的“角色授权”声明文件，待用户确认由本会话同步限定的告警功能权限发布，还是由 IAM 负责方承接同一发布批次。确认前不实施依赖它的公开接口切换，也不改 System 角色文件；独立的资源告警判定与测试继续。
+
+### 10.64 资源压力窗口判定内核（实施中）
+
+判定直接消费固定目录的 CPU 忙碌率或内存使用率，以及同次有界查询的主机运行时长序列。运行时长来自既有 `node_boot_time_seconds` 公式，用评估时间减运行时长还原启动边界；其原始采样时间必须与资源值相同，不能用旧启动样本解释新资源样本。没有引入新的指标目录、任意 PromQL、原始指标数据库或后台入口。
+
+按既有十五秒网格读取最多 22 个点（五分钟加一个网格的边界余量）。持续时长按首尾原始采样时间之差计算，而非图表时间之差；逐点要求有效、有限、同次采样且原始时间严格推进。相邻原始样本间隔及最新样本年龄最多 16 秒，沿用 CPU 完整窗口对十五秒采集与整秒评估网格的一秒容差。重复 lookback、网格缺口、不同启动边界、未来/陈旧点和不足时长均输出 unknown，不打开或恢复事件。
+
+调用方须提供当前规则、节点/目标版本及采集生命周期的共同有效起点；CPU 的一分钟计算窗口也必须全部处于该起点之后。规则/来源改变及停采后恢复均重新取得完整窗口。首期判定沿 10.61 的固定初值：无活动事件时验证完整五分钟，全部严格超过打开阈值才输出 risk；已有活动事件时验证完整两分钟，全部严格低于恢复阈值才输出 normal，其他有效窗口维持 risk。等于阈值不视为超过或低于；暂停输出 paused，任何证据不完整输出 unknown。
+
+本批先实现纯判定及确定性测试，不注册资源规则、调度器、API 或通知；不能计作资源告警已运行。实施前识别门禁为 Monitor Go T1，现有 `make test-module MODULE=monitor GO_ONLY=1` 及 CI 的 Monitor Go 自动发现覆盖新增 Go 文件。本批无数据库、API、前端或部署变更；真实 Prometheus 接线时再同次扩展已有 metrics T2，持久规则与事件接线时再扩展 PostgreSQL T2。
+
+本地 `make test-module MODULE=monitor GO_ONLY=1` 最终退出 0，覆盖两项指标的打开/恢复阈值、等值与滞回、有效零、缺失/非有限值、重复/未来/过期采样、采样与网格缺口、重启及错配启动证据、输入点数上限、原始时长不足、CPU 计算窗口跨生命周期边界和停用。四组确定性测试自动由 Monitor 既有 `go test ./...` 发现；日志 `/tmp/addp-resource-pressure-go.log`。本批未运行 PostgreSQL、metrics、前端或 Online 门禁，不把 10.62 的 CI 结果计作此新内核的 CI 证据；无运行接线，不需要重启。
