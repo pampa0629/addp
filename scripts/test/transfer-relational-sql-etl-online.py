@@ -25,6 +25,12 @@ assert SUPPORT_SPEC.loader is not None
 sys.modules[SUPPORT_SPEC.name] = SUPPORT
 SUPPORT_SPEC.loader.exec_module(SUPPORT)
 
+API_SPEC = importlib.util.spec_from_file_location("transfer_online_api", Path(__file__).resolve().parents[1] / "utils/online-api.py")
+API = importlib.util.module_from_spec(API_SPEC)
+assert API_SPEC.loader is not None
+sys.modules[API_SPEC.name] = API
+API_SPEC.loader.exec_module(API)
+
 GatewayClient = SUPPORT.GatewayClient
 SuiteError = SUPPORT.SuiteError
 _array = SUPPORT._array
@@ -360,45 +366,11 @@ def run_wide_lineage(client, engine_id, name, timeout, owned_ids):
 
 
 def read_transfer_scan_boundary(client, engine_id, source):
-    """Freeze sibling facts and ancestor scan state through the canonical read APIs."""
-    source_id = positive_int(source.get("id"), "scan boundary sibling id")
-    tenant_id = positive_int(source.get("tenant_id"), "scan boundary tenant id")
-    parent_id = positive_int(source.get("node_id"), "scan boundary parent id")
-    sibling = _object(client.request("GET", f"/api/v1/meta/items/{source_id}", (200,)).payload, "scan boundary sibling")
-    if (sibling.get("id") != source_id or sibling.get("engine_id") != engine_id
-            or sibling.get("tenant_id") != tenant_id or sibling.get("node_id") != parent_id
-            or sibling.get("full_name") != source.get("full_name") or sibling.get("item_type") != "table"
-            or not sibling.get("fingerprint")):
-        raise SuiteError("scan boundary sibling identity changed")
-
-    def scan_state(item, fields):
-        stamp = item.get("scanned_at")
-        try:
-            parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                raise ValueError("timezone required")
-        except (AttributeError, TypeError, ValueError):
-            raise SuiteError("scan boundary requires a completed baseline scan timestamp") from None
-        if item.get("scanned_depth") not in {"basic", "deep"}:
-            raise SuiteError("scan boundary requires a completed baseline scan depth")
-        return {field: item.get(field) for field in fields.split()}
-
-    result = {"sibling": scan_state(sibling, "id tenant_id engine_id node_id item_type full_name fingerprint row_count size_bytes data_updated_at scanned_at scanned_depth"),
-              "ancestors": []}
-    seen = set()
-    while parent_id is not None:
-        parent_id = positive_int(parent_id, "scan boundary ancestor id")
-        if parent_id in seen or len(seen) >= 128:
-            raise SuiteError("scan boundary ancestor chain is cyclic or too deep")
-        seen.add(parent_id)
-        node = _object(client.request("GET", f"/api/v1/meta/nodes/{parent_id}", (200,)).payload, "scan boundary ancestor")
-        if (node.get("id") != parent_id or node.get("engine_id") != engine_id
-                or node.get("tenant_id") != tenant_id or not node.get("scan_status")):
-            raise SuiteError("scan boundary ancestor identity changed")
-        # Counts are derived from the current subtree; creating a target legitimately changes them.
-        result["ancestors"].append(scan_state(node, "id tenant_id engine_id parent_node_id scan_status scanned_at scanned_depth"))
-        parent_id = node.get("parent_node_id")
-    return result
+    # The bounded transport has its own exception contract.
+    try:
+        return API.read_meta_scan_boundary(client, engine_id, source)
+    except API.SuiteError as error:
+        raise SuiteError(str(error)) from error
 
 
 def run_native_lineage(client: GatewayClient, engine_id: int, source: dict[str, object], name: str, timeout: float, owned_ids: list[int]) -> dict[str, object]:

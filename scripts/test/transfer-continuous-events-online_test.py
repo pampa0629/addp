@@ -32,6 +32,101 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def scan_fixture(self):
+        sibling = {'id': 5, 'engine_id': 10, 'tenant_id': 2, 'node_id': 9, 'item_type': 'table',
+                   'full_name': 'public.continuous_scan_sibling', 'fingerprint': 'sibling',
+                   'scanned_at': '2026-10-16T09:00:00Z', 'scanned_depth': 'deep', 'row_count': 2}
+        schema = {'id': 9, 'engine_id': 10, 'tenant_id': 2, 'parent_node_id': 1,
+                  'scan_status': 'success', 'scanned_depth': 'deep', 'scanned_at': sibling['scanned_at']}
+        root = {**schema, 'id': 1, 'parent_node_id': None}
+        target = {**sibling, 'id': 6, 'full_name': 'public.continuous_cdc_target', 'fingerprint': 'target',
+                  'scanned_at': '2026-10-16T09:00:02Z', 'attributes': {'type_info': {'table': {
+                      'fields': [{'name': 'id'}, {'name': 'label'}]}}}}
+        facts = {'/api/v1/meta/items/5': sibling, '/api/v1/meta/nodes/9': schema,
+                 '/api/v1/meta/nodes/1': root, '/api/v1/meta/engines/10/items': [sibling, target]}
+        class CatalogClient:
+            def request(self, method, path, expected, **kwargs):
+                assert method == 'GET' and expected == (200,)
+                return SimpleNamespace(payload=deepcopy(facts[path]))
+        return CatalogClient(), facts, sibling, target
+
+    def test_target_scan_requires_fresh_deep_schema_and_preserves_outside_facts(self):
+        client, facts, sibling, target = self.scan_fixture()
+        boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
+        proof = M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
+        self.assertEqual(proof['target_locator'], 'addp://engine/10/path/public/continuous_cdc_target?type=table')
+        self.assertEqual(proof['item_id'], 6)
+        # A completed task or old item alone is not evidence of the new schema scan.
+        with patch.object(M, 'until', side_effect=lambda check: self.assertFalse(check())):
+            M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
+        target['attributes']['type_info']['table']['fields'].append({'name': 'scan_extra'})
+        migrated = M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
+        self.assertEqual(migrated['fields'], ['id', 'label', 'scan_extra'])
+        for path, field, value in [('/api/v1/meta/items/5', 'scanned_at', '2026-10-16T09:00:03Z'),
+                                   ('/api/v1/meta/nodes/9', 'scan_status', 'running'),
+                                   ('/api/v1/meta/nodes/1', 'scanned_depth', 'basic')]:
+            old = facts[path][field]; facts[path][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(M.SuiteError, 'sibling facts or ancestor'):
+                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label', 'scan_extra'}, sibling, boundary)
+            facts[path][field] = old
+
+    def test_target_scan_rejects_wrong_identity_duplicates_and_incomplete_scan(self):
+        for key, value in [('tenant_id', 3), ('engine_id', 11), ('node_id', 99), ('item_type', 'file'), ('fingerprint', '')]:
+            client, facts, sibling, target = self.scan_fixture()
+            boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
+            target[key] = value
+            with self.subTest(key=key), self.assertRaises(M.SuiteError):
+                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
+        for key, value in [('scanned_at', None), ('scanned_depth', 'basic')]:
+            client, facts, sibling, target = self.scan_fixture()
+            boundary = M.API.read_meta_scan_boundary(client, 10, sibling)
+            target[key] = value
+            with self.subTest(key=key), patch.object(M, 'until', side_effect=lambda check: self.assertFalse(check())):
+                M.wait_target_scan(client, 10, 2, 'continuous_cdc_target', {'id', 'label'}, sibling, boundary)
+        client, facts, sibling, target = self.scan_fixture()
+        facts['/api/v1/meta/engines/10/items'].append(target)
+        with self.assertRaises(M.SuiteError):
+            M.catalog_item(client, 10, 2, 'continuous_cdc_target')
+
+    def test_suite_enables_auto_scan_only_after_complete_absent_target_baseline(self):
+        catalog, facts, sibling, target = self.scan_fixture()
+        facts['/api/v1/meta/engines/10/items'] = [sibling]
+        calls = []
+        class FixtureClient:
+            def request(self, method, path, expected, body=None, **kwargs):
+                calls.append((method, path, body))
+                if path == '/api/v1/meta/scan/run/manual':
+                    return SimpleNamespace(payload={'execution_id': UUID})
+                if path == '/api/v1/meta/executions/' + UUID:
+                    return SimpleNamespace(payload={'status': 'success'})
+                if path == M.OWNER + '/task-definitions':
+                    self_payload = body
+                    if not self_payload.get('auto_scan_metadata'):
+                        raise AssertionError('continuous fixture disabled automatic scanning')
+                    raise M.SuiteError('stop after verified creation request')
+                return catalog.request(method, path, expected, **kwargs)
+        report = {}
+        with patch.object(M.API, 'wait_meta_scan_tick') as tick, self.assertRaisesRegex(M.SuiteError, 'verified creation'):
+            M.run_suite(FixtureClient(), None, None, None, None, None, None, 2, 'run-1', 10, 11,
+                        report, lambda: None, None)
+        tick.assert_called_once()
+        self.assertEqual(len(tick.call_args.args[0]), 3)
+        self.assertEqual(report['cleanup'], 'passed')
+        self.assertEqual(report['precise_scan_scope']['scans'], [])
+        before = calls[:-1]
+        self.assertTrue(all(method == 'GET' or path.endswith('/manual') for method, path, _ in before))
+        self.assertEqual(sum(path.endswith('/items') for _, path, _ in before), 3)
+
+    def test_scan_clock_crosses_latest_ancestor_tick_and_has_bounded_wait(self):
+        stamps = [{'scanned_at': '1970-01-01T00:00:01Z'}, {'scanned_at': '1970-01-01T00:00:02Z'}]
+        with patch.object(M.API.time, 'time', side_effect=[2.5, 3]), \
+                patch.object(M.API.time, 'monotonic', return_value=0), patch.object(M.API.time, 'sleep') as sleep:
+            M.API.wait_meta_scan_tick(stamps)
+            sleep.assert_called_once_with(.05)
+        with patch.object(M.API.time, 'time', return_value=2.5), \
+                patch.object(M.API.time, 'monotonic', side_effect=[0, 31]), self.assertRaises(M.SuiteError):
+            M.API.wait_meta_scan_tick(stamps)
+
     def test_browser_uses_private_controls_and_only_closed_public_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

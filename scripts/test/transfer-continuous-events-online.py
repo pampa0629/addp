@@ -187,6 +187,50 @@ def until(operation, timeout=120):
     raise SuiteError('continuous execution did not converge before the deadline')
 
 
+def catalog_item(client, engine_id, tenant, name):
+    items = client.request('GET', f'/api/v1/meta/engines/{engine_id}/items', (200,), response_type=list).payload
+    require(isinstance(items, list), 'Meta engine items must be an array')
+    matches = [item for item in items if isinstance(item, dict) and item.get('full_name') == 'public.' + name]
+    require(len(matches) <= 1, 'Meta target identity is duplicated')
+    if not matches:
+        return None
+    item = matches[0]
+    require(item.get('engine_id') == engine_id and item.get('tenant_id') == tenant
+            and item.get('item_type') == 'table' and bool(item.get('fingerprint')), 'Meta target identity changed')
+    API.require_positive_int(item, 'id')
+    API.require_positive_int(item, 'node_id')
+    return item
+
+
+def assert_scan_boundary(client, engine_id, sibling, boundary):
+    require(API.read_meta_scan_boundary(client, engine_id, sibling) == boundary,
+            'automatic target scan changed sibling facts or ancestor scan state')
+
+
+def wait_target_scan(client, engine_id, tenant, name, expected_fields, sibling, boundary):
+    def scanned():
+        # Check every observation so a broadened scan's running ancestor state also fails.
+        assert_scan_boundary(client, engine_id, sibling, boundary)
+        item = catalog_item(client, engine_id, tenant, name)
+        if item is None:
+            return None
+        require(item['node_id'] == sibling['node_id'] and item['id'] != sibling['id'], 'Meta target parent or identity changed')
+        table = (item.get('attributes') or {}).get('type_info', {}).get('table', {})
+        fields = table.get('fields', [])
+        names = [field.get('name') for field in fields if isinstance(field, dict)]
+        if (item.get('scanned_depth') != 'deep' or not item.get('scanned_at')
+                or len(names) != len(fields) or len(names) != len(expected_fields) or set(names) != expected_fields):
+            return None
+        try:
+            stamp = datetime.fromisoformat(item['scanned_at'].replace('Z', '+00:00'))
+            require(stamp.tzinfo is not None, 'target scan timestamp needs a timezone')
+        except (ValueError, TypeError, AttributeError):
+            raise SuiteError('target scan timestamp is invalid') from None
+        return {'target_locator': f'addp://engine/{engine_id}/path/public/{name}?type=table',
+                'item_id': item['id'], 'scanned_at': item['scanned_at'], 'fields': sorted(names)}
+    return until(scanned)
+
+
 def detail(client, execution_id):
     item = client.request('GET', f'{OWNER}/executions/{execution_id}', (200,)).payload
     assert_projection(item, execution_id)
@@ -348,7 +392,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
     def create(kind):
         name = f'online-{run_id}-{kind}'
         result = mutate(client, f'{OWNER}/task-definitions',
-                        {'name': name, 'task_type': 'sync', 'enabled': False, 'auto_scan_metadata': False,
+                        {'name': name, 'task_type': 'sync', 'enabled': False, 'auto_scan_metadata': True,
                          'batch_size': 100, 'config': task_config(kind, pg, kafka)}, (201,))
         task_id = API.require_positive_int(result, 'id')
         API.assert_tenant(result, tenant, 'continuous task')
@@ -389,6 +433,18 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             return item.get('status') == 'success'
         until(scanned)
         report['checks'].append('formal_source_catalog_scan')
+        sibling = catalog_item(client, pg, tenant, 'continuous_scan_sibling')
+        require(sibling is not None, 'physical scan sibling is missing')
+        boundary = API.read_meta_scan_boundary(client, pg, sibling)
+        require(len(boundary['ancestors']) >= 2, 'scan baseline must include schema and root')
+        API.wait_meta_scan_tick([boundary['sibling'], *boundary['ancestors']])
+        for kind in ('kafka', 'cdc'):
+            require(catalog_item(client, pg, tenant, f'continuous_{kind}_target') is None,
+                    'automatic scan requires a target absent from the baseline catalog')
+        report['precise_scan_scope'] = {'sibling_item_id': sibling['id'],
+            'ancestor_nodes_verified': len(boundary['ancestors']), 'scans': [], 'target_only_verified': False}
+        def target_scan(kind, fields={'id', 'label'}):
+            return wait_target_scan(client, pg, tenant, f'continuous_{kind}_target', fields, sibling, boundary)
         kafka_task = create('kafka')
         initial = launch(kafka_task)
         require(physical('produce-initial'), 'business Kafka input failed')
@@ -396,6 +452,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 2
                           for e in events(client, f'{OWNER}/executions', initial)))
         lifecycle_events(events(client, f'{OWNER}/executions', initial))
+        kafka_scan = target_scan('kafka')
+        report['precise_scan_scope']['scans'].append({'phase': 'kafka_initial_prepare', **kafka_scan})
         report['checks'].append('kafka_physical_initial_commit_and_events')
         invisible(denied, initial, 403, 404)
         invisible(foreign, initial, 404, 404)
@@ -430,6 +488,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) > 0
                           for e in events(client, f'{OWNER}/executions', recovery_id)))
         require(events(client, f'{OWNER}/executions', initial) == frozen, 'old execution accepted events after recovery')
+        require(target_scan('kafka') == kafka_scan, 'Worker recovery repeated the initial target scan')
         report['checks'].append('real_worker_sigkill_lease_expiry_new_uuid_committed_resume')
         mutate(client, f'{OWNER}/task-definitions/{kafka_task}/pause')
         wait_status(client, recovery_id, 'cancelled')
@@ -449,6 +508,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         require(failed.get('error_details', {}).get('code') == 'missing_source_key'
                 and client.request('GET', f'{MONITOR}/{resumed}', (200,)).payload.get('error_details', {}).get('code') == 'missing_source_key',
                 'record failure lost its stable code in Owner or Monitor')
+        require(target_scan('kafka') == kafka_scan, 'manual resume or ordinary events repeated the initial target scan')
         report['checks'].append('kafka_pause_resume_and_record_failure_without_samples')
         report['browser_recovery'] = run_browser('recovery', [initial, recovery_id, resumed],
                                                  report['consumer_identity'], run_id, faults.secret)
@@ -466,10 +526,16 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         cdc_task = create('cdc')
         cdc = launch(cdc_task)
         until(lambda: physical('verify-cdc-initial'))
+        cdc_scan = target_scan('cdc')
+        report['precise_scan_scope']['scans'].append({'phase': 'cdc_snapshot_completed', **cdc_scan})
         require(physical('mutate-cdc'), 'CDC mutation fixture failed')
         until(lambda: physical('verify-cdc-mutated'))
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 5
                           for e in events(client, f'{OWNER}/executions', cdc)))
+        require(target_scan('cdc') == cdc_scan, 'ordinary CDC events repeated the initial target scan')
+        require(target_scan('kafka') == kafka_scan, 'CDC scans changed the Kafka sibling target')
+        report['precise_scan_scope']['target_only_verified'] = True
+        report['checks'].append('initial_scans_preserve_sibling_and_ancestors')
         name = next(name for task, kind, name in tasks if task == cdc_task)
         mutate(client, f'{OWNER}/task-definitions/{cdc_task}/stop', {'confirmed': True, 'confirmation_text': name})
         wait_status(client, cdc, 'cancelled')

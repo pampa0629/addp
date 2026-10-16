@@ -44,6 +44,8 @@ case "$action" in
     psql_owned >/dev/null <<'SQL'
 CREATE TABLE public.continuous_source (id bigint PRIMARY KEY, label text NOT NULL);
 INSERT INTO public.continuous_source VALUES (1,'business-value-sentinel-initial'),(2,'business-value-sentinel-delete');
+CREATE TABLE public.continuous_scan_sibling (id bigint PRIMARY KEY, label text NOT NULL);
+INSERT INTO public.continuous_scan_sibling VALUES (1,'business-value-sentinel-sibling'),(2,'business-value-sentinel-sibling');
 SQL
     docker run -d --name "$kafka" --label com.addp.online-fixture=continuous --label "com.addp.online-run=$owner" \
       -p 127.0.0.1:29094:29094 "${REDPANDA_IMAGE:?}" redpanda start --overprovisioned \

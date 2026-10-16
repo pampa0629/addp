@@ -2,6 +2,7 @@ import importlib.util
 import copy
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,13 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    def test_direct_suite_entry_loads_shared_helpers_without_pythonpath(self):
+        result = subprocess.run([sys.executable, str(SCRIPT.resolve())], cwd=SCRIPT.resolve().parents[2],
+                                env={'PATH': os.environ['PATH']}, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertIn('ADDP_ONLINE_TEST must be exactly 1', result.stderr)
+
     @staticmethod
     def query_events(identifier):
         return {"has_more": False, "next_cursor": 3, "retained_after": "2026-09-13T00:00:00Z", "items": [
