@@ -161,16 +161,17 @@ func TestConfigCheckTargetReplaceRequiresDelete(t *testing.T) {
 		want          plugin.DefinitionCheckStatus
 	}{
 		{name: "source_does_not_need_delete", sourceType: "highgo", engineType: "postgresql", mode: "replace", want: plugin.DefinitionSupported},
-		{name: "highgo_replace", engineType: "highgo", mode: "replace", want: plugin.DefinitionUnsupported},
-		{name: "highgo_replace_without_snapshots", engineType: "highgo", mode: "replace", missingSource: true, missingTarget: true, want: plugin.DefinitionUnsupported},
+		{name: "highgo_replace", engineType: "highgo", mode: "replace", want: plugin.DefinitionSupported},
+		{name: "highgo_registered_delete_disabled", engineType: "highgo", mode: "replace", declaration: "no_delete", want: plugin.DefinitionUnsupported},
+		{name: "highgo_replace_without_snapshots", engineType: "highgo", mode: "replace", declaration: "no_delete", missingSource: true, missingTarget: true, want: plugin.DefinitionUnsupported},
 		{name: "highgo_append", engineType: "highgo", mode: "append", want: plugin.DefinitionSupported},
 		{name: "highgo_append_missing_target", engineType: "highgo", mode: "append", missingTarget: true, want: plugin.DefinitionUnknown},
 		{name: "postgres_replace", engineType: "postgresql", mode: "replace", want: plugin.DefinitionSupported},
 		{name: "registered_delete_disabled", engineType: "postgresql", mode: "replace", declaration: "no_delete", want: plugin.DefinitionUnsupported},
 		{name: "append_does_not_need_delete", engineType: "postgresql", mode: "append", declaration: "no_delete", want: plugin.DefinitionSupported},
-		{name: "declaration_cannot_add_provider", engineType: "highgo", mode: "replace", declaration: "delete", want: plugin.DefinitionUnsupported},
+		{name: "declaration_cannot_add_provider", engineType: "mongodb", mode: "replace", declaration: "delete", want: plugin.DefinitionUnsupported},
 		{name: "missing_declaration", engineType: "postgresql", mode: "replace", declaration: "missing", want: plugin.DefinitionUnknown},
-		{name: "known_missing_provider_without_declaration", engineType: "highgo", mode: "replace", declaration: "missing", want: plugin.DefinitionUnsupported},
+		{name: "known_missing_provider_without_declaration", engineType: "mongodb", mode: "replace", declaration: "missing", want: plugin.DefinitionUnsupported},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			svc, facts, subject, body := configCheckFixture(t)

@@ -219,7 +219,7 @@ SQL catalog facts provider 差异矩阵：
 
 System 对通用引擎的手动与周期连接检测使用同一只读调用路径和 10 秒预算；不允许周期检测另设更短预算，使同一连接在手动成功后因预算差异被判为离线。Provider 必须传递 Context，使握手和查询在取消或到期时释放本次连接；真实失败仍更新离线状态，执行授权仍核验当前引擎可用性。工作流 Runtime 的专用契约探测不受此普通连接探测路径替代。
 
-HighGo V4.5 使用独立 `highgo` 插件和 SM3 驱动，通过 `ProtocolIdentity.DriverName` 复用 PostgreSQL 协议 Provider。该身份统一作用于连接检测、连接池和所有 SQL 会话；不得在认证失败后切换驱动。开放非空间目录、普通字段 Facts 和只读会话；写入仅通过非空间 TableWritePrepare、BatchWrite 与 COPY TableWriteSession 暴露，写入准备与编码复用 PostgreSQL Provider，空间定义在连接前拒绝，事务提交标记保留 `highgo.table_write_session` 身份；任意写 SQL 与 `Replace=true` 仍在连接前拒绝。Facts 可选补充仅执行已声明范围，空间、索引、约束和分区请求不阻止普通字段返回。连接默认值与源码来源见《数据引擎扩展指南》。
+HighGo V4.5 使用独立 `highgo` 插件和 SM3 驱动，通过 `ProtocolIdentity.DriverName` 复用 PostgreSQL 协议 Provider。该身份统一作用于连接检测、连接池和所有 SQL 会话；不得在认证失败后切换驱动。开放非空间目录、普通字段 Facts 和只读会话；写入通过非空间 TableWritePrepare、BatchWrite、COPY TableWriteSession 及可见普通表的 ResourceDeleteProvider 暴露，写入准备、编码与事务内覆盖复用 PostgreSQL Provider，空间定义在连接前拒绝，事务提交标记保留 `highgo.table_write_session` 身份；任意写 SQL 仍在连接前拒绝。普通表删除先读取精确叶子 Facts，仅接受 `kind=table` 且原生 `relkind=r`，并复用非空间检查，目录隐藏或不存在的叶子不执行 DROP，其他错误不吞掉；DROP 不使用 CASCADE、不删除 schema。Facts 可选补充仅执行已声明范围，空间、索引、约束和分区请求不阻止普通字段返回。连接默认值与源码来源见《数据引擎扩展指南》。
 
 `supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `EngineCatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；同一 PostgreSQL Engine 中的普通 PostgreSQL / PostGIS 表必须继续由 PostgreSQL Provider 处理，不能因为 Engine Instance 启用了 SDX+ for PostgreSQL 就整库切换到 Runtime Provider。`supermap/sdx_postgis` 的数据读写可以复用 PostgreSQL/PostGIS Provider，SuperMap 专用的注册、索引、bounds 和刷新操作由 Workspace Controller 负责。
 
@@ -302,7 +302,7 @@ type StoreProvider interface {
 - `EncodedRecordReadSessionProvider.OpenEncodedRecordReadSession()`：按 Provider 声明的类型保真交换格式连续返回已编码 record 批次；适合 MongoDB Canonical Extended JSON Lines 原始记录导出。它不等于对象内容 `stream_read`，也不得被用于表格化转换。
 - `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
-- `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
+- `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。PostgreSQL 协议写会话的 `Replace=true` 在同一事务中先 DELETE 目标行再 COPY；Close 成功时提交替换，Abort、准备／编码／COPY 失败时回滚该会话中的删除与写入，空输入提交后为空表；提交失败不产生成功标记，不自动重试。该会话不删除表结构，保留 OID、索引与约束；Transfer 在会话外已完成的 DROP／Prepare 不属于此事务，不因此承诺整个 replace 原子回滚。
 - `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。已存在且当前连接可使用的目标命名空间必须直接复用，仅在缺失且当前连接具备创建权限时创建；不得因重复执行命名空间创建语句而要求已有目标写入方额外持有数据库级 CREATE 权限。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
 - `TableWriteDefinitionChecker.CheckTableWriteDefinition()`：可选的纯定义检查接口，输入目标字段、空间声明、可选源字段／配置常量及可选既有目标结构快照；不接收连接、Context 或业务行，不访问引擎。Provider 唯一负责物理类型及兼容规则，返回逐字段 `supported / unsupported / unknown`、稳定代码和物理类型。源表示不明、采样结构及缺少原生类型不能构造通过证据。PostgreSQL 协议复用的 openGauss 与 KingbaseES 显式转发同一非空间定义检查，保留各自已有限制；不得因复用协议而把 geometry 或空间声明报告为支持。Owner 在删除／准备目标之前消费确定性 `unsupported`；真实 Prepare 复用同一检查，逐值编码及实时结构检查仍保留。无该接口只能报告未检查，不建立 Owner 引擎名单或类型映射。快照检查不证明当前数据库结构、DDL／写入权限、实例扩展或实际行值可执行，也不形成授权凭证。
 

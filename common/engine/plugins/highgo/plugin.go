@@ -36,6 +36,7 @@ var (
 	_ plugin.TableWritePreparer          = (*Plugin)(nil)
 	_ plugin.TableWriteSessionProvider   = (*Plugin)(nil)
 	_ plugin.TableWriteDefinitionChecker = (*Plugin)(nil)
+	_ plugin.ResourceDeleteProvider      = (*Plugin)(nil)
 )
 
 func init()                            { plugin.Register(&Plugin{}) }
@@ -77,7 +78,7 @@ func (p *Plugin) BuildDSN(info plugin.ConnectionInfo) (string, error) {
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
 		TableReadSession: true, QueryReadSession: true, SupportsParameters: true, IdentifierQuote: `"`,
-		BatchWrite: true, TableWritePrepare: true, TableWriteSession: true, WriterConnector: "postgres_copy",
+		BatchWrite: true, TableWritePrepare: true, TableWriteSession: true, Delete: true, WriterConnector: "postgres_copy",
 	})
 }
 func (p *Plugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
@@ -187,9 +188,9 @@ func (p *Plugin) WriteBatch(ctx context.Context, info plugin.ConnectionInfo, pat
 	return p.protocol().WriteBatch(ctx, info, path, batch, opts)
 }
 
-// deleteTable only removes a visible ordinary leaf. Hidden or absent catalog
+// DeleteResource only removes a visible ordinary leaf. Hidden or absent catalog
 // entries are idempotent no-ops; a catalog failure must never lead to DROP.
-func (p *Plugin) deleteTable(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
+func (p *Plugin) DeleteResource(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
 	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) != 2 || segments[0].Term != plugin.EngineCatalogTermSchema || segments[1].Term != plugin.EngineCatalogTermTable || segments[1].Kind != plugin.EngineCatalogKindTable {
 		return commonapi.ErrBadRequest
@@ -202,7 +203,7 @@ func (p *Plugin) deleteTable(ctx context.Context, info plugin.ConnectionInfo, pa
 		return err
 	}
 	table := plugin.EngineCatalogFactsTableInfo(facts)
-	if table == nil {
+	if table == nil || table.Kind != "table" || table.Native["relkind"] != "r" {
 		return commonapi.ErrBadRequest
 	}
 	if err := p.validateWrite(table.Fields, plugin.EngineCatalogFactsSpatialInfo(facts)); err != nil {
@@ -212,9 +213,6 @@ func (p *Plugin) deleteTable(ctx context.Context, info plugin.ConnectionInfo, pa
 }
 
 func (p *Plugin) OpenTableWriteSession(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
-	if opts.Replace {
-		return nil, commonapi.ErrForbidden
-	}
 	if err := p.validateWrite(opts.Fields, opts.SpatialInfo); err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ KingbaseES 的准入基线固定为 V9R1C10 `V009R001C010B0004` 官方 Docker ta
 
 DM8 独立登记为 `engine_type=dameng`。插件描述、连接字段、SQLDialect 和能力模板属于可由 macOS System 加载的控制面代码；官方 Go 驱动不作为 Go Module 依赖提交，而由门禁从上述固定官方介质提取、校验后只注入 Linux ARM64 Docker 构建上下文。真实 TestConnection、Engine Catalog、参数化查询、BatchRead、TableReadSession、QueryReadSession、BoundedWatermarkRead、TableWritePrepare、TableWriteSession、Delete 与基于 `MERGE` 的幂等 TableUpsert 必须在该执行边界内完成 T2。macOS System 可以创建 Engine Instance，但宿主进程不得执行连接检测或把实例伪装为 `online`；主要模块技术验证也必须把实际 Provider 调用进程放入同一 Linux ARM64 Docker 边界。Business 只拥有数据库与样例生命周期，不调用 System API；上层模块只消费 capabilities、ResourceLocator、Provider 和 SQLDialect，不增加 `dameng` 类型硬编码。
 
-HighGo V4.5 接入首期使用独立 `engine_type=highgo`，复用 PostgreSQL 方言和关系目录 Provider。开放连接、非空间实时目录与普通字段 Facts、BatchRead、TableReadSession、QueryReadSession 和参数化只读 SQL。写入扩展仅开放非空间 TableWritePrepare、BatchWrite 和 COPY TableWriteSession，继续复用同一 PostgreSQL Provider 与 `highgo` 驱动；不开放任意写 SQL、资源删除、upsert、CDC、空间、分析编译或 PostgreSQL 扩展。Facts 的可选补充不扩展已声明能力：Meta 请求的空间、索引、约束和分区补充暂不执行，普通字段正常返回。写入上线须通过隔离原生认证：随机且本次独占的测试 schema、合成数据、COPY 提交／Abort、失败批次原子回滚和精确类型往返；清理只删除本次已创建表及 schema，并核实零残留。
+HighGo V4.5 接入首期使用独立 `engine_type=highgo`，复用 PostgreSQL 方言和关系目录 Provider。开放连接、非空间实时目录与普通字段 Facts、BatchRead、TableReadSession、QueryReadSession 和参数化只读 SQL。写入扩展开放非空间 TableWritePrepare、BatchWrite、COPY TableWriteSession 及可见普通表 Delete，继续复用同一 PostgreSQL Provider 与 `highgo` 驱动；不开放任意写 SQL、upsert、CDC、空间、分析编译或 PostgreSQL 扩展。Facts 的可选补充不扩展已声明能力：Meta 请求的空间、索引、约束和分区补充暂不执行，普通字段正常返回。写入上线须通过隔离原生认证：随机且本次独占的测试 schema、合成数据、COPY 提交／Abort、失败批次原子回滚和精确类型往返；清理只删除本次已创建表及 schema，并核实零残留。
 
 连接探测以服务端 `version()` 的厂商标识和 4.5 版本系列为准，接受原生中文 `瀚高数据库管理系统V4.5` 和英文 `HighGo Database Management System 4.5` 表述。版本识别使用同一严格边界规则，不依赖构建架构或显示语言；PostgreSQL、其他厂商、4.50、其他主次版本以及含伪造嵌入标识的字符串均拒绝。
 
@@ -38,7 +38,7 @@ HighGo 普通业务目录不包含安全审计系统表 `hg_t_audit_log`，也�
 
 用户已确认官方 Go 包不可取得时采用第三方路线。驱动主体固定为 ADDP 已使用的 lib/pq v1.10.9，SM3 扩展固定取自 [iwanlebron/pq](https://github.com/iwanlebron/pq) 的 `6ff687fe05e4ef24b5d3abcb9e92d5bab94a958b`，按 MIT 许可保留声明，存放于 `common/engine/internal/highgopq`。本地适配登记唯一 `highgo` 驱动名，复用现有 `github.com/lib/pq/oid`、`scram`、公开错误类型和 `github.com/emmansun/gmsm/sm3`；不引入第三方分支的存储过程改动，不全局替换 lib/pq，不引入认证代理或认证降级。可信的 `ProtocolIdentity.DriverName` 统一绑定连接检测、GORM 连接池和 SQL 会话，默认端口 5866、`sslmode=require`，显式 TLS 设置按连接配置执行。
 
-HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL DROP 实现，先按精确叶子取得当前可见表 Facts 并复用非空间定义检查；目录隐藏或不存在的叶子不执行 DROP，其他目录／权限错误不得吞掉。仅接受 schema/table 路径，不删除 schema、不使用 CASCADE，不扩大账号权限；有依赖对象时由数据库拒绝。须在本次独占 schema 验证普通表删除、重复删除、引号标识符、同级表保留和依赖拒绝，且原生认证通过后才能开放删除能力。写会话的 Replace 仍须沿共享 PostgreSQL 会话验证，不另建 HighGo COPY 路径。
+HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL DROP 实现，先按精确叶子取得当前可见表 Facts，仅接受 `kind=table` 且原生 `relkind=r`，并复用非空间定义检查；目录隐藏或不存在的叶子不执行 DROP，其他目录／权限错误不得吞掉。仅接受 schema/table 路径，不删除 schema、不使用 CASCADE，不扩大账号权限；有依赖对象时由数据库拒绝。须在本次独占 schema 验证普通表删除、重复删除、引号标识符、同级表保留和依赖拒绝，且原生认证通过后才能开放删除能力。写会话的 Replace 沿共享 PostgreSQL 会话验证：事务内 DELETE 与 COPY 一起提交或回滚，覆盖正常提交、空输入、Abort、重复键、值编码及 COPY 准备错误，不另建 HighGo COPY 路径。会话事务不覆盖 Transfer 在此前执行的 DROP／Prepare。
 
 写入回归沿用 `scripts/test/common-postgres-gate.sh`：默认完整入口及 `--test highgo-write` 在 disposable PostgreSQL 上验证 HighGo 驱动绑定与共享 SQL/COPY 契约，现有 Common PostgreSQL CI 自动覆盖；这不等于原生瀚高认证。显式 `--test highgo-write --highgo-native` 只消费调用方注入的 `ADDP_TEST_HIGHGO_HOST/PORT/DATABASE/USER/PASSWORD`，强制 TLS、校验 V4.5，不创建／删除 database，不读取既有业务表数据；仅附加 `public` 系统审计对象的只读目录过滤核验。原生认证不得自动切换驱动或重试未知结果的写入。
 

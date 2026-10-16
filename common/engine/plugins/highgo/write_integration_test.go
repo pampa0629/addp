@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/lib/pq"
@@ -162,14 +164,14 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 			t.Fatalf("batch %s NULL/empty roundtrip: equal=%t error=%v", method, nulls, err)
 		}
 	}
-	assertCount := func(want int) {
+	assertCount := func(t *testing.T, want int) {
 		t.Helper()
 		var count int
 		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != want {
 			t.Fatalf("atomic row count: got=%d want=%d error=%v", count, want, err)
 		}
 	}
-	assertCount(3)
+	assertCount(t, 3)
 	aborted, err := writer.OpenTableWriteSession(ctx, info, path, plugin.TableWriteSessionOptions{Method: "copy", Fields: fields})
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +186,7 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	if provider := aborted.(plugin.CommitMarkerProvider); provider.CommitMarker() != nil {
 		t.Fatal("aborted COPY exposed commit marker")
 	}
-	assertCount(3)
+	assertCount(t, 3)
 	failed, err := writer.OpenTableWriteSession(ctx, info, path, plugin.TableWriteSessionOptions{Method: "copy", Fields: fields})
 	if err != nil {
 		t.Fatal(err)
@@ -198,13 +200,93 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	if provider := failed.(plugin.CommitMarkerProvider); provider.CommitMarker() != nil {
 		t.Fatal("failed COPY exposed commit marker")
 	}
-	assertCount(3)
+	assertCount(t, 3)
 	// Force separate INSERT chunks; an error in chunk 2 must undo chunk 1.
 	batch := &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{"id": int64(5)}, {"id": int64(1)}}, Hints: map[string]interface{}{"chunk_size": 1}}
 	if err := writer.WriteBatch(ctx, info, path, batch, plugin.BatchWriteOptions{Method: "insert"}); err == nil {
 		t.Fatal("duplicate key INSERT unexpectedly committed")
 	}
-	assertCount(3)
+	assertCount(t, 3)
+	fingerprint := func(t *testing.T) string {
+		t.Helper()
+		var value string
+		if err := db.QueryRowContext(ctx, "SELECT md5(coalesce(jsonb_agg(to_jsonb(r) ORDER BY id)::text,'[]')) FROM "+table+" r").Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	original := fingerprint(t)
+	for _, mode := range []string{"abort", "failed_copy", "encoding_error", "prepare_error", "commit", "empty"} {
+		t.Run("replace/"+mode, func(t *testing.T) {
+			opts := plugin.TableWriteSessionOptions{Fields: fields, Method: "copy", Replace: true}
+			if mode == "prepare_error" {
+				opts.Fields = []datatype.FieldInfo{{Name: "missing_column", Type: datatype.FieldTypeBigInt}}
+			}
+			session, err := p.OpenTableWriteSession(ctx, info, path, opts)
+			if mode == "prepare_error" {
+				if err == nil {
+					_ = session.Abort(ctx)
+					t.Fatal("missing COPY column accepted")
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer session.Abort(context.Background())
+				var writeErr error
+				if mode != "empty" {
+					rows := []map[string]interface{}{{"id": int64(9), "label": "replacement"}}
+					if mode == "encoding_error" {
+						rows[0]["doc"] = "{"
+					}
+					if mode == "failed_copy" {
+						rows = append(rows, rows[0])
+					}
+					writeErr = session.WriteBatch(ctx, &plugin.BatchData{Rows: rows})
+				}
+				if mode == "abort" {
+					if err := session.Abort(ctx); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					closeErr := session.Close(ctx)
+					if mode == "failed_copy" || mode == "encoding_error" {
+						if writeErr == nil && closeErr == nil {
+							t.Fatal("duplicate replacement committed")
+						}
+					} else if writeErr != nil || closeErr != nil {
+						t.Fatalf("write=%v close=%v", writeErr, closeErr)
+					}
+				}
+				marker := session.(plugin.CommitMarkerProvider).CommitMarker()
+				if mode == "abort" || mode == "failed_copy" || mode == "encoding_error" {
+					if marker != nil {
+						t.Fatal("failed replacement exposed commit marker")
+					}
+				} else if marker == nil || marker.Provider != "highgo.table_write_session" {
+					t.Fatal("replacement commit marker missing or identity lost")
+				}
+			}
+			switch mode {
+			case "commit":
+				assertCount(t, 1)
+				var id int64
+				if err := db.QueryRowContext(ctx, "SELECT id FROM "+table).Scan(&id); err != nil || id != 9 {
+					t.Fatalf("replacement row mismatch: %d %v", id, err)
+				}
+			case "empty":
+				assertCount(t, 0)
+			default:
+				if fingerprint(t) != original {
+					t.Fatal("replacement rollback changed existing values")
+				}
+			}
+		})
+	}
+	if err := p.WriteBatch(ctx, info, path, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{row, {"id": int64(1)}, {"id": int64(2)}}}, plugin.BatchWriteOptions{Method: "copy"}); err != nil {
+		t.Fatal(err)
+	}
+	assertCount(t, 3)
 	keepPath := plugin.TabularItemPath(987655, plugin.EngineCatalogTermSchema, schema, `keep "quoted"`)
 	keepTable := quotedSchema + `.` + pq.QuoteIdentifier(`keep "quoted"`)
 	view := quotedSchema + `."contract_guard"`
@@ -227,31 +309,35 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "CREATE VIEW "+view+" AS SELECT id FROM "+table); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.deleteTable(ctx, info, path); err == nil {
+	viewPath := plugin.TabularItemPath(987655, plugin.EngineCatalogTermSchema, schema, "contract_guard")
+	if err := p.DeleteResource(ctx, info, viewPath); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("non-table relation was not rejected by ordinary table guard: %v", err)
+	}
+	if err := p.DeleteResource(ctx, info, path); err == nil {
 		t.Fatal("dependent view must prevent deletion; no CASCADE")
 	}
-	assertCount(3)
+	assertCount(t, 3)
 	if _, err := db.ExecContext(ctx, "DROP VIEW "+view); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.deleteTable(ctx, info, path); err != nil {
+	if err := p.DeleteResource(ctx, info, path); err != nil {
 		t.Fatalf("delete ordinary table: %v", err)
 	}
-	if err := p.deleteTable(ctx, info, path); err != nil {
+	if err := p.DeleteResource(ctx, info, path); err != nil {
 		t.Fatalf("repeat delete: %v", err)
 	}
 	var preserved bool
 	if err := db.QueryRowContext(ctx, "SELECT count(*)=1 AND min(id)=42 FROM "+keepTable).Scan(&preserved); err != nil || !preserved {
 		t.Fatalf("sibling changed: %t %v", preserved, err)
 	}
-	if err := p.deleteTable(ctx, info, keepPath); err != nil {
+	if err := p.DeleteResource(ctx, info, keepPath); err != nil {
 		t.Fatalf("delete quoted table: %v", err)
 	}
 	var remains bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL OR to_regclass($2) IS NOT NULL", table, keepTable).Scan(&remains); err != nil || remains {
 		t.Fatalf("table delete not verified: %t %v", remains, err)
 	}
-	t.Log("prepare, COPY commit, INSERT/COPY batches, exact types, Abort, failed-batch rollback, restricted delete, quoted identifiers and sibling preservation verified")
+	t.Log("prepare, COPY commit, INSERT/COPY batches, exact types, Abort, failed-batch rollback, transactional replace commit/empty/Abort/failure, restricted delete, quoted identifiers and sibling preservation verified")
 }
 
 func highgoWriteTestConnection(t *testing.T, native bool) plugin.ConnectionInfo {

@@ -393,3 +393,102 @@ func postgresPrepareTablePath(schemaName, tableName string) plugin.EngineCatalog
 		},
 	}
 }
+
+func TestIntegrationPostgresPrepareTableWriteSessionReplace(t *testing.T) {
+	db, pg, info := openPostgresPrepareIntegration(t, false)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := t.Context()
+	schema := fmt.Sprintf("addp_session_replace_%d", time.Now().UnixNano())
+	path := postgresPrepareTablePath(schema, `quoted "table"`)
+	table := pq.QuoteIdentifier(schema) + "." + pq.QuoteIdentifier(`quoted "table"`)
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}, {Name: "label", Type: datatype.FieldTypeString}}
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+pq.QuoteIdentifier(schema)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 20*time.Second)
+		defer done()
+		for _, sql := range []string{"DROP TABLE IF EXISTS " + table + " RESTRICT", "DROP SCHEMA " + pq.QuoteIdentifier(schema) + " RESTRICT"} {
+			if _, err := db.ExecContext(cleanup, sql); err != nil {
+				t.Errorf("cleanup replace fixture: %v", err)
+			}
+		}
+	})
+	if err := pg.PrepareTableWrite(ctx, info, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	var originalOID int64
+	if err := db.QueryRowContext(ctx, "SELECT $1::regclass::oid", table).Scan(&originalOID); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"abort", "failed_copy", "encoding_error", "commit", "empty", "prepare_error"} {
+		t.Run(mode, func(t *testing.T) {
+			if _, err := db.ExecContext(ctx, "DELETE FROM "+table+"; INSERT INTO "+table+" VALUES (1,'old-a'),(2,'old-b')"); err != nil {
+				t.Fatal(err)
+			}
+			options := plugin.TableWriteSessionOptions{Fields: append([]datatype.FieldInfo(nil), fields...), Method: "copy", Replace: true}
+			if mode == "encoding_error" {
+				options.Fields[1].Type = datatype.FieldTypeJSON
+			}
+			if mode == "prepare_error" {
+				options.Fields = []datatype.FieldInfo{{Name: "missing", Type: datatype.FieldTypeString}}
+			}
+			session, err := pg.OpenTableWriteSession(ctx, info, path, options)
+			if mode == "prepare_error" {
+				if err == nil {
+					_ = session.Abort(ctx)
+					t.Fatal("invalid COPY column accepted")
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer session.Abort(context.Background())
+				var writeErr error
+				if mode != "empty" {
+					rows := []map[string]interface{}{{"id": int64(3), "label": "new"}}
+					if mode == "encoding_error" {
+						rows[0]["label"] = "{"
+					}
+					if mode == "failed_copy" {
+						rows = append(rows, rows[0])
+					}
+					writeErr = session.WriteBatch(ctx, &plugin.BatchData{Rows: rows})
+				}
+				if mode == "abort" {
+					if err := session.Abort(ctx); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					closeErr := session.Close(ctx)
+					if mode == "failed_copy" || mode == "encoding_error" {
+						if writeErr == nil && closeErr == nil {
+							t.Fatal("duplicate COPY committed")
+						}
+					} else if writeErr != nil || closeErr != nil {
+						t.Fatalf("write=%v close=%v", writeErr, closeErr)
+					}
+				}
+				marker := session.(plugin.CommitMarkerProvider).CommitMarker()
+				if (mode == "abort" || mode == "failed_copy" || mode == "encoding_error") && marker != nil {
+					t.Fatal("rollback exposed commit marker")
+				}
+			}
+			want := "1:old-a,2:old-b"
+			if mode == "commit" {
+				want = "3:new"
+			}
+			if mode == "empty" {
+				want = ""
+			}
+			var rows string
+			if err := db.QueryRowContext(ctx, "SELECT coalesce(string_agg(id::text||':'||label,',' ORDER BY id),'') FROM "+table).Scan(&rows); err != nil || rows != want {
+				t.Fatalf("rows=%q want=%q error=%v", rows, want, err)
+			}
+			var oid int64
+			if err := db.QueryRowContext(ctx, "SELECT $1::regclass::oid", table).Scan(&oid); err != nil || oid != originalOID {
+				t.Fatalf("table structure identity changed: %d %v", oid, err)
+			}
+		})
+	}
+}

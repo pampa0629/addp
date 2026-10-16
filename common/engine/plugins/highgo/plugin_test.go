@@ -109,17 +109,17 @@ func TestHighGoOnlyDeclaresCertifiedSurface(t *testing.T) {
 	if caps.EngineType != "highgo" || !store.BatchRead || !store.TableReadSession || !caps.Compute.Query.ReadSession {
 		t.Fatal("read capabilities missing or identity lost")
 	}
-	if !store.BatchWrite || !store.TableWriteSession || !store.TableWritePrepare {
+	if !store.BatchWrite || !store.TableWriteSession || !store.TableWritePrepare || !store.Delete {
 		t.Fatal("certified non-spatial write capabilities missing")
 	}
-	if store.Delete || store.TableUpsert != nil || store.PartitionedTableChangeApply != nil || store.TableSpatialEncoding != nil || caps.Storage.Facts.SpatialFacts {
+	if store.TableUpsert != nil || store.PartitionedTableChangeApply != nil || store.TableSpatialEncoding != nil || caps.Storage.Facts.SpatialFacts {
 		t.Fatal("uncertified capability declared")
 	}
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatalf("capability/interface contract: %v", err)
 	}
-	if _, ok := any(p).(plugin.ResourceDeleteProvider); ok {
-		t.Fatal("delete escaped read-only plugin surface")
+	if _, ok := any(p).(plugin.ResourceDeleteProvider); !ok {
+		t.Fatal("certified delete provider missing")
 	}
 	info := plugin.ConnectionInfo{"host": "localhost", "database": "test", "user": "user", "password": "fixture-password"}
 	dsn, err := p.protocol().BuildDSN(info)
@@ -189,11 +189,6 @@ func TestHighGoRejectsUnsupportedWriteDefinitionsBeforeConnecting(t *testing.T) 
 	// from untrusted values and bypass the non-spatial definition check.
 	if err := p.WriteBatch(t.Context(), nil, plugin.EngineCatalogPath{}, &plugin.BatchData{Rows: []map[string]interface{}{{"value": 1}}}, plugin.BatchWriteOptions{}); err == nil {
 		t.Fatal("untyped batch was accepted")
-	}
-	if _, err := p.OpenTableWriteSession(t.Context(), nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{
-		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, Replace: true,
-	}); !errors.Is(err, commonapi.ErrForbidden) {
-		t.Fatalf("uncertified replacement must be rejected before connecting: %v", err)
 	}
 }
 
@@ -455,11 +450,11 @@ func readMessage(r io.Reader) (byte, []byte, error) {
 	return head[0], payload, err
 }
 
-func TestHighGoDeleteTablePreservesCatalogBoundary(t *testing.T) {
+func TestHighGoDeleteProviderPreservesCatalogBoundary(t *testing.T) {
 	p := &Plugin{}
 	for _, name := range []string{"hg_t_audit_log", "pg_buffercache", "pg_stat_statements"} {
 		path := plugin.TabularItemPath(29, plugin.EngineCatalogTermSchema, "public", name)
-		if err := p.deleteTable(t.Context(), nil, path); err != nil {
+		if err := p.DeleteResource(t.Context(), nil, path); err != nil {
 			t.Fatalf("hidden object must be a no-op before connecting: %v", err)
 		}
 	}
@@ -467,7 +462,7 @@ func TestHighGoDeleteTablePreservesCatalogBoundary(t *testing.T) {
 		plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 29),
 		plugin.TabularNamespacePath(29, plugin.EngineCatalogTermSchema, "public"),
 	} {
-		if err := p.deleteTable(t.Context(), nil, path); !errors.Is(err, commonapi.ErrBadRequest) {
+		if err := p.DeleteResource(t.Context(), nil, path); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("non-table delete not rejected: %v", err)
 		}
 	}

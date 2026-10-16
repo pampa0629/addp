@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
 	"github.com/lib/pq"
 )
@@ -48,6 +49,16 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("begin postgresql table write session: %w", err)
+	}
+	if opts.Replace {
+		// Keep deletion in the COPY transaction: abort, preparation and encoding
+		// failures must restore every previous row without replacing the table.
+		target := commonquery.ForDialect(p.SQLDialect()).QualifiedTable(schema, table)
+		if _, err := tx.ExecContext(ctx, "DELETE FROM "+target); err != nil {
+			tx.Rollback()
+			db.Close()
+			return nil, fmt.Errorf("replace postgresql table rows: %w", err)
+		}
 	}
 	stmt, err := tx.PrepareContext(ctx, pq.CopyInSchema(schema, table, columns...))
 	if err != nil {
@@ -105,12 +116,23 @@ type postgresTableWriteSession struct {
 	rowsWritten    int64
 	commitMarker   *resume.Marker
 	closed         bool
+	writeErr       error
 }
 
-func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("postgresql table write session is closed")
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// Client-side encoding errors do not invalidate the SQL transaction. Retain
+	// them so Close cannot commit a partial batch or a preceding replacement.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -133,9 +155,13 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 
 func (s *postgresTableWriteSession) Close(ctx context.Context) error {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
+	if s.writeErr != nil {
+		_ = s.abort()
+		return s.writeErr
+	}
 
 	if _, err := s.stmt.ExecContext(ctx); err != nil {
 		_ = s.abort()
