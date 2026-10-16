@@ -173,6 +173,22 @@ esac
         return subprocess.run(['bash', 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', action],
                               cwd=self.root, env=environment, capture_output=True, text=True, timeout=20)
 
+    def test_import_physical_proof_is_independent_of_other_scenarios(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        for state in (self.mongodb_state, self.doris_state, self.clickhouse_state):
+            state.unlink()
+        offset = len(self.log.read_text())
+        result = self.run_fixture('manager-import')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        query = self.log.read_text()[offset:]
+        self.assertIn('ST_AsText', query)
+        self.assertIn('ST_SRID', query)
+        self.assertIn('POINT(10 20)', query)
+        self.assertNotIn('EXCEPT ALL', query)
+        failed = self.run_fixture('manager-import', ADDP_TEST_IMPORT_GEOMETRY_FAIL='1')
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('Manager import rows or geometry differ', failed.stderr)
+
     def test_rejects_import_physical_geometry_failure(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)
         result = self.run_fixture('verify', ADDP_TEST_IMPORT_GEOMETRY_FAIL='1')

@@ -367,19 +367,40 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
             or child.get("scan_context", {}).get("engine_id") != engine_id):
         raise SuiteError("automatic Meta scan lost its actual parent, current User or Tenant")
     item = wait_transfer_target(client, engine_id, "public." + IMPORT_TARGET, timeout)
+    source = _object(config.get("source"), "import source").get("locator")
+    if not isinstance(source, str) or not source:
+        raise SuiteError("Manager import lost its exact source locator")
+    for user in (client, outsider):
+        user.request("POST", "/api/v1/meta/inspect", (403,), {"locator": source})
     denied_execution = verify_import_private_access(outsider, task_id, identity, timeout)
 
     return {"transfer_task_id": task_id, "transfer_execution_id": identifier,
             "meta_scan_execution_id": scan["execution_id"], "target_item_id": item["id"],
             "records_read": 2, "records_written": 2, "current_user_origin_verified": True,
-            "automatic_scan_verified": True, "non_uploader_rejected": True, "rejected_execution_id": denied_execution}
+            "automatic_scan_verified": True, "user_inspect_rejected": True, "non_uploader_rejected": True, "rejected_execution_id": denied_execution}
+
+
+def record_manager_import_receipt(repository, artifact_dir, run_id, identity, engine_id, proof):
+    checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"],
+                             cwd=repository, capture_output=True, text=True, timeout=60)
+    if checked.returncode != 0:
+        raise SuiteError("Manager import independent physical verification failed")
+    source = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, timeout=10)
+    commit = source.stdout.strip()
+    if source.returncode != 0 or len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
+        raise SuiteError("Manager import receipt requires the actual source commit")
+    proof["physical_geometry_verified"] = True
+    receipt = {"schema_version": "addp.manager-private-import/v1", "result": "passed", "run_id": run_id,
+               "git_commit": commit, "identity": identity, "engine_id": engine_id, "manager_import": proof}
+    path = Path(artifact_dir) / "manager-private-import.json"
+    path.write_text(json.dumps(receipt, sort_keys=True) + "\n")
 
 
 def verify_import_private_access(outsider, task_id, owner_identity, timeout):
     identity = validate_user_identity(outsider, int(owner_identity["tenant_id"]))
     if identity["principal_id"] == owner_identity["principal_id"]:
         raise SuiteError("import private-source proof requires a distinct User")
-    started = _object(outsider.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (202,)).payload, "non-uploader execution")
+    started = _object(outsider.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200,)).payload, "non-uploader execution")
     identifier = started.get("execution_id")
     if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
         raise SuiteError("non-uploader admission lost its execution UUID")
@@ -1325,6 +1346,9 @@ def main() -> int:
         convergence_timeout = float(os.environ.get("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
         if convergence_timeout <= 0:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
+        repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
+        record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
 
         mongodb_scan = wait_for_scan(client, mongodb_engine_id, time.monotonic() + convergence_timeout)
@@ -1334,11 +1358,9 @@ def main() -> int:
         chain = run_orchestrated_lineage(client, engine_id, tenant_id, mongodb_lineage, owned_name, convergence_timeout, owned_paths)
 
         wide = run_wide_lineage(client, engine_id, owned_name, convergence_timeout, owned_ids)
-        repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         write_failures = run_write_failures(client, engine_id, owned_name, convergence_timeout, owned_ids)
         browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide, write_failures)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
-        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -1346,7 +1368,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v10",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v11",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

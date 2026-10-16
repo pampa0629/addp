@@ -1364,13 +1364,15 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     owner_gate = re.search(r"(?ms)^test-transfer-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)", makefile)
     if (aggregate is None or "$(MAKE) test-transfer-online-runner" not in aggregate.group("body")
-            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")):
+            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")
+            or "go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$' -count=1" not in owner_gate.group("body")):
         raise RegistrationError("transfer-relational-sql-etl Hosted regression must enter test-online-runner")
     contracts = {
+        "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v10",
-            "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v11",
+            "record_manager_import_receipt", "manager-private-import.json", "physical_geometry_verified", "user_inspect_rejected", "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_write_failures", "validate_write_failure_execution", "validate_write_failure_physical", "write_failure_details_verified", "ADDP_ONLINE_TRANSFER_WRITE_FAILURES",
             "run_multi_source_lineage", "validate_multi_source_execution", "multiple_origins_verified", "cte_join_union_verified",
@@ -1385,7 +1387,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
             "WIDE_SOURCE", "WIDE_DOWNSTREAM", "generate_series(0,499)", "EXCEPT ALL", "wide target complete row multiset differs",
             "start_write_failure_targets", "verify_write_failures", "addp-transfer-doris-online-disposable", "addp-transfer-clickhouse-online-disposable", "enable_insert_strict=true", "PARTITION BY RANGE(id)", "CONSTRAINT fixture_label_length",
-            "MULTI_TARGET", "multi-source CTE/JOIN/UNION rows differ", "DROP TABLE IF EXISTS public.${MULTI_TARGET}",
+            "verify_manager_import", "manager-import", "MULTI_TARGET", "multi-source CTE/JOIN/UNION rows differ", "DROP TABLE IF EXISTS public.${MULTI_TARGET}",
             "DIM_TARGET", "DWD_TARGET", "DIM rows differ", "DWD rows differ",
             "RENAME COLUMN person_nickname TO person_display_name", "TYPE timestamp without time zone USING activity_date::timestamp", "evolved DWD columns differ",
             "MONGODB_TARGET", "mongo:7.0", "--tmpfs /data/db --tmpfs /data/configdb", "leader_nickname_snapshot",

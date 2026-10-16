@@ -35,8 +35,8 @@ database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|write-failures|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|verify|stop|status" ;;
+  start|evolve|write-failures|manager-import|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|manager-import|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
@@ -260,8 +260,7 @@ INSERT INTO public.${SOURCE_TABLE} (id, region, status, amount, internal_note) V
 SQL
 }
 
-verify_fixture() {
-  local values columns
+verify_manager_import() {
   # Discover the geometry column from PostGIS; no storage field-name assumption.
   postgres_sql <<'SQL' >/dev/null
 DO $import$
@@ -276,6 +275,11 @@ BEGIN
   END IF;
 END; $import$;
 SQL
+}
+
+verify_fixture() {
+  local values columns
+  verify_manager_import
   for wide_table in "$WIDE_TARGET" "$WIDE_DOWNSTREAM"; do
     columns=$(postgres_sql -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='$wide_table' AND data_type='bigint' AND is_nullable='NO'")
     [ "$columns" = 500 ] || fail "wide target must retain 500 non-null bigint columns: $wide_table"
@@ -383,6 +387,11 @@ ALTER TABLE public.${DWD_TARGET} ALTER COLUMN activity_date TYPE timestamp witho
 COMMIT;
 SQL_EVOLVE
     echo "Online Transfer DWD physical schema is evolved"
+    ;;
+  manager-import)
+    assert_owned
+    postgres_running || fail "source PostgreSQL is not running"
+    verify_manager_import
     ;;
   verify)
     assert_owned

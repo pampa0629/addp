@@ -895,6 +895,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "scripts/test/online-transfer-relational-sql-etl-fixture_test.py",
             "business/scripts/online-transfer-relational-sql-etl-fixture.sh",
             "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js",
+            "transfer/backend/internal/planner/online_write_failure_contract_test.go",
             "system/backend/cmd/online-test-fixture/main.go",
             "system/backend/cmd/online-test-fixture/main_test.go",
         )
@@ -905,15 +906,19 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"transfer-relational-sql-etl"}
         CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
         for relative, fragment in (
+            ("Makefile", "go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$' -count=1"),
+            ("transfer/backend/internal/planner/online_write_failure_contract_test.go", "ParseTableExportTaskSpec"),
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_mongodb_execution"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_write_failure_physical"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "run_write_failures"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "PARTITION BY RANGE(id)"),
             ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "write_failure_details_verified: writeFailureDetailsVerified"),
-            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-online/v10"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "addp.transfer-relational-sql-etl-online/v11"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "run_manager_import"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "non_uploader_rejected"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "manager-private-import.json"),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "physical_geometry_verified"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_multi_source_execution"),
             ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "multi-source CTE/JOIN/UNION rows differ"),
             ("scripts/test/transfer-relational-sql-etl-online.py", "verify_historical_schema"),

@@ -206,7 +206,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     def test_import_requires_actual_parent_and_current_user_without_manual_rescan(self):
         parent, child_id = str(uuid.uuid4()), str(uuid.uuid4())
         task = {"task_type": "sync", "auto_scan_metadata": True, "config": {
-            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "target": {"policy": {"apply_mode": "replace"}}}}
+            "runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"}, "source": {"locator": "addp-infra://minio/manager/private/points.shp?type=object"}, "target": {"policy": {"apply_mode": "replace"}}}}
         transfer = {"records_read": 2, "records_written": 2, "metadata": {
             "metadata_scan": {"status": "submitted", "attempt": 0, "execution_id": child_id}}}
         child = {"module": "meta", "source": "transfer", "parent_execution_id": parent,
@@ -236,6 +236,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         client.request.side_effect = [SimpleNamespace(payload={"execution_id": identifier}), SimpleNamespace(payload=failure)]
         with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "32"}):
             self.assertEqual(ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30), identifier)
+            self.assertEqual(client.request.call_args_list[0].args, ("POST", "/api/v1/transfer/task-definitions/42/start", (200,)))
         for change in ({"status": "success"}, {"records_read": 1}, {"records_written": 1},
                        {"error_details": {"code": "other_error"}},
                        {"metadata": {"metadata_scan": {"status": "submitted", "attempt": 0}}}):
@@ -245,6 +246,26 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
         with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "31"}), self.assertRaisesRegex(ONLINE.SuiteError, "distinct User"):
             ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
+
+    def test_import_receipt_requires_independent_physical_check_and_actual_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proof = {"records_read": 2, "records_written": 2, "non_uploader_rejected": True}
+            calls = [SimpleNamespace(returncode=0, stdout=""), SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")]
+            with patch.object(ONLINE.subprocess, "run", side_effect=calls) as run:
+                ONLINE.record_manager_import_receipt(root, root, "run-fixture", {"tenant_id": "7"}, 8, proof)
+            self.assertEqual(run.call_args_list[0].args[0], ["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"])
+            receipt = json.loads((root / "manager-private-import.json").read_text())
+            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v1")
+            self.assertEqual(receipt["git_commit"], "a" * 40)
+            self.assertTrue(receipt["manager_import"]["physical_geometry_verified"])
+        for results in ([SimpleNamespace(returncode=1, stdout="SECRET_MARKER")],
+                        [SimpleNamespace(returncode=0, stdout=""), SimpleNamespace(returncode=0, stdout="invalid")]):
+            with tempfile.TemporaryDirectory() as directory, patch.object(ONLINE.subprocess, "run", side_effect=results):
+                with self.assertRaises(ONLINE.SuiteError) as error:
+                    ONLINE.record_manager_import_receipt(Path(directory), directory, "run-fixture", {}, 8, {})
+                self.assertNotIn("SECRET_MARKER", str(error.exception))
+                self.assertFalse((Path(directory) / "manager-private-import.json").exists())
 
     def test_metadata_scan_allows_only_safe_public_feedback(self):
         for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4())},
@@ -631,7 +652,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         client = object()
         def interrupt(*args):
             ONLINE.interrupt_online(ONLINE.signal.SIGTERM, None)
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", return_value={}), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
             self.assertEqual(ONLINE.main(), 1)
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
@@ -662,12 +683,18 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(item_type, item["item_type"])
             self.assertEqual(full_name, item["full_name"])
             return item
+        events = []
+        def receipt(*args):
+            events.append("import-receipt")
+        def native(*args):
+            self.assertEqual(events, ["import-receipt"], "import proof must survive a later scenario failure")
+            return {"two_hop_verified": True}
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", return_value={"two_hop_verified": True}), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", side_effect=native), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v10")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v11")
         self.assertEqual(report["created_resources"], 16)
         self.assertEqual(report["deleted_resources"], 16)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
