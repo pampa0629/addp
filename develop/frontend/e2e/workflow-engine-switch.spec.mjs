@@ -33,9 +33,13 @@ const RASTER_ENGINES = [7, 8].map(id => ({
 const rasterResource = (engineId, name, itemId, type = 'object') => ({
   id: `addp://engine/${engineId}/path/rasters/${name}?type=${type}&item_id=${itemId}`,
   locator: `addp://engine/${engineId}/path/rasters/${name}?type=${type}&item_id=${itemId}`,
-  label: name, type, hasChildren: false, children: []
+  label: name, type, hasChildren: false, children: [],
+  ...(name.endsWith('.tif') ? { metadata: { format: 'tiff', data_type: 'raster' } } : {})
 })
 const RASTER_RESOURCES = [rasterResource(7, 'first.tif', 701), rasterResource(7, 'second.tif', 702), rasterResource(8, 'third.tif', 801)]
+const UNSUPPORTED_RASTER_RESOURCE = {
+  ...rasterResource(7, 'unsupported.tiff', 703), metadata: { format: 'jpeg', data_type: 'raster' }
+}
 
 const orderedWorkflowEngines = [
   'geopython', 'model3d', 'pointcloud', 'supermap', 'spark', 'document'
@@ -476,6 +480,29 @@ test('renders a visible gap where workflow edges cross', async ({ page }) => {
   expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
 })
 
+test('selects TIFF metadata in the node parameter resource picker', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeInputConnections: true, includeCollectionInputs: true, includeRasterResourceBatch: true, portType: 'raster'
+  })
+  await openSavedWorkflow(page)
+  await page.getByRole('region', { name: '工作流 DAG 画布', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.right-panel')).toContainText('operator_a_1')
+  await page.getByRole('button', { name: '更换资源', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '选择数据源', exact: true })
+  await expect(dialog.getByText('first.tif', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('unsupported.tiff', { exact: true })).toHaveCount(0)
+  await dialog.locator('.picker-search input').fill('second.tif')
+  await dialog.getByRole('button').filter({ hasText: 'second.tif' }).click()
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const savedNode = backend.updates[0].payload.content.workflow_definition.tasks.find(node => node.id === 'operator_a_1')
+  expect(savedNode.params.source_locator).toBe(RASTER_RESOURCES[1].locator)
+})
+
 test('selects registered images across tree and search and adds one undoable raster input batch', async ({ page }) => {
   const backend = await installMockBackend(page, {
     includeInputConnections: true, includeCollectionInputs: true, includeRasterResourceBatch: true, portType: 'raster'
@@ -487,6 +514,8 @@ test('selects registered images across tree and search and adds one undoable ras
   const dialog = page.getByRole('dialog', { name: '选择影像', exact: true })
   const confirm = dialog.getByRole('button', { name: '确定', exact: true })
   await expect(confirm).toBeDisabled()
+  await expect(dialog.getByText('first.tif', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: 'unsupported.tiff', exact: true })).toHaveCount(0)
   await expect(dialog.getByRole('checkbox', { name: 'notes.txt', exact: true })).toHaveCount(0)
   await expect(dialog.getByRole('checkbox', { name: 'directory-whole', exact: true })).toHaveCount(0)
   await dialog.getByText('second.tif', { exact: true }).click()
@@ -1173,7 +1202,7 @@ async function installMockBackend(page, {
       name: '数据源', type: 'ui', ui_type: 'resource_tree_picker',
       ui_config: {
         engine_families: ['object'], engine_types: ['minio'], storage_operation: 'read',
-        selectable_node_types: ['object', 'file'], file_formats: ['tif', 'tiff'],
+        selectable_node_types: ['object', 'file'], file_formats: ['tiff'],
         resource_binding: { mode: 'existing', locator_param: 'source_locator' }
       }
     }, { name: 'source_locator', type: 'string', param_type: 'resource', required: true }]
@@ -1208,13 +1237,14 @@ async function installMockBackend(page, {
     if (includeRasterResourceBatch && path.startsWith('/api/v1/meta/resource-tree/')) {
       const engineId = Number(path.split('/')[5])
       if (path.endsWith('/search')) {
-        return fulfillJSON(route, { results: RASTER_RESOURCES.filter(node => node.locator.includes(`/engine/${engineId}/`) && node.label.includes(url.searchParams.get('q'))) })
+        return fulfillJSON(route, { results: [...RASTER_RESOURCES, UNSUPPORTED_RASTER_RESOURCE].filter(node => node.locator.includes(`/engine/${engineId}/`) && node.label.includes(url.searchParams.get('q'))) })
       }
       const locator = `addp://engine/${engineId}/path/rasters?type=bucket`
       return fulfillJSON(route, {
         id: locator, locator, label: `rasters-${engineId}`, type: 'bucket', hasChildren: true,
         children: [
           ...RASTER_RESOURCES.filter(node => node.locator.includes(`/engine/${engineId}/`)),
+          ...[UNSUPPORTED_RASTER_RESOURCE].filter(node => node.locator.includes(`/engine/${engineId}/`)),
           rasterResource(engineId, 'notes.txt', engineId * 1000),
           rasterResource(engineId, 'directory-whole', engineId * 1000 + 1, 'directory')
         ]

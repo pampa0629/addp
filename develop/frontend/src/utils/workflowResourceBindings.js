@@ -13,7 +13,7 @@ export function isResourceFormatSupported(parameter, node) {
   if (!['file', 'object'].includes(nodeType)) return true
   const formats = (parameter?.ui_config?.file_formats || []).map(value => String(value).toLowerCase())
   if (formats.length === 0) return true
-  const explicitFormat = String(node?.format || node?.attributes?.format || '').toLowerCase().replace(/^\./, '')
+  const explicitFormat = String(node?.metadata?.format || '').toLowerCase().replace(/^\./, '')
   if (explicitFormat) return formats.includes(explicitFormat)
   const label = String(node?.label || node?.name || '')
   const extension = label.includes('.') ? label.split('.').pop().toLowerCase() : ''

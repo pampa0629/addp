@@ -24,8 +24,26 @@ const formatFilteredPicker = {
 }
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'table', label: 'roads' }), true)
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'file', label: 'roads.gpkg' }), true)
-assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'object', format: 'CSV' }), true)
+assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'object', metadata: { format: 'CSV' } }), true)
 assert.equal(mod.isResourceFormatSupported(formatFilteredPicker, { type: 'file', label: 'notes.txt' }), false)
+const tiffPicker = { ui_config: { file_formats: ['tiff'] } }
+const tiffResource = {
+  id: 'addp://engine/2/path/rasters/mosaic-c.tif?type=object&item_id=21',
+  locator: 'addp://engine/2/path/rasters/mosaic-c.tif?type=object&item_id=21',
+  label: 'mosaic-c.tif', type: 'object', hasChildren: false, children: [],
+  metadata: { format: 'tiff', data_type: 'raster' }
+}
+assert.equal(mod.isResourceFormatSupported(tiffPicker, tiffResource), true)
+assert.equal(mod.isResourceFormatSupported(tiffPicker, { ...tiffResource, type: 'file' }), true)
+assert.equal(mod.isResourceFormatSupported(tiffPicker, {
+  ...tiffResource, label: 'unsupported.tiff', metadata: { format: 'jpeg' }
+}), false)
+assert.equal(mod.isResourceFormatSupported(tiffPicker, {
+  ...tiffResource, label: 'without-facts.tiff', metadata: {}
+}), true)
+assert.equal(mod.isResourceFormatSupported(tiffPicker, {
+  ...tiffResource, metadata: {}, format: 'tiff', attributes: { format: 'tiff' }
+}), false)
 const pointCloudPicker = {
   ui_config: {
     data_types: ['point_cloud'],
