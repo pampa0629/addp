@@ -127,7 +127,7 @@ Manager 导入在同步 User 请求内向 Transfer 创建并启动持久同步�
 
 ### Develop 产物自动扫描的执行归属
 
-Develop 工作流生成实际产物后，先在本次 running workflow execution 的 `metadata.outputs` 保存标准产物 ResourceLocator，再通过既有 Meta 手动扫描入口提交 `source=develop` 与 `parent_execution_id`。该来源只允许具有 `meta.scan_task.execute` 的 `addp-develop` Service Principal 使用；User、其他服务和缺少父执行的请求不得借用该来源。
+Develop 工作流生成实际产物后，先在本次 running workflow execution 的 `metadata.outputs` 保存标准产物 ResourceLocator，再通过既有 Meta 手动扫描入口提交 `source=develop` 与 `parent_execution_id`。该后台产物归属请求只允许具有 `meta.scan_task.execute` 的 `addp-develop` Service Principal 提交；User、其他服务和缺少父执行的请求不得声明该父子产物关系。
 
 Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、`module=develop`、`task_type=workflow`、running 状态的父 execution，核验完整且正数的 Principal、Membership、授权版本和一致的 `triggered_by`。扫描请求目标必须精确匹配父 execution 已保存的一个实际产物，不能另行提交引擎全量、目录范围或未声明的内容引用。请求目标绑定与实际扫描规划是两个边界：执行配置保留完整叶子目标，Worker 只解析和扫描该产物及其明确内容引用，不展开到所属 schema／database，也不清理兄弟项或将父范围标为完成。Meta 从父记录继承 `triggered_by` 和三项主体来源事实，保存直接父执行 UUID；不接受客户端自报主体，不复制父 Execution Authorization ID 或授权有效期，不将执行归属当作数据访问授权。专用机器 Permission 保持独立；实际资源访问授权与 Worker 重核由后续 System 契约衔接，不以本期精确扫描替代。
 
@@ -137,7 +137,7 @@ Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、
 
 Manager 产物扫描统一使用 `source=manager`。`manager/raster_mosaic_generation` 的普通用户提交时由 Manager 从已验证的当前 User AuthContext 固化 Principal、Tenant Membership、授权版本和一致的 `triggered_by`；TaskProvider 继续沿已验证的 Orchestrator 父执行继承，不接受客户端自报主体。Runtime 实际生成成功后，Manager 在当前有效 lease 下先持久化产物事实及 `metadata.produced_target`（`engine_id/catalog_path/manifest_ref/attempt`），再经现有 Meta 手动扫描接口携带直接父 execution UUID 提交。该事实仅描述本次生成成功的 dataset 根和 manifest，不是任务定义中的预期产物或新的授权。
 
-Meta 仅接受有 `meta.scan_task.execute` 的 `addp-manager` Service Principal 使用该来源；在创建事务中锁定同 Tenant、Manager mosaic 类型、running 且 lease 有效的父执行，核验完整主体、产物 attempt 与父执行一致、实际 manifest 及请求的唯一目录精确匹配。请求固定 `deep + force`，不得追加 targets、ref_groups、node/item 或其他目录，不扩大到父目录或其他产物。继承发起人与直接父 UUID，不复制执行授权或租约凭据。子扫描无任务定义，用户读取仍需 Meta Owner 读取权限及本人一次性执行归属；父执行读取权不传递给子扫描，既有无主体历史不回填。该契约不替代后续源数据访问授权及 Worker 重核。
+Meta 仅接受有 `meta.scan_task.execute` 的 `addp-manager` Service Principal 提交该后台产物归属请求；在创建事务中锁定同 Tenant、Manager mosaic 类型、running 且 lease 有效的父执行，核验完整主体、产物 attempt 与父执行一致、实际 manifest 及请求的唯一目录精确匹配。请求固定 `deep + force`，不得追加 targets、ref_groups、node/item 或其他目录，不扩大到父目录或其他产物。继承发起人与直接父 UUID，不复制执行授权或租约凭据。子扫描无任务定义，用户读取仍需 Meta Owner 读取权限及本人一次性执行归属；父执行读取权不传递给子扫描，既有无主体历史不回填。该契约不替代后续源数据访问授权及 Worker 重核。
 
 2026-10-16 确认：mosaic 父执行在原 lease、执行槽位和超时内等待上述子扫描完成。Meta 在扫描成功收尾时，从本次已扫描的精确 dataset 根 whole DataItem 生成正式资源树 locator，并与扫描终态一并保存身份回执；manifest 仅为 primary content，Runtime 的 GDAL 物理路径仅作私有事实。Manager 持久保存子扫描关联后，通过 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 读取回执，取得实际 whole 身份并写入唯一输出血缘后才成功，执行耗时包含扫描等待。读取仅接受 `addp-manager` 和既有 `meta.scan_task.execute`，重新核对同 Tenant、当前有效父执行/attempt、精确目标、专用来源和直接父子关联；不开放通用执行读取或 TaskProvider 权限。响应闭合为扫描 UUID、父 UUID、状态和成功时的 locator/item ID/fingerprint，不包含执行配置、metadata、凭据、授权、lease 或原始错误。扫描失败、依赖读取失败或超时使父执行明确失败/超时，保留已生成物理文件及子扫描关联，不自动重放、不承诺子扫描已停止，也不在终态后后台补写血缘。其他 Manager 任务不改变成功条件。
 
