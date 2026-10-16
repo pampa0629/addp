@@ -40,7 +40,9 @@ export function isWorkflowInputParameter(parameter) {
 
 export function areWorkflowTypesCompatible(sourceType, parameterType) {
   const source = normalizeType(sourceType)
-  const target = normalizeType(parameterType)
+  const target = normalizeType(parameterType && typeof parameterType === 'object'
+    ? (isWorkflowCollectionInput(parameterType) ? parameterType.item_type : parameterType.type)
+    : parameterType)
   if (!source || !target) return false
   if (source === target) return true
   if (DATA_TYPES.has(source) && DATA_TYPES.has(target)) return true
@@ -48,13 +50,26 @@ export function areWorkflowTypesCompatible(sourceType, parameterType) {
   return false
 }
 
+export function isWorkflowCollectionInput(parameter) {
+  return isWorkflowInputParameter(parameter) && normalizeType(parameter.type) === 'array' && Boolean(parameter.item_type)
+}
+
+export function workflowReferenceBindings(params, sourceId) {
+  return Object.entries(params || {}).flatMap(([parameterName, value]) => {
+    if (isReferenceValue(value)) return value.$ref === sourceId ? [{ parameterName, ref: value }] : []
+    if (!Array.isArray(value)) return []
+    return value.flatMap((ref, targetIndex) => isReferenceValue(ref) && ref.$ref === sourceId
+      ? [{ parameterName, targetIndex, ref }] : [])
+  })
+}
+
 function findInputParameter(parameters, sourceType, usedNames, currentParams) {
   const candidates = parameters.filter(param => (
     isPublicWorkflowParameter(param) &&
     param &&
     typeof param.name === 'string' &&
-    !usedNames.has(param.name) &&
-    areWorkflowTypesCompatible(sourceType, param.type)
+    (!usedNames.has(param.name) || isWorkflowCollectionInput(param)) &&
+    areWorkflowTypesCompatible(sourceType, param)
   ))
 
   const workflowInputs = candidates.filter(isWorkflowInputParameter)
@@ -73,8 +88,8 @@ function findExplicitInputParameter(parameters, edge, usedNames) {
   if (
     !parameter ||
     !isWorkflowInputParameter(parameter) ||
-    usedNames.has(parameter.name) ||
-    !areWorkflowTypesCompatible(edge.sourceType, parameter.type)
+    (usedNames.has(parameter.name) && !isWorkflowCollectionInput(parameter)) ||
+    !areWorkflowTypesCompatible(edge.sourceType, parameter)
   ) {
     throw new Error(`input parameter ${edge.targetParam} is not compatible with source ${edge.sourceId}`)
   }
@@ -92,7 +107,8 @@ export function applyWorkflowInputRefs({ params = {}, parameters = [], inputEdge
 
   const usedNames = new Set()
 
-  inputEdges.forEach(edge => {
+  const orderedEdges = [...inputEdges].sort((a, b) => (a.targetIndex ?? 0) - (b.targetIndex ?? 0))
+  orderedEdges.forEach(edge => {
     const parameter = findExplicitInputParameter(parameters, edge, usedNames) ||
       findInputParameter(parameters, edge.sourceType, usedNames, nextParams)
     if (!parameter) {
@@ -104,7 +120,12 @@ export function applyWorkflowInputRefs({ params = {}, parameters = [], inputEdge
       ref.port = edge.sourcePort
     }
 
-    nextParams[parameter.name] = ref
+    if (isWorkflowCollectionInput(parameter)) {
+      if (!usedNames.has(parameter.name)) nextParams[parameter.name] = []
+      nextParams[parameter.name].push(ref)
+    } else {
+      nextParams[parameter.name] = ref
+    }
     usedNames.add(parameter.name)
   })
 

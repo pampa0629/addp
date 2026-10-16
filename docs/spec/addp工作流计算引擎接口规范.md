@@ -954,6 +954,10 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 
 聚合属于原像素网格的整数分组，不调用重采样插值，也不按指定输出尺寸调整分组。保留源原点、CRS 与定位缺失事实；有仿射变换时，列向量乘列倍数、行向量乘行倍数，保持旋转方向。由于输出必须为规则网格，边缘不足整块时最终像元仍具有完整聚合像元的空间大小，输出矩形覆盖范围可超出源右侧或底侧；数值只来自源覆盖内的有效像元。无需补造空间定位。计算复用源 512×512 分块读取，以最多 512×512 输出单元累积单个数据波段，不把大倍数组或整幅影像一次读入内存；均值为两遍分块读取，其余方法为一遍。
 
+`raster_mosaic` 使用唯一的有序 `input_rasters` 输入数组，至少两个当前 execution 的 `raster` 引用，不保留 `input_raster/other_raster` 双输入契约。公开参数元数据为 `type=array, item_type=raster, param_type=input`；每个元素仍为标准节点引用，不新增栅格集合实体。所有输入在同一个指定 CRS／分辨率的共同网格中完成一次镶嵌；`first/last` 按数组顺序选择重叠区的有效来源，顺序不能由依赖列表或图布局替代。Develop 画布支持集合输入的添加、删除与顺序调整，保存及重载必须保持元素顺序；普通单输入端口继续只允许一条连接。每个源经现有加载节点独立授权，资源输出、自动扫描及血缘沿用现有主路径。
+
+批量拼接首期消费已登记的具体文件／对象，不自动展开目录型 whole 镶嵌数据集。用户电脑上的文件先通过 Manager 已有上传及扫描入口登记，再以同一 ResourceLocator 参与跨来源工作流；Develop 不复制上传入口，也不接受用户电脑或 Runtime 宿主机的任意路径。
+
 加载接受自包含 TIFF、PNG、JPEG，Develop 使用标准格式识别器从源文件名派生格式，实际 driver 必须匹配源格式；外部 sidecar 和伪装的 VRT 拒绝作为通用栅格输入。以下算子的默认输出端口统一为 `default`，显式或省略 `port` 的引用必须得到同一结果。
 
 | 算子 ID | 核心输入及配置 | 输出端口类型 |
@@ -967,7 +971,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_reproject` | `input_raster`、`target_crs`、可选 `resolution`、`resampling` | `raster` |
 | `raster_resample` | `input_raster`、互斥 `size/resolution`、`resampling` | `raster` |
 | `raster_clip` | `input_raster`、互斥 `bbox/geometry`、`boundary_crs`、`mode=inside/outside` | `raster` |
-| `raster_mosaic` | `input_raster/other_raster`、`target_crs`、`resolution`、`overlap=first/last`、`resampling` | `raster` |
+| `raster_mosaic` | 有序 `input_rasters`（至少两个 raster 引用）、`target_crs`、`resolution`、`overlap=first/last`、`resampling` | `raster` |
 | `raster_align` | `input_raster/reference_raster`、`resampling` | `raster`，参考网格的 Float64 数据波段 |
 | `raster_stack` | 同网格 `input_raster/other_raster` | `raster`，按输入顺序组合的数据波段 |
 | `raster_select_bands` | `input_raster`、`bands`、`color_model=multispectral/rgb` | `raster`，选定的数据波段 |

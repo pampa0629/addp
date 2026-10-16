@@ -34,7 +34,28 @@
             :label="param.display_name || param.name"
             class="input-connection-field"
           >
+            <template v-if="isWorkflowCollectionInput(param)">
+              <ol class="ordered-input-list">
+                <li v-for="(connection, index) in collectionInputConnections(param)" :key="connectionKey(connection)">
+                  <span class="ordered-input-label">{{ index + 1 }}. {{ inputConnectionOptionLabel(connection) }}</span>
+                  <el-button :icon="ArrowUp" :disabled="index === 0"
+                    :aria-label="t('develop.operatorParams.moveInputUp', { index: index + 1 })"
+                    @click="moveCollectionInput(param, index, -1)" />
+                  <el-button :icon="ArrowDown" :disabled="index === collectionInputConnections(param).length - 1"
+                    :aria-label="t('develop.operatorParams.moveInputDown', { index: index + 1 })"
+                    @click="moveCollectionInput(param, index, 1)" />
+                  <el-button :icon="Delete" :aria-label="t('develop.operatorParams.removeInput', { index: index + 1 })"
+                    @click="setCollectionInputs(param, collectionInputConnections(param).filter((_, position) => position !== index))" />
+                </li>
+              </ol>
+              <el-select :model-value="''" filterable :placeholder="t('develop.operatorParams.addInput')"
+                @change="value => addCollectionInput(param, value)">
+                <el-option v-for="option in availableCollectionInputs(param)" :key="option.key"
+                  :label="inputConnectionOptionLabel(option)" :value="option.key" :disabled="option.disabled" />
+              </el-select>
+            </template>
             <el-select
+              v-else
               :model-value="inputConnectionKey(param.name)"
               clearable
               filterable
@@ -261,10 +282,10 @@
 <script setup>
 import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, InfoFilled, ArrowUp, ArrowDown, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { geometryColumnFactsFromSelection, parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
-import { isWorkflowInputParameter } from '@/utils/workflowInputBindings'
+import { isWorkflowInputParameter, isWorkflowCollectionInput } from '@/utils/workflowInputBindings'
 import { validationMessagesForParams } from '@/utils/workflowValidationIssues'
 import { workflowResourcePresentation } from '@/utils/workflowParameterPresentation'
 import {
@@ -406,6 +427,38 @@ function inputConnectionOptionsFor(targetParam) {
 function inputConnectionKey(targetParam) {
   const connection = props.inputConnections.find(item => item.targetParam === targetParam)
   return connection ? JSON.stringify([connection.sourceId, connection.sourcePort || 'default']) : ''
+}
+
+function connectionKey(connection) {
+  return JSON.stringify([connection.sourceId, connection.sourcePort || 'default'])
+}
+
+function collectionInputConnections(parameter) {
+  return props.inputConnections.filter(item => item.targetParam === parameter.name)
+    .sort((a, b) => (a.targetIndex ?? 0) - (b.targetIndex ?? 0))
+}
+
+function availableCollectionInputs(parameter) {
+  const selected = new Set(collectionInputConnections(parameter).map(connectionKey))
+  return inputConnectionOptionsFor(parameter.name).filter(option => !selected.has(connectionKey(option)))
+}
+
+function setCollectionInputs(parameter, connections) {
+  emit('update-connection', { nodeId: props.nodeId, targetParam: parameter.name,
+    connections: connections.map(({ sourceId, sourcePort }) => ({ sourceId, sourcePort })) })
+}
+
+function addCollectionInput(parameter, key) {
+  const option = availableCollectionInputs(parameter).find(option => option.key === key && !option.disabled)
+  if (option) setCollectionInputs(parameter, [...collectionInputConnections(parameter), option])
+}
+
+function moveCollectionInput(parameter, index, offset) {
+  const connections = collectionInputConnections(parameter)
+  const other = index + offset
+  if (other < 0 || other >= connections.length) return
+  ;[connections[index], connections[other]] = [connections[other], connections[index]]
+  setCollectionInputs(parameter, connections)
 }
 
 function inputConnectionOptionLabel(option) {
@@ -757,6 +810,28 @@ defineExpose({ focusParam })
 </script>
 
 <style scoped>
+.ordered-input-list {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.ordered-input-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ordered-input-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ordered-input-list .el-button + .el-button {
+  margin-left: 0;
+}
 .operator-params-panel {
   height: 100%;
   overflow-y: auto;

@@ -15,6 +15,8 @@ export function operatorInputPorts(operator) {
     .map(parameter => ({
       name: parameter.name,
       type: parameter.type,
+      item_type: parameter.item_type,
+      param_type: parameter.param_type,
       required: Boolean(parameter.required),
       description: parameter.description || ''
     }))
@@ -216,6 +218,8 @@ function drawPort(group, { x, y, port, portType, colors }) {
     portType,
     portName: port.name,
     portDataType: port.type,
+    portItemType: port.item_type,
+    portParamType: port.param_type,
     portDescription: port.description
   })
 }

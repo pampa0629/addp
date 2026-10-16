@@ -233,7 +233,7 @@ def spatial_target(tmp_path, overlap, *, wrong_overlap=False, corrupt=False, crs
         projected = raster_reproject(loaded, 'EPSG:3857', [1, 1], 'nearest')
         left = raster_clip(raster_band_math(projected, 'b2-b1'), 'EPSG:3857', bbox=[0, 0, 160, 256])
         right = raster_clip(raster_band_math(projected, 'b2+b1'), 'EPSG:3857', bbox=[96, 0, 256, 256])
-        mosaic = raster_mosaic(left, right, 'EPSG:3857', [1, 1],
+        mosaic = raster_mosaic([left, right], 'EPSG:3857', [1, 1],
             ('last' if overlap == 'first' else 'first') if wrong_overlap else overlap)
         raster_save(mosaic, {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
             'kind': 'file', 'format': 'tiff', 'name': path.name, 'write_mode': 'create',

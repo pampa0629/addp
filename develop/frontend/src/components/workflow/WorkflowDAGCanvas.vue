@@ -107,7 +107,9 @@ import { isStandardWorkflowDefinition } from '@/utils/workflowDevTaskPayload'
 import {
   applyWorkflowInputRefs,
   areWorkflowTypesCompatible,
-  isWorkflowInputParameter
+  isWorkflowInputParameter,
+  isWorkflowCollectionInput,
+  workflowReferenceBindings
 } from '@/utils/workflowInputBindings'
 import {
   isTargetResourceBinding,
@@ -328,7 +330,9 @@ function resolveInputPort(event) {
   if (event?.shape?.cfg?.portType !== 'input') return null
   return {
     name: event.shape.cfg.portName,
-    type: event.shape.cfg.portDataType
+    type: event.shape.cfg.portDataType,
+    item_type: event.shape.cfg.portItemType,
+    param_type: event.shape.cfg.portParamType
   }
 }
 
@@ -346,7 +350,7 @@ function canConnectPorts({ sourceId, targetId, sourcePort, targetPort }) {
     )
   })
   if (baseResult !== true) return baseResult
-  if (!areWorkflowTypesCompatible(sourcePort?.type, targetPort?.type)) {
+  if (!areWorkflowTypesCompatible(sourcePort?.type, targetPort)) {
     return 'type_mismatch'
   }
 
@@ -354,7 +358,7 @@ function canConnectPorts({ sourceId, targetId, sourcePort, targetPort }) {
     const model = edge.getModel()
     return model.target === targetId && model.targetParam === targetPort.name
   })
-  return occupied ? 'target_occupied' : true
+  return occupied && !isWorkflowCollectionInput(targetPort) ? 'target_occupied' : true
 }
 
 function buildEdgeConfig({ sourceItem, targetItem, sourcePort, targetPort }) {
@@ -365,6 +369,10 @@ function buildEdgeConfig({ sourceItem, targetItem, sourcePort, targetPort }) {
   return {
     sourcePort: sourcePort?.name || 'default',
     targetParam: targetPort?.name,
+    targetIndex: isWorkflowCollectionInput(targetPort)
+      ? Math.max(-1, ...getDAGIncomingEdgeModels(graph.value, targetModel.id)
+          .filter(edge => edge.targetParam === targetPort.name).map(edge => edge.targetIndex ?? 0)) + 1
+      : undefined,
     sourceAnchor: sourceIndex >= 0 ? (sourceModel.inputPorts?.length || 0) + sourceIndex : undefined,
     targetAnchor: targetIndex >= 0 ? targetIndex : undefined,
     type: WORKFLOW_EDGE_TYPE,
@@ -547,6 +555,7 @@ function buildLoadedEdge(sourceId, targetId, sourceNode, targetNode, binding) {
     target: targetId,
     sourcePort,
     targetParam: binding?.parameterName,
+    targetIndex: binding?.targetIndex,
     sourceAnchor: sourceIndex >= 0 ? (sourceNode?.inputPorts?.length || 0) + sourceIndex : undefined,
     targetAnchor: targetIndex >= 0 ? targetIndex : undefined,
     type: WORKFLOW_EDGE_TYPE,
@@ -568,7 +577,8 @@ function buildWorkflowFromGraph() {
       sourceId: model.source,
       sourcePort: model.sourcePort || 'default',
       sourceType: output?.type,
-      targetParam: model.targetParam
+      targetParam: model.targetParam,
+      targetIndex: model.targetIndex
     })
   })
 
@@ -666,13 +676,13 @@ function clientValidationIssue(taskIndex, parameterName, code) {
 }
 
 function isMissingValue(value) {
-  return value === undefined || value === null || value === ''
+  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 }
 
 function removeStaleInputRefs(params = {}, parameters = []) {
   const next = { ...params }
   parameters.filter(isWorkflowInputParameter).forEach(parameter => {
-    if (isWorkflowReference(next[parameter.name])) delete next[parameter.name]
+    if (isWorkflowCollectionInput(parameter) || isWorkflowReference(next[parameter.name])) delete next[parameter.name]
   })
   return next
 }
@@ -700,7 +710,7 @@ function updateNodeParams(nodeId, params, publicParameters = null) {
   refreshInspectedNode(nodeId)
 }
 
-function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort = 'default' }) {
+function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort = 'default', connections = [] }) {
   const targetItem = graph.value?.findById(nodeId)
   const targetModel = targetItem?.getModel?.()
   const targetPort = (targetModel?.inputPorts || []).find(port => port.name === targetParam)
@@ -711,14 +721,21 @@ function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort 
     return model.target === nodeId && model.targetParam === targetParam
   })
 
-  if (sourceId) {
+  const requested = isWorkflowCollectionInput(targetPort) ? connections : (sourceId ? [{ sourceId, sourcePort }] : [])
+  const keys = requested.map(connection => JSON.stringify([connection.sourceId, connection.sourcePort || 'default']))
+  if (new Set(keys).size !== keys.length) return false
+  const orderedCurrent = [...currentEdges].sort((a, b) => (a.getModel().targetIndex ?? 0) - (b.getModel().targetIndex ?? 0))
+  if (JSON.stringify(keys) === JSON.stringify(orderedCurrent.map(edge => JSON.stringify([
+    edge.getModel().source, edge.getModel().sourcePort || 'default'
+  ])))) return true
+
+  const resolved = []
+  for (const connection of requested) {
+    const sourceId = connection.sourceId
+    const sourcePort = connection.sourcePort || 'default'
     const sourceItem = graph.value.findById(sourceId)
     const outputPort = (sourceItem?.getModel?.()?.outputPorts || []).find(port => port.name === sourcePort)
     if (!sourceItem || !outputPort) return false
-
-    const unchanged = currentEdges.length === 1 && currentEdges[0].getModel().source === sourceId &&
-      (currentEdges[0].getModel().sourcePort || 'default') === sourcePort
-    if (unchanged) return true
 
     const connectionResult = validateDAGConnection({
       graph: {
@@ -734,35 +751,37 @@ function updateInputConnection({ nodeId, targetParam, sourceId = '', sourcePort 
         model.targetParam === targetParam
       )
     })
-    if (connectionResult !== true || !areWorkflowTypesCompatible(outputPort.type, targetPort.type)) {
+    if (connectionResult !== true || !areWorkflowTypesCompatible(outputPort.type, targetPort)) {
       handleConnectionRejected({
         reason: connectionResult !== true ? connectionResult : 'type_mismatch'
       })
       return false
     }
 
-    currentEdges.forEach(edge => graph.value.removeItem(edge, false))
+    resolved.push({ sourceItem, outputPort })
+  }
+
+  currentEdges.forEach(edge => graph.value.removeItem(edge, false))
+  resolved.forEach(({ sourceItem, outputPort }, index) => {
     graph.value.addItem('edge', {
-      source: sourceId,
+      source: sourceItem.getID(),
       target: nodeId,
       ...buildEdgeConfig({
         sourceItem,
         targetItem,
         sourcePort: outputPort,
         targetPort
-      })
+      }),
+      targetIndex: isWorkflowCollectionInput(targetPort) ? index : undefined
     })
-  } else {
-    if (currentEdges.length === 0) return true
-    currentEdges.forEach(edge => graph.value.removeItem(edge, false))
-  }
+  })
 
   graph.value.paint()
   recordHistory()
   emitWorkflow()
   emitLayout()
   refreshInspectedNode(nodeId)
-  ElMessage.success(t(sourceId ? 'develop.workflowCanvas.connected' : 'develop.workflowCanvas.disconnected'))
+  ElMessage.success(t(requested.length ? 'develop.workflowCanvas.connected' : 'develop.workflowCanvas.disconnected'))
   return true
 }
 
@@ -909,15 +928,17 @@ function externalParameterSummaries(parameters, params) {
 }
 
 function inputConnectionsForNode(nodeId) {
-  return getDAGIncomingEdgeModels(graph.value, nodeId).map(edge => {
-    const source = graph.value.findById(edge.source)?.getModel?.() || {}
-    return {
-      targetParam: edge.targetParam,
-      sourceId: edge.source,
-      sourceLabel: source.displayName || source.label || source.operator || edge.source,
-      sourcePort: edge.sourcePort || 'default'
-    }
-  })
+  return getDAGIncomingEdgeModels(graph.value, nodeId)
+    .sort((a, b) => (a.targetIndex ?? 0) - (b.targetIndex ?? 0)).map(edge => {
+      const source = graph.value.findById(edge.source)?.getModel?.() || {}
+      return {
+        targetParam: edge.targetParam,
+        targetIndex: edge.targetIndex,
+        sourceId: edge.source,
+        sourceLabel: source.displayName || source.label || source.operator || edge.source,
+        sourcePort: edge.sourcePort || 'default'
+      }
+    })
 }
 
 function inputConnectionOptionsForNode(targetModel) {
@@ -930,7 +951,7 @@ function inputConnectionOptionsForNode(targetModel) {
   return (targetModel.inputPorts || []).flatMap(inputPort => candidates.flatMap(candidate => {
     const source = candidate.node
     return (source.outputPorts || [])
-      .filter(outputPort => areWorkflowTypesCompatible(outputPort.type, inputPort.type))
+      .filter(outputPort => areWorkflowTypesCompatible(outputPort.type, inputPort))
       .map(outputPort => ({
         key: JSON.stringify([source.id, outputPort.name]),
         targetParam: inputPort.name,
@@ -1009,9 +1030,7 @@ function defaultOperatorParams(operator) {
 }
 
 function findWorkflowBindings(params, sourceId) {
-  return Object.entries(params || {})
-    .filter(([, value]) => isWorkflowReference(value) && value.$ref === sourceId)
-    .map(([parameterName, ref]) => ({ parameterName, ref }))
+  return workflowReferenceBindings(params, sourceId)
 }
 
 function isWorkflowReference(value) {

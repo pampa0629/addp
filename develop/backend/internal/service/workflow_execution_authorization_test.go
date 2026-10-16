@@ -153,6 +153,7 @@ func TestRasterAuthorizationSeparatesSourceReadAndTargetWrite(t *testing.T) {
 	discovery.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
 		return []commonModels.OperatorDescriptor{
 			{ID: "raster_load", Name: "raster_load", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}}},
+			{ID: "raster_mosaic", Name: "raster_mosaic", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "input_rasters", Type: "array", ItemType: "raster", ParamType: "input"}}},
 			{ID: "raster_save", Name: "raster_save", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write"}, Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}, {Name: "input_raster", Type: "raster", ParamType: "input"}}},
 		}, nil
 	}
@@ -161,13 +162,18 @@ func TestRasterAuthorizationSeparatesSourceReadAndTargetWrite(t *testing.T) {
 		DevType: "workflow", ExecutionConfig: models.DevTaskContent{"engine_id": float64(12)},
 		Content: models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{
 			map[string]interface{}{"id": "load", "operator": "raster_load", "params": map[string]interface{}{"locator": "addp://engine/1/path/input.tif?type=file"}},
+			map[string]interface{}{"id": "second", "operator": "raster_load", "params": map[string]interface{}{"locator": "addp://engine/3/path/source/second.tif?type=object"}},
+			map[string]interface{}{"id": "third", "operator": "raster_load", "params": map[string]interface{}{"locator": "addp://engine/4/path/third.tif?type=file"}},
+			map[string]interface{}{"id": "mosaic", "operator": "raster_mosaic", "params": map[string]interface{}{"input_rasters": []interface{}{
+				map[string]interface{}{"$ref": "third"}, map[string]interface{}{"$ref": "load"}, map[string]interface{}{"$ref": "second"},
+			}}},
 			map[string]interface{}{"id": "save", "operator": "raster_save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/2/path/business?type=bucket", "target_name": "result.tif"}},
 		}}},
 	}, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[uint][]string{1: {"read"}, 2: {"write"}, 12: {"read", "write"}}
+	want := map[uint][]string{1: {"read"}, 2: {"write"}, 3: {"read"}, 4: {"read"}, 12: {"read", "write"}}
 	if !reflect.DeepEqual(plan.engineEffects, want) {
 		t.Fatalf("effects = %#v, want %#v", plan.engineEffects, want)
 	}

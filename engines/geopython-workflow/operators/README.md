@@ -8,6 +8,8 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
+`raster_mosaic(input_rasters, target_crs, resolution, overlap)` 将至少两个有序 raster 输入在共同网格中完成一次镶嵌；`first/last` 按数组顺序决定覆盖优先级。源逐一通过既有加载节点授权，电脑文件先经 Manager 上传及扫描登记，不接受任意本地路径或自动展开目录型数据集。显式源 mask 在分块有效性计算后转为各波段 NoData，避免 GDAL 同时遇到 mask 和 NoData 时忽略 mask；原始源保持不变。旧双输入参数不再接受。
+
 `raster_tile(input_raster, tile_size=[宽,高])` 划分整幅源栅格，输出当前执行内的 `raster_tiles` 集合，交给 `raster_save_tiles` 在目标子目录中逐片保存。按左上到右下的行优先顺序命名为 `r<像素行偏移>_c<像素列偏移>.tif`，边缘保留实际宽高，不补齐、不重采样；保留源 dtype、CRS、仿射网格、NoData、mask、alpha 和色表。每次只物化与编码一片，随后清除该片中间文件；源快照和逐片摘要保留至执行结束，摘要内存随片数增长。`create` 要求目标范围为空，`replace` 仅替换本次同名切片，不删除其他文件，目标需要读和写权限。失败保留确认写入的切片并使整批失败；写入调用报错的当前片标记 `publication=unknown`，不能计为已确认成果。名称“栅格切片”不占用 AI 语义分割、实例分割或地图瓦片的概念。
 
 `raster_update(input_raster, update_raster)` 保持基底网格，逐数据波段用更新源有效像元覆盖，更新源无效时保留基底原值，二者均无效时输出 NaN。输入须同宽高、同六参数仿射网格、等价 CRS 和等数据波段数；先用 `raster_align` 对齐、用 `raster_select_bands` 重排，多个来源通过节点顺序串联，后一次有效更新优先。结果为新的 Float64 数据波段，不改写源，不保留 alpha 大小或颜色模型；合法零和部分透明有效值按原数值更新。只支持 workflow，输出继续由 `raster_save` 持久化。

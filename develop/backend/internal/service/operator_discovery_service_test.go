@@ -9,6 +9,44 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
+func TestRasterMosaicCollectionRequiresReferences(t *testing.T) {
+	svc := newWorkflowValidationTestService(t)
+	svc.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+		return []commonModels.OperatorDescriptor{
+			{ID: "source", Name: "source", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}},
+			{ID: "raster_mosaic", Name: "raster_mosaic", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{
+				{Name: "input_rasters", Type: "array", ItemType: "raster", ParamType: "input", Required: true},
+			}},
+		}, nil
+	}
+	ref := map[string]interface{}{"$ref": "source", "port": "default"}
+	for _, tc := range []struct {
+		name  string
+		value interface{}
+		valid bool
+	}{
+		{"references", []interface{}{ref, ref, ref}, true},
+		{"empty", []interface{}{}, false},
+		{"bare-ref", ref, false},
+		{"raw-path", []interface{}{"/private/a.tif", "/private/b.tif"}, false},
+		{"mixed-forged", []interface{}{ref, map[string]interface{}{"runtime_type": "raster"}}, false},
+		{"null", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := svc.ValidateWorkflowForTenant(context.Background(), 12, map[string]interface{}{"tasks": []interface{}{
+				map[string]interface{}{"id": "source", "operator": "source", "params": map[string]interface{}{}, "depends_on": []interface{}{}},
+				map[string]interface{}{"id": "mosaic", "operator": "raster_mosaic", "params": map[string]interface{}{"input_rasters": tc.value}, "depends_on": []interface{}{"source"}},
+			}}, 7)
+			if err != nil || result.Valid != tc.valid {
+				t.Fatalf("result=%#v err=%v", result, err)
+			}
+			if !tc.valid && (len(result.Errors) != 1 || result.Errors[0].Code != "raster_reference_required") {
+				t.Fatalf("errors=%#v", result.Errors)
+			}
+		})
+	}
+}
+
 func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewWorkflowCapabilities("acme_geo_workflow", "addp.workflow/v1"))
 	if err != nil {

@@ -175,4 +175,30 @@ assert.deepEqual(mod.applyWorkflowInputRefs({
   ]
 }), { input_raster: { $ref: 'left' }, other_raster: { $ref: 'right' } })
 
+const rasterInputs = [{ name: 'input_rasters', type: 'array', item_type: 'raster', param_type: 'input' }]
+assert.equal(mod.isWorkflowCollectionInput(rasterInputs[0]), true)
+assert.equal(mod.isWorkflowCollectionInput({ name: 'levels', type: 'array', item_type: 'integer' }), false)
+assert.equal(mod.areWorkflowTypesCompatible('raster', rasterInputs[0]), true)
+assert.equal(mod.areWorkflowTypesCompatible('object', rasterInputs[0]), false)
+assert.equal(mod.areWorkflowTypesCompatible('raster', null), false)
+assert.deepEqual(mod.applyWorkflowInputRefs({
+  parameters: rasterInputs,
+  inputEdges: [
+    { sourceId: 'third', sourceType: 'raster', targetParam: 'input_rasters', targetIndex: 2 },
+    { sourceId: 'first', sourceType: 'raster', targetParam: 'input_rasters', targetIndex: 0 },
+    { sourceId: 'second', sourcePort: 'image', sourceType: 'raster', targetParam: 'input_rasters', targetIndex: 1 }
+  ]
+}), { input_rasters: [{ $ref: 'first' }, { $ref: 'second', port: 'image' }, { $ref: 'third' }] })
+assert.deepEqual(mod.workflowReferenceBindings({
+  input_rasters: [{ $ref: 'third' }, { $ref: 'first', port: 'image' }, { $ref: 'second' }],
+  input_raster: { $ref: 'first' }, levels: [2, 4]
+}, 'first'), [
+  { parameterName: 'input_rasters', targetIndex: 1, ref: { $ref: 'first', port: 'image' } },
+  { parameterName: 'input_raster', ref: { $ref: 'first' } }
+])
+assert.throws(() => mod.applyWorkflowInputRefs({
+  parameters: [{ name: 'input_raster', type: 'raster', param_type: 'input' }],
+  inputEdges: ['first', 'second'].map(sourceId => ({ sourceId, sourceType: 'raster', targetParam: 'input_raster' }))
+}), /not compatible/)
+
 console.log('workflowInputBindings tests passed')

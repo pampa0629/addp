@@ -31,6 +31,124 @@ def source_plan(path, format='tiff'):
         'kind': 'file', 'format': format, 'access': {'method': 'mounted_path', 'path': str(path)}}}
 
 
+@pytest.mark.parametrize('overlap', ['first', 'last'])
+@pytest.mark.parametrize('order', [[0, 1, 2], [2, 0, 1]])
+def test_ordered_multi_raster_mosaic(tmp_path, overlap, order):
+    arrays = [np.full((2, 4), value, dtype=float) for value in [10, 20, 30]]
+    arrays[0][0, 0] = 0
+    arrays[1][0, 1] = -9999
+    arrays[2][0, 2] = -9999
+    for array in arrays:
+        array[1, 3] = -9999
+    paths = [create_raster(tmp_path/f'source-{i}.tif', data, transform=(0,1,0,2,0,-1)) for i,data in enumerate(arrays)]
+    hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths]
+    expected = np.full((2,4), np.nan)
+    priority = order[::-1] if overlap == 'first' else order
+    for index in priority:
+        valid = arrays[index] != -9999
+        expected[valid] = arrays[index][valid]
+    with raster_workspace():
+        inputs = [raster_load(source_plan(paths[index])) for index in order]
+        result = raster_mosaic(inputs, 'EPSG:4326', [1,1], overlap)
+        output = gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)), expected, equal_nan=True)
+        assert output.GetGeoTransform() == (0,1,0,2,0,-1)
+        output = None
+        target = tmp_path/'multi.cog.tif'
+        artifact = raster_save(result, target_plan(target), profile='cog')
+        assert artifact['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+    assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in paths] == hashes
+
+
+@pytest.mark.parametrize('value', [None, {}, [], [None], [None, {}], 'file.tif'])
+def test_multi_raster_mosaic_rejects_invalid_collection(value):
+    with raster_workspace(), pytest.raises((TypeError, ValueError)):
+        raster_mosaic(value, 'EPSG:4326', [1,1])
+
+
+def test_multi_raster_mosaic_metadata_and_legacy_rejection(tmp_path):
+    meta = next(item for item in list_operators() if item['id'] == 'raster_mosaic')
+    inputs = [param for param in meta['parameters'] if param['param_type'] == 'input']
+    assert len(inputs) == 1
+    assert (inputs[0]['name'], inputs[0]['type'], inputs[0]['item_type']) == ('input_rasters', 'array', 'raster')
+    path = create_raster(tmp_path/'source.tif', np.ones((2,2)))
+    other = create_raster(tmp_path/'other.tif', np.ones((2,2,2)))
+    with raster_workspace():
+        raster = raster_load(source_plan(path))
+        with pytest.raises(ValueError, match='at least two'):
+            raster_mosaic([raster], 'EPSG:4326', [1,1])
+        with pytest.raises(TypeError, match='input_raster'):
+            raster_mosaic(input_raster=raster, other_raster=raster, target_crs='EPSG:4326', resolution=[1,1])
+        with pytest.raises(ValueError, match='band count'):
+            raster_mosaic([raster, raster, raster_load(source_plan(other))], 'EPSG:4326', [1,1])
+
+
+@pytest.mark.parametrize('overlap', ['first', 'last'])
+@pytest.mark.parametrize('order', [[0,1,2], [2,0,1]])
+def test_multi_raster_mosaic_independent_bands_masks_alpha_and_union(tmp_path, overlap, order):
+    sources, values, validity = [], [], []
+    for index in range(3):
+        data = np.arange(12, dtype=float).reshape(2,2,3) + index*20
+        data[0,0,2] = -9999
+        data[1,1,1] = -9999
+        alpha = np.full((2,3),255.)
+        alpha[0,1] = 0
+        mask = np.full((2,3),255, dtype=np.uint8)
+        if index == 1:
+            mask[1,0] = 0
+        path = create_raster(tmp_path/f'bands-{index}.tif', np.concatenate([data,alpha[None,...]]),
+                             transform=(index*2,1,0,2,0,-1))
+        dataset = gdal.Open(str(path),gdal.GA_Update)
+        dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+            dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+        dataset.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,3,2,mask.tobytes())
+        dataset = None
+        sources.append(path)
+        values.append(data)
+        validity.append((data!=-9999)&(alpha[None,...]>0)&(mask[None,...]>0))
+    originals = [path.read_bytes() for path in sources]
+    expected = np.full((2,2,7),np.nan)
+    for index in (order[::-1] if overlap=='first' else order):
+        region = expected[:,:,index*2:index*2+3]
+        region[validity[index]] = values[index][validity[index]]
+    with raster_workspace():
+        inputs = [raster_load(source_plan(sources[index])) for index in order]
+        result = raster_mosaic(inputs,'EPSG:4326',[1,1],overlap)
+        workspace = result.workspace
+        target = tmp_path/'result.cog.tif'
+        artifact = raster_save(result,target_plan(target),profile='cog')
+        assert artifact['size_bytes'] == target.stat().st_size > 0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        output = gdal.Open(str(target))
+        assert (output.RasterXSize,output.RasterYSize,output.RasterCount)==(7,2,3)
+        for band in (1,2):
+            np.testing.assert_allclose(read_band_values(output.GetRasterBand(band)),expected[band-1],equal_nan=True)
+        output = None
+    assert not workspace.exists()
+    assert [path.read_bytes() for path in sources] == originals
+
+
+def test_multi_raster_mosaic_workflow_ref_order(tmp_path):
+    paths = [create_raster(tmp_path/f'source-{index}.tif',np.full((2,2),index*10.)) for index in (1,2,3)]
+    tasks = [{'id': f'load{index}', 'operator': 'raster_load', 'depends_on': [],
+              'params': {'access_plan': source_plan(path)}} for index,path in enumerate(paths,1)]
+    target = tmp_path/'workflow.cog.tif'
+    tasks.extend([
+        {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': ['load1','load2','load3'], 'params': {
+            'input_rasters': [{'$ref': f'load{index}', 'port': 'default'} for index in (3,1,2)],
+            'target_crs': 'EPSG:4326', 'resolution': [1,1], 'overlap': 'last'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['mosaic'], 'params': {
+            'input_raster': {'$ref': 'mosaic'}, 'access_plan': target_plan(target), 'profile': 'cog'}}])
+    result = execute_workflow({'tasks': tasks})
+    assert result['status']=='success', result
+    assert json.loads(result['final_result'])['size_bytes']==target.stat().st_size>0
+    output = gdal.Open(str(target))
+    np.testing.assert_allclose(read_band_values(output.GetRasterBand(1)),np.full((2,2),20.))
+    output = None
+
+
 def target_plan(path, mode='create'):
     return {'schema_version': 'addp.workflow.access-plan/v1', 'target': {
         'kind': 'file', 'format': 'tiff', 'name': path.name, 'write_mode': mode,
@@ -1604,7 +1722,7 @@ def test_multiband_clip_mosaic_preserves_each_bands_missing_pixels(tmp_path,noda
         for index in (1,2):
             np.testing.assert_equal(read_band_values(output.GetRasterBand(index)),left[index-1])
         output = None
-        mosaic = raster_mosaic(clipped,rasters[1],'EPSG:4326',[1,1],overlap)
+        mosaic = raster_mosaic([clipped, rasters[1]],'EPSG:4326',[1,1],overlap)
         raster_save(mosaic,target_plan(tmp_path/'result.tif'),profile=profile,blocksize=128)
         persisted = raster_load(source_plan(tmp_path/'result.tif'))
         output = gdal.Open(str(persisted.path))
@@ -1791,7 +1909,7 @@ def test_alpha_clip_reproject_mosaic_save_preserves_valid_pixels(
         np.testing.assert_equal(read_band_values(warped_dataset.GetRasterBand(2))>0,np.isfinite(warped_expected))
         warped_dataset = None
         other_raster = raster_load(source_plan(other))
-        mosaic = raster_mosaic(warped,other_raster,'EPSG:3857',[resolution,resolution],overlap)
+        mosaic = raster_mosaic([warped, other_raster],'EPSG:3857',[resolution,resolution],overlap)
         mosaic_dataset = gdal.Open(str(mosaic.path))
         width,height = mosaic_dataset.RasterXSize,mosaic_dataset.RasterYSize
         assert width==8 and height>=5
@@ -2081,8 +2199,8 @@ def test_clip_and_mosaic(raster_file, tmp_path):
         assert raster_info(masked)['width'] == 2
         with pytest.raises(ValueError, match='intersect'): raster_clip(raster, 'EPSG:4326', bbox=[10,10,12,12])
         other = raster_load(source_plan(right))
-        last = raster_mosaic(raster, other, 'EPSG:4326', [1,1], 'last')
-        first = raster_mosaic(raster, other, 'EPSG:4326', [1,1], 'first')
+        last = raster_mosaic([raster, other], 'EPSG:4326', [1,1], 'last')
+        first = raster_mosaic([raster, other], 'EPSG:4326', [1,1], 'first')
         assert raster_info(last)['extent'] == [0,0,6,4]
         assert raster_statistics(last)['mean'] > raster_statistics(first)['mean']
 
@@ -2679,7 +2797,7 @@ def test_mosaic_preserves_empty_pixels_and_overviews_survive_save(tmp_path):
     left = create_raster(tmp_path / 'left.tif', np.ones((4, 4)))
     right = create_raster(tmp_path / 'right.tif', np.full((4, 4), 3.0), transform=(6, 1, 0, 4, 0, -1))
     with raster_workspace():
-        result = raster_mosaic(raster_load(source_plan(left)), raster_load(source_plan(right)), 'EPSG:4326', [1, 1])
+        result = raster_mosaic([raster_load(source_plan(left)), raster_load(source_plan(right))], 'EPSG:4326', [1, 1])
         stats = raster_statistics(result)
         assert stats['valid_count'] == 32 and stats['invalid_count'] == 8
         assert stats['mean'] == 2

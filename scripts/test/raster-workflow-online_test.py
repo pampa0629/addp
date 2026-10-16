@@ -1597,12 +1597,14 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                      if method == 'POST' and path == '/api/v1/develop/executions']
         for tasks, overlap in zip(submitted[3:5], ('first', 'last')):
             self.assertEqual([task['operator'] for task in tasks], ['raster_load', 'raster_reproject',
-                'raster_band_math', 'raster_band_math', 'raster_clip', 'raster_clip', 'raster_mosaic', 'raster_save'])
+                'raster_band_math', 'raster_band_math', 'raster_clip', 'raster_clip', 'raster_clip', 'raster_mosaic', 'raster_save'])
             self.assertEqual(tasks[1]['params']['target_crs'], 'EPSG:3857')
             self.assertEqual(tasks[1]['params']['resolution'], [1, 1])
-            self.assertEqual(tasks[6]['depends_on'], ['left_clip', 'right_clip'])
-            self.assertEqual(tasks[6]['params']['other_raster'], {'$ref': 'right_clip', 'port': 'default'})
-            self.assertEqual(tasks[6]['params']['overlap'], overlap)
+            self.assertEqual(tasks[5]['params']['bbox'], [96, 0, 176, 256])
+            self.assertEqual(tasks[6]['params']['bbox'], [176, 0, 256, 256])
+            self.assertEqual(tasks[7]['depends_on'], ['left_clip', 'right_clip', 'right_tail_clip'])
+            self.assertEqual(tasks[7]['params']['input_rasters'], [{'$ref': name, 'port': 'default'} for name in ['left_clip', 'right_clip', 'right_tail_clip']])
+            self.assertEqual(tasks[7]['params']['overlap'], overlap)
 
     def test_spatial_cases_reject_wrong_artifact_scan_lineage_and_prior_hashes(self):
         for fault in ('crs', 'grid', 'scan', 'locator', 'lineage', 'baseline', 'first', 'unchanged_last'):

@@ -80,9 +80,11 @@ def spatial_workflow(source_locator, target_engine_id, overlap):
         {'id': 'left_clip', 'operator': 'raster_clip', 'depends_on': ['left_math'], 'params': {
             'input_raster': reference('left_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [0, 0, 160, 256]}},
         {'id': 'right_clip', 'operator': 'raster_clip', 'depends_on': ['right_math'], 'params': {
-            'input_raster': reference('right_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [96, 0, 256, 256]}},
-        {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': ['left_clip', 'right_clip'], 'params': {
-            'input_raster': reference('left_clip'), 'other_raster': reference('right_clip'),
+            'input_raster': reference('right_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [96, 0, 176, 256]}},
+        {'id': 'right_tail_clip', 'operator': 'raster_clip', 'depends_on': ['right_math'], 'params': {
+            'input_raster': reference('right_math'), 'boundary_crs': 'EPSG:3857', 'bbox': [176, 0, 256, 256]}},
+        {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': ['left_clip', 'right_clip', 'right_tail_clip'], 'params': {
+            'input_rasters': [reference('left_clip'), reference('right_clip'), reference('right_tail_clip')],
             'target_crs': 'EPSG:3857', 'resolution': [1, 1], 'overlap': overlap, 'resampling': 'nearest'}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['mosaic'], 'params': {
             'input_raster': reference('mosaic'),

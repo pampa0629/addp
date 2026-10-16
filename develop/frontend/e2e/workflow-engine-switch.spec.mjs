@@ -334,6 +334,65 @@ test('renders a visible gap where workflow edges cross', async ({ page }) => {
   expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
 })
 
+test('preserves ordered raster collection inputs through editing, saving and reload', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeInputConnections: true, includeCollectionInputs: true, portType: 'raster' })
+  await openSavedWorkflow(page)
+  const openInputs = async () => {
+    const canvasBox = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+    await page.mouse.click(canvasBox.x + 520, canvasBox.y + 180)
+    return page.locator('.input-connection-field').filter({ hasText: 'input_rasters' })
+  }
+  let field = await openInputs()
+  const rows = () => field.locator('.ordered-input-label')
+  await expect(rows()).toHaveText([
+    '1. Operator A (operator_a_3)', '2. Operator A (operator_a_1)', '3. Operator A (operator_a_2)'
+  ])
+  await field.getByRole('button', { name: '下移第 1 个输入', exact: true }).click()
+  await expect(rows()).toHaveText([
+    '1. Operator A (operator_a_1)', '2. Operator A (operator_a_3)', '3. Operator A (operator_a_2)'
+  ])
+  await field.getByRole('button', { name: '移除第 2 个输入', exact: true }).click()
+  await expect(rows()).toHaveCount(2)
+  const points = await page.locator('#workflow-dag-container').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graph
+    const point = (id, name) => {
+      const item = graph.findById(id)
+      const shape = item.getContainer().find(shape => shape.get('name') === name)
+      return graph.getClientByPoint(item.getModel().x + shape.attr('x'), item.getModel().y + shape.attr('y'))
+    }
+    return { source: point('operator_a_3','output-port-default'), target: point('operator_input_1','input-port-input_rasters') }
+  })
+  await page.mouse.move(points.source.x,points.source.y)
+  await page.mouse.down()
+  await page.mouse.move(points.target.x,points.target.y,{ steps: 12 })
+  await page.mouse.up()
+  await expect(rows()).toHaveCount(3)
+  await field.getByRole('button', { name: '移除第 3 个输入', exact: true }).click()
+  await expect(rows()).toHaveCount(2)
+  await field.locator('.el-select__wrapper').click()
+  await page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'operator_a_3' }).click()
+  await expect(rows()).toHaveText([
+    '1. Operator A (operator_a_1)', '2. Operator A (operator_a_2)', '3. Operator A (operator_a_3)'
+  ])
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const mosaic = backend.updates[0].payload.content.workflow_definition.tasks.find(task => task.id === 'operator_input_1')
+  expect(mosaic.params).toEqual({ input_rasters: [1,2,3].map(index => ({ $ref: `operator_a_${index}` })) })
+  expect(new Set(mosaic.depends_on)).toEqual(new Set(['operator_a_1','operator_a_2','operator_a_3']))
+  await page.reload()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  field = await openInputs()
+  await expect(rows()).toHaveText([
+    '1. Operator A (operator_a_1)', '2. Operator A (operator_a_2)', '3. Operator A (operator_a_3)'
+  ])
+  await page.setViewportSize({ width: 620, height: 560 })
+  const removeThird = field.getByRole('button', { name: '移除第 3 个输入', exact: true })
+  await removeThird.scrollIntoViewIfNeeded()
+  await expect(removeThird).toBeInViewport({ ratio: 1 })
+  await removeThird.click()
+  await expect(rows()).toHaveCount(2)
+})
+
 for (const portType of ['number', 'raster', 'raster_tiles']) {
 test(`edits ${portType} port bindings and persists every input reference`, async ({ page }) => {
   const backend = await installMockBackend(page, { includeInputConnections: true, portType })
@@ -760,6 +819,7 @@ async function installMockBackend(page, {
   includeInputConnections = false,
   includeConnectedEdge = false,
   includeCrossingEdges = false,
+  includeCollectionInputs = false,
   portType = 'number'
 } = {}) {
   const updates = []
@@ -792,7 +852,8 @@ async function installMockBackend(page, {
     includeResourcePicker,
     includeInputConnections,
     includeConnectedEdge,
-    includeCrossingEdges
+    includeCrossingEdges,
+    includeCollectionInputs
   )
   const operatorAParameters = [
     { name: 'source', type: 'string', required: false, description: 'Source input' }
@@ -829,7 +890,7 @@ async function installMockBackend(page, {
         'Operator Input',
         'Category A',
         ENGINE_A.engine_type,
-        [
+        includeCollectionInputs ? [{ name: 'input_rasters', type: 'array', item_type: 'raster', param_type: 'input', required: true }] : [
           { name: portType === 'raster' ? 'input_raster' : 'left_value', type: portType, param_type: 'input', required: true },
           { name: portType === 'raster' ? 'other_raster' : 'right_value', type: portType, param_type: 'input', required: true }
         ]
@@ -986,6 +1047,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
+      if (includeCollectionInputs) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)
@@ -1032,7 +1094,8 @@ function createSavedTask(
   includeResourcePicker = false,
   includeInputConnections = false,
   includeConnectedEdge = false,
-  includeCrossingEdges = false
+  includeCrossingEdges = false,
+  includeCollectionInputs = false
 ) {
   const tasks = [{
     id: 'operator_a_1',
@@ -1067,6 +1130,12 @@ function createSavedTask(
         : includeConnectedEdge ? ['operator_a_1'] : []
     })
   }
+  if (includeCollectionInputs) {
+    tasks.push(...[2,3].map(index => ({ id: `operator_a_${index}`, operator: 'operator_a', params: {}, depends_on: [] })))
+    const target = tasks.find(task => task.id === 'operator_input_1')
+    target.params = { input_rasters: [3,1,2].map(index => ({ $ref: `operator_a_${index}` })) }
+    target.depends_on = ['operator_a_1','operator_a_2','operator_a_3']
+  }
   return {
     id: SAVED_TASK_ID,
     name: 'Saved workflow',
@@ -1088,6 +1157,9 @@ function createSavedTask(
       nodes: {
         operator_a_1: includeCrossingEdges ? { x: 250, y: 80 } : { x: 260, y: 180 },
         ...(includeCrossingEdges ? { operator_a_2: { x: 330, y: 520 } } : {}),
+        ...(includeCollectionInputs ? {
+          operator_a_1: { x: 200, y: 60 }, operator_a_2: { x: 200, y: 180 }, operator_a_3: { x: 200, y: 300 }
+        } : {}),
         ...(includeInputConnections
           ? {
               operator_input_1: includeCrossingEdges

@@ -101,6 +101,7 @@ def list_operators():
         'list[str]': 'array',
         'list[int]': 'array',
         'list[dict]': 'array',
+        'list[raster]': 'array',
         'raster': 'raster',
     }
 
@@ -119,8 +120,8 @@ def list_operators():
                 }
 
                 # 数组类型需要指定item_type
-                if param['type'] in ['list[float]', 'list[str]', 'list[int]', 'list[dict]']:
-                    param_meta["item_type"] = {'list[float]': 'float', 'list[str]': 'string', 'list[int]': 'integer', 'list[dict]': 'object'}[param['type']]
+                if param['type'] in ['list[float]', 'list[str]', 'list[int]', 'list[dict]', 'list[raster]']:
+                    param_meta["item_type"] = {'list[float]': 'float', 'list[str]': 'string', 'list[int]': 'integer', 'list[dict]': 'object', 'list[raster]': 'raster'}[param['type']]
 
                 if param.get('enum'):
                     param_meta["enum"] = param['enum']

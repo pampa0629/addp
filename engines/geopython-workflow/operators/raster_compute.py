@@ -613,20 +613,46 @@ def raster_clip(input_raster, boundary_crs, bbox=None, geometry=None, mode='insi
                    outputType=gdal.GDT_Float64, dstNodata=float('nan'))
 
 
-def raster_mosaic(input_raster, other_raster, target_crs, resolution, overlap='last', resampling='nearest'):
+def raster_mosaic(input_rasters, target_crs, resolution, overlap='last', resampling='nearest'):
+    if not isinstance(input_rasters, list) or len(input_rasters) < 2:
+        raise ValueError('input_rasters must contain at least two raster ports')
     if overlap not in ['first', 'last']:
         raise ValueError('overlap must be first or last')
-    datasets = [_open(input_raster), _open(other_raster)]
-    if datasets[0].RasterCount != datasets[1].RasterCount:
+    datasets = [_open(raster) for raster in input_rasters]
+    if any(dataset.RasterCount != datasets[0].RasterCount for dataset in datasets[1:]):
         raise ValueError('Mosaic inputs must have the same band count')
     for dataset in datasets:
         for index in range(1, dataset.RasterCount + 1):
             _band(dataset, index)
+    # GDAL ignores an explicit source mask when source NoData is also present.
+    # Encode that coverage per band before warping, using the same bounded
+    # validity calculation as other numeric raster composition operators.
+    datasets = [_mosaic_masked_source(dataset) for dataset in datasets]
     if overlap == 'first':
         datasets.reverse()
     xres, yres = _pair(resolution, 'resolution')
     return _warped(datasets, dstSRS=_crs(target_crs).ExportToWkt(), xRes=xres, yRes=yres,
                    targetAlignedPixels=True, resampleAlg=_algorithm(resampling), outputType=gdal.GDT_Float64, dstNodata=float('nan'))
+
+
+def _mosaic_masked_source(dataset):
+    indices = list(range(1, dataset.RasterCount + 1))
+    if not any(dataset.GetRasterBand(index).GetMaskFlags() & (gdal.GMF_ALL_VALID | gdal.GMF_NODATA | gdal.GMF_ALPHA) == 0
+               for index in indices):
+        return dataset
+    output = _copy_data_bands([(dataset, indices)])
+    for index in indices:
+        band = output.GetRasterBand(index)
+        interpretation = dataset.GetRasterBand(index).GetColorInterpretation()
+        band.SetColorInterpretation(interpretation)
+        if interpretation == gdal.GCI_AlphaBand:
+            for x, y, arrays, _ in _blocks(output, [index]):
+                values = arrays[0].copy()
+                values[~np.isfinite(values)] = 0
+                band.WriteRaster(x,y,values.shape[1],values.shape[0],values.tobytes(),buf_type=gdal.GDT_Float64)
+    band = None
+    output.FlushCache()
+    return output
 
 
 def _band(dataset, index):
@@ -1145,7 +1171,7 @@ _SPECS = [
     (raster_reproject, '栅格重投影', [_INPUT(), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率', None, False), _ALGORITHM()], 'raster', ['read']),
     (raster_resample, '栅格重采样', [_INPUT(), _param('size', 'list[int]', '输出宽高', None, False), _param('resolution', 'list[float]', '输出分辨率', None, False), _ALGORITHM()], 'raster', ['read']),
     (raster_clip, '栅格裁剪', [_INPUT(), _param('boundary_crs', 'str', '边界 CRS'), _param('bbox', 'list[float]', '裁剪边界框', None, False), _param('geometry', 'object', 'GeoJSON 面边界', None, False), _param('mode', 'str', '保留区域内或区域外；区域外保留源完整网格', 'inside', False, enum=['inside', 'outside'])], 'raster', ['read']),
-    (raster_mosaic, '栅格计算镶嵌', [_INPUT(), _param('other_raster', 'raster', '第二个栅格输入端口', role='input'), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率'), _param('overlap', 'str', '重叠策略', 'last', False, enum=['first', 'last']), _ALGORITHM()], 'raster', ['read']),
+    (raster_mosaic, '栅格计算镶嵌', [_param('input_rasters', 'list[raster]', '按覆盖优先级排列的栅格输入，至少两个', role='input'), _param('target_crs', 'str', '目标 CRS'), _param('resolution', 'list[float]', '目标分辨率'), _param('overlap', 'str', '重叠策略', 'last', False, enum=['first', 'last']), _ALGORITHM()], 'raster', ['read']),
     (raster_align, '栅格网格对齐', [_INPUT(), _param('reference_raster', 'raster', '提供输出 CRS、宽高及仿射网格的参考栅格', role='input'), _ALGORITHM()], 'raster', ['read']),
     (raster_update, '栅格局部更新', [_INPUT(), _param('update_raster', 'raster', '仅用有效像元覆盖基底的同网格更新源', role='input')], 'raster', ['read']),
     (raster_stack, '栅格波段组合', [_INPUT(), _param('other_raster', 'raster', '追加数据波段的同网格栅格', role='input')], 'raster', ['read']),
@@ -1165,11 +1191,14 @@ for function, label, params, output, effects in _SPECS:
         examples = {'access_plan': {'schema_version': 'addp.workflow.access-plan/v1', 'source': {'kind':'file','format':'tiff','access':{'method':'mounted_path','path':'/mnt/input.tif'}}}}
     if name in ('raster_save', 'raster_to_cog'):
         examples['access_plan'] = {**examples.get('access_plan', {}), 'schema_version':'addp.workflow.access-plan/v1', 'target':{'kind':'file','format':'tiff','name':'output.tif','write_mode':'create','access':{'method':'mounted_path','path':'/mnt/output.tif'}}}
-    examples.update({'raster_reproject':{'target_crs':'EPSG:3857'}, 'raster_resample':{'size':[512,512]}, 'raster_clip':{'boundary_crs':'EPSG:4326','bbox':[110,20,111,21]}, 'raster_band_math':{'expression':'(b2-b1)/(b2+b1)'}, 'raster_mosaic':{'other_raster':{'$ref':'other'},'target_crs':'EPSG:4326','resolution':[0.01,0.01]}}.get(name, {}))
+    examples.update({'raster_reproject':{'target_crs':'EPSG:3857'}, 'raster_resample':{'size':[512,512]}, 'raster_clip':{'boundary_crs':'EPSG:4326','bbox':[110,20,111,21]}, 'raster_band_math':{'expression':'(b2-b1)/(b2+b1)'}}.get(name, {}))
     examples.update({'raster_align': {'reference_raster': {'$ref': 'reference'}},
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
+    if name == 'raster_mosaic':
+        examples = {'input_rasters': [{'$ref': 'source'}, {'$ref': 'other'}],
+                    'target_crs': 'EPSG:4326', 'resolution': [0.01, 0.01]}
     if name == 'raster_reclassify':
         examples.update({'rules': [{'min': 0, 'max': 10, 'class': 1}, {'value': 10, 'class': 2}],
                          'band': 1, 'unmatched': 'nodata'})

@@ -169,7 +169,18 @@ func (s *OperatorDiscoveryService) validateWorkflow(
 				})
 				continue
 			}
-			if (parameter.Type == "raster" || parameter.Type == "raster_tiles") && !isWorkflowReference(params[name]) {
+			validRasterReference := true
+			switch {
+			case parameter.Type == "raster" || parameter.Type == "raster_tiles":
+				validRasterReference = isWorkflowReference(params[name])
+			case parameter.Type == "array" && (parameter.ItemType == "raster" || parameter.ItemType == "raster_tiles"):
+				references, ok := params[name].([]interface{})
+				validRasterReference = ok && len(references) > 0
+				for _, reference := range references {
+					validRasterReference = validRasterReference && isWorkflowReference(reference)
+				}
+			}
+			if !validRasterReference {
 				result.Errors = append(result.Errors, WorkflowValidationIssue{
 					Code:    "raster_reference_required",
 					Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name),
