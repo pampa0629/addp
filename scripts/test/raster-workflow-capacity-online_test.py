@@ -266,6 +266,7 @@ class DirectoryCapacityEvidenceTest(unittest.TestCase):
     def test_capacity_identity_requires_exact_manager_extension_without_escalating_original(self):
         original=importlib.import_module('scripts.test.raster-workflow-online_test')
         client=original.Client()
+        client.context['authorization']['role_assignments'][0]['permissions']=sorted(m.scene.PERMISSIONS)
         permissions=client.context['authorization']['role_assignments'][0]['permissions']
         with self.assertRaises(m.scene.SuiteError):m.scene.validate_identity(client,2,required_permissions=m.scene.PERMISSIONS|m.MANAGER_PERMISSIONS)
         permissions.extend(sorted(m.MANAGER_PERMISSIONS))

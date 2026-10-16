@@ -1690,8 +1690,31 @@ def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_pat
 
 
 
-def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(independent_mosaic_artifacts, tmp_path):
-    outside_artifacts = independent_mosaic_artifacts
+@pytest.fixture
+def editor_mosaic_artifacts(independent_mosaic_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    case = fixture.MOSAIC_EDITOR_CASE
+    sources = {name: 'registered-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    result, output = multisource_execution(tmp_path, api_server, case,
+        scene.mosaic_source_workflow(sources, 2, case), [('source', name) for name in sources])
+    evidence = fixture.worker('verify-' + case, independent_mosaic_artifacts)
+    assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+    assert evidence['band_valid_pixels'] == [65534, 65533]
+    assert len(evidence['preserved_sha256']) == 32
+    return independent_mosaic_artifacts
+
+
+def test_editor_mosaic_physical_oracle_uses_complete_first_priority_pixels(editor_mosaic_artifacts):
+    evidence = fixture.worker('verify-' + fixture.MOSAIC_EDITOR_CASE, editor_mosaic_artifacts)
+    assert evidence['source_unchanged'] is True and evidence['cog_valid'] is True
+    assert evidence['overview_sizes'] == [[128, 128]]
+    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASE) == fixture.mosaic_source_pixels('multisource-first')
+    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASE, 2) == fixture.mosaic_source_pixels('multisource-first', 2)
+
+
+def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(editor_mosaic_artifacts, tmp_path):
+    outside_artifacts = editor_mosaic_artifacts
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     source = tmp_path/'tiling-source.tif'

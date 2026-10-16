@@ -47,6 +47,8 @@ AGGREGATE_CASES = AGGREGATE_SINGLE_BAND_CASES + AGGREGATE_MULTIBAND_CASES
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
 MOSAIC_SOURCE_CASES = ('multisource-first', 'multisource-last')
+MOSAIC_EDITOR_CASE = 'multisource-editor-first'
+MOSAIC_CASES = MOSAIC_SOURCE_CASES + (MOSAIC_EDITOR_CASE,)
 # start column, width, numeric offset; all are independent stored TIFFs.
 MOSAIC_SOURCE_WINDOWS = {'mosaic-a.tif': (0, 160, 100000), 'mosaic-b.tif': (96, 112, 200000),
                          'mosaic-c.tif': (144, 112, 300000)}
@@ -69,7 +71,7 @@ TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': 
 CLEANUP_ACTIONS = tuple('verify-' + prefix for prefix in TILE_CLEANUP_CASES)
 TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
-ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES) + ('verify-utility-queries',)
+ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -438,9 +440,9 @@ def mosaic_source_value(name, band, row, column):
     return float(offset + position if band == 1 else -(offset + 2 * position))
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=12)
 def mosaic_source_pixels(case_name, band=1, level=1):
-    if case_name not in MOSAIC_SOURCE_CASES:
+    if case_name not in MOSAIC_CASES:
         raise FixtureError('unknown independent-source mosaic case')
     names = MOSAIC_SOURCE_ORDER if case_name.endswith('-first') else tuple(reversed(MOSAIC_SOURCE_ORDER))
     return tuple(next((value for name in names
@@ -512,7 +514,7 @@ def update_expectation(case_name):
 
 
 def computed_expectation(case_name):
-    if case_name in MOSAIC_SOURCE_CASES:
+    if case_name in MOSAIC_CASES:
         return mosaic_source_expectation(case_name)
     if case_name in UPDATE_CASES:
         return update_expectation(case_name)
@@ -1062,8 +1064,8 @@ def worker(action, path):
                     'source_unchanged': True,
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
                     **physical_file_facts(path)}
-            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
-                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES + AGGREGATE_MULTIBAND_CASES + MOSAIC_SOURCE_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
+            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES:
+                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES + AGGREGATE_MULTIBAND_CASES + MOSAIC_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
                 label = 'outside clipping' if grid_case in OUTSIDE_CASES else 'aggregation' if grid_case in AGGREGATE_CASES else 'reclassification' if grid_case in RECLASS_CASES else 'multi-raster'
                 counts = []
                 for index in range(1, dataset.RasterCount + 1):
@@ -1076,7 +1078,7 @@ def worker(action, path):
                     for level, sampled in ((1, current), (2, current.GetOverview(0))):
                         if (sampled.XSize, sampled.YSize) != (expectation['width'] // level, expectation['height'] // level):
                             raise FixtureError(f'{label} overview grid differs from nearest oracle')
-                        pixels = mosaic_source_pixels if grid_case in MOSAIC_SOURCE_CASES else update_pixels if grid_case in UPDATE_CASES else outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
+                        pixels = mosaic_source_pixels if grid_case in MOSAIC_CASES else update_pixels if grid_case in UPDATE_CASES else outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
                         expected = list(pixels(grid_case, index, level))
                         actual = struct.unpack(f'<{len(expected)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
                         if any(not math.isnan(value) if wanted is None else
@@ -1161,7 +1163,7 @@ def worker(action, path):
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
+            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES:
                 preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', grid_case=prior)['sha256']
             for prior in UTILITY_CASES:
                 preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', utility_case=prior)['sha256']
@@ -1232,11 +1234,11 @@ def worker(action, path):
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('utility target contains unexpected or partial artifacts')
             return evidence
-        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
+        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES:
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES
+            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES
             for prior in GRID_CASES + MULTIBAND_CASES + cases[:cases.index(grid_case)]:
                 preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
             for prior in UTILITY_CASES:

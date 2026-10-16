@@ -915,7 +915,7 @@ func TestRasterCapacityAddsOnlyManagerCreateAndRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	capacity, err := suitePermissions("raster-workflow-capacity")
-	if err != nil || len(capacity) != len(ordinary)+2 {
+	if err != nil || len(capacity) != len(rasterWorkflowPermissions)+2 {
 		t.Fatal("unexpected capacity permissions", capacity, err)
 	}
 	for _, permission := range []string{"manager.derived_artifact.create", "manager.derived_artifact.read"} {
@@ -923,10 +923,18 @@ func TestRasterCapacityAddsOnlyManagerCreateAndRead(t *testing.T) {
 			t.Fatal("Manager permission escaped the capacity fixture", permission)
 		}
 	}
-	for _, permission := range ordinary {
+	for _, permission := range rasterWorkflowPermissions {
 		if !contains(capacity, permission) {
 			t.Fatal("capacity lost its original workflow permission", permission)
 		}
+	}
+	for _, permission := range []string{"develop.task.create", "develop.task.delete"} {
+		if !contains(ordinary, permission) || contains(capacity, permission) {
+			t.Fatal("editor permission escaped the ordinary raster fixture", permission)
+		}
+	}
+	if len(ordinary) != len(rasterWorkflowPermissions)+2 || contains(ordinary, "develop.task.update") {
+		t.Fatal("raster editor fixture has unnecessary permissions", ordinary)
 	}
 	capacity[0] = "mutated"
 	if ordinary[0] == "mutated" || rasterWorkflowPermissions[0] == "mutated" {

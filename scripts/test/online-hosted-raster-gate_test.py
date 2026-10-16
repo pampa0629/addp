@@ -10,6 +10,11 @@ SCRIPT = Path(__file__).with_name('online-hosted-raster-gate.sh')
 
 
 class HostedRasterGateTest(unittest.TestCase):
+    def test_online_browser_spec_parses_with_the_existing_node_toolchain(self):
+        spec = SCRIPT.resolve().parents[2] / 'console/frontend/e2e/online/raster-workflow.spec.js'
+        result = subprocess.run(['node', '--check', str(spec)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def setUp(self):
         self.host = support.OnlineHostedOpenGaussGateTest()
         self.host.setUp()

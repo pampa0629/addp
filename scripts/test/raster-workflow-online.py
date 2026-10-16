@@ -21,6 +21,7 @@ PERMISSIONS = {'develop.task.read', 'develop.task.execute', 'develop.data_read.e
                'develop.data_write.execute', 'system.execution_authorization.create',
                'meta.catalog.read', 'meta.scan_task.read', 'meta.scan_task.execute',
                'meta.lineage.read', 'monitor.execution.read'}
+EDITOR_PERMISSIONS = PERMISSIONS | {'develop.task.create', 'develop.task.delete'}
 SCHEMA = 'addp.raster-workflow-online/v1'
 
 
@@ -94,7 +95,7 @@ def spatial_workflow(source_locator, target_engine_id, overlap):
 
 
 def mosaic_source_workflow(sources, target_engine_id, case_name):
-    if (case_name not in fixture.MOSAIC_SOURCE_CASES or set(sources) != set(fixture.MOSAIC_SOURCE_WINDOWS)
+    if (case_name not in fixture.MOSAIC_CASES or set(sources) != set(fixture.MOSAIC_SOURCE_WINDOWS)
         or len(set(sources.values())) != 3):
         raise SuiteError('independent mosaic requires three distinct registered sources')
     nodes = {name: 'load_' + name.removeprefix('mosaic-').removesuffix('.tif') for name in sources}
@@ -105,7 +106,7 @@ def mosaic_source_workflow(sources, target_engine_id, case_name):
         {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': sorted(nodes.values()), 'params': {
             'input_rasters': [ref(nodes[name]) for name in fixture.MOSAIC_SOURCE_ORDER],
             'target_crs': 'EPSG:3857', 'resolution': [1, 1],
-            'overlap': case_name.removeprefix('multisource-'), 'resampling': 'nearest'}},
+            'overlap': 'first' if case_name.endswith('-first') else 'last', 'resampling': 'nearest'}},
         {'id': 'save', 'operator': 'raster_save', 'depends_on': ['mosaic'], 'params': {
             'input_raster': ref('mosaic'), 'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
             'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}}
@@ -670,26 +671,95 @@ def physical(repository, env, action):
             raise SuiteError('physical tiling evidence is incomplete')
         return payload
     case_name = action.removeprefix('verify-')
-    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_SOURCE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
 
 
-def browser(repository, env, evidence):
-    report_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / f'raster-workflow-{evidence["case_name"]}-browser.json'
+def raster_browser_report(repository, env, evidence, kind, test_name):
+    report_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / f'raster-workflow-{evidence["case_name"]}-{kind}.json'
     report_path.unlink(missing_ok=True)
     browser_env = dict(env, ADDP_ONLINE_RASTER_EVIDENCE=json.dumps(evidence))
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/raster-workflow.spec.js',
-                             '--config=playwright.online.config.js'], cwd=repository / 'console/frontend',
+                             '--config=playwright.online.config.js', '--grep', test_name], cwd=repository / 'console/frontend',
                             env=browser_env, stdout=sys.stderr, stderr=sys.stderr, timeout=240)
     if result.returncode or not report_path.is_file():
         raise SuiteError('raster Console acceptance failed or report is missing')
-    report = obj(json.loads(report_path.read_text()), 'browser report')
+    return obj(json.loads(report_path.read_text()), 'browser report')
+
+
+def browser(repository, env, evidence):
+    report = raster_browser_report(repository, env, evidence, 'browser', '栅格 Console')
     expected = {**evidence, 'schema_version': 'addp.raster-workflow-browser/v1', 'result': 'passed'}
     if report != expected:
         raise SuiteError('raster Console report does not bind the exact run/User/execution/items')
     return report
+
+
+def browser_editor(repository, env, evidence):
+    report = raster_browser_report(repository, env, evidence, 'editor', '栅格页面多选')
+    validate_editor_report(report, evidence)
+    return report
+
+
+def validate_editor_report(report, evidence):
+    extra = {'schema_version', 'result', 'task_id', 'execution_id', 'workflow_definition',
+             'save_node_id', 'source_task_id', 'reloaded', 'deleted', 'page_requests'}
+    if (set(report) != set(evidence) | extra or any(report.get(key) != value for key, value in evidence.items())
+        or report.get('schema_version') != 'addp.raster-workflow-editor/v1' or report.get('result') != 'passed'
+        or type(report.get('task_id')) is not int or report['task_id'] <= 0
+        or not isinstance(report.get('execution_id'), str) or not report['execution_id']
+        or report.get('source_task_id') != str(report['task_id'])
+        or report.get('reloaded') is not True or report.get('deleted') is not True
+        or report.get('page_requests') != {'create': 1, 'update': 0, 'execute': 1}
+        or any(type(value) is not int for value in report['page_requests'].values())):
+        raise SuiteError('raster editor report does not bind the exact UI/save/execution/cleanup')
+    definition = obj(report['workflow_definition'], 'saved editor workflow')
+    tasks = array(definition.get('tasks'), 'editor tasks')
+    ids = [task.get('id') for task in tasks]
+    if (set(definition) != {'tasks'} or len(tasks) != 5
+        or any(set(task) != {'id', 'operator', 'params', 'depends_on'} for task in tasks)
+        or any(not isinstance(value, str) or not value for value in ids) or len(set(ids)) != 5):
+        raise SuiteError('raster editor did not save exactly five independent nodes')
+    sources = {task['id']: task for task in tasks if task.get('operator') == 'raster_load'}
+    mosaics = [task for task in tasks if task.get('operator') == 'raster_mosaic']
+    saves = [task for task in tasks if task.get('operator') == 'raster_save']
+    if len(sources) != 3 or len(mosaics) != 1 or len(saves) != 1:
+        raise SuiteError('raster editor saved the wrong operators')
+    if (any(task.get('depends_on') != [] or set(task.get('params', {})) != {'locator'}
+            or not isinstance(task['params']['locator'], str) for task in sources.values())
+        or sorted(task['params']['locator'] for task in sources.values()) != sorted(evidence['source_locators'])):
+        raise SuiteError('raster editor did not save all three exact public sources')
+
+    def reference(value):
+        value = obj(value, 'editor raster reference')
+        if set(value) - {'$ref', 'port'} or value.get('port', 'default') != 'default':
+            raise SuiteError('raster editor saved a non-default raster reference')
+        return value.get('$ref')
+
+    mosaic, save = mosaics[0], saves[0]
+    params = obj(mosaic.get('params'), 'editor mosaic parameters')
+    refs = [reference(value) for value in array(params.get('input_rasters'), 'editor ordered rasters')]
+    if (len(refs) != 3 or set(refs) != set(sources)
+        or [sources[value]['params']['locator'] for value in refs] != evidence['source_locators']
+        or len(mosaic.get('depends_on', [])) != 3 or set(mosaic['depends_on']) != set(sources)
+        or {key: value for key, value in params.items() if key != 'input_rasters'} != {
+            'target_crs': 'EPSG:3857', 'resolution': [1, 1], 'overlap': 'first', 'resampling': 'nearest'}):
+        raise SuiteError('raster editor changed the ordered mosaic or grid parameters')
+    params = obj(save.get('params'), 'editor save parameters')
+    parent = urllib.parse.urlsplit(params.get('target_parent_locator', ''))
+    query = urllib.parse.parse_qs(parent.query)
+    if (parent.scheme != 'addp' or parent.netloc != 'engine'
+        or parent.path != f'/{evidence["target_engine_id"]}/path/raster-target' or parent.fragment
+        or query.get('type') != ['bucket'] or set(query) - {'type', 'node_id'}
+        or ('node_id' in query and (len(query['node_id']) != 1 or not query['node_id'][0].isdigit() or int(query['node_id'][0]) <= 0))
+        or reference(params.get('input_raster')) != mosaic['id'] or save.get('depends_on') != [mosaic['id']]
+        or save['id'] != report['save_node_id']
+        or {key: value for key, value in params.items() if key not in ('input_raster', 'target_parent_locator')} != {
+            'target_name': evidence['target_name'], 'write_mode': 'create', 'profile': 'cog',
+            'compression': 'DEFLATE', 'blocksize': 128, 'overview_resampling': 'nearest'}):
+        raise SuiteError('raster editor changed the exact public output target/profile')
 
 
 def queue_output_inspection(pending, client, run_id, source, source_locator, target_engine, target_name,
@@ -722,7 +792,7 @@ def finish_output_inspections(pending, repository, env, client, timeout):
         report.update(browser_runner(repository, env, evidence))
 
 
-def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic):
+def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic, editor_runner=browser_editor):
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
     if tenant <= 1:
         raise SuiteError('raster acceptance forbids the default Tenant')
@@ -731,7 +801,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     if source_engine == target_engine:
         raise SuiteError('raster fixture requires distinct source and target Engines')
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '180'))
-    identity = validate_identity(client, tenant)
+    identity = validate_identity(client, tenant, required_permissions=EDITOR_PERMISSIONS)
     pending_outputs = []
     size_evidence = {}
     engines = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'workflow engines')
@@ -926,6 +996,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     outside_cases = []
     update_cases = []
     mosaic_source_cases = []
+    mosaic_editor_case = None
     mosaic_sources = {name: support.find_fixture_item(client, source_engine, 'raster-source/' + name, 'independent mosaic source')
                       for name in fixture.MOSAIC_SOURCE_WINDOWS}
     mosaic_locators = {name: support.build_item_locator(source_engine, item) for name, item in mosaic_sources.items()}
@@ -938,7 +1009,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     aggregate_sources = {
         name: support.find_fixture_item(client, source_engine, 'raster-source/'+name, 'aggregation source')
         for name in {fixture.aggregate_config(case)['source_name'] for case in fixture.AGGREGATE_CASES}}
-    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_SOURCE_CASES:
+    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_CASES:
         single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES
         case_sources = [(source, source_locator, '')] if single else [
             (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
@@ -947,22 +1018,42 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if case_name in fixture.AGGREGATE_CASES:
             case_source = aggregate_sources[fixture.aggregate_config(case_name)['source_name']]
             case_sources = [(case_source, support.build_item_locator(source_engine, case_source), '')]
-        if case_name in fixture.MOSAIC_SOURCE_CASES:
+        if case_name in fixture.MOSAIC_CASES:
             case_sources = [(mosaic_sources[name], mosaic_locators[name], '-' + name.removesuffix('.tif'))
                             for name in fixture.MOSAIC_SOURCE_ORDER]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        definition = (mosaic_source_workflow(mosaic_locators, target_engine, case_name) if case_name in fixture.MOSAIC_SOURCE_CASES else
-                      update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
-                      outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
-                      aggregate_workflow(source_locators[0], target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
-                      reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
-                      foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
-        identifier = submit(client, engine_id, definition)
+
+        editor_report = None
+        output_node = 'save'
+        if case_name == fixture.MOSAIC_EDITOR_CASE:
+            editor_evidence = {
+                'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity,
+                'case_name': case_name, 'workflow_engine_id': engine_id,
+                'task_name': env['ADDP_ONLINE_TEST_RUN_ID'] + '-raster-editor',
+                'source_locators': source_locators,
+                'source_names': [item['full_name'].rsplit('/', 1)[-1] for item, _, _ in case_sources],
+                'source_item_ids': [item['id'] for item, _, _ in case_sources],
+                'target_engine_id': target_engine, 'target_name': name,
+            }
+            editor_report = editor_runner(repository, env, editor_evidence)
+            validate_editor_report(editor_report, editor_evidence)
+            client.request('GET', f'/api/v1/develop/task-definitions/{editor_report["task_id"]}', (404,))
+            identifier, output_node = editor_report['execution_id'], editor_report['save_node_id']
+        else:
+            definition = (mosaic_source_workflow(mosaic_locators, target_engine, case_name) if case_name in fixture.MOSAIC_CASES else
+                          update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
+                          outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
+                          aggregate_workflow(source_locators[0], target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
+                          reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
+                          foundation_workflow(spatial_locator, reference_locator, target_engine, case_name))
+            identifier = submit(client, engine_id, definition)
         execution = wait_execution(client, 'develop', identifier, timeout)
-        facts, scan_id = validate_success(execution, source_locators, locator, 'create', expectation)
+        if editor_report and execution.get('source_task_id') != str(editor_report['task_id']):
+            raise SuiteError('raster editor execution belongs to another saved task')
+        facts, scan_id = validate_success(execution, source_locators, locator, 'create', expectation, output_node=output_node)
         wait_execution(client, 'meta', scan_id, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor multi-raster execution')
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
@@ -970,7 +1061,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('Monitor multi-raster execution differs from Develop status/lineage')
         native = physical_runner(repository, env, 'verify-' + case_name)
         artifact = execution['metadata']['result']['final_result']
-        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES + fixture.AGGREGATE_MULTIBAND_CASES + fixture.MOSAIC_SOURCE_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
+        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES + fixture.AGGREGATE_MULTIBAND_CASES + fixture.MOSAIC_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
         levels = [[expectation['width']//2, expectation['height']//2]]
         if (native.get('case_name') != case_name or native.get('preserved_sha256') != preserved
             or native.get('cog_valid') is not True or native.get('source_unchanged') is not True
@@ -992,10 +1083,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             graphs.append(graph)
             browsers.append(report)
         cases = mosaic_source_cases if case_name in fixture.MOSAIC_SOURCE_CASES else update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
-        cases.append({'case_name': case_name, 'execution_id': identifier,
+        case = {'case_name': case_name, 'execution_id': identifier,
             'artifact': artifact, 'data_item_size_bytes': target['size_bytes'],
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
-            'physical': native, 'browser': browsers[0] if single else browsers})
+            'physical': native, 'browser': browsers[0] if single else browsers}
+        if editor_report:
+            mosaic_editor_case = {**case, 'editor': editor_report}
+        else:
+            cases.append(case)
         preserved[name] = native['sha256']
     footprint_cases = []
     footprint_sources = {
@@ -1015,8 +1110,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
             or obj(monitor.get('metadata', {}), 'Monitor footprint metadata').get('lineage_facts')):
             raise SuiteError('Monitor footprint has invalid status/owner or persistent lineage')
-        native = physical_runner(repository, env, 'verify-' + fixture.MOSAIC_SOURCE_CASES[-1])
-        final_name = fixture.MOSAIC_SOURCE_CASES[-1] + '.cog.tif'
+        native = physical_runner(repository, env, 'verify-' + fixture.MOSAIC_CASES[-1])
+        final_name = fixture.MOSAIC_CASES[-1] + '.cog.tif'
         if (native.get('sha256') != preserved[final_name] or native.get('preserved_sha256') !=
             {name: digest for name, digest in preserved.items() if name != final_name}):
             raise SuiteError('footprint execution changed an accepted artifact')
@@ -1137,7 +1232,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'size_evidence': size_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
-            'mosaic_source_cases': mosaic_source_cases,
+            'mosaic_source_cases': mosaic_source_cases, 'mosaic_editor_case': mosaic_editor_case,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
             'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'update_cases': update_cases, 'footprint_cases': footprint_cases, 'tiling_cases': tiling_results['create']['cases'], 'tiling_replace_cases': tiling_results['replace']['cases'],

@@ -176,7 +176,7 @@ func suitePermissions(suite string) ([]string, error) {
 	case "platform-node-metrics":
 		return nil, nil
 	case "raster-workflow":
-		return rasterWorkflowPermissions, nil
+		return append(append([]string{}, rasterWorkflowPermissions...), "develop.task.create", "develop.task.delete"), nil
 	case "raster-workflow-capacity":
 		return append(append([]string{}, rasterWorkflowPermissions...), "manager.derived_artifact.create", "manager.derived_artifact.read"), nil
 	case "security-mysql-owner-protection":
