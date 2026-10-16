@@ -380,7 +380,7 @@ class MongoClient(SpatialClient):
             if denied:
                 execution = {"status": "failed", "metadata": {}, "error_details": {
                     "category": "execution_failed", "code": "develop.query.protection_required",
-                    "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "result", "reason": "data_protection_required"}}}
+                    "diagnostic": {"schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "data_protection_required"}}}
             else:
                 if "find" in query:
                     rows = self.rows("develop")
@@ -521,6 +521,8 @@ class MongoAlgorithmTest(unittest.TestCase):
         self.assertTrue(report["cases"][0]["export_during_manager_policy"]["same_user_verified"])
         self.assertEqual([case["query_boundaries"]["count"] for case in report["cases"]], [7, 7, 7])
         self.assertTrue(all(case["query_boundaries"]["derived_output_denied"] for case in report["cases"]))
+        self.assertTrue(all(case["query_boundaries"]["diagnostic_stage"] == "preparation" for case in report["cases"]))
+        self.assertTrue(all(case["query_boundaries"]["diagnostic_reason"] == "data_protection_required" for case in report["cases"]))
         self.assertTrue(report["cases"][0]["develop_during_manager_policy"]["null_values_preserved"])
         self.assertEqual(sum("find" in query for query in client.query_requests), 5)
         self.assertEqual(sum("count" in query for query in client.query_requests), 4)

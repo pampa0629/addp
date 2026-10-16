@@ -1358,7 +1358,7 @@ def verify_mongodb_query_boundaries(client: GatewayClient, engine_id: int,
     if rows != [{"count": 7}]:
         raise SuiteError("MongoDB count must return seven without field values")
     execution = develop_execution(client, engine_id, locator, deadline, MONGODB_DERIVED_QUERY, "mql")
-    evidence = validate_develop_protection_refusal(execution, "result")
+    evidence = validate_develop_protection_refusal(execution, "preparation")
     return {"count": 7, "derived_output_denied": True, **evidence}
 
 
