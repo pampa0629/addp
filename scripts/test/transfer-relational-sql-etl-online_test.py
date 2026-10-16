@@ -158,9 +158,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                  "triggered_by": 31, "tenant_id": 7, "scan_context": {"engine_id": 8}}
         client = Mock()
         client.request.return_value.payload = task
-        with patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual:
+        with patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual, patch.object(ONLINE,"verify_import_private_access",return_value=str(uuid.uuid4())):
             owned = []
-            report = ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned)
+            report = ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
             self.assertEqual(owned, [42])
             self.assertEqual(report["meta_scan_execution_id"], child_id)
             self.assertEqual(wait.call_args_list[1].args, (client, "meta", child_id, 30))
@@ -170,8 +170,26 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with self.subTest(change=change), patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(child, **change)]):
                 owned = []
                 with self.assertRaisesRegex(ONLINE.SuiteError, "actual parent, current User or Tenant"):
-                    ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned)
+                    ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
                 self.assertEqual(owned, [42], "failed verification must still leave the task available to cleanup")
+
+    def test_private_import_rejects_distinct_user_before_any_read_write_or_scan(self):
+        identifier = str(uuid.uuid4())
+        failure = {"execution_id": identifier, "status": "failed", "records_read": 0, "records_written": 0,
+                   "error_details": {"category": "execution_failed", "code": "data_protection_required"}, "metadata": {}}
+        client = Mock()
+        client.request.side_effect = [SimpleNamespace(payload={"execution_id": identifier}), SimpleNamespace(payload=failure)]
+        with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "32"}):
+            self.assertEqual(ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30), identifier)
+        for change in ({"status": "success"}, {"records_read": 1}, {"records_written": 1},
+                       {"error_details": {"code": "other_error"}},
+                       {"metadata": {"metadata_scan": {"status": "submitted", "attempt": 0}}}):
+            client.request.side_effect = [SimpleNamespace(payload={"execution_id": identifier}), SimpleNamespace(payload=dict(failure, **change))]
+            with self.subTest(change=change), patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "32"}):
+                with self.assertRaisesRegex(ONLINE.SuiteError, "not rejected before reading and writing"):
+                    ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
+        with patch.object(ONLINE, "validate_user_identity", return_value={"principal_id": "31"}), self.assertRaisesRegex(ONLINE.SuiteError, "distinct User"):
+            ONLINE.verify_import_private_access(client, 42, {"principal_id": "31", "tenant_id": "7"}, 30)
 
     def test_metadata_scan_allows_only_safe_public_feedback(self):
         for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4())},
@@ -568,7 +586,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_TEST_ENGINE_NAME": "fixture", "ADDP_ONLINE_TEST_MONGODB_ENGINE_ID": "4", "ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME": "mongo-fixture",
                        "ADDP_ONLINE_TEST_RUN_ID": "run-123", "CONSOLE_URL": "http://127.0.0.1:5170", "GATEWAY_URL": "http://127.0.0.1:8000",
                        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-token", "ADDP_ONLINE_TEST_USER_USERNAME": "fixture",
-                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
+                       "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN":"fixture-outsider", "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only"}
         client = object()
         pg_source = {"id": 5, "node_id": 9, "full_name": "public." + ONLINE.SOURCE_TABLE, "item_type": "table"}
         mongo_source = {"id": 20, "node_id": 21, "full_name": ONLINE.MONGODB_SOURCE, "item_type": "collection"}
@@ -582,7 +600,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v9")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v10")
         self.assertEqual(report["created_resources"], 12)
         self.assertEqual(report["deleted_resources"], 12)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])

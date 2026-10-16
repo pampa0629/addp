@@ -430,6 +430,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 3. infra MinIO 使用系统基础设施 MinIO 配置，不通过 System engines 解析，不产生业务 engine 记录。
 4. Transfer endpoint 解析层可以把 `addp-infra://minio/...` 绑定到 infra MinIO 的 engine binding 和 catalog path，后续执行链路仍复用通用 content reader / writer 和 format reader / writer，不在 planner / executor 为 Manager 导入导出建立专用格式分支。
 5. 导出到 infra 暂存时 `auto_scan_metadata=false`；导入到业务库后是否扫描目标由 Transfer / Meta 正常任务链路处理。
+6. Manager 导入暂存来源由 Manager 保存真实上传者和绑定任务；Transfer 在实际读取前通过 Owner 核验同租户、同上传者、同任务和准确 locator。路径和 UUID 本身不是读取许可；未核验的 Infra 来源不得跳过业务保护后直接读取。
 
 ---
 

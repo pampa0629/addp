@@ -254,7 +254,7 @@ def submit_manager_import(client, engine_id):
         raise SuiteError("Manager import transport failed") from error
 
 
-def run_manager_import(client, engine_id, identity, timeout, owned_ids):
+def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider):
     submitted = submit_manager_import(client, engine_id)
     task_id = positive_int(submitted.get("transfer_task_id"), "import task id")
     owned_ids.append(task_id)
@@ -282,10 +282,34 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids):
             or child.get("scan_context", {}).get("engine_id") != engine_id):
         raise SuiteError("automatic Meta scan lost its actual parent, current User or Tenant")
     item = wait_transfer_target(client, engine_id, "public." + IMPORT_TARGET, timeout)
+    denied_execution = verify_import_private_access(outsider, task_id, identity, timeout)
+
     return {"transfer_task_id": task_id, "transfer_execution_id": identifier,
             "meta_scan_execution_id": scan["execution_id"], "target_item_id": item["id"],
             "records_read": 2, "records_written": 2, "current_user_origin_verified": True,
-            "automatic_scan_verified": True}
+            "automatic_scan_verified": True, "non_uploader_rejected": True, "rejected_execution_id": denied_execution}
+
+
+def verify_import_private_access(outsider, task_id, owner_identity, timeout):
+    identity = validate_user_identity(outsider, int(owner_identity["tenant_id"]))
+    if identity["principal_id"] == owner_identity["principal_id"]:
+        raise SuiteError("import private-source proof requires a distinct User")
+    started = _object(outsider.request("POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (202,)).payload, "non-uploader execution")
+    identifier = started.get("execution_id")
+    if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
+        raise SuiteError("non-uploader admission lost its execution UUID")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _object(outsider.request("GET", f"/api/v1/transfer/executions/{identifier}", (200,)).payload, "non-uploader execution")
+        assert_transfer_execution_projection(result)
+        if result.get("status") in SUPPORT.TERMINAL_STATUSES:
+            if (result.get("status") != "failed" or result.get("error_details", {}).get("code") != "data_protection_required"
+                    or result.get("records_read") != 0 or result.get("records_written") != 0
+                    or "metadata_scan" in result.get("metadata", {})):
+                raise SuiteError("non-uploader was not rejected before reading and writing")
+            return identifier
+        time.sleep(1)
+    raise SuiteError("non-uploader execution did not fail before timeout")
 
 
 def execution_schema_hashes(execution: dict[str, object]) -> tuple[str, str]:
@@ -1225,7 +1249,8 @@ def main() -> int:
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         browser = run_browser(repository, dict(os.environ), owned_name, lineage, mongodb_lineage, chain, wide)
         multi = run_multi_source_lineage(client, engine_id, source, lineage, owned_name, convergence_timeout, owned_ids)
-        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids)
+        outsider = GatewayClient(required_environment("GATEWAY_URL"), required_environment("ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN"), timeout)
+        manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         cleanup_definitions(client, owned_paths)
         cleanup_tasks(client, owned_ids)
         owned_ids.clear()
@@ -1233,7 +1258,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v9",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v10",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",

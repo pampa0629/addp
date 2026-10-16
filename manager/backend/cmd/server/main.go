@@ -376,6 +376,7 @@ func main() {
 		minioBucket,
 		transferClient,
 		vectorMaterializedViewTaskSvc,
+		repository.NewImportSourceRepository(db),
 	)
 	importHandler := api.NewImportHandler(importService)
 	uploadService := service.NewUploadService(systemClient, commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))

@@ -448,6 +448,13 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = organizationOperator.AccessToken
 	}
 	if *suite == "transfer-relational-sql-etl" {
+		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-import-outsider", transferLineagePermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
+
 		const username = "external-online-transfer-precheck"
 		original, assignmentID, password, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, username, transferConfigCheckPermissions)

@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 500 {
-		t.Fatalf("descriptor count = %d, want 500", len(descriptors))
+	if len(descriptors) != 501 {
+		t.Fatalf("descriptor count = %d, want 501", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -231,6 +231,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"audit.tenant_event.create",
 		"develop.export_provenance.read",
 		"manager.export_provenance.read",
+		"manager.import_provenance.read",
 		"meta.catalog.read",
 		"meta.inspect.execute",
 		"meta.scan_task.execute",

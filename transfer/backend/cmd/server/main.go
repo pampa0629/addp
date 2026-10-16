@@ -145,6 +145,7 @@ func main() {
 		systemRuntimeClient,
 		nil,
 	)
+	executionEngineService.SetImportSourceVerifier(commonClient.NewManagerImportSourceClient(systemRuntimeClient, serviceTokenSource))
 	executionEngineService.SetConfig(cfg)
 	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{

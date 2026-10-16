@@ -152,6 +152,9 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("manager", systemServiceClient))
 	}
 	{
+		importSource := api.Group("/runtime/import-sources")
+		importSource.Use(auth.MustNewContextGuard("tenant"), auth.MustNewServiceClientGuard("addp-transfer"), permission(managerauthorization.PermissionManagerImportProvenanceRead))
+		importSource.POST("/verify", importHandler.VerifyImportSource)
 		exportSource := api.Group("/runtime/export-sessions")
 		exportSource.Use(exportartifact.ExecutionSourceGuards(managerauthorization.PermissionManagerExportProvenanceRead)...)
 		exportSource.POST("/:id/execution-source", exportHandler.ResolveExecutionSource)

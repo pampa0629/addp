@@ -317,3 +317,12 @@ other = "The source could not be fully parsed or contains invalid device/time fi
 
 [manager.error.import_submission_failed]
 other = "Files may already be uploaded. Transfer task submission failed; check existing tasks before retrying."
+
+[manager.import.source_invalid]
+other = "Invalid import source verification request"
+
+[manager.import.source_not_found]
+other = "Import staging source not found"
+
+[manager.import.source_unavailable]
+other = "Import source verification is unavailable"

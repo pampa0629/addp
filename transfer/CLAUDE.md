@@ -202,3 +202,5 @@ continuous Hosted 物理源准备以最终 TCP 服务成功查询 `continuous_fi
 首轮 [Hosted 38902870557](https://github.com/pampa0629/addp/actions/runs/38902870557) 在业务源初始化时误判 PostgreSQL 临时 Unix socket 服务就绪，建表报 `database system is shutting down`，尚未执行扫描场景；退出清理 passed、Infra zero_residuals。修复为最终 TCP 服务查询指定数据库后，`make test-transfer-continuous-online-runner` 的 34 项回归及 System 夹具 Go 测试通过，上述重跑完成真实验收；未放宽就绪条件或扫描范围断言。
 
 结构审批补扫的正式来源为 `schema_change_source`，只引用触发阻塞的 execution、审批 request 和当前 claim。Common 私有 `schema_change_scan_origin` 保存实际应用目标与本次审批 User 的来源，专业诊断不暴露该对象；原阻塞 execution 的主体不变，新扫描无父 execution，并按审批人隔离读取。T1/T2 沿现有 Meta 专业读取与 Transfer 结构阻塞门禁验证；continuous Hosted 套件增加真实 nullable 字段变更、审批补扫、新字段 Meta 事实、幂等审批和 resume 后物理提交与范围不变检查。
+
+Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。

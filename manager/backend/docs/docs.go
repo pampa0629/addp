@@ -3972,6 +3972,85 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/import-sources/verify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务和准确来源；不返回文件或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task and exact source; no files or credentials are returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "核验导入暂存来源 | Verify private import staging source",
+                "parameters": [
+                    {
+                        "description": "当前执行来源 | Current execution source",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerImportSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.ManagerImportSource"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.import_provenance.read"
+                ]
+            }
+        },
         "/search": {
             "get": {
                 "security": [
@@ -5880,6 +5959,40 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ordinal_position": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.ManagerImportSource": {
+            "type": "object",
+            "properties": {
+                "source_locator": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "uploader_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.ManagerImportSourceRequest": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "source_locator": {
+                    "type": "string"
+                },
+                "task_id": {
                     "type": "integer"
                 }
             }

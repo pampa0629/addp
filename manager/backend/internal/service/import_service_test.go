@@ -16,6 +16,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/format"
+	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -73,6 +74,7 @@ func TestImportShapefileCleansVectorMaterializedViewsBeforeUpload(t *testing.T) 
 		TargetSchema:   "public",
 		TargetTable:    "roads",
 		TenantID:       3,
+		UploaderID:     31,
 	}
 
 	_, err = service.ImportShapefile(context.Background(), req, "current-user")
@@ -101,6 +103,7 @@ func TestImportShapefileStopsWhenVectorMaterializedViewCleanupFails(t *testing.T
 		TargetSchema:   "public",
 		TargetTable:    "roads",
 		TenantID:       3,
+		UploaderID:     31,
 	}
 
 	_, err := service.ImportShapefile(context.Background(), req, "current-user")
@@ -334,6 +337,7 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer storage.Close()
+	store := &recordingImportSourceStore{}
 	calls := 0
 	transfer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -348,6 +352,9 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/transfer/task-definitions":
+			if store.source == nil || store.source.UploaderID != 31 {
+				t.Error("source fact must be saved before task creation")
+			}
 			var request client.CreateTransferTaskRequest
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Error(err)
@@ -380,6 +387,9 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 			w.WriteHeader(201)
 			_, _ = w.Write([]byte(`{"id":42}`))
 		case "/api/v1/transfer/task-definitions/42/start":
+			if store.taskID != 42 {
+				t.Error("source must be bound before execution starts")
+			}
 			if calls != 2 {
 				t.Error("task must be created exactly once before start")
 			}
@@ -395,10 +405,13 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewImportService(minioClient, "manager", client.NewTransferClient(transfer.URL, nil), nil)
-	result, err := service.ImportShapefile(context.Background(), &ImportShapefileRequest{Files: completeImportShapefileUploadFiles("roads"), TargetEngineID: 8, TargetSchema: "public", TargetTable: "roads", TenantID: 7}, "current-user")
+	service := NewImportService(minioClient, "manager", client.NewTransferClient(transfer.URL, nil), nil, store)
+	result, err := service.ImportShapefile(context.Background(), &ImportShapefileRequest{Files: completeImportShapefileUploadFiles("roads"), TargetEngineID: 8, TargetSchema: "public", TargetTable: "roads", TenantID: 7, UploaderID: 31}, "current-user")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if store.source == nil || store.source.UploaderID != 31 || store.source.TenantID != 7 || store.taskID != 42 {
+		t.Fatal("upload source was not saved and bound")
 	}
 	if calls != 2 || result.TransferTaskID != 42 || result.TransferExecutionID != "694c4422-56b1-45f5-b367-9f7525760a23" {
 		t.Fatalf("submission result = %#v, calls=%d", result, calls)
@@ -409,4 +422,28 @@ func TestImportShapefileSubmitsCurrentBoundedSnapshotContract(t *testing.T) {
 			t.Errorf("staged content differs for %s", file.FileName)
 		}
 	}
+}
+
+type recordingImportSourceStore struct {
+	source  *models.ImportSource
+	taskID  uint
+	bindErr error
+}
+
+func (s *recordingImportSourceStore) Create(_ context.Context, source *models.ImportSource) error {
+	s.source = source
+	return nil
+}
+func (s *recordingImportSourceStore) BindTask(_ context.Context, id string, tenant, task uint) error {
+	if s.bindErr != nil {
+		return s.bindErr
+	}
+	if s.source == nil || s.source.UploadUUID != id || s.source.TenantID != tenant {
+		return errors.New("wrong source binding")
+	}
+	s.taskID = task
+	return nil
+}
+func (s *recordingImportSourceStore) Verify(context.Context, uint, client.ManagerImportSourceRequest) (*client.ManagerImportSource, error) {
+	return nil, errors.New("not implemented")
 }

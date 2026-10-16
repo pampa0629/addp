@@ -29,6 +29,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Quick View / tile cache tables use an explicit clean-break schema guard below.
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
+		&models.ImportSource{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.EmbeddingConfiguration{},
 		&models.InferenceScenarioBinding{},

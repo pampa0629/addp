@@ -107,6 +107,28 @@ definitions:
       ordinal_position:
         type: integer
     type: object
+  client.ManagerImportSource:
+    properties:
+      source_locator:
+        type: string
+      task_id:
+        type: integer
+      tenant_id:
+        type: integer
+      uploader_id:
+        type: integer
+    type: object
+  client.ManagerImportSourceRequest:
+    properties:
+      execution_id:
+        type: string
+      principal_id:
+        type: integer
+      source_locator:
+        type: string
+      task_id:
+        type: integer
+    type: object
   datatype.Bounds3D:
     properties:
       max_x:
@@ -5900,6 +5922,59 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.export_provenance.read
+  /runtime/import-sources/verify:
+    post:
+      consumes:
+      - application/json
+      description: 仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务和准确来源；不返回文件或凭据。| Only
+        the Transfer Tenant Service may verify the execution uploader, bound task
+        and exact source; no files or credentials are returned.
+      parameters:
+      - description: 当前执行来源 | Current execution source
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/client.ManagerImportSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/client.ManagerImportSource'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 核验导入暂存来源 | Verify private import staging source
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.import_provenance.read
   /search:
     get:
       description: 执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页；field_matches 保留实际命中的已登记字段定义与高亮，纯向量命中不声明字段匹配

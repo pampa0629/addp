@@ -17,6 +17,7 @@ const (
 	PermissionManagerDerivedArtifactRead   = "manager.derived_artifact.read"
 	PermissionManagerDerivedArtifactUpdate = "manager.derived_artifact.update"
 	PermissionManagerExportProvenanceRead  = "manager.export_provenance.read"
+	PermissionManagerImportProvenanceRead  = "manager.import_provenance.read"
 	PermissionManagerSearchExecute         = "manager.search.execute"
 	PermissionManagerTaskProviderExecute   = "manager.task_provider.execute"
 	PermissionManagerTaskProviderRead      = "manager.task_provider.read"
@@ -36,6 +37,7 @@ var permissionKeys = [...]string{
 	"manager.derived_artifact.read",
 	"manager.derived_artifact.update",
 	"manager.export_provenance.read",
+	"manager.import_provenance.read",
 	"manager.search.execute",
 	"manager.task_provider.execute",
 	"manager.task_provider.read",

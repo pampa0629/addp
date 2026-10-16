@@ -34,16 +34,17 @@ import (
 
 // ExecutionEngineService executes Transfer tasks through common engine/format.
 type ExecutionEngineService struct {
-	taskRepo         *repository.TaskRepository
-	syncStateRepo    *repository.SyncStateRepository
-	executionService *ExecutionService
-	systemClient     *commonClient.SystemClient
-	systemRuntime    *commonClient.SystemServiceClient
-	metaClient       *commonClient.MetaClient
-	replayRuntime    BoundedReplayRuntime
-	cfg              *config.Config
-	logger           *slog.Logger
-	protectionGate   sourceProtectionGate
+	taskRepo             *repository.TaskRepository
+	syncStateRepo        *repository.SyncStateRepository
+	executionService     *ExecutionService
+	systemClient         *commonClient.SystemClient
+	systemRuntime        *commonClient.SystemServiceClient
+	metaClient           *commonClient.MetaClient
+	replayRuntime        BoundedReplayRuntime
+	cfg                  *config.Config
+	logger               *slog.Logger
+	protectionGate       sourceProtectionGate
+	importSourceVerifier importSourceVerifier
 }
 
 type sourceProtectionGate interface {
@@ -69,6 +70,14 @@ func NewExecutionEngineService(
 		metaClient:       metaClient,
 		logger:           logger.With("component", "execution_engine_service"),
 	}
+}
+
+type importSourceVerifier interface {
+	VerifyImportSource(context.Context, uint, commonClient.ManagerImportSourceRequest) (*commonClient.ManagerImportSource, error)
+}
+
+func (s *ExecutionEngineService) SetImportSourceVerifier(verifier importSourceVerifier) {
+	s.importSourceVerifier = verifier
 }
 
 func (s *ExecutionEngineService) SetConfig(cfg *config.Config) {
@@ -197,6 +206,10 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
+	if err := s.verifyInfraImportSource(ctx, execution, spec.Source.Locator); err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
+	}
 	if err := s.attachSourceMetaAttributes(task, &spec); err != nil {
 		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
@@ -222,7 +235,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		}
 		return s.executeWatermarkIncrementalTask(ctx, task, executionID, spec, resolver)
 	}
-	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
+	return s.executeCommonTableTransferTask(ctx, task, execution, executionID, spec, resolver)
 }
 
 func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
@@ -439,8 +452,8 @@ func (s *ExecutionEngineService) attachSourceInspectAttributes(task *models.Tran
 	return nil
 }
 
-func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
-	buildResult, metrics, err := s.runCommonTableTransferData(ctx, task, executionID, spec, resolver)
+func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Context, task *models.TransferTask, execution *commonExecution.TaskExecution, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
+	buildResult, metrics, err := s.runCommonTableTransferData(ctx, task, execution, executionID, spec, resolver)
 	if err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
@@ -464,6 +477,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 func (s *ExecutionEngineService) runCommonTableTransferData(
 	ctx context.Context,
 	task *models.TransferTask,
+	execution *commonExecution.TaskExecution,
 	executionID uint,
 	spec planner.TableExportTaskSpec,
 	resolver planner.EngineResolver,
@@ -486,9 +500,16 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
-	tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
-		ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind,
-	)
+	if planner.IsInfraLocatorURI(spec.Source.Locator) {
+		if buildResult.Plan.Source.Kind != executor.TableEndpointEncoded {
+			return nil, nil, fmt.Errorf("%w: invalid private source kind", executor.ErrProtectionPreparation)
+		}
+		err = s.verifyInfraImportSource(ctx, execution, spec.Source.Locator)
+	} else {
+		tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
+			ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind,
+		)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -627,7 +648,7 @@ func (s *ExecutionEngineService) executeTargetOverrideTableTransferTask(
 		}
 		resolver[engineID] = binding
 	}
-	_, metrics, err := s.runCommonTableTransferData(ctx, task, executionID, resolvedSpec, resolver)
+	_, metrics, err := s.runCommonTableTransferData(ctx, task, execution, executionID, resolvedSpec, resolver)
 	if err != nil {
 		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
@@ -1548,4 +1569,39 @@ func cleanPathValue(value interface{}) string {
 		return ""
 	}
 	return text
+}
+
+// Verify the frozen execution before metadata inspection and again before data reads.
+func (s *ExecutionEngineService) verifyInfraImportSource(ctx context.Context, current *commonExecution.TaskExecution, locator string) error {
+	if !planner.IsInfraLocatorURI(locator) {
+		return nil
+	}
+	deny := func() error {
+		return fmt.Errorf("%w: private import source verification failed", executor.ErrProtectionPreparation)
+	}
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || ctx.Err() != nil || current == nil || current.TenantID <= 0 || current.Module != commonExecution.ModuleTransfer || current.TaskType != commonExecution.TaskTypeSync || current.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || current.Status != commonExecution.ExecutionStatusRunning || current.SourceTaskID == nil || s.importSourceVerifier == nil {
+		return deny()
+	}
+	actualLease, err := commonExecution.LeaseFromExecution(*current)
+	if err != nil || lease != actualLease || lease.Attempt <= 0 {
+		return deny()
+	}
+
+	if err := commonExecution.CopyActorOrigin(&commonExecution.TaskExecution{TenantID: current.TenantID}, current); err != nil {
+		return deny()
+	}
+	taskID, err := commonExecution.ParseSourceTaskIDUint(current.SourceTaskID)
+	if err != nil || taskID == 0 {
+		return deny()
+	}
+	request := commonClient.ManagerImportSourceRequest{ExecutionID: current.ExecutionID, TaskID: taskID, PrincipalID: *current.ActorPrincipalID, SourceLocator: locator}
+	if request.Validate() != nil {
+		return deny()
+	}
+	result, err := s.importSourceVerifier.VerifyImportSource(ctx, uint(current.TenantID), request)
+	if err != nil || result == nil || !result.Matches(uint(current.TenantID), request) {
+		return deny()
+	}
+	return nil
 }

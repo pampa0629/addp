@@ -2,6 +2,8 @@
 
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `manager.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=manager`；Common 变更按 `make test-changed` 扩散验证。
 
+导入暂存来源按上传者私有：`manager.import_sources` 只保存成功上传的 Tenant、Uploader、UUID、准确 source locator 和一次绑定的 Transfer task ID。`POST /runtime/import-sources/verify` 仅接受持有 `manager.import_provenance.read` 的 `addp-transfer`，核对当前执行主体及任务，不返回文件或凭据。未绑定或不匹配拒绝；不从路径推断所有权。验证沿既有 Manager Go／PostgreSQL、Common Client、System IAM 和 Transfer Hosted 门禁。
+
 ## 模块定位
 
 Manager 模块负责数据探查、数据预览、表格数据剖析、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。Manager 的引擎资源树是技术浏览视图，不是 Enterprise Catalog，也不拥有企业 `CatalogEntry`、业务语义关联或责任事实。Catalog 落地后，Manager 只按需读取企业资源摘要并跳转企业资源目录；Catalog 不可达只影响该摘要和跳转，不得回退到旧 Asset 发现或在 Manager 内复制企业资源目录。

@@ -317,3 +317,12 @@ other = "源数据无法完整解析，或设备、时间字段无效"
 
 [manager.error.import_submission_failed]
 other = "文件可能已上传，Transfer 任务提交失败，请先检查已创建的任务再重试。"
+
+[manager.import.source_invalid]
+other = "导入来源核验请求无效"
+
+[manager.import.source_not_found]
+other = "导入暂存来源不存在"
+
+[manager.import.source_unavailable]
+other = "导入来源核验暂不可用"

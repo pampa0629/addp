@@ -66,6 +66,7 @@ func main() {
 	}
 	protectionGate := transferprotection.NewGate(protectionStore, systemClient)
 	executionEngineService := service.NewExecutionEngineService(taskRepo, repository.NewSyncStateRepository(db), executionService, systemClient, systemRuntimeClient, metaClient)
+	executionEngineService.SetImportSourceVerifier(commonClient.NewManagerImportSourceClient(systemRuntimeClient, tokenSource))
 	executionEngineService.SetConfig(cfg)
 	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{

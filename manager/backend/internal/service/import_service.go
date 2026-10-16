@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/logger"
+	"github.com/addp/manager/internal/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
@@ -34,7 +35,14 @@ var (
 
 // ImportService 数据导入服务
 // 职责：接收上传文件 → 存储到 MinIO temp 前缀 → 调用 Transfer API 创建并触发任务
+type ImportSourceStore interface {
+	Create(context.Context, *models.ImportSource) error
+	BindTask(context.Context, string, uint, uint) error
+	Verify(context.Context, uint, client.ManagerImportSourceRequest) (*client.ManagerImportSource, error)
+}
+
 type ImportService struct {
+	sourceStore                   ImportSourceStore
 	minioClient                   *minio.Client
 	minioBucket                   string
 	transferClient                importTransferClient
@@ -56,8 +64,9 @@ func NewImportService(
 	minioBucket string,
 	transferClient importTransferClient,
 	vectorMaterializedViewCleaner importVectorMaterializedViewCleaner,
+	sourceStore ImportSourceStore,
 ) *ImportService {
-	return &ImportService{
+	return &ImportService{sourceStore: sourceStore,
 		minioClient:                   minioClient,
 		minioBucket:                   minioBucket,
 		transferClient:                transferClient,
@@ -74,6 +83,7 @@ type ImportShapefileRequest struct {
 	TargetTable       string // 目标表名（可选，默认使用文件名）
 	Encoding          string // DBF 编码（默认 UTF-8）
 	TenantID          uint   // 租户 ID
+	UploaderID        int64  // 仅来自已验证 User AuthContext
 }
 
 type ImportUploadFile struct {
@@ -91,7 +101,7 @@ type ImportResult struct {
 
 // ImportShapefile 导入 Shapefile 文件
 func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefileRequest, userBearer string) (*ImportResult, error) {
-	if userBearer == "" || strings.ContainsAny(userBearer, " \t\r\n") {
+	if req == nil || req.TenantID == 0 || req.UploaderID <= 0 || userBearer == "" || strings.ContainsAny(userBearer, " \t\r\n") {
 		return nil, commonAPI.ErrForbidden
 	}
 	log := logger.L()
@@ -142,6 +152,12 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	}
 
 	sourceObjectPath := prefix + primaryShapefileName(files)
+	if s.sourceStore == nil {
+		return nil, fmt.Errorf("%w: import source store unavailable", ErrImportSubmission)
+	}
+	if err := s.sourceStore.Create(ctx, &models.ImportSource{UploadUUID: uploadUUID, TenantID: req.TenantID, UploaderID: req.UploaderID, SourceLocator: managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath)}); err != nil {
+		return nil, fmt.Errorf("%w: persist upload source: %w", ErrImportSubmission, err)
+	}
 
 	// 6. 创建 Transfer 任务
 	taskName := fmt.Sprintf("import_%s_%s", tableName, time.Now().Format("20060102_150405"))
@@ -163,6 +179,9 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 		return nil, fmt.Errorf("%w: %w", ErrImportSubmission, err)
 	}
 
+	if err := s.sourceStore.BindTask(ctx, uploadUUID, req.TenantID, taskResp.ID); err != nil {
+		return nil, fmt.Errorf("%w: bind upload source: %w", ErrImportSubmission, err)
+	}
 	log.Info("Transfer 任务创建成功", "task_id", taskResp.ID)
 
 	// 7. 触发任务执行
@@ -458,4 +477,11 @@ func inferTableName(filename string) string {
 		r = strings.ReplaceAll(r, "__", "_")
 	}
 	return strings.Trim(r, "_")
+}
+
+func (s *ImportService) VerifySource(ctx context.Context, tenantID uint, request client.ManagerImportSourceRequest) (*client.ManagerImportSource, error) {
+	if s == nil || s.sourceStore == nil {
+		return nil, errors.New("import source store unavailable")
+	}
+	return s.sourceStore.Verify(ctx, tenantID, request)
 }

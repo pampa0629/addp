@@ -114,6 +114,14 @@ permissions:
     status: active
     name_i18n_key: permissions.manager.export_provenance.read.name
     description_i18n_key: permissions.manager.export_provenance.read.description
+  - key: manager.import_provenance.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.import_provenance.read.name
+    description_i18n_key: permissions.manager.import_provenance.read.description
   - key: manager.resource_grant.create
     allowed_scope_types: [tenant]
     risk_level: high

@@ -1,7 +1,13 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"github.com/addp/common/client"
+	"github.com/addp/manager/internal/models"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,6 +70,105 @@ func TestImportRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) 
 			}
 			if token != "allowed" && body.read {
 				t.Fatal("request files read before identity/permission/configuration check")
+			}
+		})
+	}
+}
+
+type apiImportSourceStore struct {
+	calls  int
+	source client.ManagerImportSource
+}
+
+func (*apiImportSourceStore) Create(context.Context, *models.ImportSource) error { return nil }
+func (*apiImportSourceStore) BindTask(context.Context, string, uint, uint) error { return nil }
+func (s *apiImportSourceStore) Verify(_ context.Context, tenant uint, r client.ManagerImportSourceRequest) (*client.ManagerImportSource, error) {
+	s.calls++
+	if !s.source.Matches(tenant, r) {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &s.source, nil
+}
+func TestImportSourceProductionRouteRequiresTransferAndPrivateExactBinding(t *testing.T) {
+	permission := "manager.import_provenance.read"
+	identities := map[string]authorization.AuthContext{}
+	for _, key := range []string{"transfer", "wrong-client", "no-permission", "foreign", "user"} {
+		tenant := "7"
+		if key == "foreign" {
+			tenant = "8"
+		}
+		value := authtest.NewTenantUserAuthContext(tenant, "91", []string{permission})
+		if key != "user" {
+			value.Principal.Type = "service_principal"
+			value.Token.Type = "service_access_token"
+			value.Authentication.Methods = []string{"service_secret"}
+			value.Authentication.AssuranceLevel = "not_applicable"
+			id := "addp-transfer"
+			if key == "wrong-client" {
+				id = "addp-meta"
+			}
+			value.Client.ClientID = &id
+		}
+		if key == "no-permission" {
+			value.Authorization.RoleAssignments[0].Permissions = []string{"system.engine.read"}
+		}
+		identities[key] = value
+	}
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		value, ok := identities[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+		if !ok {
+			w.WriteHeader(401)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(value)
+	}))
+	defer system.Close()
+	store := &apiImportSourceStore{source: client.ManagerImportSource{TenantID: 7, UploaderID: 31, TaskID: 42, SourceLocator: "addp-infra://minio/manager/tenant_7/import/day/upload/roads.shp?type=object"}}
+	cfg := &config.Config{}
+	cfg.SystemServiceURL = system.URL
+	router := SetupRouter(cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), NewImportHandler(service.NewImportService(nil, "manager", nil, nil, store)), nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
+	request := client.ManagerImportSourceRequest{ExecutionID: uuid.NewString(), TaskID: 42, PrincipalID: 31, SourceLocator: store.source.SourceLocator}
+	for _, kind := range []string{"transfer", "wrong-client", "no-permission", "foreign", "user", "uploader", "task", "source", "unknown-field"} {
+		t.Run(kind, func(t *testing.T) {
+			token := kind
+			r := request
+			extra := false
+			switch kind {
+			case "uploader":
+				token = "transfer"
+				r.PrincipalID = 32
+			case "task":
+				token = "transfer"
+				r.TaskID = 43
+			case "source":
+				token = "transfer"
+				r.SourceLocator = strings.Replace(r.SourceLocator, "roads.shp", "other.shp", 1)
+			case "unknown-field":
+				token = "transfer"
+				extra = true
+			}
+			body, _ := json.Marshal(r)
+			if extra {
+				body = append(body[:len(body)-1], []byte(`,"token":"private"}`)...)
+			}
+			httpRequest := httptest.NewRequest("POST", "/api/v1/manager/runtime/import-sources/verify", bytes.NewReader(body))
+			httpRequest.Header.Set("Authorization", "Bearer "+token)
+			httpRequest.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httpRequest)
+			want := 403
+			switch kind {
+			case "transfer":
+				want = 200
+			case "foreign", "uploader", "task", "source":
+				want = 404
+			case "unknown-field":
+				want = 400
+			}
+			if response.Code != want {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, want, response.Body.String())
 			}
 		})
 	}

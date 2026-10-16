@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
-	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -15,10 +15,11 @@ import (
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func importError(c *gin.Context, err error) {
-	var submission *commonClient.TransferTaskSubmissionError
+	var submission *client.TransferTaskSubmissionError
 	switch {
 	case errors.Is(err, commonAPI.ErrForbidden):
 		commonAPI.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
@@ -166,7 +167,7 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 	)
 
 	// 执行导入
-	req := &service.ImportShapefileRequest{
+	req := &service.ImportShapefileRequest{UploaderID: int64(auth.GetUserID(c)),
 		Files:             files,
 		TargetNodeLocator: targetNodeLocator,
 		TargetEngineID:    targetLoc.EngineID,
@@ -189,4 +190,38 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusAccepted, result)
+}
+
+// VerifyImportSource 核验上传者私有的导入暂存来源。
+// @Summary 核验导入暂存来源 | Verify private import staging source
+// @Description 仅 Transfer Tenant Service 可核验当前执行的上传者、绑定任务和准确来源；不返回文件或凭据。| Only the Transfer Tenant Service may verify the execution uploader, bound task and exact source; no files or credentials are returned.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param request body client.ManagerImportSourceRequest true "当前执行来源 | Current execution source"
+// @Success 200 {object} client.ManagerImportSource
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.import_provenance.read"]
+// @Router /runtime/import-sources/verify [post]
+// @Security BearerAuth
+func (h *ImportHandler) VerifyImportSource(c *gin.Context) {
+	var request client.ManagerImportSourceRequest
+	if commonAPI.BindOptionalJSONStrict(c, &request) != nil || request.Validate() != nil {
+		commonAPI.BadRequestError(c, commoni18n.T(c, manageri18n.MsgImportSourceInvalid))
+		return
+	}
+	source, err := h.importService.VerifySource(c.Request.Context(), auth.GetTenantID(c), request)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		commonAPI.NotFoundError(c, commoni18n.T(c, manageri18n.MsgImportSourceNotFound))
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgImportSourceUnavailable)})
+		return
+	}
+	c.JSON(http.StatusOK, source)
 }

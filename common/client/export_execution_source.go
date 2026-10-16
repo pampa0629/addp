@@ -74,17 +74,17 @@ func ExportRequestDigest(request *CreateTransferExecutionRequest) (string, error
 	return hex.EncodeToString(digest[:]), nil
 }
 
-type ExportSourceRegistry interface {
+type ArtifactSourceRegistry interface {
 	ListActiveModules(context.Context) ([]*ModuleInfo, error)
 }
 
 type ExportExecutionSourceClient struct {
-	registry   ExportSourceRegistry
+	registry   ArtifactSourceRegistry
 	tokens     ServiceTokenProvider
 	httpClient *http.Client
 }
 
-func NewExportExecutionSourceClient(registry ExportSourceRegistry, tokens ServiceTokenProvider) *ExportExecutionSourceClient {
+func NewExportExecutionSourceClient(registry ArtifactSourceRegistry, tokens ServiceTokenProvider) *ExportExecutionSourceClient {
 	return &ExportExecutionSourceClient{registry: registry, tokens: tokens, httpClient: &http.Client{
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -102,9 +102,26 @@ func (c *ExportExecutionSourceClient) ResolveExportExecutionSource(ctx context.C
 	if err := request.Validate(); err != nil {
 		return nil, err
 	}
-	modules, err := c.registry.ListActiveModules(ctx)
+	transport, err := ownerArtifactTransport(ctx, c.registry, c.tokens, c.httpClient, owner, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	var result ExportExecutionSource
+	path := fmt.Sprintf("/api/v1/%s/runtime/export-sessions/%d/execution-source", owner, ref.SessionID)
+	if err := transport.doJSON(ctx, http.MethodPost, path, request, &result); err != nil {
+		return nil, err
+	}
+	if result.TenantID != tenantID || result.UserID == 0 {
+		return nil, errors.New("export source identity is invalid")
+	}
+	return &result, nil
+}
+
+// ownerArtifactTransport selects one live Owner backend for private artifact facts.
+func ownerArtifactTransport(ctx context.Context, registry ArtifactSourceRegistry, tokens ServiceTokenProvider, httpClient *http.Client, owner string, tenantID uint) (tenantHTTPClient, error) {
+	modules, err := registry.ListActiveModules(ctx)
+	if err != nil {
+		return tenantHTTPClient{}, err
 	}
 	var instances []ModuleRuntimeInstanceInfo
 	for _, module := range modules {
@@ -118,21 +135,12 @@ func (c *ExportExecutionSourceClient) ResolveExportExecutionSource(ctx context.C
 		}
 	}
 	if len(instances) == 0 {
-		return nil, errors.New("export source backend is unavailable")
+		return tenantHTTPClient{}, errors.New("artifact source backend is unavailable")
 	}
 	sort.Slice(instances, func(i, j int) bool { return instances[i].InstanceID < instances[j].InstanceID })
 	base, err := url.Parse(instances[0].ModuleURL)
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
-		return nil, errors.New("export source backend URL is invalid")
+		return tenantHTTPClient{}, errors.New("artifact source backend URL is invalid")
 	}
-	transport := newTenantHTTPClient(base.Scheme+"://"+base.Host, c.tokens, c.httpClient).withTenantID(tenantID)
-	var result ExportExecutionSource
-	path := fmt.Sprintf("/api/v1/%s/runtime/export-sessions/%d/execution-source", owner, ref.SessionID)
-	if err := transport.doJSON(ctx, http.MethodPost, path, request, &result); err != nil {
-		return nil, err
-	}
-	if result.TenantID != tenantID || result.UserID == 0 {
-		return nil, errors.New("export source identity is invalid")
-	}
-	return &result, nil
+	return newTenantHTTPClient(base.Scheme+"://"+base.Host, tokens, httpClient).withTenantID(tenantID), nil
 }

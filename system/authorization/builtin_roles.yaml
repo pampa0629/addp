@@ -1203,6 +1203,7 @@ roles:
       - audit.tenant_event.create
       - develop.export_provenance.read
       - manager.export_provenance.read
+      - manager.import_provenance.read
       - meta.catalog.read
       - meta.inspect.execute
       - meta.scan_task.execute
