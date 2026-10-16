@@ -102,6 +102,67 @@ class MetricsProtocolTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.assert_resource_overview(self.overview_reply(), node, 2, "Online host", source_failed=True, disconnected=True)
 
+    def test_source_overview_success_keeps_the_single_request_without_diagnostics(self):
+        node = {"node_id": "node-id", "version": 1, "enabled": True}
+        value = self.overview_reply()
+        value["inventory"]["collection"].update(collecting=0, failed=1)
+        admin = unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200, value)))
+        prom, report = unittest.mock.Mock(), {}
+        self.assertIs(ONLINE.assert_source_overview_isolation(admin, prom, '{addp_node_id="node-id"}', node, 2, "Online host", report), value)
+        admin.request.assert_called_once_with("GET", ONLINE.OVERVIEW, (200,))
+        prom.query.assert_not_called()
+        self.assertEqual(report, {})
+
+    def test_source_overview_failure_captures_only_bounded_same_anchor_facts_and_preserves_verdict(self):
+        node = {"node_id": "node-id", "version": 1, "enabled": True}
+        for mode in ("collecting", "missing", "unavailable", "duplicate", "foreign", "wrong_time", "nonfinite", "over_budget", "bad_inventory", "bad_anchor", "bool_count"):
+            with self.subTest(mode=mode):
+                value = self.overview_reply()
+                value["inventory"]["credential"] = "must-never-retain"
+                value["inventory"]["collection"]["credential"] = "must-never-retain"
+                if mode == "bad_inventory": value["inventory"]["collection"] = []
+                if mode == "bad_anchor": value["evaluated_at"] = "must-never-retain"
+                if mode == "bool_count": value["inventory"]["managed"] = True
+                before = copy.deepcopy(value)
+                admin = unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200, value)))
+                at = self.overview_reply()["evaluated_at"]
+                rows = [{"metric": {"addp_probe": key, "credential": "must-never-retain"},
+                         "value": [ONLINE.utc_timestamp(at), number], "credential": "must-never-retain"}
+                        for key, number in (("up_count", "1"), ("up", "1"), ("sampled_at", str(ONLINE.utc_timestamp(at) - 15)))]
+                if mode == "missing": rows = []
+                if mode == "duplicate": rows = [rows[0], copy.deepcopy(rows[0])]
+                if mode == "foreign": rows[0]["metric"]["addp_probe"] = "foreign"
+                if mode == "wrong_time": rows[0]["value"][0] += 1
+                if mode == "nonfinite": rows[0]["value"][1] = "NaN"
+                if mode == "over_budget": rows *= 2
+                prom = unittest.mock.Mock(query=unittest.mock.Mock(return_value=rows))
+                if mode == "unavailable": prom.query.side_effect = ValueError("must-never-retain")
+                report = {}
+                with self.assertRaises(ONLINE.SuiteError) as original:
+                    ONLINE.assert_resource_overview(value, node, 2, "Online host", source_failed=True)
+                with self.assertRaises(ONLINE.SuiteError) as observed:
+                    ONLINE.assert_source_overview_isolation(admin, prom, '{addp_node_id="node-id"}', node, 2, "Online host", report)
+                self.assertEqual(str(observed.exception), str(original.exception))
+                admin.request.assert_called_once_with("GET", ONLINE.OVERVIEW, (200,))
+                self.assertEqual(value, before)
+                witness = report["source_outage_host_overview"]
+                self.assertEqual(witness["state"], "captured" if mode in {"collecting", "missing", "bool_count"} else "unavailable")
+                self.assertNotIn("must-never-retain", json.dumps(report))
+                if mode in {"bad_inventory", "bad_anchor"}:
+                    prom.query.assert_not_called()
+                else:
+                    self.assertEqual(prom.query.call_count, 1)
+                    self.assertEqual(prom.query.call_args.kwargs, {"at": at})
+                    query = prom.query.call_args.args[0]
+                    self.assertIn('addp_node_id="node-id"', query)
+                    for fragment in ('count(up', 'max(up', 'max(timestamp(up', '"addp_probe"'):
+                        self.assertIn(fragment, query)
+                if witness["state"] == "captured":
+                    self.assertEqual(witness["values"]["up"], 1 if mode != "missing" else None)
+                else:
+                    self.assertNotIn("values", witness)
+                if mode == "bool_count": self.assertNotIn("managed", witness["inventory"])
+
     def test_overview_browser_requires_real_refresh_restore_scope_and_screenshot(self):
         expected = {"node": {"node_id": "node-id", "version": 1}, "display_name": "Online host", "policy_version": 2}
         flags = ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests", "detail_and_back", "negative_no_reads")

@@ -2366,3 +2366,19 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 修正后沿同一标准浏览器入口运行原 opt-in/刷新恢复/退出比较场景，1/1 通过，日志 `/tmp/addp-comparison-checkbox-green.log`；完整 `make test-node-metrics-online-runner` 再次退出 0，55 项 Python 回归、两项语法检查及 Metrics 身份夹具 Go 测试通过，日志 `/tmp/addp-comparison-hosted-click-runner.log`。临时替换的 T3 文件已精确恢复且无工作区差异。该修正尚未进入正在运行的 Hosted 固定源码，不能用本地通过把该次 Hosted 改记为成功；需在推送后以新源码复验。
 
 本次默认 `make test-changed` 在 86 个混合文件、27 个 owner 的外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-comparison-hosted-click-changed.log`。本批点击修正的最小充分验证为上述标准浏览器入口及原 node-metrics runner，不修复或重跑其他会话的数据库门禁。
+
+用户已推送点击修正 `f93c7928072622ace61492ab58e6ecd948a9f951`，经远端 main 核对后沿同一 suite 发起修复版 Hosted Run `38919237438`、Job `117034563571`。同一 suite 按现有 `cancel-in-progress=false` 串行执行，没有取消旧部署或旁路并发；旧轮结束后新轮已开始，当前不计为通过。
+
+旧源码 Run `38917707937` 已完成并归档，实际失败与本地复现一致：`node-resources-browser.json` 停在 `adjacent-resource-period-comparison`，明确记录原生 `.el-checkbox__original` 输入不可见，等待耗尽原 240 秒浏览器时限；外层 300 秒时限未超出，未到达比较统计、后续设备和服务页面阶段，不把此前页面截图视为完整验收。`node-resources-browser-runtime.json` 记录 duration_ms=243714、test_deadline_reported=true、subprocess_deadline_exceeded=false。外层 `summary.txt` 同次确认 `result=failed`、`cleanup=passed`、`infra_cleanup=zero_residuals`；旧轮是已清理的真实失败，不以新修正覆盖原结论。归档位于本机临时目录 `/tmp/addp-period-comparison-hosted-old-38917707937`，对应 Job 日志 `/tmp/addp-period-comparison-hosted-old-job.log`。
+
+修复版 Run `38919237438` 已完成：真实密码/MFA、Console/Monitor iframe 的完整浏览器阶段通过（浏览器 elapsed_ms=182949，外层 duration_ms=186541，原 240/300 秒时限均未超出）。独立 Python 重算确认三项比较通过，每轮单次十分钟趋势及刷新恢复均符合契约；complete_cases=0、incomplete_cases=3，不把本轮未出现的完整样本均值分支记作 Hosted 通过。CPU 本期 16/20、上期 0/20，内存本期 20/20、上期 0/20，均未显示均值或差值；CPU 与内存截图已目视核对，局部缺样说明与统计卡片一致。原主机、设备、服务进程、自然刷新、总览导航和安全管理员拒绝的浏览器场景同次通过。
+
+该轮整体仍为失败：浏览器之后的 `source-outage-recovery` 在 `overview inventory is not the complete one-host scope` 断言中止，尚未执行后续控制面故障与启停/删除场景。中心故障恢复与独立进程资源已通过；最终外层 `cleanup=passed`、`infra_cleanup=zero_residuals`。归档 `/tmp/addp-period-comparison-hosted-fixed-38919237438`，Job 日志 `/tmp/addp-period-comparison-hosted-fixed-job.log`。原脚本在总览断言成功后才写入响应，失败报告缺少这次实际 inventory，不能据此判定产品错误或把瞬时抓取与整秒 API 锚点之间的时序差异断言为已定位根因。
+
+下一步仅补充同一来源故障断言的失败诊断：仍执行唯一原总览请求和原严格断言，仅在断言失败时保留白名单整数 inventory，并从原 Prometheus 查询入口读取该响应 `evaluated_at` 上的 `up_count/up/sampled_at` 三项有界证据；不记录凭据、任意标签或原始异常。诊断不可覆盖最初失败、不修改产品、不放宽结果、不补零或自动重试整个场景。实施前门禁为既有 `make test-node-metrics-online-runner`，增加诊断锚点、基数/数值拒绝与原错误保留测试；原 Online suite/CI 登记已覆盖，无需新增入口、权限或重启。待这项诊断推送并实际复验后再判断根因。
+
+诊断实现沿原总览断言替换为单一调用，成功时仍只有一次原请求、不读取额外指标；失败时只记录白名单计数与三个有限数值，不保留未知字段、来源标签或异常文本。新增两组回归覆盖成功零额外查询及十一类失败/诊断不可用输入，包括未知探针、重复或超量结果、错锚点、非有限值、非法计数/时间及原错误不被覆盖。
+
+当前共享工作区首次 `make test-node-metrics-online-runner` 执行 57 项时，有一项原有跨 suite 语法测试被其他范围的 `test-manager-sgm-local-runner` 缺失入口提前中断，日志 `/tmp/addp-overview-source-witness-runner.log`；本批未修改该入口或处理其他 owner。为单独验证实际 Hosted 输入，从固定源码 `f93c7928072622ace61492ab58e6ecd948a9f951` 导出仓库外临时快照，仅叠加本批两项 Python 文件，继续执行同一标准 `make test-node-metrics-online-runner`：临时去掉诊断后新增十一项子场景均因缺少证据明确失败（`/tmp/addp-overview-source-witness-red-f93.log`），恢复本批诊断后退出 0，57 项回归、浏览器/Hosted shell 语法检查及 Metrics 身份夹具 Go 测试通过（`/tmp/addp-overview-source-witness-green-f93.log`）。该快照证明本批改动在本次 Hosted 固定输入上的结果，不冒充其他并行改动的整体通过。
+
+本轮默认 `make test-changed` 对六项混合变更命中 Model/Transfer，在外部测试连接预检退出 2，后续未执行、不计通过；日志 `/tmp/addp-overview-source-witness-changed.log`。本批任务范围 diff、章节与文档围栏检查通过；不新增 API、权限、角色、部署配置或 CI 入口。两轮归档均未发现凭据文件、私钥 PEM 或 JWT 模式，但此项有限检查不替代退出清理证明；零残留以各自外层 summary 为准。诊断尚未进入 Hosted 执行，当前仍保留整体失败结论，需推送后继续同一 suite 收集事实，不以重跑一次成功宣称本次未知根因已经消除。

@@ -711,6 +711,42 @@ def assert_resource_overview(value, node, policy_version, display_name, disconne
     return value
 
 
+def assert_source_overview_isolation(admin, prom, expression, node, policy_version, display_name, report):
+    value = admin.request("GET", OVERVIEW, (200,)).payload
+    try:
+        return assert_resource_overview(value, node, policy_version, display_name, source_failed=True)
+    except SuiteError:
+        witness = report["source_outage_host_overview"] = {"state": "unavailable"}
+        try:
+            inventory = value["inventory"]
+            witness["inventory"] = {key: inventory[key] for key in ("managed", "enabled", "disabled", "connected", "not_connected")
+                                    if type(inventory.get(key)) is int and inventory[key] >= 0}
+            collection = inventory["collection"]
+            witness["inventory"]["collection"] = {key: collection[key] for key in ("collecting", "failed", "stale", "no_sample", "not_connected")
+                                                  if type(collection.get(key)) is int and collection[key] >= 0}
+            at = value["evaluated_at"]
+            require(utc_timestamp(at) == math.floor(utc_timestamp(at)), "invalid overview diagnostic anchor")
+            witness["evaluated_at"] = at
+            up = "up" + expression
+            probes = {"up_count": "count(" + up + ") or vector(0)", "up": "max(" + up + ")", "sampled_at": "max(timestamp(" + up + "))"}
+            query = " or ".join('label_replace((' + raw + '),"addp_probe",' + json.dumps(key) + ',"","")' for key, raw in probes.items())
+            rows = prom.query(query, at=at)
+            require(isinstance(rows, list) and len(rows) <= len(probes), "invalid overview diagnostic cardinality")
+            values, seen = dict.fromkeys(probes), set()
+            for row in rows:
+                key, pair = row["metric"].get("addp_probe"), row["value"]
+                require(key in probes and key not in seen and len(pair) == 2 and float(pair[0]) == utc_timestamp(at), "invalid overview diagnostic identity or anchor")
+                number = float(pair[1])
+                require(math.isfinite(number), "invalid overview diagnostic value")
+                values[key] = number
+                seen.add(key)
+            witness.update(state="captured", values=values)
+        except Exception:
+            # Diagnostics must never replace the original verdict or export raw errors.
+            pass
+        raise
+
+
 def validate_overview_browser(value, expected, artifacts):
     evidence = value.get("overview", {})
     flags = ("natural_timer", "server_end_advanced", "unchanged_url", "iframe_preserved", "off_restored", "off_no_requests", "detail_and_back", "negative_no_reads")
@@ -1204,7 +1240,7 @@ def run(base, directory, report):
         eventually(lambda: bool(prom.query("up"+expression+" == 0")), "source outage")
         require(prom.query('up{job="prometheus"} == 1'), "center failed with source")
         assert_source_process_isolation(admin, prom, processes, report)
-        report["overview_source_failed"] = assert_resource_overview(admin.request("GET", OVERVIEW, (200,)).payload, node, query_policy["version"], node_input["display_name"], source_failed=True)
+        report["overview_source_failed"] = assert_source_overview_isolation(admin, prom, expression, node, query_policy["version"], node_input["display_name"], report)
     finally:
         source_resumed_at = time.time()
         source_action("start")
