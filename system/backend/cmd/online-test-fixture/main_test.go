@@ -416,26 +416,27 @@ func TestValidateExternalEnvironment(t *testing.T) {
 func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fixture.env")
 	values := map[string]string{
-		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN":       "addp_at_admin",
-		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN":      "addp_at_creator",
-		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":    "86",
-		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":   "addp_at_engine",
-		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN": "addp_at_security_initializer",
-		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN":   "addp_at_source_initializer",
-		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN": "addp_at_pg_outsider",
-		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID":         "41",
-		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID":      "51",
-		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":     "addp_at_foreign",
-		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":             "84",
-		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":  "addp_at_raster_platform",
-		"ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN":    "addp_at_raster_tenant",
-		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":        "addp_at_reader",
-		"ADDP_ONLINE_READ_USER_USERNAME":            "external-online-public-reader",
-		"ADDP_ONLINE_READ_USER_PASSWORD":            "reader'quoted-password",
-		"ADDP_ONLINE_TEST_TENANT_ID":                "42",
-		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN":    "addp_at_approver'quoted",
-		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":        "addp_at_user'quoted",
-		"UNREGISTERED_PASSWORD":                     "must-not-export-this-password",
+		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN":        "addp_at_admin",
+		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN":       "addp_at_creator",
+		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":     "86",
+		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":    "addp_at_engine",
+		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN":  "addp_at_security_initializer",
+		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN":    "addp_at_source_initializer",
+		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN":  "addp_at_pg_outsider",
+		"ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN": "addp_at_pg_business_owner",
+		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID":          "41",
+		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID":       "51",
+		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":      "addp_at_foreign",
+		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":              "84",
+		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":   "addp_at_raster_platform",
+		"ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN":     "addp_at_raster_tenant",
+		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":         "addp_at_reader",
+		"ADDP_ONLINE_READ_USER_USERNAME":             "external-online-public-reader",
+		"ADDP_ONLINE_READ_USER_PASSWORD":             "reader'quoted-password",
+		"ADDP_ONLINE_TEST_TENANT_ID":                 "42",
+		"ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN":     "addp_at_approver'quoted",
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":         "addp_at_user'quoted",
+		"UNREGISTERED_PASSWORD":                      "must-not-export-this-password",
 	}
 	if err := writeEnvironmentFile(path, values); err != nil {
 		t.Fatal(err)
@@ -460,7 +461,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
 		t.Fatal("fixture environment omitted the separate source initialization token")
 	}
-	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID"} {
+	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID"} {
 		if !strings.Contains(string(content), "export "+key+"='"+values[key]+"'\n") {
 			t.Fatalf("owner-only environment omitted PG authorization fixture field %s", key)
 		}

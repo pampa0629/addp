@@ -478,6 +478,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                        'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'reader',
                        'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'operator',
                        'ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN': 'outsider',
+                       'ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN': 'business',
                        'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'coordinator',
                        'ADDP_ONLINE_TEST_USER_USERNAME': 'external-online-consumer',
                        'ADDP_ONLINE_TEST_USER_PASSWORD': 'private-password',
@@ -489,7 +490,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     raise ONLINE.SuiteError('injected interruption')
                 with patch.dict(ONLINE.os.environ, env, clear=True), \
                      patch.object(ONLINE.API, 'GatewayClient', side_effect=lambda base, token, timeout: server.client(token)), \
-                     patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {}), ('34', {})]), \
+                     patch.object(ONLINE, 'identity', side_effect=[('33', {}), ('31', {}), ('34', {}), ('36', {})]), \
                      patch.object(ONLINE, 'organization_administrator', return_value=('35', {})), \
                      patch.object(ONLINE, 'organization_memberships'), \
                      patch.object(ONLINE.Lifecycle, 'run', autospec=True, side_effect=failed_run):
@@ -500,6 +501,14 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 self.assertFalse(any(server.denies.values()))
                 self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
                 self.assertNotIn('private-token', json.dumps(report))
+                if not after_deny:
+                    del env['ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN']
+                    with patch.dict(ONLINE.os.environ, env, clear=True), patch.object(ONLINE.Lifecycle, 'run') as run:
+                        self.assertEqual(ONLINE.main(), 1)
+                        run.assert_not_called()
+                    missing = json.loads((Path(directory) / (ONLINE.SUITE + '.json')).read_text())
+                    self.assertEqual(missing['phase'], 'fixture_identity_validation')
+                    self.assertNotIn('grant_commands', missing)
 
 
 class PGCatalogApprovalTest(unittest.TestCase):

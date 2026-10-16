@@ -794,6 +794,8 @@ def main():
         evidence = directory / (SUITE + '.json')
         timeout = float(os.environ.get('ADDP_ONLINE_TEST_HTTP_TIMEOUT_SECONDS', '10'))
         require(math.isfinite(timeout) and 0 < timeout <= 30, 'invalid HTTP timeout')
+        report['phase'] = 'fixture_identity_validation'
+        business = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN'], timeout)
         reader = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], timeout)
         operator = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], timeout)
         outsider = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], timeout)
@@ -805,26 +807,22 @@ def main():
         recipient, report['reader'] = identity(reader, tenant, READER_PERMISSIONS)
         issuer, report['operator'] = identity(operator, tenant, OPERATOR_PERMISSIONS)
         observer, report['outsider'] = identity(outsider, tenant, READER_PERMISSIONS)
+        confirmer, report['confirmer'] = identity(business, tenant, CONFIRMER_PERMISSIONS)
         coordinator, report['organization_operator'] = organization_administrator(organization_operator, tenant)
-        require(len({issuer, recipient, observer, coordinator}) == 4
-                and len({reader.token, operator.token, outsider.token, organization_operator.token}) == 4,
-                'source operator, reader, outsider and membership operator must be distinct Users')
+        require(len({issuer, recipient, observer, coordinator, confirmer}) == 5
+                and len({reader.token, operator.token, outsider.token, organization_operator.token, business.token}) == 5,
+                'source operator, reader, outsider, membership operator and confirmer must be distinct Users')
         organization_memberships(reader, organizations)
         organization_memberships(outsider, {})
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, interrupted)
         report.update(run_id=run_id, tenant_id=str(tenant), engine_id=engine)
-        report['principals'] = {'reader': recipient, 'operator': issuer, 'outsider': observer, 'organization_operator': coordinator}
+        report['principals'] = {'reader': recipient, 'operator': issuer, 'outsider': observer,
+                                'organization_operator': coordinator, 'confirmer': confirmer}
         lifecycle = Lifecycle(operator, reader, tenant, engine, recipient, organizations, outsider,
                               organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
-        business = API.GatewayClient(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN'], timeout)
-        confirmer, report['confirmer'] = identity(business, tenant, CONFIRMER_PERMISSIONS)
-        require(confirmer not in report['principals'].values()
-                and business.token not in {reader.token, operator.token, outsider.token, organization_operator.token},
-                'business confirmation requires a distinct minimum-permission User')
-        report['principals']['confirmer'] = confirmer
         lifecycle.catalog_flow(report, business, confirmer)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
