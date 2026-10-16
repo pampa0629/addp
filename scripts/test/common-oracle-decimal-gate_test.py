@@ -80,7 +80,7 @@ class OracleReadOnlyGateTest(unittest.TestCase):
 
 
 class OracleDisposableGateTest(unittest.TestCase):
-    def run_gate(self, *, spatial=False, skipped=False, failed=False, extra=False):
+    def run_gate(self, *, spatial=False, skipped=False, failed=False, extra=False, transfer_failed=False, transfer_skipped=False):
         with tempfile.TemporaryDirectory(prefix="addp-oracle-profile-gate-") as directory:
             root = Path(directory)
             commands = root / "commands"
@@ -100,10 +100,12 @@ esac
             docker.chmod(0o700)
             go = commands / "go"
             go.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$*" > "$GO_CALLS"\n'
-                'printf "%s %s\\n" "$ADDP_ORACLE_SPATIAL_INTEGRATION" "$ADDP_TEST_ORACLE_PORT" > "$GO_ENV"\n'
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GO_CALLS"\n'
+                'printf "%s %s\\n" "$ADDP_ORACLE_SPATIAL_INTEGRATION" "$ADDP_TEST_ORACLE_PORT" >> "$GO_ENV"\n'
                 + ('echo "--- SKIP: TestIntegrationOracleSpatialDelete"\n' if skipped else 'echo PASS\n')
                 + ('exit 17\n' if failed else '')
+                + ('case "$*" in *TestIntegrationTransferOracleReplace*) exit 18;; esac\n' if transfer_failed else '')
+                + ('case "$*" in *TestIntegrationTransferOracleReplace*) echo "--- SKIP: TestIntegrationTransferOracleReplace";; esac\n' if transfer_skipped else '')
             )
             go.chmod(0o700)
             environment = {
@@ -136,7 +138,8 @@ esac
         self.assertIn("gvenzl/oracle-free:23@sha256:", docker)
         self.assertNotIn("23-slim", docker)
         self.assertIn("|SpatialDelete)$", go)
-        self.assertEqual(env.strip(), "1 45678")
+        self.assertEqual(env.splitlines(), ["1 45678", "1 45678"])
+        self.assertIn("test ./internal/executor -run ^TestIntegrationTransferOracleReplace$ -count=1 -v", go)
         self.assertIn("rm --force --volumes addp-oracle-decimal-disposable", docker)
 
     def test_slim_profile_cannot_inherit_spatial_opt_in(self):
@@ -144,10 +147,11 @@ esac
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("gvenzl/oracle-free:23-slim@sha256:", docker)
         self.assertNotIn("SpatialDelete", go)
-        self.assertEqual(env.strip(), "0 45678")
+        self.assertEqual(env.splitlines(), ["0 45678", "0 45678"])
+        self.assertIn("TestIntegrationTransferOracleReplace", go)
 
     def test_native_spatial_profile_cleans_up_after_failure(self):
-        for kwargs in ({"skipped": True}, {"failed": True}):
+        for kwargs in ({"skipped": True}, {"failed": True}, {"transfer_failed": True}, {"transfer_skipped": True}):
             with self.subTest(kwargs=kwargs):
                 result, docker, _, _ = self.run_gate(spatial=True, **kwargs)
                 self.assertNotEqual(result.returncode, 0)

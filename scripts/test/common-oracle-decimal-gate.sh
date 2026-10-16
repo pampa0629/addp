@@ -146,3 +146,21 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-oracle-decimal.log"; then
     echo "Common Oracle decimal gate refuses skipped tests" >&2
     exit 1
 fi
+
+# Exercise the production Transfer delete/prepare/session composition with a
+# synthetic source and this same owned Oracle instance, never a saved task.
+cd "$ROOT_DIR/transfer/backend"
+ADDP_TRANSFER_ORACLE_REPLACE_INTEGRATION=1 \
+ADDP_ORACLE_SPATIAL_INTEGRATION="$SPATIAL_INTEGRATION" \
+ADDP_TEST_ORACLE_HOST=127.0.0.1 \
+ADDP_TEST_ORACLE_PORT="$host_port" \
+ADDP_TEST_ORACLE_SERVICE_NAME=FREEPDB1 \
+ADDP_TEST_ORACLE_USER="$ORACLE_USER" \
+ADDP_TEST_ORACLE_PASSWORD="$ORACLE_APP_PASSWORD" \
+    go test ./internal/executor -run '^TestIntegrationTransferOracleReplace$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/transfer-oracle-replace.log"
+
+if grep -q -- '--- SKIP:' "$WORK_DIR/transfer-oracle-replace.log"; then
+    echo "Transfer Oracle replace gate refuses skipped tests" >&2
+    exit 1
+fi
