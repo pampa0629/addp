@@ -2,7 +2,7 @@
   <el-header class="header">
     <div class="header-left">
       <div class="logo-area" @click="$emit('logo-click')">
-        <el-icon :size="28" style="margin-right: 12px"><Platform /></el-icon>
+        <img class="platform-mark" src="/addp-mark.svg" alt="" aria-hidden="true" width="32" height="32" />
         <h1>{{ t('console.title') }}</h1>
       </div>
 
@@ -93,7 +93,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Platform, User, ArrowDown, SwitchButton, Search, Close } from '@element-plus/icons-vue'
+import { User, ArrowDown, SwitchButton, Search, Close } from '@element-plus/icons-vue'
 import {
   Upload, Box, DataAnalysis, Link, Edit, Share, CircleCheck, Operation,
   Connection, Setting, ChatDotRound, Folder, Reading, Grid,
@@ -205,6 +205,12 @@ function handleResultClick(item) {
 
 .logo-area:hover {
   background: var(--addp-bg-secondary);
+}
+
+.platform-mark {
+  display: block;
+  flex-shrink: 0;
+  margin-right: 12px;
 }
 
 .logo-area h1 {

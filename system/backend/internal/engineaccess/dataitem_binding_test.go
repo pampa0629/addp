@@ -96,6 +96,41 @@ func TestDataItemReadBindingsRequireCompleteTrustedNativeProof(t *testing.T) {
 	}
 }
 
+func TestPGApprovedBindingSurvivesBasicObservationRefresh(t *testing.T) {
+	path := plugin.TabularItemPath(2, "schema", "outdoor", "ods_outdoor_persons")
+	facts := factstest.Single(path)
+	facts.ObservedAt = time.Now().Add(-time.Minute)
+	approved, err := facts.ApprovedBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(nil, nil).WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
+		if tenant != 7 || fingerprint != approved.ItemFingerprint {
+			t.Fatal("wrong PG DataItem lookup scope")
+		}
+		return &facts, nil
+	}))
+	check := func(want error) {
+		t.Helper()
+		err := service.verifyApprovedBoundary(t.Context(), 7, path, approved.ItemFingerprint, approved.BoundaryHash)
+		if !errors.Is(err, want) {
+			t.Fatalf("PG binding check: got %v, want %v", err, want)
+		}
+	}
+	check(nil)
+	// A new basic observation of the same target is not a new grant boundary.
+	// No deep-scan facts participate in this contract.
+	facts.ObservedAt = time.Now()
+	check(nil)
+	facts.BasisState = authorizationfacts.AuthorizationBasisNeedsRefresh
+	facts.Boundary, facts.BoundaryHash = nil, nil
+	check(ErrAuthorizationBoundaryChanged)
+	// Once complete facts for the same boundary return, the original approved
+	// binding remains usable; an unknown boundary never gets an ACL fallback.
+	facts = factstest.Single(path)
+	check(nil)
+}
+
 func testReadBindings(paths ...plugin.EngineCatalogPath) []authorizationfacts.Binding {
 	result := make([]authorizationfacts.Binding, 0, len(paths))
 	seen := map[string]bool{}

@@ -1278,7 +1278,7 @@
       },
       "dialog": {
         "add": "New Engine",
-        "addStorage": "New General Storage Engine",
+        "addStorage": "New General Engine",
         "addExtension": "New Extension Engine",
         "edit": "Edit Engine",
         "restore": "Restore Engine",
@@ -1356,6 +1356,18 @@
         "title": "Select general engine type",
         "subtitle": "Choose engine on the left and fill connection details on the right",
         "editLockedHint": "Engine type cannot be changed in edit mode",
+        "search": "Search engine name or type",
+        "noResults": "No matching engine types",
+        "groups": {
+          "tabular": "Relational databases",
+          "compute": "Compute engines",
+          "dynamic_schema": "Documents & search",
+          "key_value": "Key-value stores",
+          "graph": "Graph databases",
+          "object": "Object storage",
+          "file": "File storage",
+          "event_stream": "Event streams"
+        },
         "types": {
           "postgresql": "Enterprise relational database",
           "oracle": "Oracle relational database",

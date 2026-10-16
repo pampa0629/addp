@@ -49,9 +49,9 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, requirementPath = tablePath, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false } = {}) {
   const writes = [], reads = []
-  let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: tablePath }] : []
+  let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: requirementPath }] : []
   let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
   const restrictions = [...denies]
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
@@ -387,6 +387,51 @@ test('current account prohibits and releases reading without changing Grants', a
     item_fingerprint: historicalGrant().item_fingerprint, catalog_path: tablePath })
   expect(writes[1].path).toContain(`/access_denies/${writes[0].body.deny_id}/release`)
   expect(writes.every(row => row.path.includes('/access_denies'))).toBe(true)
+})
+
+test('Deny dialog opening animation never steals focus from an opened expiry selector', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.clock.install()
+  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'system.engine_access_deny.create'], history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  // Keep layout stable while delaying Vue's after-enter callback. A real user
+  // can open the selector before that callback; it must not later steal focus.
+  await page.addStyleTag({ content: '.dialog-fade-enter-active { animation: none !important; transition: opacity 10s linear !important; }' })
+  await page.getByTestId('source-deny-create').click()
+  const dialog = page.getByRole('dialog', { name: '禁止读取', exact: true })
+  await dialog.getByTestId('source-deny-expiry').click()
+  const option = page.getByRole('option', { name: '长期有效，直到解除', exact: true })
+  await expect(option).toBeVisible()
+  await page.clock.runFor(11000)
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(dialog.getByTestId('source-deny-expiry')).toContainText('长期有效，直到解除')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(writes).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('revoke dialog opening animation preserves the reason input focus', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.clock.install()
+  const { writes } = await fixture(page, { allowed: grantPermissions, history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectAccountFilter(page)
+  await page.getByTestId('account-grant-expand').click()
+  await page.addStyleTag({ content: '.dialog-fade-enter-active { animation: none !important; transition: opacity 10s linear !important; }' })
+  await page.getByTestId('source-grant-revoke').click()
+  const dialog = page.getByRole('dialog', { name: '撤销授权', exact: true })
+  const reason = dialog.getByTestId('source-grant-revoke-reason')
+  await reason.fill('Do not interrupt this input')
+  await page.clock.runFor(11000)
+  await expect(reason).toBeFocused()
+  await expect(reason).toHaveValue('Do not interrupt this input')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(writes).toEqual([])
+  expect(errors).toEqual([])
 })
 
 test('unknown Deny and release outcomes retry exactly the original commands', async ({ page }) => {
@@ -776,6 +821,31 @@ for (const [factsState, label] of [
     expect(writes).toEqual([])
   })
 }
+test('DataItem basis identity ignores PostgreSQL jsonb object key ordering', async ({ page }) => {
+  // jsonb reorders object keys; native catalog candidates retain Go field order.
+  // Object key order and an exactly representable Engine ID representation are
+  // not a different target, but ordered segment values still are.
+  const requirementPath = { version: tablePath.version, segments: tablePath.segments.map(({ term, kind, name }) => ({ kind, name, term })), engine_id: '2' }
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent', requirementPath })
+  await page.goto('/engines/2?tab=data-authorization')
+  await selectData(page); await grantDraft(page)
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+  await expect(page.getByTestId('source-grant-confirm')).toBeEnabled()
+  setFactsState('incomplete')
+  await page.getByTestId('approval-basis-refresh').click()
+  await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别不完整')
+  await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+  setFactsState('complete')
+  await page.getByTestId('approval-basis-refresh').click()
+  await expect(page.getByTestId('source-grant-confirm')).toBeEnabled()
+  await confirmGrant(page)
+  await expect(page.getByTestId('source-grant-list')).toContainText('outdoor / activities')
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body.catalog_path).toEqual(tablePath)
+  expect(writes[0].body.item_fingerprint).toBe(createHash('sha256').update('2:outdoor.activities').digest('hex'))
+  expect(writes[0].body.expected_boundary_hash).toBe('b'.repeat(64))
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(4)
+})
 test('DataItem basis recheck refreshes only facts and preserves the grant draft', async ({ page }) => {
   const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent', factsState: 'missing' })
   await page.goto('/engines/2?tab=data-authorization')
@@ -884,6 +954,21 @@ test('successful new authorization returns to current grants and locates the iss
   await expect(page.getByTestId('source-grant-table-filter')).toHaveValue('outdoor / activities')
   const query = new URL(reads.filter(url => url.includes('/access_grants?')).at(-1)).searchParams
   expect(Object.fromEntries(query)).toMatchObject({ recipient_type: 'user', recipient_id: '33', table_search: 'outdoor / activities' })
+  // Creation replaces the form with a new table instance. The source action
+  // must use that instance, including after a refresh replaces its row data.
+  const sources = page.getByTestId('account-grant-sources')
+  for (let round = 0; round < 2; round++) {
+    await list.getByTestId('account-grant-expand').click()
+    await expect(sources).toContainText('Outdoor reader')
+    await list.getByTestId('account-grant-expand').click()
+    await expect(sources).toHaveCount(0)
+    if (round === 0) {
+      const response = page.waitForResponse(response => response.request().method() === 'GET' && response.url().includes('/access_grants?'))
+      await page.getByTestId('engine-source-grants').getByRole('button', { name: '刷新', exact: true }).click()
+      await response
+      await expect(list.getByTestId('account-grant-expand')).toBeVisible()
+    }
+  }
   expect(writes).toHaveLength(1)
 })
 

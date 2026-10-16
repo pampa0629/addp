@@ -36,7 +36,7 @@
       </div>
     </el-header>
 
-    <el-container>
+    <el-container class="layout-body">
       <el-aside width="220px" class="sidebar">
         <el-menu
           :default-active="activeMenu"
@@ -120,6 +120,10 @@ const handleLogout = () => {
   flex-direction: column;
 }
 
+.layout-body {
+  min-height: 0;
+}
+
 .layout-header {
   display: flex;
   align-items: center;
@@ -170,18 +174,25 @@ const handleLogout = () => {
 }
 
 .main-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   background: var(--addp-bg-secondary) !important;
   padding: 24px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .content-only {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  height: auto;
+  height: 100vh;
+  min-height: 0;
   padding: 20px;
   margin: 0;
   background: var(--addp-bg-secondary) !important;
-  overflow: visible;
+  overflow: hidden;
   box-sizing: border-box;
 }
 </style>

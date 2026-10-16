@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <defs>
+    <linearGradient id="right" x1="50" y1="18" x2="86" y2="81" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1238DE"/>
+      <stop offset=".55" stop-color="#6540FF"/>
+      <stop offset="1" stop-color="#A42AF5"/>
+    </linearGradient>
+    <linearGradient id="left" x1="51" y1="17" x2="13" y2="78" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00AEFF"/>
+      <stop offset=".5" stop-color="#03CDE9"/>
+      <stop offset="1" stop-color="#0067F5"/>
+    </linearGradient>
+    <linearGradient id="bridge" x1="13" y1="76" x2="78" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00DFE7"/>
+      <stop offset=".48" stop-color="#078EFF"/>
+      <stop offset="1" stop-color="#5929F5"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="54" y1="44" x2="71" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0738B8"/>
+      <stop offset="1" stop-color="#3021B9"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#right)" d="M47 15h7c5 0 7 3 10 8l28 58H76c-5 0-7-2-9-7L44 30z"/>
+  <path fill="url(#fold)" d="m51 41 20 11H57z"/>
+  <path fill="url(#left)" d="M4 81 37 22c3-5 5-7 10-7h7c3 0 5 1 7 4-3-3-6-2-9 4L26 75c-2 4-4 6-8 6z"/>
+  <path fill="url(#bridge)" d="M4 81c5-10 8-16 20-22l13-7h34c7 0 11 4 15 12l3 6c-6-5-11-5-18-5H39c-6 0-9 2-12 8l-2 3c-2 4-4 5-8 5z"/>
+</svg>

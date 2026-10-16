@@ -1278,7 +1278,7 @@
       },
       "dialog": {
         "add": "新建引擎",
-        "addStorage": "新建通用存储引擎",
+        "addStorage": "新建通用引擎",
         "addExtension": "新建扩展引擎",
         "edit": "编辑引擎",
         "restore": "恢复引擎",
@@ -1356,6 +1356,18 @@
         "title": "选择通用引擎类型",
         "subtitle": "左侧选择引擎，右侧填写连接信息",
         "editLockedHint": "编辑状态下不允许切换引擎类型",
+        "search": "搜索引擎名称或类型",
+        "noResults": "没有匹配的引擎类型",
+        "groups": {
+          "tabular": "关系型数据库",
+          "compute": "计算引擎",
+          "dynamic_schema": "文档与搜索",
+          "key_value": "键值存储",
+          "graph": "图数据库",
+          "object": "对象存储",
+          "file": "文件存储",
+          "event_stream": "事件流"
+        },
         "types": {
           "postgresql": "企业级关系数据库",
           "oracle": "Oracle 关系数据库",

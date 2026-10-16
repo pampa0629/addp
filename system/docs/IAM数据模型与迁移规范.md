@@ -183,7 +183,7 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源读取显式拒绝
 
-DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。当前单项范围为 server → schema → 普通 table、server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），不代表文件组合或全部模块已接入。三个目标形态共用数据库身份约束；namespace 与 leaf 类型必须成对合法，不能把 schema 下的 collection 或 view 当作已支持目标。
+DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。当前端到端实施与验收聚焦 PG 的 server → schema → 普通 table。共享协议与数据库约束另外能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），其持久化回归只证明身份约束与规则存储，不代表这些引擎的实际读取已接入；不扩大本轮 PG 实施范围。三个目标形态共用数据库身份约束；namespace 与 leaf 类型必须成对合法，不能把 schema 下的 collection 或 view 当作已支持目标。
 
 切换回归须覆盖：同一数据项边界改变后旧 Grant 不覆盖、新 Grant 仍被原有效 Deny 阻断；正常内容更新及 whole 合法成员增长不改变摘要；解除 Deny 不复活无效 Grant；其他 Tenant／Engine／数据项不误命中；Meta 不可用不回退原生 ACL，且不阻止对已存规则的合法撤销／解除。Grant、Deny、当前来源查询与正式读取消费必须同次切换，不保留按路径独立放行的第二路线。
 

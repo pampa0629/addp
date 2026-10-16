@@ -65,6 +65,9 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 		if len(descriptor.ConnectionSpec.Fields) == 0 {
 			t.Fatalf("%s has no connection fields", descriptor.Type)
 		}
+		if strings.TrimSpace(descriptor.RegistrationGroup) == "" {
+			t.Fatalf("%s has no registration group", descriptor.Type)
+		}
 		if descriptor.Capabilities.EngineType != descriptor.Type {
 			t.Fatalf("%s capability engine_type = %q", descriptor.Type, descriptor.Capabilities.EngineType)
 		}
@@ -408,4 +411,28 @@ func contains(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func TestRegisterableEngineDisplayMetadata(t *testing.T) {
+	descriptors, err := plugin.ListEngineTypeDescriptors("general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byType := make(map[string]plugin.EngineTypeDescriptor, len(descriptors))
+	for _, descriptor := range descriptors {
+		byType[descriptor.Type] = descriptor
+	}
+	if got := byType["postgresql"].RegistrationGroup; got != "tabular" {
+		t.Fatalf("PostgreSQL registration group = %q", got)
+	}
+	spark := byType["spark"]
+	if spark.RegistrationGroup != plugin.EngineRegistrationGroupCompute || spark.Capabilities.EngineFamily != "tabular" ||
+		spark.CatalogModel == nil || spark.Capabilities.Compute == nil || spark.Capabilities.Compute.Query == nil ||
+		!spark.Capabilities.Compute.Query.Supported || spark.Capabilities.Storage == nil || spark.Capabilities.Storage.Store == nil ||
+		!spark.Capabilities.Storage.Store.TableReadSession {
+		t.Fatalf("Spark must use compute navigation while retaining tabular catalog, reads and SQL: %#v", spark)
+	}
+	if got := byType["oracle"].DisplayName; got != "Oracle" {
+		t.Fatalf("Oracle display name = %q", got)
+	}
 }

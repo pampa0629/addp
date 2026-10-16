@@ -189,7 +189,7 @@ Explicit Deny 的建立／解除使用各自独立 Permission 与引擎管理资
 
 **唯一目标与分工。** Meta 保存 DataItem 的身份、布局、入口、组成边界和识别状态；System 保存稳定数据项引用、授权认可的最小边界绑定、批准要求、Grant／Deny 与审计；Catalog 是可选业务批准入口；实际读取 owner 执行统一规则。System 不跨 schema 查 Meta，不复制完整目录或 whole 叶子清单，也不重新探测格式。
 
-Meta 向 System 精确投影当前数据项身份、可执行组成边界与基础识别状态；唯一事实契约见[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)。System 绑定被批准的最小边界及其摘要，真实读取使用同一边界表示；状态完整与摘要一致均不能代替当前权限及 Security 校验。当前代码覆盖 server → schema → 普通 table、server → database → 普通 table（MySQL）及 server → database → collection（MongoDB）三类 `single` 的事实查询、直接批准／Catalog 业务批准绑定，以及 Manager 预览、手工剖析和结果读取的源规则核验，三类目标分别验证，不能仅凭相同名称跨类型或跨 namespace 复用批准。文件 single、multi／whole 及其他消费入口尚未覆盖，不直接复用完整 Meta 详情、Catalog 变化源或浏览器自报描述。
+Meta 向 System 精确投影当前数据项身份、可执行组成边界与基础识别状态；唯一事实契约见[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)。System 绑定被批准的最小边界及其摘要，真实读取使用同一边界表示；状态完整与摘要一致均不能代替当前权限及 Security 校验。当前实施和端到端验收聚焦 PostgreSQL 的 server → schema → 普通 table `single`，先打通事实查询、批准绑定、Manager 真实读取与收权闭环。共享事实协议及 System 持久化约束也能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），但这不代表对应引擎的实际读取入口已执行源规则，不将其列为已完成的数据授权接入。不同目标仍须分别验证，不能仅凭相同名称跨类型或跨 namespace 复用批准。文件 single、multi／whole 及其他消费入口尚未覆盖，不直接复用完整 Meta 详情、Catalog 变化源或浏览器自报描述。
 
 **Grant 与 Deny 的不同匹配语义。** Grant 绑定被批准的 DataItem 身份及边界摘要；同一数据项的布局、入口或合法组成约束变化后，旧 Grant 不覆盖新边界，须显式重新批准。Deny 绑定同 Tenant、同 Engine 内的稳定 DataItem 身份、接收主体和动作；在期限及主体条件仍满足时，不因边界摘要变化、重新扫描或重新签发 Grant 而失效，直到显式解除或自然到期。建立时记录的边界可以用于审计，但不能成为继续命中该拒绝的必要条件。换 Engine、改名或来源重绑按既有身份规则处理，不把原规则猜测转移到另一个数据项。解除 Deny 不恢复已撤销、到期或边界不匹配的 Grant；未可靠确认当前身份与边界时仍拒绝读取，不以 Deny 未找到作为允许依据。
 
@@ -245,7 +245,7 @@ Service Token 仅进入显式机器契约，不因持有同名 Permission 就可
 | 范围 | 规范与实施边界 |
 | --- | --- |
 | AuthContext | 唯一 v1 Schema；破坏性变化同步 Schema、Go／Python 类型、System 投影及所有消费者，不按客户端保留旧版本 |
-| 源数据授权 | schema 普通表、MySQL 数据库普通单表与 MongoDB 数据库单集合 single 采用 DataItem 身份与批准边界绑定，覆盖直接批准、Catalog 业务批准及 Manager 的上述读取入口；文件布局与其他消费入口仍待接入，不能视为所有引擎／模块已受控 |
+| 源数据授权 | 当前实施与端到端验收限于 PG schema 普通表 single，逐项核验直接／业务批准、Manager 读取及收权；共享协议与持久化约束对其他单项目标的表达能力不等于实际读取接入。MySQL、MongoDB、文件布局及其他消费入口仍待独立闭环，不视为已受 DataItem 授权控制 |
 | Meta 基础识别 | 清单组合识别不代表所有格式已支持必要结构读取；身份、完整性与边界契约须逐格式验证 |
 | 列／行授权 | 保留同一 DataItem 上的扩展方向，具体规则和执行接入尚未确定 |
 

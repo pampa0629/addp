@@ -175,34 +175,62 @@
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="980px"
+      class="addp-dialog"
+      width="min(980px, calc(100vw - 24px))"
       @close="resetForm"
     >
       <div class="storage-layout">
         <aside class="engine-type-sidebar">
           <div class="sidebar-title">{{ t('system.engine.registerPanel.title') }}</div>
           <div class="sidebar-subtitle">{{ t('system.engine.registerPanel.subtitle') }}</div>
+          <el-input
+            v-if="!isEdit"
+            v-model="engineTypeSearch"
+            :prefix-icon="Search"
+            :placeholder="t('system.engine.registerPanel.search')"
+            :aria-label="t('system.engine.registerPanel.search')"
+            clearable
+            class="engine-type-search"
+          />
           <div class="engine-type-list">
-            <el-tooltip
-              v-for="item in visibleStorageEngineTypeOptions"
-              :key="item.value"
-              :content="item.desc"
-              placement="right"
-            >
-              <button
-                type="button"
-                class="engine-type-item"
-                :class="{
-                  'is-active': form.engine_type === item.value,
-                  'is-disabled': isEdit
-                }"
-                :disabled="isEdit"
-                @click="selectStorageEngineType(item.value)"
+            <el-collapse v-model="expandedEngineGroups">
+              <el-collapse-item
+                v-for="group in visibleEngineTypeGroups"
+                :key="group.id"
+                :name="group.id"
               >
-                <span class="engine-type-icon">{{ item.icon }}</span>
-                <span class="engine-type-name">{{ item.label }}</span>
-              </button>
-            </el-tooltip>
+                <template #title>
+                  <span class="engine-type-group-title">{{ engineRegistrationGroupLabel(group.id) }}</span>
+                  <span class="engine-type-group-count">{{ group.items.length }}</span>
+                </template>
+                <div class="engine-type-group-items">
+                  <el-tooltip
+                    v-for="item in group.items"
+                    :key="item.value"
+                    :content="item.desc"
+                    :trigger-keys="[]"
+                    placement="right"
+                  >
+                    <button
+                      type="button"
+                      class="engine-type-item"
+                      :class="{ 'is-active': form.engine_type === item.value }"
+                      :aria-pressed="form.engine_type === item.value"
+                      :disabled="isEdit"
+                      @click="selectStorageEngineType(item.value)"
+                    >
+                      <EngineTypeIcon :type="item.value" />
+                      <span class="engine-type-name">{{ item.label }}</span>
+                    </button>
+                  </el-tooltip>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+            <el-empty
+              v-if="visibleEngineTypeGroups.length === 0"
+              :description="t('system.engine.registerPanel.noResults')"
+              :image-size="48"
+            />
           </div>
           <div v-if="isEdit" class="sidebar-hint">
             {{ t('system.engine.registerPanel.editLockedHint') }}
@@ -708,14 +736,15 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
-import { Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, requestConsoleBridge } from '@common-ui'
+import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
 import { getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
 import { hasEngineAddressChanged, switchStorageEngineType } from '../utils/engineForm'
+import { compareEngineTypePopularity } from '../utils/engineTypeOrdering'
 import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
@@ -723,7 +752,7 @@ import EngineAccessDelegations from '../components/engines/EngineAccessDelegatio
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
@@ -929,18 +958,43 @@ const storageEngineTypeOptions = computed(() => engineTypeDescriptors.value.map(
   const translatedDescription = t(descriptionKey)
   return {
     value: descriptor.type,
-    icon: '◈',
+    group: descriptor.registration_group,
     label: descriptor.display_name,
     desc: translatedDescription === descriptionKey ? descriptor.display_name : translatedDescription
   }
 }))
 
-const visibleStorageEngineTypeOptions = computed(() => {
-  if (!isEdit.value) {
-    return storageEngineTypeOptions.value
+const engineTypeSearch = ref('')
+const expandedEngineGroups = ref([])
+const engineRegistrationGroupOrder = ['tabular', 'compute', 'dynamic_schema', 'key_value', 'graph', 'object', 'file', 'event_stream']
+const engineRegistrationGroupLabel = group => {
+  const key = `system.engine.registerPanel.groups.${group}`
+  return te(key) ? t(key) : group
+}
+const visibleEngineTypeGroups = computed(() => {
+  const search = engineTypeSearch.value.trim().toLocaleLowerCase()
+  const groups = new Map(engineRegistrationGroupOrder.map(group => [group, []]))
+  for (const item of storageEngineTypeOptions.value) {
+    if (isEdit.value && item.value !== form.value.engine_type) continue
+    if (!isEdit.value && search && !`${item.label} ${item.value}`.toLocaleLowerCase().includes(search)) continue
+    if (!groups.has(item.group)) groups.set(item.group, [])
+    groups.get(item.group).push(item)
   }
+  return [...groups].filter(([, items]) => items.length).map(([id, items]) => ({
+    id, items: items.sort(compareEngineTypePopularity)
+  }))
+})
 
-  return storageEngineTypeOptions.value.filter(item => item.value === form.value.engine_type)
+watch(engineTypeSearch, () => {
+  expandedEngineGroups.value = engineTypeSearch.value.trim()
+    ? visibleEngineTypeGroups.value.map(group => group.id)
+    : storageEngineTypeOptions.value.filter(item => item.value === form.value.engine_type).map(item => item.group)
+})
+watch(dialogVisible, visible => {
+  if (!visible) return
+  engineTypeSearch.value = ''
+  expandedEngineGroups.value = storageEngineTypeOptions.value
+    .filter(item => item.value === form.value.engine_type).map(item => item.group)
 })
 
 const selectedCapabilitiesView = computed(() => {
@@ -1285,15 +1339,25 @@ const loadEngines = async ({ silent = false } = {}) => {
 }
 
 const loadEngineTypeDescriptors = async () => {
-  const response = await enginesAPI.listTypes()
-  if (!Array.isArray(response)) {
-    throw new TypeError('System engine type descriptor response must be an array')
+  try {
+    const response = await enginesAPI.listTypes()
+    if (!Array.isArray(response) || response.some(descriptor =>
+      !descriptor || typeof descriptor.type !== 'string' || !descriptor.type.trim() ||
+      typeof descriptor.registration_group !== 'string' || !descriptor.registration_group.trim()
+    )) {
+      engineTypeDescriptors.value = []
+      return
+    }
+    engineTypeDescriptors.value = response
+  } catch (error) {
+    engineTypeDescriptors.value = []
+    console.error(error)
   }
-  engineTypeDescriptors.value = response
 }
 
 const refreshEngines = async () => {
-  if (await loadEngines()) ElMessage.success(t('system.engine.msg.refreshed'))
+  const [loaded] = await Promise.all([loadEngines(), loadEngineTypeDescriptors()])
+  if (loaded) ElMessage.success(t('system.engine.msg.refreshed'))
 }
 
 const selectStorageEngineType = (engineType) => {
@@ -1962,7 +2026,7 @@ const resetForm = () => {
   editingEngine.value = null
   spatialWorkspaceCollapse.value = []
   enablingSpatialWorkspace.value = false
-  storageFormRef.value?.reset()
+  storageFormRef.value?.formRef?.clearValidate()
 }
 
 const resetExtensionForm = () => {
@@ -2129,7 +2193,9 @@ onUnmounted(() => {
 }
 
 .engine-type-sidebar {
-  width: 220px;
+  width: 240px;
+  max-height: min(60vh, 560px);
+  box-sizing: border-box;
   flex-shrink: 0;
   border: 1px solid var(--addp-border-color);
   border-radius: 10px;
@@ -2152,35 +2218,76 @@ onUnmounted(() => {
   color: var(--addp-text-secondary);
 }
 
+.engine-type-search {
+  margin-bottom: 10px;
+}
+
 .engine-type-list {
-  max-height: 70vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   padding-right: 2px;
 }
 
-.engine-type-item {
-  width: 100%;
-  border: 1px solid var(--addp-border-color);
-  border-radius: 8px;
-  background: var(--addp-bg-primary);
-  color: inherit;
-  text-align: center;
-  padding: 10px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+.engine-type-list :deep(.el-collapse) {
+  --el-collapse-header-height: 36px;
 }
 
-.engine-type-item:hover {
+.engine-type-list :deep(.el-collapse-item__header),
+.engine-type-list :deep(.el-collapse-item__wrap) {
+  background: transparent;
+}
+
+.engine-type-list :deep(.el-collapse-item__content) {
+  padding-bottom: 10px;
+}
+
+.engine-type-group-title {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+  line-height: 1.4;
+  padding: 8px 0;
+  color: var(--addp-text-primary);
+  font-weight: 600;
+}
+
+.engine-type-group-count {
+  margin: 0 8px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.engine-type-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.engine-type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-primary);
+  color: var(--addp-text-primary);
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.engine-type-item:hover,
+.engine-type-item:focus-visible {
   border-color: var(--el-color-primary);
-  transform: translateY(-1px);
+}
+
+.engine-type-item:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 
 .engine-type-item.is-active {
@@ -2188,28 +2295,33 @@ onUnmounted(() => {
   background: var(--el-color-primary-light-9);
 }
 
-.engine-type-item.is-disabled {
+.engine-type-item:disabled {
   cursor: not-allowed;
-  opacity: 0.85;
-}
-
-.engine-type-item.is-disabled:hover {
-  transform: none;
-}
-
-.engine-type-icon {
-  font-size: 40px;
-  line-height: 1;
-  width: 56px;
-  text-align: center;
-  flex-shrink: 0;
 }
 
 .engine-type-name {
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--addp-text-primary);
-  line-height: 1.2;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .storage-layout {
+    flex-direction: column;
+  }
+
+  .engine-type-sidebar,
+  .storage-form-panel {
+    width: 100%;
+  }
+
+  .engine-type-list {
+    max-height: 240px;
+  }
 }
 
 .sidebar-hint {

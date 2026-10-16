@@ -12,7 +12,7 @@
       show-icon
       style="margin-bottom: 12px"
     />
-    <el-card>
+    <el-card class="scan-card">
       <div
         v-if="activeScan.visible"
         class="scan-status"
@@ -1477,11 +1477,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .metadata-scan {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 12px;
+  overflow: hidden;
 }
 
 .page-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -1494,14 +1501,27 @@ onBeforeUnmount(() => {
   font-size: 20px;
 }
 
-.metadata-scan :deep(.el-card__body) {
+.metadata-scan > .el-alert {
+  flex-shrink: 0;
+}
+
+.scan-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.scan-card :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   padding: 16px;
 }
 
 .scan-status {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  flex-shrink: 0;
   margin-bottom: 12px;
   padding: 8px 10px;
   border: 1px solid var(--el-border-color);
@@ -1556,7 +1576,17 @@ onBeforeUnmount(() => {
 
 .scan-container {
   display: flex;
+  flex: 1;
+  min-height: 0;
   gap: 12px;
+  overflow: hidden;
+}
+
+.left-panel,
+.right-panel {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 /* ========== 引擎信息列 ========== */
@@ -1762,6 +1792,7 @@ onBeforeUnmount(() => {
 
 .right-panel {
   flex: 1;
+  min-width: 0;
 }
 
 .panel-header {

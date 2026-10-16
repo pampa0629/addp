@@ -126,9 +126,10 @@ const selection = ref(null), targets = ref([]), mode = ref(''), reason = ref('')
 const selectionText = ref('')
 const basisStates = ref({}), basisRequests = new Map()
 let basisSequence = 0
-// UI identity must match native candidates (decimal strings) and API-returned
-// requirement paths (numeric IDs). Facts/signing validate the target separately.
-const basisKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(path.engine_id) })
+// jsonb may reorder object keys; UI identity follows ordered path values, not
+// their original JSON spelling. Facts/signing validate the target separately.
+const basisKey = path => serializeEngineCatalogTarget({ ...path, engine_id: String(path.engine_id),
+  segments: path.segments.map(({ term, kind, name }) => ({ term, kind, name })) })
 const basisState = path => path?.segments ? basisStates.value[basisKey(path)] || 'pending' : 'pending'
 const basisTag = path => ({ complete: 'success', failed: 'danger', incomplete: 'warning', needs_refresh: 'warning', missing: 'warning' }[basisState(path)] || 'info')
 const change = ref(null), changed = ref(false)

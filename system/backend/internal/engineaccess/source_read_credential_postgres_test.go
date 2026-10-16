@@ -126,12 +126,12 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				}
 			}
 			trustedReader := service.authorizationFacts
-			for _, state := range []string{"missing", "offline", "incomplete", "needs_refresh", "unsupported"} {
+			for _, state := range []string{"missing", "offline", "nil", "incomplete", "needs_refresh", "unsupported", "changed_fingerprint", "changed_native_namespace", "invalid_boundary_hash"} {
 				t.Run("existing Grant still requires current Meta facts "+state, func(t *testing.T) {
 					defer service.WithAuthorizationFactsReader(trustedReader)
 					calls := 0
 					want := ErrAuthorizationBoundaryChanged
-					if state == "offline" {
+					if state == "offline" || state == "nil" || state == "changed_fingerprint" || state == "invalid_boundary_hash" {
 						want = ErrAuthorizationFactsUnavailable
 					}
 					service.WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
@@ -145,6 +145,23 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 							return nil, &client.TenantAPIError{StatusCode: http.StatusNotFound}
 						case "offline":
 							return nil, errors.New("Meta facts unavailable")
+						case "nil":
+							return nil, nil
+						case "changed_fingerprint":
+							other := testBindingFacts(engineplugin.TabularItemPath(path.EngineID, "schema", path.Segments[1].Name, "different_preview_target"))
+							return &other, nil
+						case "changed_native_namespace":
+							// Same Engine, dotted name and fingerprint, but a different
+							// typed boundary. A valid DTO is not proof of PG ownership.
+							other := testBindingFacts(engineplugin.TabularItemPath(path.EngineID, "database", path.Segments[1].Name, path.Segments[2].Name))
+							if other.Validate() != nil || other.ItemFingerprint != facts.ItemFingerprint || *other.BoundaryHash == *facts.BoundaryHash {
+								t.Fatal("fixture must retain identity with a valid different boundary")
+							}
+							return &other, nil
+						case "invalid_boundary_hash":
+							hash := strings.Repeat("a", 64)
+							facts.BoundaryHash = &hash
+							return &facts, nil
 						default:
 							facts.BasisState = authorizationfacts.AuthorizationBasisState(state)
 							facts.Boundary, facts.BoundaryHash = nil, nil

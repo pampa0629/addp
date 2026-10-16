@@ -8,6 +8,7 @@ export { createAutoRefresh, autoRefreshOptions } from './utils/autoRefresh.mjs'
 // Basic UI Components (no map dependencies)
 export { default as BusinessDomainSelect } from './components/BusinessDomainSelect.vue'
 export { buildBusinessDomainOptions, businessDomainReferenceOptions } from './utils/businessDomainOptions.mjs'
+export { default as EngineTypeIcon } from './components/EngineTypeIcon.vue'
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'

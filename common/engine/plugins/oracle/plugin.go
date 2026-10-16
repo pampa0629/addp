@@ -77,7 +77,7 @@ func (p *OraclePlugin) Type() string {
 }
 
 func (p *OraclePlugin) DisplayName() string {
-	return "Oracle Database"
+	return "Oracle"
 }
 
 func (p *OraclePlugin) EngineOrigin() string {

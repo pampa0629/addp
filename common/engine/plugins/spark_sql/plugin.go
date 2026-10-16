@@ -30,6 +30,10 @@ func (p *SparkSQLPlugin) DisplayName() string {
 	return "Apache Spark"
 }
 
+func (p *SparkSQLPlugin) RegistrationGroup() string {
+	return plugin.EngineRegistrationGroupCompute
+}
+
 func (p *SparkSQLPlugin) EngineOrigin() string {
 	return "general"
 }

@@ -22,6 +22,7 @@
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
+| engine registration group | 引擎注册展示分组 | 引擎类型描述中用于注册界面导航的 `registration_group`，由插件声明，未单独声明时使用其主引擎族。 | 仅控制展示，不参与能力判断、目录模型、扫描或授权；Spark SQL 使用 `compute` 分组，仍保留 `tabular` 能力与表目录。 |
 | Engine Instance | 引擎实例 | System 中一条代表同一实际引擎、具有永久平台 ID 的登记事实。 | `engine_id` 单调分配、永久保留且不得复用；同一实际引擎搬迁时，有 `system.engine.update` 权限的用户可确认后更新连接地址并保留 ID 与已有引用。不同实际引擎必须创建新实例，不得借编辑改挂旧引用。连接地址键只用于当前非删除实例去重。 |
 | Workflow storage access | 工作流直接存储接入能力 | 计算引擎在 `compute.workflow.storage_access` 中声明自身直接连接的存储引擎类型与读写方向。 | 不是存储引擎自身能力，也不是算子名单；仅约束直接使用执行期 `connection_info` 的接入路径。受控 access-plan 路径按对应 Provider 能力校验。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |

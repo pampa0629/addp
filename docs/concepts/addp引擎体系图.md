@@ -342,6 +342,8 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 ## 五、当前支持的引擎
 
+下表按能力模型归纳引擎族，不等同于注册弹窗的展示分类。注册界面按插件描述的 `registration_group` 分组：`tabular` 显示“关系型数据库”，Spark SQL 单独显示在“计算引擎”（`compute`）中，但保留表目录与 SQL 查询能力；Spark Workflow 继续走扩展运行时入口。
+
 | 引擎族 | 引擎 |
 | --- | --- |
 | 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、TiDB、Doris、ClickHouse、Spark SQL |

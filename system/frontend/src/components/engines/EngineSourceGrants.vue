@@ -102,7 +102,7 @@
       </template>
     </template>
     <el-alert v-else-if="view !== 'create'" type="info" :closable="false" :title="t('system.engine.sourceGrants.readRequired')" />
-    <el-dialog v-if="authorizationReady" v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @opened="revokeCancel?.$el?.focus()">
+    <el-dialog v-if="authorizationReady" v-model="revokeVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))" :title="t('system.engine.sourceGrants.revoke')" :close-on-click-modal="!revoking" :close-on-press-escape="!revoking" :show-close="!revoking" @open-auto-focus="revokeCancel?.$el?.focus()">
       <p>{{ approvalPathLabel(revokeRow?.catalog_path) }}</p>
       <EngineGrantRecipient v-if="revokeRow" :type="revokeRow.recipient_type" :id="revokeRow.recipient_id" v-bind="recipientPresentation(revokeRow)" />
       <el-alert type="warning" :closable="false" :title="t('system.engine.sourceGrants.revokeBoundary')" />
@@ -113,7 +113,7 @@
       <template #footer><el-button ref="revokeCancel" :disabled="revoking" @click="revokeVisible = false">{{ t('common.cancel') }}</el-button><el-button type="danger" data-testid="source-grant-revoke-confirm" :loading="revoking" :disabled="!canRevoke" @click="revoke">{{ t('system.engine.sourceGrants.revoke') }}</el-button></template>
     </el-dialog>
     <el-dialog v-if="authorizationReady" v-model="denyVisible" class="addp-dialog" append-to-body width="min(600px, calc(100vw - 24px))"
-      :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'release' : 'create'}`)" :close-on-click-modal="!denySaving && !denyAttempt" :close-on-press-escape="!denySaving && !denyAttempt" :show-close="!denySaving && !denyAttempt" @opened="denyCancel?.$el?.focus()">
+      :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'release' : 'create'}`)" :close-on-click-modal="!denySaving && !denyAttempt" :close-on-press-escape="!denySaving && !denyAttempt" :show-close="!denySaving && !denyAttempt" @open-auto-focus="denyCancel?.$el?.focus()">
       <p>{{ approvalPathLabel(denyTarget?.catalog_path) }}</p>
       <EngineGrantRecipient v-if="denyTarget" :type="denyRule?.recipient_type || denyTarget.recipient_type" :id="denyRule?.recipient_id || denyTarget.recipient_id" v-bind="recipientPresentation(denyRule || denyTarget)" />
       <el-alert type="warning" :closable="false" :title="t(`system.engine.sourceGrants.deny.${denyRule ? 'releaseBoundary' : 'createBoundary'}`)" />

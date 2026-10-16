@@ -73,6 +73,9 @@ func TestListEngineTypesReturnsPluginDescriptors(t *testing.T) {
 		}
 	}
 	for index, descriptor := range response {
+		if descriptor.RegistrationGroup == "" || descriptor.RegistrationGroup != expected[index].RegistrationGroup {
+			t.Fatalf("descriptor[%d].registration_group = %q, want plugin group %q", index, descriptor.RegistrationGroup, expected[index].RegistrationGroup)
+		}
 		if descriptor.Type != expected[index].Type {
 			t.Fatalf("descriptor[%d].type = %q, want registered type %q", index, descriptor.Type, expected[index].Type)
 		}

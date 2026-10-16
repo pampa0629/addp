@@ -36,7 +36,7 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 
 // ListEngineTypes godoc
 // @Summary      获取可注册引擎类型 | List registerable engine types
-// @Description  返回由内置插件声明的引擎类型、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine types, connection forms, capabilities, and Catalog Models declared by compiled plugins; no connection values or credentials are included
+// @Description  返回由内置插件声明的引擎类型、注册展示分组、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine types, registration display groups, connection forms, capabilities, and Catalog Models declared by compiled plugins; no connection values or credentials are included
 // @Tags         引擎管理 | Engine Management
 // @Produce      json
 // @Security     BearerAuth

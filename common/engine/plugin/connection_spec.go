@@ -65,14 +65,25 @@ type ConnectionSpec struct {
 	Constraints   []ConnectionConstraintSpec `json:"constraints,omitempty"`
 }
 
+// EngineRegistrationGroupCompute groups general-purpose compute engines in registration UI.
+const EngineRegistrationGroupCompute = "compute"
+
+// EngineRegistrationGroupProvider declares registration navigation metadata only.
+// It does not change capabilities, catalog models, or authorization.
+type EngineRegistrationGroupProvider interface {
+	RegistrationGroup() string
+}
+
 // EngineTypeDescriptor is the public, value-free description of one compiled engine type.
 type EngineTypeDescriptor struct {
-	Type           string                  `json:"type"`
-	DisplayName    string                  `json:"display_name"`
-	Origin         string                  `json:"origin"`
-	ConnectionSpec ConnectionSpec          `json:"connection_spec"`
-	Capabilities   EngineCapabilities      `json:"capabilities"`
-	CatalogModel   *EngineCatalogModelSpec `json:"catalog_model,omitempty"`
+	Type        string `json:"type"`
+	DisplayName string `json:"display_name"`
+	// 注册展示分组，不用于能力判断 | Registration display group, not a capability.
+	RegistrationGroup string                  `json:"registration_group"`
+	Origin            string                  `json:"origin"`
+	ConnectionSpec    ConnectionSpec          `json:"connection_spec"`
+	Capabilities      EngineCapabilities      `json:"capabilities"`
+	CatalogModel      *EngineCatalogModelSpec `json:"catalog_model,omitempty"`
 }
 
 type ConnectionSpecProvider interface {
@@ -204,6 +215,13 @@ func DescribeEngineType(enginePlugin EnginePlugin) (EngineTypeDescriptor, error)
 	descriptor := EngineTypeDescriptor{
 		Type: enginePlugin.Type(), DisplayName: enginePlugin.DisplayName(), Origin: enginePlugin.EngineOrigin(),
 		ConnectionSpec: spec, Capabilities: enginePlugin.Capabilities(),
+	}
+	descriptor.RegistrationGroup = descriptor.Capabilities.EngineFamily
+	if groupProvider, ok := enginePlugin.(EngineRegistrationGroupProvider); ok {
+		descriptor.RegistrationGroup = groupProvider.RegistrationGroup()
+	}
+	if strings.TrimSpace(descriptor.RegistrationGroup) == "" {
+		return EngineTypeDescriptor{}, fmt.Errorf("engine plugin %s has empty registration group", enginePlugin.Type())
 	}
 	if catalogProvider, ok := enginePlugin.(EngineCatalogModelProvider); ok {
 		model := catalogProvider.EngineCatalogModel()

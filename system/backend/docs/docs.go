@@ -1174,7 +1174,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回由内置插件声明的引擎类型、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine types, connection forms, capabilities, and Catalog Models declared by compiled plugins; no connection values or credentials are included",
+                "description": "返回由内置插件声明的引擎类型、注册展示分组、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine types, registration display groups, connection forms, capabilities, and Catalog Models declared by compiled plugins; no connection values or credentials are included",
                 "produces": [
                     "application/json"
                 ],
@@ -20266,6 +20266,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "origin": {
+                    "type": "string"
+                },
+                "registration_group": {
+                    "description": "注册展示分组，不用于能力判断 | Registration display group, not a capability.",
                     "type": "string"
                 },
                 "type": {
