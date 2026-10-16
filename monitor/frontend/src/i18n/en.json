@@ -1038,6 +1038,48 @@
       "cpuPressure": "CPU busy rate",
       "memoryPressure": "Memory usage",
       "categoryRequired": "Select at least one alert category"
+    },
+    "resourceRules": {
+      "title": "Resource rules",
+      "create": "Create resource rule",
+      "edit": "Edit resource rule",
+      "metric": "Metric",
+      "trigger": "Trigger condition",
+      "recovery": "Recovery condition",
+      "above": "Above {percent}% for {seconds}s",
+      "below": "Below {percent}% for {seconds}s",
+      "observation": "Latest evaluation",
+      "latest": "{value}% · Sampled at {time}",
+      "seconds": "seconds",
+      "triggerPercent": "Trigger threshold (%)",
+      "triggerSeconds": "Trigger duration (seconds)",
+      "recoveryPercent": "Recovery threshold (%)",
+      "recoverySeconds": "Recovery duration (seconds)",
+      "triggerHint": "All consecutive valid samples must exceed the threshold; equality does not trigger an alert.",
+      "recoveryHint": "Recovery must be greater than 0 and lower than the trigger. Active alerts keep the recovery policy saved when opened. Missing data never means recovery.",
+      "disabledHint": "New rules are saved disabled. Review the settings, then edit to enable.",
+      "invalid": "Enter a name and use 0 < recovery < trigger ≤ 100. Durations must be 15–300 seconds in multiples of 15.",
+      "conflict": "The rule changed or this host already has a rule for this metric. Your input is retained. Close and refresh the list to review.",
+      "deleteHint": "Delete “{name}”? Active alerts must meet their recovery conditions first. Alert history is retained.",
+      "deleteConflict": "The rule changed or still has an active alert. Refresh to review; edit and disable it to pause evaluation.",
+      "verdicts": {
+        "unknown": "Not yet determined",
+        "paused": "Paused",
+        "normal": "No resource pressure alert",
+        "risk": "Resource pressure alert"
+      },
+      "reasons": {
+        "warming_up": "Accumulating consecutive valid samples",
+        "no_data": "Valid samples missing; check host collection",
+        "source_changed": "Host, collection configuration or query budget changed; rebuilding the window",
+        "collection_paused": "Host or collection target is disabled",
+        "collection_disabled": "Resource collection is disabled",
+        "identity_unavailable": "Host and source identities could not be verified",
+        "query_unavailable": "Resource query failed; check the collection pipeline",
+        "query_budget": "Query budget cannot support 15-second evaluation",
+        "query_policy": "Query budget is temporarily unavailable",
+        "unconfigured": "Required evaluation configuration is unavailable"
+      }
     }
   }
 }

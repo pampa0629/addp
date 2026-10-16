@@ -94,11 +94,11 @@ test('resource overview requires both platform owners and never becomes a Tenant
 })
 
 test('platform alerts and notification administration have independent entry reads', () => {
- for (const permission of ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read']) {
+ for (const permission of ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'monitor.platform_resource_rule.read']) {
   assert.equal(allowsConsoleRoute('/monitor/platform-alerts?tab=notifications', 'platform', [permission]), true)
   assert.equal(allowsConsoleRoute('/monitor/platform-alerts', 'tenant', [permission]), false)
  }
- for (const permission of ['monitor.log_pipeline.read', 'monitor.log_notification.read', 'monitor.platform_alert.update', 'monitor.platform_alert_notification.update']) {
+ for (const permission of ['monitor.log_pipeline.read', 'monitor.log_notification.read', 'monitor.platform_alert.update', 'monitor.platform_alert_notification.update', 'monitor.platform_resource_rule.create', 'monitor.platform_resource_rule.update', 'monitor.platform_resource_rule.delete']) {
   assert.equal(allowsConsoleRoute('/monitor/platform-alerts', 'platform', [permission]), false)
  }
  assert.equal(resolveModuleLandingRoute('/monitor', ['/platform-alerts', '/alerts'], 'platform', ['monitor.platform_alert.read']), '/platform-alerts')

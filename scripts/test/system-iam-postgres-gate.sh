@@ -109,6 +109,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    resource-alert-rules)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "resource-alert-rules requires --package migration" >&2; exit 2; }
+        test_pattern='^Test(PlatformResourceAlertRulesForwardMigration|Runner)AgainstPostgres$'
+        ;;
     platform-alert-management)
         [ "$PACKAGE_FILTER" = migration ] || { echo "platform-alert-management requires --package migration" >&2; exit 2; }
         test_pattern='^Test(PlatformAlertManagementForwardMigration|Runner)AgainstPostgres$'

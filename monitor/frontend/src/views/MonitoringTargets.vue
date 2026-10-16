@@ -24,13 +24,9 @@
         <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon data-testid="target-save-error" />
         <el-form v-if="formReady" label-position="top" :disabled="!(creating ? canCreate : canRead && auth.hasPermission('monitor.monitoring_target.update')) || saving || conflicted" @submit.prevent>
           <el-form-item :label="t('monitor.targets.node')">
-            <el-select v-if="creating" ref="nodeInput" v-model="form.node_id" filterable remote :remote-method="searchNodes" :loading="nodesLoading" :placeholder="t('monitor.targets.nodeSearch')" :aria-label="t('monitor.targets.node')" data-testid="target-node" @change="selectNode">
-              <el-option v-for="host in selectableNodes" :key="host.node_id" :value="host.node_id" :label="host.display_name" />
-            </el-select>
+            <HostNodeSelect v-if="creating" :key="route.fullPath" ref="nodeInput" v-model="form.node_id" :selected="selectedNode" @selected="selectedNode = $event" />
             <el-input v-else :model-value="selectedNode?.display_name || t('monitor.targets.nodeMissing')" readonly data-testid="target-node" />
             <p v-if="selectedNode" class="target-hint">{{ selectedNode.addresses.join(', ') }}</p>
-            <el-button v-if="creating && nodeOptions.length < nodesTotal" text :loading="nodesLoading" @click="loadNodes(nodeSearch, nodesPage + 1)">{{ t('monitor.targets.moreNodes') }}</el-button>
-            <el-alert v-if="nodesError" :title="t(nodesError)" type="error" :closable="false" />
           </el-form-item>
           <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in Object.keys(targetKinds)" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
           <el-form-item :label="t('monitor.targets.endpoint')"><el-input ref="endpointInput" v-model="form.endpoint" maxlength="512" :placeholder="t('monitor.targets.endpointHint')" data-testid="target-endpoint" /></el-form-item>
@@ -82,6 +78,7 @@ import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@co
 import { useAuthStore } from '../store/auth'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
+import HostNodeSelect from '../components/HostNodeSelect.vue'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 import { validateCollection, validateResourceResponse, resourceErrorKey } from '../utils/nodeResources'
@@ -101,10 +98,8 @@ const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false),
 const target = ref(null), formReady = ref(false), detailLoading = ref(false), detailError = ref(''), saveError = ref(''), saving = ref(false), conflicted = ref(false), statusMessage = ref('')
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
 let collectionTicket = 0, collectionController = null
-const selectedNode = ref(null), nodeOptions = ref([]), nodesLoading = ref(false), nodesError = ref('')
+const selectedNode = ref(null)
 const nodeNames = ref({})
-let nodesTicket = 0, nodesPage = 1, nodesTotal = 0, nodeSearch = ''
-const selectableNodes = computed(() => selectedNode.value && !nodeOptions.value.some(host => host.node_id === selectedNode.value.node_id) ? [selectedNode.value, ...nodeOptions.value] : nodeOptions.value)
 const nodeInput = ref(null), endpointInput = ref(null), closeButton = ref(null), pageHeading = ref(null)
 const form = reactive({ node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true })
 const draftChanged = computed(() => target.value && (form.endpoint !== target.value.source.endpoint || form.enabled !== target.value.enabled))
@@ -149,22 +144,6 @@ async function readNode(id) {
   if (host?.node_id !== id || !isTargetUUID(id) || typeof host.display_name !== 'string' || !host.display_name.trim() || !Array.isArray(host.addresses) || host.addresses.some(address => typeof address !== 'string')) throw new Error('invalid_host')
   return host
 }
-async function loadNodes(search = '', page = 1) {
-  if (!canRead.value || !creating.value) return
-  const generation = epoch, ticket = ++nodesTicket
-  nodesLoading.value = true; nodesError.value = ''
-  if (page === 1) nodeOptions.value = []
-  try {
-    const result = await request(config => hostsAPI.nodes({ page, page_size: 20, ...(search.trim() ? { search: search.trim() } : {}) }, config))
-    if (generation !== epoch || ticket !== nodesTicket) return
-    if (!Array.isArray(result.data) || !Number.isSafeInteger(result.total) || result.total < 0 || result.data.some(host => !isTargetUUID(host.node_id) || typeof host.display_name !== 'string' || !Array.isArray(host.addresses))) throw new Error('invalid_hosts')
-    nodeOptions.value = page === 1 ? result.data : [...nodeOptions.value, ...result.data.filter(host => !nodeOptions.value.some(current => current.node_id === host.node_id))]
-    nodesTotal = result.total; nodesPage = page; nodeSearch = search
-  } catch { if (generation === epoch && ticket === nodesTicket) nodesError.value = 'monitor.targets.nodeLoadingFailed' }
-  finally { if (generation === epoch && ticket === nodesTicket) nodesLoading.value = false }
-}
-function searchNodes(search) { return loadNodes(search, 1) }
-function selectNode(id) { nodesError.value = ''; selectedNode.value = nodeOptions.value.find(host => host.node_id === id) || (selectedNode.value?.node_id === id ? selectedNode.value : null) }
 async function loadList() {
   if (!canRead.value) return
   const generation = epoch, ticket = ++listTicket
@@ -254,7 +233,7 @@ async function remove() {
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
 watch([() => route.fullPath, identity], async () => {
-  invalidate(); resetForm(); nodesTicket++; nodeOptions.value = []; nodeNames.value = {}; nodesError.value = ''; nodesLoading.value = false; nodesTotal = 0; nodesPage = 1
+  invalidate(); resetForm(); nodeNames.value = {}
   rows.value = []; total.value = 0; loaded.value = false; loading.value = false; detailLoading.value = false
   listError.value = ''; detailError.value = ''; saveError.value = ''; statusMessage.value = ''; saving.value = false; conflicted.value = false
   if (!['MonitoringTargets', 'MonitoringTargetNew', 'MonitoringTargetDetail'].includes(route.name)) return
@@ -263,15 +242,8 @@ watch([() => route.fullPath, identity], async () => {
   if (creating.value) {
     formReady.value = canCreate.value
     const generation = epoch
-    await loadNodes()
     if (generation !== epoch) return
-    if (state.value.query.node_id) {
-      try {
-        const host = await readNode(state.value.query.node_id)
-        if (generation !== epoch) return
-        selectedNode.value = host; form.node_id = host.node_id
-      } catch { if (generation === epoch) nodesError.value = 'monitor.targets.nodeLoadingFailed' }
-    }
+    if (state.value.query.node_id) form.node_id = state.value.query.node_id
   }
   await Promise.all([loadList(), creating.value ? Promise.resolve() : loadDetail()])
 }, { immediate: true, flush: 'sync' })

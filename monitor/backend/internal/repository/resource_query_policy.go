@@ -28,7 +28,7 @@ func (r *ResourceQueryPolicyRepository) Save(ctx context.Context, value models.R
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The advisory transaction lock also serializes first-ever CAS inserts.
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(1836019811, 3)").Error; err != nil {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", models.ResourceQueryPolicyLockNamespace, models.ResourceQueryPolicyLockID).Error; err != nil {
 			return err
 		}
 		var current models.ResourceQueryPolicy

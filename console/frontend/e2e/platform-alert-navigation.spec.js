@@ -49,3 +49,22 @@ test('System diagnostics navigate to the sole Monitor management page with obser
   await expect(page).toHaveURL(/\/system\/modules\?tab=log-pipeline$/)
   await expect(frame.getByTestId('pipeline-health')).toContainText('告警')
 })
+
+test('rules-only platform entry preserves the sole iframe and restores rule paging', async ({ page }) => {
+  await backend(page, { identity: identity(['monitor.platform_resource_rule.read']) })
+  const reads = []
+  await page.route('**/api/v1/monitor/platform/**', route => {
+    const url = new URL(route.request().url()); reads.push({ path: url.pathname, page: url.searchParams.get('page') })
+    return route.fulfill({ json: { data: [], total: 0, presets: [], page: Number(url.searchParams.get('page')), page_size: 20 } })
+  })
+  await page.goto('/monitor/platform-alerts?tab=rules&rule_page=2')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('resource-rules')).toBeVisible()
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+  await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('平台告警')
+  await expect.poll(() => reads.at(-1)?.page).toBe('2')
+  await page.reload()
+  await expect(monitor.getByTestId('resource-rules')).toBeVisible()
+  expect(reads.every(row => row.path.endsWith('/resource-alert-rules'))).toBe(true)
+  await expect(monitor.getByRole('button', { name: '通知管理', exact: true })).toHaveCount(0)
+})

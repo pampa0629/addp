@@ -372,11 +372,16 @@ subprocess.run(['go', 'test', './internal/resourcequery', '-run',
                 '^TestIntegrationMetricsResourceQueries$', '-count=1', '-v'],
                cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                env=query_env, check=True, timeout=180)
+subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsResourcePressureEvidence$', '-count=1', '-v'],
+               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=query_env, check=True, timeout=90)
 print('Metrics T2: native fixed catalog instant/range and source isolation', flush=True)
 
 compose('stop', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 0')),
            'node exporter outage is visible without stopping the center')
+subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsResourcePressureEvidence$', '-count=1', '-v'],
+               cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
+               env=dict(query_env, ADDP_RESOURCE_RULE_SOURCE_DOWN='1'), check=True, timeout=30)
 assert get(base + '/-/ready')
 compose('start', 'node-exporter')
 eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance + '"} == 1')),

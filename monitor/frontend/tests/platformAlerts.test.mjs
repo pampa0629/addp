@@ -18,3 +18,13 @@ test('System has no second incident or notification management owner', () => {
  for (const source of [diagnostics, client]) assert.doesNotMatch(source, /log-notification-|alert-notification-|acknowledge\(|retryDelivery\(|destinationDraft|pipeline-incidents/)
  assert.doesNotMatch(read('../src/api/platformAlerts.js'), /log-notification-|log-pipeline\/incidents/)
 })
+test('resource rules retain a canonical independent page and reuse the only host selector', () => {
+ assert.deepEqual(platformAlertQuery(platformAlertState({ tab: 'rules', rule_page: '3' })), { tab: 'rules', rule_page: '3' })
+ assert.deepEqual(platformAlertQuery(platformAlertState({ tab: 'rules', rule_page: '01' })), { tab: 'rules' })
+ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+ for (const path of ['../src/views/MonitoringTargets.vue','../src/components/ResourceAlertRules.vue']) {
+  assert.match(read(path), /<HostNodeSelect/u)
+  assert.doesNotMatch(read(path), /remote-method="searchNodes"/u)
+ }
+ assert.match(read('../src/components/HostNodeSelect.vue'), /platform\.host_node\.read/u)
+})

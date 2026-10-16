@@ -45,7 +45,7 @@ func TestResourcePressureThresholdsAndHysteresis(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			metric, uptime := pressureWindow(c.key, c.value, at)
-			if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, c.active); got != c.want {
+			if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, c.active); got != c.want {
 				t.Fatalf("got %s, want %s", got, c.want)
 			}
 		})
@@ -105,7 +105,7 @@ func TestResourcePressureRejectsIncompleteEvidence(t *testing.T) {
 				}
 				metric, uptime := pressureWindow("node.cpu.busy_percent", value, at)
 				c.edit(&metric, &uptime)
-				if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, active); got != PlatformAlertUnknown {
+				if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, active); got != PlatformAlertUnknown {
 					t.Fatalf("unsafe verdict: %s", got)
 				}
 			})
@@ -126,14 +126,14 @@ func TestResourcePressureUsesRawTimeAndBoundedWindow(t *testing.T) {
 		if active {
 			want = PlatformAlertNormal
 		}
-		if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, active); got != want {
+		if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, active); got != want {
 			t.Fatalf("exact complete window active=%t: %s", active, got)
 		}
 		// The evaluation grid spans exactly the duration, but real samples
 		// span one second less. This must not count as continuous evidence.
 		stamp := metric.Points[0].SampledAt.Add(time.Second)
 		metric.Points[0].SampledAt, uptime.Points[0].SampledAt = &stamp, &stamp
-		if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, active); got != PlatformAlertUnknown {
+		if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, active); got != PlatformAlertUnknown {
 			t.Fatalf("grid substituted for raw elapsed time active=%t: %s", active, got)
 		}
 	}
@@ -144,7 +144,7 @@ func TestResourcePressureUsesRawTimeAndBoundedWindow(t *testing.T) {
 		stamp := metric.Points[i].EvaluatedAt.Add(-16 * time.Second)
 		metric.Points[i].SampledAt, uptime.Points[i].SampledAt = &stamp, &stamp
 	}
-	if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, false); got != PlatformAlertRisk {
+	if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, false); got != PlatformAlertRisk {
 		t.Fatalf("source within cadence tolerance rejected: %s", got)
 	}
 }
@@ -155,30 +155,50 @@ func TestResourcePressureLifecycleBoundaries(t *testing.T) {
 	// A version/collection change invalidates CPU's pre-boundary rate window,
 	// even when every displayed point itself is after the boundary.
 	since := at.Add(-6 * time.Minute)
-	if got := evaluateResourcePressure(metric, uptime, since, at, true, false); got != PlatformAlertUnknown {
+	if got := pressureVerdict(metric, uptime, since, at, true, false); got != PlatformAlertUnknown {
 		t.Fatalf("CPU window crossed lifecycle boundary: %s", got)
 	}
-	if got := evaluateResourcePressure(metric, uptime, time.Time{}, at, true, false); got != PlatformAlertUnknown {
+	if got := pressureVerdict(metric, uptime, time.Time{}, at, true, false); got != PlatformAlertUnknown {
 		t.Fatalf("absent lifecycle evidence accepted: %s", got)
 	}
-	if got := evaluateResourcePressure(resourcequery.Series{}, resourcequery.Series{}, time.Time{}, at, false, true); got != PlatformAlertPaused {
+	if got := pressureVerdict(resourcequery.Series{}, resourcequery.Series{}, time.Time{}, at, false, true); got != PlatformAlertPaused {
 		t.Fatalf("disabled source: %s", got)
 	}
 	// The recovery window uses only its own complete trailing evidence.
 	metric, uptime = pressureWindow("node.memory.used_percent", 0, at)
 	metric.Points[0].Value = nil
-	if got := evaluateResourcePressure(metric, uptime, at.Add(-3*time.Minute), at, true, true); got != PlatformAlertNormal {
+	if got := pressureVerdict(metric, uptime, at.Add(-3*time.Minute), at, true, true); got != PlatformAlertNormal {
 		t.Fatalf("old unrelated gap blocked valid recovery: %s", got)
 	}
 	// A brief threshold excursion cannot open or recover an incident.
 	metric, uptime = pressureWindow("node.memory.used_percent", 81, at)
 	*metric.Points[18].Value = 80
-	if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, false); got != PlatformAlertNormal {
+	if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, false); got != PlatformAlertNormal {
 		t.Fatalf("non-continuous trigger: %s", got)
 	}
 	metric, uptime = pressureWindow("node.memory.used_percent", 74, at)
 	*metric.Points[18].Value = 75
-	if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, true); got != PlatformAlertRisk {
+	if got := pressureVerdict(metric, uptime, at.Add(-time.Hour), at, true, true); got != PlatformAlertRisk {
 		t.Fatalf("non-continuous recovery: %s", got)
+	}
+}
+
+func pressureVerdict(metric, uptime resourcequery.Series, since, at time.Time, enabled, active bool) PlatformAlertVerdict {
+	return evaluateResourcePressure(metric, uptime, since, at, enabled, active, defaultResourcePressurePolicy(metric.MetricKey)).Verdict
+}
+
+func TestResourcePressureConfiguredPolicyAndImmutableWindowEvidence(t *testing.T) {
+	at := time.Date(2026, 10, 16, 0, 10, 0, 0, time.UTC)
+	metric, uptime := pressureWindow("node.memory.used_percent", 70, at)
+	policy := defaultResourcePressurePolicy(metric.MetricKey)
+	policy.TriggerPercent, policy.RecoveryPercent = 65, 60
+	policy.TriggerSeconds = 30
+	got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, false, policy)
+	if got.Verdict != PlatformAlertRisk || got.Samples != 3 || got.SampledTo.Sub(got.SampledFrom) != 30*time.Second || got.Minimum != 70 || got.Maximum != 70 || got.Latest != 70 {
+		t.Fatalf("configured evidence: %#v", got)
+	}
+	policy.RecoveryPercent = policy.TriggerPercent
+	if got := evaluateResourcePressure(metric, uptime, at.Add(-time.Hour), at, true, false, policy); got.Verdict != PlatformAlertUnknown {
+		t.Fatal("invalid hysteresis accepted", got)
 	}
 }

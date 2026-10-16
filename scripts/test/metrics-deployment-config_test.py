@@ -58,6 +58,12 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'monitor/backend/internal/service/resource_observation.go',
                      'monitor/backend/internal/service/resource_observation_test.go',
                      'monitor/backend/internal/service/resource_summary.go',
+                     'monitor/backend/internal/service/resource_alert_evaluation.go',
+                     'monitor/backend/internal/service/resource_pressure_evaluator.go',
+                     'monitor/backend/internal/service/resource_pressure_prometheus_test.go',
+                     'monitor/backend/internal/models/resource_alert_rule.go',
+                     'monitor/backend/internal/models/resource_query_policy.go',
+                     'monitor/backend/internal/repository/resource_query_policy.go',
                      'monitor/backend/internal/service/resource_overview.go',
                      'monitor/backend/internal/service/resource_overview_test.go',
                      'monitor/backend/internal/service/resource_overview_prometheus_test.go',
@@ -73,6 +79,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         probe = (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text()
         self.assertIn('CPUWindow|ProcessWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes', probe)
         self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
+        self.assertEqual(probe.count("'^TestIntegrationMetricsResourcePressureEvidence$'"), 2)
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):
         config.render(self.env)

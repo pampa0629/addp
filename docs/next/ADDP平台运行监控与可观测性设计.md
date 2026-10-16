@@ -2182,3 +2182,66 @@ System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务�
 本轮 CI 修复提交尚待推送验证，不能将前一提交失败的 System IAM Job 记为通过；前一提交其他已通过且输入未变的告警入口验证继续有效。
 
 本轮默认 `make test-changed` 对共享工作区 35 个变更选中 24 个 owner，在外部 T2 连接缺失预检退出 2，后续未执行，不计通过；上述三项标准入口已分别验证本次修正的实际范围。
+
+
+### 10.68 主机资源规则接线的限定权限发布（2026-10-16 已确认）
+
+继续实施 10.61 已确认的主机 CPU、内存压力规则。10.63 明确将规则的独立查看、创建、修改、删除权限留到其真实接口实施时发布；上一轮用户允许的四项权限仅用于事件和通知管理，不把该授权自动扩展为规则发布。本提案只确认新增四项能力的发布边界，不重新讨论已确认的 Monitor 归属、平台与租户分层及初始停用原则。
+
+| 新增 Platform User 权限 | 用途 |
+| --- | --- |
+| `monitor.platform_resource_rule.read` | 查看平台主机 CPU、内存规则及本规则的评估状态 |
+| `monitor.platform_resource_rule.create` | 为当前有权读取的已纳管主机创建规则，初始停用 |
+| `monitor.platform_resource_rule.update` | 按版本 CAS 修改规则参数或启停意图 |
+| `monitor.platform_resource_rule.delete` | 按版本 CAS 删除规则；不删除历史告警、事件或投递 |
+
+限定发布差异：Monitor Permission Manifest、生成常量、实际公开接口和 Swagger 消费者；既有 `platform.system_administrator` 的四项显式绑定；正式前向迁移及相应目录、授权版本与旧会话撤销验证。四项均只允许 Platform、不可委托、不可租户自定义；写接口同时要求规则读取与对应写权限，并独立核验所选主机。Tenant、Service 与委托身份不因持有同名字符串进入用户配置接口。事件和通知权限不能替代规则权限。
+
+不修改 IAM 内核、其他角色、账号分配、Tenant 权限或 Prometheus 服务身份。后台仍通过已有 Monitor 最小服务身份读取 System 启用主机投影，不保存管理员 Token，不直接查询 System 私有表。规则配置、后台评估和事件/outbox 沿 Monitor 唯一主路径实现；缺少规则或全部停用时不发起资源查询，不影响日志链路和业务服务。
+
+本节确认前，可继续核对既有预算、来源解析与内部证据消费，以及不暴露新权限/API的确定性测试；依赖上述发布的 Manifest、角色、迁移和公开写入口保持未实施。阈值变更与活动事件的证据保持、来源变更重建窗口、预算及并发上限须在正式接口实施契约中具体化，并同次扩展现有 Monitor PostgreSQL、metrics、Go 和前端门禁；不预先宣称资源规则已运行。
+
+
+用户已明确允许 10.68 的限定规则权限发布。后续实现仅扩展本节四项声明、既有系统管理员绑定及正式前向迁移，不修改其他角色或 IAM 内核。
+
+### 10.69 主机 CPU/内存规则实施契约（已实现，本地分层验证）
+
+平台规则只绑定一台 System 主机及一个固定指标：`node.cpu.busy_percent` 或 `node.memory.used_percent`；同一主机/指标最多一条规则，身份、主体与指标不可编辑，严重级别固定 warning。规则创建总是停用，后续启用须具备规则修改权限；不随节点登记或通知订阅自动创建、启用。保存规则上限 1,000，拒绝超限而非截断；查询预算和既有九来源采集预算继续独立限制实际评估。
+
+规则参数为打开/恢复百分比和持续秒数。四项参数必须显式填写，缺失或 null 均拒绝；百分比有限且满足 `0 < recovery < trigger <= 100`；恢复阈值不能为零，因为指标非负且恢复使用严格低于条件，零阈值会产生永远无法自动恢复的事件。持续秒数为 15 秒的整数倍，范围 15–300 秒。默认 CPU 为 90/80、300/120 秒，内存为 80/75、300/120 秒；超过/低于均使用严格比较。参数、名称和启停按配置版本 CAS；评估状态刷新不推进配置版本。删除采用 CAS，有未恢复资源事件时返回 409；停用始终可用且不伪造恢复，已恢复历史不随规则删除而删除。
+
+每个新事件保留触发时规则 UUID/版本/参数、当前主机及采集配置版本、查询策略版本和已验证窗口的原始采样首尾、样本数、最小/最大/最新值。既有未恢复事件按该触发快照的恢复条件复核，阈值编辑不能使其按新阈值消失；当前配置仅用于未来新事件。恢复事件保留本次新证据，原打开证据不覆盖。通知继续走唯一平台事件/outbox；日志消息不增加资源字段，资源消息加入相应规则证据，不向浏览器返回采集私有地址或凭据。
+
+后台每 15 秒单轮评估，不重叠排队。当前启用规则按主机分组，每个主机同次有界读取该主机规则所选资源指标和 uptime（最多三项），固定 15 秒网格、最多 22 点；预算若只能给出更粗网格则拒绝本轮。复用资源查询策略、同一进程并发 limiter、固定公式、mTLS 传输及来源解析。后台只读现有 System 最小身份投影与当前启用采集目标；主机/目标版本、解析来源、查询策略或规则变更、采集异常、暂停及调度连续性失效均重建窗口，CPU 的一分钟计算窗口也须在边界之后。缺样本、超时、预算或身份不可用输出未知/暂停，不恢复活动事件。服务重启重新积累窗口；没有启用规则时不访问指标后端。
+
+网络查询在数据库事务外完成，写入前行锁核对规则版本、采集目标版本和本次评估时间；迟到评估丢弃。事件和通知仍由既有事务协调器原子提交，竞争评估不能重复打开事件。规则启停和删除不取消既有已生成通知；派发仍按抑制及当前目标订阅裁决。
+
+唯一公开规则入口为 Monitor `/platform/resource-alert-rules` 及 `/:id`，分别提供分页 GET、POST、PUT、DELETE；写接口同时要求规则读取和对应独立写权限，创建/编辑另沿当前 User 核验所选主机。页面在现有平台告警中新增“资源规则”页签；主机从当前有权读取的 System 列表选择，不能手填私有采集端点。通知类别和规则启用分别管理。只拥有规则权限时不请求事件或通知 API，URL 及迟到请求沿现有页面规则处理。
+
+实施前确认门禁：Monitor Go T1、PostgreSQL 的规则 CAS/唯一性/证据/事件-outbox 原子性、真实 metrics 固定窗口/采集故障/预算与恢复、Monitor/System/Console/共享前端、授权目录/常量/正式前向迁移/Swagger。现有标准入口与 owner 自动发现继续覆盖；涉及 CI INPUT_FILES 扩展时同次登记。Hosted T4 的临时管理员既有用途不自动扩展，当前不执行新 Hosted 场景或真实群通知。
+
+
+### 10.70 资源规则实施与验收记录（2026-10-16）
+
+已按 10.68 授权完成 Monitor 的四项权限、唯一 CRUD、后台评估和现有平台告警页签。System 正式迁移为 `000211_platform_resource_alert_rules`，内置角色 Manifest 125、Monitor Permission Manifest 9；只向既有平台系统管理员授予四项规则能力。公开 DTO 四项条件参数须显式填写，缺失/null 拒绝；恢复阈值须大于零，避免非负指标在严格低于条件下永远不能恢复。零观测值仍为有效数据并可满足正常恢复条件。表单提示在字段附近，不增加页首长说明。
+
+规则评估状态使用独立列，配置 CAS 不随采样推进；暂停/未知批量按原配置版本更新，避免大量未连接规则逐条事务耗尽本轮写入预算。对当前可采集主机仍先在事务外查询，再在事务中核对规则、目标和查询策略版本，协调器与通知 outbox 原子提交。System 投影的时间、容量及主机 UUID/版本校验在 MetricsDiscovery 只保留一个实现；主机规则只读取其主机版本，不复用会准入所有进程端点的完整发现过程，避免服务进程采集故障连带暂停主机告警。当前服务实例启动边界写入窗口签名，重启后重新积累证据；活动事件恢复继续使用触发快照。主机选择抽取为 Monitor 唯一 `HostNodeSelect`，采集配置与资源规则共同使用，旧选择/分页/迟到请求实现已删除。
+
+本地验证使用已核实的 `localhost:25432`，仅标准 `addp_test`、`addp_iam_test` 测试库；未新增或删除 database：
+
+| 验证范围 | 标准入口与本地证据 |
+| --- | --- |
+| Monitor / System Go T1 | `make test-module MODULE=monitor GO_ONLY=1`、`make test-module MODULE=system GO_ONLY=1`；日志 `/tmp/addp-resource-rules-go-final.log`、`/tmp/addp-resource-rules-system-go.log` |
+| 规则持久化与平台事件/通知 T2 | `make test-monitor-postgres`；七组新增规则测试覆盖默认停用、唯一性/CAS、活动删除限制、原恢复参数/不可变证据、outbox、暂停/未知、重启窗口、迟到目标/规则/查询策略和批量状态 CAS，并证明无关进程端点不可用不阻断主机规则；日志 `/tmp/addp-resource-rules-postgres-final.log` |
+| 正式权限发布 T2 | `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`；已通过四项作用域/角色绑定、其他身份与目录不变、授权版本/刷新撤销、重复运行及完整 Runner；日志 `/tmp/addp-resource-rules-migration.log` |
+| 权限目录、生成物、Swagger | `make test-authorization`；日志 `/tmp/addp-resource-rules-authorization-final.log` |
+| 共享前端 / Console T3 | `make test-common-frontend` 的 203 项通过；`make test-console-frontend` 的 173 项单测、138 项浏览器回归及构建通过。包含规则独立入口、唯一 iframe、分页恢复及 Tenant 拒绝；日志 `/tmp/addp-resource-rules-common-frontend.log`、`/tmp/addp-resource-rules-console.log` |
+| Monitor 前端 T3 | 完整 `make test-monitor-frontend` 的 62 项单测、153 项浏览器回归及构建通过；随后补充空恢复参数/可恢复阈值校验，按同一浏览器标准入口复验 `platform-alerts.spec.js` 的 20 项，再单独复验空值/零恢复阈值场景，并运行单测/构建，日志 `/tmp/addp-resource-rules-browser-final.log`、`/tmp/addp-resource-rules-browser-input-final.log`、`/tmp/addp-resource-rules-frontend-unit-final.log`、`/tmp/addp-resource-rules-frontend-build-final.log` |
+| System 权限资源名称 | `npm test` 的 134 项通过，`npm run build` 通过；仅新增四项权限的资源标签，未修改其他会话的引擎页面；日志 `/tmp/addp-resource-rules-system-frontend-unit.log`、`/tmp/addp-resource-rules-system-frontend-build.log` |
+| IAM 标准入口自身 | `make test-system-iam-runner` 的 14 项通过，包括新 selector 与 migration owner 的绑定；日志 `/tmp/addp-resource-rules-runner-final.log` |
+
+真实 metrics T2 沿现有 `make test-monitor-metrics`：固定目录/mTLS 查询同一个压力判定内核，验证连续真实窗口、触发/恢复、重建边界和暂停；停用真实来源后，正常与活动两种状态均不能得到恢复判定。既有原生进程、Desktop VM、来源隔离、中心恢复、六源总览与退出零残留场景保持完整。首轮完成全部场景并退出 0，日志 `/tmp/addp-resource-rules-metrics.log`；参数完整性与正恢复阈值调整后再次执行同一完整入口，最终整轮已退出 0，并确认自有容器、网络、卷及临时文件零残留；证据记录在 `/tmp/addp-resource-rules-metrics-final.log`。末尾改为共用查询策略事务锁常量后，Monitor Go 与 PostgreSQL 再次通过；metrics 输入登记及部署静态回归的 23 项也通过，日志 `/tmp/addp-resource-rules-metrics-registration-final.log`。不把原生协议/判定内核的 T2 验证扩大为真实 User/数据库/采集源一体的 T4。
+
+此前 Infra 夹具修复 `a71c128a8` 的完整生命周期聚合由 CI 会话串行执行，本会话只读核对了源码 `0c62efbc81cf7e35faa73928d28dff07f5356611` 的退出 0 回执及日志尾部；没有重复聚合。该证据见 `/tmp/addp-ci-audit-20261016/dev-lifecycle-after-infra-fix.log` 及同目录 result.json。此前 `c64eb5d5` 修复的 System IAM 在 Run `38844981702` 中，专用 verification Job `116796340541` 已 success，本轮核对时另一 System IAM gate Job 为 queued，不据此宣称整轮成功；本批资源规则尚未推送，不能借用旧 CI 作为新代码 CI。
+
+本轮未重启个人服务、未自动启用任何规则或资源通知、未发送真实群消息；未扩大 Hosted T4 临时身份用途。下一步先由用户在外部终端执行 `./scripts/dev/restart.sh -system -monitor`，让正式权限迁移与评估代码生效，再以平台系统管理员重新登录 Safari，验证“平台告警 → 资源规则”的真实授权、默认停用、主机选择、保存/读取及启停。实际运行和新提交 CI 仍须单独记录，不能与本地分层门禁混记。

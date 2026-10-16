@@ -4,9 +4,10 @@
     <div class="alert-toolbar">
       <el-button v-if="canRead" :type="state.tab === 'incidents' ? 'primary' : ''" @click="change({ tab: 'incidents' })">{{ t('monitor.platformAlerts.incidents') }}</el-button>
       <el-button v-if="canReadNotifications" :type="state.tab === 'notifications' ? 'primary' : ''" @click="change({ tab: 'notifications' })">{{ t('monitor.platformAlerts.notifications') }}</el-button>
-      <el-button :loading="loading" @click="load">{{ t('monitor.platformAlerts.refresh') }}</el-button>
+      <el-button v-if="canReadRules" :type="state.tab === 'rules' ? 'primary' : ''" @click="change({ tab: 'rules' })">{{ t('monitor.resourceRules.title') }}</el-button>
+      <el-button :loading="loading" @click="state.tab === 'rules' ? rulesPanel?.load() : load()">{{ t('monitor.platformAlerts.refresh') }}</el-button>
     </div>
-    <el-alert v-if="!canRead && !canReadNotifications" :title="t('monitor.platformAlerts.denied')" type="warning" :closable="false" />
+    <el-alert v-if="!canRead && !canReadNotifications && !canReadRules" :title="t('monitor.platformAlerts.denied')" type="warning" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="state.tab === 'incidents' && canRead">
       <div class="alert-toolbar">
@@ -81,6 +82,7 @@
       </el-table>
       <el-pagination v-if="!loading && deliveries.total > 0" layout="total, prev, pager, next" :total="deliveries.total" :page-size="20" :current-page="deliveryPage" @current-change="changeDeliveryPage" />
     </section>
+    <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :page="state.rule_page" @page="change({ rule_page: $event })" />
     <el-dialog v-model="destinationOpen" :title="t('monitor.platformAlerts.destination')" width="min(640px, 95vw)" :close-on-click-modal="false">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
       <el-form label-position="top">
@@ -106,6 +108,7 @@ import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 import { platformAlertState, platformAlertQuery } from '../utils/platformAlerts'
+import ResourceAlertRules from '../components/ResourceAlertRules.vue'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t } = useI18n()
 const state = computed(() => platformAlertState(route.query))
 const platformUser = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation)
@@ -113,6 +116,9 @@ const canRead = computed(() => platformUser.value && auth.hasPermission('monitor
 const canUpdate = computed(() => canRead.value && auth.hasPermission('monitor.platform_alert.update'))
 const canReadNotifications = computed(() => platformUser.value && auth.hasPermission('monitor.platform_alert_notification.read'))
 const canUpdateNotifications = computed(() => canReadNotifications.value && auth.hasPermission('monitor.platform_alert_notification.update'))
+const canReadRules = computed(() => platformUser.value && auth.hasPermission('monitor.platform_resource_rule.read'))
+const rulesPanel = ref(null)
+const ruleIdentity = computed(() => JSON.stringify([auth.authContext, auth.permissions]))
 const incidents = ref([]), total = ref(0), loading = ref(false), busy = ref(false), error = ref('')
 const destinations = ref([]), deliveries = ref({ data: [], total: 0 }), notificationError = ref('')
 const deliveryPage = computed(() => state.value.delivery_page)
@@ -143,6 +149,7 @@ function change(patch) {
 }
 function changeDeliveryPage(page) { change({ delivery_page: page }) }
 async function load() {
+  if (state.value.tab === 'rules') return
   controller?.abort(); controller = new AbortController(); const own = ++request, lease = epoch
   if (state.value.tab === 'notifications' ? !canReadNotifications.value : !canRead.value) return
   loading.value = true; error.value = ''; notificationError.value = ''
@@ -224,9 +231,9 @@ async function deleteDestination(row) {
   } catch (value) { if (lease === epoch && ![abandoned, 'cancel', 'close'].includes(value)) ElMessage.error(errorText(value)) }
   finally { if (lease === epoch) busy.value = false }
 }
-watch(() => [route.fullPath, JSON.stringify(auth.authContext)], () => {
+watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions)], () => {
   clear()
-  const next = platformAlertQuery({ ...state.value, ...(!canRead.value && canReadNotifications.value ? { tab: 'notifications' } : {}) })
+  const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'rules' && !canReadRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : 'incidents' } : {}) })
   if (JSON.stringify(route.query) !== JSON.stringify(next)) { navigateMonitorRoute(router, { path: '/platform-alerts', query: next }, { history: 'replace' }); return }
   load()
 }, { immediate: true })

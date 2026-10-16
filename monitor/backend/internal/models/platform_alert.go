@@ -10,31 +10,33 @@ const (
 )
 
 type PlatformAlertIncident struct {
-	ID              uint       `gorm:"primaryKey" json:"id"`
-	Version         uint64     `gorm:"not null;default:1" json:"version"`
-	Category        string     `gorm:"not null;size:32" json:"category"`
-	SubjectKind     string     `gorm:"not null;size:32" json:"subject_kind"`
-	SubjectID       string     `gorm:"not null;size:100;index" json:"subject_id"`
-	Signal          string     `gorm:"not null;size:160" json:"signal"`
-	InstanceID      string     `gorm:"size:100" json:"instance_id,omitempty"`
-	Severity        string     `gorm:"not null;size:20" json:"severity"`
-	Status          string     `gorm:"not null;size:20;index" json:"status"`
-	OpenedAt        time.Time  `json:"opened_at"`
-	LastObservedAt  time.Time  `json:"last_observed_at"`
-	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`
-	AcknowledgedBy  *int64     `json:"acknowledged_by,omitempty"`
-	AcknowledgedAt  *time.Time `json:"acknowledged_at,omitempty"`
-	SuppressedUntil *time.Time `json:"suppressed_until,omitempty"`
+	ResourceEvidence *ResourceAlertEvidence `gorm:"serializer:json;type:jsonb" json:"resource_evidence,omitempty"`
+	ID               uint                   `gorm:"primaryKey" json:"id"`
+	Version          uint64                 `gorm:"not null;default:1" json:"version"`
+	Category         string                 `gorm:"not null;size:32" json:"category"`
+	SubjectKind      string                 `gorm:"not null;size:32" json:"subject_kind"`
+	SubjectID        string                 `gorm:"not null;size:100;index" json:"subject_id"`
+	Signal           string                 `gorm:"not null;size:160" json:"signal"`
+	InstanceID       string                 `gorm:"size:100" json:"instance_id,omitempty"`
+	Severity         string                 `gorm:"not null;size:20" json:"severity"`
+	Status           string                 `gorm:"not null;size:20;index" json:"status"`
+	OpenedAt         time.Time              `json:"opened_at"`
+	LastObservedAt   time.Time              `json:"last_observed_at"`
+	ResolvedAt       *time.Time             `json:"resolved_at,omitempty"`
+	AcknowledgedBy   *int64                 `json:"acknowledged_by,omitempty"`
+	AcknowledgedAt   *time.Time             `json:"acknowledged_at,omitempty"`
+	SuppressedUntil  *time.Time             `json:"suppressed_until,omitempty"`
 }
 
 func (PlatformAlertIncident) TableName() string { return "monitor.platform_alert_incidents" }
 
 type PlatformAlertEvent struct {
-	ID         string    `gorm:"primaryKey;size:36" json:"id"`
-	IncidentID uint      `gorm:"not null;index" json:"incident_id"`
-	Type       string    `gorm:"not null;size:20" json:"type"`
-	Severity   string    `gorm:"not null;size:20" json:"severity"`
-	OccurredAt time.Time `json:"occurred_at"`
+	ResourceEvidence *ResourceAlertEvidence `gorm:"serializer:json;type:jsonb" json:"resource_evidence,omitempty"`
+	ID               string                 `gorm:"primaryKey;size:36" json:"id"`
+	IncidentID       uint                   `gorm:"not null;index" json:"incident_id"`
+	Type             string                 `gorm:"not null;size:20" json:"type"`
+	Severity         string                 `gorm:"not null;size:20" json:"severity"`
+	OccurredAt       time.Time              `json:"occurred_at"`
 }
 
 func (PlatformAlertEvent) TableName() string { return "monitor.platform_alert_events" }

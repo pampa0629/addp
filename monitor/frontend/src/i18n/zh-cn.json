@@ -1038,6 +1038,48 @@
       "cpuPressure": "CPU 忙碌率",
       "memoryPressure": "内存使用率",
       "categoryRequired": "请选择至少一种告警类别"
+    },
+    "resourceRules": {
+      "title": "资源规则",
+      "create": "新建资源规则",
+      "edit": "编辑资源规则",
+      "metric": "监控指标",
+      "trigger": "触发条件",
+      "recovery": "恢复条件",
+      "above": "持续 {seconds} 秒高于 {percent}%",
+      "below": "持续 {seconds} 秒低于 {percent}%",
+      "observation": "最近评估",
+      "latest": "{value}% · 采样于 {time}",
+      "seconds": "秒",
+      "triggerPercent": "触发阈值（百分比）",
+      "triggerSeconds": "触发持续时间（秒）",
+      "recoveryPercent": "恢复阈值（百分比）",
+      "recoverySeconds": "恢复持续时间（秒）",
+      "triggerHint": "所有连续有效采样均高于阈值时告警；等于阈值不触发。",
+      "recoveryHint": "恢复阈值须大于 0 且低于触发阈值。已有告警沿用触发时保存的恢复条件；缺数据不会视为恢复。",
+      "disabledHint": "新规则先停用保存；核对参数后编辑并启用。",
+      "invalid": "请填写名称，并设置 0 < 恢复阈值 < 触发阈值 ≤ 100；持续时间为 15–300 秒且须为 15 的倍数。",
+      "conflict": "规则已变化或同一主机已有该指标的规则。当前输入已保留，请关闭并刷新列表后核对。",
+      "deleteHint": "删除规则“{name}”？活动告警须先满足恢复条件；告警历史会保留。",
+      "deleteConflict": "规则已变化或仍有关联的活动告警，请刷新核对；需要暂停时可编辑停用。",
+      "verdicts": {
+        "unknown": "尚不能判断",
+        "paused": "已暂停",
+        "normal": "无资源压力告警",
+        "risk": "资源压力告警"
+      },
+      "reasons": {
+        "warming_up": "正在积累连续有效采样",
+        "no_data": "缺少有效采样，请检查主机采集",
+        "source_changed": "主机、采集配置或查询预算已变化，重新积累采样",
+        "collection_paused": "主机或采集目标未启用",
+        "collection_disabled": "资源采集能力未启用",
+        "identity_unavailable": "暂时无法核对主机及采集身份",
+        "query_unavailable": "资源查询失败，请检查采集链路",
+        "query_budget": "查询预算不足，无法按 15 秒间隔评估",
+        "query_policy": "暂时无法读取查询预算",
+        "unconfigured": "评估所需配置暂不可用"
+      }
     }
   }
 }

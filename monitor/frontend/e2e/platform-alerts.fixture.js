@@ -9,7 +9,7 @@ export const deliveryView = {
   event_type: 'opened', occurred_at: '2026-10-01T08:00:00Z', incident_id: 9, incident_status: 'resolved',
   created_at: '2026-10-01T08:00:01Z', last_error: 'notification_attempt_limit'
 }
-export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, path = '/platform-alerts' } = {}) {
+export async function fixture(page, { destinations = [], deliveries = [], deliveryTotal = deliveries.length, management = true, retryConflict = false, keys, locale = 'zh-cn', entries, rules = [], ruleTotal = rules.length, ruleConflict = false, path = '/platform-alerts' } = {}) {
   await mockBase(page, { locale, identity: identity(keys || ['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', ...(management ? ['monitor.platform_alert.update', 'monitor.platform_alert_notification.update'] : [])]) })
   destinations = destinations.map(row => ({ categories: ['log_pipeline'], recipients: [], event_types: ['opened', 'resolved'], ...row }))
   const requests = []
@@ -21,6 +21,19 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const reply = (json, status = 200) => route.fulfill({ headers, json, status })
     const body = req.postDataJSON(); requests.push({ path, query: Object.fromEntries(new URL(req.url()).searchParams), method: req.method(), body })
+    if (path.includes('/resource-alert-rules')) {
+      if (req.method() === 'GET') {
+        if (held) await barrier
+        return reply({ data: rules, total: ruleTotal, page: Number(new URL(req.url()).searchParams.get('page')), presets: [
+          { metric_key: 'node.cpu.busy_percent', policy: { trigger_percent: 90, recovery_percent: 80, trigger_seconds: 300, recovery_seconds: 120 } },
+          { metric_key: 'node.memory.used_percent', policy: { trigger_percent: 80, recovery_percent: 75, trigger_seconds: 300, recovery_seconds: 120 } }
+        ] })
+      }
+      if (ruleConflict) return reply({ error: 'Rule conflict' }, 409)
+      if (req.method() === 'POST') { const row = { ...body, id: 'a0e9964c-e2d3-46ba-b151-52249cff528e', version: 1, last_verdict: 'paused', last_error: '' }; rules.push(row); ruleTotal++; return reply(row) }
+      if (req.method() === 'PUT') { const row = { ...body, id: path.split('/').at(-1), version: body.version + 1, last_verdict: 'unknown', last_error: 'warming_up' }; rules = rules.map(item => item.id === row.id ? row : item); return reply(row) }
+      rules = rules.filter(item => !path.endsWith(item.id)); ruleTotal = rules.length; return reply({})
+    }
     if (path.endsWith('/alerts')) {
       if (failure) return reply({ error: '观测不可用' }, 503)
       if (held) await barrier
@@ -43,5 +56,6 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
   await page.goto(path)
   if (!keys || keys.includes('monitor.platform_alert.read')) await expect(page.getByTestId('pipeline-incidents')).toBeVisible()
   else if (keys.includes('monitor.platform_alert_notification.read')) await expect(page.getByTestId('platform-notifications')).toBeVisible()
+  else if (keys.includes('monitor.platform_resource_rule.read')) await expect(page.getByTestId('resource-rules')).toBeVisible()
   return { requests, fail: () => { failure = true }, hold: () => { held = true }, release: () => release() }
 }

@@ -14,8 +14,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 496 {
-		t.Fatalf("descriptor count = %d, want 496", len(descriptors))
+	if len(descriptors) != 500 {
+		t.Fatalf("descriptor count = %d, want 500", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -49,7 +49,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if (key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants independent source Grant permission %q", role.Key, key)
 			}
-			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") {
+			if strings.HasPrefix(key, "monitor.platform_alert.") || strings.HasPrefix(key, "monitor.platform_alert_notification.") || strings.HasPrefix(key, "monitor.platform_resource_rule.") {
 				if role.Key != "platform.system_administrator" {
 					t.Fatalf("built-in role %q unexpectedly grants platform alert permission %q", role.Key, key)
 				}

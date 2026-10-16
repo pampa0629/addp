@@ -28,9 +28,10 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 		route := c.FullPath()
 		isResource := strings.HasPrefix(route, "/api/v1/monitor/platform/resource_") || strings.HasPrefix(route, "/api/v1/monitor/platform/process_resource_")
 		isQueryPolicy := route == "/api/v1/monitor/settings/resource-query-policy"
+		isRule := strings.HasPrefix(route, "/api/v1/monitor/platform/resource-alert-rules")
 		isAlert := strings.HasPrefix(route, "/api/v1/monitor/platform/alerts") || strings.HasPrefix(route, "/api/v1/monitor/platform/alert-notification-")
 		isTarget := strings.HasPrefix(route, "/api/v1/monitor/platform/monitoring_targets")
-		if system == nil || (!isAlert && !isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
+		if system == nil || (!isRule && !isAlert && !isTarget && !isResource && !isQueryPolicy && !strings.HasPrefix(route, "/api/v1/monitor/platform/log-")) || route == "/api/v1/monitor/platform/log-observations" {
 			return
 		}
 		identity, ok := commonauth.AuthContextFromGin(c)
@@ -58,6 +59,18 @@ func logPipelineAudit(system *client.SystemServiceClient) gin.HandlerFunc {
 				request.RiskLevel = "low"
 			}
 		}
+		if isRule {
+			request.EntityType = "resource_alert_rule"
+			request.EventName = "platform.resource_alert_rule.manage"
+			if c.Request.Method == http.MethodGet {
+				request.EventName = "platform.resource_alert_rule.read"
+				request.RiskLevel = "low"
+			}
+			if id, err := uuid.Parse(c.Param("id")); err == nil && id.String() == c.Param("id") {
+				request.EntityID = id.String()
+			}
+		}
+
 		if isResource || isQueryPolicy {
 			request.RiskLevel = "low"
 			request.EntityType = "resource_observation"

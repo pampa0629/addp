@@ -283,6 +283,8 @@ definitions:
         type: string
       resolved_at:
         type: string
+      resource_evidence:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ResourceAlertEvidence'
       severity:
         type: string
       signal:
@@ -296,6 +298,87 @@ definitions:
       suppressed_until:
         type: string
       version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.ResourceAlertEvidence:
+    properties:
+      evaluated_at:
+        type: string
+      latest:
+        type: number
+      maximum:
+        type: number
+      minimum:
+        type: number
+      node_version:
+        type: integer
+      policy:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ResourcePressurePolicy'
+      query_policy_version:
+        type: integer
+      rule_id:
+        type: string
+      rule_version:
+        type: integer
+      sampled_from:
+        type: string
+      sampled_to:
+        type: string
+      samples:
+        type: integer
+      target_id:
+        type: string
+      target_version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.ResourceAlertRule:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      last_error:
+        type: string
+      last_evaluated_at:
+        type: string
+      last_sample_at:
+        type: string
+      last_value:
+        type: number
+      last_verdict:
+        type: string
+      metric_key:
+        type: string
+      name:
+        type: string
+      node_id:
+        type: string
+      recovery_percent:
+        type: number
+      recovery_seconds:
+        type: integer
+      trigger_percent:
+        type: number
+      trigger_seconds:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+      window_since:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_models.ResourcePressurePolicy:
+    properties:
+      recovery_percent:
+        type: number
+      recovery_seconds:
+        type: integer
+      trigger_percent:
+        type: number
+      trigger_seconds:
         type: integer
     type: object
   github_com_addp_monitor_internal_models.WebhookDelivery:
@@ -966,6 +1049,58 @@ definitions:
       task_type:
         type: string
     type: object
+  github_com_addp_monitor_internal_service.ResourceAlertRuleInput:
+    properties:
+      enabled:
+        type: boolean
+      metric_key:
+        enum:
+        - node.cpu.busy_percent
+        - node.memory.used_percent
+        type: string
+      name:
+        type: string
+      node_id:
+        type: string
+      recovery_percent:
+        type: number
+      recovery_seconds:
+        type: integer
+      trigger_percent:
+        type: number
+      trigger_seconds:
+        type: integer
+      version:
+        type: integer
+    required:
+    - enabled
+    - metric_key
+    - name
+    - node_id
+    - recovery_percent
+    - recovery_seconds
+    - trigger_percent
+    - trigger_seconds
+    type: object
+  github_com_addp_monitor_internal_service.ResourceAlertRulePage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.ResourceAlertRule'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      presets:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceRulePreset'
+        type: array
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_service.ResourceCoverage:
     properties:
       complete:
@@ -1113,6 +1248,13 @@ definitions:
         type: string
       window_seconds:
         type: integer
+    type: object
+  github_com_addp_monitor_internal_service.ResourceRulePreset:
+    properties:
+      metric_key:
+        type: string
+      policy:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.ResourcePressurePolicy'
     type: object
   github_com_addp_monitor_internal_service.ResourceSummaryResponse:
     properties:
@@ -1621,6 +1763,52 @@ definitions:
         type: integer
     required:
     - secret
+    - version
+    type: object
+  internal_api.ResourceAlertRuleResponse:
+    properties:
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      last_error:
+        type: string
+      last_evaluated_at:
+        type: string
+      last_sample_at:
+        type: string
+      last_value:
+        type: number
+      last_verdict:
+        type: string
+      metric_key:
+        type: string
+      name:
+        type: string
+      node_id:
+        type: string
+      recovery_percent:
+        type: number
+      recovery_seconds:
+        type: integer
+      trigger_percent:
+        type: number
+      trigger_seconds:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+      window_since:
+        type: string
+    type: object
+  internal_api.ResourceAlertRuleVersion:
+    properties:
+      version:
+        type: integer
+    required:
     - version
     type: object
   internal_api.SuppressAlertRequest:
@@ -3892,6 +4080,219 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.resource_observation.read
+  /platform/resource-alert-rules:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
+      - description: 主机 ID | Host ID
+        in: query
+        name: node_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRulePage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询主机资源告警规则 | List host resource alert rules
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_resource_rule.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRuleInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ResourceAlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_resource_rule.read
+      - monitor.platform_resource_rule.create
+  /platform/resource-alert-rules/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ResourceAlertRuleVersion'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除主机资源告警规则 | Delete host resource alert rule
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_resource_rule.read
+      - monitor.platform_resource_rule.delete
+    put:
+      consumes:
+      - application/json
+      description: 主机及指标不可修改；活动告警沿用触发时保存的恢复条件 | Host and metric are immutable; active
+        alerts keep the recovery policy saved at opening
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRuleInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ResourceAlertRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 修改主机资源告警规则 | Update host resource alert rule
+      tags:
+      - 平台告警 | Platform Alerts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.platform_resource_rule.read
+      - monitor.platform_resource_rule.update
   /platform/resource_observations:
     get:
       description: 即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；抓取成功不等于指标或业务健康。| Instant

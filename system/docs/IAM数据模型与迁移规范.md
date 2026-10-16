@@ -356,3 +356,5 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 
 
 资源观测权限由连续迁移 `000193_resource_observation_read.up.sql` 发布：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。
+
+主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。局部验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`，同时验证新键作用域/绑定、其他目录与身份不变、授权版本、刷新撤销、重复执行及完整迁移 Runner；必须使用已核实的测试 DSN。

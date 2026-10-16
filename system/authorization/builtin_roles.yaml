@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 124
+manifest_version: 125
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -300,6 +300,10 @@ roles:
       - monitor.platform_alert.update
       - monitor.platform_alert_notification.read
       - monitor.platform_alert_notification.update
+      - monitor.platform_resource_rule.create
+      - monitor.platform_resource_rule.delete
+      - monitor.platform_resource_rule.read
+      - monitor.platform_resource_rule.update
       - monitor.resource_observation.read
       - ontology.platform_definition.read
       - platform.host_node.create

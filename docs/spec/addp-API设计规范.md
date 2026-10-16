@@ -278,7 +278,7 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 
 平台事件使用 `GET /api/v1/monitor/platform/alerts`，只接受非委托 Platform User 与 `monitor.platform_alert.read`；确认/抑制另需 `monitor.platform_alert.update`。列表按 `category/status/subject_id` 过滤并使用管理分页，返回明确的 `category/subject_kind/subject_id`。确认与抑制沿用版本 CAS，已恢复事件返回 409；抑制截止不超过 24 小时。System 日志诊断只返回健康与活动事件数量，不返回事件明细。租户告警接口保持独立。
 
-日志正式消息继续使用 `addp.platform-log-alert/v1`；主机资源消息使用 `addp.platform-resource-alert/v1`，显式携带类别、主体与固定指标键，不把主机 UUID 当作日志观察器。两类消息消费同一平台事件/outbox，历史载荷和投递身份不改写。当前入口支持管理两类事件与显式通知订阅，主机资源规则的后台评估仍需另行接线，不能把订阅保存成功解释为规则已启用。
+日志正式消息继续使用 `addp.platform-log-alert/v1`；主机资源消息使用 `addp.platform-resource-alert/v1`，显式携带类别、主体与固定指标键，不把主机 UUID 当作日志观察器。两类消息消费同一平台事件/outbox，历史载荷和投递身份不改写。主机资源规则由 `/api/v1/monitor/platform/resource-alert-rules` 的分页 GET/POST 与 `/{id}` 的 PUT/DELETE 管理；读取使用 `monitor.platform_resource_rule.read`，各写入同时需要读取和对应 create/update/delete 权限，限定非委托 Platform User。规则绑定 System 主机 UUID 和固定 CPU/内存指标，新建始终停用，修改与删除带配置版本 CAS；有活动资源告警时删除返回 409，历史保留。分页结果含固定指标及默认参数 `presets`，用于表单初始化，不接受任意表达式或采集端点。后台按连续有效采样判定，未知/暂停不恢复活动事件；触发时的规则及窗口证据不可变，已有告警使用原恢复条件。通知订阅与规则启用分别管理。
 
 ### 2.4 分页响应格式
 

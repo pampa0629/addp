@@ -828,7 +828,8 @@
           "observability_identity": "Observability identities",
           "monitoring_target": "Monitoring targets",
           "resource_observation": "Resource observations",
-          "metrics_discovery": "Metrics discovery"
+          "metrics_discovery": "Metrics discovery",
+          "platform_resource_rule": "Host resource alert rules"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",

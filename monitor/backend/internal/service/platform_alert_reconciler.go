@@ -23,6 +23,7 @@ const (
 // PlatformAlertEvaluation covers exactly one source-owned signal. Missing
 // evaluations are never inferred to mean normal for any other source or subject.
 type PlatformAlertEvaluation struct {
+	ResourceEvidence                                               *models.ResourceAlertEvidence
 	Category, SubjectKind, SubjectID, Signal, InstanceID, Severity string
 	Verdict                                                        PlatformAlertVerdict
 }
@@ -84,7 +85,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 		incident = models.PlatformAlertIncident{
 			Version: 1, Category: e.Category, SubjectKind: e.SubjectKind, SubjectID: e.SubjectID,
 			Signal: e.Signal, InstanceID: e.InstanceID, Severity: e.Severity,
-			Status: "open", OpenedAt: now, LastObservedAt: now,
+			Status: "open", OpenedAt: now, LastObservedAt: now, ResourceEvidence: e.ResourceEvidence,
 		}
 		if err := tx.Create(&incident).Error; err != nil {
 			return err
@@ -107,7 +108,7 @@ func reconcilePlatformAlert(tx *gorm.DB, notifications *PlatformAlertService, e 
 	if eventType == "" {
 		return nil
 	}
-	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now}
+	event := models.PlatformAlertEvent{ID: uuid.NewString(), IncidentID: incident.ID, Type: eventType, Severity: incident.Severity, OccurredAt: now, ResourceEvidence: e.ResourceEvidence}
 	if err := tx.Create(&event).Error; err != nil {
 		return err
 	}

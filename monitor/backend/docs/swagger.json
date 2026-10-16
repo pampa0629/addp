@@ -3052,6 +3052,329 @@
                 ]
             }
         },
+        "/platform/resource-alert-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "查询主机资源告警规则 | List host resource alert rules",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页条数 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "主机 ID | Host ID",
+                        "name": "node_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRulePage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read"
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ResourceAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.create"
+                ]
+            }
+        },
+        "/platform/resource-alert-rules/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "主机及指标不可修改；活动告警沿用触发时保存的恢复条件 | Host and metric are immutable; active alerts keep the recovery policy saved at opening",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "修改主机资源告警规则 | Update host resource alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceAlertRuleInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ResourceAlertRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台告警 | Platform Alerts"
+                ],
+                "summary": "删除主机资源告警规则 | Delete host resource alert rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ResourceAlertRuleVersion"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.platform_resource_rule.read",
+                    "monitor.platform_resource_rule.delete"
+                ]
+            }
+        },
         "/platform/resource_observations": {
             "get": {
                 "security": [
@@ -4852,6 +5175,9 @@
                 "resolved_at": {
                     "type": "string"
                 },
+                "resource_evidence": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ResourceAlertEvidence"
+                },
                 "severity": {
                     "type": "string"
                 },
@@ -4871,6 +5197,129 @@
                     "type": "string"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ResourceAlertEvidence": {
+            "type": "object",
+            "properties": {
+                "evaluated_at": {
+                    "type": "string"
+                },
+                "latest": {
+                    "type": "number"
+                },
+                "maximum": {
+                    "type": "number"
+                },
+                "minimum": {
+                    "type": "number"
+                },
+                "node_version": {
+                    "type": "integer"
+                },
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ResourcePressurePolicy"
+                },
+                "query_policy_version": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "rule_version": {
+                    "type": "integer"
+                },
+                "sampled_from": {
+                    "type": "string"
+                },
+                "sampled_to": {
+                    "type": "string"
+                },
+                "samples": {
+                    "type": "integer"
+                },
+                "target_id": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ResourceAlertRule": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_sample_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "recovery_percent": {
+                    "type": "number"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "trigger_percent": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_models.ResourcePressurePolicy": {
+            "type": "object",
+            "properties": {
+                "recovery_percent": {
+                    "type": "number"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "trigger_percent": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
                     "type": "integer"
                 }
             }
@@ -5887,6 +6336,81 @@
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ResourceAlertRuleInput": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "metric_key",
+                "name",
+                "node_id",
+                "recovery_percent",
+                "recovery_seconds",
+                "trigger_percent",
+                "trigger_seconds"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "metric_key": {
+                    "type": "string",
+                    "enum": [
+                        "node.cpu.busy_percent",
+                        "node.memory.used_percent"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "recovery_percent": {
+                    "type": "number"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "trigger_percent": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceAlertRulePage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.ResourceAlertRule"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "presets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ResourceRulePreset"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ResourceCoverage": {
             "type": "object",
             "properties": {
@@ -6110,6 +6634,17 @@
                 },
                 "window_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ResourceRulePreset": {
+            "type": "object",
+            "properties": {
+                "metric_key": {
+                    "type": "string"
+                },
+                "policy": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.ResourcePressurePolicy"
                 }
             }
         },
@@ -6857,6 +7392,76 @@
                     "description": "Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.",
                     "type": "string"
                 },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ResourceAlertRuleResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_evaluated_at": {
+                    "type": "string"
+                },
+                "last_sample_at": {
+                    "type": "string"
+                },
+                "last_value": {
+                    "type": "number"
+                },
+                "last_verdict": {
+                    "type": "string"
+                },
+                "metric_key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "string"
+                },
+                "recovery_percent": {
+                    "type": "number"
+                },
+                "recovery_seconds": {
+                    "type": "integer"
+                },
+                "trigger_percent": {
+                    "type": "number"
+                },
+                "trigger_seconds": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "window_since": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ResourceAlertRuleVersion": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
                 "version": {
                     "type": "integer"
                 }

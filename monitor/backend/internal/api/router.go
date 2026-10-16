@@ -35,6 +35,7 @@ func SetupRouter(
 	runtimeHealthService *service.RuntimeHealthService,
 	monitoringTargets *service.MonitoringTargetService,
 	resourceObservations *service.ResourceObservationService,
+	resourceRules *service.ResourceAlertRuleService,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -118,6 +119,12 @@ func SetupRouter(
 		platform.GET("/platform/alert-notification-deliveries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead), platformObservationIdentity(false), handler.Deliveries)
 		platform.POST("/platform/alert-notification-deliveries/:id/retry", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformAlertNotificationRead, monitorauthorization.PermissionMonitorPlatformAlertNotificationUpdate), platformObservationIdentity(false), handler.RetryDelivery)
 	}
+
+	ruleHandler := &ResourceAlertRuleHandler{service: resourceRules}
+	platform.GET("/platform/resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead), platformObservationIdentity(false), ruleHandler.List)
+	platform.POST("/platform/resource-alert-rules", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleCreate), platformObservationIdentity(false), ruleHandler.Create)
+	platform.PUT("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleUpdate), platformObservationIdentity(false), ruleHandler.Update)
+	platform.DELETE("/platform/resource-alert-rules/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorPlatformResourceRuleRead, monitorauthorization.PermissionMonitorPlatformResourceRuleDelete), platformObservationIdentity(false), ruleHandler.Delete)
 
 	targetHandler := NewMonitoringTargetHandler(monitoringTargets)
 	platform.GET("/platform/monitoring_targets", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorMonitoringTargetRead), platformObservationIdentity(false), targetHandler.List)

@@ -828,7 +828,8 @@
           "observability_identity": "观测身份",
           "monitoring_target": "监测目标",
           "resource_observation": "资源观测",
-          "metrics_discovery": "指标发现"
+          "metrics_discovery": "指标发现",
+          "platform_resource_rule": "主机资源告警规则"
         },
         "types": {
           "tenant_builtin": "租户内置角色",

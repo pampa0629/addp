@@ -22,7 +22,7 @@ func EnsureMonitorStore(db *gorm.DB) error {
 		&monitorModels.EmailDestination{},
 		&monitorModels.EmailDelivery{},
 		&monitorModels.ResourceQueryPolicy{}, &monitorModels.RuntimePolicy{}, &monitorModels.MonitoringTarget{},
-		&monitorModels.SMTPRelay{},
+		&monitorModels.SMTPRelay{}, &monitorModels.ResourceAlertRule{},
 		&monitorModels.LogPipelinePolicy{}, &monitorModels.LogPipelineNode{}, &monitorModels.LogObserverBoot{},
 		&monitorModels.PlatformAlertIncident{}, &monitorModels.PlatformAlertEvent{}, &monitorModels.PlatformAlertDestination{}, &monitorModels.PlatformAlertDelivery{},
 	); err != nil {

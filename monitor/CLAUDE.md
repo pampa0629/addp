@@ -208,8 +208,12 @@ Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通�
 新增 `TestExecutionReadAPIReauthenticatesThroughOwnerForEveryRequest`：真实 Monitor 路由、HTTP Owner 裁决 Client、Owner 共享读取范围 Handler 和认证中间件串联，身份事实由独立 HTTP 夹具提供。逐请求核对 Owner 调用及身份重新读取，验证跨租户、同租户他人一次性执行、缺少发起主体、父可读子不可读、已删除定义历史、列表与统计总数、详情/树/事件的动态撤权及恢复，以及 Owner 不可用时整份 503、恢复后可读；响应不带执行配置、业务载荷或 Owner 原始错误。临时让身份夹具保留撤权前权限时，回归明确失败于应 404 实际 200；恢复后 `make test-module MODULE=monitor GO_ONLY=1` 通过。新增测试由现有 Monitor Go T1 及 Platform CI `Go workspace tests` 自动发现，无新增注册或 Swagger 变更。该证据仅为使用身份夹具的 T1，不代表真实 System IAM、PostgreSQL T2、完整模块门禁或新的 Hosted T4 通过；本次不修改这些实现或重跑历史 IAM 门禁。
 
 
-## 平台告警内核收敛（本地分项已验证，待 CI）
+## 平台告警与资源规则
 
-2026-10-15 已确认告警归 Monitor、Platform/Tenant 隔离及首期平台系统管理员职责，见运行监控设计 10.61–10.62。平台日志告警四表原位收敛为 `platform_alert_incidents/events/destinations/deliveries`，统一事务协调器按来源主体与信号处理，不从另一来源的缺失推断恢复。日志观测器标识不是 System 主机 UUID；日志诊断只返回来源健康和活动事件数量，不能绕过通用事件读取权限。原位迁移的旧目标只订日志，新入口通过明确类别管理订阅，资源类别使用独立正式消息格式；两者沿唯一事件/outbox。日志源观测、策略与外部消息协议保持日志专用，旧目标初始只订阅日志。
+平台告警归 Monitor，Platform/Tenant 的事件、规则和通知相互隔离。唯一平台入口 `/platform-alerts` 包含事件、通知管理和资源规则页签；System 保留日志诊断与带来源上下文的跳转。原日志管理接口及页面路径已删除，原有通知目标仍只订阅日志，资源订阅须显式选择。两类事件使用同一事务协调器与 outbox，日志协议保持 `addp.platform-log-alert/v1`，资源协议为 `addp.platform-resource-alert/v1`。
 
-本批尚未新增统一管理 API/页面或接入资源规则，不改 IAM 内核、角色和租户告警；原日志页面仍是该日志功能的唯一入口，不另建资源告警旁路。后续接口/页面切换须删除被替换路径。新增 Go 回归由既有 `make test-module MODULE=monitor` 和 `make test-monitor-postgres` 自动发现，CI 复用现有 Monitor 门禁；迁移夹具只在标准测试库内使用随机自有 schema 并清理，不创建/删除 database。
+资源规则使用 `/platform/resource-alert-rules` 的分页 GET、POST 及 `/:id` 的 PUT/DELETE，固定绑定 System 主机 UUID 和 CPU 忙碌率或内存使用率。新建始终停用，参数与启停使用配置版本 CAS；评估不推进配置版本。独立的查看、创建、修改、删除权限为 `monitor.platform_resource_rule.*`，只接受非委托 Platform User；创建和修改沿当前用户向 System 核验主机。迁移 000211 只向既有平台系统管理员发布这四项权限，不改 IAM 内核或租户权限。事件和通知仍分别使用 `monitor.platform_alert.*`、`monitor.platform_alert_notification.*`。
+
+后台以十五秒单轮评估，按主机合并固定指标与 uptime，复用同一资源查询预算、并发 limiter、mTLS 客户端与最小身份投影。不访问 System 私有表，不使用管理员 Token；没有启用规则时不访问采集后端。缺样本、控制面不可用、预算不足、来源变化、暂停或重启均不能当作恢复，连续证据窗口需要重新积累。已有告警按触发时保存的恢复参数判定；打开证据不可变，恢复事件保留新窗口证据。活动告警阻止规则删除，停用不伪造恢复，删除规则保留已恢复历史。
+
+本批由现有 Monitor Go、PostgreSQL、真实 metrics、前端、授权目录/迁移及 Swagger 门禁覆盖；metrics 的 INPUT_FILES 已扩展规则实现和证据测试，未增加旁路 suite 或 workflow。新增规则的个人环境验收需用户重启 System/Monitor 并重新登录；不因本地 T1–T3 通过而宣称 Hosted T4 或生产 T5 完成。实现契约及分层证据见运行监控设计 10.68–10.69。

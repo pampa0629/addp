@@ -122,19 +122,9 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 	if err := CheckReservations(targets); err != nil {
 		return nil, err
 	}
-	started := p.now().UTC()
-	snapshot, err := p.identities.GetObservabilityIdentities(ctx)
-	if err != nil || snapshot == nil || ctx.Err() != nil || snapshot.Nodes == nil || snapshot.ModuleInstances == nil ||
-		snapshot.ObservedAt.IsZero() || snapshot.ObservedAt.Before(started.Add(-Timeout)) || snapshot.ObservedAt.After(p.now().UTC().Add(Timeout)) ||
-		len(snapshot.Nodes) > models.ObservabilityIdentityNodeLimit || len(snapshot.ModuleInstances) > models.ObservabilityIdentityInstanceLimit {
-		return nil, ErrIdentityUnavailable
-	}
-	nodes := make(map[string]int64, len(snapshot.Nodes))
-	for _, node := range snapshot.Nodes {
-		if !validUUID(node.NodeID) || node.Version < 1 || nodes[node.NodeID] != 0 {
-			return nil, ErrIdentityUnavailable
-		}
-		nodes[node.NodeID] = node.Version
+	snapshot, nodes, err := readIdentitySnapshot(ctx, p.identities, p.now)
+	if err != nil {
+		return nil, err
 	}
 	reservation := SelfSampleReservation
 	for _, target := range targets {
@@ -222,4 +212,31 @@ func (p *NodeProjector) Project(ctx context.Context, targets []NodeTarget) ([]Ta
 // String is safe to log; it intentionally excludes addresses and credentials.
 func (t NodeTarget) String() string {
 	return fmt.Sprintf("node monitoring target %s version %d", t.ID, t.Version)
+}
+
+// CurrentNodeVersions reads the bounded System projection without admitting
+// process endpoints. A process source outage must not suppress host evaluation.
+func CurrentNodeVersions(ctx context.Context, reader IdentityReader) (map[string]int64, error) {
+	if reader == nil {
+		return nil, ErrIdentityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+	_, nodes, err := readIdentitySnapshot(ctx, reader, time.Now)
+	return nodes, err
+}
+func readIdentitySnapshot(ctx context.Context, reader IdentityReader, now func() time.Time) (*models.ObservabilityIdentitySnapshot, map[string]int64, error) {
+	started := now().UTC()
+	snapshot, err := reader.GetObservabilityIdentities(ctx)
+	if err != nil || snapshot == nil || ctx.Err() != nil || snapshot.Nodes == nil || snapshot.ModuleInstances == nil || snapshot.ObservedAt.IsZero() || snapshot.ObservedAt.Before(started.Add(-Timeout)) || snapshot.ObservedAt.After(now().UTC().Add(Timeout)) || len(snapshot.Nodes) > models.ObservabilityIdentityNodeLimit || len(snapshot.ModuleInstances) > models.ObservabilityIdentityInstanceLimit {
+		return nil, nil, ErrIdentityUnavailable
+	}
+	nodes := make(map[string]int64, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		if !validUUID(node.NodeID) || node.Version < 1 || nodes[node.NodeID] != 0 {
+			return nil, nil, ErrIdentityUnavailable
+		}
+		nodes[node.NodeID] = node.Version
+	}
+	return snapshot, nodes, nil
 }

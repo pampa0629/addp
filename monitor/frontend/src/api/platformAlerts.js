@@ -1,6 +1,10 @@
 import client from './client'
 const base = '/monitor/platform'
 export const platformAlertsAPI = {
+  rules: (page, signal) => client.get(`${base}/resource-alert-rules`, { params: { page, page_size: 20 }, signal }),
+  createRule: data => client.post(`${base}/resource-alert-rules`, data),
+  updateRule: (id, data) => client.put(`${base}/resource-alert-rules/${id}`, data),
+  deleteRule: row => client.delete(`${base}/resource-alert-rules/${row.id}`, { data: { version: row.version } }),
   incidents: (params, signal) => client.get(`${base}/alerts`, { params, signal }),
   acknowledge: row => client.post(`${base}/alerts/${row.id}/acknowledge`, { version: row.version }),
   suppress: (row, until) => client.post(`${base}/alerts/${row.id}/suppress`, { version: row.version, suppressed_until: until }),

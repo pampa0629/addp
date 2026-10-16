@@ -258,6 +258,9 @@ func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertE
 	if incident.Category == models.PlatformAlertCategoryResource {
 		payload = map[string]any{"schema": "addp.platform-resource-alert/v1", "event_id": event.ID, "event_type": event.Type, "incident_id": incident.ID, "category": incident.Category, "subject_kind": incident.SubjectKind, "subject_id": incident.SubjectID, "signal": incident.Signal, "severity": incident.Severity, "occurred_at": now}
 	}
+	if incident.Category == models.PlatformAlertCategoryResource && event.ResourceEvidence != nil {
+		payload["evidence"] = event.ResourceEvidence
+	}
 	body, _ := json.Marshal(payload)
 	for _, d := range destinations {
 		if !stringListContains(d.EventTypes, event.Type) {
