@@ -36,7 +36,7 @@ Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓�
 
 ## 瀚高 V4.5 本地业务库
 
-瀚高使用已确认的社区镜像 `qiuchenjun/hgdb-see:4.5.10.3`，固定 OCI 摘要 `sha256:e4dd0ac4877c3a8818ec4cef68108be8d54c410782a6248a01257ea66dd49725`，不是官方镜像。默认匹配 Docker Server 架构；本机已拉取 Linux ARM64 介质，其他架构尚未进行运行认证。
+瀚高使用已确认的社区镜像 `qiuchenjun/hgdb-see:4.5.10.3`，固定 OCI 摘要 `sha256:e4dd0ac4877c3a8818ec4cef68108be8d54c410782a6248a01257ea66dd49725`，不是官方镜像。默认匹配 Docker Server 架构。Linux ARM64 已完成本机原生验证；Linux x86_64 已通过 GitHub Hosted [HighGo T4 验收](https://github.com/pampa0629/addp/actions/runs/38884152132)，覆盖普通业务账号与 TLS、四表目录和关系元数据、Console 预览及两轮 PG → HighGo 覆盖同步，并核实一次性容器与匿名卷零残留。完整事实与范围见 [数据引擎扩展指南](../docs/spec/addp数据引擎扩展指南.md)。
 
 `highgo` 为独立 Compose profile，不进入 `start.sh -all`。标准入口 `bash business/scripts/start.sh -highgo` 从 Business `.env` 读取 `HIGHGO_PASSWORD`、`HIGHGO_USER`、`HIGHGO_APP_PASSWORD` 和 `HIGHGO_PORT`，只管理 `business-highgo`，不调用 System API。数据库固定为原生 `highgo`，业务样例在 `addp_business` schema；以独立 `engine_type=highgo` 登记，不改登记为 PostgreSQL。
 

@@ -54,6 +54,10 @@ HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL
 
 本次首次执行 `abda08a1-7097-4547-b0e5-f5e8e7367d91` 在 planner 源引擎可用性校验处因 Oracle 当次 10 秒连接检测超时而失败，未进入建表／写入；追加任务的 retry 请求按既有策略拒绝，没有生成新执行。待源库恢复在线且再次确认目标仍不存在后，通过正常执行入口发起上述成功运行。该事实表明公网源库仍存在连接抖动，不能把单次成功扩展为长期稳定性或全量迁移保证。复查成功页面时曾因本地 Console 5170 与 Gateway 8000 未监听而受阻；用户启动服务后，两者恢复访问，Console 成功执行详情页已复核任务 12 的 success 状态及读取／写入各 50 行，成功截图已补齐。执行记录、网页展示与独立数据库读回验证完成，未修改认证或可用性规则。
 
+2026-10-16 的 GitHub Hosted Linux x86_64 T4 [Run 38884152132](https://github.com/pampa0629/addp/actions/runs/38884152132) 已成功，实际源码为 `d04cb65a875aaf7f48aebfc204c4531c94e4454a`；preflight 确认 checkout 干净，System、Gateway、Meta、Manager、Transfer 的运行源码一致。一次性 HighGo V4.5 使用普通 `business` 账号与 TLS，PostgreSQL 源使用只读账号；平台消费由最小权限普通 User 执行，并为 PostgreSQL 订单表建立精确读取 Grant。客户、商品、订单、订单明细四张样例分别验证 3×6、3×7、3×7、4×5 的行列及关系事实，合计 11 个约束、10 个索引。PG → HighGo 两次 snapshot replace 均读取／写入 3 行，覆盖旧哨兵数据后重复执行仍逐字段一致；真实 Console 浏览器验证四张样例与覆盖目标预览，并核验订单外键及有序索引。独立原生 SQL 确认目标 7 字段与源一致、金额合计 `6795.50`，原业务样例行数保持不变；清理日志确认本轮数据库容器与匿名卷零残留。该门禁对应 `make test-online ONLINE_SUITE=highgo-consumer-flow` 的受控 Hosted 入口，不扩展为其他版本、CDC、upsert、空间或 HighGo 独立源数据 Grant 的认证。
+
+本机 Engine 29 的通用实例版本展示另行于用户重启后验收：类型为“瀚高（HighGo）”，`server_version` 为 `HighGo Database Management System 4.5 on aarch64,build on 20250227`，探测时间更新而资源 `updated_at` 不变；这不是上述 x86_64 Hosted 对版本详情页面的专项认证。此前 Hosted 的浏览器语言不一致已由 `efa075744` 统一测试语言并在成功运行中验证；另一次 180 秒数据库启动超时因旧实例已清理、缺少数据库诊断而未能归因，`d04cb65a8` 仅补充带归属校验和脱敏的诊断，未延长预算或调整认证策略。本次成功不能据此宣称该历史超时根因已修复。
+
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
 System 的引擎类型列表、注册表单、默认值和校验规则均由 `GET /api/v1/system/engine-types` 返回的插件描述驱动。新增引擎时不得在 `system/frontend` 或 `common-frontend` 增加 `engine_type` 判断；若现有 `ConnectionFieldSpec` 无法表达所需交互，应先扩展通用描述协议和共享渲染器，再实现具体插件。
