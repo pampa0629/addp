@@ -937,5 +937,6 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 
 .PHONY: test-highgo-online-runner
 test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
+	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
 	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

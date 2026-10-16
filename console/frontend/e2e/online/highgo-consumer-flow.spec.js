@@ -20,6 +20,7 @@ test('HighGo business tables retain relational facts and replaced orders render 
   expect(current.tenantID).toBe(String(expected.tenant_id))
   expect(current.principalID).toBe(expected.principal_id)
   const first = expected.samples.customers.locator
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const token = await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'),
     required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/manager/data-explorer?locator=${encodeURIComponent(first)}`)
   const browserAPI = await request.newContext({ baseURL: gateway, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
