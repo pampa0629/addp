@@ -30,20 +30,18 @@ export default defineConfig(withModuleFrontend('model', withFrontendTestIsolatio
     enforceEntryChunkBudget()
   ],
   // Component auto-imports appear after Vite's initial source scan. Prebundle
-  // the declared dependencies and deep entries once; later discovery must not
-  // replace optimized Vue URLs while fixture HMR is disabled.
-  ...(process.env.ADDP_E2E === '1' ? {
-    optimizeDeps: {
-      noDiscovery: true,
-      include: [
-        ...Object.keys(JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).dependencies),
-        'element-plus/es',
-        ...readdirSync(resolve(__dirname, 'node_modules/element-plus/es/components'))
-          .filter(name => existsSync(resolve(__dirname, `node_modules/element-plus/es/components/${name}/index.mjs`)))
-          .map(name => `element-plus/es/components/${name}/index`)
-      ]
-    }
-  } : {}),
+  // the declared dependencies and deep entries once in development and tests;
+  // later discovery must not invalidate dependency chunks cached by the browser.
+  optimizeDeps: {
+    noDiscovery: true,
+    include: [
+      ...Object.keys(JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).dependencies),
+      'element-plus/es',
+      ...readdirSync(resolve(__dirname, 'node_modules/element-plus/es/components'))
+        .filter(name => existsSync(resolve(__dirname, `node_modules/element-plus/es/components/${name}/index.mjs`)))
+        .map(name => `element-plus/es/components/${name}/index`)
+    ]
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
