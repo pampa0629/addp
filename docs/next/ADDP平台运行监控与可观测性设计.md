@@ -2244,4 +2244,4 @@ System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务�
 
 此前 Infra 夹具修复 `a71c128a8` 的完整生命周期聚合由 CI 会话串行执行，本会话只读核对了源码 `0c62efbc81cf7e35faa73928d28dff07f5356611` 的退出 0 回执及日志尾部；没有重复聚合。该证据见 `/tmp/addp-ci-audit-20261016/dev-lifecycle-after-infra-fix.log` 及同目录 result.json。此前 `c64eb5d5` 修复的 System IAM 在 Run `38844981702` 中，专用 verification Job `116796340541` 已 success，本轮核对时另一 System IAM gate Job 为 queued，不据此宣称整轮成功；本批资源规则尚未推送，不能借用旧 CI 作为新代码 CI。
 
-本轮未重启个人服务、未自动启用任何规则或资源通知、未发送真实群消息；未扩大 Hosted T4 临时身份用途。下一步先由用户在外部终端执行 `./scripts/dev/restart.sh -system -monitor`，让正式权限迁移与评估代码生效，再以平台系统管理员重新登录 Safari，验证“平台告警 → 资源规则”的真实授权、默认停用、主机选择、保存/读取及启停。实际运行和新提交 CI 仍须单独记录，不能与本地分层门禁混记。
+本轮未重启个人服务、未自动启用任何规则或资源通知、未发送真实群消息；未扩大 Hosted T4 临时身份用途。本批同时修改 `common/authorization` 的目录校验测试，虽未修改 Common 运行代码，运行验收仍按根 AGENTS.md 的共享目录变更规则，由用户在外部终端执行 `./scripts/dev/restart.sh -all`，让正式权限迁移与评估代码生效，再以平台系统管理员重新登录 Safari，验证“平台告警 → 资源规则”的真实授权、默认停用、主机选择、保存/读取及启停。实际运行和新提交 CI 仍须单独记录，不能与本地分层门禁混记。

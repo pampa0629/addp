@@ -216,4 +216,4 @@ Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通�
 
 后台以十五秒单轮评估，按主机合并固定指标与 uptime，复用同一资源查询预算、并发 limiter、mTLS 客户端与最小身份投影。不访问 System 私有表，不使用管理员 Token；没有启用规则时不访问采集后端。缺样本、控制面不可用、预算不足、来源变化、暂停或重启均不能当作恢复，连续证据窗口需要重新积累。已有告警按触发时保存的恢复参数判定；打开证据不可变，恢复事件保留新窗口证据。活动告警阻止规则删除，停用不伪造恢复，删除规则保留已恢复历史。
 
-本批由现有 Monitor Go、PostgreSQL、真实 metrics、前端、授权目录/迁移及 Swagger 门禁覆盖；metrics 的 INPUT_FILES 已扩展规则实现和证据测试，未增加旁路 suite 或 workflow。新增规则的个人环境验收需用户重启 System/Monitor 并重新登录；不因本地 T1–T3 通过而宣称 Hosted T4 或生产 T5 完成。实现契约及分层证据见运行监控设计 10.68–10.69。
+本批由现有 Monitor Go、PostgreSQL、真实 metrics、前端、授权目录/迁移及 Swagger 门禁覆盖；metrics 的 INPUT_FILES 已扩展规则实现和证据测试，未增加旁路 suite 或 workflow。本批包含 `common/authorization` 校验同步，个人环境验收按根 AGENTS.md 由用户执行 `./scripts/dev/restart.sh -all` 并重新登录；不因本地 T1–T3 通过而宣称 Hosted T4 或生产 T5 完成。实现契约及分层证据见运行监控设计 10.68–10.69。
