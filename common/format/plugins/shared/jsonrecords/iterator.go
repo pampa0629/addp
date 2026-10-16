@@ -9,6 +9,7 @@ import (
 )
 
 type RecordIterator struct {
+	finished        bool
 	Decoder         *json.Decoder
 	Meta            Metadata
 	Structure       string
@@ -135,6 +136,9 @@ func NewRecordIterator(r io.Reader) (*RecordIterator, error) {
 
 // Next 读取下一条 Feature。
 func (it *RecordIterator) Next() (*Feature, error) {
+	if it.finished {
+		return nil, io.EOF
+	}
 	if it.Structure == StructureJSONLines && len(it.PendingRows) > 0 {
 		raw := it.PendingRows[0]
 		it.PendingRows = it.PendingRows[1:]
@@ -177,32 +181,50 @@ func (it *RecordIterator) Next() (*Feature, error) {
 
 func (it *RecordIterator) finishArray() error {
 	token, err := it.Decoder.Token()
+	if errors.Is(err, io.EOF) {
+		err = io.ErrUnexpectedEOF
+	}
 	if err != nil {
-		return fmt.Errorf("geojson: failed to close features array: %w", err)
+		return fmt.Errorf("json table: missing array close: %w", err)
 	}
-	if delim, ok := token.(json.Delim); !ok || delim != ']' {
-		return fmt.Errorf("geojson: expected closing features array, got %v", token)
+	if token != json.Delim(']') {
+		return fmt.Errorf("json table: expected closing array")
 	}
-
-	for {
-		token, err := it.Decoder.Token()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("geojson: failed to finish object: %w", err)
-		}
-		if delim, ok := token.(json.Delim); ok && delim == '}' {
-			return nil
-		}
-
-		if key, ok := token.(string); ok {
-			var skip interface{}
-			if err := it.Decoder.Decode(&skip); err != nil {
-				return fmt.Errorf("geojson: failed to skip trailing key %q: %w", key, err)
+	if it.Structure == StructureGeoJSONFeatureSet {
+		for it.Decoder.More() {
+			token, err := it.Decoder.Token()
+			if err != nil {
+				return fmt.Errorf("geojson: failed to read trailing member: %w", err)
+			}
+			if _, ok := token.(string); !ok {
+				return fmt.Errorf("geojson: invalid trailing member")
+			}
+			var value json.RawMessage
+			if err := it.Decoder.Decode(&value); err != nil {
+				return fmt.Errorf("geojson: failed to read trailing value: %w", err)
 			}
 		}
+		token, err = it.Decoder.Token()
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
+		if err != nil {
+			return fmt.Errorf("geojson: missing collection close: %w", err)
+		}
+		if token != json.Delim('}') {
+			return fmt.Errorf("geojson: expected closing collection")
+		}
 	}
+	var trailing json.RawMessage
+	err = it.Decoder.Decode(&trailing)
+	if !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("json table: additional root document")
+		}
+		return fmt.Errorf("json table: invalid document suffix: %w", err)
+	}
+	it.finished = true
+	return nil
 }
 
 // Iterator 为外部提供流式读取能力。

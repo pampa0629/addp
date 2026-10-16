@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/addp/common/datatype"
@@ -34,7 +33,7 @@ func previewResultForJSON(result *preview.PreviewResult) (*preview.PreviewResult
 		wireRow := make(map[string]interface{}, len(row))
 		for name, value := range row {
 			if bigints[name] && value != nil {
-				converted, err := bigintJSONText(value)
+				converted, err := preview.BigintJSONText(value)
 				if err != nil {
 					return nil, fmt.Errorf("serialize bigint field %q: %w", name, err)
 				}
@@ -47,21 +46,4 @@ func previewResultForJSON(result *preview.PreviewResult) (*preview.PreviewResult
 	wireResult := *result
 	wireResult.Data = &wireTable
 	return &wireResult, nil
-}
-
-func bigintJSONText(value interface{}) (string, error) {
-	switch value := value.(type) {
-	case string:
-		// Includes protection output; do not reinterpret masked text as a number.
-		return value, nil
-	case json.Number:
-		if _, err := value.Int64(); err != nil {
-			return "", fmt.Errorf("bigint JSON number must be an exact int64")
-		}
-		return value.String(), nil
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return fmt.Sprint(value), nil
-	default:
-		return "", fmt.Errorf("bigint requires an integer or exact text, got %T", value)
-	}
 }

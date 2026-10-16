@@ -302,3 +302,15 @@ other = "Encoding must be utf-8, gbk, utf-16le or utf-16be and is only supported
 
 [manager.error.upload_scan_submission_failed]
 other = "Files were written, but metadata scan submission failed. Rescan them without uploading again."
+
+[manager.error.trajectory_selection_invalid]
+other = "Invalid trajectory selection; check devices, times, fields and file type"
+
+[manager.error.trajectory_point_limit]
+other = "The selected range exceeds 2000 observations; narrow the devices or time range"
+
+[manager.error.trajectory_scan_budget]
+other = "File scan budget exceeded; split the file or import it into a queryable engine"
+
+[manager.error.trajectory_source_invalid]
+other = "The source could not be fully parsed or contains invalid device/time fields"

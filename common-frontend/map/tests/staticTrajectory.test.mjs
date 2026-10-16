@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { buildStaticTrajectory, trajectoryTime, validateTrajectoryTable } from '../src/utils/staticTrajectory.mjs'
+import { buildStaticTrajectory, buildTrajectorySelection, trajectoryTime, validateTrajectoryScope, validateTrajectoryTable } from '../src/utils/staticTrajectory.mjs'
 const config = { device_field: 'unit', time_field: 'at', x_field: 'east', y_field: 'north', coordinate_mode: 'columns', time_encoding: 'iso' }
 const rows = [
   { unit: 'A', at: '2026-10-16T02:00:00Z', east: '117', north: '32' },
@@ -68,4 +68,18 @@ test('trajectory rendering has one shared owner and Manager only adapts its cont
   const owner = readFileSync(new URL('../../../manager/frontend/src/components/explorer/PreviewPanel.vue', import.meta.url).pathname, 'utf8')
   assert.match(owner, /<StaticTrajectoryPreview\b/)
   assert.doesNotMatch(owner, /buildStaticTrajectory|new MapContainer|LineString/)
+})
+
+test('builds explicit typed device/time selections and refuses ambiguous ranges', () => {
+  const range = { device_kind: 'string', devices: 'A\nB', start: '2026-10-16T01:00:00Z', end: '2026-10-16T03:00:00Z' }
+  const selection = buildTrajectorySelection(config, range)
+  assert.deepEqual(selection.devices, ['A', 'B'])
+  assert.deepEqual(buildTrajectorySelection(config, { ...range, device_kind: 'integer', devices: '1\n2' }).devices, [1, 2])
+  for (const change of [{ devices: '' }, { devices: 'A\nA' }, { end: range.start }, { start: '2026-10-16T01:00:00' }, { device_kind: 'integer', devices: '9007199254740992' }, { device_kind: 'integer', devices: '1.2' }]) rejects(() => buildTrajectorySelection(config, { ...range, ...change }), 'range')
+})
+test('accepts only an exact complete server selection instead of an ignored filter or a stale response', () => {
+  const selection = buildTrajectorySelection(config, { device_kind: 'string', devices: 'A', start: '2026-10-16T01:00:00Z', end: '2026-10-16T03:00:00Z' })
+  const data = { ...table(), trajectory_scope: { selection, complete: true, scanned_rows: 3003 } }
+  assert.equal(validateTrajectoryScope(data, selection), data)
+  for (const scope of [undefined, { ...data.trajectory_scope, complete: false }, { ...data.trajectory_scope, scanned_rows: 1 }, { ...data.trajectory_scope, selection: { ...selection, devices: ['B'] } }, { ...data.trajectory_scope, selection: { ...selection, start: 'other' } }]) rejects(() => validateTrajectoryScope({ ...data, trajectory_scope: scope }, selection), 'scope')
 })

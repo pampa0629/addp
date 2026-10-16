@@ -20,6 +20,32 @@ export function validateTrajectoryTable(table) {
   return table
 }
 
+export function buildTrajectorySelection(config, range) {
+  const failRange = () => fail('range')
+  if (!config?.device_field || !config?.time_field || config.device_field === config.time_field || !['iso', 'unix_s', 'unix_ms'].includes(config.time_encoding)) failRange()
+  let start, end
+  try { start = trajectoryTime(range.start, 'iso'); end = trajectoryTime(range.end, 'iso') } catch { failRange() }
+  if (start >= end || !['string', 'integer'].includes(range.device_kind)) failRange()
+  const devices = String(range.devices).split(/\r?\n/).filter(value => value !== '').map(value => {
+    if (!value.trim() || new TextEncoder().encode(value).length > 256) failRange()
+    if (range.device_kind === 'string') return value
+    if (!/^-?\d+$/.test(value) || !Number.isSafeInteger(Number(value))) failRange()
+    return Number(value)
+  })
+  if (!devices.length || devices.length > 100 || new Set(devices).size !== devices.length) failRange()
+  const selection = { device_field: config.device_field, time_field: config.time_field, time_encoding: config.time_encoding, devices, start: range.start, end: range.end }
+  if (new TextEncoder().encode(JSON.stringify(selection)).length > 8192) failRange()
+  return selection
+}
+
+export function validateTrajectoryScope(table, selection) {
+  const scope = table?.trajectory_scope
+  if (scope?.complete !== true || !Number.isSafeInteger(scope.scanned_rows) || scope.scanned_rows < (table?.rows?.length ?? 0) || !scope.selection) fail('scope')
+  for (const key of ['device_field', 'time_field', 'time_encoding', 'start', 'end']) if (scope.selection[key] !== selection[key]) fail('scope')
+  if (JSON.stringify(scope.selection.devices) !== JSON.stringify(selection.devices)) fail('scope')
+  return validateTrajectoryTable(table)
+}
+
 function numeric(value, row) {
   if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') fail('coordinate', row)
   if (typeof value === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) fail('coordinate', row)

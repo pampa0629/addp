@@ -2503,7 +2503,7 @@ const showStaticTrajectory = computed(() => canPreviewStaticTrajectory({
   childName: store.selectedChildName,
   refPath: store.selectedRefPath
 }))
-const loadStaticTrajectoryTable = signal => readStaticTrajectoryTable(client, props.selectedNode.locator, signal)
+const loadStaticTrajectoryTable = (signal, selection) => readStaticTrajectoryTable(client, props.selectedNode.locator, signal, selection)
 
 const showDelimitedEncoding = computed(() => ['csv', 'tsv'].includes(objectCanonicalFormat.value) && !store.selectedRefPath && !store.selectedChildName)
 const scannedEncoding = computed(() => scannedItemFacts.value?.format_info?.[objectCanonicalFormat.value]?.encoding || objectData.value?.attributes?.format_info?.[objectCanonicalFormat.value]?.encoding || 'utf-8')

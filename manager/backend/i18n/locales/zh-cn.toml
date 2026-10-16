@@ -302,3 +302,15 @@ other = "编码仅支持 utf-8、gbk、utf-16le、utf-16be，且只能用于单�
 
 [manager.error.upload_scan_submission_failed]
 other = "文件已写入，但元数据扫描提交失败。请重新扫描，无需重复上传。"
+
+[manager.error.trajectory_selection_invalid]
+other = "轨迹范围配置无效，请检查设备、时间、字段及文件类型"
+
+[manager.error.trajectory_point_limit]
+other = "所选范围超过 2000 个采样点，请缩小设备或时间范围"
+
+[manager.error.trajectory_scan_budget]
+other = "文件扫描超过读取预算，请拆分文件或先导入可查询引擎"
+
+[manager.error.trajectory_source_invalid]
+other = "源数据无法完整解析，或设备、时间字段无效"

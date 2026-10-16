@@ -11,6 +11,10 @@ var localeFS embed.FS
 
 // Manager 模块消息 key 常量（目前 manager 后端错误消息均通过 commonAPI 返回英文，此处预留扩展）
 const (
+	MsgTrajectorySelectionInvalid            = "manager.error.trajectory_selection_invalid"
+	MsgTrajectoryPointLimit                  = "manager.error.trajectory_point_limit"
+	MsgTrajectoryScanBudget                  = "manager.error.trajectory_scan_budget"
+	MsgTrajectorySourceInvalid               = "manager.error.trajectory_source_invalid"
 	MsgUploadScanSubmissionFailed            = "manager.error.upload_scan_submission_failed"
 	MsgScanEncodingInvalid                   = "manager.error.scan_encoding_invalid"
 	MsgCacheCleared                          = "manager.cache.cleared"

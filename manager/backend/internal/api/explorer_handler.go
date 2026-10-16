@@ -97,10 +97,14 @@ func bearerToken(c *gin.Context) string {
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Description 表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
+// @Description 文件表始终多读一行核对真实 has_more，防止扫描后增长的源被误认为完整；探测行不返回 | File tables always probe one extra row for real has_more, including when a scanned exact count exists; the probe row is excluded
 // @Description 表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
 // @Description bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
+// @Param trajectory_selection query string false "单文件轨迹范围 JSON：device_field,time_field,time_encoding,devices,start,end；page=1、page_size=2000；时间左闭右开；最多2000点、32MiB、250000行、15秒 | Single-file trajectory selection JSON; device_field,time_field,time_encoding,devices,start,end; page=1,page_size=2000; half-open time range; budgets 2000 points,32MiB,250000 rows,15 seconds"
+// @Description 范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
+// @Failure 422 {object} map[string]interface{} "轨迹点数或扫描预算超限，或源数据无效 | Trajectory point/scan budget exceeded or invalid source data"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"
 // @Param nested_child_path query string false "嵌套容器内部 child 相对路径 | Relative child path inside a nested container"
@@ -126,6 +130,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	locatorURI := c.Query("locator")
 	if locatorURI == "" {
 		missingLocator(c)
+		return
+	}
+
+	selection, selectionErr := trajectorySelectionFromQuery(c)
+	if selectionErr != nil {
+		writeTrajectoryError(c, selectionErr)
 		return
 	}
 
@@ -186,10 +196,32 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		if tenantID != nil {
 			tenant = *tenantID
 		}
+		if selection != nil {
+			req.TrajectorySelection = selection
+			req.CheckTrajectoryRead = func() error {
+				return checkTrajectoryProtection(selection, protectionRules, protectionSubject, protectionProjections)
+			}
+			if err := req.CheckTrajectoryRead(); err != nil {
+				protectionRequired(c)
+				return
+			}
+		}
 		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, store, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
 		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)
 	}
 	if err != nil {
+		if selection != nil && req != nil && req.CheckTrajectoryRead != nil {
+			if checkErr := req.CheckTrajectoryRead(); checkErr != nil {
+				protectionRequired(c)
+				return
+			}
+		}
+		if selection != nil && c.Request.Context().Err() != nil {
+			return
+		}
+		if writeTrajectoryError(c, err) {
+			return
+		}
 		if writePreviewAuthorizationError(c, err) {
 			return
 		}
@@ -222,6 +254,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		return
 	}
 
+	if selection != nil {
+		if err := bindTrajectoryOutputProtection(result, req.CheckTrajectoryRead, protectionRules, protectionSubject); err != nil {
+			protectionRequired(c)
+			return
+		}
+	}
 	writePreviewResult(c, result, protectionRules, protectionSubject, protectionProjections)
 }
 

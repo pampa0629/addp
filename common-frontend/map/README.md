@@ -77,4 +77,6 @@ BD-09 尚未实现。
 
 ## 设备静态轨迹预览
 
-`StaticTrajectoryPreview` 为完整、有界点记录提供唯一的字段映射、严格校验和静态路线展示，业务模块通过 `loadTable(signal)` 提供受控表格响应；共享组件不读取业务 API、Token 或 Router。输入完整性、2000 点上限、设备/时间/坐标规则以 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览) 为准。复用 MapContainer 的要素模式、CRS registry 和主题样式，不新增地图 renderer，也不将当前表格分页拼成轨迹。
+`StaticTrajectoryPreview` 为完整、有界点记录提供唯一的字段映射、严格校验和静态路线展示，业务模块通过 `loadTable(signal, selection)` 提供受控表格响应；共享组件不读取业务 API、Token 或 Router。输入完整性、2000 点上限、设备/时间/坐标规则以 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览) 为准。复用 MapContainer 的要素模式、CRS registry 和主题样式，不新增地图 renderer，也不将当前表格分页拼成轨迹。
+
+范围读取仍使用同一组件与回调：selection 固定为设备字段、时间字段、显式时间编码、带类型的设备标识及左闭右开的起止时刻；共享组件校验服务端 `trajectory_scope` 完整性与回显，拒绝被忽略的筛选和迟到响应。

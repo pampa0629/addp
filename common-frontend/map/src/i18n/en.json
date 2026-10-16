@@ -43,7 +43,7 @@
     "trajectory": {
       "open": "Static trajectory",
       "title": "Static device trajectories",
-      "scope": "Complete files only, up to {limit} observations. Connect each device in time order; no missing-point or gap inference.",
+      "scope": "Complete files or selected device/time ranges only, up to {limit} observations. Connect each device in time order; no missing-point or gap inference.",
       "device_field": "Device field",
       "time_field": "Time field",
       "time_encoding": "Time encoding",
@@ -62,9 +62,9 @@
       "summary": "{devices} devices, {points} observations",
       "errors": {
         "not_table": "This file has no readable table.",
-        "incomplete": "The dataset is incomplete or exceeds the read limit. A complete trajectory cannot be drawn.",
+        "incomplete": "The file exceeds the read limit or completeness is unknown. Enable device and time range reading.",
         "limit": "More than {limit} observations. Use a smaller source file.",
-        "empty": "The file has no observations.",
+        "empty": "The file or selected range has no observations.",
         "configuration": "Select distinct device, time and coordinate fields.",
         "coordinate": "Invalid coordinates at row {row}. Check the values and source CRS.",
         "time": "Invalid time at row {row}. Use the selected timezone-aware or Unix encoding.",
@@ -74,10 +74,22 @@
         "crs": "Select a supported source CRS. The CRS is never guessed.",
         "login": "Your session expired. Sign in again before opening trajectories.",
         "denied": "Data access or protection requirements prevent reading trajectory data.",
-        "load": "Could not load trajectory data. Check the source and try again."
+        "load": "Could not load trajectory data. Check the source and try again.",
+        "range": "Check device identifiers, their type and the timezone-aware start/end times. Start must precede end.",
+        "scope": "The server did not confirm the complete selection. Update Manager before drawing this range.",
+        "budget": "File scan budget exceeded. Split the file or import it into a queryable engine.",
+        "source": "The file could not be fully parsed or selected devices contain invalid times. Check the source data."
       },
       "baseMap": "Trajectory base map",
-      "noBaseMap": "No base map"
+      "noBaseMap": "No base map",
+      "useRange": "Read a device and time range",
+      "deviceKind": "Device identifier type",
+      "stringDevice": "Text",
+      "integerDevice": "Integer",
+      "devices": "Device identifiers",
+      "deviceLines": "One identifier per line, up to 100",
+      "start": "Start time (inclusive, timezone required)",
+      "end": "End time (exclusive, timezone required)"
     }
   }
 }

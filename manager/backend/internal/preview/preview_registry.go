@@ -32,8 +32,10 @@ type PreparedPreviewExecutor func(context.Context, plugin.EnginePlugin, plugin.P
 
 // PreviewRequest 包含生成预览所需的上下文信息。
 type PreviewRequest struct {
-	Locator string
-	Engine  *models.Engine
+	TrajectorySelection *models.TrajectorySelection
+	CheckTrajectoryRead func() error
+	Locator             string
+	Engine              *models.Engine
 	// EnginePlugin is resolved for this concrete Engine Instance. Database
 	// previews must use it instead of looking up a plugin by engine type.
 	EnginePlugin    plugin.EnginePlugin

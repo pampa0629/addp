@@ -25,13 +25,14 @@ async function fixture(page, language, fullPage, format = 'csv', transform = dat
     if (path.endsWith('/meta/resource-tree/2') || path.endsWith('/meta/resource-tree/2/node')) return json(route, root)
     if (path.endsWith('/manager/preview')) {
       const size = Number(url.searchParams.get('page_size'))
-      requests.push({ locator: url.searchParams.get('locator'), page: Number(url.searchParams.get('page')), size })
+      const selection = url.searchParams.has('trajectory_selection') ? JSON.parse(url.searchParams.get('trajectory_selection')) : null
+      requests.push({ locator: url.searchParams.get('locator'), page: Number(url.searchParams.get('page')), size, ...(selection ? { selection } : {}) })
       const data = transform({
         mode: 'table', columns: ['unit', 'at', 'east', 'north'], rows: observations, total: 3, has_more: false, page: 1, page_size: size,
         object: { path: `observations.${format}`, content: { kind: format, metadata: { format } } },
         item_meta: { item_type: 'file', full_name: 'observations.csv', attributes: [{ key: 'item', value: { layout: 'single', data_type: 'table', format } }] }
       })
-      if (size === 2000) return fullPage(route, data)
+      if (size === 2000) return fullPage(route, data, selection)
       return json(route, { preview_type: 'table', data })
     }
     return json(route, {})
@@ -60,11 +61,11 @@ async function expectMapPaint(dialog) {
     return painted
   })).toBeGreaterThan(300)
 }
-async function configure(page, language, encoding = null) {
+async function configure(page, language, encoding = null, draw = true) {
   const chinese = language === 'zh-cn'
   for (const [name, value] of [[chinese ? '设备字段' : 'Device field', 'unit'], [chinese ? '时间字段' : 'Time field', 'at'], [chinese ? 'X / 经度字段' : 'X / longitude field', 'east'], [chinese ? 'Y / 纬度字段' : 'Y / latitude field', 'north'], [chinese ? '源坐标系' : 'Source CRS', 'EPSG:4326 — WGS84']]) await choose(page, name, value)
   if (encoding) await choose(page, chinese ? '时间格式' : 'Time encoding', encoding)
-  await page.getByRole('button', { name: chinese ? '绘制轨迹' : 'Draw trajectories', exact: true }).click()
+  if (draw) await page.getByRole('button', { name: chinese ? '绘制轨迹' : 'Draw trajectories', exact: true }).click()
 }
 for (const language of ['zh-cn', 'en']) {
   test(`static trajectories use a complete protected preview and explicit fields (${language})`, async ({ page }, testInfo) => {
@@ -93,8 +94,8 @@ for (const language of ['zh-cn', 'en']) {
 test('an incomplete response never becomes a trajectory of the first page', async ({ page }) => {
   await fixture(page, 'zh-cn', (route, data) => json(route, { preview_type: 'table', data: { ...data, total: null, has_more: true } }))
   await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
-  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('数据不完整')
-  await expect(page.getByRole('button', { name: '绘制轨迹', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('完整性未知')
+  await expect(page.getByRole('dialog').locator('.el-switch').filter({ has: page.getByRole('switch', { name: '按设备和时间范围读取' }) })).toBeVisible()
   await expect(page.getByRole('dialog').locator('canvas')).toHaveCount(0)
 })
 test('a conflicting timestamp refuses all routes instead of silently skipping a record', async ({ page }) => {
@@ -157,6 +158,67 @@ test('closing a pending read discards its late result before reopening', async (
   release()
   await oldResponse
   await expect(page.getByRole('dialog').locator('.el-select').filter({ has: page.getByRole('combobox', { name: '设备字段', exact: true }) })).toContainText('fresh_device')
+  expect(state.errors).toEqual([])
+})
+async function configureRange(page) {
+  await configure(page, 'zh-cn', null, false)
+  await page.getByRole('dialog').locator('.el-switch').filter({ has: page.getByRole('switch', { name: '按设备和时间范围读取', exact: true }) }).click()
+  await page.getByRole('textbox', { name: '设备标识', exact: true }).fill('A')
+  await page.getByRole('textbox', { name: '开始时间（包含，须带时区）', exact: true }).fill('2026-10-16T01:00:00Z')
+  await page.getByRole('textbox', { name: '结束时间（不包含，须带时区）', exact: true }).fill('2026-10-16T03:00:00Z')
+}
+test('a large file reads one complete selected range and renders every matching device point', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 1300 })
+  const state = await fixture(page, 'zh-cn', (route, data, selection) => {
+    if (!selection) return json(route, { preview_type: 'table', data: { ...data, total: 9000, has_more: true } })
+    return json(route, { preview_type: 'table', data: { ...data, rows: observations.filter(row => row.unit === 'A'), total: 2, has_more: false, trajectory_scope: { selection, complete: true, scanned_rows: 9000 } } })
+  })
+  await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('完整性未知')
+  await configureRange(page)
+  await page.getByRole('button', { name: '绘制轨迹', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('1 台设备，2 个采样点')
+  await expectMapPaint(page.getByRole('dialog'))
+  await page.screenshot({ path: testInfo.outputPath('trajectory-range.png'), fullPage: true })
+  expect(state.requests.filter(request => request.selection).map(request => request.selection)).toEqual([{ device_field: 'unit', time_field: 'at', time_encoding: 'iso', devices: ['A'], start: '2026-10-16T01:00:00Z', end: '2026-10-16T03:00:00Z' }])
+  expect(state.errors).toEqual([])
+})
+for (const failure of ['ignored', 'budget', 'denied']) {
+  test(`range selection refuses ${failure} without retaining an old route`, async ({ page }) => {
+    await fixture(page, 'zh-cn', (route, data, selection) => {
+      if (!selection || failure === 'ignored') return json(route, { preview_type: 'table', data })
+      return json(route, { error: 'range unavailable', error_code: failure === 'budget' ? 'trajectory_scan_budget_exceeded' : 'security_protection_required' }, failure === 'budget' ? 422 : 403)
+    })
+    await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
+    await configure(page, 'zh-cn')
+    await expectMapPaint(page.getByRole('dialog'))
+    await configureRange(page)
+    await expect(page.getByRole('dialog').locator('canvas')).toHaveCount(0)
+    await page.getByRole('button', { name: '绘制轨迹', exact: true }).click()
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText(failure === 'ignored' ? '服务器未确认' : failure === 'budget' ? '文件扫描超过' : '数据保护')
+    await expect(page.getByRole('dialog').locator('canvas')).toHaveCount(0)
+  })
+}
+test('a late selected-range response cannot refill a reopened configuration', async ({ page }) => {
+  let release, finished
+  const pending = new Promise(resolve => { release = resolve })
+  const completed = new Promise(resolve => { finished = resolve })
+  const state = await fixture(page, 'zh-cn', async (route, data, selection) => {
+    if (!selection) return json(route, { preview_type: 'table', data })
+    await pending
+    return json(route, { preview_type: 'table', data: { ...data, trajectory_scope: { selection, complete: true, scanned_rows: 3 } } }).catch(() => {}).finally(finished)
+  })
+  await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
+  await configureRange(page)
+  await page.getByRole('button', { name: '绘制轨迹', exact: true }).click()
+  await expect.poll(() => state.requests.filter(request => request.selection).length).toBe(1)
+  await page.getByRole('dialog').getByRole('button', { name: '关闭此对话框' }).click()
+  await page.getByRole('button', { name: '静态轨迹', exact: true }).click()
+  await choose(page, '设备字段', 'unit')
+  release()
+  await completed
+  await expect(page.getByRole('dialog').locator('canvas')).toHaveCount(0)
+  await expect(page.getByRole('dialog').locator('.el-switch').filter({ has: page.getByRole('switch', { name: '按设备和时间范围读取' }) })).not.toHaveClass(/is-checked/)
   expect(state.errors).toEqual([])
 })
 function json(route, body, status = 200) { return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) }) }

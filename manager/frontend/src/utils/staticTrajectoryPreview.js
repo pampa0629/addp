@@ -5,9 +5,9 @@ export function canPreviewStaticTrajectory({ format, itemType, mode, childName, 
     ['csv', 'json', 'geojson'].includes(format) && !childName && !refPath
 }
 
-export async function readStaticTrajectoryTable(client, locator, signal) {
+export async function readStaticTrajectoryTable(client, locator, signal, selection = null) {
   const response = await client.get('/manager/preview', {
-    params: { locator, page: 1, page_size: TRAJECTORY_POINT_LIMIT }, signal
+    params: { locator, page: 1, page_size: TRAJECTORY_POINT_LIMIT, ...(selection ? { trajectory_selection: JSON.stringify(selection) } : {}) }, signal
   })
   return response?.preview_type === 'table' ? response.data : null
 }

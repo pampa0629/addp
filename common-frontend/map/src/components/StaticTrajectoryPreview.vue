@@ -26,6 +26,23 @@
             <el-option v-for="field in table.columns" :key="field" :value="field" :label="field" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('map.trajectory.useRange')">
+          <el-switch v-model="range.enabled" :aria-label="t('map.trajectory.useRange')" />
+        </el-form-item>
+        <template v-if="range.enabled">
+          <el-form-item :label="t('map.trajectory.deviceKind')">
+            <el-select v-model="range.device_kind" :aria-label="t('map.trajectory.deviceKind')">
+              <el-option value="string" :label="t('map.trajectory.stringDevice')" />
+              <el-option value="integer" :label="t('map.trajectory.integerDevice')" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('map.trajectory.devices')">
+            <el-input v-model="range.devices" type="textarea" :rows="2" :aria-label="t('map.trajectory.devices')" :placeholder="t('map.trajectory.deviceLines')" />
+          </el-form-item>
+          <el-form-item v-for="edge in ['start', 'end']" :key="edge" :label="t(`map.trajectory.${edge}`)">
+            <el-input v-model="range[edge]" :aria-label="t(`map.trajectory.${edge}`)" placeholder="2026-10-16T00:00:00Z" />
+          </el-form-item>
+        </template>
         <el-form-item :label="t('map.trajectory.crs')">
           <el-select v-model="selectedCRS" :aria-label="t('map.trajectory.crs')">
             <el-option v-if="sourceCRSAvailable" value="source" :label="t('map.trajectory.sourceCRS')" />
@@ -57,13 +74,14 @@ import MapContainer from './map/MapContainer.vue'
 import { useMapConfig } from '../composables/useMapConfig'
 import { crsSuppressionStatus, getPreviewCRSTransform, transformGeoJSONGeometryToWGS84 } from '../utils/crsRegistry'
 import { buildThematicContext } from '../utils/thematicMap.mjs'
-import { buildStaticTrajectory, TRAJECTORY_POINT_LIMIT, TrajectoryValidationError, validateTrajectoryTable } from '../utils/staticTrajectory.mjs'
+import { buildStaticTrajectory, buildTrajectorySelection, TRAJECTORY_POINT_LIMIT, TrajectoryValidationError, validateTrajectoryScope, validateTrajectoryTable } from '../utils/staticTrajectory.mjs'
 
 const props = defineProps({ loadTable: { type: Function, required: true } })
 const { t, locale } = useI18n()
 const visible = ref(false), loading = ref(false), table = ref(null), result = ref(null), error = ref(null)
 const selectedCRS = ref(''), renderVersion = ref(0), baseMapType = ref('none')
 const { baseMapOptions, getBaseMapProfile, loadMapConfig } = useMapConfig()
+const range = reactive({ enabled: false, devices: '', device_kind: 'string', start: '', end: '' })
 const config = reactive({ device_field: '', time_field: '', coordinate_mode: 'columns', x_field: '', y_field: '', geometry_field: '', time_encoding: 'iso' })
 let controller = null
 const coordinateFields = computed(() => config.coordinate_mode === 'point' ? ['geometry_field'] : ['x_field', 'y_field'])
@@ -79,6 +97,8 @@ function clear() {
   error.value = null
   selectedCRS.value = ''
   baseMapType.value = 'none'
+  loading.value = false
+  Object.assign(range, { enabled: false, devices: '', device_kind: 'string', start: '', end: '' })
   Object.assign(config, { device_field: '', time_field: '', coordinate_mode: 'columns', x_field: '', y_field: '', geometry_field: '', time_encoding: 'iso' })
 }
 async function open() {
@@ -91,9 +111,10 @@ async function open() {
   try {
     const loaded = await props.loadTable(pending.signal)
     if (pending.signal.aborted || controller !== pending) return
-    validateTrajectoryTable(loaded)
+    if (!Array.isArray(loaded?.rows) || !Array.isArray(loaded?.columns)) throw new TrajectoryValidationError('not_table')
     table.value = loaded
     if (sourceCRSAvailable.value) selectedCRS.value = 'source'
+    validateTrajectoryTable(loaded)
   } catch (failure) {
     if (pending.signal.aborted || controller !== pending) return
     const status = failure?.response?.status
@@ -102,21 +123,39 @@ async function open() {
     if (controller === pending) loading.value = false
   }
 }
-function generate() {
+async function generate() {
   result.value = null
   error.value = null
+  let pending = null
   try {
     if (!selectedCRS.value) throw new TrajectoryValidationError('crs')
-    const descriptor = selectedCRS.value === 'source' ? table.value : { source_crs: selectedCRS.value, source_srid: Number(selectedCRS.value.split(':')[1]) }
+    let data = table.value
+    if (range.enabled) {
+      const selection = buildTrajectorySelection(config, range)
+      pending = new AbortController()
+      controller?.abort()
+      controller = pending
+      loading.value = true
+      data = await props.loadTable(pending.signal, selection)
+      if (pending.signal.aborted || controller !== pending) return
+      validateTrajectoryScope(data, selection)
+    }
+    const descriptor = selectedCRS.value === 'source' ? data : { source_crs: selectedCRS.value, source_srid: Number(selectedCRS.value.split(':')[1]) }
     const transform = getPreviewCRSTransform(descriptor)
     if (crsSuppressionStatus(transform)) throw new TrajectoryValidationError('crs')
-    result.value = buildStaticTrajectory(table.value, config, geometry => transformGeoJSONGeometryToWGS84(geometry, transform))
+    result.value = buildStaticTrajectory(data, config, geometry => transformGeoJSONGeometryToWGS84(geometry, transform))
     renderVersion.value += 1
   } catch (failure) {
-    error.value = failure instanceof TrajectoryValidationError ? failure : { code: 'coordinate' }
+    if (pending && (pending.signal.aborted || controller !== pending)) return
+    const apiCode = failure?.response?.data?.error_code
+    const mapped = { trajectory_selection_invalid: 'range', trajectory_point_limit_exceeded: 'limit', trajectory_scan_budget_exceeded: 'budget', trajectory_source_invalid: 'source' }
+    const status = failure?.response?.status
+    error.value = failure instanceof TrajectoryValidationError ? failure : { code: status === 401 ? 'login' : status === 403 ? 'denied' : mapped[apiCode] || 'load' }
+  } finally {
+    if (pending && controller === pending) loading.value = false
   }
 }
-watch([config, selectedCRS], () => { result.value = null; error.value = null })
+watch([config, selectedCRS, range], () => { controller?.abort(); controller = null; loading.value = false; result.value = null; error.value = null })
 watch(visible, value => { if (!value) clear() })
 onBeforeUnmount(clear)
 </script>

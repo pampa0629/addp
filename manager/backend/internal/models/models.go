@@ -116,6 +116,7 @@ type MetaItemLite struct {
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
+	TrajectoryScope     *TrajectoryScope               `json:"trajectory_scope,omitempty"`
 	Mode                string                         `json:"mode"`
 	Columns             []string                       `json:"columns"`
 	Fields              []datatype.FieldInfo           `json:"-"`                         // Manager 内部使用的标准字段事实；不得从展示类型反推

@@ -70,6 +70,9 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	// 构建解析选项
 	opts := p.buildParseOptions(formatType, req)
 	contentReader := contentCtx.reader
+	if req.TrajectorySelection != nil {
+		return p.previewTrajectory(ctx, contentReader, contentCtx.bucket, fullPath, formatType, opts, req)
+	}
 	if strings.TrimSpace(req.ChildName) != "" {
 		resolved, err := p.resolveContainerChild(ctx, contentReader, fullPath, formatType, req)
 		if err != nil {
@@ -275,10 +278,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		page = 1
 	}
 	offset := (page - 1) * pageSize
-	readLimit := pageSize
-	if totalCount == nil {
-		readLimit++
-	}
+	readLimit := pageSize + 1
 
 	object, sampleOpts, usedAccessIndex, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, readLimit)
 	if err != nil {
@@ -288,12 +288,12 @@ func (p *FileTablePreviewProvider) previewStreamable(
 
 	// 读取分页数据
 	rows, err := sampleReader.SampleTable(ctx, object, int64(offset), int64(readLimit), sampleOpts)
-	if err != nil && len(rows) == 0 {
+	if err != nil {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 
 	// 探测行只用于后续页判断，不进入预览响应或数据保护。
-	hasMore := totalCount == nil && len(rows) > pageSize
+	hasMore := len(rows) > pageSize
 	if hasMore {
 		rows = rows[:pageSize]
 	}
@@ -601,18 +601,15 @@ func (p *FileTablePreviewProvider) previewRefs(
 		page = 1
 	}
 	offset := (page - 1) * pageSize
-	readLimit := pageSize
-	if totalCount == nil {
-		readLimit++
-	}
+	readLimit := pageSize + 1
 
 	// 读取分页数据
 	rows, err := sampleReader.SampleMultiTable(ctx, reader, refs, int64(offset), int64(readLimit), opts)
-	if err != nil && len(rows) == 0 {
+	if err != nil {
 		return nil, fmt.Errorf("failed to read %s ref table data: %w", formatType, err)
 	}
 
-	hasMore := totalCount == nil && len(rows) > pageSize
+	hasMore := len(rows) > pageSize
 	if hasMore {
 		rows = rows[:pageSize]
 	}
