@@ -470,6 +470,14 @@ PLY 属性提取的无进展区间来自高斯泼溅采样：`蒙古族敖包.pl
 
 验证使用 `make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=meta GO_ONLY=1`、`make test-meta-postgres` 和共享消费方 `make test-go`。新增 Go 用例由已有 Common／Meta 门禁自动发现；无新增 HTTP API、数据库结构或 CI 入口。Common 变更需用户重启全部模块后，对同一 `3d/ply` 复验；此前三个执行仍是旧采样生命周期的实测，不能用来证明本轮句柄复用已在线生效或宣称提速。本轮最终本地 Common／Meta Go T1 通过，Meta PostgreSQL 18 项通过、0 失败／0 跳过，`make test-go` 覆盖 22 个模块并通过。首次 PostgreSQL 门禁的节点统计迁移夹具发生 SQL 超时，首次全量 Go 的 Manager 索引清理用例报告出口隔离；未修改这两处实现或放宽测试，按同一标准入口串行复验通过，首次失败不计为通过。
 
+2026-10-16 用户再次重启全部模块后，Meta Backend 与 Worker 的构建修订为 `302117ca2`，包含句柄复用提交 `216e7c57f`；三处 NFS／PLY／Meta 读取实现与该提交一致，Worker 二进制存在原生 `nfsFileReadCloser.ReadAt`。构建标记为 `vcs.modified=true`，不能称为干净提交构建。该实现的 [Platform CI Go workspace tests](https://github.com/pampa0629/addp/actions/runs/38831073435/job/116749731199) 已通过。
+
+通过同一 Manager 页面复扫 `3d/ply`，execution 为 `b37f9fda-74ae-412d-a748-c3990f4cbc0f`，北京时间 11:16:05–11:16:16 成功，耗时 11.725 秒；3 个文件、1 个目录，计划／完成／成功均为 3，失败为 0。页面显示真实属性范围读取；执行日志中 `rubin.ply` 的范围数依次为 1,825／5,105／8,192，同一 `蒙古族敖包.ply` 的范围数为 394／2,538／4,752／7,247，约每秒更新，之后进入哈希阶段。阶段切换清零范围计数，终态成功、按钮恢复，节点状态和成功时间同步更新。扫描前后 3 项的名称、类型、大小及完整 attributes 精确相等，包括内容指纹、点数、采样数量和边界值；两个普通 PLY 仍使用 `sampled_binary_vertices`、8,192 个采样点。此处的范围数是实际定位读取次数，不再代表重新打开文件次数。
+
+本次业务耗时低于此前 42.530／70.436／100.386 秒记录，证明新构建已完成真实扫描并保持结果与进度语义；各次运行未控制负载及缓存状态，不能由单次记录推导稳定提速比例。采样流复用及零范围重开由既有 Common／PLY／Meta 的确定性用例验证，业务验收不额外制造 NFS 请求计数。
+
+随后对父目录 `3d` 整体复扫，execution 为 `b70b0f2d-34d9-48f8-944b-d8380c21c746`，北京时间 11:17:44–11:19:01 成功，耗时 77.478 秒；发现 19,229 个文件、172 个目录，计划／完成／成功均为 95，失败为 0。页面先显示总量待确定，再显示真实文件／目录总量和数据项分母，处理进度从 7/95 增长至 84/95，并显示当前文件内容指纹已读字节／总字节，终态成功、按钮恢复。扫描前后 95 项的名称、类型、大小及完整 attributes 精确相等，父节点为 `completed + deep`，成功时间同步更新。此前整目录记录为 229.8 秒，同样不构成受控提速比例；本次 `index_cleanup_total=0`，仍不覆盖遗留组件索引批量清理的业务性能。
+
 ### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
 
 2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。
