@@ -45,6 +45,25 @@ const orderedWorkflowEngines = [
   'geopython', 'model3d', 'pointcloud', 'supermap', 'spark', 'document'
 ].map((type, index) => ({ ...ENGINE_A, id: index + 11, name: type, engine_type: `${type}_workflow` }))
 
+for (const portType of ['number', 'string']) {
+  test(`preserves pure execution dependencies without inventing ${portType} data references`, async ({ page }) => {
+    const backend = await installMockBackend(page, { includeExecutionDependency: true, portType })
+    await openSavedWorkflow(page)
+    for (let save = 1; save <= 2; save++) {
+      await primarySaveButton(page).click()
+      await expect.poll(() => backend.updates.length).toBe(save)
+      expect(backend.updates.at(-1).payload.content.workflow_definition.tasks).toEqual([
+        { id: 'operator_a_1', operator: 'operator_a', params: {}, depends_on: [] },
+        { id: 'operator_a_2', operator: 'operator_a', params: { source: 'independent-source' }, depends_on: ['operator_a_1'] }
+      ])
+      if (save === 1) {
+        await page.reload()
+        await expect(primarySaveButton(page)).toBeEnabled()
+      }
+    }
+  })
+}
+
 test('edits saved structured conversion parameters without losing their JSON types', async ({ page }) => {
   const backend = await installMockBackend(page, { includeStructuredParameters: true })
   await openSavedWorkflow(page)
@@ -1076,6 +1095,7 @@ async function installMockBackend(page, {
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
   includeStructuredParameters = false,
+  includeExecutionDependency = false,
   validationErrors = [],
   deferValidation = false,
   deferUpdate = false,
@@ -1127,6 +1147,11 @@ async function installMockBackend(page, {
     includeCrossingEdges,
     includeCollectionInputs
   )
+  if (includeExecutionDependency) {
+    task.content.workflow_definition.tasks.push({
+      id: 'operator_a_2', operator: 'operator_a', params: { source: 'independent-source' }, depends_on: ['operator_a_1']
+    })
+  }
   const operatorAParameters = [
     { name: 'source', type: 'string', required: false, description: 'Source input' }
   ]
@@ -1376,7 +1401,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
-      if (includeCollectionInputs || includeStructuredParameters) Object.assign(task, payload)
+      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)

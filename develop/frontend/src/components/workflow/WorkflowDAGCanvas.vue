@@ -558,6 +558,7 @@ function buildLoadedEdge(sourceId, targetId, sourceNode, targetNode, binding) {
   return {
     source: sourceId,
     target: targetId,
+    dependencyOnly: !binding,
     sourcePort,
     targetParam: binding?.parameterName,
     targetIndex: binding?.targetIndex,
@@ -565,7 +566,7 @@ function buildLoadedEdge(sourceId, targetId, sourceNode, targetNode, binding) {
     targetAnchor: targetIndex >= 0 ? targetIndex : undefined,
     type: WORKFLOW_EDGE_TYPE,
     label: sourcePort !== 'default' ? sourcePort : '',
-    style: edgeStyle
+    style: binding ? edgeStyle : { ...edgeStyle, lineDash: [6, 4] }
   }
 }
 
@@ -583,7 +584,8 @@ function buildWorkflowFromGraph() {
       sourcePort: model.sourcePort || 'default',
       sourceType: output?.type,
       targetParam: model.targetParam,
-      targetIndex: model.targetIndex
+      targetIndex: model.targetIndex,
+      dependencyOnly: model.dependencyOnly === true
     })
   })
 
@@ -600,7 +602,7 @@ function buildWorkflowFromGraph() {
       params: applyWorkflowInputRefs({
         params,
         parameters: model.publicParameters,
-        inputEdges
+        inputEdges: inputEdges.filter(edge => !edge.dependencyOnly)
       }),
       depends_on: [...new Set(inputEdges.map(edge => edge.sourceId))]
     }
@@ -997,6 +999,7 @@ function externalParameterSummaries(parameters, params) {
 
 function inputConnectionsForNode(nodeId) {
   return getDAGIncomingEdgeModels(graph.value, nodeId)
+    .filter(edge => !edge.dependencyOnly)
     .sort((a, b) => (a.targetIndex ?? 0) - (b.targetIndex ?? 0)).map(edge => {
       const source = graph.value.findById(edge.source)?.getModel?.() || {}
       return {

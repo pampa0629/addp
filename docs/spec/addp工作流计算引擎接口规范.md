@@ -754,6 +754,8 @@ Common Engine 同时必须校验工作流定义本身：
 - `params` 中出现 `{ "$ref": "<task_id>" }` 时，`<task_id>` 必须存在且必须同时出现在该任务的 `depends_on` 中。
 - `{ "$ref": "<task_id>", "port": "<port_name>" }` 引用非默认端口时，`<port_name>` 必须存在于被引用任务算子的 `output_ports[]` 中。
 
+Develop 画布加载、导入和再次保存时必须保留这一区别：没有参数引用的 `depends_on` 仅以虚线显示执行顺序，不参与输入参数绑定；不能根据端口类型或参数名称为它补造 `$ref`。真实数据连线继续以实线显示并按参数引用保存。
+
 工作流运行时仍必须保留同等或更细的校验防线，但不能把 Common Engine 的前置校验缺失作为运行时私有行为处理。
 
 若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。对 `spark_workflow`，Develop 执行配置必须提供 `engine_specific.spark_cluster_id`；后端在调用 Provider 前必须校验该 ID 指向已启用的 `engine_type=spark` 通用引擎资源，并将其映射为标准请求顶层 `engine_id`。GeoPython Workflow、Math Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow 不需要也不得携带该 Spark 绑定。
