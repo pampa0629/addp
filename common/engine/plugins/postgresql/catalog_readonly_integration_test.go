@@ -85,9 +85,12 @@ func TestIntegrationPostgresCatalogPreciseReadOnly(t *testing.T) {
 	if err != nil || len(fields) != 2 || fields[0].Name != "id" || !fields[0].PrimaryKey || fields[0].Nullable || fields[1].PrimaryKey {
 		t.Fatalf("SELECT-only catalog fields lost primary key: fields=%#v error=%v", fields, err)
 	}
-	facts, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, path, plugin.EngineCatalogFactsOptions{})
+	facts, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, path, plugin.EngineCatalogFactsOptions{IncludeIndexes: true, IncludeConstraints: true, IncludePartitioning: true})
 	if err != nil || facts == nil || facts.Table == nil || !reflect.DeepEqual(facts.Table.PrimaryKey, []string{"id"}) {
 		t.Fatalf("SELECT-only table facts lost stable key: facts=%#v error=%v", facts, err)
+	}
+	if len(facts.Indexes) != 1 || len(facts.Constraints) != 1 || facts.Constraints[0].ConstraintType != plugin.ConstraintTypePrimaryKey || facts.Partitioning != nil {
+		t.Fatalf("SELECT-only relational facts missing: %#v", facts)
 	}
 	fields, err = pg.listColumns(ctx, reader, schema, "other")
 	if err != nil || len(fields) != 0 {
@@ -98,7 +101,7 @@ func TestIntegrationPostgresCatalogPreciseReadOnly(t *testing.T) {
 		if _, err := pg.ResolvePath(ctx, readerInfo, deniedPath); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
 			t.Fatalf("unreadable resolve %s: %v", table, err)
 		}
-		if _, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, deniedPath, plugin.EngineCatalogFactsOptions{}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+		if _, err := pg.DescribeEngineCatalogFacts(ctx, readerInfo, deniedPath, plugin.EngineCatalogFactsOptions{IncludeIndexes: true, IncludeConstraints: true, IncludePartitioning: true}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
 			t.Fatalf("unreadable facts %s: %v", table, err)
 		}
 	}

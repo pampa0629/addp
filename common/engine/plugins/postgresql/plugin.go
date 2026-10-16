@@ -33,6 +33,9 @@ type ProtocolIdentity struct {
 	DriverName     string
 	DefaultPort    int
 	DefaultSSLMode string
+	// CatalogFacts binds the owning plugin's certified optional catalog surface.
+	// Nil leaves relational enrichment disabled for protocol adapters.
+	CatalogFacts *plugin.EngineCatalogFactsCapability
 	// AdditionalSystemSchemas extends PostgreSQL's built-in catalog filter for
 	// a protocol-compatible engine's own reserved schemas.
 	AdditionalSystemSchemas []string
@@ -51,6 +54,10 @@ type ProtocolIdentity struct {
 // NewProtocolCompatiblePlugin creates a PostgreSQL protocol implementation
 // whose prepared queries and catalog paths retain the owning engine identity.
 func NewProtocolCompatiblePlugin(identity ProtocolIdentity) *PostgreSQLPlugin {
+	if identity.CatalogFacts != nil {
+		facts := *identity.CatalogFacts
+		identity.CatalogFacts = &facts
+	}
 	return &PostgreSQLPlugin{identity: &identity}
 }
 
@@ -159,8 +166,8 @@ func (p *PostgreSQLPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
+	relational := p.relationalFactsCapability()
 	return plugin.NewTabularCapabilities(p.Type(), "schema", plugin.TabularCapabilityOptions{
-		Constraints:               true,
 		Write:                     true,
 		BulkWrite:                 true,
 		TableReadSession:          true,
@@ -183,7 +190,8 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 			plugin.TableChangeOperationDelete,
 			plugin.TableChangeOperationSkip,
 		},
-		Delete:             true,
+		Delete:  true,
+		Indexes: relational.Indexes, Constraints: relational.Constraints, Partitioning: relational.Partitioning,
 		SpatialFacts:       true,
 		SupportsExplain:    true,
 		SupportsCancel:     true,
@@ -205,7 +213,7 @@ func (p *PostgreSQLPlugin) StoreSemantics() plugin.StoreSemantics {
 }
 
 func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
-	return plugin.TabularCatalogCallbacks{
+	callbacks := plugin.TabularCatalogCallbacks{
 		NamespaceTerm:         "schema",
 		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
@@ -215,6 +223,17 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 		DescribeSpatial:       p.describeSpatialFacts,
 		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
+	relational := p.relationalFactsCapability()
+	if relational.Indexes {
+		callbacks.ListIndexes = p.listIndexes
+	}
+	if relational.Constraints {
+		callbacks.ListConstraints = p.listConstraints
+	}
+	if relational.Partitioning {
+		callbacks.DescribePartitioning = p.describePartitioning
+	}
+	return callbacks
 }
 
 func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {

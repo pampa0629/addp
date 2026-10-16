@@ -70,7 +70,9 @@ bash business/scripts/restart.sh -highgo
 
 2026-10-15 PostgreSQL → 瀚高本机同步验收：通过 Console 创建 Transfer 任务 13（`瀚高同步验收-PG订单-20261015_ac48d5`），从 Engine 2 的 `public.highgo_sync_orders_src_20261015_ac48d5` 同步到 Engine 29 的独立新表 `addp_business.orders_from_pg_20261015_ac48d5`。源表为三行合成订单，源字段经单表深度扫描取得；采用 bounded snapshot、append 和 7 个同名字段映射，普通账号 `business` 自动建表并写入。执行 `2895342d-b40a-4f3c-94aa-b9fc4aec0507` 成功，读取／写入均为 3，统一监控记录 573 显示成功。原生只读查询逐行比较全部七字段一致，金额列为 `numeric(14,2)`，两端合计均为 `6795.50`；原五张样例表行数仍为 1／3／3／3／4。自动扫描发现目标数据项 44575，Manager 预览显示三行七字段，订单号为 `PG-SYNC-2026-0001` 至 `0003`。保留任务和验收表供复查；append 再次执行会追加同一批记录，不应将其当作幂等刷新任务。
 
-本次同时发现范围限制：初次选择 replace 的执行 `86e59858-424d-41cb-a6e6-59c6cad34f66` 在读写前失败，原因是当前 HighGo 未声明／实现 ResourceDeleteProvider；失败后原生确认目标表仍不存在，随后在同一任务改用已支持的 append 才成功。只读配置预检此前仍显示定义受支持，Transfer 执行详情也未展示已记录的错误 message，这两项诊断缺口尚未修复。本记录只证明本机一次快照新表写入及预览，不计为隔离 T4、replace、upsert、增量或 CDC 认证。本轮未变更运行代码、API、依赖或 CI 路线；验收证据来自正式页面与两端原生只读查询，文档执行 `git diff --check -- business/README.md`，不重复执行上节已经通过的完整 Business 门禁。
+本次同时发现范围限制：初次选择 replace 的执行 `86e59858-424d-41cb-a6e6-59c6cad34f66` 在读写前失败，原因是当时 HighGo 尚未声明／实现 ResourceDeleteProvider；失败后原生确认目标表仍不存在，随后在同一任务改用已支持的 append 才成功。只读配置预检此前仍显示定义受支持，Transfer 执行详情也未展示已记录的错误 message，其中覆盖能力及配置预检已在后续修复；本段保留首次验收事实，执行失败诊断由共享观测能力的 Owner 维护。本记录只证明本机一次快照新表写入及预览，不计为隔离 T4、replace、upsert、增量或 CDC 认证。本轮未变更运行代码、API、依赖或 CI 路线；验收证据来自正式页面与两端原生只读查询，文档执行 `git diff --check -- business/README.md`，不重复执行上节已经通过的完整 Business 门禁。
+
+2026-10-16 覆盖运行复验：用户重启共享代码后，Engine 29 连接检测成功且能力声明 `delete=true`。Console 创建独立合成任务 14，目标为 `addp_business.orders_replace_20261016_2f83c643`；只读配置预检返回受支持，正式执行 `de0fdd08-41d3-4fce-8458-592b826a5dc1` 成功，读取／写入各 3 行。原 1 行哨兵已被替换，七字段与 PostgreSQL 源逐值一致，金额合计 `6795.50`；Meta 自动发现数据项 44581，Manager 预览显示 3 行、7 字段。原任务 13 未重新执行，原追加表仍为 3 行。此记录只证明本机 Console／原生链路，不代替隔离 Hosted T4 或完整模块门禁。
 
 ## 快速开始
 

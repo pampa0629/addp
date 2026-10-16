@@ -381,6 +381,9 @@ func TestDescribeTabularItemOnlyReadsRequestedRelationalFacts(t *testing.T) {
 	if indexCalls != 1 || constraintCalls != 1 || partitioningCalls != 1 || len(facts.Indexes) != 1 || len(facts.Constraints) != 1 || facts.Partitioning == nil {
 		t.Fatalf("requested facts = calls=%d/%d/%d facts=%#v", indexCalls, constraintCalls, partitioningCalls, facts)
 	}
+	if len(facts.Table.PrimaryKey) != 1 || facts.Table.PrimaryKey[0] != "id" || !facts.Table.Fields[0].PrimaryKey {
+		t.Fatalf("named primary key was not projected consistently: %#v", facts.Table)
+	}
 }
 
 type tabularCatalogTestPlugin struct{}

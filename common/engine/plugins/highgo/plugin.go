@@ -48,6 +48,7 @@ func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
 		EngineType: p.Type(), DisplayName: p.DisplayName(), DriverName: "highgo", DefaultPort: p.DefaultPort(), DefaultSSLMode: "require",
 		AdditionalSystemSchemas: []string{"dbms_alert", "dbms_assert", "dbms_output", "dbms_pipe", "dbms_random", "dbms_utility", "mysql", "oracle", "plunit", "plvchr", "plvdate", "plvlex", "plvstr", "plvsubst", "utl_file", "wmsys", "tiger", "tiger_data", "topology"},
 		AdditionalSystemTables:  []string{"hg_t_audit_log", "pg_buffercache", "pg_stat_statements"},
+		CatalogFacts:            p.Capabilities().Storage.Facts,
 	})
 }
 func (p *Plugin) ConnectionSpec() plugin.ConnectionSpec {
@@ -77,6 +78,7 @@ func (p *Plugin) BuildDSN(info plugin.ConnectionInfo) (string, error) {
 }
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
+		Indexes: true, Constraints: true, Partitioning: true,
 		TableReadSession: true, QueryReadSession: true, SupportsParameters: true, IdentifierQuote: `"`,
 		BatchWrite: true, TableWritePrepare: true, TableWriteSession: true, Delete: true, WriterConnector: "postgres_copy",
 	})
@@ -146,12 +148,8 @@ func (p *Plugin) ResolvePath(ctx context.Context, info plugin.ConnectionInfo, pa
 	return p.protocol().ResolvePath(ctx, info, path)
 }
 func (p *Plugin) DescribeEngineCatalogFacts(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
-	// Facts options request optional enrichment. Meta requests all enrichments;
-	// return ordinary fields without invoking capabilities not declared by HighGo.
+	// Spatial enrichment remains outside the certified non-spatial surface.
 	opts.IncludeSpatialFacts = false
-	opts.IncludeIndexes = false
-	opts.IncludeConstraints = false
-	opts.IncludePartitioning = false
 	return p.protocol().DescribeEngineCatalogFacts(ctx, info, path, opts)
 }
 func (p *Plugin) ReadBatch(ctx context.Context, info plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

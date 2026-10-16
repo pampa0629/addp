@@ -196,6 +196,18 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 		if err != nil {
 			return nil, err
 		}
+		for _, constraint := range facts.Constraints {
+			if constraint.ConstraintType == ConstraintTypePrimaryKey && facts.Table != nil {
+				facts.Table.PrimaryKey = append([]string(nil), constraint.Fields...)
+				keySet := make(map[string]bool, len(constraint.Fields))
+				for _, name := range constraint.Fields {
+					keySet[name] = true
+				}
+				for i := range facts.Table.Fields {
+					facts.Table.Fields[i].PrimaryKey = keySet[facts.Table.Fields[i].Name]
+				}
+			}
+		}
 	}
 	if opts.IncludePartitioning && callbacks.DescribePartitioning != nil {
 		facts.Partitioning, err = callbacks.DescribePartitioning(ctx, db, namespace, table)

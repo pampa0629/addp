@@ -115,6 +115,9 @@ func TestHighGoOnlyDeclaresCertifiedSurface(t *testing.T) {
 	if store.TableUpsert != nil || store.PartitionedTableChangeApply != nil || store.TableSpatialEncoding != nil || caps.Storage.Facts.SpatialFacts {
 		t.Fatal("uncertified capability declared")
 	}
+	if !caps.Storage.Facts.Indexes || !caps.Storage.Facts.Constraints || !caps.Storage.Facts.Partitioning {
+		t.Fatal("certified relational facts not declared")
+	}
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatalf("capability/interface contract: %v", err)
 	}
@@ -192,9 +195,8 @@ func TestHighGoRejectsUnsupportedWriteDefinitionsBeforeConnecting(t *testing.T) 
 	}
 }
 
-// Meta asks for optional enrichments even when an engine only exposes fields.
-// Exercise the real HighGo pool and shared catalog queries, retaining ordinary
-// facts without issuing PostGIS or uncertified relational enrichment queries.
+// Meta requests all enrichments. Certified relational facts are forwarded,
+// while optional spatial requests must not issue a PostGIS query.
 func TestHighGoOrdinaryFactsWithOptionalEnrichments(t *testing.T) {
 	info := newSM3Server(t, "瀚高数据库管理系统V4.5")
 	const engineID = 987654
@@ -214,6 +216,9 @@ func TestHighGoOrdinaryFactsWithOptionalEnrichments(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(facts.Indexes) != 1 || len(facts.Constraints) != 1 || facts.Partitioning != nil {
+		t.Fatalf("certified relational enrichment lost: %#v", facts)
 	}
 	table := plugin.EngineCatalogFactsTableInfo(facts)
 	if table == nil || table.Name != "items" || len(table.Fields) != 1 || table.Fields[0].Name != "label" || facts.Spatial != nil {
@@ -396,6 +401,12 @@ func fixtureQuery(query, version string) ([]string, []string, error) {
 	switch {
 	case query == "SELECT version()":
 		return []string{"version"}, []string{version}, nil
+	case strings.Contains(query, "FROM pg_catalog.pg_index i"):
+		return []string{"name", "fields_json", "is_unique", "index_type"}, []string{"items_label_idx", `["label"]`, "false", "btree"}, nil
+	case strings.Contains(query, "FROM pg_catalog.pg_constraint c"):
+		return []string{"name", "constraint_type", "fields_json", "referenced_namespace", "referenced_table", "referenced_fields_json"}, []string{"items_label_uq", "unique", `["label"]`, "", "", `[]`}, nil
+	case strings.Contains(query, "pg_catalog.pg_partitioned_table"):
+		return []string{"is_root", "strategy", "expression_key", "fields_json", "partition_count"}, []string{"false", "r", "false", `["label"]`, "0"}, nil
 	case strings.Contains(query, "FROM information_schema.tables t"):
 		return []string{"name", "table_type", "relkind", "kind"}, []string{"items", "BASE TABLE", "r", "table"}, nil
 	case strings.Contains(query, "FROM information_schema.columns c"):

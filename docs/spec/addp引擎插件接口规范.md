@@ -183,6 +183,8 @@ type EngineCatalogFactsProvider interface {
 
 `EngineCatalogFactsOptions.IncludeIndexes`、`IncludeConstraints`、`IncludePartitioning` 分别控制这三类详细事实读取。列表、路径解析和 basic scan 不得主动读取；deep scan 或明确的 item 详情刷新按能力声明显式请求。Provider 不得因为请求某类事实而执行 DDL、统计刷新或数据全表扫描。
 
+PostgreSQL 与已认证的 HighGo V4.5 通过同一 PG catalog 回调读取关系事实。`ProtocolIdentity.CatalogFacts` 绑定拥有者插件的事实能力声明，未绑定的协议复用者不启用新增关系回调。索引字段只包含有序键列，不含 INCLUDE 列；表达式索引、部分索引和无效索引不进入当前可移植结构。主键、唯一约束和外键保留原生键列顺序，外键按位置对应引用列；命名主键事实与表级主键投影保持一致。分区事实只描述字段分区键与直属分区数；表达式分区键不补推字段，同层子分区定义不一致时不输出统一子分区策略。
+
 `EngineCatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
 
 Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验并按该字段事实生成目标原生类型，不得选择固定默认 decimal、截断小数或改写为浮点数。已有目标 decimal 列只有在原生 precision/scale 与请求字段完全一致时才兼容。
@@ -219,7 +221,7 @@ SQL catalog facts provider 差异矩阵：
 
 System 对通用引擎的手动与周期连接检测使用同一只读调用路径和 10 秒预算；不允许周期检测另设更短预算，使同一连接在手动成功后因预算差异被判为离线。Provider 必须传递 Context，使握手和查询在取消或到期时释放本次连接；真实失败仍更新离线状态，执行授权仍核验当前引擎可用性。工作流 Runtime 的专用契约探测不受此普通连接探测路径替代。
 
-HighGo V4.5 使用独立 `highgo` 插件和 SM3 驱动，通过 `ProtocolIdentity.DriverName` 复用 PostgreSQL 协议 Provider。该身份统一作用于连接检测、连接池和所有 SQL 会话；不得在认证失败后切换驱动。开放非空间目录、普通字段 Facts 和只读会话；写入通过非空间 TableWritePrepare、BatchWrite、COPY TableWriteSession 及可见普通表的 ResourceDeleteProvider 暴露，写入准备、编码与事务内覆盖复用 PostgreSQL Provider，空间定义在连接前拒绝，事务提交标记保留 `highgo.table_write_session` 身份；任意写 SQL 仍在连接前拒绝。普通表删除先读取精确叶子 Facts，仅接受 `kind=table` 且原生 `relkind=r`，并复用非空间检查，目录隐藏或不存在的叶子不执行 DROP，其他错误不吞掉；DROP 不使用 CASCADE、不删除 schema。Facts 可选补充仅执行已声明范围，空间、索引、约束和分区请求不阻止普通字段返回。连接默认值与源码来源见《数据引擎扩展指南》。
+HighGo V4.5 使用独立 `highgo` 插件和 SM3 驱动，通过 `ProtocolIdentity.DriverName` 复用 PostgreSQL 协议 Provider。该身份统一作用于连接检测、连接池和所有 SQL 会话；不得在认证失败后切换驱动。开放非空间目录、普通字段 Facts 和只读会话；写入通过非空间 TableWritePrepare、BatchWrite、COPY TableWriteSession 及可见普通表的 ResourceDeleteProvider 暴露，写入准备、编码与事务内覆盖复用 PostgreSQL Provider，空间定义在连接前拒绝，事务提交标记保留 `highgo.table_write_session` 身份；任意写 SQL 仍在连接前拒绝。普通表删除先读取精确叶子 Facts，仅接受 `kind=table` 且原生 `relkind=r`，并复用非空间检查，目录隐藏或不存在的叶子不执行 DROP，其他错误不吞掉；DROP 不使用 CASCADE、不删除 schema。Facts 开放索引、命名约束与字段分区布局，沿共享 PG catalog 读取；空间补充仍不执行，空间请求不阻止普通字段返回。连接默认值与源码来源见《数据引擎扩展指南》。
 
 `supermap/sdx_postgresql` 的目录结构仍由 PostgreSQL Provider 枚举，但 `sdx` 业务表的详细 `EngineCatalogFacts` 必须由实例绑定的兼容 Workflow Runtime 通过 SDK 返回。私有 `SmGeometry bytea` 不得作为普通 bytes 字段进入 Meta；领域 Table Session Provider 对外统一返回虚拟 `SmGeometry` geometry 字段、EWKB 行编码、精确记录数和 SDK 空间事实。Meta 必须按实例 capability 中唯一的 `bound_runtime_engine_id` 解析 Runtime Descriptor，并校验所需 direct 算子后注入该 Provider；同一 PostgreSQL Engine 中的普通 PostgreSQL / PostGIS 表必须继续由 PostgreSQL Provider 处理，不能因为 Engine Instance 启用了 SDX+ for PostgreSQL 就整库切换到 Runtime Provider。`supermap/sdx_postgis` 的数据读写可以复用 PostgreSQL/PostGIS Provider，SuperMap 专用的注册、索引、bounds 和刷新操作由 Workspace Controller 负责。
 

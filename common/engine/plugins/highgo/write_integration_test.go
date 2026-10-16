@@ -94,6 +94,8 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 		}
 	})
 
+	assertHighGoRelationalFacts(t, ctx, db, p, info, schema)
+
 	fields := []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
 		{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
