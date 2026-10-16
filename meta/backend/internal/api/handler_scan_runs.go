@@ -53,14 +53,14 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 // CreateManualScanRun 创建异步扫描运行
 // @Summary 创建手动扫描运行 | Create manual scan run
-// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop、Transfer 和 Manager 后台产物扫描仅允许对应服务携带父 execution，核对已保存产物和完整主体；Manager 还须验证当前 lease 和 attempt。服务无来源请求拒绝 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop, Transfer and Manager output scans require the matching service, verified parent identity and persisted output; Manager also requires the current lease and attempt. Unowned service scans are rejected
+// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop、Transfer 和 Manager 后台产物扫描仅允许对应服务携带父 execution，核对已保存产物和完整主体；Manager 还须验证当前 lease 和 attempt。Transfer 结构审批补扫改为核对已应用审批及有效领取，归属审批用户并创建独立执行。服务无来源请求拒绝 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop, Transfer and Manager output scans require the matching service, verified parent identity and persisted output; Manager also requires the current lease and attempt. Transfer schema approval scans instead verify the applied approval and active claim, attribute the independent execution to the approving user. Unowned service scans are rejected
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
 // @Param request body models.ScanRequest true "扫描请求 | Scan request"
 // @Success 201 {object} models.ScanExecutionResponse "安全执行记录 | Safe execution"
-// @Failure 403 {object} map[string]interface{} "不允许使用父执行来源 | Parent provenance is not permitted"
-// @Failure 404 {object} map[string]interface{} "父执行或产物来源不可用 | Parent or output provenance unavailable"
+// @Failure 403 {object} map[string]interface{} "不允许使用扫描来源 | Scan provenance is not permitted"
+// @Failure 404 {object} map[string]interface{} "执行、产物或审批来源不可用 | Execution, output or approval provenance unavailable"
 // @Failure 409 {object} map[string]interface{} "同范围扫描正在执行：scan_scope_active | Scan scope already active: scan_scope_active"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"

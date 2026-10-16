@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 25 复核 `7b337b9c4` 的结构审批补扫来源：handler 独立固化当前审批用户，Transfer 发布已应用审批事实，Meta 核对事实、有效领取与精确目标表后创建独立扫描。这里只更新 handler 来源冻结；创建仍只保存停止态定义，条件、权限及选定覆盖范围不变。沿用平台来源审查、Ontology Go 与 PostgreSQL/FalkorDB 门禁，无新增入口或依赖。
+
 平台 Transfer 修订 24 复核 `ebe4ebb99` 的当前用户来源固化与产物扫描归属变更，更新 handler/service 的已提交来源及摘要。人工启动、恢复和重放使用当前用户，创建能力仍只保存停止态定义，不创建执行或扫描；选定覆盖、权限及确认条件不变。沿用平台来源审查、Ontology Go 与 PostgreSQL/FalkorDB 发布门禁，无新增入口或依赖。
 
 平台 Transfer 修订 23 复核 `001b0a4db` 的运行后扫描范围修正：bounded、continuous 和结构变更后的扫描只提交目标表 locator，不扩大到 schema／database。这里只更新两份规范来源冻结；创建能力仍禁止自动扫描，不改变条件、权限、确认或选定覆盖范围。现有平台来源审查、Ontology Go、PG／FalkorDB 发布门禁覆盖修订，无新增入口或依赖。
