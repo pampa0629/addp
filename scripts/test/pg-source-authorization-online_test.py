@@ -36,7 +36,7 @@ class Server:
                     server.grants[path.split('/')[-2]]['revocation'] = {'reason': body['reason']}
                 elif path.endswith('/access_denies'):
                     server.denies[body['deny_id']] = True
-                    status, result = 201, dict(body)
+                    status, result = 200, dict(body)
                 elif path.endswith('/release'):
                     server.denies[path.split('/')[-2]] = False
                     result = {'deny_id': path.split('/')[-2]}
@@ -109,6 +109,18 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                             for call in writes if 'catalog_path' in call[3]))
         self.assertNotIn('private-token', json.dumps(report))
         self.assertNotIn('person_id', json.dumps(report))
+
+    def test_deny_success_status_matches_published_contract(self):
+        swagger = json.loads((Path(__file__).resolve().parents[2] /
+                              'system/backend/docs/swagger.json').read_text())
+        responses = swagger['paths']['/engines/{id}/access_denies']['post']['responses']
+        self.assertEqual({key for key in responses if key.startswith('2')}, {'200'})
+        server, lifecycle = self.lifecycle()
+        with patch.object(lifecycle.operator, 'request', wraps=lifecycle.operator.request) as request:
+            command = lifecycle.deny(self.facts)
+        self.assertEqual(request.call_args.args[2], (200,))
+        self.assertTrue(server.denies[command])
+        lifecycle.cleanup()
 
     def test_oracle_rejects_ignored_deny_expiry_scope_data_and_denial_leaks(self):
         for fault in ('deny_ignored', 'expired_ignored', 'adjacent_granted', 'wrong_rows', 'leaked_denial'):

@@ -140,7 +140,7 @@ class Lifecycle:
                 'recipient_type': 'user', 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'at_time',
                 'expires_at': (datetime.now(timezone.utc) + timedelta(seconds=180)).isoformat(),
                 'reason': 'Disposable PG lifecycle Deny priority'}
-        receipt = self.operator.request('POST', self.base + '/access_denies', (201,), body).payload
+        receipt = self.operator.request('POST', self.base + '/access_denies', (200,), body).payload
         require(receipt.get('deny_id') == command, 'Deny receipt identity changed')
         return command
 
