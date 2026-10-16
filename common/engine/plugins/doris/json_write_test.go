@@ -2,14 +2,31 @@ package doris
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	pluginshared "github.com/addp/common/engine/plugins/shared"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 )
+
+func TestDorisAutoCommitSessionFailures(t *testing.T) {
+	writetest.AutoCommitSessionFailures(t, func(t *testing.T) (plugin.TableWriteSession, *sql.DB, string) {
+		writer, observer, qualified := writetest.AutoCommitSQLite(t)
+		return &dorisTableWriteSession{
+			db: writer, database: "main", table: "target",
+			columns: []string{"id", "document", "payload", "label"},
+			fieldTypes: map[string]datatype.FieldType{
+				"id": datatype.FieldTypeBigInt, "document": datatype.FieldTypeJSON,
+				"payload": datatype.FieldTypeBytes, "label": datatype.FieldTypeString,
+			},
+		}, observer, qualified
+	})
+}
 
 func TestDorisTableWriteArgsUsesDeclaredTypes(t *testing.T) {
 	fields := []datatype.FieldInfo{

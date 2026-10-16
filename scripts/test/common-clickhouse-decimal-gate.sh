@@ -59,7 +59,10 @@ docker run --detach \
 
 ready=false
 for _ in $(seq 1 60); do
-    if docker exec "$CONTAINER_NAME" clickhouse-client --user default --password "$DATABASE_PASSWORD" --query 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+    # The image runs a temporary server during initialization. Wait until PID 1
+    # is the final server, otherwise its shutdown races the host-side tests.
+    if docker exec "$CONTAINER_NAME" sh -c 'test "$(tr "\000" "\n" < /proc/1/cmdline | head -n 1)" = clickhouse-server' 2>/dev/null &&
+        docker exec "$CONTAINER_NAME" clickhouse-client --user default --password "$DATABASE_PASSWORD" --query 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
         ready=true
         break
     fi

@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	"github.com/google/uuid"
 )
 
@@ -21,6 +22,9 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 		t.Skip("set ADDP_DORIS_INTEGRATION=1 to run Doris integration test")
 	}
 	t.Run("definition_before_ddl", testDorisDefinitionBeforeDDL)
+	t.Run("session_failures", func(t *testing.T) {
+		writetest.AutoCommitSessionFailures(t, openDorisFailureIntegrationSession)
+	})
 	t.Run("floating_value_and_insert_projection", testDorisFloatingValueAndInsertProjection)
 	for _, method := range []string{"session", "batch"} {
 		t.Run(method, func(t *testing.T) {
@@ -214,6 +218,55 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+func openDorisFailureIntegrationSession(t *testing.T) (plugin.TableWriteSession, *sql.DB, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	conn := dorisIntegrationConnInfo(t)
+	p := &DorisPlugin{}
+	database := plugin.GetString(conn, "database")
+	table := "addp_session_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	path := plugin.TabularItemPath(93002, plugin.EngineCatalogTermDatabase, database, table)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const catalogSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?"
+	var count uint64
+	if err := db.QueryRowContext(ctx, catalogSQL, database, table).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("fixture name unavailable: count=%d error=%v", count, err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cleanupCancel()
+		if err := p.DeleteResource(cleanupCtx, conn, path); err != nil {
+			t.Errorf("cleanup session table: %v", err)
+		}
+		if err := db.QueryRowContext(cleanupCtx, catalogSQL, database, table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("session cleanup not proven: count=%d error=%v", count, err)
+		}
+	})
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true},
+		{Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true},
+		{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
+	}
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := p.OpenTableWriteSession(ctx, conn, path, plugin.TableWriteSessionOptions{Fields: fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session, db, dorisDialect().QualifiedTable(database, table)
 }
 
 func testDorisDefinitionBeforeDDL(t *testing.T) {

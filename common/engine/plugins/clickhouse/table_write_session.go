@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -229,12 +230,23 @@ type clickhouseTableWriteSession struct {
 	rowsWritten    int64
 	commitMarker   *resume.Marker
 	closed         bool
+	writeErr       error
 }
 
-func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("clickhouse table write session is closed")
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// Chunks commit independently. A later error must still make the whole
+	// session terminal and prevent Close from publishing a success marker.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -273,13 +285,18 @@ func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plu
 
 func (s *clickhouseTableWriteSession) Close(ctx context.Context) error {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
-	s.commitMarker = s.buildCommitMarker()
-	if err := s.db.Close(); err != nil {
-		return fmt.Errorf("close clickhouse table write session connection: %w", err)
+	if s.writeErr == nil {
+		s.writeErr = ctx.Err()
 	}
+	// Closing the connection cannot undo earlier autocommitted chunks.
+	s.writeErr = errors.Join(s.writeErr, s.abort())
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	s.commitMarker = s.buildCommitMarker()
 	return nil
 }
 

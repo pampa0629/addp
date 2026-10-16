@@ -13,8 +13,23 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestClickHouseAutoCommitSessionFailures(t *testing.T) {
+	writetest.AutoCommitSessionFailures(t, func(t *testing.T) (plugin.TableWriteSession, *sql.DB, string) {
+		writer, observer, qualified := writetest.AutoCommitSQLite(t)
+		return &clickhouseTableWriteSession{
+			db: writer, database: "main", table: "target",
+			columns: []string{"id", "document", "payload", "label"},
+			fieldTypes: map[string]datatype.FieldType{
+				"id": datatype.FieldTypeBigInt, "document": datatype.FieldTypeJSON,
+				"payload": datatype.FieldTypeBytes, "label": datatype.FieldTypeString,
+			},
+		}, observer, qualified
+	})
+}
 
 // SQLite observes the actual session's parameter binding without contacting an
 // engine. Native ClickHouse types are covered by the Hosted integration gate.

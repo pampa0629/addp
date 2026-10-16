@@ -14,6 +14,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,9 @@ func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
 		t.Skip("set ADDP_CLICKHOUSE_INTEGRATION=1 to run ClickHouse integration test")
 	}
 	t.Run("definition_before_ddl", testClickHouseDefinitionBeforeDDL)
+	t.Run("session_failures", func(t *testing.T) {
+		writetest.AutoCommitSessionFailures(t, openClickHouseFailureIntegrationSession)
+	})
 	t.Run("definition_preserves_target_and_projection", testClickHouseDefinitionPreservesTargetAndProjection)
 	for _, method := range []string{"session", "batch"} {
 		t.Run(method, func(t *testing.T) {
@@ -185,6 +189,55 @@ func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
 			}
 		})
 	}
+}
+
+func openClickHouseFailureIntegrationSession(t *testing.T) (plugin.TableWriteSession, *sql.DB, string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	conn := clickhouseIntegrationConnInfo(t)
+	p := &ClickHousePlugin{}
+	database := plugin.GetString(conn, "database")
+	table := "addp_session_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	path := plugin.TabularItemPath(93003, plugin.EngineCatalogTermDatabase, database, table)
+	dsn, err := p.serverDSN(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("clickhouse", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	const catalogSQL = "SELECT count() FROM system.tables WHERE database=? AND name=?"
+	var count uint64
+	if err := db.QueryRowContext(ctx, catalogSQL, database, table).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("fixture name unavailable: count=%d error=%v", count, err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cleanupCancel()
+		if err := p.DeleteResource(cleanupCtx, conn, path); err != nil {
+			t.Errorf("cleanup session table: %v", err)
+		}
+		if err := db.QueryRowContext(cleanupCtx, catalogSQL, database, table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("session cleanup not proven: count=%d error=%v", count, err)
+		}
+	})
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "document", Type: datatype.FieldTypeJSON, Nullable: true},
+		{Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true},
+		{Name: "label", Type: datatype.FieldTypeString, Nullable: true},
+	}
+	if err := p.PrepareTableWrite(ctx, conn, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := p.OpenTableWriteSession(ctx, conn, path, plugin.TableWriteSessionOptions{Fields: fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session, db, clickhouseDialect().QualifiedTable(database, table)
 }
 
 func testClickHouseDefinitionBeforeDDL(t *testing.T) {
