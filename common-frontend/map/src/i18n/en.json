@@ -39,6 +39,45 @@
     "mapSuppressedUnknownCRS": "Source CRS is unknown, map rendering has been skipped",
     "mapSuppressedUnsupportedCRS": "Coordinate transformation is not reliable for this preview, map rendering has been skipped",
     "businessBrowseMode": "Browse mode",
-    "gcj02DisplayNotice": "GCJ-02 basemaps are for browsing only and are not a precise spatial validation reference"
+    "gcj02DisplayNotice": "GCJ-02 basemaps are for browsing only and are not a precise spatial validation reference",
+    "trajectory": {
+      "open": "Static trajectory",
+      "title": "Static device trajectories",
+      "scope": "Complete files only, up to {limit} observations. Connect each device in time order; no missing-point or gap inference.",
+      "device_field": "Device field",
+      "time_field": "Time field",
+      "time_encoding": "Time encoding",
+      "iso": "ISO 8601 (timezone required, millisecond precision)",
+      "unix_s": "Unix seconds",
+      "unix_ms": "Unix milliseconds",
+      "coordinate_mode": "Coordinate source",
+      "columns": "X / Y columns",
+      "pointMode": "GeoJSON Point field",
+      "x_field": "X / longitude field",
+      "y_field": "Y / latitude field",
+      "geometry_field": "Point geometry field",
+      "crs": "Source CRS",
+      "sourceCRS": "Use identified source CRS",
+      "generate": "Draw trajectories",
+      "summary": "{devices} devices, {points} observations",
+      "errors": {
+        "not_table": "This file has no readable table.",
+        "incomplete": "The dataset is incomplete or exceeds the read limit. A complete trajectory cannot be drawn.",
+        "limit": "More than {limit} observations. Use a smaller source file.",
+        "empty": "The file has no observations.",
+        "configuration": "Select distinct device, time and coordinate fields.",
+        "coordinate": "Invalid coordinates at row {row}. Check the values and source CRS.",
+        "time": "Invalid time at row {row}. Use the selected timezone-aware or Unix encoding.",
+        "device": "Invalid device identifier at row {row}.",
+        "point": "Row {row} must contain a valid two-dimensional GeoJSON Point.",
+        "conflict": "Row {row} conflicts with another location for the same device and time. Correct the source data.",
+        "crs": "Select a supported source CRS. The CRS is never guessed.",
+        "login": "Your session expired. Sign in again before opening trajectories.",
+        "denied": "Data access or protection requirements prevent reading trajectory data.",
+        "load": "Could not load trajectory data. Check the source and try again."
+      },
+      "baseMap": "Trajectory base map",
+      "noBaseMap": "No base map"
+    }
   }
 }

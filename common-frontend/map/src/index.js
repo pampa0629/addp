@@ -1,3 +1,4 @@
+export { default as StaticTrajectoryPreview } from './components/StaticTrajectoryPreview.vue'
 // Map-related Components (requires ol and @amap/amap-jsapi-loader)
 export { default as GeoJsonPreview } from './components/GeoJsonPreview.vue'
 export { default as TablePreview } from './components/TablePreview.vue'

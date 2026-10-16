@@ -1,4 +1,4 @@
-function geometryValue(value) {
+export function geometryValue(value) {
   if (!value) return null
   if (typeof value === 'string') {
     try { return geometryValue(JSON.parse(value)) } catch { return null }

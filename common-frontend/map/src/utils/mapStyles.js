@@ -6,7 +6,7 @@ import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
 import CircleStyle from 'ol/style/Circle.js'
 import { asArray } from 'ol/color.js'
-import { thematicColorVariable, thematicIndexForValue } from './thematicMap.mjs'
+import { normalizeThematicRGB, thematicColorVariable, thematicIndexForValue } from './thematicMap.mjs'
 
 /**
  * 创建默认的矢量要素样式函数
@@ -85,6 +85,6 @@ export function createThematicFeatureStyle(feature, context) {
 }
 
 function withAlpha(color, alpha) {
-  const [red, green, blue] = asArray(color)
+  const [red, green, blue] = asArray(normalizeThematicRGB(color))
   return [red, green, blue, alpha]
 }

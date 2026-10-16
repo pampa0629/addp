@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildThematicContext, thematicColorVariable, thematicIndexForValue } from '../src/utils/thematicMap.mjs'
+import { buildThematicContext, normalizeThematicRGB, thematicColorVariable, thematicIndexForValue } from '../src/utils/thematicMap.mjs'
 
 const features = [1, 3, 5, 7, 9].map((value) => ({ properties: { metric: value, category: `C${value}` } }))
 
@@ -29,4 +29,10 @@ test('formats thematic legend values with the shared field presentation', () => 
 
   assert.match(context.entries[0].label, /分/)
   assert.match(context.entries[0].label, /1\.0/)
+})
+
+test('normalizes fractional theme rgb channels before map-library parsing', () => {
+  assert.equal(normalizeThematicRGB('rgb(216.8,235.6,255)'), 'rgb(217,236,255)')
+  assert.equal(normalizeThematicRGB('rgb(64, 158, 255)'), 'rgb(64,158,255)')
+  assert.equal(normalizeThematicRGB('#409eff'), '#409eff')
 })

@@ -67,3 +67,11 @@ function formatRange(lower, upper, presentation, locale) {
     : Number(value.toPrecision(4)).toString()
   return lower === upper ? format(lower) : `${format(lower)} – ${format(upper)}`
 }
+
+// Element Plus theme variables can contain fractional legacy rgb() channels.
+// Canonicalize them before passing the color to the map library's CSS parser.
+export function normalizeThematicRGB(color) {
+  const match = String(color).match(/^rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i)
+  if (!match || match.slice(1).some(value => !Number.isFinite(Number(value)))) return color
+  return `rgb(${match.slice(1).map(value => Math.round(Math.min(255, Math.max(0, Number(value))))).join(',')})`
+}

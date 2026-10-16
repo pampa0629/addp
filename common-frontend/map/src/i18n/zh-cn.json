@@ -39,6 +39,45 @@
     "mapSuppressedUnknownCRS": "源坐标系未知，已跳过地图渲染",
     "mapSuppressedUnsupportedCRS": "当前无法可靠完成坐标转换，已跳过地图渲染",
     "businessBrowseMode": "业务浏览",
-    "gcj02DisplayNotice": "GCJ-02 底图仅用于业务浏览，不作为精确空间校验依据"
+    "gcj02DisplayNotice": "GCJ-02 底图仅用于业务浏览，不作为精确空间校验依据",
+    "trajectory": {
+      "open": "静态轨迹",
+      "title": "设备静态轨迹图",
+      "scope": "完整文件最多 {limit} 个采样点；按设备分组、时间升序连线，不自动推断缺测或断点。",
+      "device_field": "设备字段",
+      "time_field": "时间字段",
+      "time_encoding": "时间格式",
+      "iso": "ISO 8601（须带时区，最多毫秒）",
+      "unix_s": "Unix 秒",
+      "unix_ms": "Unix 毫秒",
+      "coordinate_mode": "坐标来源",
+      "columns": "X / Y 坐标列",
+      "pointMode": "GeoJSON Point 字段",
+      "x_field": "X / 经度字段",
+      "y_field": "Y / 纬度字段",
+      "geometry_field": "Point 几何字段",
+      "crs": "源坐标系",
+      "sourceCRS": "使用已识别的源坐标系",
+      "generate": "绘制轨迹",
+      "summary": "{devices} 台设备，{points} 个采样点",
+      "errors": {
+        "not_table": "当前文件不是可读取的表格。",
+        "incomplete": "数据不完整或超过读取上限，不能绘制完整轨迹。",
+        "limit": "轨迹采样点超过 {limit} 个，请使用范围更小的数据文件。",
+        "empty": "文件没有采样点。",
+        "configuration": "请完整选择设备、时间和坐标字段，各字段不能重复。",
+        "coordinate": "第 {row} 行坐标无效，请检查坐标值与源坐标系。",
+        "time": "第 {row} 行时间无效；请按所选时间格式提供带时区时间或 Unix 时间。",
+        "device": "第 {row} 行设备标识无效。",
+        "point": "第 {row} 行必须是有效的二维 GeoJSON Point。",
+        "conflict": "第 {row} 行与同设备、同一时刻的另一位置冲突，请修正数据。",
+        "crs": "请提供可解析的源坐标系，不会自动猜测坐标系。",
+        "login": "登录已失效，请重新登录后打开轨迹。",
+        "denied": "当前读取或数据保护要求不允许获取轨迹数据。",
+        "load": "读取轨迹数据失败，请核对数据源状态后重试。"
+      },
+      "baseMap": "轨迹底图",
+      "noBaseMap": "无底图"
+    }
   }
 }

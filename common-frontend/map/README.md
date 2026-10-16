@@ -74,3 +74,7 @@ GCJ-02 不是标准 EPSG CRS，不进入 ADDP 数据事实。
 - 选择 GCJ-02 底图时必须提示“业务浏览”语义。
 
 BD-09 尚未实现。
+
+## 设备静态轨迹预览
+
+`StaticTrajectoryPreview` 为完整、有界点记录提供唯一的字段映射、严格校验和静态路线展示，业务模块通过 `loadTable(signal)` 提供受控表格响应；共享组件不读取业务 API、Token 或 Router。输入完整性、2000 点上限、设备/时间/坐标规则以 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览) 为准。复用 MapContainer 的要素模式、CRS registry 和主题样式，不新增地图 renderer，也不将当前表格分页拼成轨迹。

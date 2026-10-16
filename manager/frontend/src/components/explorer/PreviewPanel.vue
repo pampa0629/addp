@@ -54,6 +54,7 @@
           </div>
         </div>
         <div class="panel-actions">
+          <StaticTrajectoryPreview v-if="showStaticTrajectory" :key="selectedNode.locator" :load-table="loadStaticTrajectoryTable" />
           <template v-if="showDelimitedEncoding">
             <el-select v-model="csvEncoding" size="small" class="csv-encoding-select"
               :aria-label="t('manager.explorer.fileEncoding')" :disabled="refreshingPreviewItem">
@@ -515,6 +516,8 @@ import { MagicStick, Download, Location, Collection, Document, View, Refresh, Se
 import { getPreviewComponent } from '@/plugins/previews'
 import { downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
+import { StaticTrajectoryPreview } from '@common-ui-map'
+import { canPreviewStaticTrajectory, readStaticTrajectoryTable } from '@/utils/staticTrajectoryPreview'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import MAXConversionOptions from '@/components/tasks/MAXConversionOptions.vue'
@@ -2493,6 +2496,15 @@ const objectCanonicalFormat = computed(() => {
     ''
   ).trim()
 })
+const showStaticTrajectory = computed(() => canPreviewStaticTrajectory({
+  format: objectCanonicalFormat.value,
+  itemType: props.itemMeta?.item_type || props.selectedNode?.type,
+  mode: props.previewData?.mode,
+  childName: store.selectedChildName,
+  refPath: store.selectedRefPath
+}))
+const loadStaticTrajectoryTable = signal => readStaticTrajectoryTable(client, props.selectedNode.locator, signal)
+
 const showDelimitedEncoding = computed(() => ['csv', 'tsv'].includes(objectCanonicalFormat.value) && !store.selectedRefPath && !store.selectedChildName)
 const scannedEncoding = computed(() => scannedItemFacts.value?.format_info?.[objectCanonicalFormat.value]?.encoding || objectData.value?.attributes?.format_info?.[objectCanonicalFormat.value]?.encoding || 'utf-8')
 const csvEncoding = ref('utf-8')

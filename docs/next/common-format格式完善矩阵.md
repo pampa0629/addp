@@ -17,7 +17,7 @@
 | GeoTIFF（`.tif` / `.tiff`） | 卫星遥感、无人机航测 | 已接入：空间栅格识别、属性、地图预览；COG 按 Range 读取 | 需可解析的空间定位事实，不把普通 TIFF 当成已定位影像；现有 Manager Hosted 已验证 COG 实际加载，不声明所有波段、压缩编码及全部厂商遥感产品支持。 |
 | JPG / JPEG / PNG | 卫星遥感、无人机航测 | 已接入：图片元信息、原图预览和原文件下载 | 本地真实样例已验收；普通图片不自动具有地理覆盖范围，JPEG GPS 拍摄点不等于影像覆盖或设备轨迹。 |
 | Images | 卫星遥感、无人机航测 | 按实际图片编码处理 | 当前具体编码包括 JPEG、PNG、GIF、TIFF、WebP、BMP；不能承诺任意图片格式或全部编码变体均可预览。 |
-| CSV | 无人机航测、设备轨迹 | 已接入：表格读取、分页、编码选择、刷新及下载 | UTF-8/BOM、带 BOM 的 UTF-16LE/BE 和显式 GBK 已验证；无 BOM 未声明时不猜 GBK，UTF-32/GB18030 未支持；坐标列不自动生成轨迹。 |
+| CSV | 无人机航测、设备轨迹 | 已接入：表格读取、分页、编码选择、刷新及下载 | UTF-8/BOM、带 BOM 的 UTF-16LE/BE 和显式 GBK 已验证；无 BOM 未声明时不猜 GBK，UTF-32/GB18030 未支持；显式配置设备、时间、坐标及 CRS 后，可预览完整且不超过 2000 个采样点的静态轨迹，不按列名自动连线。 |
 | XLSX | 无人机航测 | 已接入：工作簿识别、工作表切换、分页与完整工作簿下载 | Hosted 已验证不同字段、空表和只有表头；估算行数按总数未知逐页读取。不声明 Excel 公式计算、宏或图表原样显示。 |
 | 3DS / DAE | 无人机航测 | 已接入：Model3D 转自包含 GLB 后在浏览器显示 | 静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收；不声明动画及复杂材质保真。 |
 | FBX | 无人机航测 | 已接入：Model3D 转 GLB 快显，Hosted 已通过 | 源格式的基础预览仍有已知 FBXLoader 缺陷；当前可用路径是已验收的 GLB 快显，不声明全部版本、动画或复杂材质。 |
@@ -25,10 +25,10 @@
 | MAX | 无人机航测 | 限定支持：Model3D 内部 Blender 与固定导入器转换静态 GLB | Hosted 已验证五个网格、444 个顶点、基础贴图与毫米换算。识别不了单位且用户未选时默认米；外部 bitmap 须显式映射。不新增 Blender 服务，不声明动画、骨架、修改器或全部版本。 |
 | SKP | 无人机航测 | 限定支持：OpenSKP 转静态 GLB，保留组件实例与内嵌基础贴图 | Hosted 已验证单位换算及两个共享实例；隐藏组件、隐藏面、关闭图层及解析器不支持的输入明确拒绝，不声明动态组件、场景动画或全部版本。 |
 | SGM（SuperMap Global Model） | 无人机航测 | 限定支持：授权 SuperMap → OSGB → Model3D GLB | 本地 NFS/真实 Business MinIO 样例已通过；秋树缺图及叶片 alpha 已修复并完成页面复验。自动读取同目录或 `Textures/` 贴图，缺图/损坏/越界明确失败；需 SuperMap SDK 与有效许可，不声明所有材质、版本或其他目录布局。私有 SGM 样例尚无 Hosted T4。 |
-| GeoJSON | 设备轨迹 | 已接入：FeatureCollection 的地图＋属性表、几何查看、刷新及完整下载 | Hosted 已验证 Point/LineString 及 `.geojson`/`.json` 两种后缀；内置 table 主线不覆盖单个 Feature 或 GeometryCollection，不自动提供时间排序与轨迹回放。 |
-| JSON（`.json`） | 设备轨迹 | 已接入：普通对象文档、records array/JSON Lines 表格；内容确认为 GeoJSON 时按 GeoJSON 展示 | Hosted 已验证普通文档、25 行 records array 和 FeatureCollection；任意嵌套 JSON 不保证可转表或生成轨迹，JSON Lines 的全部变体不由这些 Hosted 样例认证。 |
+| GeoJSON | 设备轨迹 | 已接入：FeatureCollection 的地图＋属性表、几何查看、刷新及完整下载 | Hosted 已验证 Point/LineString 及 `.geojson`/`.json` 两种后缀；内置 table 主线不覆盖单个 Feature 或 GeometryCollection；Point 记录可显式配置静态轨迹，既有 LineString 仍走普通地图预览，未提供轨迹回放。 |
+| JSON（`.json`） | 设备轨迹 | 已接入：普通对象文档、records array/JSON Lines 表格；内容确认为 GeoJSON 时按 GeoJSON 展示 | Hosted 已验证普通文档、25 行 records array 和 FeatureCollection；records 表格可显式配置静态轨迹；任意嵌套 JSON 不保证可转表，JSON Lines 的全部变体不由这些 Hosted 样例认证。 |
 
-本次核对依据为内置格式规范、`common/format/plugins/` 身份和读取实现、Manager 预览与 GLB 算子路由，以及已有真实验收记录；未新增格式、转换路线、业务类型或权限。本轮只更新文档，不改变测试层级、标准入口或 CI 登记；产品及 Hosted 复用已有有效证据，不为清单整理重复触发 T4。
+本次核对依据为内置格式规范、`common/format/plugins/` 身份和读取实现、Manager 预览与 GLB 算子路由，以及已有真实验收记录；未新增格式、转换路线、业务类型或权限。上述格式清单整理仅更新文档，复用已有产品及 Hosted 证据；后续新增静态轨迹的实现与验收范围单独记录于下文，不沿用旧 Hosted 结果认证新增功能。
 
 当前有效证据：
 
@@ -37,9 +37,11 @@
 - [SuperMap 验收记录](../../engines/supermap-workflow/README.md)：SDK 大写贴图引用修复、真实厂商模型及业务源不变检查；不能把无 SDK 协议门禁或其他模型 Hosted 通过计为 SGM Hosted 通过。
 - 图片、CSV BOM/UTF-16、大文件分页等本地验收范围保留在本文后文；不外推全部格式变体。
 
+2026-10-16 静态轨迹首版已按用户确认的范围实现：CSV、records JSON 和 Point FeatureCollection 通过既有受控 `/preview` 重新获取完整且不超过 2000 点的文件结果，再显式配置设备／时间／坐标及 CRS，按设备分组、时间排序绘图；配置和图形不回写 Meta、不建立任务或产物。共享 196 项、Manager 单元 327 项与轨迹专项 9 项通过，实际绘图及 Unix 秒毫秒精度已核对，Manager 正式构建通过；共享样式的实际消费者 Workbench 123 项单元、64 项浏览器及构建通过。Manager 全量浏览器仍有两项血缘失败，全工作区门禁缺少其他 Owner T2 条件，均不计整轮通过，也不扩展本会话处理范围。新增轨迹的真实设备文件及 Hosted T4 尚未验证，详细范围见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。
+
 当前未决范围：
 
-1. 优先讨论设备轨迹的最小业务契约：设备标识、时间列与时区、坐标字段与 CRS，以及分组、排序和连线规则。文件已经可读，不从列名或单个图片 GPS 推导这些业务事实；契约确认前不实现轨迹回放。
+1. 用户已确认先做设备静态轨迹，暂不做回放。首版实现显式字段与 CRS 配置、设备分组、时间排序，以及完整文件不超过 2000 个点的受控读取；具体契约和验证记录见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。超过上限的文件不绘制不完整路线；后续优先使用真实设备样例验收，再讨论大文件范围选择与处理边界。
 2. FBX 基础预览缺陷仍在，Three.js 升级须评估 COPC/3D Tiles 等实际消费者影响；GLB 快显通过不等于该缺陷修复。
 3. SGM 需在合法 SDK/许可环境补受控跨模块验收；现有私有样例不上传到公开 Hosted。静态模型、基础贴图以外的版本、材质和动画能力继续按真实需求与样例单独认证，不再把已解决的 3DS 丢图或秋树 alpha 列为当前故障。
 

@@ -205,6 +205,7 @@
 | PMTiles | PMTiles | 面向 HTTP Range Read 的单文件瓦片归档格式。 | ADDP 业务矢量瓦片集固定使用 PMTiles v3；PMTiles 是归档格式，MVT 是归档内单瓦片编码。 |
 | capture location | 拍摄位置 | 媒体记录时采集设备所处的地理位置，以经纬度和源大地基准表达。 | 写入 `capabilities.spatial.capture_location`；与影像地面覆盖范围 `extent`、像元定位及几何字段相互独立。基准未知时不猜测 WGS84，不据拍摄点开启栅格地图预览。 |
 | GPS receiver time | GPS 接收机时间 | GPS 元数据记录的 UTC 日期和时间。 | JPEG 的源日期、时分秒与可组合的 UTC 时间保存在 `format_info.jpeg.exif.gps`；不等同于相机快门时间，不补造日期或相机时区。 |
+| static device trajectory preview | 设备静态轨迹预览 | 对完整、有界的点记录按显式设备字段分组、按显式时间排序，绘制设备路线。 | 属于 Manager 预览组合，不是新 data type 或 format；字段映射和展示坐标不回写 Meta，不提供时间轴回放。 |
 | GPS direction of movement | GPS 移动方向 | GPS 接收机的移动方向，以度表示。 | 源方向与真北／磁北参考分别保留；不等同于图像方向，不由单张图片推导设备轨迹。 |
 | GPS image direction | GPS 图像方向 | 图像拍摄时的方向，以度表示。 | 与移动方向独立，也不同于像素旋转的 EXIF Orientation；不推导相机姿态或真北／磁北转换。 |
 | GPS destination point | GPS 目的地点 | 源 GPS 元数据记录的目的地位置及指向该目的地的方位角、距离。 | 与拍摄点、移动方向和图像方向独立；只保留源分量及参考，不计算目的地定位、导航路线或影像覆盖。 |
