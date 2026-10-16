@@ -57,12 +57,9 @@ docker run -d --name "$MYSQL" --label "addp.spark.table.owner=$OWNER" --network 
 if [ "$test_engine" != mysql ]; then
 DORIS_BOOTSTRAP=$(cat <<'BOOTSTRAP'
 set -euo pipefail
-# Start the stock loopback identity, then test the production in-place migration.
 sed -i 's/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g' /opt/apache-doris/fe/conf/fe.conf
-echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
-echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf
 echo 'mem_limit = 1024m' >> /opt/apache-doris/be/conf/be.conf
-exec bash /usr/local/bin/entry_point.sh
+exec bash /addp/doris/init.sh
 BOOTSTRAP
 )
     docker run -d --name "$DORIS" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias doris \
@@ -81,7 +78,23 @@ for _ in $(seq 1 120); do
         if [ "$(docker inspect --format '{{.State.Running}}' "$DORIS")" != true ]; then echo 'Doris disposable container exited before readiness' >&2; exit 1; fi
         if ! docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot --batch -e 'SHOW BACKENDS;' 2>/dev/null |
             awk -F '\t' 'NR == 1 { for (i=1;i<=NF;i++) if ($i=="Alive") alive=i; next } alive && tolower($alive)=="true" { found=1 } END { exit !found }'; then sleep 5; continue; fi
-        docker exec "$DORIS" bash -c 'source /addp/doris/init.sh; doris_register_backend; doris_health'
+        # Exercise the real entrypoint for a new cluster, then migrate a legacy
+        # loopback identity in place, keeping the same Backend throughout.
+        docker exec -i "$DORIS" bash <<'VERIFY'
+set -euo pipefail
+source /addp/doris/init.sh
+before=$(doris_backend_facts)
+before_id=${before%%$'\t'*}
+doris_sql -e 'ALTER SYSTEM MODIFY BACKEND "host.docker.internal:9050" HOSTNAME "127.0.0.1";'
+doris_register_backend
+after=$(doris_backend_facts)
+[ "${after%%$'\t'*}" = "$before_id" ]
+for _ in {1..30}; do
+    if doris_health; then exit 0; fi
+    sleep 1
+done
+exit 1
+VERIFY
         docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot -e 'CREATE DATABASE spark_results;'
     fi
     ready=true; break
