@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -245,12 +247,36 @@ func validateWorkflowOperatorContracts(engineType string, operators []commonMode
 func publicWorkflowOperators(engine *commonModels.Engine, operators []commonModels.OperatorDescriptor) []PublicOperatorDescriptor {
 	result := make([]PublicOperatorDescriptor, 0, len(operators))
 	for _, operator := range operators {
-		result = append(result, PublicOperatorDescriptor{
+		public := PublicOperatorDescriptor{
 			OperatorDescriptor: operator,
 			PublicParameters:   publicOperatorParameters(engine, operator),
-		})
+		}
+		public.LocalizeAdapterParameters(engine.EngineType, commoni18n.DefaultLang)
+		result = append(result, public)
 	}
 	return result
+}
+
+// LocalizeAdapterParameters resolves owner message IDs without changing runtime metadata.
+func (operator *PublicOperatorDescriptor) LocalizeAdapterParameters(engineType, language string) {
+	spec, ok := workflowOperatorAdapterSpecFor(engineType, operator.ID)
+	if !ok {
+		return
+	}
+	for _, declared := range spec.PublicParameters {
+		for index := range operator.PublicParameters {
+			parameter := &operator.PublicParameters[index]
+			if parameter.Name != declared.Name {
+				continue
+			}
+			if strings.HasPrefix(declared.DisplayName, "develop.") {
+				parameter.DisplayName = commoni18n.ForLanguage(language, declared.DisplayName)
+			}
+			if strings.HasPrefix(declared.Description, "develop.") {
+				parameter.Description = commoni18n.ForLanguage(language, declared.Description)
+			}
+		}
+	}
 }
 
 func publicOperatorParameters(engine *commonModels.Engine, operator commonModels.OperatorDescriptor) []commonModels.ParameterDescriptor {

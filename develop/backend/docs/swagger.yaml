@@ -4227,6 +4227,10 @@ paths:
   /workflow-engines/{id}/operators:
     get:
       parameters:
+      - description: 语言偏好（zh-cn 或 en） | Preferred language (zh-cn or en)
+        in: header
+        name: Accept-Language
+        type: string
       - description: 工作流引擎实例ID | Workflow engine instance ID
         in: path
         name: id

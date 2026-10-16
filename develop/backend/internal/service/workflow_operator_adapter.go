@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
+	developi18n "github.com/addp/develop/backend/i18n"
 )
 
 type workflowResourceInputSpec struct {
@@ -59,9 +60,15 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 		"datasource.open_postgis": workflowSuperMapOpenPostgisAdapterSpec(),
 		"datasource.create":       workflowSuperMapCreateUdbxAdapterSpec(),
 		"osgb_scene_to_s3m":       workflowSuperMapS3MAdapterSpec(),
+		"sgm_to_osgb":             workflowSuperMapSGMAdapterSpec(),
 	},
 	"model3d_workflow":    model3DWorkflowAdapterSpecs(),
 	"pointcloud_workflow": pointCloudWorkflowAdapterSpecs(),
+	"document_workflow": {
+		"document_to_pdf": conversionAdapterSpec("document_to_pdf", "PPTX", "pptx", "file", "file", nil, "pdf", "file", ".pdf", "application/pdf", []commonModels.ParameterDescriptor{
+			{Name: "strip_embedded_media", Type: "boolean", Default: true, DisplayName: developi18n.MsgWorkflowStripMediaLabel, Description: developi18n.MsgWorkflowStripMediaDescription},
+		}),
+	},
 }
 
 // Raster IO uses the same access-plan adapter, with source/target independently optional.
@@ -131,13 +138,26 @@ func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {
 	return spec
 }
 
+func workflowSuperMapSGMAdapterSpec() workflowOperatorAdapterSpec {
+	spec := conversionAdapterSpec("sgm_to_osgb", "SGM", "sgm", "file", "file", []string{"model_3d"}, "osgb", "file", ".osgb", "application/octet-stream", nil)
+	// This runtime operator consumes only access_plan, unlike other conversions.
+	spec.RuntimeParams = []string{"access_plan"}
+	return spec
+}
+
 func model3DWorkflowAdapterSpecs() map[string]workflowOperatorAdapterSpec {
 	return map[string]workflowOperatorAdapterSpec{
-		"osgb_to_glb":           conversionAdapterSpec("osgb_to_glb", "OSGB 模型", "osgb", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
-		"gltf_to_glb":           conversionAdapterSpec("gltf_to_glb", "glTF 模型", "gltf", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
-		"fbx_to_glb":            conversionAdapterSpec("fbx_to_glb", "FBX 模型", "fbx", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
-		"obj_to_glb":            conversionAdapterSpec("obj_to_glb", "OBJ 模型", "obj", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
-		"stl_to_glb":            conversionAdapterSpec("stl_to_glb", "STL 模型", "stl", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"osgb_to_glb": conversionAdapterSpec("osgb_to_glb", "OSGB 模型", "osgb", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"gltf_to_glb": conversionAdapterSpec("gltf_to_glb", "glTF 模型", "gltf", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"fbx_to_glb":  conversionAdapterSpec("fbx_to_glb", "FBX 模型", "fbx", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"obj_to_glb":  conversionAdapterSpec("obj_to_glb", "OBJ 模型", "obj", "directory", "parent", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"stl_to_glb":  conversionAdapterSpec("stl_to_glb", "STL 模型", "stl", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"dae_to_glb":  conversionAdapterSpec("dae_to_glb", "DAE", "dae", "directory", "parent", []string{"model_3d"}, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"3ds_to_glb":  conversionAdapterSpec("3ds_to_glb", "3DS", "3ds", "directory", "parent", []string{"model_3d"}, "glb", "file", ".glb", "model/gltf-binary", nil),
+		"max_to_glb": conversionAdapterSpec("max_to_glb", "MAX", "max", "directory", "parent", []string{"model_3d"}, "glb", "file", ".glb", "model/gltf-binary", []commonModels.ParameterDescriptor{
+			{Name: "source_unit", Type: "string", Default: "m", Enum: []string{"mm", "cm", "m", "km", "in", "ft", "mi"}, DisplayName: developi18n.MsgWorkflowSourceUnitLabel, Description: developi18n.MsgWorkflowSourceUnitDescription},
+			{Name: "texture_files", Type: "object", DisplayName: developi18n.MsgWorkflowTextureFilesLabel, Description: developi18n.MsgWorkflowTextureFilesDescription},
+		}),
 		"skp_to_glb":            conversionAdapterSpec("skp_to_glb", "SketchUp 模型", "skp", "file", "file", []string{"model_3d"}, "glb", "file", ".glb", "model/gltf-binary", nil),
 		"ifc_to_glb":            conversionAdapterSpec("ifc_to_glb", "IFC 模型", "ifc", "file", "file", nil, "glb", "file", ".glb", "model/gltf-binary", []commonModels.ParameterDescriptor{{Name: "center_model", Type: "boolean", Required: false, Default: true, Description: "转换时将 BIM 模型居中"}}),
 		"osgb_scene_to_3dtiles": conversionAdapterSpec("osgb_scene_to_3dtiles", "OSGB Scene", "osgb_scene", "directory", "directory", nil, "3dtiles", "directory", "", "", nil),

@@ -301,3 +301,21 @@ other = "The raster tile target directory name must be one path segment"
 
 [develop.workflow.resource_binding_conflict]
 other = "This operation accepts one directly accessed resource; source and target cannot be supplied together"
+
+[develop.workflow.parameters.source_unit.label]
+other = "Source model unit"
+
+[develop.workflow.parameters.source_unit.description]
+other = "Length unit of the MAX model. Defaults to meters."
+
+[develop.workflow.parameters.texture_files.label]
+other = "Texture mapping"
+
+[develop.workflow.parameters.texture_files.description]
+other = "JSON object mapping MAX bitmap references to image paths relative to the source model directory. Absolute paths and paths outside that directory are rejected."
+
+[develop.workflow.parameters.strip_embedded_media.label]
+other = "Remove embedded media"
+
+[develop.workflow.parameters.strip_embedded_media.description]
+other = "Remove embedded audio and video before converting PPTX to static PDF. Enabled by default."

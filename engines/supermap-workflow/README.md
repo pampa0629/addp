@@ -52,6 +52,16 @@ HTTP 层使用独立线程池，确保长时间 SuperMap 算子执行期间，`/
 
 `sgm_to_osgb` 同时支持 workflow 与 direct：访问计划接受单文件 `file/sgm` 源、`file/osgb` 目标，两端复用 NFS `mounted_path` 和 MinIO/S3 `object_store` 访问能力，目标只允许 `create/replace`。算子先把主文件置于私有目录，通过 SDK 原始材质模式读取非空网格实际绑定材质（含按面子材质）的贴图引用，忽略未使用的材质表条目，依次精确准备同目录图片和 `Textures/` 内的同名图片；首期只接受这两种已验证的扁平布局及 SDK `UGMaterial` 源材质封装，其他材质封装明确拒绝，不列举或递归下载 S3 目录。只在本地文件不存在或 S3 返回 404 时尝试下一候选；403、网络错误、越界符号链接及损坏图片均拒绝生成。随后统一将外部图片复制为私有编号文件及小写扩展名，由 SDK 保存带对应引用的临时 SGM，再读取完整骨架、核对源几何数量并导出 OSGB，并重读核验顶点、三角面数量及非空贴图像素，验证成功后才发布；`create` 不覆盖已有对象。Common 的 SGM 插件仅声明格式身份，不加载 SDK。Manager 依次调用本算子及 Model3D `osgb_to_glb`，中间 OSGB 不形成业务 item；Develop 单独使用时发布业务 OSGB。当前 SDK 的厂商样例通过真实转换回归，其他版本、复杂材质及动画需另行验证，不将其计为全部支持。
 
+### SGM 本机隔离集成测试（T2）
+
+`make test-engines-supermap-sgm` 在本机 Docker 的 `linux/arm64` 环境人工执行真实集成测试。它使用已有私有基础镜像 `addp-supermap-workflow-base:local`，经根 `make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine,model3d-workflow-engine --verify --jobs 1 --tag <本轮唯一标签>"` 从当前工作区构建独立标签的 SuperMap、Model3D 产品镜像；MinIO 从仓库固定 Dockerfile 构建。SDK 自带 compass 样例仅在私有临时目录和本轮容器中准备，不复制到仓库或报告。
+
+测试使用独立内部网络、MinIO 卷及随机凭据，不发布宿主机端口、不读取 `.env`、不加入开发网络、不向个人 System 注册，也不重启开发服务。受限 MinIO 用户仅能读取本轮源对象和中间 OSGB、写入本轮目标；另外显式拒绝一张贴图。为验证 404 后的 `Textures/` 精确候选，测试桶授予该用户 `ListBucket`，但通过真实请求追踪核对转换过程中没有目录列举；这不改变产品授权要求。断言范围包括两种贴图布局、真实 403、缺图、坏图、create 冲突与失败保留旧产物、源文件字节保持，以及 SGM → OSGB → GLB 的几何、UV、内嵌贴图像素；入口本身不代表这些断言已经完成真实运行。
+
+所有退出路径删除本轮容器、网络、卷、生成镜像标签、凭据、私有样例和原始日志；不清除共享构建缓存或其他镜像引用，清理不完整即失败。可通过绝对路径 `SGM_T2_REPORT=/tmp/sgm-t2-report.json` 保存不含凭据或厂商数据的摘要，只有功能及清理均通过才登记通过。摘要中的 `run_id` 与 `owned_image_tags` 用于 Docker 中断后的精确残留核查；`MEDIA_SHA256` 表示已有私有 SDK 基础镜像的内容身份，不冒充官方安装介质归档摘要。SDK 基础镜像由用户管理，测试不删除。缺少 Docker、基础镜像、许可或架构不符均失败，不计为跳过或通过。
+
+这是用户批准的 macOS ARM64 Docker Desktop / Linux ARM64 本机技术 T2，验证真实存储权限与两个 Runtime 的生产入口；没有覆盖 System User/Grant、Gateway、Manager 页面及业务任务生命周期，不计为正式跨模块 T4，也不自动套用 DM8 的 T4 例外。真实入口登记到人工 `test-integration-owner-managed`，不进入公共 Hosted；生命周期、配置和报告边界的确定性测试随既有 `make test-supermap-workflow` 进入平台 CI。
+
 UDBX 升级调试示例：
 
 ```bash

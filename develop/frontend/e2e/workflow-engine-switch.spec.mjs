@@ -41,6 +41,35 @@ const orderedWorkflowEngines = [
   'geopython', 'model3d', 'pointcloud', 'supermap', 'spark', 'document'
 ].map((type, index) => ({ ...ENGINE_A, id: index + 11, name: type, engine_type: `${type}_workflow` }))
 
+test('edits saved structured conversion parameters without losing their JSON types', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeStructuredParameters: true })
+  await openSavedWorkflow(page)
+  const openParameters = async () => {
+    await page.getByRole('region', { name: '工作流 DAG 画布', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.right-panel')).toBeVisible()
+  }
+  await openParameters()
+  const textures = page.locator('[data-param-name="texture_files"]').getByRole('textbox')
+  const layers = page.locator('[data-param-name="include_layers"]').getByRole('textbox')
+  await expect(textures).toHaveValue(JSON.stringify({ wall: 'textures/wall.png' }))
+  await expect(layers).toHaveValue(JSON.stringify(['building', 'road']))
+  const mapping = { '立面贴图': 'textures/立面.png' }
+  await textures.fill(JSON.stringify(mapping))
+  await layers.fill(JSON.stringify(['terrain']))
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  expect(backend.updates[0].payload.content.workflow_definition.tasks[0].params).toMatchObject({
+    texture_files: mapping, include_layers: ['terrain']
+  })
+  await page.reload()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  await openParameters()
+  await expect(textures).toHaveValue(JSON.stringify(mapping))
+  await expect(layers).toHaveValue(JSON.stringify(['terrain']))
+})
+
 for (const width of [1280, 620]) {
   test(`nested operator groups preserve ownership, counts, search, click and drag at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 })
@@ -1017,6 +1046,7 @@ function visibleDialogSurface(page) {
 async function installMockBackend(page, {
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
+  includeStructuredParameters = false,
   validationErrors = [],
   deferValidation = false,
   deferUpdate = false,
@@ -1071,6 +1101,15 @@ async function installMockBackend(page, {
   const operatorAParameters = [
     { name: 'source', type: 'string', required: false, description: 'Source input' }
   ]
+  if (includeStructuredParameters) {
+    operatorAParameters.push(
+      { name: 'texture_files', display_name: '贴图映射', type: 'object' },
+      { name: 'include_layers', display_name: '图层列表', type: 'array' }
+    )
+    Object.assign(task.content.workflow_definition.tasks[0].params, {
+      texture_files: { wall: 'textures/wall.png' }, include_layers: ['building', 'road']
+    })
+  }
   if (includeResourcePicker) {
     operatorAParameters.push({
       name: '数据源',
@@ -1307,7 +1346,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
-      if (includeCollectionInputs) Object.assign(task, payload)
+      if (includeCollectionInputs || includeStructuredParameters) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)

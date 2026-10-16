@@ -3434,6 +3434,12 @@ const docTemplate = `{
                 "summary": "根据工作流引擎实例获取算子列表 | List operators by workflow engine instance",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "语言偏好（zh-cn 或 en） | Preferred language (zh-cn or en)",
+                        "name": "Accept-Language",
+                        "in": "header"
+                    },
+                    {
                         "type": "integer",
                         "description": "工作流引擎实例ID | Workflow engine instance ID",
                         "name": "id",

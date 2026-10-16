@@ -217,7 +217,8 @@
                 <!-- 根据参数类型渲染不同的输入组件 -->
                 <component
                   :is="getComponentByType(param)"
-                  v-model="formData[param.name]"
+                  :model-value="parameterInputValue(param)"
+                  @update:model-value="value => { formData[param.name] = value }"
                   v-bind="getComponentProps(param)"
                   :placeholder="getPlaceholder(param)"
                   @change="onParamChange(param.name)"
@@ -540,6 +541,11 @@ const getComponentByType = (param) => {
 const getComponentProps = (param) => {
   const props = {}
 
+  if (['array', 'object', 'json'].includes(String(param.type || param.data_type || '').trim().toLowerCase())) {
+    props.type = 'textarea'
+    props.rows = 3
+  }
+
   // enum 类型的下拉选择
   if (param.enum && param.enum.length > 0) {
     // el-select 会在模板中自动渲染 options
@@ -750,7 +756,16 @@ const buildDraftParams = () => {
   return cleanedParams
 }
 
-// 文本控件承载 array/object 参数时，提交前还原为工作流运行时需要的结构化值。
+// 结构化参数以 JSON 文本编辑，提交时还原数据类型。
+function parameterInputValue(param) {
+  const value = formData.value[param.name]
+  const dataType = String(param.type || param.data_type || '').trim().toLowerCase()
+  if (['array', 'object', 'json'].includes(dataType) && value !== null && typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  return value
+}
+
 function normalizeParamValue(param, value) {
   const dataType = String(param.type || param.data_type || '').trim().toLowerCase()
   if (!['array', 'object', 'json'].includes(dataType) || typeof value !== 'string') return value

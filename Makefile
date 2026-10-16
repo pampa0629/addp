@@ -154,11 +154,16 @@ test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
 MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
 .PHONY: test-supermap-workflow
 test-supermap-workflow: ## 运行不加载厂商 SDK 的 SuperMap 协议、算子目录和资源主机测试
+	@python3 -m unittest scripts/test/supermap-sgm-gate_test.py
 	@set -eu; work_dir=$$(mktemp -d "$${TMPDIR:-/tmp}/addp-supermap-unit.XXXXXX"); \
 		trap 'rm -rf "$$work_dir"' EXIT; \
 		cmake -S engines/supermap-workflow -B "$$work_dir" -DSUPERMAP_SDK_ROOT= -DBUILD_TESTING=ON; \
 		cmake --build "$$work_dir" --parallel; \
 		ctest --test-dir "$$work_dir" --output-on-failure
+
+.PHONY: test-engines-supermap-sgm
+test-engines-supermap-sgm: ## 人工运行私有 SDK、独立 MinIO 和双 Runtime 的本机 SGM T2
+	@bash scripts/test/engines-supermap-sgm-gate.sh
 
 .PHONY: test-model3d-workflow
 test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
@@ -353,8 +358,9 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
 
-test-integration-owner-managed: ## 仅在具备合法凭据的 owner 受控 Linux 主机人工串行运行门禁
+test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
+	@$(MAKE) test-engines-supermap-sgm
 
 .PHONY: test-orchestrator-postgres
 test-orchestrator-postgres: ## 使用隔离 PostgreSQL 验证 Orchestrator 领取、调度事务及失联收敛

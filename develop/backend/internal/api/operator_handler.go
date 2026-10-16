@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +37,7 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 // @Summary 根据工作流引擎实例获取算子列表 | List operators by workflow engine instance
 // @Tags Operator
 // @Produce json
+// @Param Accept-Language header string false "语言偏好（zh-cn 或 en） | Preferred language (zh-cn or en)"
 // @Security BearerAuth
 // @Param id path int true "工作流引擎实例ID | Workflow engine instance ID"
 // @Success 200 {object} OperatorListResponse "算子列表 | Operator list"
@@ -57,6 +59,9 @@ func (h *OperatorHandler) ListOperatorsByWorkflowEngine(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	for index := range operators {
+		operators[index].LocalizeAdapterParameters(operators[index].EngineType, commoni18n.GetLang(c))
 	}
 
 	c.JSON(http.StatusOK, OperatorListResponse{

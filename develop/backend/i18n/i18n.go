@@ -11,6 +11,12 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
+	MsgWorkflowSourceUnitLabel             = "develop.workflow.parameters.source_unit.label"
+	MsgWorkflowSourceUnitDescription       = "develop.workflow.parameters.source_unit.description"
+	MsgWorkflowTextureFilesLabel           = "develop.workflow.parameters.texture_files.label"
+	MsgWorkflowTextureFilesDescription     = "develop.workflow.parameters.texture_files.description"
+	MsgWorkflowStripMediaLabel             = "develop.workflow.parameters.strip_embedded_media.label"
+	MsgWorkflowStripMediaDescription       = "develop.workflow.parameters.strip_embedded_media.description"
 	MsgRasterTileManifestInvalid           = "develop.workflow.raster_tile_manifest_invalid"
 	MsgRasterTileTargetOverlap             = "develop.workflow.raster_tile_target_overlap"
 	MsgRasterTileTargetNameInvalid         = "develop.workflow.raster_tile_target_name_invalid"
@@ -28,8 +34,8 @@ const (
 
 	MsgExecutionNotFound                      = "develop.execution.not_found"
 	MsgExecutionReadFailed                    = "develop.execution.read_failed"
-	MsgExecutionPolicyInvalid                     = "develop.execution_policy.invalid"
-	MsgExecutionPolicyConflict                    = "develop.execution_policy.conflict"
+	MsgExecutionPolicyInvalid                 = "develop.execution_policy.invalid"
+	MsgExecutionPolicyConflict                = "develop.execution_policy.conflict"
 	MsgExecutionStarted                       = "develop.execution.started"
 	MsgExecutionParametersInvalid             = "develop.execution.parameters_invalid"
 	MsgExecutionContractUnavailable           = "develop.execution.contract_unavailable"
