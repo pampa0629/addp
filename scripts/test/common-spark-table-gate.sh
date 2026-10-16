@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=doris
-# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/doris/ scripts/test/spark-table-publication-contract.py scripts/test/common-spark-table-gate_test.py
+# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/doris/ business/doris/ scripts/test/spark-table-publication-contract.py scripts/test/common-spark-table-gate_test.py
 # Full gate owns disposable Linux x86_64 databases and a real Spark Worker.
 # The explicit mysql subset is available on multi-architecture Docker hosts.
 set -euo pipefail
@@ -57,9 +57,7 @@ docker run -d --name "$MYSQL" --label "addp.spark.table.owner=$OWNER" --network 
 if [ "$test_engine" != mysql ]; then
 DORIS_BOOTSTRAP=$(cat <<'BOOTSTRAP'
 set -euo pipefail
-doris_address=$(hostname -i | awk '{print $1}')
-sed -i "s#127.0.0.1/24#${doris_address}/32#g; s#CURRENT_BE_IP=\"127.0.0.1\"#CURRENT_BE_IP=\"doris\"#" /usr/local/bin/entry_point.sh
-grep -q 'CURRENT_BE_IP="doris"' /usr/local/bin/entry_point.sh
+# Start the stock loopback identity, then test the production in-place migration.
 sed -i 's/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g' /opt/apache-doris/fe/conf/fe.conf
 echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
 echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf
@@ -68,6 +66,7 @@ exec bash /usr/local/bin/entry_point.sh
 BOOTSTRAP
 )
     docker run -d --name "$DORIS" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias doris \
+        --network-alias host.docker.internal -v "$ROOT_DIR/business/doris/init.sh:/addp/doris/init.sh:ro" \
         --hostname doris --memory 3g -e BUILD_TYPE=production --entrypoint bash "$DORIS_IMAGE" -c "$DORIS_BOOTSTRAP" >/dev/null
 fi
 docker run -d --name "$MASTER" --label "addp.spark.table.owner=$OWNER" --network "$OWNER" --network-alias spark-master --user root --memory 2g \
@@ -82,6 +81,7 @@ for _ in $(seq 1 120); do
         if [ "$(docker inspect --format '{{.State.Running}}' "$DORIS")" != true ]; then echo 'Doris disposable container exited before readiness' >&2; exit 1; fi
         if ! docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot --batch -e 'SHOW BACKENDS;' 2>/dev/null |
             awk -F '\t' 'NR == 1 { for (i=1;i<=NF;i++) if ($i=="Alive") alive=i; next } alive && tolower($alive)=="true" { found=1 } END { exit !found }'; then sleep 5; continue; fi
+        docker exec "$DORIS" bash -c 'source /addp/doris/init.sh; doris_register_backend; doris_health'
         docker exec "$DORIS" mysql -h127.0.0.1 -P9030 -uroot -e 'CREATE DATABASE spark_results;'
     fi
     ready=true; break

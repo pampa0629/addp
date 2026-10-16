@@ -43,6 +43,8 @@ Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127
 
 ## Business (业务库)
 
+本机 Docker Desktop 的 Doris all-in-one 使用 FE MySQL `9030`、FE HTTP `8030`，以及 BE HTTP `8040`、heartbeat `9050`、RPC `9060`、brpc `8060`；全部仅绑定 `127.0.0.1`。FE 两个宿主端口继续由 `DORIS_FE_PORT`、`DORIS_FE_HTTP_PORT` 显式配置，BE 四个端口必须与容器内部一致，冲突失败，不自动漂移。BE 对外公布稳定主机名 `host.docker.internal`；宿主机须将其解析为 `127.0.0.1`，Docker 容器使用 Docker Desktop 的宿主网关解析。已有单 BE 从回环地址通过原生 `MODIFY BACKEND ... HOSTNAME` 迁移，保留 Backend ID 和数据卷，不删除后重新登记。启动及健康检查必须确认 FE 可查询、唯一 BE 的公布地址正确且 Alive；仅 FE 端口可连接不代表写入就绪。其他 Doris 部署由部署方提供 Driver、Executor 和 FE 均可达的地址与端口。
+
 HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh -hdfs` 启动：NameNode WebHDFS 首选 `9870`，原生 RPC 首选 `8020`；DataNode 数据传输 `9866` 和 HTTP `9864`。四个宿主端口均只绑定 `127.0.0.1`；DataNode 公布稳定主机名 `host.docker.internal`，宿主机须配置 `127.0.0.1 host.docker.internal`，容器使用 Docker Desktop 内置解析。启动入口先验证本机映射，不检测或保存笔记本局域网 IP。DataNode 两个端口在容器内外必须一致，不能仅发布 NameNode。四个端口由 `business/.env` 显式配置，冲突失败。System 登记 `webhdfs_endpoint=http://127.0.0.1:<实际 Web 端口>`、`rpc_uri=hdfs://host.docker.internal:<实际 RPC 端口>`、`root_path=/addp`、`authentication=simple`、`user=addp_business_reader`，换网无需修改连接。其他部署由部署方提供实际可达地址；T2 的独占集群没有宿主端口，Go 测试与 Spark Driver 在同一门禁网络内运行，不复用个人 Business 集群。
 
 - Redis: `6380`（容器端口 `6379`，独立 Business 实例，只开放 DB 0）

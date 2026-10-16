@@ -249,25 +249,23 @@ services:
       - RECOVERY=${DORIS_RECOVERY:-false}
     entrypoint:
       - /bin/bash
-      - -c
-      - |
-        grep -q '^enable_fqdn_mode = true$' /opt/apache-doris/fe/conf/fe.conf ||
-          echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf
-        grep -q '^force_olap_table_replication_num = 1$' /opt/apache-doris/fe/conf/fe.conf ||
-          echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf
-        exec bash /usr/local/bin/entry_point.sh
+      - /addp/doris/init.sh
     ports:
-      - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
-      - "${DORIS_FE_HTTP_PORT:-8030}:8030"  # HTTP API
-      - "9050:9050"                          # BE heartbeat 端口
+      - "127.0.0.1:${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
+      - "127.0.0.1:${DORIS_FE_HTTP_PORT:-8030}:8030"  # FE HTTP
+      - "127.0.0.1:8040:8040"  # BE Stream Load
+      - "127.0.0.1:9050:9050"  # BE heartbeat
+      - "127.0.0.1:9060:9060"  # BE RPC
+      - "127.0.0.1:8060:8060"  # BE brpc
     volumes:
+      - ./doris/init.sh:/addp/doris/init.sh:ro
       - doris_fe_data:/opt/apache-doris/fe/doris-meta
       - doris_fe_log:/opt/apache-doris/fe/log
       - doris_be_data:/opt/apache-doris/be/storage
     networks:
       - business-network
     healthcheck:
-      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' || exit 1"]
+      test: ["CMD", "bash", "/addp/doris/init.sh", "--health"]
       interval: 15s
       timeout: 10s
       retries: 20

@@ -315,15 +315,15 @@ if [ -f .env ]; then
 fi
 
 # 3. 检测 CPU 架构
-if [ "$ENABLE_HDFS" = true ]; then
+if [ "$ENABLE_HDFS" = true ] || [ "$ENABLE_DORIS" = true ]; then
     python3 - <<'PY'
 import socket
 try:
     address = socket.gethostbyname('host.docker.internal')
 except OSError:
-    raise SystemExit('HDFS 本机部署需要 /etc/hosts 映射: 127.0.0.1 host.docker.internal')
+    raise SystemExit('HDFS/Doris 本机部署需要 /etc/hosts 映射: 127.0.0.1 host.docker.internal')
 if address != '127.0.0.1':
-    raise SystemExit('HDFS 本机部署的 host.docker.internal 必须解析为 127.0.0.1')
+    raise SystemExit('HDFS/Doris 本机部署的 host.docker.internal 必须解析为 127.0.0.1')
 PY
 fi
 
@@ -436,7 +436,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_SUPERMAP_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SUPERMAP_PG_PORT"
 [ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
 [ "$ENABLE_MONGODB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MONGO_PORT"
-[ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT"
+[ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT 8040 9050 9060 8060"
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
@@ -868,13 +868,19 @@ fi
 
 if [ "$ENABLE_DORIS" = true ]; then
     echo -e "${YELLOW}等待 Doris 启动 (可能需要 60-90 秒)...${NC}"
-    for i in {1..90}; do
-        if docker exec business-doris-fe mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ Doris 就绪${NC}"
+    DORIS_READY=false
+    for i in {1..180}; do
+        if docker exec business-doris-fe bash /addp/doris/init.sh --health >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Doris FE/BE 就绪，BE 使用 host.docker.internal${NC}"
+            DORIS_READY=true
             break
         fi
         sleep 1
     done
+    if [ "$DORIS_READY" != true ]; then
+        echo -e "${RED}✗ Doris FE/BE 未就绪；请检查 Backend 地址与 Docker 日志${NC}" >&2
+        exit 1
+    fi
 fi
 
 if [ "$ENABLE_SPARK" = true ]; then
@@ -1187,6 +1193,7 @@ fi
 if [ "$ENABLE_DORIS" = true ]; then
     echo -e "Doris FE (MySQL): localhost:${DORIS_FE_PORT}"
     echo -e "Doris FE (HTTP): http://localhost:${DORIS_FE_HTTP_PORT}"
+    echo -e "Doris BE: host.docker.internal (HTTP 8040, heartbeat 9050, RPC 9060, brpc 8060)"
 fi
 if [ "$ENABLE_SPARK" = true ]; then
     echo -e "Spark Master: spark://localhost:${SPARK_MASTER_PORT}"

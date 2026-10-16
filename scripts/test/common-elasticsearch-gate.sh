@@ -29,8 +29,9 @@ trap 'exit 143' TERM
 python3 - "$ROOT_DIR" "$WORK_DIR" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1] + '/engines/spark-workflow')
-from spark_dependencies import ensure_elasticsearch_jar
+from spark_dependencies import ensure_elasticsearch_jar, ensure_doris_jar
 ensure_elasticsearch_jar(sys.argv[2])
+ensure_doris_jar(sys.argv[2])
 PY
 compose up -d
 port=$(compose port elasticsearch 9200)

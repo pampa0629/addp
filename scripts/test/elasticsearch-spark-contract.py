@@ -27,6 +27,7 @@ try:
     assert spark.sparkContext.master == 'spark://spark-master:7077'
     distributed_jars = spark.sparkContext._jsc.sc().listJars().toString()
     for name in ('elasticsearch-spark-30_2.12-9.5.4.jar',
+                 'spark-doris-connector-spark-3.5-25.2.0.jar',
                  'sedona-spark-shaded-3.5_2.12-1.5.3.jar', 'geotools-wrapper-1.5.3-28.2.jar',
                  'postgresql-42.7.4.jar', 'mysql-connector-j-8.4.0.jar'):
         assert name in distributed_jars, (name, distributed_jars)

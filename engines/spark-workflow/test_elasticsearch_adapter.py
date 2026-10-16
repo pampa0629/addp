@@ -87,6 +87,22 @@ class ElasticsearchAdapterTest(unittest.TestCase):
 
 
 class PinnedConnectorTest(unittest.TestCase):
+    def test_prefetched_connectors_need_no_writes_or_downloads_at_submit(self):
+        import hashlib
+        data = b'owned-prefetched-jar'
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch('spark_dependencies.ES_JAR_SHA256', hashlib.sha256(data).hexdigest()), \
+                patch('spark_dependencies.DORIS_JAR_SHA256', hashlib.sha256(data).hexdigest()), \
+                patch('spark_dependencies.urlopen', side_effect=lambda *args, **kwargs: io.BytesIO(data)):
+            ensure_elasticsearch_jar(temporary)
+            ensure_doris_jar(temporary)
+            builder = MagicMock()
+            builder.config.return_value = builder
+            with patch.dict('os.environ', {'PYSPARK_SUBMIT_ARGS': 'pyspark-shell'}), \
+                    patch('spark_dependencies.urlopen', side_effect=AssertionError('read-only fixture must not download')), \
+                    patch('spark_dependencies.tempfile.NamedTemporaryFile', side_effect=AssertionError('read-only fixture must not write')):
+                self.assertIs(configure_spark_dependencies(builder, temporary), builder)
+
     def test_dependencies_merge_at_submit_without_overwriting_resolved_jars(self):
         import shlex
         for inherited in (

@@ -464,6 +464,8 @@ KingbaseES T5、T2 与 T4 workflow 的 `addp-kingbase` GitHub Environment 只配
 
 Doris Engine 的 `host`、`port`、`database` 继续标识 MySQL 协议连接；`http_port` 独立描述同一 FE 的 HTTP 部署端口，表单默认 8030，不参与永久实例身份，也不由 JDBC 端口推断。Spark 保存使用该端口与官方连接器，已有登记缺少该事实时须显式补齐实际映射。Driver/Executor 同时需要到 FE 和导入 BE 的真实网络连通性；不把容器内部 HTTP 端口当作宿主映射。
 
+Business 的本机 Doris 只发布回环端口：FE 的 MySQL/HTTP 端口由 `DORIS_FE_PORT`/`DORIS_FE_HTTP_PORT` 配置；BE 的 HTTP `8040`、heartbeat `9050`、RPC `9060`、brpc `8060` 固定内外一致。BE 公布 `host.docker.internal`，不检测笔记本局域网 IP。宿主机回环映射与 Docker Desktop 宿主网关解析是启动前提；已有单 BE 原地更新 HOSTNAME，身份与数据保持不变。`business/doris/init.sh` 是唯一初始化及健康检查入口，复用官方 all-in-one 启停，不再提供独立 BE 容器初始化路线。重启仍由用户执行 `bash business/scripts/restart.sh -doris`。
+
 Business 达梦 DM8 ARM64 不进入通用 `.env` 或 `scripts/start.sh -all`。`business/scripts/start.sh -dameng` 必须独立调用，仅从当前 shell 接受可选 `DAMENG_PORT` 和仓库外临时介质缓存目录 `ADDP_DAMENG_MEDIA_CACHE`；数据库测试账号与初始化密码固定在 disposable 本地镜像路线中，不得用于生产。脚本只接受 Docker Server `linux/arm64`，校验官方 ZIP 与内层 ISO SHA-256 后构建 `addp/dameng:dm8-20260708-arm64`，并用无卷 `business-dameng` 暴露 `127.0.0.1:${DAMENG_PORT:-5236}`。System 使用插件 ConnectionSpec 保存 `engine_type=dameng` 的 `host`、`port`、`user`、`password`；官方驱动仅由专用脚本从同版本镜像提取并校验后注入 Linux ARM64 Docker 执行进程，不进入 checkout、Module cache 或 Artifact。
 
 ```bash

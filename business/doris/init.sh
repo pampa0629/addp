@@ -1,66 +1,74 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# Single-FE/BE Docker Desktop entrypoint. Preserve the existing Backend identity.
+set -eo pipefail
 
-echo "=== Doris 集群自动初始化 ==="
+doris_sql() {
+    mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 --batch "$@"
+}
 
-# 容器名和连接参数，支持环境变量自定义
-DORIS_FE_HOST=${DORIS_FE_HOST:-business-doris-fe}
-DORIS_FE_PORT=${DORIS_FE_PORT:-9030}
-DORIS_BE_HOST=${DORIS_BE_HOST:-business-doris-be}
-DORIS_BE_PORT=${DORIS_BE_PORT:-9050}
+doris_backend_facts() {
+    doris_sql -e 'SHOW BACKENDS;' | awk -F '\t' '
+        NR == 1 {
+            for (i=1; i<=NF; i++) index_by_name[$i]=i
+            if (!index_by_name["BackendId"] || !index_by_name["Host"] ||
+                !index_by_name["HeartbeatPort"] || !index_by_name["Alive"]) exit 1
+            next
+        }
+        { print $index_by_name["BackendId"] "\t" $index_by_name["Host"] "\t" \
+                $index_by_name["HeartbeatPort"] "\t" $index_by_name["Alive"] }
+        END { if (NR == 0) exit 1 }
+    '
+}
 
-# 等待 FE 完全启动
-echo "等待 Doris FE 就绪 (主机: $DORIS_FE_HOST:$DORIS_FE_PORT)..."
-MAX_RETRIES=30
-RETRY_COUNT=0
+doris_health() (
+    set -euo pipefail
+    local facts
+    doris_sql -e 'SHOW FRONTENDS;' >/dev/null
+    facts=$(doris_backend_facts)
+    [[ "$facts" =~ ^[0-9]+$'\t'host\.docker\.internal$'\t'9050$'\t'true$ ]]
+)
 
-until mysql -h "$DORIS_FE_HOST" -P "$DORIS_FE_PORT" -uroot --connect-timeout=5 -e "SHOW FRONTENDS;" 2>/dev/null; do
-  RETRY_COUNT=$((RETRY_COUNT + 1))
-  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-    echo "❌ FE 启动超时，请检查日志"
-    exit 1
-  fi
-  echo "FE 尚未就绪 ($RETRY_COUNT/$MAX_RETRIES)，等待 5 秒..."
-  sleep 5
-done
+doris_register_backend() (
+    set -euo pipefail
+    local facts='' ready=false backend_id host heartbeat alive after_id after_host after_port after_alive
+    for _ in {1..300}; do
+        if facts=$(doris_backend_facts); then ready=true; break; fi
+        sleep 1
+    done
+    [ "$ready" = true ] || { echo 'Doris FE did not become queryable' >&2; exit 1; }
+    if [ -z "$facts" ]; then
+        doris_sql -e 'ALTER SYSTEM ADD BACKEND "host.docker.internal:9050";'
+    else
+        [[ "$facts" != *$'\n'* ]] || { echo 'Expected exactly one Business Doris Backend' >&2; exit 1; }
+        IFS=$'\t' read -r backend_id host heartbeat alive <<< "$facts"
+        [[ "$backend_id" =~ ^[0-9]+$ && "$heartbeat" = 9050 ]] || exit 1
+        case "$host" in
+            127.0.0.1)
+                doris_sql -e 'ALTER SYSTEM MODIFY BACKEND "127.0.0.1:9050" HOSTNAME "host.docker.internal";'
+                ;;
+            host.docker.internal) ;;
+            *) echo "Unexpected Business Doris Backend host: $host" >&2; exit 1 ;;
+        esac
+    fi
+    facts=$(doris_backend_facts)
+    [[ "$facts" != *$'\n'* ]] || exit 1
+    IFS=$'\t' read -r after_id after_host after_port after_alive <<< "$facts"
+    [[ "$after_id" =~ ^[0-9]+$ && "$after_host" = host.docker.internal && "$after_port" = 9050 ]] || exit 1
+    [ -z "${backend_id:-}" ] || [ "$after_id" = "$backend_id" ] || {
+        echo 'Business Doris Backend identity changed unexpectedly' >&2; exit 1;
+    }
+    echo "Doris Backend $after_id advertises host.docker.internal:9050"
+)
 
-echo "✅ Doris FE 已就绪"
-
-# 等待 BE 容器启动 (给 BE 一些启动时间)
-echo "等待 BE 容器启动..."
-sleep 10
-
-# 检查 BE 是否已经添加到集群
-EXISTING_BE=$(mysql -h "$DORIS_FE_HOST" -P "$DORIS_FE_PORT" -uroot -e "SHOW BACKENDS;" 2>/dev/null | grep -c "$DORIS_BE_HOST" || echo "0")
-
-if [ "$EXISTING_BE" -gt 0 ]; then
-  echo "✅ BE 节点已存在于集群中，跳过添加"
-else
-  echo "添加 BE 节点到集群..."
-  mysql -h "$DORIS_FE_HOST" -P "$DORIS_FE_PORT" -uroot <<EOF
-ALTER SYSTEM ADD BACKEND "$DORIS_BE_HOST:$DORIS_BE_PORT";
-EOF
-  echo "✅ BE 节点添加成功"
+if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
+    if [ "${1:-}" = --health ]; then doris_health; exit $?; fi
+    getent ahostsv4 host.docker.internal >/dev/null || {
+        echo 'Docker Desktop host.docker.internal resolution is required' >&2; exit 1;
+    }
+    sed -i '/^[[:space:]]*enable_fqdn_mode[[:space:]]*=/d; /^[[:space:]]*force_olap_table_replication_num[[:space:]]*=/d' /opt/apache-doris/fe/conf/fe.conf
+    printf '\nenable_fqdn_mode = true\nforce_olap_table_replication_num = 1\n' >> /opt/apache-doris/fe/conf/fe.conf
+    # Source the official lifecycle once; replace only its loopback registration.
+    source /usr/local/bin/entry_point.sh
+    register_be_to_fe() { doris_register_backend; }
+    _main "$@"
 fi
-
-# 验证 BE 状态
-echo "验证 BE 状态 (可能需要几秒才会显示为 Alive)..."
-mysql -h "$DORIS_FE_HOST" -P "$DORIS_FE_PORT" -uroot -e "SHOW BACKENDS\G"
-
-# 创建测试数据库
-echo "创建测试数据库..."
-mysql -h "$DORIS_FE_HOST" -P "$DORIS_FE_PORT" -uroot <<EOF
-CREATE DATABASE IF NOT EXISTS test_db
-COMMENT '测试数据库（用于验证 ADDP 集成）';
-EOF
-
-echo "✅ Doris 集群初始化完成！"
-echo ""
-echo "连接信息:"
-echo "  Host: $DORIS_FE_HOST"
-echo "  Port: $DORIS_FE_PORT"
-echo "  User: root"
-echo "  Password: (空)"
-echo ""
-echo "验证集群状态:"
-echo "  docker exec business-doris-fe mysql -h$DORIS_FE_HOST -P$DORIS_FE_PORT -uroot -e 'SHOW BACKENDS;'"

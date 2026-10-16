@@ -319,6 +319,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@python3 -m unittest scripts/test/dameng-official-media-release-gate_test.py
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py scripts/test/common-oracle-decimal-gate_test.py
 	@python3 -m unittest scripts/test/common-spark-table-gate_test.py
+	@python3 -m unittest business/doris/init_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-business-redis

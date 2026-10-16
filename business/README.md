@@ -17,11 +17,13 @@
 - **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；当前只在具备 NUMA 的 Linux x86_64 主机使用并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
 - **KingbaseES V9R1C10**：固定 `V009R001C010B0004` 官方 Docker tar 与 SHA-256、使用 owner 正规 License 的 PG 模式国产关系数据库测试源，端口 5436；只通过 owner-managed Linux x86_64 disposable 生命周期启动。
 - **达梦 DM8 ARM64**：固定鲲鹏 920/麒麟 10 SP1 官方安装 ZIP、服务端/驱动 SHA-256，本机只构建不可推送的 disposable 镜像，端口 5236；以独立 `engine_type=dameng` 登记，真实 Provider 只在 Linux ARM64 Docker 中执行。
-- **Apache Doris**：实时分析数据库，端口 9030, 8030
+- **Apache Doris**：实时分析数据库，FE 端口 9030/8030，BE 端口 8040/9050/9060/8060，仅绑定回环
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
 
 Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓扑，FE 因此固定使用 `force_olap_table_replication_num=1`。生产 Doris 集群不复用该单节点配置，应按实际 BE 数量和容灾策略设置副本数。
+
+Doris 的 BE 公布稳定主机名 `host.docker.internal`，宿主机须配置 `127.0.0.1 host.docker.internal`，容器使用 Docker Desktop 宿主网关解析；笔记本换网不修改引擎地址。FE 的 MySQL/HTTP 端口继续由 `DORIS_FE_PORT`/`DORIS_FE_HTTP_PORT` 指定，BE 四个端口固定内外一致，不能自动改选。`doris/init.sh` 复用官方启停入口，已有单 BE 通过 `MODIFY BACKEND ... HOSTNAME` 原地迁移，保留 Backend ID、已有表与数据卷；不使用 DROP/ADD 重建已有节点。健康检查必须确认 FE 可查询、唯一 BE 的地址正确且 Alive。应用部署调整由用户执行 `bash business/scripts/restart.sh -doris`；普通 `start` 不接管已运行的旧配置容器。
 
 **关键特性**：
 - ✅ 独立部署，无依赖
