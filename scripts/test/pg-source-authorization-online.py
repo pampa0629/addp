@@ -128,10 +128,13 @@ def preview(reader, target, allowed, expected=None, *, columns=('person_id',), v
         require(data.get('total') == expected, 'PG source row count changed')
 
 
-class MetaOutage:
-    """Fault only the Meta dependency in the existing disposable Hosted deployment."""
+class DependencyOutage:
+    """Fault one declared PG dependency in the existing disposable Hosted deployment."""
 
-    def __init__(self):
+    def __init__(self, module):
+        require(module in {'meta', 'catalog'}, 'PG outage only permits Meta or Catalog')
+        self.module = module
+        self.port = {'meta': 8082, 'catalog': 8192}[module]
         self.repository = Path(__file__).resolve().parents[2]
         required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
                     'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online',
@@ -140,10 +143,10 @@ class MetaOutage:
                     'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000'}
         require(all(os.environ.get(key) == value for key, value in required.items()) and sys.platform == 'linux'
                 and os.uname().machine == 'x86_64' and not (self.repository / '.env').exists(),
-                'Meta outage requires the isolated Hosted PG deployment')
+                'PG dependency outage requires the isolated Hosted deployment')
         self.secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
         require(self.secret.is_absolute() and self.secret.is_dir() and not self.secret.resolve().is_relative_to(self.repository),
-                'Meta outage requires an external Hosted Secret directory')
+                'PG dependency outage requires an external Hosted Secret directory')
         self.secret = self.secret.resolve()
         self.commit = PREFLIGHT.git(self.repository, 'rev-parse', 'HEAD')
         self.stopped = False
@@ -161,18 +164,18 @@ class MetaOutage:
         return {key: payload[key] for key in fields}
 
     def run(self, operation):
-        require(operation in {'stop', 'start'}, 'Meta outage permits only standard stop/start')
+        require(operation in {'stop', 'start'}, 'PG outage permits only standard stop/start')
         environment = {key: value for key, value in os.environ.items() if not key.startswith((
             'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_FIXTURE_', 'ADDP_ONLINE_ADMIN_USER_'))}
         environment['SKIP_MODTIDY'] = '1'
-        with (self.secret / 'pg-meta-lifecycle.log').open('a') as log:
+        with (self.secret / f'pg-{self.module}-lifecycle.log').open('a') as log:
             os.chmod(log.name, 0o600)
             try:
-                result = subprocess.run(['bash', f'scripts/dev/{operation}.sh', '-meta'], cwd=self.repository,
+                result = subprocess.run(['bash', f'scripts/dev/{operation}.sh', '-' + self.module], cwd=self.repository,
                     env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=120, check=False)
             except subprocess.TimeoutExpired as error:
-                raise SuiteError('Meta fault lifecycle exceeded its bounded deadline') from error
-        require(result.returncode == 0, 'Meta fault lifecycle failed')
+                raise SuiteError('PG dependency lifecycle exceeded its bounded deadline') from error
+        require(result.returncode == 0, 'PG dependency lifecycle failed')
 
     def __enter__(self):
         self.before = {module: self.snapshot(module) for module in ('meta', 'system', 'gateway', 'manager', 'catalog')}
@@ -180,8 +183,8 @@ class MetaOutage:
         try:
             self.run('stop')
             try:
-                with socket.create_connection(('127.0.0.1', 8082), timeout=3):
-                    raise SuiteError('Meta Backend still accepts connections')
+                with socket.create_connection(('127.0.0.1', self.port), timeout=3):
+                    raise SuiteError('PG dependency Backend still accepts connections')
             except ConnectionRefusedError:
                 pass
             return self
@@ -194,13 +197,13 @@ class MetaOutage:
             self.run('start')
             self.stopped = False
             self.after = {module: self.snapshot(module) for module in self.before}
-            before, after = self.before['meta'], self.after['meta']
+            before, after = self.before[self.module], self.after[self.module]
             require(before['instance_id'] != after['instance_id']
                     and datetime.fromisoformat(after['started_at']) > datetime.fromisoformat(before['started_at'])
                     and all(before[key] == after[key] for key in ('build_id', 'git_commit', 'source_fingerprint')),
-                    'Meta recovery did not prove a new process with identical build inputs')
-            require(all(self.before[module] == self.after[module] for module in ('system', 'gateway', 'manager', 'catalog')),
-                    'Meta outage changed another running owner')
+                    'PG dependency recovery did not prove a new process with identical build inputs')
+            require(all(self.before[module] == self.after[module] for module in self.before if module != self.module),
+                    'PG dependency outage changed another running owner')
 
 
 class BrowserObservation:
@@ -479,13 +482,8 @@ class Lifecycle:
                 'same-parameter fulfillment replay changed issuance history')
         read(True)
         preview(self.outsider, target, False)
-        report['phase'] = 'catalog_deny_release_and_withdrawal'
-        deny = self.deny(facts, catalog_path=path)
-        read(False)
-        self.release(deny)
-        read(True)
-        self.revoke(request_id)
-        read(False)
+        self.catalog_outage_flow(report, path=path, facts=facts, route=route, command=command,
+                                 history=history, read=read, target=target)
         self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
         read(False)
         revoked = self.listing(history=True, state='revoked', catalog_path=path)
@@ -497,6 +495,67 @@ class Lifecycle:
         report['checks'].extend(['catalog_confirmation_alone_denied', 'catalog_automatic_grant_bound_to_dataitem',
             'catalog_grant_actual_preview_readable', 'catalog_replay_preserves_issuance',
             'catalog_grant_deny_release_and_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
+
+    def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target):
+        report['phase'] = 'catalog_outage_existing_grant'
+        token = self.reader.token
+        outsider = self.outsider.request('GET', '/api/v1/system/auth/context', (200,)).payload['principal']['id']
+        self.recipients.add(('user', outsider))
+        blocked_request, direct_request = str(uuid.uuid4()), str(uuid.uuid4())
+        self.grants.extend((blocked_request, direct_request))  # Own even an unexpected issuance before sending.
+        evidence = report['catalog_outage'] = {'unaccepted_request_id': blocked_request,
+                                             'direct_request_id': direct_request}
+        with DependencyOutage('catalog') as outage:
+            read(True)
+            require(self.listing(history=True, state='active', catalog_path=path) == history,
+                    'Catalog outage changed the existing business Grant')
+            report['phase'] = 'catalog_outage_new_fulfillment_blocked'
+            unavailable = self.operator.request('POST', route + '/sharing_fulfillments', (502, 503),
+                dict(command, request_id=blocked_request))
+            require(set(unavailable.payload) == {'error'} and bool(unavailable.payload['error']),
+                    'offline business request did not return the Gateway dependency error')
+            # Use an ungranted recipient so a duplicate-relation conflict cannot mask the approval check.
+            direct = self.operator.request('POST', self.base + '/access_grants', (409,), {
+                'request_id': direct_request, 'catalog_path': path, 'item_fingerprint': facts['item_fingerprint'],
+                'expected_boundary_hash': facts['boundary_hash'], 'requirement_version': '1',
+                'initialize_approval': False, 'recipient_type': 'user', 'recipient_id': outsider,
+                'action': 'read', 'expiry_mode': 'at_time',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=3)).isoformat(),
+                'reason': 'Disposable PG no implicit Catalog approval fallback'}).payload
+            require(set(direct) == {'error', 'error_code'} and bool(direct['error'])
+                    and direct['error_code'] == 'engine_access_grant_approval_changed',
+                    'direct approval bypassed or failed to check the business approval requirement')
+            requirement = self.operator.request('POST', self.base + '/access_handling_requirement', (200,),
+                {key: path[key] for key in ('version', 'segments')}).payload
+            require(requirement.get('mode') == 'catalog' and requirement.get('requirement_version') == '1',
+                    'Catalog outage implicitly changed the approval requirement')
+            require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)['total'] == 0
+                    and self.listing(history=True, state='active', catalog_path=path) == history,
+                    'offline request silently issued a new Grant')
+            preview(self.outsider, target, False)
+            report['phase'] = 'catalog_outage_deny_release_and_withdrawal'
+            deny = self.deny(facts, catalog_path=path)
+            read(False)
+            self.release(deny)
+            read(True)
+            self.revoke(command['request_id'])
+            read(False)
+        report['phase'] = 'catalog_recovery_preserves_withdrawal'
+        for recipient in (self.recipient, outsider):
+            require(self.listing(history=True, state='active', recipient_id=recipient, catalog_path=path)['total'] == 0,
+                    'Catalog recovery created or restored an active Grant')
+            all_history = self.listing(history=True, recipient_id=recipient, catalog_path=path)
+            require(not any(row.get('request_id') in {blocked_request, direct_request} for row in all_history['data']),
+                    'a rejected offline command left a source Grant history')
+        absent = self.operator.request('GET', route + '/sharing_fulfillments/' + blocked_request, (404,)).payload
+        require(bool(absent.get('error')) and not any(key in absent for key in ('state', 'granted_at')),
+                'offline new request unexpectedly became a Catalog fulfillment')
+        require(self.reader.token == token, 'Catalog outage changed the consumer credential')
+        evidence.update(unavailable_status=unavailable.status, direct_error_code=direct['error_code'],
+                        same_credential=True, before=outage.before, after=outage.after)
+        report['checks'].extend(['existing_grant_readable_without_catalog', 'catalog_offline_new_fulfillment_unavailable',
+            'catalog_offline_no_direct_approval_fallback', 'catalog_offline_deny_release_withdrawal',
+            'catalog_recovery_preserves_original_rules'])
 
     def inspect_sources(self, facts, sources, denies, reason='grant'):
         current = self.listing()
@@ -668,7 +727,7 @@ class Lifecycle:
         grant, _ = self.grant(facts)
         evidence = report['meta_recovery'] = {'grant_id': grant}
         preview(self.reader, target, True, 2)
-        with MetaOutage() as outage:
+        with DependencyOutage('meta') as outage:
             evidence['before'] = outage.before
             report['phase'] = 'meta_outage_facts_probe'
             response = self.operator.request('GET', self.base + '/data-items/' + facts['item_fingerprint']

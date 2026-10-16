@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 ONLINE = importlib.import_module('scripts.test.pg-source-authorization-online')
 REAL_BASIC_SCAN = ONLINE.basic_scan
 REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
-REAL_META_OUTAGE = ONLINE.MetaOutage
+REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
 
 
 class Server:
@@ -22,6 +22,7 @@ class Server:
         self.memberships = {'department': '41', 'project_group': '51'}
         self.version, self.current_reader_token = 1, 'reader-private-token'
         self.meta_down = False
+        self.catalog_down = False
 
     def context(self, kind):
         reader = kind.startswith('reader')
@@ -82,6 +83,8 @@ class Server:
                         result = dict(row, status='ended', version=2, ended_at='2026-10-16T04:00:00Z')
                         if server.fault == 'wrong_membership_closed':
                             result['principal_id'] = '999'
+                elif server.catalog_down and server.fault == 'catalog_blocks_rule_writes' and method == 'POST':
+                    status, result = 503, {'error': 'wrong rule dependency'}
                 elif path.endswith('/access_grants') and method == 'POST':
                     if any(row['revocation'] is None and key not in server.expired_grants
                            and (row['recipient_type'], row['recipient_id']) == (body['recipient_type'], body['recipient_id'])
@@ -121,7 +124,8 @@ class Server:
                         matches = (row.get('recipient_type', 'user'), row.get('recipient_id', '33')) == recipient
                         if server.fault == 'history_expands_organizations' and history and recipient == ('user', '33'):
                             matches = True
-                        if row['catalog_path'] == json.loads(query['catalog_path'][0]) and current == (state or 'active') and (matches or (account and server.inherited(row))):
+                        state_matches = (not state or current == state) if history else current == 'active'
+                        if row['catalog_path'] == json.loads(query['catalog_path'][0]) and state_matches and (matches or (account and server.inherited(row))):
                             rows.append(dict(row))
                     if account:
                         sources = [{key: row[key] for key in ('recipient_type', 'recipient_id', 'request_id', 'expiry_mode', 'expires_at')}
@@ -173,6 +177,8 @@ class Server:
                             status = 404
                         elif server.fault == 'outage_leaks':
                             result['data'] = {'rows': []}
+                    if server.catalog_down and server.fault == 'catalog_blocks_existing_read':
+                        status, result = 503, {'error': 'wrong read dependency'}
                 else:
                     raise AssertionError('unexpected request ' + path)
                 if status not in expected:
@@ -192,7 +198,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         patch.object(ONLINE.time, 'sleep').start()
         self.browser = patch.object(ONLINE, 'BrowserObservation').start().return_value.__enter__.return_value
         self.browser.finish.return_value = {'result': 'passed'}
-        self.outage = patch.object(ONLINE, 'MetaOutage').start().return_value
+        self.outage = patch.object(ONLINE, 'DependencyOutage').start().return_value
         self.outage.before, self.outage.after = {}, {}
         def down():
             self.server.meta_down = True
@@ -519,6 +525,17 @@ class PGCatalogApprovalTest(unittest.TestCase):
         patch.object(ONLINE.time, 'sleep').start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
         patch.object(ONLINE, 'item', return_value={'id': 11, 'fingerprint': 'c' * 64}).start()
+        self.outage = patch.object(ONLINE, 'DependencyOutage').start().return_value
+        self.outage.before, self.outage.after = {}, {}
+        def down():
+            self.server.catalog_down = True
+            return self.outage
+        def restored(*_):
+            self.server.catalog_down = False
+            if self.server.fault == 'catalog_recovery_restores_grant':
+                self.server.grants[self.request_id]['revocation'] = None
+        self.outage.__enter__.side_effect = down
+        self.outage.__exit__.side_effect = restored
         self.addCleanup(patch.stopall)
 
     def reset(self):
@@ -537,12 +554,30 @@ class PGCatalogApprovalTest(unittest.TestCase):
         original = client.request
         def request(method, url, expected, body=None, **kwargs):
             path = urlsplit(url).path
-            if '/catalog/' not in path and not path.endswith('/access_approval_requirements'):
+            direct = path.endswith('/access_grants') and method == 'POST' and self.server.catalog_down
+            if ('/catalog/' not in path and not path.endswith(('/access_approval_requirements', '/access_handling_requirement'))
+                    and not direct):
                 return original(method, url, expected, body, **kwargs)
             self.server.calls.append((kind, method, path, body))
             status, result = 200, {}
             fault = self.server.fault
-            if path.endswith('/access_approval_requirements'):
+            if direct:
+                status, result = 409, {'error': 'wrong approval mode', 'error_code': 'engine_access_grant_approval_changed'}
+                if fault == 'direct_fallback':
+                    result, status = dict(body, revocation=None), 201
+                    self.server.grants[body['request_id']] = result
+                elif fault == 'duplicate_masks_approval':
+                    result['error_code'] = 'engine_access_grant_relation_exists'
+            elif path.endswith('/access_handling_requirement'):
+                result = {'mode': 'independent' if fault == 'implicit_mode_change' else 'catalog', 'requirement_version': '1'}
+            elif '/catalog/' in path and self.server.catalog_down:
+                status, result = 503, {'error': 'module unavailable'}
+                if fault == 'offline_fulfillment_issued':
+                    self.issue(body['request_id'])
+                    status, result = 200, {'state': 'accepted'}
+                elif fault == 'outage_wrong_status':
+                    status = 404
+            elif path.endswith('/access_approval_requirements'):
                 result, status = dict(body, version='1'), 201
             elif path == '/api/v1/catalog/entries':
                 result = {'data': [] if fault == 'missing_catalog_source' else [dict(self.entry)], 'total': 1}
@@ -572,10 +607,13 @@ class PGCatalogApprovalTest(unittest.TestCase):
                         grant['revocation'] = None
                 result = {'request_id': self.request_id, 'state': 'accepted'}
             elif '/sharing_fulfillments/' in path:
-                grant = self.server.grants[path.rsplit('/', 1)[-1]]
-                result = {'request_id': grant['request_id'], 'state': 'accepted', 'granted_at': grant['granted_at'],
-                          'decision_id': self.decision['decision_id'], 'requirement_version': '1',
-                          'recipient_id': '33', 'action': 'read'}
+                grant = self.server.grants.get(path.rsplit('/', 1)[-1])
+                if grant is None:
+                    result, status = {'error': 'not found'}, 404
+                else:
+                    result = {'request_id': grant['request_id'], 'state': 'accepted', 'granted_at': grant['granted_at'],
+                              'decision_id': self.decision['decision_id'], 'requirement_version': '1',
+                              'recipient_id': '33', 'action': 'read'}
             elif method == 'PUT':
                 self.entry.update(body, version='2')
                 result = dict(self.entry)
@@ -606,17 +644,23 @@ class PGCatalogApprovalTest(unittest.TestCase):
 
     def test_business_approval_uses_formal_human_commands_and_system_history_not_runtime_credentials(self):
         self.run_flow()
-        self.assertEqual(len(self.report['checks']), 6)
+        self.assertEqual(len(self.report['checks']), 11)
         self.assertEqual(self.report['catalog_approval']['rows'], 4)
         self.assertTrue(self.report['catalog_approval']['revoked_replay_denied'])
         decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
         requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
         self.assertEqual([call[0] for call in decisions], ['business'])
-        self.assertEqual([call[0] for call in requests], ['operator'] * 3)
+        self.assertEqual([call[0] for call in requests], ['operator'] * 4)
         self.assertEqual(requests[0][3], requests[-1][3])
+        self.assertNotEqual(requests[0][3]['request_id'], requests[-2][3]['request_id'])
         self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id', 'requirement_version'})
-        self.assertFalse(any('/runtime/' in call[2] or call[2].endswith('/access_grants') and call[1] == 'POST'
-                             for call in self.server.calls))
+        self.assertFalse(any('/runtime/' in call[2] for call in self.server.calls))
+        direct = [call for call in self.server.calls if call[2].endswith('/access_grants') and call[1] == 'POST']
+        self.assertEqual(len(direct), 1)
+        self.assertEqual(direct[0][3]['recipient_id'], '34')
+        self.assertFalse(direct[0][3]['initialize_approval'])
+        self.assertTrue(self.report['catalog_outage']['same_credential'])
+        self.assertFalse(self.server.catalog_down)
         self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
         self.lifecycle.cleanup()
         self.assertFalse(any(self.server.denies.values()))
@@ -631,7 +675,21 @@ class PGCatalogApprovalTest(unittest.TestCase):
                 self.server.fault = fault
                 with self.assertRaises(ONLINE.SuiteError):
                     self.run_flow()
-                self.assertNotEqual(len(self.report['checks']), 6)
+                self.assertNotEqual(len(self.report['checks']), 11)
+
+    def test_catalog_outage_cannot_mask_read_dependency_fallback_mode_change_or_recovery_regrant(self):
+        for fault in ('catalog_blocks_existing_read', 'direct_fallback', 'duplicate_masks_approval',
+                      'implicit_mode_change', 'offline_fulfillment_issued', 'outage_wrong_status',
+                      'catalog_recovery_restores_grant', 'catalog_blocks_rule_writes'):
+            with self.subTest(fault=fault):
+                self.reset()
+                self.server.fault = fault
+                with self.assertRaises(ONLINE.SuiteError):
+                    self.run_flow()
+                self.assertFalse(self.server.catalog_down)
+                self.lifecycle.cleanup()
+                self.assertFalse(any(self.server.denies.values()))
+                self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
 
     def test_unknown_issuance_outcome_is_owned_before_send_and_cleanup_checks_both_targets(self):
         self.server.fault = 'lost_issuance_response'
@@ -646,7 +704,9 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.assertEqual(len(self.lifecycle.paths), 2)
 
 
-class PGMetaOutageTest(unittest.TestCase):
+class PGDependencyOutageTest(unittest.TestCase):
+    module = 'meta'
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -667,18 +727,22 @@ class PGMetaOutageTest(unittest.TestCase):
         self.addCleanup(patch.stopall)
 
     def identity(self, module, recovered=False):
-        return {'instance_id': 'new' if recovered and module == 'meta' else 'original-' + module,
-                'started_at': '2026-10-16T01:01:00+00:00' if recovered and module == 'meta' else '2026-10-16T01:00:00+00:00',
+        return {'instance_id': 'new' if recovered and module == self.module else 'original-' + module,
+                'started_at': '2026-10-16T01:01:00+00:00' if recovered and module == self.module else '2026-10-16T01:00:00+00:00',
                 'build_id': module + '-build', 'git_commit': 'commit', 'source_fingerprint': module + '-source'}
 
     def test_unsafe_host_is_refused_before_lifecycle(self):
         with patch.dict(ONLINE.os.environ, {'GITHUB_ACTIONS': 'false'}), patch.object(ONLINE.subprocess, 'run') as run:
             with self.assertRaises(ONLINE.SuiteError):
-                REAL_META_OUTAGE()
+                REAL_DEPENDENCY_OUTAGE(self.module)
+            run.assert_not_called()
+        with patch.object(ONLINE.subprocess, 'run') as run:
+            with self.assertRaises(ONLINE.SuiteError):
+                REAL_DEPENDENCY_OUTAGE('system')
             run.assert_not_called()
 
     def test_health_uses_shared_client_and_the_actual_gateway_standalone_contract(self):
-        outage = REAL_META_OUTAGE()
+        outage = REAL_DEPENDENCY_OUTAGE(self.module)
         payload = {'module': 'meta', 'status': 'ready', 'role': 'backend', 'registration_state': 'registered',
             'instance_id': 'ca8c0683-5f9f-4d15-9c97-f00bb74ba05c', 'started_at': '2026-10-16T01:00:00+00:00',
             'built_at': '2026-10-16T00:00:00+00:00', 'build_id': 'build', 'git_commit': 'commit', 'source_fingerprint': 'sha256:source'}
@@ -696,7 +760,7 @@ class PGMetaOutageTest(unittest.TestCase):
                 outage.snapshot('gateway')
 
     def test_standard_stop_start_private_output_and_identity_verification(self):
-        outage = REAL_META_OUTAGE()
+        outage = REAL_DEPENDENCY_OUTAGE(self.module)
         snapshots = lambda module: self.identity(module, run.call_count == 2)
         with patch.object(outage, 'snapshot', side_effect=snapshots), \
              patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run, \
@@ -704,7 +768,9 @@ class PGMetaOutageTest(unittest.TestCase):
             with outage:
                 self.assertTrue(outage.stopped)
             self.assertEqual([call.args[0] for call in run.call_args_list], [
-                ['bash', 'scripts/dev/stop.sh', '-meta'], ['bash', 'scripts/dev/start.sh', '-meta']])
+                ['bash', 'scripts/dev/stop.sh', '-' + self.module], ['bash', 'scripts/dev/start.sh', '-' + self.module]])
+            self.assertEqual(ONLINE.socket.create_connection.call_args.args[0],
+                             ('127.0.0.1', 8082 if self.module == 'meta' else 8192))
             for call in run.call_args_list:
                 self.assertFalse(any(key.startswith(('ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_ADMIN_USER_',
                                                      'ADDP_ONLINE_FIXTURE_')) for key in call.kwargs['env']))
@@ -714,7 +780,7 @@ class PGMetaOutageTest(unittest.TestCase):
     def test_failure_and_live_listener_still_attempt_recovery(self):
         for cause in ('body', 'listener', 'stop', 'timeout'):
             with self.subTest(cause=cause):
-                outage = REAL_META_OUTAGE()
+                outage = REAL_DEPENDENCY_OUTAGE(self.module)
                 snapshots = lambda module: self.identity(module, run.call_count == 2)
                 failure = ONLINE.subprocess.TimeoutExpired('stop', 120) if cause == 'timeout' else SimpleNamespace(returncode=1)
                 with patch.object(outage, 'snapshot', side_effect=snapshots), \
@@ -729,10 +795,10 @@ class PGMetaOutageTest(unittest.TestCase):
     def test_recovery_rejects_noop_changed_build_or_another_owner_restart(self):
         for fault in ('noop', 'build', 'other_owner'):
             with self.subTest(fault=fault):
-                outage = REAL_META_OUTAGE()
+                outage = REAL_DEPENDENCY_OUTAGE(self.module)
                 def snapshot(module):
                     result = self.identity(module, run.call_count == 2 and fault != 'noop')
-                    if run.call_count == 2 and ((fault == 'build' and module == 'meta') or (fault == 'other_owner' and module == 'system')):
+                    if run.call_count == 2 and ((fault == 'build' and module == self.module) or (fault == 'other_owner' and module == 'system')):
                         result['build_id'] = 'changed'
                     return result
                 with patch.object(outage, 'snapshot', side_effect=snapshot), \
@@ -741,6 +807,10 @@ class PGMetaOutageTest(unittest.TestCase):
                     with self.assertRaises(ONLINE.SuiteError):
                         with outage:
                             pass
+
+
+class PGCatalogOutageTest(PGDependencyOutageTest):
+    module = 'catalog'
 
 
 class PGBrowserObservationTest(unittest.TestCase):

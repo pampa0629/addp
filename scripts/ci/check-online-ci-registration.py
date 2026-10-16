@@ -1978,10 +1978,11 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
             "state='expired'", "self.reader.token == reader_before", 'with BrowserObservation(', 'browser.finish()',
-            'pg-source-authorization.spec.js', 'self.meta_recovery_flow(', 'with MetaOutage()',
+            'pg-source-authorization.spec.js', 'self.meta_recovery_flow(', "with DependencyOutage('meta')",
             'deny_survives_meta_recovery_without_rescan', "'authorization_service_unavailable'",
             'lifecycle.catalog_flow(', 'catalog_confirmation_alone_denied',
-            'catalog_replay_does_not_restore_revoked_grant'),
+            'catalog_replay_does_not_restore_revoked_grant', "with DependencyOutage('catalog')",
+            'catalog_offline_no_direct_approval_fallback', 'catalog_recovery_preserves_original_rules'),
         "console/frontend/e2e/online/pg-source-authorization.spec.js": (
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value'),
