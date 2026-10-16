@@ -180,7 +180,17 @@ def assert_transfer_execution_projection(execution):
         return item
 
     fields(execution, "id execution_id task_id status start_time end_time records_read records_written bytes_read bytes_written error_details metadata trigger_type trigger_by", "Transfer execution")
-    fields(execution.get("error_details", {}), "category code error_code failed_targets_count", "Transfer failure")
+    failure = fields(execution.get("error_details", {}), "category code error_code failed_targets_count diagnostic", "Transfer failure")
+    if "diagnostic" in failure:
+        diagnostic = fields(failure["diagnostic"], "schema_version stage reason sql", "Transfer failure diagnostic")
+        if diagnostic.get("schema_version") != "addp.execution-failure/v2":
+            raise SuiteError("Transfer failure diagnostic uses an unknown contract")
+        if "sql" in diagnostic:
+            sql = fields(diagnostic["sql"], "object position", "Transfer failure SQL context")
+            if "object" in sql:
+                fields(sql["object"], "kind name", "Transfer failure SQL object")
+            if "position" in sql:
+                fields(sql["position"], "line column", "Transfer failure SQL position")
     metadata = fields(execution.get("metadata", {}), "metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state", "Transfer professional metadata")
     if "metadata_scan" in metadata:
         fields(metadata["metadata_scan"], "status attempt execution_id error_code", "Transfer metadata scan")

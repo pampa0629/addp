@@ -88,6 +88,33 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                 with self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
                     ONLINE.assert_transfer_execution_projection(changed)
 
+    def test_owner_failure_reports_actual_code_with_current_safe_diagnostic(self):
+        identifier = str(uuid.uuid4())
+        execution = {"execution_id": identifier, "status": "failed", "error_details": {
+            "category": "execution_failed", "code": "data_protection_required", "diagnostic": {
+                "schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "data_protection_required"}}}
+        client = Mock()
+        client.request.return_value.payload = execution
+        with self.assertRaisesRegex(ONLINE.SuiteError, "transfer execution failed: data_protection_required"):
+            ONLINE.wait_owner_execution(client, "transfer", identifier, 30)
+
+    def test_failure_diagnostic_rejects_private_nested_facts(self):
+        execution = {"error_details": {"category": "execution_failed", "code": "table_not_found", "diagnostic": {
+            "schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "table_not_found",
+            "sql": {"object": {"kind": "table", "name": "public.missing_table"}, "position": {"line": 1, "column": 15}}}}}
+        ONLINE.assert_transfer_execution_projection(execution)
+        for path, field in (((), "message"), (("diagnostic",), "runtime_error"),
+                            (("diagnostic", "sql"), "source_digest"),
+                            (("diagnostic", "sql", "object"), "sample"),
+                            (("diagnostic", "sql", "position"), "query")):
+            changed = copy.deepcopy(execution)
+            value = changed["error_details"]
+            for key in path:
+                value = value[key]
+            value[field] = "private"
+            with self.subTest(path=path, field=field), self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
+                ONLINE.assert_transfer_execution_projection(changed)
+
     def test_import_upload_contains_complete_two_point_shapefile_and_current_user(self):
         from email import policy
         from email.parser import BytesParser
