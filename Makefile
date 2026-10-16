@@ -541,6 +541,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-highgo-online-runner
 	@$(MAKE) test-pg-authorization-online-runner
 	@$(MAKE) test-transfer-continuous-online-runner
 	@$(MAKE) test-transfer-online-runner
@@ -931,4 +932,9 @@ test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物�
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@bash -n scripts/test/online-hosted-manager-gate.sh business/scripts/online-manager-nfs-fixture.sh
 	@python3 -m unittest scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-manager-nfs-fixture_test.py scripts/test/meta-content-boundary-online_test.py scripts/test/online-hosted-manager-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
+.PHONY: test-highgo-online-runner
+test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理夹具和 Hosted 隔离清理
+	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

@@ -123,6 +123,11 @@ SUITES: Mapping[str, Suite] = {
             ("service", "SERVICE_URL"),
         ),
     ),
+    "highgo-consumer-flow": Suite(
+        command=(sys.executable, "-m", "scripts.test.highgo-consumer-flow-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("transfer", "TRANSFER_URL")),
+    ),
     "opengauss-consumer-flow": Suite(
         command=(sys.executable, "scripts/test/relational-consumer-flow-online.py"),
         services=(

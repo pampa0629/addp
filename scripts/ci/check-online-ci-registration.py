@@ -1983,6 +1983,56 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError(f"PG authorization owner contract is incomplete: {relative}")
 
 
+def validate_highgo_profile(repository: Path, registered: set[str]) -> None:
+    if "highgo-consumer-flow" not in registered:
+        return
+    requirements = {
+        "scripts/test/online-hosted-highgo-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+            'business/scripts/online-highgo-consumer-fixture.py start',
+            'business/scripts/online-highgo-consumer-fixture.py verify',
+            'business/scripts/online-highgo-consumer-fixture.py stop',
+            '--suite highgo-consumer-flow', 'scripts/test/online-engine-registration.py',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+        ),
+        "business/scripts/online-highgo-consumer-fixture.py": (
+            "'GITHUB_ACTIONS': 'true'", "'ADDP_ONLINE_HOSTED': '1'",
+            "highgo_image()", "/addp/highgo/entrypoint.sh", "business/highgo/init/init.sql",
+            "'127.0.0.1::5866'", "'com.addp.online-fixture'", "'rm', '-fv'",
+            "'volume', 'inspect'", "source == target", "'SENTINEL'",
+        ),
+        "scripts/test/highgo-consumer-flow-online.py": (
+            'initialize_exact_record_read_grants', 'API.validate_user_identity',
+            "actual == PERMISSIONS", "'replace_sentinel', 'repeat_replace'",
+            'FLOW.assert_transfer_counts', 'SUPPORT.cleanup_tasks', 'run_browser(report)',
+        ),
+        "console/frontend/e2e/online/highgo-consumer-flow.spec.js": (
+            "frameLocator('iframe[data-testid=\"module-iframe\"]')",
+            'current.principalID', 'attrs.capabilities.constraints.constraints',
+            "['updated_at', 'id']", 'highgo-replace-console.png',
+        ),
+        "Makefile": ('test-highgo-online-runner:', '$(MAKE) test-highgo-online-runner'),
+        "scripts/test/highgo-consumer-flow-online_test.py": (),
+        "scripts/test/online-highgo-consumer-fixture_test.py": (),
+        "scripts/test/online-hosted-highgo-gate_test.py": (),
+    }
+    for relative, fragments in requirements.items():
+        path = repository / relative
+        if not path.is_file():
+            raise RegistrationError(f"highgo-consumer-flow requires {relative}")
+        text = path.read_text(encoding="utf-8")
+        for fragment in fragments:
+            if fragment not in text:
+                raise RegistrationError(f"highgo-consumer-flow {relative} is missing {fragment}")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    job = re.search(r"(?ms)^  highgo-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if not job or 'runs-on: ubuntu-24.04' not in job['body'] or "github.event_name == 'workflow_dispatch' && inputs.suite == 'highgo-consumer-flow'" not in job['body']:
+        raise RegistrationError("highgo-consumer-flow requires a manual Linux x86_64 Hosted job")
+    if "inputs.suite != 'highgo-consumer-flow'" not in workflow:
+        raise RegistrationError("highgo-consumer-flow must not also run on self-hosted")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1997,6 +2047,7 @@ def check_registration(repository: Path) -> None:
         raise RegistrationError(
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
+    validate_highgo_profile(repository, registered)
     validate_metric_engine_variant(repository, registered)
     validate_pg_authorization_profile(repository, registered)
     validate_public_origin_browser_profile(repository, registered)

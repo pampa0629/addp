@@ -1027,3 +1027,26 @@ func TestContinuousEventFixtureUsesMinimalTenantPermissions(t *testing.T) {
 		t.Fatalf("expanded continuous permissions=%v", permissions)
 	}
 }
+
+func TestHighGoFixtureUsesOrdinaryConsumerAndSeparateProvisioner(t *testing.T) {
+	permissions, err := suitePermissions("highgo-consumer-flow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := append(append([]string{}, redisConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create")
+	if len(permissions) != len(expected) {
+		t.Fatalf("unexpected HighGo permissions: %v", permissions)
+	}
+	for _, permission := range expected {
+		if !contains(permissions, permission) {
+			t.Fatalf("missing %s", permission)
+		}
+	}
+	if !needsEngineProvisioner("highgo-consumer-flow") {
+		t.Fatal("separate Engine provisioner required")
+	}
+	values := consumerEnvironment("highgo-consumer-flow", 2, "consumer-token", "private-password")
+	if len(values) != 4 || values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" {
+		t.Fatal("ordinary browser consumer required")
+	}
+}

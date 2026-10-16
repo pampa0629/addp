@@ -76,6 +76,8 @@ bash business/scripts/restart.sh -highgo
 
 2026-10-16 关系元数据运行复验：用户重启全部模块后，在 Console 对 Engine 29 执行连接检测成功，能力声明中的 `storage.facts.indexes`、`constraints`、`partitioning` 均为 `true`，覆盖所需 `storage.store.delete` 仍为 `true`。分别深度刷新 `customers`、`products`、`orders`、`order_items`，从 Manager 正式属性 JSON 取得的 11 个具名约束和 10 个索引与原生目录逐项一致，包括主键字段标记、订单 `updated_at, id` 索引顺序、明细 `order_id, product_id` 复合唯一键及三条外键的引用 schema／表／字段。四表预览分别为 3 行 6 字段、3 行 7 字段、3 行 7 字段、4 行 5 字段。本机样例均为普通表，不生成分区事实；RANGE／LIST／HASH 和子分区边界由已有原生 HighGo 标准测试入口覆盖，此处不计为分区表页面验收、隔离 Hosted T4 或完整 Transfer 模块门禁。
 
+瀚高自动化链路使用 `make test-online ONLINE_SUITE=highgo-consumer-flow`，仅由手动 Hosted profile `scripts/test/online-hosted-highgo-gate.sh` 编排。物理夹具复用本节固定镜像和初始化，创建独立 PG 源与瀚高目标；核验四表关系事实、Console 预览及两次覆盖同步，退出删除当次平台、业务容器和匿名卷。`make test-highgo-online-runner` 覆盖确定性反例、隔离清理和登记一致性。首次真实 Hosted 结果另行记录，不以脚本实现完成代替运行通过。
+
 ## 快速开始
 
 ### 默认启动（PostgreSQL + MinIO）
