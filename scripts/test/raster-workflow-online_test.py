@@ -266,6 +266,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([edge['target_item_id'] for edge in case['lineage']], [64, 64, 64])
         self.assertEqual(len(case['browser']), 3)
         self.assertEqual(case['physical']['band_valid_pixels'], [65534, 65533])
+        self.assertEqual([t['params']['source_crs'] for t in case['editor']['workflow_definition']['tasks'][:3]], ['', '', ''])
         self.assertEqual(case['editor']['source_task_id'], '501')
         self.assertTrue(case['editor']['deleted'])
         self.assertIn(('GET', '/api/v1/develop/task-definitions/501', None), self.client.calls)
@@ -278,7 +279,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                  'save_node_id', 'source_task_id', 'reloaded', 'deleted', 'page_requests'}
         evidence = {key: value for key, value in original.items() if key not in extra}
         for fault in ('run', 'user', 'runtime', 'task', 'parent', 'deleted', 'reload', 'update', 'replay',
-                      'boolean-count', 'source', 'missing-source', 'order', 'grid', 'operator', 'output',
+                      'boolean-count', 'source', 'source-crs', 'missing-source-default', 'missing-source', 'order', 'grid', 'operator', 'output',
                       'target-engine', 'target-path', 'private', 'save-node'):
             with self.subTest(fault=fault):
                 report = copy.deepcopy(original)
@@ -294,6 +295,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 if fault == 'replay': report['page_requests']['execute'] = 2
                 if fault == 'boolean-count': report['page_requests']['create'] = True
                 if fault == 'source': tasks[0]['params']['locator'] = tasks[1]['params']['locator']
+                if fault == 'source-crs': tasks[0]['params']['source_crs'] = 'EPSG:4326'
+                if fault == 'missing-source-default': tasks[0]['params'].pop('source_crs')
                 if fault == 'missing-source': tasks.pop(0)
                 if fault == 'order': tasks[-2]['params']['input_rasters'].reverse()
                 if fault == 'grid': tasks[-2]['params']['resolution'] = [2, 2]
@@ -397,7 +400,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_all_confirmed_writes_archive_strict_three_party_sizes(self):
         report = self.run_scene()
         records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]
-        # 32 final single rasters plus the initial replaced raster, eight tile writes,
+        # 33 final single rasters plus the initial replaced raster, eight tile writes,
         # and six confirmed tiles across the three failed executions.
         self.assertEqual(len(records), 48)
         self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 43)
@@ -795,6 +798,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def editor(self, repository, env, evidence):
         definition=m.mosaic_source_workflow(dict(zip(evidence['source_names'],evidence['source_locators'])),
                                              evidence['target_engine_id'],evidence['case_name'])
+        for task in definition['tasks'][:3]: task['params']['source_crs'] = ''
         definition['tasks'][-1]['params'].update(compression='DEFLATE',overview_resampling='nearest')
         identifier=m.submit(self.client,evidence['workflow_engine_id'],definition)
         self.client.executions[identifier]['source_task_id']='501'

@@ -727,8 +727,8 @@ def validate_editor_report(report, evidence):
     saves = [task for task in tasks if task.get('operator') == 'raster_save']
     if len(sources) != 3 or len(mosaics) != 1 or len(saves) != 1:
         raise SuiteError('raster editor saved the wrong operators')
-    if (any(task.get('depends_on') != [] or set(task.get('params', {})) != {'locator'}
-            or not isinstance(task['params']['locator'], str) for task in sources.values())
+    if (any(task.get('depends_on') != [] or set(task.get('params', {})) != {'locator', 'source_crs'}
+            or task['params']['source_crs'] != '' or not isinstance(task['params']['locator'], str) for task in sources.values())
         or sorted(task['params']['locator'] for task in sources.values()) != sorted(evidence['source_locators'])):
         raise SuiteError('raster editor did not save all three exact public sources')
 
