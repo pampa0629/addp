@@ -228,6 +228,8 @@ standard/
 | name / code | string | 类别名 / 标识 |
 | is_system | bool | 是否系统内置 |
 
+度量类别与计量单位的默认目录由 Standard 维护，按当前认证租户隔离。首次读取度量类别或单位列表时，在事务内补齐历史默认目录（10 类、31 个单位）；新部署和后续新租户无需手工 SQL。重复及并发读取不得产生重复记录，已有类别名称与自定义数据不被覆盖；缺失默认项可自动补齐。不使用固定 `tenant_id=1`，不读取 System 私有租户表。初始化回归由 Go 单元测试自动发现；真实 PostgreSQL 并发首次读取纳入已有 `make test-standard-postgres`，由 Standard T2 CI 调用，不新增部署步骤。
+
 ### `standard.units` — 计量单位
 
 | 字段 | 类型 | 说明 |

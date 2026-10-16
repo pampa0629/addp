@@ -21,6 +21,9 @@ func NewUnitService(catRepo *repository.MeasurementCategoryRepository, unitRepo 
 // --- 度量类别 ---
 
 func (s *UnitService) ListCategories(tenantID int64) ([]models.MeasurementCategory, error) {
+	if err := s.catRepo.EnsureDefaults(tenantID); err != nil {
+		return nil, err
+	}
 	return s.catRepo.List(tenantID)
 }
 
@@ -79,6 +82,9 @@ func (s *UnitService) DeleteCategory(id, tenantID int64) error {
 // --- 计量单位 ---
 
 func (s *UnitService) ListUnits(tenantID int64, categoryID *int64) ([]models.Unit, error) {
+	if err := s.catRepo.EnsureDefaults(tenantID); err != nil {
+		return nil, err
+	}
 	return s.unitRepo.List(tenantID, categoryID)
 }
 
