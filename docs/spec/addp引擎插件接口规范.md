@@ -70,6 +70,14 @@ type InstanceCapabilitiesResolver interface {
 | `general` | 用户熟悉的通用现成技术或主流引擎，如 PostgreSQL、MySQL、MinIO、Neo4j。 |
 | `extension` | 按 ADDP 扩展规范实现的引擎或运行时，如 GeoPython Workflow、Math Workflow。 |
 
+### 连接探测与实例版本
+
+插件可实现 `ConnectionProbeProvider.ProbeConnection(context.Context, ConnectionInfo) (ConnectionProbeResult, error)`，在同一次真实只读连接验证中返回 `ServerVersion`。统一入口优先消费该接口；未提供实例版本的插件继续执行基础 `TestConnection`，不推断或伪造版本。实现该可选接口的插件，其 `TestConnection` 必须复用 `ProbeConnection`，不得维护第二条探测路径。
+
+`ServerVersion` 是数据库或运行时原生返回的产品版本字符串，不是驱动版本、协议兼容版本、能力 schema 版本或平台聚合根修订号。瀚高使用 `SELECT version()` 的厂商产品版本，不使用其兼容 PostgreSQL 内核的 `server_version`。
+
+System 把成功探测的非空结果保存为 Engine Instance 的只读 `server_version` 和 `server_version_checked_at`。二者由同一次连接观测、同一地址键条件原子更新，不改变 `version` 或 `updated_at`。连接失败、插件未提供版本或临时连接配置测试不覆盖最后一次成功事实；详情同时展示版本和探测时间，不能把最新失败检测时间当成版本探测时间。创建、编辑、恢复请求不接受这两个事实字段，能力声明和连接配置不承载它们。
+
 ### 内置插件加载入口
 
 每个引擎插件仍在自己的包内通过 `init()` 注册，聚合包只负责按 `EngineOrigin()` 口径统一触发 blank import：

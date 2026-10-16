@@ -56,8 +56,11 @@ func TestEngineCapabilityRefreshPreservesObservationAgainstPostgres(t *testing.T
 		t.Fatal(err)
 	}
 	checkedAt := time.Now().UTC().Truncate(time.Microsecond)
-	if updated, err := repo.UpdateConnectionObservation(instance.ID, models.EngineConnectionOnline, checkedAt, "fresh observation", nil); err != nil || !updated {
+	if updated, err := repo.UpdateConnectionObservation(instance.ID, models.EngineConnectionOnline, checkedAt, "fresh observation", &stale.IdentityKey, "HighGo fixture 4.5"); err != nil || !updated {
 		t.Fatalf("observation: %v updated=%v", err, updated)
+	}
+	if observed, err := repo.GetByID(instance.ID); err != nil || observed.Version != stale.Version || !observed.UpdatedAt.Equal(stale.UpdatedAt) {
+		t.Fatalf("probe advanced administrative revision: %+v err=%v", observed, err)
 	}
 	caps.Compute.Workflow.StorageAccess = &engineplugin.WorkflowStorageAccessCapability{ReadEngineTypes: []string{"minio"}, WriteEngineTypes: []string{"minio"}}
 	encoded, _ := engineplugin.MarshalEngineCapabilities(caps)
@@ -70,17 +73,31 @@ func TestEngineCapabilityRefreshPreservesObservationAgainstPostgres(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.ID != instance.ID || stored.Version != 2 || stored.LifecycleState != models.EngineLifecycleDisabled || stored.ConnectionStatus != models.EngineConnectionOnline || stored.CheckMessage != "fresh observation" || stored.LastCheckAt == nil || !stored.LastCheckAt.Equal(checkedAt) {
+	if stored.ID != instance.ID || stored.Version != 2 || stored.LifecycleState != models.EngineLifecycleDisabled || stored.ConnectionStatus != models.EngineConnectionOnline || stored.CheckMessage != "fresh observation" || stored.LastCheckAt == nil || !stored.LastCheckAt.Equal(checkedAt) || stored.ServerVersion != "HighGo fixture 4.5" || stored.ServerVersionCheckedAt == nil || !stored.ServerVersionCheckedAt.Equal(checkedAt) {
 		t.Fatalf("capability refresh overwrote instance or observation: %+v", stored)
 	}
 	parsed, err := engineplugin.ParseEngineCapabilities(string(*stored.Capabilities))
 	if err != nil || !parsed.Compute.Workflow.StorageAccess.Supports("minio", "write") {
 		t.Fatalf("JSONB declaration did not round trip: %v", err)
 	}
+	// An offline probe must retain the time of the last successful version observation.
+	if updated, err := repo.UpdateConnectionObservation(instance.ID, models.EngineConnectionOffline, checkedAt.Add(time.Minute), "offline", nil, "untrusted failed result"); err != nil || !updated {
+		t.Fatal(updated, err)
+	}
 	oldVersion := *stored
 	stored.LifecycleState = models.EngineLifecycleActive
+	stored.ServerVersion = "spoofed edit"
+	stored.ServerVersionCheckedAt = nil
 	if err := repo.Update(stored); err != nil {
 		t.Fatal(err)
+	}
+	fresh, err := repo.GetByID(instance.ID)
+	if err != nil || fresh.ServerVersion != "HighGo fixture 4.5" || fresh.ServerVersionCheckedAt == nil || !fresh.ServerVersionCheckedAt.Equal(checkedAt) {
+		t.Fatalf("administrative update overwrote native version: %+v err=%v", fresh, err)
+	}
+	staleKey := models.JSONString(`{"host":"old-host"}`)
+	if applied, err := repo.UpdateConnectionObservation(instance.ID, models.EngineConnectionOnline, checkedAt.Add(2*time.Minute), "stale", &staleKey, "stale version"); err != nil || applied {
+		t.Fatal("stale address probe was accepted", applied, err)
 	}
 	if err := repo.UpdateCapabilities(&oldVersion); !errors.Is(err, repository.ErrEngineVersionConflict) {
 		t.Fatalf("stale capability writer ignored an administrative update: %v", err)

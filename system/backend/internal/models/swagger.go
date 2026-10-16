@@ -15,8 +15,9 @@ type SuccessResponse struct {
 
 // EngineConnectionProbe 引擎连接测试的协议探测结果
 type EngineConnectionProbe struct {
+	ServerVersion   string `json:"server_version,omitempty" example:"HighGo Database Management System 4.5 on aarch64,build on 20250227"`
 	RuntimeProtocol string `json:"runtime_protocol,omitempty" example:"addp.workflow/v1"`
-	OperatorsCount  int    `json:"operators_count,omitempty" example:"8"`
+	OperatorsCount  *int   `json:"operators_count,omitempty" example:"8"`
 }
 
 // EngineConnectionTestResponse 引擎连接测试响应

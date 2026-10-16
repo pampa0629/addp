@@ -19,20 +19,26 @@ func BuildDSN(engine *models.Engine) (string, error) {
 
 // TestConnection 使用插件系统测试连接
 func TestConnection(ctx context.Context, engine *models.Engine) error {
+	_, err := ProbeConnection(ctx, engine)
+	return err
+}
+
+// ProbeConnection shares the plugin probe path and preserves workflow runtime routing.
+func ProbeConnection(ctx context.Context, engine *models.Engine) (plugin.ConnectionProbeResult, error) {
 	if engine == nil {
-		return fmt.Errorf("engine cannot be nil")
+		return plugin.ConnectionProbeResult{}, fmt.Errorf("engine cannot be nil")
 	}
 	if _, err := plugin.Get(engine.EngineType); err == nil {
-		return plugin.TestConnection(ctx, toPluginEngine(engine))
+		return plugin.ProbeConnection(ctx, toPluginEngine(engine))
 	}
 	if supportsADDPWorkflowRuntime(engine) {
-		workflowProvider, err := WorkflowRuntimeProviderForEngine(engine)
+		provider, err := WorkflowRuntimeProviderForEngine(engine)
 		if err != nil {
-			return err
+			return plugin.ConnectionProbeResult{}, err
 		}
-		return workflowProvider.TestConnection(ctx, plugin.ConnectionInfo(engine.ConnectionInfo))
+		return plugin.ConnectionProbeResult{}, provider.TestConnection(ctx, plugin.ConnectionInfo(engine.ConnectionInfo))
 	}
-	return plugin.TestConnection(ctx, toPluginEngine(engine))
+	return plugin.ProbeConnection(ctx, toPluginEngine(engine))
 }
 
 // ProbeWorkflowRuntimeContract validates the addp.workflow/v1 control-plane

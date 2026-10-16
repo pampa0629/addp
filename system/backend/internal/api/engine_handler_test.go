@@ -285,6 +285,7 @@ func newEngineListTestRouter(t *testing.T, engines ...models.Engine) *gin.Engine
 		c.Next()
 	})
 	router.GET("/engines", handler.List)
+	router.POST("/engines/:id/test", handler.TestConnection)
 	router.GET("/engine-catalog/engines", handler.ListCatalogSelectors)
 	router.POST("/engines/:id/catalog/children", handler.ListEngineCatalogChildren)
 	router.POST("/engines/:id/catalog/facts", handler.DescribeEngineCatalogFacts)

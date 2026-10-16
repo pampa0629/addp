@@ -315,7 +315,7 @@ frontend/src/
 **system.engines 表**:
 - 存储各类引擎连接信息 (数据库、对象存储等)
 - 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `lifecycle_state` 及删除工作流状态
-- `version` 只表示 Engine Instance 聚合根的管理员编辑基线；后台连通性观测只更新 `connection_status`、`last_check_at`、`check_message`，不得递增 `version` 或修改 `updated_at`
+- `version` 只表示 Engine Instance 聚合根的管理员编辑基线；后台连接观测更新 `connection_status`、`last_check_at`、`check_message`，插件成功返回原生产品版本时同次更新只读 `server_version` 与独立 `server_version_checked_at`；失败或未提供版本时保留最后一次成功事实。这些观测不得递增 `version` 或修改 `updated_at`
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 

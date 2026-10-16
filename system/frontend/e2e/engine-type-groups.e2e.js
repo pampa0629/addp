@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/browserTestIsolation.mjs'
 
+test.use({ timezoneId: 'Asia/Shanghai' })
+
 const descriptor = (type, displayName, family, port = 5432) => ({
   type, display_name: displayName, origin: 'general', registration_group: family,
   capabilities: { schema_version: 'engine.capabilities/v1', engine_type: type, engine_family: family },
@@ -27,7 +29,7 @@ const descriptors = [
   descriptor('kafka', 'Apache Kafka', 'event_stream', 9092)
 ]
 
-async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors) {
+async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors, engineFacts = {}) {
   const writes = []
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -46,6 +48,7 @@ async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors) 
         permissions: ['system.engine.read', 'system.engine.create', 'system.engine.update'] }] } })
     if (request.method() !== 'GET') writes.push({ path, body: request.postDataJSON() })
     if (path.endsWith('/engine-types')) return reply(typeDescriptors)
+    if (path.endsWith('/engines/2')) return reply({ id: '2', name: 'Existing HighGo', engine_type: 'highgo', engine_origin: 'general', lifecycle_state: 'active', connection_info: {}, ...engineFacts })
     if (path.endsWith('/engines')) return reply([{ id: '2', name: 'Existing PostgreSQL',
       engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active',
       connection_status: 'online', capability_groups: ['storage'], connection_info: { host: 'existing-host', port: 5432 } }])
@@ -215,5 +218,39 @@ test('group counts and popularity order follow the current search results', asyn
   await search.fill('')
   await expect(group(dialog, '关系型数据库').locator('.engine-type-group-count')).toHaveText('4')
   await expect(group(dialog, '关系型数据库').locator('.engine-type-name')).toHaveText(['PostgreSQL', 'Oracle', 'ClickHouse', 'Newly compiled database'])
+  expect(writes).toEqual([])
+})
+
+for (const [language, typeName, versionLabel, timeLabel] of [
+  ['zh-cn', '瀚高（HighGo）', '实例版本', '版本探测时间'],
+  ['en', 'HighGo', 'Server version', 'Version observed at']
+]) {
+  test(`native product version is a read-only instance fact in ${language}`, async ({ page }) => {
+    const version = 'HighGo Database Management System 4.5 on aarch64,build on 20250227'
+    const writes = await fixture(page, language, [descriptor('highgo', 'HighGo', 'tabular', 5866)], {
+      server_version: version, server_version_checked_at: '2026-10-16T08:00:00Z',
+      last_check_at: '2026-10-16T09:00:00Z', connection_status: 'offline'
+    })
+    await page.goto('/engines/2')
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText(typeName, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(versionLabel, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(version, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(timeLabel, { exact: true })).toBeVisible()
+    // The version timestamp is independent of the later failed connectivity check.
+    const versionTime = dialog.locator('tr').filter({ hasText: timeLabel })
+    await expect(versionTime).toContainText('16:00:00')
+    await expect(dialog.locator('input')).toHaveCount(0)
+    expect(writes).toEqual([])
+  })
+}
+
+test('an engine without a successful version probe does not infer a version from its type', async ({ page }) => {
+  const writes = await fixture(page, 'zh-cn', [descriptor('highgo', 'HighGo', 'tabular', 5866)])
+  await page.goto('/engines/2')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('瀚高（HighGo）', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('实例版本', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('版本探测时间', { exact: true })).toHaveCount(0)
   expect(writes).toEqual([])
 })

@@ -22,17 +22,21 @@ func (s *StorageEngineService) ListRegisterableEngineTypes() ([]plugin.EngineTyp
 	return dbbridge.ListRegisterableEngineTypes()
 }
 
-// TestConnection 测试引擎连接。
-// 连接测试统一由插件 TestConnectionProvider 实现，且必须保持只读。
+// TestConnection performs the same read-only probe, discarding optional native facts.
 func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
-	return testStorageEngineConnection(resource)
+	_, err := s.ProbeConnection(resource)
+	return err
+}
+
+func (s *StorageEngineService) ProbeConnection(resource *models.Engine) (plugin.ConnectionProbeResult, error) {
+	return probeStorageEngineConnection(resource)
 }
 
 // Manual and periodic observations share one read-only probe and time budget.
-func testStorageEngineConnection(resource *models.Engine) error {
+func probeStorageEngineConnection(resource *models.Engine) (plugin.ConnectionProbeResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), engineConnectionProbeTimeout)
 	defer cancel()
-	return dbbridge.TestConnection(ctx, resource)
+	return dbbridge.ProbeConnection(ctx, resource)
 }
 
 // ProbeWorkflowRuntimeContract checks the workflow runtime protocol surface for

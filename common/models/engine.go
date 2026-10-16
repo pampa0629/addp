@@ -150,6 +150,11 @@ type Engine struct {
 	LastCheckAt      *time.Time `gorm:"column:last_check_at" json:"last_check_at,omitempty"`                               // 上次检测时间
 	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）
 
+	// ServerVersion 最近一次成功探测的原生产品版本（只读）。| Last successfully observed native product version (read-only).
+	ServerVersion string `gorm:"column:server_version;type:text;not null;default:''" json:"server_version,omitempty"`
+	// ServerVersionCheckedAt 成功版本探测时间（只读），不等同于最近连接检测时间。| Version observation time (read-only), independent of the latest connection check.
+	ServerVersionCheckedAt *time.Time `gorm:"column:server_version_checked_at" json:"server_version_checked_at,omitempty"`
+
 	// 时间戳字段
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`

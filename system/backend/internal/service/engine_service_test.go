@@ -988,7 +988,7 @@ func TestUpdateEngineAddressPreservesIDAndReferences(t *testing.T) {
 	if found, err := repo.FindByIdentityKey("custom_runtime", &tenantID, newKey); err != nil || found.ID != created.ID {
 		t.Fatalf("new address did not resolve to original ID: engine=%#v err=%v", found, err)
 	}
-	if err := service.RecordConnectionStatusForAddress(created.ID, stored.IdentityKey, models.EngineConnectionOnline, "stale probe"); err != nil {
+	if err := service.RecordConnectionStatusForAddress(created.ID, stored.IdentityKey, models.EngineConnectionOnline, "stale probe", "stale version"); err != nil {
 		t.Fatal(err)
 	}
 	latest, err := repo.GetByID(created.ID)

@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonquery "github.com/addp/common/query"
 	"gorm.io/gorm"
@@ -11,16 +12,28 @@ import (
 // TestConnection 统一入口：测试数据库连接
 // 自动查找对应类型的插件并调用其 TestConnection 方法
 func TestConnection(ctx context.Context, engine *Engine) error {
+	_, err := ProbeConnection(ctx, engine)
+	return err
+}
+
+// ProbeConnection validates connectivity and returns optional native instance facts.
+func ProbeConnection(ctx context.Context, engine *Engine) (ConnectionProbeResult, error) {
 	if engine == nil {
-		return fmt.Errorf("engine cannot be nil")
+		return ConnectionProbeResult{}, fmt.Errorf("engine cannot be nil")
 	}
-
-	plugin, err := Get(engine.EngineType)
+	p, err := Get(engine.EngineType)
 	if err != nil {
-		return err
+		return ConnectionProbeResult{}, err
 	}
-
-	return plugin.TestConnection(ctx, engine.ConnectionInfo)
+	if provider, ok := p.(ConnectionProbeProvider); ok {
+		result, err := provider.ProbeConnection(ctx, engine.ConnectionInfo)
+		if err != nil {
+			return ConnectionProbeResult{}, err
+		}
+		result.ServerVersion = strings.TrimSpace(result.ServerVersion)
+		return result, nil
+	}
+	return ConnectionProbeResult{}, p.TestConnection(ctx, engine.ConnectionInfo)
 }
 
 // BuildDSN 统一入口：为需要 driver DSN 的引擎构建 DSN。

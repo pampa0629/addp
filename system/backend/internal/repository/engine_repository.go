@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	commonrepo "github.com/addp/common/repository"
@@ -120,7 +121,7 @@ func (r *EngineRepository) Update(engine *models.Engine) error {
 	result := r.db.Model(&models.Engine{}).
 		Where("id = ? AND version = ?", engine.ID, expectedVersion).
 		Select("*").
-		Omit("id", "created_at").
+		Omit("id", "created_at", "server_version", "server_version_checked_at").
 		Updates(engine)
 	if result.Error != nil {
 		engine.Version = expectedVersion
@@ -161,18 +162,21 @@ func (r *EngineRepository) UpdateConnectionObservation(
 	checkedAt time.Time,
 	message string,
 	expectedAddressKey *models.JSONString,
+	serverVersion string,
 ) (bool, error) {
 	query := r.db.Model(&models.Engine{}).
 		Where("id = ? AND lifecycle_state <> ?", engineID, models.EngineLifecycleDeleted)
 	if expectedAddressKey != nil {
 		query = query.Where("identity_key = ?", *expectedAddressKey)
 	}
-	result := query.
-		UpdateColumns(map[string]interface{}{
-			"connection_status": status,
-			"last_check_at":     checkedAt,
-			"check_message":     message,
-		})
+	observation := map[string]interface{}{
+		"connection_status": status, "last_check_at": checkedAt, "check_message": message,
+	}
+	if status == models.EngineConnectionOnline && strings.TrimSpace(serverVersion) != "" {
+		observation["server_version"] = strings.TrimSpace(serverVersion)
+		observation["server_version_checked_at"] = checkedAt
+	}
+	result := query.UpdateColumns(observation)
 	if result.Error != nil {
 		return false, result.Error
 	}

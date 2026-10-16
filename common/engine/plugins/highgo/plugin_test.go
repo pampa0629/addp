@@ -51,6 +51,16 @@ func TestHighGoSM3ConnectionAndGORMPool(t *testing.T) {
 	}
 }
 
+func TestHighGoProbeReturnsNativeProductVersion(t *testing.T) {
+	for _, version := range []string{"瀚高数据库管理系统V4.5, x86_64平台, 创建日期:20250227", "HighGo Database Management System 4.5 on aarch64,build on 20250227"} {
+		info := newSM3Server(t, version)
+		result, err := plugin.ProbeConnection(t.Context(), &plugin.Engine{EngineType: "highgo", ConnectionInfo: info})
+		if err != nil || result.ServerVersion != version {
+			t.Fatalf("native version = %+v, want %q, err=%v", result, version, err)
+		}
+	}
+}
+
 func TestHighGoRejectsWrongPassword(t *testing.T) {
 	info := newSM3Server(t, "瀚高数据库管理系统V4.5")
 	info["password"] = "wrong-password"
@@ -104,6 +114,10 @@ func TestHighGoNativeVersionLanguages(t *testing.T) {
 
 func TestHighGoOnlyDeclaresCertifiedSurface(t *testing.T) {
 	p := &Plugin{}
+	descriptor, err := plugin.DescribeEngineType(p)
+	if err != nil || descriptor.Type != "highgo" || descriptor.DisplayName != "HighGo" {
+		t.Fatalf("version must not be part of engine type identity or display name: %#v, %v", descriptor, err)
+	}
 	caps := p.Capabilities()
 	store := caps.Storage.Store
 	if caps.EngineType != "highgo" || !store.BatchRead || !store.TableReadSession || !caps.Compute.Query.ReadSession {

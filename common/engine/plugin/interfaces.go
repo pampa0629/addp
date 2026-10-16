@@ -67,6 +67,18 @@ type EnginePlugin interface {
 	Capabilities() EngineCapabilities
 }
 
+// ConnectionProbeResult contains native facts obtained by a successful read-only probe.
+// ServerVersion is the product version, not a wire-protocol or driver version.
+type ConnectionProbeResult struct {
+	ServerVersion string `json:"server_version,omitempty"`
+}
+
+// ConnectionProbeProvider optionally returns native facts with the connectivity check.
+// Implementations must have TestConnection delegate to this single probe path.
+type ConnectionProbeProvider interface {
+	ProbeConnection(context.Context, ConnectionInfo) (ConnectionProbeResult, error)
+}
+
 // ConnectionIdentityProvider 声明不经过 System 注册表单的 Runtime Engine Instance 身份字段。
 // 可由用户注册的 general 插件统一从 ConnectionSpecProvider 的 identity 字段派生；
 // 自研 HTTP extension 使用标准运行时身份字段。

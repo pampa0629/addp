@@ -26,6 +26,7 @@ type Plugin struct{}
 var certifiedVersion = regexp.MustCompile(`^(?:瀚高数据库管理系统V|HighGo Database Management System )4\.5(?:\.[0-9]+)*(?:$|[ ,，])`)
 
 var (
+	_ plugin.ConnectionProbeProvider     = (*Plugin)(nil)
 	_ plugin.EnginePlugin                = (*Plugin)(nil)
 	_ plugin.ConnectionPoolPlugin        = (*Plugin)(nil)
 	_ plugin.EngineCatalogFactsProvider  = (*Plugin)(nil)
@@ -41,7 +42,7 @@ var (
 
 func init()                            { plugin.Register(&Plugin{}) }
 func (p *Plugin) Type() string         { return "highgo" }
-func (p *Plugin) DisplayName() string  { return "HighGo V4.5" }
+func (p *Plugin) DisplayName() string  { return "HighGo" }
 func (p *Plugin) EngineOrigin() string { return "general" }
 func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
 	return postgresql.NewProtocolCompatiblePlugin(postgresql.ProtocolIdentity{
@@ -90,28 +91,33 @@ func (p *Plugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 func (p *Plugin) TestConnection(ctx context.Context, info plugin.ConnectionInfo) error {
+	_, err := p.ProbeConnection(ctx, info)
+	return err
+}
+
+func (p *Plugin) ProbeConnection(ctx context.Context, info plugin.ConnectionInfo) (plugin.ConnectionProbeResult, error) {
 	if err := p.ValidateConnectionInfo(info); err != nil {
-		return err
+		return plugin.ConnectionProbeResult{}, err
 	}
 	dsn, err := p.BuildDSN(info)
 	if err != nil {
-		return err
+		return plugin.ConnectionProbeResult{}, err
 	}
 	db, err := sql.Open("highgo", dsn)
 	if err != nil {
-		return err
+		return plugin.ConnectionProbeResult{}, err
 	}
 	defer db.Close()
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var version string
 	if err := db.QueryRowContext(probe, "SELECT version()").Scan(&version); err != nil {
-		return err
+		return plugin.ConnectionProbeResult{}, err
 	}
 	if !certifiedVersion.MatchString(version) {
-		return fmt.Errorf("%w: HighGo V4.5 version required", commonapi.ErrBadRequest)
+		return plugin.ConnectionProbeResult{}, fmt.Errorf("%w: HighGo V4.5 version required", commonapi.ErrBadRequest)
 	}
-	return nil
+	return plugin.ConnectionProbeResult{ServerVersion: version}, nil
 }
 func (p *Plugin) CreateConnectionPool(info plugin.ConnectionInfo, config *plugin.PoolConfig) (*gorm.DB, error) {
 	return p.protocol().CreateConnectionPool(info, config)

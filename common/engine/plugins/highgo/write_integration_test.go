@@ -30,11 +30,14 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	t.Cleanup(func() { plugin.ClosePool(987655) })
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
+	var probedVersion string
 	if native {
 		t.Cleanup(func() { plugin.ClosePool(0) })
-		if err := p.TestConnection(ctx, info); err != nil {
+		result, err := plugin.ProbeConnection(ctx, &plugin.Engine{EngineType: "highgo", ConnectionInfo: info})
+		if err != nil {
 			t.Fatalf("native V4.5 identity/SM3/TLS: %v", err)
 		}
+		probedVersion = result.ServerVersion
 		entries, err := p.ListChildren(ctx, info, plugin.TabularNamespacePath(0, plugin.EngineCatalogTermSchema, "public"), plugin.ListOptions{})
 		if err != nil {
 			t.Fatalf("native business catalog: %v", err)
@@ -63,6 +66,10 @@ func TestIntegrationHighGoTableWrite(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
+	if native && (probedVersion == "" || probedVersion != version) {
+		t.Fatalf("probe returned %q, native version() returned %q", probedVersion, version)
+	}
+
 	t.Logf("native=%t server=%s", native, version)
 
 	random := make([]byte, 12)

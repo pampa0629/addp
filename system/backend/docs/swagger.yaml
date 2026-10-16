@@ -1479,6 +1479,14 @@ definitions:
         type: string
       restored_by:
         type: integer
+      server_version:
+        description: ServerVersion 最近一次成功探测的原生产品版本（只读）。| Last successfully observed
+          native product version (read-only).
+        type: string
+      server_version_checked_at:
+        description: ServerVersionCheckedAt 成功版本探测时间（只读），不等同于最近连接检测时间。| Version observation
+          time (read-only), independent of the latest connection check.
+        type: string
       tenant_id:
         description: 租户ID，平台共享引擎为 null
         type: integer
@@ -1592,6 +1600,9 @@ definitions:
         type: integer
       runtime_protocol:
         example: addp.workflow/v1
+        type: string
+      server_version:
+        example: HighGo Database Management System 4.5 on aarch64,build on 20250227
         type: string
     type: object
   github_com_addp_system_internal_models.EngineConnectionTestRequest:
@@ -1751,6 +1762,14 @@ definitions:
         type: string
       restored_by:
         type: integer
+      server_version:
+        description: ServerVersion 最近一次成功探测的原生产品版本（只读）。| Last successfully observed
+          native product version (read-only).
+        type: string
+      server_version_checked_at:
+        description: ServerVersionCheckedAt 成功版本探测时间（只读），不等同于最近连接检测时间。| Version observation
+          time (read-only), independent of the latest connection check.
+        type: string
       tenant_id:
         description: 租户ID，平台共享引擎为 null
         type: integer

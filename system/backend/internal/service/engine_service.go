@@ -1530,7 +1530,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	// 这类记录不属于外部数据/计算引擎，不能通过 EnginePlugin 做连接检测。
 	if strings.HasPrefix(engine.EngineType, "api.") {
 		fmt.Printf("[ConnectionCheck] ⏭️  跳过API类型资源\n")
-		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", "API类型资源不支持自动连接检测")
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", "API类型资源不支持自动连接检测", "")
 		return false
 	}
 
@@ -1538,7 +1538,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
 	if err != nil {
 		fmt.Printf("[ConnectionCheck] ❌ 解密连接信息失败: %v\n", err)
-		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", fmt.Sprintf("解密连接信息失败: %v", err), "")
 		return false
 	}
 	engine.ConnectionInfo = decryptedConnInfo
@@ -1546,12 +1546,12 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 
 	// 4. 测试连接
 	fmt.Printf("[ConnectionCheck] ⏱️  开始连接测试 (超时: %s)...\n", engineConnectionProbeTimeout)
-	err = testStorageEngineConnection(engine)
+	probe, err := probeStorageEngineConnection(engine)
 
 	// 5. 更新状态
 	if err != nil {
 		fmt.Printf("[ConnectionCheck] ❌ 连接测试失败: %v\n", err)
-		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "offline", err.Error())
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "offline", err.Error(), "")
 		return false
 	}
 
@@ -1565,7 +1565,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 			fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
 		}
 	}
-	s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, models.EngineConnectionOnline, checkMessage)
+	s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, models.EngineConnectionOnline, checkMessage, probe.ServerVersion)
 	return true
 }
 
@@ -1616,12 +1616,12 @@ func (s *EngineService) AsyncCheckConnection(engineID uint) error {
 
 // updateConnectionStatus 内部方法：更新连接状态
 func (s *EngineService) updateConnectionStatus(engineID uint, status, message string) error {
-	return s.updateConnectionStatusForAddress(engineID, nil, status, message)
+	return s.updateConnectionStatusForAddress(engineID, nil, status, message, "")
 }
 
-func (s *EngineService) updateConnectionStatusForAddress(engineID uint, addressKey *models.JSONString, status, message string) error {
+func (s *EngineService) updateConnectionStatusForAddress(engineID uint, addressKey *models.JSONString, status, message, serverVersion string) error {
 	now := time.Now()
-	applied, err := s.repo.UpdateConnectionObservation(engineID, status, now, message, addressKey)
+	applied, err := s.repo.UpdateConnectionObservation(engineID, status, now, message, addressKey, serverVersion)
 	if err != nil {
 		return err
 	}
@@ -1703,8 +1703,8 @@ func (s *EngineService) RecordConnectionStatus(engineID uint, status string, mes
 }
 
 // RecordConnectionStatusForAddress discards a probe result after the address changes.
-func (s *EngineService) RecordConnectionStatusForAddress(engineID uint, addressKey models.JSONString, status, message string) error {
-	return s.updateConnectionStatusForAddress(engineID, &addressKey, status, message)
+func (s *EngineService) RecordConnectionStatusForAddress(engineID uint, addressKey models.JSONString, status, message, serverVersion string) error {
+	return s.updateConnectionStatusForAddress(engineID, &addressKey, status, message, serverVersion)
 }
 
 // CreateEngine 创建引擎

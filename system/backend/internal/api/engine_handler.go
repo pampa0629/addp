@@ -671,7 +671,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 	probe, err := h.testEngineConnection(engine)
 	if err != nil {
 		if override == nil {
-			h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "offline", err.Error())
+			h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "offline", err.Error(), "")
 		}
 
 		commonapi.RespondSuccess(c, gin.H{
@@ -683,7 +683,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 	}
 
 	if override == nil {
-		h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "online", "连接正常")
+		h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "online", "连接正常", probe.ServerVersion)
 	}
 
 	commonapi.RespondSuccess(c, gin.H{
@@ -738,21 +738,22 @@ func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	})
 }
 
-func (h *EngineHandler) testEngineConnection(engine *models.Engine) (gin.H, error) {
+func (h *EngineHandler) testEngineConnection(engine *models.Engine) (*models.EngineConnectionProbe, error) {
 	if h.storageEngineService.ShouldProbeWorkflowRuntime(engine) {
 		operatorCount, err := h.storageEngineService.ProbeWorkflowRuntimeContract(engine)
 		if err != nil {
 			return nil, err
 		}
-		return gin.H{
-			"runtime_protocol": engineplugin.WorkflowRuntimeAPIAddpV1,
-			"operators_count":  operatorCount,
+		return &models.EngineConnectionProbe{
+			RuntimeProtocol: engineplugin.WorkflowRuntimeAPIAddpV1,
+			OperatorsCount:  &operatorCount,
 		}, nil
 	}
-	if err := h.storageEngineService.TestConnection(engine); err != nil {
+	result, err := h.storageEngineService.ProbeConnection(engine)
+	if err != nil {
 		return nil, err
 	}
-	return gin.H{}, nil
+	return &models.EngineConnectionProbe{ServerVersion: result.ServerVersion}, nil
 }
 
 func (h *EngineHandler) probeWorkflowRuntimeBeforeSave(req *models.EngineCreateRequest) error {

@@ -5,26 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func TestSharingExpiryForwardMigrationAgainstPostgres(t *testing.T) {
 	testCoordinationForwardMigration(t, "000172_engine_access_fulfillment_expiry_mode.up.sql", 172,
 		"engine_access_fulfillment_outcomes", func(db *sql.DB) func() {
-			gormDB, err := gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Seed historical facts directly: the current service requires the current
-			// database constraints and cannot initialize a pre-migration schema.
+			// Seed exactly the historical columns; current Engine models can contain
+			// fields introduced after this migration's input schema.
 			_, fixtureTenantID := seedInitializedMigrationTenant(t, db, "sharing_expiry_fixture", "Expiry")
-			tenantID := uint(fixtureTenantID)
-			engine := models.Engine{Name: "Expiry fixture", EngineType: "postgresql", TenantID: &tenantID,
-				LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"expiry.invalid","database":"fixture"}`)}
-			if err := gormDB.Table("system.engines").Create(&engine).Error; err != nil {
+			var engineID uint
+			if err := db.QueryRow(`INSERT INTO system.engines
+                (name, engine_type, engine_origin, tenant_id, lifecycle_state, connection_info, identity_key, created_at, updated_at)
+                VALUES ('Expiry fixture', 'postgresql', 'general', $1, 'active', '{}', '{"host":"expiry.invalid","database":"fixture"}', now(), now()) RETURNING id`, fixtureTenantID).Scan(&engineID); err != nil {
 				t.Fatal(err)
 			}
 			id := uuid.NewString()
@@ -33,7 +26,7 @@ func TestSharingExpiryForwardMigrationAgainstPostgres(t *testing.T) {
 			if _, err := db.Exec(`INSERT INTO system.engine_access_fulfillment_outcomes
 				(request_id, tenant_id, engine_id, caller_principal_id, catalog_path, binding, grant_expires_at, outcome, recorded_at, deadline)
 				SELECT $1, $2, $3, id, '{}'::jsonb, jsonb_build_object('expires_at', $4::text, 'fixture', 'unchanged'), $5, 'accepted', $6, $7
-				FROM system.service_principals WHERE name = 'addp-catalog'`, id, fixtureTenantID, engine.ID, expires.Format(time.RFC3339Nano), expires, now, deadline); err != nil {
+				FROM system.service_principals WHERE name = 'addp-catalog'`, id, fixtureTenantID, engineID, expires.Format(time.RFC3339Nano), expires, now, deadline); err != nil {
 				t.Fatal(err)
 			}
 			return func() {

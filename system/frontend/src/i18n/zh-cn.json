@@ -1292,6 +1292,8 @@
           "scan": "扫描配置"
         },
         "basicInfo": {
+          "serverVersion": "实例版本",
+          "serverVersionCheckedAt": "版本探测时间",
           "id": "ID",
           "name": "名称",
           "engineType": "引擎类型",
@@ -1742,6 +1744,9 @@
           "table": "表格",
           "document": "文档"
         }
+      },
+      "typeNames": {
+        "highgo": "瀚高（HighGo）"
       }
     },
     "apiConsumer": {

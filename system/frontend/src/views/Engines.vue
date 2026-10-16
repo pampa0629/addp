@@ -481,6 +481,12 @@
               <el-descriptions-item v-if="selectedEngine.deletion_error" :label="t('system.engine.dialog.basicInfo.deletionError')" :span="2">
                 {{ selectedEngine.deletion_error }}
               </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.server_version" :label="t('system.engine.dialog.basicInfo.serverVersion')" :span="2">
+                {{ selectedEngine.server_version }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.server_version_checked_at" :label="t('system.engine.dialog.basicInfo.serverVersionCheckedAt')" :span="2">
+                {{ formatDate(selectedEngine.server_version_checked_at) }}
+              </el-descriptions-item>
               <el-descriptions-item :label="t('system.engine.dialog.basicInfo.createdAt')" :span="2">
                 {{ formatDate(selectedEngine.created_at) }}
               </el-descriptions-item>
@@ -959,7 +965,7 @@ const storageEngineTypeOptions = computed(() => engineTypeDescriptors.value.map(
   return {
     value: descriptor.type,
     group: descriptor.registration_group,
-    label: descriptor.display_name,
+    label: getEngineTypeLabel(descriptor.type),
     desc: translatedDescription === descriptionKey ? descriptor.display_name : translatedDescription
   }
 }))
@@ -1136,6 +1142,8 @@ const handlePageSizeChange = () => {
 }
 
 const getEngineTypeLabel = (type, engine = null) => {
+  const labelKey = `system.engine.typeNames.${type}`
+  if (te(labelKey)) return t(labelKey)
   return engineTypeDescriptors.value.find(descriptor => descriptor.type === type)?.display_name || humanizeCapabilityValue(type)
 }
 

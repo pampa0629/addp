@@ -1292,6 +1292,8 @@
           "scan": "Scan Config"
         },
         "basicInfo": {
+          "serverVersion": "Server version",
+          "serverVersionCheckedAt": "Version observed at",
           "id": "ID",
           "name": "Name",
           "engineType": "Engine Type",
@@ -1742,6 +1744,9 @@
           "table": "Table",
           "document": "Document"
         }
+      },
+      "typeNames": {
+        "highgo": "HighGo"
       }
     },
     "apiConsumer": {
