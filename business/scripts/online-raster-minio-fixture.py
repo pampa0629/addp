@@ -46,12 +46,20 @@ AGGREGATE_MULTIBAND_CASES = ('aggregate-multiband-mean', 'aggregate-rotated-sum'
 AGGREGATE_CASES = AGGREGATE_SINGLE_BAND_CASES + AGGREGATE_MULTIBAND_CASES
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
+MOSAIC_SOURCE_CASES = ('multisource-first', 'multisource-last')
+# start column, width, numeric offset; all are independent stored TIFFs.
+MOSAIC_SOURCE_WINDOWS = {'mosaic-a.tif': (0, 160, 100000), 'mosaic-b.tif': (96, 112, 200000),
+                         'mosaic-c.tif': (144, 112, 300000)}
+MOSAIC_SOURCE_ORDER = ('mosaic-c.tif', 'mosaic-a.tif', 'mosaic-b.tif')
+MOSAIC_SOURCE_HOLES = {
+    ('mosaic-a.tif', 1): (127, 150), ('mosaic-b.tif', 1): (127, 151), ('mosaic-c.tif', 1): (127, 152),
+    ('mosaic-a.tif', 2): (64, 120), ('mosaic-b.tif', 2): (64, 121), ('mosaic-c.tif', 2): (64, 153)}
 FOOTPRINT_CASES = ('footprint-any', 'footprint-all', 'footprint-band-2', 'footprint-holes', 'footprint-rotated', 'footprint-diagonal', 'footprint-pinch')
 TILE_WINDOWS = {'r0_c0': (0, 0, 160, 160), 'r0_c160': (160, 0, 96, 160),
                 'r160_c0': (0, 160, 160, 96), 'r160_c160': (160, 160, 96, 96)}
 UTILITY_JSON_CASES = ('info-overviews', 'validate-cog-invalid', 'validate-cog-valid')
 NON_COG_SOURCE = 'non-cog.tif'
-SOURCE_FILES = (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
+SOURCE_FILES = tuple((name, False, float('nan')) for name in MOSAIC_SOURCE_WINDOWS) + (('source.tif', False, -9999.), ('spatial.tif', True, -9999.),
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.), (ROTATED_SOURCE, False, float('nan')),
                 (TOPOLOGY_SOURCE, False, -9999.))
@@ -61,7 +69,7 @@ TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': 
 CLEANUP_ACTIONS = tuple('verify-' + prefix for prefix in TILE_CLEANUP_CASES)
 TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
-ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES) + ('verify-utility-queries',)
+ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES) + ('verify-utility-queries',)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -410,6 +418,41 @@ def source_transform(name, spatial):
     return ROTATED_TRANSFORM if name == ROTATED_SOURCE else SPATIAL_SOURCE_TRANSFORM if spatial else TRANSFORM
 
 
+def source_grid(name, spatial):
+    if name in MOSAIC_SOURCE_WINDOWS:
+        start, width, _ = MOSAIC_SOURCE_WINDOWS[name]
+        return width, SIZE, (start, 1, 0, SIZE, 0, -1), 3857
+    return SIZE, SIZE, source_transform(name, spatial), 4326
+
+
+def mosaic_source_value(name, band, row, column):
+    start, width, offset = MOSAIC_SOURCE_WINDOWS[name]
+    if not start <= column < start + width:
+        return None
+    if ((row, column) in ((128, 155), (255, 255)) or (row, column) == MOSAIC_SOURCE_HOLES[name, band]
+        or (name == 'mosaic-a.tif' and band == 2 and (row, column) == (64, 10))):
+        return None
+    if (name, band, row, column) in (('mosaic-a.tif', 1, 0, 1), ('mosaic-c.tif', 2, 1, 240)):
+        return 0.
+    position = row * SIZE + column + 1
+    return float(offset + position if band == 1 else -(offset + 2 * position))
+
+
+@lru_cache(maxsize=8)
+def mosaic_source_pixels(case_name, band=1, level=1):
+    if case_name not in MOSAIC_SOURCE_CASES:
+        raise FixtureError('unknown independent-source mosaic case')
+    names = MOSAIC_SOURCE_ORDER if case_name.endswith('-first') else tuple(reversed(MOSAIC_SOURCE_ORDER))
+    return tuple(next((value for name in names
+                       if (value := mosaic_source_value(name, band, row, column)) is not None), None)
+                 for row in range(0, SIZE, level) for column in range(0, SIZE, level))
+
+
+def mosaic_source_expectation(case_name):
+    counts = [sum(value is not None for value in mosaic_source_pixels(case_name, band)) for band in (1, 2)]
+    return {**artifact_expectation(True), 'band_count': 2, 'valid_pixels': counts[0], 'band_valid_pixels': counts}
+
+
 def footprint_pixels(case_name):
     """Independent source cell indices: separate missing bands and transparent cell."""
     if case_name not in FOOTPRINT_CASES:
@@ -469,6 +512,8 @@ def update_expectation(case_name):
 
 
 def computed_expectation(case_name):
+    if case_name in MOSAIC_SOURCE_CASES:
+        return mosaic_source_expectation(case_name)
     if case_name in UPDATE_CASES:
         return update_expectation(case_name)
     if case_name in OUTSIDE_CASES:
@@ -819,6 +864,10 @@ def provision_target_writer(entry, root):
 
 
 def source_pixels(name, band, spatial, source_nodata):
+    if name in MOSAIC_SOURCE_WINDOWS:
+        start, width, _ = MOSAIC_SOURCE_WINDOWS[name]
+        return tuple(source_nodata if (value := mosaic_source_value(name, band, row, column)) is None else value
+                     for row in range(SIZE) for column in range(start, start + width))
     if name == TOPOLOGY_SOURCE:
         case = next(case for case, index in TOPOLOGY_BANDS.items() if index == band)
         return tuple(0. if valid else source_nodata for valid in footprint_pixels(case))
@@ -832,16 +881,17 @@ def write_source_raster(path, name, spatial, source_nodata):
     from osgeo import gdal, osr
     multiband = name.startswith('multiband')
     band_count = 3 if multiband else 2
-    dataset = gdal.GetDriverByName('GTiff').Create(str(path), SIZE, SIZE, band_count, gdal.GDT_Float64)
-    dataset.SetGeoTransform(source_transform(name, spatial))
-    crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
+    width, height, transform, srid = source_grid(name, spatial)
+    dataset = gdal.GetDriverByName('GTiff').Create(str(path), width, height, band_count, gdal.GDT_Float64)
+    dataset.SetGeoTransform(transform)
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
     dataset.SetProjection(crs.ExportToWkt())
     for index in range(1, band_count + 1):
         values = source_pixels(name, index, spatial, source_nodata)
         band = dataset.GetRasterBand(index)
         band.SetNoDataValue(source_nodata)
         if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
-        band.WriteRaster(0, 0, SIZE, SIZE, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
+        band.WriteRaster(0, 0, width, height, struct.pack(f'<{len(values)}d', *values), buf_type=gdal.GDT_Float64)
         band = None
     dataset = None
     return crs
@@ -938,10 +988,11 @@ def worker(action, path):
             if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(name):
                 raise FixtureError('workflow modified source bytes')
             source = gdal.Open(str(path))
+            width, height, transform, srid = source_grid(name, spatial)
             multiband = name.startswith('multiband')
             for index in range(1, 4 if multiband else 3):
                 band = source.GetRasterBand(index)
-                values = struct.unpack(f'<{SIZE * SIZE}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+                values = struct.unpack(f'<{width * height}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
                 expected_values = source_pixels(name, index, spatial, source_nodata)
                 nodata = band.GetNoDataValue()
                 if (nodata is None or (not math.isnan(nodata) if math.isnan(source_nodata) else nodata != source_nodata)
@@ -949,8 +1000,8 @@ def worker(action, path):
                            for actual, expected in zip(values, expected_values))
                     or (multiband and index == 3 and band.GetColorInterpretation() != gdal.GCI_AlphaBand)):
                     raise FixtureError('workflow modified its source pixels/NoData')
-            reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
-            if (source.GetGeoTransform() != source_transform(name, spatial)
+            reference = osr.SpatialReference(); reference.ImportFromEPSG(srid)
+            if (source.GetGeoTransform() != transform or (source.RasterXSize, source.RasterYSize) != (width, height)
                 or source.RasterCount != (3 if multiband else 2) or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
                 raise FixtureError('workflow modified source georeferencing/bands')
         spatial = action.startswith('verify-mosaic-')
@@ -1011,8 +1062,8 @@ def worker(action, path):
                     'source_unchanged': True,
                     'overview_sizes': [[SIZE // level] * 2 for level in levels], 'crs': dataset.GetProjection(),
                     **physical_file_facts(path)}
-            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
-                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES + AGGREGATE_MULTIBAND_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
+            if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
+                colors = ['Gray', 'Undefined'] if grid_case in UPDATE_CASES + AGGREGATE_MULTIBAND_CASES + MOSAIC_SOURCE_CASES else ['Gray', 'Undefined', 'Alpha'] if grid_case in OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if grid_case == 'multiraster-rgb' else ['Gray']
                 label = 'outside clipping' if grid_case in OUTSIDE_CASES else 'aggregation' if grid_case in AGGREGATE_CASES else 'reclassification' if grid_case in RECLASS_CASES else 'multi-raster'
                 counts = []
                 for index in range(1, dataset.RasterCount + 1):
@@ -1025,7 +1076,7 @@ def worker(action, path):
                     for level, sampled in ((1, current), (2, current.GetOverview(0))):
                         if (sampled.XSize, sampled.YSize) != (expectation['width'] // level, expectation['height'] // level):
                             raise FixtureError(f'{label} overview grid differs from nearest oracle')
-                        pixels = update_pixels if grid_case in UPDATE_CASES else outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
+                        pixels = mosaic_source_pixels if grid_case in MOSAIC_SOURCE_CASES else update_pixels if grid_case in UPDATE_CASES else outside_pixels if grid_case in OUTSIDE_CASES else aggregate_pixels if grid_case in AGGREGATE_CASES else reclass_pixels if grid_case in RECLASS_CASES else foundation_pixels
                         expected = list(pixels(grid_case, index, level))
                         actual = struct.unpack(f'<{len(expected)}d', sampled.ReadRaster(buf_type=gdal.GDT_Float64))
                         if any(not math.isnan(value) if wanted is None else
@@ -1110,7 +1161,7 @@ def worker(action, path):
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
+            for prior in GRID_CASES + MULTIBAND_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
                 preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', grid_case=prior)['sha256']
             for prior in UTILITY_CASES:
                 preserved[prior+'.cog.tif'] = verify(prior+'.cog.tif', utility_case=prior)['sha256']
@@ -1181,11 +1232,11 @@ def worker(action, path):
             if set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'], recursive=True)) != names:
                 raise FixtureError('utility target contains unexpected or partial artifacts')
             return evidence
-        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES:
+        if grid_case in FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES:
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
                 'mosaic-first.cog.tif': verify('mosaic-first.cog.tif', True, 'first')['sha256'],
                 'mosaic-last.cog.tif': verify('mosaic-last.cog.tif', True, 'last')['sha256']}
-            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES
+            cases = FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_SOURCE_CASES
             for prior in GRID_CASES + MULTIBAND_CASES + cases[:cases.index(grid_case)]:
                 preserved[prior + '.cog.tif'] = verify(prior + '.cog.tif', grid_case=prior)['sha256']
             for prior in UTILITY_CASES:

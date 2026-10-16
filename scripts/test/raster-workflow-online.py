@@ -93,6 +93,26 @@ def spatial_workflow(source_locator, target_engine_id, overlap):
     ]}
 
 
+def mosaic_source_workflow(sources, target_engine_id, case_name):
+    if (case_name not in fixture.MOSAIC_SOURCE_CASES or set(sources) != set(fixture.MOSAIC_SOURCE_WINDOWS)
+        or len(set(sources.values())) != 3):
+        raise SuiteError('independent mosaic requires three distinct registered sources')
+    nodes = {name: 'load_' + name.removeprefix('mosaic-').removesuffix('.tif') for name in sources}
+    ref = lambda name: {'$ref': name, 'port': 'default'}
+    tasks = [{'id': nodes[name], 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': sources[name]}}
+             for name in fixture.MOSAIC_SOURCE_WINDOWS]
+    tasks.extend([
+        {'id': 'mosaic', 'operator': 'raster_mosaic', 'depends_on': sorted(nodes.values()), 'params': {
+            'input_rasters': [ref(nodes[name]) for name in fixture.MOSAIC_SOURCE_ORDER],
+            'target_crs': 'EPSG:3857', 'resolution': [1, 1],
+            'overlap': case_name.removeprefix('multisource-'), 'resampling': 'nearest'}},
+        {'id': 'save', 'operator': 'raster_save', 'depends_on': ['mosaic'], 'params': {
+            'input_raster': ref('mosaic'), 'target_parent_locator': f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+            'target_name': case_name + '.cog.tif', 'write_mode': 'create', 'profile': 'cog', 'blocksize': 128}}
+    ])
+    return {'tasks': tasks}
+
+
 def analysis_workflow(source_locator, case_name):
     tasks = [{'id': 'load', 'operator': 'raster_load', 'depends_on': [], 'params': {'locator': source_locator}}]
     input_task = 'load'
@@ -650,7 +670,7 @@ def physical(repository, env, action):
             raise SuiteError('physical tiling evidence is incomplete')
         return payload
     case_name = action.removeprefix('verify-')
-    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
+    expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_SOURCE_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')
     return payload
@@ -905,6 +925,12 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     aggregate_cases = []
     outside_cases = []
     update_cases = []
+    mosaic_source_cases = []
+    mosaic_sources = {name: support.find_fixture_item(client, source_engine, 'raster-source/' + name, 'independent mosaic source')
+                      for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    mosaic_locators = {name: support.build_item_locator(source_engine, item) for name, item in mosaic_sources.items()}
+    if len({item['id'] for item in mosaic_sources.values()}) != 3 or len(set(mosaic_locators.values())) != 3:
+        raise SuiteError('independent mosaic sources do not have three distinct registered identities')
     patch_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'update source')
     patch_locator = support.build_item_locator(source_engine, patch_source)
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
@@ -912,7 +938,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     aggregate_sources = {
         name: support.find_fixture_item(client, source_engine, 'raster-source/'+name, 'aggregation source')
         for name in {fixture.aggregate_config(case)['source_name'] for case in fixture.AGGREGATE_CASES}}
-    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES:
+    for case_name in fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_SOURCE_CASES:
         single = case_name in fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES
         case_sources = [(source, source_locator, '')] if single else [
             (spatial_source, spatial_locator, '-spatial'), (reference_source, reference_locator, '-reference')]
@@ -921,11 +947,15 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if case_name in fixture.AGGREGATE_CASES:
             case_source = aggregate_sources[fixture.aggregate_config(case_name)['source_name']]
             case_sources = [(case_source, support.build_item_locator(source_engine, case_source), '')]
+        if case_name in fixture.MOSAIC_SOURCE_CASES:
+            case_sources = [(mosaic_sources[name], mosaic_locators[name], '-' + name.removesuffix('.tif'))
+                            for name in fixture.MOSAIC_SOURCE_ORDER]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
         name = case_name + '.cog.tif'
         locator = f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
-        definition = (update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
+        definition = (mosaic_source_workflow(mosaic_locators, target_engine, case_name) if case_name in fixture.MOSAIC_SOURCE_CASES else
+                      update_workflow(source_locator, patch_locator, target_engine, case_name) if case_name in fixture.UPDATE_CASES else
                       outside_workflow(source_locator, target_engine, case_name) if case_name in fixture.OUTSIDE_CASES else
                       aggregate_workflow(source_locators[0], target_engine, case_name) if case_name in fixture.AGGREGATE_CASES else
                       reclass_workflow(source_locator, target_engine, case_name) if case_name in fixture.RECLASS_CASES else
@@ -940,7 +970,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('Monitor multi-raster execution differs from Develop status/lineage')
         native = physical_runner(repository, env, 'verify-' + case_name)
         artifact = execution['metadata']['result']['final_result']
-        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES + fixture.AGGREGATE_MULTIBAND_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
+        colors = ['Gray', 'Undefined'] if case_name in fixture.UPDATE_CASES + fixture.AGGREGATE_MULTIBAND_CASES + fixture.MOSAIC_SOURCE_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray']
         levels = [[expectation['width']//2, expectation['height']//2]]
         if (native.get('case_name') != case_name or native.get('preserved_sha256') != preserved
             or native.get('cog_valid') is not True or native.get('source_unchanged') is not True
@@ -952,6 +982,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             or native.get('invalid_pixels') != expectation['width'] * expectation['height'] - expectation['valid_pixels']
             or native.get('band_valid_pixels') != expectation.get('band_valid_pixels', [expectation['valid_pixels']] * (expectation['band_count'] - (case_name in fixture.OUTSIDE_CASES)))):
             raise SuiteError('multi-raster bands, colour, validity or preservation evidence differs')
+        if case_name == fixture.MOSAIC_SOURCE_CASES[-1] and native.get('sha256') == mosaic_source_cases[0]['physical']['sha256']:
+            raise SuiteError('independent-source first/last outputs have identical bytes')
         target = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'multi-raster target')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
@@ -959,7 +991,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 name, identifier, case_name + suffix, identity, browser_runner, expectation, native, source_locators, artifact, size_evidence)
             graphs.append(graph)
             browsers.append(report)
-        cases = update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
+        cases = mosaic_source_cases if case_name in fixture.MOSAIC_SOURCE_CASES else update_cases if case_name in fixture.UPDATE_CASES else outside_cases if case_name in fixture.OUTSIDE_CASES else aggregate_cases if case_name in fixture.AGGREGATE_CASES else reclass_cases if case_name in fixture.RECLASS_CASES else foundation_cases
         cases.append({'case_name': case_name, 'execution_id': identifier,
             'artifact': artifact, 'data_item_size_bytes': target['size_bytes'],
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
@@ -983,8 +1015,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         if (monitor.get('status') != 'success' or monitor.get('module') != 'develop'
             or obj(monitor.get('metadata', {}), 'Monitor footprint metadata').get('lineage_facts')):
             raise SuiteError('Monitor footprint has invalid status/owner or persistent lineage')
-        native = physical_runner(repository, env, 'verify-' + fixture.UPDATE_CASES[-1])
-        final_name = fixture.UPDATE_CASES[-1] + '.cog.tif'
+        native = physical_runner(repository, env, 'verify-' + fixture.MOSAIC_SOURCE_CASES[-1])
+        final_name = fixture.MOSAIC_SOURCE_CASES[-1] + '.cog.tif'
         if (native.get('sha256') != preserved[final_name] or native.get('preserved_sha256') !=
             {name: digest for name, digest in preserved.items() if name != final_name}):
             raise SuiteError('footprint execution changed an accepted artifact')
@@ -1105,6 +1137,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'size_evidence': size_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
+            'mosaic_source_cases': mosaic_source_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
             'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'update_cases': update_cases, 'footprint_cases': footprint_cases, 'tiling_cases': tiling_results['create']['cases'], 'tiling_replace_cases': tiling_results['replace']['cases'],

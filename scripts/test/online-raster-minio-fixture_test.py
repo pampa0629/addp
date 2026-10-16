@@ -175,9 +175,9 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
             self.assertEqual(positions, expected)
             self.assertTrue(all(value == -9999. for index, value in enumerate(values) if index not in expected))
 
-    def test_source_declarations_keep_finite_and_nan_sentinels_on_the_same_grid(self):
+    def test_source_declarations_keep_finite_and_nan_sentinels_and_explicit_grids(self):
         sources = {name: (spatial, nodata) for name, spatial, nodata in m.SOURCE_FILES}
-        self.assertEqual(len(sources), 7)
+        self.assertEqual(len(sources), 10)
         self.assertFalse(sources[m.ROTATED_SOURCE][0])
         self.assertTrue(math.isnan(sources[m.ROTATED_SOURCE][1]))
         self.assertEqual(m.footprint_source_name('footprint-rotated'), m.ROTATED_SOURCE)
@@ -189,6 +189,16 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
         self.assertEqual(m.multiband_expectation('multiband-average-finite')['width'], 171)
         self.assertEqual(m.multiband_expectation('multiband-average-finite')['valid_pixels'], 29239)
         self.assertEqual(m.multiband_expectation('multiband-average-finite-joint')['valid_pixels'], 29238)
+
+    def test_independent_mosaic_formulas_cover_all_three_sources_and_preserve_valid_zero(self):
+        for case in m.MOSAIC_SOURCE_CASES:
+            self.assertEqual(m.mosaic_source_expectation(case)['band_valid_pixels'], [65534, 65533])
+            self.assertEqual(m.mosaic_source_pixels(case)[1], 0.)
+            self.assertEqual(m.mosaic_source_pixels(case, 2)[256 + 240], 0.)
+            self.assertIsNone(m.mosaic_source_pixels(case, 2)[64 * 256 + 10])
+        self.assertEqual(m.mosaic_source_pixels('multisource-first')[100 * 256 + 150], 325751.)
+        self.assertEqual(m.mosaic_source_pixels('multisource-last')[100 * 256 + 150], 225751.)
+        self.assertEqual([m.source_grid(name, False)[0] for name in m.MOSAIC_SOURCE_WINDOWS], [160, 112, 112])
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='addp-raster-fixture-test-')

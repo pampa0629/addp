@@ -1566,6 +1566,94 @@ def mounted_tiles(source, output, mode, compression):
     return json.loads(result['final_result'])
 
 
+@pytest.fixture
+def independent_mosaic_artifacts(outside_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    multisource_execution(tmp_path, api_server, 'update-valid',
+        scene.update_workflow('base', 'patch', 2, 'update-valid'),
+        [('source', 'source.tif'), ('source', 'multiband.tif')])
+    sources = {name: 'registered-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    preserved = {key[2]: hashlib.sha256(value).hexdigest() for key, value in LocalMinio.objects.items() if key[0] == 'target'}
+    for case in fixture.MOSAIC_SOURCE_CASES:
+        result, output = multisource_execution(tmp_path, api_server, case,
+            scene.mosaic_source_workflow(sources, 2, case), [('source', name) for name in sources])
+        evidence = fixture.worker('verify-' + case, outside_artifacts)
+        assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+        assert evidence['preserved_sha256'] == preserved
+        assert evidence['band_valid_pixels'] == [65534, 65533]
+        assert evidence['color_interpretations'] == ['Gray', 'Undefined']
+        assert evidence['overview_sizes'] == [[128, 128]]
+        assert result['transform'] == [0., 1., 0., 256., 0., -1.]
+        preserved[output.name] = evidence['sha256']
+    assert preserved['multisource-first.cog.tif'] != preserved['multisource-last.cog.tif']
+    return outside_artifacts
+
+
+def test_registered_mosaic_three_distinct_files_all_pixels_masks_and_order(independent_mosaic_artifacts):
+    # Hand-computed anchors are independent of the fixture's contributor selection.
+    first = fixture.mosaic_source_pixels('multisource-first')
+    last = fixture.mosaic_source_pixels('multisource-last')
+    assert first[100 * 256 + 150] == 325751.
+    assert last[100 * 256 + 150] == 225751.
+    assert first[1] == last[1] == 0.
+    assert fixture.mosaic_source_pixels('multisource-first', 2)[64 * 256 + 120] == -233010.
+    assert fixture.mosaic_source_pixels('multisource-last', 2)[256 + 240] == 0.
+    evidence = fixture.worker('verify-multisource-last', independent_mosaic_artifacts)
+    assert len(evidence['preserved_sha256']) == 31
+    hashes = [hashlib.sha256(LocalMinio.objects['source', 'raster-source', name]).hexdigest()
+              for name in fixture.MOSAIC_SOURCE_WINDOWS]
+    assert len(set(hashes)) == 3
+
+
+def test_registered_mosaic_oracle_rejects_missing_inputs_order_and_physical_corruption(independent_mosaic_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    case = 'multisource-last'
+    key = ('target', 'raster-target', case + '.cog.tif')
+    original = LocalMinio.objects[key]
+    sources = {name: 'registered-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    for fault in ('load_a', 'load_b', 'load_c', 'order'):
+        definition = scene.mosaic_source_workflow(sources, 2, case)
+        mosaic = definition['tasks'][-2]
+        bindings = [('source', name) for name in sources]
+        if fault == 'order':
+            mosaic['params']['input_rasters'].reverse()
+        else:
+            removed = next(index for index, node in enumerate(definition['tasks']) if node['id'] == fault)
+            definition['tasks'].pop(removed); bindings.pop(removed)
+            mosaic['depends_on'].remove(fault)
+            mosaic['params']['input_rasters'] = [ref for ref in mosaic['params']['input_rasters'] if ref['$ref'] != fault]
+        directory = tmp_path / fault; directory.mkdir()
+        multisource_execution(directory, api_server, case, definition, bindings)
+        with pytest.raises(fixture.FixtureError): fixture.worker('verify-' + case, independent_mosaic_artifacts)
+        LocalMinio.objects[key] = original
+    for fault in ('band-2', 'nodata', 'overview', 'grid'):
+        source = tmp_path / ('bad-' + fault + '.tif')
+        dataset = gdal.Translate(str(source), str(tmp_path / (case + '.cog.tif')), format='GTiff')
+        if fault == 'grid': dataset.SetGeoTransform((1, 1, 0, 256, 0, -1))
+        else:
+            band = dataset.GetRasterBand(2)
+            if fault != 'overview':
+                x, y = (255, 255) if fault == 'nodata' else (240, 1)
+                band.WriteRaster(x, y, 1, 1, struct.pack('<d', 1.), buf_type=gdal.GDT_Float64)
+        dataset.BuildOverviews('NEAREST', [2])
+        if fault == 'overview':
+            dataset.GetRasterBand(2).GetOverview(0).WriteRaster(10, 10, 1, 1, struct.pack('<d', 1.), buf_type=gdal.GDT_Float64)
+        band = dataset = None
+        cog = tmp_path / ('bad-' + fault + '.cog.tif')
+        converted = gdal.Translate(str(cog), str(source), format='COG', creationOptions=['BLOCKSIZE=128']); converted = None
+        LocalMinio.objects[key] = cog.read_bytes()
+        with pytest.raises(fixture.FixtureError): fixture.worker('verify-' + case, independent_mosaic_artifacts)
+        LocalMinio.objects[key] = original
+    source_key = ('source', 'raster-source', 'mosaic-c.tif')
+    source_bytes = LocalMinio.objects[source_key]
+    LocalMinio.objects[source_key] = source_bytes + b'changed'
+    with pytest.raises(fixture.FixtureError, match='source bytes'):
+        fixture.worker('verify-' + case, independent_mosaic_artifacts)
+    LocalMinio.objects[source_key] = source_bytes
+
+
 def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT))
     source = tmp_path/'source.tif'
@@ -1602,12 +1690,10 @@ def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_pat
 
 
 
-def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(outside_artifacts, tmp_path):
+def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(independent_mosaic_artifacts, tmp_path):
+    outside_artifacts = independent_mosaic_artifacts
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
-    multisource_execution(tmp_path, api_server, 'update-valid',
-        scene.update_workflow('base-locator', 'patch-locator', 2, 'update-valid'),
-        [('source', 'source.tif'), ('source', 'multiband.tif')])
     source = tmp_path/'tiling-source.tif'
     source.write_bytes(LocalMinio.objects['source', 'raster-source', 'source.tif'])
     output = tmp_path/'tiles'
