@@ -1364,10 +1364,10 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
     owner_gate = re.search(r"(?ms)^test-transfer-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)", makefile)
     if (aggregate is None or "$(MAKE) test-transfer-online-runner" not in aggregate.group("body")
-            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")
-            or "go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$' -count=1" not in owner_gate.group("body")):
+            or owner_gate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in owner_gate.group("body")):
         raise RegistrationError("transfer-relational-sql-etl Hosted regression must enter test-online-runner")
     contracts = {
+        "Makefile": ("go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$$' -count=1",),
         "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',

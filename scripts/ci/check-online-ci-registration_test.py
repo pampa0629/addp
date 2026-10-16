@@ -906,7 +906,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"transfer-relational-sql-etl"}
         CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
         for relative, fragment in (
-            ("Makefile", "go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$' -count=1"),
+            ("Makefile", "go test ./internal/planner -run '^TestHostedWriteFailureTaskContract$$' -count=1"),
             ("transfer/backend/internal/planner/online_write_failure_contract_test.go", "ParseTableExportTaskSpec"),
             ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
             ("scripts/test/transfer-relational-sql-etl-online.py", "validate_mongodb_execution"),

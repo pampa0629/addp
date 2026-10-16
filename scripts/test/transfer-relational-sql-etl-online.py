@@ -139,7 +139,7 @@ def write_failure_task(name, source_locator, source_table, target_engine_id, sce
             "config": {"runtime": {"boundary": "bounded"}, "load": {"mode": "snapshot"},
                        "source": {"locator": source_locator, "data_type": "table", "representation": "native",
                                   "query": {"language": "sql", "statement": f'SELECT id,document,payload,label FROM public.{source_table} ORDER BY id'}},
-                       "target": {"locator": f"addp://engine/{target_engine_id}/path/transfer_fixture/{target}?type=table", "data_type": "table", "representation": "native", "policy": {"apply_mode": "append"}},
+                       "target": {"parent_locator": f"addp://engine/{target_engine_id}/path/transfer_fixture?type=database", "name": target, "data_type": "table", "representation": "native", "policy": {"apply_mode": "append"}},
                        "transforms": [{"type": "field_mapping", "version": "v1", "mode": "project", "fields": [
                            {"source": field, "target": field, "target_type": field_type, "nullable": False}
                            for field, field_type in (("id", "bigint"), ("document", "json"), ("payload", "bytes"), ("label", "string"))]}],
