@@ -98,6 +98,41 @@ test('an incomplete response never becomes a trajectory of the first page', asyn
   await expect(page.getByRole('dialog').locator('.el-switch').filter({ has: page.getByRole('switch', { name: '按设备和时间范围读取' }) })).toBeVisible()
   await expect(page.getByRole('dialog').locator('canvas')).toHaveCount(0)
 })
+for (const language of ['zh-cn', 'en']) {
+  test(`identified GeoJSON CRS preserves incomplete-read errors and allows a complete range (${language})`, async ({ page }) => {
+    const chinese = language === 'zh-cn'
+    await fixture(page, language, (route, data, selection) => json(route, { preview_type: 'table', data: selection
+      ? { ...data, rows: observations.filter(row => row.unit === 'A'), total: 2, has_more: false,
+          trajectory_scope: { selection, complete: true, scanned_rows: 3000 } }
+      : { ...data, total: 3000, has_more: true } }), 'geojson', data => ({
+        ...data, source_srid: 4326, source_crs: 'EPSG:4326'
+      }))
+    const open = page.getByRole('button', { name: chinese ? '静态轨迹' : 'Static trajectory', exact: true })
+    await open.click()
+    const dialog = page.getByRole('dialog')
+    const incomplete = /完整性未知|completeness|incomplete/i
+    await expect(dialog.getByRole('alert')).toContainText(incomplete)
+    await expect(dialog.locator('canvas')).toHaveCount(0)
+    const crs = dialog.locator('.el-select').filter({ has: page.getByRole('combobox', { name: chinese ? '源坐标系' : 'Source CRS', exact: true }) })
+    await expect(crs).toContainText(chinese ? '使用已识别的源坐标系' : 'Use identified source CRS')
+    for (const [label, value] of [[chinese ? '设备字段' : 'Device field', 'unit'], [chinese ? '时间字段' : 'Time field', 'at'], [chinese ? 'X / 经度字段' : 'X / longitude field', 'east'], [chinese ? 'Y / 纬度字段' : 'Y / latitude field', 'north']]) await choose(page, label, value)
+    const draw = dialog.getByRole('button', { name: chinese ? '绘制轨迹' : 'Draw trajectories', exact: true })
+    await draw.click()
+    await expect(dialog.getByRole('alert')).toContainText(incomplete)
+    await expect(dialog.locator('canvas')).toHaveCount(0)
+    await dialog.locator('.el-switch').click()
+    await dialog.getByRole('textbox', { name: chinese ? '设备标识' : 'Device identifiers', exact: true }).fill('A')
+    await dialog.getByRole('textbox', { name: /开始时间|Start time/ }).fill('2026-10-16T01:00:00Z')
+    await dialog.getByRole('textbox', { name: /结束时间|End time/ }).fill('2026-10-16T03:00:00Z')
+    await draw.click()
+    await expect(dialog.getByRole('status')).toContainText(chinese ? '1 台设备，2 个采样点' : '1 devices, 2 observations')
+    await expectMapPaint(dialog)
+    await dialog.getByRole('button', { name: chinese ? '关闭此对话框' : 'Close this dialog' }).click()
+    await open.click()
+    await expect(dialog.getByRole('alert')).toContainText(incomplete)
+    await expect(dialog.locator('canvas')).toHaveCount(0)
+  })
+}
 test('a conflicting timestamp refuses all routes instead of silently skipping a record', async ({ page }) => {
   await fixture(page, 'zh-cn', (route, data) => json(route, { preview_type: 'table', data: { ...data, rows: [observations[0], { ...observations[0], east: 118 }], total: 2 } }))
   await page.getByRole('button', { name: '静态轨迹', exact: true }).click()

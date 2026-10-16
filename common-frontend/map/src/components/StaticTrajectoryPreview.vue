@@ -108,19 +108,27 @@ async function open() {
   loading.value = true
   const pending = new AbortController()
   controller = pending
+  let loaded
   try {
-    const loaded = await props.loadTable(pending.signal)
+    loaded = await props.loadTable(pending.signal)
     if (pending.signal.aborted || controller !== pending) return
     if (!Array.isArray(loaded?.rows) || !Array.isArray(loaded?.columns)) throw new TrajectoryValidationError('not_table')
-    table.value = loaded
-    if (sourceCRSAvailable.value) selectedCRS.value = 'source'
-    validateTrajectoryTable(loaded)
   } catch (failure) {
     if (pending.signal.aborted || controller !== pending) return
     const status = failure?.response?.status
     error.value = failure instanceof TrajectoryValidationError ? failure : { code: status === 401 ? 'login' : status === 403 ? 'denied' : 'load' }
+    return
   } finally {
     if (controller === pending) loading.value = false
+  }
+  if (pending.signal.aborted || controller !== pending) return
+  controller = null
+  table.value = loaded
+  if (sourceCRSAvailable.value) selectedCRS.value = 'source'
+  try {
+    validateTrajectoryTable(loaded)
+  } catch (failure) {
+    error.value = failure
   }
 }
 async function generate() {
@@ -155,7 +163,7 @@ async function generate() {
     if (pending && controller === pending) loading.value = false
   }
 }
-watch([config, selectedCRS, range], () => { controller?.abort(); controller = null; loading.value = false; result.value = null; error.value = null })
+watch([config, selectedCRS, range], () => { controller?.abort(); controller = null; loading.value = false; result.value = null; error.value = null }, { flush: 'sync' })
 watch(visible, value => { if (!value) clear() })
 onBeforeUnmount(clear)
 </script>
