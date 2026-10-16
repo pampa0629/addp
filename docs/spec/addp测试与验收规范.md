@@ -101,6 +101,8 @@ Model3D 原生安装的下载完整性、私有资源隔离和损坏缓存拒绝
 
 ### 4.2 T2
 
+Spark PostgreSQL 发布复用 `make test-common-hdfs` 中已有的独占 PostGIS 和真实 Spark Worker，验证已有目标与新目标提交成功但响应丢失、提交前失败的回滚及清理、回滚未确认时保留证据，以及提交成功后关闭连接或暂存清理失败不改写已提交事实。故障注入只包裹正式 JDBC 控制连接，实际提交、数据核对与暂存检查仍由原生 PostgreSQL 和独立连接完成；T1 同时验证原始错误不被回滚、查询资源关闭或连接关闭错误遮盖。沿用现有 owner、CI 输入登记和零残留生命周期，不连接个人 Business 实例。
+
 Spark MySQL/Doris 暂存发布由原生 Linux x86_64 Hosted 门禁 `make test-common-spark-table` 验证；独占 Doris 通过 Business 唯一入口验证新建集群和重复登记，核对 Backend ID 不变、FE/BE 就绪后完成官方连接器读写；历史 IP 地址迁移及反例由 `make test-business-config` 的确定性夹具覆盖，本机已有 Backend 的真实迁移另行验收，不计为 Hosted 迁移覆盖；macOS 的显式 MySQL 子集不计为完整 T2 通过。门禁拥有独占 MySQL 8.0、Doris 2.1.0、Spark Master/Worker，固定官方镜像摘要，无宿主端口、不连接 Business，失败与中断均删除本轮容器、卷和网络并核对零残留。断言覆盖真实 Worker、覆盖/追加/空成果、目标定义保留、字段与约束拒绝、计算失败、bigint/Decimal 精确读回、Doris SQL 生成 Decimal 的 JSON 写入精度和官方连接器读写回路中的中文、emoji、空串、null、合法尾随空格及长文本，以及 MySQL 提交响应丢失后保留原提交和暂存证据；不把 T1 mock 或现有 Go Provider 门禁当作 Spark 写入验证。变更选择通过声明的 Runtime 及夹具输入归 Common T2，Release/T2 CI 调用同一入口；此 T2 不证明 Develop/Console 端到端验收已完成。
 
 Document 原生转换使用独立入口 `make test-document-native`，在已准备的私有 LibreOffice 和固定中文字体上，经正式 `document_to_pdf` 算子转换三页 PPTX，核对页数、中文文本、工作目录清理及源样例不变。缺失或损坏的依赖直接失败，不跳过、不隐式安装。测试使用临时输入、输出和 profile，不启动 ADDP 服务；由 Platform CI 的 Document Workflow Job 准备依赖后调用。普通 start/restart 只负责依赖与服务就绪，不执行该功能测试。HTTP／算子确定性测试继续使用 `make test-document-workflow`，跨模块产物生成与浏览器预览继续由 Manager T4 验证，三者分别报告。

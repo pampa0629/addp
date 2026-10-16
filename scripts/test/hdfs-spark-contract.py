@@ -2,9 +2,11 @@
 import os
 import socket
 import sys
+from unittest.mock import patch
 sys.path.insert(0, '/addp/spark-workflow')
 from pyspark.sql import SparkSession
 from storage_adapters import DatabaseAdapter, FileAdapter
+from mysql_publication import PublicationUncertain
 from urllib.parse import quote
 
 spark = (SparkSession.builder.appName('ADDP-HDFS-distributed-contract')
@@ -116,6 +118,94 @@ try:
     assert commits == [1, 1]
     assert query('SELECT count(*), sum(value) FROM results.target') == [('4', '100')]
     assert save(frame) == 2
+    # Exercise the real transaction while losing only the caller's observation.
+    jdbc_factory = DatabaseAdapter._open_jdbc_connection
+    changed_frame = spark.createDataFrame([(501, 5010), (502, 5020)], frame.schema).repartition(2)
+    baseline_rows = [('1', '10'), ('2', '20')]
+    changed_rows = [('501', '5010'), ('502', '5020')]
+    def stage_names():
+        return [row[0] for row in query("SELECT tablename FROM pg_tables WHERE schemaname='results' "
+                                      "AND tablename LIKE '__addp_spark_stage_%' ORDER BY tablename")]
+    def clear_stage_evidence():
+        for name in stage_names():
+            execute('DROP TABLE ' + DatabaseAdapter._postgresql_table('results', name))
+        assert not stage_names()
+    def physical_rows(table):
+        return query('SELECT id::text, value::text FROM ' + DatabaseAdapter._postgresql_table('results', table) + ' ORDER BY id')
+    class FaultedPublicationConnection:
+        def __init__(self, actual, mode):
+            self.actual, self.mode = actual, mode
+        def __getattr__(self, name):
+            return getattr(self.actual, name)
+        def commit(self):
+            if self.mode == 'commit_before':
+                raise OSError('injected response loss before server commit')
+            self.actual.commit()
+            if self.mode == 'commit_after':
+                raise OSError('injected response loss after server commit')
+        def rollback(self):
+            if self.mode == 'rollback_unconfirmed':
+                raise OSError('injected rollback response unavailable')
+            return self.actual.rollback()
+        def close(self):
+            self.actual.close()
+            if self.mode == 'close_after_success':
+                raise OSError('injected connection close failure')
+    def faulted_factory(mode):
+        opened = 0
+        def factory(*args):
+            nonlocal opened
+            opened += 1
+            if mode == 'cleanup_after_success' and opened > 1:
+                raise OSError('injected cleanup connection failure')
+            return FaultedPublicationConnection(jdbc_factory(*args), mode)
+        return factory
+    for mode in ('commit_before', 'commit_after'):
+        for existing in (True, False):
+            table = 'target' if existing else 'new_' + mode
+            if not existing:
+                assert query('SELECT to_regclass(?)::text', ('results.' + table,)) == [(None,)]
+            with patch.object(DatabaseAdapter, '_open_jdbc_connection', side_effect=faulted_factory(mode)):
+                try:
+                    save(changed_frame, table)
+                except PublicationUncertain as error:
+                    assert isinstance(error.__cause__, OSError)
+                else:
+                    raise AssertionError('PostgreSQL lost commit response reported success')
+            if mode == 'commit_after':
+                assert physical_rows(table) == changed_rows
+            elif existing:
+                assert physical_rows(table) == baseline_rows
+            else:
+                assert query('SELECT to_regclass(?)::text', ('results.' + table,)) == [(None,)]
+            evidence = stage_names()
+            assert len(evidence) == (1 if existing or mode == 'commit_before' else 0), evidence
+            for stage in evidence:
+                assert query('SELECT * FROM ' + DatabaseAdapter._postgresql_table('results', stage) + ' ORDER BY 1') == changed_rows
+            clear_stage_evidence()
+            assert save(frame) == 2
+    invalid = spark.createDataFrame([(501, -1)], frame.schema)
+    with patch.object(DatabaseAdapter, '_open_jdbc_connection', side_effect=faulted_factory('rollback_unconfirmed')):
+        try:
+            save(invalid)
+        except Exception as error:
+            assert not isinstance(error, PublicationUncertain)
+            assert 'check constraint' in str(error), str(error)
+        else:
+            raise AssertionError('PostgreSQL constraint failure reported success')
+    assert physical_rows('target') == baseline_rows
+    assert len(stage_names()) == 1, 'unconfirmed rollback lost staging evidence'
+    clear_stage_evidence()
+    for mode in ('close_after_success', 'cleanup_after_success'):
+        with patch.object(DatabaseAdapter, '_open_jdbc_connection', side_effect=faulted_factory(mode)):
+            assert save(changed_frame) == 2
+        assert physical_rows('target') == changed_rows
+        assert query(identity_sql) == before
+        assert len(stage_names()) == (1 if mode == 'cleanup_after_success' else 0)
+        clear_stage_evidence()
+        assert save(frame) == 2
+    print('SPARK_POSTGRES_COMMIT_BOUNDARY_PASS existing=true new=true committed_response_loss=true '
+          'uncommitted_response_loss=true rollback_unconfirmed=true close_failure=true cleanup_failure=true', flush=True)
     # Quoted mixed-case, punctuation and Unicode names survive JDBC and publication.
     assert save(frame.withColumnRenamed('value', '总"值'), 'Mixed.Table') == 2
     read = DatabaseAdapter.load(spark, {'connection_info': pg, 'schema': 'results', 'table': 'Mixed.Table'})
@@ -145,7 +235,6 @@ try:
     assert query("SELECT count(*) FROM pg_tables WHERE schemaname='results' AND tablename LIKE '__addp_spark_stage_%'") == [('0',)]
     print('HDFS_SPARK_POSTGRES_PASS preserved=true rollback=true rows=2 spatial=true reuse=true staging=0', flush=True)
     print('HDFS_SPARK_PASS formats=csv,json,parquet distributed=true', flush=True)
-    from unittest.mock import patch
     from uuid import uuid4
     store = {'engine_type': 'minio', 'endpoint': 'minio:9000', 'access_key': 'owned-minio-access',
              'secret_key': 'owned-minio-secret', 'use_ssl': False, 'bucket': 'result'}

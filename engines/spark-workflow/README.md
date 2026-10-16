@@ -77,7 +77,7 @@ Elasticsearch 的 `load` 使用索引 locator 和独立 Spark 集群；Develop �
 
 最小验证：`make test-spark-workflow`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`；正式消费验收使用既有 Hosted T4 `elasticsearch-consumer-flow`，同时核对 Console、Runtime 状态和真实 Worker。
 
-保存到 PostgreSQL 时，普通表和空间表统一通过 Worker JDBC 写入同 schema 的唯一暂存表。Runtime 按 DataFrame schema 识别 Geometry 列并以 EWKT 暂存，在发布事务中恢复 PostGIS geometry。已有目标的覆盖保存只 DELETE + INSERT，保留结构、约束、索引、权限和注释；追加只 INSERT。字段、类型或约束不匹配时回滚并清理暂存表，返回实际提交行数；暂存表不作为工作流产物暴露。表目标需要 write + ddl 授权；详细类型与事务边界见工作流计算引擎接口规范。
+保存到 PostgreSQL 时，普通表和空间表统一通过 Worker JDBC 写入同 schema 的唯一暂存表。Runtime 按 DataFrame schema 识别 Geometry 列并以 EWKT 暂存，在发布事务中恢复 PostGIS geometry。已有目标的覆盖保存只 DELETE + INSERT，保留结构、约束、索引、权限和注释；追加只 INSERT。字段、类型或约束不匹配时，确认回滚后清理暂存表；回滚未确认或提交响应丢失时保留现有证据，不自动重试。已有目标的暂存表在提交确认后另行清理，新目标仍由事务内改名发布。资源关闭或清理失败不覆盖原始错误，也不把已确认提交改报失败；返回实际提交行数，暂存表不作为工作流产物暴露。表目标需要 write + ddl 授权；详细类型与事务边界见工作流计算引擎接口规范。 提交异常的确定性回归使用 `make test-spark-workflow`；真实事务回归复用 `make test-common-hdfs` 已有的独占 PostGIS、真实 Worker 和全退出路径清理。
 
 MySQL 保存限定普通 InnoDB 表，先由 Worker JDBC 写独占暂存表，再在 SERIALIZABLE 事务内发布。覆盖只替换数据，保留表定义；生成列、自增列明确拒绝；原有约束和触发器保持数据库语义，目标外副作用不属于目标表事务保证。时间列保留微秒，TIMESTAMP 统一使用 UTC JDBC 会话。新表通过暂存表原子改名发布。发布响应丢失时保留证据并报告状态不确定，不自动重试；MySQL DDL 不进入数据发布事务。
 

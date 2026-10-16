@@ -11,6 +11,8 @@ from typing import Any, Dict
 from urllib.parse import urlencode, urlsplit, unquote
 import uuid
 
+from mysql_publication import PublicationUncertain, close_safely
+
 try:
     from pyspark.sql import SparkSession, DataFrame
 except ModuleNotFoundError:
@@ -267,9 +269,9 @@ class DatabaseAdapter:
             logger.warning("Failed to clean Spark JDBC staging table %s.%s: %s", schema, table, error)
         finally:
             if statement is not None:
-                statement.close()
+                close_safely(statement)
             if connection is not None:
-                connection.close()
+                close_safely(connection)
 
     @staticmethod
     def _postgresql_query(connection, sql: str, params=()) -> list[tuple]:
@@ -285,9 +287,9 @@ class DatabaseAdapter:
                     result.append(tuple(rows.getString(index) for index in range(1, width + 1)))
                 return result
             finally:
-                rows.close()
+                close_safely(rows)
         finally:
-            statement.close()
+            close_safely(statement)
 
     @staticmethod
     def _validate_postgresql_columns(connection, stage_ref: str, target_ref: str,
@@ -314,12 +316,18 @@ class DatabaseAdapter:
         df: DataFrame, jdbc_url: str, conn_info: Dict[str, Any], schema: str,
         stage_table: str, target_table: str, geometry_columns: list[str], mode: str, stage_columns: list[str],
     ) -> int:
-        connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
+        connection = None
         statement = None
+        transaction_started = False
+        commit_attempted = False
+        cleanup_stage = True
         stage_ref = DatabaseAdapter._postgresql_table(schema, stage_table)
         target_ref = DatabaseAdapter._postgresql_table(schema, target_table)
         try:
+            connection = DatabaseAdapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
             connection.setAutoCommit(False)
+            transaction_started = True
+            cleanup_stage = False
             statement = connection.createStatement()
             for original, staged in zip(df.columns, stage_columns):
                 statement.execute(
@@ -370,21 +378,35 @@ class DatabaseAdapter:
                 )[0][0])
                 if published_rows != expected_rows:
                     raise ValueError("PostgreSQL published row count differs from expected row count")
-                statement.execute(f"DROP TABLE {stage_ref}")
             else:
                 statement.execute(
                     f"ALTER TABLE {stage_ref} RENAME TO {DatabaseAdapter._postgresql_identifier(target_table)}"
                 )
                 written_rows = staged_rows
+            commit_attempted = True
             connection.commit()
+            cleanup_stage = True
             return written_rows
-        except Exception:
-            connection.rollback()
+        except Exception as error:
+            if commit_attempted:
+                raise PublicationUncertain(
+                    f"PostgreSQL publication response uncertain; do not retry; "
+                    f"inspect target={target_ref} stage={stage_ref}"
+                ) from error
+            if transaction_started:
+                try:
+                    connection.rollback()
+                    cleanup_stage = True
+                except Exception:
+                    logger.warning("PostgreSQL rollback unconfirmed; staging evidence retained: %s", stage_ref)
             raise
         finally:
             if statement is not None:
-                statement.close()
-            connection.close()
+                close_safely(statement)
+            if connection is not None:
+                close_safely(connection)
+            if cleanup_stage:
+                DatabaseAdapter._drop_postgresql_table(df, jdbc_url, conn_info, schema, stage_table)
 
     @staticmethod
     def _save_postgresql(
@@ -414,13 +436,15 @@ class DatabaseAdapter:
                 break
         try:
             DatabaseAdapter._write_jdbc(stage_df.toDF(*stage_columns), jdbc_url, driver, conn_info, schema, stage_table, 'error')
-            return DatabaseAdapter._finalize_postgresql_table(
-                stage_df, jdbc_url, conn_info, schema, stage_table, target_table,
-                geometry_columns, params.get('mode', 'overwrite'), stage_columns,
-            )
         except Exception:
             DatabaseAdapter._drop_postgresql_table(stage_df, jdbc_url, conn_info, schema, stage_table)
             raise
+        # Publication owns its cleanup: an unknown commit/rollback must not be
+        # caught by the Worker-failure path and lose its staging evidence.
+        return DatabaseAdapter._finalize_postgresql_table(
+            stage_df, jdbc_url, conn_info, schema, stage_table, target_table,
+            geometry_columns, params.get('mode', 'overwrite'), stage_columns,
+        )
 
     @staticmethod
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
@@ -443,7 +467,7 @@ class DatabaseAdapter:
                     "SELECT attname FROM pg_attribute WHERE attrelid = to_regclass(?) "
                     "AND attnum > 0 AND NOT attisdropped ORDER BY attnum", (table_ref,))]
             finally:
-                connection.close()
+                close_safely(connection)
             if not columns:
                 raise ValueError("PostgreSQL source table has no readable columns")
             projection = ", ".join(

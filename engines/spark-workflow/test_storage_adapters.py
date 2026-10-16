@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from storage_adapters import DatabaseAdapter, FileAdapter, StorageAdapter
 from unittest.mock import MagicMock
+from mysql_publication import PublicationUncertain
 
 
 class StorageAdapterTest(unittest.TestCase):
@@ -418,6 +419,7 @@ class PostgreSQLSaveTest(unittest.TestCase):
         self.df.columns = ['id', 'value']
         self.conn = MagicMock()
         self.statement = self.conn.createStatement.return_value
+        self.cleanup = MagicMock()
         self.params = dict(connection_info={'engine_type': 'postgresql', 'host': 'pg',
                           'port': 5432, 'database': 'business'}, schema='results', table='target')
 
@@ -427,7 +429,8 @@ class PostgreSQLSaveTest(unittest.TestCase):
             queries = [*queries, [('99',)], [(str(staged + (99 if mode == 'append' else 0)),)]]
         with patch.object(DatabaseAdapter, '_open_jdbc_connection', return_value=self.conn), \
                 patch.object(DatabaseAdapter, '_postgresql_query', side_effect=queries), \
-                patch.object(DatabaseAdapter, '_validate_postgresql_columns'):
+                patch.object(DatabaseAdapter, '_validate_postgresql_columns'), \
+                patch.object(DatabaseAdapter, '_drop_postgresql_table', self.cleanup):
             return DatabaseAdapter._finalize_postgresql_table(
                 self.df, 'jdbc', {}, 'results', 'stage', 'target', [], mode, ['staged_id', 'staged_value'])
 
@@ -436,7 +439,8 @@ class PostgreSQLSaveTest(unittest.TestCase):
         self.assertEqual(self.finalize([[], [('r',)], [('2',)]]), 2)
         calls = [call.args[0] for call in self.statement.execute.call_args_list]
         self.assertIn('LOCK TABLE "results"."target" IN SHARE ROW EXCLUSIVE MODE', calls)
-        self.assertIn('DROP TABLE "results"."stage"', calls)
+        self.assertNotIn('DROP TABLE "results"."stage"', calls)
+        self.cleanup.assert_called_once()
         self.assertFalse(any('DROP TABLE "results"."target"' in sql for sql in calls))
         self.conn.commit.assert_called_once()
         self.df.count.assert_not_called()
@@ -490,18 +494,124 @@ class PostgreSQLSaveTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     DatabaseAdapter._validate_postgresql_columns(self.conn, 'stage', 'target', [])
 
-    def test_plain_postgresql_save_uses_single_staging_path_and_cleans_failures(self):
+    def test_worker_failure_cleans_stage_before_publication(self):
         with patch.object(DatabaseAdapter, '_geometry_column_names', return_value=[]), \
-                patch.object(DatabaseAdapter, '_write_jdbc') as write, \
-                patch.object(DatabaseAdapter, '_finalize_postgresql_table', side_effect=RuntimeError('publish failed')), \
+                patch.object(DatabaseAdapter, '_write_jdbc', side_effect=RuntimeError('worker failed')) as write, \
+                patch.object(DatabaseAdapter, '_finalize_postgresql_table') as finalize, \
                 patch.object(DatabaseAdapter, '_drop_postgresql_table') as cleanup:
-            with self.assertRaisesRegex(RuntimeError, 'publish failed'):
+            with self.assertRaisesRegex(RuntimeError, 'worker failed'):
                 DatabaseAdapter.save(self.df, self.params)
             stage = write.call_args.args[5]
             self.assertTrue(stage.startswith('__addp_spark_stage_'))
             self.assertEqual(cleanup.call_args.args[-1], stage)
             self.assertNotEqual(stage, 'target')
+            finalize.assert_not_called()
             self.df.count.assert_not_called()
+
+    def test_commit_response_loss_retains_evidence_for_existing_and_new_targets(self):
+        for target in ([('r',)], []):
+            with self.subTest(target=target):
+                self.setUp()
+                primary = OSError('commit response lost')
+                self.conn.commit.side_effect = primary
+                self.conn.rollback.side_effect = OSError('rollback must not run')
+                self.conn.close.side_effect = OSError('close failed')
+                self.statement.executeLargeUpdate.side_effect = [99, 2]
+                with self.assertRaises(PublicationUncertain) as caught:
+                    self.finalize([[], target, [('2',)]])
+                self.assertIs(caught.exception.__cause__, primary)
+                self.conn.rollback.assert_not_called()
+                self.cleanup.assert_not_called()
+                self.conn.close.assert_called_once()
+                self.assertNotIn('DROP TABLE "results"."stage"',
+                                 [call.args[0] for call in self.statement.execute.call_args_list])
+
+    def test_successful_commit_survives_statement_and_connection_close_failures(self):
+        self.statement.executeLargeUpdate.side_effect = [99, 2]
+        self.statement.close.side_effect = OSError('statement close failed')
+        self.conn.close.side_effect = OSError('connection close failed')
+        self.assertEqual(self.finalize([[], [('r',)], [('2',)]]), 2)
+        self.conn.commit.assert_called_once()
+        self.conn.rollback.assert_not_called()
+        self.cleanup.assert_called_once()
+
+    def test_rollback_failure_keeps_stage_and_original_error(self):
+        primary = ValueError('original insert failure')
+        self.statement.executeLargeUpdate.side_effect = [99, primary]
+        self.conn.rollback.side_effect = OSError('rollback unconfirmed')
+        self.statement.close.side_effect = OSError('statement close failed')
+        self.conn.close.side_effect = OSError('connection close failed')
+        with self.assertRaises(ValueError) as caught:
+            self.finalize([[], [('r',)], [('2',)]])
+        self.assertIs(caught.exception, primary)
+        self.conn.commit.assert_not_called()
+        self.conn.rollback.assert_called_once()
+        self.cleanup.assert_not_called()
+
+    def test_confirmed_rollback_cleans_stage_without_masking_error(self):
+        primary = ValueError('original insert failure')
+        self.statement.executeLargeUpdate.side_effect = [99, primary]
+        self.conn.close.side_effect = OSError('connection close failed')
+        with self.assertRaises(ValueError) as caught:
+            self.finalize([[], [('r',)], [('2',)]])
+        self.assertIs(caught.exception, primary)
+        self.cleanup.assert_called_once()
+
+    def test_save_does_not_override_publication_stage_ownership(self):
+        for primary in (PublicationUncertain('uncertain'), ValueError('publish failed')):
+            with self.subTest(primary=primary), \
+                    patch.object(DatabaseAdapter, '_geometry_column_names', return_value=[]), \
+                    patch.object(DatabaseAdapter, '_write_jdbc'), \
+                    patch.object(DatabaseAdapter, '_finalize_postgresql_table', side_effect=primary), \
+                    patch.object(DatabaseAdapter, '_drop_postgresql_table') as cleanup:
+                with self.assertRaises(type(primary)) as caught:
+                    DatabaseAdapter.save(self.df, self.params)
+                self.assertIs(caught.exception, primary)
+                cleanup.assert_not_called()
+
+    def test_query_closing_resources_preserves_result_and_primary_error(self):
+        for fail_read in (False, True):
+            with self.subTest(fail_read=fail_read):
+                statement = MagicMock()
+                rows = statement.executeQuery.return_value
+                rows.getMetaData.return_value.getColumnCount.return_value = 1
+                rows.getString.return_value = '2'
+                primary = ValueError('original query failure')
+                rows.next.side_effect = primary if fail_read else [True, False]
+                rows.close.side_effect = OSError('result close failed')
+                statement.close.side_effect = OSError('query close failed')
+                self.conn.prepareStatement.return_value = statement
+                if fail_read:
+                    with self.assertRaises(ValueError) as caught:
+                        DatabaseAdapter._postgresql_query(self.conn, 'SELECT COUNT(*)')
+                    self.assertIs(caught.exception, primary)
+                else:
+                    self.assertEqual(DatabaseAdapter._postgresql_query(self.conn, 'SELECT COUNT(*)'), [('2',)])
+                rows.close.assert_called_once()
+                statement.close.assert_called_once()
+
+    def test_failure_to_open_publication_connection_still_cleans_owned_stage(self):
+        primary = OSError('cannot open publication connection')
+        with patch.object(DatabaseAdapter, '_open_jdbc_connection', side_effect=primary), \
+                patch.object(DatabaseAdapter, '_drop_postgresql_table') as cleanup:
+            with self.assertRaises(OSError) as caught:
+                DatabaseAdapter._finalize_postgresql_table(
+                    self.df, 'jdbc', {}, 'results', 'stage', 'target', [], 'overwrite', ['a', 'b'])
+        self.assertIs(caught.exception, primary)
+        cleanup.assert_called_once_with(self.df, 'jdbc', {}, 'results', 'stage')
+
+    def test_worker_error_survives_cleanup_and_close_failures(self):
+        primary = ValueError('original worker failure')
+        self.statement.execute.side_effect = OSError('drop failed')
+        self.statement.close.side_effect = OSError('drop statement close failed')
+        self.conn.close.side_effect = OSError('drop connection close failed')
+        with patch.object(DatabaseAdapter, '_geometry_column_names', return_value=[]), \
+                patch.object(DatabaseAdapter, '_write_jdbc', side_effect=primary), \
+                patch.object(DatabaseAdapter, '_open_jdbc_connection', return_value=self.conn):
+            with self.assertRaises(ValueError) as caught:
+                DatabaseAdapter.save(self.df, self.params)
+        self.assertIs(caught.exception, primary)
+        self.conn.close.assert_called_once()
 
     def test_postgresql_identifier_quoting_and_duplicate_names(self):
         self.assertEqual(DatabaseAdapter._postgresql_table('mixed.schema', 'ta"ble'), '"mixed.schema"."ta""ble"')

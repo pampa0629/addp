@@ -52,5 +52,6 @@ compose exec -T spark-master pip install --disable-pip-version-check apache-sedo
 compose exec -T -e HADOOP_USER_NAME=addp_business_reader spark-master /opt/spark/bin/spark-submit --master spark://spark-master:7077 --packages org.postgresql:postgresql:42.7.4,org.apache.sedona:sedona-spark-shaded-3.5_2.12:1.5.3,org.datasyslab:geotools-wrapper:1.5.3-28.2,org.apache.spark:spark-hadoop-cloud_2.12:3.5.0 --exclude-packages com.google.cloud.bigdataoss:gcs-connector,org.apache.hadoop:hadoop-azure,org.apache.hadoop:hadoop-cloud-storage /addp/hdfs-spark-contract.py 2>&1 | tee "$HDFS_T2_WORK_DIR/spark.log"
 grep -q '^HDFS_SPARK_PASS formats=csv,json,parquet distributed=true$' "$HDFS_T2_WORK_DIR/spark.log"
 grep -q '^HDFS_SPARK_POSTGRES_PASS ' "$HDFS_T2_WORK_DIR/spark.log"
+grep -q '^SPARK_POSTGRES_COMMIT_BOUNDARY_PASS ' "$HDFS_T2_WORK_DIR/spark.log"
 grep -q '^SPARK_MINIO_PARQUET_PASS ' "$HDFS_T2_WORK_DIR/spark.log"
 echo "HDFS_T2_PASS WebHDFS, distributed Spark, PostgreSQL and MinIO publication contracts"
