@@ -7,6 +7,8 @@ test('registers, updates, disables and deletes using authoritative saved version
   await page.goto('/monitoring-targets')
   await page.getByRole('button', { name: '新增采集配置', exact: true }).click()
   await expect(page).toHaveURL(/\/monitoring-targets\/new$/)
+  const endpointBounds = await page.getByTestId('target-endpoint').boundingBox()
+  await expect.poll(async () => (await page.getByTestId('target-node').boundingBox())?.width || 0).toBeGreaterThan(endpointBounds.width * 0.9)
   await page.getByTestId('target-node').click()
   await page.getByRole('option', { name: '测试主机', exact: true }).click()
   await page.getByTestId('target-endpoint').fill('https://new.test:9443/metrics')

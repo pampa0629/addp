@@ -226,6 +226,8 @@ test('resource rules save disabled, explicitly enable with CAS, and retain indep
  await page.getByRole('button', { name: '新建资源规则', exact: true }).click()
  const dialog = page.getByRole('dialog', { name: '新建资源规则', exact: true })
  await dialog.getByTestId('rule-name').fill('CPU 压力')
+ const nameBounds = await dialog.getByTestId('rule-name').boundingBox()
+ await expect.poll(async () => (await dialog.getByTestId('target-node').boundingBox())?.width || 0).toBeGreaterThan(nameBounds.width * 0.9)
  await dialog.getByTestId('target-node').click()
  await page.getByRole('option', { name: '测试主机', exact: true }).click()
  await expect(dialog.getByRole('switch')).toBeDisabled()

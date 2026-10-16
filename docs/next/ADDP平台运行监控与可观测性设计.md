@@ -2245,3 +2245,17 @@ System 迁移包首轮因本批测试夹具的 `authenticated_at` 晚于事务�
 此前 Infra 夹具修复 `a71c128a8` 的完整生命周期聚合由 CI 会话串行执行，本会话只读核对了源码 `0c62efbc81cf7e35faa73928d28dff07f5356611` 的退出 0 回执及日志尾部；没有重复聚合。该证据见 `/tmp/addp-ci-audit-20261016/dev-lifecycle-after-infra-fix.log` 及同目录 result.json。此前 `c64eb5d5` 修复的 System IAM 在 Run `38844981702` 中，专用 verification Job `116796340541` 已 success，本轮核对时另一 System IAM gate Job 为 queued，不据此宣称整轮成功；本批资源规则尚未推送，不能借用旧 CI 作为新代码 CI。
 
 本轮未重启个人服务、未自动启用任何规则或资源通知、未发送真实群消息；未扩大 Hosted T4 临时身份用途。本批同时修改 `common/authorization` 的目录校验测试，虽未修改 Common 运行代码，运行验收仍按根 AGENTS.md 的共享目录变更规则，由用户在外部终端执行 `./scripts/dev/restart.sh -all`，让正式权限迁移与评估代码生效，再以平台系统管理员重新登录 Safari，验证“平台告警 → 资源规则”的真实授权、默认停用、主机选择、保存/读取及启停。实际运行和新提交 CI 仍须单独记录，不能与本地分层门禁混记。
+
+### 10.71 重启后的个人环境核验与主机选择显示修正（2026-10-16）
+
+用户完成重启后，System `:8180/health/ready`、Monitor `:8100/health/ready` 及 Console `:5170/` 均成功响应。System 与 Monitor 的 Ready 回执均报告源码 `23754bafa654147939650fcb82f6388ac01eb14e`，启动时间分别为北京时间 12:42:53、12:43:09；已通过 Git 祖先检查确认其中包含资源规则代码提交 `d8044a7cc`，且该提交及运行验收指引修订 `b5b928d5b` 已进入远端 main。不能仅因后续版本提交更新而将这一已包含本批实现的进程判为旧版本。
+
+原生 Safari 的平台系统管理员会话已能读取“平台告警 → 资源规则”，初始列表为空；新建表单从 System 权威列表选中 `Docker Desktop Linux VM（Business / Infra）`，不手填节点 UUID 或采集地址。CPU 默认条件为高于 90% 持续 300 秒、低于 80% 持续 120 秒，创建时启用开关不可操作。临时规则 `acceptance-disposable-cpu-20261016` 已通过真实保存并重新出现在列表，显示“否 / 已暂停”。这验证了当前用户读取、创建及主机关联路径，不据此宣称修改、删除或后台启用评估已完成真实运行验收。
+
+Safari 表格行内操作未能响应本次原生自动化点击，已请用户手动打开临时规则的编辑框；当前规则保持停用，未新增资源通知订阅或发送真实群消息。后续启停及清理须以实际操作回执补记，不把确定性浏览器测试替代为个人环境验收。
+
+同次发现共享 `HostNodeSelect` 在表单 Flex 容器中收缩，选择后主机名称仅露出开头。浏览器回归先复现选择框宽度 41px、相邻输入框 566px，再在该唯一组件的根容器及选择控件上统一设置填满可用宽度，保留 `min-width: 0` 以允许窄屏收缩。资源规则与采集配置复用同一修正；分别在既有创建回归中检查选择框实际宽度，避免仅检查样式字符串而遗漏显示缺陷。只改前端显示与既有文档，不修改 API、权限、后台评估或部署，不需要再次重启后端。
+
+显示修正的验证入口为 `make test-monitor-frontend`，已确认现有 Platform CI 的 Monitor 前端 owner 调用同一入口并覆盖这些路径，无须新增编排。修正前新增宽度断言确实失败，证据为 `/tmp/addp-resource-rules-width-before.log`；修正后完整入口退出 0，62 项单测、154 项浏览器回归及生产构建均通过，证据为 `/tmp/addp-resource-rules-width-final.log`。本轮仅修改 Monitor 前端与上述既有文档，复用 10.70 中对应后台实现未变的分层证据，不重复数据库或真实采集部署门禁。
+
+本批代码的远端 CI 核对到 Platform CI Run `38851966963` 的 Monitor/System/Console 前端、Go、平台一致性及构建 Job 均为 queued；Release and T2 Run `38851966990` 的 selection Job 亦为 queued，尚未生成本批 Monitor PostgreSQL/metrics 和 System IAM 下游结果。排队不计通过；不取消、重跑或调查其他会话任务。

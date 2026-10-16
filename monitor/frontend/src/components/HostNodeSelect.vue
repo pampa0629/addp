@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="host-node-select">
     <el-select ref="input" :model-value="modelValue" filterable remote :remote-method="searchNodes" :loading="loading" :disabled="!allowed || disabled" :placeholder="t('monitor.targets.nodeSearch')" :aria-label="t('monitor.targets.node')" data-testid="target-node" @update:model-value="select">
       <el-option v-for="host in options" :key="host.node_id" :value="host.node_id" :label="host.display_name" />
     </el-select>
@@ -55,3 +55,7 @@ watch(() => props.modelValue, async value => {
 onUnmounted(invalidate)
 defineExpose({ focus: () => input.value?.focus() })
 </script>
+<style scoped>
+.host-node-select { width: 100%; min-width: 0; }
+.host-node-select :deep(.el-select) { width: 100%; }
+</style>
