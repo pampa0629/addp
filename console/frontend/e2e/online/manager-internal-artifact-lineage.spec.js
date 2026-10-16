@@ -25,6 +25,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_DELIMITED_JSON',
   'ADDP_ONLINE_MANAGER_WORKBOOK_JSON',
   'ADDP_ONLINE_MANAGER_STRUCTURED_JSON',
+  'ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON',
   'GATEWAY_URL'
 ]
 
@@ -407,6 +408,92 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
   }
 }
 
+export async function verifyTrajectoryRange(page, api, source, artifactDir) {
+  await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const metadata = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read trajectory facts')
+  expect(metadata.row_count).toBe(3000)
+  expect(metadata.attributes.item).toMatchObject({ format: source.format, data_type: 'table', layout: 'single' })
+  expect(metadata.attributes.storage.content_hash).toBe(source.sha256)
+  const before = await verifyOriginalDownload(page, frame, source)
+  await frame.getByRole('button', { name: /静态轨迹|Static trajectory/, exact: true }).click()
+  const dialog = frame.getByRole('dialog')
+  await expect(dialog.getByRole('alert')).toContainText(/完整性未知|completeness|incomplete/i)
+  await expect(dialog.locator('canvas')).toHaveCount(0)
+  const choose = async (label, value) => {
+    const combo = dialog.getByRole('combobox', { name: label, exact: true })
+    await combo.press('ArrowDown')
+    const id = await combo.getAttribute('aria-controls')
+    expect(id).toBeTruthy()
+    await frame.locator(`[id="${id}"]`).getByRole('option', { name: value, exact: true }).click()
+  }
+  await choose(/设备字段|Device field/, 'unit')
+  await choose(/时间字段|Time field/, 'at')
+  await choose(/X \/ 经度字段|X \/ longitude field/, 'east')
+  await choose(/Y \/ 纬度字段|Y \/ latitude field/, 'north')
+  await choose(/源坐标系|Source CRS/, 'EPSG:4326 — WGS84')
+  await dialog.locator('.el-switch').click()
+  await dialog.getByRole('textbox', { name: /开始时间|Start time/ }).fill('2026-01-01T00:00:00Z')
+  await dialog.getByRole('textbox', { name: /结束时间|End time/ }).fill('2026-01-02T00:00:00Z')
+  const selection = devices => ({ device_field: 'unit', time_field: 'at', time_encoding: 'iso', devices,
+    start: '2026-01-01T00:00:00Z', end: '2026-01-02T00:00:00Z' })
+  const expectedRows = devices => Array.from({ length: 24 }, (_, hour) => devices.map(unit => ({
+    unit, at: new Date(Date.UTC(2026, 0, 1, hour)).toISOString().replace('.000Z', 'Z'),
+    east: Math.round((120 + hour / 10000 + (unit === 'B' ? 0.001 : 0)) * 10000) / 10000,
+    north: Math.round((30 + hour / 10000) * 10000) / 10000
+  }))).flat()
+  const draw = async devices => {
+    await dialog.getByRole('textbox', { name: /设备标识$|Device identifiers$/ }).fill(devices.join('\n'))
+    const received = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === source.locator && url.searchParams.has('trajectory_selection')
+    })
+    await dialog.getByRole('button', { name: /绘制轨迹|Draw trajectories/, exact: true }).click()
+    const response = await received
+    expect(response.status()).toBe(200)
+    const url = new URL(response.url())
+    expect(url.searchParams.get('page')).toBe('1')
+    expect(url.searchParams.get('page_size')).toBe('2000')
+    expect(JSON.parse(url.searchParams.get('trajectory_selection'))).toEqual(selection(devices))
+    const body = await response.json()
+    expect(body.preview_type).toBe('table')
+    expect(body.data.trajectory_scope).toEqual({ selection: selection(devices), complete: true, scanned_rows: 3000 })
+    expect(body.data.total).toBe(devices.length * 24)
+    expect(body.data.has_more).toBe(false)
+    expect(body.data.rows.map(({ unit, at, east, north }) => ({ unit, at, east, north }))).toEqual(expectedRows(devices))
+    await expect(dialog.getByRole('status')).toContainText(devices.length === 2 ? /2 台设备，48 个采样点|2 devices, 48 observations/ : /1 台设备，24 个采样点|1 devices, 24 observations/)
+    const canvas = dialog.locator('.ol-viewport canvas')
+    await expect(canvas).toBeVisible()
+    await expect.poll(() => canvas.evaluate(element => {
+      const copy = new OffscreenCanvas(element.width, element.height)
+      const context = copy.getContext('2d', { willReadFrequently: true })
+      context.drawImage(element, 0, 0)
+      const pixels = context.getImageData(0, 0, copy.width, copy.height).data
+      let count = 0
+      for (let offset = 3; offset < pixels.length; offset += 4) if (pixels[offset] > 0 && ++count > 300) return true
+      return false
+    })).toBe(true)
+  }
+  await draw(['A', 'B'])
+  await draw(['A'])
+  // Expected negative requests use the same User through APIRequestContext;
+  // browser failure/warning collection stays strict and receives no exemptions.
+  const oversized = { ...selection(['A', 'B']), end: '2026-04-01T00:00:00Z' }
+  const denied = await api.get('/api/v1/manager/preview', { params: { locator: source.locator, page: 1, page_size: 2000, trajectory_selection: JSON.stringify(oversized) } })
+  expect(denied.status()).toBe(422)
+  const denial = await denied.json()
+  expect(denial.error_code).toBe('trajectory_point_limit_exceeded')
+  expect(denial.data).toBeUndefined()
+  await draw(['A', 'B'])
+  await dialog.screenshot({ path: resolve(artifactDir, `trajectory-${source.format}-range.png`) })
+  await dialog.getByRole('button', { name: /关闭此对话框|Close this dialog/, exact: true }).click()
+  const after = await verifyOriginalDownload(page, frame, source)
+  expect(after.bytes.equals(before.bytes)).toBe(true)
+  return { ...source, whole_file_refused: true, selection_verified: true, matched_rows: 48,
+    single_device_rows: 24, scanned_rows: 3000, rows_verified: true, map_loaded: true,
+    oversize_rejected: true, restored: true, download_sha256: after.checksum, source_unchanged: true }
+}
+
 test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
@@ -426,6 +513,8 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
   expect(workbook.sheet_names).toEqual(['Cities', 'Readings', 'Empty', 'HeaderOnly'])
   const structuredJSON = JSON.parse(env.ADDP_ONLINE_MANAGER_STRUCTURED_JSON)
   expect(structuredJSON.map(source => source.case)).toEqual(['document', 'records', 'geojson', 'geojson-json'])
+  const trajectories = JSON.parse(env.ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON)
+  expect(trajectories.map(source => source.format)).toEqual(['csv', 'json', 'geojson'])
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
@@ -558,7 +647,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v10', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v11', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -651,13 +740,17 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     for (const source of structuredJSON) {
       structuredEvidence.push(await verifyStructuredJSON(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
     }
+    const trajectoryEvidence = []
+    for (const source of trajectories) {
+      trajectoryEvidence.push(await verifyTrajectoryRange(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
+    }
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v10',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v11',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -679,6 +772,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       delimited_tables: delimitedEvidence,
       workbook: workbookEvidence,
       structured_json: structuredEvidence,
+      trajectories: trajectoryEvidence,
       gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,

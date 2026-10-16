@@ -306,6 +306,34 @@ esac
             self.assertIn('cp --quiet /fixture/format-samples/format-validation.xlsx fixture/addp-online/format-samples/format-validation.xlsx', commands)
             self.assertIn('stat fixture/addp-online/format-samples/format-validation.xlsx', commands)
 
+    def test_trajectory_sources_are_deterministic_equivalent_and_large(self):
+        expected = [{'format': 'csv', 'object': 'format-samples/trajectory.csv', 'rows': 3000, 'size_bytes': 119352, 'sha256': '3d3a319a7551880a0e6fce80d76812300c92e3e7161a98bca4508b48ac6354a4'}, {'format': 'json', 'object': 'format-samples/trajectory.json', 'rows': 3000, 'size_bytes': 218335, 'sha256': '26bf3a3eca3b6e249be2ac698494d20184808d394fb8bdb1b1dd556a42eb2cb5'}, {'format': 'geojson', 'object': 'format-samples/trajectory.geojson', 'rows': 3000, 'size_bytes': 496708, 'sha256': '1542cb5872982beacf9eadd839b65a644067f4ee7145a130b61d4dcfa4902d7d'}]
+        previous = None
+        for _ in range(2):
+            started = self.run_fixture("start")
+            self.assertEqual(started.returncode, 0, started.stderr)
+            sources = {}
+            for spec in expected:
+                raw = (self.root / 'model-fixtures' / spec['object']).read_bytes()
+                self.assertEqual((len(raw), hashlib.sha256(raw).hexdigest()), (spec['size_bytes'], spec['sha256']))
+                sources[spec['format']] = raw
+                self.assertIn(f"cp --quiet /fixture/{spec['object']} fixture/addp-online/{spec['object']}", self.log.read_text())
+                self.assertIn(f"stat fixture/addp-online/{spec['object']}", self.log.read_text())
+            if previous is not None:
+                self.assertEqual(sources, previous)
+            previous = sources
+            records = json.loads(sources['json'])
+            csv_rows = list(csv.DictReader(io.StringIO(sources['csv'].decode())))
+            self.assertEqual([{**row, 'east': float(row['east']), 'north': float(row['north'])} for row in csv_rows], records)
+            features = json.loads(sources['geojson'])['features']
+            self.assertEqual([feature['properties'] for feature in features], records)
+            self.assertTrue(all(feature['geometry'] == {'type': 'Point', 'coordinates': [row['east'], row['north']]} for feature, row in zip(features, records)))
+            self.assertEqual(len(records), 3000)
+            selected = [row for row in records if '2026-01-01T00:00:00Z' <= row['at'] < '2026-01-02T00:00:00Z']
+            self.assertEqual(len(selected), 48)
+            self.assertEqual(sum(row['unit'] == 'A' for row in selected), 24)
+            self.assertEqual({row['unit'] for row in records}, {'A', 'B'})
+
     def test_generated_models_and_png_are_deterministic_valid_source_files(self) -> None:
         first = self.run_fixture("start")
         self.assertEqual(first.returncode, 0, first.stderr)

@@ -356,6 +356,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "format-samples/records.json",
         "format-samples/features.geojson",
         "format-samples/features.json",
+        "format-samples/trajectory.csv",
+        "format-samples/trajectory.json",
+        "format-samples/trajectory.geojson",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -388,6 +391,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "workbook_source",
         "STRUCTURED_JSON_SOURCES",
         "structured_json_sources",
+        "TRAJECTORY_SOURCES",
+        "trajectory_sources",
         "MODEL_FORMATS",
         "MESH_SOURCE_FACTS",
         "verify_content_boundaries",
@@ -402,7 +407,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "force=not converging",
         "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
-        "addp.manager-internal-artifact-lineage/v8",
+        "addp.manager-internal-artifact-lineage/v9",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -443,7 +448,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v10",
+        "addp.manager-internal-artifact-lineage-browser/v11",
         "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
         "verifyDelimitedTable",
         "delimited_tables",
@@ -456,6 +461,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "ADDP_ONLINE_MANAGER_STRUCTURED_JSON",
         "verifyStructuredJSON",
         "structured_json: structuredEvidence",
+        "ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON",
+        "verifyTrajectoryRange",
+        "trajectories: trajectoryEvidence",
         "content_verified",
         "table_verified",
         "geometry_verified",

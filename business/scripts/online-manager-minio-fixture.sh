@@ -9,7 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
-FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json)
+FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson)
 MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png fbx/model.fbx obj/model.obj obj/model.mtl obj/texture.png)
 
 fail() {
@@ -168,6 +168,23 @@ geojson_features = {"type": "FeatureCollection", "features": [
 for name, value in [("document.json", json_document), ("records.json", json_records),
                     ("features.geojson", geojson_features), ("features.json", geojson_features)]:
     (root / "format-samples" / name).write_bytes((json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode('utf-8'))
+
+# Three deterministic, interleaved device sources exceed the whole-file point cap.
+from datetime import datetime, timedelta, timezone
+trajectory_rows = []
+for hour in range(1500):
+    at = (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(hours=hour)).isoformat().replace('+00:00', 'Z')
+    for device in ('A', 'B'):
+        trajectory_rows.append({'unit': device, 'at': at, 'east': round(120 + hour / 10000 + (0.001 if device == 'B' else 0), 4), 'north': round(30 + hour / 10000, 4)})
+trajectory_csv = io.StringIO(newline='')
+writer = csv.DictWriter(trajectory_csv, fieldnames=['unit', 'at', 'east', 'north'], lineterminator='\n')
+writer.writeheader()
+writer.writerows(trajectory_rows)
+(root / 'format-samples/trajectory.csv').write_bytes(trajectory_csv.getvalue().encode('utf-8'))
+for extension, value in [('json', trajectory_rows), ('geojson', {'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': row, 'geometry': {'type': 'Point', 'coordinates': [row['east'], row['north']]}}
+        for row in trajectory_rows]})]:
+    (root / f'format-samples/trajectory.{extension}').write_bytes((json.dumps(value, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8'))
 
 sheets = [
     ("Cities", [["city_id", "city_name"]] + [[i, f"杭州{i}"] for i in range(1, 26)]),

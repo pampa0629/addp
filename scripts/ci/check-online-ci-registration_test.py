@@ -1010,7 +1010,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
             "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
-            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json\n",
+            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson\n",
             encoding="utf-8",
         )
         owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
@@ -1021,7 +1021,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources addp.manager-internal-artifact-lineage/v8 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging\n',
+            'MODEL_FORMATS MESH_SOURCE_FACTS verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources TRAJECTORY_SOURCES trajectory_sources addp.manager-internal-artifact-lineage/v9 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -1033,8 +1033,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ".model-preview model_loaded content_loaded .raster-tiff-quick-view raster_generation_requests range_loaded map_loaded "
             "ADDP_ONLINE_MANAGER_BROWSER_PHASE generation-entry cached-preview generation_entry_visible source_model_loaded "
             "model_generation_requests anonymous_refresh_401 failed_business_responses "
-            "addp.manager-internal-artifact-lineage-browser/v10 ADDP_ONLINE_MANAGER_DELIMITED_JSON "
-            "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256 ADDP_ONLINE_MANAGER_WORKBOOK_JSON verifyWorkbook .container-preview workbook: workbookEvidence unknown_total_verified refresh_preserved_page refresh_preserved_empty_sheet ADDP_ONLINE_MANAGER_STRUCTURED_JSON verifyStructuredJSON structured_json: structuredEvidence content_verified table_verified geometry_verified source_crs source_srid\n",
+            "addp.manager-internal-artifact-lineage-browser/v11 ADDP_ONLINE_MANAGER_DELIMITED_JSON "
+            "verifyDelimitedTable delimited_tables encoding_request_verified download_sha256 ADDP_ONLINE_MANAGER_WORKBOOK_JSON verifyWorkbook .container-preview workbook: workbookEvidence unknown_total_verified refresh_preserved_page refresh_preserved_empty_sheet ADDP_ONLINE_MANAGER_STRUCTURED_JSON verifyStructuredJSON structured_json: structuredEvidence content_verified table_verified geometry_verified source_crs source_srid ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON verifyTrajectoryRange trajectories: trajectoryEvidence\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -1061,6 +1061,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (fixture, "format-samples/records.json", "fixture contract"),
             (fixture, "format-samples/features.geojson", "fixture contract"),
             (fixture, "format-samples/features.json", "fixture contract"),
+            (fixture, "format-samples/trajectory.csv", "fixture contract"),
+            (fixture, "format-samples/trajectory.json", "fixture contract"),
+            (fixture, "format-samples/trajectory.geojson", "fixture contract"),
 
             (config, "--enable-unsafe-swiftshader", "software WebGL"),
             (owner, "validate_model_glb", "owner contract"),
@@ -1071,9 +1074,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "workbook_source", "owner contract"),
             (owner, "STRUCTURED_JSON_SOURCES", "owner contract"),
             (owner, "structured_json_sources", "owner contract"),
-            (owner, "addp.manager-internal-artifact-lineage/v8", "owner contract"),
+            (owner, "TRAJECTORY_SOURCES", "owner contract"),
+            (owner, "trajectory_sources", "owner contract"),
+            (owner, "addp.manager-internal-artifact-lineage/v9", "owner contract"),
             (browser, ".model-preview", "browser contract"),
-            (browser, "addp.manager-internal-artifact-lineage-browser/v10", "browser contract"),
+            (browser, "addp.manager-internal-artifact-lineage-browser/v11", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_BROWSER_PHASE", "browser contract"),
             (browser, "ADDP_ONLINE_MANAGER_DELIMITED_JSON", "browser contract"),
             (browser, "verifyDelimitedTable", "browser contract"),
@@ -1085,6 +1090,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (browser, "ADDP_ONLINE_MANAGER_STRUCTURED_JSON", "browser contract"),
             (browser, "verifyStructuredJSON", "browser contract"),
             (browser, "structured_json: structuredEvidence", "browser contract"),
+            (browser, "ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON", "browser contract"),
+            (browser, "verifyTrajectoryRange", "browser contract"),
+            (browser, "trajectories: trajectoryEvidence", "browser contract"),
             (browser, "content_verified", "browser contract"),
             (browser, "table_verified", "browser contract"),
             (browser, "geometry_verified", "browser contract"),

@@ -85,6 +85,29 @@ STRUCTURED_JSON_SOURCES = [
         "sha256": "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"
     }
 ]
+TRAJECTORY_SOURCES = [
+    {
+        "format": "csv",
+        "object": "format-samples/trajectory.csv",
+        "rows": 3000,
+        "size_bytes": 119352,
+        "sha256": "3d3a319a7551880a0e6fce80d76812300c92e3e7161a98bca4508b48ac6354a4"
+    },
+    {
+        "format": "json",
+        "object": "format-samples/trajectory.json",
+        "rows": 3000,
+        "size_bytes": 218335,
+        "sha256": "26bf3a3eca3b6e249be2ac698494d20184808d394fb8bdb1b1dd556a42eb2cb5"
+    },
+    {
+        "format": "geojson",
+        "object": "format-samples/trajectory.geojson",
+        "rows": 3000,
+        "size_bytes": 496708,
+        "sha256": "1542cb5872982beacf9eadd839b65a644067f4ee7145a130b61d4dcfa4902d7d"
+    }
+]
 REQUIRED_PERMISSIONS = {
     "manager.content.read",
     "manager.data_item.read",
@@ -1288,6 +1311,7 @@ def validate_browser_report(
     delimited: list[dict[str, object]],
     workbook: dict[str, object],
     structured_json: list[dict[str, object]],
+    trajectories: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
@@ -1302,8 +1326,13 @@ def validate_browser_report(
         for source, spec in zip(structured_json, STRUCTURED_JSON_SOURCES)
     ):
         raise SuiteError("browser structured JSON sources must match all four fixed fixtures")
+    if len(trajectories) != len(TRAJECTORY_SOURCES) or any(
+        any(source.get(key) != value for key, value in spec.items())
+        for source, spec in zip(trajectories, TRAJECTORY_SOURCES)
+    ):
+        raise SuiteError("browser trajectory sources must match all three fixed fixtures")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v10",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v11",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1336,6 +1365,11 @@ def validate_browser_report(
             **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
             **({"map_loaded": True, "table_verified": True, "geometry_verified": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
                 "source_srid": 4326, "source_crs": "EPSG:4326"} if source["format"] == "geojson" else {})} for source in structured_json],
+        "trajectories": [{**source, "whole_file_refused": True, "selection_verified": True,
+            "matched_rows": 48, "single_device_rows": 24, "scanned_rows": 3000,
+            "rows_verified": True, "map_loaded": True, "oversize_rejected": True,
+            "restored": True, "download_sha256": source["sha256"], "source_unchanged": True}
+            for source in trajectories],
         "browser_warning_errors": 0,
         "failed_business_responses": 0,
     }
@@ -1392,6 +1426,7 @@ def run_browser(
     delimited: list[dict[str, object]],
     workbook: dict[str, object],
     structured_json: list[dict[str, object]],
+    trajectories: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1413,6 +1448,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_DELIMITED_JSON": json.dumps(delimited),
             "ADDP_ONLINE_MANAGER_WORKBOOK_JSON": json.dumps(workbook),
             "ADDP_ONLINE_MANAGER_STRUCTURED_JSON": json.dumps(structured_json),
+            "ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON": json.dumps(trajectories),
         }
     )
     result = subprocess.run(
@@ -1446,6 +1482,7 @@ def run_browser(
         delimited=delimited,
         workbook=workbook,
         structured_json=structured_json,
+        trajectories=trajectories,
         phase=phase,
     )
 
@@ -1495,6 +1532,13 @@ def run_scenario(
         if item.get("size_bytes") != spec["size_bytes"]:
             raise SuiteError(f"{spec['case']} fixture source byte count differs from the fixed source")
         structured_json.append({**spec, "locator": build_item_locator(engine_id, item),
+            "item_id": item["id"], "fingerprint": item["fingerprint"]})
+    trajectories = []
+    for spec in TRAJECTORY_SOURCES:
+        item = find_fixture_item(client, engine_id, f"{bucket}/{spec['object']}", "trajectory")
+        if item.get("size_bytes") != spec["size_bytes"]:
+            raise SuiteError("trajectory fixture source byte count differs from the fixed source")
+        trajectories.append({**spec, "locator": build_item_locator(engine_id, item),
             "item_id": item["id"], "fingerprint": item["fingerprint"]})
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
@@ -1667,6 +1711,7 @@ def run_scenario(
             delimited=delimited,
             workbook=workbook,
             structured_json=structured_json,
+            trajectories=trajectories,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
                            "item_id": model.item["id"], **(MESH_SOURCE_FACTS.get(model.format, {})), **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
@@ -1697,7 +1742,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v8",
+            "schema_version": "addp.manager-internal-artifact-lineage/v9",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1710,6 +1755,7 @@ def run_scenario(
             "delimited_sources": delimited,
             "workbook_source": workbook,
             "structured_json_sources": structured_json,
+            "trajectory_sources": trajectories,
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},
