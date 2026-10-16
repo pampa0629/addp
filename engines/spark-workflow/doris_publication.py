@@ -109,9 +109,10 @@ def save(df, params, jdbc_url, driver, conn_info, adapter):
     stage = '__addp_spark_stage_' + uuid.uuid4().hex
     stage_ref, target_ref = table_ref(schema, stage), table_ref(schema, target)
     connection = adapter._open_jdbc_connection(df.sparkSession, jdbc_url, conn_info)
-    statement = connection.createStatement()
+    statement = None
     uncertain, own_cache, stage_created = False, not df.is_cached, False
     try:
+        statement = connection.createStatement()
         statement.execute('SET enable_insert_strict = true')
         validate_target(connection, schema, target, df, adapter)
         statement.execute(adapter._doris_create_table_sql(df, schema, stage))
@@ -149,11 +150,15 @@ def save(df, params, jdbc_url, driver, conn_info, adapter):
         raise
     finally:
         if own_cache:
-            df.unpersist()
+            try:
+                df.unpersist()
+            except Exception:
+                logger.warning('Doris input cache cleanup unverified; preserving publication outcome')
         if stage_created and not uncertain:
             try:
                 statement.execute(f'DROP TABLE IF EXISTS {stage_ref}')
             except Exception:
                 logger.warning('Doris staging cleanup unverified: %s', stage)
-        close_safely(statement)
+        if statement is not None:
+            close_safely(statement)
         close_safely(connection)

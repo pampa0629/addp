@@ -321,7 +321,7 @@ class StorageAdapterTest(unittest.TestCase):
             "database": "addp",
         })
 
-        self.assertEqual("jdbc:mysql://database.example.internal:3306/addp?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true", jdbc_url)
+        self.assertEqual("jdbc:mysql://database.example.internal:3306/addp", jdbc_url)
         self.assertEqual("com.mysql.cj.jdbc.Driver", driver)
 
     def test_doris_create_table_sql_uses_native_types_and_distribution(self):

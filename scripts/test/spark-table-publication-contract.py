@@ -2,6 +2,7 @@
 import socket
 import sys
 from decimal import Decimal
+from datetime import datetime
 from unittest.mock import patch
 
 sys.path.insert(0, '/addp/spark-workflow')
@@ -78,6 +79,13 @@ def run(engine):
         assert save(frame, engine + '_new') == 2
         assert read(engine + '_new') == read_target_baseline
         if engine == 'mysql':
+            temporal = spark.createDataFrame([(datetime(2024, 1, 2, 3, 4, 5, 123456),)],
+                T.StructType([T.StructField('at', T.TimestampType(), False)]))
+            assert save(temporal, 'mysql_temporal') == 1
+            assert query(connection, "SELECT DATE_FORMAT(at, '%Y-%m-%d %H:%i:%s.%f') FROM spark_results.mysql_temporal") == [('2024-01-02 03:04:05.123456',)]
+            unusual = spark.createDataFrame([(1, '精确😀')], ['a`b', '中文列'])
+            assert save(unusual, 'mysql_quoted') == 1
+            assert query(connection, 'SELECT `a``b`, `中文列` FROM spark_results.mysql_quoted') == [('1', '精确😀')]
             # Duplicate PK fails after DELETE inside the publication transaction.
             try:
                 save(frame.union(frame), target)

@@ -164,6 +164,8 @@ def stage_definition(df, schema, stage, aliases):
 
 
 def save(df, params, jdbc_url, driver, conn_info, adapter):
+    # Restrict UTC to this publication, leaving source JDBC reading unchanged.
+    jdbc_url += ('&' if '?' in jdbc_url else '?') + 'connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true'
     schema, target = params.get('schema', conn_info['database']), params['table']
     validate_names(schema, target, df.columns)
     if adapter._geometry_column_names(df):

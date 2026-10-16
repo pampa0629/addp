@@ -137,9 +137,8 @@ class DatabaseAdapter:
                 jdbc_url = f"{jdbc_url}?{urlencode({'sslmode': sslmode})}"
             return jdbc_url, "org.postgresql.Driver"
         if normalized_type in {'mysql', 'doris'}:
-            suffix = '?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true' if normalized_type == 'mysql' else ''
             return (
-                f"jdbc:mysql://{host}:{port}/{database}{suffix}",
+                f"jdbc:mysql://{host}:{port}/{database}",
                 "com.mysql.cj.jdbc.Driver",
             )
 
