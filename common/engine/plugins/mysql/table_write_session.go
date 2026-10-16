@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -282,12 +283,23 @@ type mysqlTableWriteSession struct {
 	rowsWritten    int64
 	commitMarker   *resume.Marker
 	closed         bool
+	writeErr       error
 }
 
-func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("mysql table write session is closed")
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// Local encoding and individual INSERT errors need not invalidate the SQL
+	// transaction. Retain them so Close cannot commit earlier chunks or batches.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -320,11 +332,22 @@ func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 	return nil
 }
 
-func (s *mysqlTableWriteSession) Close(ctx context.Context) error {
+func (s *mysqlTableWriteSession) Close(ctx context.Context) (err error) {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
+	if s.writeErr != nil {
+		return errors.Join(s.writeErr, s.abort())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, s.abort())
+	}
 	if err := s.tx.Commit(); err != nil {
 		_ = s.db.Close()
 		return fmt.Errorf("commit mysql table write session: %w", err)

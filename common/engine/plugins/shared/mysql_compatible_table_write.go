@@ -3,6 +3,7 @@ package shared
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -554,12 +555,23 @@ type mysqlCompatibleTableWriteSession struct {
 	rowsWritten     int64
 	commitMarker    *resume.Marker
 	closed          bool
+	writeErr        error
 }
 
-func (s *mysqlCompatibleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) error {
+func (s *mysqlCompatibleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchData) (err error) {
 	if s.closed {
 		return fmt.Errorf("%s table write session is closed", s.engineType)
 	}
+	if s.writeErr != nil {
+		return s.writeErr
+	}
+	// A failed chunk does not reliably abort the native transaction. Retain the
+	// first failure so Close cannot commit prior chunks or successful batches.
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
@@ -592,11 +604,22 @@ func (s *mysqlCompatibleTableWriteSession) WriteBatch(ctx context.Context, batch
 	return nil
 }
 
-func (s *mysqlCompatibleTableWriteSession) Close(_ context.Context) error {
+func (s *mysqlCompatibleTableWriteSession) Close(ctx context.Context) (err error) {
 	if s.closed {
-		return nil
+		return s.writeErr
 	}
 	s.closed = true
+	defer func() {
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
+	if s.writeErr != nil {
+		return errors.Join(s.writeErr, s.abort())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, s.abort())
+	}
 	if err := s.tx.Commit(); err != nil {
 		_ = s.db.Close()
 		return fmt.Errorf("commit %s table write session: %w", s.engineType, err)
@@ -620,6 +643,10 @@ func (s *mysqlCompatibleTableWriteSession) Abort(_ context.Context) error {
 		return nil
 	}
 	s.closed = true
+	return s.abort()
+}
+
+func (s *mysqlCompatibleTableWriteSession) abort() error {
 	var abortErr error
 	if s.tx != nil {
 		if err := s.tx.Rollback(); err != nil && err != sql.ErrTxDone {

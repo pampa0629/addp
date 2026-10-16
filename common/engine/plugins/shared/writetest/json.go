@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -30,6 +31,9 @@ type MySQLJSONProvider interface {
 // the same matrix on MySQL, OceanBase and TiDB. The caller owns the test database.
 func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plugin.ConnectionInfo, database string, spatial *datatype.SpatialInfo, geometry []byte) {
 	t.Helper()
+	t.Run("session_failure_close", func(t *testing.T) {
+		mysqlSessionFailureClose(t, db, p, connInfo, database, spatial, geometry)
+	})
 	ctx := context.Background()
 	fields := []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
@@ -235,5 +239,156 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 				}
 			}
 		})
+	}
+}
+
+// The Provider must roll back failed sessions even when its direct caller uses
+// Close instead of the explicit Abort used by Transfer and the batch adapter.
+func mysqlSessionFailureClose(t *testing.T, db *sql.DB, p MySQLJSONProvider, info plugin.ConnectionInfo, database string, spatial *datatype.SpatialInfo, geometry []byte) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	table := fmt.Sprintf("session_failure_%d", time.Now().UnixNano())
+	qualified := "`" + strings.ReplaceAll(database, "`", "``") + "`.`" + table + "`"
+	path := plugin.TabularItemPath(0, plugin.EngineCatalogTermDatabase, database, table)
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?", database, table).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("occupied fixture: count=%d err=%v", count, err)
+	}
+	t.Cleanup(func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if _, err := db.ExecContext(cleanup, "DROP TABLE IF EXISTS "+qualified); err != nil {
+			t.Error(err)
+		}
+		if err := db.QueryRowContext(cleanup, "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=? AND table_name=?", database, table).Scan(&count); err != nil || count != 0 {
+			t.Errorf("fixture cleanup not proven: count=%d err=%v", count, err)
+		}
+	})
+	fields := []datatype.FieldInfo{
+		{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
+		{Name: "payload", Type: datatype.FieldTypeJSON},
+		{Name: "blob", Type: datatype.FieldTypeBytes},
+	}
+	if spatial != nil {
+		fields = append(fields, datatype.FieldInfo{Name: "shape", Type: datatype.FieldTypeGeometry})
+	}
+	if err := p.PrepareTableWrite(ctx, info, path, plugin.TableWriteOptions{Fields: fields, SpatialInfo: spatial}); err != nil {
+		t.Fatal(err)
+	}
+	row := func(id int64) map[string]interface{} {
+		value := map[string]interface{}{"id": id, "payload": map[string]interface{}{"sentinel": true}, "blob": []byte{0, 1, 255}}
+		if spatial != nil {
+			value["shape"] = geometry
+		}
+		return value
+	}
+	open := func(t *testing.T) plugin.TableWriteSession {
+		t.Helper()
+		session, err := p.OpenTableWriteSession(ctx, info, path, plugin.TableWriteSessionOptions{Fields: fields, SpatialInfo: spatial})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = session.Abort(context.Background()) })
+		return session
+	}
+	commit := func(t *testing.T, id int64) {
+		t.Helper()
+		session := open(t)
+		if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(id)}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Close(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := session.Close(ctx); err != nil || session.(plugin.CommitMarkerProvider).CommitMarker() == nil {
+			t.Fatalf("successful session Close/marker: %v", err)
+		}
+	}
+	commit(t, 1)
+	for index, failure := range []string{"invalid_json", "duplicate_key", "not_null", "canceled_write", "canceled_close"} {
+		t.Run(failure, func(t *testing.T) {
+			session := open(t)
+			base := int64(10000 * (index + 1))
+			if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(base)}}); err != nil {
+				t.Fatal(err)
+			}
+			// A later chunk fails after a whole prior batch and 1000 more rows.
+			rows := make([]map[string]interface{}, 1001)
+			for i := range rows {
+				rows[i] = row(base + int64(i) + 1)
+			}
+			switch failure {
+			case "invalid_json":
+				rows[1000]["payload"] = "{"
+			case "duplicate_key":
+				rows[1000]["id"] = int64(1)
+			case "not_null":
+				rows[1000]["payload"] = nil
+			}
+			writeCtx, closeCtx := ctx, ctx
+			canceled, cancel := context.WithCancel(ctx)
+			cancel()
+			if failure == "canceled_write" {
+				writeCtx = canceled
+			}
+			var firstErr error
+			if failure == "canceled_close" {
+				closeCtx, firstErr = canceled, context.Canceled
+			} else {
+				firstErr = session.WriteBatch(writeCtx, &plugin.BatchData{Rows: rows})
+				if firstErr == nil {
+					t.Fatal("expected write failure")
+				}
+				if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(base + 5000)}}); !errors.Is(err, firstErr) {
+					t.Errorf("write after failure lost original error: got=%v first=%v", err, firstErr)
+				}
+			}
+			if err := session.Close(closeCtx); !errors.Is(err, firstErr) {
+				t.Errorf("Close lost failure: got=%v first=%v", err, firstErr)
+			}
+			if err := session.Close(ctx); !errors.Is(err, firstErr) {
+				t.Errorf("repeated Close lost failure: %v", err)
+			}
+			if session.(plugin.CommitMarkerProvider).CommitMarker() != nil {
+				t.Error("failed session published success marker")
+			}
+			if err := session.Abort(ctx); err != nil {
+				t.Error(err)
+			}
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 1 {
+				t.Errorf("failed session changed committed rows: count=%d want=1 err=%v", count, err)
+			}
+		})
+	}
+	commit(t, 2)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("recovery/sentinel rows=%d want=2 err=%v", count, err)
+	}
+	for _, id := range []int64{1, 2} {
+		var document string
+		var blob []byte
+		if err := db.QueryRowContext(ctx, "SELECT `payload`,`blob` FROM "+qualified+" WHERE id=?", id).Scan(&document, &blob); err != nil {
+			t.Fatal(err)
+		}
+		var value map[string]interface{}
+		if err := json.Unmarshal([]byte(document), &value); err != nil || !reflect.DeepEqual(value, map[string]interface{}{"sentinel": true}) || !bytes.Equal(blob, []byte{0, 1, 255}) {
+			t.Fatalf("JSON/BLOB changed: document=%s blob=%v err=%v", document, blob, err)
+		}
+		if spatial != nil {
+			var encoded []byte
+			var srid int
+			if err := db.QueryRowContext(ctx, "SELECT ST_AsWKB(shape),ST_SRID(shape) FROM "+qualified+" WHERE id=?", id).Scan(&encoded, &srid); err != nil {
+				t.Fatal(err)
+			}
+			g, err := ewkb.Unmarshal(geometry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := wkb.Marshal(g, wkb.NDR)
+			if err != nil || !bytes.Equal(encoded, want) || srid != 4326 {
+				t.Fatalf("geometry changed: srid=%d err=%v", srid, err)
+			}
+		}
 	}
 }
