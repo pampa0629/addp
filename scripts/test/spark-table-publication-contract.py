@@ -81,6 +81,10 @@ def run(engine):
         assert save(frame, engine + '_new') == 2
         assert read(engine + '_new') == read_target_baseline
         if engine == 'doris':
+            generated = spark.sql("SELECT CAST(9007199254740993 AS BIGINT) AS id, "
+                                  "CAST('100.123456789012345678' AS DECIMAL(38,18)) AS value")
+            assert save(generated, 'doris_sql_decimal') == 1
+            assert read('doris_sql_decimal') == [('9007199254740993', '100.123456789012345678')]
             string_schema = T.StructType([
                 T.StructField('id', T.LongType(), False),
                 T.StructField('label', T.StringType(), True),

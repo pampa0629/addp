@@ -92,6 +92,7 @@ def write_stage(df, conn_info, schema, stage, label):
         'doris.sink.label.prefix': label,
         'doris.sink.properties.format': 'json',
         'doris.sink.properties.read_json_by_line': 'true',
+        'doris.sink.properties.num_as_string': 'true',
         'doris.sink.properties.strict_mode': 'true',
         'doris.sink.properties.max_filter_ratio': '0',
         'doris.write.fields': ','.join(identifier(name) for name in df.columns),

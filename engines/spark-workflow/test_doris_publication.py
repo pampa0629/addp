@@ -34,6 +34,7 @@ class DorisPublicationTest(unittest.TestCase):
         self.assertEqual(options['doris.sink.enable-2pc'], 'true')
         self.assertEqual(options['doris.sink.max-retries'], '0')
         self.assertEqual(options['doris.sink.properties.max_filter_ratio'], '0')
+        self.assertEqual(options['doris.sink.properties.num_as_string'], 'true')
         self.assertEqual(options['doris.table.identifier'], 'results.owned_stage')
         self.frame.write.format.return_value.options.return_value.mode.assert_called_once_with('append')
 
