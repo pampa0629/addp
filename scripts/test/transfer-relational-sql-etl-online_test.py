@@ -501,6 +501,41 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         with patch.object(ONLINE.time, "monotonic", side_effect=[0, 31]), self.assertRaisesRegex(ONLINE.SuiteError, "automatic metadata scanning"):
             ONLINE.wait_transfer_target(SimpleNamespace(request=request), 3, "public.target", 30)
 
+    def test_scan_boundary_reads_exact_sibling_and_ancestors_without_derived_counts(self):
+        stamp = "2026-10-16T09:00:00Z"
+        source = {"id": 5, "engine_id": 3, "tenant_id": 7, "node_id": 9, "item_type": "table",
+                  "full_name": "public.source", "fingerprint": "source-fingerprint", "scanned_at": stamp,
+                  "scanned_depth": "deep", "row_count": 5}
+        schema = {"id": 9, "engine_id": 3, "tenant_id": 7, "parent_node_id": 1,
+                  "scan_status": "success", "scanned_depth": "deep", "scanned_at": stamp, "item_count": 1}
+        root = {"id": 1, "engine_id": 3, "tenant_id": 7, "scan_status": "success", "scanned_depth": "deep", "scanned_at": stamp}
+        facts = {"/api/v1/meta/items/5": source, "/api/v1/meta/nodes/9": schema, "/api/v1/meta/nodes/1": root}
+        calls = []
+        def request(method, path, expected):
+            self.assertEqual((method, expected), ("GET", (200,)))
+            calls.append(path)
+            return SimpleNamespace(payload=copy.deepcopy(facts[path]))
+        client = SimpleNamespace(request=request)
+        before = ONLINE.read_transfer_scan_boundary(client, 3, source)
+        schema.update(item_count=2, total_size_bytes=1024, has_children=True)
+        self.assertEqual(ONLINE.read_transfer_scan_boundary(client, 3, source), before)
+        self.assertEqual(calls[:3], list(facts))
+        for item, field, changed in ((source, "scanned_at", "2026-10-16T09:01:00Z"),
+                                      (source, "row_count", 8), (schema, "scan_status", "running"),
+                                      (schema, "scanned_at", "2026-10-16T09:01:00Z"),
+                                      (root, "scanned_depth", "basic")):
+            original = item[field]
+            item[field] = changed
+            self.assertNotEqual(ONLINE.read_transfer_scan_boundary(client, 3, source), before)
+            item[field] = original
+        for item, field, changed in ((source, "engine_id", 4), (schema, "tenant_id", 8),
+                                      (source, "scanned_at", None), (schema, "parent_node_id", 9)):
+            original = item.get(field)
+            item[field] = changed
+            with self.assertRaises(ONLINE.SuiteError):
+                ONLINE.read_transfer_scan_boundary(client, 3, source)
+            item[field] = original
+
     def test_native_scenario_requires_generated_replace_and_exact_two_hop_proofs(self):
         source = {"id": 5, "node_id": 9, "full_name": "public.source", "item_type": "table"}
         target = {"id": 7, "node_id": 9, "full_name": "public.target", "item_type": "table"}
@@ -526,7 +561,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             identities = {(item_id, field)} | {(edge[0], edge[1]) for edge in expected} | {(edge[2], edge[3]) for edge in expected}
             return {"subject": {"schema_snapshot_hash": hashes[item_id]}, "nodes": [{"item_id": key, "field_name": name, "schema_snapshot_hash": hashes[key]} for key, name in identities]}
 
-        with patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_for_scan") as scan, patch.object(ONLINE, "wait_transfer_target", side_effect=[target, target, downstream]), patch.object(ONLINE, "wait_field_graph", side_effect=proof):
+        with patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_for_scan") as scan, patch.object(ONLINE, "wait_transfer_target", side_effect=[target, target, downstream]), patch.object(ONLINE, "wait_field_graph", side_effect=proof), patch.object(ONLINE, "read_transfer_scan_boundary", return_value={"sibling": {"id": 5, "scanned_at": "2000-01-01T00:00:00Z"}, "ancestors": [{"id": 9}, {"id": 1}]}) as boundary:
             result = ONLINE.run_native_lineage(object(), 3, source, "run-name", 30, owned)
         self.assertEqual(owned, [1, 2, 3])
         scan.assert_not_called()
@@ -534,6 +569,23 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(proofs[3], (7, "region_name", {(5, "status", 7, "region_name", "direct", "replacement")}))
         self.assertEqual(proofs[4], (11, "area", {(5, "status", 7, "region_name", "direct", "replacement"), (7, "region_name", 11, "area", "direct", "hop")}))
         self.assertTrue(result["two_hop_verified"])
+        self.assertEqual(boundary.call_count, 4)
+        self.assertEqual(result["precise_scan_scope"], {"target_only_verified": True, "sibling_item_id": 5, "ancestor_nodes_verified": 2, "executions_verified": 3})
+
+        # A successful transfer/lineage result cannot hide a widened automatic scan.
+        before = {"sibling": {"id": 5, "scanned_at": "2000-01-01T00:00:00Z"}, "ancestors": [{"id": 9, "scan_status": "success"}]}
+        for outside in ("sibling", "ancestor"):
+            changed = copy.deepcopy(before)
+            if outside == "sibling":
+                changed["sibling"]["scanned_at"] = "after"
+            else:
+                changed["ancestors"][0]["scan_status"] = "running"
+            executions.clear()
+            proofs.clear()
+            owned.clear()
+            with self.subTest(outside=outside), patch.object(ONLINE.SUPPORT, "create_and_run_task", side_effect=execute), patch.object(ONLINE, "wait_transfer_target", return_value=target), patch.object(ONLINE, "wait_field_graph", side_effect=proof), patch.object(ONLINE, "read_transfer_scan_boundary", side_effect=[before, changed]), self.assertRaisesRegex(ONLINE.SuiteError, "sibling facts or ancestor scan state"):
+                ONLINE.run_native_lineage(object(), 3, source, "run-name", 30, owned)
+            self.assertEqual(len(executions), 1)
 
     @staticmethod
     def multi_source_execution():
