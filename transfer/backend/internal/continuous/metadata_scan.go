@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -47,7 +49,7 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 	if s == nil || s.Store == nil || s.Client == nil {
 		return fmt.Errorf("continuous target metadata scanner dependencies are required")
 	}
-	engineID, catalogPaths, err := preparedTargetMetadataScope(plan)
+	engineID, targets, err := preparedTargetMetadataScope(plan)
 	if err != nil {
 		return err
 	}
@@ -65,7 +67,7 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 	}
 	claimToken := task.InitialMetadataScanClaimToken
 	run, scanErr := s.Client.WithTenantID(task.TenantID).CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID: engineID, CatalogPaths: catalogPaths,
+		EngineID: engineID, Targets: targets,
 		ScanDepth: "deep", Force: true,
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleTransfer,
@@ -79,7 +81,7 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 		}
 		if s.Logger != nil {
 			s.Logger.Error("failed to submit continuous target metadata scan",
-				"error", scanErr, "task_id", task.ID, "engine_id", engineID, "catalog_paths", catalogPaths, "owned", completed)
+				"error", scanErr, "task_id", task.ID, "engine_id", engineID, "targets", targets, "owned", completed)
 		}
 		return nil
 	}
@@ -91,7 +93,7 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 	}
 	if s.Logger != nil {
 		s.Logger.Info("continuous target metadata scan submitted",
-			"task_id", task.ID, "engine_id", engineID, "catalog_paths", catalogPaths,
+			"task_id", task.ID, "engine_id", engineID, "targets", targets,
 			"meta_execution_id", run.ExecutionID, "owned", completed)
 	}
 	return nil
@@ -108,17 +110,23 @@ func preparedTargetMetadataScope(plan *planner.ContinuousPlan) (uint, []string, 
 	if engineID == 0 {
 		return 0, nil, fmt.Errorf("continuous target metadata scan requires target engine ID")
 	}
-	if len(plan.Target.Path.Segments) < 2 {
-		return 0, nil, fmt.Errorf("continuous target metadata scan requires a target parent catalog path")
+	if plan.Target.Path.EngineID != 0 && plan.Target.Path.EngineID != engineID {
+		return 0, nil, fmt.Errorf("continuous target metadata scan engine ID mismatch")
 	}
-	parent := engineplugin.EngineCatalogPath{
-		Version:  plan.Target.Path.Version,
-		EngineID: engineID,
-		Segments: append([]engineplugin.EngineCatalogSegment(nil), plan.Target.Path.Segments[:len(plan.Target.Path.Segments)-1]...),
+	segments := plan.Target.Path.Segments
+	if len(segments) > 0 && engineplugin.IsEngineCatalogRootSegment(segments[0]) {
+		segments = segments[1:]
 	}
-	path := parent.StringPath()
-	if path == "" {
-		return 0, nil, fmt.Errorf("continuous target metadata scan parent catalog path is empty")
+	if len(segments) < 2 || segments[len(segments)-1].Kind != engineplugin.EngineCatalogKindTable {
+		return 0, nil, fmt.Errorf("continuous target metadata scan requires a target table path")
 	}
-	return engineID, []string{path}, nil
+	path := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		if strings.TrimSpace(segment.Name) == "" {
+			return 0, nil, fmt.Errorf("continuous target metadata scan path contains an empty name")
+		}
+		path = append(path, segment.Name)
+	}
+	target := (&resourcetree.ResourceLocator{EngineID: engineID, Path: path, Type: resourcetree.TypeTable}).ToURI()
+	return engineID, []string{target}, nil
 }

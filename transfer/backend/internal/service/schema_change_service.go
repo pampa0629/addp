@@ -434,8 +434,13 @@ func (s *TaskService) runClaimedSchemaChangeMetaScan(ctx context.Context, tenant
 		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", err.Error())
 		return
 	}
+	targets := nativeTargetScanTargets(spec.Target)
+	if len(targets) == 0 {
+		s.reconcileSchemaChangeMetaScanResult(ctx, request, claimToken, models.SchemaChangeMetadataScanFailed, "", "metadata scan requires a target table locator")
+		return
+	}
 	run, err := s.metaClient.WithTenantID(tenantID).CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID: target.ID, CatalogPaths: nativeTargetCatalogPaths(spec.Target),
+		EngineID: target.ID, Targets: targets,
 		ScanDepth: "deep", Force: true, TriggerType: commonExecution.TriggerTypeManual, Source: commonExecution.ModuleTransfer,
 	})
 	if err != nil {

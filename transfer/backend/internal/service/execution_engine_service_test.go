@@ -45,15 +45,15 @@ func (executionTestTokenSource) PlatformToken(context.Context) (string, error) {
 	return "platform-test-token", nil
 }
 
-func TestNativeTargetCatalogPathsIgnoresEncodedObjectTarget(t *testing.T) {
+func TestNativeTargetScanTargetsIgnoresEncodedObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
 		Format:  "csv",
 		Locator: "addp://engine/9/path/addp/gis/abc.csv?type=object",
 	}
 
-	got := nativeTargetCatalogPaths(endpoint)
+	got := nativeTargetScanTargets(endpoint)
 	if got != nil {
-		t.Fatalf("nativeTargetCatalogPaths() = %#v, want nil", got)
+		t.Fatalf("nativeTargetScanTargets() = %#v, want nil", got)
 	}
 }
 
@@ -413,7 +413,7 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
-	service.updateMetadataScanExecution(uint(execution.ID), "meta-run-1", 9, []string{"public"}, 0)
+	service.updateMetadataScanExecution(uint(execution.ID), "meta-run-1", 9, []string{"addp://engine/9/path/public/roads?type=table"}, 0)
 
 	dto, err := executionService.GetExecutionByExecutionID(ctx, execution.ExecutionID, uint(task.TenantID))
 	if err != nil {
@@ -426,9 +426,9 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 	if metadataScan["execution_id"] != "meta-run-1" || metadataScan["engine_id"] != float64(9) {
 		t.Fatalf("metadata_scan = %#v, want execution id and engine id", metadataScan)
 	}
-	paths, ok := metadataScan["catalog_paths"].([]interface{})
-	if !ok || len(paths) != 1 || paths[0] != "public" {
-		t.Fatalf("metadata_scan catalog_paths = %#v, want [public]", metadataScan["catalog_paths"])
+	paths, ok := metadataScan["targets"].([]interface{})
+	if !ok || len(paths) != 1 || paths[0] != "addp://engine/9/path/public/roads?type=table" {
+		t.Fatalf("metadata_scan targets = %#v, want precise table", metadataScan["targets"])
 	}
 }
 
@@ -492,40 +492,40 @@ func assertTransferScanPayloadRefPaths(t *testing.T, payload map[string]interfac
 	}
 }
 
-func TestNativeTargetCatalogPathsIgnoresEncodedMultiObjectTarget(t *testing.T) {
+func TestNativeTargetScanTargetsIgnoresEncodedMultiObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
 		Format:  "shapefile",
 		Locator: "addp://engine/9/path/addp/gis/abc.shp?type=object",
 	}
 
-	got := nativeTargetCatalogPaths(endpoint)
+	got := nativeTargetScanTargets(endpoint)
 	if got != nil {
-		t.Fatalf("nativeTargetCatalogPaths() = %#v, want nil", got)
+		t.Fatalf("nativeTargetScanTargets() = %#v, want nil", got)
 	}
 }
 
-func TestNativeTargetCatalogPathsIgnoresEncodedFileTarget(t *testing.T) {
+func TestNativeTargetScanTargetsIgnoresEncodedFileTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
 		ParentLocator: "addp://engine/9/path/exports?type=directory",
 		Name:          "abc.shp",
 	}
 
-	got := nativeTargetCatalogPaths(endpoint)
+	got := nativeTargetScanTargets(endpoint)
 	if got != nil {
-		t.Fatalf("nativeTargetCatalogPaths() = %#v, want nil", got)
+		t.Fatalf("nativeTargetScanTargets() = %#v, want nil", got)
 	}
 }
 
-func TestNativeTargetCatalogPathsUsesNativeTableNamespace(t *testing.T) {
+func TestNativeTargetScanTargetsUsesNativeTableLeaf(t *testing.T) {
 	endpoint := planner.EndpointSpec{
 		ParentLocator: "addp://engine/9/path/public?type=schema",
 		Name:          "roads",
 	}
 
-	got := nativeTargetCatalogPaths(endpoint)
-	want := []string{"public"}
+	got := nativeTargetScanTargets(endpoint)
+	want := []string{"addp://engine/9/path/public/roads?type=table"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("nativeTargetCatalogPaths() = %#v, want %#v", got, want)
+		t.Fatalf("nativeTargetScanTargets() = %#v, want %#v", got, want)
 	}
 }
 

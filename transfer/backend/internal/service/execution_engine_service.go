@@ -1388,11 +1388,11 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 
 	metaClient := s.metaClient.WithTenantID(task.TenantID)
 	refGroups := tableTargetRefGroups(targetPlan, targetRefs)
-	catalogPaths := []string(nil)
+	targets := []string(nil)
 	if len(refGroups) == 0 {
-		catalogPaths = nativeTargetCatalogPaths(spec.Target)
+		targets = nativeTargetScanTargets(spec.Target)
 	}
-	if len(refGroups) == 0 && len(catalogPaths) == 0 {
+	if len(refGroups) == 0 && len(targets) == 0 {
 		s.logger.Warn("metadata scan scope is empty, skipping metadata scan",
 			"task_id", task.ID,
 			"engine_id", targetEngineID,
@@ -1403,17 +1403,17 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 	s.logger.Info("triggering metadata scan",
 		"task_id", task.ID,
 		"engine_id", targetEngineID,
-		"catalog_paths", catalogPaths,
+		"targets", targets,
 		"ref_groups", len(refGroups))
 
 	run, err := metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID:     targetEngineID,
-		CatalogPaths: catalogPaths,
-		RefGroups:    refGroups,
-		ScanDepth:    "deep",
-		Force:        true,
-		TriggerType:  "manual",
-		Source:       commonExecution.ModuleTransfer,
+		EngineID:    targetEngineID,
+		Targets:     targets,
+		RefGroups:   refGroups,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: "manual",
+		Source:      commonExecution.ModuleTransfer,
 	})
 	if err != nil {
 		s.logger.Error("failed to trigger metadata scan",
@@ -1426,7 +1426,7 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		"task_id", task.ID,
 		"engine_id", targetEngineID,
 		"execution_id", run.ExecutionID)
-	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, catalogPaths, len(refGroups))
+	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, targets, len(refGroups))
 }
 
 func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
@@ -1462,7 +1462,7 @@ func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.Transfe
 	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, nil, len(refGroups))
 }
 
-func (s *ExecutionEngineService) updateMetadataScanExecution(executionID uint, scanExecutionID string, engineID uint, catalogPaths []string, refGroupCount int) {
+func (s *ExecutionEngineService) updateMetadataScanExecution(executionID uint, scanExecutionID string, engineID uint, targets []string, refGroupCount int) {
 	if executionID == 0 || s.executionService == nil || strings.TrimSpace(scanExecutionID) == "" {
 		return
 	}
@@ -1470,8 +1470,8 @@ func (s *ExecutionEngineService) updateMetadataScanExecution(executionID uint, s
 		"execution_id": scanExecutionID,
 		"engine_id":    engineID,
 	}
-	if len(catalogPaths) > 0 {
-		payload["catalog_paths"] = catalogPaths
+	if len(targets) > 0 {
+		payload["targets"] = targets
 	}
 	if refGroupCount > 0 {
 		payload["ref_group_count"] = refGroupCount
@@ -1550,7 +1550,7 @@ func relatedRefsToMetaScanRefGroups(refs []format.RelatedRef) []commonClient.Met
 	return []commonClient.MetaScanRefGroup{group}
 }
 
-func nativeTargetCatalogPaths(endpoint planner.EndpointSpec) []string {
+func nativeTargetScanTargets(endpoint planner.EndpointSpec) []string {
 	loc, err := endpoint.ParentResourceLocator()
 	if err != nil {
 		return nil
@@ -1558,7 +1558,16 @@ func nativeTargetCatalogPaths(endpoint planner.EndpointSpec) []string {
 
 	switch loc.Type {
 	case resourcetree.TypeSchema, resourcetree.TypeDatabase:
-		return []string{strings.TrimSpace(loc.PathString())}
+		name := strings.TrimSpace(endpoint.Name)
+		if loc.EngineID == 0 || len(loc.Path) == 0 || name == "" {
+			return nil
+		}
+		target := &resourcetree.ResourceLocator{
+			EngineID: loc.EngineID,
+			Path:     append(loc.Path, name),
+			Type:     resourcetree.TypeTable,
+		}
+		return []string{target.ToURI()}
 	}
 	return nil
 }

@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "091391c54da947501bdc5010bc94e765ab43077e",
-      "sha256": "fbc3a21929afaae8f4db5a46a0b877f439da5760e4f1325f3d95bb49660a3cd6",
+      "commit": "001b0a4db63c93c5c9e1f6efb2d91965c19e77f5",
+      "sha256": "766bf75343c995baa6b25f33300be332317e1c7684bc85616e9b67ad43a462a3",
       "use": {
-        "zh-cn": "任务、执行、配置与写入策略及只读预检的权限交集和三态限制；复核 replace 需实例删除声明与当前插件删除声明及 Provider，已知不支持优先于结构 unknown，不扩张创建切片或实际执行保证",
-        "en": "Task, execution, apply policy and read-only precheck permissions and tri-state limits; reviewed replace requirements for registered delete capability and the current plugin declaration and Provider, with known unsupported taking precedence over unknown structure; no expanded creation coverage or execution guarantee"
+        "zh-cn": "任务、执行、配置与写入策略及只读预检的权限交集和三态限制；复核 replace 需实例删除声明与当前插件删除声明及 Provider，已知不支持优先于结构 unknown，不扩张创建切片或实际执行保证；复核运行后仅扫描目标表，不扩大 schema／database；创建切片仍禁用自动扫描",
+        "en": "Task, execution, apply policy and read-only precheck permissions and tri-state limits; reviewed replace requirements for registered delete capability and the current plugin declaration and Provider, with known unsupported taking precedence over unknown structure; no expanded creation coverage or execution guarantee; reviewed post-write scans restricted to the target table, without schema/database expansion; creation still disables automatic scanning"
       }
     },
     {
@@ -125,11 +125,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "e098da99a0cdb691b311962aaee6e006b2d0ce3a",
-      "sha256": "3ef63fcc860d7a9f9e2fe1ea7bcc73d814b905139c304c7b3f5da5999717d214",
+      "commit": "001b0a4db63c93c5c9e1f6efb2d91965c19e77f5",
+      "sha256": "cf8cb515609a0fcbbcda2b548b1b36677bdc0d25e14c1b009dc8896935987770",
       "use": {
-        "zh-cn": "正式支持矩阵区分快照 replace/append 与增量 upsert，不混用装载和写入方式",
-        "en": "Formal matrix distinguishes snapshot replace/append from incremental upsert"
+        "zh-cn": "正式支持矩阵区分快照 replace/append 与增量 upsert，不混用装载和写入方式；复核运行后仅扫描目标表，不扩大 schema／database；创建切片仍禁用自动扫描",
+        "en": "Formal matrix distinguishes snapshot replace/append from incremental upsert; reviewed post-write scans restricted to the target table, without schema/database expansion; creation still disables automatic scanning"
       }
     },
     {
