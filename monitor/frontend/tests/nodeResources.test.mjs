@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
+import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
 
 test('node resource trends delegate chart rendering and formatting to the shared owners', () => {
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
@@ -41,6 +42,87 @@ test('anchors whole-second trend windows to the latest server evaluation, not br
   assert.equal(params.start, '2026-09-30T00:00:00.000Z')
   assert.equal(params.end, '2026-10-07T00:00:00.000Z')
   assert.throws(() => trendParameters('node-id', '', '7d', 'bad-time'))
+})
+
+function comparisonResponse(range = '5m', step = 15, values = (at, boundary) => at <= boundary ? 30 : 40) {
+  const params = trendParameters('node-id', 'node.memory.used_percent', range, '2026-10-07T00:00:00Z', {}, true)
+  const start = Date.parse(params.start), end = Date.parse(params.end), boundary = (start + end) / 2
+  const points = Array.from({ length: Math.floor((end - start) / (step * 1000)) + 1 }, (_, index) => {
+    const at = start + index * step * 1000, stamp = new Date(at).toISOString()
+    return { evaluated_at: stamp, sampled_at: stamp, value: values(at, boundary), data_state: 'valid' }
+  })
+  return { ...params, subject: { kind: 'node', node_id: 'node-id' }, queried_at: params.end, step_seconds: step,
+    series: [{ metric_key: params.metrics, dimensions: {}, unit: 'percent', window_seconds: 0, points }] }
+}
+
+test('comparison restores only supported periods and metrics and uses one doubled window', () => {
+  const input = { compare: 'previous', range: '24h', metric: 'node.cpu.busy_percent' }
+  assert.deepEqual(resolveResourceRoute(input, true).query, input)
+  assert.equal(resolveResourceRoute(input, true).compare, true)
+  assert.equal(trendParameters('node', input.metric, '24h', '2026-10-07T00:00:00Z', {}, true).start, '2026-10-05T00:00:00.000Z')
+  for (const patch of [{ range: '7d' }, { metric: 'node.memory.total_bytes' }, { compare: ['previous'] }, { compare: 'unknown' }]) {
+    assert.equal(resolveResourceRoute({ ...input, ...patch }, true).compare, false)
+    assert.equal(Object.hasOwn(resolveResourceRoute({ ...input, ...patch }, true).query, 'compare'), false)
+  }
+  assert.equal(resolveResourceRoute(input).compare, false)
+  assert.equal(supportsResourceComparison(input.metric, '5m'), true)
+  assert.equal(supportsResourceComparison(input.metric, '7d'), false)
+  assert.throws(() => trendParameters('node', input.metric, '7d', '2026-10-07T00:00:00Z', {}, true))
+})
+
+test('comparison counts the boundary once and compares unrounded point means in percentage points', () => {
+  const response = comparisonResponse()
+  response.series[0].points[0].value = 100 // The left-open initial boundary belongs to neither period.
+  const value = resourceTrendComparison(response, '5m')
+  assert.equal(value.complete, true)
+  assert.deepEqual([value.previous.valid, value.previous.total, value.current.valid, value.current.total], [20, 20, 20, 20])
+  assert.equal(value.previous.mean, 30)
+  assert.equal(value.current.mean, 40)
+  assert.equal(value.delta, 10)
+  assert.equal(value.current.start, '2026-10-06T23:55:00.000Z')
+  const precision = resourceTrendComparison(comparisonResponse('5m', 15, (at, boundary) => at <= boundary ? 30.004 : 30.006), '5m')
+  assert.ok(Math.abs(precision.delta - 0.002) < 1e-10)
+  const zero = resourceTrendComparison(comparisonResponse('5m', 15, (at, boundary) => at <= boundary ? 0 : 40), '5m')
+  assert.equal(zero.delta, 40)
+})
+
+test('any invalid evaluation point blocks both means and the comparison without inventing zero', () => {
+  for (const state of ['stale', 'no_data', 'not_connected']) for (const index of [1, 21]) {
+    const response = comparisonResponse(), point = response.series[0].points[index]
+    Object.assign(point, { data_state: state, value: state === 'stale' ? point.value : null, sampled_at: state === 'stale' ? new Date(Date.parse(point.evaluated_at) - 61000).toISOString() : null })
+    const result = resourceTrendComparison(response, '5m')
+    assert.equal(result.complete, false)
+    assert.equal(result.delta, null)
+    assert.equal(result.previous.mean, null)
+    assert.equal(result.current.mean, null)
+    assert.equal(result.previous.valid + result.current.valid, 39)
+  }
+  const empty = resourceTrendComparison(comparisonResponse('5m', 600), '5m')
+  assert.equal(empty.complete, false)
+  assert.equal(empty.previous.total, 0)
+})
+
+test('comparison validates the entire evaluation grid and freshness before calculating', () => {
+  for (const mutate of [
+    row => row.step_seconds = 0, row => row.step_seconds = 15.5, row => row.step_seconds = 20,
+    row => row.series[0].points.pop(), row => row.series[0].points.reverse(),
+    row => row.series[0].points[1].evaluated_at = row.series[0].points[0].evaluated_at,
+    row => row.series[0].points[5].sampled_at = row.start,
+    row => row.series[0].points[1].sampled_at = row.end,
+    row => row.start = row.end, row => row.series[0].metric_key = 'node.load.average_1m'
+  ]) {
+    const row = comparisonResponse(); mutate(row)
+    assert.throws(() => resourceTrendComparison(row, '5m'))
+  }
+  const daily = resourceTrendComparison(comparisonResponse('24h', 180), '24h')
+  assert.equal(daily.previous.total, 480)
+  assert.equal(daily.current.total, 480)
+  assert.equal(daily.complete, true)
+  const uneven = resourceTrendComparison(comparisonResponse('5m', 45), '5m')
+  assert.equal(uneven.previous.total, 6)
+  assert.equal(uneven.current.total, 7)
+  assert.equal(uneven.complete, true)
+  assert.equal(uneven.delta, 10)
 })
 test('zero remains valid; stale and absent samples never become current values or chart zeros', () => {
   const points = ['valid', 'stale', 'no_data', 'not_connected'].map(data_state => ({ data_state, value: data_state === 'valid' ? 0 : 999, evaluated_at: '2026-10-07T00:00:00Z' }))

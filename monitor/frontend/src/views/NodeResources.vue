@@ -122,10 +122,29 @@
             <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
           </el-select>
         </div>
+        <div v-if="summaryMetrics.some(metric => metric.key === state.metric)" class="resource-compare-control">
+          <el-checkbox :model-value="state.compare" :disabled="!supportsResourceComparison(state.metric, state.range)" data-testid="resource-compare" @change="value => selectTrend('compare', value ? 'previous' : undefined)">{{ t('monitor.resources.comparison.enable') }}</el-checkbox>
+          <p v-if="state.range === '7d'" class="resource-hint" data-testid="resource-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
+        </div>
         <p v-if="state.end" class="resource-hint" data-testid="resource-history">{{ t('monitor.resources.history.fixed', { time: date(state.end) }) }}</p>
         <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="error" show-icon :closable="false" data-testid="resource-trend-error" />
+        <section v-if="comparison" class="resource-comparison" data-testid="resource-comparison" :aria-label="t('monitor.resources.comparison.title')">
+          <h4>{{ t(`monitor.resources.comparison.averages.${selectedMetric.name}`) }}</h4>
+          <div class="resource-cards">
+            <article v-for="period in ['current', 'previous']" :key="period" class="resource-card" :data-testid="`resource-compare-${period}`">
+              <h4>{{ t(`monitor.resources.comparison.${period}`) }}</h4>
+              <strong>{{ formatValue({ data_state: 'valid', value: comparison[period].mean }, selectedMetric) }}</strong>
+              <p>{{ date(comparison[period].start) }} — {{ date(comparison[period].end) }}</p>
+              <p>{{ t('monitor.resources.comparison.coverage', { valid: comparison[period].valid, total: comparison[period].total }) }}</p>
+            </article>
+          </div>
+          <p v-if="!comparison.complete" role="status" data-testid="resource-compare-incomplete">{{ t('monitor.resources.comparison.incomplete') }}</p>
+          <p v-else role="status" data-testid="resource-compare-change"><strong>{{ comparisonChange }}</strong></p>
+          <p class="resource-hint">{{ t('monitor.resources.comparison.method', { step: comparison.stepSeconds }) }}</p>
+          <p v-if="selectedMetric.windowSeconds" class="resource-hint">{{ t('monitor.resources.comparison.cpuWindow') }}</p>
+        </section>
         <template v-if="trend">
-          <p class="resource-hint">{{ t('monitor.resources.window', { start: date(trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
+          <p class="resource-hint" data-testid="resource-trend-window">{{ t('monitor.resources.window', { start: date(comparison?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
           <p class="resource-hint">{{ t('monitor.resources.gaps') }}</p>
           <div class="resource-chart" role="img" :aria-label="t('monitor.resources.trend')" data-testid="resource-chart">
             <ChartRenderer :rows="chartRows" :config="chartConfig" @invalid="invalidChart" />
@@ -138,7 +157,7 @@
                 <el-table-column :label="t('monitor.resources.value')" min-width="160"><template #default="{ row }">{{ formatValue(row, selectedMetric) }}</template></el-table-column>
                 <el-table-column :label="t('monitor.resources.dataState')" min-width="120"><template #default="{ row }">{{ t(`monitor.resources.states.${row.data_state}`) }}</template></el-table-column>
               </el-table>
-              <div class="resource-pagination"><el-pagination v-model:current-page="evidencePage" :page-size="20" :total="trend.series[0].points.length" layout="total, prev, pager, next" /></div>
+              <div class="resource-pagination"><el-pagination v-model:current-page="evidencePage" :page-size="20" :total="trendPoints.length" layout="total, prev, pager, next" /></div>
             </el-collapse-item>
           </el-collapse>
         </template>
@@ -163,7 +182,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { summaryMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { summaryMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -174,11 +193,12 @@ const collectionMessage = computed(() => !instant.value ? '' : instant.value.col
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
-const listQuery = computed(() => { const { range, metric, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
+const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(0), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref('')
+const comparison = ref(null)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
 const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
@@ -190,11 +210,19 @@ const deviceSections = computed(() => deviceFamilies.map(family => {
   return { name: family.name, metrics: family.metrics, rows, visibleRows: family.name === 'disk' && showAllDisks.value ? rows : compactRows, collapsedCount: rows.length - compactRows.length, errorKey: family.error.value, missingMessage: (['not_collected', 'failed'].includes(family.value.value?.collection[family.name]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(family.value.value?.collection, family.name) : '' }
 }))
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
-const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...(trend.value?.series[0].points.map(point => currentResourceValue(point) ?? 0) || []))) : null)
-const chartRows = computed(() => trend.value ? resourceChartRows(trend.value.series[0]).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })) : [])
+const trendPoints = computed(() => (trend.value?.series[0].points || []).filter(point => !comparison.value || Date.parse(point.evaluated_at) > Date.parse(comparison.value.current.start)))
+const chartScale = computed(() => ['bytes', 'bytes_per_second'].includes(selectedMetric.value.unit) ? scaleByteValue(Math.max(0, ...trendPoints.value.map(point => currentResourceValue(point) ?? 0))) : null)
+const chartRows = computed(() => resourceChartRows({ points: trendPoints.value }).map(row => ({ ...row, value: row.value === null ? null : row.value / (chartScale.value?.divisor || 1) })))
 const presentation = metric => ({ field: 'value', label: t(`monitor.resources.metrics.${metric.name}`), unit: t(`monitor.resources.units.${metric.unit}`), precision: metric.precision })
 const chartConfig = computed(() => ({ chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { ...presentation(selectedMetric.value), ...(chartScale.value ? { unit: chartScale.value.unit + (selectedMetric.value.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}) }] }))
-const evidenceRows = computed(() => trend.value?.series[0].points.slice((evidencePage.value - 1) * 20, evidencePage.value * 20) || [])
+const evidenceRows = computed(() => trendPoints.value.slice((evidencePage.value - 1) * 20, evidencePage.value * 20))
+const comparisonChange = computed(() => {
+  const delta = comparison.value?.delta
+  if (delta === null || delta === undefined) return ''
+  if (delta === 0) return t('monitor.resources.comparison.unchanged')
+  if (Math.round(Math.abs(delta) * 100) === 0) return t('monitor.resources.comparison.smallChange')
+  return t(`monitor.resources.comparison.${delta > 0 ? 'increased' : 'decreased'}`, { value: formatFieldPresentationValue(Math.abs(delta), { precision: 2 }, locale.value) })
+})
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
 let epoch = 0, disposed = false
@@ -232,7 +260,7 @@ function selectTrend(key, value) {
 }
 function selectFilesystem(row) { return navigate(route.path, { ...state.value.query, ...row.dimensions, metric: 'node.filesystem.used_percent' }, 'replace') }
 function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...query } = state.value.query; return navigate(route.path, { ...query, ...row.dimensions, metric }, 'replace') }
-function invalidChart() { trend.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
+function invalidChart() { trend.value = null; comparison.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
   enabled: () => canRead.value && (!nodeID.value || isTargetUUID(nodeID.value)) && !refreshBlocked.value && !state.value.changed && !loading.value,
@@ -248,6 +276,8 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
+  comparison.value = null
+  if (state.value.compare) trend.value = null
   if (!automatic) { summaries.value = new Map(); summaryErrorKey.value = '' }
   if (!automatic) { nodes.value = []; total.value = 0; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
   errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
@@ -327,11 +357,13 @@ async function reload({ automatic = false } = {}) {
       }
       trend.value = null
       try {
-        const params = trendParameters(id, state.value.metric, state.value.range, state.value.end || current.end, state.value.dimensions)
+        const params = trendParameters(id, state.value.metric, state.value.range, state.value.end || current.end, state.value.dimensions, state.value.compare)
         const history = await request(config => api.trend(params, config))
         if (!requestScope.current(ticket)) return
         validateResourceResponse(history, id, [state.value.metric], true, state.value.dimensions)
-        trend.value = validateResourceTrendWindow(history, params)
+        validateResourceTrendWindow(history, params)
+        const compared = state.value.compare ? resourceTrendComparison(history, state.value.range) : null
+        trend.value = history; comparison.value = compared
         if (state.value.end) {
           await nextTick()
           if (!requestScope.current(ticket)) return
@@ -341,6 +373,7 @@ async function reload({ automatic = false } = {}) {
       } catch (error) {
         if (!requestScope.current(ticket)) return
         trend.value = null
+        comparison.value = null
         trendErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; instant.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null; errorKey.value = trendErrorKey.value }
       }
@@ -378,6 +411,10 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-metric-heading .el-button { flex-shrink: 0; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }
+.resource-compare-control, .resource-comparison { margin: 16px 0; }
+.resource-compare-control .el-checkbox { height: auto; max-width: 100%; }
+.resource-compare-control :deep(.el-checkbox__label) { white-space: normal; }
+.resource-comparison h4 { margin: 12px 0; }
 .el-alert { margin: 16px 0; }
 @media (max-width: 600px) { .node-resources { padding: 12px; } .resource-cards { grid-template-columns: 1fr; } }
 </style>

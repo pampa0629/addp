@@ -816,6 +816,22 @@
         },
         "budget": "This page exceeds the resource query budget. Reduce the page size or ask an administrator to adjust the budget."
       },
+      "comparison": {
+        "title": "Period comparison",
+        "enable": "Compare with the previous equal period",
+        "current": "Current period",
+        "previous": "Previous period",
+        "averages": { "cpuBusy": "Average CPU busy rate comparison", "memoryUsed": "Average memory usage comparison" },
+        "coverage": "Valid evaluation points: {valid} / {total}",
+        "incomplete": "Insufficient samples. Both periods must be complete to show averages and change.",
+        "increased": "Up {value} percentage points from the previous period",
+        "decreased": "Down {value} percentage points from the previous period",
+        "unchanged": "Unchanged from the previous period",
+        "smallChange": "Change from the previous period is less than 0.01 percentage points",
+        "method": "Calculated from curve evaluation points, evaluated every {step} seconds. Complete evaluation points do not prove lossless raw sampling.",
+        "cpuWindow": "Each CPU point covers the preceding minute and may include data before the period began.",
+        "retention": "Comparing 7-day periods needs about 14 days of history, beyond current retention. The 7-day curve remains available."
+      },
       "history": {
         "fixed": "Historical trend ending at {time}. Refresh keeps this time fixed. Resource cards above still show current values. Retention and the current source constrain the curve; missing samples remain gaps.",
         "live": "Return to live trend",

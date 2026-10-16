@@ -6,10 +6,11 @@ export const resourcePermissions = ['platform.host_node.read', 'monitor.resource
 import { observations, mount, serverEnd } from './resource-observations.fixture'
 export { observations, mount, serverEnd }
 export async function resourceBackend(page, options = {}) {
-  const state = { reads: [], mode: options.mode || '', summaryMode: options.summaryMode || '', listNodes: options.nodes, trendMode: options.trendMode || '', diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
+  const state = { reads: [], mode: options.mode || '', summaryMode: options.summaryMode || '', listNodes: options.nodes, trendMode: options.trendMode || '', trendResponse: options.trendResponse, diskDevices: options.diskDevices, targetID: options.targetID, serverEnd, identity: options.identity || identity(resourcePermissions) }
   let release
   let held = options.holdInstant ? new Promise(resolve => { release = resolve }) : null
   let releaseSummary, heldSummary = options.holdSummary ? new Promise(resolve => { releaseSummary = resolve }) : null
+  let releaseTrend, heldTrend = options.holdTrend ? new Promise(resolve => { releaseTrend = resolve }) : null
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.locale || 'zh-cn')
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
   await page.route('**/api/v1/**', async route => {
@@ -67,8 +68,10 @@ export async function resourceBackend(page, options = {}) {
         const result = codes[mode]; status = result[0]; body = { error_code: result[1], error: mode }
       }
       if (mode === 'invalid') body.subject.node_id = secondNode
+      if (trend && status === 200 && state.trendResponse) state.trendResponse(body, url.searchParams)
+      if (trend && heldTrend) await heldTrend
     } else throw new Error(`Unexpected resource fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, holdSummary: () => { heldSummary = new Promise(resolve => { releaseSummary = resolve }) }, releaseSummary: () => { releaseSummary?.(); heldSummary = null } })
+  return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, holdSummary: () => { heldSummary = new Promise(resolve => { releaseSummary = resolve }) }, releaseSummary: () => { releaseSummary?.(); heldSummary = null }, holdTrend: () => { heldTrend = new Promise(resolve => { releaseTrend = resolve }) }, releaseTrend: () => { releaseTrend?.(); heldTrend = null } })
 }

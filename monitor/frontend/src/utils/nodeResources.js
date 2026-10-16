@@ -62,6 +62,9 @@ export function resourceDimensionRows(...values) {
 }
 export const resourceRanges = { '5m': 300, '1h': 3600, '24h': 86400, '7d': 604800 }
 const defaultMetric = 'node.memory.used_percent'
+export function supportsResourceComparison(metric, range) {
+  return summaryMetrics.some(item => item.key === metric) && ['5m', '1h', '24h'].includes(range)
+}
 export function resolveResourceRoute(query = {}, detail = false) {
   const pagination = resolveTargetRoute({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.page_size === undefined ? {} : { page_size: query.page_size }) })
   const search = typeof query.search === 'string' ? query.search.trim().slice(0, 200) : ''
@@ -87,14 +90,43 @@ export function resolveResourceRoute(query = {}, detail = false) {
   const end = hasEnd && validEnd ? new Date(parsedEnd).toISOString() : ''
   const invalidEnd = hasEnd && !validEnd
   const refresh = hasEnd ? 'off' : typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
-  const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
-  return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
+  const compare = detail && query.compare === 'previous' && supportsResourceComparison(metric, range)
+  const canonical = { ...pagination.query, ...canonicalDimensions, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(compare ? { compare: 'previous' } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
+  return { page: pagination.page, pageSize: pagination.pageSize, search, range, metric, compare, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
-export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {}) {
+export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {}, compare = false) {
   const end = Date.parse(serverEnd)
-  if (!Number.isFinite(end) || end % 1000 !== 0) throw new Error('invalid_resource_response')
-  return { node_id: nodeID, metrics: metric, ...dimensions, start: new Date(end - resourceRanges[range] * 1000).toISOString(), end: new Date(end).toISOString() }
+  if (!Number.isFinite(end) || end % 1000 !== 0 || !Object.hasOwn(resourceRanges, range) || (compare && !supportsResourceComparison(metric, range))) throw new Error('invalid_resource_response')
+  return { node_id: nodeID, metrics: metric, ...dimensions, start: new Date(end - resourceRanges[range] * 1000 * (compare ? 2 : 1)).toISOString(), end: new Date(end).toISOString() }
+}
+
+export function resourceTrendComparison(value, range) {
+  const metric = value?.series?.[0]?.metric_key
+  if (!supportsResourceComparison(metric, range)) throw new Error('invalid_resource_response')
+  validateResourceResponse(value, value.subject?.node_id, [metric], true)
+  validateResourceTrendWindow(value, value)
+  const start = Date.parse(value.start), end = Date.parse(value.end), step = value.step_seconds * 1000
+  const width = resourceRanges[range] * 1000, boundary = end - width, points = value.series[0].points
+  if (end - start !== width * 2 || start % 1000 !== 0 || end % 1000 !== 0 || !Number.isSafeInteger(value.step_seconds) || value.step_seconds < 15 || value.step_seconds % 15 !== 0 || points.length !== Math.floor((end - start) / step) + 1) throw new Error('invalid_resource_response')
+  const period = (from, to) => ({ start: new Date(from).toISOString(), end: new Date(to).toISOString(), valid: 0, total: 0, mean: null })
+  const previous = period(start, boundary), current = period(boundary, end)
+  let previousSum = 0, currentSum = 0
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index], at = Date.parse(point.evaluated_at), sample = Date.parse(point.sampled_at)
+    if (at !== start + index * step || (point.data_state === 'valid' && (sample > at || at - sample > 60000))) throw new Error('invalid_resource_response')
+    if (index === 0) continue // Both periods are left-open; their shared boundary belongs to the previous period.
+    const target = at <= boundary ? previous : current, numeric = currentResourceValue(point)
+    target.total++
+    if (numeric !== null) {
+      target.valid++
+      if (target === previous) previousSum += numeric
+      else currentSum += numeric
+    }
+  }
+  const complete = previous.total > 0 && current.total > 0 && previous.valid === previous.total && current.valid === current.total
+  if (complete) { previous.mean = previousSum / previous.total; current.mean = currentSum / current.total }
+  return { previous, current, complete, delta: complete ? current.mean - previous.mean : null, stepSeconds: value.step_seconds }
 }
 export function currentResourceValue(point) {
   return point?.data_state === 'valid' && typeof point.value === 'number' && Number.isFinite(point.value) ? point.value : null
