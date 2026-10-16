@@ -314,3 +314,6 @@ other = "File scan budget exceeded; split the file or import it into a queryable
 
 [manager.error.trajectory_source_invalid]
 other = "The source could not be fully parsed or contains invalid device/time fields"
+
+[manager.error.import_submission_failed]
+other = "Files may already be uploaded. Transfer task submission failed; check existing tasks before retrying."

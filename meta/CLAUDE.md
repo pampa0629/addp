@@ -42,7 +42,7 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 专业扫描执行读取按 Tenant + meta/scan 限定；当前 `meta.scan_task.read` 可读有定义的历史（含已删除定义），一次性执行只允许发起 User 读取。专业入口保留既有合法 User 凭据与 Client Scope 守卫，不套用 Monitor 的第一方令牌限制；TaskProvider 继续独立使用专用机器认证和权限。用户读取响应复用 Common Observation，仅增加固定 `scan_context.engine_id/scan_depth`，不得序列化完整 TaskExecution。详见平台任务体系规范；直接 Meta 入口已在提交 `60faf18da` 的 [Hosted T4 37166379368](https://github.com/pampa0629/addp/actions/runs/37166379368) 通过，完整证据见任务体系规范。
 
-Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager.raster_mosaic_generation.produced_target` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
+Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
 
 2026-10-16 mosaic 来源修复的最终 Meta Go T1 与标准 Meta PostgreSQL 18 项通过、0 失败/0 跳过；临时移除 Manager 主体继承可复现“扫描创建成功、本人读取 404”，恢复后通过。新增夹具已遵守 lease token UUID 与执行授权唯一索引，不放松真实存储约束；首次失败不计为通过。共享 Go、Manager PostgreSQL 及 Swagger/夹具验证见 Manager 模块记录。该结果仅为 T1/T2，不包含待栅格会话复跑的容量 T4。
 
@@ -257,8 +257,10 @@ cd meta/frontend && npm test && npm run build
 
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
-Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop.workflow.produced_target` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
+Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
 
 `GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。
 
 单项授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
+
+后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描；结构变更审批目前记录扫描提交失败，待 Owner 核验契约确定后接入。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。

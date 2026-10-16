@@ -58,6 +58,7 @@ type ExecutionProgressResponse struct {
 }
 
 type ExecutionMetadata struct {
+	MetadataScan                *ExecutionMetadataScan `json:"metadata_scan,omitempty"`
 	LineageFacts                *ExecutionLineageFacts `json:"lineage_facts,omitempty"`
 	Continuous                  *ExecutionContinuous   `json:"continuous,omitempty"`
 	StopReason                  string                 `json:"stop_reason,omitempty"`
@@ -223,6 +224,7 @@ type ExecutionSchemaChange struct {
 }
 
 type ExecutionMetadataScan struct {
+	ErrorCode   string `json:"error_code,omitempty"`
 	ExecutionID string `json:"execution_id,omitempty"`
 	Status      string `json:"status"`
 	Attempt     uint   `json:"attempt"`
@@ -257,6 +259,10 @@ func projectExecution(c *gin.Context, item *models.TaskExecution) (*ExecutionRes
 		return nil, err
 	}
 	metadata.StopReason = executionEnum(metadata.StopReason, "paused", "stopped", "cleanup", "worker_shutdown", "lease_expired", "execution_failed", "schema_change_blocked")
+	if metadata.MetadataScan != nil {
+		metadata.MetadataScan.Status = executionEnum(metadata.MetadataScan.Status, "submitted", "failed")
+		metadata.MetadataScan.ErrorCode = executionEnum(metadata.MetadataScan.ErrorCode, "scan_origin_unavailable", "scan_output_unavailable", "scan_service_unavailable", "scan_submission_failed")
+	}
 	metadata.RecoveryReason = executionEnum(metadata.RecoveryReason, "worker_shutdown", "lease_expired", "execution_failed")
 	metadata.RecoveryCircuitState = executionEnum(metadata.RecoveryCircuitState, "closed", "open", "half_open")
 	if metadata.Continuous != nil && metadata.Continuous.Diagnostics != nil && metadata.Continuous.Diagnostics.Error != "" {

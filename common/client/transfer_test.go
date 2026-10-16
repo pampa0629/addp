@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -78,12 +80,10 @@ func TestTransferClientCreateTaskParsesDirectResponse(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
-		if tenantID != 3 {
-			t.Fatalf("tenant ID = %d, want 3", tenantID)
-		}
+		t.Fatal("User submission must not acquire Service credentials")
 		return "addp_at_transfer_token", nil
 	}))
-	result, err := client.CreateTask(&CreateTransferTaskRequest{
+	result, err := client.CreateTask(context.Background(), "addp_at_transfer_token", &CreateTransferTaskRequest{
 		Name:     "sync roads",
 		TaskType: "sync",
 		Config:   map[string]interface{}{"mode": "batch"},
@@ -120,7 +120,7 @@ func TestTransferClientCreateTaskRejectsWrappedResponse(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
-	if _, err := client.CreateTask(&CreateTransferTaskRequest{Name: "sync roads", TaskType: "sync"}); err == nil {
+	if _, err := client.CreateTask(context.Background(), "addp_at_transfer_token", &CreateTransferTaskRequest{Name: "sync roads", TaskType: "sync"}); err == nil {
 		t.Fatal("CreateTask() error = nil, want wrapped response rejection")
 	}
 }
@@ -139,7 +139,7 @@ func TestTransferClientTriggerTaskUsesExecutionUUID(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
-	result, err := client.TriggerTask(7, 3)
+	result, err := client.TriggerTask(context.Background(), "addp_at_transfer_token", 7)
 	if err != nil {
 		t.Fatalf("TriggerTask() error = %v", err)
 	}
@@ -167,7 +167,7 @@ func TestTransferClientTriggerTaskRejectsEmptyExecutionUUID(t *testing.T) {
 	defer server.Close()
 
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
-	if _, err := client.TriggerTask(8, 0); err == nil {
+	if _, err := client.TriggerTask(context.Background(), "addp_at_transfer_token", 8); err == nil {
 		t.Fatal("TriggerTask() error = nil, want empty response data error")
 	}
 }
@@ -219,5 +219,57 @@ func TestTransferClientGetExecutionRejectsWrappedResponse(t *testing.T) {
 	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
 	if _, err := client.GetExecution("exec-uuid-21", 0); err == nil {
 		t.Fatal("GetExecution() error = nil, want wrapped response rejection")
+	}
+}
+
+func TestTransferUserTaskSubmissionDoesNotLeakOrReuseCredentials(t *testing.T) {
+	var calls, redirected int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path == "/redirected" {
+			redirected++
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer current-user" {
+			t.Error("current credential not forwarded")
+		}
+		w.Header().Set("Location", "/redirected")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		_, _ = w.Write([]byte("secret dependency body"))
+	}))
+	defer server.Close()
+	client := NewTransferClient(server.URL, nil)
+	for _, submit := range []func(context.Context, string) error{
+		func(ctx context.Context, token string) error {
+			_, err := client.CreateTask(ctx, token, &CreateTransferTaskRequest{Name: "import"})
+			return err
+		},
+		func(ctx context.Context, token string) error { _, err := client.TriggerTask(ctx, token, 1); return err },
+	} {
+		before := calls
+		for _, token := range []string{"", "invalid token", "user\nsecret"} {
+			if err := submit(context.Background(), token); err == nil {
+				t.Fatal("invalid credential accepted")
+			}
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := submit(ctx, "current-user"); err == nil {
+			t.Fatal("cancelled submission succeeded")
+		}
+		if calls != before {
+			t.Fatal("invalid/cancelled request reached dependency")
+		}
+		err := submit(context.Background(), "current-user")
+		var submission *TransferTaskSubmissionError
+		if !errors.As(err, &submission) || submission.StatusCode != http.StatusTemporaryRedirect || strings.Contains(err.Error(), "secret") {
+			t.Fatalf("unsafe submission result: %v", err)
+		}
+		if calls != before+1 || redirected != 0 {
+			t.Fatal("User credential followed redirect")
+		}
+	}
+	if client.httpClient.CheckRedirect != nil {
+		t.Fatal("shared transport was mutated")
 	}
 }

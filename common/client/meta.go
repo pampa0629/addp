@@ -27,10 +27,8 @@ type MetaClient struct {
 	tenantID           *uint
 }
 
-const MetaScanSourceDevelopProducedTarget = "develop.workflow.produced_target"
-const MetaScanSourceManagerMosaicProducedTarget = "manager.raster_mosaic_generation.produced_target"
-
-// MetaScanProducedTarget is a persisted Owner receipt for one generated mosaic.
+// MetaScanProducedTarget is an Owner receipt for a generated Manager product.
+// ManifestRef identifies a mosaic; a vector tile set has no manifest.
 // It carries no identity, authorization, credential or runtime access plan.
 type MetaScanProducedTarget struct {
 	EngineID    uint   `json:"engine_id"`

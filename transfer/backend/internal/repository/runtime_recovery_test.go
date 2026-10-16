@@ -2,6 +2,8 @@ package repository
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"reflect"
 	"strings"
 	"testing"
@@ -125,6 +127,74 @@ func TestBuildContinuousRecoveryPlan(t *testing.T) {
 			plan := buildContinuousRecoveryPlan(tt.previous, tt.reason, tt.sessionStarted, now, policy)
 			if plan.Attempt != tt.wantAttempt || plan.NotBefore.Sub(now) != tt.wantDelay || plan.CircuitState != tt.wantCircuit {
 				t.Fatalf("plan=%#v, want attempt=%d delay=%s circuit=%s", plan, tt.wantAttempt, tt.wantDelay, tt.wantCircuit)
+			}
+		})
+	}
+}
+
+func TestContinuousRecoveryPreservesOnlyVerifiedTaskOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*commonExecution.TaskExecution)
+	}{
+		{"valid", nil},
+		{"missing_origin", func(e *commonExecution.TaskExecution) { e.ActorPrincipalID = nil }},
+		{"conflicting_origin", func(e *commonExecution.TaskExecution) { by := 10; e.TriggeredBy = &by }},
+		{"other_tenant", func(e *commonExecution.TaskExecution) { e.TenantID++ }},
+		{"other_task", func(e *commonExecution.TaskExecution) {
+			e.SourceTaskID = commonExecution.NewSourceTaskIDFromUint(99999)
+		}},
+		{"other_module", func(e *commonExecution.TaskExecution) { e.Module = commonExecution.ModuleDevelop }},
+		{"bounded", func(e *commonExecution.TaskExecution) { e.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTaskRepositoryTestDB(t)
+			task := createTaskRepositoryTestTask(t, db, 7, "recovery-origin")
+			task.Config["runtime"] = map[string]interface{}{"boundary": "continuous"}
+			previous := claimTestExecution(task, uuid.NewString())
+			grant, lease, expiry := int64(999), "old-secret", time.Now().Add(time.Hour)
+			previous.ExecutionAuthorizationID, previous.LeaseToken, previous.AuthorizationExpiresAt = &grant, &lease, &expiry
+			if tc.mutate != nil {
+				tc.mutate(&previous)
+			}
+			var recovered *commonExecution.TaskExecution
+			err := db.Transaction(func(tx *gorm.DB) error {
+				var err error
+				recovered, err = createRecoveryExecution(tx, task, previous, "worker_shutdown", time.Now(), time.Now(), ContinuousRecoveryPolicy{})
+				return err
+			})
+			if tc.mutate != nil {
+				if err == nil {
+					t.Fatal("invalid recovery origin accepted")
+				}
+				var count int64
+				if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("recovery inserted rows: %d, %v", count, err)
+				}
+				var unchanged models.TransferTask
+				if err := db.First(&unchanged, task.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if unchanged.LastExecutionID != task.LastExecutionID {
+					t.Fatal("failed recovery changed task")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.Where("execution_id = ?", recovered.ExecutionID).First(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.TriggeredBy == nil || *stored.TriggeredBy != 9 || stored.ActorPrincipalID == nil || *stored.ActorPrincipalID != 9 || stored.ActorTenantMembershipID == nil || *stored.ActorTenantMembershipID != 19 || stored.IssuedAuthorizationVersion == nil || *stored.IssuedAuthorizationVersion != 1 {
+				t.Fatalf("origin was not persisted: %#v", stored)
+			}
+			if stored.RetryOfExecutionID == nil || *stored.RetryOfExecutionID != previous.ExecutionID || stored.Metadata["recovery_reason"] != "worker_shutdown" {
+				t.Fatal("recovery cause lost")
+			}
+			if stored.ExecutionAuthorizationID != nil || stored.LeaseToken != nil || stored.AuthorizationExpiresAt != nil {
+				t.Fatal("recovery copied authorization or lease")
 			}
 		})
 	}

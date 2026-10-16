@@ -112,7 +112,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	tenant := strconv.Itoa(scanReadTenant)
 	contexts := map[string]authorization.AuthContext{}
-	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied", "manager-machine", "manager-machine-denied", "manager-machine-foreign"} {
+	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied", "manager-machine", "manager-machine-denied", "manager-machine-foreign", "transfer-machine"} {
 		principal, targetTenant := "31", tenant
 		if token == "peer" {
 			principal = "32"
@@ -138,6 +138,9 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 			a.Authentication.Methods = []string{"service_secret"}
 			a.Authentication.AssuranceLevel = "not_applicable"
 			client := "addp-orchestrator"
+			if token == "transfer-machine" {
+				client = "addp-transfer"
+			}
 			if strings.HasPrefix(token, "develop-machine") {
 				client = "addp-develop"
 			}
@@ -345,6 +348,7 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	request("machine-denied", "/task-provider/executions/"+fixtures[0].ExecutionID, 403)
 	testMetaDevelopProducedScan(t, db, router, request)
 	testMetaManagerMosaicProducedScan(t, db, router, request)
+	testTransferAndVectorProducedScans(t, db, router, request)
 
 	// A synchronous Manager BFF submission must keep the actual User, rather than
 	// introducing a service-created execution that the browser cannot read.

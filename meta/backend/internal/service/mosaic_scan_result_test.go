@@ -52,7 +52,7 @@ func testMosaicScanWholeCompletion(t *testing.T, db *gorm.DB) {
 			tenantID := uint(710000099)
 			now := time.Now().UTC()
 			catalogPath := "mosaics/result"
-			run := scantask.NewManualExecution(tenantID, 31, 9, 0, scenario, nil, []string{catalogPath}, nil, "deep", true, commonclient.MetaScanSourceManagerMosaicProducedTarget, now)
+			run := scantask.NewManualExecution(tenantID, 31, 9, 0, scenario, nil, []string{catalogPath}, nil, "deep", true, execution.ModuleManager, now)
 			parentID := uuid.NewString()
 			run.ParentExecutionID = &parentID
 			run.Metadata = commonmodels.JSONMap{"produced_target": commonclient.MetaScanProducedTarget{EngineID: 9, CatalogPath: catalogPath, ManifestRef: "mosaic.addp.json", Attempt: 1}}

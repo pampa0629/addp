@@ -1938,7 +1938,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop 和 Manager mosaic 产物来源仅允许对应专用服务携带父 execution，原子校验持久产物与主体；Manager 还须验证当前 lease 和精确目录 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop and Manager mosaic output scans require the matching service, verified parent identity and persisted output; Manager also requires a valid lease and exact dataset directory",
+                "description": "叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop、Transfer 和 Manager 后台产物扫描仅允许对应服务携带父 execution，核对已保存产物和完整主体；Manager 还须验证当前 lease 和 attempt。服务无来源请求拒绝 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop, Transfer and Manager output scans require the matching service, verified parent identity and persisted output; Manager also requires the current lease and attempt. Unowned service scans are rejected",
                 "consumes": [
                     "application/json"
                 ],
@@ -4237,7 +4237,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "parent_execution_id": {
-                    "description": "Develop／Manager 产物扫描的直接父执行 UUID | Direct parent execution UUID for Develop/Manager output scans",
+                    "description": "后台产物扫描的直接父执行 UUID | Direct parent execution UUID for background output scans",
                     "type": "string"
                 },
                 "ref_groups": {

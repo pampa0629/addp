@@ -8,7 +8,6 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
-	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
@@ -38,10 +37,12 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		return nil, err
 	}
 	req.Source = strings.TrimSpace(req.Source)
-	if req.ParentExecutionID != "" || req.Source == commonClient.MetaScanSourceDevelopProducedTarget || req.Source == commonClient.MetaScanSourceManagerMosaicProducedTarget {
-		if (req.Source != commonClient.MetaScanSourceDevelopProducedTarget && req.Source != commonClient.MetaScanSourceManagerMosaicProducedTarget) || req.ParentExecutionID == "" {
+	if req.ParentExecutionID != "" {
+		if req.Source != commonExecution.ModuleDevelop && req.Source != commonExecution.ModuleManager && req.Source != commonExecution.ModuleTransfer {
 			return nil, commonAPI.ErrBadRequest
 		}
+	} else if userID == 0 {
+		return nil, commonAPI.ErrForbidden
 	}
 	scope, err := s.scanService.ResolveScanScope(tenantID, scanflow.Options{
 		EngineID:     req.EngineID,

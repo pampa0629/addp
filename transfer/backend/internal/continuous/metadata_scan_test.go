@@ -44,6 +44,9 @@ func TestTargetMetadataScannerSubmitsTableLeafOnce(t *testing.T) {
 	if err := scanner.ScanPreparedTarget(context.Background(), claim, metadataScanTestPlan(20, "public", "orders_cdc")); err != nil {
 		t.Fatal(err)
 	}
+	if payload["parent_execution_id"] != claim.Execution.ExecutionID {
+		t.Fatal("missing direct parent execution")
+	}
 	if payload["engine_id"] != float64(20) || payload["scan_depth"] != "deep" || payload["source"] != "transfer" {
 		t.Fatalf("payload = %#v", payload)
 	}
@@ -144,7 +147,7 @@ type fakeInitialMetadataScanStore struct {
 }
 
 func (s *fakeInitialMetadataScanStore) ClaimInitialMetadataScan(
-	_ context.Context, claim repository.RuntimeLeaseClaim, _ time.Time, _ time.Duration,
+	_ context.Context, claim repository.RuntimeLeaseClaim, targetLocator string, _ time.Time, _ time.Duration,
 ) (*models.TransferTask, bool, error) {
 	task := claim.Task
 	task.InitialMetadataScanStatus = models.InitialMetadataScanRunning

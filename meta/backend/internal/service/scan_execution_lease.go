@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -127,7 +126,7 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 				metadata["scan_progress"] = progress
 			}
 		}
-		if execution.Source == commonClient.MetaScanSourceManagerMosaicProducedTarget {
+		if isMosaicProducedScan(execution) {
 			if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
 				metadata["produced_target"] = current.Metadata["produced_target"]
 			}

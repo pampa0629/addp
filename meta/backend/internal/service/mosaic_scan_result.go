@@ -57,7 +57,7 @@ func (s *ScanExecutionService) GetMosaicScanResult(ctx context.Context, tenantID
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var child execution.TaskExecution
 		err := tx.Where("tenant_id = ? AND execution_id = ? AND parent_execution_id = ? AND module = ? AND task_type = ? AND source = ?",
-			tenantID, executionID, parentID, execution.ModuleMeta, execution.TaskTypeScan, commonclient.MetaScanSourceManagerMosaicProducedTarget).First(&child).Error
+			tenantID, executionID, parentID, execution.ModuleMeta, execution.TaskTypeScan, execution.ModuleManager).First(&child).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return commonapi.ErrNotFound
 		}

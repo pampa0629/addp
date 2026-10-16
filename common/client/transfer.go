@@ -50,7 +50,7 @@ type CreateTransferTaskRequest struct {
 	Config           map[string]interface{} `json:"config"`    // 包含 reader/writer 配置
 	BatchSize        int                    `json:"batch_size,omitempty"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata,omitempty"`
-	TenantID         uint                   `json:"tenant_id,omitempty"`
+	TenantID         uint                   `json:"-"`
 }
 
 // TransferTaskResponse Transfer 任务响应
@@ -155,25 +155,43 @@ type TransferExecutionResponse struct {
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// TransferTaskSubmissionError excludes dependency response bodies and credentials.
+type TransferTaskSubmissionError struct{ StatusCode int }
+
+func (e *TransferTaskSubmissionError) Error() string {
+	return fmt.Sprintf("Transfer task submission returned HTTP %d", e.StatusCode)
+}
+
+// doUserTaskRequest forwards credentials only within the current User request.
+func (c *TransferClient) doUserTaskRequest(req *http.Request, userBearer string) (*http.Response, error) {
+	if c == nil || c.httpClient == nil || userBearer == "" || strings.ContainsAny(userBearer, " \t\r\n") {
+		return nil, errors.New("Transfer task submission requires current User credential")
+	}
+	req.Header.Set("Authorization", "Bearer "+userBearer)
+	transport := *c.httpClient
+	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := transport.Do(req)
+	if err != nil {
+		return nil, errors.New("Transfer task submission unavailable")
+	}
+	return resp, nil
+}
+
 // CreateTask 创建 Transfer 任务
-func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTaskResponse, error) {
+func (c *TransferClient) CreateTask(ctx context.Context, userBearer string, req *CreateTransferTaskRequest) (*TransferTaskResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/transfer/task-definitions", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/v1/transfer/task-definitions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if err := c.addAuthWithTenant(httpReq, req.TenantID); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doUserTaskRequest(httpReq, userBearer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -183,7 +201,7 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("create task failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, &TransferTaskSubmissionError{StatusCode: resp.StatusCode}
 	}
 
 	var result TransferTaskResponse
@@ -197,20 +215,16 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 }
 
 // TriggerTask 触发任务执行
-func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskResponse, error) {
+func (c *TransferClient) TriggerTask(ctx context.Context, userBearer string, taskID uint) (*TriggerTaskResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/transfer/task-definitions/%d/start", c.baseURL, taskID)
 
-	httpReq, err := http.NewRequest("POST", url, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	if err := c.addAuthWithTenant(httpReq, tenantID); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doUserTaskRequest(httpReq, userBearer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -220,7 +234,7 @@ func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskRespons
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("trigger task failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, &TransferTaskSubmissionError{StatusCode: resp.StatusCode}
 	}
 
 	var result TriggerTaskResponse

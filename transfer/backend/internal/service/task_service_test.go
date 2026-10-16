@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	"strings"
 	"testing"
@@ -168,7 +170,7 @@ func TestTargetOverridableTaskUsesDefaultWithoutExecutionInput(t *testing.T) {
 	if !task.AutoScanMetadata {
 		t.Fatalf("target-overridable task must retain its default metadata scan policy: %#v", task)
 	}
-	execution, err := taskService.StartTask(context.Background(), task.ID, 7, 9)
+	execution, err := taskService.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
 	if err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
@@ -207,8 +209,8 @@ func TestTargetOverrideRequiresOrchestratorParent(t *testing.T) {
 		TenantID: 7, ExecutionID: parentExecutionID, Module: commonExecution.ModuleOrchestrator,
 		TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
 		Status: commonExecution.ExecutionStatusRunning, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
-		TriggerType:      commonExecution.TriggerTypeManual,
-		ActorPrincipalID: &actorPrincipalID, ActorTenantMembershipID: &actorMembershipID,
+		TriggerType: commonExecution.TriggerTypeManual,
+		TriggeredBy: func() *int { v := int(actorPrincipalID); return &v }(), ActorPrincipalID: &actorPrincipalID, ActorTenantMembershipID: &actorMembershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}).Error; err != nil {
 		t.Fatalf("create Orchestrator parent execution: %v", err)
@@ -230,6 +232,9 @@ func TestTargetOverrideRequiresOrchestratorParent(t *testing.T) {
 	}
 	if persistedExecution.ParentExecutionID == nil || *persistedExecution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent_execution_id = %v, want %s", persistedExecution.ParentExecutionID, parentExecutionID)
+	}
+	if persistedExecution.TriggeredBy == nil || *persistedExecution.TriggeredBy != int(actorPrincipalID) || persistedExecution.ActorPrincipalID == nil || *persistedExecution.ActorPrincipalID != actorPrincipalID {
+		t.Fatal("Orchestrator child lost the verified human initiator")
 	}
 	targetConfig := persistedExecution.ExecutionConfig["target"].(map[string]interface{})
 	if targetConfig["parent_locator"] != "addp://engine/9/path/public?type=schema" || targetConfig["name"] != "staging" {
@@ -385,7 +390,7 @@ func TestReplayTaskCreatesIndependentExecutionWithoutChangingOwnerTask(t *testin
 	taskService := NewTaskService(db, engine, nil)
 	taskService.SetExecutionService(executionService)
 
-	execution, err := taskService.ReplayTask(context.Background(), task.ID, task.TenantID, 9, models.ReplayTaskRequest{
+	execution, err := taskService.ReplayTask(transferTestUserOrigin(), task.ID, task.TenantID, 9, models.ReplayTaskRequest{
 		Ranges: []models.ReplayOffsetRangeRequest{{Partition: "0", StartOffset: 10, EndOffset: 20}},
 		Target: models.ReplayTargetRequest{ParentLocator: "addp://engine/8/path/replay?type=schema&node_id=12", Name: "orders_replay"},
 	})
@@ -528,7 +533,7 @@ func TestStartTaskRejectsPersistedNonSyncTaskType(t *testing.T) {
 		t.Fatalf("create legacy task: %v", err)
 	}
 
-	_, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+	_, err := taskSvc.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
 	if err == nil {
 		t.Fatal("StartTask() error = nil, want unsupported task_type")
 	}
@@ -550,7 +555,7 @@ func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 	if task.DesiredState != models.TaskDesiredStateStopped {
 		t.Fatalf("initial desired_state = %q", task.DesiredState)
 	}
-	first, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+	first, err := taskSvc.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
 	if err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
@@ -567,7 +572,7 @@ func TestContinuousTaskLifecycleIsAtomicWithoutAsynqQueue(t *testing.T) {
 	if cancelled.Status != commonExecution.ExecutionStatusCancelled || cancelled.Metadata["stop_reason"] != "paused" {
 		t.Fatalf("cancelled execution = status=%q metadata=%#v", cancelled.Status, cancelled.Metadata)
 	}
-	second, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+	second, err := taskSvc.ResumeTask(commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "10", nil)), task.ID, 7, 10)
 	if err != nil {
 		t.Fatalf("ResumeTask() error = %v", err)
 	}
@@ -602,7 +607,7 @@ func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *test
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	first, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+	first, err := taskSvc.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
 	if err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
@@ -612,12 +617,19 @@ func TestPostgreSQLCDCTaskStartsCaptureBeforeRuntimeAndResumesGeneration(t *test
 	if err := taskSvc.PauseTask(context.Background(), task.ID, 7); err != nil {
 		t.Fatalf("PauseTask() error = %v", err)
 	}
-	second, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+	second, err := taskSvc.ResumeTask(commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "10", nil)), task.ID, 7, 10)
 	if err != nil {
 		t.Fatalf("ResumeTask() error = %v", err)
 	}
 	if second == nil || control.startCalls != 1 || control.resumeCalls != 1 {
 		t.Fatalf("resume execution=%#v capture=%+v", second, control)
+	}
+	var resumed commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", second.ExecutionID).First(&resumed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if resumed.TriggeredBy == nil || *resumed.TriggeredBy != 10 || resumed.ActorPrincipalID == nil || *resumed.ActorPrincipalID != 10 {
+		t.Fatal("manual resume reused the original initiator")
 	}
 }
 
@@ -636,11 +648,11 @@ func TestPostgreSQLCDCSchemaBlockedTaskCannotStartOrResume(t *testing.T) {
 	taskSvc.SetCaptureControl(control)
 	for name, start := range map[string]func() error{
 		"start": func() error {
-			_, err := taskSvc.StartTask(context.Background(), task.ID, 7, 9)
+			_, err := taskSvc.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
 			return err
 		},
 		"resume": func() error {
-			_, err := taskSvc.ResumeTask(context.Background(), task.ID, 7, 9)
+			_, err := taskSvc.ResumeTask(transferTestUserOrigin(), task.ID, 7, 9)
 			return err
 		},
 		"pause": func() error {
@@ -919,4 +931,35 @@ func (f *fakeCaptureControl) Get(context.Context, uint, uint) (*models.CaptureRe
 }
 func (f *fakeCaptureControl) HasStopInitiatedGeneration(context.Context, uint, uint) (bool, error) {
 	return f.terminal, nil
+}
+
+func transferTestUserOrigin() context.Context {
+	return commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "9", nil))
+}
+
+func TestStartRejectsUnverifiedOriginBeforeCaptureOrExecutionWrite(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	control := &fakeCaptureControl{resource: &models.CaptureResource{Status: models.CaptureStatusRunning}}
+	task := &models.TransferTask{TenantID: 7, Name: "origin", TaskType: commonExecution.TaskTypeSync, Config: validPostgreSQLCDCTaskConfig(), BatchSize: 100, Status: models.TaskStatusIdle}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewTaskService(db, nil, nil)
+	svc.SetEngineResolver(planner.StaticEngineResolver{12: {Type: "postgresql", EngineID: 12}, 20: {Type: "postgresql", EngineID: 20}})
+	svc.SetCaptureControl(control)
+	for _, userID := range []uint{0, 9} {
+		if _, err := svc.StartTask(context.Background(), task.ID, 7, userID); !errors.Is(err, commonAPI.ErrForbidden) {
+			t.Fatalf("unverified user accepted: %v", err)
+		}
+	}
+	if _, err := svc.StartTask(transferTestUserOrigin(), task.ID, 7, 10); !errors.Is(err, commonAPI.ErrForbidden) {
+		t.Fatalf("conflicting initiator accepted: %v", err)
+	}
+	if control.startCalls != 0 || control.resumeCalls != 0 {
+		t.Fatal("invalid source reached capture control")
+	}
+	var count int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("invalid source created executions: %d %v", count, err)
+	}
 }

@@ -111,9 +111,23 @@ Develop claim、进度、专业回执、终态和任务摘要必须受当前 att
 5. Task Authorization Subject 不是 Access Token、Role Assignment 或第二套 Membership；任务表、execution、日志和审计均不得保存 User Token 或 Service Token。
 6. 手动执行以本次请求的当前 User 为执行授权主体，不借用任务定义中保存的主体；父 execution 固化该主体事实，子 execution 只能沿可验证的 `parent_execution_id` 来源链继承。
 
+### 生产执行与后台扫描的来源
+
+执行来源描述真实触发模块、直接因果关联与发起 User 主体事实。来源不授予数据访问、执行或子执行读取权限。普通人工执行、持续同步的人工启动和人工恢复均从本次已验证 User AuthContext 固化 `triggered_by`、`actor_principal_id`、`actor_tenant_membership_id`、`issued_authorization_version`，四项必须完整且发起人与 Principal 一致；不得使用任务创建者或客户端自报字段补充来源。Common 只负责共同事实校验与复制，领域模块继续拥有状态、产物与读取裁决。
+
+Transfer 编排子执行复用 Common 父执行核验，在创建事务中继承完整来源。持续同步自动恢复在已锁定的同租户、同任务上一轮 execution 上核验来源，保留 `retry_of_execution_id` 与恢复原因，并复制上述四项事实；不复制执行授权 ID、有效期或 lease，不把自动恢复伪装为新的人工操作。人工恢复则使用本次操作者。缺失或矛盾来源不能通过猜测身份补齐，也不回填历史记录。
+
+Manager 导入在同步 User 请求内向 Transfer 创建并启动持久同步任务：入口先检查 `manager.data_item.create`、`transfer.task.create` 和 `transfer.task.execute`，再执行文件写入；只在当前调用栈转发用户 Bearer，由 Transfer 独立认证及授权。不得使用 Manager Service Principal 代替操作者，不保存用户凭据、不在后台续用凭据，也不跟随携带凭据的重定向。
+
+后台产物扫描须核验真实已保存产物及其来源。结构变更扫描的来源关联本次经审批并实际应用的变更事实，独立于最初启动同步的用户，不制造父执行。扫描 `source` 统一使用 `develop`、`transfer`、`manager` 模块名，具体产物类型由已核验的来源事实决定，不使用附加类型后缀。用户同步请求可无父执行；后台 Service 提交必须有可验证的父执行或已应用结构审批事实，缺失来源必须拒绝。Transfer bounded 先在当前执行租约内保存实际输出与实际内容引用，再提交直接父执行 UUID；Meta 核对同租户 running sync 执行、完整主体和精确输出，不从任务配置推断产物。扫描失败保存明确反馈，不回滚已经写入的产物。
+
+当前实施边界：Transfer 自有定时调度尚未接入 Task Authorization Subject，结构审批尚未提供 Owner 核验已应用事实的跨模块契约；前者无法创建缺少当前 User 或正式任务授权主体的根执行；后者提交无来源扫描时由 Meta 拒绝，Transfer 保留明确失败反馈。不借任务创建者或旧执行补齐，不把扫描反馈失败改成数据写入失败。后续补齐这两条来源后再开放提交。
+
+持续同步初次扫描在实际目标结构准备完成后，由 Transfer 在当前私有 runtime lease 的 fencing 校验事务内保存目标 locator 和当前 execution 关联，再携带该父 execution 提交。Meta 只读取 Common 中的已保存来源及 running 状态，不跨读 Transfer 私有租约表。Manager 矢量瓦片集同样在当前 Common lease 内保存实际 PMTiles 路径和 attempt，再按精确文件内容引用提交；它不使用 mosaic 的 whole 回执与完成语义。
+
 ### Develop 产物自动扫描的执行归属
 
-Develop 工作流生成实际产物后，先在本次 running workflow execution 的 `metadata.outputs` 保存标准产物 ResourceLocator，再通过既有 Meta 手动扫描入口提交 `source=develop.workflow.produced_target` 与 `parent_execution_id`。该来源只允许具有 `meta.scan_task.execute` 的 `addp-develop` Service Principal 使用；User、其他服务和缺少父执行的请求不得借用该来源。
+Develop 工作流生成实际产物后，先在本次 running workflow execution 的 `metadata.outputs` 保存标准产物 ResourceLocator，再通过既有 Meta 手动扫描入口提交 `source=develop` 与 `parent_execution_id`。该来源只允许具有 `meta.scan_task.execute` 的 `addp-develop` Service Principal 使用；User、其他服务和缺少父执行的请求不得借用该来源。
 
 Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、`module=develop`、`task_type=workflow`、running 状态的父 execution，核验完整且正数的 Principal、Membership、授权版本和一致的 `triggered_by`。扫描请求目标必须精确匹配父 execution 已保存的一个实际产物，不能另行提交引擎全量、目录范围或未声明的内容引用。请求目标绑定与实际扫描规划是两个边界：执行配置保留完整叶子目标，Worker 只解析和扫描该产物及其明确内容引用，不展开到所属 schema／database，也不清理兄弟项或将父范围标为完成。Meta 从父记录继承 `triggered_by` 和三项主体来源事实，保存直接父执行 UUID；不接受客户端自报主体，不复制父 Execution Authorization ID 或授权有效期，不将执行归属当作数据访问授权。专用机器 Permission 保持独立；实际资源访问授权与 Worker 重核由后续 System 契约衔接，不以本期精确扫描替代。
 
@@ -121,7 +135,7 @@ Meta 必须在创建子 execution 的同一事务中读取并锁定同 Tenant、
 
 ### Manager 栅格 mosaic 产物自动扫描的执行归属
 
-仅 `manager/raster_mosaic_generation` 使用 `source=manager.raster_mosaic_generation.produced_target`。普通用户提交时由 Manager 从已验证的当前 User AuthContext 固化 Principal、Tenant Membership、授权版本和一致的 `triggered_by`；TaskProvider 继续沿已验证的 Orchestrator 父执行继承，不接受客户端自报主体。Runtime 实际生成成功后，Manager 在当前有效 lease 下先持久化产物事实及 `metadata.produced_target`（`engine_id/catalog_path/manifest_ref/attempt`），再经现有 Meta 手动扫描接口携带直接父 execution UUID 提交。该事实仅描述本次生成成功的 dataset 根和 manifest，不是任务定义中的预期产物或新的授权。
+Manager 产物扫描统一使用 `source=manager`。`manager/raster_mosaic_generation` 的普通用户提交时由 Manager 从已验证的当前 User AuthContext 固化 Principal、Tenant Membership、授权版本和一致的 `triggered_by`；TaskProvider 继续沿已验证的 Orchestrator 父执行继承，不接受客户端自报主体。Runtime 实际生成成功后，Manager 在当前有效 lease 下先持久化产物事实及 `metadata.produced_target`（`engine_id/catalog_path/manifest_ref/attempt`），再经现有 Meta 手动扫描接口携带直接父 execution UUID 提交。该事实仅描述本次生成成功的 dataset 根和 manifest，不是任务定义中的预期产物或新的授权。
 
 Meta 仅接受有 `meta.scan_task.execute` 的 `addp-manager` Service Principal 使用该来源；在创建事务中锁定同 Tenant、Manager mosaic 类型、running 且 lease 有效的父执行，核验完整主体、产物 attempt 与父执行一致、实际 manifest 及请求的唯一目录精确匹配。请求固定 `deep + force`，不得追加 targets、ref_groups、node/item 或其他目录，不扩大到父目录或其他产物。继承发起人与直接父 UUID，不复制执行授权或租约凭据。子扫描无任务定义，用户读取仍需 Meta Owner 读取权限及本人一次性执行归属；父执行读取权不传递给子扫描，既有无主体历史不回填。该契约不替代后续源数据访问授权及 Worker 重核。
 

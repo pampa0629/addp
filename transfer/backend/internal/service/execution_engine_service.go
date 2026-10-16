@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -300,14 +301,15 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"execution_upper_bound": metrics.UpperBound}}); err != nil {
 		s.logger.Warn("failed to persist watermark upper bound", "error", err, "execution_id", executionID)
 	}
-	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
-		s.triggerMetadataScan(task, executionID, spec, build.Plan.Target, nil)
-	}
-	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
+	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
+		s.triggerMetadataScan(ctx, task, executionID, spec, build.Plan.Target, nil)
+	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
+
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
@@ -444,14 +446,15 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		return err
 	}
 
-	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
-	}
-	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, metrics.FieldLineage)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(ctx, task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, metrics.FieldLineage)
+
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
@@ -917,14 +920,15 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	}
 	s.updateRawCopyMetrics(executionID, metrics)
 
-	if task.AutoScanMetadata {
-		s.triggerRawCopyMetadataScan(task, executionID, spec, buildResult.Plan.Target)
-	}
-	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
+	if task.AutoScanMetadata {
+		s.triggerRawCopyMetadataScan(ctx, task, executionID, spec, buildResult.Plan.Target)
+	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
+
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, nil, lineageMetadata); err != nil {
 		return err
 	}
@@ -1374,115 +1378,78 @@ func runningProgress(batchIndex int64) float64 {
 	return progress
 }
 
-func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan, targetRefs []format.RelatedRef) {
-	if s.metaClient == nil {
-		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
-		return
-	}
-
-	targetEngineID := spec.Target.LocatorEngineID()
-	if targetEngineID == 0 {
-		s.logger.Warn("no target engine id found, skipping metadata scan", "task_id", task.ID)
-		return
-	}
-
-	metaClient := s.metaClient.WithTenantID(task.TenantID)
-	refGroups := tableTargetRefGroups(targetPlan, targetRefs)
-	targets := []string(nil)
-	if len(refGroups) == 0 {
+func (s *ExecutionEngineService) triggerMetadataScan(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan, targetRefs []format.RelatedRef) {
+	refs := tableTargetRefGroups(targetPlan, targetRefs)
+	var targets []string
+	if len(refs) == 0 {
 		targets = nativeTargetScanTargets(spec.Target)
 	}
-	if len(refGroups) == 0 && len(targets) == 0 {
-		s.logger.Warn("metadata scan scope is empty, skipping metadata scan",
-			"task_id", task.ID,
-			"engine_id", targetEngineID,
-			"target_format", targetPlan.Format)
-		return
-	}
-
-	s.logger.Info("triggering metadata scan",
-		"task_id", task.ID,
-		"engine_id", targetEngineID,
-		"targets", targets,
-		"ref_groups", len(refGroups))
-
-	run, err := metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID:    targetEngineID,
-		Targets:     targets,
-		RefGroups:   refGroups,
-		ScanDepth:   "deep",
-		Force:       true,
-		TriggerType: "manual",
-		Source:      commonExecution.ModuleTransfer,
-	})
-	if err != nil {
-		s.logger.Error("failed to trigger metadata scan",
-			"error", err,
-			"task_id", task.ID,
-			"engine_id", targetEngineID)
-		return
-	}
-	s.logger.Info("metadata scan triggered successfully",
-		"task_id", task.ID,
-		"engine_id", targetEngineID,
-		"execution_id", run.ExecutionID)
-	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, targets, len(refGroups))
+	s.submitProducedMetadataScan(ctx, task, executionID, commonClient.MetaScanOptions{EngineID: spec.Target.LocatorEngineID(), Targets: targets, RefGroups: refs})
 }
 
-func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
+func (s *ExecutionEngineService) triggerRawCopyMetadataScan(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
+	s.submitProducedMetadataScan(ctx, task, executionID, commonClient.MetaScanOptions{EngineID: spec.Target.LocatorEngineID(), RefGroups: singlePathRefGroups(targetPlan.Path.StringPath())})
+}
+
+func (s *ExecutionEngineService) submitProducedMetadataScan(ctx context.Context, task *models.TransferTask, executionID uint, opts commonClient.MetaScanOptions) {
+	failure := func(code string) {
+		s.updateMetadataScanFeedback(ctx, executionID, map[string]interface{}{"status": "failed", "error_code": code})
+	}
+	if s.executionService == nil || task == nil || executionID == 0 {
+		failure("scan_origin_unavailable")
+		return
+	}
+	parent, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), int(task.TenantID))
+	if err != nil || parent == nil || parent.Module != commonExecution.ModuleTransfer || parent.TaskType != commonExecution.TaskTypeSync || parent.Status != commonExecution.ExecutionStatusRunning {
+		failure("scan_origin_unavailable")
+		return
+	}
+	var outputs map[string]interface{}
+	data, err := json.Marshal(parent.Metadata["outputs"])
+	if err != nil || json.Unmarshal(data, &outputs) != nil || outputs["execution_id"] != parent.ExecutionID {
+		failure("scan_output_unavailable")
+		return
+	}
+	if opts.EngineID == 0 || len(opts.Targets)+len(opts.RefGroups) == 0 {
+		failure("scan_output_unavailable")
+		return
+	}
+	outputs["ref_groups"] = opts.RefGroups
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": commonModels.JSONMap{"outputs": outputs}}); err != nil {
+		failure("scan_output_unavailable")
+		return
+	}
 	if s.metaClient == nil {
-		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
+		failure("scan_service_unavailable")
 		return
 	}
-	targetEngineID := spec.Target.LocatorEngineID()
-	if targetEngineID == 0 {
-		s.logger.Warn("no target engine id found, skipping metadata scan", "task_id", task.ID)
+	opts.ParentExecutionID, opts.Source = parent.ExecutionID, commonExecution.ModuleTransfer
+	opts.ScanDepth, opts.Force, opts.TriggerType = "deep", true, commonExecution.TriggerTypeManual
+	run, err := s.metaClient.WithTenantID(task.TenantID).CreateManualScanRun(opts)
+	if err != nil || run == nil || run.ExecutionID == "" {
+		failure("scan_submission_failed")
 		return
 	}
-	refGroups := singlePathRefGroups(targetPlan.Path.StringPath())
-	run, err := s.metaClient.WithTenantID(task.TenantID).CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID:    targetEngineID,
-		RefGroups:   refGroups,
-		ScanDepth:   "deep",
-		Force:       true,
-		TriggerType: "manual",
-		Source:      commonExecution.ModuleTransfer,
-	})
-	if err != nil {
-		s.logger.Error("failed to trigger metadata scan",
-			"error", err,
-			"task_id", task.ID,
-			"engine_id", targetEngineID)
-		return
-	}
-	s.logger.Info("metadata scan triggered successfully",
-		"task_id", task.ID,
-		"engine_id", targetEngineID,
-		"execution_id", run.ExecutionID)
-	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, nil, len(refGroups))
+	s.updateMetadataScanExecution(ctx, executionID, run.ExecutionID, opts.EngineID, opts.Targets, len(opts.RefGroups))
 }
 
-func (s *ExecutionEngineService) updateMetadataScanExecution(executionID uint, scanExecutionID string, engineID uint, targets []string, refGroupCount int) {
-	if executionID == 0 || s.executionService == nil || strings.TrimSpace(scanExecutionID) == "" {
-		return
-	}
-	payload := map[string]interface{}{
-		"execution_id": scanExecutionID,
-		"engine_id":    engineID,
-	}
+func (s *ExecutionEngineService) updateMetadataScanExecution(ctx context.Context, executionID uint, scanExecutionID string, engineID uint, targets []string, refGroupCount int) {
+	payload := map[string]interface{}{"execution_id": scanExecutionID, "engine_id": engineID, "status": "submitted"}
 	if len(targets) > 0 {
 		payload["targets"] = targets
 	}
 	if refGroupCount > 0 {
 		payload["ref_group_count"] = refGroupCount
 	}
-	ctx := context.Background()
-	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
-		"metadata": map[string]interface{}{
-			"metadata_scan": payload,
-		},
-	}); err != nil {
-		s.logger.Error("failed to update metadata scan execution", "error", err, "execution_id", executionID, "scan_execution_id", scanExecutionID)
+	s.updateMetadataScanFeedback(ctx, executionID, payload)
+}
+
+func (s *ExecutionEngineService) updateMetadataScanFeedback(ctx context.Context, executionID uint, payload map[string]interface{}) {
+	if executionID == 0 || s.executionService == nil {
+		return
+	}
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": commonModels.JSONMap{"metadata_scan": payload}}); err != nil {
+		s.logger.Error("failed to persist metadata scan feedback", "execution_id", executionID, "error", err)
 	}
 }
 

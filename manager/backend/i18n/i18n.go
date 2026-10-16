@@ -84,6 +84,7 @@ const (
 	MsgQuickViewRecordNotFound               = "manager.error.quick_view_record_not_found"
 	MsgQuickViewInvalidMode                  = "manager.error.quick_view_invalid_mode"
 	MsgQuickViewGeometryMissing              = "manager.error.quick_view_geometry_missing"
+	MsgImportSubmissionFailed                = "manager.error.import_submission_failed"
 	MsgImportTableNameRequired               = "manager.error.import_table_name_required"
 	MsgImportZipRequired                     = "manager.error.import_zip_required"
 	MsgImportUnsupportedFormat               = "manager.error.import_unsupported_format"

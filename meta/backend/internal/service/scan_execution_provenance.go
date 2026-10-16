@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -23,35 +24,28 @@ import (
 // Caller authentication is enforced at the HTTP boundary; this verifies durable
 // provenance and copies identity facts, never an execution authorization grant.
 func inheritProducedTargetActor(tx *gorm.DB, child *execution.TaskExecution, req *models.ScanRequest) error {
-	if req.Source != commonclient.MetaScanSourceDevelopProducedTarget && req.Source != commonclient.MetaScanSourceManagerMosaicProducedTarget && req.ParentExecutionID == "" {
+	if req.ParentExecutionID == "" {
 		return nil
 	}
 	parent, err := verifiedProducedTargetParent(tx, child.TenantID, req)
 	if err != nil {
 		return err
 	}
-	if req.Source == commonclient.MetaScanSourceManagerMosaicProducedTarget {
+	if parent.TaskType == execution.TaskTypeRasterMosaicGeneration {
 		if child.Metadata == nil {
 			child.Metadata = map[string]interface{}{}
 		}
 		child.Metadata["produced_target"] = parent.Metadata["produced_target"]
 	}
-	principal, membership, version := *parent.ActorPrincipalID, *parent.ActorTenantMembershipID, *parent.IssuedAuthorizationVersion
-	triggeredBy, id := *parent.TriggeredBy, parent.ExecutionID
+	id := parent.ExecutionID
 	child.ParentExecutionID = &id
-	child.TriggeredBy = &triggeredBy
-	child.ActorPrincipalID = &principal
-	child.ActorTenantMembershipID = &membership
-	child.IssuedAuthorizationVersion = &version
-	return nil
+	return execution.CopyActorOrigin(child, parent)
 }
 
 // Caller holds the returned parent's shared lock until its transaction ends.
 func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanRequest) (*execution.TaskExecution, error) {
-	module, taskType := execution.ModuleDevelop, execution.TaskTypeWorkflow
-	if req.Source == commonclient.MetaScanSourceManagerMosaicProducedTarget {
-		module, taskType = execution.ModuleManager, execution.TaskTypeRasterMosaicGeneration
-	} else if req.Source != commonclient.MetaScanSourceDevelopProducedTarget {
+	module := req.Source
+	if module != execution.ModuleDevelop && module != execution.ModuleManager && module != execution.ModuleTransfer {
 		return nil, commonapi.ErrBadRequest
 	}
 	parentID, err := uuid.Parse(req.ParentExecutionID)
@@ -60,8 +54,8 @@ func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanReq
 	}
 	var parent execution.TaskExecution
 	err = tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
-		"tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ?",
-		tenantID, parentID.String(), module, taskType, execution.ExecutionStatusRunning,
+		"tenant_id = ? AND execution_id = ? AND module = ? AND status = ?",
+		tenantID, parentID.String(), module, execution.ExecutionStatusRunning,
 	).First(&parent).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, commonapi.ErrNotFound
@@ -76,16 +70,23 @@ func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanReq
 		return nil, commonapi.ErrNotFound
 	}
 	if module == execution.ModuleManager {
+		if parent.TaskType != execution.TaskTypeRasterMosaicGeneration && parent.TaskType != execution.TaskTypeVectorTileSetGeneration {
+			return nil, commonapi.ErrNotFound
+		}
 		now := time.Now().UTC()
 		if tx.Dialector.Name() == "postgres" {
 			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
 				return nil, err
 			}
 		}
-		if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded || parent.Attempt <= 0 || parent.LeaseToken == nil || *parent.LeaseToken == "" || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseExpiresAt == nil || !parent.LeaseExpiresAt.After(now) || !matchesManagerMosaicProducedTarget(parent, req) {
+		if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded || parent.Attempt <= 0 || parent.LeaseToken == nil || *parent.LeaseToken == "" || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseExpiresAt == nil || !parent.LeaseExpiresAt.After(now) || !matchesManagerProducedTarget(parent, req) {
 			return nil, commonapi.ErrNotFound
 		}
-	} else if !matchesDevelopProducedTarget(parent, req) {
+	} else if module == execution.ModuleTransfer {
+		if parent.TaskType != execution.TaskTypeSync || !matchesTransferProducedTarget(parent, req) {
+			return nil, commonapi.ErrNotFound
+		}
+	} else if parent.TaskType != execution.TaskTypeWorkflow || !matchesDevelopProducedTarget(parent, req) {
 		return nil, commonapi.ErrNotFound
 	}
 	return &parent, nil
@@ -191,4 +192,54 @@ func matchesDevelopProducedLeaf(raw string, req *models.ScanRequest) bool {
 			req.RefGroups[0].Primary == strings.Join(locator.Path, "/")
 	}
 	return len(req.RefGroups) == 0 && len(req.Targets) == 1 && req.Targets[0] == raw
+}
+
+// Mosaic completion requires a manifest receipt, not merely source=manager.
+func isMosaicProducedScan(run *execution.TaskExecution) bool {
+	if run == nil || run.Source != execution.ModuleManager || run.ParentExecutionID == nil {
+		return false
+	}
+	var target commonclient.MetaScanProducedTarget
+	return decodeMosaicFact(run.Metadata["produced_target"], &target) && target.ManifestRef == rastermosaic.ManifestFileName
+}
+
+func matchesTransferProducedTarget(parent execution.TaskExecution, req *models.ScanRequest) bool {
+	if req.EngineID == 0 || req.NodeID != 0 || req.ItemID != 0 || len(req.CatalogPaths) != 0 || req.ScanDepth != "deep" || !req.Force {
+		return false
+	}
+	var output struct {
+		ContinuousPrepared bool                  `json:"continuous_prepared"`
+		ExecutionID        string                `json:"execution_id"`
+		TargetLocator      string                `json:"target_locator"`
+		RefGroups          []models.ScanRefGroup `json:"ref_groups"`
+	}
+	encoded, err := json.Marshal(parent.Metadata["outputs"])
+	if err != nil || json.Unmarshal(encoded, &output) != nil || output.ExecutionID != parent.ExecutionID {
+		return false
+	}
+	if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded && (parent.ExecutionBoundary != execution.ExecutionBoundaryContinuous || !output.ContinuousPrepared) {
+		return false
+	}
+	locator, err := resourcetree.ParseURI(output.TargetLocator)
+	if err != nil || locator.EngineID != req.EngineID || len(locator.Path) == 0 {
+		return false
+	}
+	if len(output.RefGroups) > 0 {
+		return len(req.Targets) == 0 && reflect.DeepEqual(output.RefGroups, req.RefGroups)
+	}
+	return len(req.RefGroups) == 0 && len(req.Targets) == 1 && req.Targets[0] == output.TargetLocator
+}
+
+func matchesManagerProducedTarget(parent execution.TaskExecution, req *models.ScanRequest) bool {
+	if parent.TaskType == execution.TaskTypeRasterMosaicGeneration {
+		return matchesManagerMosaicProducedTarget(parent, req)
+	}
+	if parent.TaskType != execution.TaskTypeVectorTileSetGeneration || req.EngineID == 0 || req.NodeID != 0 || req.ItemID != 0 || len(req.CatalogPaths) != 0 || len(req.Targets) != 0 || len(req.RefGroups) != 1 || len(req.RefGroups[0].Refs) != 0 || req.ScanDepth != "deep" || !req.Force {
+		return false
+	}
+	var target commonclient.MetaScanProducedTarget
+	if !decodeMosaicFact(parent.Metadata["produced_target"], &target) || target.EngineID != req.EngineID || target.Attempt != parent.Attempt || target.ManifestRef != "" {
+		return false
+	}
+	return target.CatalogPath != "" && target.CatalogPath != "." && !path.IsAbs(target.CatalogPath) && !strings.HasPrefix(target.CatalogPath, "../") && !strings.Contains(target.CatalogPath, "\\") && path.Clean(target.CatalogPath) == target.CatalogPath && parent.Metadata["catalog_path"] == target.CatalogPath && req.RefGroups[0].Primary == target.CatalogPath
 }

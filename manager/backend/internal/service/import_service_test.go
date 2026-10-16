@@ -70,7 +70,7 @@ func TestImportShapefileCleansVectorMaterializedViewsBeforeUpload(t *testing.T) 
 		TenantID:       3,
 	}
 
-	_, err = service.ImportShapefile(context.Background(), req)
+	_, err = service.ImportShapefile(context.Background(), req, "current-user")
 	if err == nil || !strings.Contains(err.Error(), "failed to upload") {
 		t.Fatalf("ImportShapefile() error = %v, want upload failure after cleanup", err)
 	}
@@ -98,7 +98,7 @@ func TestImportShapefileStopsWhenVectorMaterializedViewCleanupFails(t *testing.T
 		TenantID:       3,
 	}
 
-	_, err := service.ImportShapefile(context.Background(), req)
+	_, err := service.ImportShapefile(context.Background(), req, "current-user")
 	if err == nil || !strings.Contains(err.Error(), "cleanup manager vector materialized view") {
 		t.Fatalf("ImportShapefile() error = %v, want cleanup failure", err)
 	}
@@ -288,12 +288,12 @@ type recordingImportTransferClient struct {
 	triggerCalls int
 }
 
-func (c *recordingImportTransferClient) CreateTask(*client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error) {
+func (c *recordingImportTransferClient) CreateTask(context.Context, string, *client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error) {
 	c.createCalls++
 	return &client.TransferTaskResponse{ID: 1}, nil
 }
 
-func (c *recordingImportTransferClient) TriggerTask(taskID, tenantID uint) (*client.TriggerTaskResponse, error) {
+func (c *recordingImportTransferClient) TriggerTask(ctx context.Context, userBearer string, taskID uint) (*client.TriggerTaskResponse, error) {
 	c.triggerCalls++
 	return &client.TriggerTaskResponse{ID: taskID, ExecutionID: "execution-1", Status: "running"}, nil
 }

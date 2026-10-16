@@ -1672,6 +1672,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "需要当前租户用户身份 | Current tenant User identity required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "404": {
                         "description": "任务不存在 | Task not found",
                         "schema": {
@@ -1742,6 +1751,15 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "需要当前租户用户身份 | Current tenant User identity required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1970,6 +1988,15 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "参数错误或任务已在运行 | Bad request or task already running",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "需要当前租户用户身份 | Current tenant User identity required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4259,6 +4286,9 @@ const docTemplate = `{
                 "lineage_facts": {
                     "$ref": "#/definitions/internal_api.ExecutionLineageFacts"
                 },
+                "metadata_scan": {
+                    "$ref": "#/definitions/internal_api.ExecutionMetadataScan"
+                },
                 "recovered_from_execution_id": {
                     "type": "string"
                 },
@@ -4290,6 +4320,9 @@ const docTemplate = `{
             "properties": {
                 "attempt": {
                     "type": "integer"
+                },
+                "error_code": {
+                    "type": "string"
                 },
                 "execution_id": {
                     "type": "string"

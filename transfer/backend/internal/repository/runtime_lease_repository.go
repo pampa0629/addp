@@ -8,6 +8,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -379,6 +380,12 @@ func createRecoveryExecution(tx *gorm.DB, task models.TransferTask, previous com
 		},
 		CreatedAt: now, UpdatedAt: now,
 	}
+	if previous.Module != commonExecution.ModuleTransfer || previous.TaskType != commonExecution.TaskTypeSync || previous.ExecutionBoundary != commonExecution.ExecutionBoundaryContinuous || previous.SourceTaskID == nil || *previous.SourceTaskID != *recoveryExecution.SourceTaskID {
+		return nil, fmt.Errorf("continuous recovery source does not match task")
+	}
+	if err := commonExecution.CopyActorOrigin(recoveryExecution, &previous); err != nil {
+		return nil, err
+	}
 	if err := tx.Create(recoveryExecution).Error; err != nil {
 		return nil, err
 	}
@@ -594,6 +601,7 @@ func (r *RuntimeLeaseRepository) RecordProgress(ctx context.Context, claim Runti
 func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
 	ctx context.Context,
 	claim RuntimeLeaseClaim,
+	targetLocator string,
 	now time.Time,
 	claimTTL time.Duration,
 ) (*models.TransferTask, bool, error) {
@@ -603,23 +611,27 @@ func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
 	if claimTTL <= 0 {
 		return nil, false, fmt.Errorf("initial metadata scan claim TTL must be greater than zero")
 	}
+	locator, err := resourcetree.ParseURI(targetLocator)
+	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) == 0 {
+		return nil, false, fmt.Errorf("prepared table target is required")
+	}
 	var task models.TransferTask
 	owned := false
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var leaseCount int64
-		if err := tx.Model(&models.RuntimeLease{}).
-			Where("task_id = ? AND execution_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > ?",
-				claim.Task.ID, claim.Execution.ExecutionID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, now).
-			Count(&leaseCount).Error; err != nil {
-			return err
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent commonExecution.TaskExecution
+		var lease models.RuntimeLease
+		var lockErr error
+		task, parent, lease, lockErr = lockContinuousClaim(tx, claim)
+		if lockErr != nil {
+			return lockErr
 		}
-		if leaseCount != 1 {
-			return ErrRuntimeLeaseLost
+		checkedAt := now
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Raw("SELECT clock_timestamp()").Scan(&checkedAt).Error; err != nil {
+				return err
+			}
 		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", claim.Task.ID).First(&task).Error; err != nil {
-			return err
-		}
-		if task.DesiredState != models.TaskDesiredStateRunning {
+		if task.DesiredState != models.TaskDesiredStateRunning || !lease.LeaseUntil.After(checkedAt) {
 			return ErrRuntimeLeaseLost
 		}
 		if !task.AutoScanMetadata || task.InitialMetadataScanStatus == models.InitialMetadataScanSuccess {
@@ -647,6 +659,14 @@ func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
 			return ErrRuntimeLeaseLost
 		}
 		if err := tx.Where("id = ?", task.ID).First(&task).Error; err != nil {
+			return err
+		}
+		metadata := parent.Metadata.Clone()
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		metadata["outputs"] = commonModels.JSONMap{"execution_id": parent.ExecutionID, "target_locator": targetLocator, "continuous_prepared": true}
+		if err := tx.Model(&parent).Update("metadata", metadata).Error; err != nil {
 			return err
 		}
 		if err := updateInitialMetadataScanExecutionTx(tx, claim.Execution.ExecutionID, task, ""); err != nil {

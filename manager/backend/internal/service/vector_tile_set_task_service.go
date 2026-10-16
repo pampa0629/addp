@@ -210,6 +210,11 @@ func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID
 	exec := &commonExecution.TaskExecution{ExecutionID: executionID, TenantID: int(tenantID), Module: commonExecution.ModuleManager,
 		TaskType: commonExecution.TaskTypeVectorTileSetGeneration, Source: source, ParentExecutionID: parentExecutionID,
 		Status: commonExecution.ExecutionStatusPending, Progress: 0, CurrentStep: &step, TriggerType: triggerType, CreatedAt: now, UpdatedAt: now}
+	if parentExecutionID == nil {
+		if err := commonExecution.ApplyUserOrigin(ctx, exec); err != nil {
+			return "", err
+		}
+	}
 	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
 	if err != nil {
 		if errors.Is(err, commonAPI.ErrNotFound) {
@@ -258,11 +263,18 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 		}
 		metadata["catalog_path"] = result.EngineCatalogPath
 		metadata["source_version"] = cfg.SourceVersion
-		if s.metaScanSubmitter == nil {
+		lease, leaseErr := requireManagerExecutionLease(ctx, task.TenantID, executionID)
+		if leaseErr == nil {
+			metadata["produced_target"] = commonClient.MetaScanProducedTarget{EngineID: cfg.TargetEngineID, CatalogPath: result.EngineCatalogPath, Attempt: lease.Attempt}
+			leaseErr = s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{"metadata": metadata})
+		}
+		if leaseErr != nil {
+			err = leaseErr
+		} else if s.metaScanSubmitter == nil {
 			err = errors.New("vector tile set meta scan submitter is not configured")
 		} else {
 			var scan *commonExecution.TaskExecution
-			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath))
+			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath, executionID))
 			if err == nil && scan != nil {
 				metaScanExecutionID = scan.ExecutionID
 				metadata["meta_scan_execution_id"] = scan.ExecutionID
@@ -288,11 +300,12 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 	}
 }
 
-func vectorTileSetMetaScanOptions(cfg VectorTileSetExecutionConfig, catalogPath string) commonClient.MetaScanOptions {
+func vectorTileSetMetaScanOptions(cfg VectorTileSetExecutionConfig, catalogPath, executionID string) commonClient.MetaScanOptions {
 	return commonClient.MetaScanOptions{
-		EngineID:     cfg.TargetEngineID,
-		CatalogPaths: []string{catalogPath},
-		ScanDepth:    commonClient.MetaScanDepthDeep,
+		EngineID:          cfg.TargetEngineID,
+		RefGroups:         []commonClient.MetaScanRefGroup{{Primary: catalogPath}},
+		ParentExecutionID: executionID, Source: commonExecution.ModuleManager, Force: true,
+		ScanDepth: commonClient.MetaScanDepthDeep,
 	}
 }
 

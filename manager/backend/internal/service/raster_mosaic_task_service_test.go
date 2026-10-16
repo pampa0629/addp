@@ -447,7 +447,7 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 	if scanSubmitter.opts.ScanDepth != "deep" || !scanSubmitter.opts.Force {
 		t.Fatalf("scan options = %#v, want deep force", scanSubmitter.opts)
 	}
-	if scanSubmitter.opts.TriggerType != commonExecution.TriggerTypeManual || scanSubmitter.opts.Source != commonClient.MetaScanSourceManagerMosaicProducedTarget || scanSubmitter.opts.ParentExecutionID != "mosaic-exec-scan" {
+	if scanSubmitter.opts.TriggerType != commonExecution.TriggerTypeManual || scanSubmitter.opts.Source != commonExecution.ModuleManager || scanSubmitter.opts.ParentExecutionID != "mosaic-exec-scan" {
 		t.Fatalf("scan trigger/source = %#v", scanSubmitter.opts)
 	}
 

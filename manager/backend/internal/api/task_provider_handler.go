@@ -1706,6 +1706,10 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 	case commonExecution.TaskTypeVectorTileSetGeneration:
+		if !taskProvider {
+			facts, _ := commonauth.AuthContextFromGin(c)
+			ctx = commonExecution.WithUserOrigin(ctx, facts)
+		}
 		executionID, err = h.vectorTileSetTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
@@ -1743,6 +1747,10 @@ func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	}
 
 	if err != nil {
+		if errors.Is(err, commonapi.ErrForbidden) {
+			commonapi.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
+			return
+		}
 		if errors.Is(err, service.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return

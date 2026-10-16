@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"gorm.io/gorm"
@@ -29,10 +28,10 @@ func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenan
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
 			var current commonExecution.TaskExecution
-			if err := tx.Select("source", "metadata").Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&current).Error; err != nil {
+			if err := tx.Select("source", "parent_execution_id", "metadata").Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&current).Error; err != nil {
 				return err
 			}
-			if current.Source == commonClient.MetaScanSourceManagerMosaicProducedTarget {
+			if isMosaicProducedScan(&current) {
 				metadata = metadata.Clone()
 				metadata["produced_target"] = current.Metadata["produced_target"]
 				fields["metadata"] = metadata

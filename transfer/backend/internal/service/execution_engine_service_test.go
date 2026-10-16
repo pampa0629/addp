@@ -307,13 +307,10 @@ func TestTriggerMetadataScanSubmitsEncodedTargetRefGroups(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &ExecutionEngineService{
-		metaClient: newExecutionTestMetaClient(server.URL),
-		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	service.triggerMetadataScan(
+	service, executionID := newProducedScanTestService(t, server.URL, "addp://engine/9/path/bucket/exports/roads.shp?type=object")
+	service.triggerMetadataScan(context.Background(),
 		&models.TransferTask{TenantID: 7},
-		0,
+		executionID,
 		planner.TableExportTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/bucket/exports/roads.shp?type=object"}},
 		executor.TableTargetPlan{
 			Kind:   executor.TableEndpointEncoded,
@@ -356,7 +353,7 @@ func TestTriggerMetadataScanSkipsEncodedMultiTargetWithoutActualRefs(t *testing.
 		metaClient: newExecutionTestMetaClient(server.URL),
 		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	service.triggerMetadataScan(
+	service.triggerMetadataScan(context.Background(),
 		&models.TransferTask{TenantID: 7},
 		0,
 		planner.TableExportTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/bucket/exports/roads.shp?type=object"}},
@@ -388,13 +385,10 @@ func TestTriggerRawCopyMetadataScanSubmitsSingleRefGroup(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &ExecutionEngineService{
-		metaClient: newExecutionTestMetaClient(server.URL),
-		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-	service.triggerRawCopyMetadataScan(
+	service, executionID := newProducedScanTestService(t, server.URL, "addp://engine/9/path/backup/report.pdf?type=file")
+	service.triggerRawCopyMetadataScan(context.Background(),
 		&models.TransferTask{TenantID: 7},
-		0,
+		executionID,
 		planner.RawCopyTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/backup/report.pdf?type=file"}},
 		executor.RawCopyEndpointPlan{Path: engineplugin.FileItemPath(9, "backup/report.pdf")},
 	)
@@ -413,7 +407,7 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 
-	service.updateMetadataScanExecution(uint(execution.ID), "meta-run-1", 9, []string{"addp://engine/9/path/public/roads?type=table"}, 0)
+	service.updateMetadataScanExecution(ctx, uint(execution.ID), "meta-run-1", 9, []string{"addp://engine/9/path/public/roads?type=table"}, 0)
 
 	dto, err := executionService.GetExecutionByExecutionID(ctx, execution.ExecutionID, uint(task.TenantID))
 	if err != nil {
@@ -956,4 +950,20 @@ func TestTransferMultiQueryLineageRetainsEveryDeclaredPort(t *testing.T) {
 	if facts.Operations[0].FieldLineageStatus != "unavailable" || len(facts.Operations[0].FieldMappings) != 0 || facts.Outputs[0].SchemaSnapshot != nil {
 		t.Fatalf("partial inputs published as complete: %+v", facts)
 	}
+}
+
+func newProducedScanTestService(t *testing.T, baseURL, locator string) (*ExecutionEngineService, uint) {
+	t.Helper()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	exec := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, service, &exec)
+	engineService := &ExecutionEngineService{executionService: service, metaClient: newExecutionTestMetaClient(baseURL), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if locator != "" {
+		if err := engineService.writeBoundedExecutionOutputs(context.Background(), uint(exec.ID), locator, "", "", 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return engineService, uint(exec.ID)
 }

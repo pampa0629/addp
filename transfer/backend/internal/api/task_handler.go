@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -299,6 +300,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} ExecutionResponse "启动成功，返回执行记录 | Started successfully, returns execution record"
+// @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
@@ -315,7 +317,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
 
-	execution, err := h.taskService.StartTask(c.Request.Context(), id, tenantID, userID)
+	execution, err := h.taskService.StartTask(transferUserOriginContext(c), id, tenantID, userID)
 	if err != nil {
 		logger.L().Error("transfer task start failed", "task_id", id, "tenant_id", tenantID, "error", err)
 		respondTaskServiceError(c, err)
@@ -334,6 +336,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Param request body models.ReplayTaskRequest true "回放范围与新目标 | Replay ranges and new target"
 // @Success 202 {object} ExecutionResponse "已创建独立回放执行 | Independent replay execution created"
+// @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 400 {object} map[string]string "请求不符合 bounded replay v1 契约 | Request violates the bounded replay v1 contract"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @Failure 409 {object} map[string]string "范围超出保留边界或目标已存在 | Range is outside retention or target already exists"
@@ -353,7 +356,7 @@ func (h *TaskHandler) ReplayTask(c *gin.Context) {
 		commonAPI.BadRequestError(c, i18nmiddleware.T(c, transferI18n.MsgReplayInvalid))
 		return
 	}
-	execution, err := h.taskService.ReplayTask(c.Request.Context(), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), req)
+	execution, err := h.taskService.ReplayTask(transferUserOriginContext(c), id, commonAuth.GetTenantID(c), commonAuth.GetUserID(c), req)
 	if err != nil {
 		respondReplayTaskError(c, err)
 		return
@@ -656,6 +659,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
+// @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
@@ -672,7 +676,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
 
-	execution, err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID, userID)
+	execution, err := h.taskService.ResumeTask(transferUserOriginContext(c), id, tenantID, userID)
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return
@@ -754,6 +758,11 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrForbidden) {
+		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+		return
+	}
+
 	if errors.Is(err, commonAPI.ErrNotFound) {
 		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
 		return
@@ -794,6 +803,10 @@ func respondTaskServiceError(c *gin.Context, err error) {
 }
 
 func respondReplayTaskError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrForbidden) {
+		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+		return
+	}
 	if errors.Is(err, commonAPI.ErrNotFound) {
 		commonAPI.NotFoundError(c, i18nmiddleware.T(c, transferI18n.MsgTaskNotFound))
 		return
@@ -896,4 +909,9 @@ func (h *TaskHandler) CheckTaskConfig(c *gin.Context) {
 	default:
 		c.JSON(http.StatusOK, result)
 	}
+}
+
+func transferUserOriginContext(c *gin.Context) context.Context {
+	facts, _ := commonAuth.AuthContextFromGin(c)
+	return commonExecution.WithUserOrigin(c.Request.Context(), facts)
 }

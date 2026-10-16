@@ -612,7 +612,7 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request["parent_execution_id"] != parent.ExecutionID || request["source"] != commonClient.MetaScanSourceDevelopProducedTarget || r.Header.Get("Authorization") != "Bearer test-scan-service" {
+		if request["parent_execution_id"] != parent.ExecutionID || request["source"] != commonExecution.ModuleDevelop || r.Header.Get("Authorization") != "Bearer test-scan-service" {
 			t.Error("scan provenance or machine credentials missing")
 		}
 		stored, err := repo.GetByExecutionID(context.Background(), parent.ExecutionID, 7)

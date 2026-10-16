@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
@@ -22,6 +23,7 @@ import (
 )
 
 var (
+	ErrImportSubmission            = errors.New("import submission failed")
 	ErrImportTableNameRequired     = errors.New("import table name required")
 	ErrImportZipRequired           = errors.New("import zip package required")
 	ErrImportUnsupportedFormat     = errors.New("import unsupported file format")
@@ -40,8 +42,8 @@ type ImportService struct {
 }
 
 type importTransferClient interface {
-	CreateTask(req *client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error)
-	TriggerTask(taskID, tenantID uint) (*client.TriggerTaskResponse, error)
+	CreateTask(ctx context.Context, userBearer string, req *client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error)
+	TriggerTask(ctx context.Context, userBearer string, taskID uint) (*client.TriggerTaskResponse, error)
 }
 
 type importVectorMaterializedViewCleaner interface {
@@ -88,7 +90,10 @@ type ImportResult struct {
 }
 
 // ImportShapefile 导入 Shapefile 文件
-func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefileRequest) (*ImportResult, error) {
+func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefileRequest, userBearer string) (*ImportResult, error) {
+	if userBearer == "" || strings.ContainsAny(userBearer, " \t\r\n") {
+		return nil, commonAPI.ErrForbidden
+	}
 	log := logger.L()
 
 	// 1. 自动推断目标表名（使用文件名去掉扩展名）
@@ -153,17 +158,17 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 
 	log.Info("创建 Transfer 任务", "task_name", taskName, "engine_id", req.TargetEngineID, "table", tableName)
 
-	taskResp, err := s.transferClient.CreateTask(createReq)
+	taskResp, err := s.transferClient.CreateTask(ctx, userBearer, createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create transfer task: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrImportSubmission, err)
 	}
 
 	log.Info("Transfer 任务创建成功", "task_id", taskResp.ID)
 
 	// 7. 触发任务执行
-	triggerResp, err := s.transferClient.TriggerTask(taskResp.ID, req.TenantID)
+	triggerResp, err := s.transferClient.TriggerTask(ctx, userBearer, taskResp.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to trigger transfer task %d: %w", taskResp.ID, err)
+		return nil, fmt.Errorf("%w: %w", ErrImportSubmission, err)
 	}
 
 	log.Info("Transfer 任务已触发", "task_id", taskResp.ID, "execution_id", triggerResp.ExecutionID)

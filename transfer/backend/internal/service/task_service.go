@@ -578,13 +578,6 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 	for applyIdentity == task.ApplyIdentity {
 		applyIdentity = uuid.NewString()
 	}
-	preparation, err := s.executionEngine.PrepareReplayExecution(ctx, task.TenantID, task.Config, ReplayExecutionRequest{
-		Ranges: ranges,
-		Target: planner.ReplayTargetSpec{ParentLocator: req.Target.ParentLocator, Name: req.Target.Name},
-	}, applyIdentity)
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now()
 	triggeredBy := int(userID)
 	executionRecord := &commonExecution.TaskExecution{
@@ -593,9 +586,20 @@ func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), SourceTaskName: &task.Name,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
-		TriggeredBy:       &triggeredBy, ExecutionConfig: preparation.ExecutionConfig, Metadata: preparation.Metadata,
-		CreatedAt: now, UpdatedAt: now,
+		TriggeredBy:       &triggeredBy,
+		CreatedAt:         now, UpdatedAt: now,
 	}
+	if err := commonExecution.ApplyUserOrigin(ctx, executionRecord); err != nil {
+		return nil, err
+	}
+	preparation, err := s.executionEngine.PrepareReplayExecution(ctx, task.TenantID, task.Config, ReplayExecutionRequest{
+		Ranges: ranges,
+		Target: planner.ReplayTargetSpec{ParentLocator: req.Target.ParentLocator, Name: req.Target.Name},
+	}, applyIdentity)
+	if err != nil {
+		return nil, err
+	}
+	executionRecord.ExecutionConfig, executionRecord.Metadata = preparation.ExecutionConfig, preparation.Metadata
 	if err := s.executionService.taskExecutionRepo.Create(ctx, executionRecord); err != nil {
 		return nil, fmt.Errorf("create bounded replay execution: %w", err)
 	}
@@ -694,6 +698,11 @@ func (s *TaskService) startTaskWithContext(
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: executionConfig,
 		ExecutionBoundary: boundary,
 		CreatedAt:         now, UpdatedAt: now,
+	}
+	if parentExecutionID == nil {
+		if err := commonExecution.ApplyUserOrigin(ctx, executionRecord); err != nil {
+			return nil, err
+		}
 	}
 	if hasTargetOverride {
 		executionRecord.MaxAttempts = 1

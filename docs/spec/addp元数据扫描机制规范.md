@@ -773,8 +773,10 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 
 ### Develop 产物自动扫描来源
 
-Develop 自动扫描使用既有 `/scan/run/manual`，提交已持久化产物及 `parent_execution_id`，由 Meta 校验专用 Develop 服务身份、同租户 running workflow 父执行及请求目标与已保存产物的精确匹配，原子继承发起主体。实际扫描沿用现有目标解析与范围规划，表／集合／图目标可能展开到所属 schema／database；请求目标绑定不等于实际扫描限定为单个叶子产物。它不创建 ScanTask，不复制数据执行授权，不放宽一次性扫描读取权限；具体契约见任务体系规范“Develop 产物自动扫描的执行归属”。
+Develop 自动扫描使用既有 `/scan/run/manual`，提交已持久化产物及 `parent_execution_id`，由 Meta 校验专用 Develop 服务身份、同租户 running workflow 父执行及请求目标与已保存产物的精确匹配，原子继承发起主体。实际扫描保留完整叶子目标，仅解析该产物及明确内容引用，不展开到所属 schema／database。它不创建 ScanTask，不复制数据执行授权，不放宽一次性扫描读取权限；具体契约见任务体系规范“Develop 产物自动扫描的执行归属”。
 
-Manager 的 `raster_mosaic_generation` 自动扫描沿用同一手动入口，使用专用 `manager.raster_mosaic_generation.produced_target` 来源及直接父 execution UUID。只接受 `addp-manager`；在创建事务内以父执行的有效 lease、完整主体和本 attempt 已持久化的真实产物核验唯一 dataset 目录，保持 `deep + force` 及原范围规划，不扩大到父目录、兄弟目录或其他任务类型。子扫描仅继承来源身份，不继承数据访问授权；用户读取仍需 Meta Permission 与本人归属。详见任务体系规范“Manager 栅格 mosaic 产物自动扫描的执行归属”。
+Manager 的 `raster_mosaic_generation` 自动扫描沿用同一手动入口，使用专用 `manager` 来源及直接父 execution UUID。只接受 `addp-manager`；在创建事务内以父执行的有效 lease、完整主体和本 attempt 已持久化的真实产物核验唯一 dataset 目录，保持 `deep + force` 及原范围规划，不扩大到父目录、兄弟目录或其他任务类型。子扫描仅继承来源身份，不继承数据访问授权；用户读取仍需 Meta Permission 与本人归属。详见任务体系规范“Manager 栅格 mosaic 产物自动扫描的执行归属”。
 
 该来源的成功扫描在受当前扫描 lease 保护的收尾事务内保存 whole DataItem 身份回执。回执只来自本次精确目录扫描形成的、deep 且扫描时间不早于本次开始时间的 `raster_mosaic + whole` item，复用 Meta 资源树转换器生成 locator；缺少正式身份不得标扫描成功。专用结果读取只允许 Manager 查询与仍有效的父执行及其持久扫描关联一致的回执，不接受调用方自报目标或主体，不读取任意其他执行。Manager 等待和失败语义见任务体系规范；通用诊断与用户专业执行读取边界不变。
+
+Transfer 产物扫描使用 `source=transfer` 与直接父 execution UUID，核对同租户 running sync、完整主体及已持久化实际输出。持续同步初次扫描的目标结构准备事实由 Transfer 在有效 runtime lease 内保存；Meta 不跨读 Transfer 私有表。Manager 矢量瓦片集使用 `source=manager`、直接父 execution UUID 和精确 PMTiles 内容引用，核对当前 lease、attempt 及实际路径，不套用 mosaic whole 完成回执。服务提交缺失来源时拒绝；Transfer 保存明确失败反馈。具体范围和未接入路径见任务体系规范“生产执行与后台扫描的来源”。

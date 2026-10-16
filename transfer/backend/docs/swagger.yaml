@@ -1301,6 +1301,8 @@ definitions:
         $ref: '#/definitions/internal_api.ExecutionContinuous'
       lineage_facts:
         $ref: '#/definitions/internal_api.ExecutionLineageFacts'
+      metadata_scan:
+        $ref: '#/definitions/internal_api.ExecutionMetadataScan'
       recovered_from_execution_id:
         type: string
       recovery_attempt:
@@ -1322,6 +1324,8 @@ definitions:
     properties:
       attempt:
         type: integer
+      error_code:
+        type: string
       execution_id:
         type: string
       status:
@@ -2908,6 +2912,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "403":
+          description: 需要当前租户用户身份 | Current tenant User identity required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "404":
           description: 任务不存在 | Task not found
           schema:
@@ -2960,6 +2970,12 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 需要当前租户用户身份 | Current tenant User identity required
           schema:
             additionalProperties:
               type: string
@@ -3125,6 +3141,12 @@ paths:
             $ref: '#/definitions/internal_api.ExecutionResponse'
         "400":
           description: 参数错误或任务已在运行 | Bad request or task already running
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 需要当前租户用户身份 | Current tenant User identity required
           schema:
             additionalProperties:
               type: string

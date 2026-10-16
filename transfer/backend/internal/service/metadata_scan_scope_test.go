@@ -56,8 +56,8 @@ func TestNativeTargetMetadataScanSubmitsOnlyTableLeaf(t *testing.T) {
 				logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 				endpoint := planner.EndpointSpec{Representation: "native", ParentLocator: tc.parent, Name: tc.table}
 				if entry == "bounded" {
-					svc := &ExecutionEngineService{metaClient: client, logger: logger}
-					svc.triggerMetadataScan(&models.TransferTask{TenantID: 7}, 0,
+					svc, executionID := newProducedScanTestService(t, server.URL, tc.target)
+					svc.triggerMetadataScan(context.Background(), &models.TransferTask{TenantID: 7}, executionID,
 						planner.TableExportTaskSpec{Target: endpoint}, executor.TableTargetPlan{Kind: executor.TableEndpointNative}, nil)
 				} else {
 					svc := &TaskService{metaClient: client, logger: logger}

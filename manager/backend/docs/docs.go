@@ -1674,7 +1674,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "上传并导入数据文件（如Shapefile ZIP包）到目标数据库 | Upload and import data files (e.g. Shapefile ZIP) to target database",
+                "description": "仅租户用户；写入前检查导入及 Transfer 创建、执行权限，在当前请求内以用户身份创建并启动同步任务 | Tenant users only; check import and Transfer create/execute permissions before writes, then create and start the task with the current User credential",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1726,11 +1726,27 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Transfer 提交失败 | Transfer submission failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "manager.data_item.create"
+                    "manager.data_item.create",
+                    "transfer.task.create",
+                    "transfer.task.execute"
                 ]
             }
         },

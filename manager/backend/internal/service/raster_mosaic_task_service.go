@@ -511,7 +511,7 @@ func (s *RasterMosaicTaskService) submitRasterMosaicMetaScan(ctx context.Context
 		ScanDepth:         commonClient.MetaScanDepthDeep,
 		Force:             true,
 		TriggerType:       commonExecution.TriggerTypeManual,
-		Source:            commonClient.MetaScanSourceManagerMosaicProducedTarget,
+		Source:            commonExecution.ModuleManager,
 	})
 }
 

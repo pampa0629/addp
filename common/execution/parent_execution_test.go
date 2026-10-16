@@ -18,12 +18,13 @@ func TestInheritOrchestratorActor(t *testing.T) {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
+	by := 41
 	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
 	parent := &commonExecution.TaskExecution{
 		TenantID: 7, ExecutionID: "11111111-1111-4111-8111-111111111111",
 		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
 		Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual,
-		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		TriggeredBy: &by, ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}
 	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
@@ -41,6 +42,22 @@ func TestInheritOrchestratorActor(t *testing.T) {
 		child.TriggeredBy == nil || *child.TriggeredBy != int(principalID) {
 		t.Fatalf("child actor facts were not inherited: %#v", child)
 	}
+	for _, field := range []map[string]interface{}{{"triggered_by": nil}, {"triggered_by": 42}, {"task_type": "workflow"}} {
+		if err := db.Model(&commonExecution.TaskExecution{}).Where("id = ?", parent.ID).Updates(field).Error; err != nil {
+			t.Fatal(err)
+		}
+		rejected := &commonExecution.TaskExecution{TenantID: 7, Source: commonExecution.ModuleOrchestrator, ParentExecutionID: &parentID}
+		if err := db.Transaction(func(tx *gorm.DB) error { return commonExecution.InheritOrchestratorActor(tx, rejected) }); err == nil {
+			t.Fatal("incomplete or conflicting parent origin accepted")
+		}
+		if rejected.ActorPrincipalID != nil || rejected.TriggeredBy != nil {
+			t.Fatal("rejected parent copied identity")
+		}
+		if err := db.Save(parent).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }
 
 func TestInheritOrchestratorActorRejectsCrossTenantParent(t *testing.T) {
@@ -51,12 +68,13 @@ func TestInheritOrchestratorActorRejectsCrossTenantParent(t *testing.T) {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
+	by := 41
 	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
 	parent := &commonExecution.TaskExecution{
 		TenantID: 8, ExecutionID: "22222222-2222-4222-8222-222222222222",
 		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
 		Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual,
-		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		TriggeredBy: &by, ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}
 	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {

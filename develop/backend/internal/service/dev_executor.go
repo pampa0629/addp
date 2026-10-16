@@ -814,7 +814,7 @@ func workflowProducedTargetScanOptions(target WorkflowProducedTarget) commonClie
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: commonExecution.TriggerTypeManual,
-		Source:      commonClient.MetaScanSourceDevelopProducedTarget,
+		Source:      commonExecution.ModuleDevelop,
 		Targets:     []string{target.Locator},
 	}
 	if target.Layout == "whole" {

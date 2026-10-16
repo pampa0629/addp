@@ -280,6 +280,9 @@ func TestInitialMetadataScanClaimIsFencedAndRetryable(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.First(&task, task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	execution := claimTestExecution(task, "continuous-meta-scan-execution")
 	execution.Status = commonExecution.ExecutionStatusRunning
 	if err := db.Create(&execution).Error; err != nil {
@@ -299,11 +302,11 @@ func TestInitialMetadataScanClaimIsFencedAndRetryable(t *testing.T) {
 	}
 	claim := &RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
 
-	claimed, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now, 2*time.Minute)
+	claimed, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, "addp://engine/20/path/public/target?type=table", now, 2*time.Minute)
 	if err != nil || !owned || claimed.InitialMetadataScanClaimToken == "" || claimed.InitialMetadataScanAttempt != 1 {
 		t.Fatalf("first metadata scan claim=%#v owned=%v error=%v", claimed, owned, err)
 	}
-	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(time.Second), 2*time.Minute); err != nil || owned {
+	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, "addp://engine/20/path/public/target?type=table", now.Add(time.Second), 2*time.Minute); err != nil || owned {
 		t.Fatalf("second active metadata scan claim owned=%v error=%v", owned, err)
 	}
 
@@ -319,7 +322,7 @@ func TestInitialMetadataScanClaimIsFencedAndRetryable(t *testing.T) {
 		t.Fatalf("failed completion=%#v owned=%v error=%v", failed, owned, err)
 	}
 
-	retried, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(4*time.Second), 2*time.Minute)
+	retried, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, "addp://engine/20/path/public/target?type=table", now.Add(4*time.Second), 2*time.Minute)
 	if err != nil || !owned || retried.InitialMetadataScanAttempt != 2 || retried.InitialMetadataScanClaimToken == claimed.InitialMetadataScanClaimToken {
 		t.Fatalf("retry claim=%#v owned=%v error=%v", retried, owned, err)
 	}
@@ -329,7 +332,7 @@ func TestInitialMetadataScanClaimIsFencedAndRetryable(t *testing.T) {
 	if err != nil || !owned || succeeded.InitialMetadataScanExecutionID != "meta-success" {
 		t.Fatalf("success completion=%#v owned=%v error=%v", succeeded, owned, err)
 	}
-	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, now.Add(6*time.Second), 2*time.Minute); err != nil || owned {
+	if _, owned, err := repo.ClaimInitialMetadataScan(context.Background(), *claim, "addp://engine/20/path/public/target?type=table", now.Add(6*time.Second), 2*time.Minute); err != nil || owned {
 		t.Fatalf("completed metadata scan reclaimed owned=%v error=%v", owned, err)
 	}
 }
@@ -428,7 +431,10 @@ func claimTestExecution(task models.TransferTask, executionID string) commonExec
 		boundary = commonExecution.ExecutionBoundaryContinuous
 	}
 	now := time.Now()
+	by := 9
+	principal, membership, version := int64(9), int64(19), int64(1)
 	return commonExecution.TaskExecution{
+		TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version,
 		TenantID: int(task.TenantID), ExecutionID: executionID, Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(task.ID), Status: commonExecution.ExecutionStatusPending,

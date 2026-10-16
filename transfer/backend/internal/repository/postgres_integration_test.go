@@ -742,6 +742,12 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	if secondClaim.Execution.TriggerType != firstClaim.Execution.TriggerType || secondClaim.Execution.Metadata["recovery_reason"] != "worker_shutdown" {
 		t.Fatalf("worker-shutdown recovery execution = %#v", secondClaim.Execution)
 	}
+	if secondClaim.Execution.TriggeredBy == nil || *secondClaim.Execution.TriggeredBy != 9 || secondClaim.Execution.ActorPrincipalID == nil || *secondClaim.Execution.ActorPrincipalID != 9 || secondClaim.Execution.ActorTenantMembershipID == nil || *secondClaim.Execution.ActorTenantMembershipID != 19 || secondClaim.Execution.IssuedAuthorizationVersion == nil || *secondClaim.Execution.IssuedAuthorizationVersion != 1 {
+		t.Fatal("automatic recovery lost User origin")
+	}
+	if secondClaim.Execution.ExecutionAuthorizationID != nil || secondClaim.Execution.AuthorizationExpiresAt != nil || secondClaim.Execution.RetryOfExecutionID == nil || *secondClaim.Execution.RetryOfExecutionID != firstClaim.Execution.ExecutionID {
+		t.Fatal("recovery inherited authorization or lost retry relation")
+	}
 	if secondClaim.Lease.FencingToken != 2 {
 		t.Fatalf("worker-shutdown recovery fencing token = %d, want 2", secondClaim.Lease.FencingToken)
 	}

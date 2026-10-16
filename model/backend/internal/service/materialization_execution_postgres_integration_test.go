@@ -155,7 +155,7 @@ func TestPostgresMaterializationExecutionLifecycle(t *testing.T) {
 	requireDomainErrorCode(t, err, "materialization_parent_invalid")
 	principal, membership, version := int64(11), int64(12), int64(1)
 	started := time.Now()
-	parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenantID), Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "running", TriggerType: "manual", ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, StartedAt: &started}
+	parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenantID), Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "running", TriggerType: "manual", TriggeredBy: func() *int { v := int(principal); return &v }(), ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, StartedAt: &started}
 	if err = tx.Create(&parent).Error; err != nil {
 		t.Fatal(err)
 	}

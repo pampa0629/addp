@@ -314,3 +314,6 @@ other = "文件扫描超过读取预算，请拆分文件或先导入可查询�
 
 [manager.error.trajectory_source_invalid]
 other = "源数据无法完整解析，或设备、时间字段无效"
+
+[manager.error.import_submission_failed]
+other = "文件可能已上传，Transfer 任务提交失败，请先检查已创建的任务再重试。"

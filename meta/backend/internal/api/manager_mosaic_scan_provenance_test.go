@@ -29,7 +29,7 @@ func testMetaManagerMosaicProducedScan(t *testing.T, db *gorm.DB, router http.Ha
 		Metadata: commonmodels.JSONMap{"manifest_locator": "/vsis3/results/mosaic/mosaic.addp.json", "manifest_ref": "mosaic.addp.json",
 			"produced_target": commonclient.MetaScanProducedTarget{EngineID: 9, CatalogPath: "results/mosaic", ManifestRef: "mosaic.addp.json", Attempt: 1}}}
 	req := models.ScanRequest{EngineID: 9, CatalogPaths: []string{"results/mosaic"}, ScanDepth: "deep", Force: true,
-		Source: commonclient.MetaScanSourceManagerMosaicProducedTarget, ParentExecutionID: parent.ExecutionID}
+		Source: execution.ModuleManager, ParentExecutionID: parent.ExecutionID}
 	post := func(credential string, request models.ScanRequest, want int) string {
 		t.Helper()
 		encoded, _ := json.Marshal(request)

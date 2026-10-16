@@ -764,7 +764,7 @@ func createTaskProviderParentExecution(t *testing.T, repo *commonExecution.TaskE
 		TenantID: tenantID, ExecutionID: parentExecutionID,
 		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
 		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
-		TriggerType: triggerType, ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		TriggerType: triggerType, TriggeredBy: func() *int { v := int(principalID); return &v }(), ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}); err != nil {
 		t.Fatalf("create parent execution: %v", err)

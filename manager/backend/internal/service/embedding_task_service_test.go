@@ -60,8 +60,8 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 		TenantID: int(task.TenantID), ExecutionID: parentExecutionID,
 		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
 		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
-		TriggerType:      commonExecution.TriggerTypeManual,
-		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		TriggerType: commonExecution.TriggerTypeManual,
+		TriggeredBy: func() *int { v := int(principalID); return &v }(), ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}); err != nil {
 		t.Fatalf("create parent execution: %v", err)

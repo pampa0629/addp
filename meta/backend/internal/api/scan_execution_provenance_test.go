@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -54,7 +52,7 @@ func testMetaDevelopProducedScan(t *testing.T, db *gorm.DB, router http.Handler,
 	if err := db.Create(&parent).Error; err != nil {
 		t.Fatal(err)
 	}
-	request := models.ScanRequest{EngineID: 9, ScanDepth: "deep", Force: true, Source: commonclient.MetaScanSourceDevelopProducedTarget,
+	request := models.ScanRequest{EngineID: 9, ScanDepth: "deep", Force: true, Source: execution.ModuleDevelop,
 		ParentExecutionID: parentID, RefGroups: []models.ScanRefGroup{{Primary: "results/dem.tif"}}}
 	post := func(token string, req models.ScanRequest, want int) string {
 		t.Helper()

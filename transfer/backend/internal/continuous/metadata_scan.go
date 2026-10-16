@@ -21,7 +21,7 @@ type PreparedTargetMetadataScanner interface {
 }
 
 type InitialMetadataScanStore interface {
-	ClaimInitialMetadataScan(ctx context.Context, claim repository.RuntimeLeaseClaim, now time.Time, claimTTL time.Duration) (*models.TransferTask, bool, error)
+	ClaimInitialMetadataScan(ctx context.Context, claim repository.RuntimeLeaseClaim, targetLocator string, now time.Time, claimTTL time.Duration) (*models.TransferTask, bool, error)
 	CompleteInitialMetadataScan(
 		ctx context.Context,
 		claim repository.RuntimeLeaseClaim,
@@ -61,13 +61,13 @@ func (s *TargetMetadataScanner) ScanPreparedTarget(ctx context.Context, claim re
 	if claimTTL <= 0 {
 		claimTTL = 2 * time.Minute
 	}
-	task, owned, err := s.Store.ClaimInitialMetadataScan(ctx, claim, now(), claimTTL)
+	task, owned, err := s.Store.ClaimInitialMetadataScan(ctx, claim, targets[0], now(), claimTTL)
 	if err != nil || !owned {
 		return err
 	}
 	claimToken := task.InitialMetadataScanClaimToken
 	run, scanErr := s.Client.WithTenantID(task.TenantID).CreateManualScanRun(commonClient.MetaScanOptions{
-		EngineID: engineID, Targets: targets,
+		EngineID: engineID, Targets: targets, ParentExecutionID: claim.Execution.ExecutionID,
 		ScanDepth: "deep", Force: true,
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleTransfer,

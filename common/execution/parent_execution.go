@@ -32,20 +32,13 @@ func InheritOrchestratorActor(tx *gorm.DB, execution *TaskExecution) error {
 		First(&parent).Error; err != nil {
 		return fmt.Errorf("orchestration parent execution is unavailable: %w", err)
 	}
-	if parent.ActorPrincipalID == nil || parent.ActorTenantMembershipID == nil || parent.IssuedAuthorizationVersion == nil ||
-		*parent.ActorPrincipalID <= 0 || *parent.ActorTenantMembershipID <= 0 || *parent.IssuedAuthorizationVersion <= 0 {
-		return fmt.Errorf("orchestration parent has no authorization lineage")
+	if parent.TaskType != TaskTypeOrchestration {
+		return fmt.Errorf("orchestration parent has an invalid task type")
 	}
-
-	principalID := *parent.ActorPrincipalID
-	membershipID := *parent.ActorTenantMembershipID
-	authorizationVersion := *parent.IssuedAuthorizationVersion
-	triggeredBy := int(principalID)
+	if err := CopyActorOrigin(execution, &parent); err != nil {
+		return err
+	}
 	execution.ParentExecutionID = &parentExecutionID
-	execution.TriggeredBy = &triggeredBy
-	execution.ActorPrincipalID = &principalID
-	execution.ActorTenantMembershipID = &membershipID
-	execution.IssuedAuthorizationVersion = &authorizationVersion
 	return nil
 }
 

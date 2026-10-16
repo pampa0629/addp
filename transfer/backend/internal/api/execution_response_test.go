@@ -148,3 +148,23 @@ func TestTransferCommittedOffsetUsesCanonicalDecimalString(t *testing.T) {
 		})
 	}
 }
+
+func TestProducedScanFeedbackExposesOnlyStableFailure(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	for _, code := range []string{"scan_submission_failed", "private-secret"} {
+		item := transferResponseFixture()
+		item.Metadata["metadata_scan"] = map[string]interface{}{"status": "failed", "error_code": code, "error": "private-secret", "target": "private-secret", "lease_token": "private-secret"}
+		response, err := projectExecution(c, item)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := response.Metadata.MetadataScan
+		if got == nil || got.Status != "failed" || (code == "scan_submission_failed" && got.ErrorCode != code) || (code == "private-secret" && got.ErrorCode != "") {
+			t.Fatalf("scan failure feedback=%#v", got)
+		}
+		data, _ := json.Marshal(got)
+		if strings.Contains(string(data), "private-secret") {
+			t.Fatal("private scan failure leaked")
+		}
+	}
+}

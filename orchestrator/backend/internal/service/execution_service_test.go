@@ -98,8 +98,8 @@ func TestCreateExecutionWithContextInheritsActorFromRunningOrchestratorParent(t 
 		TenantID: 7, ExecutionID: "11111111-1111-4111-8111-111111111111",
 		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
 		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
-		TriggerType:      commonExecution.TriggerTypeManual,
-		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		TriggerType: commonExecution.TriggerTypeManual,
+		TriggeredBy: func() *int { v := int(principalID); return &v }(), ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 	}
 	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
-	commonclient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -54,7 +53,7 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 // CreateManualScanRun 创建异步扫描运行
 // @Summary 创建手动扫描运行 | Create manual scan run
-// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop 和 Manager mosaic 产物来源仅允许对应专用服务携带父 execution，原子校验持久产物与主体；Manager 还须验证当前 lease 和精确目录 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop and Manager mosaic output scans require the matching service, verified parent identity and persisted output; Manager also requires a valid lease and exact dataset directory
+// @Description 叶子 locator 仅扫描自身，root／branch 范围必须显式指定；Develop、Transfer 和 Manager 后台产物扫描仅允许对应服务携带父 execution，核对已保存产物和完整主体；Manager 还须验证当前 lease 和 attempt。服务无来源请求拒绝 | Leaf locators scan only themselves; root and branch scopes must be explicit. Develop, Transfer and Manager output scans require the matching service, verified parent identity and persisted output; Manager also requires the current lease and attempt. Unowned service scans are rejected
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -95,21 +94,27 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	producedClient := ""
-	switch req.Source {
-	case commonclient.MetaScanSourceDevelopProducedTarget:
-		producedClient = "addp-develop"
-	case commonclient.MetaScanSourceManagerMosaicProducedTarget:
-		producedClient = "addp-manager"
+	principal, exists := commonAuth.PrincipalFromGin(c)
+	if !exists {
+		commonapi.ForbiddenError(c, commoni18n.T(c, metai18n.MsgScanProvenanceDenied))
+		return
 	}
-	if req.ParentExecutionID != "" || producedClient != "" {
-		if producedClient == "" {
+	if principal.Type == "service_principal" || req.ParentExecutionID != "" {
+		producedClient := ""
+		switch req.Source {
+		case commonExecution.ModuleDevelop, commonExecution.ModuleManager, commonExecution.ModuleTransfer:
+			producedClient = "addp-" + req.Source
+		}
+		if producedClient == "" && req.ParentExecutionID != "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
 			return
 		}
-		principal, exists := commonAuth.PrincipalFromGin(c)
-		if !exists || principal.Type != "service_principal" || commonAuth.GetClientID(c) != producedClient {
+		if principal.Type != "service_principal" || producedClient == "" || commonAuth.GetClientID(c) != producedClient {
 			c.JSON(http.StatusForbidden, gin.H{"error_code": "scan_provenance_denied", "error": commoni18n.T(c, metai18n.MsgScanProvenanceDenied)})
+			return
+		}
+		if req.ParentExecutionID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_provenance_unavailable", "error": commoni18n.T(c, metai18n.MsgScanProvenanceUnavailable)})
 			return
 		}
 	}

@@ -85,7 +85,7 @@ func testManagerMosaicResultRead(t *testing.T, db *gorm.DB, read func(string, st
 	}{
 		{"module", func(c *execution.TaskExecution) { c.Module = execution.ModuleManager }},
 		{"type", func(c *execution.TaskExecution) { c.TaskType = execution.TaskTypeWorkflow }},
-		{"source", func(c *execution.TaskExecution) { c.Source = commonclient.MetaScanSourceDevelopProducedTarget }},
+		{"source", func(c *execution.TaskExecution) { c.Source = execution.ModuleDevelop }},
 		{"attempt_receipt", func(c *execution.TaskExecution) {
 			c.Metadata["produced_target"] = commonclient.MetaScanProducedTarget{EngineID: 9, CatalogPath: "results/mosaic", ManifestRef: "mosaic.addp.json", Attempt: 2}
 		}},
