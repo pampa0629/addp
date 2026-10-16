@@ -69,6 +69,9 @@ func TestMetaScanExecutionReadAgainstPostgres(t *testing.T) {
 	if err := tx.AutoMigrate(&models.MetaNode{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := tx.AutoMigrate(&models.MetaItem{}); err != nil {
+		t.Fatal(err)
+	}
 	testMetaScanReadContract(t, tx)
 }
 
@@ -76,12 +79,12 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	tenant := strconv.Itoa(scanReadTenant)
 	contexts := map[string]authorization.AuthContext{}
-	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied", "manager-machine", "manager-machine-denied"} {
+	for _, token := range []string{"owner", "peer", "oauth", "denied", "foreign", "machine", "wrong-machine", "machine-denied", "develop-machine", "develop-machine-denied", "manager-machine", "manager-machine-denied", "manager-machine-foreign"} {
 		principal, targetTenant := "31", tenant
 		if token == "peer" {
 			principal = "32"
 		}
-		if token == "foreign" {
+		if token == "foreign" || token == "manager-machine-foreign" {
 			targetTenant = strconv.Itoa(scanReadTenant + 1)
 		}
 		permissions := []string{"meta.scan_task.read", "meta.scan_task.execute"}

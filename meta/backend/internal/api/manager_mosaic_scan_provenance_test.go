@@ -75,6 +75,7 @@ func testMetaManagerMosaicProducedScan(t *testing.T, db *gorm.DB, router http.Ha
 	if child.TriggeredBy == nil || *child.TriggeredBy != by || child.ParentExecutionID == nil || *child.ParentExecutionID != parent.ExecutionID || child.ActorPrincipalID == nil || *child.ActorPrincipalID != principal || child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membership || child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != version || child.ExecutionAuthorizationID != nil || child.AuthorizationExpiresAt != nil || child.SourceTaskID != nil || child.LeaseToken != nil {
 		t.Fatal("mosaic child did not inherit only the verified origin")
 	}
+	testManagerMosaicResultRead(t, db, read, parent, child)
 	read("peer", "/executions/"+id, http.StatusNotFound)
 	read("foreign", "/executions/"+id, http.StatusNotFound)
 	read("denied", "/executions/"+id, http.StatusForbidden)
@@ -102,7 +103,9 @@ func testMetaManagerMosaicProducedScan(t *testing.T, db *gorm.DB, router http.Ha
 		{"foreign_module", func(p *execution.TaskExecution) { p.Module = execution.ModuleDevelop }},
 		{"other_task_type", func(p *execution.TaskExecution) { p.TaskType = execution.TaskTypeRasterCOGGeneration }},
 		{"completed_parent", func(p *execution.TaskExecution) { p.Status = execution.ExecutionStatusSuccess }},
-		{"missing_actor", func(p *execution.TaskExecution) { p.ActorPrincipalID = nil }},
+		{"missing_actor", func(p *execution.TaskExecution) {
+			p.ActorPrincipalID, p.ActorTenantMembershipID, p.IssuedAuthorizationVersion = nil, nil, nil
+		}},
 		{"missing_membership", func(p *execution.TaskExecution) { p.ActorTenantMembershipID = nil }},
 		{"missing_version", func(p *execution.TaskExecution) { p.IssuedAuthorizationVersion = nil }},
 		{"wrong_triggered_by", func(p *execution.TaskExecution) { other := 32; p.TriggeredBy = &other }},
@@ -122,7 +125,23 @@ func testMetaManagerMosaicProducedScan(t *testing.T, db *gorm.DB, router http.Ha
 		changed.LeaseToken = &leaseToken
 		changed.Metadata = parent.Metadata.Clone()
 		test.mutate(&changed)
-		if err := db.Create(&changed).Error; err != nil {
+		partialActor := db.Dialector.Name() == "postgres" && (test.name == "missing_membership" || test.name == "missing_version")
+		if partialActor {
+			if err := db.SavePoint("mosaic_invalid_actor").Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		err := db.Create(&changed).Error
+		if partialActor {
+			if err == nil || !strings.Contains(err.Error(), "task_executions_execution_authorization_tuple_check") {
+				t.Fatalf("%s must be rejected by the canonical database constraint: %v", test.name, err)
+			}
+			if err := db.RollbackTo("mosaic_invalid_actor").Error; err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err != nil {
 			t.Fatalf("%s parent fixture: %v", test.name, err)
 		}
 		request := req

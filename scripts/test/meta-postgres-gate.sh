@@ -40,7 +40,7 @@ if [ "$test_group" = all ]; then
 fi
 service_tests='^TestDataItemAuthorizationFactsAgainstPostgres$'
 if [ "$test_group" = all ]; then
-    service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
+    service_tests='^(TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
 fi
 go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 if [ "$test_group" = all ]; then

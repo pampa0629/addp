@@ -382,7 +382,7 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 	taskSvc := NewRasterMosaicTaskService(mosaicRepo, taskExecRepo)
 	taskSvc.SetExecutor(fakeRasterMosaicExecutor{
 		result: &RasterMosaicExecutionResult{
-			ManifestLocator: "addp://engine/27/path/mosaics/srtm_mosaic/mosaic.addp.json?type=object",
+			ManifestLocator: "/vsis3/mosaics/srtm_mosaic/mosaic.addp.json",
 			ManifestRef:     "mosaic.addp.json",
 			IndexRef:        "index/source-index.json",
 			OverviewRef:     "overview/global-overview.tif",
@@ -464,6 +464,11 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 	}
 	if metaScan["execution_id"] != "scan-exec-1" || metaScan["catalog_path"] != "mosaics/srtm_mosaic" {
 		t.Fatalf("metadata.meta_scan = %#v", metaScan)
+	}
+	var facts commonExecution.LineageFacts
+	encoded, _ := json.Marshal(commonExecution.Observe(got).Metadata["lineage_facts"])
+	if err := json.Unmarshal(encoded, &facts); err != nil || len(facts.Outputs) != 1 || facts.Outputs[0].Locator != "addp://engine/27/path/mosaics/srtm_mosaic?type=object&item_id=42" || facts.Outputs[0].ItemID == nil || *facts.Outputs[0].ItemID != 42 || facts.Outputs[0].ItemFingerprint != "whole-fingerprint" {
+		t.Fatalf("wrong whole output identity: %+v", facts)
 	}
 }
 
@@ -658,6 +663,15 @@ type fakeRasterMosaicMetaScanSubmitter struct {
 	tenantID *uint
 	run      *commonExecution.TaskExecution
 	err      error
+	read     func(context.Context) (*commonClient.MetaMosaicScanResult, error)
+}
+
+func (f *fakeRasterMosaicMetaScanSubmitter) GetMosaicScanResult(ctx context.Context, tenantID uint, executionID, parentExecutionID string) (*commonClient.MetaMosaicScanResult, error) {
+	if f.read != nil {
+		return f.read(ctx)
+	}
+	return &commonClient.MetaMosaicScanResult{ExecutionID: executionID, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusSuccess,
+		Output: &commonClient.MetaMosaicOutput{Locator: "addp://engine/27/path/mosaics/srtm_mosaic?type=object&item_id=42", ItemID: 42, Fingerprint: "whole-fingerprint"}}, nil
 }
 
 func (f *fakeRasterMosaicMetaScanSubmitter) CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error) {

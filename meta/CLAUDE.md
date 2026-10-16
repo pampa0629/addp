@@ -1,5 +1,7 @@
 # Meta 模块说明
 
+Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 返回：仅 `addp-manager` 与现有 `meta.scan_task.execute`，重核同租户、当前父执行有效 lease/attempt、精确目标、来源和持久父子关联；不借用 TaskProvider，不应用用户本人读取规则。成功收尾必须从本次 deep 扫描的 `raster_mosaic + whole` item 经既有资源树转换器取得正式身份，并与扫描终态一并持久化 `mosaic_output` 回执；进度更新不得丢弃创建时的 `produced_target` 绑定。响应只返回 UUID、父 UUID、状态及成功的 locator/item ID/fingerprint，不返回任意 metadata、配置、原始错误或授权。标准 Meta 模块 T1 和 `make test-meta-postgres` 包含直接 HTTP 权限矩阵及真实 PostgreSQL 收尾回归，既有 CI 自动登记同一入口。
+
 ## 模块定位
 
 Meta 模块负责从 Engine Catalog 扫描并持久化 DataItem 技术事实，以及元数据查询、对象元数据提取、扫描任务调度和扫描运行记录。Meta 不拥有企业 `CatalogEntry`、业务语义关联、责任或治理状态，也不再向 Asset 提供自动发现接口。企业 Catalog 接入时，Meta 只提供 DataItem fingerprint 为身份的可恢复游标变化源和精确批量读取契约，不同步调用 Catalog，也不保存 `catalog_entry_id` 反向投影。Security 对显式纳管 DataItem 使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts` 精确读取无原值字段事实；无字段的文档则继续使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-sample` 临时读取有界正文样本。两个端点都固定 `addp-security` Client Guard 和 `meta.security_facts.read`，不提供列表或变化订阅；样本不写入 Meta attributes。PostgreSQL table 的 Catalog 变化摘要由 Meta 直接带出结构化 `schema_name + table_name`，供 Catalog 向 Quality 动态解析当前摘要；消费方不得拆分 `full_name` 猜测定位。

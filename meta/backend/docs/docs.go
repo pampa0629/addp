@@ -1851,6 +1851,86 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/mosaic-scans/{execution_id}/result": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅允许 addp-manager，在当前父执行有效 lease/attempt 和精确目标绑定下读取专用子扫描状态及正式 whole item 身份；不返回配置、metadata、授权或原始错误 | Only addp-manager may read the dedicated scan status and whole item identity bound to the live parent lease, attempt and exact target; no configuration, metadata, authorization or raw errors",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "读取 Manager mosaic 扫描结果 | Read Manager mosaic scan result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "扫描执行 UUID | Scan execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "当前 Manager 父执行 UUID | Current Manager parent execution UUID",
+                        "name": "parent_execution_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "受限扫描结果 | Bound scan result",
+                        "schema": {
+                            "$ref": "#/definitions/client.MetaMosaicScanResult"
+                        }
+                    },
+                    "400": {
+                        "description": "UUID 参数错误 | Invalid UUID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "服务或权限不匹配 | Client or Permission denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "无有效父子绑定或正式结果 | No valid parent binding or formal result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "结果依赖不可用 | Result dependency unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.execute"
+                ]
+            }
+        },
         "/scan/run/manual": {
             "post": {
                 "security": [
@@ -2916,6 +2996,37 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.MetaMosaicOutput": {
+            "type": "object",
+            "properties": {
+                "fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.MetaMosaicScanResult": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "output": {
+                    "$ref": "#/definitions/client.MetaMosaicOutput"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

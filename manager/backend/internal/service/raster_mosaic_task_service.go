@@ -29,6 +29,11 @@ type RasterMosaicMetaScanSubmitter interface {
 	CreateManualScanRunForTenant(tenantID uint, opts commonClient.MetaScanOptions) (*commonExecution.TaskExecution, error)
 }
 
+type RasterMosaicMetaScanClient interface {
+	RasterMosaicMetaScanSubmitter
+	GetMosaicScanResult(ctx context.Context, tenantID uint, executionID, parentExecutionID string) (*commonClient.MetaMosaicScanResult, error)
+}
+
 type RasterMosaicExecutionRequest struct {
 	Task        *models.RasterMosaicTask
 	ExecutionID string
@@ -111,7 +116,7 @@ type RasterMosaicTaskService struct {
 	repo              *repository.RasterMosaicRepository
 	taskExecRepo      *commonExecution.TaskExecutionRepository
 	executor          RasterMosaicExecutor
-	metaScanSubmitter RasterMosaicMetaScanSubmitter
+	metaScanSubmitter RasterMosaicMetaScanClient
 }
 
 var (
@@ -128,7 +133,7 @@ func (s *RasterMosaicTaskService) SetExecutor(executor RasterMosaicExecutor) {
 	s.executor = executor
 }
 
-func (s *RasterMosaicTaskService) SetMetaScanSubmitter(submitter RasterMosaicMetaScanSubmitter) {
+func (s *RasterMosaicTaskService) SetMetaScanSubmitter(submitter RasterMosaicMetaScanClient) {
 	s.metaScanSubmitter = submitter
 }
 
@@ -309,6 +314,9 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 			err = errors.New("raster mosaic generation executor is not configured")
 		} else {
 			result, err = s.executor.BuildRasterMosaic(ctx, RasterMosaicExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+			if err == nil && result == nil {
+				err = errors.New("raster mosaic runtime returned no result")
+			}
 		}
 	}
 	if err == nil && result != nil {
@@ -333,31 +341,55 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 				"engine_id":    cfg.Target.TargetEngineID,
 				"catalog_path": rasterMosaicDatasetCatalogPath(cfg),
 			}
+			lease, leaseErr := requireManagerExecutionLease(ctx, task.TenantID, executionID)
+			err = leaseErr
+			if err == nil {
+				// Save the association before polling; timeout or loss of the worker
+				// must not lose the already submitted child or generated files.
+				err = s.taskExecRepo.UpdateWithLease(ctx, lease, map[string]interface{}{
+					"metadata": s.mergeRasterMosaicExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata),
+					"progress": 99, "current_step": "等待元数据扫描与成果登记",
+				})
+			}
 		}
 		if err == nil {
-			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeRasterMosaicGeneration,
-				[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageInputPort, cfg.Source.NodeLocator)},
-				[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageOutputPort, result.ManifestLocator)},
-				metaScanExecutionID,
-			)
+			var output *commonClient.MetaMosaicOutput
+			output, err = s.waitRasterMosaicScan(ctx, task.TenantID, executionID, metaScanExecutionID, cfg, metadata)
+			if err == nil {
+				metadata["meta_scan"].(commonModels.JSONMap)["status"] = commonExecution.ExecutionStatusSuccess
+				ref := managerResourceLineageRef(managerLineageOutputPort, output.Locator)
+				ref.ItemID, ref.ItemFingerprint = &output.ItemID, output.Fingerprint
+				metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeRasterMosaicGeneration,
+					[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageInputPort, cfg.Source.NodeLocator)},
+					[]commonExecution.LineageResourceRef{ref}, metaScanExecutionID)
+			}
 		}
 	}
+	// Terminal persistence is bounded separately, still fenced by the same lease.
+	// It does not extend execution time or start new business work.
+	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer finishCancel()
 	if err != nil {
 		if rasterMosaicExecutionTimedOut(err) {
 			status = commonExecution.ExecutionStatusTimeout
 		} else {
 			status = commonExecution.ExecutionStatusFailed
 		}
-		progress = s.rasterMosaicExistingExecutionProgress(ctx, executionID, int(task.TenantID))
-		errDetails = commonModels.JSONMap{"message": err.Error()}
+		progress = s.rasterMosaicExistingExecutionProgress(finishCtx, executionID, int(task.TenantID))
+		errDetails = commonModels.JSONMap{"code": "manager.mosaic.result_unavailable", "message": err.Error()}
 	}
-	metadata = s.mergeRasterMosaicExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata)
+	metadata = s.mergeRasterMosaicExistingExecutionMetadata(finishCtx, executionID, int(task.TenantID), metadata)
 
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, map[string]interface{}{
+	currentStep := "执行完成"
+	if status != commonExecution.ExecutionStatusSuccess {
+		currentStep = "成果生成或登记未完成"
+	}
+	if err := s.repo.CompleteExecution(finishCtx, task.ID, task.TenantID, executionID, map[string]interface{}{
 		"status":            status,
 		"progress":          progress,
+		"current_step":      currentStep,
 		"metadata":          metadata,
 		"error_details":     errDetails,
 		"completed_at":      completedAt,
@@ -365,6 +397,57 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 		"updated_at":        completedAt,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交栅格 mosaic execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
+	}
+}
+
+func (s *RasterMosaicTaskService) waitRasterMosaicScan(ctx context.Context, tenantID uint, parentID, scanID string, cfg RasterMosaicExecutionConfig, metadata commonModels.JSONMap) (*commonClient.MetaMosaicOutput, error) {
+	if scanID == "" {
+		return nil, errors.New("mosaic scan submission returned no execution")
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if _, err := requireManagerExecutionLease(ctx, tenantID, parentID); err != nil {
+			return nil, err
+		}
+		result, err := s.metaScanSubmitter.GetMosaicScanResult(ctx, tenantID, scanID, parentID)
+		if err != nil {
+			return nil, err
+		}
+		if result == nil || result.ExecutionID != scanID || result.ParentExecutionID != parentID {
+			return nil, errors.New("mosaic scan result binding mismatch")
+		}
+		metadata["meta_scan"].(commonModels.JSONMap)["status"] = result.Status
+		switch result.Status {
+		case commonExecution.ExecutionStatusSuccess:
+			if result.Output == nil {
+				return nil, errors.New("mosaic scan returned no whole identity")
+			}
+			output := result.Output
+			loc, err := resourcetree.ParseURI(output.Locator)
+			if err != nil || loc.ItemID == nil || *loc.ItemID != output.ItemID || output.ItemID == 0 || output.Fingerprint == "" || loc.EngineID != cfg.Target.TargetEngineID || loc.FullName() != rasterMosaicDatasetCatalogPath(cfg) {
+				return nil, errors.New("mosaic scan whole identity mismatch")
+			}
+			return output, nil
+		case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+			if result.Output != nil {
+				return nil, errors.New("mosaic scan returned output before success")
+			}
+		case commonExecution.ExecutionStatusTimeout:
+			return nil, fmt.Errorf("%w: mosaic metadata scan timed out", context.DeadlineExceeded)
+		case commonExecution.ExecutionStatusFailed, commonExecution.ExecutionStatusCancelled:
+			return nil, fmt.Errorf("mosaic metadata scan ended with status %s", result.Status)
+		default:
+			return nil, errors.New("mosaic metadata scan returned an invalid status")
+		}
+		timer := time.NewTimer(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 

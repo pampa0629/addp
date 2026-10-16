@@ -4,7 +4,10 @@ import (
 	"context"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
+	"gorm.io/gorm"
 )
 
 func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenantID int, fields map[string]interface{}) {
@@ -23,7 +26,21 @@ func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenan
 			counters[key] = value
 		}
 	}
-	if err := commonExecution.UpdateWithEvent(context.Background(), s.db, lease, fields, commonExecution.EventInput{Kind: "progress", Counters: counters}); err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
+			var current commonExecution.TaskExecution
+			if err := tx.Select("source", "metadata").Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&current).Error; err != nil {
+				return err
+			}
+			if current.Source == commonClient.MetaScanSourceManagerMosaicProducedTarget {
+				metadata = metadata.Clone()
+				metadata["produced_target"] = current.Metadata["produced_target"]
+				fields["metadata"] = metadata
+			}
+		}
+		return commonExecution.UpdateWithEvent(context.Background(), tx, lease, fields, commonExecution.EventInput{Kind: "progress", Counters: counters})
+	})
+	if err != nil {
 		s.log.Warn("更新执行进度失败", "execution_id", executionID, "error", err)
 	}
 }

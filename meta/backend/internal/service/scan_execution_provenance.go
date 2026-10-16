@@ -23,56 +23,72 @@ import (
 // Caller authentication is enforced at the HTTP boundary; this verifies durable
 // provenance and copies identity facts, never an execution authorization grant.
 func inheritProducedTargetActor(tx *gorm.DB, child *execution.TaskExecution, req *models.ScanRequest) error {
-	module, taskType := execution.ModuleDevelop, execution.TaskTypeWorkflow
-	if req.Source == commonclient.MetaScanSourceManagerMosaicProducedTarget {
-		module, taskType = execution.ModuleManager, execution.TaskTypeRasterMosaicGeneration
-	} else if req.Source != commonclient.MetaScanSourceDevelopProducedTarget && req.ParentExecutionID == "" {
+	if req.Source != commonclient.MetaScanSourceDevelopProducedTarget && req.Source != commonclient.MetaScanSourceManagerMosaicProducedTarget && req.ParentExecutionID == "" {
 		return nil
-	} else if req.Source != commonclient.MetaScanSourceDevelopProducedTarget {
-		return commonapi.ErrBadRequest
 	}
-	parentID, err := uuid.Parse(req.ParentExecutionID)
-	if err != nil || parentID == uuid.Nil {
-		return commonapi.ErrBadRequest
-	}
-	var parent execution.TaskExecution
-	err = tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
-		"tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ?",
-		child.TenantID, parentID.String(), module, taskType, execution.ExecutionStatusRunning,
-	).First(&parent).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return commonapi.ErrNotFound
-	}
+	parent, err := verifiedProducedTargetParent(tx, child.TenantID, req)
 	if err != nil {
 		return err
 	}
-	if parent.ActorPrincipalID == nil || *parent.ActorPrincipalID <= 0 ||
-		parent.ActorTenantMembershipID == nil || *parent.ActorTenantMembershipID <= 0 ||
-		parent.IssuedAuthorizationVersion == nil || *parent.IssuedAuthorizationVersion <= 0 ||
-		parent.TriggeredBy == nil || int64(*parent.TriggeredBy) != *parent.ActorPrincipalID {
-		return commonapi.ErrNotFound
-	}
-	if module == execution.ModuleManager {
-		now := time.Now().UTC()
-		if tx.Dialector.Name() == "postgres" {
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				return err
-			}
+	if req.Source == commonclient.MetaScanSourceManagerMosaicProducedTarget {
+		if child.Metadata == nil {
+			child.Metadata = map[string]interface{}{}
 		}
-		if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded || parent.Attempt <= 0 || parent.LeaseToken == nil || *parent.LeaseToken == "" || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseExpiresAt == nil || !parent.LeaseExpiresAt.After(now) || !matchesManagerMosaicProducedTarget(parent, req) {
-			return commonapi.ErrNotFound
-		}
-	} else if !matchesDevelopProducedTarget(parent, req) {
-		return commonapi.ErrNotFound
+		child.Metadata["produced_target"] = parent.Metadata["produced_target"]
 	}
 	principal, membership, version := *parent.ActorPrincipalID, *parent.ActorTenantMembershipID, *parent.IssuedAuthorizationVersion
-	triggeredBy, id := *parent.TriggeredBy, parentID.String()
+	triggeredBy, id := *parent.TriggeredBy, parent.ExecutionID
 	child.ParentExecutionID = &id
 	child.TriggeredBy = &triggeredBy
 	child.ActorPrincipalID = &principal
 	child.ActorTenantMembershipID = &membership
 	child.IssuedAuthorizationVersion = &version
 	return nil
+}
+
+// Caller holds the returned parent's shared lock until its transaction ends.
+func verifiedProducedTargetParent(tx *gorm.DB, tenantID int, req *models.ScanRequest) (*execution.TaskExecution, error) {
+	module, taskType := execution.ModuleDevelop, execution.TaskTypeWorkflow
+	if req.Source == commonclient.MetaScanSourceManagerMosaicProducedTarget {
+		module, taskType = execution.ModuleManager, execution.TaskTypeRasterMosaicGeneration
+	} else if req.Source != commonclient.MetaScanSourceDevelopProducedTarget {
+		return nil, commonapi.ErrBadRequest
+	}
+	parentID, err := uuid.Parse(req.ParentExecutionID)
+	if err != nil || parentID == uuid.Nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	var parent execution.TaskExecution
+	err = tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
+		"tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ?",
+		tenantID, parentID.String(), module, taskType, execution.ExecutionStatusRunning,
+	).First(&parent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, commonapi.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if parent.ActorPrincipalID == nil || *parent.ActorPrincipalID <= 0 ||
+		parent.ActorTenantMembershipID == nil || *parent.ActorTenantMembershipID <= 0 ||
+		parent.IssuedAuthorizationVersion == nil || *parent.IssuedAuthorizationVersion <= 0 ||
+		parent.TriggeredBy == nil || int64(*parent.TriggeredBy) != *parent.ActorPrincipalID {
+		return nil, commonapi.ErrNotFound
+	}
+	if module == execution.ModuleManager {
+		now := time.Now().UTC()
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+				return nil, err
+			}
+		}
+		if parent.ExecutionBoundary != execution.ExecutionBoundaryBounded || parent.Attempt <= 0 || parent.LeaseToken == nil || *parent.LeaseToken == "" || parent.LeaseOwner == nil || *parent.LeaseOwner == "" || parent.LeaseExpiresAt == nil || !parent.LeaseExpiresAt.After(now) || !matchesManagerMosaicProducedTarget(parent, req) {
+			return nil, commonapi.ErrNotFound
+		}
+	} else if !matchesDevelopProducedTarget(parent, req) {
+		return nil, commonapi.ErrNotFound
+	}
+	return &parent, nil
 }
 
 func matchesManagerMosaicProducedTarget(parent execution.TaskExecution, req *models.ScanRequest) bool {

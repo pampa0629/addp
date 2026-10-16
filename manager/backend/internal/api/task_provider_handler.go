@@ -649,7 +649,7 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 
 // ProviderTaskExecute 执行 TaskProvider Manager 任务。
 // @Summary 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
-// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time.
 // @Tags TaskProvider
 // @Accept json
 // @Produce json
@@ -1635,7 +1635,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 
 // TaskExecute POST /api/v1/manager/tasks/:task_type/:id/execute
 // @Summary 执行任务 | Execute task
-// @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。| Trigger a task immediately as the current user; machine parent execution context is not accepted.
+// @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。raster_mosaic_generation 等待精确 Meta 扫描完成及 whole 身份登记后才成功，耗时包含扫描；失败保留产物和扫描关联，不自动重放。| Trigger a task as the current user without machine parent context. raster_mosaic_generation succeeds after the exact Meta scan and whole item registration, including scan time; failures retain files and scan association without automatic replay.
 // @Tags Manager
 // @Accept json
 // @Produce json
