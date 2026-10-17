@@ -5,6 +5,7 @@ import * as Vue from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { parse } from '@vue/compiler-sfc'
 import { compile } from '@vue/compiler-dom'
+import { executionFailurePresentation } from '../../../common-frontend/basic/src/utils/executionFailure.mjs'
 
 const source = readFileSync(new URL('../src/views/ExecutionDetail.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
@@ -38,7 +39,7 @@ async function renderExecution(execution, language) {
 test('execution detail delegates the exact safe API contract to the sole shared failure panel', async () => {
   for (const language of ['zh-cn', 'en']) {
     const details = { category: 'execution_failed', code: 'data_protection_required', diagnostic: {
-      schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'data_protection_required'
+      schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required'
     } }
     const { html, failureProps } = await renderExecution({ execution_id: 'fixture', status: 'failed', error_details: details,
       error_msg: 'private-sentinel<script>alert(1)</script>' }, language)
@@ -67,5 +68,24 @@ test('professional diagnostics have no worker identity, lease or fencing control
     for (const key of ['workerInstance', 'fencingToken', 'heartbeatAt', 'leaseUntil']) {
       assert.equal(messages.transfer.executionDetail[key], undefined)
     }
+  }
+})
+
+test('real shared failure template renders localized write position and target warning', async () => {
+  const component = parse(readFileSync(new URL('../../../common-frontend/basic/src/components/ExecutionFailure.vue', import.meta.url), 'utf8')).descriptor
+  const compiled = compile(component.template.content, { mode: 'function', prefixIdentifiers: true })
+  const sharedRender = new Function('Vue', compiled.code)(Vue)
+  for (const language of ['zh-cn', 'en']) {
+    const messages = JSON.parse(readFileSync(new URL(`../../../common-frontend/basic/src/i18n/${language}.json`, import.meta.url), 'utf8'))
+    const t = (key, params = {}) => key.split('.').reduce((value, part) => value?.[part], messages)?.replace(/\{(\w+)\}/g, (_, key) => params[key])
+    const details = { diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason: 'json_invalid',
+      write: { column_index: 3, declared_type: 'json' }, target_change_possible: true }, message: 'private-value SELECT password' }
+    const presentation = executionFailurePresentation(details, t)
+    const app = Vue.createSSRApp({ render: sharedRender, setup: () => ({ t, presentation, failed: true,
+      fallbackMessage: '', executionId: 'fixture-execution', showMonitorLink: false, ownerRoute: '', copyDetails: () => {} }) })
+    app.component('ElButton', { setup: (_, { slots }) => () => Vue.h('button', slots.default?.()) })
+    const html = await renderToString(app)
+    for (const expected of [presentation.reason, presentation.write, presentation.targetWarning, 'fixture-execution']) assert.ok(html.includes(expected), expected)
+    assert.doesNotMatch(html, /private-value|SELECT|password/)
   }
 })

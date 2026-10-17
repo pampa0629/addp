@@ -100,6 +100,7 @@ func transferExecutionSourceModule(c *gin.Context) (string, bool) {
 
 // GetExecution 获取执行记录详情
 // @Summary 获取执行详情 | Get execution detail
+// @Description 写入失败沿 error_details.diagnostic v3 返回受控原因；可确定时含 write.column_index（本次写入列的 1 起始序号）和 declared_type。target_change_possible=true 提示目标数据或表结构可能已改变；缺失该字段不证明无副作用。不返回原始错误或业务值。| Write failures use controlled diagnostic v3 reasons, with write.column_index (1-based actual write column) and declared_type when proven. target_change_possible=true warns that target data or structure may have changed; omission is not proof of no effects. Raw errors and business values are excluded.
 // @Description 第一方或普通 OAuth User；当前租户 transfer/sync 的任务历史（含已删除定义），无定义执行仅发起人可读。返回声明的专业诊断事实，不包含原始配置、checkpoint 或任意 metadata。| First-party or ordinary OAuth Users may read tenant transfer/sync task history, including deleted definitions, and their own ad-hoc executions. Only declared professional diagnostic facts are returned; raw configuration, checkpoints and arbitrary metadata are excluded.
 // @Tags 执行管理 | Execution Management
 // @Produce json

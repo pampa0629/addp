@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	commonPlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
@@ -687,6 +688,64 @@ func TestBoundedCompletionRetainsTypedLineageFailureWithoutPrivateText(t *testin
 				t.Fatal("private text leaked")
 			}
 		})
+	}
+}
+
+func TestBoundedWriteFailurePersistsSafeDiagnosticAndTargetRisk(t *testing.T) {
+	for _, code := range []commonPlugin.TableWriteErrorCode{commonPlugin.TableWriteJSONInvalid, commonPlugin.TableWriteFailed} {
+		t.Run(string(code), func(t *testing.T) {
+			db := newExecutionServiceTestDB(t)
+			task := createExecutionServiceTestTask(t, db)
+			item := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+			if err := db.Model(&task).Updates(map[string]interface{}{"last_execution_id": item.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusRunning}).Error; err != nil {
+				t.Fatal(err)
+			}
+			svc := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+			bindExecutionServiceTestLease(t, db, svc, &item)
+			cause := errors.New("private driver value SELECT password=credential")
+			err := commonPlugin.NewTableWriteError(code, cause)
+			err = commonPlugin.WithTableWriteField(err, 3, datatype.FieldTypeJSON)
+			err = fmt.Errorf("execute: %w", errors.Join(err, executor.ErrTargetMayHaveChanged))
+			if err := svc.FinishIfRunning(context.Background(), uint(item.ID), err); err != nil {
+				t.Fatal(err)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.First(&stored, item.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			observed := commonExecution.Observe(&stored)
+			diagnostic, ok := observed.ErrorDetails["diagnostic"].(*commonExecution.FailureDiagnostic)
+			if !ok || diagnostic.Reason != string(code) || diagnostic.TargetChangePossible == nil || !*diagnostic.TargetChangePossible {
+				t.Fatalf("lost write facts: %#v", observed.ErrorDetails)
+			}
+			if code == commonPlugin.TableWriteJSONInvalid && (diagnostic.Write == nil || diagnostic.Write.ColumnIndex != 3) {
+				t.Fatal("lost write field")
+			}
+			if code == commonPlugin.TableWriteFailed && diagnostic.Write != nil {
+				t.Fatal("guessed native failure column")
+			}
+			encoded, _ := json.Marshal(observed.ErrorDetails)
+			if strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "password") {
+				t.Fatalf("leaked private evidence: %s", encoded)
+			}
+		})
+	}
+}
+
+func TestTargetRiskDoesNotInventWriteColumnOrEraseProtectionBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		cause         error
+		stage, reason string
+	}{
+		{errors.New("private json_invalid column 3 permission denied"), "execution", "execution_failed"},
+		{executor.ErrProtectionResult, "result", "data_protection_required"},
+	} {
+		details, changed := finishErrorDetails(nil, models.ExecutionStatusFailed, errors.Join(tc.cause, executor.ErrTargetMayHaveChanged))
+		observed := commonExecution.Observe(&commonExecution.TaskExecution{Status: "failed", ErrorDetails: details})
+		diagnostic, ok := observed.ErrorDetails["diagnostic"].(*commonExecution.FailureDiagnostic)
+		if !changed || !ok || diagnostic.Stage != tc.stage || diagnostic.Reason != tc.reason || diagnostic.Write != nil || diagnostic.TargetChangePossible == nil || !*diagnostic.TargetChangePossible {
+			t.Fatalf("wrong boundary or guessed column: %#v", diagnostic)
+		}
 	}
 }
 

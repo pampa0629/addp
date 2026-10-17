@@ -388,6 +388,14 @@ var diagnosticCode = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]{0,79}$`)
 // bodies, so tenant diagnostics never echo them. Detailed domain evidence stays
 // behind the Owner's result/diagnostic authorization.
 func FailureCategory(details models.JSONMap) string {
+	// A proven write cause must not be reclassified by private driver/encoder
+	// prose (which can itself contain user-controlled text).
+	if diagnostic := projectFailureDiagnostic(details["diagnostic"]); diagnostic != nil {
+		switch diagnostic.Reason {
+		case "json_invalid", "array_invalid", "bytes_invalid", "table_write_failed":
+			return "execution_failed"
+		}
+	}
 	text := strings.ToLower(fmt.Sprint(details["code"], " ", details["error_code"], " ", details["message"]))
 	for _, rule := range []struct {
 		category string

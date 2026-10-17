@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 )
 
 // TableWriteFieldTypes snapshots declared field types for a write operation.
@@ -48,11 +49,11 @@ func EncodeTableWriteValue(value interface{}, fieldType datatype.FieldType) (int
 		var err error
 		encoded, err = json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("encode JSON value: %w", err)
+			return nil, plugin.NewTableWriteError(plugin.TableWriteJSONInvalid, fmt.Errorf("encode JSON value: %w", err))
 		}
 	}
 	if !json.Valid(encoded) {
-		return nil, fmt.Errorf("invalid encoded JSON value (%T)", value)
+		return nil, plugin.NewTableWriteError(plugin.TableWriteJSONInvalid, fmt.Errorf("invalid encoded JSON value (%T)", value))
 	}
 	return string(encoded), nil
 }

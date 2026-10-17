@@ -199,10 +199,10 @@ func clickhouseTableWriteArgs(ctx context.Context, columns []string, fieldTypes 
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		for _, column := range columns {
+		for columnIndex, column := range columns {
 			value, err := pluginshared.EncodeTableWriteValue(row[column], fieldTypes[column])
 			if err != nil {
-				return nil, fmt.Errorf("encode clickhouse row %d field %q: %w", rowIndex, column, err)
+				return nil, fmt.Errorf("encode clickhouse row %d field %q: %w", rowIndex, column, plugin.WithTableWriteField(err, columnIndex+1, fieldTypes[column]))
 			}
 			// The native SQL driver binds []byte as Array(UInt8), but our bytes
 			// columns use binary String storage. Preserve the original bytes.
@@ -244,6 +244,7 @@ func (s *clickhouseTableWriteSession) WriteBatch(ctx context.Context, batch *plu
 	// session terminal and prevent Close from publishing a success marker.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -292,7 +293,7 @@ func (s *clickhouseTableWriteSession) Close(ctx context.Context) error {
 		s.writeErr = ctx.Err()
 	}
 	// Closing the connection cannot undo earlier autocommitted chunks.
-	s.writeErr = errors.Join(s.writeErr, s.abort())
+	s.writeErr = plugin.NewTableWriteError(plugin.TableWriteFailed, errors.Join(s.writeErr, s.abort()))
 	if s.writeErr != nil {
 		return s.writeErr
 	}

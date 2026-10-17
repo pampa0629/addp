@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
 )
 
@@ -17,7 +18,7 @@ func postgresWriteRow(row map[string]interface{}, columns []string, fieldTypes m
 	for i, column := range columns {
 		value, err := ProtocolTableWriteValue(row[column], fieldTypes[column])
 		if err != nil {
-			return nil, fmt.Errorf("postgresql write column %q: %w", column, err)
+			return nil, fmt.Errorf("postgresql write column %q: %w", column, plugin.WithTableWriteField(err, i+1, fieldTypes[column]))
 		}
 		values[i] = value
 	}
@@ -39,7 +40,8 @@ func ProtocolTableWriteValue(value interface{}, fieldType datatype.FieldType) (i
 		}
 	}
 	if fieldType == datatype.FieldTypeArray {
-		return postgresArrayWriteValue(value)
+		encoded, err := postgresArrayWriteValue(value)
+		return encoded, plugin.NewTableWriteError(plugin.TableWriteArrayInvalid, err)
 	}
 	if isPostgresGeometryField(fieldType) {
 		if v, ok := value.([]byte); ok {

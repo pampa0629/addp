@@ -1343,7 +1343,7 @@ def validate_develop_protection_refusal(execution: Mapping[str, object], stage: 
     metadata = _object(execution.get("metadata") or {}, "denied Develop metadata")
     details = _object(execution.get("error_details"), "Develop protection diagnostics")
     diagnostic = _object(details.get("diagnostic"), "Develop protection diagnostic")
-    expected = {"schema_version": "addp.execution-failure/v2", "stage": stage, "reason": "data_protection_required"}
+    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": "data_protection_required"}
     if (execution.get("status") != "failed" or "result" in metadata
             or details.get("code") != "develop.query.protection_required"
             or set(details) - {"category", "code", "diagnostic"} or diagnostic != expected):
@@ -1354,7 +1354,7 @@ def validate_develop_protection_refusal(execution: Mapping[str, object], stage: 
 
 def validate_transfer_protection_refusal(execution: Mapping[str, object], stage: str, code: str) -> dict[str, object]:
     details = _object(execution.get("error_details"), "Transfer protection diagnostics")
-    expected = {"schema_version": "addp.execution-failure/v2", "stage": stage, "reason": "data_protection_required"}
+    expected = {"schema_version": "addp.execution-failure/v3", "stage": stage, "reason": "data_protection_required"}
     if (execution.get("status") != "failed" or details.get("code") != code
             or set(details) - {"category", "code", "diagnostic"} or details.get("diagnostic") != expected):
         raise SuiteError("Transfer protection refusal must have the precise safe diagnostic")

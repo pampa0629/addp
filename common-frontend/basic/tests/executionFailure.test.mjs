@@ -20,7 +20,7 @@ test('failure diagnostics use only closed shared vocabulary in both languages', 
     }
   }
   const presentation = executionFailurePresentation({ code: 'develop.query.snapshot_invalid', message: 'secret runtime body',
-    diagnostic: { schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid' } }, key => key)
+    diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'validation', reason: 'query_template_invalid' } }, key => key)
   assert.equal(presentation.stage, 'common.executionFailure.stages.validation')
   assert.equal(presentation.reason, 'common.executionFailure.reasons.query_template_invalid')
   assert.equal(presentation.code, 'develop.query.snapshot_invalid')
@@ -29,8 +29,8 @@ test('failure diagnostics use only closed shared vocabulary in both languages', 
 
 test('unknown or free text diagnostics show explicit missing evidence without runtime text', () => {
   for (const diagnostic of [undefined, { schema_version: 'v2', stage: 'validation', reason: 'query_template_invalid' },
-    { schema_version: 'addp.execution-failure/v2', stage: 'secret', reason: 'query_failed' },
-    { schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid', message: 'business-secret' }]) {
+    { schema_version: 'addp.execution-failure/v3', stage: 'secret', reason: 'query_failed' },
+    { schema_version: 'addp.execution-failure/v3', stage: 'validation', reason: 'query_template_invalid', message: 'business-secret' }]) {
     const result = executionFailurePresentation({ diagnostic, category: 'unknown', code: 'secret-value', message: 'private' }, key => key)
     assert.equal(result.stage, '')
     assert.equal(result.reason, 'common.executionFailure.execution_failed')
@@ -48,7 +48,7 @@ test('existing orchestration failure categories retain their specific explanatio
 
 test('SQL failure facts accept only bounded identifiers and coordinates under the single current contract', () => {
   const translate = (key, params) => params ? `${key}:${JSON.stringify(params)}` : key
-  const base = { schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'table_not_found' }
+  const base = { schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'table_not_found' }
   const result = executionFailurePresentation({ diagnostic: { ...base, sql: { object: { kind: 'table', name: 'public.farmla1nd' }, position: { line: 2, column: 15 } } } }, translate)
   assert.match(result.object, /public.farmla1nd/)
   assert.match(result.position, /"line":2/)
@@ -69,6 +69,29 @@ test('query execution navigation works without a task definition and does not gu
   }
 })
 
+test('write diagnostics show only proven write column and independent target risk', () => {
+  const translate = (key, params) => params ? `${key}:${JSON.stringify(params)}` : key
+  const base = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason: 'json_invalid' }
+  const result = executionFailurePresentation({ diagnostic: { ...base, write: { column_index: 3, declared_type: 'json' }, target_change_possible: true }, message: 'private' }, translate)
+  assert.match(result.write, /"column_index":3/)
+  assert.equal(result.targetWarning, 'common.executionFailure.targetChangePossible')
+  assert.doesNotMatch(JSON.stringify(result), /private/)
+  for (const extra of [{ write: null }, { write: { column_index: 0, declared_type: 'json' } },
+    { write: { column_index: 65536, declared_type: 'json' } }, { write: { column_index: 1.5, declared_type: 'json' } },
+    { write: { column_index: 3, declared_type: 'bytes' } }, { write: { column_index: 3, declared_type: 'json', value: 'private' } },
+    { target_change_possible: false }, { target_change_possible: 'true' }, { target_change_possible: null },
+    { stage: 'validation', target_change_possible: true }, { schema_version: 'addp.execution-failure/v2' }]) {
+    const invalid = executionFailurePresentation({ diagnostic: { ...base, ...extra } }, translate)
+    assert.equal(invalid.write, '')
+    assert.equal(invalid.targetWarning, '')
+    assert.equal(invalid.stage, '')
+  }
+  const native = executionFailurePresentation({ diagnostic: { ...base, reason: 'table_write_failed', target_change_possible: true } }, translate)
+  assert.equal(native.write, '')
+  assert.ok(native.targetWarning)
+  assert.equal(executionFailurePresentation({ diagnostic: base }, translate).targetWarning, '')
+})
+
 test('shared ExecutionFailure is the sole failure panel for Workbench, Owner and Monitor', () => {
   for (const path of ['../../../develop/frontend/src/components/QueryResult.vue', '../../../develop/frontend/src/views/ExecutionDetail.vue', '../../../monitor/frontend/src/views/ExecutionList.vue']) {
     const source = read(path)
@@ -87,7 +110,7 @@ test('protection refusals remain distinct from data permissions without exposing
   for (const stage of ['preparation', 'result']) {
     const presentation = executionFailurePresentation({ code: 'develop.query.protection_required',
       category: 'permission_denied', message: 'private-value SELECT phone',
-      diagnostic: { schema_version: 'addp.execution-failure/v2', stage, reason: 'data_protection_required' }
+      diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason: 'data_protection_required' }
     }, key => key)
     assert.equal(presentation.stage, `common.executionFailure.stages.${stage}`)
     assert.equal(presentation.reason, 'common.executionFailure.reasons.data_protection_required')

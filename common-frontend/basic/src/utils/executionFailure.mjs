@@ -5,6 +5,7 @@ export const failureReasons = Object.freeze([
   'engine_unavailable', 'engine_mismatch', 'query_syntax_invalid', 'column_not_found',
   'table_not_found', 'ambiguous_column', 'function_or_operator_not_found', 'division_by_zero',
   'type_mismatch', 'permission_denied', 'connection_failed',
+  'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required'
 ])
 
@@ -14,10 +15,13 @@ const failureCategories = new Set(['permission_denied', 'timeout', 'cancelled', 
 
 export function executionFailurePresentation(details, translate) {
   const diagnostic = details?.diagnostic
-  const controlled = diagnostic?.schema_version === 'addp.execution-failure/v2'
-    && Object.keys(diagnostic).every(key => ['schema_version', 'stage', 'reason', 'sql'].includes(key))
+  const controlled = diagnostic?.schema_version === 'addp.execution-failure/v3'
+    && Object.keys(diagnostic).every(key => ['schema_version', 'stage', 'reason', 'sql', 'write', 'target_change_possible'].includes(key))
     && failureStages.includes(diagnostic.stage) && failureReasons.includes(diagnostic.reason)
     && validSQLContext(diagnostic.sql, diagnostic.reason)
+    && validWriteContext(diagnostic)
+    && (diagnostic.target_change_possible === undefined || diagnostic.target_change_possible === true
+      && ['preparation', 'execution', 'result'].includes(diagnostic.stage))
   const category = failureCategories.has(details?.category) ? details.category : 'execution_failed'
   const rawCode = details?.code || details?.error_code || ''
   const code = typeof rawCode === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(rawCode) && !/secret/i.test(rawCode) ? rawCode : ''
@@ -28,8 +32,20 @@ export function executionFailurePresentation(details, translate) {
     stage: controlled ? translate(`common.executionFailure.stages.${diagnostic.stage}`) : '',
     reason: translate(controlled ? `common.executionFailure.reasons.${diagnostic.reason}` : `common.executionFailure.${category}`),
     action: translate(controlled ? `common.executionFailure.actions.${diagnostic.reason}` : 'common.executionFailure.unrecordedAction'),
-    code, object, position
+    code, object, position,
+    write: controlled && diagnostic.write ? translate('common.executionFailure.writeColumn', diagnostic.write) : '',
+    targetWarning: controlled && diagnostic.target_change_possible === true ? translate('common.executionFailure.targetChangePossible') : ''
   }
+}
+
+function validWriteContext(diagnostic) {
+  const write = diagnostic.write
+  if (write === undefined) return true
+  const types = { json_invalid: 'json', array_invalid: 'array', bytes_invalid: 'bytes' }
+  return write !== null && typeof write === 'object' && !Array.isArray(write)
+    && Object.keys(write).length === 2 && diagnostic.sql === undefined && diagnostic.stage === 'execution'
+    && Number.isInteger(write.column_index) && write.column_index >= 1 && write.column_index <= 65535
+    && Object.hasOwn(types, diagnostic.reason) && write.declared_type === types[diagnostic.reason]
 }
 
 function validSQLContext(sql, reason) {

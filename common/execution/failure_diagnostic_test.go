@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
@@ -65,15 +67,16 @@ func TestFailureDiagnosticSurvivesPersistenceWithoutRuntimeText(t *testing.T) {
 func TestFailureDiagnosticRejectsUnknownContractAndFreeText(t *testing.T) {
 	for _, raw := range []string{
 		`{"schema_version":"addp.execution-failure/v1","stage":"validation","reason":"query_template_invalid"}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"SELECT secret","reason":"query_template_invalid"}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"validation","reason":"password=secret"}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"validation","reason":"query_template_invalid","message":"business-secret"}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"validation"}`,
+		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"table_write_failed"}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"SELECT secret","reason":"query_template_invalid"}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"validation","reason":"password=secret"}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"validation","reason":"query_template_invalid","message":"business-secret"}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"validation"}`,
 		`"arbitrary runtime body"`, `null`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"table","name":"private"}}}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":0}}}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"column","name":"a","message":"private"}}}`,
-		`{"schema_version":"addp.execution-failure/v2","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":1},"SourceDigest":"private"}}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"table","name":"private"}}}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":0}}}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"column_not_found","sql":{"object":{"kind":"column","name":"a","message":"private"}}}`,
+		`{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"column_not_found","sql":{"position":{"line":1,"column":1},"SourceDigest":"private"}}`,
 	} {
 		var value interface{}
 		if err := json.Unmarshal([]byte(raw), &value); err != nil {
@@ -82,6 +85,49 @@ func TestFailureDiagnosticRejectsUnknownContractAndFreeText(t *testing.T) {
 		observed := execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"diagnostic": value}})
 		if observed.ErrorDetails["diagnostic"] != nil {
 			t.Fatalf("accepted unsafe contract: %s", raw)
+		}
+	}
+}
+
+func TestWriteFailureObservationRoundTripAndClosedContext(t *testing.T) {
+	possible := true
+	diagnostic := execution.NewFailureDiagnostic("execution", "json_invalid")
+	diagnostic.Write = &plugin.TableWriteField{ColumnIndex: 3, DeclaredType: datatype.FieldTypeJSON}
+	diagnostic.TargetChangePossible = &possible
+	payload, _ := json.Marshal(diagnostic)
+	var value interface{}
+	if err := json.Unmarshal(payload, &value); err != nil {
+		t.Fatal(err)
+	}
+	observed := execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"diagnostic": value, "message": "permission denied private SELECT password=secret"}})
+	if observed.ErrorDetails["category"] != "execution_failed" {
+		t.Fatal("private text overrode the proven write cause")
+	}
+	encoded, _ := json.Marshal(observed.ErrorDetails)
+	for _, want := range []string{`"column_index":3`, `"declared_type":"json"`, `"target_change_possible":true`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("missing safe fact %s: %s", want, encoded)
+		}
+	}
+	if strings.Contains(string(encoded), "private") {
+		t.Fatal("raw evidence leaked")
+	}
+	for _, suffix := range []string{
+		`"write":{"column_index":0,"declared_type":"json"}`,
+		`"write":{"column_index":3,"declared_type":"bytes"}`,
+		`"write":{"column_index":3,"declared_type":"json","value":"private"}`,
+		`"write":{"column_index":3.5,"declared_type":"json"}`,
+		`"write":null`, `"target_change_possible":null`, `"target_change_possible":false`,
+		`"target_change_possible":"true"`,
+		`"write":{"column_index":3,"declared_type":"json"},"sql":{"position":{"line":1,"column":1}}`,
+	} {
+		raw := `{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"json_invalid",` + suffix + `}`
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			t.Fatal(err)
+		}
+		observed := execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"diagnostic": value}})
+		if observed.ErrorDetails["diagnostic"] != nil {
+			t.Fatalf("accepted unsafe context %s", raw)
 		}
 	}
 }

@@ -130,6 +130,7 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 	// them so Close cannot commit a partial batch or a preceding replacement.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -153,7 +154,8 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 	return nil
 }
 
-func (s *postgresTableWriteSession) Close(ctx context.Context) error {
+func (s *postgresTableWriteSession) Close(ctx context.Context) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	if s.closed {
 		return s.writeErr
 	}

@@ -3,20 +3,24 @@ package execution
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
 
-const FailureDiagnosticSchemaVersion = "addp.execution-failure/v2"
+const FailureDiagnosticSchemaVersion = "addp.execution-failure/v3"
 
 // FailureDiagnostic contains only controlled vocabulary, never runtime text.
 // Owners choose the reason at the failing boundary. The shared UI owns the
 // corresponding localized explanation and action. Optional SQL facts contain
 // only provider-confirmed identifiers and an original-source location.
 type FailureDiagnostic struct {
-	SchemaVersion string                    `json:"schema_version"`
-	Stage         string                    `json:"stage"`
-	Reason        string                    `json:"reason"`
-	SQL           *commonquery.ErrorContext `json:"sql,omitempty"`
+	SchemaVersion        string                    `json:"schema_version"`
+	Stage                string                    `json:"stage"`
+	Reason               string                    `json:"reason"`
+	SQL                  *commonquery.ErrorContext `json:"sql,omitempty"`
+	Write                *plugin.TableWriteField   `json:"write,omitempty"`
+	TargetChangePossible *bool                     `json:"target_change_possible,omitempty"`
 }
 
 var failureStages = map[string]bool{
@@ -35,6 +39,8 @@ var failureReasons = map[string]bool{
 	"timeout": true, "cancelled": true, "resource_exhausted": true,
 	"query_failed": true, "result_invalid": true,
 	"database_required": true, "data_protection_required": true,
+	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
+	"table_write_failed": true, "execution_failed": true,
 }
 
 func NewFailureDiagnostic(stage, reason string) *FailureDiagnostic {
@@ -76,6 +82,15 @@ func validSQLFailureContext(diagnostic *FailureDiagnostic) bool {
 	return true
 }
 
+func validWriteFailureContext(diagnostic *FailureDiagnostic) bool {
+	if diagnostic.TargetChangePossible != nil && (!*diagnostic.TargetChangePossible ||
+		(diagnostic.Stage != "preparation" && diagnostic.Stage != "execution" && diagnostic.Stage != "result")) {
+		return false
+	}
+	return diagnostic.Write == nil || diagnostic.SQL == nil && diagnostic.Stage == "execution" &&
+		diagnostic.Write.Valid(plugin.TableWriteErrorCode(diagnostic.Reason))
+}
+
 func projectFailureDiagnostic(value interface{}) *FailureDiagnostic {
 	payload, err := json.Marshal(value)
 	if err != nil || len(payload) > 2048 {
@@ -87,8 +102,17 @@ func projectFailureDiagnostic(value interface{}) *FailureDiagnostic {
 	if decoder.Decode(&diagnostic) != nil || diagnostic.SchemaVersion != FailureDiagnosticSchemaVersion {
 		return nil
 	}
-	if NewFailureDiagnostic(diagnostic.Stage, diagnostic.Reason) == nil || !validSQLFailureContext(&diagnostic) {
+	if NewFailureDiagnostic(diagnostic.Stage, diagnostic.Reason) == nil || !validSQLFailureContext(&diagnostic) || !validWriteFailureContext(&diagnostic) {
 		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(payload, &fields) != nil {
+		return nil
+	}
+	for _, name := range []string{"sql", "write", "target_change_possible"} {
+		if value, ok := fields[name]; ok && bytes.Equal(value, []byte("null")) {
+			return nil
+		}
 	}
 	return &diagnostic
 }

@@ -94,7 +94,7 @@ WRITE_FAILURE_CASES = ("late_execute_failure", "invalid_json")
 WRITE_FAILURE_ENGINES = ("doris", "clickhouse")
 
 
-def validate_write_failure_execution(execution, task_id):
+def validate_write_failure_execution(execution, task_id, scenario=None):
     assert_transfer_execution_projection(execution)
     identifier = execution.get("execution_id")
     if not isinstance(identifier, str) or len(identifier) != 36:
@@ -111,6 +111,13 @@ def validate_write_failure_execution(execution, task_id):
     failure = _object(execution.get("error_details"), "write failure details")
     if failure.get("category") != "execution_failed" or not execution.get("end_time"):
         raise SuiteError("write failure must expose a safe failure category and terminal time")
+    diagnostic = _object(failure.get("diagnostic"), "write failure diagnostic")
+    expected_reason = "json_invalid" if scenario == "invalid_json" else "table_write_failed"
+    if diagnostic.get("stage") != "execution" or diagnostic.get("reason") != expected_reason or diagnostic.get("target_change_possible") is not True or failure.get("code") != expected_reason:
+        raise SuiteError("write failure lost its controlled cause or target risk")
+    expected_write = {"column_index": 2, "declared_type": "json"} if scenario == "invalid_json" else None
+    if diagnostic.get("write") != expected_write:
+        raise SuiteError("write failure lost the actual write column or guessed a native failure column")
     if execution.get("metadata", {}).get("metadata_scan"):
         raise SuiteError("write failure unexpectedly triggered metadata scanning")
     return {"task_id": task_id, "execution_id": identifier, "status": "failed", "records_written": 0, "error_details": failure}
@@ -162,7 +169,7 @@ def run_write_failures(client, source_engine_id, name, timeout, owned_ids):
             source = find_item(client, source_engine_id, "public." + source_table, "table")
             task = write_failure_task(name + "_" + engine + "_" + scenario, SUPPORT.build_item_locator(source_engine_id, source), source_table, engine_id, scenario)
             task_id, execution = SUPPORT.create_and_run_task(client, task, time.monotonic() + timeout, owned_ids, expected_status="failed")
-            report[engine]["cases"][scenario] = validate_write_failure_execution(execution, task_id)
+            report[engine]["cases"][scenario] = validate_write_failure_execution(execution, task_id, scenario)
         if client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload != before:
             raise SuiteError("failed writes unexpectedly produced target metadata")
     repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
@@ -265,9 +272,16 @@ def assert_transfer_execution_projection(execution):
     fields(execution, "id execution_id task_id status start_time end_time records_read records_written bytes_read bytes_written error_details metadata trigger_type trigger_by", "Transfer execution")
     failure = fields(execution.get("error_details", {}), "category code error_code failed_targets_count diagnostic", "Transfer failure")
     if "diagnostic" in failure:
-        diagnostic = fields(failure["diagnostic"], "schema_version stage reason sql", "Transfer failure diagnostic")
-        if diagnostic.get("schema_version") != "addp.execution-failure/v2":
+        diagnostic = fields(failure["diagnostic"], "schema_version stage reason sql write target_change_possible", "Transfer failure diagnostic")
+        if diagnostic.get("schema_version") != "addp.execution-failure/v3":
             raise SuiteError("Transfer failure diagnostic uses an unknown contract")
+        if "write" in diagnostic:
+            write = fields(diagnostic["write"], "column_index declared_type", "Transfer failure write context")
+            expected = {"json_invalid": "json", "array_invalid": "array", "bytes_invalid": "bytes"}
+            if type(write.get("column_index")) is not int or not 1 <= write["column_index"] <= 65535 or diagnostic.get("reason") not in expected or write.get("declared_type") != expected[diagnostic["reason"]] or "sql" in diagnostic or diagnostic.get("stage") != "execution":
+                raise SuiteError("Transfer failure write context is invalid")
+        if "target_change_possible" in diagnostic and (diagnostic["target_change_possible"] is not True or diagnostic.get("stage") not in {"preparation", "execution", "result"}):
+            raise SuiteError("Transfer target risk is invalid")
         if "sql" in diagnostic:
             sql = fields(diagnostic["sql"], "object position", "Transfer failure SQL context")
             if "object" in sql:

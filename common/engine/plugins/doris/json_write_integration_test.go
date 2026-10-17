@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"strings"
@@ -156,6 +157,11 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != len(cases) {
 					t.Fatalf("failed batch changed committed rows: count=%d want=%d err=%v", count, len(cases), err)
 				}
+				var typed *plugin.TableWriteError
+				if !errors.As(writeErr, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost structured JSON column: %#v error=%v", typed, writeErr)
+				}
+
 				if writeErr == nil || !strings.Contains(writeErr.Error(), `row 1000 field "document"`) {
 					t.Fatalf("invalid %T expected row/field error, got %v", invalid, writeErr)
 				}

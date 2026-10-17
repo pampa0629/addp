@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -75,6 +76,17 @@ func AutoCommitSessionFailures(t *testing.T, setup func(*testing.T) (plugin.Tabl
 				firstErr = session.WriteBatch(ctx, &plugin.BatchData{Rows: rows})
 				if firstErr == nil {
 					t.Fatal("expected write failure")
+				}
+				var typed *plugin.TableWriteError
+				if !errors.As(firstErr, &typed) {
+					t.Fatalf("lost typed table write failure: %v", firstErr)
+				}
+				if scenario == "invalid_json" {
+					if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+						t.Fatalf("lost proven JSON column: %#v", typed)
+					}
+				} else if typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+					t.Fatalf("native failure guessed a column: %#v", typed)
 				}
 				if scenario == "late_execute_failure" && !strings.Contains(firstErr.Error(), "rows 1000-1001") {
 					t.Fatalf("failure did not reach later chunk: %v", firstErr)

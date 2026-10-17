@@ -537,6 +537,7 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 	}
 	if execErr != nil {
 		next["message"] = execErr.Error()
+		delete(next, "diagnostic")
 		if errors.Is(execErr, commonPlugin.ErrQueryOutputLineageUnresolved) {
 			next["code"] = "query_output_lineage_unresolved"
 		}
@@ -555,6 +556,26 @@ func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionSt
 				next["code"] = "data_protection_required"
 			}
 			next["diagnostic"] = commonExecution.NewFailureDiagnostic(stage, "data_protection_required")
+		}
+		var writeError *commonPlugin.TableWriteError
+		if errors.As(execErr, &writeError) && writeError != nil && writeError.Code.Valid() {
+			if diagnostic := commonExecution.NewFailureDiagnostic("execution", string(writeError.Code)); diagnostic != nil {
+				if writeError.Field.Valid(writeError.Code) {
+					field := *writeError.Field
+					diagnostic.Write = &field
+				}
+				next["diagnostic"] = diagnostic
+				next["code"] = string(writeError.Code)
+			}
+		}
+		if errors.Is(execErr, executor.ErrTargetMayHaveChanged) {
+			diagnostic, _ := next["diagnostic"].(*commonExecution.FailureDiagnostic)
+			if diagnostic == nil {
+				diagnostic = commonExecution.NewFailureDiagnostic("execution", "execution_failed")
+			}
+			possible := true
+			diagnostic.TargetChangePossible = &possible
+			next["diagnostic"] = diagnostic
 		}
 		return next, true
 	}

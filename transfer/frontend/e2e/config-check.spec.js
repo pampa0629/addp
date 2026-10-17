@@ -248,7 +248,7 @@ for (const language of ['zh-cn', 'en']) {
     const path = new URL(route.request().url()).pathname
     if (route.request().method()==='GET' && path===`/api/v1/transfer/executions/${id}`) return route.fulfill({json:{
      execution_id:id, task_id:900001, status:'failed', execution_boundary:'bounded', records_read:0,records_written:0,
-     error_details:{category:'execution_failed',code:'data_protection_required',diagnostic:{schema_version:'addp.execution-failure/v2',stage,reason:'data_protection_required'},message:'private-sentinel'},
+     error_details:{category:'execution_failed',code:'data_protection_required',diagnostic:{schema_version:'addp.execution-failure/v3',stage,reason:'data_protection_required'},message:'private-sentinel'},
      error_msg:'private-sentinel'
     }})
     if (route.request().method()==='GET' && path===`/api/v1/transfer/executions/${id}/events`) return route.fulfill({json:{items:[],has_more:false,next_cursor:0,retained_after:'2026-01-01T00:00:00Z'}})
@@ -263,6 +263,46 @@ for (const language of ['zh-cn', 'en']) {
    await expect(panel).toContainText(id)
    await expect(page.locator('body')).not.toContainText('private-sentinel')
    await expect(page.getByRole('link', {name:language==='en'?'View error details in Monitor':'查看监控错误详情'})).toHaveCount(0)
+   expect(unexpected).toEqual([])
+  })
+ }
+}
+
+for (const language of ['zh-cn', 'en']) {
+ for (const reason of ['json_invalid', 'table_write_failed']) {
+  test(`write failure keeps field proof and target warning in ${language}: ${reason}`, async ({ page, context }) => {
+   const id = '11111111-1111-4111-8111-111111111111'
+   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), language)
+   await page.setViewportSize({ width: 390, height: 844 })
+   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+   const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, target_change_possible: true,
+    ...(reason === 'json_invalid' ? { write: { column_index: 3, declared_type: 'json' } } : {}) }
+   const unexpected = []
+   await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() === 'GET' && path === `/api/v1/transfer/executions/${id}`) return route.fulfill({ json: {
+     execution_id: id, task_id: 900001, status: 'failed', records_written: 0,
+     error_details: { category: 'execution_failed', code: reason, diagnostic, message: 'private-sentinel' }
+    } })
+    if (route.request().method() === 'GET' && path === `/api/v1/transfer/executions/${id}/events`) return route.fulfill({ json: { items: [], has_more: false, next_cursor: 0, retained_after: '2026-01-01T00:00:00Z' } })
+    unexpected.push(path); return route.abort('blockedbyclient')
+   })
+   await page.goto('/e2e/fixtures/config-check.html?execution=1')
+   const panel = page.locator('.execution-failure')
+   await expect(panel).toBeVisible()
+   const warning = language === 'en' ? 'Target data or table structure may have changed.' : '目标数据或表结构可能已改变'
+   await expect(panel).toContainText(warning)
+   if (reason === 'json_invalid') await expect(panel).toContainText(language === 'en' ? 'Write column 3' : '本次写入第 3 列')
+   else await expect(panel).not.toContainText(language === 'en' ? 'Write column 3' : '本次写入第 3 列')
+   await expect(page.locator('body')).not.toContainText('private-sentinel')
+   const box = await panel.boundingBox()
+   expect(box.x + box.width).toBeLessThanOrEqual(390)
+   await panel.getByRole('button', { name: language === 'en' ? 'Copy diagnostics' : '复制诊断' }).click()
+   const copied = await page.evaluate(() => navigator.clipboard.readText())
+   expect(copied).toContain(warning)
+   expect(copied).toContain(id)
+   expect(copied).not.toContain('private-sentinel')
+   if (reason === 'json_invalid') expect(copied).toContain(language === 'en' ? 'Write column 3' : '本次写入第 3 列')
    expect(unexpected).toEqual([])
   })
  }

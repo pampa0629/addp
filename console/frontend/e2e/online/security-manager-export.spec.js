@@ -161,7 +161,7 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
   expect(denied.metadata || {}).not.toHaveProperty('result')
   expect(Object.keys(denied.error_details).sort()).toEqual(['category', 'code', 'diagnostic'])
   expect(denied.error_details.code).toBe('develop.query.protection_required')
-  expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2',
+  expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3',
     stage: 'preparation', reason: 'data_protection_required' })
   const executionPath = `/api/v1/develop/executions/${denied.execution_id}`
   const currentAPI = await navigate(`/develop/executions/${denied.execution_id}`, executionPath)
@@ -280,7 +280,7 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
     expect(Object.keys(details).sort()).toEqual(['category', 'code', 'diagnostic'])
     expect(details.category).toBe('execution_failed')
     expect(details.code).toBe('data_protection_required')
-    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2', stage: 'result', reason: 'data_protection_required' })
+    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'result', reason: 'data_protection_required' })
     expect(Number(denied.records_written)).toBe(0)
     expect(Number(denied.bytes_written)).toBe(0)
     expect(await synchronized()).toEqual(installed)
@@ -432,7 +432,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const details = denied.error_details
     expect(Object.keys(details).every(key => ['category', 'code', 'diagnostic'].includes(key))).toBe(true)
     expect(details.code).toBe('data_protection_required')
-    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'data_protection_required' })
+    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required' })
     expect(Number(denied.records_written || 0)).toBe(0)
     expect(Number(denied.bytes_written || 0)).toBe(0)
     expect(await targetRows()).toEqual(before)

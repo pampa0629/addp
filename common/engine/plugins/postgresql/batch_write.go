@@ -16,7 +16,8 @@ import (
 const postgresDefaultInsertChunkSize = 1000
 const postgresMaxBindParams = 65535
 
-func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) error {
+func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.BatchWriteOptions) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

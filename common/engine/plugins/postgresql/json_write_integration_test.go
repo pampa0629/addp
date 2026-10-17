@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -131,10 +132,33 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), `column "caredOutdoors"`) {
 					t.Fatalf("invalid %T: %v", bad, err)
 				}
+				var typed *plugin.TableWriteError
+				// Upsert has no batch.Fields here: its actual SQL column order
+				// comes from sorted keys of these three input columns.
+				columnIndex := 3
+				if method == "upsert" {
+					columnIndex = 1
+				}
+				if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != columnIndex || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost structured JSON field in %s: %#v error=%v", method, typed, err)
+				}
+
 				var count int
 				if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil || count != len(cases) {
 					t.Fatalf("failed write changed rows: count=%d error=%v", count, err)
 				}
+			}
+			// This is valid JSON syntax but JSONB cannot store U+0000. Preserve
+			// the actual PostgreSQL error rather than guessing an encoding column.
+			err := write([]map[string]interface{}{{"id": 2000, "label": "database rejection", "caredOutdoors": `"\u0000"`}})
+			var typed *plugin.TableWriteError
+			var native *pq.Error
+			if !errors.As(err, &typed) || typed.Code != plugin.TableWriteFailed || typed.Field != nil || !errors.As(err, &native) || native.Code == "" {
+				t.Fatalf("lost native SQLSTATE or invented a column in %s: %v", method, err)
+			}
+			var count int
+			if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count); err != nil || count != len(cases) {
+				t.Fatalf("native rejection changed rows: count=%d error=%v", count, err)
 			}
 		})
 	}

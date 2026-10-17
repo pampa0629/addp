@@ -181,7 +181,8 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 
 // GetExecutionTreeByExecutionID 获取执行记录树
 // @Summary 按 execution_id 获取执行记录树 | Get execution tree by execution_id
-// @Description 失败诊断 error_details.diagnostic 使用 schema_version=addp.execution-failure/v2、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置；历史未记录当前契约时省略。| Failure error_details.diagnostic uses schema_version=addp.execution-failure/v2 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions; omitted when the current contract was not recorded.
+// @Description 表写入可附带 write.column_index（1 起始写入列序号）、declared_type 和 target_change_possible=true；风险缺失不表示没有副作用，不包含列值或原始驱动正文。| Table writes may include write.column_index (1-based write column), declared_type and target_change_possible=true; absent risk does not prove no effects. Column values and raw driver text are excluded.
+// @Description 失败诊断 error_details.diagnostic 使用 schema_version=addp.execution-failure/v3、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置；历史未记录当前契约时省略。| Failure error_details.diagnostic uses schema_version=addp.execution-failure/v3 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions; omitted when the current contract was not recorded.
 // @Tags Monitor
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"

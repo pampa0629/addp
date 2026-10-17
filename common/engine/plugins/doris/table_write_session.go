@@ -205,17 +205,17 @@ func dorisTableWriteArgs(ctx context.Context, columns []string, fieldTypes map[s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		for _, column := range columns {
+		for columnIndex, column := range columns {
 			value, err := pluginshared.EncodeTableWriteValue(row[column], fieldTypes[column])
 			if err != nil {
-				return nil, fmt.Errorf("encode doris row %d field %q: %w", rowIndex, column, err)
+				return nil, fmt.Errorf("encode doris row %d field %q: %w", rowIndex, column, plugin.WithTableWriteField(err, columnIndex+1, fieldTypes[column]))
 			}
 			// Doris rejects the MySQL driver's _binary literal. Bind ASCII hex
 			// and let UNHEX restore bytes without any character conversion.
 			if fieldTypes[column] == datatype.FieldTypeBytes && value != nil {
 				binary, ok := value.([]byte)
 				if !ok {
-					return nil, fmt.Errorf("encode doris row %d field %q: bytes requires []byte, got %T", rowIndex, column, value)
+					return nil, plugin.WithTableWriteField(plugin.NewTableWriteError(plugin.TableWriteBytesInvalid, fmt.Errorf("encode doris row %d field %q: bytes requires []byte, got %T", rowIndex, column, value)), columnIndex+1, fieldTypes[column])
 				}
 				if binary == nil {
 					value = nil
@@ -254,6 +254,7 @@ func (s *dorisTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 	// session terminal and prevent Close from publishing a success marker.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -301,7 +302,7 @@ func (s *dorisTableWriteSession) Close(ctx context.Context) error {
 		s.writeErr = ctx.Err()
 	}
 	// Closing the connection cannot undo earlier autocommitted chunks.
-	s.writeErr = errors.Join(s.writeErr, s.abort())
+	s.writeErr = plugin.NewTableWriteError(plugin.TableWriteFailed, errors.Join(s.writeErr, s.abort()))
 	if s.writeErr != nil {
 		return s.writeErr
 	}

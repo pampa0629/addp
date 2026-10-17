@@ -23,9 +23,11 @@ SPEC.loader.exec_module(ONLINE)
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     @staticmethod
-    def write_failure_execution():
+    def write_failure_execution(scenario=None):
         return {"task_id": 10, "execution_id": str(uuid.uuid4()), "status": "failed", "records_read": 0, "records_written": 0,
-                "end_time": "2026-10-16T00:00:01Z", "error_details": {"category": "execution_failed"}, "metadata": {}}
+                "end_time": "2026-10-16T00:00:01Z", "error_details": {"category": "execution_failed", "code": "json_invalid" if scenario == "invalid_json" else "table_write_failed", "diagnostic": {
+                    "schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "json_invalid" if scenario == "invalid_json" else "table_write_failed", "target_change_possible": True,
+                    **({"write": {"column_index": 2, "declared_type": "json"}} if scenario == "invalid_json" else {})}}, "metadata": {}}
 
     @staticmethod
     def write_failure_physical():
@@ -42,6 +44,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                      lambda p: p.update(checkpoint_state={"commit_marker": {}}),
                      lambda p: p["error_details"].update(message="private runtime text"),
                      lambda p: p["error_details"].update(category="permission_denied"),
+                     lambda p: p["error_details"].pop("diagnostic"),
+                     lambda p: p["error_details"]["diagnostic"].update(target_change_possible=False),
+                     lambda p: p["error_details"]["diagnostic"].update(write={"column_index": 2, "declared_type": "json"}),
                      lambda p: p["metadata"].update(metadata_scan={"status": "pending"})]
         for mutate in mutations:
             changed = copy.deepcopy(execution); mutate(changed)
@@ -66,7 +71,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(task['config']['batch_size'], 1001)
             self.assertEqual(task['config']['target']['policy']['apply_mode'], 'append')
             self.assertIn('ORDER BY id', task['config']['source']['query']['statement'])
-            execution = self.write_failure_execution(); execution['task_id'] = 10 + len(executions)
+            execution = self.write_failure_execution('invalid_json' if 'invalid_json' in task['name'] else None); execution['task_id'] = 10 + len(executions)
             ids.append(execution['task_id']); executions.append(execution)
             return execution['task_id'], execution
         environment = {'ADDP_ONLINE_TEST_DORIS_ENGINE_ID': '8', 'ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID': '9'}
@@ -147,7 +152,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         identifier = str(uuid.uuid4())
         execution = {"execution_id": identifier, "status": "failed", "error_details": {
             "category": "execution_failed", "code": "data_protection_required", "diagnostic": {
-                "schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "data_protection_required"}}}
+                "schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "data_protection_required"}}}
         client = Mock()
         client.request.return_value.payload = execution
         with self.assertRaisesRegex(ONLINE.SuiteError, "transfer execution failed: data_protection_required"):
@@ -155,7 +160,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
 
     def test_failure_diagnostic_rejects_private_nested_facts(self):
         execution = {"error_details": {"category": "execution_failed", "code": "table_not_found", "diagnostic": {
-            "schema_version": "addp.execution-failure/v2", "stage": "preparation", "reason": "table_not_found",
+            "schema_version": "addp.execution-failure/v3", "stage": "preparation", "reason": "table_not_found",
             "sql": {"object": {"kind": "table", "name": "public.missing_table"}, "position": {"line": 1, "column": 15}}}}}
         ONLINE.assert_transfer_execution_projection(execution)
         for path, field in (((), "message"), (("diagnostic",), "runtime_error"),

@@ -74,7 +74,7 @@ const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
 test('shows the actual missing-table preparation failure with an actionable correction in the workbench', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code: 'table_not_found', diagnostic: {
-    schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'table_not_found',
+    schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'table_not_found',
     sql: { object: { kind: 'table', name: 'public.farmla1nd' }, position: { line: 1, column: 15 } }
   } } })
   await page.goto('/sql')
@@ -106,7 +106,7 @@ for (const [code, reason, explanation, action] of [
   ['sqlstate_22012', 'division_by_zero', '除零错误', 'NULLIF(除数, 0)']
 ]) test(`shows useful SQL execution guidance for ${reason}`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code,
-    diagnostic: { schema_version: 'addp.execution-failure/v2', stage: 'execution', reason } } })
+    diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason } } })
   await page.goto(`/executions/${EXECUTION_ID}`)
   const diagnostic = page.locator('.execution-failure')
   await expect(diagnostic).toContainText(explanation)
@@ -120,7 +120,7 @@ for (const [locale, explanation, action] of [
 ]) for (const stage of ['preparation', 'result']) test(`explains protection refusal in ${locale} at ${stage} without runtime values`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', locale, errorDetails: {
     category: 'execution_failed', code: 'develop.query.protection_required', message: 'private-value SELECT phone',
-    diagnostic: { schema_version: 'addp.execution-failure/v2', stage, reason: 'data_protection_required' }
+    diagnostic: { schema_version: 'addp.execution-failure/v3', stage, reason: 'data_protection_required' }
   } })
   await page.goto(`/executions/${EXECUTION_ID}`)
   const diagnostic = page.locator('.execution-failure')
@@ -137,7 +137,7 @@ for (const [locale, explanation, action] of [
 
 for (const embedded of [false, true]) test(`keeps the query draft and opens the same failure in a new Monitor tab (${embedded ? 'Console iframe' : 'standalone'})`, async ({ page }) => {
   const errorDetails = { category: 'execution_failed', code: 'develop.query.snapshot_invalid', diagnostic: {
-    schema_version: 'addp.execution-failure/v2', stage: 'validation', reason: 'query_template_invalid'
+    schema_version: 'addp.execution-failure/v3', stage: 'validation', reason: 'query_template_invalid'
   } }
   await installMockBackend(page, { resultKind: 'table', errorDetails })
   if (embedded) {

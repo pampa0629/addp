@@ -74,7 +74,8 @@ func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plug
 	return nil
 }
 
-func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+func (p *PostgreSQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

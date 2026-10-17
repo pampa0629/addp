@@ -719,7 +719,7 @@ async function verifyWriteFailureDetails(page, api, env) {
   const failures = JSON.parse(env.ADDP_ONLINE_TRANSFER_WRITE_FAILURES)
   expect(Object.keys(failures).sort()).toEqual(['clickhouse', 'doris'])
   const translations = JSON.parse(readFileSync(resolve(env.ADDP_ONLINE_REPOSITORY, 'common-frontend/basic/src/i18n/zh-cn.json'), 'utf8'))
-  const translate = key => key.split('.').reduce((value, part) => value?.[part], translations)
+  const translate = (key, params = {}) => key.split('.').reduce((value, part) => value?.[part], translations)?.replace(/\{(\w+)\}/g, (_, key) => params[key])
   let verified = 0
   for (const engine of ['doris', 'clickhouse']) {
     expect(Object.keys(failures[engine].cases).sort()).toEqual(['invalid_json', 'late_execute_failure'])
@@ -734,6 +734,10 @@ async function verifyWriteFailureDetails(page, api, env) {
       expect(execution.error_msg).toBeUndefined()
       expect(execution.error_details.message).toBeUndefined()
       expect(failures[engine].physical[scenario].rows).toBe(scenario === 'late_execute_failure' ? 1001 : 1)
+      expect(execution.error_details.diagnostic.target_change_possible).toBe(true)
+      expect(execution.error_details.diagnostic.reason).toBe(scenario === 'invalid_json' ? 'json_invalid' : 'table_write_failed')
+      if (scenario === 'invalid_json') expect(execution.error_details.diagnostic.write).toEqual({ column_index: 2, declared_type: 'json' })
+      else expect(execution.error_details.diagnostic.write).toBeUndefined()
       const presentation = executionFailurePresentation(execution.error_details, translate)
       expect(typeof presentation.reason).toBe('string')
       expect(presentation.reason.length).toBeGreaterThan(0)
@@ -744,6 +748,8 @@ async function verifyWriteFailureDetails(page, api, env) {
       await expect(alert).toBeVisible()
       await expect(alert.locator('h4')).toHaveText(presentation.reason)
       await expect(alert).toContainText(presentation.action)
+      await expect(alert).toContainText(presentation.targetWarning)
+      if (scenario === 'invalid_json') await expect(alert).toContainText(presentation.write)
       await expect(alert).toContainText(proof.execution_id)
       if (presentation.code) await expect(alert).toContainText(presentation.code)
       await expect(alert).not.toContainText('synthetic constraint failure')

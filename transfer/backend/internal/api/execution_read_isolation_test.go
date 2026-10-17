@@ -221,7 +221,7 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 			body := request(token, "/executions/"+ids["own"]+suffix, 200)
 			details, ok := body["error_details"].(map[string]interface{})
 			diagnostic, _ := details["diagnostic"].(map[string]interface{})
-			if !ok || diagnostic["schema_version"] != "addp.execution-failure/v2" || diagnostic["stage"] != "preparation" || diagnostic["reason"] != "data_protection_required" || details["category"] != "execution_failed" || details["code"] != "query_output_lineage_unresolved" {
+			if !ok || diagnostic["schema_version"] != "addp.execution-failure/v3" || diagnostic["stage"] != "preparation" || diagnostic["reason"] != "data_protection_required" || details["category"] != "execution_failed" || details["code"] != "query_output_lineage_unresolved" {
 				t.Fatalf("safe lineage diagnostic missing: %#v", body)
 			}
 		}

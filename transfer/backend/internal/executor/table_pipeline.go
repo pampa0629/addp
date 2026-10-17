@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -105,7 +106,11 @@ type TablePipeline struct {
 	GeometryBatchReprojecter GeometryBatchReprojectProvider
 }
 
-func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, error) {
+// ErrTargetMayHaveChanged records an entered native target mutation boundary.
+// It never asserts a committed row count or an unsuccessful rollback.
+var ErrTargetMayHaveChanged = errors.New("transfer target may have changed")
+
+func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetrics, execErr error) {
 	if p == nil {
 		return nil, fmt.Errorf("table pipeline cannot be nil")
 	}
@@ -114,6 +119,14 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}
 	if p.Target == nil {
 		return nil, fmt.Errorf("table pipeline requires target")
+	}
+	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
+		target.effectsPossible = false
+		defer func() {
+			if execErr != nil && target.effectsPossible {
+				execErr = errors.Join(execErr, ErrTargetMayHaveChanged)
+			}
+		}()
 	}
 	transforms, err := buildTableTransforms(p.Transforms, p.GeometryBatchReprojecter)
 	if err != nil {
@@ -833,6 +846,7 @@ func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (co
 }
 
 type nativeTableBatchTarget struct {
+	effectsPossible      bool
 	definitionChecker    engineplugin.TableWriteDefinitionChecker
 	deleter              *engineTargetResourceDeleter
 	preparer             engineplugin.TableWritePreparer
@@ -858,6 +872,7 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 		return nil, fmt.Errorf("managed existing table target must not delete the target")
 	}
 	if !t.managedExisting && t.deleter != nil {
+		t.effectsPossible = true
 		if err := t.deleter.DeleteTarget(ctx); err != nil {
 			return nil, fmt.Errorf("delete native table target before write: %w", err)
 		}
@@ -869,6 +884,9 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 	}
 	fields := tableInfoFields(tableInfo)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
+		if t.replace && !t.managedExisting {
+			t.effectsPossible = true
+		}
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
 			Method:       t.writeOptions.Method,
 			Fields:       fields,
@@ -879,18 +897,19 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
 		}
-		return &nativeTableSessionBatchWriter{session: session, fields: fields, spatialInfo: spatialInfo}, nil
+		return &nativeTableSessionBatchWriter{session: session, fields: fields, spatialInfo: spatialInfo, effectsPossible: &t.effectsPossible}, nil
 	}
 	if t.writer == nil {
 		return nil, fmt.Errorf("native table target requires batch writer")
 	}
 	return &nativeDirectBatchWriter{
-		writer:       t.writer,
-		connInfo:     t.connInfo,
-		path:         t.path,
-		writeOptions: t.writeOptions,
-		fields:       fields,
-		spatialInfo:  spatialInfo,
+		effectsPossible: &t.effectsPossible,
+		writer:          t.writer,
+		connInfo:        t.connInfo,
+		path:            t.path,
+		writeOptions:    t.writeOptions,
+		fields:          fields,
+		spatialInfo:     spatialInfo,
 	}, nil
 }
 
@@ -902,6 +921,7 @@ func (t *nativeTableBatchTarget) prepare(ctx context.Context, tableInfo *datatyp
 		Fields:      tableInfoFields(tableInfo),
 		SpatialInfo: spatialInfo.Clone(),
 	}
+	t.effectsPossible = true
 	if err := t.preparer.PrepareTableWrite(ctx, t.connInfo, t.path, opts); err != nil {
 		return fmt.Errorf("prepare native table write: %w", err)
 	}
@@ -909,12 +929,13 @@ func (t *nativeTableBatchTarget) prepare(ctx context.Context, tableInfo *datatyp
 }
 
 type nativeDirectBatchWriter struct {
-	writer       engineplugin.BatchWritableProvider
-	connInfo     engineplugin.ConnectionInfo
-	path         engineplugin.EngineCatalogPath
-	writeOptions engineplugin.BatchWriteOptions
-	fields       []datatype.FieldInfo
-	spatialInfo  *datatype.SpatialInfo
+	effectsPossible *bool
+	writer          engineplugin.BatchWritableProvider
+	connInfo        engineplugin.ConnectionInfo
+	path            engineplugin.EngineCatalogPath
+	writeOptions    engineplugin.BatchWriteOptions
+	fields          []datatype.FieldInfo
+	spatialInfo     *datatype.SpatialInfo
 }
 
 func (w *nativeDirectBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
@@ -922,6 +943,9 @@ func (w *nativeDirectBatchWriter) WriteBatch(ctx context.Context, batch *enginep
 		return nil
 	}
 	batch = batchWithTargetFields(batch, w.fields, w.spatialInfo)
+	if w.effectsPossible != nil {
+		*w.effectsPossible = true
+	}
 	if err := w.writer.WriteBatch(ctx, w.connInfo, w.path, batch, w.writeOptions); err != nil {
 		return fmt.Errorf("write native table batch at offset %d: %w", batch.Offset, err)
 	}
@@ -957,10 +981,11 @@ func batchWithTargetFields(batch *engineplugin.BatchData, fields []datatype.Fiel
 }
 
 type nativeTableSessionBatchWriter struct {
-	session     engineplugin.TableWriteSession
-	fields      []datatype.FieldInfo
-	spatialInfo *datatype.SpatialInfo
-	closed      bool
+	effectsPossible *bool
+	session         engineplugin.TableWriteSession
+	fields          []datatype.FieldInfo
+	spatialInfo     *datatype.SpatialInfo
+	closed          bool
 }
 
 func (w *nativeTableSessionBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
@@ -968,6 +993,9 @@ func (w *nativeTableSessionBatchWriter) WriteBatch(ctx context.Context, batch *e
 		return nil
 	}
 	batch = batchWithTargetFields(batch, w.fields, w.spatialInfo)
+	if w.effectsPossible != nil {
+		*w.effectsPossible = true
+	}
 	if err := w.session.WriteBatch(ctx, batch); err != nil {
 		_ = w.session.Abort(ctx)
 		w.closed = true

@@ -8,7 +8,7 @@ async function installBackend(page, { empty = false, unavailable = false, events
   if (queryFailure) {
     Object.assign(execution, { module: 'develop', task_type: 'query', source: 'develop', source_task_id: null, source_task_name: null, steps: [], error_details: {
       code: 'table_not_found', category: 'execution_failed', diagnostic: {
-        schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'table_not_found',
+        schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'table_not_found',
         sql: { object: { kind: 'table', name: 'public.farmla1nd' }, position: { line: 1, column: 15 } }
       }
     } })

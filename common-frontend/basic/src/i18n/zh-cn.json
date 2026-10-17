@@ -122,7 +122,12 @@
       "object": "错误对象",
       "position": "SQL 位置（执行时）",
       "sourcePosition": "第 {line} 行，第 {column} 列",
-      "objects": { "table": "数据表 {name}", "column": "字段 {name}", "function": "函数 {name}", "operator": "运算符 {name}" },
+      "objects": {
+        "table": "数据表 {name}",
+        "column": "字段 {name}",
+        "function": "函数 {name}",
+        "operator": "运算符 {name}"
+      },
       "action": "处理建议",
       "code": "错误码",
       "executionId": "执行 ID",
@@ -164,7 +169,12 @@
         "query_failed": "查询执行失败，尚未记录可展示的具体原因。",
         "result_invalid": "查询结果无法保存或不符合结果契约。",
         "database_required": "查询缺少数据库定位。",
-        "data_protection_required": "无法确认本次数据访问或结果满足数据保护要求，执行已被阻止。"
+        "data_protection_required": "无法确认本次数据访问或结果满足数据保护要求，执行已被阻止。",
+        "json_invalid": "JSON 值编码失败",
+        "array_invalid": "原生数组值编码失败",
+        "bytes_invalid": "二进制值编码失败",
+        "table_write_failed": "目标表写入失败",
+        "execution_failed": "执行失败，未记录具体原因"
       },
       "actions": {
         "configuration_missing": "重新发起执行；若仍失败，请联系管理员检查执行配置生成过程。",
@@ -191,8 +201,17 @@
         "query_failed": "复制诊断信息交给管理员，按执行 ID 排查；不要仅凭本提示修改查询。",
         "result_invalid": "复制诊断信息交给管理员检查结果处理过程。",
         "database_required": "在数据资源中选择目标数据库或集合后重新执行。",
-        "data_protection_required": "请核对当前账号的数据访问资格，并联系安全管理员检查保护规则、有效期和同步状态。"
-      }
+        "data_protection_required": "请核对当前账号的数据访问资格，并联系安全管理员检查保护规则、有效期和同步状态。",
+        "json_invalid": "核对目标列的 JSON 格式和输入类型。",
+        "array_invalid": "核对数组的元素类型、维度和格式。",
+        "bytes_invalid": "核对二进制列的输入是否为字节值。",
+        "table_write_failed": "核对目标约束、连接和写入权限，并根据执行编号排查。",
+        "execution_failed": "根据执行编号检查运行记录和相关资源状态。"
+      },
+      "write": "写入字段",
+      "writeColumn": "本次写入第 {column_index} 列（声明类型：{declared_type}）",
+      "targetState": "目标状态",
+      "targetChangePossible": "目标数据或表结构可能已改变；写入计数为 0 不表示没有副作用。请核对目标后再决定是否重试。"
     },
     "executionSteps": {
       "lastRecorded": "最后记录：{status}",
