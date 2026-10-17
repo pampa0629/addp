@@ -133,7 +133,16 @@ func (p Processor) Process(ctx context.Context, input input) (Result, error) {
 		if found && existing.ScannedDepth == models.ScannedDepthDeep &&
 			commonJSON.String(existing.Attributes, "item", "layout") == commonJSON.String(attrs, "item", "layout") {
 			preserved := metaattr.Normalize(existing.Attributes)
+			confirmedFormat := commonJSON.String(existing.Attributes, "item", "format")
+			confirmedType := commonJSON.String(existing.Attributes, "item", "data_type")
+			sameFormat := confirmedFormat != "" && confirmedFormat == commonJSON.String(attrs, "item", "format")
 			metaattr.MergeStandardAttributes(preserved, attrs)
+			// Basic rediscovery refreshes catalog facts, without reading the
+			// content that established the existing deep type. Suffix defaults
+			// must not replace that type while its deep facts are retained.
+			if sameFormat && confirmedType != "" {
+				metaattr.SetItem(preserved, "data_type", confirmedType)
+			}
 			attrs = preserved
 		}
 		metaitem.ApplyContainerSummary(attrs, input.Detected)

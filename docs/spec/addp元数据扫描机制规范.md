@@ -522,7 +522,7 @@ node 的 `scan_status` 表达最近一次覆盖该 node 范围的扫描过程状
 | `basic` | `basic`，但如果原来已是 `deep`，保持 `deep` |
 | `deep` | `deep` |
 
-同一内容布局下，Basic 重新发现资源时不能把已有 deep 状态降级。目录或完整 refs 重新裁决改变既有 item 的内容布局时，旧布局的 deep 状态及内容增强不证明新布局已完成 deep；按本次实际完成深度登记，后续 deep 补齐新布局事实。single 归并为 multi 时保留 primary 身份；whole 的身份仍由 scope 根范围决定。
+同一内容布局下，Basic 重新发现资源时不能把已有 deep 状态降级。 对相同格式、相同布局且已完成 deep 的文件型 item，basic 合并新的目录级存储事实时，应保留 deep 已确认的数据类型与增强事实，不能用扩展名默认的数据类型覆盖内容识别结果；这一保留不触发内容读取，也不把 basic 当成重新完成了 deep。目录或完整 refs 重新裁决改变既有 item 的内容布局时，旧布局的 deep 状态及内容增强不证明新布局已完成 deep；按本次实际完成深度登记，后续 deep 补齐新布局事实。single 归并为 multi 时保留 primary 身份；whole 的身份仍由 scope 根范围决定。
 
 ## 覆盖策略
 

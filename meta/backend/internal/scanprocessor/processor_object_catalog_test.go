@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanresource"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
@@ -77,6 +80,91 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	table := typeInfo["table"].(map[string]interface{})
 	if table["fields"] == nil {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
+	}
+}
+
+func TestBasicRediscoveryPreservesDeepJSONTableSemantics(t *testing.T) {
+	testBasicRediscoveryPreservesDeepJSONTableSemantics(t, openObjectCatalogProcessorTestDB(t))
+}
+
+func TestBasicRediscoveryPreservesDeepJSONTableSemanticsAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	t.Cleanup(func() { tx.Rollback() })
+	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}); err != nil {
+		t.Fatal(err)
+	}
+	testBasicRediscoveryPreservesDeepJSONTableSemantics(t, tx)
+}
+
+func testBasicRediscoveryPreservesDeepJSONTableSemantics(t *testing.T, db *gorm.DB) {
+	repo := metaRepo.NewScanRepository(db)
+	parent, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err = repo.EnsureObjectCatalogPrefixPath(1, 7, parent, "datasets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := scanresource.StorageResource{
+		RootName: "addp", Path: "datasets/orders.json", FullPath: "addp/datasets/orders.json",
+		SizeBytes: 64, Format: string(format.FormatJSON),
+		EngineCatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/orders.json"),
+	}
+	makeInput := func(depth string, reader plugin.ContentReadableProvider) input {
+		plan := scanresource.PlanObjectSingleItem(7, resource, resource.Path, "object")
+		return ObjectSingleInput(&commonModels.Engine{ID: 7, EngineType: "static"}, 1, 7, parent,
+			plan, resource, plan.Attributes, resource.Path, reader, nil, depth)
+	}
+	processor := New(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	initial, err := processor.Process(context.Background(), makeInput(models.ScannedDepthBasic, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial.Item.ScannedDepth != models.ScannedDepthBasic || commonJSON.String(initial.Item.Attributes, "item", "data_type") != string(datatype.Document) {
+		t.Fatal("an uninspected JSON file must not be promoted to a table by suffix")
+	}
+	deep, err := processor.Process(context.Background(), makeInput(models.ScannedDepthDeep,
+		staticObjectContentReader{content: "{\"id\":1,\"region\":\"east\",\"amount\":10}\n{\"id\":2,\"region\":\"west\",\"amount\":20}\n"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commonJSON.String(deep.Item.Attributes, "item", "data_type") != string(datatype.Table) {
+		t.Fatal("deep fixture must identify the JSON records as a table")
+	}
+	// A basic forced rediscovery has no content reader. It must update cheap
+	// catalog facts without replacing confirmed deep semantics by suffix defaults.
+	basic, err := processor.Process(context.Background(), makeInput(models.ScannedDepthBasic, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if basic.Item.ID != deep.Item.ID || basic.Item.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("basic rediscovery identity/depth: deep=(%d,%s,%#v) basic=(%d,%s,%#v)", deep.Item.ID, deep.Item.ScannedDepth, deep.Item.Attributes["item"], basic.Item.ID, basic.Item.ScannedDepth, basic.Item.Attributes["item"])
+	}
+	if commonJSON.String(basic.Item.Attributes, "item", "data_type") != string(datatype.Table) {
+		t.Fatalf("basic rediscovery lost confirmed JSON table semantics: %#v", basic.Item.Attributes["item"])
+	}
+	if fields := commonJSON.Section(basic.Item.Attributes, "type_info.table")["fields"]; fields == nil {
+		t.Fatal("basic rediscovery lost the deep table fields")
 	}
 }
 
