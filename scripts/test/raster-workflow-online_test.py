@@ -8,6 +8,13 @@ import urllib.parse
 m = importlib.import_module('scripts.test.raster-workflow-online')
 
 
+def terrain_contour_result():
+    return {'type':'FeatureCollection','crs':{'type':'name','properties':{'name':'urn:ogc:def:crs:EPSG::3857'}},
+        'features':[{'type':'Feature','properties':{'elevation':level},'geometry':{'type':'LineString',
+            'coordinates':[[x,255.5-(level-100000.5-x)/256] for x in (.5,159.5)]}}
+            for level in m.fixture.TERRAIN_CONTOUR_LEVELS]}
+
+
 def footprint_result(case_name):
     # Hand-written expected boundary for independent missing/transparent source cells.
     if case_name == 'footprint-diagonal':
@@ -104,6 +111,12 @@ class Client:
             overviews = key != 'r160_c160'
             item['attributes']['format_info']['tiff'] = {'profile': 'cog' if overviews else 'geotiff', 'is_tiled': True, 'has_overviews':overviews}
             self.targets[item_id] = item
+        for item_id,name in enumerate(m.fixture.TERRAIN_CASES,80):
+            item=copy.deepcopy(self.targets[21]);expected=m.fixture.terrain_expectation()
+            item.update(id=item_id,full_name='raster-target/'+name+'.cog.tif',fingerprint=name,size_bytes=1024)
+            item['attributes']['type_info']['media']={'width':160,'height':256}
+            item['attributes']['capabilities']['spatial']={'srid':3857,'extent':expected['extent']}
+            self.targets[item_id]=item
         self.context = {'principal': {'id': 7, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                         'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                             {'role_key': 'online.raster_workflow', 'permissions': sorted(m.EDITOR_PERMISSIONS)}]}}
@@ -146,7 +159,7 @@ class Client:
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
         elif method == 'POST' and path == '/api/v1/develop/executions':
             definition = body['content']['workflow_definition']
-            if definition['tasks'][-1]['id'] == 'analysis':
+            if definition['tasks'][-1]['id'] == 'analysis' or definition['tasks'][-1]['operator']=='raster_contour':
                 identifier = f'run-{len(self.executions) + 1}'
                 operator = definition['tasks'][-1]['operator']
                 if operator == 'raster_info':
@@ -162,6 +175,8 @@ class Client:
                 elif operator == 'validate_cog':
                     valid = 'to-cog.cog.tif' in definition['tasks'][0]['params']['locator']
                     final_result = {'valid': valid, 'warnings': [], 'errors': [] if valid else ['not tiled']}
+                elif operator == 'raster_contour':
+                    final_result = terrain_contour_result()
                 else:
                     case_name = next(name for name in m.fixture.ANALYSIS_CASES
                         if definition == m.analysis_workflow(definition['tasks'][0]['params']['locator'], name))
@@ -216,7 +231,7 @@ class Client:
             spatial = 'mosaic' in definition['tasks'][-1]['depends_on']
             case_name = definition['tasks'][-1]['params']['target_name'].removesuffix('.cog.tif')
             utility = case_name in m.fixture.UTILITY_CASES
-            expectation = m.fixture.utility_expectation() if utility else m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES else m.fixture.artifact_expectation(spatial)
+            expectation = m.fixture.utility_expectation() if utility else m.fixture.terrain_expectation() if case_name in m.fixture.TERRAIN_CASES else m.fixture.computed_expectation(case_name) if case_name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES + m.fixture.TERRAIN_CASES else m.fixture.artifact_expectation(spatial)
             metadata = {} if status == 'failed' else {
                 'outputs': {definition['tasks'][-1]['id']: {'resource': {'locator': target, 'type': 'object', 'write_mode': mode}}},
                 'lineage_facts': {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source} for source in sources],
@@ -227,7 +242,7 @@ class Client:
                                           **{key: value for key, value in expectation.items() if key not in ('valid_pixels', 'band_nodata')},
                                           'bands': [{'dtype': 'Float64', 'nodata_is_nan': expectation['band_nodata'] is None, 'nodata': expectation['band_nodata'],
                                                     **({'overviews': [[128, 128], [64, 64]] if case_name == 'build-overviews' else [[128, 128]]} if utility else {}),
-                                                    **({'color_interpretation': (['Gray', 'Undefined'] if case_name in m.fixture.UPDATE_CASES + m.fixture.AGGREGATE_MULTIBAND_CASES + m.fixture.MOSAIC_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in m.fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray'])[index], 'overviews': [[expectation['width']//2, expectation['height']//2]]} if case_name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES else {})}
+                                                    **({'color_interpretation': (['Gray', 'Undefined'] if case_name in m.fixture.UPDATE_CASES + m.fixture.AGGREGATE_MULTIBAND_CASES + m.fixture.MOSAIC_CASES else ['Gray', 'Undefined', 'Alpha'] if case_name in m.fixture.OUTSIDE_CASES else ['Red', 'Green', 'Blue'] if case_name == 'multiraster-rgb' else ['Gray'])[index], 'overviews': [[expectation['width']//2, expectation['height']//2]]} if case_name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES + m.fixture.TERRAIN_CASES else {})}
                                                     for index in range(expectation['band_count'])]},
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
@@ -263,6 +278,48 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_dem_append_keeps_original_scenes_and_checks_three_cogs_and_vector_preview(self):
+        report=self.run_scene()
+        self.assertEqual([c['case_name'] for c in report['terrain_cases']],list(m.fixture.TERRAIN_CASES)+['dem-contour'])
+        self.assertEqual([c['lineage']['source_item_id'] for c in report['terrain_cases'][:3]],[70]*3)
+        self.assertEqual(len(report['terrain_cases'][-1]['physical']['preserved_sha256']),45)
+        self.assertEqual(report['terrain_cases'][-1]['json_result'],terrain_contour_result())
+        definitions=[body['content']['workflow_definition'] for method,path,body in self.client.calls
+            if method=='POST' and path=='/api/v1/develop/executions'][-4:]
+        self.assertEqual([d['tasks'][1]['operator'] for d in definitions],['raster_slope','raster_aspect','raster_hillshade','raster_contour'])
+        self.assertTrue(all(d['tasks'][1]['params']['elevation_unit']=='metre' for d in definitions))
+
+    def test_dem_rejects_broken_baseline_source_prior_size_and_overview(self):
+        for fault in ('baseline','source','prior','size','overview','existing-dem'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                def physical(repo,env,action):
+                    result=self.physical(repo,env,action)
+                    if action=='prepare-terrain' and fault=='baseline':result['preserved_sha256'].pop('result.cog.tif')
+                    if action=='verify-dem-slope':
+                        if fault=='source':result['source_unchanged']=False
+                        if fault=='prior':result['preserved_sha256']['result.cog.tif']='changed'
+                        if fault=='size':result['terrain']['dem-slope']['size_bytes']=1024.
+                        if fault=='overview':result['terrain']['dem-slope']['overview_sizes']=[[1,1]]
+                    if action=='verify-dem-aspect' and fault=='existing-dem':result['terrain']['dem-slope']['sha256']='changed'
+                    return result
+                with self.assertRaises(m.SuiteError):self.run_scene(physical)
+
+    def test_dem_contour_rejects_wrong_level_geometry_grid_crs_and_publication(self):
+        good={'metadata':{'result':{'summary':{'has_result':True},'final_result':terrain_contour_result()}}}
+        for fault in ('level','geometry','grid','crs','publication','missing','nonfinite','extra-field'):
+            with self.subTest(fault=fault):
+                execution=copy.deepcopy(good);result=execution['metadata']['result']['final_result'];feature=result['features'][0]
+                if fault=='level':feature['properties']['elevation']=1
+                if fault=='geometry':feature['geometry']['type']='Polygon'
+                if fault=='grid':feature['geometry']['coordinates'][0][1]+=1
+                if fault=='crs':result['crs']['properties']['name']='EPSG:4326'
+                if fault=='publication':execution['outputs']={'resource':{}}
+                if fault=='missing':result['features'].pop()
+                if fault=='nonfinite':feature['geometry']['coordinates'][0][0]=float('nan')
+                if fault=='extra-field':feature['properties']['path']='/private/runtime'
+                with self.assertRaises(m.SuiteError):m.validate_terrain_contour(execution)
+
     def test_cross_engine_editor_binds_three_independent_sources_and_new_saved_task(self):
         report = self.run_scene()
         first, cross = report['mosaic_editor_cases']
@@ -450,8 +507,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]
         # 34 final single rasters plus the initial replaced raster, eight tile writes,
         # and six confirmed tiles across the three failed executions.
-        self.assertEqual(len(records), 49)
-        self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 44)
+        self.assertEqual(len(records), 52)
+        self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 47)
         for sizes in records:
             self.assertEqual(set(sizes), {'artifact_size_bytes', 'object_size_bytes', 'data_item_size_bytes'})
             self.assertTrue(all(type(value) is int and value > 0 for value in sizes.values()))
@@ -769,6 +826,15 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def physical(self, repo, env, action):
         self.physical_actions.append(action)
+        if action=='prepare-terrain' or action.startswith('verify-dem-'):
+            case=action.removeprefix('verify-')
+            count=0 if action=='prepare-terrain' else len(m.fixture.TERRAIN_CASES) if case=='dem-contour' else m.fixture.TERRAIN_CASES.index(case)+1
+            expected=m.fixture.terrain_expectation()
+            return {'source_unchanged':True,'preserved_sha256':{name:name for name in m.fixture.preterrain_target_names()},
+                'terrain':{name:{'case_name':name,'sha256':name,'size_bytes':1024,'source_unchanged':True,
+                    'cog_valid':True,'has_overviews':True,'overview_sizes':[[80,128]],
+                    'valid_pixels':expected['valid_pixels'],'invalid_pixels':160*256-expected['valid_pixels'],
+                    'color_interpretations':['Gray']} for name in m.fixture.TERRAIN_CASES[:count]}}
         if action.startswith('verify-mosaic-'):
             overlap = action.removeprefix('verify-mosaic-')
             return {'size_bytes': 1024, 'sha256': 'spatial-' + overlap, 'cog_valid': True, 'has_overviews': True, 'source_unchanged': True,
@@ -1018,7 +1084,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             {x['execution_id'] for x in report['tiling_replace_automatic_scan_runs']})
         definitions = [body['content']['workflow_definition'] for method, path, body in self.client.calls
             if method == 'POST' and path == '/api/v1/develop/executions']
-        params = next(d['tasks'][-1]['params'] for d in reversed(definitions) if d['tasks'][-1]['params']['target_name'] == 'tiles-basic')
+        params = next(d['tasks'][-1]['params'] for d in reversed(definitions) if d['tasks'][-1]['params'].get('target_name') == 'tiles-basic')
         self.assertEqual((params['write_mode'], params['compression'], params['target_name']), ('replace', 'NONE', 'tiles-basic'))
 
     def test_batch_replace_rejects_old_bytes_size_compression_sentinel_or_changed_prior_files(self):
@@ -1100,12 +1166,13 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         def converged_request(method, path, expected, body=None):
             if path.startswith('/api/v1/meta/lineage/graph'):
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(list(self.client.executions)[-1], 'tiles-basic-replace' if 'verify-tiles-replace' in self.physical_actions else 'tiles-basic-create')
+                if not any(action.startswith('verify-dem-') for action in self.physical_actions):
+                    self.assertEqual(list(self.client.executions)[-1], 'tiles-basic-replace' if 'verify-tiles-replace' in self.physical_actions else 'tiles-basic-create')
                 graphs.append(path)
             return request(method, path, expected, body)
 
         def browser(repo, env, evidence):
-            if evidence.get('result_kind') != 'json':
+            if evidence.get('result_kind') != 'json' and not evidence['case_name'].startswith('dem-'):
                 self.assertIn('verify-tiles', self.physical_actions)
                 self.assertEqual(list(self.client.executions)[-1], 'tiles-basic-replace' if evidence['case_name'].startswith('tiles-replace-') else 'tiles-basic-create')
             browsers.append(evidence['case_name'])
@@ -1115,9 +1182,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
             lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'},editor_runner=self.editor)
         self.assertEqual(report['result'], 'passed')
-        self.assertEqual(len(browsers), 67)
-        self.assertEqual(len(set(browsers)), 67)
-        self.assertEqual(len(graphs), 53)
+        self.assertEqual(len(browsers), 71)
+        self.assertEqual(len(set(browsers)), 71)
+        self.assertEqual(len(graphs), 56)
         self.assertEqual(report['browser']['case_name'], 'band-math')
         for case in report['tiling_cases']:
             self.assertTrue(case['lineage'])
@@ -1207,7 +1274,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES] + ['verify-' + m.fixture.MOSAIC_EDITOR_CASES[-1]] * len(m.fixture.FOOTPRINT_CASES) + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES] + ['verify-' + m.fixture.MOSAIC_EDITOR_CASES[-1]] * len(m.fixture.FOOTPRINT_CASES) + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace','prepare-terrain'] + ['verify-'+name for name in m.fixture.TERRAIN_CASES+('dem-contour',)])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -1234,7 +1301,8 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual({task['operator'] for definition in submitted for task in definition['tasks']}, {
             'raster_load', 'raster_save', 'raster_info', 'validate_cog', 'raster_to_cog', 'raster_build_overviews',
             'raster_reproject', 'raster_resample', 'raster_clip', 'raster_mosaic', 'raster_band_math',
-            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate', 'raster_footprint', 'raster_update', 'raster_tile', 'raster_save_tiles'})
+            'raster_statistics', 'raster_histogram', 'raster_align', 'raster_stack', 'raster_select_bands', 'raster_reclassify', 'raster_aggregate', 'raster_footprint', 'raster_update', 'raster_tile', 'raster_save_tiles',
+            'raster_slope','raster_aspect','raster_hillshade','raster_contour'})
         submitted = [definition for definition in submitted if any(
             task['params'].get('target_name') in {'build-overviews.cog.tif', 'to-cog.cog.tif'}
             for task in definition['tasks'])]

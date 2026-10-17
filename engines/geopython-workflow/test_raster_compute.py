@@ -20,6 +20,7 @@ from operators.raster_compute import (
     raster_align, raster_stack, raster_select_bands, raster_update,
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
     raster_tile, raster_save_tiles, raster_tiles_info,
+    raster_slope, raster_aspect, raster_hillshade, raster_contour,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -173,6 +174,247 @@ def create_raster(path, array, transform=(0, 1, 0, 4, 0, -1), crs='EPSG:4326', n
         band = ds.GetRasterBand(index); band.SetNoDataValue(nodata); band.WriteRaster(0, 0, values.shape[1], values.shape[0], values.astype(np.float64).tobytes(), buf_type=gdal.GDT_Float64)
     ds = None
     return path
+
+
+@pytest.mark.parametrize('east,north', [(1., 0.), (0., 1.), (-1., 0.), (0., -1.), (2., 3.), (0., 0.)])
+def test_dem_terrain_plane_independent_values_grid_edges_and_cog(tmp_path, east, north):
+    rows, columns = np.indices((9, 11))
+    elevations = 100 + east * (columns + .5) * 2 - north * (rows + .5) * 3
+    path = create_raster(tmp_path/'dem.tif', elevations, (600000,2,0,4000000,0,-3), 'EPSG:32617')
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    magnitude = math.hypot(east, north)
+    expected_slope = math.degrees(math.atan(magnitude))
+    expected_aspect = math.degrees(math.atan2(-east, -north)) % 360 if magnitude else math.nan
+    azimuth, altitude = 315., 45.
+    light = (math.sin(math.radians(azimuth)) * math.cos(math.radians(altitude)),
+             math.cos(math.radians(azimuth)) * math.cos(math.radians(altitude)), math.sin(math.radians(altitude)))
+    illumination = max(0., (-east*light[0] - north*light[1] + light[2]) / math.sqrt(1+magnitude*magnitude))
+    expected_hillshade = math.floor(1 + 254*illumination + .5)
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        for name, result, expected, tolerance in (
+            ('slope', raster_slope(source, 'metre'), expected_slope, 1e-5),
+            ('percent', raster_slope(source, 'metre', slope_unit='percent'), magnitude*100, 1e-4),
+            ('aspect', raster_aspect(source, 'metre'), expected_aspect, 1e-5),
+            ('shade', raster_hillshade(source, 'metre'), expected_hillshade, 0)):
+            dataset = gdal.Open(str(result.path))
+            actual = read_band_values(dataset.GetRasterBand(1))
+            assert dataset.GetGeoTransform() == (600000,2,0,4000000,0,-3)
+            assert dataset.GetSpatialRef().GetAuthorityCode(None) == '32617'
+            assert dataset.GetRasterBand(1).DataType == gdal.GDT_Float64
+            assert np.isnan(actual[[0,-1],:]).all() and np.isnan(actual[:,[0,-1]]).all()
+            np.testing.assert_allclose(actual[1:-1,1:-1], expected, atol=tolerance, rtol=0, equal_nan=True)
+            dataset = None
+            target = tmp_path/(name+'.cog.tif')
+            saved = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+            assert type(saved['size_bytes']) is int and saved['size_bytes'] == target.stat().st_size > 0
+            assert validate_cog(raster_load(source_plan(target)))['valid']
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('unit,factor', [('metre',1), ('foot',.3048), ('us_survey_foot',1200/3937)])
+@pytest.mark.parametrize('crs', ['EPSG:32617', 'EPSG:2277'])
+def test_dem_terrain_units_are_explicit_and_horizontal_units_come_from_crs(tmp_path, unit, factor, crs):
+    reference = osr.SpatialReference(crs)
+    horizontal = reference.GetLinearUnits()
+    rows, columns = np.indices((5,7))
+    values = (100 + columns*horizontal*2 + rows*horizontal*3) / factor
+    path = create_raster(tmp_path/'unit.tif', values, (10,2,0,30,0,-3), crs)
+    with raster_workspace():
+        raster = raster_load(source_plan(path))
+        result = raster_slope(raster, unit)
+        dataset = gdal.Open(str(result.path))
+        # GDAL's Horn implementation reads elevations as Float32 internally.
+        # The absolute tolerance covers that quantization after unit conversion.
+        np.testing.assert_allclose(read_band_values(dataset.GetRasterBand(1))[1:-1,1:-1], math.degrees(math.atan(math.sqrt(2))), atol=3e-4, rtol=0)
+        dataset = None
+
+
+@pytest.mark.parametrize('operation', [raster_slope, raster_aspect, raster_hillshade])
+@pytest.mark.parametrize('fault', ['nodata', 'mask', 'alpha', 'nan', 'inf', 'all-invalid'])
+def test_dem_terrain_validity_requires_all_nine_samples_and_keeps_partial_alpha(tmp_path, operation, fault):
+    rows, columns = np.indices((7,7)); values = columns.astype(float) + rows*2
+    alpha = np.full((7,7),128.)
+    if fault == 'nodata': values[3,3] = -9999
+    if fault == 'nan': values[3,3] = math.nan
+    if fault == 'inf': values[3,3] = math.inf
+    if fault == 'alpha': alpha[3,3] = 0
+    if fault == 'all-invalid': values[:] = -9999
+    path = create_raster(tmp_path/'holes.tif', np.stack([values,alpha]), (0,1,0,7,0,-1), 'EPSG:3857')
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault == 'mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask = np.full((7,7),255,np.uint8);mask[3,3]=0
+        ds.GetRasterBand(1).GetMaskBand().WriteRaster(0,0,7,7,mask.tobytes())
+    ds = None
+    with raster_workspace():
+        result = operation(raster_load(source_plan(path)), 'metre')
+        dataset = gdal.Open(str(result.path)); actual = read_band_values(dataset.GetRasterBand(1))
+        valid = np.zeros((7,7), bool);valid[1:-1,1:-1] = True;valid[2:5,2:5] = False
+        if fault == 'all-invalid': valid[:] = False
+        np.testing.assert_array_equal(np.isfinite(actual), valid)
+        dataset = None
+
+
+@pytest.mark.parametrize('fault', ['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','small'])
+def test_dem_terrain_rejects_ambiguous_input_before_gdal_computation(tmp_path, fault, monkeypatch):
+    transform = (0,1,0,5,0,-1)
+    crs = 'EPSG:4326' if fault=='geographic' else '' if fault=='missing-crs' else 'EPSG:3857'
+    if fault=='rotated': transform=(0,1,.2,5,0,-1)
+    if fault=='south-up': transform=(0,1,0,5,0,1)
+    if fault=='missing-grid': transform=None
+    path=create_raster(tmp_path/'bad.tif',np.ones((2,2) if fault=='small' else (5,5)),transform,crs)
+    ds=gdal.Open(str(path),gdal.GA_Update);b=ds.GetRasterBand(1)
+    if fault=='unit-conflict':b.SetUnitType('foot')
+    if fault=='unit-unknown':b.SetUnitType('fathom')
+    if fault=='scale':b.SetScale(2)
+    if fault=='offset':b.SetOffset(10)
+    if fault=='alpha':b.SetColorInterpretation(gdal.GCI_AlphaBand)
+    b=ds=None
+    monkeypatch.setattr(gdal,'DEMProcessing',lambda *a,**k:pytest.fail('invalid DEM reached GDAL terrain computation'))
+    with raster_workspace(),pytest.raises(ValueError):
+        raster_slope(raster_load(source_plan(path)), 'unknown' if fault=='unit' else 'metre', band=True if fault=='band' else 1)
+
+
+@pytest.mark.parametrize('kwargs', [{'azimuth':True},{'azimuth':360},{'azimuth':-1},{'altitude':0},{'altitude':91},{'altitude':math.nan}])
+def test_dem_hillshade_rejects_invalid_lighting(kwargs):
+    with pytest.raises(ValueError,match='hillshade'): raster_hillshade(None,'metre',**kwargs)
+
+
+@pytest.mark.parametrize('mode', ['interval','levels'])
+def test_dem_contour_plane_levels_metres_geometry_and_empty_result(tmp_path, mode):
+    rows,columns=np.indices((7,7))
+    path=create_raster(tmp_path/'contour.tif',(columns+.5)*2/.3048,(100,2,0,50,0,-3),'EPSG:3857')
+    before=hashlib.sha256(path.read_bytes()).hexdigest()
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        result=raster_contour(source,'foot',**({'interval':4} if mode=='interval' else {'levels':[4,8,12]}))
+        assert set(result.elevation)=={4,8,12}
+        assert str(result.elevation.dtype)=='float64' and result.crs.to_epsg()==3857
+        for row in result.itertuples():
+            assert row.geometry.geom_type=='LineString' and row.geometry.is_valid and not row.geometry.is_empty
+            assert all(abs(x-(100+row.elevation))<1e-5 for x,y in row.geometry.coords)
+        empty=raster_contour(source,'foot',levels=[1000.])
+        assert empty.empty and list(empty.columns)==['elevation','geometry'] and str(empty.elevation.dtype)=='float64'
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==before
+
+
+@pytest.mark.parametrize('kwargs', [{},{'interval':1,'levels':[1]},{'interval':0},{'interval':True},{'interval':math.inf},{'levels':[]},{'levels':[2,1]},{'levels':[1,1]},{'levels':[True]},{'levels':[math.nan]},{'levels':'1,2'}])
+def test_dem_contour_rejects_ambiguous_or_invalid_levels(kwargs):
+    with pytest.raises(ValueError,match='contour'): raster_contour(None,'metre',**kwargs)
+
+
+def test_dem_terrain_metadata_contract_is_discovered_without_private_paths():
+    catalog={item['id']:item for item in list_operators()}
+    for name in ('raster_slope','raster_aspect','raster_hillshade','raster_contour'):
+        spec=catalog[name]
+        assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+        assert spec['attributes']['resource_groups']==['raster']
+        params={param['name']:param for param in spec['parameters']}
+        assert params['input_raster']['param_type']=='input'
+        assert params['elevation_unit']['required'] is True
+        assert spec['output_ports'][0]['type']==('GeoDataFrame' if name=='raster_contour' else 'raster')
+        assert not {'path','access_plan','engine_id'} & params.keys()
+
+
+@pytest.mark.parametrize('operator', ['raster_slope','raster_aspect','raster_hillshade','raster_contour'])
+@pytest.mark.parametrize('invalid', [False,True])
+def test_dem_terrain_async_dag_saves_via_existing_ports_and_cleans_workspace(tmp_path,monkeypatch,operator,invalid):
+    import api_server
+    import workflow_engine
+    source=create_raster(tmp_path/'dem.tif',np.tile(np.arange(9,dtype=float),(9,1)),
+                         transform=(100,1,0,200,0,-1),crs='EPSG:3857')
+    before=source.read_bytes()
+    contour=operator=='raster_contour'
+    target=tmp_path/('contours.geojson' if contour else 'terrain.cog.tif')
+    params={'input_raster':{'$ref':'load'},'elevation_unit':'unknown' if invalid else 'metre'}
+    if contour:params['levels']=[2.,4.,6.]
+    save_params=({'input_df':{'$ref':'terrain'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}} if contour else
+                 {'input_raster':{'$ref':'terrain'},'access_plan':target_plan(target),'profile':'cog','blocksize':128})
+    tasks=[{'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+           {'id':'terrain','operator':operator,'depends_on':['load'],'params':params},
+           {'id':'save','operator':'save' if contour else 'raster_save','depends_on':['terrain'],'params':save_params}]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name==operator:paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},
+        'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and source.read_bytes()==before
+    if invalid:assert not target.exists()
+    elif contour:
+        import geopandas as gpd
+        saved=gpd.read_file(target)
+        assert set(saved.elevation)=={2,4,6} and saved.crs.to_epsg()==3857
+        assert set(saved.geometry.geom_type)=={'LineString'}
+    else:
+        result=json.loads(status['result'])
+        assert result['size_bytes']==target.stat().st_size>0
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+    assert client.post('/api/operators/'+operator+'/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('fault', ['mask','alpha','nan','all-invalid'])
+def test_dem_contour_selected_band_validity_and_no_fill(tmp_path,fault):
+    rows,columns=np.indices((7,7));values=columns.astype(float)+.5
+    alpha=np.full((7,7),128.)
+    if fault=='nan':values[:,3]=np.nan
+    if fault=='all-invalid':values[:]=np.nan
+    if fault=='alpha':alpha[:,3]=0
+    path=create_raster(tmp_path/'contour-holes.tif',np.stack([np.full((7,7),1000.),values,alpha]),
+        (100,1,0,200,0,-1),'EPSG:3857',nodata=math.nan)
+    dataset=gdal.Open(str(path),gdal.GA_Update);dataset.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):dataset.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full((7,7),255,np.uint8);mask[:,3]=0
+        dataset.GetRasterBand(2).GetMaskBand().WriteRaster(0,0,7,7,mask.tobytes())
+    dataset=None
+    with raster_workspace():
+        result=raster_contour(raster_load(source_plan(path)),'metre',band=2,levels=[2.,3.5,5.])
+        assert set(result.elevation)==(set() if fault=='all-invalid' else {2.,5.})
+        for row in result.itertuples():
+            assert all(abs(x-(100+row.elevation))<1e-5 for x,y in row.geometry.coords)
+
+
+def test_dem_terrain_bounded_normalization_keeps_cross_block_neighbors(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    rows,columns=np.indices((515,517));values=(columns+rows*2).astype(float)
+    values[511,511]=np.nan
+    path=create_raster(tmp_path/'block.tif',values,(0,1,0,515,0,-1),'EPSG:3857',nodata=math.nan)
+    original=compute._read_values;reads=[]
+    def bounded(band,x,y,width,height):
+        assert width<=512 and height<=512
+        reads.append((x,y,width,height))
+        return original(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',bounded)
+    with raster_workspace():
+        result=raster_slope(raster_load(source_plan(path)),'metre')
+        dataset=gdal.Open(str(result.path));actual=read_band_values(dataset.GetRasterBand(1))
+        valid=np.zeros(values.shape,bool);valid[1:-1,1:-1]=True;valid[510:513,510:513]=False
+        np.testing.assert_array_equal(np.isfinite(actual),valid)
+        np.testing.assert_allclose(actual[valid],math.degrees(math.atan(math.sqrt(5))),atol=1e-5)
+        dataset=None
+    assert any(x==512 or y==512 for x,y,w,h in reads)
+
+
+def test_dem_contour_gdal_failure_closes_vector_before_workspace_cleanup(tmp_path,monkeypatch):
+    path=create_raster(tmp_path/'failure.tif',np.arange(25,dtype=float).reshape(5,5),crs='EPSG:3857')
+    before=path.read_bytes()
+    def fail(*args,**kwargs):raise RuntimeError('injected contour failure')
+    monkeypatch.setattr(gdal,'ContourGenerateEx',fail)
+    with raster_workspace():
+        source=raster_load(source_plan(path));workspace=source.workspace
+        with pytest.raises(RuntimeError,match='injected contour failure'):raster_contour(source,'metre',interval=5)
+    assert not workspace.exists() and path.read_bytes()==before
 
 
 def aggregate_oracle(data, valid, factors, method):

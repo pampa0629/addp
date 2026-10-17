@@ -435,6 +435,7 @@
 | RasterTiles | 栅格切片集合 | 当前工作流执行内，由私有源栅格和像素切片网格定义的多片对象。 | 使用 `raster_tiles` 端口；按需生成，不能用 JSON 或跨 execution 对象伪造。仅用于计算与批量保存，不是公开数据类型、whole scope 数据项或通用 foreach。 |
 | RasterArtifact | 栅格成果 | 已保存到目标存储的栅格及其事实摘要。 | Develop 业务成果使用稳定 ResourceLocator；Manager 私有快显成果仍由 Manager 管理，不新增成果状态 owner。 |
 | RasterRef | 栅格引用 | 对栅格输入或成果的引用语义。 | 公开资源身份仍统一使用 ResourceLocator，不建立第二套身份或持久状态；临时摘要不能重建内部数据集。 |
+| DEM terrain analysis | DEM 基础地形分析 | 从显式声明高程单位的栅格数据波段计算坡度、坡向、地形晕渲或等值线。 | 首期仅接受有投影坐标系的北向无旋转网格；水平单位由 CRS 决定，高程单位由参数明确，不能从像元数值猜测。晕渲不表示三维场景，等值线不表示等值面。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
 | Engine Access Scope | 引擎访问范围 | Execution Authorization 中一个 Source Engine 与其允许 Execution Effect 集合组成的最小授权单元。 | 授权必须逐引擎保存和校验，不得把独立的 Engine ID 集合与 Effect 集合做笛卡尔积；例如跨引擎传输应分别表达源 `read` 和目标 `write`。 |
 | Internal Task Scope | 内部任务范围 | Execution Authorization 中绑定 owner 内部任务类型、资源修订、摘要与 generation 的不可变操作范围。 | 与 Engine Access Scope 互斥；不授予业务 Engine 访问权。首个消费者为 Ontology 语义投影，使用 Infra FalkorDB，不注册业务 Engine。 |

@@ -200,6 +200,67 @@ def physical(tmp_path):
         yield config
 
 
+@pytest.fixture
+def terrain_artifacts(physical,tmp_path):
+    from operators.raster_compute import (raster_workspace,raster_load,raster_slope,raster_aspect,
+        raster_hillshade,raster_build_overviews,raster_save)
+    for name in fixture.preterrain_target_names():
+        LocalMinio.objects['target','raster-target',name]=('earlier-'+name).encode()
+    baseline=fixture.worker('prepare-terrain',physical)
+    assert set(baseline['preserved_sha256'])==fixture.preterrain_target_names()
+    fixture.private_json(physical.with_name('raster-terrain-baseline.json'),baseline['preserved_sha256'])
+    source=tmp_path/'terrain-source.tif'
+    source.write_bytes(LocalMinio.objects['source','raster-source','mosaic-a.tif'])
+    for case,operation in zip(fixture.TERRAIN_CASES,(raster_slope,raster_aspect,raster_hillshade)):
+        output=tmp_path/(case+'.cog.tif')
+        with raster_workspace():
+            loaded=raster_load({'schema_version':'addp.workflow.access-plan/v1','source':{
+                'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(source)}}})
+            result=operation(loaded,'metre')
+            result=raster_build_overviews(result,[2],'nearest')
+            artifact=raster_save(result,{'schema_version':'addp.workflow.access-plan/v1','target':{
+                'kind':'file','format':'tiff','name':output.name,'write_mode':'create',
+                'access':{'method':'mounted_path','path':str(output)}}},profile='cog',blocksize=128)
+        assert artifact['size_bytes']==output.stat().st_size>0
+        LocalMinio.objects['target','raster-target',output.name]=output.read_bytes()
+        proof=fixture.worker('verify-'+case,physical)
+        assert proof['terrain'][case]['size_bytes']==artifact['size_bytes']
+    return physical
+
+
+def test_dem_hosted_physical_oracle_checks_all_pixels_pyramids_prior_and_sources(terrain_artifacts,tmp_path,monkeypatch):
+    evidence=fixture.worker('verify-dem-contour',terrain_artifacts)
+    assert evidence['source_unchanged'] and len(evidence['preserved_sha256'])==45
+    assert set(evidence['terrain'])==set(fixture.TERRAIN_CASES)
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene=importlib.import_module('scripts.test.raster-workflow-online')
+    from operators.raster_compute import raster_workspace,raster_load,raster_contour
+    source=tmp_path/'contour-source.tif';source.write_bytes(LocalMinio.objects['source','raster-source','mosaic-a.tif'])
+    with raster_workspace():
+        loaded=raster_load({'schema_version':'addp.workflow.access-plan/v1','source':{
+            'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(source)}}})
+        result=json.loads(raster_contour(loaded,'metre',levels=list(fixture.TERRAIN_CONTOUR_LEVELS)).to_json())
+    assert scene.validate_terrain_contour({'metadata':{'result':{'summary':{'has_result':True},'final_result':result}}})==result
+
+
+@pytest.mark.parametrize('fault',['pixel','overview','grid','source','prior','unexpected','missing'])
+def test_dem_hosted_oracle_rejects_corruption_and_preservation_faults(terrain_artifacts,tmp_path,fault):
+    if fault=='source':LocalMinio.objects['source','raster-source','mosaic-a.tif']+=b'changed'
+    elif fault=='prior':LocalMinio.objects['target','raster-target','result.cog.tif']+=b'changed'
+    elif fault=='unexpected':LocalMinio.objects['target','raster-target','extra.tif']=b'unexpected'
+    elif fault=='missing':del LocalMinio.objects['target','raster-target','dem-aspect.cog.tif']
+    else:
+        src=tmp_path/'correct.tif';src.write_bytes(LocalMinio.objects['target','raster-target','dem-slope.cog.tif'])
+        edit=tmp_path/'edit.tif';dataset=gdal.Translate(str(edit),str(src),format='GTiff',creationOptions=['COPY_SRC_OVERVIEWS=YES'])
+        if fault=='grid':dataset.SetGeoTransform((1,1,0,256,0,-1))
+        elif fault=='pixel':dataset.GetRasterBand(1).WriteRaster(50,50,1,1,struct.pack('<d',-5),buf_type=gdal.GDT_Float64)
+        else:dataset.GetRasterBand(1).GetOverview(0).WriteRaster(10,10,1,1,struct.pack('<d',-5),buf_type=gdal.GDT_Float64)
+        dataset=None
+        cog=tmp_path/'changed.cog.tif';dataset=gdal.Translate(str(cog),str(edit),format='COG',creationOptions=['BLOCKSIZE=128','OVERVIEWS=FORCE_USE_EXISTING']);dataset=None
+        LocalMinio.objects['target','raster-target','dem-slope.cog.tif']=cog.read_bytes()
+    with pytest.raises(fixture.FixtureError):fixture.worker('verify-dem-contour',terrain_artifacts)
+
+
 def target(tmp_path, factor=1, cog=True, crs=4326, corrupt=False, nodata=float('nan')):
     size = fixture.SIZE
     path = tmp_path / 'computed.tif'

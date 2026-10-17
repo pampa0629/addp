@@ -1147,6 +1147,139 @@ def raster_select_bands(input_raster, bands, color_model='multispectral'):
     return _raster(path)
 
 
+_ELEVATION_METRES = {'metre': 1., 'foot': .3048, 'us_survey_foot': 1200 / 3937}
+_ELEVATION_UNIT_NAMES = {'m': 'metre', 'meter': 'metre', 'metre': 'metre',
+                         'ft': 'foot', 'foot': 'foot', 'foot international': 'foot',
+                         'us survey foot': 'us_survey_foot', 'us_survey_foot': 'us_survey_foot'}
+
+
+def _dem_source(input_raster, elevation_unit, band, minimum_size):
+    dataset = _open(input_raster)
+    _, _, transform = _grid(dataset)
+    reference = _crs(dataset.GetProjection())
+    horizontal_metres = reference.GetLinearUnits()
+    if (not reference.IsProjected() or reference.IsCompound() or reference.GetAxesCount() != 2
+        or not math.isfinite(horizontal_metres) or horizontal_metres <= 0
+        or reference.GetLinearUnitsName().lower() in ('unknown', '')
+        or transform[1] <= 0 or transform[5] >= 0 or transform[2] != 0 or transform[4] != 0):
+        raise ValueError('DEM requires a projected north-up grid with known linear units; reproject explicitly')
+    if min(dataset.RasterXSize, dataset.RasterYSize) < minimum_size:
+        raise ValueError(f'DEM must be at least {minimum_size} by {minimum_size} pixels')
+    if not isinstance(elevation_unit, str) or elevation_unit not in _ELEVATION_METRES:
+        raise ValueError('elevation_unit must explicitly be metre, foot or us_survey_foot')
+    source_band = _band(dataset, band)
+    if source_band.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise ValueError('DEM elevation band cannot be alpha')
+    unit = source_band.GetUnitType().strip().lower()
+    if unit and _ELEVATION_UNIT_NAMES.get(unit) != elevation_unit:
+        raise ValueError('DEM band elevation unit is unknown or conflicts with elevation_unit')
+    if source_band.GetScale() not in (None, 1) or source_band.GetOffset() not in (None, 0):
+        raise ValueError('DEM encoded scale/offset must be applied before terrain analysis')
+    normalized = _numeric_output(dataset, 1)
+    destination = normalized.GetRasterBand(1)
+    destination.SetUnitType('metre')
+    valid_count = 0
+    for x, y, arrays, masks in _blocks(dataset, [band]):
+        with np.errstate(over='ignore', invalid='ignore'):
+            values = arrays[0] * _ELEVATION_METRES[elevation_unit]
+        if np.any(masks[0] & ~np.isfinite(values)):
+            raise ValueError('DEM elevation unit conversion overflow')
+        values[~masks[0]] = np.nan
+        valid_count += int(np.count_nonzero(masks[0]))
+        height, width = values.shape
+        destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
+    destination = source_band = None
+    normalized.FlushCache()
+    return normalized, horizontal_metres, valid_count
+
+
+def _terrain(input_raster, elevation_unit, band, processing, **options):
+    source, horizontal_metres, _ = _dem_source(input_raster, elevation_unit, band, 3)
+    raw = gdal.DEMProcessing(str(_path()), source, processing,
+        format='GTiff', creationOptions=['TILED=YES', 'COMPRESS=DEFLATE'],
+        alg='Horn', computeEdges=False, scale=horizontal_metres, **options)
+    if raw is None:
+        raise ValueError('GDAL terrain analysis failed')
+    output = _numeric_output(source, 1)
+    destination = output.GetRasterBand(1)
+    destination.SetUnitType('degree' if processing == 'aspect' else
+                            'percent' if options.get('slopeFormat') == 'percent' else
+                            'degree' if processing == 'slope' else '')
+    for x, y, arrays, masks in _blocks(raw, [1]):
+        values = arrays[0].copy()
+        values[~masks[0]] = np.nan
+        if processing == 'aspect':
+            # GDAL aspect uses pixel-axis gradients rather than map distances.
+            # Transform that direction into the projected grid so rectangular
+            # pixels have the same physical aspect as square pixels.
+            angle = np.radians(values)
+            transform = source.GetGeoTransform()
+            values = np.degrees(np.arctan2(np.sin(angle) / transform[1],
+                                           np.cos(angle) / -transform[5])) % 360
+        height, width = values.shape
+        destination.WriteRaster(x, y, width, height, values.tobytes(), buf_type=gdal.GDT_Float64)
+    destination = raw = source = None
+    output.FlushCache()
+    path = output.GetDescription()
+    output = None
+    return _raster(path)
+
+
+def raster_slope(input_raster, elevation_unit, band=1, slope_unit='degree'):
+    if slope_unit not in ('degree', 'percent'):
+        raise ValueError('slope_unit must be degree or percent')
+    return _terrain(input_raster, elevation_unit, band, 'slope', slopeFormat=slope_unit)
+
+
+def raster_aspect(input_raster, elevation_unit, band=1):
+    return _terrain(input_raster, elevation_unit, band, 'aspect', trigonometric=False, zeroForFlat=False)
+
+
+def raster_hillshade(input_raster, elevation_unit, band=1, azimuth=315., altitude=45.):
+    if (isinstance(azimuth, bool) or not isinstance(azimuth, (int, float))
+        or not math.isfinite(azimuth) or not 0 <= azimuth < 360
+        or isinstance(altitude, bool) or not isinstance(altitude, (int, float))
+        or not math.isfinite(altitude) or not 0 < altitude <= 90):
+        raise ValueError('hillshade azimuth must be in [0,360) and altitude in (0,90] degrees')
+    return _terrain(input_raster, elevation_unit, band, 'hillshade', azimuth=azimuth, altitude=altitude)
+
+
+def raster_contour(input_raster, elevation_unit, band=1, interval=None, levels=None):
+    if (interval is None) == (levels is None):
+        raise ValueError('contour requires exactly one of interval or levels in metres')
+    options = ['NODATA=nan', 'ELEV_FIELD=0']
+    if interval is not None:
+        if (isinstance(interval, bool) or not isinstance(interval, (int, float))
+            or not math.isfinite(interval) or interval <= 0):
+            raise ValueError('contour interval must be positive finite metres')
+        options += [f'LEVEL_INTERVAL={interval}', 'LEVEL_BASE=0']
+    else:
+        if (not isinstance(levels, list) or not levels
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in levels)
+            or any(left >= right for left, right in zip(levels, levels[1:]))):
+            raise ValueError('contour levels must be finite strictly increasing metres')
+        options.append('FIXED_LEVELS=' + ','.join(str(value) for value in levels))
+    source, _, valid_count = _dem_source(input_raster, elevation_unit, band, 2)
+    projection = source.GetProjection()
+    if not valid_count:
+        source = None
+        return gpd.GeoDataFrame({'elevation': np.asarray([], dtype=np.float64)}, geometry=[], crs=projection)
+    vector = ogr.GetDriverByName('GPKG').CreateDataSource(str(_path('.gpkg')))
+    layer = vector.CreateLayer('contours', _crs(source.GetProjection()), ogr.wkbLineString)
+    layer.CreateField(ogr.FieldDefn('elevation', ogr.OFTReal))
+    elevations, geometries = [], []
+    feature = None
+    try:
+        if gdal.ContourGenerateEx(source.GetRasterBand(1), layer, options=options) != 0:
+            raise ValueError('GDAL contour extraction failed')
+        for feature in layer:
+            elevations.append(float(feature.GetField('elevation')))
+            geometries.append(from_wkb(bytes(feature.GetGeometryRef().ExportToWkb())))
+    finally:
+        feature = layer = vector = source = None
+    return gpd.GeoDataFrame({'elevation': np.asarray(elevations, dtype=np.float64)}, geometry=geometries, crs=projection)
+
+
 def _param(name, kind, description, default=None, required=True, role='param', enum=None):
     return OperatorParam(name=name, data_type=kind, type=role, description=description,
                          required=required, default=default, enum=enum)
@@ -1154,6 +1287,8 @@ def _param(name, kind, description, default=None, required=True, role='param', e
 
 _INPUT = lambda: _param('input_raster', 'raster', '当前工作流的栅格输入端口', role='input')
 _ALGORITHM = lambda: _param('resampling', 'str', '重采样算法', 'nearest', False, enum=RESAMPLING)
+_DEM_PARAMS = lambda: [_INPUT(), _param('elevation_unit', 'str', '高程数值单位，必须明确声明', enum=list(_ELEVATION_METRES)),
+                       _param('band', 'int', '从 1 开始的高程数据波段', 1, False)]
 _COG_OPTIONS = [
     _param('compression', 'str', '压缩算法', 'DEFLATE', False, enum=['DEFLATE', 'LZW', 'ZSTD', 'NONE']),
     _param('blocksize', 'int', 'COG 块大小', 512, False),
@@ -1182,6 +1317,10 @@ _SPECS = [
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
+    (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
+    (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
+    (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
+    (raster_contour, OperatorCategory.RASTER_EXTENT, 'DEM 等值线', [*_DEM_PARAMS(), _param('interval', 'float', '等高距（米），与指定高程二选一', None, False), _param('levels', 'list[float]', '严格递增的指定高程（米）', None, False)], 'GeoDataFrame', ['read']),
 ]
 OPERATORS = {}
 for function, category, label, params, output, effects in _SPECS:
@@ -1208,6 +1347,10 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
+    if name in ('raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
+        examples.update({'elevation_unit': 'metre', 'band': 1})
+        if name == 'raster_contour':
+            examples.update({'interval': 10.})
     if name == 'raster_save_tiles':
         examples = {'input_tiles': {'$ref': 'tiles'}, 'access_plan': {
             'schema_version': 'addp.workflow.access-plan/v1', 'target': {

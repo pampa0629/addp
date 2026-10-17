@@ -223,6 +223,55 @@ def foundation_workflow(source_locator, reference_locator, target_engine_id, cas
     ]}
 
 
+def terrain_workflow(source_locator, target_engine_id, case_name):
+    if case_name not in fixture.TERRAIN_CASES + ('dem-contour',):
+        raise SuiteError('unknown DEM terrain case')
+    params = {'input_raster': {'$ref':'load'}, 'elevation_unit':'metre', 'band':1}
+    if case_name=='dem-contour':params['levels']=list(fixture.TERRAIN_CONTOUR_LEVELS)
+    tasks = [
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'locator':source_locator}},
+        {'id':'terrain','operator':case_name.replace('dem-','raster_'),'depends_on':['load'],'params':params}]
+    if case_name!='dem-contour':
+        tasks += [
+            {'id':'overviews','operator':'raster_build_overviews','depends_on':['terrain'],
+             'params':{'input_raster':{'$ref':'terrain'},'levels':[2],'resampling':'nearest'}},
+            {'id':'save','operator':'raster_save','depends_on':['overviews'],'params':{
+                'input_raster':{'$ref':'overviews'},'target_parent_locator':f'addp://engine/{target_engine_id}/path/raster-target?type=bucket',
+                'target_name':case_name+'.cog.tif','write_mode':'create','profile':'cog','blocksize':128}}]
+    return {'tasks':tasks}
+
+
+def validate_terrain_contour(execution):
+    result = transient_result(execution)
+    if result.get('type')!='FeatureCollection':raise SuiteError('DEM contour must be a vector FeatureCollection')
+    features=array(result.get('features'),'DEM contour features')
+    levels=set()
+    for feature in features:
+        props=obj(feature.get('properties'),'DEM contour attributes')
+        elevation=props.get('elevation')
+        geometry=obj(feature.get('geometry'),'DEM contour geometry')
+        if (set(props)!={'elevation'} or type(elevation) not in (int,float)
+            or elevation not in fixture.TERRAIN_CONTOUR_LEVELS or geometry.get('type')!='LineString'):
+            raise SuiteError('DEM contour level/schema differs')
+        levels.add(elevation)
+        points=array(geometry.get('coordinates'),'DEM contour vertices')
+        if len(points)<2:raise SuiteError('DEM contour line is empty')
+        for point in points:
+            if (not isinstance(point,list) or len(point)!=2 or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in point)):
+                raise SuiteError('DEM contour vertex is invalid')
+            x,y=point
+            # GDAL extends samples to half-cell outer edges. Clamp to the
+            # actual sample-centre domain before evaluating the plane.
+            expected=100000.5+min(159.5,max(.5,x))+256*(256-min(255.5,max(.5,y))-.5)
+            if not (0<=x<=160 and 0<=y<=256) or not math.isclose(expected,elevation,abs_tol=2e-5,rel_tol=0):
+                raise SuiteError('DEM contour vertex left its independent elevation plane')
+    if levels!=set(fixture.TERRAIN_CONTOUR_LEVELS):raise SuiteError('DEM contour lost a requested level')
+    crs=obj(obj(result.get('crs'),'DEM contour CRS').get('properties'),'DEM contour CRS properties').get('name')
+    if crs not in ('urn:ogc:def:crs:EPSG::3857','EPSG:3857'):raise SuiteError('DEM contour changed source CRS')
+    return result
+
+
 def reclass_workflow(source_locator, target_engine_id, case_name):
     if case_name not in fixture.RECLASS_CASES:
         raise SuiteError('unknown reclassification case')
@@ -1265,12 +1314,66 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         failures[prefix] = {'execution_id': identifier, 'status': 'failed', 'manifest': manifest,
             'outputs': execution['outputs'], 'automatic_scan_runs': scans, 'confirmed_items': confirmed_items, 'physical': native}
         prior_failure_hashes[prefix] = {key: fact['sha256'] for key, fact in native['tiles'].items()}
+    # Append terrain after every original success/failure scene. Its baseline
+    # binds the complete prior object set, including confirmed failed writes.
+    terrain_source=mosaic_sources['mosaic-a.tif'];terrain_locator=mosaic_locators['mosaic-a.tif']
+    baseline=physical_runner(repository,env,'prepare-terrain')
+    if (baseline.get('source_unchanged') is not True or baseline.get('terrain')!={}
+        or set(baseline.get('preserved_sha256',{}))!=fixture.preterrain_target_names()
+        or any(not isinstance(v,str) or not v for v in baseline['preserved_sha256'].values())):
+        raise SuiteError('DEM baseline does not preserve every earlier target')
+    terrain_cases=[];terrain_hashes={}
+    for case_name in fixture.TERRAIN_CASES+('dem-contour',):
+        identifier=submit(client,engine_id,terrain_workflow(terrain_locator,target_engine,case_name))
+        execution=wait_execution(client,'develop',identifier,timeout)
+        monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'DEM Monitor execution')
+        if monitor.get('status')!='success' or monitor.get('module')!='develop':raise SuiteError('DEM Monitor status/owner differs')
+        native=physical_runner(repository,env,'verify-'+case_name)
+        accepted=fixture.TERRAIN_CASES if case_name=='dem-contour' else fixture.TERRAIN_CASES[:len(terrain_cases)+1]
+        if (native.get('source_unchanged') is not True or native.get('preserved_sha256')!=baseline['preserved_sha256']
+            or set(native.get('terrain',{}))!=set(accepted)
+            or any(native['terrain'][name].get('sha256')!=digest for name,digest in terrain_hashes.items())):
+            raise SuiteError('DEM computation changed sources or an accepted output')
+        if case_name=='dem-contour':
+            result=validate_terrain_contour(execution)
+            if monitor.get('metadata',{}).get('lineage_facts'):raise SuiteError('transient DEM contour has persistent lineage')
+            browser=browser_runner(repository,env,{'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,
+                'execution_id':identifier,'source_item_id':terrain_source['id'],'source_locator':terrain_locator,
+                'source_name':'mosaic-a.tif','case_name':case_name,'result_kind':'json','expected_result':result})
+            terrain_cases.append({'case_name':case_name,'execution_id':identifier,'json_result':result,'physical':native,'browser':browser})
+            continue
+        name=case_name+'.cog.tif';locator=f'addp://engine/{target_engine}/path/raster-target/{name}?type=object'
+        expectation=fixture.terrain_expectation()
+        facts,scan=validate_success(execution,[terrain_locator],locator,'create',expectation)
+        wait_execution(client,'meta',scan,timeout)
+        if monitor.get('metadata',{}).get('lineage_facts')!=facts:raise SuiteError('DEM Monitor lineage differs')
+        physical_evidence=native['terrain'][case_name];artifact=execution['metadata']['result']['final_result']
+        if (physical_evidence.get('cog_valid') is not True or physical_evidence.get('has_overviews') is not True
+            or physical_evidence.get('source_unchanged') is not True or physical_evidence.get('case_name')!=case_name
+            or not isinstance(physical_evidence.get('sha256'),str) or not physical_evidence['sha256']
+            or physical_evidence.get('valid_pixels')!=expectation['valid_pixels']
+            or physical_evidence.get('invalid_pixels')!=expectation['width']*expectation['height']-expectation['valid_pixels']
+            or physical_evidence.get('color_interpretations')!=['Gray']
+            or physical_evidence.get('overview_sizes')!=[[80,128]]
+            or artifact['bands'][0].get('overviews')!=[[80,128]]
+            or artifact['bands'][0].get('color_interpretation')!='Gray'):
+            raise SuiteError('DEM physical pixels/overview evidence differs')
+        pending=[]
+        lineage,browser=queue_output_inspection(pending,client,env['ADDP_ONLINE_TEST_RUN_ID'],terrain_source,
+            terrain_locator,target_engine,name,identifier,case_name,identity,browser_runner,expectation,physical_evidence,
+            [terrain_locator],artifact,size_evidence)
+        finish_output_inspections(pending,repository,env,client,timeout)
+        target=support.find_fixture_item(client,target_engine,'raster-target/'+name,'DEM target')
+        terrain_hashes[case_name]=physical_evidence['sha256']
+        terrain_cases.append({'case_name':case_name,'execution_id':identifier,'artifact':artifact,
+            'data_item_size_bytes':target['size_bytes'],'automatic_target_scan_execution_id':scan,
+            'lineage':lineage,'browser':browser,'physical':native})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'size_evidence': size_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
-            'mosaic_source_cases': mosaic_source_cases, 'mosaic_editor_cases': mosaic_editor_cases,
+            'mosaic_source_cases': mosaic_source_cases, 'mosaic_editor_cases': mosaic_editor_cases,'terrain_cases':terrain_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
             'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'update_cases': update_cases, 'footprint_cases': footprint_cases, 'tiling_cases': tiling_results['create']['cases'], 'tiling_replace_cases': tiling_results['replace']['cases'],

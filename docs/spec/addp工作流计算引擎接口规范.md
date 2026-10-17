@@ -964,6 +964,12 @@ Meta 对批量产物只读取已持久化的 `outputs.<节点>.tiles.<切片键>
 
 `raster_reclassify` 将 `band`（默认 1）选定的数据波段按 `rules` 重分类，输出同网格 Float64 单波段。规则为非空 JSON 数组：精确值使用 `{"value": 1, "class": 10}`，区间使用 `{"min": 0, "max": 10, "class": 1}`，统一左闭右开，`null` 端点表示该侧无界；精确值可单独覆盖区间右端点。规则必须互不重叠且不重复，输入顺序不影响结果；拒绝未知字段、非数值、布尔值及非有限值。有效像元未命中规则时，默认 `unmatched=nodata` 写 NaN，可显式选择 `keep` 保留原值；源 NoData、mask 无效、非有限值及 alpha 覆盖无效的像元始终写 NaN，不能因保留原值而恢复为有效值。alpha 和复数波段不能作为分类数据，合法零与部分透明的有效值正常参与分类。保留源宽高、完整仿射变换、CRS 及定位缺失事实，无需补造 CRS；输出不复制原分类色表或透明度大小，数值转换仍遵循 Float64 精度边界。公开规则参数声明为 `array`、`item_type=object`，由已有参数面板还原 JSON 数组，不接受字符串化规则作为执行输入。沿用 512×512 分块与排序后二分检索，不为重分类增加执行协议或整幅影像读取路径。
 
+DEM 基础地形分析使用 `raster_slope`、`raster_aspect`、`raster_hillshade` 和 `raster_contour`，输入为执行内 `raster`，显式必填 `elevation_unit=metre/foot/us_survey_foot`，可选 `band` 默认 1。高程换算分别使用 1、0.3048、1200/3937 米；若波段带有高程单位事实，必须与声明语义一致，不识别或冲突则拒绝。源必须是有可信 CRS 的二维投影坐标系、可逆北向网格（列分辨率正、行分辨率负、无旋转），CRS 水平线性单位必须可信且可换算为米；地理坐标和旋转网格先显式重投影。拒绝复数、alpha 高程波段及存储 scale/offset 非默认的高程输入，不能默默忽略编码换算。
+
+前三项固定采用 GDAL Horn 3×3 邻域，水平单位由 CRS 派生，显式传递换算比例，不依赖 GDAL 版本的自动单位推断。NoData、mask、非有限值和无效 alpha 覆盖按已有规则先归一化，无效高程不填补；最外一圈及包含无效值的邻域输出 NaN。输出同宽高、CRS、仿射网格的单波段 Float64，保留 GDAL 算法的数值精度，源及已有成果不变。输入最小为 3×3，全无效输入返回全 NaN。`raster_slope` 的 `slope_unit=degree/percent` 默认 degree；`raster_aspect` 按投影横纵实际分辨率换算梯度方向，输出投影网格北为 0°、顺时针的 [0,360) 角度，平坦区域写 NaN，不与朝北混淆；`raster_hillshade` 的 `azimuth` 默认 315°、范围 [0,360)，`altitude` 默认 45°、范围 (0,90]，有效值采用 GDAL 常规晕渲的 1–255 灰度，不开放垂直夸张或其他变体，也不表示三维晕渲场景。
+
+`raster_contour` 只生成二维等值线，最小输入为 2×2。`interval`（有限正米数，以 0 米为基准）与 `levels`（有限、严格递增且不重复的米制高程序列）二选一；不自动替换、排序或同时接受两种配置。使用 GDAL 等值线算法沿有效样本插值，不对无效高程补洞或生成分类面。输出既有 GeoDataFrame，源 CRS、LineString 几何、Float64 `elevation` 字段（米）；无等值线时返回同 Schema 的空结果。以现有矢量保存节点持久化，不新增栅格转矢量通用算子、输出身份或扫描旁路。四项均为 workflow-only、read 效果、raster 资源组；栅格结果沿用现有 `raster_save` 与 COG 主路径。 GDAL 调用依据 [DEMProcessing 与 ContourGenerateEx 官方 Python API](https://gdal.org/en/stable/api/python/utilities.html)；本规范显式冻结单位、边缘和输出规则，不随工具默认值变化。
+
 区域内裁剪边界必须与输入栅格四角定义的实际覆盖面有正面积交集，不能只比较两者的外接矩形；仅接触边界、栅格完全落在多边形孔洞中、MultiPolygon 各部分均在覆盖面外时均拒绝执行。旋转栅格使用其实际四角覆盖面判定，不能将 extent 矩形的空白角落视为输入数据。多边形转换到源 CRS 必须成功后再判定交集；区域外模式不要求正面积交集，但仍验证边界及转换。
 
 `raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
@@ -1005,6 +1011,10 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_reclassify` | `input_raster`、`rules`、`band`、`unmatched=nodata/keep` | `raster`，同网格 Float64 单波段 |
 | `raster_aggregate` | `input_raster`、`factors`、`method=sum/mean/min/max` | `raster`，整数分组后的数据波段 |
 | `raster_footprint` | `input_raster`、`bands`、`validity=any/all`（默认 any） | `GeoDataFrame`，源 CRS、MultiPolygon 或空几何批 |
+| `raster_slope` | `input_raster`、必填 `elevation_unit`、`band`、`slope_unit=degree/percent` | `raster`，坡度 |
+| `raster_aspect` | `input_raster`、必填 `elevation_unit`、`band` | `raster`，北起顺时针坡向 |
+| `raster_hillshade` | `input_raster`、必填 `elevation_unit`、`band`、`azimuth/altitude` | `raster`，常规地形晕渲 |
+| `raster_contour` | `input_raster`、必填 `elevation_unit`、`band`、互斥 `interval/levels`（米） | `GeoDataFrame`，二维等值线及米制 elevation |
 | `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 

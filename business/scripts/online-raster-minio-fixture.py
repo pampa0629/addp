@@ -52,6 +52,8 @@ UPDATE_CASES = ('update-valid',)
 MOSAIC_SOURCE_CASES = ('multisource-first', 'multisource-last')
 MOSAIC_EDITOR_CASES = ('multisource-editor-first', 'multiengine-editor-first')
 MOSAIC_CASES = MOSAIC_SOURCE_CASES + MOSAIC_EDITOR_CASES
+TERRAIN_CASES = ('dem-slope', 'dem-aspect', 'dem-hillshade')
+TERRAIN_CONTOUR_LEVELS = (110000., 120000., 150000.)
 # start column, width, numeric offset; all are independent stored TIFFs.
 MOSAIC_SOURCE_WINDOWS = {'mosaic-a.tif': (0, 160, 100000), 'mosaic-b.tif': (96, 112, 200000),
                          'mosaic-c.tif': (144, 112, 300000)}
@@ -80,6 +82,7 @@ CLEANUP_ACTIONS = tuple('verify-' + prefix for prefix in TILE_CLEANUP_CASES)
 TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
 ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES) + ('verify-utility-queries',)
+ACTIONS += ('prepare-terrain', 'verify-dem-contour') + tuple('verify-' + name for name in TERRAIN_CASES)
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -447,6 +450,88 @@ def mosaic_source_value(name, band, row, column, role='source'):
         return 0.
     position = row * SIZE + column + 1
     return float(offset + position if band == 1 else -(offset + 2 * position))
+
+
+def terrain_expectation():
+    _, width, _ = MOSAIC_SOURCE_WINDOWS['mosaic-a.tif']
+    count = sum(value is not None for value in terrain_pixels('dem-slope'))
+    return {'width': width, 'height': SIZE, 'band_count': 1, 'extent_srid': 3857,
+            'source_crs': 'EPSG:3857', 'transform': [0,1,0,SIZE,0,-1],
+            'extent': [0,0,width,SIZE], 'band_nodata': None, 'valid_pixels': count}
+
+
+@lru_cache(maxsize=6)
+def terrain_pixels(case_name, level=1):
+    if case_name not in TERRAIN_CASES:
+        raise FixtureError('unknown terrain case')
+    width = MOSAIC_SOURCE_WINDOWS['mosaic-a.tif'][1]
+    azimuth, altitude = math.radians(315), math.radians(45)
+    values=[]
+    for row in range(0,SIZE,level):
+        for column in range(0,width,level):
+            if not (0<row<SIZE-1 and 0<column<width-1):
+                values.append(None);continue
+            z=[mosaic_source_value('mosaic-a.tif',1,row+dy,column+dx)
+               for dy in (-1,0,1) for dx in (-1,0,1)]
+            if any(value is None for value in z):
+                values.append(None);continue
+            east=(z[2]+2*z[5]+z[8]-z[0]-2*z[3]-z[6])/8
+            north=(z[0]+2*z[1]+z[2]-z[6]-2*z[7]-z[8])/8
+            magnitude=math.hypot(east,north)
+            illumination=(-east*math.sin(azimuth)*math.cos(altitude)-north*math.cos(azimuth)*math.cos(altitude)
+                          +math.sin(altitude))/math.sqrt(1+magnitude*magnitude)
+            values.append(math.degrees(math.atan(magnitude)) if case_name=='dem-slope' else
+                math.degrees(math.atan2(-east,-north))%360 if case_name=='dem-aspect' else
+                float(math.floor(1+254*max(0,illumination)+.5)))
+    return tuple(values)
+
+
+def preterrain_target_names():
+    names = {'result.cog.tif','mosaic-first.cog.tif','mosaic-last.cog.tif',TILE_KEEP_NAME}
+    names.update(name+'.cog.tif' for name in GRID_CASES+MULTIBAND_CASES+UTILITY_CASES+FOUNDATION_CASES+
+                 RECLASS_CASES+AGGREGATE_CASES+OUTSIDE_CASES+UPDATE_CASES+MOSAIC_CASES)
+    names.update('tiles-basic/'+key+'.tif' for key in TILE_WINDOWS)
+    for prefix,count in [(TILE_FAILURE_PREFIX,1)]+[(prefix,count) for prefix,(_,count) in TILE_CLEANUP_CASES.items()]:
+        names.update(prefix+'/'+key+'.tif' for key in list(TILE_WINDOWS)[:count])
+    return names
+
+
+def verify_terrain_file(path, case_name):
+    from osgeo import gdal, osr
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    dataset = gdal.Open(str(path)); expected = terrain_expectation()
+    _, errors, _ = validate(dataset, full_check=True)
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(3857)
+    if (errors or dataset.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE') != 'COG'
+        or (dataset.RasterXSize,dataset.RasterYSize,dataset.RasterCount) != (expected['width'],SIZE,1)
+        or dataset.GetGeoTransform() != tuple(expected['transform'])
+        or not osr.SpatialReference(dataset.GetProjection()).IsSame(reference)):
+        raise FixtureError('terrain COG structure/grid differs')
+    band = dataset.GetRasterBand(1)
+    if (band.DataType != gdal.GDT_Float64 or band.GetNoDataValue() is None
+        or not math.isnan(band.GetNoDataValue()) or band.GetOverviewCount() != 1
+        or gdal.GetColorInterpretationName(band.GetColorInterpretation()) != 'Gray'):
+        raise FixtureError('terrain COG band facts differ')
+    for level, current in ((1,band),(2,band.GetOverview(0))):
+        wanted = terrain_pixels(case_name,level)
+        if (current.XSize,current.YSize) != (expected['width']//level,SIZE//level):
+            raise FixtureError('terrain overview grid differs')
+        actual = struct.unpack(f'<{len(wanted)}d',current.ReadRaster(buf_type=gdal.GDT_Float64))
+        # The oracle uses scalar analytic gradients. GDAL's Float32 angle
+        # output is accepted only within this explicit absolute tolerance.
+        tolerance = 0 if case_name=='dem-hillshade' else 5e-5
+        for position,(value,desired) in enumerate(zip(actual,wanted)):
+            if (not math.isnan(value) if desired is None else
+                not math.isclose(value,desired,rel_tol=0,abs_tol=tolerance)):
+                raise FixtureError(f'terrain {case_name} level {level} pixel {position}: {value} differs from {desired}')
+        mask = current.GetMaskBand().ReadRaster(buf_type=gdal.GDT_Byte)
+        if any(value != (0 if desired is None else 255) for value,desired in zip(mask,wanted)):
+            raise FixtureError('terrain mask differs from independent oracle')
+    band = dataset = None
+    return {'case_name':case_name,'source_unchanged':True,'cog_valid':True,'has_overviews':True,
+            'overview_sizes':[[expected['width']//2,SIZE//2]],'color_interpretations':['Gray'],
+            'valid_pixels':expected['valid_pixels'],'invalid_pixels':expected['width']*SIZE-expected['valid_pixels'],
+            **physical_file_facts(path)}
 
 
 @lru_cache(maxsize=4 * len(MOSAIC_CASES))
@@ -831,6 +916,8 @@ def physical_worker(action, root):
         raise FixtureError('physical_worker_failed') from error
     if action == 'seed':
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])
+    if action == 'prepare-terrain':
+        private_json(root / 'raster-terrain-baseline.json', result['preserved_sha256'])
     if action in CLEANUP_ACTIONS:
         result['cleanup_fault'] = cleanup_evidence(root, action.removeprefix('verify-'))
     return result
@@ -1024,6 +1111,31 @@ def worker(action, path):
         spatial = action.startswith('verify-mosaic-')
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
         target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
+
+        if action == 'prepare-terrain' or action.startswith('verify-dem-'):
+            names = set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'],recursive=True))
+            baseline_names = preterrain_target_names()
+            baseline = {} if action == 'prepare-terrain' else json.loads(fingerprint_path.with_name('raster-terrain-baseline.json').read_text())
+            if action != 'prepare-terrain' and set(baseline) != baseline_names:
+                raise FixtureError('terrain baseline does not bind all prior accepted targets')
+            prior = {}
+            for name in baseline_names:
+                path = root/'preserved'/name; path.parent.mkdir(parents=True,exist_ok=True)
+                clients['target'].fget_object(config['target']['bucket'],name,str(path))
+                prior[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if action != 'prepare-terrain' and prior != baseline:
+                raise FixtureError('terrain changed an earlier accepted target')
+            case_name = action.removeprefix('verify-')
+            count = len(TERRAIN_CASES) if case_name=='dem-contour' else TERRAIN_CASES.index(case_name)+1 if action!='prepare-terrain' else 0
+            expected_names = baseline_names | {case+'.cog.tif' for case in TERRAIN_CASES[:count]}
+            if names != expected_names:
+                raise FixtureError('terrain target set contains missing or unexpected artifacts')
+            terrain = {}
+            for case in TERRAIN_CASES[:count]:
+                name=case+'.cog.tif';path=root/name
+                clients['target'].fget_object(config['target']['bucket'],name,str(path))
+                terrain[case]=verify_terrain_file(path,case)
+            return {'source_unchanged':True,'preserved_sha256':prior,'terrain':terrain}
 
         def verify(name, spatial=False, overlap=None, factor=1, grid_case=None, utility_case=None):
             path = root / name
