@@ -160,6 +160,10 @@ class GaussDBCertificationTest(unittest.TestCase):
             if kwargs.get("output"):
                 kwargs["output"].write_text("native log\n")
             if args[:2] == ["docker", "build"]:
+                entrypoint = (Path(args[-1]) / "entrypoint.sh").read_text()
+                self.assertIn("/data/db/gs_hba.conf", entrypoint)
+                self.assertNotIn("/data/db/pg_hba.conf", entrypoint)
+                self.assertIn("sha256", entrypoint)
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
                 resources[("image", args[args.index("-t") + 1])] = {"Config": {"Labels": {GATE.LABEL: owner}}}
             elif args[:3] == ["docker", "network", "create"]:
@@ -231,6 +235,22 @@ class GaussDBCertificationTest(unittest.TestCase):
         with self.assertRaises(SystemExit) as stopped:
             GATE.terminate(15, None)
         self.assertEqual(stopped.exception.code, 143)
+
+    @patch.object(GATE.subprocess, "run")
+    def test_readiness_preserves_client_loader_errors_instead_of_only_timeout(self, run):
+        run.return_value = subprocess.CompletedProcess([], 127, "", "gsql: loader failure")
+        log = self.root / "readiness.log"
+        result = GATE.probe_readiness("owned", log)
+        self.assertEqual(result.returncode, 127)
+        self.assertEqual(json.loads(log.read_text()), {"returncode": 127, "stdout": "", "stderr": "gsql: loader failure"})
+
+    @patch.object(GATE.subprocess, "run")
+    def test_readiness_retains_partial_output_when_client_times_out(self, run):
+        run.side_effect = subprocess.TimeoutExpired([], 15, output=b"partial output", stderr=b"partial error")
+        log = self.root / "readiness.log"
+        with self.assertRaises(subprocess.TimeoutExpired):
+            GATE.probe_readiness("owned", log)
+        self.assertEqual(json.loads(log.read_text()), {"timed_out": True, "stdout": "partial output", "stderr": "partial error"})
 
     def test_common_package_discovery_cannot_resolve_the_external_certification_driver(self):
         # go mod tidy examines all ordinary build tags. Exercise real discovery

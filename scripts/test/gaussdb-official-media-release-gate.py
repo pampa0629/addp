@@ -182,6 +182,21 @@ def terminate(signum, _frame):
     raise SystemExit(128 + signum)
 
 
+def probe_readiness(container: str, log_path: Path) -> subprocess.CompletedProcess:
+    args = ["docker", "exec", container, "gsql", "-d", "postgres", "-p", "5432", "-Atc", "SELECT 1"]
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired as error:
+        def text(value):
+            return value.decode(errors="replace") if isinstance(value, bytes) else value
+        log_path.write_text(json.dumps({"timed_out": True, "stdout": text(error.stdout),
+                                        "stderr": text(error.stderr)}, ensure_ascii=False) + "\n")
+        raise
+    log_path.write_text(json.dumps({"returncode": result.returncode, "stdout": result.stdout,
+                                    "stderr": result.stderr}, ensure_ascii=False) + "\n")
+    return result
+
+
 def main() -> None:
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise RuntimeError("GaussDB official-media T5 requires native Linux x86_64")
@@ -201,7 +216,7 @@ def main() -> None:
         if inspect(kind, name) is not None:
             raise RuntimeError("refusing to replace preexisting resource")
     report = {"schema_version": "addp.gaussdb-official-media-certification/v1",
-              "result": "failed", "media": facts,
+              "result": "failed", "phase": "media", "media": facts,
               "runner": {"os": "linux", "architecture": "x86_64"},
               "scope": "developer-single-node-protocol-only", "cleanup": {"result": "not-run"}}
     password = ""
@@ -214,25 +229,29 @@ def main() -> None:
             driver_media = download(facts[FACT_NAMES[4]], facts[FACT_NAMES[5]], cache)
             extract_kernel(media, work_dir / "kernel.bin")
             driver = extract_driver(driver_media, facts[FACT_NAMES[3]], work_dir / "driver")
+            report["phase"] = "image"
             (work_dir / "Dockerfile").write_text(f'''FROM {facts[FACT_NAMES[6]]}
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libaio1 libnuma1 libreadline8 libncurses6 libncurses5 libtinfo5 zlib1g libatomic1 libltdl7 libtirpc3 locales && rm -rf /var/lib/apt/lists/*
 COPY kernel.bin /tmp/kernel.bin
 RUN chmod 700 /tmp/kernel.bin && /tmp/kernel.bin -y -o/opt/gauss && rm /tmp/kernel.bin && useradd -m -u 10001 omm && mkdir /data && chown -R omm:omm /opt/gauss /data
-ENV GAUSSHOME=/opt/gauss LD_LIBRARY_PATH=/opt/gauss/lib PATH=/opt/gauss/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV GAUSSHOME=/opt/gauss GAUSSLOG=/data/log LD_LIBRARY_PATH=/opt/gauss/lib PATH=/opt/gauss/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh
 USER omm
+RUN gsql --version && gaussdb --version
 ENTRYPOINT ["/entrypoint.sh"]
 ''')
             (work_dir / "entrypoint.sh").write_text('''#!/bin/bash
 set -euo pipefail
 umask 077
+mkdir -p "$GAUSSLOG"
 printf '%s\\n' "$GAUSS_CERT_SECRET" > /data/password
 unset GAUSS_CERT_SECRET
 gs_initdb -D /data/db --nodename=addp_cert -U omm --pwfile=/data/password -E UTF8 --locale=C
 rm /data/password
-printf 'host all all 0.0.0.0/0 sha256\\n' >> /data/db/pg_hba.conf
-exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_connections=32 -c shared_buffers=128MB -c max_process_memory=2GB
+[ -f /data/db/gs_hba.conf ]
+printf 'host all all 0.0.0.0/0 sha256\\n' >> /data/db/gs_hba.conf
+exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_connections=32 -c shared_buffers=128MB -c max_process_memory=2GB -c logging_collector=off
 ''')
             command(["docker", "build", "--label", LABEL + "=" + run_id, "-t", image, work],
                     output=report_path.with_suffix(".build.log"), timeout=900)
@@ -242,9 +261,10 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
             command(["docker", "run", "-d", "--name", container, "--network", network,
                      "--label", LABEL + "=" + run_id, "--shm-size=256m",
                      "-p", "127.0.0.1::5432", "-e", "GAUSS_CERT_SECRET", image], capture_output=True, env=env)
+            report["phase"] = "readiness"
             deadline = time.monotonic() + 240
             while time.monotonic() < deadline:
-                ready = subprocess.run(["docker", "exec", container, "gsql", "-d", "postgres", "-p", "5432", "-Atc", "SELECT 1"], capture_output=True, text=True, timeout=15)
+                ready = probe_readiness(container, report_path.with_suffix(".readiness.log"))
                 if ready.returncode == 0 and ready.stdout.strip() == "1":
                     break
                 state = inspect("container", container)
@@ -254,6 +274,7 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
             else:
                 raise RuntimeError("official GaussDB not ready within 240 seconds")
             # Only synthetic data in the owner disposable container; no shared Infra.
+            report["phase"] = "fixture"
             sql = f"""CREATE USER addp_reader PASSWORD '{password}';
 CREATE SCHEMA addp_cert;
 CREATE TABLE addp_cert.source(id BIGINT PRIMARY KEY,name TEXT,amount NUMERIC(38,18));
@@ -265,6 +286,7 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
             state = inspect("container", container)
             port = state["NetworkSettings"]["Ports"]["5432/tcp"][0]["HostPort"]
             probe = prepare_probe(work_dir, driver)
+            report["phase"] = "probe"
             probe_env = {**os.environ, "GOWORK": "off", "GOENV_REGIST_ALL": "false",
                          "ADDP_GAUSSDB_CERTIFICATION": "1",
                          "ADDP_TEST_GAUSSDB_DSN": f"host=127.0.0.1 port={port} dbname=postgres user=addp_reader password={password} sslmode=disable connect_timeout=10"}
@@ -273,6 +295,7 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
             if "--- SKIP:" in report_path.with_suffix(".probe.log").read_text():
                 raise RuntimeError("native GaussDB certification refuses skipped tests")
             report["result"] = "passed"
+            report["phase"] = "complete"
     except BaseException:
         report["result"] = "failed"
         raise
@@ -287,7 +310,7 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
                     clean_owned(run_id, container, network, image)
                 finally:
                     if password:
-                        for suffix in (".build.log", ".probe.log", ".container.log"):
+                        for suffix in (".build.log", ".readiness.log", ".probe.log", ".container.log"):
                             log_path = report_path.with_suffix(suffix)
                             if log_path.exists():
                                 log_path.write_text(log_path.read_text(errors="replace").replace(password, "[REDACTED]"))
