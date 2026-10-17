@@ -47,6 +47,9 @@ OWNER_METADATA = set('metadata_scan lineage_facts continuous stop_reason recover
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
                     'verify-cdc-mutated', 'verify-scheduled', 'verify-clean'}
+OWNER_OUTAGE_CHECKS = ['previously_readable', 'event_transport_failure_isolated', 'event_transport_recovered',
+                       'real_owner_503', 'old_details_tree_steps_events_cleared', 'old_list_and_total_cleared',
+                       'recovered_authorized_reads', 'no_samples']
 
 
 def require(condition, message):
@@ -358,15 +361,46 @@ def revoke(reader, admin, login, tenant, execution_id, mutate):
     invisible(fresh, execution_id, 403, 404)
 
 
-def run_browser(phase, execution_ids, subject, run_id, secret, action=None):
-    require(phase in {'live', 'recovery', 'revocation'}, 'unknown browser phase')
-    require((action is not None) == (phase != 'recovery'), 'browser action binding changed')
+def wait_browser_marker(control, name, marker, process):
+    deadline = time.monotonic() + 100
+    path = control / (name + '.json')
+    while not path.exists():
+        require(process.poll() is None and time.monotonic() < deadline,
+                'browser did not reach its controlled observation: ' + name)
+        time.sleep(.2)
+    require(json.loads(path.read_text()) == marker, 'browser control identity changed')
+
+
+def write_browser_marker(control, name, marker):
+    temporary = control / (name + '.tmp')
+    temporary.write_text(json.dumps(marker))
+    temporary.replace(control / (name + '.json'))
+
+
+def observe_browser_owner_outage(control, marker, process, faults):
+    def observation():
+        write_browser_marker(control, 'owner_stopped', marker)
+        wait_browser_marker(control, 'owner_failure_observed', marker, process)
+    proof = faults.stop_owner_during(observation)
+    require(isinstance(proof, dict) and set(proof) == {'owner_pid', 'stopped_verified', 'resumed_verified'}
+            and type(proof['owner_pid']) is int and proof['owner_pid'] > 1
+            and proof['stopped_verified'] is True and proof['resumed_verified'] is True,
+            'Owner fault did not prove stopped and restored process identity')
+    return proof
+
+
+def run_browser(phase, execution_ids, subject, run_id, secret, action=None, *, faults=None):
+    require(phase in {'live', 'recovery', 'revocation', 'owner_unavailable'}, 'unknown browser phase')
+    require((action is not None) == (phase in {'live', 'revocation'}), 'browser action binding changed')
+    require((faults is not None) == (phase == 'owner_unavailable'), 'browser Owner fault binding changed')
     execution_ids = [canonical_uuid(value) for value in execution_ids]
-    require(len(execution_ids) == (3 if phase == 'recovery' else 1), 'browser execution scope changed')
+    require(len(execution_ids) == {'recovery': 3, 'owner_unavailable': 2}.get(phase, 1)
+            and len(set(execution_ids)) == len(execution_ids), 'browser execution scope changed')
     required_checks = {
         'live': ['timeline', 'automatic_committed_progress', 'no_samples'],
         'recovery': ['old_failure', 'recovery_source', 'record_failure_code', 'no_samples'],
         'revocation': ['previously_readable', 'old_content_cleared', 'fresh_monitor_only_denied', 'no_samples'],
+        'owner_unavailable': OWNER_OUTAGE_CHECKS,
     }[phase]
     evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / f'continuous-browser-{phase}.json'
     evidence.unlink(missing_ok=True)
@@ -388,18 +422,13 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None):
                          cwd=ROOT / 'console/frontend', env=environment, stdout=output,
                          stderr=subprocess.STDOUT, start_new_session=True)
             try:
-                if action is not None:
-                    deadline = time.monotonic() + 100
-                    ready = control / 'ready.json'
-                    while not ready.exists():
-                        require(process.poll() is None and time.monotonic() < deadline,
-                                'browser did not reach its authorized observation')
-                        time.sleep(.2)
-                    require(json.loads(ready.read_text()) == marker, 'browser control identity changed')
-                    action()
-                    release = control / 'release.tmp'
-                    release.write_text(json.dumps(marker))
-                    release.replace(control / 'release.json')
+                if action is not None or faults is not None:
+                    wait_browser_marker(control, 'ready', marker, process)
+                    if faults is not None:
+                        fault_proof = observe_browser_owner_outage(control, marker, process, faults)
+                    else:
+                        action()
+                    write_browser_marker(control, 'release', marker)
                 require(process.wait(timeout=180) == 0, 'continuous browser acceptance failed: ' + phase)
             finally:
                 if process.poll() is None:
@@ -416,6 +445,9 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None):
                     'principal_id': str(subject['principal_id']), 'execution_ids': execution_ids,
                     'checks': required_checks, 'result': 'passed'}
         require(result == expected, 'browser evidence contract changed')
+        if faults is not None:
+            result = {**result, 'owner_process': fault_proof}
+            evidence.write_text(json.dumps(result, sort_keys=True) + '\n')
         return result
 
 
@@ -609,6 +641,11 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         until(lambda: physical('verify-cdc-initial'))
         cdc_scan = target_scan('cdc')
         report['precise_scan_scope']['scans'].append({'phase': 'cdc_snapshot_completed', **cdc_scan})
+        report['browser_owner_unavailable'] = run_browser('owner_unavailable', [initial, cdc],
+            report['consumer_identity'], run_id, faults.secret, faults=faults)
+        compare(initial, 'failed')
+        compare(cdc, 'running')
+        report['checks'].append('real_owner_outage_browser_clears_and_recovers_without_grant_cache')
         require(physical('mutate-cdc'), 'CDC mutation fixture failed')
         until(lambda: physical('verify-cdc-mutated'))
         until(lambda: any(e['kind'] == 'progress' and e['counters'].get('records_written', 0) >= 5

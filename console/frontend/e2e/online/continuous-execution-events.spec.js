@@ -17,7 +17,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const control = process.env.ADDP_CONTINUOUS_BROWSER_CONTROL
   const artifacts = process.env.ADDP_ONLINE_ARTIFACT_DIR
   const credentials = [process.env.ADDP_CONTINUOUS_BROWSER_USERNAME, process.env.ADDP_CONTINUOUS_BROWSER_PASSWORD]
-  if (!['live', 'recovery', 'revocation'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
+  if (!['live', 'recovery', 'revocation', 'owner_unavailable'].includes(phase) || !control || !artifacts || credentials.some(value => !value)) throw new Error('incomplete browser scope')
   const marker = { run_id: runID, phase, execution_id: ids[0] }
   const checks = []
   let stage = 'login'
@@ -25,7 +25,7 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
   const report = result => ({ schema_version: 'addp.continuous-execution-browser/v1', phase,
     run_id: runID, tenant_id: tenantID, principal_id: principalID, execution_ids: ids, checks, result })
   const destination = resolve(artifacts, `continuous-browser-${phase}.json`)
-  const route = id => `/monitor/executions?execution_id=${encodeURIComponent(id)}`
+  const route = id => id ? `/monitor/executions?execution_id=${encodeURIComponent(id)}` : '/monitor/executions'
   async function signedPage(id, owner = true) {
     const prefix = owner ? 'owner_login' : 'fresh_monitor_only_login'
     stage = prefix
@@ -72,14 +72,28 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
     stage = prefix
     return { detail, events }
   }
-  async function release() {
-    const temporary = resolve(control, 'ready.tmp')
+  function signal(name) {
+    const temporary = resolve(control, `${name}.tmp`)
     writeFileSync(temporary, JSON.stringify(marker))
-    renameSync(temporary, resolve(control, 'ready.json'))
+    renameSync(temporary, resolve(control, `${name}.json`))
+  }
+  async function waitForSignal(name) {
     await expect.poll(() => {
-      const file = resolve(control, 'release.json')
+      const file = resolve(control, `${name}.json`)
       return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
     }, { timeout: 100_000, intervals: [200] }).toEqual(marker)
+  }
+  async function release() {
+    signal('ready')
+    await waitForSignal('release')
+  }
+  async function unavailableResponse(response) {
+    expect(response.status()).toBe(503)
+    const body = await response.json()
+    expect(Object.keys(body).sort()).toEqual(['error', 'error_code'])
+    expect(body.error_code).toBe('execution_owner_unavailable')
+    expect(typeof body.error).toBe('string')
+    expect(JSON.stringify(body)).not.toContain('business-value-sentinel')
   }
   try {
     const { page, frame } = await signedPage(ids[0])
@@ -115,6 +129,84 @@ test('continuous execution timeline, recovery and revoked Owner access', async (
       await expect(visible.detail).toContainText('missing_source_key')
       checks.push('record_failure_code', 'no_samples')
       await page.screenshot({ path: resolve(artifacts, 'continuous-record-failure.png'), fullPage: true })
+    } else if (phase === 'owner_unavailable') {
+      stage = 'ordinary_event_transport_failure'
+      const visible = await timeline(frame, '执行失败')
+      try {
+        await page.context().setOffline(true)
+        const failed = page.waitForEvent('requestfailed', { predicate: value =>
+          value.method() === 'GET' && new URL(value.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${ids[0]}/events` })
+        await visible.events.getByRole('button', { name: '刷新过程', exact: true }).click()
+        await failed
+        await expect(visible.events.getByRole('alert')).toBeVisible()
+        await expect(visible.events.locator('tbody tr')).toHaveCount(0)
+        await expect(visible.detail).toBeVisible()
+        await expect(visible.detail).toContainText(ids[0])
+        await expect(frame.locator('.el-tree')).toBeVisible()
+        checks.push('event_transport_failure_isolated')
+      } finally {
+        await page.context().setOffline(false)
+      }
+      await visible.events.getByRole('button', { name: '刷新过程', exact: true }).click()
+      await expect(visible.events.locator('tbody tr').first()).toBeVisible()
+      checks.push('event_transport_recovered')
+
+      stage = 'owner_outage_previously_readable'
+      const running = await signedPage(ids[1])
+      await timeline(running.frame)
+      await expect(running.frame.locator('.execution-detail-content')).toContainText(ids[1])
+      await expect(running.frame.locator('.el-tree')).toBeVisible()
+      const list = await signedPage()
+      const rows = list.frame.locator('.execution-list .el-table__row')
+      const total = list.frame.locator('.el-pagination__total')
+      await expect(rows.first()).toBeVisible()
+      await expect.poll(async () => Number((await total.innerText()).match(/\d+/)?.[0] || 0)).toBeGreaterThan(0)
+      checks.unshift('previously_readable')
+
+      // These responses come from real Monitor BFF authorization while the proven
+      // Transfer process is SIGSTOP'ed externally. No HTTP response is mocked.
+      const eventFailure = page.waitForResponse(response => response.status() === 503 &&
+        new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${ids[0]}/events`)
+      const treeFailure = running.page.waitForResponse(response => response.status() === 503 &&
+        new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${ids[1]}/tree`)
+      const listFailure = list.page.waitForResponse(response => response.status() === 503 &&
+        new URL(response.url()).pathname === '/api/v1/monitor/executions')
+      signal('ready')
+      await waitForSignal('owner_stopped')
+      stage = 'owner_outage_real_503'
+      await Promise.all([
+        visible.events.getByRole('button', { name: '刷新过程', exact: true }).click(),
+        list.frame.getByRole('button', { name: '查询', exact: true }).click()
+      ])
+      for (const response of await Promise.all([eventFailure, treeFailure, listFailure])) await unavailableResponse(response)
+      checks.push('real_owner_503')
+      stage = 'owner_outage_old_views_cleared'
+      for (const view of [frame, running.frame]) {
+        await expect(view.locator('.execution-detail-content, .execution-steps, .execution-events, .el-tree')).toHaveCount(0)
+        await expect(view.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+      }
+      checks.push('old_details_tree_steps_events_cleared')
+      await expect(rows).toHaveCount(0)
+      await expect.poll(async () => Number((await total.innerText()).match(/\d+/)?.[0])).toBe(0)
+      checks.push('old_list_and_total_cleared')
+      await page.screenshot({ path: resolve(artifacts, 'continuous-owner-unavailable-detail.png'), fullPage: true })
+      await list.page.screenshot({ path: resolve(artifacts, 'continuous-owner-unavailable-list.png'), fullPage: true })
+      signal('owner_failure_observed')
+      await waitForSignal('release')
+
+      stage = 'owner_outage_recovered_authorized_reads'
+      await Promise.all([
+        frame.getByRole('button', { name: '重新加载', exact: true }).click(),
+        running.frame.getByRole('button', { name: '重新加载', exact: true }).click(),
+        list.frame.getByRole('button', { name: '查询', exact: true }).click()
+      ])
+      await timeline(frame, '执行失败')
+      await timeline(running.frame)
+      await expect(rows.first()).toBeVisible()
+      await expect.poll(async () => Number((await total.innerText()).match(/\d+/)?.[0] || 0)).toBeGreaterThan(0)
+      for (const view of [frame, running.frame]) await expect(view.locator('.execution-detail-content')).not.toContainText('business-value-sentinel')
+      checks.push('recovered_authorized_reads', 'no_samples')
+      await running.page.screenshot({ path: resolve(artifacts, 'continuous-owner-recovered.png'), fullPage: true })
     } else {
       stage = 'previously_readable'
       const visible = await timeline(frame, '执行失败')

@@ -8,6 +8,7 @@ from pathlib import Path
 import select
 import signal
 import subprocess
+import time
 
 SUPPORT = importlib.import_module('scripts.test.orchestrator-execution-faults')
 
@@ -27,6 +28,18 @@ def runtime_environment(environment):
                'ADDP_ONLINE_SECRET_DIR', 'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_ENV_FILE'}
     return {key: value for key, value in environment.items()
             if not key.startswith('ADDP_ONLINE_') or key in markers}
+
+
+def wait_owner_state(pid, stopped):
+    deadline = time.monotonic() + 5
+    while True:
+        state = next((line.split()[1] for line in (Path('/proc') / str(pid) / 'status').read_text().splitlines()
+                      if line.startswith('State:')), '')
+        if (stopped and state == 'T') or (not stopped and state in {'R', 'S', 'D'}):
+            return
+        if time.monotonic() >= deadline:
+            raise ValueError('owned Owner process did not reach its expected state')
+        time.sleep(.05)
 
 
 class HostedFaults:
@@ -69,12 +82,15 @@ class HostedFaults:
                 'executable_sha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
 
     def stop_owner_during(self, operation):
-        _, descriptor = self.pin('transfer')
+        pid, descriptor = self.pin('transfer')
         try:
             signal.pidfd_send_signal(descriptor, signal.SIGSTOP)
-            return operation()
+            wait_owner_state(pid, True)
+            operation()
         finally:
             try:
                 signal.pidfd_send_signal(descriptor, signal.SIGCONT)
+                wait_owner_state(pid, False)
             finally:
                 os.close(descriptor)
+        return {'owner_pid': pid, 'stopped_verified': True, 'resumed_verified': True}

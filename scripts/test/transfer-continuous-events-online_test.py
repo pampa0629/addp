@@ -32,6 +32,81 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def test_owner_browser_control_requires_bound_observation_and_restored_process_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = Path(directory)
+            marker = {'run_id': 'run-1', 'phase': 'owner_unavailable', 'execution_id': UUID}
+            process = SimpleNamespace(poll=lambda: None)
+            def stopped(operation):
+                M.write_browser_marker(control, 'owner_failure_observed', marker)
+                operation()
+                self.assertEqual(json.loads((control / 'owner_stopped.json').read_text()), marker)
+                return {'owner_pid': 42, 'stopped_verified': True, 'resumed_verified': True}
+            faults = SimpleNamespace(stop_owner_during=stopped)
+            self.assertTrue(M.observe_browser_owner_outage(control, marker, process, faults)['resumed_verified'])
+            M.write_browser_marker(control, 'owner_failure_observed', {**marker, 'execution_id': 'other'})
+            def wrong_marker(operation):
+                operation()
+            with self.assertRaisesRegex(M.SuiteError, 'control identity'):
+                M.observe_browser_owner_outage(control, marker, process, SimpleNamespace(stop_owner_during=wrong_marker))
+            for proof in [None, {'owner_pid': 42, 'stopped_verified': True, 'resumed_verified': False},
+                          {'owner_pid': True, 'stopped_verified': True, 'resumed_verified': True},
+                          {'owner_pid': 42, 'stopped_verified': True, 'resumed_verified': True, 'raw_response': {}}]:
+                with self.subTest(proof=proof), self.assertRaisesRegex(M.SuiteError, 'process identity'):
+                    M.observe_browser_owner_outage(control, marker, process,
+                        SimpleNamespace(stop_owner_during=lambda action: proof))
+
+    def test_owner_browser_control_does_not_wait_after_failed_browser(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(M.SuiteError, 'controlled observation'):
+            M.wait_browser_marker(Path(directory), 'owner_failure_observed', {}, SimpleNamespace(poll=lambda: 1))
+
+    def test_owner_browser_receipt_binds_two_real_executions_current_user_and_external_fault(self):
+        second = 'bbbbbbbb-1111-4111-8111-111111111111'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts, secrets = root / 'artifacts', root / 'private'
+            artifacts.mkdir(); secrets.mkdir()
+            subject = {'tenant_id': '2', 'principal_id': '33'}
+            marker = {'run_id': 'run-1', 'phase': 'owner_unavailable', 'execution_id': UUID}
+            proof = {'owner_pid': 42, 'stopped_verified': True, 'resumed_verified': True}
+            env = {'ADDP_ONLINE_ARTIFACT_DIR': str(artifacts),
+                   'ADDP_ONLINE_TEST_USER_USERNAME': 'external-online-consumer',
+                   'ADDP_ONLINE_TEST_USER_PASSWORD': 'private-password'}
+            class Process:
+                pid = 999999
+                def __init__(self, args, **kwargs):
+                    self.ended = False
+                    self.control = Path(kwargs['env']['ADDP_CONTINUOUS_BROWSER_CONTROL'])
+                    M.write_browser_marker(self.control, 'ready', marker)
+                    M.write_browser_marker(self.control, 'owner_failure_observed', marker)
+                def poll(self): return 0 if self.ended else None
+                def wait(self, timeout):
+                    assert json.loads((self.control / 'owner_stopped.json').read_text()) == marker
+                    assert json.loads((self.control / 'release.json').read_text()) == marker
+                    report = {'schema_version': 'addp.continuous-execution-browser/v1', 'phase': 'owner_unavailable',
+                              'run_id': 'run-1', 'tenant_id': '2', 'principal_id': '33',
+                              'execution_ids': [UUID, second], 'checks': M.OWNER_OUTAGE_CHECKS, 'result': 'passed'}
+                    (artifacts / 'continuous-browser-owner_unavailable.json').write_text(json.dumps(report))
+                    self.ended = True
+                    return 0
+            class Faults:
+                def stop_owner_during(self, operation):
+                    operation()
+                    return proof
+            with patch.dict(os.environ, env), patch.object(M.subprocess, 'Popen', Process):
+                result = M.run_browser('owner_unavailable', [UUID, second], subject, 'run-1', secrets, faults=Faults())
+            self.assertEqual(result['owner_process'], proof)
+            self.assertEqual(result['execution_ids'], [UUID, second])
+            receipt = artifacts / 'continuous-browser-owner_unavailable.json'
+            self.assertEqual(json.loads(receipt.read_text()), result)
+            self.assertNotIn('private-password', receipt.read_text())
+            self.assertEqual(list(secrets.iterdir()), [])
+        for ids in [[UUID], [UUID, UUID], [UUID, 'invalid']]:
+            with self.subTest(ids=ids), self.assertRaises(M.SuiteError):
+                M.run_browser('owner_unavailable', ids, {}, 'run-1', '/not-used', faults=object())
+        with self.assertRaisesRegex(M.SuiteError, 'fault binding'):
+            M.run_browser('owner_unavailable', [UUID, second], {}, 'run-1', '/not-used')
+
     def test_scheduled_scan_requires_exact_parent_user_and_peer_isolation(self):
         execution = {'execution_id': UUID, 'status': 'success', 'trigger_type': 'scheduled', 'trigger_by': 31, 'metadata': {}}
         scan_id = 'bbbbbbbb-1111-4111-8111-111111111111'
@@ -431,6 +506,10 @@ class ContinuousRunnerTest(unittest.TestCase):
         self.assertIn('node --check --input-type=module < console/frontend/e2e/online/continuous-execution-events.spec.js', makefile)
         browser = (M.ROOT / 'console/frontend/e2e/online/continuous-execution-events.spec.js').read_text()
         self.assertNotIn('page.route(', browser)
+        self.assertIn('setOffline(true)', browser)
+        self.assertIn("body.error_code).toBe('execution_owner_unavailable')", browser)
+        self.assertIn("signal('owner_failure_observed')", browser)
+        self.assertIn("checks.push('old_list_and_total_cleared')", browser)
         self.assertIn('transfer-browser-support.js', browser)
         self.assertIn("localStorage.setItem('addp-lang', 'zh-cn')", browser)
         self.assertIn("locale: 'zh-CN'", browser)
