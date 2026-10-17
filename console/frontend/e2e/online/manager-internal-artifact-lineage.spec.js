@@ -1,4 +1,5 @@
 import { expect, request, test } from '@playwright/test'
+import { expectColoredModel, modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -55,6 +56,48 @@ async function verifySourceModel(page, frame, model) {
   await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
   const downloaded = await verifyOriginalDownload(page, frame, model)
   return { source_model_loaded: true, download_sha256: downloaded.checksum }
+}
+
+async function verifyBasicColoredFBX(page, source, artifactDir, phase) {
+  const loadSource = async navigate => {
+    const streamed = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === '/api/v1/manager/storage-stream' && url.searchParams.get('locator') === source.locator
+    })
+    await navigate()
+    const response = await streamed
+    expect(response.status()).toBe(200)
+    const bytes = await response.body()
+    expect(bytes.length).toBe(source.size_bytes)
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(source.sha256)
+  }
+  await loadSource(() => page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`))
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const preview = frame.locator('.model-preview')
+  const canvas = preview.locator('canvas')
+  await expect(preview).toBeVisible({ timeout: 60_000 })
+  await expect(canvas).toBeVisible()
+  await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+  const before = await verifyOriginalDownload(page, frame, source)
+  // Establish RGB in the first phase; a later phase may restore the orbited camera.
+  const initial = await expectColoredModel(page, canvas, expect, phase === 'generation-entry' ? 3 : 2)
+  await preview.screenshot({ path: resolve(artifactDir, `fbx-basic-${phase}-initial.png`) })
+  const box = await canvas.boundingBox()
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.5, { steps: 16 })
+  await page.mouse.up()
+  await expect.poll(async () => (await modelPixels(page, canvas)).checksum).not.toBe(initial.checksum)
+  await expectColoredModel(page, canvas, expect)
+  await preview.screenshot({ path: resolve(artifactDir, `fbx-basic-${phase}-orbited.png`) })
+  await loadSource(() => page.reload())
+  await expect(canvas).toBeVisible()
+  await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+  await expectColoredModel(page, canvas, expect)
+  const after = await verifyOriginalDownload(page, frame, source)
+  expect(after.checksum).toBe(before.checksum)
+  return { source_model_loaded: true, vertex_colors_verified: true, orbit_verified: true,
+    reopened: true, source_unchanged: true, download_sha256: after.checksum, source_stream_sha256: source.sha256 }
 }
 
 async function verifyDelimitedTable(page, api, source, artifactDir) {
@@ -594,6 +637,11 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(String(browserIdentity?.context?.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     await browserAPI.dispose()
 
+    const basicFBX = models.find(model => model.format === 'fbx').basic_preview_source
+    gpuDiagnostics.setStage(`fbx-basic-${phase}:preview`)
+    const basicPreviewProof = await verifyBasicColoredFBX(page, basicFBX, env.ADDP_ONLINE_ARTIFACT_DIR, phase)
+    gpuDiagnostics.setStage('navigation')
+
     if (phase === 'generation-entry') {
       const modelEvidence = []
       for (const model of models) {
@@ -639,7 +687,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
           path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-generation-entry.png`)
         })
         gpuDiagnostics.setStage('navigation')
-        modelEvidence.push({ ...model, generation_entry_visible: true, ...sourceProof, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
+        modelEvidence.push({ ...model, ...(model.format === 'fbx' ? { basic_preview: basicPreviewProof } : {}), generation_entry_visible: true, ...sourceProof, ...(model.format === 'max' ? { conversion_options_verified: true } : {}) })
       }
       expect(modelGenerationRequests).toBe(0)
       expect(failedBusinessResponses).toEqual([])
@@ -647,7 +695,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v11', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v12', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -656,6 +704,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       return
     }
 
+    await page.goto(executionPath)
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const lineage = frame.locator('.execution-lineage')
     await expect(lineage).toBeVisible()
@@ -728,7 +777,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       gpuDiagnostics.setStage('navigation')
       const sourceProof = ['fbx', 'obj'].includes(model.format)
         ? { download_sha256: (await verifyOriginalDownload(page, modelFrame, model)).checksum } : {}
-      modelEvidence.push({ ...model, model_loaded: true, content_loaded: true, ...sourceProof })
+      modelEvidence.push({ ...model, ...(model.format === 'fbx' ? { basic_preview: basicPreviewProof } : {}), model_loaded: true, content_loaded: true, ...sourceProof })
     }
     const delimitedEvidence = []
     gpuDiagnostics.setStage('navigation')
@@ -750,7 +799,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v11',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v12',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,

@@ -37,6 +37,12 @@ MESH_ITEM_SIZE_BYTES = {
 }
 MAX_SOURCE_SHA256 = "916714595bf7a2953264b8afaafe339fa60bdb4944b4664f6802ccb288190653"
 MAX_OPTIONS = {'source_unit': 'mm', 'texture_files': {'C:\\0ad\\binaries\\data\\mods\\official\\art\\textures\\skins\\skeletal\\horse_chestnut_a.dds': 'texture.png'}}
+FBX_BASIC_SOURCE = {
+    "format": "fbx", "object": "model3d/fbx/vCube.fbx", "size_bytes": 12460,
+    "sha256": "c0c2d4a07aae2060d4c623e2642a7f9d576ff8f2dc595152ddcfc2a07d214304",
+}
+FBX_BASIC_PROOF = {"source_model_loaded": True, "vertex_colors_verified": True,
+    "orbit_verified": True, "reopened": True, "source_unchanged": True}
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
 DELIMITED_SHA256 = {
     "csv": "b2d4a39906f6b5b37cb28d3a8222e93a67c73b09df8dc7a00b5050ffe50a4728",
@@ -672,20 +678,7 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
                 or native.get("schema_version") != "IFC4" or native.get("entity_count") != 16
                 or _object(native.get("entity_type_counts"), "IFC entity types").get("IFCBUILDINGELEMENTPROXY") != 1):
             raise SuiteError("IFC fixture must preserve its IFC4 schema and 16-entity BIM summary")
-    query = urllib.parse.urlencode({"item_fingerprint": item["fingerprint"], "page": 1, "page_size": 100})
-    results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "initial model results")
-    if non_negative_int(results.get("total"), "initial model result total") != 0:
-        raise SuiteError(f"a stale {format_name} GLB exists for the dedicated fixture")
-    query = urllib.parse.urlencode({"task_type": MODEL_TASK_TYPE, "page": 1, "page_size": 100})
-    tasks = _object(client.request("GET", f"/api/v1/manager/tasks?{query}", (200,)).payload, "initial model tasks")
-    rows = _array(tasks.get("items"), "initial model task items")
-    if non_negative_int(tasks.get("total"), "initial model task total") != len(rows):
-        raise SuiteError("model task preflight must inspect the complete task list")
-    for row in rows:
-        task = _object(row, "initial model task")
-        source = _object(_object(task.get("config"), "model task config").get("source"), "model task source")
-        if source.get("item_fingerprint") == item["fingerprint"]:
-            raise SuiteError(f"a stale {format_name} task exists for the dedicated fixture")
+    assert_no_model_resources(client, item["fingerprint"], format_name)
     model = ArtifactFixture(format_name, item, build_item_locator(engine_id, item))
     if format_name in MESH_SOURCE_FACTS:
         if item.get("size_bytes") != MESH_ITEM_SIZE_BYTES[format_name]:
@@ -694,11 +687,45 @@ def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, fo
     return model
 
 
+def assert_no_model_resources(client: GatewayClient, fingerprint: str, label: str) -> None:
+    query = urllib.parse.urlencode({"item_fingerprint": fingerprint, "page": 1, "page_size": 100})
+    results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "initial model results")
+    if non_negative_int(results.get("total"), "initial model result total") != 0:
+        raise SuiteError(f"a stale {label} GLB exists for the dedicated fixture")
+    query = urllib.parse.urlencode({"task_type": MODEL_TASK_TYPE, "page": 1, "page_size": 100})
+    tasks = _object(client.request("GET", f"/api/v1/manager/tasks?{query}", (200,)).payload, "initial model tasks")
+    rows = _array(tasks.get("items"), "initial model task items")
+    if non_negative_int(tasks.get("total"), "initial model task total") != len(rows):
+        raise SuiteError("model task preflight must inspect the complete task list")
+    for row in rows:
+        task = _object(row, "initial model task")
+        source = _object(_object(task.get("config"), "model task config").get("source"), "model task source")
+        if source.get("item_fingerprint") == fingerprint:
+            raise SuiteError(f"a stale {label} task exists for the dedicated fixture")
+
+
+def prepare_basic_fbx_source(client: GatewayClient, engine_id: int, bucket: str) -> dict[str, object]:
+    item = find_fixture_item(client, engine_id, f"{bucket}/{FBX_BASIC_SOURCE['object']}", "colored FBX")
+    facts = _object(_object(item.get("attributes"), "colored FBX attributes").get("item"), "colored FBX item facts")
+    if any(facts.get(key) != value for key, value in {"data_type": "model_3d", "format": "fbx", "layout": "single"}.items()):
+        raise SuiteError("colored FBX fixture must be scanned as model_3d/single")
+    if item.get("size_bytes") != FBX_BASIC_SOURCE["size_bytes"]:
+        raise SuiteError("colored FBX item size differs from the pinned fixture")
+    source = {**FBX_BASIC_SOURCE, "item_id": item["id"], "fingerprint": item["fingerprint"],
+              "locator": build_item_locator(engine_id, item)}
+    verify_source_download(client, source)
+    assert_no_model_resources(client, source["fingerprint"], "colored FBX")
+    return source
+
+
+def verify_source_download(client: GatewayClient, source: dict[str, object]) -> None:
+    raw = client.request("GET", "/api/v1/manager/downloads/file?" + urllib.parse.urlencode({"locator": source["locator"]}), (200,)).raw
+    if len(raw) != source["size_bytes"] or hashlib.sha256(raw).hexdigest() != source["sha256"]:
+        raise SuiteError(f"{source['format']} original source bytes changed")
+
+
 def verify_mesh_source(client: GatewayClient, model: ArtifactFixture) -> None:
-    spec = MESH_SOURCE_FACTS[model.format]
-    raw = client.request("GET", "/api/v1/manager/downloads/file?" + urllib.parse.urlencode({"locator": model.locator}), (200,)).raw
-    if len(raw) != spec["size_bytes"] or hashlib.sha256(raw).hexdigest() != spec["sha256"]:
-        raise SuiteError(f"{model.format} original source bytes changed")
+    verify_source_download(client, {**MESH_SOURCE_FACTS[model.format], "format": model.format, "locator": model.locator})
 
 
 def validate_fixture_png(raw: bytes) -> None:
@@ -1331,8 +1358,14 @@ def validate_browser_report(
         for source, spec in zip(trajectories, TRAJECTORY_SOURCES)
     ):
         raise SuiteError("browser trajectory sources must match all three fixed fixtures")
+    if [model.get("format") for model in models] != list(MODEL_FORMATS):
+        raise SuiteError("browser models must match the eight fixed conversion fixtures")
+    basic = _object(models[MODEL_FORMATS.index("fbx")].get("basic_preview_source"), "colored FBX source")
+    if any(basic.get(key) != value for key, value in FBX_BASIC_SOURCE.items()):
+        raise SuiteError("browser colored FBX source must match the pinned original")
+    positive_int(basic.get("item_id"), "colored FBX source item id")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v11",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1350,7 +1383,7 @@ def validate_browser_report(
         "model_generation_requests": 0,
         "raster_generation_requests": 0,
         "raster": {**raster, "range_loaded": True, "map_loaded": True},
-        "models": [{**model, "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in MESH_SOURCE_FACTS else {})} for model in models],
+        "models": [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in MESH_SOURCE_FACTS else {})} for model in models],
         "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
             "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
@@ -1378,7 +1411,7 @@ def validate_browser_report(
             "schema_version", "phase", "suite", "run_id", "result",
             "model_generation_requests", "browser_warning_errors", "failed_business_responses",
         )}
-        expected["models"] = [{**model, "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
+        expected["models"] = [{**model, **({"basic_preview": {**FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in models]
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
@@ -1392,7 +1425,7 @@ def validate_browser_report(
     for entry in stages:
         entry = _object(entry, "browser GPU diagnostic stage")
         stage = entry.get("stage")
-        allowed = {"navigation", "pptx-preview", "raster-cog:preview", "raster-cog:screenshot"}
+        allowed = {"fbx-basic-generation-entry:preview", "fbx-basic-cached-preview:preview", "navigation", "pptx-preview", "raster-cog:preview", "raster-cog:screenshot"}
         allowed.update(f"{prefix}-{format_name}:{step}" for prefix in ("generation", "model")
                        for format_name in MODEL_FORMATS
                        for step in ("preview", "screenshot"))
@@ -1509,6 +1542,8 @@ def run_scenario(
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
     model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in MODEL_FORMATS]
+    basic_fbx = prepare_basic_fbx_source(client, engine_id, bucket)
+    basic_fbx_cleanup = {}
     raster_item = find_fixture_item(client, engine_id, f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT']}", "raster")
     raster = ArtifactFixture("raster", raster_item, build_item_locator(engine_id, raster_item))
     delimited = []
@@ -1714,7 +1749,7 @@ def run_scenario(
             trajectories=trajectories,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
-                           "item_id": model.item["id"], **(MESH_SOURCE_FACTS.get(model.format, {})), **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
+                           "item_id": model.item["id"], **(MESH_SOURCE_FACTS.get(model.format, {})), **({"basic_preview_source": basic_fbx} if model.format == "fbx" else {}), **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
         entry_evidence: dict[str, object] = {}
         if browser_runner is not None:
             entry_evidence = browser_runner(repository, environment, **browser_arguments,
@@ -1729,7 +1764,7 @@ def run_scenario(
             "format": model.format, "locator": model.locator,
             "item_id": model.item["id"], "result_id": model.result_id,
             "preview_url": model.artifact["preview_url"],
-            **(MESH_SOURCE_FACTS.get(model.format, {})),
+            **(MESH_SOURCE_FACTS.get(model.format, {})), **({"basic_preview_source": basic_fbx} if model.format == "fbx" else {}),
             **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {}),
         } for model in model_fixtures]
         browser_evidence: dict[str, object] = {}
@@ -1742,7 +1777,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v9",
+            "schema_version": "addp.manager-internal-artifact-lineage/v10",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1776,7 +1811,7 @@ def run_scenario(
             "raster_cog": {"task_id": raster.task_id, "execution_id": raster.execution_id, "result_id": raster.result_id,
                 **{k:v for k,v in raster.artifact.items() if k != "physical_request"}},
             "browser": browser_evidence,
-            "cleanup": {"raster_cog": raster.cleanup, "point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
+            "cleanup": {"fbx_basic_preview": basic_fbx_cleanup, "raster_cog": raster.cleanup, "point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
         }
     finally:
         scenario_error = sys.exception()
@@ -1884,6 +1919,12 @@ def run_scenario(
                     cleanup_errors.append("PointCloud task deletion was not verified")
             except SuiteError as error:
                 cleanup_errors.append(str(error))
+        try:
+            verify_source_download(client, basic_fbx)
+            assert_no_model_resources(client, basic_fbx["fingerprint"], "colored FBX")
+            basic_fbx_cleanup.update(source_unchanged=True, residual_resources=0)
+        except SuiteError as error:
+            cleanup_errors.append(str(error))
         if cleanup_errors:
             message = "Manager lineage cleanup failed: " + "; ".join(cleanup_errors)
             if isinstance(scenario_error, SuiteError):

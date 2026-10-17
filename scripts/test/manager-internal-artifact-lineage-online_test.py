@@ -24,6 +24,11 @@ def response(status, payload=None, *, raw=b""):
     return SUITE.Response(status, payload if payload is not None else {}, {}, raw)
 
 
+def basic_fbx_source():
+    return {**SUITE.FBX_BASIC_SOURCE, "item_id": 230, "fingerprint": "f" * 64,
+            "locator": "addp://engine/27/path/addp-online/model3d/fbx/vCube.fbx?type=object&item_id=230"}
+
+
 def fixture_glb(format_name="dae"):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -327,6 +332,9 @@ class FakeGatewayClient:
                 *[{"id": 204+i, "full_name": f"addp-online/{spec['object']}", "item_type": "object",
                    "fingerprint": spec['sha256'], "size_bytes": spec['size_bytes']}
                   for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)],
+                {"id": 230, "full_name": "addp-online/model3d/fbx/vCube.fbx", "item_type": "object",
+                 "fingerprint": "f" * 64, "size_bytes": SUITE.FBX_BASIC_SOURCE["size_bytes"],
+                 "attributes": {"item": {"data_type": "model_3d", "format": "fbx", "layout": "single"}}},
                 *[{"id": 210+i, "full_name": f"addp-online/{spec['object']}", "item_type": "object",
                    "fingerprint": spec["sha256"], "size_bytes": spec["size_bytes"]}
                   for i, spec in enumerate(SUITE.TRAJECTORY_SOURCES)],
@@ -340,6 +348,8 @@ class FakeGatewayClient:
         query = urllib.parse.parse_qs(parsed.query)
         if parsed.path == "/api/v1/manager/downloads/file" and method == "GET":
             locator = query.get("locator", [""])[0]
+            if "/fbx/vCube.fbx?" in locator:
+                return response(200, raw=(SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx").read_bytes())
             if "/fbx/" in locator:
                 return response(200, raw=(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
             if "/obj/" in locator:
@@ -562,7 +572,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def browser_models(self):
         client = FakeGatewayClient()
         return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],
-                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **SUITE.MESH_SOURCE_FACTS.get(format_name, {}), **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
+                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content", **SUITE.MESH_SOURCE_FACTS.get(format_name, {}), **({"basic_preview_source": basic_fbx_source()} if format_name == "fbx" else {}), **({"conversion_options": SUITE.MAX_OPTIONS} if format_name == "max" else {})}
                 for format_name, model in client.models.items()]
 
     def browser_delimited(self):
@@ -611,14 +621,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v11",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
-                    "models": [{**model, "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
+                    "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v11",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -636,7 +646,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "model_generation_requests": 0,
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
-            "models": [{**model, "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
+            "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
             "trajectories": [{**source, "whole_file_refused": True, "selection_verified": True,
                 "matched_rows": 48, "single_device_rows": 24, "scanned_rows": 3000,
                 "rows_verified": True, "map_loaded": True, "oversize_rejected": True,
@@ -828,6 +838,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.pptx_result_exists)
         self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
         self.assertEqual(client.model_modes, dict.fromkeys(client.models, "basic_preview"))
+        self.assertEqual(report["cleanup"]["fbx_basic_preview"], {"source_unchanged": True, "residual_resources": 0})
         self.assertEqual(client.pptx_capability_calls, 3)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertEqual([call[1]["phase"] for call in browser_calls], ["generation-entry", "cached-preview"])
@@ -998,11 +1009,74 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(client, "_request", side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, "original source bytes changed"):
                 SUITE.verify_mesh_source(client, fixture)
 
+    def test_colored_fbx_rejects_wrong_identity_bytes_or_existing_resources(self):
+        source = SUITE.prepare_basic_fbx_source(FakeGatewayClient(), 27, "addp-online")
+        self.assertEqual(source, basic_fbx_source())
+        for failure in ("format", "size", "bytes", "result", "task"):
+            with self.subTest(failure=failure):
+                client = FakeGatewayClient()
+                original = client._request
+                def changed(method, path, body, headers):
+                    result = original(method, path, body, headers)
+                    if path == "/api/v1/meta/engines/27/items":
+                        item = next(row for row in result.payload if row["id"] == 230)
+                        if failure == "format": item["attributes"]["item"]["format"] = "obj"
+                        if failure == "size": item["size_bytes"] += 1
+                    if "/downloads/file?" in path and "vCube" in path and failure == "bytes":
+                        return response(200, raw=b"wrong original source")
+                    if failure == "result" and path.startswith("/api/v1/manager/model_3d_glb?"):
+                        return response(200, {"data": [{"id": 999}], "total": 1})
+                    if failure == "task" and path.startswith("/api/v1/manager/tasks?"):
+                        return response(200, {"items": [{"config": {"source": {"item_fingerprint": "f" * 64}}}], "total": 1})
+                    return result
+                client._request = changed
+                with self.assertRaises(SUITE.SuiteError):
+                    SUITE.prepare_basic_fbx_source(client, 27, "addp-online")
+
+    def test_colored_fbx_browser_proofs_are_required_in_both_phases(self):
+        for phase in ("generation-entry", "cached-preview"):
+            evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                        "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
+                        "raster": self.browser_raster(), "delimited": self.browser_delimited(),
+                        "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
+                        "trajectories": self.browser_trajectories(), "phase": phase}
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            for key in (*SUITE.FBX_BASIC_PROOF, "download_sha256", "source_stream_sha256"):
+                with self.subTest(phase=phase, missing=key):
+                    bad = copy.deepcopy(report)
+                    bad["models"][SUITE.MODEL_FORMATS.index("fbx")]["basic_preview"].pop(key)
+                    with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                        SUITE.validate_browser_report(bad, run_id="run-1", **evidence)
+            bad = copy.deepcopy(report)
+            bad["schema_version"] = "addp.manager-internal-artifact-lineage-browser/v11"
+            with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                SUITE.validate_browser_report(bad, run_id="run-1", **evidence)
+            bad_models = copy.deepcopy(evidence)
+            bad_models["models"][6]["basic_preview_source"]["sha256"] = SUITE.MESH_SOURCE_FACTS["fbx"]["sha256"]
+            with self.assertRaisesRegex(SUITE.SuiteError, "pinned original"):
+                SUITE.validate_browser_report(report, run_id="run-1", **bad_models)
+
+    def test_colored_fbx_cleanup_checks_source_after_browser_failure(self):
+        client = FakeGatewayClient()
+        def browser(_repository, environment, **evidence):
+            if evidence["phase"] == "generation-entry":
+                return self.browser_report(environment, evidence)
+            raise SUITE.SuiteError("injected colored FBX browser failure")
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(SUITE, "GatewayClient", return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, "injected colored FBX browser failure"):
+                SUITE.run_scenario(Path("/repository"), scenario_environment(directory), browser)
+        downloads = [index for index, (method, path) in enumerate(client.calls)
+                     if method == "GET" and "/downloads/file?" in path and "vCube.fbx" in path]
+        self.assertEqual(len(downloads), 2)
+        self.assertGreater(downloads[-1], max(index for index, (method, _) in enumerate(client.calls) if method == "DELETE"))
+        self.assertFalse(client.pointcloud_task_exists or client.pptx_task_exists or client.raster["task_exists"])
+        self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
+
     def test_mesh_browser_proofs_are_mandatory_in_both_phases(self):
         for phase in ("generation-entry", "cached-preview"):
             models = self.browser_models()
             if phase == "generation-entry":
-                models = [{k: v for k, v in m.items() if k in ("format", "locator", "item_id", "sha256", "size_bytes")} for m in models]
+                models = [{k: v for k, v in m.items() if k in ("format", "locator", "item_id", "sha256", "size_bytes", "basic_preview_source")} for m in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models, "phase": phase,
                         "raster": self.browser_raster(), "delimited": self.browser_delimited(),
@@ -1414,7 +1488,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 SUITE.validate_browser_report(report, run_id="run-1", **evidence)
 
     def test_generation_entry_report_rejects_missing_or_wrong_model_and_generation(self):
-        models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes")} for model in self.browser_models()]
+        models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes", "basic_preview_source")} for model in self.browser_models()]
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "phase": "generation-entry"}
@@ -1431,7 +1505,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         for phase in ("generation-entry", "cached-preview"):
             models = self.browser_models()
             if phase == "generation-entry":
-                models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes")} for model in models]
+                models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes", "basic_preview_source")} for model in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
                         "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "phase": phase}
@@ -1630,7 +1704,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v11")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v12")
 
 
 if __name__ == "__main__":

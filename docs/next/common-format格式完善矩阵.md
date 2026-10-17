@@ -47,6 +47,10 @@
 
 验证：`make test-manager-frontend` 退出 0，328 项单元、211 项浏览器及生产构建通过。最后将 mock 文件流对齐正式 `storage-stream` 契约后，按标准 `scripts/test/frontend-browser-gate.mjs resource-tree-picker.spec.js` 补验最终测试文件 34 项全部通过；`make test-frontend-ci-registration` 的 20 项登记回归和 21 个前端登记检查通过。样例及许可作为测试夹具随代码提交，不依赖本机 Business NFS 文件才能运行 CI。
 
+同日 Hosted 扩展沿用既有 Manager suite：新增独立 `model3d/fbx/vCube.fbx`，在两个浏览器阶段直接预览、旋转、重开及下载，不替换原盒子的转换 oracle。颜色像素核验抽到 Manager 的唯一页面测试辅助模块，由 T3 与 Hosted 共用；Browser v12／Owner v10 为唯一报告，保留十项普通 User Permission、原八模型及十一类清理。新增源在清理后核对字节不变、无任务和无成果；真实 Hosted 通过前只登记为验收扩展，不能复用前轮 T4 成功认证新增彩色源。
+
+本次扩展的本地验证：`make test-manager-online-runner` 退出 0（Manager／夹具／登记 92 项，既有 SGM 隔离 23 项及 System 身份工具通过）；最终资源树页面专项 34 项通过，Online CI 登记一致。完整 Manager 前端门禁执行了 328 项单元和 211 项页面：单元通过，页面 205 项通过，6 项本会话范围外的导入诊断断言失败，构建阶段未执行；完整 `make test-online-runner` 停在既有 HDFS 门禁，均不计整套通过。本轮只提交 FBX 验收相关变更，新增 Hosted T4 仍待真实运行。
+
 ### 2026-10-17 FBX 基础预览与 Three.js 升级评估
 
 固定源 `box.fbx`（SHA-256 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`）实际包含 `ByVertice`／`IndexToDirect` 颜色层和 96 个 RGBA 数值，即 24 组颜色，但没有 `ColorIndex`。原记录将其称为空顶点颜色层并直接归为 [Three.js #31247](https://github.com/mrdoob/three.js/issues/31247) 不准确；[Autodesk 的引用模式定义](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-Developer-Help/files/cpp_ref/FBX_Developer_Help_cpp_ref_class_fbx_layer_element_html.html)说明 `IndexToDirect` 通过索引数组引用颜色数组；本轮不据此猜测顺序映射、丢弃颜色或构造索引。

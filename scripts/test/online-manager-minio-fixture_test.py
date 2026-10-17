@@ -87,6 +87,10 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         mesh = self.root / "engines/model3d-workflow/tests/fixtures/mesh"
         mesh.mkdir(parents=True)
         shutil.copy2(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx", mesh / "box.fbx")
+        colored = self.root / "manager/frontend/e2e/fixtures/fbx"
+        colored.mkdir(parents=True)
+        shutil.copy2(SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx", colored / "vCube.fbx")
+        shutil.copy2(SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt", colored / "LICENSE-three.txt")
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
@@ -212,7 +216,7 @@ esac
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
-        for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png", "ifc/model.ifc", "osgb/model.osgb", "skp/model.skp", "max/model.max", "max/texture.png", "fbx/model.fbx", "obj/model.obj", "obj/model.mtl", "obj/texture.png"):
+        for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png", "ifc/model.ifc", "osgb/model.osgb", "skp/model.skp", "max/model.max", "max/texture.png", "fbx/model.fbx", "fbx/vCube.fbx", "fbx/LICENSE-three.txt", "obj/model.obj", "obj/model.mtl", "obj/texture.png"):
             self.assertIn(f"cp --quiet /fixture/{model_object} fixture/addp-online/model3d/{model_object}", commands)
             self.assertIn(f"stat fixture/addp-online/model3d/{model_object}", commands)
         for suffix in ("csv", "tsv"):
@@ -359,6 +363,10 @@ esac
         self.assertEqual(baseline["skp/model.skp"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.skp").read_bytes())
         self.assertEqual(baseline["fbx/model.fbx"], (SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
         self.assertEqual(hashlib.sha256(baseline["fbx/model.fbx"]).hexdigest(), "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8")
+        self.assertEqual(baseline["fbx/vCube.fbx"], (SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx").read_bytes())
+        self.assertEqual(baseline["fbx/LICENSE-three.txt"], (SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt").read_bytes())
+        self.assertEqual((len(baseline["fbx/vCube.fbx"]), hashlib.sha256(baseline["fbx/vCube.fbx"]).hexdigest()),
+                         (12460, "c0c2d4a07aae2060d4c623e2642a7f9d576ff8f2dc595152ddcfc2a07d214304"))
         self.assertEqual(hashlib.sha256(baseline["obj/model.obj"]).hexdigest(), "77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7")
         self.assertEqual(len(baseline["obj/model.obj"]), 97)
         self.assertEqual(len(baseline["obj/model.mtl"]), 45)

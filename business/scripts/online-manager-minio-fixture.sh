@@ -10,7 +10,7 @@ PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_pre
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
 FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson)
-MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png fbx/model.fbx obj/model.obj obj/model.mtl obj/texture.png)
+MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png fbx/model.fbx fbx/vCube.fbx fbx/LICENSE-three.txt obj/model.obj obj/model.mtl obj/texture.png)
 
 fail() {
   echo "Online Manager MinIO fixture failed: $*" >&2
@@ -91,6 +91,8 @@ for format in ifc osgb skp max; do
 done
 
 [ -f "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" ] || fail "FBX fixture source is missing"
+[ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/vCube.fbx" ] || fail "colored FBX fixture source is missing"
+[ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" ] || fail "colored FBX fixture license is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" ] || fail "MAX texture fixture source is missing"
 
 docker_fixture() {
@@ -306,6 +308,8 @@ seed_fixture() {
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/max/texture.png"
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/obj/texture.png"
   cp "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" "$MODEL_FIXTURE_DIR/fbx/model.fbx"
+  cp "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/vCube.fbx" "$MODEL_FIXTURE_DIR/fbx/vCube.fbx"
+  cp "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" "$MODEL_FIXTURE_DIR/fbx/LICENSE-three.txt"
   POINTCLOUD_FIXTURE_SOURCE="$MODEL_FIXTURE_DIR/pdal_las12_format0.las"
   mc mb --ignore-existing "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET" >/dev/null
   local network
