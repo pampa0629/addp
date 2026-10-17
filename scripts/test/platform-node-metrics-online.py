@@ -1108,7 +1108,8 @@ def assert_resource_alert_event(value, node, target, query_policy, rule):
         require(type(evidence[field]) is type(expected) and evidence[field] == expected, "resource evidence configuration mismatch")
     require(evidence["policy"] == {k: rule[k] for k in PRESSURE_FIELDS}
             and all(type(evidence["policy"][k]) is int for k in PRESSURE_FIELDS[2:]), "resource event policy mismatch")
-    evaluated, first, last, occurred = (utc_timestamp(v) for v in (evidence["evaluated_at"], evidence["sampled_from"], evidence["sampled_to"], value["occurred_at"]))
+    evaluated, first, last = (utc_timestamp(evidence[k]) for k in ("evaluated_at", "sampled_from", "sampled_to"))
+    occurred = instance_timestamp(value["occurred_at"])
     duration = rule["trigger_seconds" if value["event_type"] == "opened" else "recovery_seconds"]
     require(evaluated == int(evaluated) and occurred == evaluated and 0 <= evaluated-last <= 16
             and duration <= last-first <= duration+16 and type(evidence["samples"]) is int
@@ -1223,8 +1224,9 @@ def assert_alert_delivery(row, receipts, destination, incident_status, deleted=F
     matching = [r for r in receipts if r["delivery_id"] == row.get("id")]
     require(bool(matching), "delivery audit has no signed receipt")
     event = matching[0]["payload"]
-    for field in ("event_id", "event_type", "incident_id", "category", "subject_kind", "subject_id", "occurred_at"):
+    for field in ("event_id", "event_type", "incident_id", "category", "subject_kind", "subject_id"):
         require(row.get(field) == event[field], "delivery audit event mismatch")
+    require(instance_timestamp(row.get("occurred_at")) == instance_timestamp(event["occurred_at"]), "delivery audit occurrence time mismatch")
     attempts = row.get("attempt_count")
     require(row.get("destination_id") == destination["id"] and row.get("destination_version") == (0 if deleted else destination["version"])
             and row.get("channel") == "webhook" and row.get("status") == "delivered" and row.get("incident_status") == incident_status
@@ -1233,7 +1235,7 @@ def assert_alert_delivery(row, receipts, destination, incident_status, deleted=F
             and not row.get("last_error") and row.get("next_attempt_at") is None, "delivery audit final state mismatch")
     require(len(matching) <= attempts and matching[-1]["response_status"] == 202
             and (event["event_type"] != "opened" or matching[0]["response_status"] == 503), "automatic retry not witnessed")
-    require(utc_timestamp(row.get("delivered_at")) >= utc_timestamp(event["occurred_at"]), "delivery predates event")
+    require(instance_timestamp(row.get("delivered_at")) >= instance_timestamp(event["occurred_at"]), "delivery predates event")
 
 
 def alert_page(client, path):
@@ -1299,14 +1301,14 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     def evaluated(verdict, after):
         row = current_rule()
         if row.get("last_verdict") != verdict or not row.get("last_evaluated_at"): return False
-        if utc_timestamp(row["last_evaluated_at"]) < after: return False
+        if instance_timestamp(row["last_evaluated_at"]) < after: return False
         require(row.get("enabled") is True, "enabled rule unexpectedly paused")
         if verdict == "unknown":
             require(row.get("last_error") == "no_data" and row.get("last_value") is None and row.get("last_sample_at") is None,
                     "unknown resource verdict retained a value")
         else:
             require(row.get("last_error") == "" and finite_number(row.get("last_value")), "evaluated rule has no valid sample")
-            if utc_timestamp(row.get("last_sample_at")) < after: return False
+            if instance_timestamp(row.get("last_sample_at")) < after: return False
             if verdict == "normal" and row["last_value"] >= rule["recovery_percent"]: return False
             if verdict == "risk" and row["last_value"] <= rule["trigger_percent"]: return False
         detail["last_"+verdict] = {k: row[k] for k in ("last_evaluated_at", "last_verdict", "last_error", "last_sample_at", "last_value") if k in row}
@@ -1404,7 +1406,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
                 detail["source_recovery_preserves_incident"] = True
             eventually(lambda: check_incident("resolved", opened), "memory release recovers the original incident", timeout=180)
             resolved = check_incident("resolved", opened)
-            require(resolved is not None and utc_timestamp(resolved.get("resolved_at")) >= detail["pressure_released_at"], "resource recovery predates memory release")
+            require(resolved is not None and instance_timestamp(resolved.get("resolved_at")) >= detail["pressure_released_at"], "resource recovery predates memory release")
             eventually(lambda: deliveries_ready(("opened", "resolved"), resolved), "signed resolved notification", timeout=90)
             receipts = receiver.snapshot()
             events = {r["payload"]["event_type"]: r["payload"] for r in receipts}

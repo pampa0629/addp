@@ -1214,6 +1214,22 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                 with self.subTest(kind=kind, mutate=mutate), self.assertRaises(ONLINE.SuiteError):
                     ONLINE.assert_resource_alert_event(bad, node, target, policy, rule)
 
+    def test_alert_lifecycle_time_accepts_equivalent_offsets_but_resource_evidence_stays_utc(self):
+        node, target, policy, rule = self.context()
+        event = self.event()
+        event["occurred_at"] = "2026-10-17T09:01:00+08:00"
+        ONLINE.assert_resource_alert_event(event, node, target, policy, rule)
+        for stamp in ("2026-10-17T01:01:00+08:00", "2026-10-17T01:01:00", "invalid"):
+            bad = copy.deepcopy(event); bad["occurred_at"] = stamp
+            with self.subTest(stamp=stamp), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resource_alert_event(bad, node, target, policy, rule)
+        for field, stamp in (("evaluated_at", "2026-10-17T09:01:00+08:00"),
+                             ("sampled_from", "2026-10-17T09:00:29+08:00"),
+                             ("sampled_to", "2026-10-17T09:00:59+08:00")):
+            bad = copy.deepcopy(event); bad["evidence"][field] = stamp
+            with self.subTest(field=field), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_resource_alert_event(bad, node, target, policy, rule)
+
     def test_signed_receiver_retries_same_delivery_but_rejects_rebinding_and_secret_reflection(self):
         receiver = self.receiver()
         body, headers = self.signed(receiver)
@@ -1257,7 +1273,11 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                "incident_id": 1, "category": "resource", "subject_kind": "host_node", "subject_id": event["subject_id"],
                "incident_status": "open", "destination_version": 3, "delivered_at": "2026-10-17T01:01:05Z"}
         ONLINE.assert_alert_delivery(row, receiver.snapshot(), {"id": 7, "version": 3}, "open")
-        for field, value in (("event_id", "foreign"), ("attempt_count", 1), ("manual_retry_count", 1), ("destination_id", 8), ("payload", "private"), ("status", "pending"), ("destination_version", 2)):
+        offset = dict(row, occurred_at="2026-10-17T09:01:00+08:00", delivered_at="2026-10-17T09:01:05+08:00")
+        ONLINE.assert_alert_delivery(offset, receiver.snapshot(), {"id": 7, "version": 3}, "open")
+        for field, value in (("event_id", "foreign"), ("attempt_count", 1), ("manual_retry_count", 1), ("destination_id", 8), ("payload", "private"), ("status", "pending"), ("destination_version", 2),
+                             ("occurred_at", "2026-10-17T01:01:00+08:00"), ("occurred_at", "2026-10-17T01:01:00"),
+                             ("delivered_at", "2026-10-17T09:00:59+08:00"), ("delivered_at", "2026-10-17T01:01:05")):
             bad = dict(row); bad[field] = value
             with self.subTest(field=field), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.assert_alert_delivery(bad, receiver.snapshot(), {"id": 7, "version": 3}, "open")
@@ -1274,8 +1294,9 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                 receiver.rule = None
                 receiver.node, receiver.target, receiver.query_policy = node, target, query_policy
                 receiver.url = "https://127.0.0.1:12345/resource-alert"
-                def stamp(at=None):
-                    return datetime.datetime.fromtimestamp(clock[0] if at is None else at, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                def stamp(at=None, database=False):
+                    value = datetime.datetime.fromtimestamp(clock[0] if at is None else at, datetime.timezone.utc)
+                    return value.astimezone(datetime.timezone(datetime.timedelta(hours=8))).isoformat() if database else value.strftime("%Y-%m-%dT%H:%M:%SZ")
                 def notify(kind):
                     incident, rule = state["incident"], state["rule"]
                     evidence = {"rule_id": rule["id"], "rule_version": 2, "policy": {k: rule[k] for k in ONLINE.PRESSURE_FIELDS},
@@ -1291,8 +1312,8 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                     for _ in range(2 if kind == "opened" else 1): receiver.accept(body, headers)
                     state["deliveries"].append({"id": headers["X-ADDP-Webhook-ID"], "event_id": event["event_id"], "event_type": kind,
                         "destination_id": 7, "channel": "webhook", "status": "delivered", "attempt_count": 2 if kind == "opened" else 1,
-                        "cycle_attempt_count": 2 if kind == "opened" else 1, "manual_retry_count": 0, "occurred_at": stamp(), "incident_id": 9,
-                        "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"], "delivered_at": stamp()})
+                        "cycle_attempt_count": 2 if kind == "opened" else 1, "manual_retry_count": 0, "occurred_at": stamp(database=True), "incident_id": 9,
+                        "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"], "delivered_at": stamp(database=True)})
                 def page(rows): return {"data": copy.deepcopy(rows), "total": len(rows), "page": 1, "page_size": 100}
                 def request(method, path, expected, body=None, **kwargs):
                     status, value = 200, {}
@@ -1304,8 +1325,8 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                         if rows and rows[0]["enabled"]:
                             phase = state["phase"]
                             verdict = "unknown" if phase == "unknown" else "risk" if phase == "high" else "normal"
-                            rows[0].update(last_verdict=verdict, last_error="no_data" if verdict == "unknown" else "", last_evaluated_at=stamp())
-                            if verdict != "unknown": rows[0].update(last_sample_at=stamp(), last_value=43 if verdict == "risk" else 25)
+                            rows[0].update(last_verdict=verdict, last_error="no_data" if verdict == "unknown" else "", last_evaluated_at=stamp(database=True))
+                            if verdict != "unknown": rows[0].update(last_sample_at=stamp(database=True), last_value=43 if verdict == "risk" else 25)
                             if fail_at == "source_unknown" and phase == "unknown": raise ONLINE.SuiteError("original source failure")
                         value = page(rows)
                     elif route.startswith(ONLINE.RESOURCE_RULES):
@@ -1333,10 +1354,10 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                     elif route == ONLINE.ALERTS:
                         if state["phase"] == "high" and state["incident"] is None:
                             state["incident"] = {"id": 9, "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
-                                                 "signal": "node.memory.used_percent", "severity": "warning", "status": "open", "opened_at": stamp()}
+                                                 "signal": "node.memory.used_percent", "severity": "warning", "status": "open", "opened_at": stamp(database=True)}
                             notify("opened")
                         if state["phase"] == "released" and state["incident"]["status"] == "open":
-                            state["incident"].update(status="resolved", resolved_at=stamp()); notify("resolved")
+                            state["incident"].update(status="resolved", resolved_at=stamp(database=True)); notify("resolved")
                         value = page([] if state["incident"] is None else [state["incident"]])
                     elif route == ONLINE.ALERT_DELIVERIES:
                         rows = [dict(r, destination_version=0 if state["destination"] is None else state["destination"]["version"], incident_status=state["incident"]["status"]) for r in state["deliveries"]]

@@ -1,6 +1,6 @@
 # ADDP 平台运行监控与可观测性设计
 
-状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、平台主机管理、采集配置及主机监控页面已分批实施并验收。九项概览、文件系统容量与 inode、磁盘吞吐与 IO 时间、网络接口收发的固定目录共 25 项，本地标准门禁与原生 Linux Hosted 验收已通过；平台告警领域调整已于 2026-10-15 确认并分批实施，资源规则及统一入口尚未交付，生产 T5 未完成。
+状态：总体方案与依赖隔离原则已确认；可选日志/指标设施、平台主机管理、采集配置及主机监控页面已分批实施并验收。九项概览、文件系统容量与 inode、磁盘吞吐与 IO 时间、网络接口收发的固定目录共 25 项，本地标准门禁与原生 Linux Hosted 验收已通过；服务进程资源与趋势、主机 CPU/内存 TOP5、相邻时段比较、统一平台告警入口及 CPU/内存规则已实现。资源告警正式身份闭环 T4 尚未通过，生产 T5 未完成；具体范围和失败记录以第十节最新批次为准。
 
 用户已确认首期覆盖 ADDP 自身部署节点、服务和明确纳管的业务引擎；监控组件按 Infra 组织、按需部署，其缺失或故障只影响对应观测能力。本文记录目标契约与分批实施证据；可选设施裁剪及资源查询的已验收范围以第十节批次记录为准，不据此宣称所有目标能力或生产部署已完成。
 
@@ -2419,3 +2419,9 @@ API 操作完成后先停用并按 CAS 删除本轮规则和通知目标，验�
 实施前门禁：原 `make test-node-metrics-online-runner` 增加内存预算/阈值、隔离边界与 mmap/接收端释放、签名/载荷拒绝、证据时间与阈值、重试 ID/状态及 API 清理回归；fixture 原配置回归覆盖两项仅 Hosted 输入。原脚本和测试文件已由同一 root runner、`test-online-runner`、Online 注册及 Hosted workflow 覆盖，不新增入口或技术路线。只消费现有 API，不修改路由、DTO 或 Swagger；标准节点指标 runner 和默认 `make test-changed` 分别记录结果，随后固定源码真实 Hosted 复验，不把本地夹具或受控源 T2 计为 T4 已通过。
 
 本地实现已落在原 Online runner 和 fixture：`make test-node-metrics-online-runner` 的 65 项 Python 回归及原 Metrics Go 测试通过，含真实 TLS 根证书/回环 SAN 校验和监听器异常释放；新增模拟只证明验收器会正确检查身份拒绝、CAS、未知保持、同 incident 恢复和历史保留，不计作正式 T4。`make test-changed` 因共享工作区扩散到其他模块，停在缺少外部 PostgreSQL 等测试连接的预检，未执行或计为通过；日志 `/tmp/addp-resource-alert-changed.log`。原根 runner、Online 注册与 Hosted workflow 已覆盖本批原有文件，无需新增入口或编排。真实 Hosted 尚待固定源码执行。
+
+首次正式告警验收 Run `38987739949`（源码 `4507f944e8b00aa6448c23c50b4c764013e5afc0`、Job `117263028018`）已失败，停在 `resource-alert-real-memory-lifecycle` 的基线正常评估读取，错误为 `resource time must be UTC`。实际规则为 enabled=true/version=2、last_verdict=normal、last_error 为空，评估与采样时间分别是 `2026-10-17T09:44:49+08:00` 和 `09:44:38.671+08:00`；管理员与四类负例隔离已通过，内存压力尚未申请，触发、通知和恢复不计通过。原资源浏览器阶段 passed，外层耗时 237107 ms，未超原期限；退出 summary 为 result=failed、cleanup=passed、infra_cleanup=zero_residuals。
+
+按 API 规范 7.2，普通模型时间允许带时区 ISO 8601。规则评估状态、incident 生命周期、delivery 审计沿该契约读取，不能误用仅属于资源观测证据的 UTC `Z` 限制；同一 event 的审计时间与签名正文按绝对时刻比较，其他身份及不可变正文仍精确核对。嵌入 `ResourceAlertEvidence` 的评估、采样区间继续严格要求 UTC，持续时间、新鲜度、整数评估点、配置版本及阈值断言不变。本批只修正原验收器，不改产品 API、数据库、时区配置、IAM、浏览器或 Hosted 时限。实施前沿原 `make test-node-metrics-online-runner` 增加数据库 `+08:00` 与通知 UTC 的完整闭环模拟、等价时间及错误偏移/无时区拒绝反例，默认 `make test-changed` 单独记录；原登记已覆盖，修正后同一 Hosted suite 必须重新执行。
+
+时间格式反例先在原 runner 复现：65 项中完整闭环与来源异常清理分支被错误 UTC 断言提前中断（`/tmp/addp-resource-alert-timezone-red.log`）。修正后同一标准入口退出 0，66 项 Python 回归及 Metrics Go 测试通过（`/tmp/addp-resource-alert-timezone-green.log`）；额外验证等价时区可以比较、错误偏移与无时区时间仍拒绝、嵌入资源证据不得改成带偏移表示。`make test-changed` 因共享工作区 Catalog/Manager 的外部测试连接缺失在预检停止，未执行、不计通过（`/tmp/addp-resource-alert-timezone-changed.log`）；本批不调查或修复这些 Owner 的门禁。任务范围 diff 检查通过；原规范入口与 CI 已覆盖，无产品或环境变更，无需个人服务重启。
