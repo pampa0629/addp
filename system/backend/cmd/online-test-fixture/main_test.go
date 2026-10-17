@@ -347,6 +347,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, redisConsumerPermissions...)
 	allPermissions = append(allPermissions, readWorkflowConsumerPermissions...)
 	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
+	allPermissions = append(allPermissions, vectorPMTilesPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
 	allPermissions = append(allPermissions, sourceInitializerPermissions...)
@@ -1142,5 +1143,19 @@ func TestPrivateImportOutsiderTokenIsExportedToOwnerOnlyEnvironment(t *testing.T
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatal("private import fixture token must remain owner-only")
+	}
+}
+
+func TestVectorPMTilesIdentityHasExactConsumerPermissions(t *testing.T) {
+	actual, err := suitePermissions("vector-pmtiles-workflow")
+	expected := []string{"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
+		"system.execution_authorization.create", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+		"meta.lineage.read", "monitor.execution.read", "manager.data_item.read", "manager.derived_artifact.read"}
+	if err != nil || !slices.Equal(actual, expected) || !needsEngineProvisioner("vector-pmtiles-workflow") {
+		t.Fatal("PMTiles fixture must grant exactly the ordinary consumer permissions plus an independent provisioner")
+	}
+	values := consumerEnvironment("vector-pmtiles-workflow", 42, "token", "password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "password" {
+		t.Fatal("PMTiles Console must use the same ordinary User")
 	}
 }

@@ -999,6 +999,37 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "must not keep a self-hosted"):
             CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
 
+    def test_pmtiles_requires_manual_isolation_content_and_cleanup(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
+            'scripts/test/online-hosted-vector-pmtiles-gate.sh', 'scripts/utils/hosted-online.sh',
+            'business/scripts/online-vector-pmtiles-fixture.py', 'scripts/test/vector-pmtiles-workflow-online.py',
+            'console/frontend/e2e/online/vector-pmtiles-workflow.spec.js',
+            'system/backend/cmd/online-test-fixture/main.go', 'Makefile')
+        for relative in paths:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, destination)
+        CHECK.validate_vector_pmtiles_profile(self.repository, {'vector-pmtiles-workflow'})
+        faults = [(paths[0], "inputs.suite != 'vector-pmtiles-workflow'"),
+            (paths[2], 'for start_target in -security -develop -manager -monitor'),
+            (paths[2], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+            (paths[2], 'business.scripts.online-vector-pmtiles-fixture stop'),
+            (paths[3], 'stop_online_product_runtime || status=1'),
+            (paths[4], 'shared.owned(name, SUITE)'), (paths[4], 'reader.get(5, 26, 13)'),
+            (paths[5], 'before_scans != after_scans'), (paths[5], 'before_graph != after_graph'),
+            (paths[6], 'evidence.tile_sha256'), (paths[6], "value === 'no-store'"),
+            (paths[8], 'test_online_pmtiles_fixture.py'),
+            (paths[8], 'test_pmtiles_requires_manual_isolation_content_and_cleanup')]
+        for relative, fragment in faults:
+            path = self.repository / relative
+            original = path.read_text()
+            self.assertIn(fragment, original)
+            path.write_text(original.replace(fragment, 'omitted'))
+            with self.subTest(relative=relative, fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_vector_pmtiles_profile(self.repository, {'vector-pmtiles-workflow'})
+            path.write_text(original)
+
     def test_raster_requires_manual_disposable_profile_and_registered_regressions(self) -> None:
         root = SCRIPT.parents[2]
         files = (

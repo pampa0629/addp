@@ -1782,6 +1782,45 @@ def validate_quality_dynamic_binding_profile(repository: Path, registered: set[s
             raise RegistrationError(f"Quality Hosted owner contract is incomplete: {relative}")
 
 
+def validate_vector_pmtiles_profile(repository: Path, registered: set[str]) -> None:
+    if "vector-pmtiles-workflow" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  vector-pmtiles-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    suite = load_suite_registry(repository)["vector-pmtiles-workflow"]
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-pmtiles-workflow'" not in job.group("body")
+        or "&& inputs.suite != 'vector-pmtiles-workflow'" not in workflow or suite.nightly
+        or ("security", "SECURITY_URL") not in suite.services):
+        raise RegistrationError("PMTiles requires a manual isolated Hosted job and Security preflight")
+    required = {
+        "scripts/test/online-hosted-vector-pmtiles-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite vector-pmtiles-workflow',
+            'start_online_geopython_runtime', 'for start_target in -security -develop -manager -monitor',
+            'business.scripts.online-vector-pmtiles-fixture stop', 'scripts/test/online-engine-registration.py',
+            'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'env -u POSTGRES_PASSWORD make test-online'),
+        "scripts/utils/hosted-online.sh": ('stop_online_product_runtime || status=1',),
+        "business/scripts/online-vector-pmtiles-fixture.py": (
+            'shared.start_minio(', 'shared.owned(name, SUITE)', "com.addp.online-fixture=", 'validate_records(',
+            "'vector_layers'", "header['min_zoom'] != 0", 'reader.get(5, 26, 13)', 'physical_worker('),
+        "scripts/test/vector-pmtiles-workflow-online.py": (
+            'validate_conflict(', 'before_scans != after_scans', 'before_graph != after_graph',
+            "target['fingerprint'] != before_item['fingerprint']", "'meta_scan_runs'", 'wait_current_graph(',
+            'validate_item(target, native)', 'browser_runner(repository, env, evidence)'),
+        "console/frontend/e2e/online/vector-pmtiles-workflow.spec.js": (
+            'login(', 'auth.principalID', "content.metadata.min_zoom).toBe(0)", "['cache-control']).toBe('no-store')",
+            "value === 'no-store'", 'evidence.tile_sha256', 'evidence.feature_count', "getImageData("),
+        "system/backend/cmd/online-test-fixture/main.go": ('case "vector-pmtiles-workflow":', 'return vectorPMTilesPermissions, nil'),
+        "Makefile": ('@$(MAKE) test-vector-pmtiles-online-runner', 'test_online_pmtiles_fixture.py',
+            'scripts/test/vector-pmtiles-workflow-online_test.py', 'scripts/test/online-vector-pmtiles-fixture_test.py',
+            'scripts/test/online-hosted-vector-pmtiles-gate_test.py', 'test_pmtiles_requires_manual_isolation_content_and_cleanup'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"PMTiles owner contract is incomplete: {relative}")
+
+
 def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> None:
     if "raster-workflow" not in registered:
         return
@@ -2166,6 +2205,7 @@ def check_registration(repository: Path) -> None:
     validate_metric_engine_variant(repository, registered)
     validate_pg_authorization_profile(repository, registered)
     validate_public_origin_browser_profile(repository, registered)
+    validate_vector_pmtiles_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
     validate_raster_capacity_profile(repository, registered)
     validate_hdfs_spark_profile(repository, registered)

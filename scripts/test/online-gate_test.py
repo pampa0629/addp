@@ -96,6 +96,7 @@ class OnlineGateTest(unittest.TestCase):
                 "opengauss-consumer-flow",
                 "quality-dynamic-binding",
                 "raster-workflow",
+                "vector-pmtiles-workflow",
                 "raster-workflow-capacity",
                 "security-mysql-owner-protection",
                 "security-plaintext-access",

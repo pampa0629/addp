@@ -196,7 +196,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
@@ -521,6 +521,13 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限和隔离生命周期
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
+.PHONY: test-vector-pmtiles-online-runner
+test-vector-pmtiles-online-runner: ## 验证 PMTiles T4 场景、物理夹具与隔离生命周期
+	@node --check console/frontend/e2e/online/vector-pmtiles-workflow.spec.js
+	@bash -n scripts/test/online-hosted-vector-pmtiles-gate.sh
+	@python3 -m unittest scripts/test/vector-pmtiles-workflow-online_test.py scripts/test/online-vector-pmtiles-fixture_test.py scripts/test/online-hosted-vector-pmtiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pmtiles_requires_manual_isolation_content_and_cleanup
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
 	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -579,6 +586,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-node-metrics-online-runner
 	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
+	@$(MAKE) test-vector-pmtiles-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@$(MAKE) test-elasticsearch-online-runner
