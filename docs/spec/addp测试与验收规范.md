@@ -228,6 +228,10 @@ Quality 过程事件扩展复用同一套件和普通 User，经 Gateway 读取 
 
 Orchestrator 执行 T4 `orchestrator-execution` 复用 Hosted 生命周期、System owner 身份夹具和既有一次性 PostgreSQL 样例源，正式启动 System、Gateway、Meta、Orchestrator、Monitor。每轮经 API 创建扫描任务和嵌套串行 DAG，核对父子执行、成功进度、真实数据源中断后的失败阻断、安全步骤/事件以及跨 Tenant 与缺少 Owner 权限时的不可见性。故障操作必须核对当次源容器标签，恢复后删除本轮任务；原始执行历史由 Hosted Infra 销毁，凭据不归档。入口为 `make test-online ONLINE_SUITE=orchestrator-execution`，准备和退出由 `scripts/test/online-hosted-orchestrator-gate.sh` 负责，确定性测试进入 `make test-online-runner` 与 T0。首次真实通过前只允许手动 `workflow_dispatch`。该首轮只覆盖业务数据源中断；后端进程崩溃和 POST 响应丢失由同一 suite 的故障扩展验收，续租故障仍待后续真实验证。
 
+<a id="orchestrator-读取权限与历史保留验收"></a>
+
+**Orchestrator 读取权限与历史保留验收**
+
 权限边界扩展沿用同一手动 Hosted T4，不新增认证旁路或生产故障开关。System IAM 夹具提供同 Tenant 的普通读者，其 Orchestrator 读取与 Monitor 读取分别赋权；父执行及嵌套编排可读，Meta 子执行不授予读取权，树仅显示两层编排，子执行详情、树和事件返回 404。独立 Tenant 管理员仅通过正式 IAM 接口撤销该读者的 Orchestrator 角色分配；先验证旧令牌失效为 401，再经正式登录取得同 User、Membership 和 Tenant 的新令牌，确认 Monitor 权限仍在、父执行详情、树及事件均为 404。外部代理只中断本轮 Meta 的 execution-read-scope GET 连接，由真实 Monitor 返回 503 execution_owner_unavailable 且不含执行数据；恢复连接后核对完整执行树不变。凭据与代理控制只存于不归档的 owner-only 临时目录，业务报告不保存角色分配编号，未知撤权结果不重试，失败路径释放故障并由标准生命周期销毁部署。确定性验证归入现有 make test-orchestrator-online-runner 与 make test-online-runner / 平台 CI；扩展首次真实通过前不计为 T4 已通过。
 
 权限扩展已在提交 `759ca7736` 的 [Hosted T4 37126213434](https://github.com/pampa0629/addp/actions/runs/37126213434) 真实通过，本轮共 20 项检查。普通读者可读取父执行与嵌套编排，Meta 子执行的详情、树和事件均不可见；正式撤销 Owner 角色分配后，旧令牌返回 401，重新登录仍保留 Monitor 权限时父执行详情、树和事件返回 404。中断 Meta 读取范围连接时，真实 Monitor 返回无执行数据的 503 `execution_owner_unavailable`，恢复后完整执行树一致。此前的业务源中断、响应丢失与 Backend 崩溃检查同时通过，两类派发故障均无重放。System、Gateway、Meta、Orchestrator、Monitor 的构建身份均匹配该提交；四个临时任务定义经正式 API 删除，生命周期清理通过，Infra 容器、网络及数据卷零残留。61 个归档文件未包含身份凭据及代理控制文件，也未检出标准令牌或夹具密码。此结果不包含续租故障、一次性执行及已删除任务历史的真实验收。
@@ -298,6 +302,10 @@ API 消费方数据面边界由 `workbench-service-consumption` 复用同一 Bus
 该 suite 还验证普通只读共享的正式准备、真实双服务 OAuth 反查与首次受理。专用 User 必须是 fixture 的当前业务负责人，显式具备共享确认、独立办理和批准要求初始化／读取 Permission，并由管理员预置当前有效的引擎管理委派；测试不自动赋权或创建委派。专用部署须配置独立 `SYSTEM_SERVICE_CLIENT_SECRET`，未配置在生命周期启动前拒绝验收，不改变普通部署允许留空的 Ready 边界。只为上述精确稳定表通过正式 API 初始化尚不存在的 Catalog 批准要求，已有独立批准模式拒绝而不覆盖；不可变业务决定、已核清的办理记录与 System 回执属于专用 Tenant 的长期审计事实，单列证据，不按临时资源删除。正式请求显式限时十分钟，办理窗口仍从首次受理起最多五分钟。同编号换用途或批准要求版本须返回 `409 catalog_sharing_decision_conflict`，拒绝后原决定／原回执必须不变；不新增决定或办理编号。此拒绝允许产生操作审计，不能以场景预期数量代替数据库计数验证。同参重放必须保持完整绑定、受理时间及截止时间不变；调用方丢弃已提交响应后恢复只证明调用方边界，不冒充 Catalog→System 网络中断或进程重启。人类 Token 访问机器反查／受理接口必须拒绝；`pending`、绑定错误或恢复失败不能计为通过。受理不等于 Grant 写入或实际可读，本 suite 不验证或创建源访问 Grant。
 
 Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 MinIO Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 与多页 PPTX 样本；suite 经 Gateway 触发真实 Meta scan，并使用扫描所得的 ResourceLocator、item ID 和 fingerprint 验证两条正式链路：`point_cloud_copc_generation` 必须由 PointCloud Runtime 从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`；PPTX 预览必须由 Quick View Capability 声明 `generate_pptx_pdf`，并通过统一 action 入口首次触发 `pptx_pdf_generation`，由 Document Workflow / LibreOffice 发布多页静态 PDF，同源再次读取 Capability 只复用同一任务与结果，不创建第二次 execution。Monitor API 与真实浏览器必须展示同一业务输入和 `addp-infra://` 输出；浏览器还必须在 Data Explorer 翻到后续 PDF 页，跨过 Engine 状态周期刷新后仍保持当前页。退出路径通过 Manager 正式 API 删除两类结果与任务、验证对象不可再读取及临时资源零残留；不得直接操作数据库或 infra MinIO 清理。
+
+<a id="max-模型-hosted-验收"></a>
+
+**MAX 模型 Hosted 验收**
 
 MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
 

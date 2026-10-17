@@ -424,7 +424,7 @@ Catalog 的来源绑定和最后观察摘要保证企业身份稳定、离线列
 
 ### 5.5 Standard Metric 专业资源变化与动态引用
 
-Standard Metric 无论处于 `draft`、`approved` 还是 `deprecated`，只要已经正式持久化，就自动建立 `metric` CatalogEntry。Standard 专业状态不改写 Catalog 治理状态，初始条目仍使用 `discovered + inventory`。
+Standard Metric 采用稳定身份与不可变修订；修订状态统一为 `draft|in_review|published|withdrawn`，只要指标已经正式持久化，就自动建立 `metric` CatalogEntry。动态引用响应的 `status` 表达所展示修订的状态（优先待维护修订，否则当前修订），稳定身份的生命周期独立保留在摘要 `lifecycle_state` 中。客户端只接受上述修订状态，不保留旧 `approved|deprecated` 校验路线。Standard 专业状态不改写 Catalog 治理状态，初始条目仍使用 `discovered + inventory`。
 
 Standard 在 Metric 聚合根创建、版本推进或删除的同一数据库事务中，通过 PostgreSQL trigger 追加 owner-local、append-only `standard.catalog_resource_changes`。指标数据元映射和依赖关系写入必须与 Metric 版本推进处于同一事务，因此只监听 Metric 聚合根；不得在 Service 层增加向 Catalog 的同步双写。
 

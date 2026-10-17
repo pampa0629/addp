@@ -340,7 +340,7 @@
       "apiTest": "接口测试",
       "testTab": "接口测试",
       "publicAccess": "公开访问",
-      "publicAccessHint": "开启后，无需 JWT 即可访问该图谱的知识服务 API",
+      "publicAccessHint": "开启后，无需登录即可访问该图谱的知识服务 API；数据保护规则仍然生效",
       "publicHint": "开启后，无需 JWT 即可访问该图谱的知识服务 API",
       "serviceBaseUrl": "服务基础 URL",
       "copy": "复制",

@@ -94,7 +94,7 @@ func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 
 // Update godoc
 // @Summary      更新知识图谱 | Update knowledge graph
-// @Description  更新知识图谱的名称、描述或状态 | Update knowledge graph name, description or status
+// @Description  更新名称、描述、状态或知识服务公开状态；省略 is_public 保留原值，false 关闭公开 | Update name, description, status or knowledge-service public access; omit is_public to retain it, false disables public access
 // @Tags         知识图谱 | Knowledge Graph
 // @Accept       json
 // @Produce      json
@@ -103,6 +103,9 @@ func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 // @Param        request body models.UpdateKnowledgeGraphRequest   true "更新知识图谱请求 | Update knowledge graph request"
 // @Success      200 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.update"]

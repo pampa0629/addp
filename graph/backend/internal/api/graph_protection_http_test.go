@@ -88,7 +88,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	gate := service.NewGraphProtectionGate(store)
 	graphRepo, ontologyRepo := repository.NewKnowledgeGraphRepository(db), repository.NewOntologyRepository(db)
 	data := service.NewGraphDataService(graphRepo, ontologyRepo, commonclient.NewSystemServiceClient(system.URL, graphProtectionHTTPToken{}, system.Client()), gate)
-	auth := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer viewer": {"graph.graph.read"}})
+	auth := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer viewer": {"graph.graph.read"}, "Bearer no-permission": {"graph.ontology.read"}})
 	defer auth.Close()
 	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, nil, NewBrowseHandler(data, nil), nil, nil, nil, NewServiceHandler(service.NewKnowledgeService(data, ontologyRepo, graphRepo)), modulelifecycle.NewStandalone("graph"))
 	target, err := dataprotection.DataItemTargetFromCatalogPath(provider.EngineCatalogModel(), path)
@@ -113,6 +113,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 			{"/api/v1/graph/kg/1/search?q=name", ""},
 			{"/api/v1/graph/kg/1/ontology", ""},
 			{"/api/v1/graph/kg/1/stats", ""},
+			{"/api/v1/graph/kg/1/stats", "no-permission"},
 		} {
 			t.Run(fmt.Sprintf("%s_%s", state, route.path), func(t *testing.T) {
 				request := httptest.NewRequest(http.MethodGet, route.path, nil)
@@ -127,6 +128,55 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 				}
 				if err := gate.ReadyToAcknowledge(t.Context(), 7, "installed"); err != nil {
 					t.Fatal("request leaked a protection read", err)
+				}
+			})
+		}
+	}
+	beforeInvalid := engineReads.Load()
+	invalid := httptest.NewRequest(http.MethodGet, "/api/v1/graph/kg/1/stats", nil)
+	invalid.Header.Set("Authorization", "Bearer invalid")
+	invalidResponse := httptest.NewRecorder()
+	router.ServeHTTP(invalidResponse, invalid)
+	if invalidResponse.Code != 401 || engineReads.Load() != beforeInvalid {
+		t.Fatal("invalid credentials fell back to anonymous access", invalidResponse.Code)
+	}
+	graph.IsPublic = false
+	if err := graphRepo.Update(&graph); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path, body string }{
+		{"GET", "/api/v1/graph/kg/1/entities/Person", ""},
+		{"GET", "/api/v1/graph/kg/1/entities/Person/0", ""},
+		{"GET", "/api/v1/graph/kg/1/nodes/0/neighbors", ""},
+		{"GET", "/api/v1/graph/kg/1/search?q=name", ""},
+		{"GET", "/api/v1/graph/kg/1/ontology", ""},
+		{"GET", "/api/v1/graph/kg/1/stats", ""},
+		{"POST", "/api/v1/graph/kg/1/paths", `{"source_node_id":"0","target_node_id":"1"}`},
+		{"POST", "/api/v1/graph/kg/1/subgraph", `{"node_id":"0"}`},
+	} {
+		for _, token := range []string{"no-permission", "viewer", ""} {
+			t.Run("private_"+route.path+"_"+token, func(t *testing.T) {
+				before := engineReads.Load()
+				request := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
+				request.Header.Set("Accept-Language", "en")
+				request.Header.Set("Content-Type", "application/json")
+				if token != "" {
+					request.Header.Set("Authorization", "Bearer "+token)
+				}
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				want, reason := 403, "Data protection"
+				if token == "no-permission" {
+					reason = "permission_denied"
+				}
+				if token == "" {
+					want, reason = 401, ""
+				}
+				if response.Code != want || !strings.Contains(response.Body.String(), reason) {
+					t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+				}
+				if token != "viewer" && engineReads.Load() != before {
+					t.Fatal("unauthorized request obtained an engine connection")
 				}
 			})
 		}

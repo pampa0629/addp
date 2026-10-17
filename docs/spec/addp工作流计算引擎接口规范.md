@@ -1193,9 +1193,9 @@ Spark 只提供领域算子执行器和已声明输出端口适配；DAG 校验�
 ### B. 相关文档
 
 - [ADDP 开发原则](./addp开发原则.md)
-- [ADDP API 设计规范](./addp-api设计规范.md)
-- [Develop 模块文档](../develop/CLAUDE.md)
-- [System 引擎管理](../system/CLAUDE.md)
+- [ADDP API 设计规范](./addp-API设计规范.md)
+- [Develop 模块文档](../../develop/CLAUDE.md)
+- [System 引擎管理](../../system/CLAUDE.md)
 
 ### C. 技术支持
 

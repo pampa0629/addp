@@ -1,8 +1,10 @@
+# ADDP 技术栈规约
+
 ## 技术栈
 
 ### 后端
 
-- **语言**: Go 1.23+
+- **语言**: Go 1.24.2（工作区基线）
 - **HTTP 框架**: Gin
 - **ORM**: GORM
 - **数据库**: PostgreSQL 15（所有持久化业务模块使用各自 owner schema 隔离，例如 `system`、`manager`、`meta`、`catalog`、`security`、`transfer`、`orchestrator`、`develop`）

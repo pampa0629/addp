@@ -113,6 +113,7 @@ type UpdateKnowledgeGraphRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Status      string `json:"status"`
+	IsPublic    *bool  `json:"is_public,omitempty"` // 省略时保留现值，false 显式关闭公开 | Omit to retain; false disables public access
 }
 
 // CreateOntologyVersionRequest 创建版本快照请求

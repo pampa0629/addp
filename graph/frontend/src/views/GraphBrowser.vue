@@ -8,7 +8,7 @@
           {{ t('graph.browser.totalCount') }}:
           {{ stats.node_count }} {{ t('graph.browser.nodes') }} / {{ stats.relationship_count }} {{ t('graph.browser.relations') }}
         </el-tag>
-        <el-tag size="small" type="success">
+        <el-tag v-if="!browseError" size="small" type="success">
           {{ canvasSummary }}
         </el-tag>
         <!-- 着色状态标签 -->
@@ -76,8 +76,17 @@
       </div>
     </div>
 
+    <el-alert
+      v-if="browseError"
+      :title="t(browseError.messageKey)"
+      :description="browseError.message"
+      type="error"
+      :closable="false"
+      show-icon
+    />
+
     <!-- 主体区域 -->
-    <div class="main-area">
+    <div v-else class="main-area">
       <!-- 左侧过滤面板 -->
       <div class="filter-panel">
         <div class="filter-section">
@@ -215,6 +224,7 @@ const visibleRelTypes = ref([])
 // UI 状态
 const loading = ref(false)
 const searching = ref(false)
+const browseError = ref(null)
 const searchQuery = ref('')
 const currentLayout = ref('force')
 const showEdgeLabels = ref(false)
@@ -380,9 +390,19 @@ function runBrowseOperation(kind, request, onSuccess, errorMessageKey) {
       loading.value = true
       searching.value = kind === 'search'
     },
-    onSuccess,
+    onSuccess: result => {
+      browseError.value = null
+      return onSuccess(result)
+    },
     onError: error => {
-      ElMessage.error(t(errorMessageKey) + ': ' + error.message)
+      clearTransientState()
+      stats.value = null
+      schema.value = { node_shapes: [], relationship_shapes: [] }
+      replaceSubgraph(null)
+      visibleNodeShapes.value = []
+      visibleRelTypes.value = []
+      activeRightPanel.value = 'detail'
+      browseError.value = { messageKey: errorMessageKey, message: error.response?.data?.error || error.message }
     },
     onFinish: () => {
       loading.value = false

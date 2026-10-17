@@ -1,4 +1,4 @@
-## 新服务的开发指南
+# ADDP 新模块开发指南
 
 ## ⚠️ 关键原则（必读）
 
@@ -92,7 +92,7 @@
    )
 
    type Config struct {
-       commonConfig.BaseConfig  // 继承通用配置 (DB、JWT、加密密钥等)
+       commonConfig.BaseConfig  // 继承通用配置 (DB、服务地址等)
 
        // 模块特有配置
        Port     string
@@ -369,7 +369,7 @@
 **Meta 模块特殊性**:
 统一的元数据模型 (resource/node/item) 需要协调更新:
 
-- [meta/backend/internal/models/](meta/backend/internal/models/) 中的模型结构
+- [meta/backend/internal/models/](../../meta/backend/internal/models/) 中的模型结构
 - `meta_dictionary` 表中的字典验证
 - 如果结构更改,`attributes` 字段中的 JSON schema 版本
 - 可能需要现有元数据的数据迁移脚本

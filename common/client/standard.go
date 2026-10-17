@@ -136,7 +136,7 @@ func (c *StandardClient) ResolveCatalogReferences(ctx context.Context, reference
 		if result.SourceType != requested.SourceType || result.SourceIdentity != requested.SourceIdentity {
 			return nil, errors.New("Standard catalog reference resolution returned results out of request order")
 		}
-		if result.Found && (result.Version <= 0 || (result.Status != "draft" && result.Status != "approved" && result.Status != "deprecated") || len(result.Summary) == 0 || strings.TrimSpace(result.DetailPath) == "") {
+		if result.Found && (result.Version <= 0 || (result.Status != "draft" && result.Status != "in_review" && result.Status != "published" && result.Status != "withdrawn") || len(result.Summary) == 0 || strings.TrimSpace(result.DetailPath) == "") {
 			return nil, errors.New("Standard catalog reference resolution returned an invalid found result")
 		}
 	}

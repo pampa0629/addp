@@ -33,7 +33,7 @@ func TestStandardClientResolveCatalogReferencesPreservesOrder(t *testing.T) {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(ResolveStandardCatalogReferencesResponse{Results: []StandardCatalogReferenceResolution{
-			{SourceType: "metric", SourceIdentity: "12", Found: true, Status: "approved", Version: 3, Summary: map[string]any{"name": "Order amount"}, DetailPath: "/standard/metrics/12"},
+			{SourceType: "metric", SourceIdentity: "12", Found: true, Status: "published", Version: 3, Summary: map[string]any{"name": "Order amount"}, DetailPath: "/standard/metrics/12"},
 			{SourceType: "metric", SourceIdentity: "8", Found: false},
 		}})
 	}))
@@ -42,5 +42,29 @@ func TestStandardClientResolveCatalogReferencesPreservesOrder(t *testing.T) {
 	result, err := client.ResolveCatalogReferences(context.Background(), []StandardCatalogReference{{SourceType: "metric", SourceIdentity: "12"}, {SourceType: "metric", SourceIdentity: "8"}})
 	if err != nil || len(result.Results) != 2 || !result.Results[0].Found || result.Results[1].Found {
 		t.Fatalf("result = %#v, err = %v", result, err)
+	}
+}
+
+func TestStandardClientCatalogReferenceUsesCurrentRevisionLifecycle(t *testing.T) {
+	for _, status := range []string{"draft", "in_review", "published", "withdrawn", "approved", "deprecated", "active", "unknown", ""} {
+		t.Run(status, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(ResolveStandardCatalogReferencesResponse{Results: []StandardCatalogReferenceResolution{{
+					SourceType: "metric", SourceIdentity: "12", Found: true, Status: status, Version: 3,
+					Summary: map[string]any{"name": "Order amount", "category_id": "41", "unit_id": "51", "lifecycle_state": "active"}, DetailPath: "/standard/metrics/12",
+				}}})
+			}))
+			defer server.Close()
+			client := NewStandardClient(server.URL, staticTenantTokenSource{}, server.Client()).WithTenantID(7)
+			result, err := client.ResolveCatalogReferences(context.Background(), []StandardCatalogReference{{SourceType: "metric", SourceIdentity: "12"}})
+			valid := status == "draft" || status == "in_review" || status == "published" || status == "withdrawn"
+			if valid {
+				if err != nil || result.Results[0].Status != status || result.Results[0].Summary["category_id"] != "41" || result.Results[0].Summary["unit_id"] != "51" {
+					t.Fatalf("current revision rejected or references lost: result=%+v error=%v", result, err)
+				}
+			} else if err == nil {
+				t.Fatalf("invalid revision status %q accepted", status)
+			}
+		})
 	}
 }

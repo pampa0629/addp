@@ -95,7 +95,7 @@ graph/
 
 ## 六、API 路由
 
-所有路由通过 Gateway (`/api/v1`) 转发，需要 JWT 认证。
+所有路由通过 Gateway (`/api/v1`) 转发。管理接口和私有知识服务使用 System User Access Token 与权威 AuthContext；仅显式公开图谱的知识服务允许匿名访问，数据保护门禁仍然生效。
 
 ```
 GET    /api/v1/graph/ontologies                          本体列表
@@ -174,6 +174,7 @@ Graph 是以下 Permission 的唯一 owner：
 - Ontology 的实体类、关系类、版本、Model 导入、Schema 推导和约束/空间映射都是 Ontology 聚合内部能力，按操作语义映射到 `graph.ontology.read/create/update/delete`。
 - 从业务图引擎的显式 graph leaf 推导本体时，选择器使用 System 的 `system.engine_catalog.read` 窄目录；预览与应用 API 在本体读取或更新权限之外还要求该目录权限。Graph 不返回完整引擎对象供前端选择。
 - 图谱实例 CRUD 映射到 `graph.graph.*`；Schema 预览、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。从图谱推导 Schema 并写入本体时同时要求 `graph.graph.read` 与 `graph.ontology.update`，不能用图谱更新权代替本体更新权。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
+- 公开状态使用唯一的 `PUT /graphs/{id}` 更新契约和 `graph.graph.update`：可选 `is_public` 省略时不修改，显式 `false` 关闭公开；返回已持久化的完整图谱，前端使用响应更新状态并对无更新权限者禁用开关。认证请求仍按当前 Tenant 解析图谱，私有图谱须通过 `graph.graph.read`；匿名仅可访问明确公开的图谱，携带无效凭据不能降级为匿名。公开与私有读取随后均执行 Security 目标图门禁。验证复用 `make test-module MODULE=graph`、Graph Swagger 生成与 `make test-authorization`，不新增身份或源数据授权。
 - 用户构建任务使用 `graph.build_task.*`；Graph TaskProvider 只允许 `addp-orchestrator` Service Client，并使用 `graph.task_provider.read|execute`。上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
 - Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
 - Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。

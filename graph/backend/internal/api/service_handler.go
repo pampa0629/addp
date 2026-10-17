@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	graphauthorization "github.com/addp/graph/internal/authorization"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
@@ -12,14 +13,16 @@ import (
 
 // ServiceHandler 知识服务 API Handler
 type ServiceHandler struct {
-	knowledgeSvc *service.KnowledgeService
+	knowledgeSvc     *service.KnowledgeService
+	privateReadGuard gin.HandlerFunc
 }
 
 func NewServiceHandler(knowledgeSvc *service.KnowledgeService) *ServiceHandler {
-	return &ServiceHandler{knowledgeSvc: knowledgeSvc}
+	return &ServiceHandler{knowledgeSvc: knowledgeSvc, privateReadGuard: commonAuth.MustNewPermissionGuard(graphauthorization.PermissionGraphGraphRead)}
 }
 
-// checkAccess 鉴权辅助：is_public 图谱无需 JWT，否则需要 JWT 中提取 tenantID
+// checkAccess uses the current Tenant for authenticated callers; private graphs
+// require graph.graph.read. Anonymous callers may only read explicit public graphs.
 // 返回 (tenantID, ok)；ok=false 表示已写入错误响应
 func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID, tenantID uint, ok bool) {
 	id, err := strconv.ParseUint(graphIDStr, 10, 32)
@@ -37,11 +40,16 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 			c.JSON(http.StatusNotFound, gin.H{"error": "图谱不存在"})
 			return 0, 0, false
 		}
-		_ = kg
+		if !kg.IsPublic {
+			h.privateReadGuard(c)
+			if c.IsAborted() {
+				return 0, 0, false
+			}
+		}
 		return graphID, tenantID, true
 	}
 
-	// 没有 JWT，检查是否 is_public
+	// 未携带访问令牌时，仅允许显式公开的图谱。
 	kg, err := h.knowledgeSvc.GetGraphPublic(graphID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "图谱不存在"})
@@ -55,13 +63,15 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 }
 
 // @Summary 按类型列出实体（分页）| List entities by type (paginated)
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @Param graphId path int true "图谱 ID | Graph ID"
 // @Param type path string true "本体实体类型名称 | Ontology entity type name"
 // @Param page query int false "页码（默认 1）| Page number (default 1)"
 // @Param page_size query int false "每页大小（默认 20）| Page size (default 20)"
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/entities/{type} [get]
 func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -95,9 +105,11 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 }
 
 // @Summary 获取实体详情 | Get entity detail
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/entities/{type}/{nodeId} [get]
 func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -114,9 +126,11 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 }
 
 // @Summary 获取节点邻居 | Get node neighbors
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/nodes/{nodeId}/neighbors [get]
 func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -135,9 +149,11 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 }
 
 // @Summary 路径查找 | Find paths
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/paths [post]
 func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -158,9 +174,11 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 }
 
 // @Summary 获取实体中心子图 | Get entity-centric subgraph
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/subgraph [post]
 func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -181,11 +199,13 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 }
 
 // @Summary 全文搜索实体 | Full-text search entities
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 409 {object} models.ErrorResponse
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -224,9 +244,11 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 }
 
 // @Summary 获取图谱本体描述 | Get graph ontology description
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/ontology [get]
 func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -242,9 +264,11 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 }
 
 // @Summary 图谱统计信息 | Graph statistics
+// @Description 显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
-// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
+// @Failure 401 {object} models.ErrorResponse "认证失败或图谱尚未公开 | Authentication failed or graph is private"
+// @Failure 403 {object} models.ErrorResponse "功能权限或数据保护拒绝 | Functional permission or data protection denied"
 // @Router /kg/{graphId}/stats [get]
 func (h *ServiceHandler) GetStats(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))

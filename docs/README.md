@@ -32,6 +32,7 @@
 - [概念文档](concepts/)
 - [规范文档](spec/)
 - [术语表](concepts/addp术语表.md)
+- [核心对象 ER 图（元模型）](concepts/addp核心对象ER图（元模型）.md)
 - [账号与权限体系](concepts/addp账号与权限体系图.md)
 - [授权上下文规范](spec/addp授权上下文规范.md)
 - [权限与角色发布规范](spec/addp权限与角色发布规范.md)

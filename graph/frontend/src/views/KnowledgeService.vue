@@ -35,6 +35,7 @@
                 <el-switch
                   v-model="isPublic"
                   :loading="saving"
+                  :disabled="!authStore.hasPermission('graph.graph.update')"
                   @change="handlePublicToggle"
                 />
                 <span class="config-hint">{{ t('graph.service.publicAccessHint') }}</span>
@@ -127,8 +128,10 @@ import { useI18n } from 'vue-i18n'
 import { resolveKnowledgeServiceRouteState } from '@/utils/knowledgeServiceRouteState'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { useConsolePageDescriptor } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -318,15 +321,18 @@ async function restoreKnowledgeRoute() {
 }
 
 async function handlePublicToggle(val) {
-  if (!selectedGraphId.value) return
+  if (!selectedGraphId.value || !authStore.hasPermission('graph.graph.update')) return
+  const graphId = selectedGraphId.value
+  const previous = selectedGraph.value.is_public
   saving.value = true
   try {
-    await knowledgeServiceApi.updateGraph(selectedGraphId.value, { is_public: val })
-    const g = graphs.value.find(g => g.id === selectedGraphId.value)
-    if (g) g.is_public = val
-    ElMessage.success(val ? t('graph.service.setPublic') : t('graph.service.setPrivate'))
+    const saved = await knowledgeServiceApi.updateGraph(graphId, { is_public: val })
+    const g = graphs.value.find(g => g.id === graphId)
+    if (g) g.is_public = saved.is_public
+    if (selectedGraphId.value === graphId) isPublic.value = saved.is_public
+    ElMessage.success(saved.is_public ? t('graph.service.setPublic') : t('graph.service.setPrivate'))
   } catch (e) {
-    isPublic.value = !val
+    if (selectedGraphId.value === graphId) isPublic.value = previous
     ElMessage.error(t('graph.service.setFailed'))
   } finally {
     saving.value = false
@@ -354,7 +360,7 @@ async function handleTest() {
     )
     testResult.value = JSON.stringify(res, null, 2)
   } catch (e) {
-    testResult.value = `${t('graph.service.error')}: ${e.message || e}`
+    testResult.value = `${t('graph.service.error')}: ${e.response?.data?.error || e.message || e}`
   } finally {
     testing.value = false
   }

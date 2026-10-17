@@ -340,7 +340,7 @@
       "apiTest": "API Test",
       "testTab": "API Test",
       "publicAccess": "Public Access",
-      "publicAccessHint": "When enabled, the knowledge service API can be accessed without JWT",
+      "publicAccessHint": "When enabled, the knowledge service API is available without signing in; data protection rules still apply",
       "publicHint": "When enabled, the knowledge service API can be accessed without JWT",
       "serviceBaseUrl": "Service Base URL",
       "copy": "Copy",

@@ -4,15 +4,14 @@
 
 ## 一、消费范围
 
-ADDP 已具备数据开发、计算编排、结果物化和数据服务发布能力，但服务发布后的用户侧消费仍不完整：
+ADDP 通过 Service、Workbench、Catalog、Asset 和 Portal 串联数据服务发布、数据应用创作与用户侧消费：
 
-- Service 前端的预览面向服务发布者，用于验证服务定义，不是数据消费者的正式应用；
-- Portal 在资产授权后主要展示服务端点，没有通用的查询、筛选和可视化运行环境；
-- System 的 Application 是外部 API 调用主体和 API Key 管理资源，不是用户界面或数据应用定义；
-- 当前没有独立 owner 保存可复用的数据服务查询与展示配置；
-- 报表、看板和数据应用尚未形成从服务消费、发布到 Asset/Portal 发现的闭环。
+- Service 定义并发布数据服务，向消费者提供类型化输入、输出和执行契约；发布者预览用于验证服务定义。
+- Workbench 保存可复用的数据应用配置，负责查询、筛选、可视化、组件联动、发布修订和稳定运行入口。
+- Catalog 为已发布应用建立企业目录身份；Asset 负责资产组合、发布与授权履约，Portal 负责发现并打开应用。
+- System 管理用户身份、OAuth Client 和 API Consumer Credential。浏览器应用运行使用当前 User Bearer；外部系统消费已发布数据面 API 使用 API Consumer Credential，两者遵循各自认证与授权契约。
 
-Workbench 的第一目标是补齐：
+数据应用的职责链路为：
 
 ```text
 数据生产与刷新
@@ -48,7 +47,7 @@ Workbench 不负责：
 - 资产编目、上架、申请和授权履约，归 Asset；
 - 用户侧资产发现和应用入口，归 Portal；
 - 调度和任务执行，归 Orchestrator；
-- 用户、应用主体、OAuth 和 API Key，归 System。
+- 用户身份、OAuth Client 和 API Consumer Credential，归 System。
 
 Workbench 不是 TaskProvider。用户查看、筛选和刷新数据属于在线服务消费，不进入任务编排。昂贵或周期性计算必须由上游任务提前完成，Workbench 只读取发布后的稳定服务。
 
@@ -57,7 +56,7 @@ Workbench 不是 TaskProvider。用户查看、筛选和刷新数据属于在线
 Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使用不同的唯一入口：
 
 | 界面 | 正式入口 | 集成方式 |
-| --- | --- | --- | --- |
+| --- | --- | --- |
 | Workbench 创作端 | `/workbench/...` | Console iframe 模块 |
 | Data Application 运行端 | `/data-apps/:application_id` | Console 当前 origin 下的独立顶层页面 |
 
@@ -81,7 +80,7 @@ Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使
 
 两个界面仍属于同一个 `workbench` 模块，复用同一 Backend、领域模型、renderer 和 Browser AuthSession，不新增 `data-app` 模块、数据库 schema、Service Principal 或独立认证体系。运行端使用当前 User Bearer 调用 Workbench 和 Service，不使用 API Key。
 
-System 的 Application 是外部 API 调用主体与 API Key 管理资源，不是 Data Application 注册表。Data Application 不自动创建 System Application 或 API Key。System 模块运行注册表只登记 `workbench` 模块运行实例，不为每个 Data Application 注册模块；Data Application 的企业发现身份仍由 CatalogEntry 承担。
+System 的 OAuth Client 与 API Consumer 分别登记 OAuth 客户端和外部数据面调用方，不是 Data Application 注册表。Data Application 不自动创建 OAuth Client、API Consumer 或 API Consumer Credential。System 模块运行注册表只登记 `workbench` 模块运行实例，不为每个 Data Application 注册模块；Data Application 的企业发现身份仍由 CatalogEntry 承担。
 
 ## 三、通用业务边界
 

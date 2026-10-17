@@ -11,7 +11,7 @@ const client = vi.hoisted(() => ({
 vi.mock('../src/api/client', () => ({ default: client }))
 
 import { batchGovernance, createStandardMapping, deleteStandardMapping, exportEntryDataDictionary, getEntry, getEntryDataDictionary, getGovernanceCoverage, listDomainOverviews, listEntries, listEntryFacets, listMyProjectGroups, listReferenceCandidates, listStandardMappingRevisionOptions, replaceMyEntryMarks, resolveSourceEntries, reviewStandardMapping, updateEntryGovernance, updateStandardMapping } from '../src/api/catalog'
-import { listDomainElements, listDomainGlossaries, listDomainMetrics } from '../src/api/standard'
+import { getMeasurementUnit, listDomainElements, listDomainGlossaries, listDomainMetrics, listMetricCategories } from '../src/api/standard'
 import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules } from '../src/api/quality'
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
@@ -21,6 +21,14 @@ import { serializeEngineApprovalInitialization } from '../../../common-frontend/
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+  it('reads metric categories and exact units through the current User client', async () => {
+    await listMetricCategories()
+    await getMeasurementUnit('9007199254740993')
+    expect(client.get.mock.calls).toEqual([
+      ['/standard/metric-categories'], ['/standard/units/9007199254740993']
+    ])
+    expect(client.post).not.toHaveBeenCalled()
+  })
   it('batches visible candidate checks and keeps incomplete absence unknown', async () => {
     const first = { id: 'one', recipient_type: 'user', recipient_id: '60', item_fingerprint: 'a'.repeat(64), target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
     const second = { ...first, id: 'two', recipient_id: '61' }

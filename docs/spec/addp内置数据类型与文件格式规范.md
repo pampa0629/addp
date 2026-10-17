@@ -68,7 +68,7 @@
 | glTF | `multi` | `model_3d` | `gltf` | 由 `.gltf` manifest 声明的多资源三维模型，buffers / images 作为 related refs |
 | OBJ | `single` | `model_3d` | `obj` | Wavefront OBJ 单体网格模型；第一阶段支持识别和轻量摘要 |
 | STL | `single` | `model_3d` | `stl` | STL 单体网格模型；支持识别、轻量摘要和 GLB 快显 |
-| PLY | `single` | `model_3d` | `ply` | PLY 单文件三维模型 / 点集合；第一阶段支持 header 识别和轻量摘要 |
+| PLY | `single` | `model_3d` / `point_cloud` / `gaussian_splat` | `ply` | 按 header 区分 mesh、点云与高斯泼溅，写入对应类型的轻量摘要 |
 | FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
 | DAE / Collada | `single` | `model_3d` | `dae` | Collada 1.4.0 / 1.4.1；摘要记录版本、单位、上轴、网格和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | 3DS | `single` | `model_3d` | `3ds` | 3DS chunk 模型；摘要记录网格、顶点、三角面、材质和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
@@ -259,21 +259,39 @@ Manager 基础预览可将单文件 STL 源文件通过 storage stream 交给前
 
 PLY 是单资源、内容敏感格式。它既可能表达 polygon mesh，也可能只包含顶点集合或 Gaussian Splat 导出数据；扫描不得仅凭 `.ply` 扩展名臆造面、材质、三角面或点云事实。实现必须优先读取 PLY header，记录 format、version、element counts、vertex properties 和可识别的 Gaussian Splat 信号，并按 header 事实确定 `data_type`。
 
+| header 事实 | `data_type` | `format_info.ply.layout` |
+|---|---|---|
+| `element face` 数量大于 0 | `model_3d` | `mesh` |
+| 无 face，且具备 `x/y/z`、`opacity`、`scale_0..2`、`rot_0..3`、`f_dc_0..2` 或颜色字段 | `gaussian_splat` | `gaussian_splat` |
+| 无 face，且具备 `chunk` element 与 `packed_position`、`packed_rotation`、`packed_scale`、`packed_color` vertex 属性 | `gaussian_splat` | `gaussian_splat` |
+| 无 face，且不满足高斯泼溅字段组合 | `point_cloud` | `point_cloud` |
+
+SuperSplat 压缩 PLY 仍归入 `data_type=gaussian_splat`、`format=ply`，并通过 `format_info.ply.is_compressed_splat=true` 表达格式私有事实。Manager 基础预览读取该标记选择非渐进加载策略，不把压缩 PLY 转入 GLB 快显路线。
+
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout=single`、`format=ply`、按 header 判定后的 `data_type` |
-| `type_info.model_3d` | 仅 mesh PLY 写入；`model_kind`、顶点数和 mesh 相关轻量事实 |
-| `type_info.point_cloud` | 仅点云型 PLY 写入；点数、维度列表、颜色 / intensity 能力 |
-| `type_info.gaussian_splat` | 仅 3DGS 型 PLY 写入；高斯基元数量、opacity / scale / rotation / spherical harmonics 能力 |
-| `format_info.ply` | PLY 私有摘要，例如 encoding、version、layout、vertex / face count、element counts、vertex property 数、是否 Gaussian Splat |
+| `type_info.model_3d` | 仅 mesh PLY 写入；`model_kind=mesh_scene`、vertex count、mesh count 等跨格式三维模型轻量摘要 |
+| `type_info.point_cloud` | 仅点云型 PLY 写入；`point_cloud_kind=raw_point_cloud`、点数、维度列表、颜色 / intensity 能力等跨格式点云摘要 |
+| `type_info.gaussian_splat` | 仅 3DGS 型 PLY 写入；`representation=3d_gaussian_splatting`、splat count、opacity / scale / rotation / spherical harmonics 能力 |
+| `format_info.ply` | PLY 私有摘要，例如 encoding、version、layout、vertex / face count、header line count、element counts、vertex properties 及其数量、是否 Gaussian Splat |
 
 ### 消费要求
 
 Manager 按 `data_type` 选择消费路线。`data_type=model_3d` 的普通 mesh PLY 可通过 storage stream 交给前端 Three.js PLYLoader 做基础预览；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。点云型 PLY 走点云路线；Gaussian Splat PLY 走高斯泼溅 renderer，不得简单等同于 mesh GLB，也不开放 `model_3d` 的 GLB 快显任务入口。
 
+mesh PLY 的后续快显转换可接 PLY -> GLB；这不改变当前基础预览独立读取源文件的契约。点云型 PLY 使用点云快显，高斯泼溅 PLY 使用高斯泼溅快显，不转换为 GLB。
+
 PLY deep scan 不应读取完整大文件数据体；header 级事实足以完成首轮识别和轻量摘要。模型包围盒、材质、纹理、法线等事实只有在稳定解析后才可写入。
+
+### 格式约束
+
+- 不得把所有 `.ply` 固定归入 `model_3d` 或 `point_cloud`。
+- 不得仅因 3DGS PLY 使用 vertex 记录就归为 `point_cloud`。
+- 不得把高斯泼溅的渲染协议、排序结果、压缩产物或派生 splat artifact 写入 `type_info.gaussian_splat`。
+- PLY header 私有属性列表进入 `format_info.ply`，跨格式通用摘要进入对应 `type_info.<data_type>`。
 
 ## SPLAT
 
@@ -453,7 +471,7 @@ Manager 的数据探查和任务创建入口复用同一 MAX 转换选项组件�
 
 确定性单位、路径和发布边界进入 `make test-model3d-workflow`；真实 MAX、贴图和单位换算进入既有 Linux 产品镜像构建的 smoke，macOS 原生预检核对 Blender 和导入器。Manager、Common 的格式和快显契约沿用标准模块门禁。以上不替代真实 Manager 页面和 Hosted T4 验收。
 
-MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
+MAX 模型的 Hosted T4 验收范围、操作约束和结果统一见[测试与验收规范](addp测试与验收规范.md#max-模型-hosted-验收)。
 
 ## SKP
 
@@ -770,52 +788,6 @@ Manager 第一阶段应把 EPT 作为 whole-scope 点云 item 展示，不得尝
 - 只有根范围强命中 `ept.json` 时才生成 EPT whole item。
 - `ept-data/`、`ept-hierarchy/`、`ept-sources/` 等叶子资源由 whole-scope claims 认领，不写入 `item.refs`。
 - 不得把 EPT 数据集伪装成 COPC；转换结果如果生成 COPC，应作为新的 `format=copc` item。
-
-## PLY
-
-### 识别与组织
-
-| 维度 | 取值 |
-|---|---|
-| `layout` | `single` |
-| `format` | `ply` |
-| 主资源 | `meta_item.full_name` 指向 `.ply` 文件资源 |
-
-PLY 是内容敏感格式，不能仅凭扩展名固定归入单一数据类型。Meta deep scan 必须读取 PLY header，并按以下规则确定 `data_type`：
-
-| header 事实 | `data_type` | `format_info.ply.layout` |
-|---|---|---|
-| `element face` 数量大于 0 | `model_3d` | `mesh` |
-| 无 face，且具备 `x/y/z`、`opacity`、`scale_0..2`、`rot_0..3`、`f_dc_0..2` 或颜色字段 | `gaussian_splat` | `gaussian_splat` |
-| 无 face，且具备 `chunk` element 与 `packed_position`、`packed_rotation`、`packed_scale`、`packed_color` vertex 属性 | `gaussian_splat` | `gaussian_splat` |
-| 无 face，且不满足高斯泼溅字段组合 | `point_cloud` | `point_cloud` |
-
-SuperSplat 压缩 PLY 仍归入 `data_type=gaussian_splat`、`format=ply`，并通过 `format_info.ply.is_compressed_splat=true` 表达格式私有事实。Manager 基础预览读取该标记选择非渐进加载策略，不把压缩 PLY 转入 GLB 快显路线。
-
-### attributes 写入
-
-| 分区 | 写入内容 |
-|---|---|
-| `item` | `layout=single`、`format=ply`、按 header 判定后的 `data_type` |
-| `type_info.model_3d` | 仅 mesh PLY 写入；`model_kind=mesh_scene`、vertex count、mesh count 等跨格式三维模型摘要 |
-| `type_info.point_cloud` | 仅点云型 PLY 写入；`point_cloud_kind=raw_point_cloud`、点数、维度列表、颜色 / intensity 能力等跨格式点云摘要 |
-| `type_info.gaussian_splat` | 仅 3DGS 型 PLY 写入；`representation=3d_gaussian_splatting`、splat count、opacity / scale / rotation / spherical harmonics 能力 |
-| `format_info.ply` | encoding、version、layout、vertex count、face count、header line count、vertex properties、element counts、是否高斯泼溅等 PLY 私有事实 |
-
-### 消费要求
-
-Manager 需要按 `data_type` 分别选择快显路线：
-
-- mesh PLY 可走三维模型快显路线，后续可接 PLY -> GLB。
-- 点云型 PLY 走点云快显路线。
-- 3DGS 型 PLY 走高斯泼溅快显路线，不转换为 GLB。
-
-### 格式约束
-
-- 不得把所有 `.ply` 固定归入 `model_3d` 或 `point_cloud`。
-- 不得仅因 3DGS PLY 使用 vertex 记录就归为 `point_cloud`。
-- 不得把高斯泼溅的渲染协议、排序结果、压缩产物或派生 splat artifact 写入 `type_info.gaussian_splat`。
-- PLY header 私有属性列表进入 `format_info.ply`，跨格式通用摘要进入对应 `type_info.<data_type>`。
 
 ## CSV / TSV
 

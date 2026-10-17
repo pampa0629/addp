@@ -73,6 +73,9 @@ func (s *KnowledgeGraphService) Update(id, tenantID uint, req *models.UpdateKnow
 	if req.Status != "" {
 		kg.Status = req.Status
 	}
+	if req.IsPublic != nil {
+		kg.IsPublic = *req.IsPublic
+	}
 	return kg, s.graphRepo.Update(kg)
 }
 

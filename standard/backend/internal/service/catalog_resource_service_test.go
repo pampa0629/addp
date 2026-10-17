@@ -50,6 +50,8 @@ func TestCatalogResourceServiceResolvesMetricsInRequestOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Results) != 2 || !result.Results[0].Found || result.Results[1].Found ||
+		result.Results[0].Status != models.RevisionStatusPublished || result.Results[0].Summary["lifecycle_state"] != "active" ||
+		result.Results[0].Summary["category_id"] != "41" || result.Results[0].Summary["unit_id"] != "51" ||
 		result.Results[0].Summary["domain_id"] != "31" || result.Results[0].Summary["scope_type"] != "domain" || result.Results[0].DetailPath != "/standard/metrics/9" {
 		t.Fatalf("result = %#v", result)
 	}

@@ -251,7 +251,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新知识图谱的名称、描述或状态 | Update knowledge graph name, description or status",
+                "description": "更新名称、描述、状态或知识服务公开状态；省略 is_public 保留原值，false 关闭公开 | Update name, description, status or knowledge-service public access; omit is_public to retain it, false disables public access",
                 "consumes": [
                     "application/json"
                 ],
@@ -289,6 +289,24 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1942,6 +1960,7 @@ const docTemplate = `{
         },
         "/kg/{graphId}/entities/{type}": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
@@ -1975,8 +1994,14 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1987,13 +2012,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/entities/{type}/{nodeId}": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体详情 | Get entity detail",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2004,13 +2036,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/nodes/{nodeId}/neighbors": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取节点邻居 | Get node neighbors",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2021,13 +2060,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/ontology": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取图谱本体描述 | Get graph ontology description",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2038,13 +2084,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/paths": {
             "post": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "路径查找 | Find paths",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2055,6 +2108,7 @@ const docTemplate = `{
         },
         "/kg/{graphId}/search": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
@@ -2066,8 +2120,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2084,13 +2144,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/stats": {
             "get": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "图谱统计信息 | Graph statistics",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2101,13 +2168,20 @@ const docTemplate = `{
         },
         "/kg/{graphId}/subgraph": {
             "post": {
+                "description": "显式公开图谱允许匿名访问；私有图谱要求当前租户及 graph.graph.read；所有读取仍执行数据保护门禁 | Explicit public graphs allow anonymous access; private graphs require the current tenant and graph.graph.read; all reads remain subject to data protection",
                 "tags": [
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体中心子图 | Get entity-centric subgraph",
                 "responses": {
+                    "401": {
+                        "description": "认证失败或图谱尚未公开 | Authentication failed or graph is private",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "403": {
-                        "description": "数据保护拒绝 | Data protection denied",
+                        "description": "功能权限或数据保护拒绝 | Functional permission or data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -4430,6 +4504,10 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "错误信息描述"
+                },
+                "error_code": {
+                    "type": "string",
+                    "example": "permission_denied"
                 }
             }
         },
@@ -5148,6 +5226,10 @@ const docTemplate = `{
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "is_public": {
+                    "description": "省略时保留现值，false 显式关闭公开 | Omit to retain; false disables public access",
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"

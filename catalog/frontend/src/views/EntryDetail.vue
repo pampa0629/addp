@@ -576,7 +576,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -598,7 +598,7 @@ import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from 
 import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildDeprecationWithdrawalPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
 import { coverageDimensionLabel } from '../utils/governanceCoverageView'
-import { isProfessionalOwner, professionalOwnerName, resolveOwnerPrimaryDomain } from '../utils/entryOwnerPresentation'
+import { isProfessionalOwner, loadOwnerMetricReferences, professionalOwnerName, resolveOwnerPrimaryDomain } from '../utils/entryOwnerPresentation'
 import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
 import {
   normalizeProfessionalRelations,
@@ -697,9 +697,7 @@ const ownerDomainID = computed(() => {
   return String(summary.domain_id || '')
 })
 const ownerDomain = ref(null)
-const ownerCategory = ref(null)
-const ownerUnit = ref(null)
-let ownerReferencesRequestVersion = 0
+const ownerMetricReferences = reactive({ category: null, unit: null, requestVersion: 0 })
 const ownerDomainState = ref('idle')
 let ownerDomainRequestVersion = 0
 const primaryDomainName = computed(() => {
@@ -764,8 +762,8 @@ const ownerSummaryItems = computed(() => {
     .map(([key, label]) => {
       let value = summary[key]
       if (key === 'domain_id') value = primaryDomainName.value
-      if (key === 'category_id') value = ownerCategory.value?.name || t('catalog.entry.referenceNameUnavailable')
-      if (key === 'unit_id') value = ownerUnit.value?.name || t('catalog.entry.referenceNameUnavailable')
+      if (key === 'category_id') value = ownerMetricReferences.category?.name || t('catalog.entry.referenceNameUnavailable')
+      if (key === 'unit_id') value = ownerMetricReferences.unit?.name || t('catalog.entry.referenceNameUnavailable')
       if (['engine_id', 'runtime_engine_id'].includes(key)) {
         const reference = entry.value?.source_resolution?.engine_references?.[key]
         value = reference?.status === 'current' ? [reference.name, reference.engine_type].filter(Boolean).join(' · ') : t(reference?.status === 'missing' ? 'catalog.entry.sourceEngineMissing' : 'catalog.entry.sourceEngineUnavailable')
@@ -1376,18 +1374,10 @@ function formatDate(value) {
 
 watch(() => [entry.value, authStore.authContext?.principal?.id, authStore.authContext?.context?.tenant_id,
   authStore.hasPermission('standard.metric.read'), authStore.hasPermission('standard.unit.read')], async () => {
-  const version = ++ownerReferencesRequestVersion
-  ownerCategory.value = null
-  ownerUnit.value = null
-  if (entry.value?.source?.source_module !== 'standard') return
-  const summary = entry.value?.source_resolution?.summary || entry.value?.source?.observed_snapshot || {}
-  const results = await Promise.allSettled([
-    summary.category_id && authStore.hasPermission('standard.metric.read') ? listMetricCategories() : Promise.resolve([]),
-    summary.unit_id && authStore.hasPermission('standard.unit.read') ? getMeasurementUnit(summary.unit_id) : Promise.resolve(null)
-  ])
-  if (version !== ownerReferencesRequestVersion) return
-  if (results[0].status === 'fulfilled') ownerCategory.value = results[0].value.find(item => String(item.id) === String(summary.category_id)) || null
-  if (results[1].status === 'fulfilled' && String(results[1].value?.id) === String(summary.unit_id)) ownerUnit.value = results[1].value
+  await loadOwnerMetricReferences(ownerMetricReferences, {
+    entry: entry.value, hasPermission: permission => authStore.hasPermission(permission),
+    listCategories: listMetricCategories, getUnit: getMeasurementUnit
+  })
 }, { immediate: true })
 watch(entry, async () => {
   const version = ++ownerDomainRequestVersion

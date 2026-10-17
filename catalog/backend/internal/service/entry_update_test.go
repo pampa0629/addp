@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -364,11 +367,43 @@ func TestMetaDataItemDetailResolvesQualitySummaryDynamically(t *testing.T) {
 	}
 }
 
+func TestStandardMetricPublishedHTTPResponseReachesCurrentCatalogFacts(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	entry := createMetricCatalogEntry(t, db, 7, "41")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/runtime/catalog-references/resolve" || r.Header.Get("Authorization") != "Bearer catalog-test-service" {
+			t.Errorf("unexpected Standard request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(commonClient.ResolveStandardCatalogReferencesResponse{Results: []commonClient.StandardCatalogReferenceResolution{{
+			SourceType: "metric", SourceIdentity: "21", Found: true, Status: "published", Version: 5,
+			Summary: map[string]any{"name": "活动次数", "domain_id": "41", "category_id": "51", "unit_id": "61", "lifecycle_state": "active"}, DetailPath: "/standard/metrics/21",
+		}}})
+	}))
+	defer server.Close()
+	tokens := commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		if tenantID != 7 {
+			t.Errorf("unexpected tenant %d", tenantID)
+		}
+		return "catalog-test-service", nil
+	})
+	svc := NewEntryService(db, nil, nil).WithProfessionalSourceResolvers(NewStandardClientSourceResolver(commonClient.NewStandardClient(server.URL, tokens, server.Client())))
+	result, err := svc.Get(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolution := result.SourceResolution
+	if resolution == nil || resolution.Status != "current" || resolution.OwnerStatus != "published" || resolution.Summary["category_id"] != "51" || resolution.Summary["unit_id"] != "61" || resolution.DetailPath != "/standard/metrics/21" {
+		t.Fatalf("published owner facts became unavailable: %+v", resolution)
+	}
+}
+
 func TestStandardMetricUsesOwnerDomainAndDynamicCurrentSummary(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	entry := createMetricCatalogEntry(t, db, 7, "41")
 	resolver := &fakeProfessionalSourceResolver{module: models.SourceModuleStandard, result: ProfessionalSourceResult{
-		Found: true, Status: "approved", Version: 5,
+		Found: true, Status: "published", Version: 5,
 		Summary: map[string]any{"name": "Current order amount", "domain_id": "41", "metric_type": "atomic"}, DetailPath: "/standard/metrics/21",
 	}}
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{}).WithProfessionalSourceResolvers(resolver)
