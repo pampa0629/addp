@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+<head><meta charset="UTF-8"><title>GraphSchemaView theme fixture</title></head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { createApp, h, ref } from 'vue'
+    import { createI18n } from 'vue-i18n'
+    import ElementPlus from 'element-plus'
+    import 'element-plus/dist/index.css'
+    import 'element-plus/theme-chalk/dark/css-vars.css'
+    import '../../../../common-frontend/basic/src/styles/theme.css'
+    import { GraphSchemaView, graphMessagesZhCn } from '@addp/common-frontend/graph'
+
+    const schema = {
+      nodes: [
+        { label: 'Person', count: 32, properties: ['name', 'age'] },
+        { label: 'Company', count: 4, properties: ['name'] }
+      ],
+      relationships: [{ type: 'WORKS_AT', count: 12, from_labels: ['Person'], to_labels: ['Company'] }]
+    }
+    createApp({
+      setup() {
+        const visible = ref(true)
+        const clicked = ref('')
+        const theme = ref('dark')
+        return () => [
+          h('header', [
+            h('select', {
+              'aria-label': '主题', value: theme.value,
+              onChange: event => {
+                theme.value = event.target.value
+                document.documentElement.className = theme.value === 'light' ? '' : `dark ${theme.value === 'dark' ? '' : theme.value}`
+              }
+            }, ['dark', 'blue', 'purple', 'light'].map(theme => h('option', { value: theme }, theme))),
+            h('button', { onClick: () => { visible.value = !visible.value } }, '显示或卸载图'),
+            h('output', { 'aria-label': '选中节点' }, clicked.value)
+          ]),
+          h('main', visible.value ? h(GraphSchemaView, { schema, onNodeClick: label => { clicked.value = label } }) : null)
+        ]
+      }
+    }).use(ElementPlus).use(createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': graphMessagesZhCn } })).mount('#app')
+  </script>
+  <style>
+    html, body, #app { height: 100%; margin: 0; }
+    body { background: var(--addp-bg-primary); color: var(--addp-text-primary); }
+    #app { display: flex; flex-direction: column; }
+    header { display: flex; gap: 16px; padding: 12px; }
+    main { flex: 1; min-height: 0; }
+  </style>
+</body>
+</html>

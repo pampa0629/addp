@@ -27,6 +27,12 @@ export function readGraphTheme(root = document.documentElement) {
   }
 }
 
+export function graphLabelColor(label, palette) {
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) & 0xffff
+  return palette[hash % palette.length]
+}
+
 export function getContrastingTextColor(backgroundColor, lightColor, darkColor) {
   const rgb = parseHexColor(backgroundColor)
   if (!rgb) return lightColor

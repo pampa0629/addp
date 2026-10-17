@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { readGraphTheme, getContrastingTextColor } from '../src/graphTheme.js'
+import { readGraphTheme, getContrastingTextColor, graphLabelColor } from '../src/graphTheme.js'
 
 test('图主题读取调用元素继承的 CSS 变量，不缓存旧主题', t => {
   const root = {}
@@ -44,5 +44,19 @@ test('主题读取和标签对比色由共享 graph 包唯一提供', () => {
   for (const path of ['components/GraphCanvas.vue', 'views/GraphBrowser.vue']) {
     const source = readFileSync(new URL(`../../../graph/frontend/src/${path}`, import.meta.url), 'utf8')
     assert.match(source, /import \{ getContrastingTextColor, readGraphTheme \} from '@addp\/common-frontend\/graph'/)
+  }
+})
+
+test('结构与查询结果共享稳定的标签配色，主题换色不改变标签分组', () => {
+  const firstPalette = ['#111111', '#222222', '#333333']
+  const nextPalette = ['#444444', '#555555', '#666666']
+  const color = graphLabelColor('Person', firstPalette)
+  assert.ok(firstPalette.includes(color))
+  assert.equal(graphLabelColor('Person', firstPalette), color)
+  assert.equal(graphLabelColor('Person', nextPalette), nextPalette[firstPalette.indexOf(color)])
+  for (const file of ['GraphResultView.vue', 'GraphSchemaView.vue']) {
+    const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+    assert.match(source, /import \{[^}]*graphLabelColor[^}]*\} from '\.\/graphTheme\.js'/)
+    assert.doesNotMatch(source, /function labelColor\b|const palette\s*=/)
   }
 })

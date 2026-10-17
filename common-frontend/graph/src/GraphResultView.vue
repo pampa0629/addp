@@ -35,7 +35,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
-import { readGraphTheme, getContrastingTextColor } from './graphTheme.js'
+import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
 
 const { t } = useI18n()
 
@@ -56,21 +56,13 @@ const isEmpty = computed(
   () => !props.graphData?.nodes?.length
 )
 
-// 基于标签生成颜色
-function labelColor(labels, palette) {
-  const label = (labels && labels[0]) || 'Node'
-  let hash = 0
-  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) & 0xffff
-  return palette[hash % palette.length]
-}
-
 function buildG6Data() {
   const theme = readGraphTheme(containerRef.value)
   const nodes = (props.graphData?.nodes || []).map(n => {
     const label = (n.labels && n.labels[0]) || 'Node'
     // 显示名称：优先显示 name/title/id 属性
     const displayName = n.properties?.name || n.properties?.title || n.properties?.id || label
-    const fill = labelColor(n.labels, theme.categoryColors)
+    const fill = graphLabelColor(label, theme.categoryColors)
     return {
       id: n.element_id,
       label: String(displayName).substring(0, 20),

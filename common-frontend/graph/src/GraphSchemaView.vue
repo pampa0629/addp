@@ -37,6 +37,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
 
 const { t } = useI18n()
 
@@ -59,31 +60,23 @@ const isEmpty = computed(
   () => !props.schema?.nodes?.length && !props.schema?.relationships?.length
 )
 
-// 生成节点颜色（基于标签名 hash）
-function labelColor(label) {
-  const palette = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
-    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC'
-  ]
-  let hash = 0
-  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) & 0xffff
-  return palette[hash % palette.length]
-}
-
 function buildGraphData() {
-  const nodes = (props.schema?.nodes || []).map(n => ({
-    id: n.label,
-    label: `${n.label}\n(${n.count})`,
-    _meta: n,
-    style: {
-      fill: labelColor(n.label),
-      stroke: '#fff',
-      lineWidth: 2,
-      r: Math.max(28, Math.min(50, 20 + Math.log10(n.count + 1) * 12))
-    },
-    labelCfg: { style: { fill: '#fff', fontSize: 12, fontWeight: 'bold' } }
-  }))
+  const theme = readGraphTheme(containerRef.value)
+  const nodes = (props.schema?.nodes || []).map(n => {
+    const fill = graphLabelColor(n.label, theme.categoryColors)
+    return {
+      id: n.label,
+      label: `${n.label}\n(${n.count})`,
+      _meta: n,
+      style: {
+        fill,
+        stroke: theme.nodeStroke,
+        lineWidth: 2,
+        r: Math.max(28, Math.min(50, 20 + Math.log10(n.count + 1) * 12))
+      },
+      labelCfg: { style: { fill: getContrastingTextColor(fill, theme.labelLight, theme.labelDark), fontSize: 12, fontWeight: 'bold' } }
+    }
+  })
 
   const edges = []
   const edgeCount = {}
@@ -98,14 +91,22 @@ function buildGraphData() {
           target: to,
           label: rel.type,
           curveOffset: edgeCount[key] > 1 ? edgeCount[key] * 20 : 0,
-          style: { stroke: '#aab', lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: '#aab' } },
-          labelCfg: { style: { fill: '#333', fontSize: 12, fontWeight: '600', stroke: '#fff', lineWidth: 3 }, autoRotate: true }
+          style: { stroke: theme.edgeDefault, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: theme.edgeDefault } },
+          labelCfg: { style: { fill: theme.edgeLabel, fontSize: 12, fontWeight: '600', stroke: theme.edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
         })
       })
     })
   })
 
   return { nodes, edges }
+}
+
+function updateTheme() {
+  if (!graphInstance || !containerRef.value) return
+  const { nodes, edges } = buildGraphData()
+  for (const model of [...nodes, ...edges]) {
+    graphInstance.updateItem(model.id, { style: model.style, labelCfg: model.labelCfg })
+  }
 }
 
 function initGraph() {
@@ -160,9 +161,12 @@ function resizeGraph() {
 }
 
 let resizeObserver = null
+let themeObserver = null
 
 onMounted(async () => {
   await nextTick()
+  themeObserver = new MutationObserver(updateTheme)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
   if (!isEmpty.value) {
     initGraph()
     resizeObserver = new ResizeObserver(resizeGraph)
@@ -173,6 +177,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearTimeout(resizeTimer)
   resizeObserver?.disconnect()
+  themeObserver?.disconnect()
   graphInstance?.destroy()
   graphInstance = null
 })
@@ -217,6 +222,7 @@ watch(() => props.schema, async () => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: var(--addp-bg-primary);
 }
 
 /* 消除 canvas inline 元素底部间隙，避免 ResizeObserver 反馈循环 */
@@ -231,21 +237,21 @@ watch(() => props.schema, async () => {
   z-index: 10;
   display: flex;
   gap: 16px;
-  background: rgba(255,255,255,0.85);
+  background: var(--addp-bg-secondary);
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 12px;
-  color: #555;
+  color: var(--addp-text-secondary);
 }
 
 .legend-item { display: flex; align-items: center; gap: 5px; }
 .legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
-.node-dot { background: #4E79A7; }
+.node-dot { background: var(--addp-graph-category-1); }
 .legend-arrow {
   display: inline-block;
   width: 20px;
   height: 2px;
-  background: #aab;
+  background: var(--addp-graph-edge-default);
   position: relative;
 }
 .legend-arrow::after {
@@ -254,20 +260,20 @@ watch(() => props.schema, async () => {
   right: -1px;
   top: -3px;
   border: 4px solid transparent;
-  border-left-color: #aab;
+  border-left-color: var(--addp-graph-edge-default);
 }
 
 .detail-panel {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 6px;
   padding: 10px 14px;
   min-width: 180px;
   max-width: 260px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: var(--addp-shadow-card);
   font-size: 13px;
 }
 
@@ -276,7 +282,7 @@ watch(() => props.schema, async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .detail-row {
@@ -286,7 +292,7 @@ watch(() => props.schema, async () => {
   line-height: 1.4;
 }
 
-.detail-key { color: #888; flex-shrink: 0; }
-.detail-val { color: #333; word-break: break-all; }
-.detail-val.props { font-size: 12px; color: #555; }
+.detail-key { color: var(--addp-text-tertiary); flex-shrink: 0; }
+.detail-val { color: var(--addp-text-primary); word-break: break-all; }
+.detail-val.props { font-size: 12px; color: var(--addp-text-secondary); }
 </style>
