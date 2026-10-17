@@ -14,7 +14,7 @@
       <el-button data-testid="sharing-back-records" :disabled="switchingBlocked" @click="backToRecords">{{ t('catalog.sharing.backRecords') }}</el-button>
       <strong>{{ t(recordKind === 'confirmations' ? 'catalog.sharing.confirmationDetail' : 'catalog.sharing.requestDetail') }}</strong>
     </div>
-    <el-card v-if="(eligibility.confirm || eligibility.history) && ((workspace === 'records' && detailOpen) || (workspace === 'handling' && (decisionID || requestID)))" shadow="never" data-testid="sharing-progress">
+    <el-card v-if="(eligibility.confirm || eligibility.history) && ((workspace === 'records' && detailOpen) || (workspace === 'handling' && requestID))" shadow="never" data-testid="sharing-progress">
       <template #header><strong>{{ t('catalog.sharing.progressTitle') }}</strong></template>
       <el-steps v-if="progress.step >= 0" :active="progress.step" :process-status="['duplicate', 'expired'].includes(progress.status) ? 'error' : 'process'" finish-status="success" align-center>
         <el-step v-for="phase in ['confirmation', 'handling', 'issuance']" :key="phase" :title="t(`catalog.sharing.phases.${phase}`)" />

@@ -83,6 +83,37 @@ beforeEach(() => {
 afterEach(() => { mounted.splice(0).forEach(app => app.unmount()); vi.unstubAllGlobals() })
 
 describe('business authorization workspace', () => {
+  it.each(['relation_exists', 'window_expired'])('does not carry an old %s outcome into a reused approval handling form', async reason => {
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active', approvals: [
+      { id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+    ] }] })
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [{ request_id: id, decision_id: decision.id,
+      state: 'accepted', unissued_reason: reason }], total: 1 })
+    fixtures.api.findExistingSharingGrant.mockResolvedValue({ ...decision, expiry_mode: 'until_revoked' })
+    const view = mount(); await settle(); await switchWorkspace(view, 'create')
+    await view.control('select', 1).props.onVisibleChange(true); await settle()
+    view.control('select', 1).props['onUpdate:modelValue']('60')
+    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
+    await view.button('sharing-use-approval-handle').props.onClick(); await settle()
+    expect(view.state.decisionID).toBe(decision.id)
+    expect(view.state.requestID).toBe('')
+    expect(view.button('sharing-existing-grant')).toBeDefined()
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+    expect(view.button('sharing-progress')).toBeUndefined()
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    await switchWorkspace(view, 'records')
+    await view.button('sharing-record-kind').props.onChange('confirmations'); await settle()
+    // Viewing the original approval keeps its historical failure available.
+    fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [decision], total: 1 })
+    await view.button('sharing-refresh-history').props.onClick(); await settle()
+    await view.button('sharing-open-confirmation').props.onClick(); await settle()
+    expect(view.button('sharing-progress-status').text).toBe(`catalog.sharing.progress.${reason === 'window_expired' ? 'expired' : 'duplicate'}`)
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+
   it('reuses the approved ID without another confirmation or implicit fulfillment', async () => {
     fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active', approvals: [
       { id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
@@ -94,6 +125,10 @@ describe('business authorization workspace', () => {
     view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
     expect(view.button('sharing-confirm')).toBeUndefined()
     expect(view.button('sharing-already-approved')).toBeDefined()
+    view.control('select', 2).props['onUpdate:modelValue']('at_time'); await settle()
+    expect(view.button('sharing-confirm')).toBeDefined()
+    expect(view.button('sharing-already-approved')).toBeUndefined()
+    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
     await view.button('sharing-use-approval-handle').props.onClick(); await settle()
     expect(view.state.decisionID).toBe(decision.id)
     expect(view.button('sharing-workspace').props['model-value']).toBe('handling')
@@ -335,7 +370,7 @@ describe('task-oriented sharing guidance', () => {
     expect(view.button('sharing-current-selected')).toBeDefined()
     expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledWith(decision.target)
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
-    expect(view.button('sharing-progress-status').text).toBe('catalog.sharing.progress.awaitingHandling')
+    expect(view.button('sharing-progress')).toBeUndefined()
     expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
     expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
@@ -348,7 +383,7 @@ describe('task-oriented sharing guidance', () => {
     expect(view.button('sharing-decision-select').props.modelValue).toBe('')
     expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
     expect(view.button('sharing-prepare').props.disabled).toBe(true)
-    expect(view.nodes().some(node => node.text?.includes('catalog.sharing.next.askHandler'))).toBe(true)
+    expect(view.button('sharing-progress')).toBeUndefined()
   })
   it('guides a confirmation-only user to a qualified handler without loading handling candidates', async () => {
     fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']
