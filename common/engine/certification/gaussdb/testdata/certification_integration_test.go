@@ -62,6 +62,16 @@ func TestGaussDBOfficialMediaCertification(t *testing.T) {
 		t.Fatalf("unexpected official kernel: %s", version)
 	}
 	t.Logf("official kernel: %s", version)
+	const exactAmount = "12345678901234567890.123456789012345678"
+	const largeInteger int64 = 9007199254740993
+	var boundText, boundAmount string
+	var boundInteger int64
+	if err := db.QueryRowContext(ctx, "SELECT $1::text, $2::numeric(38,18)::text, $3::bigint", "高斯参数中文", exactAmount, largeInteger).Scan(&boundText, &boundAmount, &boundInteger); err != nil {
+		t.Fatalf("typed Chinese/numeric/bigint parameter binding failed: %v", err)
+	}
+	if boundText != "高斯参数中文" || boundAmount != exactAmount || boundInteger != largeInteger {
+		t.Fatal("typed parameter binding changed exact values")
+	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatal(err)
