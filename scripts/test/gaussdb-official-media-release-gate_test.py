@@ -146,12 +146,18 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertEqual(command.call_args.kwargs["env"]["GOARCH"], "amd64")
         self.assertEqual(list(self.root.iterdir()), [])
 
-    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False):
+    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False, fail_initial_password=False):
         resources = {}
         probes = []
         initialization = []
         initial_secrets = []
         report = self.root / "report.json"
+
+        def assert_password_policy(value):
+            self.assertGreaterEqual(len(value), 8)
+            self.assertLessEqual(len(value), 32, "fixed native kernel password_max_length defaults to 32")
+            for character_class in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^a-zA-Z0-9]"):
+                self.assertRegex(value, character_class)
 
         def native_sql(args, **kwargs):
             self.assertIn("ON_ERROR_STOP=1", args)
@@ -161,6 +167,9 @@ class GaussDBCertificationTest(unittest.TestCase):
                 self.assertNotIn(statement, " ".join(args))
                 self.assertNotIn(initial_secrets[0], statement)
                 initialization.append(statement)
+                assert_password_policy(statement.split("'")[1])
+                if fail_initial_password:
+                    return subprocess.CompletedProcess(args, 3, "", "Password policy rejected SQL")
                 return subprocess.CompletedProcess(args, 0, "ALTER ROLE\n", "")
             self.assertEqual(statement, "SELECT 1")
             self.assertEqual(len(initialization), 1, "initial password must be changed before SQL readiness")
@@ -188,6 +197,7 @@ class GaussDBCertificationTest(unittest.TestCase):
                 resources[("network", args[-1])] = {"Labels": {GATE.LABEL: owner}}
             elif args[:2] == ["docker", "run"]:
                 initial_secrets.append(kwargs["env"]["GAUSS_CERT_SECRET"])
+                assert_password_policy(initial_secrets[0])
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
                 resources[("container", args[args.index("--name") + 1])] = {
                     "Config": {"Labels": {GATE.LABEL: owner}}, "State": {"Running": True},
@@ -215,6 +225,7 @@ class GaussDBCertificationTest(unittest.TestCase):
              patch.object(GATE, "inspect", side_effect=inspect), \
              patch.object(GATE, "command", side_effect=command), \
              patch.object(GATE.subprocess, "run", side_effect=native_sql), \
+             patch.object(GATE.time, "sleep", side_effect=AssertionError("SQL rejection must not be retried")), \
              patch.dict(GATE.os.environ, {"ADDP_GAUSSDB_CERTIFICATION_REPORT": str(report)}):
             # media_facts calls real Bash through check_output; avoid intercepting it.
             facts = {name: "fixed" for name in GATE.FACT_NAMES}
@@ -225,13 +236,16 @@ class GaussDBCertificationTest(unittest.TestCase):
                 elif fail_readiness:
                     with self.assertRaisesRegex(RuntimeError, "SQL readiness failed"):
                         GATE.main()
+                elif fail_initial_password:
+                    with self.assertRaisesRegex(RuntimeError, "initial password SQL rejected"):
+                        GATE.main()
                 else:
                     GATE.main()
         self.assertEqual(resources, {})
         self.assertEqual(len(initialization), 1)
         self.assertNotIn(initial_secrets[0], report.with_suffix(".container.log").read_text())
         self.assertIn("PASSWORD '[REDACTED]'", report.with_suffix(".container.log").read_text())
-        if fail_readiness:
+        if fail_readiness or fail_initial_password:
             self.assertEqual(probes, [])
             return json.loads(report.read_text())
         self.assertEqual(probes[0]["GOENV_REGIST_ALL"], "false")
@@ -254,6 +268,12 @@ class GaussDBCertificationTest(unittest.TestCase):
         report = self.run_fake_lifecycle(fail_readiness=True)
         self.assertEqual(report["result"], "failed")
         self.assertEqual(report["phase"], "readiness")
+        self.assertEqual(report["cleanup"], {"result": "passed", "residual_resources": 0})
+
+    def test_initial_password_sql_rejection_fails_immediately_and_still_cleans_up(self):
+        report = self.run_fake_lifecycle(fail_initial_password=True)
+        self.assertEqual(report["result"], "failed")
+        self.assertEqual(report["phase"], "initial-password")
         self.assertEqual(report["cleanup"], {"result": "passed", "residual_resources": 0})
 
     def test_focused_dispatch_does_not_trigger_other_owners_or_false_aggregate_failures(self):

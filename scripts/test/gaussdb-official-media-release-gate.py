@@ -259,8 +259,10 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
             command(["docker", "build", "--label", LABEL + "=" + run_id, "-t", image, work],
                     output=report_path.with_suffix(".build.log"), timeout=900)
             command(["docker", "network", "create", "--label", LABEL + "=" + run_id, network], capture_output=True)
-            password = "AddpCert9@" + secrets.token_hex(12)
-            initial_password = "AddpInit9@" + secrets.token_hex(12)
+            # Preserve 96 random bits within the kernel's default 32-character
+            # maximum; the four-character prefix guarantees all four classes.
+            password = "Ac9@" + secrets.token_hex(12)
+            initial_password = "Ai9@" + secrets.token_hex(12)
             env = {**os.environ, "GAUSS_CERT_SECRET": initial_password}
             command(["docker", "run", "-d", "--name", container, "--network", network,
                      "--label", LABEL + "=" + run_id, "--shm-size=256m",
@@ -272,6 +274,8 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
                                         report_path.with_suffix(".initial-password.log"))
                 if initialized.returncode == 0 and initialized.stdout.strip() == "ALTER ROLE":
                     break
+                if initialized.returncode == 3:
+                    raise RuntimeError("official GaussDB initial password SQL rejected; see initialization log")
                 state = inspect("container", container)
                 if not state or not state["State"]["Running"]:
                     raise RuntimeError("official GaussDB exited before readiness")
