@@ -100,6 +100,7 @@ class OnlineGateTest(unittest.TestCase):
                 "raster-workflow-capacity",
                 "security-mysql-owner-protection",
                 "security-plaintext-access",
+                "graph-falkordb-protection",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
                 "tidb-consumer-flow",

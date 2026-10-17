@@ -17,6 +17,25 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_graph_protection_requires_synthetic_lifecycle_and_regressions(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',
+                 'scripts/test/online-hosted-security-gate.sh', 'scripts/test/graph-falkordb-protection-online.py',
+                 'business/scripts/online-graph-falkordb-fixture.py', 'business/docker-compose.online-graph-falkordb.yml')
+        for relative in paths:
+            target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        CHECK.validate_graph_falkordb_protection_profile(self.repository, {'graph-falkordb-protection'})
+        for relative, fragment in ((paths[0], "inputs.suite != 'graph-falkordb-protection'"),
+                                   (paths[1], 'graph-falkordb-protection-online_test.py'),
+                                   (paths[2], 'develop,graph,manager,service,transfer'),
+                                   (paths[3], 'same_engine_control'), (paths[4], '--volumes'), (paths[5], 'tmpfs:')):
+            target = self.repository / relative; original = target.read_text()
+            target.write_text(original.replace(fragment, 'removed'))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_graph_falkordb_protection_profile(self.repository, {'graph-falkordb-protection'})
+            target.write_text(original)
+
     def test_online_aggregate_follows_focused_security_owner(self):
         makefile = "test-online-runner:\n\t@$(MAKE) test-security-online-runner\n\ntest-security-online-runner:\n\t@python3 -m unittest security_fixture_test.py\n"
         self.assertIn("security_fixture_test.py", CHECK.make_target_commands(makefile, "test-online-runner"))

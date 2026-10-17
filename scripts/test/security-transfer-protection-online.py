@@ -80,7 +80,7 @@ class GatewayClient:
             headers={
                 "Accept": "application/octet-stream" if raw_response else "application/json",
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.token}",
+                **({"Authorization": f"Bearer {self.token}"} if self.token else {}),
             },
         )
         try:

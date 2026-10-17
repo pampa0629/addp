@@ -353,6 +353,9 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, sourceInitializerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
+	allPermissions = append(allPermissions, graphProtectionReaderPermissions...)
+	allPermissions = append(allPermissions, graphProtectionPreparerPermissions...)
+	allPermissions = append(allPermissions, graphProtectionOutsiderPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -387,6 +390,25 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
+	permissions, err := suitePermissions("graph-falkordb-protection")
+	if err != nil || !slices.Equal(permissions, []string{"graph.graph.read"}) || !needsEngineProvisioner("graph-falkordb-protection") {
+		t.Fatalf("Graph reader must have only graph.graph.read: %v %v", permissions, err)
+	}
+	for _, forbidden := range []string{"system.engine.read", "system.engine_access_grant.create", "system.execution_authorization.create", "develop.data_read.execute"} {
+		if slices.Contains(graphProtectionPreparerPermissions, forbidden) || slices.Contains(permissions, forbidden) {
+			t.Fatalf("Graph fixture must not expand source authorization: %s", forbidden)
+		}
+	}
+	if slices.Contains(graphProtectionOutsiderPermissions, "graph.graph.read") || slices.Contains(permissions, "graph.graph.update") {
+		t.Fatal("Graph fixture mixed reader, outsider or public-state authority")
+	}
+	values := consumerEnvironment("graph-falkordb-protection", 2, "private-access", "private-password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
+		t.Fatal("Graph reader credentials are not bound to the disposable User")
+	}
 }
 
 func TestComposePublicOriginFixtureHasNoGrantedPermissions(t *testing.T) {

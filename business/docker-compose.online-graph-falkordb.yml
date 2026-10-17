@@ -1,0 +1,11 @@
+services:
+  falkordb:
+    extends:
+      file: ../scripts/infra/falkordb.yml
+      service: falkordb
+    container_name: addp-graph-online-falkordb
+    ports:
+      - "127.0.0.1::6379"
+    tmpfs:
+      - /data
+    restart: "no"

@@ -32,6 +32,7 @@ on:
           - raster-workflow
           - vector-pmtiles-workflow
           - raster-workflow-capacity
+          - graph-falkordb-protection
           - security-plaintext-access
           - security-mysql-owner-protection
           - security-transfer-protection
@@ -128,7 +129,7 @@ jobs:
 
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-falkordb-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -306,7 +307,7 @@ jobs:
 
   security-hosted-t4:
     name: Online T4 (${{ inputs.suite }}, Linux x86_64)
-    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access')
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access' || inputs.suite == 'graph-falkordb-protection')
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false

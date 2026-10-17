@@ -2197,6 +2197,41 @@ def validate_local_sgm_profile(repository: Path) -> None:
             raise RegistrationError("private local SGM must not execute in GitHub Actions")
 
 
+def validate_graph_falkordb_protection_profile(repository: Path, registered: set[str]) -> None:
+    if "graph-falkordb-protection" not in registered:
+        return
+    required = {
+        "scripts/test/online-hosted-security-gate.sh": (
+            "# ADDP_ONLINE_SUITES=graph-falkordb-protection", "online-graph-falkordb-fixture.py start",
+            "online-graph-falkordb-fixture.py stop", "develop,graph,manager,service,transfer", "graph-falkordb.json",
+        ),
+        "scripts/test/graph-falkordb-protection-online.py": (
+            "addp.graph-falkordb-protection-online/v1", "public_unmanaged", "public_protected",
+            "same_engine_control", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
+        ),
+        "business/scripts/online-graph-falkordb-fixture.py": (
+            "--volumes", "owned_resources", "127\\.0\\.0\\.1", "0o600", "graph_protection_control",
+        ),
+        "business/docker-compose.online-graph-falkordb.yml": (
+            "../scripts/infra/falkordb.yml", "127.0.0.1::6379", "tmpfs:",
+        ),
+    }
+    for path, fragments in required.items():
+        file = repository / path
+        if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
+            raise RegistrationError("Graph FalkorDB protection contract is incomplete: " + path)
+    commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
+    for test in ("graph-falkordb-protection-online_test.py", "online-graph-falkordb-fixture_test.py"):
+        if test not in commands:
+            raise RegistrationError("Graph protection regression must enter test-online-runner")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if job is None or "inputs.suite == 'graph-falkordb-protection'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):
+        raise RegistrationError("Graph protection requires the standard Ubuntu Hosted Security lifecycle")
+    if "&& inputs.suite != 'graph-falkordb-protection'" not in workflow:
+        raise RegistrationError("Graph protection must not also dispatch on self-hosted")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -2233,6 +2268,7 @@ def check_registration(repository: Path) -> None:
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)
+    validate_graph_falkordb_protection_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)

@@ -57,6 +57,15 @@ var securityPermissions = []string{
 	"security.sensitive_data_type.create", "security.sensitive_data_type.delete", "security.sensitive_data_type.read",
 }
 
+var graphProtectionReaderPermissions = []string{"graph.graph.read"}
+var graphProtectionPreparerPermissions = []string{
+	"graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
+	"graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
+	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"security.enrollment.create", "security.enrollment.read", "security.enrollment.update",
+}
+var graphProtectionOutsiderPermissions = []string{"meta.catalog.read"}
+
 var securityInitializerPermissions = []string{
 	"security.classification.read", "security.classification.create", "security.grade.read", "security.grade.create",
 	"security.sensitive_data_type.read", "security.sensitive_data_type.create", "security.detector.read", "security.detector.create",
@@ -189,6 +198,8 @@ var readWorkflowConsumerPermissions = []string{
 
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case "graph-falkordb-protection":
+		return graphProtectionReaderPermissions, nil
 	case "pg-source-authorization":
 		return pgAuthorizationConsumerPermissions, nil
 	case "platform-node-metrics":
@@ -236,6 +247,9 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
+	if suite == "graph-falkordb-protection" {
+		return true
+	}
 	if suite == "pg-source-authorization" {
 		return true
 	}
@@ -251,6 +265,9 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
+	case "graph-falkordb-protection":
+		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
+		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	case "vector-pmtiles-workflow", "highgo-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "redis-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
@@ -604,6 +621,20 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_USER_USERNAME"] = readerName
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
+	}
+	if *suite == "graph-falkordb-protection" {
+		preparer, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-graph-preparer", graphProtectionPreparerPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		outsider, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-graph-outsider", graphProtectionOutsiderPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"] = preparer.AccessToken
+		values["ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
 	}
 	if *suite == "security-plaintext-access" {
 		approver, _, approverPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,

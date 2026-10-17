@@ -2,6 +2,7 @@
 # Disposable Security masking and owner protection acceptance on GitHub Hosted.
 # ADDP_ONLINE_SUITES=security-mysql-owner-protection
 # ADDP_ONLINE_SUITES=security-plaintext-access
+# ADDP_ONLINE_SUITES=graph-falkordb-protection
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -10,11 +11,20 @@ ONLINE_SUITE=${ONLINE_SUITE_INPUT:-}
 case "$ONLINE_SUITE" in
   security-mysql-owner-protection) INITIALIZER_SCRIPT=security-mysql-owner-protection-online.py ;;
   security-plaintext-access) INITIALIZER_SCRIPT=security-plaintext-access-online.py ;;
+  graph-falkordb-protection) INITIALIZER_SCRIPT= ;;
   *) echo 'Unsupported Hosted Security suite' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-falkordb)
+  HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online)
+fi
 stop_online_fixture() {
-  run_logged bash business/scripts/online-security-owner-fixture.sh stop
+  if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+    run_logged python3 business/scripts/online-graph-falkordb-fixture.py stop
+  else
+    run_logged bash business/scripts/online-security-owner-fixture.sh stop
+  fi
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 # The v11 suite adds discovery, required Owner acknowledgements and a real bank-card
@@ -40,14 +50,30 @@ run_logged go work init "${go_modules[@]}"
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
-run_logged bash business/scripts/online-security-owner-fixture.sh start
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  run_logged python3 business/scripts/online-graph-falkordb-fixture.py start
+else
+  run_logged bash business/scripts/online-security-owner-fixture.sh start
+fi
 application_owned=1
 for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
+if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then
+  run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
+fi
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2" --wait-protection-owners develop,graph,manager,service,transfer' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
+else
+  run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2"' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
+fi
 source "$IDENTITY_ENV"
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  run_logged python3 scripts/test/online-engine-registration.py \
+    --descriptor "$ADDP_ONLINE_SECRET_DIR/graph-falkordb.json" --output "$ENGINE_RESULT_ENV"
+  source "$ENGINE_RESULT_ENV"
+  export ADDP_ONLINE_TEST_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+else
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_SECRET_DIR/security-postgres.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
@@ -63,5 +89,6 @@ if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
   export ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 fi
 run_logged python3 "scripts/test/$INITIALIZER_SCRIPT" --initialize
+fi
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

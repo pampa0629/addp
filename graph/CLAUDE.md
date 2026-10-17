@@ -248,3 +248,7 @@ GraphDataService 是浏览、构建审核、Schema 推导和知识服务的唯�
 数据库结构统一由 MigrateGraphTables 原子迁移并删除退役 database/neo4j_id 列。不自动猜测已有旧图谱实例的目录路径或索引管理范围；非空旧绑定无法满足新结构时，迁移失败并完整回滚，需显式重新配置；不删除业务图数据。
 
 验证入口：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-falkordb`、`make test-common-neo4j`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`。PostgreSQL 分组验证目标路径保真、目标唯一性、旧字段移除、失败回滚和构建 execution 并发；默认 Common PostgreSQL 完整门禁包含该分组。Graph 路径已在三项 Common T2 的输入元数据登记，因此 Graph 后端变更会自动选中 Common owner 的既有 CI Job。Swagger 使用标准 graph 生成与覆盖入口。
+
+隔离权限 T4 使用 `graph-falkordb-protection` suite，沿 `online-hosted-security-gate.sh` 和 `hosted-online.sh` 的唯一 Hosted 生命周期，由 `make test-online ONLINE_SUITE=graph-falkordb-protection` 执行。专用 FalkorDB 复用中央镜像契约，回环随机端口、tmpfs 数据、独立 Compose 资源；仅含两张各 3 个 Person、2 条 Link 的合成图。普通读取 User 仅获 `graph.graph.read`；准备者独立持有图谱配置、Meta 扫描和纳管所需 Permission，无权对照 User 不含 Graph 读取权。所有账号只存在于 disposable Hosted Tenant，不新增产品角色、源数据 Grant 或业务引擎授权。
+
+上述 T4 从 Gateway 和 Graph 直连验证私有读取 200、无权 403、匿名 401，仅将合成测试图显式公开，先验证匿名读取 200，再经正式 Security 纳管并等待 develop/graph/manager/service/transfer 五 Owner 的当前投影确认后验证保护 403；同引擎未纳管对照图仍返回真实数据。拒绝必须匹配保护原因，不能以普通权限错误或连接失败代替。失败也须关闭公开状态、正式退出测试纳管并等待五 Owner、删除图谱与本体配置；标准 Hosted 清理继续销毁合成图数据库和临时 IAM 所在的完整测试 Infra，并核对容器、网络、卷零残留。现有业务图、Infra 私有图、external 索引和暂缓的 Graph 源数据授权均不参与。确定性回归由 `make test-security-online-runner`、聚合 `make test-online-runner` 及既有 Platform CI 覆盖，真实 T4 结果单独报告。

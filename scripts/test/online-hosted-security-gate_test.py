@@ -29,6 +29,11 @@ class HostedSecurityGateTest(unittest.TestCase):
             echo "security-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
             [ "$1" != start ] || [ "${ADDP_TEST_FIXTURE_FAIL:-0}" != 1 ]
         ''')
+        self.host._write_repository_script('business/scripts/online-graph-falkordb-fixture.py', '''
+            import os, sys
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('graph-fixture:' + sys.argv[1] + '\\n')
+            sys.exit(1 if sys.argv[1] == 'start' and os.environ.get('ADDP_TEST_FIXTURE_FAIL') == '1' else 0)
+        ''')
         self.host._executable('go', '''
             #!/usr/bin/env bash
             if [ "$1 $2" = 'work init' ]; then
@@ -53,6 +58,8 @@ class HostedSecurityGateTest(unittest.TestCase):
             export ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=consumer-token
             export ADDP_ONLINE_TEST_USER_USERNAME=external-online-consumer
             export ADDP_ONLINE_TEST_USER_PASSWORD=private-password
+            export ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN=graph-preparer
+            export ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN=graph-outsider
             EOF
                 exit 0
               fi
@@ -94,6 +101,14 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
+            if [ "$ONLINE_SUITE_INPUT" = graph-falkordb-protection ]; then
+              [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
+              [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
+              [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]
+              echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
+              exit
+            fi
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ]
             [ "$ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID" = 23 ]
             if [ "$ONLINE_SUITE_INPUT" = security-mysql-owner-protection ]; then
@@ -135,6 +150,23 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_graph_profile_uses_only_its_synthetic_fixture_and_always_cleans(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('graph-fixture:start', trace)
+        self.assertIn('graph-fixture:stop', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=graph-falkordb-protection', trace)
+        self.assertNotIn('security-fixture:', trace)
+        self.assertNotIn('initialize', trace)
+        self.assertNotIn('chromium', trace)
+        self.assertLess(trace.index('application-stop'), trace.index('graph-fixture:stop'))
+
+    def test_graph_profile_failure_keeps_lifecycle_cleanup(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_SUITE_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('graph-fixture:stop', self.host.trace.read_text())
 
     def test_separate_engine_ids_and_preparation_tokens_do_not_leak_into_owner_suite(self):
         result = self.run_gate()
