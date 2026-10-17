@@ -225,3 +225,5 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
 
 2026-10-17 原值授权扩展：规范与代码改为 scopes 集合，一次申请／审批可覆盖 Manager 预览和 Develop 查询，逐出口返回授权状态并可独立撤销；SchemaVersion 5 单向迁移旧申请为原出口单元素集合，删除旧 owner/action 列。Develop 保存默认脱敏结果及仅含执行时已授权原值的 Owner 私有有界历史；专业详情、列表与工作台轮询每次按当前可信用户及本地投影重判。到期或撤销回落默认保护，默认语义／结构变化则拒绝历史结果并要求重新查询。通用观察和导出不暴露私有载荷；Notebook 交互查询使用经控制面核验的 session 用户，完整导出仍走 Transfer 默认保护。共享申请弹窗由 common-frontend 唯一维护。Hosted 原值套件扩展为领域 v5／浏览器 v2，真实结果另行记录，不以历史 v4 验收代替。
+
+结构化投影启动补齐仅处理 enrolling/active Enrollment，必须先锁定并核对 Enrollment 生命周期，再解析与检查 Owner 投影。released 保留的 active 投影记录是解除审计，不要求补出后续新加入的 Graph Owner，也不得重建已解除资源的保护。releasing/activating 同样不进入该字段升级路径。回归覆盖旧四 Owner 已解除资源在 Graph 初始化与结构化补齐顺序执行后的幂等性、历史内容不变，纳入既有 Security Go 与 PostgreSQL Lifecycle 门禁。

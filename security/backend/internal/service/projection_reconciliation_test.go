@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -100,5 +101,52 @@ func TestReconcileStructuredOwnerProjectionsUpgradesLegacyEnrollmentOnce(t *test
 	second, err := ReconcileStructuredOwnerProjections(context.Background(), db, now.Add(2*time.Second))
 	if err != nil || second != 0 {
 		t.Fatalf("second reconciliation = %d, err=%v", second, err)
+	}
+}
+
+func TestReconcileStructuredOwnerProjectionsPreservesReleasedHistory(t *testing.T) {
+	assertStructuredReconciliationPreservesReleasedHistory(t, openSecurityTestDB(t))
+}
+
+func assertStructuredReconciliationPreservesReleasedHistory(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	db, _, finding, _, _ := prepareReviewablePhoneFindingOnDB(t, db)
+	if _, err := NewAssessmentService(db, nil).ReviewFinding(t.Context(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认历史字段"}); err != nil {
+		t.Fatal(err)
+	}
+	// A resource released before Graph was introduced keeps its four-owner
+	// audit projections. Startup must neither require nor recreate a fifth.
+	if err := db.Model(&models.ProtectionEnrollment{}).Where("id = ?", finding.EnrollmentID).Update("state", models.EnrollmentStateReleased).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("enrollment_id = ? AND consumer_owner = ?", finding.EnrollmentID, graphProtectionOwner).Delete(&models.ProtectionProjectionRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("enrollment_id = ? AND consumer_owner = ?", finding.EnrollmentID, graphProtectionOwner).Delete(&models.ProtectionProjectionChange{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var before []models.ProtectionProjectionRecord
+	if err := db.Where("enrollment_id = ?", finding.EnrollmentID).Order("consumer_owner").Find(&before).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 4 {
+		t.Fatalf("historical fixture owners = %d", len(before))
+	}
+	for i := 0; i < 2; i++ {
+		if err := ReconcileGraphOwnerProjections(t.Context(), db, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		if count, err := ReconcileStructuredOwnerProjections(t.Context(), db, time.Now().UTC()); err != nil || count != 0 {
+			t.Fatalf("released history reconciliation = %d, %v", count, err)
+		}
+	}
+	var after []models.ProtectionProjectionRecord
+	if err := db.Where("enrollment_id = ?", finding.EnrollmentID).Order("consumer_owner").Find(&after).Error; err != nil {
+		t.Fatal(err)
+	}
+	beforeJSON, _ := json.Marshal(before)
+	afterJSON, _ := json.Marshal(after)
+	if string(beforeJSON) != string(afterJSON) {
+		t.Fatal("startup changed released audit projections")
 	}
 }

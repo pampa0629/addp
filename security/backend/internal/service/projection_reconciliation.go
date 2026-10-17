@@ -31,6 +31,15 @@ func ReconcileStructuredOwnerProjections(ctx context.Context, db *gorm.DB, now t
 			return err
 		}
 		for _, managerRecord := range managerRecords {
+			enrollment, err := lockProtectionEnrollment(tx, managerRecord.TenantID, managerRecord.EnrollmentID)
+			if err != nil {
+				return err
+			}
+			// Release retains active projection records as audit history. Only
+			// current enrollments may have structured field projections upgraded.
+			if enrollment.State != models.EnrollmentStateEnrolling && enrollment.State != models.EnrollmentStateActive {
+				continue
+			}
 			var managerProjection dataprotection.Projection
 			if err := json.Unmarshal([]byte(managerRecord.ProjectionPayload), &managerProjection); err != nil {
 				return err
@@ -57,10 +66,6 @@ func ReconcileStructuredOwnerProjections(ctx context.Context, db *gorm.DB, now t
 			}
 			if len(pendingOwners) == 0 {
 				continue
-			}
-			var enrollment models.ProtectionEnrollment
-			if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", managerRecord.TenantID, managerRecord.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
-				return err
 			}
 			if strings.TrimSpace(enrollment.LatestSourceSnapshotHash) == "" || enrollment.LatestSourceSnapshotHash != managerProjection.SourceSnapshotHash {
 				continue
