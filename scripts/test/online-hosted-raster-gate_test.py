@@ -64,6 +64,7 @@ class HostedRasterGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${POSTGRES_PASSWORD:-}" ]
             [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1740 ] || exit 1
+            echo "security-url:${SECURITY_URL:-}" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID" = 11 ]
             [ "$ADDP_ONLINE_RASTER_TARGET_ENGINE_ID" = 12 ]
             [ "$ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID" = 13 ]
@@ -112,6 +113,9 @@ class HostedRasterGateTest(unittest.TestCase):
                      'application-stop', 'raster-fixture:stop', 'docker-rm:addp-raster-registry', 'infra-down'):
             self.assertIn(step, trace)
         self.assertNotIn('start:-geopython-workflow', trace)
+        self.assertIn('start:-security', trace)
+        self.assertIn('security-url:http://127.0.0.1:8194', trace)
+        self.assertLess(trace.index('start:-security'), trace.index('start:-develop'))
         self.assertIn('docker-rm:addp-raster-online-runtime', trace)
         self.assertLess(trace.index('application-stop'), trace.index('raster-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
@@ -119,6 +123,29 @@ class HostedRasterGateTest(unittest.TestCase):
         evidence = result.stdout + ''.join(path.read_text() for path in self.host.artifacts.rglob('*') if path.is_file())
         self.assertNotIn('private-database-marker', evidence)
         self.assertNotIn('provisioner-token', evidence)
+
+    def test_preflight_requires_security_with_the_same_build_identity(self):
+        gate = importlib.import_module('scripts.test.online-gate')
+        self.assertIn(('security', 'SECURITY_URL'), gate.SUITES['raster-workflow'].services)
+
+    def test_security_startup_failure_stops_before_workflows_and_cleans(self):
+        self.host._write_repository_script('scripts/dev/start.sh', '''
+            #!/usr/bin/env bash
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [ "$1" != -security ]
+        ''')
+        subprocess.run(['git', 'add', 'scripts/dev/start.sh'], cwd=self.host.repository, check=True)
+        subprocess.run(['git', 'commit', '-qm', 'security startup failure fixture'], cwd=self.host.repository, check=True)
+        result = self.run_gate()
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('start:-security', trace)
+        self.assertNotIn('start:-develop', trace)
+        self.assertNotIn('raster-fixture:seed', trace)
+        self.assertNotIn('make:test-online', trace)
+        for step in ('application-stop', 'raster-fixture:stop', 'infra-down'):
+            self.assertIn(step, trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_business_failure_still_cleans_application_business_registry_infra_and_secrets(self):
         result = self.run_gate(ADDP_TEST_SUITE_FAIL='1')

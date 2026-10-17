@@ -69,7 +69,8 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "-m", "scripts.test.raster-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
                   ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
-                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL")),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
     ),
     "redis-consumer-flow": Suite(
         command=(sys.executable, "scripts/test/redis-consumer-flow-online.py"),

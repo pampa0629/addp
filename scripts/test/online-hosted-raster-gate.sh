@@ -32,6 +32,7 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 # This manual scene verifies each accepted output in a browser plus byte/lineage checks.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1740
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
+export SECURITY_URL=http://127.0.0.1:8194
 export ADDP_ONLINE_TEST_RUN_ID="raster-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 # Mirror for the independently built product Runtime.
 fixture_owned=1
@@ -49,7 +50,8 @@ infra_owned=1
 run_logged bash scripts/infra/up.sh
 run_logged python3 business/scripts/online-raster-minio-fixture.py start
 application_owned=1
-for start_target in -develop -manager -monitor; do
+# Owners install their first protection projection from Security before data reads.
+for start_target in -security -develop -manager -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 start_online_geopython_runtime "$RUNTIME_TAG"
