@@ -1,4 +1,5 @@
 import json
+import importlib
 import os
 from pathlib import Path
 import shutil
@@ -9,6 +10,7 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'business/scripts/online-hdfs-spark-fixture.sh'
+REGISTRATION = importlib.import_module('scripts.test.online-engine-registration')
 
 
 class HDFSOnlineFixtureTest(unittest.TestCase):
@@ -100,7 +102,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         for engine in ('hdfs', 'spark', 'postgres', 'minio', 'mysql', 'doris'):
             descriptor = self.secret / (engine + '-engine.json')
             self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
-            self.assertEqual(json.loads(descriptor.read_text())['engine_type'], 'postgresql' if engine == 'postgres' else engine)
+            self.assertEqual(REGISTRATION.load_descriptor(descriptor)['engine_type'], 'postgresql' if engine == 'postgres' else engine)
         hdfs = json.loads((self.secret / 'hdfs-engine.json').read_text())['connection_info']
         self.assertEqual((hdfs['authentication'], hdfs['user'], hdfs['root_path']), ('simple', 'addp_business_reader', '/addp'))
         spark = json.loads((self.secret / 'spark-engine.json').read_text())['connection_info']

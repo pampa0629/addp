@@ -129,8 +129,10 @@ columns = ', '.join(f'{name}_{suffix} bigint NOT NULL CHECK ({name}_{suffix} >= 
 values = {
  'mysql.env': f'MYSQL_ROOT_PASSWORD={mysql_password}\nMYSQL_DATABASE=spark_results\n',
  'mysql-engine.json': json.dumps({'name': 'Hosted MySQL', 'engine_type': 'mysql', 'engine_origin': 'general',
+    'description': 'Disposable Spark MySQL publication acceptance',
     'connection_info': {'host': '127.0.0.1', 'port': 15438, 'database': 'spark_results', 'user': 'root', 'password': mysql_password}}),
  'doris-engine.json': json.dumps({'name': 'Hosted Doris', 'engine_type': 'doris', 'engine_origin': 'general',
+    'description': 'Disposable Spark Doris publication acceptance',
     'connection_info': {'host': '127.0.0.1', 'port': 9030, 'http_port': 8030, 'database': 'spark_results', 'user': 'root', 'password': ''}}),
  'minio.env': f'MINIO_ROOT_USER={minio_access}\nMINIO_ROOT_PASSWORD={minio_secret}\n',
  'minio-engine.json': json.dumps({'name': 'Hosted MinIO', 'engine_type': 'minio',
