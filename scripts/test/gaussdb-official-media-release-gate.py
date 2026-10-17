@@ -182,10 +182,12 @@ def terminate(signum, _frame):
     raise SystemExit(128 + signum)
 
 
-def probe_readiness(container: str, log_path: Path) -> subprocess.CompletedProcess:
-    args = ["docker", "exec", container, "gsql", "-d", "postgres", "-p", "5432", "-Atc", "SELECT 1"]
+def probe_sql(container: str, statement: str, log_path: Path) -> subprocess.CompletedProcess:
+    # Initial-user password SQL must never enter process arguments or reports.
+    args = ["docker", "exec", "-i", container, "gsql", "-v", "ON_ERROR_STOP=1",
+            "-d", "postgres", "-p", "5432", "-At"]
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(args, input=statement, capture_output=True, text=True, timeout=15)
     except subprocess.TimeoutExpired as error:
         def text(value):
             return value.decode(errors="replace") if isinstance(value, bytes) else value
@@ -220,6 +222,7 @@ def main() -> None:
               "runner": {"os": "linux", "architecture": "x86_64"},
               "scope": "developer-single-node-protocol-only", "cleanup": {"result": "not-run"}}
     password = ""
+    initial_password = ""
     previous_term = signal.signal(signal.SIGTERM, terminate)
     try:
         with tempfile.TemporaryDirectory(prefix="addp-gaussdb-certification-") as work:
@@ -257,22 +260,28 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
                     output=report_path.with_suffix(".build.log"), timeout=900)
             command(["docker", "network", "create", "--label", LABEL + "=" + run_id, network], capture_output=True)
             password = "AddpCert9@" + secrets.token_hex(12)
-            env = {**os.environ, "GAUSS_CERT_SECRET": password}
+            initial_password = "AddpInit9@" + secrets.token_hex(12)
+            env = {**os.environ, "GAUSS_CERT_SECRET": initial_password}
             command(["docker", "run", "-d", "--name", container, "--network", network,
                      "--label", LABEL + "=" + run_id, "--shm-size=256m",
                      "-p", "127.0.0.1::5432", "-e", "GAUSS_CERT_SECRET", image], capture_output=True, env=env)
-            report["phase"] = "readiness"
+            report["phase"] = "initial-password"
             deadline = time.monotonic() + 240
             while time.monotonic() < deadline:
-                ready = probe_readiness(container, report_path.with_suffix(".readiness.log"))
-                if ready.returncode == 0 and ready.stdout.strip() == "1":
+                initialized = probe_sql(container, f"ALTER ROLE omm PASSWORD '{password}';",
+                                        report_path.with_suffix(".initial-password.log"))
+                if initialized.returncode == 0 and initialized.stdout.strip() == "ALTER ROLE":
                     break
                 state = inspect("container", container)
                 if not state or not state["State"]["Running"]:
                     raise RuntimeError("official GaussDB exited before readiness")
                 time.sleep(2)
             else:
-                raise RuntimeError("official GaussDB not ready within 240 seconds")
+                raise RuntimeError("official GaussDB initial password not changed within 240 seconds")
+            report["phase"] = "readiness"
+            ready = probe_sql(container, "SELECT 1", report_path.with_suffix(".readiness.log"))
+            if ready.returncode != 0 or ready.stdout.strip() != "1":
+                raise RuntimeError("official GaussDB SQL readiness failed after initial password change")
             # Only synthetic data in the owner disposable container; no shared Infra.
             report["phase"] = "fixture"
             sql = f"""CREATE USER addp_reader PASSWORD '{password}';
@@ -310,10 +319,14 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
                     clean_owned(run_id, container, network, image)
                 finally:
                     if password:
-                        for suffix in (".build.log", ".readiness.log", ".probe.log", ".container.log"):
+                        for suffix in (".build.log", ".initial-password.log", ".readiness.log", ".probe.log", ".container.log"):
                             log_path = report_path.with_suffix(suffix)
                             if log_path.exists():
-                                log_path.write_text(log_path.read_text(errors="replace").replace(password, "[REDACTED]"))
+                                content = log_path.read_text(errors="replace")
+                                for secret in (password, initial_password):
+                                    if secret:
+                                        content = content.replace(secret, "[REDACTED]")
+                                log_path.write_text(content)
             report["cleanup"] = {"result": "passed", "residual_resources": 0}
         except Exception:
             report["result"] = "failed"

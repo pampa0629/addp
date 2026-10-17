@@ -146,10 +146,27 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertEqual(command.call_args.kwargs["env"]["GOARCH"], "amd64")
         self.assertEqual(list(self.root.iterdir()), [])
 
-    def run_fake_lifecycle(self, fail_probe=False):
+    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False):
         resources = {}
         probes = []
+        initialization = []
+        initial_secrets = []
         report = self.root / "report.json"
+
+        def native_sql(args, **kwargs):
+            self.assertIn("ON_ERROR_STOP=1", args)
+            self.assertIn("-i", args)
+            statement = kwargs["input"]
+            if statement.startswith("ALTER ROLE omm PASSWORD "):
+                self.assertNotIn(statement, " ".join(args))
+                self.assertNotIn(initial_secrets[0], statement)
+                initialization.append(statement)
+                return subprocess.CompletedProcess(args, 0, "ALTER ROLE\n", "")
+            self.assertEqual(statement, "SELECT 1")
+            self.assertEqual(len(initialization), 1, "initial password must be changed before SQL readiness")
+            if fail_readiness:
+                return subprocess.CompletedProcess(args, 1, "", "SQL rejected")
+            return subprocess.CompletedProcess(args, 0, "1\n", "")
 
         def inspect(kind, name):
             return resources.get((kind, name))
@@ -170,6 +187,7 @@ class GaussDBCertificationTest(unittest.TestCase):
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
                 resources[("network", args[-1])] = {"Labels": {GATE.LABEL: owner}}
             elif args[:2] == ["docker", "run"]:
+                initial_secrets.append(kwargs["env"]["GAUSS_CERT_SECRET"])
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
                 resources[("container", args[args.index("--name") + 1])] = {
                     "Config": {"Labels": {GATE.LABEL: owner}}, "State": {"Running": True},
@@ -183,6 +201,8 @@ class GaussDBCertificationTest(unittest.TestCase):
                 kwargs["output"].write_text(kwargs["env"]["ADDP_TEST_GAUSSDB_DSN"])
                 if fail_probe:
                     raise subprocess.CalledProcessError(1, args)
+            elif args[:2] == ["docker", "logs"]:
+                kwargs["output"].write_text(initialization[0] + initial_secrets[0])
             return subprocess.CompletedProcess(args, 0)
 
         with patch.object(GATE.platform, "system", return_value="Linux"), \
@@ -194,7 +214,7 @@ class GaussDBCertificationTest(unittest.TestCase):
              patch.object(GATE, "prepare_probe", return_value=self.root / "probe"), \
              patch.object(GATE, "inspect", side_effect=inspect), \
              patch.object(GATE, "command", side_effect=command), \
-             patch.object(GATE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "1\n", "")), \
+             patch.object(GATE.subprocess, "run", side_effect=native_sql), \
              patch.dict(GATE.os.environ, {"ADDP_GAUSSDB_CERTIFICATION_REPORT": str(report)}):
             # media_facts calls real Bash through check_output; avoid intercepting it.
             facts = {name: "fixed" for name in GATE.FACT_NAMES}
@@ -202,9 +222,18 @@ class GaussDBCertificationTest(unittest.TestCase):
                 if fail_probe:
                     with self.assertRaises(subprocess.CalledProcessError):
                         GATE.main()
+                elif fail_readiness:
+                    with self.assertRaisesRegex(RuntimeError, "SQL readiness failed"):
+                        GATE.main()
                 else:
                     GATE.main()
         self.assertEqual(resources, {})
+        self.assertEqual(len(initialization), 1)
+        self.assertNotIn(initial_secrets[0], report.with_suffix(".container.log").read_text())
+        self.assertIn("PASSWORD '[REDACTED]'", report.with_suffix(".container.log").read_text())
+        if fail_readiness:
+            self.assertEqual(probes, [])
+            return json.loads(report.read_text())
         self.assertEqual(probes[0]["GOENV_REGIST_ALL"], "false")
         self.assertEqual(probes[0]["ADDP_GAUSSDB_CERTIFICATION"], "1")
         self.assertNotIn("password=", report.read_text())
@@ -220,6 +249,12 @@ class GaussDBCertificationTest(unittest.TestCase):
         report = self.run_fake_lifecycle(fail_probe=True)
         self.assertEqual(report["result"], "failed")
         self.assertEqual(report["cleanup"]["result"], "passed")
+
+    def test_sql_rejection_after_password_change_never_runs_probe_and_still_cleans_up(self):
+        report = self.run_fake_lifecycle(fail_readiness=True)
+        self.assertEqual(report["result"], "failed")
+        self.assertEqual(report["phase"], "readiness")
+        self.assertEqual(report["cleanup"], {"result": "passed", "residual_resources": 0})
 
     def test_focused_dispatch_does_not_trigger_other_owners_or_false_aggregate_failures(self):
         workflow = (GATE.ROOT / ".github/workflows/release-and-t2-gates.yml").read_text()
@@ -240,7 +275,7 @@ class GaussDBCertificationTest(unittest.TestCase):
     def test_readiness_preserves_client_loader_errors_instead_of_only_timeout(self, run):
         run.return_value = subprocess.CompletedProcess([], 127, "", "gsql: loader failure")
         log = self.root / "readiness.log"
-        result = GATE.probe_readiness("owned", log)
+        result = GATE.probe_sql("owned", "SELECT 1", log)
         self.assertEqual(result.returncode, 127)
         self.assertEqual(json.loads(log.read_text()), {"returncode": 127, "stdout": "", "stderr": "gsql: loader failure"})
 
@@ -249,7 +284,7 @@ class GaussDBCertificationTest(unittest.TestCase):
         run.side_effect = subprocess.TimeoutExpired([], 15, output=b"partial output", stderr=b"partial error")
         log = self.root / "readiness.log"
         with self.assertRaises(subprocess.TimeoutExpired):
-            GATE.probe_readiness("owned", log)
+            GATE.probe_sql("owned", "SELECT 1", log)
         self.assertEqual(json.loads(log.read_text()), {"timed_out": True, "stdout": "partial output", "stderr": "partial error"})
 
     def test_common_package_discovery_cannot_resolve_the_external_certification_driver(self):
