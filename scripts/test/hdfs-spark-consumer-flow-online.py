@@ -320,6 +320,16 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
             'reuse_runtime_status': reuse_runtime}
 
 
+def validate_minio_independent_results(client, first, second):
+    if first['target_locator'] == second['target_locator']:
+        raise SuiteError('Independent executions reused the same MinIO result directory')
+    _, old_rows = support.preview_rows(client, first['preview_locator'])
+    # Recheck the first publication at the same Manager HTTP boundary. Its
+    # independently verified bigint strings must remain exact after the second.
+    if sorted(old_rows, key=lambda row: row['region']) != sorted(first['manager_preview_rows'], key=lambda row: row['region']):
+        raise SuiteError('Second publication changed the first MinIO result')
+
+
 def minio_physical(path):
     command = ['docker', 'exec', 'addp-hdfs-online-minio', 'mc', 'ls', '--recursive', '--json', 'owned/' + path + '/']
     objects = [json.loads(line) for line in subprocess.run(command, check=True, capture_output=True, text=True).stdout.splitlines() if line]
@@ -425,11 +435,7 @@ def run_scenario(client, timeout):
     minio_id = support.positive_int(require('ADDP_ONLINE_MINIO_ENGINE_ID'), 'MinIO')
     report['minio'] = run_persistence(client, report, minio_id, timeout, 'file')
     report['minio_second'] = run_persistence(client, report, minio_id, timeout, 'file')
-    if report['minio']['target_locator'] == report['minio_second']['target_locator']:
-        raise SuiteError('Independent executions reused the same MinIO result directory')
-    _, old_rows = support.preview_rows(client, report['minio']['preview_locator'])
-    if sorted(old_rows, key=lambda row: row['region']) != sorted(report['final_result']['preview_rows'], key=lambda row: row['region']):
-        raise SuiteError('Second publication changed the first MinIO result')
+    validate_minio_independent_results(client, report['minio'], report['minio_second'])
     report['tables'] = TABLES.run(table_host(), client, report, timeout)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'spark-table-consumer-flow.json').write_text(json.dumps(report['tables'], ensure_ascii=False, indent=2))
     report['worker'] = worker_evidence(report['cluster_id'])

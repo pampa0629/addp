@@ -35,6 +35,30 @@ class HDFSOnlineTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertFalse(any('--incomplete' in command for command in calls))
 
+    def test_second_minio_publication_preserves_exact_manager_json_of_first_result(self):
+        first = {'target_locator': 'addp://engine/9/path/result/first?type=object',
+                 'preview_locator': 'addp://engine/9/path/result/first?type=object&item_id=5',
+                 'manager_preview_rows': [{key: value if key == 'region' else str(value)
+                                           for key, value in row.items()} for row in final_result()['preview_rows']]}
+        second = {'target_locator': 'addp://engine/9/path/result/second?type=object'}
+        for mutation in ('', 'number', 'value', 'missing', 'duplicate'):
+            rows = json.loads(json.dumps(first['manager_preview_rows']))
+            rows.reverse()
+            if mutation == 'number': rows[0]['csv_rows'] = 10
+            if mutation == 'value': rows[0]['csv_amount_sum'] = '1'
+            if mutation == 'missing': rows.pop()
+            if mutation == 'duplicate': rows.append(rows[0].copy())
+            with self.subTest(mutation=mutation), patch.object(MODULE.support, 'preview_rows', return_value=([], rows)):
+                if mutation:
+                    with self.assertRaisesRegex(MODULE.SuiteError, 'Second publication changed'):
+                        MODULE.validate_minio_independent_results(None, first, second)
+                else:
+                    MODULE.validate_minio_independent_results(None, first, second)
+        with patch.object(MODULE.support, 'preview_rows') as preview:
+            with self.assertRaisesRegex(MODULE.SuiteError, 'same MinIO result directory'):
+                MODULE.validate_minio_independent_results(None, first, first)
+            preview.assert_not_called()
+
     def test_source_preparation_refuses_personal_environment_before_any_request(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(MODULE.sys, 'argv', ['hdfs', '--initialize-table-read']), patch.object(MODULE.support, 'GatewayClient') as client:
             with self.assertRaises(MODULE.REGISTRATION.RegistrationError):
