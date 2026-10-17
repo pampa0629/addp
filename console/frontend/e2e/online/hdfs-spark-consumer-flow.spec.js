@@ -22,13 +22,25 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
     await expect(samples).toHaveCount(1)
     const submitted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/scan/run/manual' && response.request().method() === 'POST')
     await samples.getByRole('button', { name: /^(重新扫描|Rescan)$/i }).click()
-    const scan = await json(await submitted, 'Meta UI scan')
+    const scopeDialog = meta.getByRole('dialog', { name: /^(确认扫描范围与深度|Confirm scan scope and depth)$/i })
+    await expect(scopeDialog).toBeVisible()
+    await expect(scopeDialog).toContainText('Hosted HDFS')
+    await expect(scopeDialog).toContainText('samples')
+    await expect(scopeDialog.getByRole('radio', { name: /^(基础扫描|Basic Scan)/i })).toBeChecked()
+    await expect(scopeDialog.getByRole('checkbox')).toBeChecked()
+    await scopeDialog.getByRole('button', { name: /^(确认并开始扫描|Confirm and start scan)$/i }).click()
+    const scanResponse = await submitted
+    expect(scanResponse.request().postDataJSON()).toEqual({
+      engine_id: expected.engine_id, scan_depth: 'basic', force: true,
+      trigger_type: 'manual', source: 'meta', catalog_paths: ['samples']
+    })
+    const scan = await json(scanResponse, 'Meta UI scan')
     await expect.poll(async () => {
       const execution = await json(await api.get(`/api/v1/meta/executions/${scan.execution_id}`), 'Meta execution')
       if (['failed', 'timeout', 'cancelled'].includes(execution.status)) throw new Error('HDFS UI scan failed')
       return execution.status
     }, { timeout: 120_000 }).toBe('success')
-    await expect(meta.locator('.scan-status')).toContainText(/扫描完成|completed/i)
+    await expect(meta.locator('.scan-status')).toContainText(/所选范围扫描已完成|The selected scope has been scanned/i)
     const items = await json(await api.get(`/api/v1/meta/engines/${expected.engine_id}/items`), 'rescanned files')
     for (const [name, locator] of Object.entries(expected.locators)) {
       const path = new URL(locator).pathname.replace(/^\/[0-9]+\/path\//, '').split('/').map(decodeURIComponent).join('/')

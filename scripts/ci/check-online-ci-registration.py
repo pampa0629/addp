@@ -2003,6 +2003,8 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         ),
         "console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js": (
             'login(', 'auth.principalID', 'meta/scan/run/manual', '.workflow-final-result-json',
+            "getByRole('dialog'", 'Confirm and start scan', 'postDataJSON()', "catalog_paths: ['samples']",
+            'The selected scope has been scanned',
             'facts.physical_after.rows', "['created', 'overwrite', 'reuse']", "getAttribute('class')",
         ),
         "Makefile": ('$(MAKE) test-hdfs-online-runner', 'scripts/test/hdfs-spark-consumer-flow-online_test.py',
