@@ -171,6 +171,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -373,6 +379,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.AlgorithmCapabilities"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -435,6 +447,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -480,6 +498,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -522,6 +546,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.BrowseSnapshot"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
@@ -1110,6 +1140,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1172,6 +1208,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1229,7 +1271,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Forbidden",
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1305,6 +1347,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -1370,6 +1418,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1861,6 +1915,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
                         "description": "Conflict",
                         "schema": {
@@ -1914,7 +1974,14 @@ const docTemplate = `{
                         "in": "query"
                     }
                 ],
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1924,7 +1991,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体详情 | Get entity detail",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1934,7 +2008,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取节点邻居 | Get node neighbors",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1944,7 +2025,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取图谱本体描述 | Get graph ontology description",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1954,7 +2042,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "路径查找 | Find paths",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1967,6 +2062,12 @@ const docTemplate = `{
                 "responses": {
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1987,7 +2088,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "图谱统计信息 | Graph statistics",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -1997,7 +2105,14 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "获取实体中心子图 | Get entity-centric subgraph",
-                "responses": {},
+                "responses": {
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -2171,6 +2286,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2629,6 +2750,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -2701,6 +2828,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -2837,6 +2970,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "数据保护拒绝 | Data protection denied",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }

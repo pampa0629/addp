@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   crsSuppressionStatus,
+  canDeclarePreviewSourceCRS,
   getPreviewCRSTransform,
+  TEMPORARY_SOURCE_CRS_OPTIONS,
   sourceCRSFromPreview,
   sourceSRIDFromPreview,
   transformGeoJSONGeometryToWGS84
@@ -223,5 +225,51 @@ describe('preview CRS registry', () => {
     expect(transform.status).toBe('transformable')
     expect(geometry.coordinates[0]).toBeCloseTo(117, 6)
     expect(geometry.coordinates[1]).toBeCloseTo(0, 6)
+  })
+})
+
+
+describe('temporary source CRS declaration', () => {
+  it('has no default, accepts only explicit built-in choices and does not register arbitrary definitions', () => {
+    const unknown = { transform_status: 'unknown_crs', source_srid: 0 }
+    expect(TEMPORARY_SOURCE_CRS_OPTIONS).toEqual(['EPSG:4326', 'EPSG:3857'])
+    expect(canDeclarePreviewSourceCRS(unknown)).toBe(true)
+    expect(canDeclarePreviewSourceCRS({ transform_status: 'engine_transformed' })).toBe(false)
+    expect(canDeclarePreviewSourceCRS({ source_srid: 4547 })).toBe(false)
+    for (const value of ['', 'EPSG:4547', 'epsg:4326', '+proj=longlat']) {
+      expect(getPreviewCRSTransform(unknown, value)).toEqual({ status: 'unknown_crs' })
+    }
+    expect(getPreviewCRSTransform({ transform_status: 'engine_transformed' }, 'EPSG:3857')).toEqual({ status: 'unknown_crs' })
+  })
+  it('uses the shared transformation and preserves every source field and coordinate', () => {
+    const source = { transform_status: 'unknown_crs', source_srid: 0, source_crs: '', rows: [{ shape: { type: 'Point', coordinates: [1113194.9079327357, 0] } }],
+      item_meta: { fingerprint: 'source-fingerprint', attributes: [{ key: 'item', value: { format: 'topojson' } }] } }
+    const before = structuredClone(source)
+    const transform = getPreviewCRSTransform(source, 'EPSG:3857')
+    const result = transformGeoJSONGeometryToWGS84(source.rows[0].shape, transform)
+    expect(transform.status).toBe('transformable')
+    expect(result.coordinates[0]).toBeCloseTo(10, 6)
+    expect(result.coordinates[1]).toBeCloseTo(0, 6)
+    expect(source).toEqual(before)
+    expect(getPreviewCRSTransform(source, '')).toEqual({ status: 'unknown_crs' })
+  })
+  it('requires an explicit choice even if a response marked unknown also carries stale CRS facts', () => {
+    const source = { transform_status: 'unknown_crs', source_srid: 4326, source_crs: 'EPSG:4326' }
+    expect(getPreviewCRSTransform(source).status).toBe('unknown_crs')
+    expect(getPreviewCRSTransform(source, 'EPSG:3857').sourceCode).toBe('EPSG:3857')
+    expect(getPreviewCRSTransform({}, 'EPSG:4326').status).toBe('direct')
+  })
+  it('never overrides identified, unsupported or already transformed geometry', () => {
+    for (const source of [
+      { source_srid: 4326 },
+      { source_srid: 3857 },
+      { source_srid: 4547 },
+      { source_srid: 3857, transform_status: 'engine_transformed', target_srid: 4326 }
+    ]) {
+      const baseline = getPreviewCRSTransform(source)
+      const selected = getPreviewCRSTransform(source, 'EPSG:3857')
+      expect(selected.status).toBe(baseline.status)
+      expect(selected.sourceCode).toBe(baseline.sourceCode)
+    }
   })
 })

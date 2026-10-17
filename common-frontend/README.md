@@ -35,6 +35,8 @@ Vite 配置直接导入 `basic/src/utils/viteTestIsolation.mjs`，以 `defineCon
 
 ### 导入预览组件
 
+`TablePreview` 的 `temporaryCrs` model 只用于源 CRS 未知时的本次地图展示，默认空值，可选择 EPSG:4326 或 EPSG:3857；共享 CRS registry 负责转换，响应数据保持不变。容器预览通过同一 model 传递声明，Owner 在当前预览上下文中临时持有，并在资源、child 或组件引用改变时同步清除。它不属于可持久化的 `tableState` / `viewState`，不得发送给元数据或视图保存接口；未绑定 model 的独立组件使用 Vue model 自身的局部生命周期。
+
 ```vue
 <script setup>
 import { GeoJsonPreview, TablePreview, StorageEngineForm } from '@addp/common-frontend'

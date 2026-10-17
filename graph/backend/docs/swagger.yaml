@@ -1411,6 +1411,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -1542,6 +1546,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.AlgorithmCapabilities'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1584,6 +1592,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1614,6 +1626,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1643,6 +1659,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.BrowseSnapshot'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2022,6 +2042,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2064,6 +2088,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2101,7 +2129,7 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "403":
-          description: Forbidden
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
@@ -2150,6 +2178,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -2193,6 +2225,10 @@ paths:
             $ref: '#/definitions/github_com_addp_graph_internal_models.SubgraphResult'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
@@ -2509,6 +2545,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "409":
           description: Conflict
           schema:
@@ -2546,35 +2586,55 @@ paths:
         in: query
         name: page_size
         type: integer
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 按类型列出实体（分页）| List entities by type (paginated)
       tags:
       - 知识服务 | Knowledge Service
       x-addp-auth-mode: public
   /kg/{graphId}/entities/{type}/{nodeId}:
     get:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 获取实体详情 | Get entity detail
       tags:
       - 知识服务 | Knowledge Service
       x-addp-auth-mode: public
   /kg/{graphId}/nodes/{nodeId}/neighbors:
     get:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 获取节点邻居 | Get node neighbors
       tags:
       - 知识服务 | Knowledge Service
       x-addp-auth-mode: public
   /kg/{graphId}/ontology:
     get:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 获取图谱本体描述 | Get graph ontology description
       tags:
       - 知识服务 | Knowledge Service
       x-addp-auth-mode: public
   /kg/{graphId}/paths:
     post:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 路径查找 | Find paths
       tags:
       - 知识服务 | Knowledge Service
@@ -2584,6 +2644,10 @@ paths:
       responses:
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "409":
@@ -2596,14 +2660,22 @@ paths:
       x-addp-auth-mode: public
   /kg/{graphId}/stats:
     get:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 图谱统计信息 | Graph statistics
       tags:
       - 知识服务 | Knowledge Service
       x-addp-auth-mode: public
   /kg/{graphId}/subgraph:
     post:
-      responses: {}
+      responses:
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 获取实体中心子图 | Get entity-centric subgraph
       tags:
       - 知识服务 | Knowledge Service
@@ -2941,6 +3013,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -2991,6 +3067,10 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
@@ -3079,6 +3159,10 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":
@@ -3364,6 +3448,10 @@ paths:
             type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: 数据保护拒绝 | Data protection denied
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "404":

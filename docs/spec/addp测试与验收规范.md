@@ -266,7 +266,7 @@ Ontology 修订、审计与历史图在验收期间保留，不增加测试删�
 
 每个断言只验证规范定义的唯一身份链路，不在 User Token、Service Token 和直接 SQL 之间兼容回退。Repository / Migration 的直接数据库夹具属于 T2，不能替代 T4 API 授权验收。
 
-平台节点指标控制面的隔离验收身份例外（2026-10-06 用户确认）：仅在干净 GitHub Hosted Linux 一次性部署中，允许通过 System 正式三员 Bootstrap 建立临时平台系统管理员，并通过真实密码/MFA 登录取得 Platform User Token，验收正式节点台账、监测目标管理、九项标量、五项文件系统字节容量、四项 inode、两项磁盘吞吐、三项磁盘 IO 时间及两项网络收发速率的节点资源即时/趋势查询（含一分钟 CPU 忙碌率、精确挂载维度和非特权可用容量使用率）及资源查询预算配置 API（资源查询与预算读写范围于 2026-10-06 再次经用户确认；第九项 CPU 忙碌率、五项文件系统容量及四项 inode 读取分别于 2026-10-07 经用户继续推进确认；两项磁盘吞吐、三项磁盘 IO 时间及两项网络收发速率读取与原生 Linux 页面验收于 2026-10-08 经用户继续推进确认）。账号保留既有角色的完整权限，测试脚本只执行同一 platform-node-metrics suite 中该链路的节点/目标管理、当次节点资源查询和当次测试库的查询预算 CAS/热生效验证；不借用个人或生产身份、不新增测试专用生产角色、不以管理员读取租户业务数据。Prometheus 仍使用独立 `addp-prometheus` Platform Service 身份和唯一 `monitor.metrics_discovery.read`；User、其他 Client、Tenant 与无权限身份须分别验证拒绝。所有退出路径销毁当次部署、身份、卷与仓库外凭据并核验零残留。同一 suite 的真实 Console/Monitor iframe 验收沿用这些身份及资源读取范围，通过密码/MFA 登录验证实际页面；不得注入 Token 或拦截业务 API 冒充真实链路。本例外不扩大其他 T4 suite 的身份范围；实际运行继续严格按 Platform/Tenant Context、对应 Permission 和 Owner 对象策略隔离。具体链路与实施状态见 `docs/next/ADDP平台运行监控与可观测性设计.md` 第 3.3、6、9 节；未实现或未真实执行的 suite 不计为已通过。
+平台节点指标控制面的隔离验收身份例外（2026-10-06 用户确认）：仅在干净 GitHub Hosted Linux 一次性部署中，允许通过 System 正式三员 Bootstrap 建立临时平台系统管理员，并通过真实密码/MFA 登录取得 Platform User Token，验收正式节点台账、监测目标管理、九项标量、五项文件系统字节容量、四项 inode、两项磁盘吞吐、三项磁盘 IO 时间及两项网络收发速率的节点资源即时/趋势查询（含一分钟 CPU 忙碌率、精确挂载维度和非特权可用容量使用率）及资源查询预算配置 API（资源查询与预算读写范围于 2026-10-06 再次经用户确认；第九项 CPU 忙碌率、五项文件系统容量及四项 inode 读取分别于 2026-10-07 经用户继续推进确认；两项磁盘吞吐、三项磁盘 IO 时间及两项网络收发速率读取与原生 Linux 页面验收于 2026-10-08 经用户继续推进确认）。账号保留既有角色的完整权限，测试脚本只执行同一 platform-node-metrics suite 中该链路的节点/目标管理、当次节点资源查询和当次测试库的查询预算 CAS/热生效验证；不借用个人或生产身份、不新增测试专用生产角色、不以管理员读取租户业务数据。Prometheus 仍使用独立 `addp-prometheus` Platform Service 身份和唯一 `monitor.metrics_discovery.read`；User、其他 Client、Tenant 与无权限身份须分别验证拒绝。所有退出路径销毁当次部署、身份、卷与仓库外凭据并核验零残留。同一 suite 的真实 Console/Monitor iframe 验收沿用这些身份及资源读取范围，通过密码/MFA 登录验证实际页面；不得注入 Token 或拦截业务 API 冒充真实链路。本例外不扩大其他 T4 suite 的身份范围；实际运行继续严格按 Platform/Tenant Context、对应 Permission 和 Owner 对象策略隔离。具体链路与实施状态见 `docs/spec/addp平台运行观测规范.md`的平台权限、资源查询和 Hosted 范围；未实现或未真实执行的 suite 不计为已通过。
 
 同一 `platform-node-metrics` Hosted 隔离验收的身份例外于 2026-10-10 经用户确认扩展到服务实例监控：临时平台系统管理员可沿真实密码/MFA 读取当次 System 平台实例列表（含 `ids` 精确过滤）、Monitor 三项进程资源摘要，并验收 Console「服务监控」页面。两个真实 Go SDK 实例须证明自动声明/发现、未关联主机时的自身资源、CPU 完整窗口、RSS/时长单位、实例隔离及停止/重启后旧实例不借用当前值；来源或中心失效不得破坏其他业务运行边界，Tenant、Service、Delegated 和缺权限主体仍须拒绝。此扩展不增加预算配置操作、不读取 Tenant 业务数据、不修改生产 IAM；沿用原最小权限 Prometheus 身份和全退出路径销毁/零残留要求。具体实施与证据见上述设计文档第 6、9 节，未执行项不计通过。
 
@@ -507,4 +507,65 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 
 Graph 的 Neo4j/FalkorDB 领域回归复用 `make test-common-neo4j` 与 `make test-common-falkordb` 的独占容器。相同领域测试覆盖显式目标绑定、实体/关系写入、原生唯一约束、构建审核、浏览展开、无向最短路径、全文搜索字段范围、外部索引冲突不修改、managed 按本体重建及知识服务。FalkorDB 同 label 的多定义物理索引取并集，但搜索仍必须限定各定义字段；不能用匹配数量相同替代字段隔离断言。Develop PreparedGraphQuery 与保护边界继续使用原有执行链路测试，不以 Graph 领域可信写入入口代替。
 
+Graph Security 门禁沿上述两项领域 T2 验证纳管后的浏览、搜索、展开、路径、约束、推导、分析、空间同步、知识服务及返回标识的领域写入拒绝。Graph Go T1 使用正式 Router 与普通 User AuthContext 验证非默认 Tenant、未同步投影、纳管拒绝、匿名公开知识服务不能绕过及跨租户请求不取得引擎连接；HTTP 在途屏障延续至响应序列化结束，响应结束后的旧 Context 不可发起读取。Security Go 验证独立 `graph_read` 拒绝投影及无原值豁免；既有 Security PostgreSQL `TestEnrollmentLifecycleAgainstPostgres` 同时执行存量 Graph Owner 补齐、过期不续期、releasing 解除变化、released 不复活和幂等回归。Common PostgreSQL 的既有投影存储契约测试增加 `graph` owner。System 的 000218 Runtime 迁移复用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test graph-protection-runtime"`，完整迁移与现有 CI 默认筛选同样命中。既有 Security Hosted 生命周期补齐 Graph，既有 security-transfer-protection 的 -all 生命周期保持不变，三项 Security T4 profile 预检要求 Graph Ready，消费者同步和期限断言增加第五个 Graph 回执；原四个字段执行出口仍单独验证，不冒充 Graph 属性脱敏。确定性编排回归由 `make test-security-online-runner` 接入既有 `test-online-runner` 和 Online CI 注册检查。不新增 T4 套件，不将这些确定性/T2 结果或管理员页面浏览计为普通用户真实端到端保护验收；System 源数据授权不在本轮范围。
+
 目标路径的 PostgreSQL JSONB 保真、数据库唯一性、退役字段删除、迁移失败回滚和构建 execution 并发进入默认 `make test-common-postgres`。可在同样测试连接与清理约束下运行 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`，只证明该分组。三项 Common T2 都登记 `graph/backend/` 为输入，沿现有 owner 影响计算自动选中 CI；没有新增服务或测试 database。Go T1、Graph 前端与 Swagger 使用现有标准入口。上述验收不声明真实用户、Console、Gateway、Copilot 或运行中服务已重启验收。
+
+
+### Manager 预览浏览器门禁
+
+Manager 的唯一浏览器入口为 `make test-manager-frontend` 内部调度的共享 `scripts/test/frontend-browser-gate.mjs`，模块声明 `test:e2e`、Playwright 配置及 `addpBrowserTest` 夹具；独立回环服务/端口由共享隔离入口管理，不另外保留模块 shell runner、固定旧建议端口或生产 mock 开关。测试数据与外网地图均受夹具控制，不使用个人账号、服务或真实业务库。
+
+共享组件 T1 由 common-frontend 所有，完整 Manager 页面组合后的布局/路由/预览 T3 由 Manager 所有，外层 iframe 与认证由 Console 唯一负责。断言优先角色、标签和少量稳定 testid，以浏览器实际可见性、bounding box、顺序及状态证明布局；异步等待依赖响应/状态，不使用长 sleep 或重试掩盖缺陷。失败 screenshot/trace/video 写操作系统临时目录或 CI Artifact。
+
+普通表格、空间容器、分页、子项/字段弹窗、视角/locator 恢复及响应式场景按当前 Owner 用例覆盖。T3 使用隔离模拟 API，只证明页面行为；真实 System 登录、Gateway、Meta、数据源与权限闭环归已登记 T4，各格式/引擎证据不互换。代码变更由模块入口和现有前端路径自动发现，开发 restart 不隐式运行或接管测试。
+
+### 专用 Online 场景的固定断言
+
+部署 profile、Runner 与工具链版本以 `.github/workflows/online-t4-gates.yml`、Online registry 和当前 Host Gate 为准；Hosted 与 self-hosted 不能共用准备或清理假设。以下为已有 self-hosted 场景的行为契约，代码就绪不表示真实 T4 已通过。
+
+**`consumer-engine-recovery`**
+
+该独立 suite 负责补齐上节最后两项，不扩大 `module-registry-recovery` 的边界：
+
+1. Host Gate 使用正式全量启动入口，保留 Manager、Service Backend 和三个被测 Frontend 的初始 PID。
+2. 专用 Runner 环境预置一个长期存在的 PostgreSQL Engine Instance；仓库外环境文件提供 `ADDP_ONLINE_TEST_ENGINE_ID`、`ADDP_ONLINE_TEST_ENGINE_NAME`、`ADDP_ONLINE_TEST_ENGINE_PORT`、`ADDP_ONLINE_TEST_ENGINE_USER`、`ADDP_ONLINE_TEST_ENGINE_PASSWORD` 和 `ADDP_ONLINE_TEST_ENGINE_DATABASE`。这些变量只属于 Online 业务 Fixture，不得复用平台数据库变量。
+3. `business/scripts/online-engine-fixture.sh` 是该物理 Fixture 的唯一生命周期入口，要求 `ADDP_ONLINE_HOST=1`，不读取、不生成 `business/.env`，并只操作 `business-postgres`。
+4. Browser 使用 `ADDP_ONLINE_TEST_USER_USERNAME` 与 `ADDP_ONLINE_TEST_USER_PASSWORD` 走真实 Console 登录；API 控制面继续使用同一专用 User 的 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。测试必须确认两种会话属于同一 Tenant User 且具备 `system.engine.read`、`system.engine.execute` 和被测页面的读取权限。
+5. 同一 Browser Context 依次首次打开 `/configuration`、`/manager/data-explorer` 和 `/service/query-services`，每页只允许一次导航；页面自身的首次请求成功即为通过，不允许 reload、刷新按钮或失败后重试导航。
+6. Manager iframe 保持打开时停止 Fixture、调用 Engine test API 写入 `offline`、等待页面轮询显示不可用；恢复 Fixture 并再次写入 `online` 后，同一 iframe 自动恢复。整个阶段被测消费方 PID 不变。
+7. `finally` 路径必须恢复 Fixture 与 Engine `online` 状态；Host Gate 随后停止 Fixture 和全套 ADDP，并把浏览器报告、截图、PID 快照和 Online JSON 报告统一写入仓库外 Artifact 目录。
+
+Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除测试引擎，也禁止以墓碑、名称前缀清理或直接修改 System 数据库作为收尾方式。
+
+**`enterprise-catalog-publishing`**
+
+1. Host Gate 全量启动 System、Gateway、Meta、Catalog、Asset 和 Portal，并通过 `business/scripts/online-engine-fixture.sh` 幂等准备 `public.addp_online_catalog_fixture`。
+2. 真实 User Access Token 先经 System AuthContext 验证 Tenant 和精确 Permission，所有业务请求只经 Gateway，不直连 owner 或直接 SQL。
+3. suite 触发 Meta 扫描，以 DataItem fingerprint 等待唯一 CatalogEntry 自动建档；首跑可使用预置 Domain、Department 和当前 User 将永久 fixture 初始化为 `curated`。
+4. 后续运行对同一 CatalogEntry 执行临时编目并在 `finally` 恢复原完整聚合；以 CatalogEntry UUID 创建 AssetComponent，发布后由 Portal 返回同一身份，并通过 AssetCategory 目录树和分类子树列表发现该 Asset；真实浏览器随后打开同一分类页，确认目录名称和唯一 Asset 卡片。
+5. 每轮 Asset 经 `published → offline → deleted` 正式生命周期清理；suite 先确认空 AssetCategory 已从 Portal 目录树消失，再删除 Asset-owned 目录，双方 GET 404 与 Portal Asset 404 共同证明零临时残留。
+
+**`workbench-service-consumption`**
+
+1. Host Gate 全量启动 System、Gateway、Service、Workbench 和 Console；`business/scripts/online-workbench-mysql-fixture.sh` 使用外部环境变量启动 `business-mysql`，重建仓库既有 `customers + orders` 确定性数据并创建仅有 `SELECT` 的专用账号，同时为 Playwright 安装专用 Chromium。
+2. 专用环境长期预置指向该账号的 MySQL Engine Instance，身份由 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
+3. 两个真实 User Token 先各自校验 AuthContext：现有专用 User 必须属于同一 Tenant、不含管理员角色且只具备 Service/Workbench 场景权限；独立 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN` 必须属于同一 Tenant 的 User、含 `tenant.administrator` 角色且具备当次 API 消费方生命周期所用权限。两者都不得是个人会话或平台管理员 Token。
+4. 非管理员 User 的所有平台操作只经 Gateway：检测 SQL 输出契约，发布私有主 Query Service `commerce-order-analysis` 和同契约未授权 Query Service `commerce-order-analysis-denied`，读取主服务 Consumer Descriptor，创建 Data Application 草稿并执行查询。SQL 只 JOIN 既有表并排除姓名、邮箱、电话和地址；MySQL 将 `BOOLEAN` 暴露为 `TINYINT`，publisher 只把已知语义的 `active_customer` 显式发布为 `bool`，Service 再按冻结契约归一化 `0 | 1`。
+5. Tenant Administrator 只经 System 正式 API 创建一个仅授权主 Query Service 的 API 消费方及一枚凭据。凭据只保存在 suite 进程内存，不写入报告或日志；用它调用主服务必须返回 200，调用未授权服务必须返回 `403 api_consumer_service_denied`，调用 `/api/v1/system/tenant/api-consumers` 必须返回 `401 api_consumer_control_plane_denied`。删除 API 消费方后，旧凭据必须在 45 秒内收敛为 `401 api_consumer_credential_invalid`。
+6. API 层还要验证 `order_no` cursor、五类动态筛选、decimal/boolean/timestamp/null、完整有限 CSV，以及无 SpatialInfo 时 Map 不可用。浏览器使用非管理员专用 User 登录 Console 并核对浏览器 AuthContext 与 API User 身份一致，在同一应用草稿中依次打开两个 Component 的正式编辑器，验证 Table 两行结果、Chart canvas 和无空间契约下不存在 Map。
+7. 浏览器经正式 Service API 更新主服务的公开默认字段策略以改变 `contract_fingerprint`；刷新同一应用后 Component 编辑器必须显示契约变化告警并禁用预览查询。API 层同时确认已保存快照仍持有旧指纹，不增加 Workbench 执行 API 或测试旁路。
+8. `finally` 只按本轮捕获 ID 删除 API 消费方及其级联凭据、未发布 Data Application 和两个 Query Service，并逐项验证 404 或凭据失效；Fixture 和全套 ADDP 再由 Host Gate 统一停止。最终发布运行态由 Outdoor 双服务场景验收，不能为自动清理增加已发布应用强删旁路。
+
+**`security-transfer-protection`**
+
+1. Host Gate 全量启动 System、Gateway、Meta、Security、Transfer 和 Manager；`business/scripts/online-security-transfer-fixture.sh` 复用 PostgreSQL Online Fixture，并只在 macOS 专用 Runner 管理独立 `business-mongodb`。
+2. MongoDB Fixture 幂等建立 3 条合成文档与只读账号；PostgreSQL Fixture 幂等建立 `addp_online_security.transfer_excluded` 和 `addp_online_security.transfer_masked` 两张固定目标表。专用环境长期预置对应的 MongoDB 与 PostgreSQL Engine Instance，suite 不创建、修改或删除 Engine 身份。
+3. 真实 User Token 校验 Tenant、非管理员角色和 Meta/Security/Transfer/Manager 最小权限；所有平台操作只经 Gateway。专用 Tenant 必须先具备平台推荐的手机号敏感类型、识别方式和默认保护规则；首次运行允许按固定 MongoDB DataItem 建立一个永久 Security 纳管，后续运行必须复用它，并确认 Transfer 已安装且确认 `export → mask` 投影。
+4. 每轮创建两条带 Run ID 的 bounded Transfer 任务，均使用 Common MongoDB Provider 可证明输出血缘的 `$project + 直接字段引用/$ifNull`：未输出手机号的任务必须成功；输出 `userInfo.phone` 的任务必须成功并写入遮盖值。
+5. suite 经 Meta 重新扫描后由 Manager 预览固定目标表，断言非敏感目标没有手机号列，敏感目标 2 个非空号码全部遮盖、明文计数为零。不得撤销 Security 投影、按资源放行、管理员绕过或增加 Outdoor/函数名白名单。
+6. `finally` 只按本轮捕获的 Transfer task ID 删除临时任务并逐条确认 404；固定 Engine、纳管和目标表属于专用 Runner 永久 Fixture，不计为本轮残留。成功与失败报告都不得包含源手机号或凭据。
+
+**`module-registry-recovery`**
+
+正式进程编排顺序为 Manager Backend → System → Gateway → 停止 System → 恢复 System。验证模块先 Alive/Not Ready、业务门禁、同 instance_id 自动恢复，以及 Gateway 路由随租约出现、消失和恢复；再验证幂等、多实例、注销和零残留。进程级证据不得用注册 API 或人工重启替代，消费方页面与业务 Engine 恢复仍归独立 consumer-engine-recovery。

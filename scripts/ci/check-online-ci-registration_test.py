@@ -17,6 +17,11 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_online_aggregate_follows_focused_security_owner(self):
+        makefile = "test-online-runner:\n\t@$(MAKE) test-security-online-runner\n\ntest-security-online-runner:\n\t@python3 -m unittest security_fixture_test.py\n"
+        self.assertIn("security_fixture_test.py", CHECK.make_target_commands(makefile, "test-online-runner"))
+        self.assertNotIn("security_fixture_test.py", CHECK.make_target_commands(makefile.replace("@$(MAKE) test-security-online-runner", "@true"), "test-online-runner"))
+
     def test_pg_authorization_requires_isolated_manual_profile(self):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
@@ -753,7 +758,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
                                    (paths[5], "review-queue?scope=pending"),
                                    (paths[5], "revoked_applicant"),
-                                   (paths[5], 'addp.security-plaintext-access-online/v4'),
+                                   (paths[5], 'addp.security-plaintext-access-online/v5'),
+                                   (paths[5], 'validate_develop_scope_report('),
+                                   (paths[5], 'same_history_masked_at_expiry'),
+                                   (paths[5], 'same_history_masked_at_revocation'),
+                                   (paths[5], 'manager_grant_independent'),
+                                   (paths[7], 'multi_outlet_request_verified'),
                                    (paths[5], 'outage = exercise_security_unavailability('),
                                    (paths[5], 'run_security_lifecycle(repository, "stop", deadline)'),
                                    (paths[5], 'run_security_lifecycle(repository, "start", deadline)'),
@@ -809,7 +819,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-hosted-security-gate.sh", 'go work init "${go_modules[@]}"', "Hosted profile is missing"),
             ("scripts/test/online-hosted-security-gate.sh", 'cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"', "Hosted profile is missing"),
             ("scripts/test/online-hosted-security-gate.sh", 'GOMODCACHE="$ROOT_DIR/.gomodcache"', "Hosted profile is missing"),
-            ("scripts/test/online-hosted-security-gate.sh", "-transfer -monitor", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-security-gate.sh", "-transfer -graph -monitor", "Hosted profile is missing"),
             ("scripts/test/online-gate.py", '("monitor", "MONITOR_URL"),', "must preflight Monitor"),
             ("scripts/test/security-mysql-owner-protection-online.py", "run_export_browser(", "must dispatch and validate"),
             ("scripts/test/security-mysql-owner-protection-online.py", "wait_for_technical_field(", "must dispatch and validate"),

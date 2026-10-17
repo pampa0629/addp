@@ -49,71 +49,9 @@ ADDP 当前同时存在两类自动运行入口：
 
 如果本专题的目标模型得到确认，应先修订术语表、任务体系规范、任务编排体系图和监控与执行体系图，再修改模块实现。专题文档不能与正式规范长期并列为两套有效规则。
 
-## 三、当前实现事实
+## 三、当前事实入口
 
-### 3.1 当前支持任务自身定时的能力
-
-根据 TaskProvider capabilities 和当前运行闭环：
-
-| 模块 | 任务类型 | `supports_schedule` | 当前含义 |
-| --- | --- | --- | --- |
-| Meta | `scan` | `true` | Meta owner scheduler 按扫描任务计划创建 execution |
-| Transfer | `sync` | `true` | Transfer owner scheduler按同步任务计划创建 execution |
-| Manager | `embedding` | `true` | Manager owner scheduler按向量化任务计划创建 execution |
-| Orchestrator | `orchestration` | `true` | Orchestrator scheduler按编排计划创建 orchestration execution |
-| Develop | `query/workflow/script` | `false` | 没有 owner scheduler 和 `next_run_at` due claim 闭环 |
-| Quality | `check` | `false` | 可以手动或被编排调用，没有任务自身定时 |
-| Graph | `kg_build` | `false` | 可以手动或被编排调用，没有任务自身定时 |
-| Manager其他任务 | 多种 | `false` | 可以手动或被编排调用，没有任务自身定时 |
-
-Develop 已明确删除任务定义中的 `schedule`、`enabled`、`next_run_at` 字段。Develop execution 可以因为父编排由定时触发而记录 `trigger_type=scheduled`，但这不代表 Develop 拥有自己的 owner scheduler。
-
-### 3.2 当前 owner scheduler 的共同模式
-
-当前支持自身定时的 owner task 基本采用以下模式：
-
-```text
-owner task.schedule + enabled + next_run_at
-                ↓
-owner scheduler 查询到期任务
-                ↓
-事务领取任务并推进 next_run_at
-                ↓
-创建 common.task_executions: pending
-                ↓
-owner execution worker 或 runner 执行
-```
-
-当前新规范已要求用户可配置任务采用 DB-driven due task claim，不再把各模块内存 Cron 注册表作为长期主路线。
-
-### 3.3 当前编排调度模式
-
-Orchestrator 当前采用：
-
-```text
-orchestration.schedule + enabled + next_run_at
-                ↓
-Orchestrator scheduler 创建父 execution
-                ↓
-Orchestrator 解析 DAG
-                ↓
-按 Step 调用 TaskProvider execution endpoint
-                ↓
-owner 模块创建子 execution 并完成实际工作
-```
-
-Step 只引用 `provider + task_type + task_id`，不读取、不修改子任务的 `schedule`、`enabled` 或 `next_run_at`。这一执行边界应继续保留。
-
-### 3.4 当前 `common/scheduler` 的真实定位
-
-`common/scheduler` 当前主要提供：
-
-- Cron表达式解析和校验；
-- 下一次运行时间计算；
-- 时区处理；
-- 必要的进程内Cron辅助能力。
-
-它是公共调度工具库，不拥有持久 Trigger，不统一决定全平台哪些任务到期，也不处理跨模块DAG依赖。因此不应把 `common/scheduler` 单独称为 ADDP 调度引擎。
+现行 owner scheduler、due claim、任务 capability 和编排调用边界由[任务体系规范](../spec/addp任务体系规范.md)、[Common Scheduler](../../common/scheduler/README.md)及各 TaskProvider 的实际能力声明维护。本文不保存第二份逐模块支持矩阵。当前 owner 调度与编排调度相互独立；下文统一 Trigger 仍为待确认方案，不能按目标模型宣称现有实现已迁移。
 
 ## 四、当前概念混淆
 

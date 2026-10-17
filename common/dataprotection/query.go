@@ -13,12 +13,21 @@ import (
 type PreparedTableProtection struct {
 	Apply         func(*plugin.QueryResult) error
 	DerivedFields []string
+	// CaptureAuthorized retains a bounded, already protected snapshot only when
+	// the trusted user has a plaintext grant. Ordinary executions retain none.
+	CaptureAuthorized func(*plugin.QueryResult, SubjectReference) (*HistoricalQueryResult, error)
 }
 
 // ProtectQueryResultSource applies already schema-validated rules to every
 // value output from one QueryOutputSource. It mutates the result in place and
 // never includes protected values in errors.
 func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOutputSource, action string, rules []Rule, subject SubjectReference) error {
+	return ProtectQueryResultSourceAt(result, source, action, rules, subject, time.Now().UTC())
+}
+
+// ProtectQueryResultSourceAt binds every field in one output to the same
+// decision instant. Owners pass their current server time, never client time.
+func ProtectQueryResultSourceAt(result *plugin.QueryResult, source plugin.QueryOutputSource, action string, rules []Rule, subject SubjectReference, now time.Time) error {
 	if result == nil {
 		return errors.New("query protection result is required")
 	}
@@ -27,7 +36,7 @@ func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOut
 		return err
 	}
 	for _, mappedRule := range mapped {
-		mappedRule.Decision = mappedRule.EffectiveDecision(subject, time.Now().UTC())
+		mappedRule.Decision = mappedRule.EffectiveDecision(subject, now)
 		mappedRule.Authorizations = nil
 		for _, row := range result.Rows {
 			if err := ProtectDocument(row, action, []Rule{mappedRule}, subject); err != nil {

@@ -29,6 +29,7 @@ while [ "$#" -gt 0 ]; do
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
             echo "Focused authorization-relation migration: --package migration --test source-grant-relations" >&2
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
+            echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
@@ -409,6 +410,12 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestTransferTaskProviderForwardMigrationAgainstPostgres$'
+        ;;
+    graph-protection-runtime)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "graph-protection-runtime requires --package migration" >&2; exit 2
+        fi
+        test_pattern='^TestGraphProtectionRuntimeForwardMigrationAgainstPostgres$'
         ;;
     transfer-task-create)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

@@ -14,6 +14,8 @@ import (
 func graphOperationError(c *gin.Context, err error) {
 	status, key := http.StatusInternalServerError, graphi18n.MsgGraphOperationFailed
 	switch {
+	case errors.Is(err, service.ErrGraphProtectionRequired):
+		status, key = http.StatusForbidden, graphi18n.MsgProtectionRequired
 	case errors.Is(err, service.ErrGraphTargetInvalid):
 		status, key = http.StatusBadRequest, graphi18n.MsgTargetInvalid
 	case errors.Is(err, gorm.ErrDuplicatedKey):

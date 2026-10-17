@@ -258,6 +258,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"copilot.knowledge_graph.execute",
 		"model.entity.read",
 		"model.entity_relation.read",
+		"security.protection_projection.read",
+		"security.protection_projection.update",
 		"system.engine.read",
 		"system.engine_catalog.read",
 	})

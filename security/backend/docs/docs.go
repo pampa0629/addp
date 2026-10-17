@@ -2459,7 +2459,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用当前可信用户主体为一个正式敏感字段申请 Manager 预览原值；申请本身不改变保护 | Request Manager preview plaintext access for one formal sensitive field using the trusted current user; creating a request does not change protection",
+                "description": "使用当前可信用户主体为一个正式敏感字段申请所选 Manager 预览或 Develop 查询原值；申请本身不改变保护 | Request plaintext access for selected Manager preview or Develop query outlets of one formal sensitive field using the trusted current user; creating a request does not change protection",
                 "consumes": [
                     "application/json"
                 ],
@@ -3800,7 +3800,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active",
+                "description": "从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过所有必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active",
                 "consumes": [
                     "application/json"
                 ],
@@ -4008,7 +4008,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "资源级长期有效或指定未来截止时间；同事务递增版本并同步四 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish four owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict",
+                "description": "资源级长期有效或指定未来截止时间；同事务递增版本并同步所有必需 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish all required owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -6116,17 +6116,11 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_security_internal_models.ProtectionAccessRequestResponse": {
+        "github_com_addp_security_internal_models.ProtectionAccessAuthorization": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string"
-                },
-                "assessment_id": {
-                    "type": "string"
-                },
-                "assessment_revision": {
-                    "type": "integer"
                 },
                 "authorization_state": {
                     "type": "string"
@@ -6134,14 +6128,34 @@ const docTemplate = `{
                 "authorized_until": {
                     "type": "string"
                 },
+                "consumer_owner": {
+                    "type": "string"
+                },
+                "exemption_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.ProtectionAccessRequestResponse": {
+            "type": "object",
+            "properties": {
+                "assessment_id": {
+                    "type": "string"
+                },
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "authorizations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessAuthorization"
+                    }
+                },
                 "can_decide": {
                     "type": "boolean"
                 },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
-                },
-                "consumer_owner": {
-                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -6158,9 +6172,6 @@ const docTemplate = `{
                 "enrollment_id": {
                     "type": "string"
                 },
-                "exemption_id": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
@@ -6175,6 +6186,12 @@ const docTemplate = `{
                 },
                 "reviewer": {
                     "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessScope"
+                    }
                 },
                 "state": {
                     "type": "string"
@@ -6200,6 +6217,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.ProtectionAccessScope": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "consumer_owner": {
                     "type": "string"
                 }
             }
@@ -7303,20 +7331,13 @@ const docTemplate = `{
         "internal_api.CreateProtectionAccessRequest": {
             "type": "object",
             "required": [
-                "action",
                 "assessment_id",
-                "consumer_owner",
                 "rationale",
-                "requested_expires_at"
+                "requested_expires_at",
+                "scopes"
             ],
             "properties": {
-                "action": {
-                    "type": "string"
-                },
                 "assessment_id": {
-                    "type": "string"
-                },
-                "consumer_owner": {
                     "type": "string"
                 },
                 "rationale": {
@@ -7324,6 +7345,12 @@ const docTemplate = `{
                 },
                 "requested_expires_at": {
                     "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessScope"
+                    }
                 }
             }
         },
@@ -7446,29 +7473,23 @@ const docTemplate = `{
         "internal_api.ProtectionAccessRequestResponse": {
             "type": "object",
             "properties": {
-                "action": {
-                    "type": "string"
-                },
                 "assessment_id": {
                     "type": "string"
                 },
                 "assessment_revision": {
                     "type": "integer"
                 },
-                "authorization_state": {
-                    "type": "string"
-                },
-                "authorized_until": {
-                    "type": "string"
+                "authorizations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessAuthorization"
+                    }
                 },
                 "can_decide": {
                     "type": "boolean"
                 },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
-                },
-                "consumer_owner": {
-                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -7485,9 +7506,6 @@ const docTemplate = `{
                 "enrollment_id": {
                     "type": "string"
                 },
-                "exemption_id": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
@@ -7502,6 +7520,12 @@ const docTemplate = `{
                 },
                 "reviewer": {
                     "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessScope"
+                    }
                 },
                 "state": {
                     "type": "string"

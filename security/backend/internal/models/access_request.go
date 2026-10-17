@@ -17,25 +17,24 @@ const (
 )
 
 type ProtectionAccessRequest struct {
-	ID                   string     `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID             int64      `gorm:"not null;index" json:"-"`
-	AssessmentID         string     `gorm:"type:uuid;not null;index" json:"assessment_id"`
-	AssessmentRevision   int64      `gorm:"not null" json:"assessment_revision"`
-	ConsumerOwner        string     `gorm:"size:32;not null" json:"consumer_owner"`
-	Action               string     `gorm:"size:32;not null" json:"action"`
-	SubjectType          string     `gorm:"size:16;not null" json:"-"`
-	SubjectID            string     `gorm:"size:64;not null;index" json:"-"`
-	SubjectDisplayName   string     `gorm:"size:255;not null;default:''" json:"-"`
-	RequestedExpiresAt   time.Time  `gorm:"not null" json:"requested_expires_at"`
-	Rationale            string     `gorm:"type:text;not null" json:"rationale"`
-	State                string     `gorm:"size:16;not null;index" json:"state"`
-	Version              int64      `gorm:"not null;default:1" json:"version"`
-	DecidedBy            *int64     `json:"-"`
-	DecidedByDisplayName string     `gorm:"size:255;not null;default:''" json:"-"`
-	DecidedAt            *time.Time `json:"decided_at,omitempty"`
-	DecisionRationale    string     `gorm:"type:text;not null;default:''" json:"decision_rationale"`
-	CreatedAt            time.Time  `gorm:"not null" json:"created_at"`
-	UpdatedAt            time.Time  `gorm:"not null" json:"updated_at"`
+	ID                   string                  `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID             int64                   `gorm:"not null;index" json:"-"`
+	AssessmentID         string                  `gorm:"type:uuid;not null;index" json:"assessment_id"`
+	AssessmentRevision   int64                   `gorm:"not null" json:"assessment_revision"`
+	Scopes               []ProtectionAccessScope `gorm:"serializer:json;type:text;not null;default:'[]'" json:"scopes"`
+	SubjectType          string                  `gorm:"size:16;not null" json:"-"`
+	SubjectID            string                  `gorm:"size:64;not null;index" json:"-"`
+	SubjectDisplayName   string                  `gorm:"size:255;not null;default:''" json:"-"`
+	RequestedExpiresAt   time.Time               `gorm:"not null" json:"requested_expires_at"`
+	Rationale            string                  `gorm:"type:text;not null" json:"rationale"`
+	State                string                  `gorm:"size:16;not null;index" json:"state"`
+	Version              int64                   `gorm:"not null;default:1" json:"version"`
+	DecidedBy            *int64                  `json:"-"`
+	DecidedByDisplayName string                  `gorm:"size:255;not null;default:''" json:"-"`
+	DecidedAt            *time.Time              `json:"decided_at,omitempty"`
+	DecisionRationale    string                  `gorm:"type:text;not null;default:''" json:"decision_rationale"`
+	CreatedAt            time.Time               `gorm:"not null" json:"created_at"`
+	UpdatedAt            time.Time               `gorm:"not null" json:"updated_at"`
 }
 
 func (ProtectionAccessRequest) TableName() string {
@@ -43,11 +42,10 @@ func (ProtectionAccessRequest) TableName() string {
 }
 
 type CreateProtectionAccessRequest struct {
-	AssessmentID       string    `json:"assessment_id" binding:"required"`
-	ConsumerOwner      string    `json:"consumer_owner" binding:"required"`
-	Action             string    `json:"action" binding:"required"`
-	RequestedExpiresAt time.Time `json:"requested_expires_at" binding:"required"`
-	Rationale          string    `json:"rationale" binding:"required"`
+	AssessmentID       string                  `json:"assessment_id" binding:"required"`
+	Scopes             []ProtectionAccessScope `json:"scopes" binding:"required"`
+	RequestedExpiresAt time.Time               `json:"requested_expires_at" binding:"required"`
+	Rationale          string                  `json:"rationale" binding:"required"`
 }
 
 type DecideProtectionAccessRequest struct {
@@ -71,16 +69,26 @@ type ProtectionAccessRequestReviewFilter struct {
 
 type ProtectionAccessRequestResponse struct {
 	ProtectionAccessRequest
-	Requester                 ProtectionAccessActor    `json:"requester"`
-	Reviewer                  *ProtectionAccessActor   `json:"reviewer,omitempty"`
-	Component                 dataprotection.Component `json:"component"`
-	EnrollmentID              string                   `json:"enrollment_id"`
-	TargetFullName            string                   `json:"target_full_name"`
-	ExemptionID               string                   `json:"exemption_id,omitempty"`
-	AuthorizationState        string                   `json:"authorization_state,omitempty"`
-	AuthorizedUntil           *time.Time               `json:"authorized_until,omitempty"`
-	CanDecide                 bool                     `json:"can_decide"`
-	DecisionUnavailableReason string                   `json:"decision_unavailable_reason,omitempty"`
+	Requester                 ProtectionAccessActor           `json:"requester"`
+	Reviewer                  *ProtectionAccessActor          `json:"reviewer,omitempty"`
+	Component                 dataprotection.Component        `json:"component"`
+	EnrollmentID              string                          `json:"enrollment_id"`
+	TargetFullName            string                          `json:"target_full_name"`
+	Authorizations            []ProtectionAccessAuthorization `json:"authorizations"`
+	CanDecide                 bool                            `json:"can_decide"`
+	DecisionUnavailableReason string                          `json:"decision_unavailable_reason,omitempty"`
+}
+
+type ProtectionAccessScope struct {
+	ConsumerOwner string `json:"consumer_owner"`
+	Action        string `json:"action"`
+}
+
+type ProtectionAccessAuthorization struct {
+	ProtectionAccessScope
+	ExemptionID        string     `json:"exemption_id,omitempty"`
+	AuthorizationState string     `json:"authorization_state"`
+	AuthorizedUntil    *time.Time `json:"authorized_until,omitempty"`
 }
 
 type ProtectionAccessActor struct {

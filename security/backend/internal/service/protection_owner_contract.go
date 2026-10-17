@@ -5,6 +5,7 @@ const (
 	developProtectionOwner  = "develop"
 	serviceProtectionOwner  = "service"
 	transferProtectionOwner = "transfer"
+	graphProtectionOwner    = "graph"
 
 	managerPreviewAction     = "preview"
 	managerProfileAction     = "profile"
@@ -12,6 +13,7 @@ const (
 	developQueryAction       = "query"
 	serviceExecuteAction     = "service_execute"
 	transferExportAction     = "export"
+	graphReadAction          = "graph_read"
 )
 
 type protectionOwnerContract struct {
@@ -20,13 +22,14 @@ type protectionOwnerContract struct {
 }
 
 // requiredProtectionOwnerContracts is the single Security-owned source of
-// truth for enrollment activation owners and their exemptible primary action.
+// truth for enrollment activation owners and their primary exemption action, if supported.
 // Keep the order stable because projection changes are append-only.
 var requiredProtectionOwnerContracts = [...]protectionOwnerContract{
 	{owner: developProtectionOwner, exemptionAction: developQueryAction},
 	{owner: managerProtectionOwner, exemptionAction: managerPreviewAction},
 	{owner: serviceProtectionOwner, exemptionAction: serviceExecuteAction},
 	{owner: transferProtectionOwner, exemptionAction: transferExportAction},
+	{owner: graphProtectionOwner},
 }
 
 func allRequiredProtectionOwners() []string {
@@ -44,7 +47,7 @@ func isRequiredOwner(owner string) bool {
 
 func validExemptionBinding(owner, action string) bool {
 	contract, exists := requiredProtectionOwnerContract(owner)
-	return exists && action == contract.exemptionAction
+	return exists && contract.exemptionAction != "" && action == contract.exemptionAction
 }
 
 func requiredProtectionOwnerContract(owner string) (protectionOwnerContract, bool) {

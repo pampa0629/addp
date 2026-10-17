@@ -9,8 +9,8 @@
 - 模块目录下的 `README.md`、`CLAUDE.md`、`docs/`：记录只在单个模块内部生效的技术实现、helper 边界和局部流程。
 - 仓库根目录 `skills/`：平台共享任务方法，由 Agent Runtime 按需加载；本目录 `docs/skills/` 保存 Skill 规范与使用说明。
 - `pr/`：宣传文章与对外材料。
-- `plan/`：尚未完成的大型规划和设计稿。
-- `next/`：正在推进中的跟进记录。
+- `plan/`：尚未实施或待确认的远期设计；已完成方案归入正式文档，历史过程由 Git 和 CI 保存。
+- `next/`：正在推进的未完成设计、待确认事项和验收缺口；已实现内容迁入 concepts/spec，不追加过程流水。
 - `guide/`：部署、开发、排障等操作指南。
 
 ## 推荐阅读顺序
@@ -49,7 +49,8 @@
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
 - [调度与任务编排统一改造专题](next/ADDP调度与任务编排统一改造专题.md)
-- [Workbench 数据服务消费与数据应用专题](next/ADDP%20Workbench数据服务消费与数据应用专题.md)
+- [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)
+- [Workbench 后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)
 - [数据质量规范](spec/addp数据质量规范.md)
 - [数据血缘能力规范](spec/addp数据血缘能力规范.md)
 - [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
@@ -67,15 +68,31 @@
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)
 - [GitHub 外部治理与 T4 Runner 待办](next/ADDP持续集成体系改进专题.md)
 - [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
-- [模块服务运行日志设计（首版开发收口，验收边界见正文）](next/ADDP模块服务运行日志设计.md)
-- [平台运行监控与可观测性设计（总体方案已确认，待实施）](next/ADDP平台运行监控与可观测性设计.md)
+- [模块服务运行日志规范](spec/addp模块服务运行日志规范.md)
+- [模块服务运行日志验收与后续事项](next/ADDP模块服务运行日志设计.md)
+- [平台运行观测规范](spec/addp平台运行观测规范.md)
+- [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
 - [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)
-- [Ontology 最小设计契约（语义内核、PG 修订、图适配与 Infra 部署定义已落地，发布运行时待实施）](next/ADDP%20Ontology最小设计契约.md)
+- [本体定义与发布规范](spec/addp本体定义与发布规范.md)
+- [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md)
+- [Outdoor 业务语义](concepts/Outdoor业务语义.md)
+- [Outdoor 数据治理与指标实现规范](spec/Outdoor数据治理与指标实现规范.md)
+- [栅格计算与成果契约规范](spec/addp栅格计算与成果契约规范.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)
+
+## 远期设计入口
+
+以下仅是未实施设计或待补证范围，当前支持能力以概念、规范和模块文档为准：
+
+- [跨网离线表同步设计](plan/跨网离线表同步设计.md)：单向包链、源侧封包与目标提交、恢复和实施前决策。
+- [Manager 第三方预览扩展](plan/addpManager内容预览插件能力构想.md)、[属性扩展声明](plan/addp第三方插件扩展声明构想.md)、[跨 Registry 能力发现](plan/addpRegistry与能力发现层构想.md)：未确认的扩展方案。
+- [数据导入后续事项](plan/数据导入流程设计.md)：上传源保留、失败补偿及批量/大文件增强。
+- [文件系统引擎后续事项](plan/nfs-storage-engine-plan.md)、[文件与目录表格验收](plan/湖仓一体化第二阶段详细工作规划.md)：首版之外的接入与组合证据。
+- [Graph 与 Agent 后续方向](plan/development_analysis_and_roadmap.md)、[铁路两侧耕地面积实验](plan/铁路占耕地面积计算-AI自动化实验.md)：待选定范围的能力与业务场景。
 
 ## AI 智能体能力开放主题
 
@@ -89,9 +106,9 @@
 6. [授权上下文规范](spec/addp授权上下文规范.md)与 [OAuth 授权规范](spec/addp%20OAuth授权规范.md)：确认 AuthContext、OAuth Scope、委托身份和 owner 写审批。
 7. [ADDP API 设计规范](spec/addp-API设计规范.md)：确认 AI Agent 友好 API、`x-ai-hint` 和错误格式。
 8. [Agent 模块说明](../agent/CLAUDE.md)、[common-python 模块说明](../common-python/CLAUDE.md)与 [common-frontend 说明](../common-frontend/README.md)：查看当前实现。
-9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看架构决策、阶段实施历史和延期条件。
-10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看 `workflow-analysis` 的业务实验背景。
-11. [Ontology 最小设计契约](next/ADDP%20Ontology最小设计契约.md)：查看 Tenant 领域本体、PG 权威定义、FalkorDB 投影与 Agent 语义消费的目标边界及实施准入条件。
+9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看未完成能力和验收缺口。
+10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看尚未闭合的空间计算业务场景与验收问题。
+11. [本体定义与发布规范](spec/addp本体定义与发布规范.md)：查看已实现 Tenant/平台定义、PG 权威修订、FalkorDB 投影及 Agent 消费；绑定与真实求值见[后续设计](next/ADDP%20Ontology最小设计契约.md)。
 
 AI 模型接入、在线厂商账号、内网模型服务、模型档案、场景绑定或推理密钥管理，应先阅读 [ADDP AI 推理接口规范](spec/addp%20AI推理接口规范.md)。Agent 与 Copilot 只消费统一推理数据面，不拥有 Provider 或 API Key。
 
@@ -122,8 +139,8 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [数据服务体系图](concepts/addp数据服务体系图.md)：确认查询服务、瓦片服务和外部服务注册的发布与执行职责。
 4. [API 设计规范](spec/addp-API设计规范.md)：确认结构化查询、cursor 分页、Bearer、Service Principal 和 BFF 边界。
 5. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认 CatalogEntry、Asset 选源、授权来源与 owner 最终授权边界。
-6. [Workbench 数据服务消费与数据应用专题](next/ADDP%20Workbench数据服务消费与数据应用专题.md)：查看当前决策、阶段计划、延期范围和未决问题。
-7. [Outdoor 业务数据治理推进方案](next/Outdoor业务数据治理推进方案.md)：仅作为首个真实验收场景，不作为 Workbench 平台模型。
+6. [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)：查看 Service 契约、应用创作/运行与共享 renderer；真实 BI 和剩余验收见[后续事项](next/ADDP%20Workbench数据服务消费与数据应用专题.md)。
+7. [Outdoor 数据治理与指标实现规范](spec/Outdoor数据治理与指标实现规范.md)：首个业务样板的已确认口径与链路；业务规则不进入 Workbench 平台默认值。
 
 ## 企业资源目录主题
 
@@ -144,7 +161,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [数据安全与隐私保护实现规范](spec/addp数据安全与隐私保护实现规范.md)：确认纳管状态机、受控发现、投影 v1、变化流、Owner 失效关闭和首期 API 契约。
 4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 AuthContext、Service Principal、Resource Grant / Policy 与 Security 保护效果的正交关系。
 5. [企业资源目录体系图](concepts/addp企业资源目录体系图.md)：确认 Catalog 是后续企业目录身份与联邦展示层，不是 Security 发现或保护生效的前置。
-6. [数据安全与隐私保护体系专题](next/ADDP数据安全与隐私保护体系专题.md)：查看推进阶段、已确认决策、Outdoor 手机号验收切片和待实施清单。
+6. [数据安全与隐私保护体系专题](next/ADDP数据安全与隐私保护体系专题.md)：查看未完成保护能力与真实验收边界。
 
 ## 栅格、TIFF / COG 与空间快显主题
 
@@ -156,7 +173,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 4. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认 `direct_tiff_client`、`client_cog_render`、`raster_cog` 与矢量快显的概念边界。
 5. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认 Quick View capability、COG 内容接口、前端 geotiff.js 消费、底图和 related ref 行为。
 6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [task_definitions 表](../manager/docs/tables/task_definitions表.md)：确认 COG 结果和统一派生任务定义的字段、状态和生命周期。
-7. [栅格算子体系后续专题](next/栅格算子体系后续专题.md)：查看 `raster_reproject`、`raster_clip`、`raster_statistics`、`raster_to_tiles` 等第一阶段之外的后续算子规划。
+7. [栅格计算与成果契约规范](spec/addp栅格计算与成果契约规范.md)：查看已实现的通用栅格、成果写入、资源与验收契约；DEM 与规模缺口见[后续专题](next/栅格算子体系后续专题.md)。
 
 ## SuperMap 工作流运行时主题
 

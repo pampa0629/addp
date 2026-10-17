@@ -12,6 +12,7 @@ export function createProtectionAccessRequestPresentation({ t, formatDateTime, r
       confirmType: normalized === 'reject' ? 'danger' : 'primary',
       target: `${targetName} · ${componentKey}`,
       details: [
+        {key:'scope',label:t('common.plaintextAccess.scope'),value:(request?.scopes || []).map(scope=>t(`common.plaintextAccess.outlets.${scope.consumer_owner}`)).join('、')},
         {
           key: 'requester',
           label: t('security.accessRequest.requester'),
@@ -34,7 +35,6 @@ export function createProtectionAccessRequestPresentation({ t, formatDateTime, r
   function accessRequestReviewRowView(request, context = {}) {
     const unavailable = t('security.common.notAvailable')
     const requestState = String(request?.state || '')
-    const authorizationState = String(request?.authorization_state || '')
     const unavailableReason = String(request?.decision_unavailable_reason || '')
     const actorView = actor => actor
       ? {
@@ -57,18 +57,14 @@ export function createProtectionAccessRequestPresentation({ t, formatDateTime, r
         type: requestState === 'approved' ? 'success' : requestState === 'rejected' ? 'danger' : 'info',
         label: t(`security.accessRequest.states.${requestState}`)
       },
-      authorization: authorizationState
-        ? {
-            state: {
-              type: authorizationState === 'active' ? 'success' : authorizationState === 'revoked' ? 'danger' : 'info',
-              label: t(`security.accessRequest.authorizationStates.${authorizationState}`)
-            },
-            untilLabel: request?.authorized_until
-              ? t('security.accessRequest.authorizedUntil', { time: formatDateTime(request.authorized_until) })
-              : '',
-            canOpen: Boolean(context.canReadExemptions && request?.enrollment_id && request?.exemption_id)
-          }
-        : null,
+      scopeLabel: (request?.scopes || []).map(scope=>t(`common.plaintextAccess.outlets.${scope.consumer_owner}`)).join('、'),
+      authorizations: (request?.authorizations || []).map(authorization=>({
+        outlet: t(`common.plaintextAccess.outlets.${authorization.consumer_owner}`),
+        state: {type: authorization.authorization_state==='active' ? 'success' : authorization.authorization_state==='revoked' ? 'danger' : 'info',label:t(`security.accessRequest.authorizationStates.${authorization.authorization_state}`)},
+        untilLabel: authorization.authorized_until ? t('security.accessRequest.authorizedUntil',{time:formatDateTime(authorization.authorized_until)}) : '',
+        canOpen:Boolean(context.canReadExemptions && request?.enrollment_id && authorization.exemption_id),
+        target:{enrollment_id:request?.enrollment_id,exemption_id:authorization.exemption_id}
+      })),
       authorizationFallback: t('security.accessRequest.authorizationStates.not_granted'),
       reviewer: actorView(request?.reviewer),
       reviewerFallback: unavailable,

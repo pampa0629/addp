@@ -14,6 +14,21 @@ class RegistrationError(RuntimeError):
     pass
 
 
+def make_target_commands(makefile: str, target: str, visited: set[str] | None = None) -> str:
+    """Resolve the same focused Make owners invoked by the Online aggregate."""
+    if visited is None:
+        visited = set()
+    if target in visited:
+        return ""
+    visited.add(target)
+    match = re.search(rf"(?ms)^{re.escape(target)}:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    if match is None:
+        return ""
+    body = match.group("body")
+    children = re.findall(r"\$\(MAKE\)\s+(test-[a-z0-9-]+)", body)
+    return body + "".join(make_target_commands(makefile, child, visited) for child in children)
+
+
 def compose_service_block(compose: str, service: str) -> str | None:
     match = re.search(
         rf"(?ms)^  {re.escape(service)}:\s*\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
@@ -556,7 +571,7 @@ def validate_security_transfer_protection_profile(repository: Path, registered: 
     required_fragments = (
         "security-transfer-protection)",
         "START_TARGET=-all",
-        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL TRANSFER_URL MANAGER_URL",
+        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL GRAPH_URL TRANSFER_URL MANAGER_URL",
         "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID",
         "ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD",
         "bash business/scripts/online-security-transfer-fixture.sh start",
@@ -623,10 +638,14 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
             "applicant and approver must be two different Users", "preview_rows = SUPPORT.preview_rows",
             "/api/v1/security/protection-access-request-targets", "review-queue?scope=pending",
             '"scope": "history"', "protected_other_subject", "expired_without_security_refresh",
-            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v4', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
+            "revoked_applicant", "revoked_approval_history", 'addp.security-plaintext-access-online/v5', 'validate_plaintext_browser_report(', 'run_plaintext_browser(', 'report["browser"] = run_plaintext_browser(',
             'outage = exercise_security_unavailability(', 'SUPPORT.require_hosted_security_lifecycle(repository)',
             'SUPPORT.run_security_lifecycle(repository, "stop", deadline)', 'SUPPORT.run_security_lifecycle(repository, "start", deadline)',
             'finally:', 'SUPPORT.security_listener_refused()', 'connection_refusals', 'manager_process_unchanged',
+            'exercise_develop_scopes(', 'same_history_masked_at_expiry', 'same_history_masked_at_revocation',
+            'manager_only_does_not_authorize_develop', 'private_history_excluded', 'manager_grant_independent',
+            'validate_develop_scope_report(',
+            'develop_history_while_unavailable_verified', 'develop_process_unchanged',
         ),
         "scripts/test/security-transfer-protection-online.py": (
             'def require_hosted_security_lifecycle(', 'def ready_process(', 'def verify_restarted_process(',
@@ -636,11 +655,12 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
         ),
         "system/backend/cmd/online-test-fixture/main.go": ("plaintextApplicantPermissions", "plaintextApproverPermissions", "external-online-plaintext-approver", "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN", "ADDP_ONLINE_TEST_APPROVER_USERNAME", "ADDP_ONLINE_TEST_APPROVER_PASSWORD"),
         "console/frontend/e2e/online/security-plaintext-access.spec.js": (
-            "addp.security-plaintext-access-browser/v1", "browser.newContext(", "browserIdentity(",
+            "addp.security-plaintext-access-browser/v2", "browser.newContext(", "browserIdentity(",
             "submitRequest(", "approve(", "history(", "revocation_from_security_ui",
             "target.projection_acknowledged === true", "await synchronized", "await secondSynchronized",
             "Date.now() >= Date.parse(first.requested_expires_at) + 1000", "expired_history_verified",
             "revoked_history_verified", "isAnonymousRefreshResponse", "state.started = true",
+            "multi_outlet_request_verified", "['manager','develop']",
             "expect(applicantState.failures.concat(approverState.failures)).toEqual([])",
             "expect(applicantState.errors.concat(approverState.errors)).toEqual([])",
             "screenshot: 'off'", "for (const context of contexts) await context.close()",
@@ -660,9 +680,9 @@ def validate_security_plaintext_access_profile(repository: Path, registered: set
         raise RegistrationError("security-plaintext-access requires a manual Ubuntu Hosted job")
     if "&& inputs.suite != 'security-plaintext-access'" not in workflow:
         raise RegistrationError("security-plaintext-access must not also dispatch on self-hosted")
-    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", (repository / "Makefile").read_text())
+    aggregate = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("security-plaintext-access-online_test.py", "online-hosted-security-gate_test.py"):
-        if aggregate is None or test not in aggregate.group("body"):
+        if not aggregate or test not in aggregate:
             raise RegistrationError("security-plaintext-access regression must enter test-online-runner")
 
 
@@ -683,7 +703,7 @@ def validate_security_mysql_owner_protection_profile(
         'GOWORK="$ADDP_ONLINE_SECRET_DIR/go.work"', 'go work init "${go_modules[@]}"',
         'GOMODCACHE="$ROOT_DIR/.gomodcache"',
         'cp "$ROOT_DIR/go.work.sum" "${GOWORK}.sum"',
-        'for start_target in -meta -security -manager -develop -service -transfer -monitor',
+        'for start_target in -meta -security -manager -develop -service -transfer -graph -monitor',
         'playwright install --with-deps chromium',
         'MONITOR_URL=', 'CONSOLE_URL=',
         'bash business/scripts/online-security-owner-fixture.sh start',
@@ -707,9 +727,9 @@ def validate_security_mysql_owner_protection_profile(
     if "&& inputs.suite != 'security-mysql-owner-protection'" not in workflow:
         raise RegistrationError("security-mysql-owner-protection must not also dispatch on self-hosted")
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    aggregate = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
     for test in ("online-hosted-security-gate_test.py", "online-security-owner-fixture_test.py", "security-mysql-owner-protection-online_test.py"):
-        if aggregate is None or test not in aggregate.group("body"):
+        if not aggregate or test not in aggregate:
             raise RegistrationError("security-mysql-owner-protection regression must enter test-online-runner")
     for relative in (
         "business/scripts/online-security-owner-fixture.sh",

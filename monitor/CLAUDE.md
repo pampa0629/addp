@@ -4,7 +4,7 @@
 
 Monitor 模块是 ADDP 的统一运行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 运行观测与告警域。
 
-平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入，真实 Hosted 实例链路及默认服务范围已验收（设计第 6 节）；节点基础资源查询首批已接入（见文末范围），统一告警域收敛已于 2026-10-15 确认。平台事件与通知已收敛到 Monitor 唯一入口；主机 CPU/内存规则的独立权限、配置 CRUD 和后台评估已实现并通过本地分层验证，个人环境已验证规则创建、读取、修改、删除、显式启停及真实采样的正常评估，临时规则已清理；受控指标源的触发、缺样保护、恢复与签名 Webhook 联合 T2 已通过（设计第 7、9 节），正式身份与 Gateway 的告警闭环 T4 仍待验收。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行监控与可观测性设计](../docs/next/ADDP平台运行监控与可观测性设计.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
+平台运行观测扩展已于 2026-10-04 确认，分批实施：首期覆盖 ADDP 纳管节点、运行实例和明确纳管引擎，指标/日志/追踪按需部署，观测设施故障不阻断业务或现有执行查询。System 维护节点及已有对象身份；Monitor 拥有监测目标、策略、资源查询与告警，不复制实例租约、不直接读节点文件。当前已完成集中日志可选部署/启动隔离，可选 Prometheus 中心模板已接入自身采集和节点 HTTP SD；正式节点来源与真实控制面链路已完成 Hosted Linux VM 首次 T4 验收，生产纳管覆盖仍须实际部署及独立验收。System 平台主机管理、实例首次节点声明与当前绑定裁决、节点管理前端已完成；System 提供固定 Monitor Platform Service Client 专用的有界当前身份投影（`/runtime/observability-identities`，`system.observability_identity.read`），Common 提供唯一共享 DTO 与服务 Client。Monitor 不直接查询 System 私有表，也不能用后台投影替代用户详情授权。节点监测目标后端 CRUD、原子预算和固定 Prometheus 身份的认证 HTTP SD 已接入；目标管理前端已接入 Console，macOS/Linux Go 自身进程指标与服务监控已接入，真实 Hosted 实例链路及默认服务范围已验收（设计第 6 节）；节点基础资源查询首批已接入（见文末范围），统一告警域收敛已于 2026-10-15 确认。平台事件与通知已收敛到 Monitor 唯一入口；主机 CPU/内存规则的独立权限、配置 CRUD 和后台评估已实现并通过本地分层验证，个人环境已验证规则创建、读取、修改、删除、显式启停及真实采样的正常评估，临时规则已清理；受控指标源的触发、缺样保护、恢复与签名 Webhook 联合 T2 已通过（设计第 7、9 节），正式身份与 Gateway 的告警闭环 T4 仍待验收。详细设计、依赖矩阵、告警领域收敛准入和验收清单见 [平台运行观测规范](../docs/spec/addp平台运行观测规范.md)。开发前先读该契约，不把设计状态写成现有能力，不为观测后端增加整体 Ready 强依赖。
 
 节点来源准入和发现投影内核位于 `backend/internal/metricsdiscovery/`，由 Monitor 唯一维护。已实现受控 CIDR/端口、固定 HTTPS 指标路径、每次发现重新解析 DNS 并固定单一 IP、来源 mTLS 准入、节点当前身份筛选和端点预留预算；只支持 node_exporter 主机来源与通过既定 mTLS 入口的 cAdvisor 节点容器来源。目标持久化、公开 HTTP SD 和独立 Prometheus OAuth 身份已消费此内核：管理请求转发当前 User Token，由 System 对节点再次裁决；目标写事务串行化预算和 CAS，发现读取当前身份而不复制 System 台账。启用目标必须通过 mTLS 准入，停用配置保存和撤除采集意图不依赖指标设施或来源在线。Prometheus 生产模板和正式节点来源已完成真实 Hosted T4，包含权限隔离、发现版本、真实采样及故障恢复；资源查询的生效状态查询、后续指标与生产纳管覆盖仍须交付，不能以一次测试部署宣称生产覆盖。T1 归 `make test-go`，目标事务与 IAM/OAuth 使用现有 PostgreSQL T2 自动发现；设计第 3.3、4.3、9.2 节记录边界与接线门禁。
 
@@ -106,9 +106,9 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
 
-主机详情提供“相关告警”入口，沿当前主机 ID 与资源类别打开平台告警列表。资源告警可查看保存的触发条件、窗口数值和采样区间；有独立主机读取权限时解析当前名称，有资源观测权限且主机仍可读时才能跳转到主机资源。历史趋势通过原主机详情路由的固定 `end` 展示，停止自动刷新、校验响应时段、保留缺样，并可返回实时趋势；当前资源卡片仍表示当前值。规则与采集配置列表共用同一去重且最多四并发的主机引用解析，身份或请求失效后丢弃结果。本批不改 API、权限及告警状态，详细契约和验证见运行监控设计 7.2。
+主机详情提供“相关告警”入口，沿当前主机 ID 与资源类别打开平台告警列表。资源告警可查看保存的触发条件、窗口数值和采样区间；有独立主机读取权限时解析当前名称，有资源观测权限且主机仍可读时才能跳转到主机资源。历史趋势通过原主机详情路由的固定 `end` 展示，停止自动刷新、校验响应时段、保留缺样，并可返回实时趋势；当前资源卡片仍表示当前值。规则与采集配置列表共用同一去重且最多四并发的主机引用解析，身份或请求失效后丢弃结果。本批不改 API、权限及告警状态，详细契约和验证见平台运行观测规范 7.2。
 
-采集配置列表优先显示主机、配置启停、最近采集结果及采样时间。主列表在独立资源观测权限下复用一次有界 `resource_summaries` 查询，不逐行观测；列表与详情共用目标 ID/已保存版本关联校验。停用、容器、无权或主机不可读取时不查询相应对象，失败清除旧结果但保留配置管理，预算拒绝可减少每页数量后重试。新建及详情不执行列表观测，迟到结果不能覆盖新页或新身份；详见运行监控设计 4.3。
+采集配置列表优先显示主机、配置启停、最近采集结果及采样时间。主列表在独立资源观测权限下复用一次有界 `resource_summaries` 查询，不逐行观测；列表与详情共用目标 ID/已保存版本关联校验。停用、容器、无权或主机不可读取时不查询相应对象，失败清除旧结果但保留配置管理，预算拒绝可减少每页数量后重试。新建及详情不执行列表观测，迟到结果不能覆盖新页或新身份；详见平台运行观测规范的采集配置与查询展示。
 
 主机 CPU 忙碌率、内存使用率的趋势可显式开启相邻等长时段比较（设计 6.3 节），范围为 5 分钟、1 小时和 24 小时。通过原趋势 API 一次读取两倍时长，按同一评估网格计算两期均值和百分点差；两期预期评估点全部有效才给出结论，缺样或过期不填零。比较和本期曲线共用响应与预算，错误或身份变化清除整组结果；固定历史 end 不推进，7 天曲线仍可用但当前保留配置不支持 7 天比较。不增加 API、权限或指标保留；不是精确时间积分、原始抓取完整度或泄漏诊断。实现与验收状态以设计第 2、9 节为准。
 
@@ -123,7 +123,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - 持久表为 `monitor.log_pipeline_policy/log_pipeline_nodes`、`log_observer_boots`、`platform_alert_incidents/events/destinations/deliveries`。单一活动告警按来源类别、主体类型、主体 ID 和信号去重；日志实例信号保留有证据的实例身份，各信号固定严重级别、独立恢复，事件和通知订阅仅为 `opened/resolved`，与通知 outbox 同事务；未知事实不能恢复告警，首次累计计数只建立基线。
 - Webhook/SMTP 复用中立发送接口和统一重试算法，至少一次投递；确认/抑制不改写业务实例状态。读取与管理通过 Monitor 服务账号向 System 独立 Platform 审计接口追加最小操作事实。
 - 最终失败的平台通知通过单条 `POST /platform/alert-notification-deliveries/{id}/retry` 重新入队，仅 Platform User 与 `monitor.platform_alert_notification.read/update` 可操作。保留原投递/事件/正文和发生时间，使用原目标当前配置；目标版本与预期人工次数拒绝并发或延迟重复请求，抑制不能绕过。累计次数保留，本轮上限和退避从 `retry_base_attempt_count` 重新计算；历史恢复告警允许补发，界面必须明确提示。
-- 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。完整设计见 `docs/next/ADDP模块服务运行日志设计.md` 第十一节。
+- 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。稳定契约见 `docs/spec/addp模块服务运行日志规范.md`，剩余验收见 `docs/next/ADDP模块服务运行日志设计.md`。
 
 平台日志通知支持明确的 `wecom` 渠道：固定官方端点、通过既有凭据接口写入完整机器人地址并仅加密保存 key；复用受控 HTTP 客户端，HTTP 2xx 与整数 errcode=0 同时成立才算发送成功。平台 outbox、重试及安全诊断保持同一主路径，租户通知不扩展。Go/PostgreSQL 回归由现有 Monitor owner gate 自动发现，Monitor 配置交互及 System 诊断跳转由两模块既有前端门禁覆盖。
 
@@ -229,6 +229,6 @@ Hosted `38337857450`（`b0765f802`）的 live/recovery 和旧内容清空已通�
 
 后台以十五秒单轮评估，按主机合并固定指标与 uptime，复用同一资源查询预算、并发 limiter、mTLS 客户端与最小身份投影。不访问 System 私有表，不使用管理员 Token；没有启用规则时不访问采集后端。缺样本、控制面不可用、预算不足、来源变化、暂停或重启均不能当作恢复，连续证据窗口需要重新积累。已有告警按触发时保存的恢复参数判定；打开证据不可变，恢复事件保留新窗口证据。活动告警阻止规则删除，停用不伪造恢复，删除规则保留已恢复历史。
 
-本批由现有 Monitor Go、PostgreSQL、真实 metrics、前端、授权目录/迁移及 Swagger 门禁覆盖；metrics 的 INPUT_FILES 已扩展规则实现和证据测试，未增加旁路 suite 或 workflow。本批包含 `common/authorization` 校验同步，个人环境验收按根 AGENTS.md 由用户执行 `./scripts/dev/restart.sh -all` 并重新登录；不因本地 T1–T3 通过而宣称 Hosted T4 或生产 T5 完成。实现契约及分层证据见运行监控设计 7.1、7.2。
+本批由现有 Monitor Go、PostgreSQL、真实 metrics、前端、授权目录/迁移及 Swagger 门禁覆盖；metrics 的 INPUT_FILES 已扩展规则实现和证据测试，未增加旁路 suite 或 workflow。本批包含 `common/authorization` 校验同步，个人环境验收按根 AGENTS.md 由用户执行 `./scripts/dev/restart.sh -all` 并重新登录；不因本地 T1–T3 通过而宣称 Hosted T4 或生产 T5 完成。实现契约及分层证据见平台运行观测规范 7.1、7.2。
 
 资源告警联合 T2 继续使用 `make test-monitor-metrics`：受控 mTLS 源经真实 Prometheus 和后台规则循环驱动 PostgreSQL 事件/outbox，再向临时 TLS 接收端发送签名 Webhook，包含 HTTP 503 重试、缺样不恢复及低值恢复。PostgreSQL 由同一临时 Compose 独占，只初始化 `addp_test`；临时密码文件是数据库启动的必需输入，只渲染共享指标源的 Hosted 准备不需要该凭据。Go 编译依赖与联合测试统一登记在该门禁的 service/models/repository 目录输入；原有采集及 TOP5 场景保持完整。System 身份仍为模块夹具，验收范围见设计第 9 节，不将该 T2 当作正式身份的 T4 或真实群通知验证。

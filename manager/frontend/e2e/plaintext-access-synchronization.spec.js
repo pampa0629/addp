@@ -48,12 +48,12 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
     return json(route, {})
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
-  await expect(page.getByText('1 个申请待审批', { exact: true })).toBeVisible()
+  await expect(page.getByText('Manager 预览：1 个申请待审批', { exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: '138****5678', exact: true })).toBeVisible()
   const initialPreviews = previews
   stage = 'approved'
   await page.clock.runFor(5000)
-  await expect(page.getByText('1 个字段已批准，等待同步', { exact: true })).toBeVisible()
+  await expect(page.getByText('Manager 预览：1 个字段已批准，等待同步', { exact: true })).toBeVisible()
   expect(previews).toBe(initialPreviews)
   const waitingTargets = targets
   await page.clock.runFor(5000)
@@ -62,7 +62,7 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
   stage = 'synchronized'
   await page.clock.runFor(5000)
   await expect(page.getByRole('cell', { name: '13812345678', exact: true })).toBeVisible()
-  await expect(page.getByText('1 个字段原值授权已同步', { exact: true })).toBeVisible()
+  await expect(page.getByText('Manager 预览：1 个字段原值授权已同步', { exact: true })).toBeVisible()
   expect(previews).toBe(initialPreviews + 1)
   await page.clock.runFor(10_000)
   expect(previews).toBe(initialPreviews + 1)
@@ -70,13 +70,18 @@ test('waits for the Owner checkpoint before automatically refreshing an approved
   // proposing the usual eight hours and waiting for a backend rejection.
   stage = 'requestable'
   await page.reload()
+  await page.clock.resume()
   await page.getByRole('button', { name: '申请查看原值', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '申请查看字段原值', exact: true })
   await expect(dialog.getByText(/申请期限不能超过资源保护截止时间/)).toBeVisible()
+  await dialog.getByText('Develop 开发查询',{exact:true}).click()
+  await expect(dialog.getByRole('checkbox',{name:'Develop 开发查询',exact:true})).toBeChecked()
   await dialog.locator('textarea').fill('核对资源期限内的联系方式')
   await dialog.getByRole('button', { name: '提交申请', exact: true }).click()
   await expect.poll(() => submitted.length).toBe(1)
   expect(Date.parse(submitted[0].requested_expires_at)).toBe(Date.parse(protectionDeadline))
+  expect(submitted[0].scopes).toEqual([{consumer_owner:'manager',action:'preview'},{consumer_owner:'develop',action:'query'}])
+  expect(submitted[0]).not.toHaveProperty('consumer_owner')
 })
 
 function json(route, body) {

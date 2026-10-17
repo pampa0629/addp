@@ -159,3 +159,4 @@ export { default as ParameterValueInput } from './components/ParameterValueInput
 export { default as ParameterCaption } from './components/ParameterCaption.vue'
 
 export { createModelMetricAPI, publishedMetricSources } from './api/modelMetrics.js'
+export { default as ProtectionAccessRequestDialog } from './components/ProtectionAccessRequestDialog.vue'

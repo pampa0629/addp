@@ -193,9 +193,9 @@ describe('protected-resource presentation model', () => {
     expect(rejection.confirmLabel).toBe('security.accessRequest.confirmActions.reject')
     expect(rejection.confirmType).toBe('danger')
     expect(rejection.target).toBe('business.customers · phone')
-    expect(rejection.details.map(detail => detail.key)).toEqual(['requester', 'requestedUntil', 'rationale'])
-    expect(rejection.details[0].value).toContain('Alice')
-    expect(rejection.details[2].value).toBe('support case')
+    expect(rejection.details.map(detail => detail.key)).toEqual(['scope', 'requester', 'requestedUntil', 'rationale'])
+    expect(rejection.details[1].value).toContain('Alice')
+    expect(rejection.details[3].value).toBe('support case')
 
     const approval = presentation.accessRequestDecisionDialogView(request, 'approve')
     expect(approval.confirmType).toBe('primary')
@@ -213,10 +213,9 @@ describe('protected-resource presentation model', () => {
       created_at: '2026-01-02T03:04:05Z',
       rationale: 'support case',
       state: 'approved',
-      authorization_state: 'active',
-      authorized_until: '2026-01-04T03:04:05Z',
+      scopes: [{consumer_owner: 'manager', action: 'preview'}],
+      authorizations: [{consumer_owner: 'manager', action: 'preview', authorization_state: 'active', authorized_until: '2026-01-04T03:04:05Z', exemption_id: 'exemption-1'}],
       enrollment_id: 'enrollment-1',
-      exemption_id: 'exemption-1',
       reviewer: { id: 9, display_name: 'Bob' },
       decided_at: '2026-01-03T03:04:05Z',
       decision_rationale: 'approved',
@@ -230,8 +229,8 @@ describe('protected-resource presentation model', () => {
     expect(row.requester.displayName).toBe('Alice')
     expect(row.requester.idLabel).toContain('"id":8')
     expect(row.state).toEqual({ type: 'success', label: 'security.accessRequest.states.approved' })
-    expect(row.authorization?.state.type).toBe('success')
-    expect(row.authorization?.canOpen).toBe(true)
+    expect(row.authorizations[0]?.state.type).toBe('success')
+    expect(row.authorizations[0]?.canOpen).toBe(true)
     expect(row.reviewer?.displayName).toBe('Bob')
     expect(row.decisionRationale).toBe('approved')
     expect(row.actions.canDecide).toBe(false)
@@ -240,11 +239,11 @@ describe('protected-resource presentation model', () => {
     const workspace = presentation.accessRequestReviewWorkspaceView([request], { canReadExemptions: true })
     expect(workspace.rows).toHaveLength(1)
     expect(workspace.rows[0].request).toBe(request)
-    expect(workspace.rows[0].authorization?.canOpen).toBe(true)
+    expect(workspace.rows[0].authorizations[0]?.canOpen).toBe(true)
 
-    const pending = presentation.accessRequestReviewRowView({ ...request, state: 'pending', authorization_state: '', reviewer: null, can_decide: true })
+    const pending = presentation.accessRequestReviewRowView({ ...request, state: 'pending', authorizations: [], reviewer: null, can_decide: true })
     expect(pending.state.type).toBe('info')
-    expect(pending.authorization).toBeNull()
+    expect(pending.authorizations).toEqual([])
     expect(pending.reviewer).toBeNull()
     expect(pending.actions.canDecide).toBe(true)
   })

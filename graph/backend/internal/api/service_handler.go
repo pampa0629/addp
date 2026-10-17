@@ -61,6 +61,7 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 // @Param page query int false "页码（默认 1）| Page number (default 1)"
 // @Param page_size query int false "每页大小（默认 20）| Page size (default 20)"
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/entities/{type} [get]
 func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -96,6 +97,7 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 // @Summary 获取实体详情 | Get entity detail
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/entities/{type}/{nodeId} [get]
 func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -105,7 +107,7 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	nodeID := c.Param("nodeId")
 	entity, err := h.knowledgeSvc.GetEntityDetail(c.Request.Context(), graphID, tenantID, nodeID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, entity)
@@ -114,6 +116,7 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 // @Summary 获取节点邻居 | Get node neighbors
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/nodes/{nodeId}/neighbors [get]
 func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -134,6 +137,7 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 // @Summary 路径查找 | Find paths
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/paths [post]
 func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -156,6 +160,7 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 // @Summary 获取实体中心子图 | Get entity-centric subgraph
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/subgraph [post]
 func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -180,6 +185,7 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 // @x-addp-auth-mode "public"
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 409 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -220,6 +226,7 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 // @Summary 获取图谱本体描述 | Get graph ontology description
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/ontology [get]
 func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -237,6 +244,7 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 // @Summary 图谱统计信息 | Graph statistics
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router /kg/{graphId}/stats [get]
 func (h *ServiceHandler) GetStats(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))

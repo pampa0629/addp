@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/addp/common/schema"
 
@@ -42,6 +43,9 @@ func main() {
 	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Security execution store migration failed: %v", err)
+	}
+	if err := service.ReconcileGraphOwnerProjections(ctx, db, time.Now().UTC()); err != nil {
+		log.Fatalf("Security Graph owner projection initialization failed: %v", err)
 	}
 	tokenSource, err := commonclient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-security", cfg.ServiceClientSecret, nil)
 	if err != nil {

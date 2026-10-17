@@ -6,6 +6,19 @@
         <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
+      <div v-if="showMap && needsSourceCRS" class="temporary-crs-control">
+        <span>{{ t('map.temporarySourceCRS') }}</span>
+        <el-select
+          v-model="temporaryCrs"
+          clearable
+          size="small"
+          class="temporary-crs-select"
+          :aria-label="t('map.temporarySourceCRS')"
+          :placeholder="t('map.selectSourceCRS')"
+        >
+          <el-option v-for="code in TEMPORARY_SOURCE_CRS_OPTIONS" :key="code" :label="code" :value="code" />
+        </el-select>
+      </div>
       <div v-if="showMap" class="base-map-control">
         <el-select v-model="baseMapType" size="small" class="base-map-select">
           <el-option
@@ -30,7 +43,7 @@
           ref="mapRef"
           :features="geoFeatures"
           :base-map-type="baseMapType"
-          :preserve-view="hasSavedViewState"
+          :preserve-view="hasSavedViewState && !temporaryCrs"
           :view-state="viewState"
           height="100%"
           @feature-click="handleFeatureClick"
@@ -129,7 +142,9 @@ import WKB from 'ol/format/WKB'
 import GeoJSON from 'ol/format/GeoJSON'
 import {
   crsSuppressionStatus,
+  canDeclarePreviewSourceCRS,
   getPreviewCRSTransform,
+  TEMPORARY_SOURCE_CRS_OPTIONS,
   transformGeoJSONGeometryToWGS84
 } from '../utils/crsRegistry'
 import TabularResultRenderer from '../../../basic/src/components/TabularResultRenderer.vue'
@@ -245,6 +260,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['page-change', 'view-state-change', 'table-state-change'])
+const temporaryCrs = defineModel('temporaryCrs', { type: String, default: '' })
 
 const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
@@ -267,7 +283,7 @@ const hasSavedViewState = computed(() => {
 })
 
 const handleViewStateChange = (state) => {
-  emit('view-state-change', state)
+  if (!temporaryCrs.value) emit('view-state-change', state)
 }
 
 const getVisibleSectionCount = () => {
@@ -370,7 +386,11 @@ const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total ?? null)
 const showPagination = computed(() => total.value > 0 || (total.value === null && (rows.value.length > 0 || currentPage.value > 1)))
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
-const crsTransform = computed(() => getPreviewCRSTransform(props.data))
+const needsSourceCRS = computed(() => canDeclarePreviewSourceCRS(props.data))
+const crsTransform = computed(() => getPreviewCRSTransform(props.data, temporaryCrs.value))
+watch(needsSourceCRS, (unknown) => {
+  if (props.data && !unknown) temporaryCrs.value = ''
+}, { immediate: true, flush: 'sync' })
 const isDynamicSchemaRecordSet = computed(() => props.data?.preview_kind === 'dynamic_schema_record_set')
 const selectedBaseMapProfile = computed(() => getBaseMapProfile(baseMapType.value))
 const baseMapNotice = computed(() => {
@@ -770,6 +790,8 @@ onBeforeUnmount(() => {
 
 .map-controls {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
@@ -793,6 +815,21 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.temporary-crs-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.temporary-crs-select {
+  width: 210px;
+  max-width: 100%;
 }
 
 .base-map-policy-tag {

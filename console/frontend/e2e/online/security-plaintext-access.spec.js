@@ -89,10 +89,17 @@ async function browserIdentity(page, prefix, redirect) {
   }
 }
 
-async function submitRequest(page, seconds, rationale) {
+async function submitRequest(page, seconds, rationale, owners = ['manager']) {
   await frame(page).getByRole('button', { name: /^(申请查看原值|Request plaintext access)$/ }).click()
   const dialog = frame(page).getByRole('dialog', { name: /申请查看字段原值|Request field plaintext access/ })
   await expect(dialog).toBeVisible()
+  const managerScope=dialog.getByRole('checkbox',{name:/Manager (数据预览|data preview)/})
+  await expect(managerScope).toBeEnabled()
+  await expect(managerScope).toBeChecked()
+  if (owners.includes('develop')) {
+    await dialog.getByText(/Develop (开发查询|queries)/, { exact: true }).click()
+    await expect(dialog.getByRole('checkbox', { name: /Develop (开发查询|queries)/ })).toBeChecked()
+  }
   const expires = new Date(Date.now() + seconds * 1000)
   const pad = value => String(value).padStart(2, '0')
   const formatted = `${expires.getFullYear()}-${pad(expires.getMonth() + 1)}-${pad(expires.getDate())} ${pad(expires.getHours())}:${pad(expires.getMinutes())}:${pad(expires.getSeconds())}`
@@ -106,8 +113,7 @@ async function submitRequest(page, seconds, rationale) {
   expect(response.status()).toBe(201)
   const body = response.request().postDataJSON()
   expect(body.assessment_id).toBe(process.env.ADDP_ONLINE_SECURITY_ASSESSMENT_ID)
-  expect(body.consumer_owner).toBe('manager')
-  expect(body.action).toBe('preview')
+  expect(body.scopes).toEqual(owners.map(owner=>({consumer_owner:owner,action:owner==='manager'?'preview':'query'})))
   expect(body).not.toHaveProperty('subject_id')
   expect(body.rationale).toBe(rationale)
   expect(Math.abs(Date.parse(body.requested_expires_at) - expires.getTime()) < 1000, 'UI submitted the chosen short deadline').toBe(true)
@@ -138,7 +144,8 @@ async function approve(page, securityPath, created, rationale, approverID) {
   expect(approved.requester.id).toBe(created.requester.id)
   expect(approved.reviewer.id).toBe(approverID)
   expect(approved.reviewer.type).toBe('user')
-  expect(approved.exemption_id).toBeTruthy()
+  expect(approved.authorizations.map(grant=>grant.consumer_owner).sort()).toEqual(created.scopes.map(scope=>scope.consumer_owner).sort())
+  expect(approved.authorizations.every(grant=>Boolean(grant.exemption_id))).toBe(true)
   await expect(dialog).not.toBeVisible()
   return approved
 }
@@ -154,7 +161,7 @@ async function history(page, securityPath, created, rationale, state) {
   expect(matches.length).toBe(1)
   expect(matches[0].state).toBe('approved')
   expect(matches[0].requester.id).toBe(created.requester.id)
-  expect(matches[0].authorization_state).toBe(state)
+  expect(matches[0].authorizations.find(grant=>grant.consumer_owner==='manager').authorization_state).toBe(state)
   const row = card.getByRole('row').filter({ hasText: rationale })
   await expect(row).toContainText(state === 'expired' ? /已到期|Expired/ : state === 'revoked' ? /已撤销|Revoked/ : /生效中|Active/)
   return row
@@ -210,7 +217,7 @@ test('two users request, approve, expire and revoke plaintext access through Con
     await applicant.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-plaintext-expired.png') })
 
     const secondRationale = `Hosted browser revocation ${env.ADDP_ONLINE_TEST_RUN_ID}`
-    const second = await submitRequest(applicant, 120, secondRationale)
+    const second = await submitRequest(applicant, 120, secondRationale, ['manager','develop'])
     expect(second.requester.id).toBe(applicantIdentity.principalID)
     expect(second.id === first.id).toBe(false)
     const secondSynchronized = applicant.waitForResponse(async r => endpoint(r) === '/api/v1/security/protection-access-request-targets' &&
@@ -222,14 +229,14 @@ test('two users request, approve, expire and revoke plaintext access through Con
     await renderedPreview(applicant, true)
     await reloadPreview(approver, managerPath, false)
     const activeRow = await history(approver, securityPath, second, secondRationale, 'active')
-    await activeRow.getByRole('button', { name: /^(查看授权|View grant)$/ }).click()
+    await activeRow.locator('.access-authorization-state').filter({hasText:/Manager (数据预览|data preview)/}).getByRole('button', { name: /^(查看授权|View grant)$/ }).click()
     const grant = frame(approver).locator('.exemption-card.is-focused')
     await expect(grant).toContainText(applicantIdentity.principalID)
     await expect(grant).toContainText('phone')
     await grant.getByRole('button', { name: /^(提前撤销|Revoke early)$/ }).click()
     const revokeDialog = frame(approver).getByRole('dialog', { name: /提前撤销临时授权|Revoke temporary grant early/ })
     await revokeDialog.locator('textarea').fill('Hosted browser work completed')
-    const revokedResponse = approver.waitForResponse(r => endpoint(r) === `/api/v1/security/protection-exemptions/${approved.exemption_id}` && r.request().method() === 'DELETE')
+    const revokedResponse = approver.waitForResponse(r => endpoint(r) === `/api/v1/security/protection-exemptions/${approved.authorizations.find(grant=>grant.consumer_owner==='manager').exemption_id}` && r.request().method() === 'DELETE')
     await revokeDialog.getByRole('button', { name: /^(确认撤销|Confirm revoke)$/ }).click()
     const revoked = await revokedResponse
     expect(revoked.status()).toBe(200)
@@ -244,11 +251,11 @@ test('two users request, approve, expire and revoke plaintext access through Con
     expect(applicantState.anonymous).toBe(1)
     expect(approverState.anonymous).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-plaintext-access-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-plaintext-access-browser/v1', result: 'passed',
+      schema_version: 'addp.security-plaintext-access-browser/v2', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: applicantIdentity.tenantID,
       applicant_id: applicantIdentity.principalID, approver_id: approverIdentity.principalID,
       records: 3, request_ids: [first.id, second.id], isolated_browser_contexts: true, same_users_verified: true,
-      request_from_manager_ui: true, approval_from_security_ui: true, authorized_applicant_verified: true,
+      request_from_manager_ui: true, approval_from_security_ui: true, multi_outlet_request_verified: true, authorized_applicant_verified: true,
       other_subject_protected: true, expired_preview_protected: true, expired_history_verified: true,
       revocation_from_security_ui: true, revoked_preview_protected: true, revoked_history_verified: true,
       null_preserved: true, browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: 2

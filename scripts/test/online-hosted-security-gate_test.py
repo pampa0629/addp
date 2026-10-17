@@ -140,7 +140,7 @@ class HostedSecurityGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
-        for target in ('-meta', '-security', '-manager', '-develop', '-service', '-transfer', '-monitor'):
+        for target in ('-meta', '-security', '-manager', '-develop', '-service', '-transfer', '-graph', '-monitor'):
             self.assertIn('start:' + target, trace)
         self.assertIn('initialize', trace)
         self.assertLess(trace.index('go-workspace'), trace.index('start:-meta'))

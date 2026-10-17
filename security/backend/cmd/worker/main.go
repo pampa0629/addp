@@ -41,6 +41,9 @@ func main() {
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Security worker execution store migration failed: %v", err)
 	}
+	if err := service.ReconcileGraphOwnerProjections(ctx, db, time.Now().UTC()); err != nil {
+		log.Fatalf("Security Graph owner projection initialization failed: %v", err)
+	}
 	metaClient := commonclient.NewMetaClient(cfg.MetaURL, tokens)
 	discoveries := service.NewDiscoveryService(db, func(tenantID uint) service.SecurityFactsReader { return metaClient.WithTenantID(tenantID) })
 	if _, err := service.ReconcileStructuredOwnerProjections(ctx, db, time.Now().UTC()); err != nil {

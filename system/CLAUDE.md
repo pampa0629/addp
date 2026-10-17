@@ -1,3 +1,5 @@
+Graph 保护投影 Runtime（000218）：只向既有 `tenant.graph_runtime` 发布 `security.protection_projection.read/update`，向 `platform.graph_runtime` 发布 `platform.tenant.read` 以发现待同步租户；不新增用户授权或 Role Assignment，不调整源数据访问授权。绑定变更沿现有 IAM 触发器推进服务主体授权版本。验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test graph-protection-runtime"`，完整迁移门禁与既有 System CI 自动发现。
+
 # CLAUDE.md
 
 数据授权办理员统一角色：`tenant.source_data_authorizer` 同时组合直接 Grant 创建与 Catalog 人类办理 Permission，并包含 Catalog 条目读取。两种流程继续按当前目标批准方式、引擎管理范围及业务确认分别核验；不增加确认、Deny、模式切换、机器 execute 或数据读取权限。000217 仅扩展该既有角色，推进已分配主体授权版本并撤销旧会话，不新增账号分配、委派或 Grant，不修改租户自定义角色。下文 000178／000197 的描述记录原迁移范围，当前模板以 `system/authorization/builtin_roles.yaml` 为准。
@@ -535,7 +537,7 @@ API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_i
 
 正文由 Alloy/Loki/MinIO 保存，不写入 IAM 审计表。标准开发和容器启动通过 `common/cmd/runtime-log` 生成并传递进程身份。重启产生新身份，原有 DOWN 登记事实保留，便于查询集中保留期内的旧日志。尚未登记的进程使用可信来源目录提供日志入口，不虚构登记实例或启动失败状态。
 
-标准验证：`make test-module MODULE=system`（显式注入允许的 IAM 测试 DSN），`make test-system-runtime-log`。设计与限制见 [模块服务运行日志设计](../docs/next/ADDP模块服务运行日志设计.md)，设施运维见 [Infra 指南](../scripts/infra/README.md)。
+标准验证：`make test-module MODULE=system`（显式注入允许的 IAM 测试 DSN），`make test-system-runtime-log`。正文、来源及查询限制见 [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md)，设施运维见 [Infra 指南](../scripts/infra/README.md)。
 
 ### 未登记实例的运行日志
 

@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -115,7 +118,16 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	}
 
 	graphRepo, ontologyRepo := repository.NewKnowledgeGraphRepository(db), repository.NewOntologyRepository(db)
-	data := NewGraphDataService(graphRepo, ontologyRepo, commonClient.NewSystemServiceClient(system.URL, graphServiceToken{}, system.Client()))
+	if err := db.Exec("ATTACH DATABASE 'file:graph-protection?mode=memory&cache=private' AS graph").Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := projectionstore.Migrate(db, "graph", "graph", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncGraphProtection(t, store, 7, "")
+	gate := NewGraphProtectionGate(store)
+	data := NewGraphDataService(graphRepo, ontologyRepo, commonClient.NewSystemServiceClient(system.URL, graphServiceToken{}, system.Client()), gate)
 	graphs := NewKnowledgeGraphService(graphRepo, data)
 	req := &models.CreateKnowledgeGraphRequest{OntologyID: ontology.ID, EngineID: 13, CatalogPath: path, IndexManagement: models.GraphIndexesManaged, Name: "domain"}
 	kg, err := graphs.Create(ctx, 7, req)
@@ -124,6 +136,17 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	}
 	if _, err = graphs.Create(ctx, 7, req); err == nil {
 		t.Fatal("duplicate graph target accepted")
+	}
+	_, held, err := data.getGraphAndEngine(ctx, kg.ID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = gate.ReadyToAcknowledge(ctx, 7, "next"); err == nil {
+		t.Fatal("target lifecycle ended before its operation")
+	}
+	held.close()
+	if err = gate.ReadyToAcknowledge(ctx, 7, "next"); err != nil {
+		t.Fatal(err)
 	}
 	first, err := data.MergeEntity(ctx, kg.ID, 7, []string{"ADDPDomainPerson"}, "key", "a", map[string]interface{}{"key": "a", "name": "Ada Lovelace", "summary": "Mathematics", "remarks": "SecretOnly", "big": int64(9007199254740993)})
 	if err != nil || first == "" {
@@ -343,5 +366,50 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		}
 	}
 
+	protected := graphProtectionProjection(t, registered.(plugin.PropertyGraphProvider), path, "managed-graph")
+	syncGraphProtection(t, store, 7, "managed", dataprotection.ProjectionChange{ChangeID: "managed", Operation: dataprotection.ChangeOperationUpsert, Projection: &protected})
+	for operation, run := range map[string]func() error{
+		"expand": func() error {
+			_, err := data.Expand(ctx, kg.ID, 7, &models.ExpandRequest{Target: models.ExpandTarget{Kind: "entity", ID: first}, Depth: 1, NodeLimit: 10, RelationshipLimit: 10})
+			return err
+		},
+		"knowledge_search": func() error {
+			_, _, err := knowledge.SearchEntities(ctx, kg.ID, 7, "name", "Person", 1, 10)
+			return err
+		},
+		"knowledge_stats":  func() error { _, err := knowledge.GetStats(ctx, kg.ID, 7); return err },
+		"knowledge_schema": func() error { _, err := knowledge.GetOntologyDescription(ctx, kg.ID, 7); return err },
+		"schema":           func() error { _, err := inference.InferSchema(ctx, kg.ID, 7, nil); return err },
+		"sync_constraints": func() error {
+			return data.SyncConstraints(ctx, kg.ID, 7, "Person", []string{"ADDPDomainPerson"}, props)
+		},
+		"spatial_sync": func() error { _, err := analysis.SyncAllSpatialLayers(ctx, kg.ID, 7); return err },
+		"browse":       func() error { _, err := data.GetBrowseSnapshot(ctx, kg.ID, 7); return err },
+		"search":       func() error { _, err := data.SearchNodes(ctx, kg.ID, 7, "name", 10); return err },
+		"path":         func() error { _, err := data.FindPath(ctx, kg.ID, 7, first, middle); return err },
+		"constraints":  func() error { _, err := data.GetConstraints(ctx, kg.ID, 7); return err },
+		"inference":    func() error { _, err := inference.InferSchemaFromEngine(ctx, 13, 7, path, nil); return err },
+		"entities":     func() error { _, _, err := knowledge.ListEntitiesByType(ctx, kg.ID, 7, "Person", 1, 10); return err },
+		"entity":       func() error { _, err := knowledge.GetEntityDetail(ctx, kg.ID, 7, first); return err },
+		"neighbors":    func() error { _, err := knowledge.GetEntityNeighbors(ctx, kg.ID, 7, first, 10); return err },
+		"capabilities": func() error { _, err := analysis.CheckCapabilities(ctx, kg.ID, 7); return err },
+		"analysis": func() error {
+			_, err := analysis.RunAlgorithm(ctx, kg.ID, 7, &models.AlgorithmRunRequest{Algorithm: "degree_centrality", Limit: 10})
+			return err
+		},
+		"merge": func() error {
+			_, err := data.MergeEntity(ctx, kg.ID, 7, []string{"ADDPDomainPerson"}, "key", "protected-write", map[string]interface{}{"name": "forbidden"})
+			return err
+		},
+	} {
+		t.Run("protected_"+operation, func(t *testing.T) {
+			if err := run(); !errors.Is(err, ErrGraphProtectionRequired) {
+				t.Fatalf("protected exit: %v", err)
+			}
+		})
+	}
+	if err := gate.ReadyToAcknowledge(ctx, 7, "managed"); err != nil {
+		t.Fatal(err)
+	}
 	t.Log(fmt.Sprintf("%s domain target, writes, indexes, review, browse and knowledge service passed", kind))
 }

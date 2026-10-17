@@ -1,6 +1,8 @@
 {
   "map": {
     "preview": "Map Preview",
+    "temporarySourceCRS": "Source CRS for this preview",
+    "selectSourceCRS": "Select source CRS",
     "truncated": "Content is large, showing partial data",
     "shapefileTruncated": "Showing partial features only",
     "geometryType": "Geometry Type",

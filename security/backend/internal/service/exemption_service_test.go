@@ -59,8 +59,8 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if _, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{}, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("missing review scope error = %v", err)
 	}
-	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
-		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
+		AssessmentID:       reviewed.Assessment.ID,
 		RequestedExpiresAt: now.Add(24 * time.Hour), Rationale: "工单 SEC-2026-001 需要核验客户联系方式",
 	})
 	if err != nil {
@@ -129,7 +129,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approved.State != models.ProtectionAccessRequestStateApproved || approved.EnrollmentID != reviewed.Assessment.EnrollmentID || approved.ExemptionID == "" || approved.AuthorizationState != models.ProtectionExemptionStateActive || approved.AuthorizedUntil == nil || !approved.AuthorizedUntil.Equal(now.Add(time.Hour)) {
+	if approved.State != models.ProtectionAccessRequestStateApproved || approved.EnrollmentID != reviewed.Assessment.EnrollmentID || approved.Authorizations[0].ExemptionID == "" || approved.Authorizations[0].AuthorizationState != models.ProtectionExemptionStateActive || approved.Authorizations[0].AuthorizedUntil == nil || !approved.Authorizations[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("approved request = %#v", approved)
 	}
 	assertAccessTargetSynchronization(t, db, requests, approved)
@@ -152,7 +152,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].EnrollmentID != reviewed.Assessment.EnrollmentID || approvalHistory.Data[0].AuthorizationState != models.ProtectionExemptionStateActive || approvalHistory.Data[0].AuthorizedUntil == nil || !approvalHistory.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) || approvalHistory.Data[0].Reviewer == nil || approvalHistory.Data[0].Reviewer.ID != "42" || approvalHistory.Data[0].Reviewer.DisplayName != "用户 42" || approvalHistory.Data[0].DecisionRationale != "复核通过" {
+	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].EnrollmentID != reviewed.Assessment.EnrollmentID || approvalHistory.Data[0].Authorizations[0].AuthorizationState != models.ProtectionExemptionStateActive || approvalHistory.Data[0].Authorizations[0].AuthorizedUntil == nil || !approvalHistory.Data[0].Authorizations[0].AuthorizedUntil.Equal(now.Add(time.Hour)) || approvalHistory.Data[0].Reviewer == nil || approvalHistory.Data[0].Reviewer.ID != "42" || approvalHistory.Data[0].Reviewer.DisplayName != "用户 42" || approvalHistory.Data[0].DecisionRationale != "复核通过" {
 		t.Fatalf("approval review history = %#v", approvalHistory)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, managerProtectionOwner, "", 20)
@@ -180,11 +180,11 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 
 	exemptions := NewExemptionService(db)
 	exemptions.now = func() time.Time { return now.Add(30 * time.Minute) }
-	currentExemption, err := exemptions.Get(context.Background(), 7, approved.ExemptionID)
+	currentExemption, err := exemptions.Get(context.Background(), 7, approved.Authorizations[0].ExemptionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	revoked, err := exemptions.Revoke(context.Background(), 7, 42, approved.ExemptionID, models.RevokeProtectionExemptionRequest{
+	revoked, err := exemptions.Revoke(context.Background(), 7, 42, approved.Authorizations[0].ExemptionID, models.RevokeProtectionExemptionRequest{
 		Version: currentExemption.Version, Rationale: "提前撤销原值访问授权",
 	})
 	if err != nil {
@@ -196,7 +196,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revokedHistory.Total != 1 || len(revokedHistory.Data) != 1 || revokedHistory.Data[0].AuthorizationState != models.ProtectionExemptionStateRevoked || revokedHistory.Data[0].AuthorizedUntil == nil || !revokedHistory.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
+	if revokedHistory.Total != 1 || len(revokedHistory.Data) != 1 || revokedHistory.Data[0].Authorizations[0].AuthorizationState != models.ProtectionExemptionStateRevoked || revokedHistory.Data[0].Authorizations[0].AuthorizedUntil == nil || !revokedHistory.Data[0].Authorizations[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("revoked authorization review history = %#v", revokedHistory)
 	}
 	revokedFilter := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
@@ -228,7 +228,7 @@ func assertExemptionComponentJSON(t *testing.T, response *models.ProtectionExemp
 func assertExemptionResponseComponent(t *testing.T, db *gorm.DB, approved *models.ProtectionAccessRequestResponse, want string) {
 	t.Helper()
 	exemptions := NewExemptionService(db)
-	detail, err := exemptions.Get(context.Background(), 7, approved.ExemptionID)
+	detail, err := exemptions.Get(context.Background(), 7, approved.Authorizations[0].ExemptionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func assertAccessTargetSynchronization(t *testing.T, db *gorm.DB, requests *Acce
 			t.Fatalf("access targets: result=%#v error=%v", result, err)
 		}
 		target := result.Data[0]
-		if target.ActiveExemptionID != approved.ExemptionID || target.AccessRequest == nil || target.AccessRequest.State != models.ProtectionAccessRequestStateApproved || target.ProjectionAcknowledged != want {
+		if target.ActiveExemptionID != approved.Authorizations[0].ExemptionID || target.AccessRequest == nil || target.AccessRequest.State != models.ProtectionAccessRequestStateApproved || target.ProjectionAcknowledged != want {
 			t.Fatalf("approved target synchronization (want %v) = %#v", want, target)
 		}
 	}
@@ -292,7 +292,7 @@ func assertAccessTargetSynchronization(t *testing.T, db *gorm.DB, requests *Acce
 	}
 	originalNow := requests.now
 	defer func() { requests.now = originalNow }()
-	requests.now = func() time.Time { return approved.AuthorizedUntil.Add(time.Second) }
+	requests.now = func() time.Time { return approved.Authorizations[0].AuthorizedUntil.Add(time.Second) }
 	expired, err := requests.Targets(ctx, 7, 41, enrollment.TargetIdentity, managerProtectionOwner, managerPreviewAction)
 	if err != nil || len(expired.Data) != 1 || expired.Data[0].ActiveExemptionID != "" {
 		t.Fatalf("checkpoint must not keep an expired grant active: result=%#v error=%v", expired, err)
@@ -346,8 +346,8 @@ func TestProtectionAccessReviewQueueFiltersAndPaginatesOnServer(t *testing.T) {
 
 	create := func(userID int64, expiresAt time.Time, rationale string) *models.ProtectionAccessRequestResponse {
 		t.Helper()
-		created, createErr := requests.Create(context.Background(), 7, userID, models.CreateProtectionAccessRequest{
-			AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+		created, createErr := requests.Create(context.Background(), 7, userID, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
+			AssessmentID:       reviewed.Assessment.ID,
 			RequestedExpiresAt: expiresAt, Rationale: rationale,
 		})
 		if createErr != nil {
@@ -396,7 +396,7 @@ func TestProtectionAccessReviewQueueFiltersAndPaginatesOnServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if authorizationExpiredOnly.Total != 1 || authorizationExpiredOnly.Data[0].ID != approvedRequest.ID || authorizationExpiredOnly.Data[0].AuthorizationState != models.ProtectionExemptionStateExpired {
+	if authorizationExpiredOnly.Total != 1 || authorizationExpiredOnly.Data[0].ID != approvedRequest.ID || authorizationExpiredOnly.Data[0].Authorizations[0].AuthorizationState != models.ProtectionExemptionStateExpired {
 		t.Fatalf("expired authorization filter = %#v", authorizationExpiredOnly)
 	}
 	history.AuthorizationState = ""
@@ -476,10 +476,10 @@ func TestProtectionAccessRequestBackfillsImmutableActorSnapshots(t *testing.T) {
 	db := openSecurityTestDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	reviewerID := int64(42)
-	row := models.ProtectionAccessRequest{
+	row := models.ProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
 		ID: "15a0191b-4773-4217-837c-44bfaf148bad", TenantID: 7,
 		AssessmentID: "92826a2d-5bb4-48c6-a632-09683cb247ca", AssessmentRevision: 1,
-		ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+
 		SubjectType: "user", SubjectID: "41", RequestedExpiresAt: now.Add(time.Hour),
 		Rationale: "历史申请", State: models.ProtectionAccessRequestStateApproved, Version: 2,
 		DecidedBy: &reviewerID, DecidedAt: &now, DecisionRationale: "复核通过",
@@ -514,8 +514,8 @@ func TestExpiredProtectionAccessRequestStopsPollingAndCanBeResubmitted(t *testin
 	now := time.Now().UTC().Truncate(time.Second)
 	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
-	first, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
-		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+	first, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
+		AssessmentID:       reviewed.Assessment.ID,
 		RequestedExpiresAt: now.Add(time.Hour), Rationale: "首次申请",
 	})
 	if err != nil {
@@ -530,8 +530,8 @@ func TestExpiredProtectionAccessRequestStopsPollingAndCanBeResubmitted(t *testin
 	if len(targets.Data) != 1 || targets.Data[0].AccessRequest == nil || targets.Data[0].AccessRequest.ID != first.ID || targets.Data[0].AccessRequest.State != models.ProtectionAccessRequestStateExpired {
 		t.Fatalf("expired access target = %#v", targets.Data)
 	}
-	second, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
-		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+	second, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
+		AssessmentID:       reviewed.Assessment.ID,
 		RequestedExpiresAt: now.Add(3 * time.Hour), Rationale: "过期后重新申请",
 	})
 	if err != nil {
@@ -558,14 +558,14 @@ func TestProtectionAccessRequestRejectsUnsupportedOutletAndDuplicatePending(t *t
 	now := time.Now().UTC().Truncate(time.Second)
 	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
-	request := models.CreateProtectionAccessRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: now.Add(time.Hour), Rationale: "核验"}
+	request := models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}}, AssessmentID: reviewed.Assessment.ID, RequestedExpiresAt: now.Add(time.Hour), Rationale: "核验"}
 	if _, err := requests.Create(context.Background(), 7, 41, request); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := requests.Create(context.Background(), 7, 41, request); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate pending error = %v", err)
 	}
-	request.ConsumerOwner, request.Action = transferProtectionOwner, transferExportAction
+	request.Scopes = []models.ProtectionAccessScope{{ConsumerOwner: transferProtectionOwner, Action: transferExportAction}}
 	if _, err := requests.Create(context.Background(), 7, 41, request); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("unsupported outlet error = %v", err)
 	}
@@ -580,8 +580,8 @@ func TestProtectionAccessRequestApprovalCannotExtendRequestedDeadlineAndRejectDo
 	now := time.Now().UTC().Truncate(time.Second)
 	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
-	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
-		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},
+		AssessmentID:       reviewed.Assessment.ID,
 		RequestedExpiresAt: now.Add(time.Hour), Rationale: "临时核验客户联系方式",
 	})
 	if err != nil {
@@ -598,7 +598,7 @@ func TestProtectionAccessRequestApprovalCannotExtendRequestedDeadlineAndRejectDo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rejected.State != models.ProtectionAccessRequestStateRejected || rejected.ExemptionID != "" {
+	if rejected.State != models.ProtectionAccessRequestStateRejected || len(rejected.Authorizations) != 0 {
 		t.Fatalf("rejected request = %#v", rejected)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, managerProtectionOwner, "", 20)

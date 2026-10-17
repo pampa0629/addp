@@ -126,7 +126,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	accessRequestsAPI.POST("/:id/decisions", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.Decide)
 
 	runtime := api.Group("/runtime")
-	runtime.Use(commonauth.MustNewServiceClientGuard("addp-manager", "addp-transfer", "addp-develop", "addp-service"))
+	runtime.Use(commonauth.MustNewServiceClientGuard("addp-manager", "addp-transfer", "addp-develop", "addp-service", "addp-graph"))
 	runtime.GET("/protection-projections/changes", permission(securityauthorization.PermissionSecurityProtectionProjectionRead), enrollmentHandler.ListChanges)
 	runtime.POST("/protection-projection-acknowledgements", permission(securityauthorization.PermissionSecurityProtectionProjectionUpdate), enrollmentHandler.Acknowledge)
 	return router

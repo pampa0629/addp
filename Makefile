@@ -527,7 +527,7 @@ test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生�
 
 .PHONY: test-hdfs-online-runner
 test-hdfs-online-runner: ## 验证 HDFS Spark 及 MySQL/Doris 页面 T4、物理夹具与隔离生命周期
-	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/spark-table-consumer-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_hdfs_requires_manual_java11_lifecycle_browser_and_owner_tests
+	@python3 -m unittest scripts/test/hdfs-spark-consumer-flow-online_test.py scripts/test/spark-table-consumer-online_test.py scripts/test/online-hdfs-spark-fixture_test.py scripts/test/online-hosted-hdfs-gate_test.py scripts/test/online-engine-registration_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_hdfs_requires_manual_java11_lifecycle_browser_and_owner_tests
 	@node --check --input-type=module < console/frontend/e2e/online/hdfs-spark-consumer-flow.spec.js
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
@@ -571,6 +571,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-security-online-runner
 	@$(MAKE) test-highgo-online-runner
 	@$(MAKE) test-pg-authorization-online-runner
 	@$(MAKE) test-transfer-continuous-online-runner
@@ -586,7 +587,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@$(MAKE) test-quality-online-runner
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-hosted-security-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-security-owner-fixture_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
@@ -981,3 +982,8 @@ test-common-falkordb-unit: ## 图引擎契约、共享 Cypher AST 与 FalkorDB �
 
 test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保护边界和结果
 	@bash scripts/test/common-falkordb-gate.sh
+
+.PHONY: test-security-online-runner
+test-security-online-runner: ## 验证 Security Hosted 生命周期、保护消费者回执及已有出口验收断言
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py scripts.test.online-host-gate_test.OnlineHostGateTest.test_runs_security_transfer_suite_with_composite_fixture
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

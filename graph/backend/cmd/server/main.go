@@ -15,10 +15,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 
@@ -101,7 +103,15 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, graphTokenSource, nil)
-	graphDataSvc := service.NewGraphDataService(graphRepo, ontologyRepo, systemServiceClient)
+	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "graph", nil)
+	if err != nil {
+		logger.Error("Graph protection store initialization failed", "error", err)
+		os.Exit(1)
+	}
+	protectionGate := service.NewGraphProtectionGate(protectionStore)
+	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, graphTokenSource, nil)
+	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second, protectionGate).Start(runtimeContext)
+	graphDataSvc := service.NewGraphDataService(graphRepo, ontologyRepo, systemServiceClient, protectionGate)
 	graphSvc := service.NewKnowledgeGraphService(graphRepo, graphDataSvc)
 
 	knowledgeSvc := service.NewKnowledgeService(graphDataSvc, ontologyRepo, graphRepo)

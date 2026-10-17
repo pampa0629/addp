@@ -88,6 +88,7 @@ const (
 	MsgQueryExportInvalid                     = "develop.query.export_invalid"
 	MsgQueryExportNotFound                    = "develop.query.export_not_found"
 	MsgQueryExportUnavailable                 = "develop.query.export_unavailable"
+	MsgQueryHistoryProtectionRequired         = "develop.query.history_protection_required"
 	MsgNotebookExecutionForbidden             = "develop.notebook.execution_permission_denied"
 	MsgNotebookEngineListFailed               = "develop.notebook.engine_list_failed"
 	MsgNotebookEngineRequired                 = "develop.notebook.engine_required"

@@ -236,6 +236,10 @@ bash scripts/dev/restart.sh -graph
 
 ## 业务图引擎与索引管理
 
+Graph HTTP Tenant 与 User 身份只从权威 AuthContext 提取，缺失返回零值并由既有 Guard 拒绝，不保留默认租户或旧 Gin key 回退。
+
+Graph 是 Security 的固定保护消费者，使用本地 `common/dataprotection/projectionstore` 和显式目标图的原生读取门禁；首次投影同步完成前拒绝读取。浏览、搜索、展开、路径、推导、分析及公开/私有知识服务均检查同一目标，命中纳管时拒绝，不提供属性脱敏或原值豁免。领域操作的在途生命周期覆盖完整的服务组合，结束前不得向 Security 确认新投影已安装。System 源数据授权暂未接入，不以本门禁替代。验证复用 Graph/Security/System 模块门禁、Security PostgreSQL 以及 Common Neo4j/FalkorDB 独占实例门禁；新增服务测试须被现有门禁筛选命中。
+
 GraphDataService 是浏览、构建审核、Schema 推导和知识服务的唯一图谱数据组合入口。目标使用 EngineCatalogPath，原生 ID 表达式、全文索引和唯一约束由 Common PropertyGraphProvider 提供，不修改引擎连接的 database 配置。Neo4j 路径为 server/database/graph，FalkorDB 为 server/graph，原生 graph key 作为完整一段保存。
 
 创建图谱必须明确选择 `index_management=managed|external`，同一租户与 Engine 的同一 graph 只能绑定一个实例。managed 按本体维护索引；external 只复用已有完全匹配索引，缺失或冲突返回 409，绝不自动修改。FalkorDB 同 label 多定义取字段并集创建物理索引，搜索仍按每个定义的字段和标签执行。基础度中心性与 K 跳已验证；FalkorDB 不声明 GDS、Spatial 或多路最短路径。单条无向最短路径采用共享逐层遍历，最多 10 跳、每层最多 10000 行、最多访问 10000 节点；超出预算返回 400，不作为无路径结果。

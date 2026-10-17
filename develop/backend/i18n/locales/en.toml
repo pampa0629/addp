@@ -346,3 +346,5 @@ other = "An explicit JSON array of field names, such as [\"name\", \"type\"]; an
 
 [develop.workflow.vector_tile_facts_invalid]
 other = "Invalid vector tile parameters or source metadata; check zoom levels and attributes, and run a deep scan of the source."
+[develop.query.history_protection_required]
+other = "The historical query result protection has changed or cannot be verified. Execute the query again."

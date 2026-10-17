@@ -96,3 +96,6 @@ other = "The path query exceeds the traversal budget. Query a smaller target gra
 
 [graph.kg.operation_failed]
 other = "The graph operation failed. Check the service logs."
+
+[graph.kg.protection_required]
+other = "Data protection is not ready or the target graph is protected; reading is denied"

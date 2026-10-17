@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -40,6 +41,10 @@ REGISTRATION_SPEC = importlib.util.spec_from_file_location("plaintext_engine_reg
 REGISTRATION = importlib.util.module_from_spec(REGISTRATION_SPEC)
 assert REGISTRATION_SPEC.loader is not None
 REGISTRATION_SPEC.loader.exec_module(REGISTRATION)
+DEVELOP_SPEC = importlib.util.spec_from_file_location("plaintext_develop_output", Path(__file__).with_name("security-mysql-owner-protection-online.py"))
+DEVELOP = importlib.util.module_from_spec(DEVELOP_SPEC)
+assert DEVELOP_SPEC.loader is not None
+DEVELOP_SPEC.loader.exec_module(DEVELOP)
 
 
 SOURCE_FULL_NAME = "addp_online_security.exemption_source"
@@ -47,6 +52,7 @@ RAW_VALUES = {"1": "13812345678", "2": "13987654321", "3": None}
 MASKED_VALUES = {"1": "138****5678", "2": "139****4321", "3": None}
 FORBIDDEN_ADMIN_ROLES = SUPPORT.FORBIDDEN_ADMIN_ROLES
 APPLICANT_PERMISSIONS = {
+    "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
     "manager.data_item.read",
     "meta.catalog.read",
     "meta.scan_task.execute",
@@ -60,6 +66,7 @@ APPLICANT_PERMISSIONS = {
     "security.protection_access_request.read",
 }
 APPROVER_PERMISSIONS = {
+    "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
     "security.enrollment.read",
     "meta.catalog.read",
     "manager.data_item.read",
@@ -336,13 +343,13 @@ def wait_for_manager_values(
 
 
 def access_targets(
-    client: GatewayClient, target_identity: str
+    client: GatewayClient, target_identity: str, owner: str = "manager", action: str = "preview"
 ) -> list[dict[str, object]]:
     path = "/api/v1/security/protection-access-request-targets?" + urllib.parse.urlencode(
         {
             "target_identity": target_identity,
-            "consumer_owner": "manager",
-            "action": "preview",
+            "consumer_owner": owner,
+            "action": action,
         }
     )
     payload = _object(client.request("GET", path, (200,)).payload, "access targets")
@@ -354,10 +361,11 @@ def access_targets(
 
 
 def approve_access_request(applicant: GatewayClient, approver: GatewayClient,
-                           assessment_id: str, authorization_seconds: int) -> tuple[str, str, datetime]:
+                           assessment_id: str, authorization_seconds: int,
+                           scopes: tuple[tuple[str, str], ...] = (("manager", "preview"),)) -> tuple[str, str, datetime]:
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=authorization_seconds)
     created = _object(applicant.request("POST", "/api/v1/security/protection-access-requests", (201,), {
-        "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
+        "assessment_id": assessment_id, "scopes": [{"consumer_owner": owner, "action": action} for owner, action in scopes],
         "requested_expires_at": expires_at.isoformat(), "rationale": "Hosted Online Manager plaintext verification",
     }).payload, "ProtectionAccessRequest")
     request_id = created.get("id")
@@ -377,7 +385,10 @@ def approve_access_request(applicant: GatewayClient, approver: GatewayClient,
             "version": positive_int(matches[0].get("version"), "request version"), "decision": "approve",
             "expires_at": expires_at.isoformat(), "rationale": "Hosted Online independent approval",
         }).payload, "approved ProtectionAccessRequest")
-    exemption_id = approved.get("exemption_id")
+    authorizations = _array(approved.get("authorizations"), "approved authorizations")
+    if len(authorizations) != len(scopes) or {(grant.get("consumer_owner"), grant.get("action")) for grant in authorizations} != set(scopes):
+        raise SuiteError("approval changed its explicit outlet scopes")
+    exemption_id = next(grant.get("exemption_id") for grant in authorizations if (grant.get("consumer_owner"),grant.get("action")) == scopes[0])
     if approved.get("state") != "approved" or not isinstance(exemption_id, str) or not exemption_id:
         raise SuiteError("approval did not create a subject-scoped grant")
     return request_id, exemption_id, expires_at
@@ -397,7 +408,7 @@ def verify_approval_history(approver: GatewayClient, request_id: str, authorizat
         "/api/v1/security/protection-access-requests/review-queue?" + urllib.parse.urlencode({
             "scope": "history", "state": "approved", "authorization_state": authorization_state,
         })) if item.get("id") == request_id]
-    if len(matches) != 1 or matches[0].get("state") != "approved" or matches[0].get("authorization_state") != authorization_state:
+    if len(matches) != 1 or matches[0].get("state") != "approved" or not any(isinstance(grant, dict) and grant.get("consumer_owner") == "manager" and grant.get("action") == "preview" and grant.get("authorization_state") == authorization_state for grant in matches[0].get("authorizations", [])):
         raise SuiteError("approval history does not match the current authorization state")
     return {"state": "approved", "authorization_state": authorization_state, "request_id": request_id}
 
@@ -412,13 +423,14 @@ def wait_for_grant_expiry(expires_at: datetime, deadline: float) -> None:
 
 
 def wait_for_current_grant(applicant: GatewayClient, target_identity: str,
-                           assessment_id: str, exemption_id: str, deadline: float) -> None:
+                           assessment_id: str, exemption_id: str | None, deadline: float,
+                           owner: str = "manager", action: str = "preview") -> str:
     while time.monotonic() < deadline:
-        matches = [target for target in access_targets(applicant, target_identity)
+        matches = [target for target in access_targets(applicant, target_identity, owner, action)
                    if target.get("assessment_id") == assessment_id]
-        if (len(matches) == 1 and matches[0].get("active_exemption_id") == exemption_id
+        if (len(matches) == 1 and bool(matches[0].get("active_exemption_id")) and (exemption_id is None or matches[0].get("active_exemption_id") == exemption_id)
                 and matches[0].get("projection_acknowledged") is True):
-            return
+            return matches[0]["active_exemption_id"]
         time.sleep(1)
     raise SuiteError("outage grant projection was not acknowledged before the Online deadline")
 
@@ -426,14 +438,18 @@ def wait_for_current_grant(applicant: GatewayClient, target_identity: str,
 def exercise_security_unavailability(applicant: GatewayClient, approver: GatewayClient,
                                      tenant_id: int, locator: str, target_identity: str,
                                      assessment_id: str, identities: list[dict[str, object]],
-                                     deadline: float) -> dict[str, object]:
+                                     deadline: float, engine_id: int) -> dict[str, object]:
     repository = Path(__file__).resolve().parents[2]
     SUPPORT.require_hosted_security_lifecycle(repository)
     security_before = SUPPORT.ready_process("security")
     manager_before = SUPPORT.ready_process("manager")
-    request_id, exemption_id, expires_at = approve_access_request(applicant, approver, assessment_id, 90)
+    develop_before = SUPPORT.ready_process("develop")
+    request_id, exemption_id, expires_at = approve_access_request(applicant, approver, assessment_id, 90, (("manager", "preview"), ("develop", "query")))
     wait_for_manager_values(applicant, locator, RAW_VALUES, "before-outage", deadline)
     wait_for_current_grant(applicant, target_identity, assessment_id, exemption_id, deadline)
+    develop_grant = wait_for_current_grant(applicant, target_identity, assessment_id, None, deadline, "develop", "query")
+    develop_execution = DEVELOP.develop_execution(applicant, engine_id, locator, deadline, "SELECT id, phone FROM addp_online_security.exemption_source ORDER BY id", "sql")
+    develop_history_evidence(develop_execution, RAW_VALUES)
     refusals: list[dict[str, str]] = []
     previews: dict[str, object] = {}
     try:
@@ -454,11 +470,16 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
             refusals.append({"phase": phase, "boundary": "before", "observed_at": SUPPORT.security_listener_refused()})
             # One real request: retries could hide an incorrect protected output.
             previews[phase] = manager_evidence(consumer, locator, expected, phase)
+            if phase in {"authorized_applicant", "expired_applicant"}:
+                history = applicant.request("GET", f"/api/v1/develop/executions/{urllib.parse.quote(develop_execution['execution_id'])}", (200,)).payload
+                develop_history_evidence(history, expected)
             refusals.append({"phase": phase, "boundary": "after", "observed_at": SUPPORT.security_listener_refused()})
             if active and datetime.now(timezone.utc) >= expires_at:
                 raise SuiteError("outage grant expired during its active preview")
             if SUPPORT.ready_process("manager") != manager_before:
                 raise SuiteError("Manager process changed during the Security outage")
+            if SUPPORT.ready_process("develop") != develop_before:
+                raise SuiteError("Develop process changed during the Security outage")
     finally:
         # A partially failed stop still needs recovery; outer cleanup remains mandatory.
         SUPPORT.run_security_lifecycle(repository, "start", deadline)
@@ -466,17 +487,142 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
     SUPPORT.verify_restarted_process("security", security_before, security_after)
     if SUPPORT.ready_process("manager") != manager_before:
         raise SuiteError("Manager process changed during Security restoration")
+    if SUPPORT.ready_process("develop") != develop_before:
+        raise SuiteError("Develop process changed during Security restoration")
     after_identities = [validate_user_identity(applicant, tenant_id, APPLICANT_PERMISSIONS, "applicant"),
                         validate_user_identity(approver, tenant_id, APPROVER_PERMISSIONS, "approver")]
     if after_identities != identities:
         raise SuiteError("Security outage changed the two ordinary Users or Tenant")
     history = verify_approval_history(approver, request_id, "expired")
-    return {"request_id": request_id, "exemption_id": exemption_id,
+    return {"request_id": request_id, "exemption_id": exemption_id, "develop_exemption_id": develop_grant,
+            "develop_history_while_unavailable_verified": True, "develop_process_unchanged": True,
+            "develop_execution_id": develop_execution["execution_id"],
             "authorization_seconds": 90, "expires_at": expires_at.isoformat(),
             "connection_refusals": refusals, **previews,
             "manager_process_unchanged": True, "manager_process": manager_before,
             "security_process": {"before": security_before, "after": security_after},
             "same_users_verified": True, "expired_approval_history": history}
+
+
+def develop_history_evidence(execution: object, expected: Mapping[str, object]) -> dict[str, object]:
+    item = _object(execution, "Develop history")
+    if item.get("status") != "success" or "protected_query_history" in json.dumps(item):
+        raise SuiteError("Develop history did not return a safe successful result")
+    result = _object(_object(item.get("metadata"), "Develop metadata").get("result"), "Develop result")
+    if result.get("columns") != ["id", "phone"]:
+        raise SuiteError("Develop history returned unexpected output columns")
+    rows = _array(_object(result.get("summary"), "Develop summary").get("preview_rows"), "Develop rows")
+    actual = {str(row.get("id")): row.get("phone") for row in rows if isinstance(row, dict)}
+    if len(rows) != len(expected) or actual != expected:
+        raise SuiteError("Develop current-user protected output mismatch")
+    return {"records": len(rows), "private_history_excluded": True}
+
+
+def validate_develop_scope_report(payload: object) -> dict[str, object]:
+    report = _object(payload, "Develop plaintext report")
+    expected = {"manager_only_does_not_authorize_develop": True, "explicit_two_outlet_approval": True,
+                "authorized_query_verified": True, "other_user_masked": True,
+                "same_history_masked_at_expiry": True, "same_history_masked_at_revocation": True,
+                "manager_grant_independent": True, "private_history_excluded": True, "records": 3}
+    if set(report) != set(expected) | {"authorized_execution_id", "revoked_execution_id", "request_ids", "exemption_ids"}:
+        raise SuiteError("Develop plaintext report fields are incomplete or unexpected")
+    if any(type(report.get(key)) is not type(value) or report.get(key) != value for key, value in expected.items()):
+        raise SuiteError("Develop plaintext evidence is incomplete")
+    ids = [report["authorized_execution_id"], report["revoked_execution_id"]]
+    for key, count in (("request_ids", 2), ("exemption_ids", 2)):
+        if not isinstance(report[key], list) or len(report[key]) != count:
+            raise SuiteError("Develop plaintext audit identifiers are incomplete")
+        ids.extend(report[key])
+    try:
+        if len(set(ids)) != len(ids) or any(not isinstance(value, str) or str(uuid.UUID(value)) != value or uuid.UUID(value).int == 0 for value in ids):
+            raise ValueError("invalid identifiers")
+    except (ValueError, TypeError, AttributeError):
+        raise SuiteError("Develop plaintext evidence has invalid or reused identifiers")
+    return report
+
+
+def exercise_develop_scopes(applicant: GatewayClient, approver: GatewayClient, engine_id: int,
+                            locator: str, identity: str, assessment_id: str, deadline: float) -> dict[str, object]:
+    scopes = (("manager", "preview"), ("develop", "query"))
+    query = "SELECT id, phone FROM addp_online_security.exemption_source ORDER BY id"
+    grants: list[str] = []
+    requests: list[str] = []
+
+    def execute(client: GatewayClient, expected: Mapping[str, object]) -> dict[str, object]:
+        execution = DEVELOP.develop_execution(client, engine_id, locator, deadline, query, "sql")
+        develop_history_evidence(execution, expected)
+        return execution
+
+    def history(execution_id: str, expected: Mapping[str, object]) -> dict[str, object]:
+        execution = applicant.request("GET", f"/api/v1/develop/executions/{urllib.parse.quote(execution_id)}", (200,)).payload
+        develop_history_evidence(execution, expected)
+        return _object(execution, "Develop history")
+
+    def approve(seconds: int) -> tuple[str, datetime]:
+        request_id, manager_grant, expires = approve_access_request(applicant, approver, assessment_id, seconds, scopes)
+        requests.append(request_id)
+        detail = _object(approver.request("GET", f"/api/v1/security/protection-access-requests/{urllib.parse.quote(request_id)}", (200,)).payload, "multi-outlet approval")
+        authorizations = _array(detail.get("authorizations"), "multi-outlet grants")
+        if {(grant.get("consumer_owner"), grant.get("action")) for grant in authorizations} != set(scopes):
+            raise SuiteError("multi-outlet approval lost its explicit scope")
+        for grant in authorizations:
+            grant_id = grant.get("exemption_id")
+            if not isinstance(grant_id, str) or not grant_id:
+                raise SuiteError("multi-outlet approval is missing a grant")
+            grants.append(grant_id)
+        while time.monotonic() < deadline:
+            ready = True
+            for owner, action in scopes:
+                path = "/api/v1/security/protection-access-request-targets?" + urllib.parse.urlencode({"target_identity": identity, "consumer_owner": owner, "action": action})
+                targets = _object(applicant.request("GET", path, (200,)).payload, "outlet targets").get("data", [])
+                matches = [target for target in targets if target.get("assessment_id") == assessment_id]
+                ready = ready and len(matches) == 1 and bool(matches[0].get("active_exemption_id")) and matches[0].get("projection_acknowledged") is True
+            if ready:
+                develop_grant = next(grant["exemption_id"] for grant in authorizations if grant["consumer_owner"] == "develop")
+                return develop_grant, expires
+            time.sleep(1)
+        raise SuiteError("explicit outlet grants did not synchronize")
+
+    try:
+        baseline = execute(applicant, MASKED_VALUES)
+        _, expires = approve(45)
+        wait_for_manager_values(applicant, locator, RAW_VALUES, "multi-outlet", deadline)
+        authorized = execute(applicant, RAW_VALUES)
+        other = execute(approver, MASKED_VALUES)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        if remaining > 0:
+            time.sleep(remaining + 1)
+        history(authorized["execution_id"], MASKED_VALUES)
+        execute(applicant, MASKED_VALUES)
+        develop_grant, _ = approve(120)
+        second = execute(applicant, RAW_VALUES)
+        revoke_exemption(approver, develop_grant)
+        while time.monotonic() < deadline:
+            try:
+                history(second["execution_id"], MASKED_VALUES)
+                break
+            except SuiteError:
+                time.sleep(1)
+        else:
+            raise SuiteError("revoked Develop history remained plaintext")
+        wait_for_manager_values(applicant, locator, RAW_VALUES, "Manager grant remains independent", deadline)
+        return validate_develop_scope_report({"manager_only_does_not_authorize_develop": True, "explicit_two_outlet_approval": True,
+                "authorized_query_verified": True, "other_user_masked": True,
+                "same_history_masked_at_expiry": True, "same_history_masked_at_revocation": True,
+                "manager_grant_independent": True, "private_history_excluded": True, "records": 3,
+                "authorized_execution_id": authorized["execution_id"], "revoked_execution_id": second["execution_id"],
+                "request_ids": requests.copy(), "exemption_ids": sorted(set(grants))})
+    finally:
+        errors = []
+        for grant_id in set(grants):
+            try:
+                state = _object(approver.request("GET", f"/api/v1/security/protection-exemptions/{urllib.parse.quote(grant_id)}", (200,)).payload, "cleanup grant")
+                if state.get("effective_state") == "active":
+                    revoke_exemption(approver, grant_id)
+            except Exception as error:
+                errors.append(type(error).__name__)
+        if errors:
+            raise SuiteError("multi-outlet cleanup failed: " + ",".join(errors))
 
 
 def run_scenario(
@@ -525,7 +671,7 @@ def run_scenario(
     if len(target) != 1 or target[0].get("requestable") is not True:
         raise SuiteError("formal phone field is not requestable from Manager preview")
     approver.request("POST", "/api/v1/security/protection-access-requests", (403,), {
-        "assessment_id": assessment_id, "consumer_owner": "manager", "action": "preview",
+        "assessment_id": assessment_id, "scopes": [{"consumer_owner": "manager", "action": "preview"}],
         "requested_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=authorization_seconds)).isoformat(),
         "rationale": "Hosted Online approver cannot request",
     })
@@ -535,6 +681,9 @@ def run_scenario(
     authorized = wait_for_manager_values(
         applicant, source_locator, RAW_VALUES, "authorized", deadline
     )
+    manager_only_query = DEVELOP.develop_execution(applicant, engine_id, source_locator, deadline,
+        "SELECT id, phone FROM addp_online_security.exemption_source ORDER BY id", "sql")
+    develop_history_evidence(manager_only_query, MASKED_VALUES)
     other_subject = wait_for_manager_values(
         approver, source_locator, MASKED_VALUES, "other-subject", deadline
     )
@@ -558,10 +707,11 @@ def run_scenario(
     revoked_history = verify_approval_history(approver, revoked_request_id, "revoked")
 
     outage = exercise_security_unavailability(applicant, approver, tenant_id, source_locator,
-        target_identity, assessment_id, [applicant_identity, approver_identity], deadline)
+        target_identity, assessment_id, [applicant_identity, approver_identity], deadline, engine_id)
+    develop_scopes = exercise_develop_scopes(applicant, approver, engine_id, source_locator, target_identity, assessment_id, deadline)
 
     return {
-        "schema_version": "addp.security-plaintext-access-online/v4",
+        "schema_version": "addp.security-plaintext-access-online/v5",
         "result": "passed",
         "identities": {
             "applicant": applicant_identity,
@@ -594,11 +744,12 @@ def run_scenario(
             "revoked_approval_history": revoked_history,
         },
         "security_unavailability": outage,
+        "develop_plaintext": develop_scopes,
         "created_resources": 0,
         "deleted_resources": 0,
         "residual_resources": 0,
-        "audit_retained": {"access_request_ids": [request_id, revoked_request_id, outage["request_id"]],
-                           "exemption_ids": sorted({exemption_id, revoked_exemption_id, outage["exemption_id"]})},
+        "audit_retained": {"access_request_ids": [request_id, revoked_request_id, outage["request_id"]] + develop_scopes["request_ids"],
+                           "exemption_ids": sorted({exemption_id, revoked_exemption_id, outage["exemption_id"], outage["develop_exemption_id"], *develop_scopes["exemption_ids"]})},
     }
 
 
@@ -606,13 +757,13 @@ def validate_plaintext_browser_report(payload: object, environment: Mapping[str,
                                       api_report: Mapping[str, object]) -> dict[str, object]:
     report = _object(payload, "plaintext browser report")
     expected = {
-        "schema_version": "addp.security-plaintext-access-browser/v1", "result": "passed",
+        "schema_version": "addp.security-plaintext-access-browser/v2", "result": "passed",
         "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
         "tenant_id": environment["ADDP_ONLINE_TEST_TENANT_ID"],
         "applicant_id": api_report["identities"]["applicant"]["principal_id"],
         "approver_id": api_report["identities"]["approver"]["principal_id"],
         "records": 3, "isolated_browser_contexts": True, "same_users_verified": True,
-        "request_from_manager_ui": True, "approval_from_security_ui": True,
+        "request_from_manager_ui": True, "approval_from_security_ui": True, "multi_outlet_request_verified": True,
         "authorized_applicant_verified": True, "other_subject_protected": True,
         "expired_preview_protected": True, "expired_history_verified": True,
         "revocation_from_security_ui": True, "revoked_preview_protected": True,

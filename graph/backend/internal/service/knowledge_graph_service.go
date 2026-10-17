@@ -38,6 +38,7 @@ func (s *KnowledgeGraphService) Create(ctx context.Context, tenantID uint, req *
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrGraphTargetInvalid, err)
 	}
+	defer target.close()
 	if _, err = target.query(ctx, "RETURN 1 AS available", nil); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrGraphTargetInvalid, err)
 	}

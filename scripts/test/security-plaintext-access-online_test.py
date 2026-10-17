@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from datetime import datetime, timedelta, timezone
 from contextlib import ExitStack
 import time
+import uuid
 
 
 SCRIPT = Path(__file__).with_name("security-plaintext-access-online.py")
@@ -21,6 +22,31 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
+    def test_develop_history_report_requires_complete_distinct_evidence(self):
+        report = {key: True for key in (
+            'manager_only_does_not_authorize_develop', 'explicit_two_outlet_approval',
+            'authorized_query_verified', 'other_user_masked', 'same_history_masked_at_expiry',
+            'same_history_masked_at_revocation', 'manager_grant_independent', 'private_history_excluded')}
+        report.update(records=3, authorized_execution_id=str(uuid.uuid4()), revoked_execution_id=str(uuid.uuid4()),
+                      request_ids=[str(uuid.uuid4()), str(uuid.uuid4())],
+                      exemption_ids=[str(uuid.uuid4()), str(uuid.uuid4())])
+        self.assertEqual(ONLINE.validate_develop_scope_report(report), report)
+        invalid = []
+        for key in report:
+            missing = report.copy()
+            del missing[key]
+            invalid.append(missing)
+        invalid.extend([
+            dict(report, records=True), dict(report, private_history_excluded=False),
+            dict(report, same_history_masked_at_expiry=1), dict(report, unexpected=True),
+            dict(report, exemption_ids=[report['exemption_ids'][0]] * 2),
+            dict(report, request_ids=[str(uuid.UUID(int=0)), report['request_ids'][1]]),
+            dict(report, revoked_execution_id=report['authorized_execution_id']),
+            dict(report, exemption_ids=[report['request_ids'][0], report['exemption_ids'][1]])])
+        for payload in invalid:
+            with self.subTest(payload=payload), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_develop_scope_report(payload)
+
     def test_applicant_rejects_custom_role_with_approval_permission(self):
         permissions = list(ONLINE.APPLICANT_PERMISSIONS)
         context = {"principal": {"type": "user", "id": "41"},
@@ -87,7 +113,7 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
         applicant.request.return_value = ONLINE.SUPPORT.Response(201, {"id": "request-1", "state": "pending", "version": "1"})
         approver.request.side_effect = [
             ONLINE.SUPPORT.Response(200, {"data": [{"id": "request-1", "version": "2"}], "total_pages": 1}),
-            ONLINE.SUPPORT.Response(200, {"state": "approved", "exemption_id": "grant-1"}),
+            ONLINE.SUPPORT.Response(200, {"state": "approved", "authorizations": [{"consumer_owner": "manager", "action": "preview", "exemption_id": "grant-1"}]}),
         ]
         request_id, grant_id, expiry = ONLINE.approve_access_request(applicant, approver, "assessment-1", 40)
         self.assertEqual((request_id, grant_id), ("request-1", "grant-1"))
@@ -112,7 +138,7 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
             with self.subTest(state=state):
                 approver = Mock()
                 approver.request.return_value = ONLINE.SUPPORT.Response(200, {
-                    "data": [{"id": "request-1", "state": "approved", "authorization_state": state}], "total_pages": 1})
+                    "data": [{"id": "request-1", "state": "approved", "authorizations": [{"consumer_owner": "manager", "action": "preview", "authorization_state": state}]}], "total_pages": 1})
                 ONLINE.verify_approval_history(approver, "request-1", state)
                 path = approver.request.call_args.args[1]
                 self.assertIn("scope=history", path)
@@ -143,11 +169,14 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
              patch.object(ONLINE, 'wait_for_manager_values', side_effect=preview), \
              patch.object(ONLINE, 'verify_approval_history', side_effect=lambda *args: events.append('history-' + args[-1]) or {}), \
              patch.object(ONLINE, 'revoke_exemption', side_effect=lambda *args: events.append('revoke')), \
-             patch.object(ONLINE, 'exercise_security_unavailability', side_effect=lambda *args: events.append('outage') or {'request_id': 'outage-request', 'exemption_id': 'outage-grant'}):
+             patch.object(ONLINE, 'exercise_security_unavailability', side_effect=lambda *args: events.append('outage') or {'request_id': 'outage-request', 'exemption_id': 'outage-grant', 'develop_exemption_id': 'outage-develop-grant'}), \
+             patch.object(ONLINE.DEVELOP, 'develop_execution', return_value={}), \
+             patch.object(ONLINE, 'develop_history_evidence', return_value={}), \
+             patch.object(ONLINE, 'exercise_develop_scopes', return_value={'request_ids': [], 'exemption_ids': []}):
             report = ONLINE.run_scenario(applicant, approver, 2, 17, 120)
         self.assertEqual(events, ['baseline', 'approve', 'authorized', 'other-subject', 'expired', 'history-expired',
                                   'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked', 'outage'])
-        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v4')
+        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v5')
         self.assertIn('outage-request', report['audit_retained']['access_request_ids'])
         self.assertIn('outage-grant', report['audit_retained']['exemption_ids'])
         self.assertEqual(report['security_unavailability']['request_id'], 'outage-request')
@@ -193,12 +222,12 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
                'fixture': {'source_locator': 'addp://engine/17/path/addp_online_security/exemption_source?type=table',
                            'security_assessment_id': 'assessment'},
                'audit_retained': {'access_request_ids': ['api-1', 'api-2']}}
-        report = {'schema_version': 'addp.security-plaintext-access-browser/v1', 'result': 'passed',
+        report = {'schema_version': 'addp.security-plaintext-access-browser/v2', 'result': 'passed',
                   'run_id': 'run-1', 'tenant_id': '2', 'applicant_id': '41', 'approver_id': '42',
                   'records': 3, 'request_ids': ['browser-1', 'browser-2'],
                   'browser_warning_errors': 0, 'failed_business_responses': 0, 'anonymous_refresh_401': 2}
         for flag in ('isolated_browser_contexts', 'same_users_verified', 'request_from_manager_ui',
-                     'approval_from_security_ui', 'authorized_applicant_verified', 'other_subject_protected',
+                     'approval_from_security_ui', 'multi_outlet_request_verified', 'authorized_applicant_verified', 'other_subject_protected',
                      'expired_preview_protected', 'expired_history_verified', 'revocation_from_security_ui',
                      'revoked_preview_protected', 'revoked_history_verified', 'null_preserved'):
             report[flag] = True
@@ -309,7 +338,9 @@ class SecurityUnavailabilityTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE.SUPPORT, 'ready_process', side_effect=ready))
             stack.enter_context(patch.object(ONLINE, 'approve_access_request', return_value=('outage-request', 'outage-grant', expiry)))
             stack.enter_context(patch.object(ONLINE, 'wait_for_manager_values', return_value={"rows": 3, "plaintext": True}))
-            stack.enter_context(patch.object(ONLINE, 'wait_for_current_grant'))
+            stack.enter_context(patch.object(ONLINE, 'wait_for_current_grant', return_value='outage-develop-grant'))
+            stack.enter_context(patch.object(ONLINE.DEVELOP, 'develop_execution', return_value={'execution_id':'outage-develop'}))
+            stack.enter_context(patch.object(ONLINE, 'develop_history_evidence', return_value={}))
             stack.enter_context(patch.object(ONLINE.SUPPORT, 'run_security_lifecycle', side_effect=lifecycle))
             stack.enter_context(patch.object(ONLINE.SUPPORT, 'security_listener_refused', side_effect=probe))
             stack.enter_context(patch.object(ONLINE, 'manager_evidence', side_effect=preview))
@@ -319,7 +350,7 @@ class SecurityUnavailabilityTest(unittest.TestCase):
             wall = stack.enter_context(patch.object(ONLINE, 'datetime', wraps=datetime))
             wall.now.side_effect = lambda *args: now[0]
             report = ONLINE.exercise_security_unavailability(applicant, approver, 2, 'locator', 'target',
-                'assessment', identities, time.monotonic() + 120)
+                'assessment', identities, time.monotonic() + 120, 17)
         return report, events
 
     def test_outage_proves_both_subjects_before_and_after_real_expiry_then_recovers(self):

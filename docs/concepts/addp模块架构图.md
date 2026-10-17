@@ -240,7 +240,7 @@ graph TB
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
 - **源数据授权主线（已确认，表级贯通待实现）**: Catalog 维护企业责任与业务关联，System 引擎访问控制领域唯一维护物理源数据规则，Manager、Develop、Quality、Transfer 等执行相同权威规则；专业模型、服务、应用等对象的授权仍归各自 owner。责任不自动赋予访问或办理权限，业务确认不等于授权生效，Catalog 不是实际访问的运行前提。分工、接入限时只读与责任移交遵循 `docs/spec/addp授权上下文规范.md` 5.5，不新增 System IAM 中央业务 ACL。
 - **数据标准主线**: Standard 拥有业务域、术语、数据元、码值集、单位、指标定义和标准来源文档等语义契约；Model 拥有逻辑模型、公共/一致性维度、维度层级和指标实现，并冻结采用的 Standard 修订；Catalog 拥有实际字段/组件到标准修订的映射；Quality 拥有规则应用、执行、符合性结果和问题。Standard 可以聚合展示落标与符合性，但不复制后三者的事实。
-- **领域本体主线**: 平台能力语义、租户领域语义和运行时业务事实分层组合。Ontology 管理自有本体定义、修订、规则及未来的本体专用数据绑定；已有专业定义和映射仍引用各 owner。除 System 和自身 PG/FalkorDB Infra 外，不假定其他业务模块存在；按需通过正式 Client SDK/API 协作，失败只影响依赖该能力的请求。Catalog 提供可选企业身份、责任和治理关联，不是本体建模或真实事实判断的必经入口。当前已实现原生 Tenant 定义、发布、Agent 定义读取与手工试算，平台本体、数据绑定及真实事实求值尚未实现；详见 [Ontology 最小设计契约](../next/ADDP%20Ontology最小设计契约.md)。
+- **领域本体主线**: 平台能力语义、租户领域语义和运行时业务事实分层组合。Ontology 管理自有本体定义、修订、规则及未来的本体专用数据绑定；已有专业定义和映射仍引用各 owner。除 System 和自身 PG/FalkorDB Infra 外，不假定其他业务模块存在；按需通过正式 Client SDK/API 协作，失败只影响依赖该能力的请求。Catalog 提供可选企业身份、责任和治理关联，不是本体建模或真实事实判断的必经入口。当前已实现原生 Tenant 定义、发布、Agent 定义读取与手工试算，以及平台 Transfer 创建能力的发布和同版图依赖消费；数据绑定及真实业务事实求值尚未实现；详见 [本体定义与发布规范](../spec/addp本体定义与发布规范.md)。
 - **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
 - **Worker运行时**: Quality、Meta、Security 与 Transfer bounded execution 使用 owner 模块附属的独立 Worker；Develop Query、Manager bounded 与 Model logical table materialization 使用 owner Backend 内嵌 Supervisor。每种 task type 只能选择其中一条路线。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
@@ -473,7 +473,7 @@ graph TB
 
 ## Monitor 模块
 
-Monitor 模块当前提供**统一运行监控**及独立的 Platform 日志链路健康与告警。2026-10-04 已确认扩展平台运行观测，覆盖 ADDP 节点、运行实例和明确纳管引擎的资源、服务质量与关联诊断；主机资源观测与独立可选指标设施已分批实施；实例资源、引擎专业指标、拓扑及追踪仍待实施，依赖矩阵与分期见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+Monitor 模块当前提供**统一运行监控**及独立的 Platform 日志链路健康与告警。2026-10-04 已确认扩展平台运行观测，覆盖 ADDP 节点、运行实例和明确纳管引擎的资源、服务质量与关联诊断；主机资源观测与独立可选指标设施已分批实施；实例自身 CPU/RSS/时长及趋势已接入；引擎专业指标、容器观测、拓扑及追踪仍待实施，依赖矩阵与分期见 [平台运行观测规范](../spec/addp平台运行观测规范.md)。
 
 ```mermaid
 graph TB
@@ -1196,8 +1196,8 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 - 可选观测设施和 Monitor 不进入其他业务模块的启动、Ready 或 Gateway 路由条件；Monitor 整体 Ready 不包含可选观测后端，执行查询与资源/日志/追踪请求分别处理错误。
 - 未启用、配置缺失、设施故障、目标未接入、无样本、过期与不支持分别表达；未知观测不改变任务、租约或引擎事实，也不能恢复告警。
 - 首期平台资源视图不授予 Tenant 数据、SQL、任务结果或主机管理权。集中日志正文保持下述 System 授权主路径。
-- 日志、指标设施已按显式部署开关组织；实际覆盖仍须来源部署与授权验收。详细契约见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+- 日志、指标设施已按显式部署开关组织；实际覆盖仍须来源部署与授权验收。详细契约见 [平台运行观测规范](../spec/addp平台运行观测规范.md)。
 
 ## 模块服务运行日志边界
 
-System 提供 Platform 实例运行日志的授权查询和页面入口；Infra 的 Alloy 采集受控实例文件，Loki 保存日志，使用独立 MinIO bucket。Monitor 拥有任务执行监控及独立的平台日志链路告警域；Infra 定时采集节点安全计数并通过受认证观测协议上报，Monitor 判定、持久保存并复用通知传输能力，System 提供平台链路摘要和处理入口。Monitor 不读取业务节点文件，平台事件不绑定虚构 Tenant 或任务。日志设施故障不作为业务 Ready 前置条件，也不改写模块租约状态。详细契约见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
+System 提供 Platform 实例运行日志的授权查询和页面入口；Infra 的 Alloy 采集受控实例文件，Loki 保存日志，使用独立 MinIO bucket。Monitor 拥有任务执行监控及独立的平台日志链路告警域；Infra 定时采集节点安全计数并通过受认证观测协议上报，Monitor 判定、持久保存并复用通知传输能力，System 提供平台链路摘要和处理入口。Monitor 不读取业务节点文件，平台事件不绑定虚构 Tenant 或任务。日志设施故障不作为业务 Ready 前置条件，也不改写模块租约状态。详细契约见 [模块服务运行日志规范](../spec/addp模块服务运行日志规范.md)，未完成验收见 [日志专题](../next/ADDP模块服务运行日志设计.md)。

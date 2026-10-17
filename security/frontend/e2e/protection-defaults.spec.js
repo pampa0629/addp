@@ -255,9 +255,11 @@ test('opens the protected resource and focuses the approved grant from review hi
     reviewer: { type: 'user', id: '61', display_name: '审批用户甲' },
     decided_at: '2026-09-11T08:10:00Z',
     decision_rationale: '核验通过，批准临时查看原值',
-    authorization_state: 'active',
-    authorized_until: '2026-09-30T10:00:00Z',
-    exemption_id: exemptionID
+    scopes:[{consumer_owner:'manager',action:'preview'},{consumer_owner:'develop',action:'query'}],
+    authorizations:[
+      {consumer_owner:'manager',action:'preview',authorization_state:'active',authorized_until:'2026-09-30T10:00:00Z',exemption_id:exemptionID},
+      {consumer_owner:'develop',action:'query',authorization_state:'revoked',authorized_until:'2026-09-30T10:00:00Z',exemption_id:'develop-grant'}
+    ]
   })
 
   await page.goto('/protection-enrollments')
@@ -266,7 +268,9 @@ test('opens the protected resource and focuses the approved grant from review hi
 
   const approvedRow = accessReviewCard.getByRole('row').filter({ hasText: '申请用户甲' })
   await expect(approvedRow).toContainText('生效中')
-  await approvedRow.getByRole('button', { name: '查看授权' }).click()
+  await expect(approvedRow).toContainText('Develop 开发查询')
+  await expect(approvedRow).toContainText('已撤销')
+  await approvedRow.locator('.access-authorization-state').filter({hasText:'Manager 数据预览'}).getByRole('button', { name: '查看授权' }).click()
 
   const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
   const focusedGrant = detailDrawer.locator('.exemption-card.is-focused').filter({ hasText: 'requester-1' })
@@ -769,7 +773,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   const approvalRow = accessReviewCard.getByRole('row').filter({ hasText: '申请用户甲' })
   await approvalRow.getByRole('button', { name: '批准' }).click()
   const approvalDialog = page.getByRole('dialog', { name: '批准' })
-  await expect(approvalDialog.getByText('批准后将为该申请人生成仅限当前字段和数据预览出口的临时原值授权，并在申请期限到达时自动恢复保护。', { exact: true })).toBeVisible()
+  await expect(approvalDialog.getByText('批准后将为该申请人生成仅限当前字段和所选使用范围的临时原值授权，并在申请期限到达时自动恢复保护。', { exact: true })).toBeVisible()
   await expect(approvalDialog.getByText('business.customers · customer.phone', { exact: true })).toBeVisible()
   await expect(approvalDialog.getByText(/申请用户甲/)).toBeVisible()
   await approvalDialog.getByRole('button', { name: '确认批准' }).click()
@@ -1287,8 +1291,8 @@ async function installMockBackend(page, options = {}) {
         id: accessApprovalRequestID,
         assessment_id: assessmentID,
         assessment_revision: '1',
-        consumer_owner: 'manager',
-        action: 'preview',
+        scopes: [{ consumer_owner: 'manager', action: 'preview' }],
+        authorizations: [],
         subject_type: 'user',
         subject_id: '51',
         requested_expires_at: '2026-09-25T10:00:00Z',
@@ -1306,8 +1310,8 @@ async function installMockBackend(page, options = {}) {
         id: accessRejectionRequestID,
         assessment_id: assessmentID,
         assessment_revision: '1',
-        consumer_owner: 'manager',
-        action: 'preview',
+        scopes: [{ consumer_owner: 'manager', action: 'preview' }],
+        authorizations: [],
         subject_type: 'user',
         subject_id: '52',
         requested_expires_at: '2026-09-26T10:00:00Z',

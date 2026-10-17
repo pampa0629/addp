@@ -119,7 +119,7 @@ func (h *EnrollmentHandler) Get(c *gin.Context) {
 }
 
 // @Summary 重新纳入数据保护 | Re-enroll data protection
-// @Description 从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active
+// @Description 从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过所有必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json
@@ -289,13 +289,15 @@ func protectionConsumerOwner(c *gin.Context) string {
 		return "develop"
 	case "addp-service":
 		return "service"
+	case "addp-graph":
+		return "graph"
 	default:
 		return ""
 	}
 }
 
 // @Summary 修改资源保护有效期 | Update resource protection validity
-// @Description 资源级长期有效或指定未来截止时间；同事务递增版本并同步四 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish four owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict
+// @Description 资源级长期有效或指定未来截止时间；同事务递增版本并同步所有必需 Owner 新修订，不重新发现或解除保护；版本冲突返回 409 resource_version_conflict | Set permanent protection or an explicit future deadline; atomically increment the enrollment version and publish all required owner revisions without rediscovery or release; stale versions return 409 resource_version_conflict
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json

@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/graph/i18n"
+	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,5 +36,29 @@ func TestGraphIndexConflictUsesLocalizedConflictStatus(t *testing.T) {
 				t.Fatalf("untranslated conflict: %s", response.Body.String())
 			}
 		})
+	}
+}
+
+func TestGraphProtectionErrorDoesNotExposeSourceDetails(t *testing.T) {
+	for _, language := range []string{"en", "zh-cn"} {
+		router := gin.New()
+		router.Use(commoni18n.I18nMiddleware())
+		router.GET("/read", func(c *gin.Context) {
+			graphOperationError(c, fmt.Errorf("private graph/password: %w", service.ErrGraphProtectionRequired))
+		})
+		request := httptest.NewRequest("GET", "/read", nil)
+		request.Header.Set("Accept-Language", language)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != 403 || strings.Contains(response.Body.String(), "private") || strings.Contains(response.Body.String(), "password") {
+			t.Fatalf("unsafe response: %d %s", response.Code, response.Body.String())
+		}
+		expected := "Data protection"
+		if language == "zh-cn" {
+			expected = "数据保护"
+		}
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatal(response.Body.String())
+		}
 	}
 }

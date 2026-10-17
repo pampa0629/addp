@@ -37,6 +37,7 @@ func NewBrowseHandler(graphDataSvc *service.GraphDataService, schemaInference *s
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/browse-snapshot [get]
 func (h *BrowseHandler) GetBrowseSnapshot(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -64,6 +65,7 @@ func (h *BrowseHandler) GetBrowseSnapshot(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/search [post]
 func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -95,6 +97,7 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/expand [post]
 func (h *BrowseHandler) ExpandTarget(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -154,6 +157,7 @@ func validateExpandRequest(req *models.ExpandRequest) error {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/path [post]
 func (h *BrowseHandler) FindPath(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -181,6 +185,7 @@ func (h *BrowseHandler) FindPath(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/constraints [get]
 func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 	id := parseUintParam(c, "id")
@@ -208,6 +213,7 @@ func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
 // @x-addp-conditional-permissions ["graph.ontology.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/infer-schema [get]
 func (h *BrowseHandler) InferSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -254,6 +260,7 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read","graph.ontology.update"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/infer-schema/apply [post]
 func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")

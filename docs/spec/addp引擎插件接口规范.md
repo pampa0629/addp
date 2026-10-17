@@ -78,6 +78,8 @@ type InstanceCapabilitiesResolver interface {
 
 System 把成功探测的非空结果保存为 Engine Instance 的只读 `server_version` 和 `server_version_checked_at`。二者由同一次连接观测、同一地址键条件原子更新，不改变 `version` 或 `updated_at`。连接失败、插件未提供版本或临时连接配置测试不覆盖最后一次成功事实；详情同时展示版本和探测时间，不能把最新失败检测时间当成版本探测时间。创建、编辑、恢复请求不接受这两个事实字段，能力声明和连接配置不承载它们。
 
+Spark SQL 的 Thrift 会话用户名只消费插件 `ConnectionSpec` 的 `username`，连接探测、SQL 查询和表读取使用同一字段，不接收 `user` 别名或依赖宿主机用户名。HDFS Simple 的 `user` 与 `HADOOP_USER_NAME` 属于存储/应用身份，不能代替 Thrift 会话身份；两种连接分别按各自契约校验。
+
 ### 内置插件加载入口
 
 每个引擎插件仍在自己的包内通过 `init()` 注册，聚合包只负责按 `EngineOrigin()` 口径统一触发 blank import：
@@ -696,6 +698,10 @@ type FederatedQueryRequest struct {
 - `POST /api/v1/queries`：同步执行一次只读联邦查询。
 
 查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP JSON 解码必须保留整数精度，参数只能通过数据库驱动绑定。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
+
+联邦对象表消费必须显式区分 Source Engine 与 Query Runtime。对象表由 Meta 的 `item.data_type=table`、`item.format`、`item.layout`、`storage.physical_path` 等标准事实确定，不能恢复 `lake_table` item type 或 `lake_mode`。当前 DuckDB 对象表仅开放 Parquet、single/whole；普通 object/file 的目录叶子身份不随表格内容语义改变。
+
+Service 在唯一 `source_snapshot` 中冻结 `object_table` 描述符、`federated_source_engine_ids` 和 `federated_object_tables` 映射，执行时不按同名表重新绑定。关系表使用 Source `engine_id`，联邦 SQL 使用 `runtime_engine_id`，对象表显式保存两者；缺失标准事实须修复扫描后重新发布，不按字段为空或 SQL 文本猜路线。Develop 的查询任务用 `execution_config.engine_id` 绑定 Runtime，候选对象仍保留真实 Source Engine 身份。原生实现与离线扩展生命周期见 [DuckDB Runtime](../../engines/duckdb/README.md)。
 
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 

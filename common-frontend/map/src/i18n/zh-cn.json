@@ -1,6 +1,8 @@
 {
   "map": {
     "preview": "地图预览",
+    "temporarySourceCRS": "本次预览的源坐标系",
+    "selectSourceCRS": "请选择源坐标系",
     "truncated": "内容较大，仅展示部分",
     "shapefileTruncated": "仅展示部分要素",
     "geometryType": "几何类型",

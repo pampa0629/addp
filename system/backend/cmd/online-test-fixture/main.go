@@ -88,6 +88,7 @@ var pgAuthorizationConfirmerPermissions = []string{
 }
 
 var plaintextApplicantPermissions = []string{
+	"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
 	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"security.assessment.read", "security.enrollment.create", "security.enrollment.read",
 	"security.finding.read", "security.finding.update", "security.protection_access_request.create",
@@ -95,6 +96,7 @@ var plaintextApplicantPermissions = []string{
 }
 
 var plaintextApproverPermissions = []string{
+	"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
 	"security.enrollment.read", "meta.catalog.read",
 	"manager.data_item.read", "security.protection_access_request.update",
 	"security.protection_exemption.delete", "security.protection_exemption.read",

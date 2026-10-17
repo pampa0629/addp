@@ -1202,3 +1202,7 @@ ad-hoc-only execution 不要求存在任务定义或声明 TaskProvider capabili
 - Meta 扫描任务细节见 [元数据扫描机制规范](addp元数据扫描机制规范.md)。
 - Transfer 稳定任务语义以本文、[Transfer 任务语义与同步模式](../../transfer/docs/transfer-任务语义与同步模式.md) 和 [Transfer 模块基本概念及配置说明](../../transfer/docs/transfer-基本概念及配置说明.md) 为准；尚未实现的能力统一记录在 [Transfer 后续能力清单](../next/transfer后续能力清单.md)。
 - Manager 派生产物任务内部语义后续以 Manager 专题为准。
+
+## Manager 导入的任务与执行边界
+
+Manager 的“导入”是用户动作，不是 Transfer task_type。现有文件导入通过正式 User Client 创建并启动 Transfer sync，Transfer 拥有任务、execution、实际读写、写后扫描与派生血缘；Manager 只拥有上传私有来源及其绑定，不另建导入执行状态机。完整请求和来源核验见[Manager 资源预览与动作规范](../../manager/docs/数据预览与资源树实现规范.md#4-与导入和导出)。导入历史、重试、上传包保留和批量入口的后续设计见[导入待办](../plan/数据导入流程设计.md)，不得将旧计划的定时清理或私有 connector 配置作为当前契约。

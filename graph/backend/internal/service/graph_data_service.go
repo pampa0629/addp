@@ -32,17 +32,20 @@ type GraphDataService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
 	ontologyRepo *repository.OntologyRepository
 	systemClient *commonClient.SystemServiceClient
+	protection   *GraphProtectionGate
 }
 
 func NewGraphDataService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
 	systemClient *commonClient.SystemServiceClient,
+	protection *GraphProtectionGate,
 ) *GraphDataService {
 	return &GraphDataService{
 		graphRepo:    graphRepo,
 		ontologyRepo: ontologyRepo,
 		systemClient: systemClient,
+		protection:   protection,
 	}
 }
 
@@ -69,6 +72,7 @@ func (s *GraphDataService) GetBrowseSnapshot(ctx context.Context, graphID, tenan
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
 	nodeResult, relationshipResult, err := queryBrowseFacts(ctx, engine)
@@ -254,6 +258,7 @@ func (s *GraphDataService) SearchNodes(ctx context.Context, graphID, tenantID ui
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get search ontology: %w", err)
@@ -300,6 +305,7 @@ func (s *GraphDataService) Expand(ctx context.Context, graphID, tenantID uint, r
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
 	semantics := newOntologySemantics(ontology)
@@ -462,6 +468,7 @@ func (s *GraphDataService) FindPath(ctx context.Context, graphID, tenantID uint,
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	nodeColors, edgeColors, edgeDirections := buildVisualMaps(ontology)
 
@@ -479,6 +486,7 @@ func (s *GraphDataService) SyncConstraints(ctx context.Context, graphID, tenantI
 	if err != nil {
 		return err
 	}
+	defer target.close()
 	if len(nodeLabels) == 0 {
 		nodeLabels = []string{entityTypeName}
 	}
@@ -497,6 +505,7 @@ func (s *GraphDataService) GetConstraints(ctx context.Context, graphID, tenantID
 	if err != nil {
 		return nil, err
 	}
+	defer target.close()
 	constraints, err := target.provider.ListGraphConstraints(ctx, target.conn, target.path)
 	if err != nil {
 		return nil, err
@@ -697,6 +706,7 @@ func (s *GraphDataService) MergeEntity(ctx context.Context, graphID, tenantID ui
 	if err != nil {
 		return "", err
 	}
+	defer engine.close()
 
 	labelSelector := nodeLabelsPattern(entityLabels)
 	if labelSelector == "" {
@@ -736,6 +746,7 @@ func (s *GraphDataService) MergeRelation(
 	if err != nil {
 		return "", err
 	}
+	defer engine.close()
 
 	srcSelector, tgtSelector := nodeLabelsPattern(srcLabels), nodeLabelsPattern(tgtLabels)
 	if srcSelector == "" || tgtSelector == "" {
@@ -764,6 +775,7 @@ func (s *GraphDataService) SyncSpatialLayer(ctx context.Context, graphID, tenant
 	if err != nil {
 		return err
 	}
+	defer engine.close()
 
 	if !engine.provider.GraphDialect().Spatial {
 		return fmt.Errorf("target graph does not support spatial layers")
@@ -825,6 +837,7 @@ func (s *GraphDataService) SyncSpatialLayerByConfig(ctx context.Context, graphID
 	if err != nil {
 		return err
 	}
+	defer engine.close()
 
 	if !engine.provider.GraphDialect().Spatial {
 		return fmt.Errorf("target graph does not support spatial layers")
@@ -864,6 +877,7 @@ func (s *GraphDataService) AddNodeToSpatialLayer(ctx context.Context, graphID, t
 	if err != nil {
 		return err
 	}
+	defer engine.close()
 	cypher := fmt.Sprintf(
 		"MATCH (n) WHERE %s = '%s' CALL spatial.addNode('%s', n) YIELD node RETURN node",
 		engine.provider.GraphDialect().ID("n"), escapeCypher(elementId), escapeCypher(layerName),

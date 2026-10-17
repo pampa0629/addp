@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 )
@@ -325,13 +328,24 @@ func (s *QueryExecutionService) executeAndComplete(
 	if err := s.queries.UpdateProgressWithLease(ctx, lease, 30, "执行查询"); err != nil {
 		return err
 	}
+	if authorization == nil || execution.ActorPrincipalID == nil || authorization.ActorPrincipalID != *execution.ActorPrincipalID || authorization.ActorPrincipalID <= 0 {
+		return fmt.Errorf("query plaintext actor is unverified")
+	}
+	queryCtx, capture := protection.WithQueryCapture(ctx, dataprotection.SubjectReference{Type: "user", ID: strconv.FormatInt(authorization.ActorPrincipalID, 10)})
 	result, rowsAffected, queryErr := s.executor.executeQuery(
-		ctx, devTask, execution.ExecutionID, execution.TenantID, authorization,
+		queryCtx, devTask, execution.ExecutionID, execution.TenantID, authorization,
 	)
 	if queryErr != nil {
 		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, queryErr)
 	}
 	metadata := queryExecutionMetadata(result)
+	if capture.History != nil {
+		if limit := devTask.QueryResultLimit; limit > 0 && len(capture.History.Result.Rows) > limit {
+			capture.History.Truncated = true
+			capture.History.Result.Rows = capture.History.Result.Rows[:limit]
+		}
+		metadata[protection.QueryHistoryMetadataKey] = capture.History
+	}
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
 }
 

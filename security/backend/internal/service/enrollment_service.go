@@ -157,39 +157,7 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 		return models.ProtectionEnrollment{}, err
 	}
 	for _, owner := range allRequiredProtectionOwners() {
-		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV4,
-			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
-			ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
-			Target: target, TargetEngineID: snapshot.EngineID, Rules: []dataprotection.Rule{},
-			ValidFrom: now, ExpiresAt: enrollment.ProtectionExpiresAt,
-		}
-		if err := projection.Seal(); err != nil {
-			return models.ProtectionEnrollment{}, err
-		}
-		payload, err := json.Marshal(projection)
-		if err != nil {
-			return models.ProtectionEnrollment{}, err
-		}
-		payloadText := string(payload)
-		change := models.ProtectionProjectionChange{
-			ChangeID: uuid.NewString(), TenantID: tenantID, EnrollmentID: enrollment.ID,
-			ConsumerOwner: owner, Operation: dataprotection.ChangeOperationUpsert,
-			ProjectionID: projection.ProjectionID, Revision: projection.Revision,
-			TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
-			TargetIdentity:    target.ResourceIdentity,
-			ProjectionPayload: &payloadText, CreatedAt: now,
-		}
-		if err := tx.Create(&change).Error; err != nil {
-			return models.ProtectionEnrollment{}, err
-		}
-		record := models.ProtectionProjectionRecord{
-			ID: projection.ProjectionID, TenantID: tenantID, EnrollmentID: enrollment.ID,
-			ConsumerOwner: owner, Revision: projection.Revision, State: projection.State,
-			ProjectionPayload: payloadText, PublishedSequence: change.Sequence,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := tx.Create(&record).Error; err != nil {
+		if err := installEnrollmentOwnerProjection(tx, enrollment, owner, now); err != nil {
 			return models.ProtectionEnrollment{}, err
 		}
 	}
@@ -854,4 +822,50 @@ func lockProtectionEnrollment(tx *gorm.DB, tenantID int64, id string) (models.Pr
 		return row, policyDBError(err)
 	}
 	return row, nil
+}
+
+func installEnrollmentOwnerProjection(tx *gorm.DB, enrollment models.ProtectionEnrollment, owner string, now time.Time) error {
+	if err := dataprotection.VerifyTargetEngine(enrollment.Target(), enrollment.TargetEngineID, enrollment.TargetFullName); err != nil {
+		return err
+	}
+	validFrom := now
+	if enrollment.ProtectionExpiresAt != nil && !now.Before(*enrollment.ProtectionExpiresAt) {
+		validFrom = enrollment.CreatedAt
+	}
+	projection := dataprotection.Projection{
+		SchemaVersion: dataprotection.ProjectionSchemaV4,
+		ProjectionID:  uuid.NewString(), Revision: revisionString(1),
+		ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
+		Target: enrollment.Target(), TargetEngineID: enrollment.TargetEngineID, Rules: []dataprotection.Rule{},
+		ValidFrom: validFrom, ExpiresAt: enrollment.ProtectionExpiresAt,
+	}
+	if err := projection.Seal(); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(projection)
+	if err != nil {
+		return err
+	}
+	payloadText := string(payload)
+	change := models.ProtectionProjectionChange{
+		ChangeID: uuid.NewString(), TenantID: enrollment.TenantID, EnrollmentID: enrollment.ID,
+		ConsumerOwner: owner, Operation: dataprotection.ChangeOperationUpsert,
+		ProjectionID: projection.ProjectionID, Revision: projection.Revision,
+		TargetOwner: enrollment.TargetOwner, TargetType: enrollment.TargetType,
+		TargetIdentity:    enrollment.TargetIdentity,
+		ProjectionPayload: &payloadText, CreatedAt: now,
+	}
+	if err := tx.Create(&change).Error; err != nil {
+		return err
+	}
+	record := models.ProtectionProjectionRecord{
+		ID: projection.ProjectionID, TenantID: enrollment.TenantID, EnrollmentID: enrollment.ID,
+		ConsumerOwner: owner, Revision: projection.Revision, State: projection.State,
+		ProjectionPayload: payloadText, PublishedSequence: change.Sequence,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&record).Error; err != nil {
+		return err
+	}
+	return nil
 }

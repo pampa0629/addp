@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
@@ -463,6 +464,7 @@ func (h *OntologyHandler) CreateVersion(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.ontology.update"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /ontologies/{id}/entity-types/{eid}/sync-constraints [post]
 func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -489,7 +491,7 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 	}
 
 	if err := h.graphDataSvc.SyncConstraints(c.Request.Context(), req.GraphID, tenantID, et.Name, h.svc.EntityTypeNodeLabels(ontologyID, tenantID, et.Name), props); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "constraints synced"})
@@ -511,6 +513,7 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.ontology.update"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /ontologies/{id}/entity-types/{eid}/sync-spatial-layer [put]
 func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 	ontologyID := parseUintParam(c, "id")
@@ -534,7 +537,7 @@ func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 	}
 
 	if err := h.graphDataSvc.SyncSpatialLayer(c.Request.Context(), req.GraphID, tenantID, *et); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 
@@ -632,6 +635,7 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.ontology.read","system.engine_catalog.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /ontologies/infer-schema/from-engine [post]
 func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -652,7 +656,7 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, preview)
@@ -673,6 +677,7 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.ontology.update","system.engine_catalog.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /ontologies/{id}/infer-schema/from-engine/apply [post]
 func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -697,7 +702,7 @@ func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -706,22 +711,14 @@ func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 // --- helpers ---
 
 func getTenantID(c *gin.Context) uint {
-	if v, exists := c.Get("tenant_id"); exists {
-		if id, ok := v.(uint); ok {
-			return id
-		}
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		return 0
 	}
-	return 1
+	return uint(tenantID)
 }
 
-func getUserID(c *gin.Context) uint {
-	if v, exists := c.Get("user_id"); exists {
-		if id, ok := v.(uint); ok {
-			return id
-		}
-	}
-	return 0
-}
+func getUserID(c *gin.Context) uint { return commonAuth.GetUserID(c) }
 
 func parseUintParam(c *gin.Context, param string) uint {
 	id, _ := strconv.ParseUint(c.Param(param), 10, 64)

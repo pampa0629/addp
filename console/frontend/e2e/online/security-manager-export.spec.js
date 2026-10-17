@@ -221,8 +221,8 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
     await expect.poll(async () => {
       source = await json(await getAPI().get(enrollmentPath), 'result source synchronization')
       return source.validity_mode === 'permanent' && source.expires_at === null &&
-        source.owner_progress?.length === 4 &&
-        source.owner_progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,manager,service,transfer' &&
+        source.owner_progress?.length === 5 &&
+        source.owner_progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,graph,manager,service,transfer' &&
         source.owner_progress.every(owner => owner.acknowledged === true && owner.projection_state === 'active' && owner.validity === 'valid')
     }, { timeout: 45_000 }).toBe(true)
     const owner = source.owner_progress.find(owner => owner.consumer_owner === 'transfer')
@@ -379,8 +379,8 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     await expect.poll(async () => {
       synchronized = await json(await getAPI().get(enrollmentPath), 'browser synchronized validity')
       const progress = synchronized.owner_progress
-      return Array.isArray(progress) && progress.length === 4 &&
-        progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,manager,service,transfer' &&
+      return Array.isArray(progress) && progress.length === 5 &&
+        progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,graph,manager,service,transfer' &&
         progress.every(owner => owner.acknowledged === true && owner.validity === 'valid' &&
           (until === null ? owner.expires_at === null : Date.parse(owner.expires_at) === Date.parse(until)))
     }, { timeout: 45_000 }).toBe(true)

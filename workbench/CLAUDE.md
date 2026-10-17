@@ -4,7 +4,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 ## 必读文档
 
-- `docs/next/ADDP Workbench数据服务消费与数据应用专题.md`
+- `docs/spec/addp数据服务消费与数据应用规范.md`
 - `docs/concepts/addp术语表.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp新模块开发指南.md`

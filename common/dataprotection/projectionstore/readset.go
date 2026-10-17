@@ -74,11 +74,7 @@ func (s *Store) PrepareQueryProtection(
 	if err != nil {
 		return nil, err
 	}
-	type sourceProtection struct {
-		source plugin.QueryOutputSource
-		rules  []dataprotection.Rule
-	}
-	plans := make([]sourceProtection, 0, len(managed))
+	plans := make([]querySourceProtection, 0, len(managed))
 	derived := []string{}
 	matched := make(map[string]struct{}, len(managed))
 	for _, source := range lineage.Sources {
@@ -100,13 +96,18 @@ func (s *Store) PrepareQueryProtection(
 		}
 		fields := dataprotection.QueryOutputDerivedFields(source, action, rules, subject, now)
 		derived = append(derived, fields...)
-		plans = append(plans, sourceProtection{source: source, rules: rules})
+		plans = append(plans, querySourceProtection{target: target, source: source, rules: rules})
 		matched[target.ResourceIdentity] = struct{}{}
 	}
 	if len(matched) != len(managed) {
 		return nil, errors.New("protected query lineage is incomplete")
 	}
-	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.HistoricalQueryResult, error) {
+		if err := validateOutputProjections(projections); err != nil {
+			return nil, err
+		}
+		return captureAuthorizedQuery(result, plans, actor, tenantID, action)
+	}, Apply: func(result *plugin.QueryResult) error {
 		if err := validateOutputProjections(projections); err != nil {
 			return err
 		}

@@ -1166,7 +1166,10 @@ func (e *DevExecutor) GetExecution(ctx context.Context, executionID string, tena
 		return nil, err
 	}
 
-	result := professionalExecutionResponse(execution)
+	result, err := e.protectedExecutionResponse(ctx, execution)
+	if err != nil {
+		return nil, err
+	}
 
 	// 加载关联的开发任务
 	if execution.SourceTaskID != nil && e.devTaskRepo != nil {
@@ -1266,7 +1269,11 @@ func (e *DevExecutor) ListExecutions(ctx context.Context, req *models.ListExecut
 	// 直接映射，加载关联开发任务
 	result := make([]models.ExecutionWithDevTask, len(executions))
 	for i, exec := range executions {
-		result[i] = *professionalExecutionResponse(exec)
+		visible, err := e.protectedExecutionResponse(ctx, exec)
+		if err != nil {
+			return nil, 0, err
+		}
+		result[i] = *visible
 
 		// 加载关联的开发任务
 		if exec.SourceTaskID != nil && e.devTaskRepo != nil {

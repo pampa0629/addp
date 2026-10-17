@@ -79,7 +79,7 @@ func TestReconcileStructuredOwnerProjectionsUpgradesLegacyEnrollmentOnce(t *test
 	}
 
 	reconciled, err := ReconcileStructuredOwnerProjections(context.Background(), db, now.Add(time.Second))
-	if err != nil || reconciled != 3 {
+	if err != nil || reconciled != len(requiredProtectionOwnerContracts)-1 {
 		t.Fatalf("reconciled = %d, err=%v", reconciled, err)
 	}
 	changes, err := NewEnrollmentService(db).ListChanges(context.Background(), 7, "develop", "", 20)

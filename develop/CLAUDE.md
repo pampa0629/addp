@@ -473,3 +473,5 @@ continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限
 
 
 FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authorization、PreparedGraphQuery、共享图结果与保护门禁，必须显式传递目标 graph locator；无需先创建 Graph 知识图谱实例。`make test-common-falkordb` 的独占真实引擎场景调用 DevExecutor 正式 query 分支，验证执行期连接、表格／图结果、类型化参数、写语句拒绝及受保护目标零结果。该 T2 不是登录／Gateway／浏览器 Hosted T4。支持版本与本地只读语法边界以引擎插件和技术栈规范为准。
+
+2026-10-17 原值查询与历史保护：develop/query 仅消费当前用户显式获批的原值范围，不借用 Manager 授权。执行用户来自受信 Execution Authorization；默认结果继续脱敏，执行时获权字段可保存私有历史。专业详情、列表和轮询在每次读取时以当前用户和本地投影复核，期限结束或撤销回落默认保护；默认规则／结构变化时拒绝旧结果。私有历史不进入 Monitor、TaskProvider 或导出载荷。工作台按服务端原值截止时间清空展示并重新读取，持有原值期间周期复查撤销。Notebook 交互查询从已核验 session 用户匹配同一 query 规则；导出继续独立使用 Transfer 默认保护。相关 T1/T2/T3 与 Hosted v5 结论须分别记录。

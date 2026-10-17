@@ -78,8 +78,8 @@
 
   const component = {
     name: 'GenericContainerPreview',
-    props: ['data', 'activeChildPreview', 'activeChildLoading', 'selectedChildName', 'selectedChildKey', 'selectedRefPath'],
-    emits: ['child-change', 'page-change'],
+    props: ['data', 'activeChildPreview', 'activeChildLoading', 'selectedChildName', 'selectedChildKey', 'selectedRefPath', 'temporaryCrs'],
+    emits: ['child-change', 'page-change', 'update:temporaryCrs'],
     computed: {
       content() {
         return this.data?.object?.content || {}
@@ -164,6 +164,8 @@
         defaultChildKey: this.defaultChildKey,
         selectorLabel: this.selectorLabel,
         activeChildPreview: this.activeChildPreview,
+        temporaryCrs: this.temporaryCrs,
+        'onUpdate:temporaryCrs': value => this.$emit('update:temporaryCrs', value),
         activeChildLoading: Boolean(this.activeChildLoading),
         activeChildPreviewComponent: this.activeChildPreviewComponent,
         selectedChildKey: this.selectedChildKey || this.selectedChildName || '',

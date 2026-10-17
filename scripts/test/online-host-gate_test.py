@@ -208,6 +208,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 ORCHESTRATOR_URL=http://127.0.0.1:8084
                 META_URL=http://127.0.0.1:8082
                 SECURITY_URL=http://127.0.0.1:8194
+                GRAPH_URL=http://127.0.0.1:8186
                 DEVELOP_URL=http://127.0.0.1:8084
                 TRANSFER_URL=http://127.0.0.1:8083
                 CATALOG_URL=http://127.0.0.1:8192

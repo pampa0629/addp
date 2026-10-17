@@ -15,7 +15,7 @@
 - `transfer/docs/transfer-任务语义与同步模式.md`
 - `docs/next/transfer后续能力清单.md`
 
-当前开放格式验收基线已增加 Oracle Spatial -> FileGDB round-trip：真实 PGeo `Loess` MultiPolygon 经统一 Transfer table pipeline 写入 Oracle Spatial，再由 Oracle 原生 reader 写入 GeoPython/OpenFileGDB，并回读验证行数、geometry 类型、空值和无 SRID 语义。该结果只证明 Oracle Spatial 与 FileGDB 的组合链路，不构成 ArcGIS SDE 验收。
+Oracle Spatial、FileGDB/PGeo 和普通 Oracle CDC 的既有能力以正式格式/引擎规范为准，不构成 ArcGIS SDE 验收。
 
 ## 一、目标与非目标
 
@@ -128,15 +128,7 @@ flowchart LR
 
 ### 4.1 当前基线
 
-Oracle `InstanceCapabilitiesResolver` 已按实例只读探测：
-
-- repository owner 必须为 `SDE`。
-- 同一 owner 必须同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS`。
-- 弱签名保持 `not_detected`。
-- 字典可见但核心表读取被拒绝时为 `permission_denied`。
-- 第一阶段固定 `can_enable=false`、`risk_level=high`。
-
-该探测只产生 workspace fact，不改变 Oracle `storage.store` 能力，也不开放 SDE 任务选项。
+已实现的只读 workspace 探测及 can_enable=false 门控，统一维护于[引擎能力声明规范](../spec/addp引擎能力声明规范.md)和[引擎插件接口规范](../spec/addp引擎插件接口规范.md)。探测事实不开放 SDE 数据面；下文仍是待真实许可环境验证的目标契约。
 
 ### 4.2 后续能力结构
 
@@ -445,7 +437,7 @@ SDE logical change 应新增独立变化识别值：
 
 这些测试只能证明前置通用能力，不证明 SDE 可运行。
 
-当前可重复的无许可验收入口为 `make test-arcgis-open-formats`。它在 GeoPython Linux 容器内确认普通 Access 不被提升为 PGeo、真实 PGeo 的 child/catalog/geometry 读取，并通过 Transfer 通用 table pipeline 将 PGeo `WGS84_Points` 和 `Loess` bounded 导入 Oracle `SDO_GEOMETRY`，覆盖 Point/MultiPolygon、空 geometry 和有/无 SRID；另对 `Fault` 的 MultiLineString 做 Runtime 读取验收。它仍不宣称 enterprise geodatabase/SDE 已通过验收。
+无许可前置能力沿根 Makefile 的 `make test-arcgis-open-formats` 验证，具体已实现读写矩阵由[内置格式规范](../spec/addp内置数据类型与文件格式规范.md)维护。该入口不证明 enterprise geodatabase/SDE 可运行。
 
 ### 12.2 正式许可环境矩阵
 
@@ -471,13 +463,7 @@ SDE logical change 应新增独立变化识别值：
 
 ## 十三、实施阶段
 
-### Phase 0：现有前置基线
-
-- Oracle Spatial 表读写、预览和二维 geometry matrix。
-- Oracle/Oracle Spatial CDC。
-- FileGDB 读写、PGeo 只读和 Oracle Spatial roundtrip。
-- Oracle SDE workspace 只读探测与 `can_enable=false` 门控。
-- `SDELogicalChangeSourceProvider` 基础契约。
+前置通用能力与探测由上述正式规范维护；后续从真实许可环境开始，不保存已完成 Phase 0 清单。
 
 ### Phase 1：真实 workspace 发现与只读 Catalog
 

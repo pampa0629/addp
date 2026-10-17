@@ -59,7 +59,7 @@
 
     <el-table v-loading="loading" :data="presentation.rows" size="small">
       <el-table-column :label="t('security.accessRequest.resourceField')" min-width="260">
-        <template #default="{ row }"><strong>{{ row.target.fullName }}</strong><br><span>{{ row.target.componentKey }}</span></template>
+        <template #default="{ row }"><strong>{{ row.target.fullName }}</strong><br><span>{{ row.target.componentKey }}</span><br><span>{{ row.scopeLabel }}</span></template>
       </el-table-column>
       <el-table-column :label="t('security.accessRequest.requester')" min-width="150">
         <template #default="{ row }">
@@ -81,23 +81,24 @@
       </el-table-column>
       <el-table-column v-if="scope === 'history'" :label="t('security.accessRequest.authorizationState')" min-width="170">
         <template #default="{ row }">
-          <div v-if="row.authorization" class="access-authorization-state">
-            <el-tag size="small" :type="row.authorization.state.type">
-              {{ row.authorization.state.label }}
+          <div v-for="authorization in row.authorizations" :key="authorization.outlet" class="access-authorization-state">
+            <strong>{{ authorization.outlet }}</strong>
+            <el-tag size="small" :type="authorization.state.type">
+              {{ authorization.state.label }}
             </el-tag>
-            <span v-if="row.authorization.untilLabel">{{ row.authorization.untilLabel }}</span>
+            <span v-if="authorization.untilLabel">{{ authorization.untilLabel }}</span>
             <el-button
-              v-if="row.authorization.canOpen"
+              v-if="authorization.canOpen"
               class="access-authorization-link"
               link
               type="primary"
               size="small"
-              @click="emit('openAuthorization', row.request)"
+              @click="emit('openAuthorization', authorization.target)"
             >
               {{ t('security.accessRequest.viewAuthorization') }}
             </el-button>
           </div>
-          <span v-else>{{ row.authorizationFallback }}</span>
+          <span v-if="!row.authorizations.length">{{ row.authorizationFallback }}</span>
         </template>
       </el-table-column>
       <el-table-column v-if="scope === 'history'" :label="t('security.accessRequest.reviewer')" width="130">

@@ -35,13 +35,28 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		end()
 		return nil, nil, fmt.Errorf("%w: query provider has no catalog model", ErrRequired)
 	}
-	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC())
+	subject, _ := ctx.Value(interactiveQuerySubjectKey{}).(dataprotection.SubjectReference)
+	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", subject, time.Now().UTC())
 	if err != nil {
 		end()
 		return nil, nil, fmt.Errorf("%w: %w", ErrRequired, err)
 	}
 	return func(result *plugin.QueryResult) error {
+		if capture, ok := ctx.Value(queryCaptureKey{}).(*QueryCapture); ok && protect.CaptureAuthorized != nil {
+			history, err := protect.CaptureAuthorized(result, capture.Subject)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrResultRequired, err)
+			}
+			capture.History = history
+		}
 		if err := protect.Apply(result); err != nil {
+			if capture, ok := ctx.Value(queryCaptureKey{}).(*QueryCapture); ok && capture.History != nil {
+				// An authorized result may have a deny fallback. Retain no default
+				// rows in that case; every real read still rechecks the private history.
+				result.Columns = []string{}
+				result.Rows = []map[string]interface{}{}
+				return nil
+			}
 			return fmt.Errorf("%w: %w", ErrResultRequired, err)
 		}
 		return nil

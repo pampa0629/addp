@@ -227,6 +227,7 @@
           <div class="panel-heading">
             <span><el-icon><List /></el-icon>{{ t('develop.query.resultTitle') }}</span>
             <div class="result-actions">
+              <el-button v-if="canRequestPlaintext && plaintextTargetIdentity" size="small" @click="plaintextRequestVisible = true">{{ t('common.plaintextAccess.title') }}</el-button>
               <el-radio-group v-if="hasGraphData" v-model="resultViewMode" size="small">
                 <el-radio-button value="table">{{ t('develop.query.tableView') }}</el-radio-button>
                 <el-radio-button value="graph">{{ t('develop.query.graphView') }}</el-radio-button>
@@ -735,6 +736,7 @@
       </el-tooltip>
     </div>
     <StatusAnnouncer :message="announcement" />
+    <ProtectionAccessRequestDialog v-model="plaintextRequestVisible" :target-identity="plaintextTargetIdentity" initial-owner="develop" :api="client" />
   </div>
 </template>
 
@@ -794,6 +796,9 @@ import {
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { useAuthStore } from '../store/auth'
+import client from '../api/client'
+import { createQueryPlaintextRefresh } from '../utils/queryPlaintextRefresh.mjs'
+import { ProtectionAccessRequestDialog } from '@addp/common-frontend'
 import {
   formatterLanguageForQuery,
   formatGeneratedQueryForEditor,
@@ -827,6 +832,10 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const authStore = useAuthStore()
+const canRequestPlaintext = computed(() => authStore.hasPermission('security.protection_access_request.create') && authStore.hasPermission('security.protection_access_request.read'))
+const plaintextRequestVisible=ref(false)
+const plaintextTargetIdentity=ref('')
+let plaintextTargetSequence=0
 const canExecuteReadQuery = computed(() => authStore.hasPermission('develop.task.execute') && authStore.hasPermission('develop.data_read.execute'))
 const canSaveTask = computed(() => authStore.hasPermission(currentTaskId.value ? 'develop.task.update' : 'develop.task.create'))
 
@@ -843,6 +852,8 @@ const engines = ref([])
 const queryContent = ref('')
 const currentQueryLanguage = ref('')
 const executionResult = ref(null)
+const plaintextRefresh=createQueryPlaintextRefresh({fetchExecution:getExecution,normalize:queryResultFromExecution,onResult:result=>{executionResult.value=result},onClear:()=>{executionResult.value=null}})
+onBeforeUnmount(()=>{plaintextTargetSequence++;plaintextRefresh.dispose()})
 const executing = ref(false)
 const testingConnection = ref(false)
 const loadingSampleQuery = ref(false)
@@ -857,10 +868,21 @@ const savingForEngineSwitch = ref(false)
 const saveForEngineSwitch = ref(false)
 const resultViewMode = ref('table')
 const catalogSelection = ref(null)
+const targetLocator = ref('')
+watch([catalogSelection, targetLocator, canRequestPlaintext],async ([selection, savedLocator, permitted])=>{
+  const sequence=++plaintextTargetSequence
+  plaintextTargetIdentity.value='';plaintextRequestVisible.value=false
+  const locator=selection?.identity?.locator || savedLocator
+  if(!locator || !permitted)return
+  let itemId
+  try { itemId=selection?.identity?.item_id || parseLocator(locator).itemId } catch { return }
+  if(!itemId)return
+  try {const item=await client.get(`/meta/items/${itemId}`);if(sequence===plaintextTargetSequence)plaintextTargetIdentity.value=String(item?.fingerprint || '')}
+  catch { if(sequence===plaintextTargetSequence)plaintextTargetIdentity.value='' }
+})
 const catalogSourceEngines = ref([])
 const catalogEngineIds = ref([])
 const catalogEnginesLoading = ref(false)
-const targetLocator = ref('')
 const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
 const fieldCompletions = ref([])
@@ -1588,6 +1610,7 @@ const submitQuery = async (parameters = {}) => {
 	}
 
   const requestSequence = ++executionRequestSequence
+  clearResult()
   executing.value = true
   executionParameterDialogVisible.value = false
   resultViewMode.value = 'table'
@@ -1660,6 +1683,7 @@ const submitQuery = async (parameters = {}) => {
       const execution = await getExecution(started.execution_id)
       if (requestSequence !== executionRequestSequence) return
       executionResult.value = queryResultFromExecution(execution)
+      plaintextRefresh.schedule(executionResult.value)
       if (hasGraphData.value) resultViewMode.value = 'graph'
       if (isTerminalExecutionStatus(execution.status)) {
         if (execution.status === 'success') {
@@ -1707,6 +1731,7 @@ const formatQuery = () => {
 }
 
 const clearResult = () => {
+  plaintextRefresh.stop()
   executionResult.value = null
   resultViewMode.value = 'table'
 }

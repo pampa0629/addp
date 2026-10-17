@@ -14,7 +14,8 @@ import (
 
 // ReconcileStructuredOwnerProjections upgrades existing structured
 // enrollments whose Manager field projection predates the Develop, Service,
-// or Transfer field-level executor. It is idempotent because only enrolling
+// or Transfer field-level executor, or the conservative Graph refusal gate.
+// It is idempotent because only enrolling
 // owner projections are eligible.
 func ReconcileStructuredOwnerProjections(ctx context.Context, db *gorm.DB, now time.Time) (int, error) {
 	if db == nil {

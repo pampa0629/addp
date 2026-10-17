@@ -16,6 +16,21 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateSQLite(db); err != nil {
 			return err
 		}
+		hasScopes, err := accessRequestColumnExists(db, "scopes")
+		if err != nil {
+			return err
+		}
+		if !hasScopes {
+			if err := db.Exec("ALTER TABLE security.protection_access_requests ADD COLUMN scopes TEXT NOT NULL DEFAULT '[]'").Error; err != nil {
+				return err
+			}
+		}
+		if err := migrateAccessRequestScopes(db); err != nil {
+			return err
+		}
+		if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS security.uq_security_pending_access_request ON protection_access_requests (tenant_id,assessment_id,subject_type,subject_id) WHERE state = 'pending'").Error; err != nil {
+			return err
+		}
 		if err := migrateProtectionValidity(db, hadValidity); err != nil {
 			return err
 		}
@@ -59,6 +74,9 @@ func Migrate(db *gorm.DB) error {
 	); err != nil {
 		return fmt.Errorf("migrate security schema: %w", err)
 	}
+	if err := migrateAccessRequestScopes(db); err != nil {
+		return err
+	}
 	if db.Dialector.Name() == "postgres" {
 		statements := []string{
 			`ALTER TABLE security.sensitive_data_types DROP COLUMN IF EXISTS protection_threshold`,
@@ -74,7 +92,7 @@ func Migrate(db *gorm.DB) error {
 			`ALTER TABLE security.resource_security_assessment_revisions ALTER COLUMN source_review_id DROP NOT NULL`,
 			`CREATE INDEX IF NOT EXISTS idx_security_policies_assessment ON security.protection_policies (tenant_id, assessment_id, updated_at DESC)`,
 			`CREATE INDEX IF NOT EXISTS idx_security_exemptions_assessment ON security.protection_exemptions (tenant_id, assessment_id, updated_at DESC)`,
-			`CREATE UNIQUE INDEX IF NOT EXISTS uq_security_pending_access_request ON security.protection_access_requests (tenant_id, assessment_id, consumer_owner, action, subject_type, subject_id) WHERE state = 'pending'`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uq_security_pending_access_request ON security.protection_access_requests (tenant_id, assessment_id, subject_type, subject_id) WHERE state = 'pending'`,
 			`CREATE INDEX IF NOT EXISTS idx_security_access_requests_review_queue ON security.protection_access_requests (tenant_id, state, created_at DESC)`,
 		}
 		for _, statement := range statements {
@@ -120,8 +138,8 @@ func migrateSQLite(db *gorm.DB) error {
 		`CREATE TABLE IF NOT EXISTS security.protection_exemptions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, consumer_owner TEXT NOT NULL, action TEXT NOT NULL, subject_type TEXT NOT NULL, subject_id TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, current_revision INTEGER NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, UNIQUE (tenant_id, assessment_id, consumer_owner, action, subject_type, subject_id))`,
 		`CREATE INDEX IF NOT EXISTS security.idx_security_exemptions_assessment ON protection_exemptions (tenant_id, assessment_id, updated_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS security.protection_exemption_revisions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, exemption_id TEXT NOT NULL, revision INTEGER NOT NULL, assessment_revision INTEGER NOT NULL, source_request_id TEXT NOT NULL, state TEXT NOT NULL, expires_at DATETIME NOT NULL, rationale TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, UNIQUE (exemption_id, revision))`,
-		`CREATE TABLE IF NOT EXISTS security.protection_access_requests (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, assessment_revision INTEGER NOT NULL, consumer_owner TEXT NOT NULL, action TEXT NOT NULL, subject_type TEXT NOT NULL, subject_id TEXT NOT NULL, subject_display_name TEXT NOT NULL DEFAULT '', requested_expires_at DATETIME NOT NULL, rationale TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, decided_by INTEGER, decided_by_display_name TEXT NOT NULL DEFAULT '', decided_at DATETIME, decision_rationale TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS security.uq_security_pending_access_request ON protection_access_requests (tenant_id, assessment_id, consumer_owner, action, subject_type, subject_id) WHERE state = 'pending'`,
+		`CREATE TABLE IF NOT EXISTS security.protection_access_requests (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, assessment_revision INTEGER NOT NULL, scopes TEXT NOT NULL DEFAULT '[]', subject_type TEXT NOT NULL, subject_id TEXT NOT NULL, subject_display_name TEXT NOT NULL DEFAULT '', requested_expires_at DATETIME NOT NULL, rationale TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, decided_by INTEGER, decided_by_display_name TEXT NOT NULL DEFAULT '', decided_at DATETIME, decision_rationale TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS security.uq_security_pending_access_request ON protection_access_requests (tenant_id, assessment_id, subject_type, subject_id) WHERE state = 'pending'`,
 		`CREATE INDEX IF NOT EXISTS security.idx_security_access_requests_review_queue ON protection_access_requests (tenant_id, state, created_at DESC)`,
 	}
 	for _, statement := range statements {

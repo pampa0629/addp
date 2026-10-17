@@ -67,6 +67,7 @@ func (s *SchemaInferenceService) InferSchema(ctx context.Context, graphID, tenan
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	return s.inferWithEngine(ctx, engine, tenantID, ontologyID)
 }
 
@@ -76,6 +77,7 @@ func (s *SchemaInferenceService) InferSchemaFromEngine(ctx context.Context, engi
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	return s.inferWithEngine(ctx, engine, tenantID, ontologyID)
 }
 

@@ -10,13 +10,16 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/google/uuid"
 )
 
@@ -400,7 +403,8 @@ func (s *NotebookSessionService) StreamQuery(
 	if s.protectionGate == nil {
 		return fmt.Errorf("notebook data protection gate is not configured")
 	}
-	protectResult, endProtection, err := s.protectionGate.BeginPreparedQuery(executionCtx, session.TenantID, enginePlugin, prepared)
+	protectionCtx := protection.WithInteractiveQuerySubject(executionCtx, dataprotection.SubjectReference{Type: "user", ID: strconv.FormatUint(uint64(session.UserID), 10)})
+	protectResult, endProtection, err := s.protectionGate.BeginPreparedQuery(protectionCtx, session.TenantID, enginePlugin, prepared)
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,7 @@ import (
 	developi18n "github.com/addp/develop/backend/i18n"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -483,6 +484,10 @@ func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 
 	execution, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantID)
 	if err != nil {
+		if errors.Is(err, protection.ErrRequired) {
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryHistoryProtectionRequired), "error_code": "data_protection_required"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
 		return
 	}
@@ -521,6 +526,10 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 
 	executions, total, err := h.devExecutor.ListExecutions(c.Request.Context(), &req, tenantID)
 	if err != nil {
+		if errors.Is(err, protection.ErrRequired) {
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryHistoryProtectionRequired), "error_code": "data_protection_required"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}

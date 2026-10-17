@@ -1271,6 +1271,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MODEL_URL=http://model-backend:8181
       - COPILOT_URL=http://copilot-backend:8087
+      - SECURITY_URL=http://security-backend:8194
       - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

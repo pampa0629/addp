@@ -11,6 +11,7 @@ func TestRequiredProtectionOwnerContractIsCompleteAndStable(t *testing.T) {
 		managerProtectionOwner,
 		serviceProtectionOwner,
 		transferProtectionOwner,
+		graphProtectionOwner,
 	}
 	if owners := allRequiredProtectionOwners(); !reflect.DeepEqual(owners, wantOwners) {
 		t.Fatalf("allRequiredProtectionOwners() = %#v, want %#v", owners, wantOwners)
@@ -32,6 +33,9 @@ func TestRequiredProtectionOwnerContractIsCompleteAndStable(t *testing.T) {
 		if validExemptionBinding(owner, action+"_other") {
 			t.Fatalf("validExemptionBinding(%q, mismatched action) = true", owner)
 		}
+	}
+	if !isRequiredOwner(graphProtectionOwner) || validExemptionBinding(graphProtectionOwner, graphReadAction) || validExemptionBinding(graphProtectionOwner, "") {
+		t.Fatal("Graph must require installation without raw-value exemptions")
 	}
 	if isRequiredOwner("workbench") || validExemptionBinding("workbench", serviceExecuteAction) {
 		t.Fatal("workbench must consume protected Service results instead of becoming a projection owner")

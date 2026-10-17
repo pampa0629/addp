@@ -98,6 +98,8 @@ OWNER_ACTIONS = {
     "service": "service_execute",
     "transfer": "export",
 }
+# Graph acknowledges protection but does not execute these tabular masking probes.
+PROTECTION_OWNERS = (*OWNER_ACTIONS, "graph")
 EXPECTED_IDS = {"1", "2", "3", "4", "5"}
 FORBIDDEN_ADMIN_ROLES = SUPPORT.FORBIDDEN_ADMIN_ROLES
 REQUIRED_PERMISSIONS = {
@@ -667,7 +669,7 @@ def exercise_explicit_rediscovery(client: GatewayClient, enrollment_id: str,
                 "previous_discovery_execution_id": before["latest_discovery_execution_id"],
                 "source_snapshot_hash": snapshot, "source_snapshot_unchanged": True, "projections_before": previous, "projections_after": renewed,
                 "all_current_revisions_acknowledged": True, "outputs": outputs}
-    raise SuiteError("explicit rediscovery did not synchronize all four owner revisions before the deadline")
+    raise SuiteError("explicit rediscovery did not synchronize output owner revisions before the deadline")
 
 
 def normalize_id(value: object) -> str:
@@ -1720,8 +1722,11 @@ def assert_bank_card_rows(rows: Iterable[Mapping[str, object]], owner: str,
 
 def bank_card_projections(enrollment: Mapping[str, object]) -> dict[str, object]:
     progress = _array(enrollment.get("owner_progress"), "bank-card Owner progress")
-    if enrollment.get("state") != "active" or len(progress) != 4:
-        raise SuiteError("bank-card Enrollment must have four active Owner projections")
+    if enrollment.get("state") != "active" or {p.get("consumer_owner") for p in progress if isinstance(p, dict)} != set(PROTECTION_OWNERS) or len(progress) != len(PROTECTION_OWNERS):
+        raise SuiteError("bank-card Enrollment must have all required Owner projections")
+    graph = next(p for p in progress if p.get("consumer_owner") == "graph")
+    if graph.get("acknowledged") is not True or graph.get("projection_state") != "active" or not any(rule.get("action") == "graph_read" and rule.get("effect") == "deny" for rule in graph.get("rules", [])):
+        raise SuiteError("Graph protection deny must be installed")
     evidence = {}
     for owner, action in OWNER_ACTIONS.items():
         matches = [p for p in progress if isinstance(p, dict) and p.get("consumer_owner") == owner]
@@ -1873,10 +1878,10 @@ def validity_snapshot(enrollment: Mapping[str, object], mode: str,
     elif utc_timestamp(actual, "resource protection deadline") != expected_deadline:
         raise SuiteError("resource protection deadline changed")
     progress = [_object(item, "validity Owner") for item in _array(enrollment.get("owner_progress"), "resource validity owners")]
-    if len(progress) != 4:
-        raise SuiteError("resource validity requires all four Owner projections")
+    if len(progress) != len(PROTECTION_OWNERS):
+        raise SuiteError("resource validity requires all required Owner projections")
     result = {}
-    for owner in OWNER_ACTIONS:
+    for owner in PROTECTION_OWNERS:
         matches = [item for item in progress if item.get("consumer_owner") == owner]
         if len(matches) != 1:
             raise SuiteError("resource validity Owner is missing or duplicated")

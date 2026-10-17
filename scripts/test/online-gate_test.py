@@ -227,6 +227,7 @@ class OnlineGateTest(unittest.TestCase):
                 ("system", "SYSTEM_URL"),
                 ("meta", "META_URL"),
                 ("security", "SECURITY_URL"),
+                ("graph", "GRAPH_URL"),
                 ("transfer", "TRANSFER_URL"),
                 ("manager", "MANAGER_URL"),
             ),
@@ -239,7 +240,9 @@ class OnlineGateTest(unittest.TestCase):
                 ("system", "SYSTEM_URL"),
                 ("meta", "META_URL"),
                 ("security", "SECURITY_URL"),
+                ("graph", "GRAPH_URL"),
                 ("manager", "MANAGER_URL"),
+                ("develop", "DEVELOP_URL"),
             ),
         )
         mysql_security_suite = ONLINE_GATE.SUITES[
@@ -252,6 +255,7 @@ class OnlineGateTest(unittest.TestCase):
                 ("system", "SYSTEM_URL"),
                 ("meta", "META_URL"),
                 ("security", "SECURITY_URL"),
+                ("graph", "GRAPH_URL"),
                 ("manager", "MANAGER_URL"),
                 ("develop", "DEVELOP_URL"),
                 ("service", "SERVICE_URL"),

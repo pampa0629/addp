@@ -85,6 +85,7 @@
             v-if="activePreviewComponent"
             :is="activePreviewComponent"
             :data="activeChildPreviewData"
+            v-bind="activePreviewProps"
             :loading="activeChildLoading"
             @page-change="handlePageChange"
             @child-change="handleNestedChildChange"
@@ -178,9 +179,16 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['child-change', 'page-change'])
+const temporaryCrs = defineModel('temporaryCrs', { type: String, default: '' })
 
 const activeChildKey = ref('')
 const activeRefPath = ref('')
+
+watch([activeChildKey, activeRefPath], () => { temporaryCrs.value = '' }, { flush: 'sync' })
+const activePreviewProps = computed(() => props.activeChildPreview?.mode === 'table' ? {
+  temporaryCrs: temporaryCrs.value,
+  'onUpdate:temporaryCrs': value => { temporaryCrs.value = value }
+} : {})
 
 const normalizedChildren = computed(() => {
   return props.children.filter(child => child && child.key)

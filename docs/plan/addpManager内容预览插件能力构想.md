@@ -1,105 +1,34 @@
-# ADDP Manager 内容预览插件能力构想
+# ADDP Manager 内容预览插件扩展构想
 
-更新时间：2026-05-06
+状态：第三方预览插件的声明式扩展尚待确认；现有内置预览已落地，不能按本构想再建另一条路由。
 
-本文是基于 next 阶段数据类型、内容布局、文件格式和 attributes 规范的构想文档，不作为最终规范。
+现行职责与接口见[Manager 预览实现规范](../../manager/docs/数据预览与资源树实现规范.md)、[数据预览语义协议](../../manager/docs/数据预览语义协议.md)、[类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)及[元数据扫描规范](../spec/addp元数据扫描机制规范.md)。表格 single/multi/whole、refs、deep 补齐、当前 kind/material/renderer、刷新与错误语义由这些正式文档维护，不在此复制 DTO 或已完成阶段。
 
-## 目标
+## 未确认的扩展范围
 
-Manager 内容预览插件应消费 meta 已识别的标准 data item，不重新判断内容布局，不按扩展名抢路由，不自行枚举 sibling refs。
-插件本身不直接承担格式解析职责；它依赖内容 I/O 抽象、FormatPlugin、info provider 和 content reader 提供的结果，再组装最终 preview。
+目标是在有第三方扩展需求时，声明如何将已识别 data item 组合为 Manager 预览材料。它不替代 Meta 识别、Common Format Provider、ContentIO 或现有 PreviewRegistry。
 
-Manager 对外部资源的稳定事实源是 Meta。只有在预览容器内部 child 时，Manager 后端可以调用 `common/dataitem` 做动态识别；该结果只用于本次预览，不写回 Meta，也不替代 Meta 对外部资源的 item 识别。
-
-## 表预览统一口径
-
-Manager 的表预览不需要对外再拆成 `filetable` 和 `laketable` 两套能力。
-
-对 Manager 来说，它们只是同一类 `table preview` 的不同来源路径：
-
-- `filetable`：单 content 或多相关内容形成的表格来源。
-- `laketable`：目录型或范围型表格来源。
-- `native table`：引擎原生表格来源。
-
-对外应统一成一套表预览 DTO 和一套表预览能力声明；差异只保留在内部读取计划和资源抽象层，不直接下沉到展示层。
-
-因此，preview manifest 中不建议再把 `filetable`、`laketable` 作为独立预览类型，而应围绕 `data_type=table`、`format`、`layout`、`capabilities` 来做匹配。
-
-当前实现已经先把底层读取链路收口到 `TableProvider` / `MultiTableProvider` / `ScopeTableProvider`。`builtin:scope-table` 作为目录型表格来源路由，直接对应 `item.data_type=table + item.layout=whole`。
-
-Manager 请求层已经新增 `ScopePath`，用于承载 `layout=whole` 的目录型表格范围；`PhysicalPath` 只用于 `layout=single` 的单文件表。Provider 选择基于 `data_type=table + layout`：whole table 走 `builtin:scope-table`，single 文件表走 `builtin:file-table`。新扫描结果不再使用 `item_type=lake_table`。
-
-## 匹配输入
-
-插件匹配只基于标准字段：
-
-- `meta_item.item_type`
-- `meta_item.full_name`
-- `attributes.item.layout`
-- `attributes.item.data_type`
-- `attributes.item.format`
-- `attributes.item.refs`
-- `attributes.storage.physical_path`
-- `attributes.type_info`
-- `attributes.format_info`
-- `attributes.capabilities`
-
-其中，插件不应直接依赖 `engine id` 构造读取器，也不应自己找 sibling refs。
-应由上层编排层先构造 `contentio.Reader`、`[]format.RelatedRef` 或 `NativeCursor`，再交给插件或其依赖的 provider。
-对于表预览，编排层可以根据资源内容布局选择不同读取计划，但对插件暴露的仍应是统一的表格输入。
-
-## manifest 构想
+以下只是候选描述，当前未实现，不是可直接安装的 manifest：
 
 ```json
 {
-  "id": "builtin-table-preview",
+  "id": "vendor-table-preview",
   "version": "0.1.0",
   "preview": {
-    "match": {
-      "data_type": ["table"],
-      "layout": ["single", "multi", "whole"]
-    },
+    "match": {"data_type": ["table"], "layout": ["single", "multi", "whole"]},
     "priority": 100,
-    "input": {
-      "requires_resource_reader": true
-    },
-    "output": {
-      "mode": "table",
-      "stream": false,
-      "paging": true
-    }
+    "input": {"requires_resource_reader": true},
+    "output": {"mode": "table", "stream": false, "paging": true}
   }
 }
 ```
 
-## 约束
+## 实施前决策
 
-- `priority` 只在同一标准匹配结果内解决冲突。
-- 插件不得用扩展名、MIME 或 provider 优先级覆盖 meta 识别结果。
-- multi item 使用 `meta_item.full_name` 作为主资源，并使用 `refs` 读取ref 资源。
-- whole item 使用 `meta_item.full_name` 作为 whole scope 根范围；manifest 等格式入口写入 `format_info.<format>`。
-- 私有 `format_info` 只能用于展示细节，不得改变核心路由。
-- 插件输出的 `kind` 是 Manager 展示语义，不是 format 的标准类型。
+1. 是否确有第三方动态加载需求；代码注册已能满足时不新增 manifest 或插件管理实体。
+2. 声明如何映射现有预览材料/renderer 和 command 输入 Schema，不引入平行 kind/分页协议。
+3. 同一标准匹配结果的冲突、优先级、启停和失败诊断由谁裁决；不能按扩展名或优先级覆盖 Meta 事实。
+4. 大文件 stream/paging/tile 的声明如何与实际内容读取能力、预算及授权校验一致。
+5. 与[第三方属性扩展](addp第三方插件扩展声明构想.md)及[能力发现](addpRegistry与能力发现层构想.md)的关联边界。
 
-## 刷新与 deep 补齐
-
-Manager 预览 item 时默认要求 item 已达到 `scanned_depth=deep`。如果未达到 deep，Manager 应调用 Meta 对该 item 做 `scan_depth=deep, force=false` 补齐，完成后重新读取 item 元数据再预览。
-
-Manager 刷新按钮按对象区分：
-
-| 对象 | 行为 |
-|---|---|
-| node | 触发 `scan_depth=basic, force=true`，重新枚举当前范围并发现新 node / item。 |
-| item | 触发 `scan_depth=deep, force=true`，必须等待扫描完成，再重新读取 item 元数据和预览。 |
-
-item 刷新只刷新当前 item，但必须使用 item 的完整内容输入。`layout=multi` 必须使用 `attributes.item.refs` 的完整 refs 集合；只刷新 primary content 会导致 Shapefile 等多 ref 格式的 fields、spatial facts 或 access index 丢失。
-
-如果 item 边界本身错误，应提示用户从 node 层重新扫描，而不是在 item 刷新中扩大扫描范围。
-
-## 待讨论
-
-1. 输出 `kind` 是否需要统一枚举。
-2. command 型预览是否需要输入 payload schema。
-3. 大文件 preview 是否统一声明 stream / paging / tile 能力。
-4. spatial preview 缺失 `capabilities.spatial` 时是否拒绝还是降级。
-5. 插件异常是否进入 Manager 诊断面板。
+确认后先修订正式预览与扩展规范，再沿现有 Manager/Common owner 门禁验证；未落地前不注册占位插件。完成内容迁入规范并从本构想移除。

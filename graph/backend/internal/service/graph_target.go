@@ -11,10 +11,11 @@ import (
 
 type graphTarget struct {
 	*commonmodels.Engine
-	provider plugin.PropertyGraphProvider
-	conn     plugin.ConnectionInfo
-	path     plugin.EngineCatalogPath
-	managed  bool
+	provider      plugin.PropertyGraphProvider
+	conn          plugin.ConnectionInfo
+	path          plugin.EngineCatalogPath
+	managed       bool
+	endProtection func()
 }
 
 func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID uint, path plugin.EngineCatalogPath) (*graphTarget, error) {
@@ -28,7 +29,16 @@ func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID
 	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
 		return nil, fmt.Errorf("graph engine is unavailable")
 	}
-	return bindGraphTarget(engine, path)
+	target, err := bindGraphTarget(engine, path)
+	if err != nil {
+		return nil, err
+	}
+	end, err := s.protection.BeginTarget(ctx, tenantID, target.provider, target.path)
+	if err != nil {
+		return nil, err
+	}
+	target.endProtection = end
+	return target, nil
 }
 func bindGraphTarget(engine *commonmodels.Engine, path plugin.EngineCatalogPath) (*graphTarget, error) {
 	registered, err := plugin.Get(engine.EngineType)
@@ -61,4 +71,10 @@ func (t *graphTarget) query(ctx context.Context, query string, params map[string
 }
 func executeGraphQuery(ctx context.Context, target *graphTarget, query string) (*plugin.GraphQueryResult, error) {
 	return target.query(ctx, query, nil)
+}
+
+func (t *graphTarget) close() {
+	if t != nil && t.endProtection != nil {
+		t.endProtection()
+	}
 }

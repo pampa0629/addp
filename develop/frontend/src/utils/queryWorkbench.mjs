@@ -423,6 +423,7 @@ export function queryResultFromExecution(execution) {
     result_kind: result.result_kind || 'table',
     result_limit: result.result_limit,
     truncated: result.truncated === true,
+	plaintext_expires_at: result.plaintext_expires_at || null,
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
     graph_data: result.graph_data || null,
     error_category: success ? '' : (execution?.error_details?.category || ''),

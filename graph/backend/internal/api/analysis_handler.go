@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ func NewAnalysisHandler(analysisSvc *service.AnalysisService) *AnalysisHandler {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.analysis.read"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/analysis/capabilities [get]
 func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -40,7 +42,7 @@ func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 
 	caps, err := h.analysisSvc.CheckCapabilities(ctx, graphID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, caps)
@@ -57,6 +59,7 @@ func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.analysis.execute"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/analysis/sync-spatial [post]
 func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -67,7 +70,7 @@ func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 
 	synced, err := h.analysisSvc.SyncAllSpatialLayers(ctx, graphID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -91,6 +94,7 @@ func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.analysis.execute"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs/{id}/analysis/run [post]
 func (h *AnalysisHandler) RunAlgorithm(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -107,6 +111,10 @@ func (h *AnalysisHandler) RunAlgorithm(c *gin.Context) {
 
 	result, err := h.analysisSvc.RunAlgorithm(ctx, graphID, tenantID, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrGraphProtectionRequired) {
+			graphOperationError(c, err)
+			return
+		}
 		errMsg := err.Error()
 		if errMsg == "GDS_UNAVAILABLE" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该算法需要 Neo4j GDS 插件，当前实例未安装"})

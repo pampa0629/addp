@@ -251,16 +251,16 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 
 1. 申请主体只能取 Security API 收到的可信 AuthContext，首期只允许 `subject_type=user`；请求正文不得提交主体，也不得申请其他用户、角色或租户级放行。
 2. 申请只能绑定当前结论为 `sensitive` 的正式 Assessment；组件路径、类型、分类和等级取不可变 Assessment revision，不接受自由文本字段路径。
-3. `consumer_owner + action` 首期只允许 `manager/preview`。其他出口在完成自己的可信用户发起入口前不得借用 Manager 授权，也不得继续使用旧的租户级豁免。
+3. 申请使用显式 `scopes` 集合，仅允许 `manager/preview`、`develop/query` 两个精确出口，可单选或同时选择；一次审批批准整个集合，分别形成各出口 ProtectionExemption。旧申请一次性迁移为原出口的单元素集合，已有授权不得扩大。Service、Transfer、Graph 及 Manager profile 不消费这两个出口的原值授权。申请主体始终取可信当前用户；Manager 和 Develop 复用同一申请交互及 Security 集中审批，不建立 Owner 私有授权。
 4. 申请期限最长 30 天、业务依据必填。审批人与申请人必须不同；拒绝不生成授权，批准期限不得晚于申请期限。
-5. 审批通过后创建或重新激活唯一 ProtectionExemption，并追加不可变 revision；revision 冻结 `source_request_id`、`assessment_revision`、主体、`expires_at`、依据、审批人和状态。
+5. 审批通过后为每个所选出口创建或重新激活唯一 ProtectionExemption，并分别追加不可变 revision；revision 冻结 `source_request_id`、`assessment_revision`、主体、`expires_at`、依据、审批人和状态。
 6. Assessment 后续产生任何新修订时旧授权立即失效且不得静默恢复；授权到期、撤销或失配时 Owner 自动执行默认保护决策。
 7. ProtectionProjection 的每条规则保留默认 `decision`，并携带零个或多个按用户授权。Owner 必须使用服务端可信 AuthContext 精确匹配 `subject_type + subject_id`；主体为空或不匹配时不得放行。
 8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 主体级限时授权`。授权只改变内容保护，不改变 Owner 资源授权；结构无法证明、查询血缘不明或 Owner 授权拒绝时仍然 fail closed。
-9. 申请审批、Exemption revision 和 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取申请或授权表、不保存审批依据，也不增加本地放行接口。
+9. 申请审批、所选全部出口的 Exemption revision 和 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取申请或授权表、不保存审批依据，也不增加本地放行接口。每个出口分别返回当前授权与同步状态，不能把一个出口的回执视为另一个出口已同步。
 10. ProtectionAccessRequest 的生命周期状态固定为 `pending|approved|rejected|expired`。`pending` 只表示仍在申请截止时间内等待决策；服务端时间达到 `requested_expires_at` 后，所有查询必须立即将其视为 `expired`，不再算作待审批，不得依赖浏览器时钟推导。
-11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。审批结论与当前授权状态必须分开表达：`approved` 只表示当时审批通过，批准记录还必须按服务端时间和当前 ProtectionExemption、Assessment revision 返回 `authorization_state=active|expired|revoked|superseded` 与原授权截止时间；被拒绝或申请过期未决策时不产生授权状态。历史视图可按同一组 `authorization_state` 值进行服务端筛选；筛选以当前授权事实为准，只命中曾产生授权的批准记录，并在分页、总数统计之前完成。响应同时返回所属 `enrollment_id`，审批工作区只能据此进入既有受保护资源详情和授权撤销路径，不得按资源名称猜测关联，也不得另建第二套授权详情或撤销流程。申请人和审批人对外统一返回 `{type,id,display_name}` 语义对象：ID 始终是权威审计身份，`display_name` 由 Security 在申请或决策当时通过 System 的受信批量用户引用接口校验并固化，后续用户改名不改写历史。审批列表不得由前端逐行解析身份，也不得在读路径实时依赖 System。
-12. Manager 只消费 Security 返回的有效申请状态。`pending` 触发状态轮询并阻止重复申请；`expired` 和 `rejected` 必须明确展示结果、停止轮询并允许重新申请。审批通过不等于 Owner 已同步：字段申请目标同时返回必填 `projection_acknowledged`，由当前 Tenant、当前消费 Owner 的 acknowledgement sequence 是否覆盖该资源当前投影的 published sequence 推导；投影、申请、Assessment、授权和回执必须从同一只读一致性快照读取。该字段只表示保护规则同步进度，不授予内容读取权，也不承诺某次预览成功。当前用户仍有效的临时授权尚未确认时，Manager 显示“已批准，等待同步”并继续状态轮询；从待审批或待同步变为当前投影已确认后才自动刷新预览，不以固定等待时间或敏感值形态猜测同步完成。有效授权期间不允许重复申请；到期或失效后停止同步等待。Owner 数据请求仍只按本地投影及可信主体判定，不实时调用 Security。新申请创建时，Security 在同一事务中先将同一绑定键上已超时的 `pending` 记录固化为 `expired`，再校验和创建唯一新申请。
+11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。审批结论与当前授权状态必须分开表达：`approved` 只表示当时审批通过，批准记录必须通过 `authorizations[]` 分别返回各所选出口的 `consumer_owner`、`action`、`exemption_id`、当前 `authorization_state=active|expired|revoked|superseded` 与原授权截止时间；被拒绝或申请过期未决策时不产生授权状态。历史视图可按同一组 `authorization_state` 值进行服务端筛选；筛选以各出口当前授权事实为准，任一所选出口匹配即命中同一批准申请，不重复计数；筛选在分页、总数统计之前完成。响应同时返回所属 `enrollment_id`，审批工作区只能据此进入既有受保护资源详情和授权撤销路径，不得按资源名称猜测关联，也不得另建第二套授权详情或撤销流程。申请人和审批人对外统一返回 `{type,id,display_name}` 语义对象：ID 始终是权威审计身份，`display_name` 由 Security 在申请或决策当时通过 System 的受信批量用户引用接口校验并固化，后续用户改名不改写历史。审批列表不得由前端逐行解析身份，也不得在读路径实时依赖 System。
+12. Manager 和 Develop 的共享申请交互只消费 Security 返回的有效申请状态。`pending` 触发状态轮询并阻止重复申请；`expired` 和 `rejected` 必须明确展示结果、停止轮询并允许重新申请。审批通过不等于 Owner 已同步：字段申请目标同时返回必填 `projection_acknowledged`，由当前 Tenant、当前消费 Owner 的 acknowledgement sequence 是否覆盖该资源当前投影的 published sequence 推导；投影、申请、Assessment、授权和回执必须从同一只读一致性快照读取。该字段只表示保护规则同步进度，不授予内容读取权，也不承诺某次预览成功。当前用户仍有效的临时授权尚未确认时，Manager 显示“已批准，等待同步”并继续状态轮询；从待审批或待同步变为当前投影已确认后才自动刷新预览，不以固定等待时间或敏感值形态猜测同步完成。有效授权期间不允许重复申请；到期或失效后停止同步等待。Owner 数据请求仍只按本地投影及可信主体判定，不实时调用 Security。同一用户与正式字段同时至多一个 pending 申请；创建时在同一事务固化已超时 pending，再检查所选范围没有当前有效授权并创建申请。申请包含重复或未知出口时整体拒绝，不静默删减范围。
 13. ProtectionExemption 只能在“受保护资源”详情中提前撤销，并必须使用正式表单对话框收集撤销依据。版本冲突时保持对话框和撤销依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才重新读取该 ProtectionExemption。若最新 `effective_state` 已不是 `active`，则关闭对话框并告知无需重复撤销；仍然生效时以最新版本建立空白撤销依据，由用户重新确认，不得自动重试、自动合并或沿用旧依据提交。
 14. 批准和驳回必须共用“受保护资源”审批工作区中的正式表单对话框，完整展示资源、字段、申请人、申请期限和业务依据，并另行收集审批依据。审批版本冲突时保持对话框、审批动作和审批依据，禁用旧版本再次提交；只有用户显式放弃当前输入后才调用 `GET /protection-access-requests/{id}` 读取最新申请。若最新申请已不是未过期的 `pending`、当前审批人已不可审批，则关闭对话框并刷新审批工作区；仍可审批时以最新版本建立空白审批依据，由用户重新确认。不得自动重试、自动合并或沿用旧依据提交。服务端明确返回 `protection_access_request_expired` 时，前端直接关闭对话框、刷新工作区并告知申请已过期。
 
@@ -517,6 +517,10 @@ Owner 可以使用最后一份未过期、checksum 正确且结构仍匹配的�
 
 ### 查询保护的引擎范围排除
 
+Graph 领域数据出口统一作为 `graph` 保护消费者，覆盖浏览快照、搜索、展开、路径、Schema 推导、分析与知识服务（包括公开服务）。Graph 使用 Common 的 provider-owned 显式 graph catalog leaf 判定完整的领域操作目标，复用 `RequireCatalogPathUnmanaged`；它不是用户任意 Cypher 的 ReadSet 证明，也不能替代 Develop 的 PreparedQuery 路径。Neo4j 与 FalkorDB 执行相同门禁：未命中纳管目标才可读取，命中纳管、投影同步未完成、过期或状态无效均拒绝，不提供图属性脱敏或原值豁免。领域写入返回原生标识和空间映射等操作也不得绕过目标门禁。System 源数据授权本轮不调整，不将 Security 检查当成授权。
+
+Security 为 Graph 发布独立 `graph_read` 保守拒绝投影（不把基线掩码声明为 Graph 已支持属性脱敏），将其纳入安装与解除回执；Graph 不开放可编辑 Policy 或原值访问授权。存量非 released 纳管在 Security 启动时事务补齐 Graph 投影，releasing 同时补齐解除变化；已 released 资源不复活。Graph 在本地持久化投影并完整同步后才放行未纳管读取，读取期间保留 owner 在途屏障，旧读取结束前不得确认新投影已安装。正常重启重放使用既有 cursor，不清空中央回执。
+
 目标是避免一个引擎的数据纳管影响另一个无关引擎，同时保留同一引擎内的数据项精确匹配。Security 发布受保护目标的引擎归属；Provider / Runtime 约束本次执行的访问范围；Common 根据两个范围是否相交决定是否需要完整 ReadSet。Security 不解析查询语言，Owner 不复制引擎语义分析，也不为 Neo4j 等类型增加跳过名单。
 
 **保护侧事实。** Projection v4 的数据项保护投影包含必填的 `target_engine_id`，值为 System 登记的永久 Engine Instance ID，不是引擎类型、地址或当前连接。字段与既有 DataItem fingerprint 同源：从 Enrollment 冻结的目标身份前像派生，发布前校验 `engine_id + full_name` 重算的指纹与 target 一致；不能由请求者单独指定一个与目标无关的引擎编号。它参与投影 checksum、修订和持久化。数据项身份仍以原 target 为准，不新增引擎 ACL，不向不属于引擎的数据安全专业资源强加引擎归属。
@@ -554,7 +558,13 @@ Manager 数据剖析不得直接复用 `preview` 对行值的遮盖算法。唯�
 
 第一阶段已纳管 DataItem 只开放 `kind=all` 剖析。`kind=condition` 的条件值既会影响源读取，也可能进入 execution 配置；在形成独立的条件值保护契约前必须拒绝。投影 upsert、revision 变化和 release 都必须在 Owner 本地事务屏障中删除该目标的历史剖析结果，并清除历史 execution 配置中的条件原值；release 后需要用户重新剖析，不恢复退出纳管前的缓存结果。
 
-### 10.2 Service `service_execute` 动作
+### 10.2 Develop 原值历史读取
+
+Develop 原值查询沿现有异步执行与专业历史读取链路实现。执行时从已验证 Execution Authorization 取得用户主体；普通执行记录继续保存默认脱敏结果。只有该用户在执行时具有 `develop/query` 授权的直接输出字段，才可另存 Owner 私有的有界原值历史；其余字段在保存前执行默认保护。历史冻结 Provider 输出血缘、字段结构、默认保护规则和主体，不保存凭据或审批依据。通用观察、日志、TaskProvider、Monitor 与导出配置不得返回该私有载荷。
+
+专业详情、列表和工作台轮询每次均从当前可信用户及 Develop 本地持久投影重新判定；授权到期、撤销或修订失配时在返回副本中恢复默认保护，不返回旧原值，不修改历史原值事实。当前默认规则或组件结构已变化、资源投影到期或状态无法验证时拒绝历史结果并要求重新查询，不重复哈希旧脱敏值。未在执行时获权的历史结果不能由后来批准的授权还原。已有 Manager 授权不扩大；Develop 查询授权不改变 Transfer 完整导出的默认保护。已经交付给客户端的数据不承诺远程收回，页面在期限结束后清除展示并重新读取。
+
+### 10.3 Service `service_execute` 动作
 
 Service 已发布 QueryService 的 REST Query 与 OGC API Features 共用唯一结构化查询内核，因此首个字段级切片只开放该内核的直接 PreparedQuery 执行，并使用独立 `service_execute` 动作。Security 必须从同一基线为 Service 编译独立规则；只属于 `manager/preview` 的 ProtectionPolicy 不得收紧 Develop 或 Service 投影。
 
@@ -564,7 +574,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 
 当前不能提供完整 PreparedQuery 读取闭包与输出血缘的联邦查询、图查询，以及尚未建立独立 `service_publish` 或其他动作执行器的数据查询辅助、查询样例和瓦片路径，继续使用资源级失效关闭，不得借用 `service_execute` 或 Manager 规则开放。
 
-### 10.3 Transfer `export` 动作
+### 10.4 Transfer `export` 动作
 
 `export` 是 Transfer Owner 对“受保护数据离开源 DataItem”的稳定动作，不是 Transfer `task_type`。Transfer 任务类型仍唯一使用 `sync`，不得因数据安全恢复 `export` 任务类型或第二条执行路线。
 
@@ -609,9 +619,9 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `DELETE` | `/assessments/{id}` | 携带 `version` 和原因，追加 `not_sensitive` 修订以撤销当前正式结论，不删除历史 |
 | `GET/POST` | `/protection-policies` | 保护策略列表/创建；列表可按 `enrollment_id` 精确筛选，创建产生首个不可变修订 |
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
-| `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
-| `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
-| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，并可按申请人、资源或字段、申请时间筛选；`history` 还可按 `approved|rejected|expired` 处理结果及 `active|expired|revoked|superseded` 当前授权状态进行服务端筛选。待审批视图排除已过期记录并明确本人申请不可自审；审批记录视图返回完整决策审计信息，并为批准记录返回当前 `authorization_state`、原授权截止时间和用于进入既有授权详情的 `enrollment_id` |
+| `GET` | `/protection-access-request-targets` | Manager 预览或 Develop 查询按 DataItem fingerprint 和明确出口查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
+| `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从共享申请交互提交明确 scopes 集合的按用户原值访问申请 |
+| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，并可按申请人、资源或字段、申请时间筛选；`history` 还可按 `approved|rejected|expired` 处理结果及 `active|expired|revoked|superseded` 当前授权状态进行服务端筛选。待审批视图排除已过期记录并明确本人申请不可自审；审批记录视图返回完整决策审计信息，并为批准记录通过 `authorizations[]` 分别返回每个出口的当前授权状态、原授权截止时间、授权 ID，以及用于进入既有授权详情的 `enrollment_id` |
 | `GET` | `/protection-access-requests/{id}` | 审批人员按当前租户读取一条申请的最新状态与可审批性，用于版本冲突后的显式重新加载 |
 | `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
 | `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
@@ -777,7 +787,7 @@ Manager 必须按已实现的动作执行器逐项开放已纳管 DataItem，不
 14. 显式重新发现拒绝同一纳管的并发 pending/running 执行；结构快照变化后发布携带最新 Hash 的新投影，组件结构未变化的正式 Assessment 可以续用，组件结构冲突时保守保护。
 15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 自动发现初始等级变化只影响未复核候选；Detector 自动采用置信度变化走有界重新发现；正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
 16. Manager 预览只列出当前投影中的字段：已有正式敏感 Assessment 的字段可申请；自动发现但尚未正式复核的字段继续保护并明确标注“需先完成复核”，不得因不具备申请条件而从保护状态中消失。
-17. ProtectionAccessRequest 只能由当前可信用户从 Manager 预览发起，申请人与审批人必须不同；批准后形成的 ProtectionExemption 只对该用户的 `manager/preview` 生效。到期、撤销或 Assessment 修订变化后即使 Security 不可达也自动回落到 Policy 与 Baseline；主体不匹配、结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。不存在直接创建、续期、管理员绕过或租户级原值授权路径。
+17. ProtectionAccessRequest 由当前可信用户从 Manager 或 Develop 共享交互发起，显式选择 manager/preview、develop/query 或两者；申请人与审批人必须不同。一次审批原子创建所选各出口的精确 ProtectionExemption，其他出口不继承。到期、撤销或 Assessment 修订变化后即使 Security 不可达也自动回落到 Policy 与 Baseline；主体不匹配、结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。不存在直接创建、续期、管理员绕过或租户级原值授权路径。
 18. `security-mysql-owner-protection` Online T4 必须通过 Gateway 实际创建一个可清理的 SensitiveDataType，并确认同一命令生成唯一有效初始 ProtectionBaseline；非法默认保护必须整体回滚且不留下类型。事务探针清理后，再由同一 suite 验证 Manager、Develop、Service 和 Transfer 已安装并执行真实保护投影，报告必须分别保留事务、回滚、清理和 Owner 出口证据。
 
 代码实施后的标准本地入口至少为：
@@ -809,11 +819,11 @@ make test-changed
 
 ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null 明确表示长期有效。新纳管与重新纳入默认长期有效；创建可提交 `validity_mode=permanent|until` 和 `expires_at`，permanent 必须无截止时间，until 必须为未来时间。响应始终返回明确的 validity_mode 与可空 expires_at。完整表／集合内的四 Owner 使用同一截止时间，不按字段设置期限。
 
-`PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、四 Owner 新投影和变更流必须同事务，失败整体回滚。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
+`PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、所有必要 Owner 新投影和变更流必须同事务，失败整体回滚。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
 
 Projection 唯一运行协议为 v4，expires_at 必须出现，可为 null（长期）或非零且晚于 valid_from 的时间。缺失 expires_at、旧协议及非法日期均拒绝；checksum 包含 null。中央迁移单向转换当前投影和历史变化，保留原日期、ID、revision、cursor 和顺序，重新计算 checksum；四 Owner 清理旧协议副本并完整重放，恢复相同日期、身份及修订，不保留运行时兼容。旧 Enrollment 首次回填四 Owner 当前投影中最早截止时间，不能静默变为长期。初始 enrolling deny 也服从资源期限，到期不能解除门禁。
 
-临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及四 Owner 同步状态，冲突保留表单，不自动重试。
+临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及所有必要 Owner 同步状态，冲突保留表单，不自动重试。
 
 Manager 原值申请目标可返回 protection_expires_at；长期有效时省略。申请界面默认期限和校验上限同时受该资源截止时间与 30 天上限限制；既有授权的 authorized_until 展示当前投影下实际可用的截止时间，授权历史原期限保持不变。
 

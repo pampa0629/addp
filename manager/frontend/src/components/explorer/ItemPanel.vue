@@ -337,39 +337,7 @@
       </div>
     </div>
 
-    <el-dialog
-      v-model="accessRequestVisible"
-      :title="t('manager.explorer.plaintextAccess.title')"
-      width="560px"
-      append-to-body
-      destroy-on-close
-    >
-      <el-alert type="warning" :closable="false" show-icon :title="t('manager.explorer.plaintextAccess.warning')" />
-      <el-form label-position="top" class="plaintext-access-form">
-        <el-form-item :label="t('manager.explorer.plaintextAccess.field')" required>
-          <el-select v-model="accessRequestForm.assessmentId" style="width: 100%">
-            <el-option v-for="target in requestableAccessTargets" :key="target.assessment_id" :label="target.component?.key" :value="target.assessment_id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('manager.explorer.plaintextAccess.deadline')" required>
-          <el-date-picker
-            v-model="accessRequestForm.expiresAt"
-            type="datetime"
-            style="width: 100%"
-            :disabled-date="disableAccessRequestDate"
-          />
-          <small class="plaintext-access-form__help">{{ t('manager.explorer.plaintextAccess.deadlineHint') }}</small>
-          <small v-if="selectedAccessTarget?.protection_expires_at" class="plaintext-access-form__help">{{ t('manager.explorer.plaintextAccess.protectionDeadline', { at: new Date(selectedAccessTarget.protection_expires_at).toLocaleString() }) }}</small>
-        </el-form-item>
-        <el-form-item :label="t('manager.explorer.plaintextAccess.rationale')" required>
-          <el-input v-model="accessRequestForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('manager.explorer.plaintextAccess.rationalePlaceholder')" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="accessRequestVisible = false">{{ t('manager.explorer.plaintextAccess.cancel') }}</el-button>
-        <el-button type="primary" :loading="accessRequestSaving" @click="submitAccessRequest">{{ t('manager.explorer.plaintextAccess.submit') }}</el-button>
-      </template>
-    </el-dialog>
+    <ProtectionAccessRequestDialog v-model="accessRequestVisible" :target-identity="itemFingerprint" initial-owner="manager" :api="client" @submitted="onAccessRequestSubmitted" />
 
     <el-dialog
       v-model="jsonDialogVisible"
@@ -395,6 +363,7 @@ import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
 import { buildSecurityProtectionRoute } from '@/utils/securityNavigation'
 import { normalizeMetaItemMetadata } from '@/utils/itemMetadata'
+import { ProtectionAccessRequestDialog } from '@addp/common-frontend'
 import { hasAccessGrantSynchronized, isAccessGrantSynchronized, isAccessGrantSynchronizing } from '@/utils/plaintextAccess'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
@@ -532,18 +501,15 @@ const canRequestPlaintext = computed(() => authStore.hasPermission('security.pro
 const accessTargets = ref([])
 const accessTargetsLoading = ref(false)
 const accessRequestVisible = ref(false)
-const accessRequestSaving = ref(false)
-const accessRequestForm = reactive({ assessmentId: '', expiresAt: null, rationale: '' })
 let accessTargetsRequestSeq = 0
 let accessStatusTimer = null
-const ACCESS_REQUEST_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000
 const activeAccessCount = computed(() => accessTargets.value.filter(isAccessGrantSynchronized).length)
 const synchronizingAccessCount = computed(() => accessTargets.value.filter(isAccessGrantSynchronizing).length)
 const pendingAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'pending').length)
 const expiredAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'expired').length)
 const rejectedAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'rejected').length)
 const reviewRequiredAccessCount = computed(() => accessTargets.value.filter(target => !target.requestable).length)
-const requestableAccessTargets = computed(() => accessTargets.value.filter(target => target.requestable && !target.active_exemption_id && target.access_request?.state !== 'pending'))
+const requestableAccessTargets = computed(() => accessTargets.value.filter(target => target.requestable))
 
 const clearAccessStatusPoll = () => {
   if (accessStatusTimer) clearTimeout(accessStatusTimer)
@@ -584,48 +550,10 @@ const loadAccessTargets = async () => {
   }
 }
 
-const selectedAccessTarget = computed(() => requestableAccessTargets.value.find(target => target.assessment_id === accessRequestForm.assessmentId))
-const accessRequestMaximum = () => Math.min(Date.now() + ACCESS_REQUEST_MAX_DURATION_MS,
-  selectedAccessTarget.value?.protection_expires_at ? Date.parse(selectedAccessTarget.value.protection_expires_at) : Infinity)
-const disableAccessRequestDate = value => value.getTime() < Date.now() - 24 * 60 * 60 * 1000 || value.getTime() > accessRequestMaximum()
-
-const validAccessRequestDeadline = value => {
-  const deadline = value instanceof Date ? value : new Date(value)
-  const remaining = deadline.getTime() - Date.now()
-  return !Number.isNaN(deadline.getTime()) && remaining > 0 && deadline.getTime() <= accessRequestMaximum()
-}
-
-const openAccessRequest = () => {
-  const target = requestableAccessTargets.value[0]
-  if (!target) return
-  accessRequestForm.assessmentId = target.assessment_id
-  accessRequestForm.expiresAt = new Date(Math.min(Date.now() + 8 * 60 * 60 * 1000, accessRequestMaximum()))
-  accessRequestForm.rationale = ''
-  accessRequestVisible.value = true
-}
-
-const submitAccessRequest = async () => {
-  if (!accessRequestForm.assessmentId || !validAccessRequestDeadline(accessRequestForm.expiresAt) || !String(accessRequestForm.rationale || '').trim()) {
-    ElMessage.warning(t('manager.explorer.plaintextAccess.required'))
-    return
-  }
-  accessRequestSaving.value = true
-  try {
-    await client.post('/security/protection-access-requests', {
-      assessment_id: accessRequestForm.assessmentId,
-      consumer_owner: 'manager',
-      action: 'preview',
-      requested_expires_at: new Date(accessRequestForm.expiresAt).toISOString(),
-      rationale: String(accessRequestForm.rationale).trim()
-    })
-    accessRequestVisible.value = false
-    ElMessage.success(t('manager.explorer.plaintextAccess.created'))
-    await loadAccessTargets()
-  } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('manager.explorer.plaintextAccess.failed'))
-  } finally {
-    accessRequestSaving.value = false
-  }
+const openAccessRequest = () => { accessRequestVisible.value = true }
+const onAccessRequestSubmitted = async () => {
+  ElMessage.success(t('manager.explorer.plaintextAccess.created'))
+  await loadAccessTargets()
 }
 
 const loadFallbackItemMeta = async (itemId) => {

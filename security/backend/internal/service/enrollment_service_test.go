@@ -108,7 +108,7 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.State != models.EnrollmentStateActivating || len(created.OwnerProgress) != 4 {
+	if created.State != models.EnrollmentStateActivating || len(created.OwnerProgress) != len(requiredProtectionOwnerContracts) {
 		t.Fatalf("created state/progress = %s/%d", created.State, len(created.OwnerProgress))
 	}
 	if created.TargetSnapshot.EngineID != 11 || created.TargetSnapshot.ItemType != "collection" || created.TargetSnapshot.FullName != "Outdoor.Persons" {
@@ -672,8 +672,8 @@ func assertResourceProtectionValidity(t *testing.T, db *gorm.DB) {
 	}
 	var count int64
 	db.Model(&models.ProtectionProjectionChange{}).Where("enrollment_id = ?", row.ID).Count(&count)
-	if count != 8 {
-		t.Fatalf("want 4 initial and 4 revised projections; got %d", count)
+	if count != int64(2*len(requiredProtectionOwnerContracts)) {
+		t.Fatalf("want initial and revised projections for every required owner; got %d", count)
 	}
 	for i, request := range []models.UpdateProtectionValidityRequest{
 		{Version: row.Version, ValidityMode: "permanent"},
@@ -793,12 +793,12 @@ func TestActiveValidityUpdatePreservesRulesAndBoundsPlaintext(t *testing.T) {
 	if err := db.Where("enrollment_id = ?", row.ID).First(&assessment).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{AssessmentID: assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: deadline.Add(time.Minute), Rationale: "期限之外"}); !errors.Is(err, commonapi.ErrBadRequest) {
+	if _, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},AssessmentID: assessment.ID,   RequestedExpiresAt: deadline.Add(time.Minute), Rationale: "期限之外"}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("plaintext exceeded protection deadline: %v", err)
 	}
 
 	grantDeadline := now.Add(15 * time.Minute)
-	application, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{AssessmentID: assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: grantDeadline, Rationale: "期限内核验"})
+	application, err := requests.Create(ctx, 7, 41, models.CreateProtectionAccessRequest{Scopes: []models.ProtectionAccessScope{{ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction}},AssessmentID: assessment.ID,   RequestedExpiresAt: grantDeadline, Rationale: "期限内核验"})
 	if err != nil {
 		t.Fatal(err)
 	}

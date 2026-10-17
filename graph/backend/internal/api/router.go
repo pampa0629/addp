@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	graphauthorization "github.com/addp/graph/internal/authorization"
 	"github.com/addp/graph/internal/config"
+	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -29,6 +30,12 @@ func SetupRouter(
 
 	// i18n 中间件（解析 Accept-Language 请求头）
 	router.Use(i18nmiddleware.I18nMiddleware())
+	router.Use(func(c *gin.Context) {
+		ctx, end := service.WithGraphProtectionResponse(c.Request.Context())
+		defer end()
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
 
 	// Swagger 文档
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

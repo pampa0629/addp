@@ -626,6 +626,12 @@ const graphOverviewPage = ref(1)
 const graphOverviewPageSize = ref(20)
 const quickViewStatus = ref(null)
 const previewState = ref(null)
+const temporaryPreviewCrs = ref('')
+watch(() => JSON.stringify([
+  props.selectedNode?.locator || props.selectedNode?.id || '',
+  store.selectedChildName, store.selectedChildKey,
+  store.selectedRefPath, store.selectedNestedChildPath
+]), () => { temporaryPreviewCrs.value = '' }, { flush: 'sync' })
 const quickViewLoadError = ref('')
 const quickViewActionLoading = ref(false)
 const quickViewTileAdvisory = ref(null)
@@ -673,11 +679,16 @@ const pptxPreviewSource = computed(() => {
 })
 
 const previewComponentProps = computed(() => {
+  const temporaryCrsProps = {
+    temporaryCrs: temporaryPreviewCrs.value,
+    'onUpdate:temporaryCrs': value => { temporaryPreviewCrs.value = value }
+  }
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
   }
   if (previewPluginName.value === 'container-preview') {
     return {
+      ...temporaryCrsProps,
       activeChildPreview: store.activeChildPreviewData,
       activeChildLoading: store.childPreviewLoading,
       selectedChildName: store.selectedChildName,
@@ -685,6 +696,7 @@ const previewComponentProps = computed(() => {
       selectedRefPath: store.selectedRefPath
     }
   }
+  if (previewPluginName.value === 'table') return temporaryCrsProps
   if (previewPluginName.value === 'vector-tile') {
 	return vectorTileObjectPreviewProps(props.previewData, props.selectedNode?.locator)
   }

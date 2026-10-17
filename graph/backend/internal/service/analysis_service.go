@@ -138,6 +138,7 @@ func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenant
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	gdsAvail, gdsVer := s.checkGDS(ctx, engine)
 	spatialAvail := s.checkSpatial(ctx, engine)
 	caps := &models.AlgorithmCapabilities{
@@ -198,6 +199,7 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	if !engine.provider.GraphDialect().Spatial {
 		return nil, fmt.Errorf("SPATIAL_UNAVAILABLE")
 	}
@@ -291,6 +293,7 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 
 	// 检查 GDS 算法是否可用
 	isGDS := false

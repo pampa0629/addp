@@ -24,7 +24,7 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}
 
-	owners := []string{"manager", "develop", "service", "transfer", "future_owner"}
+	owners := []string{"manager", "develop", "service", "transfer", "graph", "future_owner"}
 	for _, owner := range owners {
 		schema := "projection_store_" + owner + "_it"
 		dropProjectionStoreTestSchema(t, db, schema)

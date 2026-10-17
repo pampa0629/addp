@@ -17,12 +17,13 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-security-owner-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-# The v11 suite adds discovery, four Owner acknowledgements and a real bank-card
+# The v11 suite adds discovery, required Owner acknowledgements and a real bank-card
 # transfer to the existing serial algorithm/outage/index-convergence acceptance.
 if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
   export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200
 fi
 export SECURITY_URL=http://127.0.0.1:8194
+export GRAPH_URL=http://127.0.0.1:8186
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
 # Swagger generation requires an explicit workspace in a clean checkout.
@@ -41,7 +42,7 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-security-owner-fixture.sh start
 application_owned=1
-for start_target in -meta -security -manager -develop -service -transfer -monitor; do
+for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

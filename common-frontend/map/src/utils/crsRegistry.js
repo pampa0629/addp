@@ -4,6 +4,7 @@ import { normalizeCRSDefinition } from './crsDefinition.mjs'
 
 const WGS84 = 'EPSG:4326'
 const WEB_MERCATOR = 'EPSG:3857'
+export const TEMPORARY_SOURCE_CRS_OPTIONS = Object.freeze([WGS84, WEB_MERCATOR])
 const SUPPORTED_DEFINITION_ENCODINGS = new Set(['wkt', 'esri_wkt', 'proj4'])
 
 let registered = false
@@ -106,22 +107,21 @@ const ensureProjection = (code, crsDefinition) => {
   return canRegisterCRSDefinition(code, crsDefinition)
 }
 
-export const getPreviewCRSTransform = (preview) => {
+export const getPreviewCRSTransform = (preview, temporarySourceCRS = '') => {
   ensureBuiltIns()
 
   const transformStatus = String(preview?.transform_status || metadata(preview)?.transform_status || '').trim()
-  if (transformStatus === 'unknown_crs') {
-    return { status: 'unknown_crs' }
-  }
-
-  const sourceCode = responseGeometryCodeFromPreview(preview, transformStatus)
-  if (!sourceCode) {
-    return { status: 'unknown_crs' }
+  let sourceCode = responseGeometryCodeFromPreview(preview, transformStatus)
+  if (transformStatus === 'engine_transformed' && !sourceCode) return { status: 'unknown_crs' }
+  const needsDeclaration = transformStatus === 'unknown_crs' || !sourceCode
+  if (needsDeclaration) {
+    if (!TEMPORARY_SOURCE_CRS_OPTIONS.includes(temporarySourceCRS)) return { status: 'unknown_crs' }
+    sourceCode = temporarySourceCRS
   }
   if (sourceCode.toUpperCase() === WGS84) {
     return { status: 'direct', sourceCode, targetCode: WGS84 }
   }
-  const sourceCRSDefinition = sourceCRSDefinitionFromPreview(preview)
+  const sourceCRSDefinition = needsDeclaration ? null : sourceCRSDefinitionFromPreview(preview)
   if (!ensureProjection(sourceCode, sourceCRSDefinition)) {
     return { status: 'unsupported_crs', sourceCode, targetCode: WGS84 }
   }
@@ -145,6 +145,11 @@ const transformCoordinates = (value, transformCoordinate) => {
     ]
   }
   return value.map((item) => transformCoordinates(item, transformCoordinate))
+}
+
+export const canDeclarePreviewSourceCRS = (preview) => {
+  const status = String(preview?.transform_status || metadata(preview)?.transform_status || '').trim()
+  return status !== 'engine_transformed' && getPreviewCRSTransform(preview).status === 'unknown_crs'
 }
 
 export const transformGeoJSONGeometryToWGS84 = (geometry, crsTransform) => {

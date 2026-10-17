@@ -34,6 +34,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	if err := Migrate(tx); err != nil {
 		t.Fatal(err)
 	}
+	assertAccessScopeMigration(t, tx)
 	assertExistingEnrollmentValidityMigration(t, tx)
 	if err := schema.Migrate(tx, "security", SchemaVersion, Migrate); err != nil {
 		t.Fatal(err)

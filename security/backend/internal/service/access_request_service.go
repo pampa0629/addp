@@ -100,7 +100,7 @@ func (s *AccessRequestService) BackfillActorSnapshots(ctx context.Context) error
 
 func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int64, targetIdentity, owner, action string) (*models.ProtectionAccessTargetListResponse, error) {
 	targetIdentity, owner, action = strings.TrimSpace(targetIdentity), strings.TrimSpace(owner), strings.TrimSpace(action)
-	if tenantID <= 0 || userID <= 0 || targetIdentity == "" || owner != managerProtectionOwner || action != managerPreviewAction {
+	if tenantID <= 0 || userID <= 0 || targetIdentity == "" || !validAccessScope(owner, action) {
 		return nil, commonapi.ErrBadRequest
 	}
 	var result *models.ProtectionAccessTargetListResponse
@@ -165,10 +165,8 @@ func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targ
 		}
 		target.AssessmentID, target.AssessmentRevision, target.Requestable, target.UnavailableReason = assessment.ID, revision.Revision, true, ""
 		var latestRequest models.ProtectionAccessRequest
-		if err := db.
-			Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID)).
-			Order("created_at DESC, id DESC").
-			First(&latestRequest).Error; err == nil {
+		query := db.Where("tenant_id = ? AND assessment_id = ? AND subject_type = ? AND subject_id = ?", tenantID, assessment.ID, "user", userIDString(userID))
+		if err := filterAccessScope(query, owner, action).Order("created_at DESC,id DESC").First(&latestRequest).Error; err == nil {
 			latestRequest = effectiveAccessRequest(latestRequest, now)
 			target.AccessRequest = &models.ProtectionAccessRequestSummary{
 				ID: latestRequest.ID, State: latestRequest.State, RequestedExpiresAt: latestRequest.RequestedExpiresAt,
@@ -198,12 +196,11 @@ func (s *AccessRequestService) targets(db *gorm.DB, tenantID, userID int64, targ
 
 func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int64, request models.CreateProtectionAccessRequest) (*models.ProtectionAccessRequestResponse, error) {
 	request.AssessmentID = strings.TrimSpace(request.AssessmentID)
-	request.ConsumerOwner = strings.TrimSpace(request.ConsumerOwner)
-	request.Action = strings.TrimSpace(request.Action)
+	scopes, validScopes := canonicalAccessScopes(request.Scopes)
 	request.Rationale = strings.TrimSpace(request.Rationale)
 	now := s.now().UTC()
 	request.RequestedExpiresAt = request.RequestedExpiresAt.UTC()
-	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || request.ConsumerOwner != managerProtectionOwner || request.Action != managerPreviewAction || !validExemptionDeadline(now, request.RequestedExpiresAt) || !validPolicyRationale(request.Rationale) {
+	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || !validScopes || !validExemptionDeadline(now, request.RequestedExpiresAt) || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
 	actors, err := s.resolveActorDisplayNames(ctx, tenantID, []int64{userID})
@@ -219,8 +216,17 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		if enrollment.ProtectionExpiresAt != nil && request.RequestedExpiresAt.After(*enrollment.ProtectionExpiresAt) {
 			return commonapi.ErrBadRequest
 		}
-		binding := "tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?"
-		bindingValues := []any{tenantID, assessment.ID, request.ConsumerOwner, request.Action, "user", userIDString(userID)}
+		for _, scope := range scopes {
+			var active int64
+			if err := tx.Table("security.protection_exemptions AS exemption").Joins("JOIN security.protection_exemption_revisions AS revision ON revision.exemption_id = exemption.id AND revision.tenant_id = exemption.tenant_id AND revision.revision = exemption.current_revision").Where("exemption.tenant_id = ? AND exemption.assessment_id = ? AND exemption.consumer_owner = ? AND exemption.action = ? AND exemption.subject_type = ? AND exemption.subject_id = ? AND exemption.state = ? AND revision.state = ? AND revision.assessment_revision = ? AND revision.expires_at > ?", tenantID, assessment.ID, scope.ConsumerOwner, scope.Action, "user", userIDString(userID), models.ProtectionExemptionStateActive, models.ProtectionExemptionStateActive, current.Revision, now).Count(&active).Error; err != nil {
+				return err
+			}
+			if active > 0 {
+				return commonapi.ErrConflict
+			}
+		}
+		binding := "tenant_id = ? AND assessment_id = ? AND subject_type = ? AND subject_id = ?"
+		bindingValues := []any{tenantID, assessment.ID, "user", userIDString(userID)}
 		if err := tx.Model(&models.ProtectionAccessRequest{}).
 			Where(binding+" AND state = ? AND requested_expires_at <= ?", append(bindingValues, models.ProtectionAccessRequestStatePending, now)...).
 			Updates(map[string]any{
@@ -237,14 +243,14 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		}
 		row := models.ProtectionAccessRequest{
 			ID: uuid.NewString(), TenantID: tenantID, AssessmentID: assessment.ID, AssessmentRevision: current.Revision,
-			ConsumerOwner: request.ConsumerOwner, Action: request.Action, SubjectType: "user", SubjectID: userIDString(userID), SubjectDisplayName: actors[userID],
+			Scopes: scopes, SubjectType: "user", SubjectID: userIDString(userID), SubjectDisplayName: actors[userID],
 			RequestedExpiresAt: request.RequestedExpiresAt, Rationale: request.Rationale,
 			State: models.ProtectionAccessRequestStatePending, Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := tx.Create(&row).Error; err != nil {
 			return policyDBError(err)
 		}
-		response = accessRequestResponse(row, current.Component, enrollment.ID, enrollment.TargetFullName, "")
+		response = accessRequestResponse(row, current.Component, enrollment.ID, enrollment.TargetFullName)
 		return nil
 	})
 	return response, err
@@ -372,11 +378,7 @@ func (s *AccessRequestService) filterByAuthorizationState(ctx context.Context, t
 		Select("authorization_request.id").
 		Joins(`JOIN security.protection_exemptions AS authorization_exemption
 			ON authorization_exemption.tenant_id = authorization_request.tenant_id
-			AND authorization_exemption.assessment_id = authorization_request.assessment_id
-			AND authorization_exemption.consumer_owner = authorization_request.consumer_owner
-			AND authorization_exemption.action = authorization_request.action
-			AND authorization_exemption.subject_type = authorization_request.subject_type
-			AND authorization_exemption.subject_id = authorization_request.subject_id`).
+			AND authorization_exemption.id IN (SELECT original_grant.exemption_id FROM security.protection_exemption_revisions AS original_grant WHERE original_grant.tenant_id = authorization_request.tenant_id AND original_grant.source_request_id = authorization_request.id)`).
 		Joins(`JOIN security.protection_exemption_revisions AS authorization_revision
 			ON authorization_revision.tenant_id = authorization_exemption.tenant_id
 			AND authorization_revision.exemption_id = authorization_exemption.id
@@ -490,14 +492,21 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		if current.Revision != row.AssessmentRevision {
 			return commonapi.ErrConflict
 		}
-		state, exemptionID := models.ProtectionAccessRequestStateRejected, ""
+		if _, valid := canonicalAccessScopes(row.Scopes); !valid {
+			return commonapi.ErrBadRequest
+		}
+		state := models.ProtectionAccessRequestStateRejected
 		if request.Decision == "approve" {
 			if !validExemptionDeadline(now, request.ExpiresAt) || request.ExpiresAt.After(row.RequestedExpiresAt) || (enrollment.ProtectionExpiresAt != nil && request.ExpiresAt.After(*enrollment.ProtectionExpiresAt)) {
 				return commonapi.ErrBadRequest
 			}
-			exemptionID, err = approveSubjectExemption(tx, row, reviewerID, request.ExpiresAt, request.Rationale, now)
-			if err != nil {
-				return err
+			for _, scope := range row.Scopes {
+				if !validAccessScope(scope.ConsumerOwner, scope.Action) {
+					return commonapi.ErrBadRequest
+				}
+				if _, err := approveSubjectExemption(tx, row, scope, reviewerID, request.ExpiresAt, request.Rationale, now); err != nil {
+					return err
+				}
 			}
 			state = models.ProtectionAccessRequestStateApproved
 		}
@@ -513,28 +522,28 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		}
 		row.State, row.Version, row.DecidedBy, row.DecidedByDisplayName, row.DecidedAt, row.DecisionRationale, row.UpdatedAt = state, row.Version+1, &reviewerID, actors[reviewerID], &now, request.Rationale, now
 		if state == models.ProtectionAccessRequestStateApproved {
-			if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{managerProtectionOwner}); err != nil {
+			owners := make([]string, len(row.Scopes))
+			for i, scope := range row.Scopes {
+				owners[i] = scope.ConsumerOwner
+			}
+			if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, owners); err != nil {
 				return err
 			}
 		}
 		_ = assessment
-		response = accessRequestResponse(row, current.Component, enrollment.ID, enrollment.TargetFullName, exemptionID)
-		if state == models.ProtectionAccessRequestStateApproved {
-			response.AuthorizationState = models.ProtectionExemptionStateActive
-			response.AuthorizedUntil = &request.ExpiresAt
-		}
-		return nil
+		response, err = s.loadResponse(tx, row, now)
+		return err
 	})
 	return response, err
 }
 
-func approveSubjectExemption(tx *gorm.DB, request models.ProtectionAccessRequest, reviewerID int64, expiresAt time.Time, rationale string, now time.Time) (string, error) {
+func approveSubjectExemption(tx *gorm.DB, request models.ProtectionAccessRequest, scope models.ProtectionAccessScope, reviewerID int64, expiresAt time.Time, rationale string, now time.Time) (string, error) {
 	var exemption models.ProtectionExemption
-	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", request.TenantID, request.AssessmentID, request.ConsumerOwner, request.Action, request.SubjectType, request.SubjectID).First(&exemption).Error
+	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", request.TenantID, request.AssessmentID, scope.ConsumerOwner, scope.Action, request.SubjectType, request.SubjectID).First(&exemption).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		exemption = models.ProtectionExemption{
 			ID: uuid.NewString(), TenantID: request.TenantID, AssessmentID: request.AssessmentID,
-			ConsumerOwner: request.ConsumerOwner, Action: request.Action, SubjectType: request.SubjectType, SubjectID: request.SubjectID,
+			ConsumerOwner: scope.ConsumerOwner, Action: scope.Action, SubjectType: request.SubjectType, SubjectID: request.SubjectID,
 			State: models.ProtectionExemptionStateActive, Version: 1, CurrentRevision: 1,
 			CreatedBy: reviewerID, CreatedAt: now, UpdatedAt: now,
 		}
@@ -566,6 +575,9 @@ func approveSubjectExemption(tx *gorm.DB, request models.ProtectionAccessRequest
 }
 
 func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAccessRequest, now time.Time) (*models.ProtectionAccessRequestResponse, error) {
+	if _, valid := canonicalAccessScopes(row.Scopes); !valid {
+		return nil, errors.New("protection access request has invalid scopes")
+	}
 	var revision models.ResourceSecurityAssessmentRevision
 	if err := db.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", row.TenantID, row.AssessmentID, row.AssessmentRevision).First(&revision).Error; err != nil {
 		return nil, err
@@ -578,33 +590,25 @@ func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAc
 	if err := db.Where("tenant_id = ? AND id = ?", row.TenantID, assessment.EnrollmentID).First(&enrollment).Error; err != nil {
 		return nil, err
 	}
-	var exemption models.ProtectionExemption
-	exemptionID := ""
-	if err := db.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", row.TenantID, row.AssessmentID, row.ConsumerOwner, row.Action, row.SubjectType, row.SubjectID).First(&exemption).Error; err == nil {
-		exemptionID = exemption.ID
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	response := accessRequestResponse(row, revision.Component, enrollment.ID, enrollment.TargetFullName, exemptionID)
+	response := accessRequestResponse(row, revision.Component, enrollment.ID, enrollment.TargetFullName)
 	if row.State != models.ProtectionAccessRequestStateApproved {
 		return response, nil
 	}
-	if exemptionID == "" {
-		return nil, errors.New("approved protection access request is missing its exemption")
+	for _, scope := range row.Scopes {
+		var exemption models.ProtectionExemption
+		if err := db.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", row.TenantID, row.AssessmentID, scope.ConsumerOwner, scope.Action, row.SubjectType, row.SubjectID).First(&exemption).Error; err != nil {
+			return nil, err
+		}
+		var revisions []models.ProtectionExemptionRevision
+		if err := db.Where("tenant_id = ? AND exemption_id = ? AND (revision = ? OR source_request_id = ?)", row.TenantID, exemption.ID, exemption.CurrentRevision, row.ID).Order("revision DESC").Find(&revisions).Error; err != nil {
+			return nil, err
+		}
+		current, grant := findAccessRequestExemptionRevisions(revisions, exemption.CurrentRevision, row.ID)
+		if current == nil || grant == nil {
+			return nil, errors.New("approved protection access request is missing its exemption revision")
+		}
+		response.Authorizations = append(response.Authorizations, models.ProtectionAccessAuthorization{ProtectionAccessScope: scope, ExemptionID: exemption.ID, AuthorizationState: effectiveAccessRequestAuthorizationState(row.ID, exemption, *current, assessment.CurrentRevision, now), AuthorizedUntil: &grant.ExpiresAt})
 	}
-	var exemptionRevisions []models.ProtectionExemptionRevision
-	if err := db.Where(
-		"tenant_id = ? AND exemption_id = ? AND (revision = ? OR source_request_id = ?)",
-		row.TenantID, exemption.ID, exemption.CurrentRevision, row.ID,
-	).Order("revision DESC").Find(&exemptionRevisions).Error; err != nil {
-		return nil, err
-	}
-	currentExemptionRevision, grantRevision := findAccessRequestExemptionRevisions(exemptionRevisions, exemption.CurrentRevision, row.ID)
-	if currentExemptionRevision == nil || grantRevision == nil {
-		return nil, errors.New("approved protection access request is missing its exemption revision")
-	}
-	response.AuthorizationState = effectiveAccessRequestAuthorizationState(row.ID, exemption, *currentExemptionRevision, assessment.CurrentRevision, now)
-	response.AuthorizedUntil = &grantRevision.ExpiresAt
 	return response, nil
 }
 
@@ -637,14 +641,14 @@ func effectiveAccessRequestAuthorizationState(requestID string, exemption models
 	}
 }
 
-func accessRequestResponse(row models.ProtectionAccessRequest, component dataprotection.Component, enrollmentID, targetFullName, exemptionID string) *models.ProtectionAccessRequestResponse {
+func accessRequestResponse(row models.ProtectionAccessRequest, component dataprotection.Component, enrollmentID, targetFullName string) *models.ProtectionAccessRequestResponse {
 	response := &models.ProtectionAccessRequestResponse{
 		ProtectionAccessRequest: row,
 		Requester:               models.ProtectionAccessActor{Type: row.SubjectType, ID: row.SubjectID, DisplayName: row.SubjectDisplayName},
 		Component:               component,
 		EnrollmentID:            enrollmentID,
 		TargetFullName:          targetFullName,
-		ExemptionID:             exemptionID,
+		Authorizations:          []models.ProtectionAccessAuthorization{},
 	}
 	if row.DecidedBy != nil {
 		response.Reviewer = &models.ProtectionAccessActor{Type: "user", ID: userIDString(*row.DecidedBy), DisplayName: row.DecidedByDisplayName}

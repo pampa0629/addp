@@ -83,6 +83,7 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 	developRules := make([]dataprotection.Rule, 0, len(candidates))
 	serviceRules := make([]dataprotection.Rule, 0, len(candidates))
 	transferRules := make([]dataprotection.Rule, 0, len(candidates))
+	graphRules := make([]dataprotection.Rule, 0, len(candidates))
 	componentKeys := make([]string, 0, len(candidates))
 	for componentKey := range candidates {
 		componentKeys = append(componentKeys, componentKey)
@@ -133,9 +134,15 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 			dataprotection.Rule{Action: managerPreviewAction, Component: candidate.Component, Decision: managerDecision, Authorizations: managerAuthorizations},
 			dataprotection.Rule{Action: managerProfileAction, Component: candidate.Component, Decision: profileDecision},
 		)
-		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: baselineDecision})
+		developAuthorizations, err := protectionAuthorizations(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, developProtectionOwner, developQueryAction, now)
+		if err != nil {
+			return err
+		}
+		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: baselineDecision, Authorizations: developAuthorizations})
 		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: baselineDecision})
 		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: baselineDecision})
+		// Graph has no certified attribute transformer; its public rule must describe the actual refusal.
+		graphRules = append(graphRules, dataprotection.Rule{Action: graphReadAction, Component: candidate.Component, Decision: dataprotection.Decision{Effect: dataprotection.EffectDeny}})
 	}
 	for _, consumerOwner := range consumerOwners {
 		var rules []dataprotection.Rule
@@ -148,6 +155,8 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 			rules = serviceRules
 		case transferProtectionOwner:
 			rules = transferRules
+		case graphProtectionOwner:
+			rules = graphRules
 		default:
 			return errors.New("unsupported field-level protection consumer owner")
 		}

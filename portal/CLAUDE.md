@@ -67,5 +67,5 @@ bash scripts/swagger/check-route-coverage.sh portal
 
 - `asset/CLAUDE.md`
 - `service/CLAUDE.md`
-- `docs/plan/数据资产模块群规划.md`
+- [企业资源目录实现规范](../docs/spec/addp企业资源目录实现规范.md)
 - `docs/spec/addp-API设计规范.md`

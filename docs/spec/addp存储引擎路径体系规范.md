@@ -529,7 +529,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ## HDFS 路径目标契约
 
-本节记录 HDFS 接入契约。Simple 只读插件、Business 样例及 Spark 原生读取已实现，通过独占集群的 T2 门禁及 [Hosted T4 正式消费验收](https://github.com/pampa0629/addp/actions/runs/37217772982)（提交 `11bbacfd5`）。同一普通 User 已完成 System 登记后的 Meta 扫描、Manager 四文件预览及 Develop 正式 Spark 工作流；CSV、JSON、Parquet 各 20 行、金额合计 2100，并验证对应 Standalone Worker 已完成任务及 Console 执行详情。支持范围限于本节规定的 Simple 只读接入。
+本节记录 HDFS 接入契约。Simple 只读插件、Business 样例及 Spark 原生读取已实现，通过独占集群的 T2 门禁及 [Hosted T4 正式消费验收](https://github.com/pampa0629/addp/actions/runs/37217772982)（提交 `11bbacfd5`）。产品容器默认入口与后续 PostgreSQL 结果发布的最终证据由 [Spark Runtime 验证说明](../../engines/spark-workflow/README.md#运行测试)维护，不从早期失败记录推断当前阻塞。同一普通 User 已完成 System 登记后的 Meta 扫描、Manager 四文件预览及 Develop 正式 Spark 工作流；CSV、JSON、Parquet 各 20 行、金额合计 2100，并验证对应 Standalone Worker 已完成任务及 Console 执行详情。支持范围限于本节规定的 Simple 只读接入。
 
 HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCatalogModel` 的 `root -> directory -> file` 层级和 Catalog/Content Provider；不复用对象存储目录模型，不新增 data type。CSV、JSON、Parquet 等内容的类型与格式由现有文件探测和解析能力裁决。
 
@@ -537,6 +537,8 @@ HDFS 以独立 `engine_type=hdfs`、`engine_family=file` 接入，复用 `FileCa
 - 显性 root 使用引擎实例名称，`full_name=""`；根目录下普通文件可以直接成为 leaf。业务路径保留根目录内的原始名称，例如管理根为 `/addp` 时，`/addp/samples/orders.parquet` 的 `full_name` 为 `samples/orders.parquet`，locator 业务 path 为 `samples/orders.parquet`，`item_type=file`。
 - 只有经过根目录边界检查的目录和普通文件进入 Catalog；拒绝穿越根目录的路径，不把符号链接作为普通文件或可递归目录。列举、路径解析、事实查询与内容读取必须使用同一边界。
 - 管理根目录是平台资源命名空间边界，不能替代引擎原生认证、权限或集群网络隔离。
+
+WebHDFS `LISTSTATUS_BATCH` 分页使用固定 Hadoop 3.5.0 实际协议字段 `startafter`，不同时发送 `startAfter` 别名。跨页校验归入独占 HDFS T2；不能因默认小样本恰好一页而省略分页契约。具体协议实现与测试入口见[引擎插件规范](addp引擎插件接口规范.md)及[HDFS/Spark 标准验证](../../engines/spark-workflow/README.md#运行测试)。
 
 Meta/Manager 通过 WebHDFS 消费目录事实和有界内容读取；Spark 通过原生 Hadoop 客户端读取同一个资源。两者共享同一存储 Engine Instance，不为 Spark 重复登记一份 HDFS。Develop 从经过授权和实时校验的资源 locator 与连接事实派生执行期 HDFS URI、Hadoop 配置和认证上下文；用户任务不保存物理路径、连接参数或凭据。Spark 计算集群仍独立选择，不得用 HDFS Engine ID 替代 Spark 集群 ID。
 

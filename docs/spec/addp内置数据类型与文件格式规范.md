@@ -350,6 +350,8 @@ FBX 第一阶段按单资源三维模型接入。扫描只做格式识别和轻�
 
 Manager 基础预览可将单文件 FBX 源文件通过 storage stream 交给前端三维渲染器直接读取；该基础预览不查找、替换或依赖 Manager 受管 GLB artifact。快显路线仍是通过 `model_3d_glb_generation` 调用 `model3d_workflow` 的 `fbx_to_glb` direct operator，由运行时内置的 `assimp export` 生成 Manager infra MinIO 中的 GLB artifact，再复用 `model_3d` / GLB 前端预览链路。`_3dtile -f fbx` 的输出语义是 3D Tiles 目录，不得用于登记 GLB artifact。
 
+FBX 基础读取只接受当前解析器可证明的静态结构与有效颜色索引。声明 IndexToDirect 却缺索引的输入明确失败，不填补源数据、不复制私有 FBXLoader、不以 GLB 快显成功宣称基础预览已修复。正常静态彩色源与缺索引反例分别验证；Three.js 版本沿技术栈和单实例依赖契约，不能为一个格式引入第二份运行依赖。GLB 路线不扩展为全部动画、骨架或复杂材质保真。
+
 ## IFC
 
 ### 识别与组织
@@ -1204,6 +1206,7 @@ FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdb
 - 唯一原生读取路线为已有 GeoPython Runtime 的 GDAL `KML`、`GML`、`TopoJSON` 驱动，Meta / Manager 不嵌入 GDAL；首期只读，不提供这三种格式的写出 Provider。
 - 容器 attributes 只保存图层名称、数量和轻量定位；字段、几何、范围与 CRS 在选择 child 后取得。源文件只读，解析副文件位于可回收的隔离临时目录。
 - KML 的简单要素按格式规定使用 EPSG:4326。GML 保留 GDAL 从 `srsName` 识别的 CRS 和标准轴序；未知 CRS 不默认米或经纬度。TopoJSON 标准允许投影坐标，不能把 GDAL 的默认 WGS84 当作源声明；没有明确 CRS 时只展示属性和源几何，地图按既有 `unknown_crs` 契约暂停定位。
+- 用户可以在共享表格地图预览中临时声明 EPSG:4326 或 EPSG:3857，默认不选，明确选择后才绘图；只用于解释当前响应的源坐标，不覆盖已识别 CRS 或后端已转换的几何。声明不进入 URL、持久视图、Meta 或源文件，同一资源／图层翻页时保留，切换资源、图层、组件或重新打开时清除。清除选择后恢复未知 CRS 的地图暂停状态；显示坐标仍走唯一的共享 CRS registry，不另建 TopoJSON 地图转换路线。
 - 首期支持简单要素与图层读取，不承诺 KML 样式、嵌套 Folder 层次和描述语义的完整还原；Model、Overlay、NetworkLink、gx Track 不作为普通矢量静默处理。TopoJSON 首期只支持二维位置，非法弧索引、额外维度、null object 和嵌套 GeometryCollection 明确拒绝，避免驱动静默丢失；GML 接受普通 schemaLocation 注记，但明确禁用 schema 下载／导入，在隔离副本中按要素推断字段；仅接受标准 EPSG / OGC CRS84 标识，不读取自定义 CRS 外部链接；不支持 XLink、越界 schema 路径或应用 schema 的完整业务语义；XML DTD 和实体声明拒绝读取，不回源下载链接内容。
 
 最小验证使用 `make test-geopython-workflow`（真实原生驱动、多图层、坐标／轴序、TopoJSON 量化与反向弧、未知 CRS 和拒绝边界）、`make test-go`（格式注册、Meta 和 Manager 路由／读取协议），沿用 Platform CI 已登记的 Go 和 GeoPython 门禁。上述门禁不等同于跨模块 T4 或真实页面验收。升级后，已有 KML 文档项应通过父目录的强制扫描重新发现为容器；known-item refresh 只重建既有身份，不能代替格式分类重识别。

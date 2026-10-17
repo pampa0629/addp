@@ -22,7 +22,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 `raster_footprint` 提取真实有效像元轮廓。省略 `bands` 使用所有数据波段，`validity=any` 默认取并集，可选择 `all` 交集；排除 NoData、mask、非有限值和透明区域，保留合法零、部分透明有效数据。源须有 CRS 与可逆仿射网格；按四邻接、完整像元边界保留孔洞和多块面，输出源 CRS 的 GeoDataFrame，非空一条 MultiPolygon，全无效为空批。源逐块逐波段生成文件 Byte mask，再文件矢量化；不填孔、不简化、不改写源，不输出临时路径。读取分块不代表轮廓几何规模固定。
 
-`raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。算子契约与使用边界见 [工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md) 和 [栅格专题](../../../docs/next/栅格算子体系后续专题.md)。
+`raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。算子契约与使用边界见 [工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md) 和 [栅格计算与成果契约规范](../../../docs/spec/addp栅格计算与成果契约规范.md)。
 
 运行 `make test-geopython-workflow` 验证真实 GDAL 栅格、既有矢量、多端口及 API 契约。
 

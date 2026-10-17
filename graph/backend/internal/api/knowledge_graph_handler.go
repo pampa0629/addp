@@ -75,6 +75,7 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.create"]
+// @Failure 403 {object} models.ErrorResponse "数据保护拒绝 | Data protection denied"
 // @Router       /graphs [post]
 func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 	tenantID := getTenantID(c)

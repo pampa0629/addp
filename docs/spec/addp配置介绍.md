@@ -19,7 +19,7 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 指标、集中日志和追踪的部署选择、中心设施端点及进程启动输入属于部署配置，专用凭据属于 Secret。Monitor 拥有监测目标、阈值、采样/查询策略及其他普通运行配置；System 只维护节点和已有模块/实例/引擎身份，不代存观测策略。
 
-未选择的能力不要求其专用 Secret，不创建远端发送；已选择但配置不完整与运行中不可用分别报告。可选观测配置不加入业务模块或 Monitor 整体 Ready 条件，不以环境变量覆盖已持久化的 Monitor 策略，不新增另一条存储或采集 fallback。现有日志启动入口仍准备和校验标准组合配置，按需裁剪尚未实现。目标部署/状态契约及验收要求见 [平台运行监控与可观测性设计](../next/ADDP平台运行监控与可观测性设计.md)。
+未选择的能力不要求其专用 Secret，不创建远端发送；已选择但配置不完整与运行中不可用分别报告。可选观测配置不加入业务模块或 Monitor 整体 Ready 条件，不以环境变量覆盖已持久化的 Monitor 策略，不新增另一条存储或采集 fallback。标准生命周期按已选能力准备和校验组合配置，未选能力不要求其专用 Secret。部署/状态契约及验收要求见 [平台运行观测规范](addp平台运行观测规范.md)。
 
 Go 自身进程采集由唯一启动输入 `ADDP_PROCESS_METRICS_DEPLOYMENTS` 选择。空值表示未选择；非空值是最多 1000 项、256 KiB 的严格 JSON 数组，每项包含 `module_name`、`role`、明确本机 IP:端口 `listen`、同时对 Monitor 和中心可达的 HTTPS `/metrics` 地址 `endpoint`、仓库外绝对证书目录 `tls_dir`。同一模块/role 只能出现一次，各监听地址和采集端点不得重复。每个进程只消费匹配自身正式登记模块/role 的一项；不同部署或副本由部署方注入各自值。不能从业务 URL 拼接采集地址，不自动寻找端口，也不新增每模块默认端口表。
 
@@ -694,7 +694,7 @@ System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]
 
 本地进程输出接收器与独立清理器继续工作，容量、时长和目录权限约束保持有效。核心 Infra 先启动并验证，再预检和启动所选日志组件；日志失败返回非零整体结果，开发与生产入口按核心服务实际状态继续启动业务并保留部分失败报告。Compose 解析会校验未选 Profile 的端口，核心操作将不参与运行的日志端口设为无分配占位值，日志阶段再单独解析实际映射。System 正文查询在关闭时返回既有 `503` 未接入响应，不读取宿主文件；Monitor 观测上报在关闭时返回 `409`，部署配置无效时返回 `503`。
 
-`ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。技术探针 `runtime-probe` 的已关闭源段按最后写入时间保留最多一小时（不超过源保留配置），持续探针接收器按小时轮转；业务源仍使用配置时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
+`ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。技术探针 `runtime-probe` 的已关闭源段按最后写入时间保留最多一小时（不超过源保留配置），持续探针接收器按小时轮转；业务源仍使用配置时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整契约见 [模块服务运行日志规范](addp模块服务运行日志规范.md)。
 
 ### 平台日志链路观测与通知
 
@@ -706,7 +706,7 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 
 `LOG_OBSERVER_SYSTEM_URL` / `LOG_OBSERVER_MONITOR_URL` 是 Infra 到控制面的受控地址，默认 `http://host.docker.internal:8180` / `http://host.docker.internal:8100`；使用非默认端口或容器部署时必须按实际地址设置。观测器每 30 秒采样，探针最多 20 秒，上报最多尝试两次，不上传日志正文。监测阈值通过 Monitor 平台规则 API 统一管理。
 
-通知目标由平台管理员在 System 模块管理的“日志链路 → 通知管理”配置，Webhook 签名凭据与目标字段分开写入、加密保存；企业微信 `wecom` 目标的完整机器人地址仅通过凭据接口写入，key 使用现有 ENCRYPTION_KEY 加密，普通目标和投递读取不回显 key。邮件复用 Monitor-owned SMTP Relay。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，通用 Webhook 接收方可按投递 ID 去重；企业微信群消息保留投递 ID，但可能重复或乱序，不提供接收方自动去重保证。失败达到尝试上限后保留最终失败记录。
+通知目标由平台管理员在 Monitor 唯一“平台告警”页面配置，System 日志链路页仅提供诊断和上下文跳转，Webhook 签名凭据与目标字段分开写入、加密保存；企业微信 `wecom` 目标的完整机器人地址仅通过凭据接口写入，key 使用现有 ENCRYPTION_KEY 加密，普通目标和投递读取不回显 key。邮件复用 Monitor-owned SMTP Relay。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，通用 Webhook 接收方可按投递 ID 去重；企业微信群消息保留投递 ID，但可能重复或乱序，不提供接收方自动去重保证。失败达到尝试上限后保留最终失败记录。
 
 
 ## 栅格引擎资源策略（2026-10-05 已确认）
@@ -730,7 +730,7 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
 
 
-Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [运行监控设计](../next/ADDP平台运行监控与可观测性设计.md#62-资源查询与预算)。
+Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [平台运行观测规范](addp平台运行观测规范.md#62-资源查询与预算)。
 
 
 本地可选指标 TLS 转发由 `ADDP_METRICS_CONTROL_ENABLED=false` 显式选择，仅在指标中心也启用时生效。`ADDP_METRICS_CONTROL_DIR` 为仓库外服务器证书目录，`ADDP_METRICS_CONTROL_GATEWAY_URL` 为明确的规范 HTTP origin（含端口、无路径）；标准预检生成 nginx.conf，不签发证书。选中此入口后两个 `PROMETHEUS_*_URL` 均须为 `https://metrics-control:9444`，中心信任该入口独立 CA。关闭入口时由部署方提供原有 HTTPS 控制面输入，不校验入口专用目录或上游；关闭中心也停止其可选转发服务。入口只转发 Token POST 与指标发现 GET，不发布宿主端口，不参与业务 Ready。HTTP 上游属于受控开发网络部署边界，生产 TLS 和密钥权限须独立验收。

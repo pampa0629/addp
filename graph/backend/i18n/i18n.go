@@ -26,6 +26,7 @@ const (
 	MsgDisplayPropertyNotString = "graph.ontology.display_property_not_string"
 
 	// 图谱
+	MsgProtectionRequired   = "graph.kg.protection_required"
 	MsgTargetInvalid        = "graph.kg.target_invalid"
 	MsgTargetConflict       = "graph.kg.target_conflict"
 	MsgIndexConflict        = "graph.kg.index_conflict"

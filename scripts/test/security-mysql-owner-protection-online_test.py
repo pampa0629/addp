@@ -148,7 +148,7 @@ class SpatialClient:
         if path == "/api/v1/security/protection-enrollments/enrolled":
             return response(200, {"id": "enrolled", "version": "1", "state": "active", "latest_source_snapshot_hash": "snapshot",
                                    "owner_progress": [{"consumer_owner": owner, "projection_state": "active", "acknowledged": True}
-                                                      for owner in ONLINE.OWNER_ACTIONS]})
+                                                      for owner in ONLINE.PROTECTION_OWNERS]})
         if path == "/api/v1/security/protection-enrollments/enrolled/components":
             return response(200, {"data": [{"component": {"key": field, "value_type": "geometry" if field == "location_point" else "string"}}
                                            for field in ONLINE.SPATIAL_FIELDS[1:]]})
@@ -1403,7 +1403,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
     get: async path => {
       if (path.includes('protection-baselines')) return structuredClone(baseline)
       if (path.includes('protection-enrollments')) return { validity_mode: 'permanent', expires_at: null,
-        owner_progress: ['manager', 'develop', 'service', 'transfer'].map(consumer_owner => ({ consumer_owner, acknowledged: true,
+        owner_progress: ['manager', 'develop', 'service', 'transfer', 'graph'].map(consumer_owner => ({ consumer_owner, acknowledged: true,
           projection_state: 'active', validity: 'valid', projection_id: consumer_owner, revision: String(baseline.version), published_cursor: String(baseline.version) })) }
       if (path.includes('/manager/preview')) return { data: { columns, rows: structuredClone(rows) } }
       return { status: () => 404 }
@@ -1895,8 +1895,8 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                     "projection_id": str(uuid.uuid4()), "revision": "00000000000000000001",
                     "published_cursor": str(index), "acknowledged": True,
                     "acknowledged_at": "2026-10-13T02:00:01Z", "validity": "valid",
-                    "rules": [{"action": action, "effect": "mask"}]}
-                    for index, (owner, action) in enumerate(ONLINE.OWNER_ACTIONS.items(), 1)]}
+                    "rules": [{"action": action, "effect": "deny" if owner == "graph" else "mask"}]}
+                    for index, (owner, action) in enumerate((*ONLINE.OWNER_ACTIONS.items(), ("graph", "graph_read")), 1)]}
 
     def assessment(self):
         return {"id": "assessment-bank", "enrollment_id": "enrollment-bank", "current": {
@@ -2022,11 +2022,11 @@ class ResourceValiditySnapshotTest(unittest.TestCase):
         return {"validity_mode": "permanent" if until is None else "until", "expires_at": until,
             "owner_progress": [{"consumer_owner": owner,"projection_id":"projection-"+owner,"revision":"00000000000000000004",
                 "published_cursor":"cursor-"+owner,"acknowledged":True,"projection_state":"active",
-                "validity":"expired" if expired else "valid","expires_at":until} for owner in ONLINE.OWNER_ACTIONS]}
+                "validity":"expired" if expired else "valid","expires_at":until} for owner in ONLINE.PROTECTION_OWNERS]}
 
     def test_permanent_requires_explicit_null_for_resource_and_every_owner(self):
         value=self.snapshot()
-        self.assertEqual(set(ONLINE.validity_snapshot(value,"permanent",None)),set(ONLINE.OWNER_ACTIONS))
+        self.assertEqual(set(ONLINE.validity_snapshot(value,"permanent",None)),set(ONLINE.PROTECTION_OWNERS))
         for target in [value]+value["owner_progress"]:
             with self.subTest(target=target.get("consumer_owner")):
                 old=target.pop("expires_at")

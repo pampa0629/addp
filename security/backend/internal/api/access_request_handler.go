@@ -48,7 +48,7 @@ func (h *AccessRequestHandler) Targets(c *gin.Context) {
 }
 
 // @Summary 发起原值访问申请 | Create plaintext access request
-// @Description 使用当前可信用户主体为一个正式敏感字段申请 Manager 预览原值；申请本身不改变保护 | Request Manager preview plaintext access for one formal sensitive field using the trusted current user; creating a request does not change protection
+// @Description 使用当前可信用户主体为一个正式敏感字段申请所选 Manager 预览或 Develop 查询原值；申请本身不改变保护 | Request plaintext access for selected Manager preview or Develop query outlets of one formal sensitive field using the trusted current user; creating a request does not change protection
 // @Tags Protection Access Request
 // @Accept json
 // @Produce json

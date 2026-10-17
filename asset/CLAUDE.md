@@ -66,8 +66,8 @@ bash scripts/swagger/check-route-coverage.sh asset
 
 ## 相关文档
 
-- `docs/plan/数据资产模块群规划.md`
-- `docs/plan/数据资产模块群开发计划.md`
+- [企业资源目录实现规范](../docs/spec/addp企业资源目录实现规范.md)
+- [企业资源目录后续事项](../docs/next/ADDP企业资源目录能力专题.md)
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
 

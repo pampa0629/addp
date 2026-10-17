@@ -96,3 +96,6 @@ other = "路径查询超过遍历预算，请在更小的目标图中查询。"
 
 [graph.kg.operation_failed]
 other = "图谱操作失败，请查看服务日志。"
+
+[graph.kg.protection_required]
+other = "数据保护门禁尚未就绪，或目标图已纳入保护，当前不允许读取"

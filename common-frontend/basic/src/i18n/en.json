@@ -105,6 +105,26 @@
     }
   },
   "common": {
+    "plaintextAccess": {
+      "noFields": "This resource has no formally assessed fields available for plaintext requests. Complete the security review first.",
+      "protectionDeadline": "The request must not exceed the resource protection deadline: {at}",
+      "title": "Request field plaintext access",
+      "hint": "After approval and synchronization, plaintext is available only to you within the approved outlets and period.",
+      "field": "Sensitive field",
+      "scope": "Usage scope",
+      "scopeHint": "Active or pending outlets cannot be requested again. Full exports retain their separate protection rules.",
+      "deadline": "Requested until",
+      "rationale": "Business rationale",
+      "cancel": "Cancel",
+      "submit": "Submit request",
+      "required": "Select a field, scope, a future deadline within 30 days, and provide a rationale",
+      "failed": "Request was not submitted. Refresh its state before retrying.",
+      "loadFailed": "Could not load requestable fields. Close and reopen this dialog.",
+      "outlets": {
+        "manager": "Manager data preview",
+        "develop": "Develop queries"
+      }
+    },
     "executionFailure": {
       "permission_denied": "Insufficient read or execution permission",
       "timeout": "Execution timed out",

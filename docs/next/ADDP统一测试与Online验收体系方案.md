@@ -1,169 +1,37 @@
-# ADDP 统一测试与 Online 验收体系方案
+# ADDP Online 验收后续事项
 
-> 状态：稳定规则已迁入正式规范；专用 macOS Runner 尚未上线，已登记的 self-hosted T4 仍等待首次真实执行（2026-09-12）。
+测试分层、标准入口、身份隔离、报告与各固定场景断言统一维护于[测试与验收规范](../spec/addp测试与验收规范.md)。本文只跟踪专用 self-hosted 部署的准备和尚缺真实证据；已迁入 Hosted 的场景使用各自 disposable profile，不列入专用 Mac 首跑清单。
 
-## 一、专题边界
+## 一、部署与证据边界
 
-测试分层、标准入口、数据与身份隔离、CI 编排以及 Online / Release 报告的稳定规则，统一以 [ADDP 测试与验收规范](../spec/addp测试与验收规范.md) 为准。
+- Runner 分发唯一依据为[Online workflow](../../.github/workflows/online-t4-gates.yml)，suite 与生命周期以 [scripts 说明](../../scripts/README.md)、[Online registry](../../scripts/test/online-gate.py)及 [Host Gate](../../scripts/test/online-host-gate.sh)为准。已具备实现和确定性测试，不等于已取得实机 T4。
+- 历史排队运行已经不能续用；本文没有当前 Runner 在线状态或外部 Settings 的实时审计结论。准备完成后重新手工触发并核对实际报告，不把旧 queued 记录当作待执行作业。
+- 专用部署要求独立账号、干净 checkout、仓库外 owner-only 环境文件和证据目录；个人开发账号、根 .env、生产凭据或脏工作区不得接单。工具链版本遵循仓库当前锁定文件，不保存过时安装清单。
 
-当前实现事实由以下入口拥有：
+## 二、专用部署准备
 
-- 根目录 `Makefile`：公共测试命令。
-- `scripts/README.md`：可用目标、参数和运行说明。
-- `scripts/test/`：自动发现、suite 登记、安全预检、分发和报告。
-- `.github/workflows/`：CI 触发、Runner、环境和证据归档。
+1. 准备具有 self-hosted/macOS/addp-online 标签的专用 Runner；GitHub Environment 与外部环境文件路径按 Host Gate 配置，真实秘密不写进仓库或报告。
+2. 只经正式 UI/API 建立每个 suite 所需的最小权限 User、Tenant 与永久业务 Fixture；Engine Instance 不按 Run ID 创建再删除。平台和业务数据库、端口、凭据彼此隔离。
+3. 先运行 `bash scripts/test/online-host-gate.sh --check-only`，检查工具链、checkout、回环边界、环境权限及证据目录；不放宽准入绕过资源不足。
+4. 通过 workflow 按 suite 运行，核对构建身份、AuthContext、业务断言、addp.online-gate/v1 报告及成功/失败/中断清理，保存外部 Artifact。
 
-本文不再复制上述规范和实现，只跟踪尚未具备硬件条件的 T4 实机事项。待完成关闭条件后删除本文，不归档第二份历史规范。
+## 三、待取得专用环境报告的范围
 
-## 二、已完成基线
+以下按当前 workflow 的默认 self-hosted 分发列出，不是历史固定数量；新增或迁出 profile 时直接更新清单：
 
-- [x] T0-T5 分层、根 `Makefile` 单一入口和 owner 边界已形成正式规范。
-- [x] `make test-changed`、`make test-module` 与 PR T0-T3 使用同一 owner 影响计算。
-- [x] `make test-integration` 严格串行编排全部已登记的 disposable 基础设施门禁。
-- [x] `make test-online ONLINE_SUITE=<suite>` 统一 Run ID、预检、超时、进程锁和 `addp.online-gate/v1` 报告。
-- [x] Online registry 中的全部 suite 均已登记真实 owner 断言与唯一部署 profile，不存在占位 suite 或未登记的平行入口。
-- [x] 专用宿主机门禁会在生命周期操作前检查 macOS、`ADDP_ONLINE_HOST=1`、仓库外环境文件与证据目录、干净 checkout、`addp_online` 数据库和 suite profile。
-- [x] 手工 `.github/workflows/online-t4-gates.yml` 已绑定 `addp-online` Environment，并使用 `self-hosted`、`macOS`、`addp-online` Runner 标签。
-- [x] 手工 Online T4 workflow 已进入远端并被 GitHub 识别为 active；workflow 语法和 Runner 上下文约束由 `make test-platform` 自动检查。
-- [x] 宿主机编排复用正式 Infra / Dev 生命周期与 `make test-online`，退出时停止应用并输出清理证据。
-- [x] `make test-release RELEASE_SUITE=<suite>` 与 `addp.release-gate/v1` 已统一现有 T5 产品门禁调用和报告。
+- [ ] `consumer-engine-recovery`。
+- [ ] `enterprise-catalog-publishing`。
+- [ ] `manager-hybrid-search`。
+- [ ] `module-registry-recovery`。
+- [ ] `oceanbase-consumer-flow`。
+- [ ] `security-transfer-protection`。
+- [ ] `standard-model-reference-deletion`。
+- [ ] `tidb-consumer-flow`。
+- [ ] `transfer-insert-only-mysql`。
+- [ ] `workbench-service-consumption`。
 
-## 三、专用 T4 Runner 首跑与消费方恢复场景
-
-2026-08-26 已对 `main` 提交 `0f5a88e4ff8c6a7cd364da401050cfd2c6806d10` 触发 [Online T4 run 32915692407](https://github.com/pampa0629/addp/actions/runs/32915692407)，输入为 `module-registry-recovery`。2026-09-12 又触发 [Online T4 run 34667885473](https://github.com/pampa0629/addp/actions/runs/34667885473)，输入为 `manager-hybrid-search`。两次 Workflow 和 Job 都已正确创建，但均没有被匹配 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 接单，因此不算真实 T4 执行证据。排队 Job 会在 24 小时后失败；专用 Runner 上线后必须重新手工触发，不能把过期排队记录当作待续作业。
-
-排查事实：Job 返回的 `runner_name`、`runner_group_name` 为空，标签声明与 workflow 一致；当前开发 Mac 未发现 Runner 进程、launchd 服务或安装目录，且个人 checkout 因根 `.env` 和脏工作区不满足 Host Gate。当前阻塞属于专用部署资源未在线或尚未准备，不属于业务代码、suite 或 workflow 故障。不得删除 `addp-online` 标签、改用 GitHub-hosted Runner 或放宽环境隔离规则规避该阻塞。
-
-### 3.1 机器与环境准备
-
-1. [ ] 擦除或重置专用 Mac，创建独立 `addp-online` 系统账号；不登录个人 Apple ID，不复制个人 SSH Key、浏览器会话、开发 `.env` 或生产凭据，只保留测试专用网络出口。
-2. [ ] 安装 Docker Desktop、Git、Go 1.24+、Python 3.11+、仓库 `.node-version` 声明的 Node.js 24、npm、`make`、`curl`、`lsof` 和 `nc`；先在独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--check-only`。
-3. [ ] 从仓库 `Settings → Actions → Runners` 使用 GitHub 当次生成的下载、校验和注册命令，将 Runner 安装在仓库外独立目录，增加唯一自定义标签 `addp-online`，并作为当前专用账号的系统服务运行。GitHub 自动添加的 `self-hosted`、`macOS` 和架构标签不手写替代。
-4. [ ] 创建受保护的 `addp-online` GitHub Environment，配置必要的人工批准，并只将仓库外环境文件的绝对路径保存为 Repository Variable `ADDP_ONLINE_ENV_FILE`；不把环境文件内容或长期业务凭据复制到 GitHub Secret。
-5. [ ] 在仓库外创建 owner-only（文件权限 `0600`）的 `addp-online.env`。它以根 `.env.example` 为字段清单，但必须使用独立 Secret、`POSTGRES_DB=addp_online`、全部回环服务地址和专用 Fixture 端口；Actions checkout 根目录不创建 `.env`。
-6. [ ] 首次人工启动该专用部署，只经正式 UI/API 建立长期测试事实：非默认 Tenant、最小权限 User / Service Principal、PostgreSQL/MySQL/MongoDB/MinIO/OceanBase/TiDB Engine Instance、Standard Domain / Department、Inference Provider / Deployment / 2560 维 Model Profile，以及 Manager `semantic_search_embedding` 场景绑定。不直接修改业务表。
-7. [ ] 将上述永久事实的 ID、测试 User 凭据和各 Fixture 的 owner 凭据写入仓库外 `addp-online.env`；DashScope API Key 只通过 Inference credential 设置操作进入其加密存储，环境文件只保存 Inference 的部署级 `ENCRYPTION_KEY` 和预期 Model Profile ID。
-8. [ ] 先直接在 Runner checkout 上为 `module-registry-recovery` 和 `manager-hybrid-search` 分别执行一次 `online-host-gate.sh --check-only`，确认工作区干净、仓库根无 `.env`、环境文件与证据目录均在仓库外、工具链完整且 Tenant / database / loopback 边界通过，再允许 GitHub Job 接单。
-
-### 3.2 首次真实执行
-
-通过手工 workflow 分别运行：
-
-1. `module-registry-recovery`。
-2. `standard-model-reference-deletion`。
-3. `consumer-engine-recovery`。
-4. `enterprise-catalog-publishing`。
-5. `workbench-service-consumption`。
-6. `manager-internal-artifact-lineage`。
-7. `manager-hybrid-search`。
-8. `security-transfer-protection`。
-9. `security-plaintext-access`。
-10. `security-mysql-owner-protection`。
-11. `oceanbase-consumer-flow`。
-12. `tidb-consumer-flow`。
-13. `transfer-insert-only-mysql`。
-14. `transfer-relational-sql-etl`。
-
-每次运行必须核验：
-
-- [ ] 宿主机只读准入在任何服务停止或启动前通过。
-- [ ] 被测服务健康且构建身份等于 workflow checkout。
-- [ ] 测试 Tenant、AuthContext、Principal 与 Permission 满足 suite 的精确约束。
-- [ ] `online-report.json` 使用 `addp.online-gate/v1`，包含阶段、构建身份、清理和零残留证据，且不含秘密。
-- [ ] workflow Artifact 同时保留宿主机 readiness、gate summary、业务报告和必要日志。
-- [ ] 成功、失败或中断后应用进程均停止，下一次执行不受上次残留影响。
-
-### 3.3 进程乱序恢复证据
-
-`module-registry-recovery` 已验证注册、租约、同 ID 恢复、多实例与 Gateway 路由收敛；仍需由专用部署编排补充真实进程启动次序证据：
-
-- [ ] 模块先启动、System 后启动时，公共注册客户端自动恢复。
-- [ ] System 与模块先启动、Gateway 后启动时，路由发现自动收敛。
-- [ ] 全部服务重启后，Manager、Service 等消费方首次打开不依赖人工刷新。
-- [ ] 引擎或模块恢复在线后，消费方无需重启即可动态恢复使用。
-
-该编排必须复用正式进程入口和专用 T4 环境，不得在个人开发环境人工操作后宣称自动化通过。
-
-### 3.4 `consumer-engine-recovery` 实现契约
-
-该独立 suite 负责补齐上节最后两项，不扩大 `module-registry-recovery` 的边界：
-
-1. Host Gate 使用正式全量启动入口，保留 Manager、Service Backend 和三个被测 Frontend 的初始 PID。
-2. 专用 Runner 环境预置一个长期存在的 PostgreSQL Engine Instance；仓库外环境文件提供 `ADDP_ONLINE_TEST_ENGINE_ID`、`ADDP_ONLINE_TEST_ENGINE_NAME`、`ADDP_ONLINE_TEST_ENGINE_PORT`、`ADDP_ONLINE_TEST_ENGINE_USER`、`ADDP_ONLINE_TEST_ENGINE_PASSWORD` 和 `ADDP_ONLINE_TEST_ENGINE_DATABASE`。这些变量只属于 Online 业务 Fixture，不得复用平台数据库变量。
-3. `business/scripts/online-engine-fixture.sh` 是该物理 Fixture 的唯一生命周期入口，要求 `ADDP_ONLINE_HOST=1`，不读取、不生成 `business/.env`，并只操作 `business-postgres`。
-4. Browser 使用 `ADDP_ONLINE_TEST_USER_USERNAME` 与 `ADDP_ONLINE_TEST_USER_PASSWORD` 走真实 Console 登录；API 控制面继续使用同一专用 User 的 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`。测试必须确认两种会话属于同一 Tenant User 且具备 `system.engine.read`、`system.engine.execute` 和被测页面的读取权限。
-5. 同一 Browser Context 依次首次打开 `/configuration`、`/manager/data-explorer` 和 `/service/query-services`，每页只允许一次导航；页面自身的首次请求成功即为通过，不允许 reload、刷新按钮或失败后重试导航。
-6. Manager iframe 保持打开时停止 Fixture、调用 Engine test API 写入 `offline`、等待页面轮询显示不可用；恢复 Fixture 并再次写入 `online` 后，同一 iframe 自动恢复。整个阶段被测消费方 PID 不变。
-7. `finally` 路径必须恢复 Fixture 与 Engine `online` 状态；Host Gate 随后停止 Fixture 和全套 ADDP，并把浏览器报告、截图、PID 快照和 Online JSON 报告统一写入仓库外 Artifact 目录。
-
-Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除测试引擎，也禁止以墓碑、名称前缀清理或直接修改 System 数据库作为收尾方式。
-
-2026-08-26 已完成 suite、浏览器断言、物理 Fixture、进程稳定性观测、Host Gate 失败恢复、workflow choice 和 CI 登记检查；本地确定性测试与三个前端构建已通过。该状态只表示实现就绪，不表示专用 Runner T4 已通过。
-
-### 3.5 `enterprise-catalog-publishing` 实现契约
-
-1. Host Gate 全量启动 System、Gateway、Meta、Catalog、Asset 和 Portal，并通过 `business/scripts/online-engine-fixture.sh` 幂等准备 `public.addp_online_catalog_fixture`。
-2. 真实 User Access Token 先经 System AuthContext 验证 Tenant 和精确 Permission，所有业务请求只经 Gateway，不直连 owner 或直接 SQL。
-3. suite 触发 Meta 扫描，以 DataItem fingerprint 等待唯一 CatalogEntry 自动建档；首跑可使用预置 Domain、Department 和当前 User 将永久 fixture 初始化为 `curated`。
-4. 后续运行对同一 CatalogEntry 执行临时编目并在 `finally` 恢复原完整聚合；以 CatalogEntry UUID 创建 AssetComponent，发布后由 Portal 返回同一身份，并通过 AssetCategory 目录树和分类子树列表发现该 Asset；真实浏览器随后打开同一分类页，确认目录名称和唯一 Asset 卡片。
-5. 每轮 Asset 经 `published → offline → deleted` 正式生命周期清理；suite 先确认空 AssetCategory 已从 Portal 目录树消失，再删除 Asset-owned 目录，双方 GET 404 与 Portal Asset 404 共同证明零临时残留。
-
-2026-08-28 已完成 owner suite、永久数据源 fixture、AssetCategory 目录消费、Asset 下架后删除闭环、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
-
-### 3.6 `workbench-service-consumption` 实现契约
-
-1. Host Gate 全量启动 System、Gateway、Service、Workbench 和 Console；`business/scripts/online-workbench-mysql-fixture.sh` 使用外部环境变量启动 `business-mysql`，重建仓库既有 `customers + orders` 确定性数据并创建仅有 `SELECT` 的专用账号，同时为 Playwright 安装专用 Chromium。
-2. 专用环境长期预置指向该账号的 MySQL Engine Instance，身份由 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
-3. 两个真实 User Token 先各自校验 AuthContext：现有专用 User 必须属于同一 Tenant、不含管理员角色且只具备 Service/Workbench 场景权限；独立 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN` 必须属于同一 Tenant 的 User、含 `tenant.administrator` 角色且具备当次 API 消费方生命周期所用权限。两者都不得是个人会话或平台管理员 Token。
-4. 非管理员 User 的所有平台操作只经 Gateway：检测 SQL 输出契约，发布私有主 Query Service `commerce-order-analysis` 和同契约未授权 Query Service `commerce-order-analysis-denied`，读取主服务 Consumer Descriptor，创建 Data Application 草稿并执行查询。SQL 只 JOIN 既有表并排除姓名、邮箱、电话和地址；MySQL 将 `BOOLEAN` 暴露为 `TINYINT`，publisher 只把已知语义的 `active_customer` 显式发布为 `bool`，Service 再按冻结契约归一化 `0 | 1`。
-5. Tenant Administrator 只经 System 正式 API 创建一个仅授权主 Query Service 的 API 消费方及一枚凭据。凭据只保存在 suite 进程内存，不写入报告或日志；用它调用主服务必须返回 200，调用未授权服务必须返回 `403 api_consumer_service_denied`，调用 `/api/v1/system/tenant/api-consumers` 必须返回 `401 api_consumer_control_plane_denied`。删除 API 消费方后，旧凭据必须在 45 秒内收敛为 `401 api_consumer_credential_invalid`。
-6. API 层还要验证 `order_no` cursor、五类动态筛选、decimal/boolean/timestamp/null、完整有限 CSV，以及无 SpatialInfo 时 Map 不可用。浏览器使用非管理员专用 User 登录 Console 并核对浏览器 AuthContext 与 API User 身份一致，在同一应用草稿中依次打开两个 Component 的正式编辑器，验证 Table 两行结果、Chart canvas 和无空间契约下不存在 Map。
-7. 浏览器经正式 Service API 更新主服务的公开默认字段策略以改变 `contract_fingerprint`；刷新同一应用后 Component 编辑器必须显示契约变化告警并禁用预览查询。API 层同时确认已保存快照仍持有旧指纹，不增加 Workbench 执行 API 或测试旁路。
-8. `finally` 只按本轮捕获 ID 删除 API 消费方及其级联凭据、未发布 Data Application 和两个 Query Service，并逐项验证 404 或凭据失效；Fixture 和全套 ADDP 再由 Host Gate 统一停止。最终发布运行态由 Outdoor 双服务场景验收，不能为自动清理增加已发布应用强删旁路。
-
-2026-08-26 已完成 owner suite、浏览器 Table/Chart/Map/契约变化链路、只读 MySQL Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”，不得勾选 Workbench 专题中的真实 Online 验收项。
-
-### 3.7 `manager-internal-artifact-lineage` 实现契约
-
-1. Host Gate 全量启动 System、Gateway、Meta、Manager、Monitor、Console、PointCloud Runtime 和 Document Workflow Runtime；`business/scripts/online-manager-minio-fixture.sh` 只在 macOS 专用 Runner 上管理独立 `business-minio`，并把仓库已有小型 LAS 与三页 PPTX 幂等写入指定 bucket/object。
-2. 专用环境长期预置指向该 MinIO 的 Engine Instance，身份由 `ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
-3. 真实 User Token 校验 Tenant、非管理员角色和最小权限后，所有平台操作只经 Gateway：触发一次 Meta deep scan，以扫描得到的两条 DataItem 身份分别执行 `point_cloud_copc_generation` 和 PPTX 按需预览。
-4. Manager owner execution 必须产生唯一 `addp.lineage-facts/v1` 输入、输出和 derive operation；输入是 Business ResourceLocator，输出是 `addp-infra://minio/manager/tenant_{id}/point-cloud-copc/...copc.laz?type=object`。Monitor 按 execution ID 返回安全资源投影，输入、输出资源身份必须与 Owner 一致；不得返回 operations、schema snapshot、专业结果、执行配置、lease 或授权引用。suite 分别验证 Owner 完整事实和 Monitor 安全投影，不比较完整响应是否相同。
-5. suite 经 Manager 内容 API 验证 COPC Range 读取；真实浏览器打开正式 Monitor 执行详情，确认业务输入可进入 Data Explorer，平台内部产物明确标识且不伪造业务资源跳转。
-6. PPTX 场景先读取 Quick View Capability 并通过其 `generate_pptx_pdf` action 触发一次 `pptx_pdf_generation`，等待真实 LibreOffice 转换完成并断言 PDF 为三页；同源第二次读取 Capability 必须返回同一 task/result 且不创建新的 execution。真实浏览器打开 Data Explorer 后翻到第 2 页，跨过 15 秒 Engine 状态刷新仍保持第 2 页，并且已就绪预览在整个页面生命周期不再发起生成 action。
-7. `finally` 只通过 Manager API 按本轮 ID 删除 COPC、PPTX PDF 及两类任务，再以内容 404、任务 404 和 fingerprint 结果总数为零共同证明无临时业务资源残留；Host Gate 最后停止 Business MinIO Fixture 与全套 ADDP。
-
-2026-09-06 在同一 owner suite 中补充小型多页 PPTX 的首次 LibreOffice 转换、同源缓存复用、Manager/Monitor 血缘一致性和浏览器翻页稳定性契约；不新增第二条 T4 suite。当前仍是“实现就绪、专用 Runner 首跑待执行”。
-
-### 3.8 `security-transfer-protection` 实现契约
-
-1. Host Gate 全量启动 System、Gateway、Meta、Security、Transfer 和 Manager；`business/scripts/online-security-transfer-fixture.sh` 复用 PostgreSQL Online Fixture，并只在 macOS 专用 Runner 管理独立 `business-mongodb`。
-2. MongoDB Fixture 幂等建立 3 条合成文档与只读账号；PostgreSQL Fixture 幂等建立 `addp_online_security.transfer_excluded` 和 `addp_online_security.transfer_masked` 两张固定目标表。专用环境长期预置对应的 MongoDB 与 PostgreSQL Engine Instance，suite 不创建、修改或删除 Engine 身份。
-3. 真实 User Token 校验 Tenant、非管理员角色和 Meta/Security/Transfer/Manager 最小权限；所有平台操作只经 Gateway。专用 Tenant 必须先具备平台推荐的手机号敏感类型、识别方式和默认保护规则；首次运行允许按固定 MongoDB DataItem 建立一个永久 Security 纳管，后续运行必须复用它，并确认 Transfer 已安装且确认 `export → mask` 投影。
-4. 每轮创建两条带 Run ID 的 bounded Transfer 任务，均使用 Common MongoDB Provider 可证明输出血缘的 `$project + 直接字段引用/$ifNull`：未输出手机号的任务必须成功；输出 `userInfo.phone` 的任务必须成功并写入遮盖值。
-5. suite 经 Meta 重新扫描后由 Manager 预览固定目标表，断言非敏感目标没有手机号列，敏感目标 2 个非空号码全部遮盖、明文计数为零。不得撤销 Security 投影、按资源放行、管理员绕过或增加 Outdoor/函数名白名单。
-6. `finally` 只按本轮捕获的 Transfer task ID 删除临时任务并逐条确认 404；固定 Engine、纳管和目标表属于专用 Runner 永久 Fixture，不计为本轮残留。成功与失败报告都不得包含源手机号或凭据。
-
-2026-09-05 已完成 owner suite、MongoDB/PostgreSQL 复合 Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
-
-### 3.9 `security-plaintext-access` 实现契约
-
-1. Host Gate 全量启动 System、Gateway、Meta、Security 与 Manager，并复用 `business/scripts/online-security-transfer-fixture.sh` 中的固定 PostgreSQL 源表。
-2. 首次运行允许为 `addp_online_security.exemption_source.phone` 建立永久 Enrollment、确认手机号 Finding 并形成正式 Assessment；后续必须复用同一治理身份。每轮保留申请、审批和授权修订作为不可变审计事实。
-3. suite 使用两名不同的专用 User：申请人在 Manager 预览出口发起按字段、按用户、限时原值访问申请；另一名审批人在 Security 待审批队列批准。申请人不得审批自己的申请。
-4. suite 依次验证三类真实数据结果：默认状态下申请人看到遮盖值；授权有效期内只有申请人看到原值而审批人继续看到遮盖值；到期后不调用 Security，由 Manager 根据本地 Projection v2 自动恢复遮盖。
-5. Assessment 修订使授权失效继续由 Security T1/T2 事务门禁验证，T4 不为重复证明该语义而持续追加无业务价值的 Assessment 修订。
-
-2026-09-05 已完成 owner suite、复合 Fixture 扩展、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+优先验证 module-registry-recovery 的进程乱序恢复，再验证 consumer-engine-recovery 的首次页面访问、同 iframe 离线/恢复及消费方 PID 不变。其他场景按实际业务需求安排；没有新报告的项目不勾选，不据此否定独立 Hosted 场景的已有证据。
 
 ## 四、关闭条件
 
-满足以下条件后删除本文：
-
-1. 十四个已登记 self-hosted T4 suite 在专用 Runner 至少各真实通过一次；GitHub Hosted `opengauss-consumer-flow` 继续使用自己的 disposable profile，不进入专用 Mac 首跑清单。
-2. 构建身份、专用 Tenant、数据库隔离、失败清理和零残留证据均已核验。
-3. 进程乱序恢复形成可重复的部署编排证据。
-4. 根据首跑耗时与稳定性决定是否增加夜间 schedule；不需要定时执行时也必须明确记录决定。
-5. `scripts/README.md`、workflow 与相关模块专题已更新为最终运行事实。
-
-首跑日志和报告保留在 GitHub Actions Artifact 或外部证据存储中，不复制进长期规范。专题删除后，稳定规则继续由 [ADDP 测试与验收规范](../spec/addp测试与验收规范.md) 唯一维护。
+范围内 suite 取得真实报告并核对清理后从清单移除。若确认迁到 Hosted，须同次完成唯一 profile、隔离生命周期和 CI 登记，不能仅改 Runner 标签。剩余部署事项关闭后删除本文；稳定规则继续由正式规范维护，不归档逐轮日志。

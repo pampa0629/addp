@@ -72,6 +72,37 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
+test('requests explicit Develop plaintext access through the shared dialog', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table' })
+  const auth = structuredClone(developAuthContext)
+  auth.authorization.role_assignments[0].permissions.push('security.protection_access_request.create', 'security.protection_access_request.read')
+  await page.route('**/api/v1/system/auth/context', route => fulfillJSON(route, auth))
+  await page.route('**/api/v1/meta/items/*', route => fulfillJSON(route, { fingerprint: 'customers-fingerprint' }))
+  const submitted = []
+  await page.route('**/api/v1/security/protection-access-request-targets?*', route => fulfillJSON(route, { data: [{
+    assessment_id: 'phone-assessment', requestable: true, component: { key: 'phone' }, projection_acknowledged: true
+  }] }))
+  await page.route('**/api/v1/security/protection-access-requests', route => {
+    submitted.push(route.request().postDataJSON())
+    return fulfillJSON(route, { id: 'develop-request' })
+  })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await page.getByRole('button', { name: '申请查看字段原值', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '申请查看字段原值', exact: true })
+  await expect(dialog.getByRole('checkbox', { name: 'Develop 开发查询', exact: true })).toBeChecked()
+  await expect(dialog.getByRole('checkbox', { name: 'Manager 数据预览', exact: true })).not.toBeChecked()
+  await dialog.locator('textarea').fill('在开发查询中核验联系方式')
+  await dialog.getByRole('button', { name: '提交申请', exact: true }).click()
+  await expect.poll(() => submitted.length).toBe(1)
+  expect(submitted[0].scopes).toEqual([{ consumer_owner: 'develop', action: 'query' }])
+  expect(submitted[0]).not.toHaveProperty('subject_id')
+  expect(submitted[0]).not.toHaveProperty('consumer_owner')
+})
+
 test('shows the actual missing-table preparation failure with an actionable correction in the workbench', async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', errorDetails: { category: 'execution_failed', code: 'table_not_found', diagnostic: {
     schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'table_not_found',

@@ -51,6 +51,7 @@ func (s *KnowledgeService) ListEntitiesByType(
 	if err != nil {
 		return nil, 0, err
 	}
+	defer engine.close()
 
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	semantics := newOntologySemantics(ontology)
@@ -105,6 +106,7 @@ func (s *KnowledgeService) GetEntityDetail(
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 
 	result, err := executeGraphQuery(ctx, engine,
 		fmt.Sprintf("MATCH (n) WHERE %s = '%s' AND %s RETURN n", engine.provider.GraphDialect().ID("n"), escapeCypher(nodeID), propertygraph.NodePredicate(engine.provider.GraphDialect(), "n")))
@@ -139,6 +141,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 	if err != nil {
 		return nil, err
 	}
+	defer engine.close()
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
@@ -228,6 +231,7 @@ func (s *KnowledgeService) SearchEntities(
 	if err != nil {
 		return nil, 0, err
 	}
+	defer engine.close()
 
 	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	if err != nil {

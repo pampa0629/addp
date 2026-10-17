@@ -105,6 +105,26 @@
     }
   },
   "common": {
+    "plaintextAccess": {
+      "noFields": "该资源暂无可申请原值的正式敏感字段，请先完成安全复核。",
+      "protectionDeadline": "申请期限不能超过资源保护截止时间：{at}",
+      "title": "申请查看字段原值",
+      "hint": "审批通过并同步后，仅当前用户可在批准的使用范围和期限内查看原值。",
+      "field": "敏感字段",
+      "scope": "使用范围",
+      "scopeHint": "已获权或待审批的范围不可重复申请。完整结果导出仍执行独立脱敏规则。",
+      "deadline": "申请有效期至",
+      "rationale": "业务依据",
+      "cancel": "取消",
+      "submit": "提交申请",
+      "required": "请选择字段、使用范围、未来30天内的期限并填写业务依据",
+      "failed": "原值申请未提交，请刷新状态后重试",
+      "loadFailed": "读取可申请字段失败，请关闭后重新打开",
+      "outlets": {
+        "manager": "Manager 数据预览",
+        "develop": "Develop 开发查询"
+      }
+    },
     "executionFailure": {
       "permission_denied": "读取或执行权限不足",
       "timeout": "执行超时",
