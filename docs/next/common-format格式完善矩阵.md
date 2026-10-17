@@ -20,7 +20,7 @@
 | CSV | 无人机航测、设备轨迹 | 已接入：表格读取、分页、编码选择、刷新及下载；静态轨迹范围读取已通过 Hosted | UTF-8/BOM、带 BOM 的 UTF-16LE/BE 和显式 GBK 已验证；无 BOM 未声明时不猜 GBK，UTF-32/GB18030 未支持。显式配置设备、时间、坐标及 CRS，完整文件或所选设备／时间范围最多 2000 点；已验证 3000 点合成源的范围读取及本地 NOAA 真实样例，不按列名自动连线，不提供回放。 |
 | XLSX | 无人机航测 | 已接入：工作簿识别、工作表切换、分页与完整工作簿下载 | Hosted 已验证不同字段、空表和只有表头；估算行数按总数未知逐页读取。不声明 Excel 公式计算、宏或图表原样显示。 |
 | 3DS / DAE | 无人机航测 | 已接入：Model3D 转自包含 GLB 后在浏览器显示 | 静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收；不声明动画及复杂材质保真。 |
-| FBX | 无人机航测 | 已接入：Model3D 转 GLB 快显，Hosted 已通过 | 固定盒子源的基础预览因声明 `IndexToDirect` 却缺少颜色索引而失败；0.179.0 和 0.186.1 亦复现，不能将依赖升级记为修复。当前可用路径是已验收的 GLB 快显，不声明全部版本、动画或复杂材质。 |
+| FBX | 无人机航测 | 已接入：正常静态源的基础预览；Model3D GLB 快显已有 Hosted 验收 | 官方彩色 `vCube.fbx` 已在本地真实 NFS 页面直接显示，旋转、重开和原文件下载哈希核对通过。固定盒子源因 `IndexToDirect` 缺少颜色索引仍不能基础预览，沿用已验收的 GLB 快显；不升级 Three.js，不声明全部版本、动画或复杂材质。 |
 | OBJ | 无人机航测 | 已接入：基础几何预览及 Model3D GLB 快显 | Hosted 已验证源几何、GLB 内嵌漫反射贴图及下载；引用的 MTL/图片须可访问，不声明复杂材质保真。 |
 | MAX | 无人机航测 | 限定支持：Model3D 内部 Blender 与固定导入器转换静态 GLB | Hosted 已验证五个网格、444 个顶点、基础贴图与毫米换算。识别不了单位且用户未选时默认米；外部 bitmap 须显式映射。不新增 Blender 服务，不声明动画、骨架、修改器或全部版本。 |
 | SKP | 无人机航测 | 限定支持：OpenSKP 转静态 GLB，保留组件实例与内嵌基础贴图 | Hosted 已验证单位换算及两个共享实例；隐藏组件、隐藏面、关闭图层及解析器不支持的输入明确拒绝，不声明动态组件、场景动画或全部版本。 |
@@ -38,6 +38,14 @@
 - [Model3D 验收记录](../../engines/model3d-workflow/README.md)：同一源码的 Linux x86_64 产品构建及 10 种 OSGB 贴图回归通过；2026-10-15 本地秋树 GLB 保留透明叶片、9589 顶点和 7273 面，旋转、刷新缓存与清理通过。
 - [SuperMap 验收记录](../../engines/supermap-workflow/README.md)：SDK 大写贴图引用修复、真实厂商模型及业务源不变检查；不能把无 SDK 协议门禁或其他模型 Hosted 通过计为 SGM Hosted 通过。
 - 图片、CSV BOM/UTF-16、大文件分页等本地验收范围保留在本文后文；不外推全部格式变体。
+
+### 2026-10-17 官方彩色 FBX 基础预览页面复验
+
+使用 [Three.js r179 官方 `vCube.fbx`](https://github.com/mrdoob/three.js/blob/r179/examples/models/fbx/vCube.fbx)，保持 12460 字节原文及 SHA-256 `c0c2d4a07aae2060d4c623e2642a7f9d576ff8f2dc595152ddcfc2a07d214304`，保留同版本 MIT 许可。样例已放入 Business NFS `3d/fbx/threejs-vcube/`，通过正式 FBX 子目录深度扫描登记为 item `44598`。本地实际 Console／Manager 页面直接读取源 FBX：红绿蓝三面显示、拖动旋转、刷新重开均已目视核对；页面原文件下载与源 SHA-256 一致。全程未点击生成 GLB，沿用 Three.js 0.172.0，无服务重启。
+
+持续回归复用 `resource-tree-picker.spec.js` 的正式 DataExplorer 页面及既有模型 mock 协议，只模拟身份／目录／预览 API 并提供固定原始 FBX 字节，真实加载产品预览插件、FBXLoader 和 WebGL。断言初始截图三种主色、旋转后图像变化及可见彩色模型、重开和 900px 视口的实际着色，不以元数据或空 canvas 计通过。该测试属于确定性 T3；本地实际 NFS 页面为开发环境复验，均不冒充新增 Hosted T4。现有 `make test-manager-frontend` 与 Platform CI Manager frontend 自动发现，无需增加权限、测试部署入口或 workflow。
+
+验证：`make test-manager-frontend` 退出 0，328 项单元、211 项浏览器及生产构建通过。最后将 mock 文件流对齐正式 `storage-stream` 契约后，按标准 `scripts/test/frontend-browser-gate.mjs resource-tree-picker.spec.js` 补验最终测试文件 34 项全部通过；`make test-frontend-ci-registration` 的 20 项登记回归和 21 个前端登记检查通过。样例及许可作为测试夹具随代码提交，不依赖本机 Business NFS 文件才能运行 CI。
 
 ### 2026-10-17 FBX 基础预览与 Three.js 升级评估
 
