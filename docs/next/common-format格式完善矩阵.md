@@ -20,7 +20,7 @@
 | CSV | 无人机航测、设备轨迹 | 已接入：表格读取、分页、编码选择、刷新及下载；静态轨迹范围读取已通过 Hosted | UTF-8/BOM、带 BOM 的 UTF-16LE/BE 和显式 GBK 已验证；无 BOM 未声明时不猜 GBK，UTF-32/GB18030 未支持。显式配置设备、时间、坐标及 CRS，完整文件或所选设备／时间范围最多 2000 点；已验证 3000 点合成源的范围读取及本地 NOAA 真实样例，不按列名自动连线，不提供回放。 |
 | XLSX | 无人机航测 | 已接入：工作簿识别、工作表切换、分页与完整工作簿下载 | Hosted 已验证不同字段、空表和只有表头；估算行数按总数未知逐页读取。不声明 Excel 公式计算、宏或图表原样显示。 |
 | 3DS / DAE | 无人机航测 | 已接入：Model3D 转自包含 GLB 后在浏览器显示 | 静态几何及声明的 PNG/JPEG 漫反射贴图已有真实转换与 Hosted 页面验收；不声明动画及复杂材质保真。 |
-| FBX | 无人机航测 | 已接入：Model3D 转 GLB 快显，Hosted 已通过 | 源格式的基础预览仍有已知 FBXLoader 缺陷；当前可用路径是已验收的 GLB 快显，不声明全部版本、动画或复杂材质。 |
+| FBX | 无人机航测 | 已接入：Model3D 转 GLB 快显，Hosted 已通过 | 固定盒子源的基础预览因声明 `IndexToDirect` 却缺少颜色索引而失败；0.179.0 和 0.186.1 亦复现，不能将依赖升级记为修复。当前可用路径是已验收的 GLB 快显，不声明全部版本、动画或复杂材质。 |
 | OBJ | 无人机航测 | 已接入：基础几何预览及 Model3D GLB 快显 | Hosted 已验证源几何、GLB 内嵌漫反射贴图及下载；引用的 MTL/图片须可访问，不声明复杂材质保真。 |
 | MAX | 无人机航测 | 限定支持：Model3D 内部 Blender 与固定导入器转换静态 GLB | Hosted 已验证五个网格、444 个顶点、基础贴图与毫米换算。识别不了单位且用户未选时默认米；外部 bitmap 须显式映射。不新增 Blender 服务，不声明动画、骨架、修改器或全部版本。 |
 | SKP | 无人机航测 | 限定支持：OpenSKP 转静态 GLB，保留组件实例与内嵌基础贴图 | Hosted 已验证单位换算及两个共享实例；隐藏组件、隐藏面、关闭图层及解析器不支持的输入明确拒绝，不声明动态组件、场景动画或全部版本。 |
@@ -38,6 +38,26 @@
 - [Model3D 验收记录](../../engines/model3d-workflow/README.md)：同一源码的 Linux x86_64 产品构建及 10 种 OSGB 贴图回归通过；2026-10-15 本地秋树 GLB 保留透明叶片、9589 顶点和 7273 面，旋转、刷新缓存与清理通过。
 - [SuperMap 验收记录](../../engines/supermap-workflow/README.md)：SDK 大写贴图引用修复、真实厂商模型及业务源不变检查；不能把无 SDK 协议门禁或其他模型 Hosted 通过计为 SGM Hosted 通过。
 - 图片、CSV BOM/UTF-16、大文件分页等本地验收范围保留在本文后文；不外推全部格式变体。
+
+### 2026-10-17 FBX 基础预览与 Three.js 升级评估
+
+固定源 `box.fbx`（SHA-256 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`）实际包含 `ByVertice`／`IndexToDirect` 颜色层和 96 个 RGBA 数值，即 24 组颜色，但没有 `ColorIndex`。原记录将其称为空顶点颜色层并直接归为 [Three.js #31247](https://github.com/mrdoob/three.js/issues/31247) 不准确；[Autodesk 的引用模式定义](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-Developer-Help/files/cpp_ref/FBX_Developer_Help_cpp_ref_class_fbx_layer_element_html.html)说明 `IndexToDirect` 通过索引数组引用颜色数组；本轮不据此猜测顺序映射、丢弃颜色或构造索引。
+
+隔离临时副本使用既有 `make test-manager-frontend` 入口加载真实 FBXLoader 和固定源，核对结果如下。0.178.0／0.179.0／0.186.1 均从官方 npm 发布包提取并验证发布的 SHA-512 integrity；彩色对照源使用 Three.js r179 的 `vCube.fbx`，12460 字节，SHA-256 `c0c2d4a07aae2060d4c623e2642a7f9d576ff8f2dc595152ddcfc2a07d214304`。
+
+| 加载器 | 固定盒子 | 有效顶点颜色对照 |
+| --- | --- | --- |
+| 当前 0.172.0 | 读取缺失的颜色索引时失败 | 可解析并保留颜色 |
+| 0.178.0 | 可读出十二个三角面，但跳过颜色层 | 错误丢失有效顶点颜色 |
+| 0.179.0、0.186.1 | 仍在缺失颜色索引处失败 | 可解析并保留颜色，与当前版一致 |
+
+上游 [#31248](https://github.com/mrdoob/three.js/pull/31248) 在 r178 处理缺失颜色数据，但其检查引入颜色丢失；[#31420](https://github.com/mrdoob/three.js/pull/31420) 在 r179 修正该回归。只移植最终的 `Colors` 存在性检查亦不能解决当前盒子；仅增加非空数组检查同样无效，因为该源确有 96 个颜色数值。两个尝试均仅在临时副本中验证失败，未进入产品或依赖安装流程。
+
+升级影响覆盖 Manager 的模型、COPC、3D Tiles、S3M、CAD 与高斯预览。当前 CAD 1.6.3 及核实时最新版 1.7.6 均要求 `three ^0.172.0`（[官方 CAD 依赖声明](https://github.com/mlightcad/cad-viewer/blob/master/packages/cad-simple-viewer/package.json)）；[Giro3D 1.0.1](https://gitlab.com/giro3d/giro3d/-/blob/v1.0.1/package.json) 声明 `three ^0.170.0`，当前已有固定 0.172.0 的已验证 override，不能据此推定任意升级兼容。核实时 [Giro3D 2.0.5 官方发布清单](https://registry.npmjs.org/@giro3d/giro3d/2.0.5) 改为 `three ^0.180.0`、`ol ~10.8.0` 和 GeoTIFF 3.x；当前 3D Tiles 0.4.28 与高斯库 0.4.7 的宽泛 Three.js 范围也不代替实际渲染验证。升级不能只改 Three.js 版本、用第二份运行实例绕过约束，或将 package override 当成兼容证据。
+
+当前结论：本轮不升级、不引入私有 FBXLoader 分支或数据修补；继续使用已验收的 Model3D → GLB 快显。有效 FBX 的解析对照不计为浏览器页面验收，现有 Hosted 仍只认证该固定盒子的 GLB 路线。若后续扩大依赖升级范围，须同步技术栈规约、唯一依赖约束和根门禁，并覆盖上述六类消费者、真实 FBX／GLB、COPC Range、瓦片、CAD 及高斯页面；不能把此轮隔离解析结果计为升级通过。
+
+验证副本基线为 `44be5dcab59740c3f495dc7ca8b5d4dda59a4ec0`，Manager 的 `package.json`／锁文件与当前工作区逐字节一致。标准 `make test-manager-frontend` 完整退出 0：328 项既有单元测试加 4 项临时真实加载器对照共 332 项、210 项浏览器回归及生产构建全部通过；浏览器和构建仍使用既有 0.172.0，明确不认证新版本渲染。临时源码副本、下载包及两个失败补丁尝试已清理，未修改开发依赖或接管开发服务；安全摘要格式为 `addp.fbx-dependency-assessment/v1`，SHA-256 为 `6e55559cc79ec997f57401d67585810048d7f9b1bb04fb044d0b9ea647c7e917`。这四项解析对照只属于本次隔离调查，未登记成持续 CI 场景。
 
 2026-10-16 静态轨迹首版已按用户确认的范围实现：CSV、records JSON 和 Point FeatureCollection 通过既有受控 `/preview` 重新获取完整且不超过 2000 点的文件结果，再显式配置设备／时间／坐标及 CRS，按设备分组、时间排序绘图；配置和图形不回写 Meta、不建立任务或产物。共享 196 项、Manager 单元 327 项与轨迹专项 9 项通过，实际绘图及 Unix 秒毫秒精度已核对，Manager 正式构建通过；共享样式的实际消费者 Workbench 123 项单元、64 项浏览器及构建通过。Manager 全量浏览器仍有两项血缘失败，全工作区门禁缺少其他 Owner T2 条件，均不计整轮通过，也不扩展本会话处理范围。三份 Business NFS 合成 CSV／JSON／GeoJSON 文件的真实页面均已绘出 2 台设备、3 个采样点；另以 NOAA GDP 公开真实浮标的六小时插值 CSV 子集补验，两台设备各 44 点、共 88 点，带单位源列名直接配置后绘出两条路线，源哈希保持不变。该补验使用显式浏览 CRS，不认证源大地基准；其他设备生产文件及 Hosted T4 尚未验证，详细范围见 [Manager 预览规范](../../manager/docs/数据预览与资源树实现规范.md#设备静态轨迹预览)。
 
@@ -169,7 +189,7 @@ GeoJSON 初始化时序修复已完成确定性验证：正确隔离的已提交
 
 2026-10-13 FBX／OBJ Hosted 扩展准备：沿既有 Manager suite 增加固定 FBX 盒子和带 MTL／PNG 的 OBJ 三角形。复用十项普通 User 权限，按真实源下载核对大小与 SHA-256，检查生成入口、OBJ 基础几何预览及两种格式生成后的 GLB 缓存加载；GLB 分别核对原始变换／颜色和贴图／不透明度，清理后再次核对原模型字节。Owner/v7、browser/v9 为本扩展的单一报告契约，模型集合扩大到八种、产物集合扩大到十一类，不改血缘产品实现。仍待新增范围的 Hosted 实际报告，旧六模型及 JSON／GeoJSON 运行结果不外推为 FBX／OBJ 已通过。
 
-本轮浏览器探针复现固定 FBX 的空顶点颜色层在 Three.js 0.172.0 `FBXLoader.parseVertexColors` 中读取不存在的 `Colors.a`，与 [上游 issue 31247](https://github.com/mrdoob/three.js/issues/31247) 一致；最新上游源码已有存在性检查，升级影响另行评估。2026-10-13 用户已确认先完成 FBX GLB 快显，基础预览缺陷不计为通过、不自动切换或忽略浏览器错误。本轮不升级 Three.js，不改产品预览路线；OBJ 保留基础几何和 GLB 贴图验收。
+本轮浏览器探针复现固定 FBX 基础预览失败，当时将其归为缺少 `Colors.a` 的 [上游 issue 31247](https://github.com/mrdoob/three.js/issues/31247)。2026-10-17 实际解析已纠正该归因：该源有颜色数组，缺失的是 `ColorIndex`，详见当前升级评估。2026-10-13 用户已确认先完成 FBX GLB 快显，基础预览缺陷不计为通过、不自动切换或忽略浏览器错误。本轮不升级 Three.js，不改产品预览路线；OBJ 保留基础几何和 GLB 贴图验收。
 
 本扩展的隔离副本验证：`make test-manager-online-runner` 的 76 项及 Go 身份工具通过，完整 `make test-online-runner` 的 968 项 Python 回归（13 批）及 CI 登记核对通过；最终按已确认的 FBX GLB 范围再次执行 Manager 专项通过。既有 Linux ARM64 最终 Runtime 镜像经正式 operator 转换同一固定源，FBX 的 24 个顶点／源变换／颜色与 OBJ 的三角形／内嵌 PNG 像素通过新断言。标准浏览器入口的临时中英文探针共两项通过，已目视核对 FBX GLB 及 OBJ 基础几何、带贴图 GLB，原文件下载哈希一致；探针使用受控 API，不能代替 Hosted。临时测试与 Vite 文件服务已移除，未升级依赖或重启用户服务；正式八模型 Hosted 尚未执行。
 
