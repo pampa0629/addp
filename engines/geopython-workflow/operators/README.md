@@ -42,7 +42,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 71 个算子：通用处理 18 个、矢量处理 26 个、栅格处理 27 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 72 个算子：通用处理 18 个、矢量处理 27 个、栅格处理 27 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -51,7 +51,7 @@ operators/
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 9 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve` |
+| 矢量处理 | 几何处理 | 10 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -69,6 +69,12 @@ operators/
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
 `crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义。
+
+## 拓扑构面
+
+`polygonize(input_gdf)` 接受二维 LineString / MultiLineString 线网，先按真实交点打断、去除重合段，再提取闭合区域。默认 `result` 端口每行一个 Polygon，仅含几何；`diagnostics` 端口含 `issue_type + geometry`，区分 `dangle`、`cut_edge`、`invalid_ring`。两端口均保留源 CRS，可分别连接 `save`；空批和无闭合区域返回同 Schema 的空面结果。
+
+不自动吸附、补缝、延伸或删除短线，不改写源，也不继承源线业务属性。拒绝空值、空几何、Z/M、非有限坐标及无效线。嵌套闭合区域保留孔洞及独立内面；诊断来自打断去重后的线网，不含原始线 ID，不等同完整拓扑质检。完整线网在内存中计算，不承诺固定内存或大规模容量。详细契约见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md#拓扑构面契约)。
 
 ## 使用方式
 

@@ -5,10 +5,13 @@
 """
 
 import geopandas as gpd
+import numpy as np
+import pandas as pd
+import shapely
 from typing import List
 from .base import (
     OperatorType,
-    OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+    OperatorMetadata, OperatorParam, OperatorCategory, OutputPort, register_operator
 )
 
 
@@ -167,7 +170,78 @@ def dissolve(input_gdf: gpd.GeoDataFrame, by: str = None) -> gpd.GeoDataFrame:
     return result
 
 
+def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
+    """Build planar faces and report unused edges without changing source linework."""
+    if not isinstance(input_gdf, gpd.GeoDataFrame):
+        raise ValueError("input_gdf must be a GeoDataFrame")
+    try:
+        geometry = input_gdf.geometry
+    except AttributeError as exc:
+        raise ValueError("input_gdf requires an active geometry column") from exc
+
+    if geometry.isna().any() or not geometry.geom_type.isin(["LineString", "MultiLineString"]).all():
+        raise ValueError("input_gdf requires non-null LineString or MultiLineString geometries")
+    parts = shapely.get_parts(geometry.array)
+    if shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any():
+        raise ValueError("input_gdf must not contain empty line geometries")
+    if shapely.has_z(parts).any() or shapely.has_m(parts).any():
+        raise ValueError("input_gdf requires two-dimensional XY line geometries")
+    if not np.isfinite(shapely.get_coordinates(parts)).all() or not shapely.is_valid(parts).all():
+        raise ValueError("input_gdf requires valid lines with finite coordinates")
+
+    # Node the complete network once; this inserts real intersections and removes
+    # overlapping segments without introducing a snapping distance.
+    network = shapely.node(shapely.multilinestrings(parts))
+    faces, cuts, dangles, invalid = shapely.polygonize_full(shapely.get_parts(network))
+    diagnostic_geometries, issue_types = [], []
+    for issue_type, collection in [("dangle", dangles), ("cut_edge", cuts), ("invalid_ring", invalid)]:
+        edges = list(shapely.get_parts(collection))
+        diagnostic_geometries.extend(edges)
+        issue_types.extend([issue_type] * len(edges))
+
+    return {
+        "result": gpd.GeoDataFrame(geometry=gpd.GeoSeries(shapely.get_parts(faces), crs=geometry.crs)),
+        "diagnostics": gpd.GeoDataFrame(
+            {"issue_type": pd.Series(issue_types, dtype="string")},
+            geometry=gpd.GeoSeries(diagnostic_geometries, crs=geometry.crs),
+        ),
+    }
+
+
 # ==================== 元数据定义 ====================
+
+POLYGONIZE_METADATA = OperatorMetadata(
+    name="polygonize",
+    type=OperatorType.SPATIAL,
+    category=OperatorCategory.VECTOR_GEOMETRY,
+    description="拓扑构面",
+    brief_description="从二维线网提取闭合面，并输出未参与构面的线诊断",
+    execution_modes=["workflow"],
+    effects=["read"],
+    overview="将多个线要素组成的平面线网按真实交点打断并去除重合线段，提取每个闭合区域。"
+             "面结果和余线诊断使用独立端口，保留源坐标系，不修改源数据或继承源线属性。",
+    params=[OperatorParam(
+        name="input_gdf", type="input", data_type="GeoDataFrame", required=True,
+        description="二维 LineString / MultiLineString 线网",
+        notes="允许空批；非空批拒绝空值、空几何、Z/M、非有限坐标及无效线",
+    )],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="构面结果，仅含面几何", is_default=True),
+        OutputPort(name="diagnostics", type="geodataframe", description="余线诊断，含 issue_type 和线几何", is_default=False),
+    ],
+    use_cases=["将地块边界线网构建为面", "从道路闭合区域生成街区面", "定位未参与构面的余线"],
+    notes=[
+        "不自动吸附、补缝、延伸或删除短线；无闭合区域时输出空面",
+        "保留嵌套闭合区域及孔洞，不继承源线业务属性",
+        "诊断类型为 dangle（悬挂或孤立余线）、cut_edge（连接但不构面的边）、invalid_ring（无效环）",
+        "诊断对应打断去重后的线网，不提供原始线 ID，不等同完整拓扑质检",
+        "两端口可分别连接保存节点；完整线网在内存中计算，几何规模影响内存消耗",
+    ],
+    workflow_example={
+        "id": "build_faces", "operator": "polygonize",
+        "params": {"input_gdf": {"$ref": "load_boundaries"}}, "depends_on": ["load_boundaries"],
+    },
+)
 
 BUFFER_METADATA = OperatorMetadata(
     name="buffer",
@@ -662,4 +736,5 @@ OPERATORS = dict([
     register_operator(CONVEX_HULL_METADATA, convex_hull),
     register_operator(ENVELOPE_METADATA, envelope),
     register_operator(DISSOLVE_METADATA, dissolve),
+    register_operator(POLYGONIZE_METADATA, polygonize),
 ])

@@ -45,7 +45,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 71 个支持 workflow，另有 10 个仅支持 direct |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 72 个支持 workflow，另有 10 个仅支持 direct |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 21 个支持 workflow |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | 12 个，均支持 workflow + direct |
 | **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | 5 个，均支持 workflow + direct |
@@ -927,6 +927,18 @@ Business ES reader 仅增加 `cluster:monitor/main` 和 `cluster:monitor/health`
 Copilot 在生成工作流前做数据源理解时也必须遵守同一资源契约：低置信度或未验证的数据源只能返回 `DataSourceCandidate[]` 给调用方澄清，候选项中的位置字段使用 `namespace`、`table`、`bucket`、`path` 作为解释性事实，并提供标准 `locator` 或 `target_parent_locator`；不得把元数据搜索结果中的 `schema` 字段透传为 Copilot 对外模型字段，也不得把存储引擎 `engine_id` 写入工作流任务 params。
 
 ---
+
+### 拓扑构面契约
+
+GeoPython `polygonize`（拓扑构面）位于“矢量处理 / 几何处理”，仅支持 workflow，效果为 `read`。唯一输入 `input_gdf` 是当前工作流的 GeoDataFrame：仅接受二维、坐标有限的 LineString / MultiLineString，使用实际 active geometry 列；非空批中的空值、空几何、无效线或 Z/M 输入明确拒绝，不能静默丢弃。允许空批，保留源 CRS（包括未定义事实），不自动重投影。
+
+所有输入线共同构成一个平面线网，先在真实交点处打断并去除重合线段，再提取闭合区域。内部自交线按真实交点构面；嵌套边界保留孔洞和其独立闭合面。首版不提供容差吸附、补缝、端点延伸或短线删除，不修改源数据、不继承源线业务属性。该算法在内存中处理完整线网，不能宣称固定内存或大规模容量已认证。
+
+输出复用两个既有 `geodataframe` 端口：默认端口 `result` 每行一个 Polygon，仅含 `geometry`；`diagnostics` 为未参与构面的线段，字段为 `issue_type + geometry`，类型值为 `dangle`（悬挂或孤立余线）、`cut_edge`（两端相连但未参与构面的边）、`invalid_ring`（构面阶段发现的无效环）。两端口均保留源 CRS，空结果保留相同 Schema。诊断对应打断、去重后的线网，不承诺原始线 ID 追溯；余线可能是合法业务对象，不自动判为质量不合格。无闭合区域时返回空面及实际诊断，不补造面。
+
+Develop 按 Runtime 元数据动态发现和显示端口，默认引用选取 `result`，显式 `port=diagnostics` 读取诊断；两者可分别连接既有矢量 `save` 节点。纯计算和预览不产生持久输出、Meta 扫描或血缘，保存继续使用现有授权及成果主线，不新增 Adapter 或 direct 路径。辅助诊断不替代独立拓扑质检、源线关联或评分体系。
+
+验证沿用 `make test-geopython-workflow`，覆盖真实线网构面、交点与重合、孔洞、余线类型、零容差边界、输入拒绝、CRS/属性/源数据不变及两端口 DAG 保存重载。新用例加入根入口的显式文件列表，既有 Platform CI 的 GeoPython Job 和 engines 路径选择自动覆盖，无新增依赖、API 或 CI Job；确定性回归不替代完整 ADDP T4 验收。
 
 ### 4.6 栅格计算契约
 

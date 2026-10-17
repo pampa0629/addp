@@ -13,7 +13,7 @@ from .base import OperatorMetadata, OperatorParam, OperatorCategory, OperatorTyp
 from .io_operators import load, save
 from .geometric_operators import (
     buffer, intersection, union, centroid, difference,
-    simplify, convex_hull, envelope, dissolve
+    simplify, convex_hull, envelope, dissolve, polygonize
 )
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
@@ -216,6 +216,7 @@ __all__ = [
     'simplify',
     'convex_hull',
     'envelope',
+    'polygonize',
 
     # 空间关系算子
     'contains',

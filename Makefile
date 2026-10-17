@@ -201,7 +201,7 @@ test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/C
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
+	@ROOT_DIR="$(CURDIR)" GEOPYTHON_WORKFLOW_PYTHON="$(abspath $(GEOPYTHON_WORKFLOW_PYTHON))" bash -c 'source scripts/dev/geopython-workflow.sh; addp_geopython_native_environment || exit 1; cd engines/geopython-workflow; PYTHONPATH="$(CURDIR)/common-python" exec "$$GEOPYTHON_WORKFLOW_PYTHON" -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_online_pmtiles_fixture.py test_engine.py test_multiport.py test_topology_operators.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs'
 
 COPILOT_PYTHON ?= copilot/backend/venv/bin/python
 test-copilot: ## 运行 Copilot 后端全量确定性测试
