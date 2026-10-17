@@ -943,8 +943,36 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID, userID uint)
 		return nil, fmt.Errorf("task is already enabled")
 	}
 
-	enabled := true
-	if _, err := s.UpdateTask(ctx, id, tenantID, &models.UpdateTaskRequest{Enabled: &enabled}); err != nil {
+	// Resume only changes future scheduling. An existing bounded execution may
+	// still be active; its configuration, identity and summary stay untouched.
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND tenant_id=?", id, tenantID).First(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return commonAPI.ErrNotFound
+			}
+			return err
+		}
+		if current.Schedule == "" {
+			return fmt.Errorf("manual tasks do not support resume")
+		}
+		if current.Enabled {
+			return fmt.Errorf("task is already enabled")
+		}
+		boundary, err := planner.TaskRuntimeBoundary(current.Config)
+		if err != nil || boundary != commonExecution.ExecutionBoundaryBounded {
+			return ErrInvalidTaskConfig
+		}
+		current.Enabled = true
+		current.NextRunAt, err = transferTaskNextRunAt(current.Schedule, true, time.Now())
+		if err != nil {
+			return err
+		}
+		if err := s.authorizeSchedule(ctx, &current); err != nil {
+			return err
+		}
+		return tx.Model(&current).Select("enabled", "next_run_at", "authorization_subject_id", "authorization_definition_hash", "authorization_principal_id", "authorization_membership_id", "authorization_version", "authorized_at").Updates(&current).Error
+	}); err != nil {
 		return nil, err
 	}
 

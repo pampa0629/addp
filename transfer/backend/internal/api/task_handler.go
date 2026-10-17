@@ -235,6 +235,7 @@ func (h *TaskHandler) listTasks(c *gin.Context, providerOnly bool) {
 // @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 503 {object} map[string]string "任务授权服务不可用 | Task authorization service unavailable"
+// @Failure 401 {object} map[string]string "当前用户凭据失效 | Current User credential is no longer valid"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.update"]
@@ -634,7 +635,7 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
-// @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
+// @Failure 503 {object} map[string]string "捕获控制面或任务授权服务不可用 | Capture control or task authorization service unavailable"
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.update"]
@@ -663,6 +664,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
+// @Failure 401 {object} map[string]string "当前用户凭据失效 | Current User credential is no longer valid"
 // @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
@@ -763,6 +765,10 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, commonAPI.ErrUnauthorized) {
+		commonAPI.UnauthorizedError(c, i18nmiddleware.T(c, i18nmiddleware.MsgUnauthorized))
+		return
+	}
 	if errors.Is(err, service.ErrTaskAuthorizationUnavailable) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, i18nmiddleware.MsgAuthorizationServiceUnavailable)})
 		return

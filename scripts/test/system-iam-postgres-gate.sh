@@ -113,7 +113,7 @@ case "$TEST_FILTER" in
     task-authorization)
         case "$PACKAGE_FILTER" in
             iam) test_pattern='^TestTaskAuthorizationSubjectAgainstPostgres$' ;;
-            migration) test_pattern='^TestTransferTaskAuthorizationForwardMigrationAgainstPostgres$' ;;
+            migration) test_pattern='^Test(TransferTaskAuthorizationForwardMigration|Runner)AgainstPostgres$' ;;
             *) echo "task-authorization requires --package iam or migration" >&2; exit 2 ;;
         esac
         ;;

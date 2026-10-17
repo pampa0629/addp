@@ -1214,6 +1214,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current User credential is no longer valid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "服务器错误 | Server error",
                         "schema": {
@@ -1627,7 +1636,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "捕获控制面不可用 | Capture control unavailable",
+                        "description": "捕获控制面或任务授权服务不可用 | Capture control or task authorization service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1773,6 +1782,15 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "当前用户凭据失效 | Current User credential is no longer valid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

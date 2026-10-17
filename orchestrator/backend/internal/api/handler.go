@@ -73,6 +73,7 @@ func NewOrchestrationHandler(
 // Create 创建编排
 // @Summary 创建编排 | Create orchestration
 // @Description 严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions
+// @Description 保存时从当前 User 为定义绑定任务授权主体，另需编排执行与执行授权创建权限；凭据仅在同步请求内转发 | Bind the definition to the current User task authorization subject when saving, requiring workflow execute and execution authorization create; forward credentials only within the synchronous request
 // @Tags Orchestrator
 // @Accept json
 // @Produce json
@@ -81,7 +82,7 @@ func NewOrchestrationHandler(
 // @Failure 400 {object} models.ErrorResponse "编排定义或执行参数无效 | Invalid orchestration definition or execution parameters"
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["orchestrator.workflow.create"]
+// @x-addp-required-permissions ["orchestrator.workflow.create","orchestrator.workflow.execute","system.execution_authorization.create"]
 // @Router /orchestrations [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Create(c *gin.Context) {
@@ -174,6 +175,7 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 // Update 更新编排
 // @Summary 更新编排 | Update orchestration
 // @Description 严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions
+// @Description 保存时从当前 User 为定义绑定任务授权主体，另需编排执行与执行授权创建权限；凭据仅在同步请求内转发 | Bind the definition to the current User task authorization subject when saving, requiring workflow execute and execution authorization create; forward credentials only within the synchronous request
 // @Tags Orchestrator
 // @Accept json
 // @Produce json
@@ -184,7 +186,7 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["orchestrator.workflow.update"]
+// @x-addp-required-permissions ["orchestrator.workflow.update","orchestrator.workflow.execute","system.execution_authorization.create"]
 // @Router /orchestrations/{id} [put]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Update(c *gin.Context) {

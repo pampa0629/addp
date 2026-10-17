@@ -233,7 +233,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions",
+                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions\n保存时从当前 User 为定义绑定任务授权主体，另需编排执行与执行授权创建权限；凭据仅在同步请求内转发 | Bind the definition to the current User task authorization subject when saving, requiring workflow execute and execution authorization create; forward credentials only within the synchronous request",
                 "consumes": [
                     "application/json"
                 ],
@@ -278,7 +278,9 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "orchestrator.workflow.create"
+                    "orchestrator.workflow.create",
+                    "orchestrator.workflow.execute",
+                    "system.execution_authorization.create"
                 ]
             }
         },
@@ -328,7 +330,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions",
+                "description": "严格解析编排定义并拒绝未知字段，统一校验 Step、DAG、模板依赖、任务引用、递归引用和调度表达式 | Strictly parse the orchestration definition, reject unknown fields, and validate steps, DAG, template dependencies, task references, recursive references, and schedule expressions\n保存时从当前 User 为定义绑定任务授权主体，另需编排执行与执行授权创建权限；凭据仅在同步请求内转发 | Bind the definition to the current User task authorization subject when saving, requiring workflow execute and execution authorization create; forward credentials only within the synchronous request",
                 "consumes": [
                     "application/json"
                 ],
@@ -386,7 +388,9 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "orchestrator.workflow.update"
+                    "orchestrator.workflow.update",
+                    "orchestrator.workflow.execute",
+                    "system.execution_authorization.create"
                 ]
             },
             "delete": {

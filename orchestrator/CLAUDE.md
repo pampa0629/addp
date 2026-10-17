@@ -122,3 +122,5 @@ Model 可在页内通过共享关联流程对话框消费现有 list/get/execute
 节点执行状态验证覆盖后端 SQLite/HTTP 受控集成（下一步骤启动前检查前一步结果与进度）、前端状态映射和浏览器执行链路；由既有 Go 模块测试和 `make test-orchestrator-frontend` 自动发现。Swagger 执行详情说明同步逐步更新语义。
 
 Orchestrator 执行可靠性遵循任务体系规范的“Orchestrator 执行可靠性”节：Backend 内嵌监督器是唯一执行者，API/Scheduler 只入队；冻结本次 Steps，按步骤推进和等待，不持有整条流程执行槽；Common lease 约束步骤、进度、终态和事件。失联、停机和不确定提交不自动重放，用户取消仍不支持。模块启动迁移由 Backend 在模块 schema 锁下执行。验证入口为 `make test-module MODULE=orchestrator`；新增 `make test-orchestrator-postgres` 验证真实领取、原子调度、失联恢复和一次性迁移，Hosted T2 同次登记。真实执行与诊断权限首轮验收使用手动 Hosted T4 `orchestrator-execution`，由 `scripts/test/online-hosted-orchestrator-gate.sh` 管理隔离生命周期；本地 `make test-online-runner` 只验证套件确定性逻辑，不作为真实 T4 通过证据。
+
+保存编排定义沿用 System Task Authorization Subject：创建／更新除各自 `orchestrator.workflow.create|update` 外，还需 `orchestrator.workflow.execute` 与 `system.execution_authorization.create`，由 System 以当前 User 凭据同步核验并绑定定义摘要；不保存 Token。System 通用任务主体接口接入 Transfer 后，Orchestrator 仍仅解析自己的 orchestration 二元组，不能解析 Transfer sync 主体。Swagger 同步声明三项权限交集；本次仅补齐该既有调用链的文档声明，不改变编排执行路线。

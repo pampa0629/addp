@@ -133,7 +133,7 @@ Transfer 在既有扫描 claim 状态变化事务中同步这份来源的 claim 
 
 Transfer 自有 bounded 定时调度复用 System Task Authorization Subject。任务以不可变 apply identity 作为 task ref，定义摘要覆盖名称、描述、类型、配置、批大小、调度开关、Cron 和自动扫描选项；保存带 Cron 的定义或恢复调度时，由本次 User 同步授权并原子保存完整主体及摘要。暂停清除本地调度授权，恢复不得借用旧主体。无 Cron 和 continuous 任务不建立调度授权，历史定义不得按创建人补齐。
 
-既有 `POST /auth/task-authorization-subjects` 使用 `system.execution_authorization.create`，再按严格的 owner/type 二元组检查 `orchestrator.workflow.execute` 或 `transfer.task.execute`。User Token 仅在同步调用内使用。既有 resolve 入口继续使用不可委派的 `system.task_authorization.execute`，仅分别允许 `addp-orchestrator` 解析 orchestration、`addp-transfer` 解析 sync；该 Permission 只增授 Transfer Runtime，不授予普通用户。System 重核当前 User、Membership、Tenant、模块执行 Permission 和授权版本；Transfer 在 due claim 的同一事务中重核定义摘要、保存主体及返回主体完全一致后，才能创建带完整来源的 pending execution 并推进计划。失败不产生无主体执行、不推进计划，并留下安全失败诊断。来源不授予数据访问权，产物扫描仍走既有精确输出及父执行核验。
+既有 `POST /auth/task-authorization-subjects` 使用 `system.execution_authorization.create`，再按严格的 owner/type 二元组检查 `orchestrator.workflow.execute` 或 `transfer.task.execute`。User Token 仅在同步调用内使用；任务主体授权及解析请求均拒绝重定向，不能把凭据转发给跳转目标或修改共享 HTTP Client。既有 resolve 入口继续使用不可委派的 `system.task_authorization.execute`，仅分别允许 `addp-orchestrator` 解析 orchestration、`addp-transfer` 解析 sync；该 Permission 只增授 Transfer Runtime，不授予普通用户。System 重核当前 User、Membership、Tenant、模块执行 Permission 和授权版本；Transfer 在 due claim 的同一事务中重核定义摘要、保存主体及返回主体完全一致后，才能创建带完整来源的 pending execution 并推进计划。失败不产生无主体执行、不推进计划，并留下安全失败诊断。来源不授予数据访问权，产物扫描仍走既有精确输出及父执行核验。
 
 持续同步初次扫描在实际目标结构准备完成后，由 Transfer 在当前私有 runtime lease 的 fencing 校验事务内保存目标 locator 和当前 execution 关联，再携带该父 execution 提交。Meta 只读取 Common 中的已保存来源及 running 状态，不跨读 Transfer 私有租约表。Manager 矢量瓦片集同样在当前 Common lease 内保存实际 PMTiles 路径和 attempt，再按精确文件内容引用提交；它不使用 mosaic 的 whole 回执与完成语义。
 

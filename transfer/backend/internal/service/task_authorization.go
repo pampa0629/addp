@@ -58,7 +58,10 @@ func (s *TaskService) authorizeSchedule(ctx context.Context, task *models.Transf
 	request := commonClient.TaskAuthorizationSubjectRequest{OwnerModule: "transfer", TaskType: "sync", TaskRef: task.ApplyIdentity, DefinitionHash: hash}
 	subject, err := s.taskAuthorizer.AuthorizeTaskSubject(ctx, token, request)
 	if err != nil {
-		if status, ok := commonClient.SystemAPIStatusCode(err); (ok && (status == 401 || status == 403)) || errors.Is(err, commonAPI.ErrForbidden) {
+		if status, ok := commonClient.SystemAPIStatusCode(err); ok && status == 401 {
+			return commonAPI.ErrUnauthorized
+		}
+		if status, ok := commonClient.SystemAPIStatusCode(err); (ok && status == 403) || errors.Is(err, commonAPI.ErrForbidden) {
 			return fmt.Errorf("%w: task authorization was rejected", commonAPI.ErrForbidden)
 		}
 		return ErrTaskAuthorizationUnavailable

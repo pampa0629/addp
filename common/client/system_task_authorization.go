@@ -41,7 +41,7 @@ func (c *SystemExecutionAuthorizationClient) AuthorizeTaskSubject(
 		return nil, errors.New("task authorization requires a System URL and User Access Token")
 	}
 	var response TaskAuthorizationSubject
-	_, err := c.system.doJSON(
+	_, err := c.system.taskAuthorizationTransport().doJSON(
 		ctx, http.MethodPost, "/api/v1/system/auth/task-authorization-subjects",
 		userAccessToken, request, &response,
 	)
@@ -64,7 +64,7 @@ func (c *SystemServiceClient) ResolveTaskAuthorizationSubject(
 	}
 	var response TaskAuthorizationSubject
 	path := fmt.Sprintf("/api/v1/system/runtime/task-authorization-subjects/%s/resolve", subjectID)
-	if err := c.doTenantJSON(ctx, http.MethodPost, path, request, &response); err != nil {
+	if err := c.taskAuthorizationTransport().doTenantJSON(ctx, http.MethodPost, path, request, &response); err != nil {
 		return nil, err
 	}
 	if response.ID != subjectID {
@@ -97,4 +97,17 @@ func validateTaskAuthorizationSubject(
 		}
 	}
 	return nil
+}
+
+// Task authorization credentials are confined to the configured System origin.
+// Copy request policy without mutating the client shared by other RPCs.
+func (c *SystemServiceClient) taskAuthorizationTransport() *SystemServiceClient {
+	if c == nil || c.httpClient == nil {
+		return c
+	}
+	scoped := *c
+	transport := *c.httpClient
+	transport.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	scoped.httpClient = &transport
+	return &scoped
 }

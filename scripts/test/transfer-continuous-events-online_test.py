@@ -33,12 +33,13 @@ class Client:
 
 class ContinuousRunnerTest(unittest.TestCase):
     def test_scheduled_scan_requires_exact_parent_user_and_peer_isolation(self):
-        execution = {'execution_id': UUID, 'status': 'success', 'trigger_type': 'scheduled', 'trigger_by': 31}
+        execution = {'execution_id': UUID, 'status': 'success', 'trigger_type': 'scheduled', 'trigger_by': 31, 'metadata': {}}
         scan_id = 'bbbbbbbb-1111-4111-8111-111111111111'
         scan = {'execution_id': scan_id, 'status': 'success', 'triggered_by': 31, 'parent_execution_id': UUID}
-        owner, peer = Client([scan]), Client([{'error': 'not found'}])
+        owner, peer = Client([scan]), Client([execution, {'error': 'not found'}])
         self.assertTrue(M.assert_scheduled_scan_origin(owner, peer, execution, scan_id, 31))
-        self.assertEqual(peer.calls[0][2], (404,))
+        self.assertEqual(peer.calls[0][2], (200,))
+        self.assertEqual(peer.calls[1][2], (404,))
         for changed in [{**scan, 'triggered_by': 32}, {**scan, 'parent_execution_id': scan_id},
                         {**scan, 'status': 'failed'}]:
             with self.subTest(scan=changed), self.assertRaises(M.SuiteError):
@@ -47,7 +48,7 @@ class ContinuousRunnerTest(unittest.TestCase):
             with self.assertRaises(M.SuiteError):
                 M.assert_scheduled_scan_origin(Client([scan]), Client([{}]), changed, scan_id, 31)
         with self.assertRaises(M.SuiteError):
-            M.assert_scheduled_scan_origin(Client([scan]), Client([{'execution_id': scan_id}]), execution, scan_id, 31)
+            M.assert_scheduled_scan_origin(Client([scan]), Client([execution, {'execution_id': scan_id}]), execution, scan_id, 31)
 
     def test_scheduled_body_uses_existing_scanned_source_and_a_single_new_target(self):
         body = M.scheduled_task_body('scheduled', 10)

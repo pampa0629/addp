@@ -88,7 +88,7 @@ func TestScheduleDefinitionReplacePauseAndResumeUsesCurrentUser(t *testing.T) {
 }
 
 func TestScheduleRejectsUnverifiedAndMismatchedSubjectsWithoutDefinitionWrite(t *testing.T) {
-	for _, scenario := range []string{"no_origin", "no_token", "unavailable", "rejected", "tenant", "principal", "membership", "version", "hash", "subject", "nil"} {
+	for _, scenario := range []string{"no_origin", "no_token", "unavailable", "rejected", "expired", "tenant", "principal", "membership", "version", "hash", "subject", "nil"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := newTransferTaskServiceTestDB(t)
 			svc := NewTaskService(db, nil, nil)
@@ -106,6 +106,8 @@ func TestScheduleRejectsUnverifiedAndMismatchedSubjectsWithoutDefinitionWrite(t 
 						return nil, err
 					}
 					switch scenario {
+					case "expired":
+						return nil, &commonClient.SystemAPIError{StatusCode: 401}
 					case "rejected":
 						return nil, commonAPI.ErrForbidden
 					case "tenant":
@@ -129,6 +131,9 @@ func TestScheduleRejectsUnverifiedAndMismatchedSubjectsWithoutDefinitionWrite(t 
 			_, err := svc.CreateTask(ctx, &models.CreateTaskRequest{Name: "rejected", TaskType: "sync", Config: validTableTransferTaskConfig(), Schedule: "0 */5 * * * *", Enabled: boolPtr(true)}, 7, 9)
 			if err == nil {
 				t.Fatal("invalid scheduled source accepted")
+			}
+			if scenario == "expired" && !errors.Is(err, commonAPI.ErrUnauthorized) {
+				t.Fatal("expired User credential did not preserve authentication failure")
 			}
 			var count int64
 			db.Model(&models.TransferTask{}).Count(&count)
@@ -158,5 +163,40 @@ func TestRejectedScheduleUpdatePreservesCommittedDefinitionAndSubject(t *testing
 	db.First(&stored, task.ID)
 	if stored.Name != task.Name || *stored.AuthorizationPrincipalID != 9 || *stored.AuthorizationDefinitionHash != *task.AuthorizationDefinitionHash {
 		t.Fatal("failed update changed committed authorization")
+	}
+}
+
+func TestResumeBoundedScheduleWhileExecutionIsActivePreservesItsOrigin(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	svc := NewTaskService(db, nil, nil)
+	svc.SetTaskSubjectAuthorizer(scheduleAuthorizerFunc(validScheduleTestSubject))
+	task, err := svc.CreateTask(scheduleTestContext("9"), &models.CreateTaskRequest{Name: "active-schedule", TaskType: "sync", Config: validTableTransferTaskConfig(), Schedule: "0 */5 * * * *", Enabled: boolPtr(true)}, 7, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.SetExecutionService(NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db)))
+	active, err := svc.StartTask(transferTestUserOrigin(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.PauseTask(context.Background(), task.ID, 7); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResumeTask(scheduleTestContext("10"), task.ID, 7, 10); err != nil {
+		t.Fatalf("schedule resume must not require stopping its active execution: %v", err)
+	}
+	current, err := svc.GetTask(context.Background(), task.ID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.Enabled || current.NextRunAt == nil || current.Status != models.TaskStatusRunning || current.LastExecutionID == nil || *current.LastExecutionID != active.ExecutionID || *current.AuthorizationPrincipalID != 10 {
+		t.Fatal("resume changed active execution or failed to authorize future schedule")
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id=?", active.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "pending" || stored.TriggeredBy == nil || *stored.TriggeredBy != 9 || *stored.ActorPrincipalID != 9 {
+		t.Fatal("schedule reauthorization rewrote active execution")
 	}
 }

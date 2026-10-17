@@ -95,7 +95,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
 
     def test_task_authorization_filter_selects_registered_iam_and_migration_tests(self):
         for package, pattern in [('iam', '^TestTaskAuthorizationSubjectAgainstPostgres$'),
-                                 ('migration', '^TestTransferTaskAuthorizationForwardMigrationAgainstPostgres$')]:
+                                 ('migration', '^Test(TransferTaskAuthorizationForwardMigration|Runner)AgainstPostgres$')]:
             result = self.run_gate(arguments=('--package', package, '--test', 'task-authorization'))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f'./internal/{package} -run {pattern}', (self.root / 'trace-1').read_text())

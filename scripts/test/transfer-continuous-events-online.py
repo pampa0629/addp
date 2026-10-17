@@ -428,6 +428,8 @@ def assert_scheduled_scan_origin(client, peer, execution, scan_id, principal):
             and scan.get('status') not in {'failed', 'cancelled', 'timeout'},
             'scheduled scan did not inherit the exact producing execution and User')
     assert_safe(scan)
+    parent = peer.request('GET', f'{OWNER}/executions/{execution["execution_id"]}', (200,)).payload
+    assert_projection(parent, execution['execution_id'])
     hidden = peer.request('GET', f'/api/v1/meta/executions/{scan_id}', (404,)).payload
     require(isinstance(hidden, dict) and 'execution_id' not in hidden, 'scheduled scan leaked to another User')
     return scan.get('status') == 'success'
@@ -683,7 +685,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
             'metadata_scan_execution_id': scheduled_scan_id, **precise})
         report['scheduled_scan_ownership'] = {'execution_id': scheduled_id, 'scan_execution_id': scheduled_scan_id,
             'principal_id': initiating_user, 'trigger_type': 'scheduled', 'parent_and_user_verified': True,
-            'peer_read_denied': True, 'physical_rowset_verified': True, 'schedule_paused': True}
+            'parent_read_verified': True, 'peer_read_denied': True, 'physical_rowset_verified': True, 'schedule_paused': True}
         report['checks'].append('bounded_owner_schedule_current_subject_precise_scan_and_read_isolation')
 
     finally:

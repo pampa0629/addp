@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
@@ -640,5 +641,15 @@ func validTransferTaskHandlerCDCConfig() map[string]interface{} {
 			"type": "field_mapping", "version": "v1", "mode": "project",
 			"fields": []interface{}{map[string]interface{}{"source": "id", "target": "id", "target_type": "bigint", "nullable": false}},
 		}},
+	}
+}
+
+func TestTaskAuthorizationPreservesExpiredCredentialResponse(t *testing.T) {
+	router := gin.New()
+	router.GET("/expired-subject", func(c *gin.Context) { respondTaskServiceError(c, commonAPI.ErrUnauthorized) })
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest("GET", "/expired-subject", nil))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
 	}
 }

@@ -2645,6 +2645,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "401":
+          description: 当前用户凭据失效 | Current User credential is no longer valid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "500":
           description: 服务器错误 | Server error
           schema:
@@ -2877,7 +2883,8 @@ paths:
               type: string
             type: object
         "503":
-          description: 捕获控制面不可用 | Capture control unavailable
+          description: 捕获控制面或任务授权服务不可用 | Capture control or task authorization service
+            unavailable
           schema:
             additionalProperties:
               type: string
@@ -2986,6 +2993,12 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 当前用户凭据失效 | Current User credential is no longer valid
           schema:
             additionalProperties:
               type: string
