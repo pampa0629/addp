@@ -20,6 +20,7 @@ import (
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ExecutionService 执行记录服务（使用统一执行表）
@@ -366,6 +367,25 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, taskI
 
 // UpdateExecution 更新执行记录
 func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates map[string]interface{}) error {
+	return s.withLockedExecution(ctx, id, func(tx *gorm.DB, execution *commonExecution.TaskExecution) error {
+		return s.updateLockedExecution(ctx, tx, execution, updates)
+	})
+}
+
+// Serialize metadata merges with private production receipts; stale full-object
+// updates must not erase a pending/prepared/committed fact.
+func (s *ExecutionService) withLockedExecution(ctx context.Context, id uint, update func(*gorm.DB, *commonExecution.TaskExecution) error) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item commonExecution.TaskExecution
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id)
+		if err := commonExecution.ApplyReadScopes(ctx, query).First(&item).Error; err != nil {
+			return err
+		}
+		return update(tx, &item)
+	})
+}
+
+func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.DB, execution *commonExecution.TaskExecution, updates map[string]interface{}) error {
 	// 需要将 Transfer 的字段映射到统一表字段
 	unifiedUpdates := make(map[string]interface{})
 
@@ -396,12 +416,6 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 		}
 	}
 
-	// 获取执行记录以获取 execution_id 和 tenant_id
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0) // tenant_id 传 0 不过滤
-	if err != nil {
-		return err
-	}
-
 	// 处理通用 metadata 和 checkpoint 数据：合并入现有 metadata。
 	if _, hasMetadata := updates["metadata"]; hasMetadata {
 		metadata := execution.Metadata
@@ -409,10 +423,16 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 			metadata = commonModels.JSONMap{}
 		}
 		if values, ok := updates["metadata"].(map[string]interface{}); ok {
+			if _, reserved := values[models.TargetProductionMetadataKey]; reserved {
+				return fmt.Errorf("private target production requires its owner write path")
+			}
 			for key, value := range values {
 				metadata[key] = value
 			}
 		} else if values, ok := updates["metadata"].(commonModels.JSONMap); ok {
+			if _, reserved := values[models.TargetProductionMetadataKey]; reserved {
+				return fmt.Errorf("private target production requires its owner write path")
+			}
 			for key, value := range values {
 				metadata[key] = value
 			}
@@ -433,11 +453,20 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 		unifiedUpdates["metadata"] = metadata
 	}
 
-	return s.updateExecutionFields(ctx, execution, unifiedUpdates)
+	return s.updateExecutionFieldsInDB(ctx, tx, execution, unifiedUpdates)
 }
 
 // FinishExecution 完成执行（设置结束时间和状态）
 func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
+	if _, reserved := resultMetadata[models.TargetProductionMetadataKey]; reserved {
+		return fmt.Errorf("private target production requires its owner write path")
+	}
+	return s.withLockedExecution(ctx, id, func(tx *gorm.DB, execution *commonExecution.TaskExecution) error {
+		return s.finishLockedExecution(ctx, tx, execution, status, execErr, resultMetadata)
+	})
+}
+
+func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.DB, execution *commonExecution.TaskExecution, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":       string(status),
@@ -445,11 +474,6 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		"progress":     100,
 	}
 
-	// 获取执行记录
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
-	if err != nil {
-		return err
-	}
 	if len(resultMetadata) > 0 {
 		metadata := execution.Metadata
 		if metadata == nil {
@@ -471,10 +495,10 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		updates["execution_time_ms"] = executionTimeMs
 	}
 
-	if lease, ok := s.leaseForExecution(ctx, id, execution.ExecutionID); ok {
+	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {
 		delete(updates, "status")
 		delete(updates, "completed_at")
-		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := commonExecution.CompleteWithEvent(ctx, tx, lease, string(status), now, updates); err != nil {
 				return err
 			}
@@ -507,7 +531,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded {
 		return fmt.Errorf("bounded execution %s completion requires the active lease", execution.ExecutionID)
 	}
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
+	return commonExecution.NewTaskExecutionRepository(db).UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
 }
 
 func (s *ExecutionService) FinishIfRunning(ctx context.Context, id uint, execErr error) error {
@@ -734,13 +758,17 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status mod
 }
 
 func (s *ExecutionService) updateExecutionFields(ctx context.Context, execution *commonExecution.TaskExecution, fields map[string]interface{}) error {
+	return s.updateExecutionFieldsInDB(ctx, s.db, execution, fields)
+}
+
+func (s *ExecutionService) updateExecutionFieldsInDB(ctx context.Context, db *gorm.DB, execution *commonExecution.TaskExecution, fields map[string]interface{}) error {
 	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {
-		return commonExecution.UpdateWithLease(ctx, s.db, lease, fields)
+		return commonExecution.UpdateWithLease(ctx, db, lease, fields)
 	}
 	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded && execution.Status == commonExecution.ExecutionStatusRunning {
 		return fmt.Errorf("bounded execution %s update requires the active lease", execution.ExecutionID)
 	}
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, fields)
+	return commonExecution.NewTaskExecutionRepository(db).UpdateFields(ctx, execution.ExecutionID, execution.TenantID, fields)
 }
 
 func (s *ExecutionService) leaseForExecution(ctx context.Context, id uint, executionID string) (commonExecution.Lease, bool) {

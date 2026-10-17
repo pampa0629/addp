@@ -526,6 +526,15 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		})
 	}
 
+	productionLocator, productionLease, err := s.beginTableTargetProduction(ctx, task, execution, executionID, buildResult.Plan.Target, tableExecutor)
+	if err != nil {
+		return buildResult, nil, err
+	}
+	if productionLocator != "" {
+		buildResult.Plan.TargetPreparedCallback = func(ctx context.Context, preparation engineplugin.TableTargetPreparation) error {
+			return s.executionService.taskRepo.RecordTargetPreparation(ctx, productionLease, productionLocator, preparation)
+		}
+	}
 	metrics, err := tableExecutor.Execute(ctx, buildResult.Plan)
 	if err != nil {
 		wrapped := fmt.Errorf("execute common table transfer plan: %w", err)
@@ -533,6 +542,11 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 			s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 		}
 		return buildResult, metrics, wrapped
+	}
+	if productionLocator != "" {
+		if err := s.executionService.taskRepo.RecordTargetCommit(ctx, productionLease, productionLocator); err != nil {
+			return buildResult, metrics, fmt.Errorf("persist target commit: %w", err)
+		}
 	}
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
 	s.updateTableTargetRefs(executionID, metrics.TargetRefs)

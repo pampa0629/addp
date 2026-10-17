@@ -23,8 +23,9 @@ func transferResponseFixture() *models.TaskExecution {
 		ErrorDetails:     execution.Observe(&execution.TaskExecution{Status: "failed", ErrorDetails: commonmodels.JSONMap{"message": "private-sentinel", "code": "record_decode"}}).ErrorDetails,
 		CheckpointOffset: 42, CheckpointState: models.JSONMap{"value": "private-sentinel"},
 		Metadata: models.JSONMap{
-			"execution_inputs": map[string]interface{}{"sql": "private-sentinel"},
-			"checkpoint_state": map[string]interface{}{"cursor": "private-sentinel"}, "fencing_token": "private-sentinel",
+			"target_production": map[string]interface{}{"execution_id": "private-sentinel", "phase": "committed"},
+			"execution_inputs":  map[string]interface{}{"sql": "private-sentinel"},
+			"checkpoint_state":  map[string]interface{}{"cursor": "private-sentinel"}, "fencing_token": "private-sentinel",
 			"recovery_attempt": 2, "recovery_consecutive_failures": 0, "recovery_backoff_seconds": 30,
 			"recovery_not_before": time.Date(2026, 10, 11, 1, 0, 0, 0, time.UTC), "recovery_reason": "lease_expired", "recovery_circuit_state": "open", "stop_reason": "private-sentinel",
 			"lineage_facts": map[string]interface{}{

@@ -74,3 +74,13 @@ func TestTargetPreparationDoesNotProveCommittedOutput(t *testing.T) {
 		t.Fatalf("preparation confused with commit: metrics=%+v aborted=%v closed=%v error=%v", metrics, provider.aborted, provider.closed, err)
 	}
 }
+
+func TestPreparationPersistenceFailureAbortsBeforeRows(t *testing.T) {
+	provider := &observedTargetPreparer{fakeNativeTableWriter: &fakeNativeTableWriter{}, result: plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}}
+	receiptFailure := errors.New("receipt lease expired")
+	exec := &TableTransferExecutor{SourceNativeReader: &fakeBatchReader{batches: []*plugin.BatchData{{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}, Rows: []map[string]interface{}{{"id": int64(1)}}}}}, TargetNativePreparer: provider, TargetNativeWriter: provider, TargetTableSessionProvider: provider}
+	_, err := exec.Execute(t.Context(), TableTransferPlan{Source: TableSourcePlan{Kind: TableEndpointNative}, Target: TableTargetPlan{Kind: TableEndpointNative, TableWrite: plugin.BatchWriteOptions{Method: "copy"}}, TargetPreparedCallback: func(context.Context, plugin.TableTargetPreparation) error { return receiptFailure }})
+	if !errors.Is(err, receiptFailure) || len(provider.batches) != 0 || !provider.aborted || provider.closed {
+		t.Fatalf("persist failure reached rows: provider=%+v error=%v", provider, err)
+	}
+}

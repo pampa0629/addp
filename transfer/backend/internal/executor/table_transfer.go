@@ -61,11 +61,12 @@ type TableTargetPlan struct {
 }
 
 type TableTransferPlan struct {
-	Source           TableSourcePlan
-	Target           TableTargetPlan
-	Transforms       []TableTransformPlan
-	BatchSize        int
-	ProgressCallback TableProgressCallback
+	Source                 TableSourcePlan
+	Target                 TableTargetPlan
+	Transforms             []TableTransformPlan
+	BatchSize              int
+	ProgressCallback       TableProgressCallback
+	TargetPreparedCallback func(context.Context, engineplugin.TableTargetPreparation) error
 }
 
 type GeometryBatchReprojectProvider interface {
@@ -233,6 +234,7 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		Transforms:               plan.Transforms,
 		BatchSize:                plan.BatchSize,
 		ProgressCallback:         plan.ProgressCallback,
+		TargetPreparedCallback:   plan.TargetPreparedCallback,
 		GeometryBatchReprojecter: e.GeometryBatchReprojecter,
 	}).Execute(ctx)
 }

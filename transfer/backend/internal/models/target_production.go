@@ -1,0 +1,75 @@
+package models
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	plugin "github.com/addp/common/engine/plugin"
+)
+
+const TargetProductionMetadataKey = "target_production"
+
+const (
+	TargetProductionSchema    = "transfer.target-production/v1"
+	TargetProductionPending   = "pending"
+	TargetProductionPrepared  = "prepared"
+	TargetProductionCommitted = "committed"
+)
+
+// TargetProduction is private execution provenance, never an authorization or
+// a public execution output. A created preparation alone does not prove an
+// initial business DataItem or a successful execution.
+type TargetProduction struct {
+	SchemaVersion      string                        `json:"schema_version"`
+	TenantID           int                           `json:"tenant_id"`
+	ExecutionID        string                        `json:"execution_id"`
+	Attempt            int                           `json:"attempt"`
+	RetryOfExecutionID *string                       `json:"retry_of_execution_id,omitempty"`
+	TargetLocator      string                        `json:"target_locator"`
+	Phase              string                        `json:"phase"`
+	Preparation        plugin.TableTargetDisposition `json:"preparation,omitempty"`
+	StartedAt          time.Time                     `json:"started_at"`
+	PreparedAt         *time.Time                    `json:"prepared_at,omitempty"`
+	CommittedAt        *time.Time                    `json:"committed_at,omitempty"`
+}
+
+func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
+	var result TargetProduction
+	data, err := json.Marshal(value)
+	if err != nil || len(data) > 4096 {
+		return result, fmt.Errorf("invalid target production record")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return result, fmt.Errorf("invalid target production record: %w", err)
+	}
+	if result.SchemaVersion != TargetProductionSchema || result.TenantID <= 0 || result.ExecutionID == "" || result.Attempt <= 0 || result.TargetLocator == "" || result.StartedAt.IsZero() ||
+		(result.RetryOfExecutionID != nil && (*result.RetryOfExecutionID == "" || *result.RetryOfExecutionID == result.ExecutionID)) {
+		return result, fmt.Errorf("incomplete target production identity")
+	}
+	switch result.Phase {
+	case TargetProductionPending:
+		if result.Preparation != "" || result.PreparedAt != nil || result.CommittedAt != nil {
+			return result, fmt.Errorf("pending production has outcome facts")
+		}
+	case TargetProductionPrepared, TargetProductionCommitted:
+		if result.Preparation != plugin.TableTargetCreated && result.Preparation != plugin.TableTargetRecreated && result.Preparation != plugin.TableTargetReused {
+			return result, fmt.Errorf("unknown target preparation")
+		}
+		if result.PreparedAt == nil || result.PreparedAt.IsZero() || result.PreparedAt.Before(result.StartedAt) {
+			return result, fmt.Errorf("invalid preparation time")
+		}
+		if result.Phase == TargetProductionPrepared && result.CommittedAt != nil {
+			return result, fmt.Errorf("prepared production claims commit")
+		}
+		if result.Phase == TargetProductionCommitted && (result.CommittedAt == nil || result.CommittedAt.IsZero() || result.CommittedAt.Before(*result.PreparedAt)) {
+			return result, fmt.Errorf("invalid commit time")
+		}
+	default:
+		return result, fmt.Errorf("unknown production phase")
+	}
+	return result, nil
+}

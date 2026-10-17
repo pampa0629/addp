@@ -104,6 +104,7 @@ type TablePipeline struct {
 	Transforms               []TableTransformPlan
 	BatchSize                int
 	ProgressCallback         TableProgressCallback
+	TargetPreparedCallback   func(context.Context, engineplugin.TableTargetPreparation) error
 	GeometryBatchReprojecter GeometryBatchReprojectProvider
 }
 
@@ -182,6 +183,11 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	metrics := &TablePipelineMetrics{}
 	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
 		metrics.TargetPreparation = target.preparation
+	}
+	if p.TargetPreparedCallback != nil {
+		if err := p.TargetPreparedCallback(ctx, metrics.TargetPreparation); err != nil {
+			return metrics, fmt.Errorf("persist target preparation: %w", err)
+		}
 	}
 	if p.ObserveFieldLineage != nil {
 		var derived []string
