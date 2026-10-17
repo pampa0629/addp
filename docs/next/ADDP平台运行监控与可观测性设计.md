@@ -2394,3 +2394,13 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 整秒同步修正的回归已完成。先沿原标准 runner 保留即时查询实现，新增普通秒内和分钟末两个反例均明确失败于 True is not false，58 项中的两项子场景失败，日志 `/tmp/addp-source-outage-anchor-red.log`；改为显式 UTC 整秒查询后，同一 `make test-node-metrics-online-runner` 退出 0：58 项 Python 回归、浏览器/Hosted shell 语法检查及 Metrics 身份夹具 Go 测试全部通过，日志 `/tmp/addp-source-outage-anchor-green.log`。新场景证明失败抓取虽已被实时查询看到，整秒上仍不可见时不能结束等待；推进到下一秒（含分钟切换）后才满足条件，原严格 inventory 断言继续验证真实采集失败。
 
 默认 `make test-changed` 对 18 项混合变更选中 27 个模块，在必需外部测试连接预检退出 2，后续未执行、不计通过，日志 `/tmp/addp-source-outage-anchor-changed.log`。已确认原 node-metrics runner 仍进入 `test-online-runner`，原 Hosted suite 及固定源码路径覆盖本次两项 Python 文件，无新增登记；任务范围 diff、章节与文档围栏检查通过。本批只调整已有测试的失败可见性等待，旧即时谓词已移除，诊断及原断言保留；无需重启个人服务。修正后的真实 Hosted 仍待推送后执行，Run `38925249864` 保持失败记录，不把本地回归记作正式链路通过。
+
+用户于 2026-10-17 明确允许本会话自行推送。本次推送检查遇到远端被并行会话推进，随后核对其已包含修正 `ac7522bf5`，未强制覆盖；沿同一 `platform-node-metrics` suite 发起修正后的 Hosted Run `38983748074`，固定源码 `68d7cbd0311f51e00fc97c821c737f9c36d65f43`、Job `117250308016`，本批浏览器和 Python 文件与修正提交无后续差异。该 Job 已 completed/success，报告 `platform-node-metrics.json` 为 result=passed、stage=complete，不以此前失败轮次或本地 runner 代替本轮结果。
+
+本轮来源故障断言实际通过：`2026-10-17T00:13:20Z` 的总览仍纳管且接入一台主机，collection 为 failed=1/collecting=0；`00:14:35Z` 的恢复观测重新为 collecting=1/failed=0，读取的是恢复后的新鲜样本。控制面故障期间 `00:15:13Z` 的既有来源仍 collecting=1，恢复发现随后通过。节点停用后移出发现、资源不复用停用前历史，重新启用按当前版本和新采样恢复；目标停用、删除 CAS 冲突拒绝、正式删除后 404 及总览未接入状态均通过。原节点/查询身份隔离、两次独立采集身份 grant、九项标量及各设备家族、服务实例停止/重启隔离、可选进程来源故障不阻断业务和中心故障恢复也同次保留通过；不把发现移除表述成删除 System 主机记录。
+
+真实 Console/Monitor iframe 浏览器阶段 passed，elapsed_ms=195644，外层 duration_ms=197263，原 240/300 秒期限均未超出。CPU、内存和内存刷新恢复三项比较均经独立 Python 网格重算通过，单次十分钟趋势与 URL 恢复正确；complete_cases=0、incomplete_cases=3。CPU 本期 16/20、上期 0/20，内存及其恢复均本期 20/20、上期 0/20，两期均值和差值均为 null。CPU 与恢复后的内存截图已目视核对，卡片、缺样提示及本期曲线一致；完整样本均值分支仍由 10.75 的 T3 和个人 Safari 证明，不记作本轮 Hosted 覆盖，不代表生产 T5。
+
+内层报告的 cleanup=awaiting-hosted-deployment-destruction 只是等待外层退出；最终 `summary.txt` 明确 result=passed、cleanup=passed、infra_cleanup=zero_residuals，才作为本轮清理通过证据。归档 `/tmp/addp-source-outage-anchor-hosted-38983748074`、Job 日志 `/tmp/addp-source-outage-anchor-hosted-job-38983748074.log`；归档的凭据文件、私钥 PEM 和 JWT 模式有限检查均为零，不用该扫描替代生命周期销毁证明。
+
+同源码 Platform consistency Job `117250200889` 已结束，仍在其他范围的 `test_common_postgres_group_preserves_full_default_and_scopes_explicitly` 命令断言失败，日志 `/tmp/addp-source-outage-anchor-platform-job-117250200889.log`；本会话未修复或重跑该项，且未把其整体门禁记为通过。本批完成证据是整秒反例的本地 58 项标准 runner 通过、上述固定源码完整 Hosted 通过和退出零残留，不宣称整个仓库 CI 全绿。此次只同步本设计及 Monitor 模块说明，按任务范围检查章节、围栏和 diff；没有新的产品输入，无需为文档同步再次执行产品测试。
