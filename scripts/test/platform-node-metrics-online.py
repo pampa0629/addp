@@ -1472,6 +1472,9 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     require(receiver.invalid == 0, "signed notification receiver rejected a request")
     require(completed and detail["memory_released"] and detail["receiver_closed"], "resource alert fixture cleanup incomplete")
     detail["result"] = "passed"
+    # Preserve this phase if a later fault phase exhausts the outer deadline.
+    # The overall report stays failed until the complete scene finishes.
+    write_evidence(report)
 
 
 def run(base, directory, report):
@@ -1753,6 +1756,16 @@ def run(base, directory, report):
                   cleanup="awaiting-hosted-deployment-destruction", result="passed", stage="complete")
 
 
+def write_evidence(report):
+    path = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "platform-node-metrics.json"
+    temporary = path.with_suffix(".json.tmp")
+    try:
+        temporary.write_text(json.dumps(report, sort_keys=True)+"\n")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def main():
     report = {"schema_version": "addp.platform-node-metrics-online/v1", "result": "failed"}
     evidence = None
@@ -1771,7 +1784,7 @@ def main():
         print("Platform node metrics Online acceptance failed; credentials are omitted", file=sys.stderr)
     finally:
         if evidence is not None:
-            evidence.write_text(json.dumps(report, sort_keys=True)+"\n")
+            write_evidence(report)
     if report["result"] != "passed":
         return 1
     print(json.dumps(report, sort_keys=True))

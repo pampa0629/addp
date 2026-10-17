@@ -25,6 +25,9 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# One scene now includes process/browser checks, resource alerts and fault recovery.
+# Keep individual waits, browser deadlines and the 60-minute Job limit unchanged.
+export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1800
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 # Core Infra is created independently; metrics preparation and startup follow.
 infra_owned=1

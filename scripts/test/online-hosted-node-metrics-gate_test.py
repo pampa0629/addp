@@ -51,6 +51,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.host._executable("make", '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "suite-timeout:${ADDP_ONLINE_TEST_TIMEOUT_SECONDS:-unset}" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
         self.host._executable("docker", '''
@@ -97,6 +98,12 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertEqual(trace.count("infra-up"), 2)
         self.assertLess(trace.index("application-stop"), trace.index("node-source:down"))
         self.assertFalse(self.host.secrets.exists())
+        self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_resource_fault_scene_has_its_own_bounded_suite_budget(self):
+        result = self.run_gate(ADDP_ONLINE_TEST_TIMEOUT_SECONDS="5")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertIn("suite-timeout:1800", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):

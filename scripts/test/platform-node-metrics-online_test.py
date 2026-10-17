@@ -1413,13 +1413,14 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                      patch.object(ONLINE, "assert_resources"), patch.object(ONLINE, "ResourceAlertReceiver", return_value=receiver), \
                      patch.object(type(receiver), "__enter__", enter), patch.object(type(receiver), "__exit__", close), \
                      patch.object(ONLINE.API, "GatewayClient", return_value=denied), patch.object(ONLINE, "eventually", side_effect=wait), \
-                     patch.object(ONLINE, "native_memory_pressure", pressure), patch.object(ONLINE, "source_action", side_effect=action), \
+                     patch.object(ONLINE, "write_evidence") as checkpoint, patch.object(ONLINE, "native_memory_pressure", pressure), patch.object(ONLINE, "source_action", side_effect=action), \
                      patch.object(ONLINE, "source_scrape_failed", return_value=True), patch.object(ONLINE.time, "time", side_effect=lambda: clock[0]), \
                      patch.object(ONLINE.time, "monotonic", side_effect=lambda: clock[0]), patch.object(ONLINE.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)):
                     if fail_at:
                         with self.assertRaisesRegex(ONLINE.SuiteError, "original .* failure"):
                             ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
                         self.assertFalse(state["destination"]["enabled"])
+                        checkpoint.assert_not_called()
                         self.assertTrue(report["resource_alert_lifecycle"]["receiver_closed"])
                         if fail_at == "source_unknown":
                             self.assertTrue(report["resource_alert_lifecycle"]["memory_released"])
@@ -1429,12 +1430,40 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                         ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
                         detail = report["resource_alert_lifecycle"]
                         self.assertEqual(detail["result"], "passed")
+                        checkpoint.assert_called_once_with(report)
                         self.assertTrue(detail["configuration_removed_history_retained"])
                         self.assertIsNone(state["rule"]); self.assertIsNone(state["destination"])
                         self.assertGreaterEqual(detail["unknown_does_not_resolve"]["duration_seconds"], 45)
                         self.assertEqual(state["source_actions"], ["stop", "start"])
                         self.assertEqual(detail["opened_incident"]["id"], detail["resolved_incident"]["id"])
                         self.assertEqual(len(detail["signed_receipts"]), 3)
+
+class MetricsEvidenceCheckpointTest(unittest.TestCase):
+    def test_completed_phase_survives_abrupt_exit_without_passing_the_suite(self):
+        import os
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            report = {"schema_version": "addp.platform-node-metrics-online/v1", "result": "failed",
+                      "stage": "resource-alert-real-memory-lifecycle", "resource_alert_lifecycle": {"result": "passed"}}
+            source = ("import os, importlib; m=importlib.import_module('scripts.test.platform-node-metrics-online'); "
+                      "m.write_evidence("+repr(report)+"); os._exit(0)")
+            result = subprocess.run([sys.executable, "-c", source], cwd=Path(__file__).resolve().parents[2],
+                                    env=dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory), capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            output = Path(directory) / "platform-node-metrics.json"
+            self.assertEqual(json.loads(output.read_text()), report)
+            self.assertEqual(list(Path(directory).iterdir()), [output])
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory):
+                ONLINE.write_evidence(dict(report, result="passed", stage="complete"))
+            self.assertEqual(json.loads(output.read_text())["stage"], "complete")
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory), \
+                 patch.object(ONLINE.Path, "replace", side_effect=OSError("publication failed")):
+                with self.assertRaisesRegex(OSError, "publication failed"):
+                    ONLINE.write_evidence(report)
+            self.assertEqual(json.loads(output.read_text())["stage"], "complete")
+            self.assertEqual(list(Path(directory).iterdir()), [output])
+
 
 if __name__ == "__main__":
     unittest.main()
