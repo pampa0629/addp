@@ -219,8 +219,12 @@ class HostedHDFSGateTest(unittest.TestCase):
                 trace = self.host.trace.read_text()
                 self.assertIn('hdfs-fixture:stop', trace)
                 self.assertIn('infra-down', trace)
+                publication_started = any(flag in flags for flag in ('ADDP_TEST_GRANT_FAIL', 'ADDP_TEST_SUITE_FAIL'))
+                self.assertEqual('table-domain-cleanup' in trace, publication_started)
                 self.assertFalse(self.host.secrets.exists())
-                self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
+                summary = (self.host.artifacts / 'summary.txt').read_text()
+                self.assertIn('result=failed', summary)
+                self.assertIn('cleanup=passed', summary)
 
     def test_cleanup_failure_cannot_be_reported_as_passed(self):
         result = self.run_gate(ADDP_TEST_FIXTURE_FAIL='stop')
