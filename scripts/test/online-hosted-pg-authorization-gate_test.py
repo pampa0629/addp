@@ -115,6 +115,48 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 if counter.exists():
                     self.assertEqual(int(counter.read_text()), 60 if never_ready else 2)
 
+    def test_content_mutation_only_touches_the_owned_pg_fixture_and_requires_its_suite(self):
+        source = SCRIPT.parents[2] / 'business/scripts/online-metric-postgres-fixture.sh'
+        destination = self.host.repository / 'business/scripts' / source.name
+        shutil.copy2(source, destination)
+        self.host._executable('docker', '''
+            #!/usr/bin/env python3
+            import os, pathlib, sys
+            args = sys.argv[1:]
+            if args[0] == 'inspect':
+                assert args[-1] == 'addp-metric-online-disposable'
+                print(os.environ.get('ADDP_TEST_CONTENT_OWNER', 'metric'))
+            elif args[:3] == ['exec', '-i', 'addp-metric-online-disposable']:
+                assert args[args.index('-d') + 1] == 'metric_fixture'
+                sql = sys.stdin.read()
+                assert 'LOCK TABLE public.metric_people' in sql
+                assert 'BEGIN;' in sql and 'COMMIT;' in sql and 'ON_ERROR_STOP=1' in args
+                assert 'INSERT INTO public.metric_people' in sql and 'DELETE FROM public.metric_people' in sql
+                assert not any(term in sql for term in ('metric_events', 'GRANT ', 'CREATE ', 'DROP ', 'meta.'))
+                pathlib.Path(os.environ['ADDP_TEST_CONTENT_EXECUTED']).write_text('owned-source')
+                print('pg-content:changed' if 'change=1' in args else 'pg-content:baseline')
+            else:
+                sys.exit(2)
+        ''')
+        marker = self.host.root / 'content-executed'
+        env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true',
+            RUNNER_OS='Linux', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_TEST='1',
+            POSTGRES_DB='addp_online', ONLINE_SUITE='pg-source-authorization', ADDP_TEST_CONTENT_EXECUTED=str(marker))
+        cases = [('content-change', {}, 'pg-content:changed'), ('content-reset', {}, 'pg-content:baseline'),
+                 ('content-change', {'ONLINE_SUITE': 'other-suite'}, None),
+                 ('content-reset', {'POSTGRES_DB': 'personal'}, None),
+                 ('content-change', {'ADDP_TEST_CONTENT_OWNER': 'personal'}, None),
+                 ('content-change', {'GITHUB_ACTIONS': 'false'}, None)]
+        for action, overrides, receipt in cases:
+            with self.subTest(action=action, overrides=overrides):
+                marker.unlink(missing_ok=True)
+                result = subprocess.run(['bash', str(destination), action], cwd=self.host.repository,
+                    env=dict(env, **overrides), capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode == 0, receipt is not None, result.stderr)
+                self.assertEqual(marker.exists(), receipt is not None)
+                if receipt:
+                    self.assertEqual(result.stdout.strip(), receipt)
+
     def test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources(self):
         # Each call needs a new secret directory; the lifecycle removes it on exit.
         for overrides in ({}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_SOURCE_FAIL': '1'},

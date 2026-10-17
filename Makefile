@@ -561,7 +561,7 @@ test-transfer-continuous-online-runner: ## 验证连续任务 Hosted 生命周�
 .PHONY: test-pg-authorization-online-runner
 test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔离和清理
 	@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js
-	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh
+	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture

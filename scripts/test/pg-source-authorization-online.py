@@ -129,6 +129,26 @@ def preview(reader, target, allowed, expected=None, *, columns=('person_id',), v
         require(data.get('total') == expected, 'PG source row count changed')
 
 
+def mutate_source_content(action):
+    """Ask the Business owner to mutate only its disposable PG source table."""
+    repository = Path(__file__).resolve().parents[2]
+    required = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'ADDP_ONLINE_HOSTED': '1',
+                'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_TEST': '1', 'POSTGRES_DB': 'addp_online'}
+    require(action in {'content-change', 'content-reset'} and sys.platform == 'linux'
+            and os.uname().machine == 'x86_64' and not (repository / '.env').exists()
+            and all(os.environ.get(key) == value for key, value in required.items()),
+            'PG content changes require the isolated Hosted suite')
+    # Physical fixture operations need Docker, not any platform User or Service credential.
+    environment = dict(required, PATH=os.environ['PATH'], ONLINE_SUITE=SUITE)
+    try:
+        result = subprocess.run(['bash', str(repository / 'business/scripts/online-metric-postgres-fixture.sh'), action],
+            cwd=repository, env=environment, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SuiteError('PG content fixture did not complete') from exc
+    receipt = 'pg-content:changed' if action == 'content-change' else 'pg-content:baseline'
+    require(result.returncode == 0 and result.stdout.strip() == receipt, 'PG content fixture failed its source oracle')
+
+
 class DependencyOutage:
     """Fault one declared PG dependency in the existing disposable Hosted deployment."""
 
@@ -904,6 +924,68 @@ class Lifecycle:
             'meta_recovery_preserves_identity_boundary_and_grant', 'deny_survives_meta_recovery_without_rescan',
             'explicit_release_restores_original_grant_then_withdrawal_denies'])
 
+    def content_change_flow(self, report, facts, original, target, ungranted):
+        report['phase'] = 'pg_content_change_grant'
+        token = self.reader.token
+        grant, command = self.grant(facts)
+        history = self.listing(history=True)
+        scans = []
+        def rescan():
+            scans.append(basic_scan(self.reader, self.engine, ['metric_people']))
+            current = item(self.reader, self.engine, 'metric_people')
+            observed = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+            require(current['id'] == original['id'] and current['fingerprint'] == original['fingerprint']
+                    and observed['item_fingerprint'] == facts['item_fingerprint']
+                    and observed['boundary_hash'] == facts['boundary_hash'],
+                    'PG content update changed the approved DataItem identity or boundary')
+            preview(self.reader, ungranted, False)
+            preview(self.outsider, target, False)
+        def unchanged(expected):
+            require(self.listing(history=True) == expected, 'PG content update rewrote Grant history')
+        try:
+            mutate_source_content('content-change')
+            rescan()
+            unchanged(history)
+            preview(self.reader, target, True, 3, values=('A', 'B2', 'C'))
+            report['phase'] = 'pg_content_change_deny'
+            deny = self.deny(facts)
+            mutate_source_content('content-reset')
+            rescan()
+            unchanged(history)
+            current = self.listing()['data']
+            require(len(current) == 1 and current[0]['inspection']['reason'] == 'explicit_deny'
+                    and [row['deny_id'] for row in current[0]['inspection']['denies']] == [deny],
+                    'Deny did not survive the content update and basic rescan')
+            preview(self.reader, target, False)
+            self.release(deny)
+            preview(self.reader, target, True, 2)
+            unchanged(history)
+            self.revoke(grant)
+            withdrawn = self.listing(history=True)
+            report['phase'] = 'pg_content_change_withdrawn'
+            mutate_source_content('content-change')
+            rescan()
+            preview(self.reader, target, False)
+            unchanged(withdrawn)
+            self.operator.request('POST', self.base + '/access_grants', (201,), command)
+            preview(self.reader, target, False)
+            unchanged(withdrawn)
+            require(self.listing()['total'] == 0, 'withdrawn Grant or released Deny returned after content change')
+        finally:
+            mutate_source_content('content-reset')
+        report['phase'] = 'pg_content_baseline_restored'
+        rescan()
+        preview(self.reader, target, False)
+        unchanged(withdrawn)
+        require(self.reader.token == token and self.listing()['total'] == 0,
+                'content acceptance changed the credential or left a current source rule')
+        report['content_changes'] = {'basic_scans': scans, 'same_identity_and_boundary': True,
+            'same_credential': True, 'changed_row_count': 3, 'baseline_row_count': 2, 'source_baseline_restored': True,
+            'grant_request_id': grant, 'deny_id': deny}
+        report['checks'].extend(['content_change_preserves_identity_and_boundary', 'old_grant_reads_changed_content',
+            'deny_survives_content_change_and_basic_rescan', 'release_restores_current_content',
+            'content_change_and_replay_do_not_restore_withdrawn_grant', 'source_baseline_restored_without_read_access'])
+
     def run(self, report):
         reader_before = self.reader.token
         report['phase'] = 'initial_basic_scan'
@@ -964,6 +1046,7 @@ class Lifecycle:
         self.organization_flow(report, facts, target, ungranted)
         self.membership_flow(report, facts, target, ungranted)
         self.meta_recovery_flow(report, facts, target, ungranted)
+        self.content_change_flow(report, facts, original, target, ungranted)
 
 
 def main():

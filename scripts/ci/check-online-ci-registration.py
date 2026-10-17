@@ -2006,12 +2006,18 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'catalog_replay_does_not_restore_revoked_grant', "with DependencyOutage('catalog')",
             'catalog_offline_no_direct_approval_fallback', 'catalog_recovery_preserves_original_rules',
             'self.approval_mode_flow(', 'approval_switch_preserves_business_grant',
-            'old_version_new_catalog_request_closed_without_upgrade'),
+            'old_version_new_catalog_request_closed_without_upgrade', 'self.content_change_flow(',
+            'mutate_source_content(', 'deny_survives_content_change_and_basic_rescan',
+            'content_change_and_replay_do_not_restore_withdrawn_grant'),
+        "business/scripts/online-metric-postgres-fixture.sh": (
+            'content-change|content-reset)', 'pg-source-authorization', 'container ownership mismatch',
+            'LOCK TABLE public.metric_people', 'pg-content:changed', 'pg-content:baseline'),
         "console/frontend/e2e/online/pg-source-authorization.spec.js": (
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value'),
         "Makefile": ('test-pg-authorization-online-runner', 'pg-source-authorization-online_test.py',
                      'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner',
+                     'scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh',
                      '@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js'),
     }
     for relative, fragments in required.items():

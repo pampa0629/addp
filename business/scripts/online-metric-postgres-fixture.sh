@@ -6,6 +6,39 @@ fail() { echo "Metric PostgreSQL fixture failed: $*" >&2; exit 1; }
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] || fail "Hosted Linux Online is required"
 container=addp-metric-online-disposable
 case "${1:-}" in
+  content-change|content-reset)
+    [ "${ONLINE_SUITE:-}" = pg-source-authorization ] && [ "${ADDP_ONLINE_TEST:-}" = 1 ] &&
+      [ "${POSTGRES_DB:-}" = addp_online ] || fail "PG authorization content changes require its isolated suite"
+    [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
+    change=0
+    [ "$1" != content-change ] || change=1
+    docker exec -i "$container" psql -U postgres -d metric_fixture -Atq -v ON_ERROR_STOP=1 -v change="$change" <<'SQL'
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '5s';
+LOCK TABLE public.metric_people IN EXCLUSIVE MODE;
+DO $$ BEGIN
+  IF NOT COALESCE((SELECT array_agg(person_id ORDER BY person_id) FROM public.metric_people)
+      IN (ARRAY['A','B']::text[], ARRAY['A','B2','C']::text[]), false) THEN
+    RAISE EXCEPTION 'unexpected PG authorization source content';
+  END IF;
+END $$;
+\if :change
+UPDATE public.metric_people SET person_id = 'B2' WHERE person_id = 'B';
+INSERT INTO public.metric_people VALUES ('C') ON CONFLICT DO NOTHING;
+\else
+DELETE FROM public.metric_people WHERE person_id = 'C';
+UPDATE public.metric_people SET person_id = 'B' WHERE person_id = 'B2';
+\endif
+COMMIT;
+\if :change
+SELECT 'pg-content:changed' WHERE (SELECT array_agg(person_id ORDER BY person_id) FROM public.metric_people) = ARRAY['A','B2','C']::text[];
+\else
+SELECT 'pg-content:baseline' WHERE (SELECT array_agg(person_id ORDER BY person_id) FROM public.metric_people) = ARRAY['A','B']::text[];
+\endif
+SQL
+    exit 0
+    ;;
   stop)
     if docker container inspect "$container" >/dev/null 2>&1; then
       [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = metric ] || fail "container ownership mismatch"
@@ -15,7 +48,7 @@ case "${1:-}" in
     exit 0
     ;;
   start) ;;
-  *) fail "usage: online-metric-postgres-fixture.sh start|stop" ;;
+  *) fail "usage: online-metric-postgres-fixture.sh start|stop|content-change|content-reset" ;;
 esac
 ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
 [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"

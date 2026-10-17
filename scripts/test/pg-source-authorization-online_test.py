@@ -12,6 +12,7 @@ ONLINE = importlib.import_module('scripts.test.pg-source-authorization-online')
 REAL_BASIC_SCAN = ONLINE.basic_scan
 REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
 REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
+REAL_MUTATE_SOURCE_CONTENT = ONLINE.mutate_source_content
 
 
 class Server:
@@ -23,6 +24,7 @@ class Server:
         self.version, self.current_reader_token = 1, 'reader-private-token'
         self.meta_down = False
         self.catalog_down = False
+        self.people = ('A', 'B')
 
     def context(self, kind):
         reader = kind.startswith('reader')
@@ -170,7 +172,9 @@ class Server:
                         allowed = True
                     status = 200 if allowed else 403
                     result = {'preview_type': 'table', 'data': {'columns': ['person_id'], 'rows': [
-                        {'person_id': 'A'}, {'person_id': 'B'}], 'total': 2}} if allowed else {'error': 'denied'}
+                        {'person_id': value} for value in server.people], 'total': len(server.people)}} if allowed else {'error': 'denied'}
+                    if allowed and server.fault == 'stale_content' and len(server.people) == 3:
+                        result['data'] = {'columns': ['person_id'], 'rows': [{'person_id': 'A'}, {'person_id': 'B'}], 'total': 2}
                     if allowed and 'metric_events?' in target:
                         result['data'] = {'columns': ['event_id', 'event_date'],
                             'rows': [{'event_id': value, 'event_date': '2026-01-01'} for value in ('e1', 'e2', 'e3', 'old')], 'total': 4}
@@ -199,12 +203,22 @@ class Server:
 class PGAuthorizationOnlineTest(unittest.TestCase):
     def setUp(self):
         self.facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64}
-        self.scans = patch.object(ONLINE, 'basic_scan', side_effect=['initial-basic', 'exact-basic']).start()
+        self.scans = patch.object(ONLINE, 'basic_scan', side_effect=[
+            'initial-basic', 'exact-basic', 'content-grant-basic', 'content-deny-basic',
+            'content-revoked-basic', 'content-restored-basic']).start()
         self.addCleanup(patch.stopall)
         patch.object(ONLINE, 'item', side_effect=lambda reader, engine, name: {
             'id': 10 if name == 'metric_people' else 11, 'fingerprint': 'a' * 64}).start()
         patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=self.facts).start()
         patch.object(ONLINE.time, 'sleep').start()
+        def mutate(action):
+            self.server.people = ('A', 'B2', 'C') if action == 'content-change' else ('A', 'B')
+            if self.server.fault == 'content_loses_deny' and action == 'content-reset':
+                self.server.denies = dict.fromkeys(self.server.denies, False)
+            if self.server.fault == 'content_restores_withdrawn' and action == 'content-change':
+                for row in self.server.grants.values():
+                    row['revocation'] = None
+        self.content = patch.object(ONLINE, 'mutate_source_content', side_effect=mutate).start()
         self.browser = patch.object(ONLINE, 'BrowserObservation').start().return_value.__enter__.return_value
         self.browser.finish.return_value = {'result': 'passed'}
         self.outage = patch.object(ONLINE, 'DependencyOutage').start().return_value
@@ -234,8 +248,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         report = {}
         lifecycle.run(report)
         lifecycle.cleanup()
-        self.assertEqual(len(report['checks']), 27)
-        self.assertEqual(len(server.grants), 8)
+        self.assertEqual(len(report['checks']), 33)
+        self.assertEqual(len(server.grants), 9)
         self.assertTrue(report['same_credential_through_grant_expiry'])
         self.assertIn(lifecycle.expiry_grant, server.expired_grants)
         self.assertIsNone(server.grants[lifecycle.expiry_grant]['revocation'])
@@ -257,7 +271,53 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual([call.args[0] for call in self.browser.wait.call_args_list], ['department', 'project_group'])
         self.assertEqual([call.args[0] for call in self.browser.release.call_args_list], ['department', 'project_group'])
         self.assertTrue(report['meta_recovery']['verified_without_rescan'])
-        self.assertEqual(self.scans.call_count, 2)
+        self.assertEqual(self.scans.call_count, 6)
+        self.assertEqual(server.people, ('A', 'B'))
+        self.assertTrue(report['content_changes']['source_baseline_restored'])
+
+    def test_content_changes_require_current_data_stable_binding_deny_and_withdrawal(self):
+        for fault in ('stale_content', 'content_loses_deny', 'content_restores_withdrawn',
+                      'direct_replay_restores_revoked', 'content_changes_identity', 'content_changes_boundary'):
+            with self.subTest(fault=fault):
+                server, lifecycle = self.lifecycle(fault)
+                self.scans.side_effect = lambda *_: 'exact-content-basic'
+                facts = dict(self.facts)
+                if fault == 'content_changes_boundary':
+                    facts['boundary_hash'] = 'c' * 64
+                with patch.object(ONLINE.REGISTRATION, 'read_exact_record_authorization_facts', return_value=facts), \
+                     patch.object(ONLINE, 'item', return_value={
+                         'id': 99 if fault == 'content_changes_identity' else 10, 'fingerprint': 'a' * 64}):
+                    with self.assertRaises(ONLINE.SuiteError):
+                        lifecycle.content_change_flow({'checks': []}, self.facts, {'id': 10, 'fingerprint': 'a' * 64},
+                            ONLINE.locator(2, 'metric_people', 10), ONLINE.locator(2, 'metric_events', 11))
+                self.assertEqual(server.people, ('A', 'B'))
+                lifecycle.cleanup()
+                self.assertFalse(any(server.denies.values()))
+                self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
+
+    def test_lost_source_mutation_response_restores_baseline_and_leaves_grant_owned_for_cleanup(self):
+        mutate = self.content.side_effect
+        for interrupted_action in ('content-change', 'content-reset'):
+            with self.subTest(action=interrupted_action):
+                server, lifecycle = self.lifecycle()
+                self.scans.side_effect = lambda *_: 'exact-content-basic'
+                interrupted = False
+                def lost_response(action):
+                    nonlocal interrupted
+                    mutate(action)
+                    if action == interrupted_action and not interrupted:
+                        interrupted = True
+                        raise ONLINE.SuiteError('source operation response lost')
+                self.content.side_effect = lost_response
+                with self.assertRaisesRegex(ONLINE.SuiteError, 'response lost'):
+                    lifecycle.content_change_flow({'checks': []}, self.facts, {'id': 10, 'fingerprint': 'a' * 64},
+                        ONLINE.locator(2, 'metric_people', 10), ONLINE.locator(2, 'metric_events', 11))
+                self.assertTrue(interrupted)
+                self.assertEqual(server.people, ('A', 'B'))
+                self.assertEqual(len(lifecycle.grants), 1)
+                lifecycle.cleanup()
+                self.assertFalse(any(server.denies.values()))
+                self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_meta_recovery_rejects_fallback_wrong_status_lost_deny_and_leaks(self):
         for fault in ('outage_fallback', 'outage_masquerades_as_missing', 'outage_leaks', 'recovery_loses_deny'):
@@ -786,6 +846,7 @@ class PGDependencyOutageTest(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.env = {'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_HOST': '1', 'ADDP_ONLINE_HOSTED': '1',
             'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'POSTGRES_DB': 'addp_online',
+            'PATH': '/usr/bin:/bin',
             'META_URL': 'http://127.0.0.1:8082', 'MANAGER_URL': 'http://127.0.0.1:8081',
             'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000',
             'CATALOG_URL': 'http://127.0.0.1:8192',
@@ -814,6 +875,30 @@ class PGDependencyOutageTest(unittest.TestCase):
             with self.assertRaises(ONLINE.SuiteError):
                 REAL_DEPENDENCY_OUTAGE('system')
             run.assert_not_called()
+
+    def test_content_fixture_is_bounded_token_free_and_checks_source_receipt(self):
+        for action, receipt in (('content-change', 'pg-content:changed'), ('content-reset', 'pg-content:baseline')):
+            with self.subTest(action=action), \
+                 patch.object(ONLINE.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=receipt)) as run:
+                REAL_MUTATE_SOURCE_CONTENT(action)
+                self.assertEqual(run.call_args.args[0][-1], action)
+                self.assertEqual(run.call_args.kwargs['timeout'], 30)
+                self.assertEqual(run.call_args.kwargs['env']['ONLINE_SUITE'], ONLINE.SUITE)
+                self.assertFalse(any(key.startswith(('ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_ADMIN_USER_',
+                                                    'ADDP_ONLINE_FIXTURE_')) for key in run.call_args.kwargs['env']))
+        for response in (SimpleNamespace(returncode=1, stdout='pg-content:changed'),
+                         SimpleNamespace(returncode=0, stdout='wrong rows'),
+                         ONLINE.subprocess.TimeoutExpired('private-output', 30)):
+            with self.subTest(response=response), patch.object(ONLINE.subprocess, 'run', side_effect=[response]):
+                with self.assertRaises(ONLINE.SuiteError):
+                    REAL_MUTATE_SOURCE_CONTENT('content-change')
+        for action, overrides in (('arbitrary-sql', {}), ('content-change', {'GITHUB_ACTIONS': 'false'}),
+                                  ('content-reset', {'POSTGRES_DB': 'personal'})):
+            with self.subTest(action=action, overrides=overrides), patch.dict(ONLINE.os.environ, overrides), \
+                 patch.object(ONLINE.subprocess, 'run') as run:
+                with self.assertRaises(ONLINE.SuiteError):
+                    REAL_MUTATE_SOURCE_CONTENT(action)
+                run.assert_not_called()
 
     def test_health_uses_shared_client_and_the_actual_gateway_standalone_contract(self):
         outage = REAL_DEPENDENCY_OUTAGE(self.module)

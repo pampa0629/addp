@@ -22,7 +22,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py',
                  'scripts/test/online-hosted-pg-authorization-gate.sh',
                  'scripts/test/pg-source-authorization-online.py', 'Makefile',
-                 'console/frontend/e2e/online/pg-source-authorization.spec.js')
+                 'console/frontend/e2e/online/pg-source-authorization.spec.js',
+                 'business/scripts/online-metric-postgres-fixture.sh')
         for relative in paths:
             destination = self.repository / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +42,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'catalog_recovery_preserves_original_rules'),
                                    (paths[3], 'self.approval_mode_flow('),
                                    (paths[3], 'old_version_new_catalog_request_closed_without_upgrade'),
+                                   (paths[3], 'self.content_change_flow('),
+                                   (paths[3], 'deny_survives_content_change_and_basic_rescan'),
+                                   (paths[6], 'LOCK TABLE public.metric_people'),
+                                   (paths[6], 'pg-content:baseline'),
                                    (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):
             path = self.repository / relative
             original = path.read_text()
