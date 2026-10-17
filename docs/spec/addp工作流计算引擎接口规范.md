@@ -838,6 +838,8 @@ Develop 将该算子显示为“矢量切片”，位于“矢量处理 / 成果
 
 文件、对象和目录型持久化转换统一使用以下内部契约：
 
+矢量切片的源 GDAL 检查、CRS 复核和范围转换在独立子进程内执行，避免原生库上下文跨 HTTP worker 的 fork／线程边界；源凭据只传给源读取子进程，发布继续由标准目标发布器负责。原生回归须从正式 Gunicorn 入口验证 CRS 调用后 worker 与共享执行状态仍保持有效。
+
 ```json
 {
   "schema_version": "addp.workflow.access-plan/v1",

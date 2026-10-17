@@ -21,7 +21,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict
 
-from pyproj import CRS, Transformer
 from addp_common.workflow_access import require_access_plan, publish_target_file
 from pmtiles.tile import Compression, TileType, zxy_to_tileid
 from pmtiles.writer import Writer
@@ -89,14 +88,19 @@ def _extent_to_wgs84(extent: list[float], extent_srid: int, source_srs: str = ""
     if not source_crs:
         raise ValueError("tile.extent_srid or tile.source_srs is required for non-WGS84 extent")
 
-    transformer = Transformer.from_crs(source_crs, "EPSG:4326", always_xy=True)
     min_x, min_y, max_x, max_y = extent
-    points = [
-        transformer.transform(min_x, min_y),
-        transformer.transform(min_x, max_y),
-        transformer.transform(max_x, min_y),
-        transformer.transform(max_x, max_y),
-    ]
+    transform_extent = """
+import json, sys
+from pyproj import Transformer
+request = json.load(sys.stdin)
+transformer = Transformer.from_crs(request['source_crs'], 'EPSG:4326', always_xy=True)
+print(json.dumps([transformer.transform(*point) for point in request['points']]))
+"""
+    completed = subprocess.run([sys.executable, "-c", transform_extent],
+        input=json.dumps({"source_crs": source_crs, "points": [
+            [min_x, min_y], [min_x, max_y], [max_x, min_y], [max_x, max_y]]}),
+        capture_output=True, text=True, check=True, timeout=60)
+    points = json.loads(completed.stdout)
     lon_values = [float(point[0]) for point in points if math.isfinite(point[0]) and math.isfinite(point[1])]
     lat_values = [float(point[1]) for point in points if math.isfinite(point[0]) and math.isfinite(point[1])]
     if not lon_values or not lat_values:
@@ -156,6 +160,7 @@ def _vector_source_facts(source_uri, source_plan, source_env, source_srs):
     inspect_source = """
 import json, sys
 from osgeo import gdal
+from pyproj import CRS
 gdal.UseExceptions()
 dataset = gdal.OpenEx(sys.argv[1], gdal.OF_VECTOR | gdal.OF_READONLY)
 if dataset is None:
@@ -167,13 +172,15 @@ for layer in dataset:
     for index in range(definition.GetGeomFieldCount()):
         geometry = definition.GetGeomFieldDefn(index)
         crs = geometry.GetSpatialRef()
-        geometry_fields.append({'name': geometry.GetName(), 'coordinateSystem': {'wkt': crs.ExportToWkt() if crs else None}})
+        wkt = crs.ExportToWkt() if crs else None
+        matches = bool(wkt) and (not sys.argv[2] or CRS.from_wkt(wkt).equals(CRS.from_user_input(sys.argv[2]), ignore_axis_order=True))
+        geometry_fields.append({'name': geometry.GetName(), 'coordinateSystem': {'matches': matches}})
     layers.append({'name': layer.GetName(), 'geometryFields': geometry_fields, 'fields': [
         {'name': definition.GetFieldDefn(index).GetName(), 'type': definition.GetFieldDefn(index).GetTypeName()}
         for index in range(definition.GetFieldCount())]})
 print(json.dumps({'layers': layers}))
 """
-    completed = subprocess.run([sys.executable, "-c", inspect_source, source_uri],
+    completed = subprocess.run([sys.executable, "-c", inspect_source, source_uri, source_srs],
         env={**os.environ, **{key: str(value) for key, value in source_env.items()}},
         capture_output=True, text=True, check=True, timeout=60)
     layers = json.loads(completed.stdout).get("layers", [])
@@ -186,8 +193,7 @@ print(json.dumps({'layers': layers}))
     if len(geometries) != 1:
         raise ValueError("vector source requires exactly one geometry field")
     coordinate_system = geometries[0].get("coordinateSystem") or {}
-    wkt = coordinate_system.get("wkt")
-    if not wkt or (source_srs and not CRS.from_wkt(wkt).equals(CRS.from_user_input(source_srs), ignore_axis_order=True)):
+    if not coordinate_system.get("matches"):
         raise ValueError("vector source CRS is missing or differs from source facts")
     return layer["name"], {field["name"]: field["type"] for field in layer.get("fields", [])}, geometries[0].get("name") or "_ogr_geometry_"
 

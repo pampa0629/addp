@@ -64,6 +64,13 @@ def test_real_gunicorn_listens_before_registration_and_shares_worker_state(tmp_p
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
     registration = tmp_path / 'registration.json'
+    vector_source = tmp_path / 'native-crs.geojson'
+    vector_source.write_text(json.dumps({
+        'type': 'FeatureCollection', 'features': [
+            {'type': 'Feature', 'properties': {'name': '天安门'},
+             'geometry': {'type': 'Point', 'coordinates': [116.3974, 39.9093]}}
+        ]
+    }), encoding='utf-8')
     script = '''
 import api_server, json, os
 from pathlib import Path
@@ -73,13 +80,19 @@ state = {'count': 0}
 def probe_state():
     state['count'] += 1
     return {'pid': os.getpid(), 'count': state['count']}
+@api_server.app.route('/probe-vector-crs')
+def probe_vector_crs():
+    from operators.vector_tile_operators import _vector_source_facts, _extent_to_wgs84
+    layer, fields, geometry = _vector_source_facts(os.environ['VECTOR_SOURCE'], {}, {}, 'EPSG:4326')
+    extent = _extent_to_wgs84([500000, 3000000, 501000, 3001000], 4549)
+    return {'layer': layer, 'fields': fields, 'geometry': geometry, 'extent': extent, 'pid': os.getpid()}
 def register():
     with build_opener(ProxyHandler({})).open('http://127.0.0.1:' + os.environ['PORT'] + '/health') as r:
         Path(os.environ['REGISTRATION']).write_text(json.dumps({'health': r.status, 'pid': os.getpid()}))
 api_server.register_to_system_with_retry = register
 api_server.run_runtime()
 '''
-    env = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', REGISTRATION=str(registration),
+    env = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST='127.0.0.1', REGISTRATION=str(registration), VECTOR_SOURCE=str(vector_source),
                SYSTEM_URL='http://127.0.0.1:1', GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET='')
     opener = build_opener(ProxyHandler({}))
     log = tmp_path / 'server.log'
@@ -98,6 +111,14 @@ api_server.run_runtime()
             assert [r['count'] for r in responses] == [1, 2, 3]
             assert {r['pid'] for r in responses} == {evidence['pid']}
             assert evidence['pid'] != process.pid
+            native = json.loads(opener.open(f'http://127.0.0.1:{port}/probe-vector-crs', timeout=15).read())
+            assert native['pid'] == evidence['pid']
+            assert native['fields'] == {'name': 'String'}
+            assert native['geometry'] == '_ogr_geometry_'
+            assert 100 < native['extent'][0] < native['extent'][2] < 130
+            assert 20 < native['extent'][1] < native['extent'][3] < 40
+            after_native = json.loads(opener.open(f'http://127.0.0.1:{port}/probe-state', timeout=3).read())
+            assert after_native == {'pid': evidence['pid'], 'count': 4}
         finally:
             process.terminate()
             process.wait(timeout=15)
