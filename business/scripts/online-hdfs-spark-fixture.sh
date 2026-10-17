@@ -161,7 +161,7 @@ docker run -d --name addp-hdfs-online-mysql --label "$LABEL=$SUITE" --network ho
   --env-file "$ADDP_ONLINE_SECRET_DIR/mysql.env" --tmpfs /var/lib/mysql \
   "$MYSQL_IMAGE" --port=15438 --bind-address=127.0.0.1 --mysqlx=0 >/dev/null
 docker run -d --name addp-hdfs-online-doris --label "$LABEL=$SUITE" --network host --memory 3g \
-  --add-host host.docker.internal:127.0.0.1 --hostname doris -e BUILD_TYPE=production \
+  --add-host host.docker.internal:127.0.0.1 --add-host doris:127.0.0.1 --hostname doris -e BUILD_TYPE=production \
   --mount "type=bind,source=$ROOT_DIR/business/doris/init.sh,target=/addp/doris/init.sh,readonly" \
   --entrypoint bash "$DORIS_IMAGE" -c '
     set -euo pipefail

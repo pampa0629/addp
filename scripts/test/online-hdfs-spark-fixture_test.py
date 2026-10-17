@@ -127,6 +127,9 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         for container in ('doris', 'worker'):
             run = next(command for command in commands if command[0] == 'run' and 'addp-hdfs-online-' + container in command)
             self.assertIn('host.docker.internal:127.0.0.1', run)
+            if container == 'doris':
+                hostname = run[run.index('--hostname') + 1]
+                self.assertIn(hostname + ':127.0.0.1', run, 'host networking must resolve the Doris FE hostname')
         self.assertNotIn('local[*]', self.trace.read_text())
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertEqual(list(self.state.iterdir()), [])
