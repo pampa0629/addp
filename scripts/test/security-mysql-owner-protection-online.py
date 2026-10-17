@@ -1679,7 +1679,7 @@ def exercise_mongodb_algorithms(client: GatewayClient, engine_id: int, prepared:
             or len({entry["execution_id"] for entry in transfers}) != 10
             or not all(entry["task_deleted"] for entry in transfers)):
         raise SuiteError("MongoDB query transfers require ten distinct cleaned tasks and executions")
-    return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD,
+    return {"source_collection": MONGODB_SOURCE, "component_key": MONGODB_FIELD, "enrollment_id": enrollment_id,
             "unprotected_derived_query": unprotected_derived,
             "unprotected_derived_transfer": unprotected_transfer,
             "target_scan_execution_id": transfer_targets["scan_execution_id"],
@@ -2114,7 +2114,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v16",
+            "schema_version": "addp.security-mysql-owner-protection-online/v17",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -2206,10 +2206,36 @@ def initialize_governance(client: GatewayClient, tenant_id: int) -> None:
     ])
 
 
+def result_browser_context(client: GatewayClient, engine_id: int, source: Mapping[str, object],
+                           targets: Mapping[str, object], enrollment_id: str) -> dict[str, object]:
+    phones = [row for row in definition_array(client, "/api/v1/security/sensitive-data-types") if row.get("code") == "phone"]
+    if len(phones) != 1:
+        raise SuiteError("result browser requires the exact phone type")
+    baselines = [row for row in definition_array(client, "/api/v1/security/protection-baselines")
+                 if row.get("sensitive_data_type_id") == phones[0]["id"]
+                 and row.get("security_grade_id") == phones[0]["default_security_grade_id"] and row.get("enabled") is True]
+    if len(baselines) != 1:
+        raise SuiteError("result browser requires the exact phone baseline")
+    original = baseline_body(baselines[0])
+    original.pop("version")  # Restoration preserves semantics, never rolls back the CAS version.
+    parameters = {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}
+    if (original["effect"] != "mask" or original["algorithm"] != STRUCTURED_MASK_ALGORITHM
+            or original["parameters"] != parameters or original["invalid_value_effect"] != "suppress"):
+        raise SuiteError("result browser requires the restored default phone mask")
+    target = MONGODB_TRANSFER_TARGETS[2]
+    normal = mongodb_transfer_payload(build_item_locator(engine_id, source), targets, target, False)
+    denied = mongodb_transfer_payload(build_item_locator(engine_id, source), targets, target, False)
+    denied["config"]["target"]["policy"]["apply_mode"] = "append"
+    return {"baseline_id": str(baselines[0]["id"]), "baseline_body": original,
+            "enrollment_id": enrollment_id, "target_locator": targets["locators"][target],
+            "columns": list(MONGODB_TRANSFER_FIELDS), "expected_phones": spatial_expected(STRUCTURED_MASK_ALGORITHM, parameters),
+            "normal_payload": normal, "denied_payload": denied}
+
+
 def validate_export_browser_report(payload: object, run_id: str, tenant_id: str) -> dict[str, object]:
     report = _object(payload, "Manager export browser report")
     expected = {
-        "schema_version": "addp.security-manager-export-browser/v7", "result": "passed",
+        "schema_version": "addp.security-manager-export-browser/v8", "result": "passed",
         "run_id": run_id, "tenant_id": tenant_id, "records": 5,
         "email_field_present": False, "non_sensitive_fields_preserved": True,
         "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
@@ -2230,11 +2256,16 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
         "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
         "expected_service_refusal_403": 1,
+        "transfer_result_stage": "result", "transfer_result_diagnostic_verified": True,
+        "transfer_result_visible": True, "transfer_result_monitor_same_execution": True,
+        "transfer_result_target_unchanged": True, "transfer_result_records_written": 0,
+        "transfer_result_baseline_restored": True, "transfer_result_recovery_verified": True,
+        "result_browser_created_resources": 2, "result_browser_deleted_resources": 2, "result_browser_residual_resources": 0,
         "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
     }
     mismatches = [key for key, value in expected.items()
                   if type(report.get(key)) is not type(value) or report.get(key) != value]
-    if set(report) != set(expected) | {"execution_id", "protection_transfer_execution_id"}:
+    if set(report) != set(expected) | {"execution_id", "protection_transfer_execution_id", "result_transfer_execution_id"}:
         mismatches.append("report_fields")
     execution_id = report.get("execution_id")
     try:
@@ -2252,6 +2283,14 @@ def validate_export_browser_report(payload: object, run_id: str, tenant_id: str)
         valid_refusal_id = False
     if not valid_refusal_id:
         mismatches.append("protection_transfer_execution_id")
+    result_id = report.get("result_transfer_execution_id")
+    try:
+        valid_result_id = (isinstance(result_id, str) and str(uuid.UUID(result_id)) == result_id
+                           and uuid.UUID(result_id).int != 0 and result_id not in {execution_id, refusal_id})
+    except (ValueError, TypeError):
+        valid_result_id = False
+    if not valid_result_id:
+        mismatches.append("result_transfer_execution_id")
     if mismatches:
         raise SuiteError("Manager export browser report mismatch: " + ", ".join(mismatches))
     return report
@@ -2274,7 +2313,7 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
         "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
         "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
         "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
-        "security-transfer-protection-monitor.png",
+        "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png",
     )]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
@@ -2376,6 +2415,8 @@ def main() -> int:
         "target_locator": build_item_locator(target_engine_id, target_item),
         "service_payload": service_payload(browser_name, source_engine_id, source_locator),
         "transfer_payload": transfer_payload(browser_name, source_locator, build_schema_locator(target_engine_id, target_item)),
+        "result_protection": result_browser_context(client, mongodb_engine_id, mongodb_source["item"],
+            mongodb_transfer_targets, report["mongodb_algorithms"]["enrollment_id"]),
     }
     report["manager_export_browser"] = run_export_browser(
         Path(__file__).resolve().parents[2], dict(os.environ), source_locator, output_context)

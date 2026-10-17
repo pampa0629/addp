@@ -193,6 +193,137 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 }
 
 
+async function checkProtectionFailurePanel(panel, executionID, stage) {
+  expect(['preparation', 'result']).toContain(stage)
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
+  await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
+  await expect(panel).toContainText(stage === 'result' ? /保存执行结果|Save execution result/ : /准备查询|Prepare query/)
+  await expect(panel).toContainText('data_protection_required')
+  await expect(panel).toContainText(executionID)
+}
+
+async function verifyTransferResultProtection(page, env, navigate, getAPI, runTransfer) {
+  const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT).result_protection
+  const original = input.baseline_body
+  const baselinePath = `/api/v1/security/protection-baselines/${input.baseline_id}`
+  const enrollmentPath = `/api/v1/security/protection-enrollments/${input.enrollment_id}`
+  const tasks = []
+  let baselineChanged = false
+  let outcome
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  function baselineBody(row) {
+    return Object.fromEntries(Object.keys(original).map(key => [key,
+      typeof original[key] === 'number' ? Number(row[key]) : row[key]]))
+  }
+  async function synchronized() {
+    let source
+    await expect.poll(async () => {
+      source = await json(await getAPI().get(enrollmentPath), 'result source synchronization')
+      return source.validity_mode === 'permanent' && source.expires_at === null &&
+        source.owner_progress?.length === 4 &&
+        source.owner_progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,manager,service,transfer' &&
+        source.owner_progress.every(owner => owner.acknowledged === true && owner.projection_state === 'active' && owner.validity === 'valid')
+    }, { timeout: 45_000 }).toBe(true)
+    const owner = source.owner_progress.find(owner => owner.consumer_owner === 'transfer')
+    return [owner.projection_id, owner.revision, owner.published_cursor]
+  }
+  async function setInvalidValueEffect(effect) {
+    const current = await json(await getAPI().get(baselinePath), 'result phone baseline')
+    const body = baselineBody(current)
+    expect({ ...body, invalid_value_effect: original.invalid_value_effect }).toEqual(original)
+    expect(['suppress', 'deny']).toContain(body.invalid_value_effect)
+    if (body.invalid_value_effect !== effect) {
+      const updated = await json(await getAPI().put(baselinePath, { data: {
+        ...original, version: current.version, invalid_value_effect: effect
+      } }), 'result invalid value handling')
+      expect(baselineBody(updated)).toEqual({ ...original, invalid_value_effect: effect })
+    }
+    return synchronized()
+  }
+  async function readResultTarget() {
+    const preview = await json(await getAPI().get('/api/v1/manager/preview', { params: {
+      locator: input.target_locator, page: 1, page_size: 100
+    } }), 'result protected target')
+    expect([...preview.data.columns].sort()).toEqual([...input.columns].sort())
+    const rows = [...preview.data.rows].sort((a, b) => String(a._id).localeCompare(String(b._id)))
+    expect(rows.map(row => row._id)).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual([...input.columns].sort())
+      expect(row.display_name).toBe(`person-${row._id}`)
+      expect(row.nick_name).toBe(row._id === '7' ? null : `nickname-${row._id}`)
+      expect(row.userInfo__phone).toBe(input.expected_phones[row._id] ?? null)
+    }
+    return rows
+  }
+  try {
+    expect(baselineBody(await json(await getAPI().get(baselinePath), 'original result baseline'))).toEqual(original)
+    expect(original.invalid_value_effect).toBe('suppress')
+    await synchronized()
+    expect(input.normal_payload.config.source).toEqual(input.denied_payload.config.source)
+    expect(input.normal_payload.config.target.policy.apply_mode).toBe('replace')
+    expect(input.denied_payload.config.target.policy.apply_mode).toBe('append')
+    for (const payload of [input.normal_payload, input.denied_payload]) {
+      const task = await json(await getAPI().post('/api/v1/transfer/task-definitions', { data: payload }), 'result Transfer definition')
+      expect(Number(task.id)).toBeGreaterThan(0)
+      tasks.push(task.id)
+    }
+    const beforeExecution = await runTransfer('success', tasks[0])
+    expect(Number(beforeExecution.records_read)).toBe(7)
+    expect(Number(beforeExecution.records_written)).toBe(7)
+    const before = await readResultTarget()
+    baselineChanged = true
+    const installed = await setInvalidValueEffect('deny')
+    const denied = await runTransfer('failed', tasks[1])
+    expect(denied.execution_id).not.toBe(beforeExecution.execution_id)
+    const details = denied.error_details
+    expect(Object.keys(details).sort()).toEqual(['category', 'code', 'diagnostic'])
+    expect(details.category).toBe('execution_failed')
+    expect(details.code).toBe('data_protection_required')
+    expect(details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v2', stage: 'result', reason: 'data_protection_required' })
+    expect(Number(denied.records_written)).toBe(0)
+    expect(Number(denied.bytes_written)).toBe(0)
+    expect(await synchronized()).toEqual(installed)
+    expect(await readResultTarget()).toEqual(before)
+    await navigate(`/transfer/executions/${denied.execution_id}`, `/api/v1/transfer/executions/${denied.execution_id}`)
+    await checkProtectionFailurePanel(frame.locator('.execution-failure'), denied.execution_id, 'result')
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-result-refusal.png') })
+    const link = new URL(await frame.locator('.execution-failure').getByRole('link', { name: /查看监控错误详情|View error details in Monitor/ }).getAttribute('href'), page.url())
+    expect(link.origin).toBe(new URL(page.url()).origin)
+    expect(link.pathname).toBe('/monitor/executions')
+    expect([...link.searchParams]).toEqual([['execution_id', denied.execution_id]])
+    await navigate(link.pathname + link.search, `/api/v1/monitor/executions/by-execution-id/${denied.execution_id}/tree`)
+    await checkProtectionFailurePanel(frame.locator('.execution-detail-content > .execution-failure'), denied.execution_id, 'result')
+    await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-transfer-result-monitor.png') })
+    await setInvalidValueEffect(original.invalid_value_effect)
+    baselineChanged = false
+    const restored = await runTransfer('success', tasks[0])
+    expect(restored.execution_id).not.toBe(denied.execution_id)
+    expect(Number(restored.records_read)).toBe(7)
+    expect(Number(restored.records_written)).toBe(7)
+    expect(await readResultTarget()).toEqual(before)
+    expect(baselineBody(await json(await getAPI().get(baselinePath), 'restored complete result baseline'))).toEqual(original)
+    outcome = { transfer_result_stage: 'result', transfer_result_diagnostic_verified: true,
+      transfer_result_visible: true, transfer_result_monitor_same_execution: true,
+      transfer_result_target_unchanged: true, transfer_result_records_written: 0,
+      transfer_result_baseline_restored: true, transfer_result_recovery_verified: true,
+      result_transfer_execution_id: denied.execution_id }
+  } finally {
+    const failures = []
+    if (baselineChanged) {
+      try { await setInvalidValueEffect(original.invalid_value_effect) } catch { failures.push('result baseline restoration failed') }
+    }
+    for (const id of tasks.reverse()) {
+      try {
+        expect((await getAPI().delete(`/api/v1/transfer/task-definitions/${id}`)).ok()).toBe(true)
+        expect((await getAPI().get(`/api/v1/transfer/task-definitions/${id}`)).status()).toBe(404)
+      } catch { failures.push('result Transfer cleanup failed') }
+    }
+    expect(failures).toEqual([])
+  }
+  return { ...outcome, result_browser_created_resources: 2, result_browser_deleted_resources: 2, result_browser_residual_resources: 0 }
+}
+
 async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal, sourceColumns) {
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
@@ -226,8 +357,8 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     checkRows(response.data.rows, targetColumns)
     return [...response.data.rows].sort((a, b) => Number(a.id) - Number(b.id))
   }
-  async function runTransfer(status) {
-    const started = await json(await getAPI().post(`/api/v1/transfer/task-definitions/${taskID}/start`), 'browser Transfer start')
+  async function runTransfer(status, selectedTaskID = taskID) {
+    const started = await json(await getAPI().post(`/api/v1/transfer/task-definitions/${selectedTaskID}/start`), 'browser Transfer start')
     expect(started.execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
     let execution
     await expect.poll(async () => {
@@ -235,7 +366,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
       return execution.status
     }, { timeout: 45_000 }).toMatch(/^(success|failed|timeout|cancelled)$/)
     expect(execution.status).toBe(status)
-    expect(String(execution.task_id)).toBe(String(taskID))
+    expect(String(execution.task_id)).toBe(String(selectedTaskID))
     expect(String(execution.trigger_by)).toBe(input.principal_id)
     return execution
   }
@@ -310,12 +441,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     const rebound = await json(await getAPI().get(executionPath), 'browser same Transfer refusal')
     expect(rebound.error_details).toEqual(details)
     async function checkPanel(panel) {
-      await expect(panel).toBeVisible()
-      await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
-      await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
-      await expect(panel).toContainText(/准备查询|Prepare query/)
-      await expect(panel).toContainText('data_protection_required')
-      await expect(panel).toContainText(denied.execution_id)
+      await checkProtectionFailurePanel(panel, denied.execution_id, 'preparation')
     }
     const panel = frame.locator('.execution-failure')
     await checkPanel(panel)
@@ -363,6 +489,7 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     }
     expect(failures).toEqual([])
   }
+  const resultProtection = await verifyTransferResultProtection(page, env, navigate, getAPI, runTransfer)
   // Validity changes and definition cleanup can isolate the technical index.
   // Require the same source field to be searchable again before the UI search.
   const source = new URL(env.ADDP_ONLINE_SECURITY_EXPORT_LOCATOR)
@@ -384,11 +511,11 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     expect(matches.length).toBeLessThanOrEqual(1)
     return matches.length === 1 && matches[0].field_matches.some(field => field.name === 'email' && field.data_type === 'string')
   }, { timeout: 120_000 }).toBe(true)
-  return { ...outcome, output_browser_created_resources: 2, output_browser_deleted_resources: 2, output_browser_residual_resources: 0 }
+  return { ...outcome, ...resultProtection, output_browser_created_resources: 2, output_browser_deleted_resources: 2, output_browser_residual_resources: 0 }
 }
 
 test('ordinary-user queries and Manager export preserve protection diagnostics and provenance in Monitor', async ({ page }) => {
-  test.setTimeout(300_000)
+  test.setTimeout(420_000)
   const names = [
     'ADDP_ONLINE_ARTIFACT_DIR', 'ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID',
     'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_USER_USERNAME',
@@ -433,6 +560,7 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
       'manager.content.read', 'manager.data_item.read', 'manager.search.execute', 'manager.derived_artifact.create',
       'manager.derived_artifact.read', 'monitor.execution.read', 'security.enrollment.read', 'meta.catalog.read', 'develop.task.read', 'develop.task.execute', 'develop.data_read.execute',
       'security.enrollment.update', 'service.definition.create', 'service.definition.read', 'service.definition.delete',
+      'security.protection_baseline.read', 'security.protection_baseline.update',
       'service.data_read.execute', 'transfer.task.create', 'transfer.task.read', 'transfer.task.execute', 'transfer.task.delete'
     ]
     const expected = identity(await json(await api.get('/api/v1/system/auth/context'), 'API AuthContext'))
@@ -597,10 +725,10 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
     expect(failedResponses).toEqual([])
     expect(browserErrors).toEqual([])
     expect(anonymousRefresh401).toBe(1)
-    expect(browserSessionRebinds).toBe(8)
+    expect(browserSessionRebinds).toBe(10)
     expect(serviceRefusal403).toBe(1)
     writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'security-manager-export-browser.json'), `${JSON.stringify({
-      schema_version: 'addp.security-manager-export-browser/v7', result: 'passed',
+      schema_version: 'addp.security-manager-export-browser/v8', result: 'passed',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID, tenant_id: actual.tenantID,
       execution_id: session.transfer_execution_id, records: rows.length,
       email_field_present: false, non_sensitive_fields_preserved: true,
@@ -612,7 +740,7 @@ test('ordinary-user queries and Manager export preserve protection diagnostics a
       ...developProtection,
       ...outputProtection,
       expected_service_refusal_403: serviceRefusal403,
-      browser_session_rebound_verified: browserSessionRebinds === 8, resource_permanent_validity_visible: true,
+      browser_session_rebound_verified: browserSessionRebinds === 10, resource_permanent_validity_visible: true,
       browser_warning_errors: 0, failed_business_responses: 0, anonymous_refresh_401: anonymousRefresh401
     })}\n`, 'utf8')
   } catch (error) {

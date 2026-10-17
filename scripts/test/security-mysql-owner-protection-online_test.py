@@ -1347,6 +1347,109 @@ class ExplicitRediscoveryTest(unittest.TestCase):
 
 
 class ManagerExportBrowserTest(unittest.TestCase):
+    def test_result_context_reuses_direct_query_and_existing_target_without_authorization_writes(self):
+        baseline = {"id": "9", "version": 1, "sensitive_data_type_id": "7", "security_grade_id": "2", "effect": "mask",
+                    "algorithm": ONLINE.STRUCTURED_MASK_ALGORITHM,
+                    "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
+                    "allowed_algorithms": [ONLINE.STRUCTURED_MASK_ALGORITHM], "invalid_value_effect": "suppress", "enabled": True}
+        client = Mock()
+        targets = {"parent_locator": "target-parent", "locators": {ONLINE.MONGODB_TRANSFER_TARGETS[2]: "existing-target"}}
+        def definitions(_, path):
+            return [{"id": "7", "code": "phone", "default_security_grade_id": "2"}] if path.endswith("sensitive-data-types") else [baseline]
+        with patch.object(ONLINE, "definition_array", side_effect=definitions), patch.object(ONLINE, "build_item_locator", return_value="existing-source"):
+            result = ONLINE.result_browser_context(client, 3, {"fingerprint": "known"}, targets, "enrollment")
+            self.assertEqual(result["baseline_body"]["invalid_value_effect"], "suppress")
+            self.assertEqual(result["target_locator"], "existing-target")
+            normal, denied = result["normal_payload"], result["denied_payload"]
+            self.assertEqual(normal["config"]["source"], denied["config"]["source"])
+            self.assertNotIn("$concat", normal["config"]["source"]["query"]["statement"])
+            self.assertEqual(normal["config"]["target"]["policy"], {"apply_mode": "replace"})
+            self.assertEqual(denied["config"]["target"]["policy"], {"apply_mode": "append"})
+            self.assertFalse(denied["auto_scan_metadata"])
+            self.assertEqual(result["expected_phones"]["1"], "138****5678")
+            for change in ({"invalid_value_effect": "deny"}, {"algorithm": ONLINE.SM3_ALGORITHM}, {"parameters": {}}):
+                saved = dict(baseline); baseline.update(change)
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.result_browser_context(client, 3, {}, targets, "enrollment")
+                baseline.clear(); baseline.update(saved)
+        client.request.assert_not_called()
+
+    def test_result_browser_restores_baseline_and_attempts_all_task_cleanup_on_failures(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const source = readFileSync(0, 'utf8')
+const helper = source.slice(source.indexOf('async function verifyTransferResultProtection('), source.indexOf('async function verifyServiceTransferProtectionRefusal('))
+const expect = value => ({ toBe: expected => assert.equal(value, expected), toEqual: expected => assert.deepEqual(value, expected),
+  toContain: expected => assert.ok(value.includes(expected)), toBeGreaterThan: expected => assert.ok(value > expected),
+  not: { toBe: expected => assert.notEqual(value, expected) } })
+expect.poll = callback => ({ toBe: async expected => assert.equal(await callback(), expected) })
+const failedID = '75834320-203b-4d8c-838e-15e01024d484'
+const original = { sensitive_data_type_id: 7, security_grade_id: 2, effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2',
+  parameters: { prefix_runes: 3, suffix_runes: 4, mask_rune: '*' }, allowed_algorithms: ['addp.mask.keep_prefix_suffix/v2'],
+  invalid_value_effect: 'suppress', enabled: true }
+const baseRows = Array.from({ length: 7 }, (_, i) => ({ _id: String(i + 1), display_name: `person-${i + 1}`,
+  nick_name: i === 6 ? null : `nickname-${i + 1}`, userInfo__phone: i === 0 ? '138****5678' : null }))
+const columns = ['_id', 'display_name', 'userInfo__phone', 'nick_name']
+const input = { baseline_id: '9', enrollment_id: 'source', baseline_body: original, columns, expected_phones: { '1': '138****5678' },
+  normal_payload: { config: { source: { locator: 'source' }, target: { policy: { apply_mode: 'replace' } } } },
+  denied_payload: { config: { source: { locator: 'source' }, target: { policy: { apply_mode: 'append' } } } } }
+const run = new Function('expect', 'json', 'resolve', 'checkProtectionFailurePanel', helper + ';return verifyTransferResultProtection')(
+  expect, async value => value, (...parts) => parts.join('/'), async (_, id, stage) => { assert.equal(id, failedID); assert.equal(stage, 'result') })
+for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'restore-response', 'delete']) {
+  let baseline = { ...structuredClone(original), version: 1 }, rows = structuredClone(baseRows), denied = false, injected = false
+  const tasks = new Set(), deleted = [], navigations = [], screenshots = []
+  const api = {
+    get: async path => {
+      if (path.includes('protection-baselines')) return structuredClone(baseline)
+      if (path.includes('protection-enrollments')) return { validity_mode: 'permanent', expires_at: null,
+        owner_progress: ['manager', 'develop', 'service', 'transfer'].map(consumer_owner => ({ consumer_owner, acknowledged: true,
+          projection_state: 'active', validity: 'valid', projection_id: consumer_owner, revision: String(baseline.version), published_cursor: String(baseline.version) })) }
+      if (path.includes('/manager/preview')) return { data: { columns, rows: structuredClone(rows) } }
+      return { status: () => 404 }
+    },
+    put: async (_, { data }) => {
+      assert.equal(data.version, baseline.version)
+      baseline = { ...structuredClone(data), version: data.version + 1 }
+      if (!injected && ((fault === 'deny-response' && data.invalid_value_effect === 'deny') ||
+          (fault === 'restore-response' && data.invalid_value_effect === 'suppress'))) { injected = true; throw new Error('lost response') }
+      return structuredClone(baseline)
+    },
+    post: async () => { const id = 41 + tasks.size; tasks.add(id); return { id } },
+    delete: async path => { const id = Number(path.split('/').at(-1)); deleted.push(id); tasks.delete(id)
+      if (fault === 'delete' && deleted.length === 1) throw new Error('cleanup failure')
+      return { ok: () => true } }
+  }
+  const runTransfer = async (status, id) => {
+    assert.ok(tasks.has(id))
+    if (status === 'failed') {
+      assert.equal(baseline.invalid_value_effect, 'deny'); denied = true
+      if (fault === 'target') rows[0].display_name = 'changed'
+      return { execution_id: failedID, records_written: fault === 'writes' ? 1 : 0, bytes_written: 0, error_details: { category: 'execution_failed', code: 'data_protection_required',
+        diagnostic: { schema_version: 'addp.execution-failure/v2', stage: fault === 'stage' ? 'preparation' : 'result', reason: 'data_protection_required' } } }
+    }
+    assert.equal(baseline.invalid_value_effect, 'suppress'); rows = structuredClone(baseRows)
+    return { execution_id: denied ? 'recovery' : 'baseline', records_read: 7, records_written: 7 }
+  }
+  const panel = { getByRole: () => ({ getAttribute: async () => `/monitor/executions?execution_id=${failedID}` }) }
+  const page = { frameLocator: () => ({ locator: () => panel }), url: () => 'http://localhost:5170/', screenshot: async value => screenshots.push(value.path) }
+  const action = () => run(page, { ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT: JSON.stringify({ result_protection: input }), ADDP_ONLINE_ARTIFACT_DIR: '/tmp' },
+    async path => navigations.push(path), () => api, runTransfer)
+  if (fault === 'none') {
+    const report = await action(); assert.equal(report.transfer_result_stage, 'result'); assert.equal(report.result_browser_residual_resources, 0)
+    assert.equal(report.result_transfer_execution_id, failedID); assert.equal(navigations.length, 2); assert.equal(screenshots.length, 2)
+  } else await assert.rejects(action)
+  const { version, ...restored } = baseline
+  assert.deepEqual(restored, original, fault)
+  assert.deepEqual(deleted.sort(), [41, 42], fault)
+  assert.equal(tasks.size, 0, fault)
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe],
+            input=(SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_main_waits_for_protected_email_search_before_starting_browser(self):
         environment = {
             'ADDP_ONLINE_TEST': '1', 'ADDP_ONLINE_TEST_TENANT_ID': '2',
@@ -1364,10 +1467,11 @@ class ManagerExportBrowserTest(unittest.TestCase):
                 patch.object(ONLINE.signal, 'signal'),
                 patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'),
                 patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
-                patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared'}) as prepare,
+                patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
                 patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}}) as scenario,
-                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': []}),
+                patch.object(ONLINE, 'exercise_mongodb_algorithms', return_value={'cases': [], 'enrollment_id': 'mongo-enrollment'}),
+                patch.object(ONLINE, 'result_browser_context', return_value={'fixture': 'result'}),
                 patch.object(ONLINE, 'find_item', return_value={'fingerprint': 'source', 'node_id': 12}),
                 patch.object(ONLINE, 'build_item_locator', return_value='source-locator'),
                 patch.object(ONLINE, 'wait_for_technical_field') as readiness,
@@ -1390,6 +1494,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
                         readiness.assert_called_once()
                         context = args[3]
                         self.assertEqual(context["principal_id"], "7")
+                        self.assertEqual(context["result_protection"], {"fixture": "result"})
                         self.assertEqual(context["enrollment_id"], "enrollment")
                         self.assertFalse(context["service_payload"]["public_access"])
                         self.assertFalse(context["transfer_payload"]["enabled"])
@@ -1403,10 +1508,11 @@ class ManagerExportBrowserTest(unittest.TestCase):
 
     def report(self):
         return {
-            "schema_version": "addp.security-manager-export-browser/v7", "result": "passed",
+            "schema_version": "addp.security-manager-export-browser/v8", "result": "passed",
             "run_id": "run-42", "tenant_id": "2", "records": 5,
             "execution_id": "53834320-203b-4d8c-838e-15e01024d484",
             "protection_transfer_execution_id": "64834320-203b-4d8c-838e-15e01024d484",
+            "result_transfer_execution_id": "75834320-203b-4d8c-838e-15e01024d484",
             "email_field_present": False, "non_sensitive_fields_preserved": True,
             "same_user_verified": True, "initiator_verified": True, "taskless_execution": True,
             "manager_source_verified": True, "monitor_detail_visible": True,
@@ -1426,6 +1532,11 @@ class ManagerExportBrowserTest(unittest.TestCase):
             "transfer_target_unchanged": True, "output_protection_permanent_restored": True,
             "output_browser_created_resources": 2, "output_browser_deleted_resources": 2, "output_browser_residual_resources": 0,
             "expected_service_refusal_403": 1,
+            "transfer_result_stage": "result", "transfer_result_diagnostic_verified": True,
+            "transfer_result_visible": True, "transfer_result_monitor_same_execution": True,
+            "transfer_result_target_unchanged": True, "transfer_result_records_written": 0,
+            "transfer_result_baseline_restored": True, "transfer_result_recovery_verified": True,
+            "result_browser_created_resources": 2, "result_browser_deleted_resources": 2, "result_browser_residual_resources": 0,
             "browser_warning_errors": 0, "failed_business_responses": 0, "anonymous_refresh_401": 1,
         }
 
@@ -1463,6 +1574,17 @@ class ManagerExportBrowserTest(unittest.TestCase):
             ("protection_transfer_execution_id", "00000000-0000-0000-0000-000000000000"),
             ("protection_transfer_execution_id", "53834320-203b-4d8c-838e-15e01024d484"),
             ("initiator_verified", 1), ("browser_warning_errors", False),
+            ("transfer_result_stage", "preparation"), ("transfer_result_diagnostic_verified", False),
+            ("transfer_result_visible", False), ("transfer_result_monitor_same_execution", False),
+            ("transfer_result_target_unchanged", False), ("transfer_result_records_written", 1),
+            ("transfer_result_records_written", False), ("transfer_result_baseline_restored", False),
+            ("transfer_result_recovery_verified", False), ("result_browser_created_resources", 0),
+            ("result_browser_deleted_resources", 1), ("result_browser_residual_resources", 1),
+            ("result_transfer_execution_id", "bad"), ("result_transfer_execution_id", None),
+            ("result_transfer_execution_id", "00000000-0000-0000-0000-000000000000"),
+            ("result_transfer_execution_id", "53834320-203b-4d8c-838e-15e01024d484"),
+            ("result_transfer_execution_id", "64834320-203b-4d8c-838e-15e01024d484"),
+            ("schema_version", "addp.security-manager-export-browser/v7"),
         ):
             with self.subTest(key=key, value=value), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_export_browser_report(dict(valid, **{key: value}), "run-42", "2")
@@ -1484,7 +1606,7 @@ class ManagerExportBrowserTest(unittest.TestCase):
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 const source = readFileSync(0, 'utf8')
-const helper = source.slice(source.indexOf('  async function runTransfer(status) {'), source.indexOf('  async function updateValidity('))
+const helper = source.slice(source.indexOf('  async function runTransfer('), source.indexOf('  async function updateValidity('))
 assert.ok(helper.includes('async function runTransfer'))
 const expect = value => ({ toBe: expected => assert.equal(value, expected), toMatch: expected => assert.match(value, expected) })
 expect.poll = callback => ({ toMatch: async expected => assert.match(await callback(), expected) })
@@ -1565,7 +1687,7 @@ for (const data of [
                              "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
                              "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
-                             "security-transfer-protection-monitor.png"):
+                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png"):
                     (artifact / name).write_bytes(b"test screenshot")
                 return Mock(returncode=0, stdout="", stderr="")
             with patch.object(ONLINE.subprocess, "run", side_effect=browser):
@@ -1576,7 +1698,7 @@ for (const data of [
                             "security-resource-filter-reset.png", "security-develop-protection-refusal.png",
                              "security-develop-protection-monitor.png", "security-service-protection-refusal.png",
                              "security-service-protection-restored.png", "security-transfer-protection-refusal.png",
-                             "security-transfer-protection-monitor.png"):
+                             "security-transfer-protection-monitor.png", "security-transfer-result-refusal.png", "security-transfer-result-monitor.png"):
                 def incomplete_browser(command, **kwargs):
                     result = browser(command, **kwargs)
                     (artifact / missing).unlink()
