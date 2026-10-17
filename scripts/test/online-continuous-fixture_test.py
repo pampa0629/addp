@@ -78,6 +78,13 @@ elif args[0]=='exec' and 'produce' in args:
         return subprocess.run(['bash', str(SCRIPT), action], env={**self.environment, **env},
                               capture_output=True, text=True, timeout=45)
 
+    def test_scheduled_rowset_verification_rejects_missing_or_wrong_rows(self):
+        self.assertEqual(self.run_fixture('start').returncode, 0)
+        correct = '1|business-value-sentinel-sibling\n2|business-value-sentinel-sibling'
+        self.assertEqual(self.run_fixture('verify-scheduled', PHYSICAL_ROWS=correct).returncode, 0)
+        self.assertNotEqual(self.run_fixture('verify-scheduled', PHYSICAL_ROWS='').returncode, 0)
+        self.assertNotEqual(self.run_fixture('verify-scheduled', PHYSICAL_ROWS=correct + '\n3|extra').returncode, 0)
+
     def test_separate_source_descriptors_have_private_credentials_and_real_host_address(self):
         result = self.run_fixture('start')
         self.assertEqual(result.returncode, 0, result.stderr)

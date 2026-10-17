@@ -37,6 +37,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Summary 创建数据传输任务 | Create data transfer task
 // @Description 创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL/Oracle 单表 initial_snapshot、block 和 PostgreSQL/MySQL/Oracle 新目标表 upsert_delete；Oracle Spatial 由 generation-owned WKB 镜像捕获，Oracle 目标首期支持 XY geometry，普通 Oracle LOB/RAC 与 ArcGIS SDE 不支持。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL, MySQL, or Oracle source table with initial_snapshot, block policy, and a new PostgreSQL, MySQL, or Oracle upsert_delete target; Oracle Spatial uses a generation-owned WKB mirror, Oracle targets initially support XY geometry, while regular Oracle LOB/RAC and ArcGIS SDE remain unsupported. Legacy mode/write_mode fields are rejected.
 // @Tags         任务管理 | Task Management
+// @Description 带 Cron 的定义另需 system.execution_authorization.create 和 transfer.task.execute；只在同步请求内授权当前 User，不保存凭据。| Definitions with a Cron schedule also require system.execution_authorization.create and transfer.task.execute; authorize only the current User synchronously without retaining credentials.
 // @Description 委托 transfer.task.create 仅允许租户范围内创建 bounded/snapshot/native table 任务，必须显式禁用任务及自动扫描且不设调度；不创建 execution | Delegated transfer.task.create only creates tenant-scoped bounded/snapshot/native table tasks with explicit disabled task and auto-scan, no schedule and no execution
 // @Accept json
 // @Produce json
@@ -45,6 +46,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Failure 400 {object} map[string]string "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]string "未授权 | Unauthorized"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 503 {object} map[string]string "任务授权服务不可用 | Task authorization service unavailable"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "delegated_tool"
 // @x-addp-required-permissions ["transfer.task.create"]
@@ -76,7 +78,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
 
-	task, err := h.taskService.CreateTask(c.Request.Context(), &req, tenantID, userID)
+	task, err := h.taskService.CreateTask(transferTaskAuthorizationContext(c), &req, tenantID, userID)
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return
@@ -232,9 +234,11 @@ func (h *TaskHandler) listTasks(c *gin.Context, providerOnly bool) {
 // @Param request body models.UpdateTaskRequestDoc true "任务更新请求 | Task update request"
 // @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 503 {object} map[string]string "任务授权服务不可用 | Task authorization service unavailable"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.update"]
+// @x-addp-conditional-permissions ["system.execution_authorization.create","transfer.task.execute"]
 // @Router /task-definitions/{id} [put]
 // @Security BearerAuth
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
@@ -251,7 +255,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
 	// 修正参数顺序：id, tenantID, req
-	task, err := h.taskService.UpdateTask(c.Request.Context(), id, tenantID, &req)
+	task, err := h.taskService.UpdateTask(transferTaskAuthorizationContext(c), id, tenantID, &req)
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return
@@ -665,6 +669,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.update"]
+// @x-addp-conditional-permissions ["system.execution_authorization.create","transfer.task.execute"]
 // @Router /task-definitions/{id}/resume [post]
 // @Security BearerAuth
 func (h *TaskHandler) ResumeTask(c *gin.Context) {
@@ -676,7 +681,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
 
-	execution, err := h.taskService.ResumeTask(transferUserOriginContext(c), id, tenantID, userID)
+	execution, err := h.taskService.ResumeTask(transferTaskAuthorizationContext(c), id, tenantID, userID)
 	if err != nil {
 		respondTaskServiceError(c, err)
 		return
@@ -758,6 +763,10 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 }
 
 func respondTaskServiceError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrTaskAuthorizationUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, i18nmiddleware.MsgAuthorizationServiceUnavailable)})
+		return
+	}
 	if errors.Is(err, commonAPI.ErrForbidden) {
 		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
 		return
@@ -914,4 +923,13 @@ func (h *TaskHandler) CheckTaskConfig(c *gin.Context) {
 func transferUserOriginContext(c *gin.Context) context.Context {
 	facts, _ := commonAuth.AuthContextFromGin(c)
 	return commonExecution.WithUserOrigin(c.Request.Context(), facts)
+}
+
+func transferTaskAuthorizationContext(c *gin.Context) context.Context {
+	token := ""
+	parts := strings.Fields(c.GetHeader("Authorization"))
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		token = parts[1]
+	}
+	return service.WithTaskAuthorizationToken(transferUserOriginContext(c), token)
 }

@@ -247,6 +247,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
+		"system.task_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.graph_runtime", []string{
 		"copilot.knowledge_graph.execute",

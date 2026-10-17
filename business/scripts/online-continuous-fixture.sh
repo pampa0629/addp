@@ -114,6 +114,11 @@ PY
     actual=$(psql_owned -c "SELECT id,label FROM public.$table ORDER BY id" 2>/dev/null) || exit 1
     [ "$actual" = "$expected" ] || exit 1
     ;;
+  verify-scheduled)
+    actual=$(psql_owned -c "SELECT id,label FROM public.continuous_scheduled_target ORDER BY id" 2>/dev/null) || exit 1
+    [ "$actual" = '1|business-value-sentinel-sibling
+2|business-value-sentinel-sibling' ] || exit 1
+    ;;
   verify-clean)
     remaining=$(psql_owned -c "SELECT (SELECT count(*) FROM pg_replication_slots)+(SELECT count(*) FROM pg_publication WHERE pubname <> '');")
     [ "$remaining" = 0 ] || fail 'CDC slots or publications remain'

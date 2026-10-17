@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -14,6 +13,23 @@ import (
 )
 
 const orchestratorExecutePermission = "orchestrator.workflow.execute"
+
+// Fixed owner/type bindings also determine the only runtime allowed to resolve.
+func taskAuthorizationBinding(owner, kind string) (permission, client string) {
+	switch {
+	case owner == "orchestrator" && kind == "orchestration":
+		return orchestratorExecutePermission, "addp-orchestrator"
+	case owner == "transfer" && kind == "sync":
+		return "transfer.task.execute", "addp-transfer"
+	default:
+		return "", ""
+	}
+}
+
+func TaskAuthorizationExecutePermission(owner, kind string) string {
+	permission, _ := taskAuthorizationBinding(owner, kind)
+	return permission
+}
 
 var sha256HexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -26,16 +42,16 @@ type AuthorizeTaskSubjectInput struct {
 	PrincipalID          int64
 	TenantMembershipID   int64
 	AuthorizationVersion int64
-	Audit                 AuditMetadata
+	Audit                AuditMetadata
 }
 
 type ResolveTaskSubjectInput struct {
-	SubjectID         int64
-	OwnerModule       string
-	TaskType          string
-	TaskRef           uuid.UUID
-	DefinitionHash    string
-	TenantID          int64
+	SubjectID          int64
+	OwnerModule        string
+	TaskType           string
+	TaskRef            uuid.UUID
+	DefinitionHash     string
+	TenantID           int64
 	ServicePrincipalID int64
 	ServiceClientID    string
 	Audit              AuditMetadata
@@ -88,7 +104,7 @@ func (s *TaskAuthorizationSubjectService) Authorize(
 		if err != nil {
 			return err
 		}
-		if !containsPermission(permissions, orchestratorExecutePermission) {
+		if !containsPermission(permissions, "system.execution_authorization.create") || !containsPermission(permissions, TaskAuthorizationExecutePermission(input.OwnerModule, input.TaskType)) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 
@@ -101,9 +117,9 @@ func (s *TaskAuthorizationSubjectService) Authorize(
 				OwnerModule: input.OwnerModule, TaskType: input.TaskType,
 				TaskRef: input.TaskRef, DefinitionHash: input.DefinitionHash,
 				TenantID: input.TenantID, PrincipalID: input.PrincipalID,
-				TenantMembershipID: input.TenantMembershipID,
+				TenantMembershipID:   input.TenantMembershipID,
 				AuthorizationVersion: input.AuthorizationVersion,
-				AuthorizedAt: now, CreatedAt: now, UpdatedAt: now,
+				AuthorizedAt:         now, CreatedAt: now, UpdatedAt: now,
 			}
 			if err := tx.CreateTaskAuthorizationSubject(ctx, subject); err != nil {
 				return err
@@ -144,11 +160,15 @@ func (s *TaskAuthorizationSubjectService) Resolve(
 	input ResolveTaskSubjectInput,
 ) (*ResolvedTaskAuthorizationSubject, error) {
 	if input.SubjectID <= 0 || input.TenantID <= 0 || input.ServicePrincipalID <= 0 ||
-		input.ServiceClientID != "addp-orchestrator" {
+		input.ServiceClientID == "" {
 		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	if err := validateTaskAuthorizationIdentity(input.OwnerModule, input.TaskType, input.TaskRef, input.DefinitionHash); err != nil {
 		return nil, err
+	}
+	_, expectedClient := taskAuthorizationBinding(input.OwnerModule, input.TaskType)
+	if input.ServiceClientID != expectedClient {
+		return nil, ErrExecutionAuthorizationPermissionDenied
 	}
 	var result *ResolvedTaskAuthorizationSubject
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
@@ -175,7 +195,7 @@ func (s *TaskAuthorizationSubjectService) Resolve(
 		if err != nil {
 			return err
 		}
-		if !containsPermission(permissions, orchestratorExecutePermission) {
+		if !containsPermission(permissions, "system.execution_authorization.create") || !containsPermission(permissions, TaskAuthorizationExecutePermission(input.OwnerModule, input.TaskType)) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 		if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
@@ -189,11 +209,17 @@ func (s *TaskAuthorizationSubjectService) Resolve(
 		result = mapResolvedTaskAuthorizationSubject(subject)
 		return nil
 	})
+	if err != nil {
+		auditErr := NewAuditWriter(s.repository).Write(ctx, AuditEvent{Metadata: input.Audit, EventName: "iam.task_authorization.resolve_denied", Result: AuditResultDenied, RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "task_authorization_subject", EntityID: strconv.FormatInt(input.SubjectID, 10), Details: map[string]any{"owner_module": input.OwnerModule, "task_ref": input.TaskRef.String(), "code": "task_authorization_invalid"}})
+		if auditErr != nil {
+			return nil, auditErr
+		}
+	}
 	return result, err
 }
 
 func validateTaskAuthorizationIdentity(ownerModule, taskType string, taskRef uuid.UUID, definitionHash string) error {
-	if strings.TrimSpace(ownerModule) != "orchestrator" || strings.TrimSpace(taskType) != "orchestration" ||
+	if TaskAuthorizationExecutePermission(ownerModule, taskType) == "" ||
 		taskRef == uuid.Nil || !sha256HexPattern.MatchString(definitionHash) {
 		return fmt.Errorf("%w: invalid task authorization identity", commonapi.ErrBadRequest)
 	}
@@ -214,7 +240,7 @@ func mapResolvedTaskAuthorizationSubject(subject *TaskAuthorizationSubject) *Res
 		ID: subject.ID, OwnerModule: subject.OwnerModule, TaskType: subject.TaskType,
 		TaskRef: subject.TaskRef, DefinitionHash: subject.DefinitionHash,
 		TenantID: subject.TenantID, PrincipalID: subject.PrincipalID,
-		TenantMembershipID: subject.TenantMembershipID,
+		TenantMembershipID:   subject.TenantMembershipID,
 		AuthorizationVersion: subject.AuthorizationVersion, AuthorizedAt: subject.AuthorizedAt.UTC(),
 	}
 }

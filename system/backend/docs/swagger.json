@@ -899,8 +899,12 @@
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "orchestrator.workflow.execute",
+                    "transfer.task.execute"
+                ],
                 "x-addp-required-permissions": [
-                    "orchestrator.workflow.execute"
+                    "system.execution_authorization.create"
                 ]
             }
         },
@@ -9251,7 +9255,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-orchestrator Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体 | Only the addp-orchestrator tenant service principal may resolve a still-valid task subject matching the current definition hash",
+                "description": "仅对应 owner 的 addp-orchestrator 或 addp-transfer Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体 | Only the matching owner addp-orchestrator or addp-transfer tenant service principal may resolve a still-valid task subject matching the current definition hash",
                 "consumes": [
                     "application/json"
                 ],

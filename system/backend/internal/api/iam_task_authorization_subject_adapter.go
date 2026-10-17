@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -63,11 +64,22 @@ func NewIAMTaskAuthorizationSubjectHandler(service taskAuthorizationSubjectServi
 // @Failure      401 {object} IAMErrorResponse
 // @Failure      403 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["orchestrator.workflow.execute"]
+// @x-addp-required-permissions ["system.execution_authorization.create"]
+// @x-addp-conditional-permissions ["orchestrator.workflow.execute","transfer.task.execute"]
 // @Router       /auth/task-authorization-subjects [post]
 func (h *IAMTaskAuthorizationSubjectHandler) Authorize(c *gin.Context) {
 	request, taskRef, ok := bindTaskAuthorizationSubjectRequest(c)
 	if !ok {
+		return
+	}
+	permission := iam.TaskAuthorizationExecutePermission(request.OwnerModule, request.TaskType)
+	if permission == "" {
+		respondExecutionAuthorizationError(c, commonapi.ErrBadRequest)
+		return
+	}
+	facts, ok := middleware.IAMAuthContextFromGin(c)
+	if !ok || !commonauth.HasContextPermissions(facts, permission) {
+		respondExecutionAuthorizationError(c, commonapi.ErrForbidden)
 		return
 	}
 	principalID, tenantID, principalType, err := iamTenantActor(c)
@@ -98,7 +110,7 @@ func (h *IAMTaskAuthorizationSubjectHandler) Authorize(c *gin.Context) {
 		DefinitionHash: request.DefinitionHash, TenantID: int64(tenantID),
 		PrincipalID: int64(principalID), TenantMembershipID: membershipID,
 		AuthorizationVersion: authorizationVersion,
-		Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
+		Audit:                iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
 		respondExecutionAuthorizationError(c, err)
@@ -109,7 +121,7 @@ func (h *IAMTaskAuthorizationSubjectHandler) Authorize(c *gin.Context) {
 
 // Resolve godoc
 // @Summary      解析定时任务授权主体 | Resolve a scheduled task authorization subject
-// @Description  仅 addp-orchestrator Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体 | Only the addp-orchestrator tenant service principal may resolve a still-valid task subject matching the current definition hash
+// @Description  仅对应 owner 的 addp-orchestrator 或 addp-transfer Tenant Service Principal 可解析与当前定义哈希匹配且仍有效的任务授权主体 | Only the matching owner addp-orchestrator or addp-transfer tenant service principal may resolve a still-valid task subject matching the current definition hash
 // @Tags         Runtime 执行授权 | Runtime Execution Authorization
 // @Accept       json
 // @Produce      json
@@ -178,8 +190,8 @@ func mapTaskAuthorizationSubject(subject *iam.ResolvedTaskAuthorizationSubject) 
 		ID: strconv.FormatInt(subject.ID, 10), OwnerModule: subject.OwnerModule,
 		TaskType: subject.TaskType, TaskRef: subject.TaskRef.String(), DefinitionHash: subject.DefinitionHash,
 		TenantID: strconv.FormatInt(subject.TenantID, 10), PrincipalID: strconv.FormatInt(subject.PrincipalID, 10),
-		TenantMembershipID: strconv.FormatInt(subject.TenantMembershipID, 10),
+		TenantMembershipID:   strconv.FormatInt(subject.TenantMembershipID, 10),
 		AuthorizationVersion: strconv.FormatInt(subject.AuthorizationVersion, 10),
-		AuthorizedAt: subject.AuthorizedAt.UTC(),
+		AuthorizedAt:         subject.AuthorizedAt.UTC(),
 	}
 }

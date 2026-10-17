@@ -54,7 +54,7 @@ func RegisterIAMRoutes(
 	if err != nil {
 		return err
 	}
-	orchestratorExecute, err := middleware.NewIAMPermissionGuard("orchestrator.workflow.execute")
+	taskAuthorizationCreate, err := middleware.NewIAMPermissionGuard("system.execution_authorization.create")
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func RegisterIAMRoutes(
 		auth.POST("/delegations", runtime.UserAccessCredential, runtime.DelegationHandler.CreateDelegation)
 		auth.POST("/execution-authorizations", runtime.UserAccessCredential, tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.Issue)
 		auth.POST("/notebook-session-authorizations", runtime.UserAccessCredential, tenantContext, notebookEngineCatalogIssue, runtime.NotebookSessionAuthorizationHandler.Issue)
-		auth.POST("/task-authorization-subjects", runtime.UserAccessCredential, tenantContext, orchestratorExecute, runtime.TaskAuthorizationSubjectHandler.Authorize)
+		auth.POST("/task-authorization-subjects", runtime.UserAccessCredential, tenantContext, taskAuthorizationCreate, runtime.TaskAuthorizationSubjectHandler.Authorize)
 	}
 
 	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)

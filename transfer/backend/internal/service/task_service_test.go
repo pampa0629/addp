@@ -317,7 +317,8 @@ func assertTransferStableOutputContract(t *testing.T, contract taskprovider.Exec
 
 func TestTargetOverridableTaskAcceptsTaskOwnedScheduleAndScan(t *testing.T) {
 	taskService := NewTaskService(newTransferTaskServiceTestDB(t), nil, nil)
-	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
+	taskService.SetTaskSubjectAuthorizer(scheduleAuthorizerFunc(validScheduleTestSubject))
+	task, err := taskService.CreateTask(scheduleTestContext("9"), &models.CreateTaskRequest{
 		Name: "scheduled-overridable", TaskType: commonExecution.TaskTypeSync,
 		Config: validOverridableTargetTransferTaskConfig(), Schedule: "0 0 * * * *",
 		Enabled: boolPtr(true), AutoScanMetadata: boolPtr(true),
@@ -438,7 +439,8 @@ func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context
 func TestCreateTaskPersistsNextRunAtWhenEnabled(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskSvc := NewTaskService(db, nil, nil)
-	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+	taskSvc.SetTaskSubjectAuthorizer(scheduleAuthorizerFunc(validScheduleTestSubject))
+	task, err := taskSvc.CreateTask(scheduleTestContext("9"), &models.CreateTaskRequest{
 		Name:     "scheduled",
 		TaskType: commonExecution.TaskTypeSync,
 		Config:   validTableTransferTaskConfig(),
@@ -460,7 +462,8 @@ func TestCreateTaskKeepsScheduledTaskDisabledWithoutNextRunAt(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskSvc := NewTaskService(db, nil, nil)
 
-	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+	taskSvc.SetTaskSubjectAuthorizer(scheduleAuthorizerFunc(validScheduleTestSubject))
+	task, err := taskSvc.CreateTask(scheduleTestContext("9"), &models.CreateTaskRequest{
 		Name:     "scheduled-disabled",
 		TaskType: commonExecution.TaskTypeSync,
 		Config:   validTableTransferTaskConfig(),
@@ -479,7 +482,8 @@ func TestUpdateTaskClearsNextRunAtWhenScheduleRemoved(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskSvc := NewTaskService(db, nil, nil)
 
-	task, err := taskSvc.CreateTask(context.Background(), &models.CreateTaskRequest{
+	taskSvc.SetTaskSubjectAuthorizer(scheduleAuthorizerFunc(validScheduleTestSubject))
+	task, err := taskSvc.CreateTask(scheduleTestContext("9"), &models.CreateTaskRequest{
 		Name:     "scheduled",
 		TaskType: commonExecution.TaskTypeSync,
 		Config:   validTableTransferTaskConfig(),
@@ -771,7 +775,13 @@ func newTransferTaskServiceTestDB(t *testing.T) *gorm.DB {
 			status TEXT,
 			desired_state TEXT NOT NULL DEFAULT 'stopped',
 			progress REAL,
-			created_by INTEGER,
+			authorization_subject_id INTEGER,
+ authorization_definition_hash TEXT,
+ authorization_principal_id INTEGER,
+ authorization_membership_id INTEGER,
+ authorization_version INTEGER,
+ authorized_at DATETIME,
+ created_by INTEGER,
 			last_execution_id TEXT,
 			last_execution_status TEXT,
 			last_run_at DATETIME,

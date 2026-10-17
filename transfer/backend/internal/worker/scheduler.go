@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
@@ -20,10 +22,15 @@ type Scheduler struct {
 	taskRepo         *repository.TaskRepository
 	executionService *service.ExecutionService
 	claimGate        func() bool
+	taskSubjects     *commonClient.SystemServiceClient
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
+}
+
+func (s *Scheduler) SetTaskSubjectResolver(resolver *commonClient.SystemServiceClient) {
+	s.taskSubjects = resolver
 }
 
 func (s *Scheduler) SetClaimGate(claimGate func() bool) {
@@ -93,7 +100,7 @@ func (s *Scheduler) ensureScheduledTaskNextRuns(ctx context.Context) error {
 func (s *Scheduler) scheduledLoop(ctx context.Context) {
 	defer s.wg.Done()
 
-	s.runDueScheduledTasks(context.Background())
+	s.runDueScheduledTasks(ctx)
 	ticker := time.NewTicker(schedulePollInterval)
 	defer ticker.Stop()
 
@@ -104,7 +111,7 @@ func (s *Scheduler) scheduledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runDueScheduledTasks(context.Background())
+			s.runDueScheduledTasks(ctx)
 		}
 	}
 }
@@ -140,6 +147,22 @@ func (s *Scheduler) claimAndExecuteDueTask(ctx context.Context, taskID uint, now
 	if err != nil {
 		return err
 	}
+	hash, err := task.ScheduleAuthorizationHash()
+	if err != nil {
+		return err
+	}
+	if s.taskSubjects == nil || task.AuthorizationSubjectID == nil || task.AuthorizationDefinitionHash == nil || *task.AuthorizationDefinitionHash != hash || task.AuthorizedAt == nil || task.AuthorizationPrincipalID == nil || task.AuthorizationMembershipID == nil || task.AuthorizationVersion == nil {
+		return fmt.Errorf("scheduled task authorization is missing or stale")
+	}
+	subject, err := s.taskSubjects.WithTenantID(task.TenantID).ResolveTaskAuthorizationSubject(ctx, strconv.FormatInt(*task.AuthorizationSubjectID, 10), commonClient.TaskAuthorizationSubjectRequest{
+		OwnerModule: "transfer", TaskType: "sync", TaskRef: task.ApplyIdentity, DefinitionHash: hash,
+	})
+	if err != nil {
+		return fmt.Errorf("scheduled task authorization resolution failed")
+	}
+	if subject.TenantID != strconv.FormatUint(uint64(task.TenantID), 10) || subject.PrincipalID != strconv.FormatInt(*task.AuthorizationPrincipalID, 10) || subject.TenantMembershipID != strconv.FormatInt(*task.AuthorizationMembershipID, 10) || subject.AuthorizationVersion != strconv.FormatInt(*task.AuthorizationVersion, 10) || !subject.AuthorizedAt.Equal(*task.AuthorizedAt) {
+		return fmt.Errorf("scheduled task authorization origin mismatch")
+	}
 	executionID := uuid.New().String()
 	taskName := task.Name
 	execution := &commonExecution.TaskExecution{
@@ -150,7 +173,15 @@ func (s *Scheduler) claimAndExecuteDueTask(ctx context.Context, taskID uint, now
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		ExecutionConfig:   task.Config, CreatedAt: now, UpdatedAt: now,
 	}
-	claimed, _, err := s.taskRepo.ClaimDueScheduledExecution(ctx, taskID, task.Schedule, now, next, execution, service.IncrementalSourceIdentityForTask(task))
+	by := int(*task.AuthorizationPrincipalID)
+	origin := commonExecution.TaskExecution{TenantID: int(task.TenantID), TriggeredBy: &by, ActorPrincipalID: task.AuthorizationPrincipalID, ActorTenantMembershipID: task.AuthorizationMembershipID, IssuedAuthorizationVersion: task.AuthorizationVersion}
+	if err := commonExecution.CopyActorOrigin(execution, &origin); err != nil {
+		return err
+	}
+	if s.claimGate != nil && !s.claimGate() {
+		return nil
+	}
+	claimed, _, err := s.taskRepo.ClaimDueScheduledExecution(ctx, taskID, task.Schedule, hash, now, next, execution, service.IncrementalSourceIdentityForTask(task))
 	if err != nil || claimed == nil {
 		return err
 	}

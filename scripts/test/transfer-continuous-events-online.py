@@ -42,11 +42,11 @@ MONITOR_FIELDS = set('id execution_id module task_type source source_task_id sou
                      'queue_duration_ms run_duration_ms lease_state recovery_reason'.split())
 OWNER_FIELDS = set('id execution_id task_id status start_time end_time records_read records_written bytes_read '
                    'bytes_written error_details metadata trigger_type trigger_by'.split())
-OWNER_METADATA = set('lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
+OWNER_METADATA = set('metadata_scan lineage_facts continuous stop_reason recovery_reason recovered_from_execution_id recovery_attempt '
                      'recovery_consecutive_failures recovery_backoff_seconds recovery_not_before recovery_circuit_state'.split())
 PHYSICAL_ACTIONS = {'produce-initial', 'produce-after-recovery', 'produce-invalid', 'mutate-cdc', 'alter-cdc', 'verify-cdc-altered',
                     'verify-kafka-initial', 'verify-kafka-recovered', 'verify-cdc-initial',
-                    'verify-cdc-mutated', 'verify-clean'}
+                    'verify-cdc-mutated', 'verify-scheduled', 'verify-clean'}
 
 
 def require(condition, message):
@@ -95,6 +95,10 @@ def assert_projection(item, execution_id, *, monitor=False, tenant=None):
     else:
         require(isinstance(item.get('metadata'), dict) and set(item['metadata']) <= OWNER_METADATA,
                 'Owner exposed arbitrary metadata')
+        scan = item['metadata'].get('metadata_scan')
+        if scan is not None:
+            require(isinstance(scan, dict) and set(scan) <= {'status', 'attempt', 'execution_id', 'error_code'},
+                    'Owner exposed private metadata scan facts')
     error = item.get('error_details') or {}
     require(isinstance(error, dict) and set(error) <= {'category', 'code', 'error_code', 'message', 'failed_targets_count'},
             'execution exposed private failure details')
@@ -415,6 +419,31 @@ def run_browser(phase, execution_ids, subject, run_id, secret, action=None):
         return result
 
 
+def assert_scheduled_scan_origin(client, peer, execution, scan_id, principal):
+    require(execution.get('trigger_type') == 'scheduled' and execution.get('trigger_by') == int(principal)
+            and execution.get('status') == 'success', 'scheduled execution did not preserve its authorized User')
+    scan = client.request('GET', f'/api/v1/meta/executions/{scan_id}', (200,)).payload
+    require(scan.get('triggered_by') == int(principal)
+            and scan.get('parent_execution_id') == execution['execution_id']
+            and scan.get('status') not in {'failed', 'cancelled', 'timeout'},
+            'scheduled scan did not inherit the exact producing execution and User')
+    assert_safe(scan)
+    hidden = peer.request('GET', f'/api/v1/meta/executions/{scan_id}', (404,)).payload
+    require(isinstance(hidden, dict) and 'execution_id' not in hidden, 'scheduled scan leaked to another User')
+    return scan.get('status') == 'success'
+
+
+def scheduled_task_body(name, pg):
+    config = task_config('cdc', pg, 1)
+    config['runtime'] = {'boundary': 'bounded'}
+    config['load'] = {'mode': 'snapshot'}
+    config['source']['locator'] = f'addp://engine/{pg}/path/public/continuous_scan_sibling?type=table'
+    config['target']['name'] = 'continuous_scheduled_target'
+    config['target']['policy'] = {'apply_mode': 'replace'}
+    return {'name': name, 'task_type': 'sync', 'enabled': True, 'schedule': '*/15 * * * * *',
+            'auto_scan_metadata': True, 'batch_size': 100, 'config': config}
+
+
 def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults):
     report.update(schema_version='addp.online-suite/v1', suite=SUITE, run_id=run_id, tenant_id=str(tenant),
                   result='failed', checks=[], resources=[], executions=[], cleanup='not_started',
@@ -618,6 +647,45 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         compare(cdc_resumed, 'cancelled')
         require(physical('verify-clean'), 'CDC capture resources survived confirmed stop')
         report['checks'].append('cdc_snapshot_update_delete_insert_safe_events_and_confirmed_cleanup')
+        # The existing Transfer deployment also runs its bounded worker. Exercise
+        # a real owner timer, then pause before the next tick while this run drains.
+        require(catalog_item(client, pg, tenant, 'continuous_scheduled_target') is None,
+                'scheduled target must be absent from the baseline catalog')
+        name = f'online-{run_id}-scheduled'
+        definition = mutate(client, f'{OWNER}/task-definitions', scheduled_task_body(name, pg), (201,))
+        task_id = API.require_positive_int(definition, 'id')
+        tasks.append((task_id, 'scheduled', name))
+        report['resources'].append(f'{OWNER}/task-definitions/{task_id}')
+        checkpoint()
+        require(definition.get('enabled') is True and definition.get('next_run_at'), 'schedule was not armed')
+        def scheduled_run():
+            runs = history(client, task_id)
+            require(len(runs) <= 1, 'scheduled task created duplicate initial executions')
+            return runs[0] if runs else None
+        pending = until(scheduled_run)
+        scheduled_id = canonical_uuid(pending.get('execution_id'))
+        report['executions'].append(scheduled_id)
+        checkpoint()
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+        execution = wait_status(client, scheduled_id, 'success')
+        scan_feedback = execution.get('metadata', {}).get('metadata_scan', {})
+        require(scan_feedback.get('status') == 'submitted', 'scheduled write did not submit its target scan')
+        scheduled_scan_id = canonical_uuid(scan_feedback.get('execution_id'))
+        until(lambda: assert_scheduled_scan_origin(client, peer, execution, scheduled_scan_id, initiating_user))
+        precise = wait_target_scan(client, pg, tenant, 'continuous_scheduled_target', {'id', 'label'}, sibling, boundary)
+        require(physical('verify-scheduled'), 'scheduled transfer did not commit the expected physical rowset')
+        paused = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
+        require(paused.get('enabled') is False and not paused.get('next_run_at'), 'pause left the schedule armed')
+        assert_scan_boundary(client, pg, sibling, boundary)
+        require(target_scan('cdc', {'id', 'label', 'scan_extra'}) == migrated
+                and target_scan('kafka') == kafka_scan, 'scheduled scan changed existing continuous targets')
+        report['precise_scan_scope']['scans'].append({'phase': 'bounded_scheduled',
+            'metadata_scan_execution_id': scheduled_scan_id, **precise})
+        report['scheduled_scan_ownership'] = {'execution_id': scheduled_id, 'scan_execution_id': scheduled_scan_id,
+            'principal_id': initiating_user, 'trigger_type': 'scheduled', 'parent_and_user_verified': True,
+            'peer_read_denied': True, 'physical_rowset_verified': True, 'schedule_paused': True}
+        report['checks'].append('bounded_owner_schedule_current_subject_precise_scan_and_read_isolation')
+
     finally:
         report['cleanup'] = 'started'
         checkpoint()

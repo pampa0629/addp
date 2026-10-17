@@ -22,6 +22,7 @@ import (
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrInvalidTaskConfig = errors.New("invalid transfer task config")
@@ -59,6 +60,7 @@ type TaskExecutionEngine interface {
 
 // TaskService 任务服务
 type TaskService struct {
+	taskAuthorizer   TaskSubjectAuthorizer
 	configChecker    *TaskConfigCheckService
 	db               *gorm.DB
 	taskRepo         *repository.TaskRepository
@@ -215,6 +217,10 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		return nil, err
 	}
 
+	if err := s.authorizeSchedule(ctx, task); err != nil {
+		return nil, err
+	}
+
 	// 创建任务
 	if err := s.taskRepo.Create(task); err != nil {
 		s.logger.Error("failed to create task", "error", err)
@@ -253,11 +259,27 @@ func (s *TaskService) attachCaptureSummary(ctx context.Context, task *models.Tra
 
 // UpdateTask 更新任务
 func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *models.UpdateTaskRequest) (*models.TransferTask, error) {
-	task, err := s.GetTask(ctx, id, tenantID)
-	if err != nil {
-		return nil, err
-	}
+	var result *models.TransferTask
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return commonAPI.ErrNotFound
+			}
+			return err
+		}
+		scoped := *s
+		scoped.db = tx
+		scoped.taskRepo = repository.NewTaskRepository(tx)
+		var err error
+		result, err = scoped.updateTaskDefinition(ctx, &task, req)
+		return err
+	})
+	return result, err
+}
 
+func (s *TaskService) updateTaskDefinition(ctx context.Context, task *models.TransferTask, req *models.UpdateTaskRequest) (*models.TransferTask, error) {
+	id, tenantID := task.ID, task.TenantID
 	// 运行中的任务需要先停止才能更新
 	if task.Status == models.TaskStatusRunning {
 		return nil, fmt.Errorf("cannot update task in %s status", task.Status)
@@ -331,6 +353,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, err
 	}
 	task.NextRunAt = nextRunAt
+	if err := s.authorizeSchedule(ctx, task); err != nil {
+		return nil, err
+	}
 
 	if err := s.taskRepo.Update(task); err != nil {
 		return nil, fmt.Errorf("failed to update task: %w", err)
@@ -867,8 +892,10 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	}
 
 	updates := map[string]interface{}{
-		"enabled":     false,
-		"next_run_at": nil,
+		"enabled": false, "next_run_at": nil,
+		"authorization_subject_id": nil, "authorization_definition_hash": nil,
+		"authorization_principal_id": nil, "authorization_membership_id": nil,
+		"authorization_version": nil, "authorized_at": nil,
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
@@ -916,17 +943,9 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID, userID uint)
 		return nil, fmt.Errorf("task is already enabled")
 	}
 
-	nextRunAt, err := transferTaskNextRunAt(task.Schedule, true, time.Now())
-	if err != nil {
+	enabled := true
+	if _, err := s.UpdateTask(ctx, id, tenantID, &models.UpdateTaskRequest{Enabled: &enabled}); err != nil {
 		return nil, err
-	}
-	updates := map[string]interface{}{
-		"enabled":     true,
-		"next_run_at": nextRunAt,
-	}
-
-	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
-		return nil, fmt.Errorf("failed to resume task: %w", err)
 	}
 
 	s.logger.Info("task resumed", "task_id", id)

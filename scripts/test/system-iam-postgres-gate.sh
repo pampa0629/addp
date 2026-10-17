@@ -110,6 +110,13 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    task-authorization)
+        case "$PACKAGE_FILTER" in
+            iam) test_pattern='^TestTaskAuthorizationSubjectAgainstPostgres$' ;;
+            migration) test_pattern='^TestTransferTaskAuthorizationForwardMigrationAgainstPostgres$' ;;
+            *) echo "task-authorization requires --package iam or migration" >&2; exit 2 ;;
+        esac
+        ;;
     standard-platform-units)
         [ "$PACKAGE_FILTER" = migration ] || { echo "standard-platform-units requires --package migration" >&2; exit 2; }
         test_pattern='^TestStandardPlatformUnitsForwardMigrationAgainstPostgres$'

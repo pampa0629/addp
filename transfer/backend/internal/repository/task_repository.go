@@ -388,7 +388,7 @@ func (r *TaskRepository) ListDueScheduledTaskIDs(ctx context.Context, now time.T
 	return taskIDs, err
 }
 
-func (r *TaskRepository) ClaimDueScheduledExecution(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time, execution *commonExecution.TaskExecution, sourceIdentity string) (*models.TransferTask, *models.SyncState, error) {
+func (r *TaskRepository) ClaimDueScheduledExecution(ctx context.Context, taskID uint, schedule string, authorizedHash string, now time.Time, nextRunAt *time.Time, execution *commonExecution.TaskExecution, sourceIdentity string) (*models.TransferTask, *models.SyncState, error) {
 	var claimed *models.TransferTask
 	var claimedState *models.SyncState
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -402,6 +402,24 @@ func (r *TaskRepository) ClaimDueScheduledExecution(ctx context.Context, taskID 
 			return err
 		}
 
+		hash, err := task.ScheduleAuthorizationHash()
+		if err != nil {
+			return err
+		}
+		if task.AuthorizationDefinitionHash == nil || task.AuthorizationSubjectID == nil || task.AuthorizedAt == nil || hash != authorizedHash || hash != *task.AuthorizationDefinitionHash || task.AuthorizationPrincipalID == nil || task.AuthorizationMembershipID == nil || task.AuthorizationVersion == nil || execution == nil || execution.TenantID != int(task.TenantID) || execution.Module != "transfer" || execution.TaskType != "sync" || execution.ParentExecutionID != nil || execution.Status != commonExecution.ExecutionStatusPending || execution.TriggerType != commonExecution.TriggerTypeScheduled || execution.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || execution.SourceTaskID == nil || *execution.SourceTaskID != fmt.Sprint(task.ID) {
+			return fmt.Errorf("scheduled execution authorization does not match locked task definition")
+		}
+		origin := commonExecution.TaskExecution{TenantID: execution.TenantID}
+		if err := commonExecution.CopyActorOrigin(&origin, execution); err != nil {
+			return err
+		}
+		if *origin.ActorPrincipalID != *task.AuthorizationPrincipalID || *origin.ActorTenantMembershipID != *task.AuthorizationMembershipID || *origin.IssuedAuthorizationVersion != *task.AuthorizationVersion {
+			return fmt.Errorf("scheduled execution origin does not match locked task authorization")
+		}
+		// Freeze inputs from the locked definition, never from the earlier due read.
+		execution.ExecutionConfig = task.Config
+		name := task.Name
+		execution.SourceTaskName = &name
 		if strings.TrimSpace(sourceIdentity) != "" {
 			initial := models.SyncState{TaskID: task.ID, SourceIdentity: sourceIdentity, Partition: "default", PositionType: "watermark", PositionVersion: "v1"}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {

@@ -121,6 +121,12 @@ type TransferTask struct {
 	Status                         TaskStatus                     `gorm:"type:varchar(20);default:'idle';index" json:"status"`
 	DesiredState                   TaskDesiredState               `gorm:"type:varchar(20);not null;default:'stopped';index" json:"desired_state"`
 	Progress                       float64                        `gorm:"type:numeric(5,2);default:0" json:"progress"`
+	AuthorizationSubjectID         *int64                         `json:"-"`
+	AuthorizationDefinitionHash    *string                        `gorm:"size:64" json:"-"`
+	AuthorizationPrincipalID       *int64                         `json:"-"`
+	AuthorizationMembershipID      *int64                         `json:"-"`
+	AuthorizationVersion           *int64                         `json:"-"`
+	AuthorizedAt                   *time.Time                     `json:"-"`
 	CreatedBy                      *uint                          `json:"created_by,omitempty"`
 	// BaseTask 基类字段
 	LastExecutionID     *string         `gorm:"size:36" json:"last_execution_id,omitempty"`

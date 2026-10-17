@@ -32,6 +32,31 @@ class Client:
 
 
 class ContinuousRunnerTest(unittest.TestCase):
+    def test_scheduled_scan_requires_exact_parent_user_and_peer_isolation(self):
+        execution = {'execution_id': UUID, 'status': 'success', 'trigger_type': 'scheduled', 'trigger_by': 31}
+        scan_id = 'bbbbbbbb-1111-4111-8111-111111111111'
+        scan = {'execution_id': scan_id, 'status': 'success', 'triggered_by': 31, 'parent_execution_id': UUID}
+        owner, peer = Client([scan]), Client([{'error': 'not found'}])
+        self.assertTrue(M.assert_scheduled_scan_origin(owner, peer, execution, scan_id, 31))
+        self.assertEqual(peer.calls[0][2], (404,))
+        for changed in [{**scan, 'triggered_by': 32}, {**scan, 'parent_execution_id': scan_id},
+                        {**scan, 'status': 'failed'}]:
+            with self.subTest(scan=changed), self.assertRaises(M.SuiteError):
+                M.assert_scheduled_scan_origin(Client([changed]), Client([{}]), execution, scan_id, 31)
+        for changed in [{**execution, 'trigger_type': 'manual'}, {**execution, 'trigger_by': 32}]:
+            with self.assertRaises(M.SuiteError):
+                M.assert_scheduled_scan_origin(Client([scan]), Client([{}]), changed, scan_id, 31)
+        with self.assertRaises(M.SuiteError):
+            M.assert_scheduled_scan_origin(Client([scan]), Client([{'execution_id': scan_id}]), execution, scan_id, 31)
+
+    def test_scheduled_body_uses_existing_scanned_source_and_a_single_new_target(self):
+        body = M.scheduled_task_body('scheduled', 10)
+        self.assertTrue(body['enabled'] and body['auto_scan_metadata'])
+        self.assertEqual(body['schedule'], '*/15 * * * * *')
+        self.assertEqual(body['config']['runtime'], {'boundary': 'bounded'})
+        self.assertEqual(body['config']['source']['locator'], 'addp://engine/10/path/public/continuous_scan_sibling?type=table')
+        self.assertEqual(body['config']['target']['name'], 'continuous_scheduled_target')
+
     def scan_fixture(self):
         sibling = {'id': 5, 'engine_id': 10, 'tenant_id': 2, 'node_id': 9, 'item_type': 'table',
                    'full_name': 'public.continuous_scan_sibling', 'fingerprint': 'sibling',

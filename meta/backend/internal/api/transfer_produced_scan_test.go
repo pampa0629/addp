@@ -19,12 +19,16 @@ import (
 // Runs through the same HTTP contracts on SQLite T1 and PostgreSQL T2.
 func testTransferAndVectorProducedScans(t *testing.T, db *gorm.DB, router http.Handler, read func(string, string, int) map[string]interface{}) {
 	t.Helper()
-	for _, kind := range []string{"bounded", "continuous", "vector"} {
+	for _, kind := range []string{"bounded", "scheduled", "continuous", "vector"} {
 		t.Run("produced_"+kind, func(t *testing.T) {
 			by, principal, membership, version := 31, int64(31), int64(51), int64(6)
 			id, owner, token := uuid.NewString(), "producer", uuid.NewString()
 			expires := time.Now().Add(time.Hour)
 			parent := execution.TaskExecution{TenantID: scanReadTenant, ExecutionID: id, Module: "transfer", TaskType: "sync", Source: "transfer", Status: "running", TriggerType: "manual", ExecutionBoundary: kind, TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version}
+			if kind == "scheduled" {
+				parent.ExecutionBoundary = "bounded"
+				parent.TriggerType = "scheduled"
+			}
 			locator := "addp://engine/9/path/public/produced?type=table"
 			parent.Metadata = commonmodels.JSONMap{"outputs": commonmodels.JSONMap{"execution_id": id, "target_locator": locator, "continuous_prepared": kind == "continuous"}}
 			req := models.ScanRequest{Source: "transfer", ParentExecutionID: id, EngineID: 9, Targets: []string{locator}, ScanDepth: "deep", Force: true}

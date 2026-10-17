@@ -153,6 +153,7 @@ func main() {
 		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),
 	}))
 	taskService := service.NewTaskService(db, executionEngineService, cfg)
+	taskService.SetTaskSubjectAuthorizer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil))
 	taskService.SetEngineResolver(planner.NewSystemEngineResolver(systemClient))
 	taskService.SetTaskConfigChecker(service.NewTaskConfigCheckService(systemClient, commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
@@ -174,6 +175,7 @@ func main() {
 	var registration *commonClient.ModuleRegistrationLifecycle
 	boundedScheduler := worker.NewScheduler(transferRepo.NewTaskRepository(db))
 	boundedScheduler.SetExecutionService(executionService)
+	boundedScheduler.SetTaskSubjectResolver(systemRuntimeClient)
 
 	// 数据库 CDC capture control plane；数据面由独立 continuous worker 消费登记的 Infra Kafka generation。
 	if systemClient != nil {

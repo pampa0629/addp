@@ -70,8 +70,13 @@ func TestClaimDueScheduledTaskAdvancesNextRunAt(t *testing.T) {
 		t.Fatalf("due ids = %#v, want [%d]", ids, task.ID)
 	}
 
+	task.Schedule = "0 */5 * * * *"
+	task.NextRunAt = &dueAt
+	task.Enabled = true
+	hash := authorizeScheduledRepositoryTask(t, db, &task)
 	execution := claimTestExecution(task, "scheduled-claim")
-	claimed, _, err := repo.ClaimDueScheduledExecution(context.Background(), task.ID, "0 */5 * * * *", time.Now(), &nextRunAt, &execution, "")
+	execution.TriggerType = commonExecution.TriggerTypeScheduled
+	claimed, _, err := repo.ClaimDueScheduledExecution(context.Background(), task.ID, "0 */5 * * * *", hash, time.Now(), &nextRunAt, &execution, "")
 	if err != nil {
 		t.Fatalf("ClaimDueScheduledTask() error = %v", err)
 	}
@@ -372,7 +377,13 @@ func newTaskRepositoryTestDB(t *testing.T) *gorm.DB {
 			status TEXT,
 			desired_state TEXT NOT NULL DEFAULT 'stopped',
 			progress REAL,
-			created_by INTEGER,
+			authorization_subject_id INTEGER,
+ authorization_definition_hash TEXT,
+ authorization_principal_id INTEGER,
+ authorization_membership_id INTEGER,
+ authorization_version INTEGER,
+ authorized_at DATETIME,
+ created_by INTEGER,
 			last_execution_id TEXT,
 			last_execution_status TEXT,
 			last_run_at DATETIME,
@@ -498,5 +509,68 @@ func createTaskRepositoryTestExecution(t *testing.T, db *gorm.DB, task models.Tr
 	}
 	if err := db.Create(&execution).Error; err != nil {
 		t.Fatalf("create execution: %v", err)
+	}
+}
+
+func authorizeScheduledRepositoryTask(t *testing.T, db *gorm.DB, task *models.TransferTask) string {
+	t.Helper()
+	id, principal, membership, version := int64(81), int64(9), int64(19), int64(1)
+	now := time.Now().UTC()
+	hash, err := task.ScheduleAuthorizationHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.AuthorizationSubjectID = &id
+	task.AuthorizationDefinitionHash = &hash
+	task.AuthorizationPrincipalID = &principal
+	task.AuthorizationMembershipID = &membership
+	task.AuthorizationVersion = &version
+	task.AuthorizedAt = &now
+	if err := db.Save(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
+func TestScheduledClaimRejectsMissingChangedOrMismatchedOrigin(t *testing.T) {
+	for _, change := range []string{"missing", "definition", "actor", "membership", "version", "manual", "configuration_race"} {
+		t.Run(change, func(t *testing.T) {
+			db := newTaskRepositoryTestDB(t)
+			task := createTaskRepositoryTestTask(t, db, 7, "scheduled")
+			due := time.Now().Add(-time.Minute)
+			task.Schedule = "0 */5 * * * *"
+			task.Enabled = true
+			task.NextRunAt = &due
+			hash := authorizeScheduledRepositoryTask(t, db, &task)
+			execution := claimTestExecution(task, "scheduled-"+change)
+			execution.TriggerType = commonExecution.TriggerTypeScheduled
+			switch change {
+			case "missing":
+				db.Model(&task).Update("authorization_subject_id", nil)
+			case "definition":
+				hash = "stale"
+			case "actor":
+				*execution.ActorPrincipalID = 42
+			case "membership":
+				*execution.ActorTenantMembershipID = 42
+			case "version":
+				*execution.IssuedAuthorizationVersion = 42
+			case "manual":
+				execution.TriggerType = "manual"
+			case "configuration_race":
+				db.Model(&task).Update("auto_scan_metadata", !task.AutoScanMetadata)
+			}
+			next := time.Now().Add(time.Hour)
+			if _, _, err := NewTaskRepository(db).ClaimDueScheduledExecution(context.Background(), task.ID, task.Schedule, hash, time.Now(), &next, &execution, ""); err == nil {
+				t.Fatal("unauthorized scheduled execution was created")
+			}
+			var count int64
+			db.Model(&commonExecution.TaskExecution{}).Count(&count)
+			var stored models.TransferTask
+			db.First(&stored, task.ID)
+			if count != 0 || !stored.NextRunAt.Equal(due) || stored.LastExecutionID != nil {
+				t.Fatal("rejected claim advanced schedule or created execution")
+			}
+		})
 	}
 }
