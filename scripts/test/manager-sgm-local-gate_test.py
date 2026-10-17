@@ -212,6 +212,28 @@ class LocalSGMContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 WORKER.glb_summary(raw, broken, lambda _: image, 'compass')
 
+    def test_untextured_default_material_is_valid_but_cannot_substitute_for_bound_images(self):
+        # Match the established glTF contract: geometry may use the default
+        # material; every expected image must still be bound by another primitive.
+        doc = {"meshes": [{"primitives": [
+            {"attributes": {"POSITION": 0}, "indices": 1},
+            {"attributes": {"POSITION": 2, "TEXCOORD_0": 4}, "indices": 3, "material": 0}]}],
+            "accessors": [{"count": 100}, {"count": 240}, {"count": 36}, {"count": 42}],
+            "images": [{"mimeType": "image/png", "bufferView": 0}], "bufferViews": [{"byteLength": 1}],
+            "textures": [{"source": 0}], "materials": [
+                {"alphaMode": "BLEND", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}]}
+        raw = bytearray(29)
+        image = SimpleNamespace(size=(256, 256), mode='RGBA', getextrema=lambda: [(0, 255)] * 4,
+            tobytes=lambda: b'decoded', getchannel=lambda _: SimpleNamespace(histogram=lambda: [1] + [0] * 254 + [65535]))
+        image.convert = lambda _: image
+        self.assertEqual(WORKER.glb_summary(raw, doc, lambda _: image, 'compass')['textured_primitives'], 1)
+        doc['meshes'][0]['primitives'][0]['material'] = 1
+        doc['materials'].append({'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1]}})
+        self.assertEqual(WORKER.glb_summary(raw, doc, lambda _: image, 'compass')['textured_primitives'], 1)
+        doc['materials'][0]['pbrMetallicRoughness'].clear()
+        with self.assertRaisesRegex(ValueError, 'image is not used'):
+            WORKER.glb_summary(raw, doc, lambda _: image, 'compass')
+
     def test_failed_build_diagnostics_expose_only_categories_not_private_output(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "private.log"

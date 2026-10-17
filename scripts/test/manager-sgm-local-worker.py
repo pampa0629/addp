@@ -7,9 +7,13 @@ import struct
 import sys
 
 
+class ObserverCheckError(ValueError):
+    """Only fixed, non-secret assertions authored in this observer."""
+
+
 def require(value, message):
     if not value:
-        raise ValueError(message)
+        raise ObserverCheckError(message)
 
 
 SAMPLES = {"compass": {"name": "compass.SGM", "geometry": (136, 94), "image_size": 256,
@@ -29,10 +33,14 @@ def glb_summary(raw, doc, image_open, sample_id):
     require(sorted(i.get("mimeType", "") for i in images) == expected["mime_types"], "embedded images changed")
     bindings = {index: [] for index in range(len(images))}
     for primitive in primitives:
-        require("material" in primitive, "primitive material lost")
+        # Default and solid-colour geometry are valid glTF. Require every
+        # expected image to be used, rather than requiring textures on all faces.
+        if "material" not in primitive:
+            continue
         material = doc["materials"][primitive["material"]]
         texture = material.get("pbrMetallicRoughness", {}).get("baseColorTexture")
-        require(texture is not None, "untextured primitive")
+        if texture is None:
+            continue
         require(texture.get("texCoord", 0) == 0 and "TEXCOORD_0" in primitive["attributes"], "UV binding lost")
         index = doc["textures"][texture["index"]]["source"]
         require(index in bindings, "wrong embedded image")
@@ -128,5 +136,6 @@ if __name__ == "__main__":
     try:
         print(json.dumps(run(sys.argv[1])))
     except Exception as error:
-        print("SGM_PROBE_CHECK:private storage observer " + type(error).__name__, file=sys.stderr)
+        detail = str(error) if isinstance(error, ObserverCheckError) else type(error).__name__
+        print("SGM_PROBE_CHECK:private storage observer " + detail, file=sys.stderr)
         sys.exit(1)
