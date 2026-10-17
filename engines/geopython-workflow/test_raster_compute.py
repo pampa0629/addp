@@ -215,7 +215,9 @@ def test_dem_terrain_plane_independent_values_grid_edges_and_cog(tmp_path, east,
 @pytest.mark.parametrize('unit,factor', [('metre',1), ('foot',.3048), ('us_survey_foot',1200/3937)])
 @pytest.mark.parametrize('crs', ['EPSG:32617', 'EPSG:2277'])
 def test_dem_terrain_units_are_explicit_and_horizontal_units_come_from_crs(tmp_path, unit, factor, crs):
-    reference = osr.SpatialReference(crs)
+    reference = osr.SpatialReference()
+    assert reference.SetFromUserInput(crs) == 0
+    assert reference.IsProjected() and reference.GetAuthorityCode(None) == crs.split(':')[1]
     horizontal = reference.GetLinearUnits()
     rows, columns = np.indices((5,7))
     values = (100 + columns*horizontal*2 + rows*horizontal*3) / factor
