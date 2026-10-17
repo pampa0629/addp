@@ -51,9 +51,9 @@ def observe(engine, table, cleanup=False):
     if [value[0] for value in columns] != ['id', 'label', 'value']:
         raise ValueError('physical target columns differ')
     kinds = [re.sub(r'\s+', '', value[1].lower()) for value in columns]
-    if (not kinds[0].startswith('bigint') or kinds[1] not in ('longtext', 'text', 'string')
-        or not re.fullmatch(r'decimal(?:v3|128)?\(38,18\)', kinds[2])):
-        raise ValueError('physical exact field types differ')
+    expected = ['bigint', 'longtext' if engine == 'mysql' else 'varchar(65533)', 'decimal(38,18)']
+    if kinds != expected:
+        raise ValueError(f'physical exact field types differ: expected={expected!r}, actual={kinds!r}')
     ddl = owned_query(engine, 'SHOW CREATE TABLE ' + ref)
     if engine == 'mysql':
         identity = owned_query(engine, "SELECT TABLE_ID FROM information_schema.INNODB_TABLES WHERE NAME='spark_results/" + table + "'")

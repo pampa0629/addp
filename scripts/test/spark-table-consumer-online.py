@@ -25,7 +25,9 @@ def physical(engine, table, cleanup=False):
     command = [sys.executable, 'business/scripts/online-spark-table-oracle.py', engine, table]
     if cleanup:
         command.append('--cleanup')
-    return json.loads(subprocess.run(command, check=True, capture_output=True, text=True, timeout=180).stdout)
+    # The owned oracle keeps credentials inside the container. Preserve its
+    # stderr diagnostics while capturing only the JSON result on stdout.
+    return json.loads(subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True, timeout=180).stdout)
 
 
 def validate_rows(rows, *, manager=False):

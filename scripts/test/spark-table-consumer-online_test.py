@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -26,6 +27,16 @@ TABLE = 'spark_boundary_' + 'a' * 16
 
 
 class SparkTableConsumerTest(unittest.TestCase):
+    def test_physical_oracle_failure_keeps_its_diagnostic_visible(self):
+        with tempfile.TemporaryDirectory() as work:
+            script = Path(work, 'business/scripts/online-spark-table-oracle.py')
+            script.parent.mkdir(parents=True)
+            script.write_text('import sys\nprint("physical exact field types differ: varchar(100)", file=sys.stderr)\nsys.exit(1)\n')
+            code = f'import runpy; module = runpy.run_path({str(Path(__file__).with_name("spark-table-consumer-online.py"))!r}); module["physical"]("doris", {TABLE!r})'
+            result = subprocess.run([sys.executable, '-c', code], cwd=work, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('physical exact field types differ: varchar(100)', result.stderr)
+
     def test_boundary_assertions_reject_rounding_whitespace_null_and_missing_rows(self):
         for mutation in ('bigint', 'decimal', 'space', 'null', 'long', 'missing', 'extra', ''):
             rows = json.loads(json.dumps(TABLES.ROWS))
@@ -145,7 +156,7 @@ class PhysicalOracleTest(unittest.TestCase):
     def query(self, engine, sql, headers=False):
         if 'COUNT(*)' in sql: return '0'
         if sql.startswith('DROP '): return ''
-        if sql.startswith('DESC '): return 'id\tbigint\nlabel\t' + ('longtext' if engine == 'mysql' else 'string') + '\nvalue\tdecimal(38, 18)'
+        if sql.startswith('DESC '): return 'id\tbigint\nlabel\t' + ('longtext' if engine == 'mysql' else 'VARCHAR(65533)') + '\nvalue\tdecimal(38, 18)'
         if sql.startswith('SHOW CREATE'): return 'table\tstable definition'
         if 'INNODB_TABLES' in sql: return '123'
         if sql == "SHOW PROC '/dbs'": return 'DbId\tDbName\n12\tspark_results'
@@ -165,6 +176,18 @@ class PhysicalOracleTest(unittest.TestCase):
         with patch.object(ORACLE.subprocess, 'run', return_value=SimpleNamespace(stdout='foreign')) as run:
             with self.assertRaisesRegex(ValueError, 'foreign'): ORACLE.owned_query('mysql', 'SELECT 1')
             self.assertEqual(run.call_count, 1)
+
+    def test_exact_native_types_reject_narrowing_and_other_string_storage(self):
+        for engine in ('mysql', 'doris'):
+            for old, new in (('bigint', 'bigint unsigned'), ('decimal(38, 18)', 'decimal(38, 17)'),
+                             ('longtext' if engine == 'mysql' else 'VARCHAR(65533)', 'string'),
+                             ('longtext' if engine == 'mysql' else 'VARCHAR(65533)', 'varchar(100)')):
+                def query(actual_engine, sql, headers=False):
+                    result = self.query(actual_engine, sql, headers)
+                    return result.replace(old, new) if sql.startswith('DESC ') else result
+                with self.subTest(engine=engine, type=new), patch.object(ORACLE, 'owned_query', side_effect=query):
+                    with self.assertRaisesRegex(ValueError, 'field types differ'):
+                        ORACLE.observe(engine, TABLE)
 
     def test_invalid_identifier_never_runs_sql(self):
         with patch.object(ORACLE, 'owned_query') as query:
