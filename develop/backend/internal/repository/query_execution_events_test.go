@@ -52,20 +52,12 @@ func runTaskEventCases(t *testing.T, database func(*testing.T) *gorm.DB, taskTyp
 				t.Fatal(err)
 			}
 			fields := map[string]interface{}{"metadata": commonModels.JSONMap{"result": "query-private-sentinel"}}
-			if taskType == commonExecution.TaskTypeQuery {
-				fields["metadata"].(commonModels.JSONMap)["protected_query_history"] = commonModels.JSONMap{
-					"rows": []interface{}{commonModels.JSONMap{"phone": "query-private-sentinel"}},
-				}
-			}
 			if err := repo.CompleteWithLease(t.Context(), claimed, *lease, status, time.Now(), fields); err != nil {
 				t.Fatal(err)
 			}
 			var persisted commonExecution.TaskExecution
 			if err := db.Where("execution_id = ?", item.ExecutionID).First(&persisted).Error; err != nil || persisted.Metadata["result"] != "query-private-sentinel" {
 				t.Fatal("filtered SQL logging changed persisted execution metadata")
-			}
-			if taskType == commonExecution.TaskTypeQuery && persisted.Metadata["protected_query_history"] == nil {
-				t.Fatal("filtered SQL logging removed private query history")
 			}
 			if strings.Contains(trace.String(), "query-private-sentinel") || strings.Contains(trace.String(), "protected_query_history") {
 				t.Fatal("execution completion SQL trace exposed private metadata")

@@ -452,6 +452,33 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	h.getExecution(c, tenantIDValue(c))
 }
 
+// GetQueryResult 获取当次查询结果
+// @Summary 获取当次查询结果 | Get current query result
+// @Description 仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.
+// @Tags Execution
+// @Produce json
+// @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Success 200 {object} models.ExecutionWithDevTaskSwagger "当次结果 | Current result"
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
+// @x-addp-conditional-permissions ["develop.data_read.execute"]
+// @Router /executions/{execution_id}/result [get]
+func (h *ExecutionHandler) GetQueryResult(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	execution, err := h.devExecutor.GetQueryResult(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c))
+	if err != nil {
+		if errors.Is(err, protection.ErrRequired) {
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryResultProtectionRequired), "error_code": "data_protection_required"})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
+		return
+	}
+	c.JSON(http.StatusOK, execution)
+}
+
 // ProviderGetExecution 返回 TaskProvider 内部调用的执行状态。
 // @Summary 获取 TaskProvider 执行状态 | Get TaskProvider execution status
 // @Description 仅 Orchestrator Service 可读取同租户、来源为 orchestrator 且父执行属于 Orchestrator 的子执行；只返回安全状态和稳定 outputs。| Orchestrator Service only; read same-tenant orchestrator-origin child executions with an Orchestrator parent; return safe status and stable outputs only.
@@ -484,10 +511,6 @@ func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 
 	execution, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		if errors.Is(err, protection.ErrRequired) {
-			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryHistoryProtectionRequired), "error_code": "data_protection_required"})
-			return
-		}
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
 		return
 	}
@@ -526,10 +549,6 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 
 	executions, total, err := h.devExecutor.ListExecutions(c.Request.Context(), &req, tenantID)
 	if err != nil {
-		if errors.Is(err, protection.ErrRequired) {
-			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryHistoryProtectionRequired), "error_code": "data_protection_required"})
-			return
-		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}

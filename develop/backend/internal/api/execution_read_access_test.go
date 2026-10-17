@@ -99,12 +99,16 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 	group.GET("", handler.ListExecutions)
 	group.GET("/statistics", handler.GetExecutionStatistics)
 	group.GET("/:execution_id", handler.GetExecution)
+	group.GET("/:execution_id/result", handler.GetQueryResult)
 	group.GET("/:execution_id/logs", handler.GetExecutionLogs)
 	for _, test := range []struct {
 		token, path string
 		status      int
 	}{
-		{"all", "/executions/mine", 200}, {"all", "/executions/saved", 200}, {"all", "/executions/notebook", 200},
+		{"all", "/executions/mine", 200}, {"all", "/executions/mine/result", 200},
+		{"all", "/executions/other/result", 404}, {"all", "/executions/cross-tenant/result", 404}, {"all", "/executions/wrong-membership/result", 404},
+		{"revoked", "/executions/mine/result", 404}, {"read-only", "/executions/mine/result", 404}, {"data-only", "/executions/mine/result", 403},
+		{"all", "/executions/saved/result", 403}, {"all", "/executions/notebook/result", 403}, {"all", "/executions/saved", 200}, {"all", "/executions/notebook", 200},
 		{"all", "/executions/other", 404}, {"all", "/executions/cross-tenant", 404}, {"all", "/executions/missing-origin", 404}, {"all", "/executions/wrong-membership", 404}, {"all", "/executions/other-module", 404},
 		{"all", "/executions/other/logs", 404}, {"read-only", "/executions/mine", 404}, {"data-only", "/executions/mine", 403}, {"revoked", "/executions/mine", 404},
 		{"all", "/executions", 200}, {"all", "/executions/statistics", 200}, {"read-only", "/executions", 200}, {"revoked", "/executions/statistics", 200},
@@ -117,6 +121,9 @@ func TestProfessionalExecutionReadEnforcesCurrentActorAndPermissions(t *testing.
 			router.ServeHTTP(response, request)
 			if response.Code != test.status {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if strings.HasSuffix(test.path, "/result") && test.status == 200 && response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("current query result permits HTTP caching")
 			}
 			if strings.Contains(response.Body.String(), "actor_principal_id") || strings.Contains(response.Body.String(), "execution_authorization_id") {
 				t.Fatal("authorization facts leaked")

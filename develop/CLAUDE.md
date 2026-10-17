@@ -112,7 +112,7 @@ Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthCont
 
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
 
-Backend 与查询执行进程共用的数据库连接必须使用 `common/logger.WithoutSQLValues`：ORM 查询日志保留 SQL 结构、级别、耗时和行数，不展开绑定参数；错误只记录固定类别、类型或合法 SQLSTATE，避免驱动回显私有原值历史。过滤不改变绑定值、事务、持久历史和调用方错误链；`Debug/LogMode` 不能移除过滤。执行事务的日志非泄露与数据完整性由 SQLite 和既有 Develop PostgreSQL 门禁共同验证。
+Backend 与查询执行进程共用的数据库连接必须使用 `common/logger.WithoutSQLValues`：ORM 查询日志保留 SQL 结构、级别、耗时和行数，不展开绑定参数；错误只记录固定类别、类型或合法 SQLSTATE，避免驱动回显查询结果参数。过滤不改变绑定值、事务、持久历史和调用方错误链；`Debug/LogMode` 不能移除过滤。执行事务的日志非泄露与数据完整性由 SQLite 和既有 Develop PostgreSQL 门禁共同验证。
 
 数据保护拒绝沿既有 `error_details.diagnostic` 和共享 `ExecutionFailure` 展示：稳定码 `develop.query.protection_required`、原因 `data_protection_required`。Gate 准备失败标记 `preparation`，已执行结果的保护失败标记 `result`，保留原始错误链用于内部判定；不解析原始错误正文、不混同数据项权限不足，也不放宽保护规则。标准验证为 `make test-module MODULE=develop`、`make test-common-frontend` 和 `make test-go`；共享组件的 Monitor 消费由 `make test-monitor-frontend` 验证。现有单测、浏览器和 Develop PostgreSQL 入口自动覆盖，不增加新门禁。
 
@@ -476,4 +476,6 @@ continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限
 
 FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authorization、PreparedGraphQuery、共享图结果与保护门禁，必须显式传递目标 graph locator；无需先创建 Graph 知识图谱实例。`make test-common-falkordb` 的独占真实引擎场景调用 DevExecutor 正式 query 分支，验证执行期连接、表格／图结果、类型化参数、写语句拒绝及受保护目标零结果。该 T2 不是登录／Gateway／浏览器 Hosted T4。支持版本与本地只读语法边界以引擎插件和技术栈规范为准。
 
-2026-10-17 原值查询与历史保护：develop/query 仅消费当前用户显式获批的原值范围，不借用 Manager 授权。执行用户来自受信 Execution Authorization；默认结果继续脱敏，执行时获权字段可保存私有历史。专业详情、列表和轮询在每次读取时以当前用户和本地投影复核，期限结束或撤销回落默认保护；默认规则／结构变化时拒绝旧结果。私有历史不进入 Monitor、TaskProvider 或导出载荷。工作台按服务端原值截止时间清空展示并重新读取，持有原值期间周期复查撤销。Notebook 交互查询从已核验 session 用户匹配同一 query 规则；导出继续独立使用 Transfer 默认保护。相关 T1/T2/T3 与 Hosted v5 结论须分别记录。
+2026-10-17 原值查询与历史保护：develop/query 消费当前用户显式获批的原值范围。执行记录只保存默认脱敏预览；当次获权结果仅在同一 Backend 有界内存中暂存，通过独立 result 接口每次按当前用户及本地投影重判。历史详情和列表始终默认保护，原值需要重新执行查询。暂存最多五分钟，容量淘汰或重启后不恢复。旧 protected_query_history 通过 Develop 数据迁移移除。通用 Observe、Monitor、TaskProvider 与导出不暴露私有暂存；Notebook 的交互请求继续按当前 session 主体消费统一保护。工作台在暂存或授权截止时清空展示并复核。旧 Hosted v5 只代表旧历史规则，当前规范 10.2 的 T1/T2/T3/T4 须分别验证。
+
+2026-10-17 用户确认收敛查询结果保存：执行记录仅保存默认脱敏预览，原值只在 Backend 有界进程内暂存，通过当次结果接口按当前授权重判；历史不还原原值，需要原值重新查询。规范见数据安全实现规范 10.2，旧私有历史通过单向数据迁移移除。本次实现的 Common／Develop Go、全仓 22 模块 Go、Common／Develop PostgreSQL、Develop 前端 80 项浏览器与构建、IAM／Swagger 及新版 Online 夹具门禁已通过；真实 Hosted v6 和重启后的本地验收待运行，旧 Hosted v5 只代表旧历史规则。

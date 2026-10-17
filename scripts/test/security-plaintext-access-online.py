@@ -449,7 +449,8 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
     wait_for_current_grant(applicant, target_identity, assessment_id, exemption_id, deadline)
     develop_grant = wait_for_current_grant(applicant, target_identity, assessment_id, None, deadline, "develop", "query")
     develop_execution = DEVELOP.develop_execution(applicant, engine_id, locator, deadline, "SELECT id, phone FROM addp_online_security.exemption_source ORDER BY id", "sql")
-    develop_history_evidence(develop_execution, RAW_VALUES)
+    develop_history_evidence(develop_execution, MASKED_VALUES)
+    current_develop_result(applicant, develop_execution["execution_id"], RAW_VALUES)
     refusals: list[dict[str, str]] = []
     previews: dict[str, object] = {}
     try:
@@ -472,7 +473,8 @@ def exercise_security_unavailability(applicant: GatewayClient, approver: Gateway
             previews[phase] = manager_evidence(consumer, locator, expected, phase)
             if phase in {"authorized_applicant", "expired_applicant"}:
                 history = applicant.request("GET", f"/api/v1/develop/executions/{urllib.parse.quote(develop_execution['execution_id'])}", (200,)).payload
-                develop_history_evidence(history, expected)
+                develop_history_evidence(history, MASKED_VALUES)
+                current_develop_result(applicant, develop_execution["execution_id"], expected)
             refusals.append({"phase": phase, "boundary": "after", "observed_at": SUPPORT.security_listener_refused()})
             if active and datetime.now(timezone.utc) >= expires_at:
                 raise SuiteError("outage grant expired during its active preview")
@@ -518,12 +520,19 @@ def develop_history_evidence(execution: object, expected: Mapping[str, object]) 
     return {"records": len(rows), "private_history_excluded": True}
 
 
+def current_develop_result(client: GatewayClient, execution_id: str, expected: Mapping[str, object]) -> dict[str, object]:
+    response = client.request("GET", f"/api/v1/develop/executions/{urllib.parse.quote(execution_id)}/result", (200,))
+    result = _object(response.payload, "current Develop result")
+    develop_history_evidence(result, expected)
+    return result
+
+
 def validate_develop_scope_report(payload: object) -> dict[str, object]:
     report = _object(payload, "Develop plaintext report")
     expected = {"manager_only_does_not_authorize_develop": True, "explicit_two_outlet_approval": True,
                 "authorized_query_verified": True, "other_user_masked": True,
                 "same_history_masked_at_expiry": True, "same_history_masked_at_revocation": True,
-                "manager_grant_independent": True, "private_history_excluded": True, "records": 3}
+                "manager_grant_independent": True, "private_history_excluded": True, "authorized_history_masked": True, "current_result_rechecked": True, "records": 3}
     if set(report) != set(expected) | {"authorized_execution_id", "revoked_execution_id", "request_ids", "exemption_ids"}:
         raise SuiteError("Develop plaintext report fields are incomplete or unexpected")
     if any(type(report.get(key)) is not type(value) or report.get(key) != value for key, value in expected.items()):
@@ -550,7 +559,8 @@ def exercise_develop_scopes(applicant: GatewayClient, approver: GatewayClient, e
 
     def execute(client: GatewayClient, expected: Mapping[str, object]) -> dict[str, object]:
         execution = DEVELOP.develop_execution(client, engine_id, locator, deadline, query, "sql")
-        develop_history_evidence(execution, expected)
+        develop_history_evidence(execution, MASKED_VALUES)
+        current_develop_result(client, execution["execution_id"], expected)
         return execution
 
     def history(execution_id: str, expected: Mapping[str, object]) -> dict[str, object]:
@@ -593,6 +603,7 @@ def exercise_develop_scopes(applicant: GatewayClient, approver: GatewayClient, e
         if remaining > 0:
             time.sleep(remaining + 1)
         history(authorized["execution_id"], MASKED_VALUES)
+        current_develop_result(applicant, authorized["execution_id"], MASKED_VALUES)
         execute(applicant, MASKED_VALUES)
         develop_grant, _ = approve(120)
         second = execute(applicant, RAW_VALUES)
@@ -600,6 +611,7 @@ def exercise_develop_scopes(applicant: GatewayClient, approver: GatewayClient, e
         while time.monotonic() < deadline:
             try:
                 history(second["execution_id"], MASKED_VALUES)
+                current_develop_result(applicant, second["execution_id"], MASKED_VALUES)
                 break
             except SuiteError:
                 time.sleep(1)
@@ -609,7 +621,7 @@ def exercise_develop_scopes(applicant: GatewayClient, approver: GatewayClient, e
         return validate_develop_scope_report({"manager_only_does_not_authorize_develop": True, "explicit_two_outlet_approval": True,
                 "authorized_query_verified": True, "other_user_masked": True,
                 "same_history_masked_at_expiry": True, "same_history_masked_at_revocation": True,
-                "manager_grant_independent": True, "private_history_excluded": True, "records": 3,
+                "manager_grant_independent": True, "private_history_excluded": True, "authorized_history_masked": True, "current_result_rechecked": True, "records": 3,
                 "authorized_execution_id": authorized["execution_id"], "revoked_execution_id": second["execution_id"],
                 "request_ids": requests.copy(), "exemption_ids": sorted(set(grants))})
     finally:
@@ -715,7 +727,7 @@ def run_scenario(
     wait_for_manager_values(applicant, source_locator, MASKED_VALUES, "post-cleanup", deadline)
 
     return {
-        "schema_version": "addp.security-plaintext-access-online/v5",
+        "schema_version": "addp.security-plaintext-access-online/v6",
         "result": "passed",
         "identities": {
             "applicant": applicant_identity,

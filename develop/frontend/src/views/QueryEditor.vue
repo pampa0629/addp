@@ -785,7 +785,7 @@ import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { getSampleQuery, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
-import { createExecution, createQueryExport, getExecution, getQueryExport } from '../api/execution.js'
+import { createExecution, createQueryExport, getQueryResult, getQueryExport } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
 import { generateQueryFromNL } from '../api/copilot.js'
@@ -852,7 +852,7 @@ const engines = ref([])
 const queryContent = ref('')
 const currentQueryLanguage = ref('')
 const executionResult = ref(null)
-const plaintextRefresh=createQueryPlaintextRefresh({fetchExecution:getExecution,normalize:queryResultFromExecution,onResult:result=>{executionResult.value=result},onClear:()=>{executionResult.value=null}})
+const plaintextRefresh=createQueryPlaintextRefresh({fetchExecution:getQueryResult,normalize:queryResultFromExecution,onResult:result=>{executionResult.value=result},onClear:()=>{executionResult.value=null}})
 onBeforeUnmount(()=>{plaintextTargetSequence++;plaintextRefresh.dispose()})
 const executing = ref(false)
 const testingConnection = ref(false)
@@ -1680,7 +1680,7 @@ const submitQuery = async (parameters = {}) => {
     announcement.value = t('develop.query.executionSubmitted')
 
     while (requestSequence === executionRequestSequence) {
-      const execution = await getExecution(started.execution_id)
+      const execution = await getQueryResult(started.execution_id)
       if (requestSequence !== executionRequestSequence) return
       executionResult.value = queryResultFromExecution(execution)
       plaintextRefresh.schedule(executionResult.value)

@@ -32,6 +32,9 @@ func NewQueryExecutionService(
 	if executor == nil || executor.sqlEngine == nil || executor.taskExecutionRepo == nil || queries == nil {
 		return nil, fmt.Errorf("Develop Query Execution Service dependencies are required")
 	}
+	if executor.queryResults == nil {
+		executor.queryResults = newQueryResultCache()
+	}
 	return &QueryExecutionService{executor: executor, queries: queries}, nil
 }
 
@@ -338,15 +341,35 @@ func (s *QueryExecutionService) executeAndComplete(
 	if queryErr != nil {
 		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, queryErr)
 	}
+	return s.completeQueryResult(ctx, execution, lease, startedAt, result, rowsAffected, capture, devTask.QueryResultLimit)
+}
+
+func (s *QueryExecutionService) completeQueryResult(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, startedAt time.Time, result commonModels.JSONMap, rowsAffected *int64, capture *protection.QueryCapture, limit int) error {
 	metadata := queryExecutionMetadata(result)
-	if capture.History != nil {
-		if limit := devTask.QueryResultLimit; limit > 0 && len(capture.History.Result.Rows) > limit {
-			capture.History.Truncated = true
-			capture.History.Result.Rows = capture.History.Result.Rows[:limit]
+	if capture.Result != nil {
+		if limit > 0 && len(capture.Result.Result.Rows) > limit {
+			capture.Result.Truncated = true
+			capture.Result.Result.Rows = capture.Result.Result.Rows[:limit]
 		}
-		metadata[protection.QueryHistoryMetadataKey] = capture.History
+		reader, ok := s.executor.sqlEngine.protectionGate.(queryResultReader)
+		if !ok {
+			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+		}
+		current, err := reader.ReadQueryResult(ctx, int64(execution.TenantID), capture.Result, capture.Subject)
+		if err != nil {
+			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+		}
+		if current.PlaintextExpiresAt != nil {
+			if err := s.executor.queryResults.put(execution.ExecutionID, lease.Attempt, lease.Token, capture.Result, current.PlaintextExpiresAt); err != nil {
+				return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+			}
+		}
 	}
-	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
+	err := s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
+	if err != nil && s.executor.queryResults != nil {
+		s.executor.queryResults.remove(execution.ExecutionID, lease.Token)
+	}
+	return err
 }
 
 func (s *QueryExecutionService) attachAuthorization(

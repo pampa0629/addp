@@ -38,6 +38,7 @@ type DevExecutor struct {
 	notebookExecutionService *NotebookExecutionService
 	notifyExecution          func()
 	executionQueue           *repository.ExecutionRepository
+	queryResults             *queryResultCache
 }
 
 // SetExecutionNotifier wakes the embedded query supervisor after a
@@ -86,6 +87,7 @@ func NewDevExecutor(
 ) *DevExecutor {
 	return &DevExecutor{
 		devTaskRepo:              devTaskRepo,
+		queryResults:             newQueryResultCache(),
 		taskExecutionRepo:        taskExecutionRepo,
 		workflowEngine:           workflowEngine,
 		operatorDiscovery:        operatorDiscovery,
@@ -1166,10 +1168,7 @@ func (e *DevExecutor) GetExecution(ctx context.Context, executionID string, tena
 		return nil, err
 	}
 
-	result, err := e.protectedExecutionResponse(ctx, execution)
-	if err != nil {
-		return nil, err
-	}
+	result := professionalExecutionResponse(execution)
 
 	// 加载关联的开发任务
 	if execution.SourceTaskID != nil && e.devTaskRepo != nil {
@@ -1269,10 +1268,7 @@ func (e *DevExecutor) ListExecutions(ctx context.Context, req *models.ListExecut
 	// 直接映射，加载关联开发任务
 	result := make([]models.ExecutionWithDevTask, len(executions))
 	for i, exec := range executions {
-		visible, err := e.protectedExecutionResponse(ctx, exec)
-		if err != nil {
-			return nil, 0, err
-		}
+		visible := professionalExecutionResponse(exec)
 		result[i] = *visible
 
 		// 加载关联的开发任务

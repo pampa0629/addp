@@ -15,7 +15,7 @@ type PreparedTableProtection struct {
 	DerivedFields []string
 	// CaptureAuthorized retains a bounded, already protected snapshot only when
 	// the trusted user has a plaintext grant. Ordinary executions retain none.
-	CaptureAuthorized func(*plugin.QueryResult, SubjectReference) (*HistoricalQueryResult, error)
+	CaptureAuthorized func(*plugin.QueryResult, SubjectReference) (*AuthorizedQueryResult, error)
 }
 
 // ProtectQueryResultSource applies already schema-validated rules to every

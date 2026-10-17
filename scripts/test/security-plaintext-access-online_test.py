@@ -22,11 +22,25 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
+    def test_current_develop_result_uses_the_distinct_ephemeral_endpoint(self):
+        payload = {"execution_id": "one", "status": "success", "metadata": {"result": {
+            "columns": ["id", "phone"], "summary": {"preview_rows": [
+                {"id": 1, "phone": "13812345678"}, {"id": 2, "phone": "13987654321"}, {"id": 3, "phone": None}]}}}}
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(200, payload)
+        self.assertEqual(ONLINE.current_develop_result(client, "one", ONLINE.RAW_VALUES), payload)
+        client.request.assert_called_once_with("GET", "/api/v1/develop/executions/one/result", (200,))
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.develop_history_evidence(payload, ONLINE.MASKED_VALUES)
+        payload["metadata"]["protected_query_history"] = {"private": True}
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.current_develop_result(client, "one", ONLINE.RAW_VALUES)
+
     def test_develop_history_report_requires_complete_distinct_evidence(self):
         report = {key: True for key in (
             'manager_only_does_not_authorize_develop', 'explicit_two_outlet_approval',
             'authorized_query_verified', 'other_user_masked', 'same_history_masked_at_expiry',
-            'same_history_masked_at_revocation', 'manager_grant_independent', 'private_history_excluded')}
+            'same_history_masked_at_revocation', 'manager_grant_independent', 'private_history_excluded', 'authorized_history_masked', 'current_result_rechecked')}
         report.update(records=3, authorized_execution_id=str(uuid.uuid4()), revoked_execution_id=str(uuid.uuid4()),
                       request_ids=[str(uuid.uuid4()), str(uuid.uuid4())],
                       exemption_ids=[str(uuid.uuid4()), str(uuid.uuid4())])
@@ -177,7 +191,7 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
         self.assertEqual(events, ['baseline', 'approve', 'authorized', 'other-subject', 'expired', 'history-expired',
                                   'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked', 'outage',
                                   'develop-scopes', 'post-cleanup'])
-        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v5')
+        self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v6')
         self.assertIn('outage-request', report['audit_retained']['access_request_ids'])
         self.assertIn('outage-grant', report['audit_retained']['exemption_ids'])
         self.assertEqual(report['security_unavailability']['request_id'], 'outage-request')
@@ -342,6 +356,7 @@ class SecurityUnavailabilityTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, 'wait_for_current_grant', return_value='outage-develop-grant'))
             stack.enter_context(patch.object(ONLINE.DEVELOP, 'develop_execution', return_value={'execution_id':'outage-develop'}))
             stack.enter_context(patch.object(ONLINE, 'develop_history_evidence', return_value={}))
+            stack.enter_context(patch.object(ONLINE, 'current_develop_result', return_value={}))
             stack.enter_context(patch.object(ONLINE.SUPPORT, 'run_security_lifecycle', side_effect=lifecycle))
             stack.enter_context(patch.object(ONLINE.SUPPORT, 'security_listener_refused', side_effect=probe))
             stack.enter_context(patch.object(ONLINE, 'manager_evidence', side_effect=preview))

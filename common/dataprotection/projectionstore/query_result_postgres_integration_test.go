@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestProjectionStoreQueryHistoryAgainstPostgres(t *testing.T) {
+func TestProjectionStoreAuthorizedQueryResultAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN is not set")
@@ -28,14 +28,14 @@ func TestProjectionStoreQueryHistoryAgainstPostgres(t *testing.T) {
 			name = "direct"
 		}
 		t.Run(name, func(t *testing.T) {
-			schema := "projection_history_" + name + "_it"
+			schema := "projection_query_result_" + name + "_it"
 			dropProjectionStoreTestSchema(t, db, schema)
 			t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
 			store, err := Migrate(db, schema, "develop", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertQueryHistoryLifecycle(t, store, identity)
+			assertAuthorizedQueryResultLifecycle(t, store, identity)
 		})
 	}
 }

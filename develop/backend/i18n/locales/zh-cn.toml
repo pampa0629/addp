@@ -346,5 +346,5 @@ other = "显式字段名 JSON 数组，如 [\"名称\", \"类型\"]；空数组�
 
 [develop.workflow.vector_tile_facts_invalid]
 other = "矢量切片参数或源元数据无效；请核对层级、属性字段，并对源数据执行深度扫描。"
-[develop.query.history_protection_required]
-other = "历史查询结果的保护规则已变化或无法验证，请重新执行查询。"
+[develop.query.result_protection_required]
+other = "查询结果的保护规则已变化或无法验证，请重新执行查询。"

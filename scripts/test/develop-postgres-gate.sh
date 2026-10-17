@@ -23,7 +23,7 @@ addp_infra_verify_test_postgres_dsn "$DEVELOP_POSTGRES_TEST_DSN"
 
 cd "$ROOT_DIR/develop/backend"
 go test ./internal/repository \
-    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres)$' \
+    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres|TestQueryExecutionEventsAgainstPostgres|TestExecutionPolicyMigrationAgainstPostgres|TestQueryResultMigrationAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
     echo "Develop PostgreSQL gate refuses skipped tests" >&2
@@ -31,7 +31,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
 fi
 
 go test ./internal/service \
-    -run '^(TestTableResultOwner.*AgainstPostgres|TestQueryFailureDiagnosticsAgainstPostgres)$' \
+    -run '^(TestTableResultOwner.*AgainstPostgres|TestQueryFailureDiagnosticsAgainstPostgres|TestQueryResultPersistenceAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop-table-result.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop-table-result.log"; then
     echo "Develop table result PostgreSQL gate refuses skipped tests" >&2

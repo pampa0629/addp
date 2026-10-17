@@ -24,12 +24,12 @@ func defaultQueryRules(rules []dataprotection.Rule) []dataprotection.Rule {
 	return result
 }
 
-func captureAuthorizedQuery(result *plugin.QueryResult, plans []querySourceProtection, subject dataprotection.SubjectReference, tenantID int64, action string) (*dataprotection.HistoricalQueryResult, error) {
+func captureAuthorizedQuery(result *plugin.QueryResult, plans []querySourceProtection, subject dataprotection.SubjectReference, tenantID int64, action string) (*dataprotection.AuthorizedQueryResult, error) {
 	if subject.Type != "user" || subject.ID == "" {
 		return nil, nil
 	}
 	now := time.Now().UTC()
-	history := &dataprotection.HistoricalQueryResult{SchemaVersion: dataprotection.HistoricalQueryResultSchemaV1, TenantID: tenantID, Subject: subject}
+	snapshot := &dataprotection.AuthorizedQueryResult{TenantID: tenantID, Subject: subject}
 	for _, plan := range plans {
 		source := plan.source
 		source.OpaqueOutput = false
@@ -51,10 +51,10 @@ func captureAuthorizedQuery(result *plugin.QueryResult, plans []querySourceProte
 				}
 			}
 		}
-		history.Sources = append(history.Sources, dataprotection.HistoricalQuerySource{Target: plan.target, Source: source, DefaultRules: defaultQueryRules(plan.rules)})
+		snapshot.Sources = append(snapshot.Sources, dataprotection.AuthorizedQuerySource{Target: plan.target, Source: source, DefaultRules: defaultQueryRules(plan.rules)})
 	}
 	open := false
-	for _, source := range history.Sources {
+	for _, source := range snapshot.Sources {
 		open = open || len(source.Source.Bindings) > 0
 	}
 	if !open {
@@ -64,41 +64,41 @@ func captureAuthorizedQuery(result *plugin.QueryResult, plans []querySourceProte
 	if err != nil {
 		return nil, err
 	}
-	// Sanitize every non-authorized output before it can enter owner-private history.
+	// Sanitize every non-authorized output before it can enter ephemeral owner memory.
 	for _, plan := range plans {
 		if err := dataprotection.ProtectQueryResultSourceAt(clone, plan.source, action, plan.rules, subject, now); err != nil {
 			return nil, err
 		}
 	}
-	history.Result = *clone
-	return history, nil
+	snapshot.Result = *clone
+	return snapshot, nil
 }
 
-// ReadHistoricalQueryResult rechecks current local protection on every read,
-// including expiration while Security is unavailable. It never mutates storage.
-func (s *Store) ReadHistoricalQueryResult(ctx context.Context, tenantID int64, history *dataprotection.HistoricalQueryResult, subject dataprotection.SubjectReference, action string) (*dataprotection.HistoricalQueryReadResult, error) {
-	if history == nil || history.TenantID != tenantID {
+// ReadAuthorizedQueryResult rechecks current local protection on every read,
+// including expiration while Security is unavailable. It never mutates the in-memory snapshot.
+func (s *Store) ReadAuthorizedQueryResult(ctx context.Context, tenantID int64, snapshot *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference, action string) (*dataprotection.AuthorizedQueryReadResult, error) {
+	if snapshot == nil || snapshot.TenantID != tenantID {
 		return nil, dataprotection.ErrDenied
 	}
 	if err := s.EnsureCurrent(ctx, tenantID); err != nil {
 		return nil, err
 	}
-	return s.readHistoricalQueryResultAt(ctx, tenantID, history, subject, action, time.Now().UTC())
+	return s.readAuthorizedQueryResultAt(ctx, tenantID, snapshot, subject, action, time.Now().UTC())
 }
 
-func (s *Store) readHistoricalQueryResultAt(ctx context.Context, tenantID int64, history *dataprotection.HistoricalQueryResult, subject dataprotection.SubjectReference, action string, now time.Time) (*dataprotection.HistoricalQueryReadResult, error) {
-	if history == nil || history.SchemaVersion != dataprotection.HistoricalQueryResultSchemaV1 || history.TenantID != tenantID || len(history.Sources) == 0 {
+func (s *Store) readAuthorizedQueryResultAt(ctx context.Context, tenantID int64, snapshot *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference, action string, now time.Time) (*dataprotection.AuthorizedQueryReadResult, error) {
+	if snapshot == nil || snapshot.TenantID != tenantID || len(snapshot.Sources) == 0 {
 		return nil, dataprotection.ErrDenied
 	}
-	if subject != history.Subject {
+	if subject != snapshot.Subject {
 		subject = dataprotection.SubjectReference{}
 	}
-	result, err := dataprotection.CloneQueryResult(&history.Result)
+	result, err := dataprotection.CloneQueryResult(&snapshot.Result)
 	if err != nil {
 		return nil, err
 	}
 	var deadline *time.Time
-	for _, source := range history.Sources {
+	for _, source := range snapshot.Sources {
 		gate := s.Gate(tenantID, source.Target, now)
 		if !gate.Managed || gate.Err != nil || gate.State != dataprotection.ProjectionStateActive {
 			return nil, dataprotection.ErrDenied
@@ -148,7 +148,7 @@ func (s *Store) readHistoricalQueryResultAt(ctx context.Context, tenantID int64,
 				}
 			}
 		}
-		output, outputRules := historicalOutputRules(source.Source, rules)
+		output, outputRules := authorizedOutputRules(source.Source, rules)
 		if len(source.Source.Bindings) == 0 {
 			continue
 		}
@@ -159,10 +159,10 @@ func (s *Store) readHistoricalQueryResultAt(ctx context.Context, tenantID int64,
 			return nil, err
 		}
 	}
-	return &dataprotection.HistoricalQueryReadResult{QueryResult: *result, PlaintextExpiresAt: deadline}, nil
+	return &dataprotection.AuthorizedQueryReadResult{QueryResult: *result, PlaintextExpiresAt: deadline}, nil
 }
 
-func historicalOutputRules(source plugin.QueryOutputSource, rules []dataprotection.Rule) (plugin.QueryOutputSource, []dataprotection.Rule) {
+func authorizedOutputRules(source plugin.QueryOutputSource, rules []dataprotection.Rule) (plugin.QueryOutputSource, []dataprotection.Rule) {
 	selected := []dataprotection.Rule{}
 	for _, rule := range rules {
 		path := make([]string, len(rule.Component.Path))

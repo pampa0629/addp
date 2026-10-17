@@ -172,6 +172,7 @@ func SetupRouter(
 				),
 				executionHandler.CreateQueryExport,
 			)
+			executions.GET("/:execution_id/result", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetQueryResult)
 			executions.GET("/:execution_id", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecution)
 			executions.GET("/:execution_id/logs", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecutionLogs)
 			executions.POST("/:execution_id/retry", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.RetryExecution)

@@ -256,6 +256,21 @@ test('keeps a Notebook runtime traceback in Owner logs after removing the generi
   await expect(page.locator('.execution-failure')).toHaveCount(1)
 })
 
+test('keeps current query delivery separate from the masked execution history', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table', resultRows: [{ id: 1, name: '***' }], currentResultRows: [{ id: 1, name: 'current-only' }] })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  await expect(page.locator('.query-result')).toContainText('current-only')
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  await expect(page.locator('.query-result')).toContainText('***')
+  await expect(page.locator('.query-result')).not.toContainText('current-only')
+})
+
 test('submits a complete multiline JSON query and observes its browser execution result', async ({ page }) => {
   const engine = { ...ENGINE, engine_type: 'elasticsearch', capabilities: {
     compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'] } }
@@ -275,7 +290,7 @@ test('submits a complete multiline JSON query and observes its browser execution
   const preflight = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/develop/query-preflight')
   const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
   const finished = page.waitForResponse(async response => {
-    if (!/^\/api\/v1\/develop\/executions\/[^/]+$/.test(new URL(response.url()).pathname) ||
+    if (!/^\/api\/v1\/develop\/executions\/[^/]+\/result$/.test(new URL(response.url()).pathname) ||
       response.request().method() !== 'GET' || !response.ok()) return false
     return ['success', 'failed', 'timeout', 'cancelled'].includes((await response.json()).status)
   })
@@ -285,7 +300,7 @@ test('submits a complete multiline JSON query and observes its browser execution
   expect(submitted.query_type).toBe('es_dsl')
   const execution = await (await created).json()
   const resultResponse = await finished
-  expect(new URL(resultResponse.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}`)
+  expect(new URL(resultResponse.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}/result`)
   const completed = await resultResponse.json()
   expect(completed.execution_id).toBe(execution.execution_id)
   expect(completed.status).toBe('success')
@@ -649,6 +664,7 @@ async function installMockBackend(page, {
   copilotRequests = [],
   resourceTreeRequests = [],
   resultRows,
+  currentResultRows = resultRows,
   errorDetails,
   executionType = 'query',
   locale = 'zh-cn',
@@ -794,9 +810,9 @@ async function installMockBackend(page, {
       executionRequests.push(request.postDataJSON())
       return fulfillJSON(route, { execution_id: EXECUTION_ID })
     }
-    if (path === `/api/v1/develop/executions/${EXECUTION_ID}`) {
+    if (path === `/api/v1/develop/executions/${EXECUTION_ID}` || path === `/api/v1/develop/executions/${EXECUTION_ID}/result`) {
       if (errorDetails) return fulfillJSON(route, { execution_id: EXECUTION_ID, module: 'develop', task_type: executionType, status: 'failed', progress: 100, execution_time_ms: 0, metadata: executionMetadata, error_details: errorDetails })
-      return fulfillJSON(route, executionResult(resultKind, resultRows))
+      return fulfillJSON(route, { ...executionResult(resultKind, path.endsWith("/result") ? currentResultRows : resultRows), module: "develop", task_type: executionType })
     }
 
     return fulfillJSON(route, {})

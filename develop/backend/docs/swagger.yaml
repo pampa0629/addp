@@ -2365,6 +2365,44 @@ paths:
       - develop.notebook.read
       x-addp-required-permissions:
       - develop.task.read
+  /executions/{execution_id}/result:
+    get:
+      description: 仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only.
+        Plaintext is reauthorized from bounded process memory; history stays protected
+        and expired delivery requires a new query.
+      parameters:
+      - description: 执行ID（UUID）| Execution ID (UUID)
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当次结果 | Current result
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取当次查询结果 | Get current query result
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - develop.data_read.execute
+      x-addp-required-permissions:
+      - develop.task.read
   /executions/{execution_id}/retry:
     post:
       description: 必须先具有本人原执行的专业读取权，再以当前执行授权重试。| Requires professional read access

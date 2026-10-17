@@ -13,17 +13,17 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
-func TestQueryHistoryRechecksCurrentGrantWithoutMutatingSnapshot(t *testing.T) {
+func TestAuthorizedQueryResultRechecksCurrentGrantWithoutMutatingSnapshot(t *testing.T) {
 	for _, identity := range []bool{true, false} {
 		store, err := Migrate(openProjectionStoreDB(t), "develop", "develop", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertQueryHistoryLifecycle(t, store, identity)
+		assertAuthorizedQueryResultLifecycle(t, store, identity)
 	}
 }
 
-func assertQueryHistoryLifecycle(t *testing.T, store *Store, identity bool) {
+func assertAuthorizedQueryResultLifecycle(t *testing.T, store *Store, identity bool) {
 	t.Helper()
 	var err error
 	model := plugin.DynamicSchemaCatalogModel()
@@ -96,7 +96,7 @@ func assertQueryHistoryLifecycle(t *testing.T, store *Store, identity bool) {
 		{"exact expiry", user, deadline, masked},
 		{"after expiry", user, deadline.Add(time.Second), masked},
 	} {
-		result, err := store.readHistoricalQueryResultAt(t.Context(), 7, history, test.subject, "query", test.at)
+		result, err := store.readAuthorizedQueryResultAt(t.Context(), 7, history, test.subject, "query", test.at)
 		if err != nil || result.Rows[0][output] != test.want {
 			t.Fatalf("%s: result=%v err=%v", test.name, result, err)
 		}
@@ -114,7 +114,7 @@ func assertQueryHistoryLifecycle(t *testing.T, store *Store, identity bool) {
 		t.Fatal(err)
 	}
 	apply("history-2", "history-1")
-	result, err := store.ReadHistoricalQueryResult(t.Context(), 7, history, user, "query")
+	result, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query")
 	if err != nil || result.Rows[0][output] != masked {
 		t.Fatalf("revocation: %v %v", result, err)
 	}
@@ -124,15 +124,15 @@ func assertQueryHistoryLifecycle(t *testing.T, store *Store, identity bool) {
 		t.Fatal(err)
 	}
 	apply("history-3", "history-2")
-	if _, err := store.ReadHistoricalQueryResult(t.Context(), 7, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 7, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("changed default: %v", err)
 	}
-	if _, err := store.ReadHistoricalQueryResult(t.Context(), 8, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
+	if _, err := store.ReadAuthorizedQueryResult(t.Context(), 8, history, user, "query"); !errors.Is(err, dataprotection.ErrDenied) {
 		t.Fatalf("other tenant: %v", err)
 	}
 }
 
-func TestHistoricalIdentityKeepsTypedArrayTraversal(t *testing.T) {
+func TestAuthorizedIdentityKeepsTypedArrayTraversal(t *testing.T) {
 	now := time.Now().UTC()
 	user := dataprotection.SubjectReference{Type: "user", ID: "41"}
 	rule := dataprotection.Rule{Action: "query", Component: dataprotection.Component{Key: "contacts.phone", Path: []dataprotection.PathSegment{{Name: "contacts", Container: "array"}, {Name: "phone", Container: "scalar"}}, ValueType: "string"}, Decision: dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}, Authorizations: []dataprotection.TemporaryAuthorization{{Subject: user, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Hour)}}}
@@ -142,7 +142,7 @@ func TestHistoricalIdentityKeepsTypedArrayTraversal(t *testing.T) {
 		t.Fatalf("capture array: %v", err)
 	}
 	rule.Authorizations = nil
-	source, rules := historicalOutputRules(history.Sources[0].Source, []dataprotection.Rule{rule})
+	source, rules := authorizedOutputRules(history.Sources[0].Source, []dataprotection.Rule{rule})
 	if !source.IdentityOutput || len(source.Bindings) != 0 || len(rules) != 1 {
 		t.Fatal("identity traversal flattened")
 	}

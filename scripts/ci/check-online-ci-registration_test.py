@@ -780,7 +780,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "# ADDP_ONLINE_SUITES=security-plaintext-access"),
                                    (paths[5], "review-queue?scope=pending"),
                                    (paths[5], "revoked_applicant"),
-                                   (paths[5], 'addp.security-plaintext-access-online/v5'),
+                                   (paths[5], 'addp.security-plaintext-access-online/v6'),
                                    (paths[5], 'validate_develop_scope_report('),
                                    (paths[5], 'same_history_masked_at_expiry'),
                                    (paths[5], 'same_history_masked_at_revocation'),

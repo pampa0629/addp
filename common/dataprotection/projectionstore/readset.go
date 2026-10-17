@@ -102,7 +102,7 @@ func (s *Store) PrepareQueryProtection(
 	if len(matched) != len(managed) {
 		return nil, errors.New("protected query lineage is incomplete")
 	}
-	return &dataprotection.PreparedTableProtection{DerivedFields: derived, CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.HistoricalQueryResult, error) {
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryResult, error) {
 		if err := validateOutputProjections(projections); err != nil {
 			return nil, err
 		}

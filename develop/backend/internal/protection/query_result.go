@@ -7,8 +7,6 @@ import (
 	"github.com/addp/common/dataprotection"
 )
 
-const QueryHistoryMetadataKey = "protected_query_history"
-
 type queryCaptureKey struct{}
 type interactiveQuerySubjectKey struct{}
 
@@ -22,7 +20,7 @@ func WithInteractiveQuerySubject(ctx context.Context, subject dataprotection.Sub
 // its Execution Authorization. It never accepts an actor from query JSON.
 type QueryCapture struct {
 	Subject dataprotection.SubjectReference
-	History *dataprotection.HistoricalQueryResult
+	Result  *dataprotection.AuthorizedQueryResult
 }
 
 func WithQueryCapture(ctx context.Context, subject dataprotection.SubjectReference) (context.Context, *QueryCapture) {
@@ -30,7 +28,7 @@ func WithQueryCapture(ctx context.Context, subject dataprotection.SubjectReferen
 	return context.WithValue(ctx, queryCaptureKey{}, capture), capture
 }
 
-func (g *Gate) ReadQueryHistory(ctx context.Context, tenantID int64, history *dataprotection.HistoricalQueryResult, subject dataprotection.SubjectReference) (*dataprotection.HistoricalQueryReadResult, error) {
+func (g *Gate) ReadQueryResult(ctx context.Context, tenantID int64, snapshot *dataprotection.AuthorizedQueryResult, subject dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryReadResult, error) {
 	if g == nil || g.store == nil {
 		return nil, ErrRequired
 	}
@@ -39,7 +37,7 @@ func (g *Gate) ReadQueryHistory(ctx context.Context, tenantID int64, history *da
 		return nil, err
 	}
 	defer end()
-	result, err := g.store.ReadHistoricalQueryResult(ctx, tenantID, history, subject, "query")
+	result, err := g.store.ReadAuthorizedQueryResult(ctx, tenantID, snapshot, subject, "query")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrResultRequired, err)
 	}
