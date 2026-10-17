@@ -2,13 +2,38 @@ import copy
 import importlib
 import json
 import threading
+import tempfile
 import unittest
+from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
 
 SUITE = importlib.import_module('scripts.test.graph-falkordb-protection-online')
 
 
 class GraphProtectionOnlineTest(unittest.TestCase):
+    def test_main_emits_the_standard_dispatcher_report_without_credentials(self):
+        dispatcher = importlib.import_module('scripts.test.online-gate')
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {'GITHUB_ACTIONS': 'true', 'ADDP_ONLINE_HOSTED': '1',
+                           'ADDP_ONLINE_ARTIFACT_DIR': directory, 'GATEWAY_URL': 'http://127.0.0.1:8000',
+                           'GRAPH_URL': 'http://127.0.0.1:8186', 'ADDP_ONLINE_TEST_ENGINE_ID': '13',
+                           'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'reader-secret',
+                           'ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN': 'outsider-secret',
+                           'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret'}
+            for failure in (False, True):
+                stdout = StringIO()
+                with self.subTest(failure=failure), patch.dict(SUITE.os.environ, environment), \
+                     patch.object(SUITE, 'run', side_effect=SUITE.SuiteError('expected failure') if failure else None), redirect_stdout(stdout):
+                    self.assertEqual(SUITE.main(), 1 if failure else 0)
+                report = dispatcher._parse_stage_report('scenario', stdout.getvalue())
+                self.assertEqual(report['passed'], not failure)
+                self.assertEqual(report, json.loads((Path(directory) / 'graph-falkordb-protection.json').read_text()))
+                for secret in ('reader-secret', 'outsider-secret', 'preparer-secret'):
+                    self.assertNotIn(secret, stdout.getvalue())
+
     def progress(self):
         return {'state': 'enrolling', 'owner_progress': [
             {'consumer_owner': owner, 'projection_id': owner, 'revision': '00000000000000000001',

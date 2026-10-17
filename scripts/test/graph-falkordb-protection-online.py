@@ -233,6 +233,8 @@ def main():
         return 1
     finally:
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        # The standard Online dispatcher consumes the last stdout line as JSON.
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == "__main__":
