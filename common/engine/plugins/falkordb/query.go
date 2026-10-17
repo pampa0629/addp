@@ -37,9 +37,8 @@ func (p *FalkorDBPlugin) prepare(c plugin.ConnectionInfo, req plugin.QueryReques
 	if req.EngineID == 0 || req.Language != "cypher" || req.TargetPath == nil || req.TargetPath.EngineID != req.EngineID {
 		return nil, "", "", nil, 0, errLocalRead
 	}
-	if err := p.ValidateConnectionInfo(c); err != nil {
-		return nil, "", "", nil, 0, err
-	}
+	// Analysis uses the credential-free runtime descriptor. Connection validation
+	// happens in open when resolving the read scope or executing the frozen plan.
 	name, err := p.graphName(*req.TargetPath)
 	if err != nil {
 		return nil, "", "", nil, 0, err

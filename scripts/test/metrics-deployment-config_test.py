@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest import mock
+from contextlib import redirect_stdout
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('metrics_config', ROOT / 'scripts/infra/generate-metrics-config.py')
@@ -348,6 +350,53 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             node_config.run('up', {'ADDP_NODE_METRICS_ENABLED': 'false'})
         with self.assertRaises(ValueError):
             node_config.deployment(dict(self.env, ADDP_NODE_METRICS_ENABLED='1'))
+
+    def test_admission_export_is_a_secret_free_proposal_without_host_identity(self):
+        value = node_config.admission_document(dict(self.env, PASSWORD='secret-never-export', ADDP_HOST_NODE_ID='not-this-vm'), 'desktop')
+        self.assertEqual(value, {'schema': 'addp.host-admission/v1', 'host': {
+            'display_name': 'Docker Desktop Linux VM', 'node_kind': 'virtual', 'addresses': [], 'allowed_module_bindings': []},
+            'collection': {'monitor_kind': 'host_resources', 'source': {'type': 'node_exporter', 'endpoint': 'https://192.0.2.10:9100/metrics'}}})
+        serialized = json.dumps(value)
+        for forbidden in ('secret-never-export', 'not-this-vm', str(self.directory), 'server.key', 'node_id', 'PASSWORD'):
+            self.assertNotIn(forbidden, serialized)
+        value = node_config.admission_document(self.env, 'linux', 'physical', 'Linux host', ['192.0.2.10', 'host.example'])
+        self.assertEqual(value['host']['addresses'], ['192.0.2.10', 'host.example'])
+        self.assertEqual(value['host']['node_kind'], 'physical')
+
+    def test_admission_host_kind_and_attributes_must_be_explicit_and_bounded(self):
+        for arguments in [(self.env, 'desktop', 'physical'), (self.env, 'linux'), (self.env, 'other', 'virtual'),
+                          (self.env, 'linux', 'virtual', 'name\ncontrol'), (self.env, 'linux', 'physical', 'x' * 256),
+                          (self.env, 'linux', 'physical', 'host', ['same', 'same']),
+                          (self.env, 'linux', 'physical', 'host', ['https://not-an-address']),
+                          (self.env, 'linux', 'physical', 'host', [f'host-{i}' for i in range(33)])]:
+            with self.subTest(arguments=arguments[1:]), self.assertRaises(ValueError):
+                node_config.admission_document(*arguments)
+
+    def test_admission_export_only_reads_the_owned_local_running_source(self):
+        context = [{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]
+        info = {'KernelVersion': '6.10.0-linuxkit', 'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'}
+        item = {'Config': {'Labels': {'io.addp.node-metrics.owner': str(ROOT), 'com.docker.compose.service': 'node-exporter'}}, 'State': {'Running': True}}
+        for change in (None, 'owner', 'stopped', 'service'):
+            inspected = json.loads(json.dumps(item))
+            if change == 'owner': inspected['Config']['Labels']['io.addp.node-metrics.owner'] = '/another-workspace'
+            if change == 'stopped': inspected['State']['Running'] = False
+            if change == 'service': inspected['Config']['Labels']['com.docker.compose.service'] = 'unrelated'
+            output = io.StringIO()
+            with self.subTest(change=change), mock.patch.object(node_config.platform, 'system', return_value='Darwin'), \
+                    mock.patch.object(node_config, 'docker_json', side_effect=[context, info, [inspected]]), \
+                    mock.patch.object(node_config.subprocess, 'check_output', return_value='source-id\n'), \
+                    mock.patch.object(node_config.subprocess, 'run') as mutate, redirect_stdout(output):
+                if change is None:
+                    node_config.run('export-admission', self.env)
+                    self.assertEqual(json.loads(output.getvalue()), node_config.admission_document(self.env, 'desktop'))
+                else:
+                    with self.assertRaises(ValueError): node_config.run('export-admission', self.env)
+                    self.assertEqual(output.getvalue(), '')
+                mutate.assert_not_called()
+        with mock.patch.object(node_config, 'docker_json') as docker:
+            for env in ({'ADDP_NODE_METRICS_ENABLED': 'false'}, dict(self.env, DOCKER_HOST='ssh://remote')):
+                with self.assertRaises(ValueError): node_config.run('export-admission', env)
+            docker.assert_not_called()
 
     def test_only_canonical_ip_listen_and_source_files_are_admitted(self):
         self.assertEqual(node_config.deployment(self.env), self.directory)

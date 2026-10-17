@@ -194,6 +194,7 @@ make ports-validate
 | PostgreSQL (System)   | 15432    | 5432 | ADDP 系统元数据            |
 | Redis                 | 16379    | 6379 | 缓存、事件和分布式锁       |
 | FalkorDB              | 16479    | 6379        | Ontology Infra，仅绑定回环，不注册为业务 Engine |
+| Business FalkorDB     | 6381     | 6379        | 独立业务图副本，仅绑定回环；由 System Engine 登记 |
 | MinIO System API      | 19000    | 9000 | 系统文件存储               |
 | MinIO System Console  | 19001    | 9001 | 系统 MinIO Web UI          |
 | Meilisearch           | 17700    | 7700 | 全文检索引擎               |

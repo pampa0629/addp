@@ -2446,3 +2446,16 @@ API 操作完成后先停用并按 CAS 删除本轮规则和通知目标，验�
 最终 `make test-system-frontend` 退出 0：135 项单元测试、166 项浏览器测试及构建通过；`make test-console-frontend` 退出 0：173 项单元测试、139 项浏览器测试及构建通过。覆盖鼠标与键盘选择、字面搜索与停用条件、分页重置、详情关闭/重载、Console 单一 iframe 和 URL 同步、迟到响应隔离及中英文窄屏。初次完整前端运行有三项失败：两个新用例因 Element Plus 将空字符串当作无选择及输入框点击定位失败，已复用现有 `empty-values` 约定并修正操作定位；既有创建用例出现下拉已关闭的时序失败，在聚焦和最终完整运行未重现，保留 `/tmp/addp-host-filters-frontend-green.log`，不宣称已定位该次时序根因。未以重试或放宽断言替换最终完整门禁。
 
 前端 CI 登记检查通过，21 个前端仍由原入口覆盖。默认 `make test-changed` 因共享工作区 49 项混合变更扩散到 27 个 owner，在外部测试连接预检退出 2，后续未执行、不计通过；不调查或修复其他 owner 门禁。本批日志为 `/tmp/addp-host-filters-go.log`、`/tmp/addp-host-filters-pg.log`、`/tmp/addp-host-filters-gate-runner.log`、`/tmp/addp-host-filters-frontend-final.log`、`/tmp/addp-host-filters-console.log`、`/tmp/addp-host-filters-swagger-coverage.log`、`/tmp/addp-host-filters-frontend-registration.log` 和 `/tmp/addp-host-filters-changed.log`。个人服务尚未由本会话重启，已告知用户通过 `./scripts/dev/restart.sh -system` 加载新参数；真实个人页面与本批远端 CI 尚待验证，不以本地门禁代替。
+
+
+### 10.79 管理员确认的部署清单接入（2026-10-17，用户已确认方向，首批实施契约）
+
+用户选择先做“部署入口提供可信清单、平台管理员确认后一键接入”，不先引入无人值守身份。本批先闭合独立节点来源的主机与主机采集配置：既有 `scripts/infra/node-metrics.py` 增加只读 `export-admission` 动作，核验本地 Docker Engine、部署类型及来源项目归属后，将当前显式输入导出为不含 Secret 的 JSON。不会启动或重启任何设施，不访问 System/Monitor、不读取整个环境输出，不分配 node_id，不持久化另一套主机身份。Desktop 明确导出 virtual/Linux VM，宿主发布的回环或网卡地址只作为采集访问地址，不冒充 VM 网卡；原生 Linux 的 physical/virtual 必须由部署方明确声明。显示名称是可读属性，不能据此去重或自动关联已有主机。
+
+首版唯一文件协议为 `schema=addp.host-admission/v1`，只包含 `host`（display_name/node_kind/addresses/allowed_module_bindings）及 `collection`（monitor_kind=host_resources，source.type=node_exporter，显式 HTTPS metrics endpoint）。首批节点入口只声明自身来源，不猜测 ADDP 模块或 Business 引擎的位置，导出的允许模块集合为空；没有明确部署声明的服务/引擎关系仍为未关联，不能把 VM 的合计资源解释为某个引擎的资源。主机地址只消费明确的主机属性，允许为空；不从采集地址反推。浏览器不接收证书路径、私钥、Token、数据库连接或任意脚本。文件最大 16 KiB，版本、对象字段、数组边界及类型严格校验；不执行文件内容。文件本身不授予权限，最终事实由管理员确认与既有服务端准入决定，不把 JSON 文件称作签名或独立物理位置证明。
+
+确认入口复用 Monitor 唯一新建采集配置页面及原 HostNodeSelect，导入内容只保留于当前草稿，不新增 URL 身份、数据库实体、后台注册器或持久管理员 Token。默认由管理员明确选择已有主机；有既有主机创建权限时可选择按清单新建，预览全部待写字段后一次确认。新建走既有 System HostNode 创建 API，node_id 仍由 System 分配；选择已有主机不修改其名称、地址、允许模块或纳管状态，停用或类型不符的主机禁止接入。随后沿同一既有 Monitor 创建 API 写入主机采集配置，mTLS、端点/CIDR/端口准入、唯一启用来源和审计不变；原手工配置继续作为同一表单的输入方式，不复制 HostNode 编辑器或第二条保存路径。
+
+两个 owner 的写入不是跨服务事务。提交期间禁止修改或重复点击；主机创建成功后冻结该次主体，采集失败时保留返回的 node_id 并显示“主机已登记，采集尚未完成/待核验”，提供原主机监控/配置入口。任何写入响应不确定时停止本次提交，不自动重试、不按名称/IP寻找所谓已成功主机，也不删除已建主机；由管理员在原管理入口核验后选择既有主机或配置继续。离开页面、身份/权限切换或取消的文件读取产生的迟到结果不得回填新草稿；不自动创建副本或扩大准入。完成配置不等于已经取得有效采样，仍由既有采集状态反馈。
+
+实施前识别门禁：原 `metrics-deployment-config_test.py`/`make test-dev-lifecycle` 覆盖导出白名单、Desktop/原生 Linux 边界、禁用/远端/跨工作区拒绝及无变更动作；Monitor 单元与浏览器门禁覆盖协议边界、权限、导入、已有/新建主机、两阶段部分完成、未知结果不重试及迟到身份隔离；Console 标准门禁覆盖真实 iframe 集成。新增文件仍按原前端路径自动发现，节点脚本仍在原 Metrics T2 输入登记范围；编码同批核对 CI，必要时补登记。复用现有 API，不修改后端 DTO、数据库、Swagger、IAM 或部署开关。个人服务不自行重启，本地与 T3 结果不能冒充新交互的 Hosted T4。

@@ -647,6 +647,33 @@
         "changed": "配置已变化，请刷新列表",
         "budget": "当页观测超出查询预算。请减少每页数量后重试；采集配置仍可管理。",
         "queried": "查询时间：{time}。列表结果在刷新时更新。"
+      },
+      "admission": {
+        "import": "导入部署清单",
+        "clear": "改为手动配置",
+        "hostFacts": "清单中的主机信息",
+        "hostKind": "主机类型",
+        "addresses": "主机地址",
+        "modules": "允许关联的服务模块",
+        "mode": "主机接入方式",
+        "existing": "选择已有主机",
+        "new": "按清单新建主机",
+        "existingHint": "仅为所选主机配置采集，不修改该主机的信息。",
+        "newHint": "将按以上信息新建并启用主机，再保存下面的采集配置。",
+        "created": "主机已登记：{name}（{id}）",
+        "partial": "主机已登记，采集配置尚未完成。",
+        "hostUnknown": "主机登记结果待核实。请先在平台主机管理中核对，再选择已有主机继续。",
+        "collectionUnknown": "采集配置的保存结果待核实。请先查看该主机的现有采集配置。",
+        "verify": "查看主机监控",
+        "submit": "确认接入",
+        "hostMismatch": "所选主机必须已启用，且物理机或虚拟机类型与清单一致。",
+        "invalid": "部署清单无效。请选择标准节点入口导出的 JSON 文件，大小不超过 16 KiB。",
+        "kinds": {
+          "physical": "物理机",
+          "virtual": "虚拟机"
+        },
+        "verifyCollection": "查看采集配置列表",
+        "conflict": "配置发生冲突。本次接入未完成，请先核对现有主机和采集配置。"
       }
     },
     "resources": {
@@ -821,7 +848,10 @@
         "enable": "与上一等长时段比较",
         "current": "本期",
         "previous": "上期",
-        "averages": { "cpuBusy": "CPU 平均忙碌率对比", "memoryUsed": "内存平均使用率对比" },
+        "averages": {
+          "cpuBusy": "CPU 平均忙碌率对比",
+          "memoryUsed": "内存平均使用率对比"
+        },
         "coverage": "有效评估点：{valid} / {total}",
         "incomplete": "样本不足，暂不比较。两期数据完整后才显示均值和变化。",
         "increased": "较上期上升 {value} 个百分点",

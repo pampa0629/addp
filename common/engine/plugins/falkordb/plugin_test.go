@@ -94,3 +94,24 @@ func TestFalkorDBConnectionValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestFalkorDBStaticAnalysisWithoutExecutionCredentials(t *testing.T) {
+	p := &FalkorDBPlugin{}
+	path := p.graphPath(9, "业务.图/a")
+	prepared, err := p.PrepareQuery(t.Context(), nil, plugin.QueryRequest{
+		EngineID: 9, Language: "cypher", TargetPath: &path,
+		Query: "MATCH (n) RETURN count(n) AS node_count",
+	})
+	if err != nil {
+		t.Fatalf("credential-free query preflight failed: %v", err)
+	}
+	if analysis, err := prepared.Analysis(t.Context()); err != nil || analysis == nil {
+		t.Fatalf("analysis=%#v error=%v", analysis, err)
+	}
+	if _, err := prepared.EngineReadScope(t.Context()); err == nil {
+		t.Fatal("read scope accepted missing execution credentials")
+	}
+	if _, err := prepared.Execute(t.Context()); err == nil {
+		t.Fatal("execution accepted missing execution credentials")
+	}
+}

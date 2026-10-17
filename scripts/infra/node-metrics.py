@@ -60,10 +60,45 @@ def docker_json(*args):
     return json.loads(subprocess.check_output(['docker', *args], text=True, stderr=subprocess.DEVNULL))
 
 
-def run(action, env):
+def admission_document(env, runtime, node_kind=None, display_name=None, addresses=()):
+    if deployment(env) is None:
+        raise ValueError('Node metrics must be explicitly enabled')
+    if runtime == 'desktop':
+        if node_kind not in (None, 'virtual'):
+            raise ValueError('Docker Desktop is a virtual Linux node')
+        node_kind = 'virtual'
+        display_name = display_name or 'Docker Desktop Linux VM'
+    elif runtime != 'linux' or node_kind not in ('physical', 'virtual'):
+        raise ValueError('Native Linux requires an explicit physical or virtual node kind')
+    display_name = display_name or platform.node()
+    if (not isinstance(display_name, str) or not display_name.strip()
+            or display_name != display_name.strip() or len(display_name) > 255
+            or any(ord(char) < 32 or ord(char) == 127 for char in display_name)):
+        raise ValueError('Invalid host display name')
+    addresses = list(addresses)
+    if len(addresses) > 32 or len(set(addresses)) != len(addresses):
+        raise ValueError('Invalid explicit host addresses')
+    for address in addresses:
+        try:
+            valid = str(ipaddress.ip_address(address)) == address
+        except ValueError:
+            valid = (len(address) <= 253 and re.fullmatch(
+                r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*', address))
+        if not valid:
+            raise ValueError('Invalid explicit host address')
+    return {'schema': 'addp.host-admission/v1', 'host': {
+        'display_name': display_name, 'node_kind': node_kind,
+        'addresses': addresses, 'allowed_module_bindings': []},
+        'collection': {'monitor_kind': 'host_resources', 'source': {
+            'type': 'node_exporter', 'endpoint': 'https://' + env['ADDP_NODE_METRICS_LISTEN'] + '/metrics'}}}
+
+
+def run(action, env, *, node_kind=None, display_name=None, addresses=()):
     if action == 'up' and deployment(env) is None:
         print('Node metrics: Disabled')
         return
+    if action == 'export-admission' and deployment(env) is None:
+        raise ValueError('Cannot export a disabled source')
     # Never operate a remote Docker host, including for status/down.
     endpoint = None if env.get('DOCKER_CONTEXT') else env.get('DOCKER_HOST')
     if not endpoint:
@@ -72,7 +107,7 @@ def run(action, env):
     if not endpoint.startswith('unix:///'):
         raise ValueError('Node metrics lifecycle requires a local Docker endpoint')
     runtime = 'desktop' if platform.system() == 'Darwin' else 'linux'
-    if action == 'up':
+    if action in ('up', 'export-admission'):
         info = docker_json('info', '--format', '{{json .}}')
         runtime = deployment_runtime(platform.system(), info['KernelVersion'], endpoint, info['OperatingSystem'])
         if (info['OSType'] != 'linux'
@@ -80,10 +115,16 @@ def run(action, env):
             raise ValueError('Node metrics Docker Engine must share the current Linux kernel')
     ids = subprocess.check_output(['docker', 'ps', '-aq', '--filter',
                                   'label=com.docker.compose.project=' + PROJECT], text=True).split()
-    if ids:
-        for item in docker_json('inspect', *ids):
-            if item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT):
-                raise ValueError('Node metrics project belongs to another workspace')
+    containers = docker_json('inspect', *ids) if ids else []
+    for item in containers:
+        if item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT):
+            raise ValueError('Node metrics project belongs to another workspace')
+    if action == 'export-admission':
+        if (len(containers) != 1 or containers[0].get('State', {}).get('Running') is not True
+                or containers[0]['Config']['Labels'].get('com.docker.compose.service') != 'node-exporter'):
+            raise ValueError('Admission export requires the owned running node source')
+        print(json.dumps(admission_document(env, runtime, node_kind, display_name, addresses), ensure_ascii=False, indent=2))
+        return
     desktop = runtime == 'desktop'
     values = dict(env, ADDP_NODE_METRICS_OWNER=str(ROOT),
                   ADDP_NODE_METRICS_ROOTFS='/' if desktop else '/host',
@@ -111,9 +152,14 @@ def run(action, env):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('up', 'down', 'status'))
+    parser.add_argument('action', choices=('up', 'down', 'status', 'export-admission'))
+    parser.add_argument('--node-kind', choices=('physical', 'virtual'))
+    parser.add_argument('--display-name')
+    parser.add_argument('--address', action='append', default=[])
     args = parser.parse_args()
+    if args.action != 'export-admission' and (args.node_kind or args.display_name is not None or args.address):
+        parser.error('Host attributes are only accepted for export-admission')
     try:
-        run(args.action, os.environ)
+        run(args.action, os.environ, node_kind=args.node_kind, display_name=args.display_name, addresses=args.address)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
         sys.exit('Node metrics deployment rejected; check deployment environment, explicit inputs and project ownership')

@@ -208,6 +208,12 @@ Ontology Backend 使用 `ONTOLOGY_BACKEND_PORT=8195`、`SYSTEM_URL` 和既有独
 
 `scripts/infra/falkordb.yml` 是正式 Compose 与 disposable T2 共用的服务定义，随现有 Infra 打包路径发布，固定镜像 digest、非零查询预算、线程/查询内存/队列上限和容器资源限制。`/data` 使用独立 `falkordb_data` 卷，采用 RDB 快照；PG 仍是恢复权威，RDB 不能替代发布摘要校验与重建。此单机配置只用于本地开发/受控同机网络，未声明生产 TLS、HA 或灾备认证。
 
+### Business FalkorDB 部署配置
+
+业务 FalkorDB 由 `business/docker-compose.yml` 的 `falkordb` 服务管理，容器为 `business-falkordb`，使用固定 4.20.6 镜像摘要、独立 `falkordb_data` 卷和 Business 网络。`business/.env` 中配置 `BUSINESS_FALKORDB_PORT=6381` 与非空独立 `BUSINESS_FALKORDB_PASSWORD`；端口只绑定回环，首次避让及后续固定复用沿用 Business 端口解析。通过 `business/scripts/start.sh -falkordb` 启动；日常启动不复制 Infra 数据。
+
+用户明确要求查看 Infra 图内容时，可一次性导出 Infra 的 RDB 快照到仓库外私有临时目录，在业务容器首次启动前导入其空数据卷。只能恢复到未启动的全新目标，不覆盖已有业务数据，不共享源数据卷或凭据，不更改 Ontology 的运行连接。复制的是当时的数据副本，后续不自动同步。System 只登记业务实例，由 Graph 的显式目录路径选择具体图；若启用推导字段的全文搜索，由 Graph 在业务副本维护所需索引；源库索引不受影响。
+
 ### Standard 文档文件部署配置
 
 Standard 文档文件由 Standard owner 写入 ADDP infra MinIO 的 `standard` bucket。以下参数在服务启动前生效，属于部署级资源保护配置：

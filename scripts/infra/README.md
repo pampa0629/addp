@@ -996,6 +996,16 @@ macOS 本地验证需要避免 DHCP 地址变化时，可显式将 `ADDP_NODE_ME
 
 固定项目 `addp-node-metrics` 使用仓库绝对路径 Owner 标签，异工作区同名容器存在时拒绝操作。`down/status` 不校验已失效的来源证书或当前开关，不依赖中心，不删除业务容器、网络或卷。启动成功只说明来源容器运行；部署方仍需通过独立 mTLS 验证来源，再用 Monitor 正式目标接口完成准入，来源部署不会自动创建 System 节点、目标或发现标签。端口与来源错误只影响这个独立入口。
 
+已启用并运行的本工作区节点来源可以沿同一入口导出接入清单；仍需先提供与 `up` 相同的三个显式环境输入，入口不自动读取 `.env`：
+
+```bash
+python3 scripts/infra/node-metrics.py export-admission > /tmp/addp-host-admission.json
+```
+
+Desktop 自动声明 `virtual` 与 Linux VM 名称。原生 Linux 必须额外传 `--node-kind physical` 或 `--node-kind virtual`；显示名可通过 `--display-name` 提供，主机地址可通过重复的 `--address` 明确提供，缺省地址为空，不将监听地址推作节点地址。上述属性参数只用于导出，不用于 `up/down/status`。导出核验本地 Engine、内核、当前运行的唯一来源与工作区 Owner，仅读取状态，不执行 Compose 变更；禁用、远端、异工作区或来源未运行时拒绝，不导出其他环境键或证书路径。
+
+在“平台主机管理 → 从部署清单接入”或“运行监控 → 采集配置 → 新增采集配置”导入 JSON，预览后明确选择已有主机或按清单新建；只在确认时写入。System 创建新 node_id，Monitor 执行原 mTLS 和端点准入并保存配置，不自动修改根 `.env` 或当前进程声明。已有主机信息保留；新建主机和采集保存分步完成，失败时页面标明已完成步骤，未知结果先核验，不能从头自动重试。文件不含身份凭据，不是独立物理位置证明；首批仅覆盖节点与主机采集，不根据 Docker 容器名、数据库地址或资源使用量建立模块/引擎关联。协议及门禁见平台运行监控设计 10.79。
+
 `make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID。同一临时来源再部署为 Desktop 受限层，实际对照 Engine 核数、内存和内核，检查仅七采集器、不同命名空间容器的原始磁盘计数对照、被禁用指标族缺失、mTLS、唯一 HTTP SD 磁盘即时/趋势查询及恢复。macOS Docker Desktop 上的执行证明 VM 内核全局基础资源，Linux CI 只证明受限部署层；完整文件系统、cAdvisor、真实 System/Monitor 控制面和生产权限仍按各自验收范围验证，不以 T2 协议夹具替代。
 
 

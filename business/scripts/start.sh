@@ -16,6 +16,7 @@
 #   bash scripts/start.sh -clickhouse        # 只启动 ClickHouse
 #   bash scripts/start.sh -mongodb           # 只启动 MongoDB
 #   bash scripts/start.sh -elasticsearch     # 只启动 Elasticsearch
+#   bash scripts/start.sh -falkordb          # 只启动 Business FalkorDB
 #   bash scripts/start.sh -redis             # 只启动 Business Redis
 #   bash scripts/start.sh -doris             # 只启动 Doris
 #   bash scripts/start.sh -spark             # 只启动 Spark
@@ -68,6 +69,7 @@ ENABLE_CLICKHOUSE=false
 ENABLE_MONGODB=false
 ENABLE_ELASTICSEARCH=false
 ENABLE_REDIS=false
+ENABLE_FALKORDB=false
 ENABLE_DORIS=false
 ENABLE_SPARK=false
 ENABLE_NEO4J=false
@@ -92,6 +94,7 @@ for arg in "$@"; do
             ENABLE_MONGODB=true
             ENABLE_ELASTICSEARCH=true
             ENABLE_REDIS=true
+            ENABLE_FALKORDB=true
             ENABLE_DORIS=true
             ENABLE_SPARK=true
             ENABLE_HDFS=true
@@ -120,6 +123,9 @@ for arg in "$@"; do
             ;;
         -elasticsearch)
             ENABLE_ELASTICSEARCH=true
+            ;;
+        -falkordb)
+            ENABLE_FALKORDB=true
             ;;
         -redis)
             ENABLE_REDIS=true
@@ -167,6 +173,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -minio                # 只启动 MinIO"
             echo "  bash scripts/start.sh -clickhouse           # 只启动 ClickHouse"
             echo "  bash scripts/start.sh -elasticsearch        # 只启动 Elasticsearch"
+            echo "  bash scripts/start.sh -falkordb             # 只启动 Business FalkorDB"
             echo "  bash scripts/start.sh -redis                # 只启动 Business Redis"
             echo "  bash scripts/start.sh -mongodb              # 只启动 MongoDB"
             echo "  bash scripts/start.sh -doris                # 只启动 Doris"
@@ -314,6 +321,11 @@ if [ -f .env ]; then
     set +a
 fi
 
+if [ "$ENABLE_FALKORDB" = true ] && [ -z "${BUSINESS_FALKORDB_PASSWORD:-}" ]; then
+    echo '✗ 请在 business/.env 设置独立的 BUSINESS_FALKORDB_PASSWORD' >&2
+    exit 1
+fi
+
 # 3. 检测 CPU 架构
 if [ "$ENABLE_HDFS" = true ] || [ "$ENABLE_DORIS" = true ]; then
     python3 - <<'PY'
@@ -365,6 +377,7 @@ SELECTED_PORT_SERVICES=()
 [ "$ENABLE_MINIO" = true ] && SELECTED_PORT_SERVICES+=(minio)
 [ "$ENABLE_ELASTICSEARCH" = true ] && SELECTED_PORT_SERVICES+=(elasticsearch)
 [ "$ENABLE_REDIS" = true ] && SELECTED_PORT_SERVICES+=(redis)
+[ "$ENABLE_FALKORDB" = true ] && SELECTED_PORT_SERVICES+=(falkordb)
 addp_business_resolve_ports "${SELECTED_PORT_SERVICES[@]}"
 
 # 其余 Business 服务仍使用显式端口；启动前提示当前占用。
@@ -481,7 +494,7 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
 fi
 
 for service_flag in ENABLE_PG ENABLE_ORACLE ENABLE_SUPERMAP_PG ENABLE_MINIO ENABLE_CLICKHOUSE \
-                    ENABLE_MONGODB ENABLE_ELASTICSEARCH ENABLE_REDIS ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
+                    ENABLE_MONGODB ENABLE_ELASTICSEARCH ENABLE_REDIS ENABLE_FALKORDB ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
                     ENABLE_OCEANBASE ENABLE_TIDB ENABLE_OPENGAUSS ENABLE_REDPANDA ENABLE_HDFS; do
     if [ "${!service_flag}" = true ]; then
         addp_business_ensure_network "$OCEANBASE_PERSISTED_IP" || exit 1
@@ -492,6 +505,10 @@ done
 
 if [ -n "$OCEANBASE_PERSISTED_IP" ]; then
     addp_business_check_oceanbase_ip "$OCEANBASE_PERSISTED_IP" || exit 1
+fi
+
+if [ "$ENABLE_FALKORDB" = true ]; then
+    docker compose up -d --wait --wait-timeout 120 falkordb
 fi
 
 # 5. 启动服务（幂等）
@@ -1232,4 +1249,8 @@ if [ "$ENABLE_ELASTICSEARCH" = true ]; then
 fi
 if [ "$ENABLE_REDIS" = true ]; then
     echo "Business Redis: 127.0.0.1:${BUSINESS_REDIS_PORT:-6380}，DB 0（只读用户 addp_business_reader）"
+fi
+
+if [ "$ENABLE_FALKORDB" = true ]; then
+    echo "Business FalkorDB: 127.0.0.1:${BUSINESS_FALKORDB_PORT}，DB 0（用户 default）"
 fi

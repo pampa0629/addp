@@ -6,6 +6,7 @@
 export { default as GraphSchemaView } from './GraphSchemaView.vue'
 export { default as GraphResultView } from './GraphResultView.vue'
 export { readGraphTheme, getContrastingTextColor } from './graphTheme.js'
+export { graphNodeItemId, graphEdgeItemId } from './graphIdentity.js'
 export { default as LineageViewer } from './LineageViewer.vue'
 export { createLineageApi, normalizeLineageGraph } from './lineageApi.js'
 export { default as OntologyView } from './OntologyView.vue'

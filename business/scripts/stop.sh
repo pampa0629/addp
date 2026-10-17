@@ -53,7 +53,7 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-highgo|-redpanda|-nfs|-hdfs|-all]"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-elasticsearch|-redis|-falkordb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-highgo|-redpanda|-nfs|-hdfs|-all]"
             echo "  -kingbase、-dameng 和 -highgo 必须独立使用，且不属于 -all"
             exit 0
             ;;
@@ -63,7 +63,7 @@ for arg in "$@"; do
             ;;
         -*)
             case "$key" in
-                postgres|oracle|supermap-postgresql|minio|clickhouse|mongodb|elasticsearch|redis|neo4j|mysql|oceanbase|opengauss)
+                postgres|oracle|supermap-postgresql|minio|clickhouse|mongodb|elasticsearch|redis|falkordb|neo4j|mysql|oceanbase|opengauss)
                     SERVICES+=("$key")
                     ;;
                 tidb)

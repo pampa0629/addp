@@ -17,6 +17,18 @@ describe('business graph target API', () => {
     expect(targets[0].path).toEqual(graph.path)
     expect(client.post.mock.calls[1][1].path).toEqual(branch.path)
   })
+  it.each(['neo4j', 'falkordb'])('traverses the server root returned for an empty %s path', async engineType => {
+    const root = { role: 'branch', path: { version: 'catalog.path/v1', engine_id: 8, segments: [{ term: 'server', kind: 'server', name: '' }] } }
+    const database = { role: 'branch', path: { ...root.path, segments: [...root.path.segments, { term: 'database', kind: 'namespace', name: 'business' }] } }
+    const graph = { role: 'leaf', kind: 'graph', name: '中文.a/b', path: { ...root.path, segments: [...(engineType === 'neo4j' ? database : root).path.segments, { term: 'graph', kind: 'graph', name: '中文.a/b' }] } }
+    const levels = engineType === 'neo4j' ? [root, database, graph] : [root, graph]
+    client.post.mockImplementation((_, { path }) => {
+      const next = levels.find(node => node.path.segments.length === path.segments.length + 1)
+      return Promise.resolve({ nodes: next ? [next] : [] })
+    })
+    expect(await engineAPI.getGraphTargets(8)).toEqual([graph])
+    expect(client.post.mock.calls.map(([, body]) => body.path)).toEqual([{ segments: [] }, ...levels.slice(0, -1).map(node => node.path)])
+  })
   it('passes the explicit graph target to schema inference in the request body', async () => {
     const target = { engine_id: 8, catalog_path: { segments: [] } }
     await ontologyAPI.inferSchemaFromEngine(target, 4)

@@ -233,6 +233,8 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@bash business/scripts/start.sh --help | grep -Fq -- '-falkordb'
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["falkordb"]; assert s["container_name"] == "business-falkordb"; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "v4.20.6@sha256:" in s["image"]; assert s["volumes"][0]["source"] == "falkordb_data"; assert "INFRA_FALKORDB" not in str(s); assert "test -n" in s["command"][0]; assert "--requirepass" in s["command"][0]; assert "GRAPH.CONFIG" in str(s["healthcheck"])'
 	@bash -n business/highgo/entrypoint.sh business/highgo/init/01-business.sh business/scripts/highgo.sh
 	@python3 scripts/test/business-highgo_test.py
 	@bash business/scripts/start.sh --help | grep -Fq -- '-highgo'

@@ -2,6 +2,7 @@
   <section v-if="canRead" class="host-nodes" data-testid="host-nodes">
     <header class="node-toolbar">
       <h2>{{ t('system.hostNodes.title') }}</h2>
+      <el-button v-if="canRead && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('monitor.monitoring_target.create')" @click="openConsoleRoute('/monitor/monitoring-targets/new')">{{ t('system.hostNodes.importDeployment') }}</el-button>
       <el-button v-if="canCreate" type="primary" data-testid="node-create" @click="openCreate">{{ t('system.hostNodes.create') }}</el-button>
     </header>
     <form class="node-toolbar" @submit.prevent="search">

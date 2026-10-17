@@ -599,6 +599,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | managed host node | 纳管节点 | System 维护稳定 node_id 的物理机或虚拟机身份及基础信息；用户入口称“平台主机管理”。 | 名称和 IP 是属性；不由 registered_host、容器主机名或服务 URL 推算，不等同 Engine Instance。平台节点 API 创建 UUID，enabled 表示纳管意图而非在线状态。 |
+| host admission manifest | 主机接入清单 | 部署入口导出、供平台管理员预览并确认主机及采集配置的有界声明文件。 | 不是主机身份库、签名或权限凭据；System 仍创建 node_id，Monitor 仍拥有采集配置，不按名称/IP自动合并或推断服务、引擎位置。 |
 | deployment association | 部署关联 | 受信部署环境明确提供的节点、容器、运行实例或引擎之间的承载关系。 | 保存来源与有效时间；模块实例首次声明固定，当前 node_id 必须经节点允许集合裁定，declared_node_id 仅为历史声明。无证据时不回填历史，不参与 Ready、路由或执行所有权。 |
 | monitoring target | 监测目标 | Monitor 管理的被观测对象引用、监测类别和采集端点配置；用户高级入口称“采集配置”。 | 不替代节点、模块实例或引擎登记；引擎已登记不代表已接入资源监测。 |
 | observability capability | 观测能力 | 可独立选择部署的指标、集中日志或追踪能力。 | 组件属于 Infra，但不是所有模块的必需依赖；关闭与故障必须分别表达。 |

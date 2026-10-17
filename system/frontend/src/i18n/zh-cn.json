@@ -2149,7 +2149,8 @@
         "node_unknown": "声明的主机不存在",
         "node_disabled": "声明的主机已停用",
         "source_not_allowed": "主机不允许此模块身份关联"
-      }
+      },
+      "importDeployment": "从部署清单接入"
     },
     "configuration": {
       "title": "配置管理",

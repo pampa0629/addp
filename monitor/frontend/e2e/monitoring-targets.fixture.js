@@ -26,7 +26,7 @@ export async function backend(page, options = {}) {
     else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
     else if (path === '/api/v1/system/auth/context') body = options.identity || identity()
     else if (path.startsWith('/api/v1/system/platform/host_nodes')) {
-      const hosts = options.hosts || [{ node_id: node, display_name: '测试主机', addresses: ['node.test'], enabled: true, version: 1 }]
+      const hosts = options.hosts || [{ node_id: node, display_name: '测试主机', node_kind: 'virtual', addresses: ['node.test'], enabled: true, version: 1 }]
       body = path.endsWith('/host_nodes') ? { data: hosts, total: hosts.length, page: 1, page_size: 20 } : hosts.find(host => path.endsWith(host.node_id))
       if (!body) { status = 404; body = { error: 'not found' } }
       if (options.hostUnavailable) { status = 503; body = { error: 'host unavailable' } }

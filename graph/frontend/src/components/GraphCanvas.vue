@@ -9,7 +9,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import G6 from '@antv/g6'
-import { getContrastingTextColor, readGraphTheme } from '@addp/common-frontend/graph'
+import { getContrastingTextColor, readGraphTheme, graphNodeItemId as nodeItemId, graphEdgeItemId as edgeItemId } from '@addp/common-frontend/graph'
 import { placeIncrementalNodes } from '../utils/incrementalGraphLayout'
 import { createGraphLayoutConfig } from '../utils/graphLayoutPolicy'
 
@@ -160,7 +160,7 @@ function buildG6Data(nodes, edges) {
       const baseLabel = (node.display_name || node.id).toString().substring(0, density.labelMaxLength)
       const displayLabel = isAggregate ? `${baseLabel}\n${node.member_count || 0}` : baseLabel
       return {
-        id: node.id,
+        id: nodeItemId(node.id),
         label: displayLabel,
         _meta: node,
         _displayLabel: displayLabel,
@@ -188,9 +188,9 @@ function buildG6Data(nodes, edges) {
         ? `${edge.type || ''} (${edge.count || 0})`
         : props.showEdgeLabels ? edge.type || '' : ''
       return {
-        id: edge.id || `edge-${index}`,
-        source: edge.source,
-        target: edge.target,
+        id: edgeItemId(edge.id || `generated-${index}`),
+        source: nodeItemId(edge.source),
+        target: nodeItemId(edge.target),
         label: displayLabel,
         _meta: edge,
         _displayLabel: displayLabel,
@@ -221,7 +221,7 @@ function currentLayoutConfig() {
     props.layout,
     props.nodes.length,
     props.edges.length,
-    props.selectedNodeId,
+    props.selectedNodeId ? nodeItemId(props.selectedNodeId) : '',
   )
 }
 
@@ -286,7 +286,7 @@ function initGraph() {
 
   graphInstance.on('node:click', event => {
     const model = event.item.getModel()
-    emit('node-click', model.id)
+    emit('node-click', model._meta.id)
     if (model._meta) emit('node-select', model._meta)
   })
 
@@ -345,7 +345,7 @@ function applyKnownPositions(data, existingPositions) {
 }
 
 function applyIncrementalPositions(data, existingPositions) {
-  return placeIncrementalNodes(data, existingPositions, props.expansionAnchorId)
+  return placeIncrementalNodes(data, existingPositions, props.expansionAnchorId ? nodeItemId(props.expansionAnchorId) : '')
 }
 
 function updateTheme() {
@@ -387,21 +387,23 @@ function syncInteractionStates({ syncZoom = true } = {}) {
   const edges = graphInstance.getEdges()
   nodes.forEach(node => graphInstance.clearItemStates(node))
   edges.forEach(edge => graphInstance.clearItemStates(edge))
+  const selectedNodeId = props.selectedNodeId ? nodeItemId(props.selectedNodeId) : ''
+  const selectedEdgeId = props.selectedEdgeId ? edgeItemId(props.selectedEdgeId) : ''
 
   const relatedNodeIds = new Set()
   const relatedEdgeIds = new Set()
-  if (props.selectedNodeId) {
-    relatedNodeIds.add(props.selectedNodeId)
+  if (selectedNodeId) {
+    relatedNodeIds.add(selectedNodeId)
     edges.forEach(edge => {
       const model = edge.getModel()
-      if (model.source === props.selectedNodeId || model.target === props.selectedNodeId) {
+      if (model.source === selectedNodeId || model.target === selectedNodeId) {
         relatedEdgeIds.add(model.id)
         relatedNodeIds.add(model.source)
         relatedNodeIds.add(model.target)
       }
     })
-  } else if (props.selectedEdgeId) {
-    const selectedEdge = graphInstance.findById(props.selectedEdgeId)
+  } else if (selectedEdgeId) {
+    const selectedEdge = graphInstance.findById(selectedEdgeId)
     if (selectedEdge) {
       const model = selectedEdge.getModel()
       relatedEdgeIds.add(model.id)
@@ -411,26 +413,26 @@ function syncInteractionStates({ syncZoom = true } = {}) {
   }
 
   relatedNodeIds.forEach(id => {
-    if (id !== props.selectedNodeId && graphInstance.findById(id)) graphInstance.setItemState(id, 'related', true)
+    if (id !== selectedNodeId && graphInstance.findById(id)) graphInstance.setItemState(id, 'related', true)
   })
   relatedEdgeIds.forEach(id => {
-    if (id !== props.selectedEdgeId && graphInstance.findById(id)) graphInstance.setItemState(id, 'related', true)
+    if (id !== selectedEdgeId && graphInstance.findById(id)) graphInstance.setItemState(id, 'related', true)
   })
 
-  props.pathNodeIds.forEach(id => {
+  props.pathNodeIds.map(nodeItemId).forEach(id => {
     if (graphInstance.findById(id)) graphInstance.setItemState(id, 'path', true)
   })
-  props.pathEdgeIds.forEach(id => {
+  props.pathEdgeIds.map(edgeItemId).forEach(id => {
     if (graphInstance.findById(id)) graphInstance.setItemState(id, 'path', true)
   })
-  props.searchMatchNodeIds.forEach(id => {
+  props.searchMatchNodeIds.map(nodeItemId).forEach(id => {
     if (graphInstance.findById(id)) graphInstance.setItemState(id, 'search-match', true)
   })
-  if (props.selectedNodeId && graphInstance.findById(props.selectedNodeId)) {
-    graphInstance.setItemState(props.selectedNodeId, 'selected', true)
+  if (selectedNodeId && graphInstance.findById(selectedNodeId)) {
+    graphInstance.setItemState(selectedNodeId, 'selected', true)
   }
-  if (props.selectedEdgeId && graphInstance.findById(props.selectedEdgeId)) {
-    graphInstance.setItemState(props.selectedEdgeId, 'selected', true)
+  if (selectedEdgeId && graphInstance.findById(selectedEdgeId)) {
+    graphInstance.setItemState(selectedEdgeId, 'selected', true)
   }
   restoreSemanticChannels()
   if (syncZoom) syncSemanticZoom(true)
@@ -552,12 +554,13 @@ function applyAnalysisVisuals() {
 defineExpose({
   focusNodes(nodeIds) {
     if (!graphInstance || !nodeIds?.length) return
-    const first = graphInstance.findById(nodeIds[0])
-    if (first && nodeIds.every(id => graphInstance.findById(id))) {
+    const itemIds = nodeIds.map(nodeItemId)
+    const first = graphInstance.findById(itemIds[0])
+    if (first && itemIds.every(id => graphInstance.findById(id))) {
       graphInstance.focusItem(first, true, { duration: 300, easing: 'easeCubic' })
       pendingFocusIds = null
     } else {
-      pendingFocusIds = [...nodeIds]
+      pendingFocusIds = itemIds
     }
   },
   fitView() {
@@ -578,7 +581,7 @@ defineExpose({
       const fill = mode === 'community'
         ? theme.categoryColors[communityIndex] || theme.analysisLow
         : interpolateColor(theme.analysisLow, theme.analysisHigh, ratio)
-      analysisVisuals.set(node.node_id, {
+      analysisVisuals.set(nodeItemId(node.node_id), {
         fill,
         radius: sizeMapping ? 20 + Math.round(ratio * 20) : null
       })

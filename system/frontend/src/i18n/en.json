@@ -2149,7 +2149,8 @@
         "node_unknown": "The declared host does not exist",
         "node_disabled": "The declared host is disabled",
         "source_not_allowed": "This module identity is not allowed on the host"
-      }
+      },
+      "importDeployment": "Admit from deployment manifest"
     },
     "configuration": {
       "title": "Configuration Management",

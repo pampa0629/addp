@@ -27,6 +27,7 @@
 - MySQL/Doris 的 Spark 页面 T4 扩展既有 `hdfs-spark-consumer-flow`，`online-hdfs-spark-fixture.sh` 从真实 Worker T2 读取固定镜像并复用 Doris 唯一初始化。`online-spark-table-oracle.py` 只访问本轮有 owner 标签的业务容器，核对精确类型、原生表身份、DDL 和暂存表；目标名绑定 Run ID，删除后确认不存在。普通 User、Engine 登记和精确表读取 Grant 仍由 System owner 的现有准备流程负责，Business 不访问平台 API。
 - 本机 Doris all-in-one 只发布回环 FE 9030/8030 与 BE 8040/9050/9060/8060，BE 公布 `host.docker.internal`，仅 Doris 容器将其解析到自身回环地址，其他容器使用宿主网关解析。`doris/init.sh` 是唯一初始化与 FE/BE 健康检查入口，复用官方启停；已有回环 BE 必须以原生 HOSTNAME 修改保留 Backend ID 和数据，不删除后重建。确定性迁移与反例归 `make test-business-config`；新库、重复登记保留 Backend ID 和真实 Worker 读写归 Hosted `make test-common-spark-table`。
 - Neo4j：图业务数据测试环境。
+- FalkorDB 4.20.6：独立 `business-falkordb`，通过 `start.sh -falkordb` 管理，回环首选 6381、独立密码和持久卷；用户明确要求的 Infra 快照只在首次启动前一次性恢复，不自动复制或持续同步。
 - Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → keyspace 目录、Meta 键值数据集身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
 
 ## 重要目录

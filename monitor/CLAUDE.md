@@ -151,6 +151,7 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - Monitor 唯一拥有 `/monitoring-targets`、`/monitoring-targets/new`、`/monitoring-targets/:id`，Console 使用 `/monitor` 前缀集成真实 iframe；分页与详情由公开 URL 恢复，端点草稿不进入 URL。
 - 入口只接受非委托 Platform User，需同时具备 `monitor.monitoring_target.read` 和 `platform.host_node.read`；新建、修改、删除分别消费对应独立 Permission。Context、主体、委托或权限变化同步取消请求并清空列表与草稿，迟到响应不得覆盖新范围。
 - 主体/类别创建后只读，更新/停用与删除携带保存版本。CAS 冲突保留草稿并停止写入，须明确重新加载；启用标记仅表示保存配置，不表示实际采集健康。平台主机管理导航使用共享 Console bridge。
+- 新建页支持导入标准节点入口的 `addp.host-admission/v1` 清单，当前草稿内预览后由 Platform User 确认。复用 HostNodeSelect 明确选择既有主机；有 `platform.host_node.create` 时可按只读清单新建，仍由 System 创建 node_id，再沿唯一目标创建接口保存采集。既有主机不被改写；部分完成保留主体，未知写入结果停止重试并指向现有管理入口；身份变化或迟到文件读取不得恢复旧草稿。不会发布新权限、代持管理员凭据或将来源地址推作主机/引擎身份；协议和分层验证见平台设计 10.79。
 - 标准门禁为 `make test-monitor-frontend`、`make test-console-frontend`、`make test-common-frontend` 与 `make test-frontend-ci-registration`。Console 浏览器生命周期自建 Monitor Vite 夹具，CI 安装其锁定依赖；Monitor 前端变更扩散至 Console，后端变更不扩散。无需重启个人开发环境。
 
 ## 平台节点资源前端

@@ -647,6 +647,33 @@
         "changed": "Configuration changed; refresh the list",
         "budget": "This page exceeds the observation budget. Reduce the page size and retry. Collection settings remain manageable.",
         "queried": "Queried at {time}. List results update on refresh."
+      },
+      "admission": {
+        "import": "Import deployment manifest",
+        "clear": "Use manual configuration",
+        "hostFacts": "Host proposed by the manifest",
+        "hostKind": "Host type",
+        "addresses": "Host addresses",
+        "modules": "Allowed service modules",
+        "mode": "Host admission mode",
+        "existing": "Select an existing host",
+        "new": "Create the proposed host",
+        "existingHint": "Configure collection for the selected host without changing its details.",
+        "newHint": "Create and enable the host above, then save the collection settings below.",
+        "created": "Host registered: {name} ({id})",
+        "partial": "The host is registered. Collection setup is not complete.",
+        "hostUnknown": "Host registration needs verification. Check host management first, then select the existing host to continue.",
+        "collectionUnknown": "The collection save result needs verification. Check the existing collection settings for this host first.",
+        "verify": "View host monitoring",
+        "submit": "Confirm admission",
+        "hostMismatch": "The selected host must be enabled and match the physical or virtual type in the manifest.",
+        "invalid": "Invalid deployment manifest. Select JSON exported by the standard node entry, no larger than 16 KiB.",
+        "kinds": {
+          "physical": "Physical host",
+          "virtual": "Virtual host"
+        },
+        "verifyCollection": "View collection settings",
+        "conflict": "A configuration conflict prevented admission. Check the existing host and collection settings first."
       }
     },
     "resources": {
@@ -821,7 +848,10 @@
         "enable": "Compare with the previous equal period",
         "current": "Current period",
         "previous": "Previous period",
-        "averages": { "cpuBusy": "Average CPU busy rate comparison", "memoryUsed": "Average memory usage comparison" },
+        "averages": {
+          "cpuBusy": "Average CPU busy rate comparison",
+          "memoryUsed": "Average memory usage comparison"
+        },
         "coverage": "Valid evaluation points: {valid} / {total}",
         "incomplete": "Insufficient samples. Both periods must be complete to show averages and change.",
         "increased": "Up {value} percentage points from the previous period",

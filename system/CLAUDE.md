@@ -502,6 +502,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 
 - 平台主机管理唯一使用 `/host-nodes` 和 `/host-nodes/:node_id`，仅 Platform User、`platform.host_node.read`；创建与更新另需对应权限。检索和分页使用 `search/node_kind/enabled/page/page_size`，类型为 physical/virtual，纳管状态为 true/false，全部时省略；默认第 1 页、每页 20 条省略，共享导航桥同步 Console。类型、状态及名称/地址在服务端计数与分页前组合筛选；筛选变化回第一页，详情返回保留条件，重置保留每页数量。详情新读取版本后完整提交，409 保留草稿，不自动重试；实例节点展示共用 `ModuleInstanceNode`，只对当前有效绑定提供节点详情入口。纳管状态不表示主机电源状态，具体实现与验证见平台运行监控设计 10.78。
 - 主机台账列表的计数与页数据来自同一只读可重复读事务，供 Monitor 在现有分页上限内识别完整当前 User 授权集合；不增加权限或后台身份投影。超出完整范围或资源预算时由 Monitor 整份拒绝，不把单页称作平台 TOP5。System repository PostgreSQL 门禁覆盖计数后并发插入不会混入同页。
+- 主机管理在当前 User 同时拥有监测目标读取/创建权时，提供“从部署清单接入”导航到 Monitor 原新建页。System 继续唯一创建主机身份；导入、预览和跨 owner 保存由该页面组合既有公开 API，不新增 System 导入接口、存储或后台身份。新建主机仍另需 `platform.host_node.create`，详情见平台运行监控设计 10.79。
 - IAM 左侧导航按业务大类固定为 `/iam/organization`、`/iam/accounts`、`/iam/roles`、`/iam/application-access`、`/iam/security` 五个页面；具体管理对象使用页内稳定 `tab`，默认 Tab 省略，无权限或无效 Tab 规范化为该分类下的首个可用值。
 - `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请和平台身份变更；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 分别承载 API 消费方、外部 OAuth 应用、租户服务账号和平台运行账号，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。当前 User 由右上角“个人中心”进入唯一 `/account` 页面，分类查看基本信息、当前租户下本人组织归属与账号安全，不属于任一 IAM 管理页 Tab；`GET /users/me/organization` 是只读自服务，不要求组织管理权限，不枚举他人或跨租户组织。
 - 引擎对象唯一使用 `/engines/:id`；详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略；独立授权窗口使用 `tab=data-authorization|delegations`，按对应权限显示数据授权或委托授权。通过同一对象路由的稳定子视图区分页面职责，不新增同一功能的双轨路由；刷新、关闭和无权限规范化继续使用共享导航桥。

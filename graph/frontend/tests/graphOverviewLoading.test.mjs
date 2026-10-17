@@ -76,7 +76,7 @@ test('选中节点只做强调，不压暗多跳子图', () => {
     canvasSource.indexOf('function syncSemanticZoom'),
   )
 
-  assert.match(interactionStateSource, /setItemState\(props\.selectedNodeId, 'selected'/)
+  assert.match(interactionStateSource, /setItemState\(selectedNodeId, 'selected'/)
   assert.doesNotMatch(interactionStateSource, /'dimmed'/)
 })
 

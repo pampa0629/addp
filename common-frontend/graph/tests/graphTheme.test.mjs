@@ -43,7 +43,7 @@ test('主题读取和标签对比色由共享 graph 包唯一提供', () => {
   assert.doesNotMatch(encoding, /function (readGraphTheme|getContrastingTextColor)\b/)
   for (const path of ['components/GraphCanvas.vue', 'views/GraphBrowser.vue']) {
     const source = readFileSync(new URL(`../../../graph/frontend/src/${path}`, import.meta.url), 'utf8')
-    assert.match(source, /import \{ getContrastingTextColor, readGraphTheme \} from '@addp\/common-frontend\/graph'/)
+    assert.match(source, /import \{[^}]*getContrastingTextColor[^}]*readGraphTheme[^}]*\} from '@addp\/common-frontend\/graph'/)
   }
 })
 

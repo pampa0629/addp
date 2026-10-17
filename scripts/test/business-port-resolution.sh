@@ -8,7 +8,7 @@ PROJECT_ROOT=$(mktemp -d)
 trap 'rm -rf "$PROJECT_ROOT"' EXIT
 MOCK_RUNNING=0
 MOCK_FOREIGN=0
-MOCK_BUSY='9002 9003 6380'
+MOCK_BUSY='9002 9003 6380 6381'
 MOCK_NETWORK_EXISTS=0
 MOCK_NETWORK_SUBNET=172.19.0.0/16
 MOCK_NETWORK_IP_OWNER=''
@@ -24,6 +24,7 @@ docker() {
         business-postgres) service=postgres ;;
         business-mysql) service=mysql ;;
         business-redis) service=redis ;;
+        business-falkordb) service=falkordb ;;
         business-minio) service=minio ;;
         *) return 1 ;;
       esac
@@ -44,6 +45,7 @@ docker() {
         business-postgres:5432/tcp) echo 0.0.0.0:5433 ;;
         business-mysql:3306/tcp) echo 0.0.0.0:3306 ;;
         business-redis:6379/tcp) echo 127.0.0.1:16380 ;;
+        business-falkordb:6379/tcp) echo 127.0.0.1:16381 ;;
         business-minio:9000/tcp) echo 0.0.0.0:19002 ;;
         business-minio:9001/tcp) echo 0.0.0.0:19003 ;;
         *) return 1 ;;
@@ -91,12 +93,13 @@ MYSQL_PORT=3306
 MINIO_API_PORT=9002
 MINIO_CONSOLE_PORT=9003
 BUSINESS_REDIS_PORT=6380
-addp_business_resolve_ports postgres mysql minio redis >/dev/null
+addp_business_resolve_ports postgres mysql minio redis falkordb >/dev/null
 [ "$POSTGRES_PORT" = 5433 ]
 [ "$MYSQL_PORT" = 3306 ]
 [ "$MINIO_API_PORT" = 19002 ]
 [ "$MINIO_CONSOLE_PORT" = 19003 ]
 [ "$BUSINESS_REDIS_PORT" = 16380 ]
+[ "$BUSINESS_FALKORDB_PORT" = 16381 ]
 
 MOCK_RUNNING=1
 addp_business_save_actual_ports
@@ -104,6 +107,7 @@ state=$(addp_business_port_state)
 grep -Fxq 'MINIO_API_PORT=19002' "$state"
 grep -Fxq 'MINIO_CONSOLE_PORT=19003' "$state"
 grep -Fxq 'BUSINESS_REDIS_PORT=16380' "$state"
+grep -Fxq 'BUSINESS_FALKORDB_PORT=16381' "$state"
 
 MOCK_RUNNING=0
 MOCK_BUSY='16380'

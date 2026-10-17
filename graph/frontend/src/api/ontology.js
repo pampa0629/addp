@@ -110,11 +110,14 @@ export const engineAPI = {
       const response = await client.post(`/system/engines/${engineId}/catalog/children`, { path, options: {} })
       return response.nodes
     }
-    const nodes = await children({ segments: [] })
-    const groups = await Promise.all(nodes.map(async node => {
-      if (node.role === 'leaf') return node.kind === 'graph' ? [node] : []
-      return (await children(node.path)).filter(child => child.role === 'leaf' && child.kind === 'graph')
-    }))
-    return groups.flat()
+    const graphLeaves = async path => {
+      const nodes = await children(path)
+      const groups = await Promise.all(nodes.map(node => {
+        if (node.role === 'leaf') return node.kind === 'graph' ? [node] : []
+        return node.role === 'branch' ? graphLeaves(node.path) : []
+      }))
+      return groups.flat()
+    }
+    return graphLeaves({ segments: [] })
   }
 }
