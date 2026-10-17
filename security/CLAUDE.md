@@ -227,3 +227,5 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 2026-10-17 原值授权扩展：规范与代码改为 scopes 集合，一次申请／审批可覆盖 Manager 预览和 Develop 查询，逐出口返回授权状态并可独立撤销；SchemaVersion 5 单向迁移旧申请为原出口单元素集合，删除旧 owner/action 列。Develop 保存默认脱敏结果及仅含执行时已授权原值的 Owner 私有有界历史；专业详情、列表与工作台轮询每次按当前可信用户及本地投影重判。到期或撤销回落默认保护，默认语义／结构变化则拒绝历史结果并要求重新查询。通用观察和导出不暴露私有载荷；Notebook 交互查询使用经控制面核验的 session 用户，完整导出仍走 Transfer 默认保护。共享申请弹窗由 common-frontend 唯一维护。Hosted 原值套件扩展为领域 v5／浏览器 v2，真实结果另行记录，不以历史 v4 验收代替。
 
 结构化投影启动补齐仅处理 enrolling/active Enrollment，必须先锁定并核对 Enrollment 生命周期，再解析与检查 Owner 投影。released 保留的 active 投影记录是解除审计，不要求补出后续新加入的 Graph Owner，也不得重建已解除资源的保护。releasing/activating 同样不进入该字段升级路径。回归覆盖旧四 Owner 已解除资源在 Graph 初始化与结构化补齐顺序执行后的幂等性、历史内容不变，纳入既有 Security Go 与 PostgreSQL Lifecycle 门禁。
+
+2026-10-17 原值授权 v5 Hosted 首次运行 [39018432898](https://github.com/pampa0629/addp/actions/runs/39018432898) 未进入领域验收：标准启动入口在 Hosted 跳过本地端口解析时，Graph 前端缺少默认端口，导致环境启动超时。归档 summary 确认 cleanup=passed、infra_cleanup=zero_residuals；不能计为原值授权或历史回落 T4 通过。已按现有默认配置补齐 GRAPH_FE_PORT，并在既有生命周期门禁中对照唯一端口清单验证全部前端默认值和显式覆盖。新增回归先复现未定义变量，修正后 make test-dev-lifecycle 全部通过；新增 Hosted 结果另行核验。本地 Security 后端与 Worker 重启后已稳定运行。

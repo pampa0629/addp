@@ -2281,6 +2281,32 @@ print('PASS: running backends/workers skip builds; missing processes build indep
 PY
 }
 
+test_frontend_defaults_match_port_registry() {
+  python3 - "$ROOT_DIR" <<'PY'
+from pathlib import Path
+import os, re, subprocess, sys
+root = Path(sys.argv[1])
+registry = subprocess.check_output(['bash', '-c', 'source "$1"; addp_dev_port_specs', '_', str(root/'scripts/dev/ports.sh')], text=True)
+expected = {variable: preferred for _, variable, preferred in map(str.split, registry.splitlines()) if variable.endswith('_FE_PORT')}
+source = (root/'scripts/dev/start.sh').read_text()
+assignments = '\n'.join(re.findall(r'^(?:export )?[A-Z_]+_FE_PORT=.*$', source, re.M))
+# Hosted deliberately skips local port discovery, so defaults must be complete
+# even when no frontend port has been inherited from a developer's .env.
+for overridden in (False, True):
+    env = {key: value for key, value in os.environ.items() if key not in expected}
+    if overridden:
+        env.update({key: str(int(value)+1000) for key, value in expected.items()})
+    script = 'set -eu\n'+assignments+'\n'+'\n'.join(f'printf "%s\\n" "${{{key}}}"' for key in expected)
+    result = subprocess.run(['bash', '-c', script], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    actual = dict(zip(expected, result.stdout.splitlines(), strict=True))
+    wanted = {key: env[key] if overridden else value for key, value in expected.items()}
+    assert actual == wanted, (actual, wanted)
+print('PASS: every frontend has its registered default in Hosted and preserves explicit overrides')
+PY
+}
+
+test_frontend_defaults_match_port_registry
 test_build_only_stopped_processes
 test_model3d_python_dependency_sync
 test_stop_keeps_system_available_for_deregistration
