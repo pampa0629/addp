@@ -37,6 +37,10 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 }
 
 func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, ifNotExists bool) error {
+	return createPostgresTableWithPolicy(ctx, db, schema, table, fields, spatialInfo, ifNotExists, ifNotExists)
+}
+
+func createPostgresTableWithPolicy(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, createSchema, ensureTable bool) error {
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
@@ -65,7 +69,7 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 		return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
 	}
 	if !schemaExists {
-		if !ifNotExists {
+		if !createSchema {
 			return fmt.Errorf("postgresql replay target schema %s does not exist", schema)
 		}
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
@@ -74,14 +78,14 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 	}
 
 	createPrefix := "CREATE TABLE "
-	if ifNotExists {
+	if ensureTable {
 		createPrefix = "CREATE TABLE IF NOT EXISTS "
 	}
 	createSQL := fmt.Sprintf("%s%s (%s)", createPrefix, dialect.QualifiedTable(schema, table), strings.Join(definitions, ", "))
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
 	}
-	if !ifNotExists {
+	if !ensureTable {
 		return nil
 	}
 	if err := evolvePostgresTableSchema(ctx, db, schema, table, writeFields, spatialInfo); err != nil {
@@ -253,6 +257,10 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	}
 	defer db.Close()
 
+	return dropPostgresTable(ctx, db, schema, table)
+}
+
+func dropPostgresTable(ctx context.Context, db *sql.DB, schema, table string) error {
 	dropSQL := "DROP TABLE IF EXISTS " + commonquery.ForDialect("postgresql").QualifiedTable(schema, table)
 	if _, err := db.ExecContext(ctx, dropSQL); err != nil {
 		return fmt.Errorf("drop postgresql table %s.%s: %w", schema, table, err)

@@ -905,6 +905,9 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 	if !writer.deleted {
 		t.Fatal("target was not deleted before write")
 	}
+	if metrics.TargetPreparation != (engineplugin.TableTargetPreparation{}) {
+		t.Fatal("legacy preparation fabricated target creation evidence")
+	}
 	if len(writer.preparedFields) != 2 {
 		t.Fatalf("prepared fields = %#v, want 2 fields", writer.preparedFields)
 	}

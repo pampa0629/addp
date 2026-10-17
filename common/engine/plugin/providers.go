@@ -204,6 +204,32 @@ type TableWritePreparer interface {
 	PrepareTableWrite(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableWriteOptions) error
 }
 
+// TableTargetPreparer owns observation and preparation of a single target.
+// Callers must not delete the target separately before invoking it.
+type TableTargetPreparer interface {
+	StoreProvider
+	PrepareTableTarget(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts TableTargetPrepareOptions) (TableTargetPreparation, error)
+}
+
+type TableTargetPrepareOptions struct {
+	Definition       TableWriteOptions
+	RecreateExisting bool
+}
+
+type TableTargetDisposition string
+
+const (
+	TableTargetCreated   TableTargetDisposition = "created"
+	TableTargetRecreated TableTargetDisposition = "recreated"
+	TableTargetReused    TableTargetDisposition = "reused"
+)
+
+// TableTargetPreparation describes preparation only, never commit or permission.
+// The zero value is unavailable, not a newly created target.
+type TableTargetPreparation struct {
+	Disposition TableTargetDisposition
+}
+
 type TableUpsertOptions struct {
 	Fields      []datatype.FieldInfo
 	SpatialInfo *datatype.SpatialInfo

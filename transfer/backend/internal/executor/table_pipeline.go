@@ -18,11 +18,12 @@ import (
 )
 
 type TablePipelineMetrics struct {
-	FieldLineage   *TableFieldLineage
-	RecordsRead    int64
-	RecordsWritten int64
-	Batches        int64
-	TargetRefs     []format.RelatedRef
+	TargetPreparation engineplugin.TableTargetPreparation
+	FieldLineage      *TableFieldLineage
+	RecordsRead       int64
+	RecordsWritten    int64
+	Batches           int64
+	TargetRefs        []format.RelatedRef
 }
 
 type TableBatchSource interface {
@@ -122,6 +123,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	}
 	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
 		target.effectsPossible = false
+		target.preparation = engineplugin.TableTargetPreparation{}
 		defer func() {
 			if execErr != nil && target.effectsPossible {
 				execErr = errors.Join(execErr, ErrTargetMayHaveChanged)
@@ -178,6 +180,9 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 	}()
 
 	metrics := &TablePipelineMetrics{}
+	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
+		metrics.TargetPreparation = target.preparation
+	}
 	if p.ObserveFieldLineage != nil {
 		var derived []string
 		if protected, ok := reader.(*protectedTableBatchReader); ok {
@@ -846,6 +851,7 @@ func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (co
 }
 
 type nativeTableBatchTarget struct {
+	preparation          engineplugin.TableTargetPreparation
 	effectsPossible      bool
 	definitionChecker    engineplugin.TableWriteDefinitionChecker
 	deleter              *engineTargetResourceDeleter
@@ -862,6 +868,7 @@ type nativeTableBatchTarget struct {
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
+	t.preparation = engineplugin.TableTargetPreparation{}
 	if t.definitionChecker != nil {
 		definition := engineplugin.TableWriteDefinitionFromOptions(engineplugin.TableWriteOptions{Fields: tableInfoFields(tableInfo), SpatialInfo: spatialInfo})
 		if err := t.definitionChecker.CheckTableWriteDefinition(definition).UnsupportedError(); err != nil {
@@ -871,15 +878,27 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 	if t.managedExisting && t.deleter != nil {
 		return nil, fmt.Errorf("managed existing table target must not delete the target")
 	}
-	if !t.managedExisting && t.deleter != nil {
-		t.effectsPossible = true
-		if err := t.deleter.DeleteTarget(ctx); err != nil {
-			return nil, fmt.Errorf("delete native table target before write: %w", err)
-		}
-	}
 	if !t.managedExisting {
-		if err := t.prepare(ctx, tableInfo, spatialInfo); err != nil {
-			return nil, err
+		if preparer, ok := t.preparer.(engineplugin.TableTargetPreparer); ok {
+			t.effectsPossible = true
+			preparation, err := preparer.PrepareTableTarget(ctx, t.connInfo, t.path, engineplugin.TableTargetPrepareOptions{
+				Definition:       engineplugin.TableWriteOptions{Fields: tableInfoFields(tableInfo), SpatialInfo: spatialInfo.Clone()},
+				RecreateExisting: t.replace,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prepare native table target: %w", err)
+			}
+			t.preparation = preparation
+		} else {
+			if t.deleter != nil {
+				t.effectsPossible = true
+				if err := t.deleter.DeleteTarget(ctx); err != nil {
+					return nil, fmt.Errorf("delete native table target before write: %w", err)
+				}
+			}
+			if err := t.prepare(ctx, tableInfo, spatialInfo); err != nil {
+				return nil, err
+			}
 		}
 	}
 	fields := tableInfoFields(tableInfo)
