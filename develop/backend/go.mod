@@ -24,7 +24,9 @@ require (
 )
 
 require (
+	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210803070921-b358b509191a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cloudprivacylabs/opencypher v1.0.0 // indirect
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect

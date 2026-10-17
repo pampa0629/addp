@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataprotection"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -43,6 +44,9 @@ func contentDeliveryServiceFixture(t *testing.T, handler http.Handler) (*HybridS
 	repo := repository.NewContentIndexDeliveryRepository(db, "content")
 	store, err := projectionstore.Migrate(db, "manager", "manager", nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	epoch, err := repo.Open(t.Context(), contentIndexEndpointID(server.URL), true)

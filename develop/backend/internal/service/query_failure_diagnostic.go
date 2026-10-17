@@ -77,6 +77,8 @@ func queryFailureDiagnostic(code, message string, cause error) *commonExecution.
 			code = queryErrorCode(cause)
 		}
 		switch code {
+		case string(plugin.QueryErrorCodeLocalReadUnsupported):
+			stage, reason = "preparation", "local_read_unsupported"
 		case string(plugin.QueryErrorCodeSyntaxInvalid):
 			stage, reason = "preparation", "query_syntax_invalid"
 		case string(plugin.QueryErrorCodeTableNotFound):

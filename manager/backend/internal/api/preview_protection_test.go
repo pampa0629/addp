@@ -460,11 +460,12 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3,
-		ProjectionID:  "outdoor-phone-manager",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "manager",
-		State:         dataprotection.ProjectionStateActive,
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		ProjectionID:   "outdoor-phone-manager",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "manager",
+		State:          dataprotection.ProjectionStateActive,
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item",
 			ResourceIdentity: req.ItemFingerprint, ComponentKey: "userInfo.phone",

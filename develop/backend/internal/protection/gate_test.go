@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/neo4j"
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	"github.com/addp/common/models"
 	"gorm.io/driver/sqlite"
@@ -202,11 +203,12 @@ func installDevelopProjection(t *testing.T, store *projectionstore.Store, identi
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3,
-		ProjectionID:  "projection-develop-persons",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "develop",
-		State:         dataprotection.ProjectionStateEnrolling,
+		TargetEngineID: 11,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		ProjectionID:   "projection-develop-persons",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "develop",
+		State:          dataprotection.ProjectionStateEnrolling,
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity,
 		},
@@ -247,7 +249,8 @@ func installActiveDevelopProjectionAt(t *testing.T, store *projectionstore.Store
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
+		TargetEngineID: 11,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
 		ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,
@@ -298,5 +301,46 @@ func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
 	}
 	if !store.Gate(7, dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: models.GenerateItemFingerprint(11, "Outdoor.Persons")}, time.Now().UTC()).Managed {
 		t.Fatal("expired resource was released")
+	}
+}
+
+func TestGraphGateUsesPreparedScopeAndRetainsInflightBarrier(t *testing.T) {
+	store := developProjectionStore(t)
+	installDevelopProjection(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"))
+	enginePlugin, err := plugin.Get("neo4j")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGate(store)
+	plan, err := plugin.NewPreparedGraphQuery(&plugin.QueryAnalysis{Language: "cypher", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, func(context.Context) (*plugin.QueryEngineReadScope, error) { return plugin.NewQueryEngineReadScope(13) }, nil, func(context.Context) (*plugin.GraphQueryResult, error) { return &plugin.GraphQueryResult{}, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	end, err := gate.BeginPreparedGraphQuery(t.Context(), 7, enginePlugin, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gate.HasActiveExecutionsForTenant(7) {
+		t.Fatal("graph read bypassed inflight barrier")
+	}
+	if _, err := plan.ExecuteGraph(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	end()
+	if gate.HasActiveExecutionsForTenant(7) {
+		t.Fatal("completed graph read remained active")
+	}
+	unknown, err := plugin.NewPreparedGraphQuery(&plugin.QueryAnalysis{Language: "cypher", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil, nil, func(context.Context) (*plugin.GraphQueryResult, error) {
+		t.Fatal("unproved graph executed")
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gate.BeginPreparedGraphQuery(t.Context(), 7, enginePlugin, unknown); !errors.Is(err, plugin.ErrQueryReadSetUnresolved) {
+		t.Fatalf("unknown graph admitted: %v", err)
+	}
+	if gate.HasActiveExecutionsForTenant(7) {
+		t.Fatal("denied graph retained inflight lease")
 	}
 }

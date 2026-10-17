@@ -21,6 +21,7 @@ func TestVersionCommitRejectsChangedCheckpointAndUsesDurableFacts(t *testing.T) 
 		t.Fatal(err)
 	}
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}
+	initializeTenant(t, store, 7)
 	version, err := store.CaptureVersion(context.Background(), 7, func(g GateReader) error {
 		if g.Gate(7, target, time.Now()).Managed {
 			t.Fatal("unexpected managed target")
@@ -71,6 +72,7 @@ func TestVersionCommitBindingRollbackAndTenantIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	initializeTenant(t, store, 7)
 	version, err := store.CaptureVersion(context.Background(), 7, func(GateReader) error { return nil })
 	if err != nil {
 		t.Fatal(err)

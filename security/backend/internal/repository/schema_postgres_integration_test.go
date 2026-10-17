@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/schema"
 	"github.com/addp/security/internal/models"
 	"gorm.io/driver/postgres"
@@ -49,7 +50,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		SchemaVersion: legacyProjectionSchemaV1,
 		ProjectionID:  "11111111-1111-1111-1111-111111111111",
 		Revision:      "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
-		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:postgres-migration"},
+		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonmodels.GenerateItemFingerprint(1, "business.pg_people")},
 		SourceSnapshotHash: "sha256:postgres-migration-snapshot",
 		Rules: []legacyProjectionRuleV1{{
 			Action:    "preview",
@@ -73,6 +74,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		Revision: "00000000000000000001", State: dataprotection.ProjectionStateActive,
 		ProjectionPayload: string(legacyPayload), PublishedSequence: 1, CreatedAt: now, UpdatedAt: now,
 	}
+	persistProjectionEnrollment(t, tx, legacyRecord.EnrollmentID, legacyRecord.TenantID, dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonmodels.GenerateItemFingerprint(1, "business.pg_people")}, "business.pg_people")
 	if err := tx.Create(&legacyRecord).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +88,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(legacyRecord.ProjectionPayload), &migratedProjection); err != nil {
 		t.Fatal(err)
 	}
-	if migratedProjection.SchemaVersion != dataprotection.ProjectionSchemaV3 {
+	if migratedProjection.SchemaVersion != dataprotection.ProjectionSchemaV4 {
 		t.Fatalf("migrated projection schema = %s", migratedProjection.SchemaVersion)
 	}
 	decision := migratedProjection.Rules[0].Decision

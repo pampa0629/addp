@@ -468,3 +468,5 @@ continuous T4 的新鲜登录阶段已增加闭合阶段标识（身份、权限
 上一批 Query 事件 Hosted T4 `38333947835`（`dcb802e4236dc32aaf82c79341430efb609504e3`）已通过：三轮各验证两个 Query execution 的 started/progress/completed 事件，浏览器与专业成果/血缘断言通过、残留 0；58 个公开归档文件未发现私有控制文件或访问令牌标记。这不替代本批 Workflow/Notebook 的 T4。
 
 2026-10-15 当前 main 状态核对：以上“工作区尚未发布”是 10 月 13 日的历史快照；共享执行监督器实现现已随 `afeb312ed` 进入 main。`ExecutionService.Execute` 的 script 分支仍固定以 `authorization_unavailable` 失败，不会派发 Notebook Runtime，因此不能将该批计为 Notebook 排队执行已完成。其运行许可契约及 System IAM 实现仍须由对应 Owner 衔接确认，Develop 消费许可并补齐真实执行验收；不得借用 Notebook Session 或数据读取授权、保存用户 Token，或恢复旧请求外 goroutine 绕过。现有 Query 与 continuous 的历史通过证据不能外推到该 Notebook 路径。
+
+查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。

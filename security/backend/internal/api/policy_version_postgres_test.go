@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/common/dataprotection"
 	authmiddleware "github.com/addp/common/middleware/auth"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/security/internal/models"
 	"github.com/addp/security/internal/service"
 	"github.com/gin-gonic/gin"
@@ -25,7 +26,7 @@ func verifyPolicyHTTPVersions(t *testing.T, db *gorm.DB, kind models.SensitiveDa
 		t.Fatal(err)
 	}
 	baseline = *updatedBaseline
-	enrollment := models.ProtectionEnrollment{ID: uuid.NewString(), TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: "policy-http-fixture", State: models.EnrollmentStateActive, Version: 1, LatestSourceSnapshotHash: "sha256:policy-http", CreatedBy: 11}
+	enrollment := models.ProtectionEnrollment{ID: uuid.NewString(), TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: commonmodels.GenerateItemFingerprint(1, "business.policy_http_fixture"), TargetEngineID: 1, TargetFullName: "business.policy_http_fixture", State: models.EnrollmentStateActive, Version: 1, LatestSourceSnapshotHash: "sha256:policy-http", CreatedBy: 11}
 	assessment := models.ResourceSecurityAssessment{ID: uuid.NewString(), TenantID: 7, EnrollmentID: enrollment.ID, ComponentKey: "userInfo.phone", Version: 1, CurrentRevision: 1, CreatedBy: 11}
 	revision := models.ResourceSecurityAssessmentRevision{ID: uuid.NewString(), TenantID: 7, AssessmentID: assessment.ID, Revision: 1, Conclusion: models.AssessmentConclusionSensitive, SourceKind: models.AssessmentRevisionSourceManual, SensitiveDataTypeID: kind.ID, SecurityClassificationID: kind.SecurityClassificationID, SecurityGradeID: kind.DefaultSecurityGradeID, SourceSnapshotHash: enrollment.LatestSourceSnapshotHash, Component: dataprotection.Component{Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}, ValueType: "string", SchemaFingerprint: "sha256:policy-http-component"}, Rationale: "fixture", CreatedBy: 11}
 	projection := models.ProtectionProjectionRecord{ID: uuid.NewString(), TenantID: 7, EnrollmentID: enrollment.ID, ConsumerOwner: "manager", Revision: "00000000000000000001", State: dataprotection.ProjectionStateActive, ProjectionPayload: `{}`}

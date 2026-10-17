@@ -43,6 +43,7 @@ type SQLEngineService struct {
 		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
 		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
 		BeginUnresolvedRead(context.Context, uint) (func(), error)
+		BeginPreparedGraphQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedGraphQuery) (func(), error)
 	}
 }
 
@@ -50,6 +51,7 @@ func (s *SQLEngineService) SetProtectionGate(gate interface {
 	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
 	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
 	BeginUnresolvedRead(context.Context, uint) (func(), error)
+	BeginPreparedGraphQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedGraphQuery) (func(), error)
 }) {
 	s.protectionGate = gate
 }

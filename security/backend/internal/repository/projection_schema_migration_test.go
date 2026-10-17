@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/security/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -43,7 +44,7 @@ type legacyProjectionV1 struct {
 	ExpiresAt          time.Time                        `json:"expires_at"`
 }
 
-func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
+func TestProjectionSchemaV4MigrationPreservesFeedAndDropsTenantWideAllow(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +60,7 @@ func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 		SchemaVersion: legacyProjectionSchemaV1,
 		ProjectionID:  "11111111-1111-1111-1111-111111111111",
 		Revision:      "00000000000000000003", ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
-		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:target"},
+		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonmodels.GenerateItemFingerprint(1, "business.people")},
 		SourceSnapshotHash: "sha256:snapshot",
 		Rules: []legacyProjectionRuleV1{{
 			Action: "preview",
@@ -90,6 +91,7 @@ func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 		ConsumerOwner: "manager", Revision: legacy.Revision, State: legacy.State,
 		ProjectionPayload: string(payload), PublishedSequence: 41, CreatedAt: now, UpdatedAt: now,
 	}
+	persistProjectionEnrollment(t, db, record.EnrollmentID, record.TenantID, legacy.Target, "business.people")
 	if err := db.Create(&record).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -98,13 +100,13 @@ func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 		Sequence: 41, ChangeID: "33333333-3333-3333-3333-333333333333", TenantID: 7,
 		EnrollmentID: record.EnrollmentID, ConsumerOwner: "manager", Operation: dataprotection.ChangeOperationUpsert,
 		ProjectionID: record.ID, Revision: record.Revision, TargetOwner: "meta", TargetType: "data_item",
-		TargetIdentity: "sha256:target", ProjectionPayload: &payloadText, CreatedAt: now,
+		TargetIdentity: legacy.Target.ResourceIdentity, ProjectionPayload: &payloadText, CreatedAt: now,
 	}
 	if err := db.Create(&change).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	if err := migrateProtectionProjectionSchemaV3(db); err != nil {
+	if err := migrateProtectionProjectionSchemaV4(db); err != nil {
 		t.Fatal(err)
 	}
 	var migratedRecord models.ProtectionProjectionRecord
@@ -118,7 +120,7 @@ func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 	if err := projection.Validate(time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
+	if projection.SchemaVersion != dataprotection.ProjectionSchemaV4 || projection.Rules[0].Decision.Effect != dataprotection.EffectMask || len(projection.Rules[0].Authorizations) != 0 {
 		t.Fatalf("unexpected migrated projection: %#v", projection)
 	}
 	if projection.Rules[0].Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || projection.Rules[0].Decision.Parameters["mask_rune"] != "*" || len(projection.Rules[0].Decision.Parameters) != 3 {
@@ -142,7 +144,7 @@ func TestProjectionSchemaV3MigrationPreservesFeedAndDropsTenantWideAllow(t *test
 
 func timePointer(value time.Time) *time.Time { return &value }
 
-func TestProjectionSchemaV3MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
+func TestProjectionSchemaV4MigrationFailsClosedForNonCurrentPayloads(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		payload  string
 		expected string
@@ -170,9 +172,9 @@ func TestProjectionSchemaV3MigrationFailsClosedForNonCurrentPayloads(t *testing.
 			if err := db.Create(&record).Error; err != nil {
 				t.Fatal(err)
 			}
-			err = migrateProtectionProjectionSchemaV3(db)
+			err = migrateProtectionProjectionSchemaV4(db)
 			if err == nil || !strings.Contains(err.Error(), testCase.expected) {
-				t.Fatalf("migrateProtectionProjectionSchemaV3() error=%v, want %q", err, testCase.expected)
+				t.Fatalf("migrateProtectionProjectionSchemaV4() error=%v, want %q", err, testCase.expected)
 			}
 		})
 	}
@@ -199,7 +201,8 @@ func TestKeepPrefixSuffixV2MigrationRewritesBaselineAndCurrentFeed(t *testing.T)
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "44444444-4444-4444-4444-444444444444", Revision: "00000000000000000007",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item"},
 		SourceSnapshotHash: "sha256:snapshot",
@@ -293,7 +296,7 @@ func assertExistingEnrollmentValidityMigration(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	deadline := now.Add(time.Hour)
-	row := models.ProtectionEnrollment{ID: uuid.NewString(), TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: "old-validity", State: "active", Version: 3, CreatedBy: 11, CreatedAt: now, UpdatedAt: now}
+	row := models.ProtectionEnrollment{ID: uuid.NewString(), TenantID: 7, TargetOwner: "meta", TargetType: "data_item", TargetIdentity: commonmodels.GenerateItemFingerprint(1, "business.people"), TargetEngineID: 1, TargetFullName: "business.people", State: "active", Version: 3, CreatedBy: 11, CreatedAt: now, UpdatedAt: now}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +304,8 @@ func assertExistingEnrollmentValidityMigration(t *testing.T, db *gorm.DB) {
 	for index, owner := range []string{"manager", "develop", "service", "transfer"} {
 		ownerDeadline := deadline.Add(time.Duration(index) * time.Minute)
 		ownerDeadlines[owner] = ownerDeadline
-		projection := dataprotection.Projection{SchemaVersion: "addp.protection_projection/v2", ProjectionID: uuid.NewString(), Revision: "00000000000000000003", ConsumerOwner: owner, State: "enrolling", Target: row.Target(), Rules: []dataprotection.Rule{}, ValidFrom: now, ExpiresAt: &ownerDeadline}
+		projection := dataprotection.Projection{
+			TargetEngineID: 1, SchemaVersion: "addp.protection_projection/v2", ProjectionID: uuid.NewString(), Revision: "00000000000000000003", ConsumerOwner: owner, State: "enrolling", Target: row.Target(), Rules: []dataprotection.Rule{}, ValidFrom: now, ExpiresAt: &ownerDeadline}
 		if err := projection.Seal(); err != nil {
 			t.Fatal(err)
 		}
@@ -342,9 +346,66 @@ func assertExistingEnrollmentValidityMigration(t *testing.T, db *gorm.DB) {
 			if err := projection.Validate(time.Time{}); err != nil {
 				t.Fatal(err)
 			}
-			if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 || projection.ExpiresAt == nil || !projection.ExpiresAt.Equal(ownerDeadlines[record.ConsumerOwner]) || projection.Revision != "00000000000000000003" || record.PublishedSequence != 1 {
+			if projection.SchemaVersion != dataprotection.ProjectionSchemaV4 || projection.ExpiresAt == nil || !projection.ExpiresAt.Equal(ownerDeadlines[record.ConsumerOwner]) || projection.Revision != "00000000000000000003" || record.PublishedSequence != 1 {
 				t.Fatal("migration changed an Owner deadline, revision or feed position")
 			}
 		}
+	}
+}
+
+func persistProjectionEnrollment(t *testing.T, db *gorm.DB, id string, tenantID int64, target dataprotection.ResourceReference, fullName string) {
+	t.Helper()
+	row := models.ProtectionEnrollment{ID: id, TenantID: tenantID, TargetOwner: target.OwnerModule, TargetType: target.ResourceType, TargetIdentity: target.ResourceIdentity, TargetEngineID: 1, TargetFullName: fullName, State: "active", Version: 1, CreatedBy: 11}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProjectionV4MigrationRejectsMissingOrInconsistentEnginePreimage(t *testing.T) {
+	for _, kind := range []string{"missing", "wrong_engine", "wrong_name"} {
+		t.Run(kind, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pool, _ := db.DB()
+			defer pool.Close()
+			if err := db.Exec("ATTACH DATABASE ':memory:' AS security").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := Migrate(db); err != nil {
+				t.Fatal(err)
+			}
+			target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: commonmodels.GenerateItemFingerprint(1, "business.people")}
+			now := time.Now().UTC()
+			projection := dataprotection.Projection{SchemaVersion: "addp.protection_projection/v3", ProjectionID: uuid.NewString(), Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateEnrolling, Target: target, ValidFrom: now}
+			_ = projection.Seal()
+			payload, _ := json.Marshal(projection)
+			enrollmentID := uuid.NewString()
+			if kind != "missing" {
+				persistProjectionEnrollment(t, db, enrollmentID, 7, target, "business.people")
+				updates := map[string]interface{}{"target_engine_id": 2}
+				if kind == "wrong_name" {
+					updates = map[string]interface{}{"target_full_name": "business.other"}
+				}
+				if err := db.Model(&models.ProtectionEnrollment{}).Where("id = ?", enrollmentID).Updates(updates).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			record := models.ProtectionProjectionRecord{ID: projection.ProjectionID, TenantID: 7, EnrollmentID: enrollmentID, ConsumerOwner: "develop", Revision: projection.Revision, State: projection.State, ProjectionPayload: string(payload), PublishedSequence: 1}
+			if err := db.Create(&record).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := migrateProtectionProjectionSchemaV4(db); err == nil {
+				t.Fatal("untrusted engine preimage was migrated")
+			}
+			var persisted models.ProtectionProjectionRecord
+			if err := db.First(&persisted, "id = ?", record.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if persisted.ProjectionPayload != string(payload) {
+				t.Fatal("failed migration changed payload")
+			}
+		})
 	}
 }

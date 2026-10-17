@@ -472,3 +472,7 @@ func sampleQueryRequestForTest(handler *QueryHandler, target string) *httptest.R
 	router.ServeHTTP(response, request)
 	return response
 }
+
+func (allowQueryProtectionGate) BeginPreparedGraphQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedGraphQuery) (func(), error) {
+	return func() {}, nil
+}

@@ -347,6 +347,9 @@ func protectionEffectRank(effect string) int {
 }
 
 func publishProtectionProjection(tx *gorm.DB, enrollment models.ProtectionEnrollment, consumerOwner, sourceSnapshotHash string, rules []dataprotection.Rule, now time.Time) error {
+	if err := dataprotection.VerifyTargetEngine(enrollment.Target(), enrollment.TargetEngineID, enrollment.TargetFullName); err != nil {
+		return err
+	}
 	var record models.ProtectionProjectionRecord
 	query := tx
 	if tx.Dialector.Name() == "postgres" {
@@ -393,8 +396,8 @@ func publishProtectionProjection(tx *gorm.DB, enrollment models.ProtectionEnroll
 		rules[i].Authorizations = kept
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: record.ID, Revision: revision,
-		ConsumerOwner: consumerOwner, State: state, Target: enrollment.Target(),
+		SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: record.ID, Revision: revision,
+		ConsumerOwner: consumerOwner, State: state, Target: enrollment.Target(), TargetEngineID: enrollment.TargetEngineID,
 		SourceSnapshotHash: sourceSnapshotHash, Rules: rules, ValidFrom: validFrom, ExpiresAt: enrollment.ProtectionExpiresAt,
 	}
 	if err := projection.Seal(); err != nil {

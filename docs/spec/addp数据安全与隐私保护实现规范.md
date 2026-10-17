@@ -74,7 +74,7 @@ Security 中所有 Finding、Assessment、Enrollment 和 Policy 必须使用同�
 
 ProtectionEnrollment 固定纳管整个 DataItem，不接受 `component_key`。字段或文档组件可以由 Detector 在发现执行中产生 Finding，也可以由治理人员从 Security 服务端实时读取并校验的 Meta 当前字段清单中选择后直接形成正式 Assessment；两者都不得接受自由文本字段路径，也不得形成 DataItem 级、字段级两条纳管路线。
 
-创建时同时冻结最小 protection target snapshot，只包含 `engine_id`、DataItem `item_type` 与 `full_name`。该快照只用于 Security 列表、详情和历史审计，以及校验 fingerprint 前像；不得作为资源存在性、授权、自动改绑或保护执行依据，也不得扩展为 Meta attributes、字段或样本副本。
+创建时同时冻结最小 protection target snapshot，只包含 `engine_id`、DataItem `item_type` 与 `full_name`。该快照用于 Security 列表、详情、历史审计及 fingerprint 前像校验；只有与 target 指纹一致的 engine_id 才能派生 Projection v4 的保护引擎归属。它不证明资源存在性、读取授权或当前字段结构，不用于自动改绑或直接决定字段保护，也不得扩展为 Meta attributes、字段或样本副本。
 
 正式 Assessment 还必须冻结确认时真正影响结论的 dependency snapshot，至少包含 owner 源版本或结构指纹、观测时间和快照 Hash。快照不复制完整 Meta attributes 或原始样本。
 
@@ -283,13 +283,13 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 
 被 SensitiveFinding、SensitiveFindingReview 或 ResourceSecurityAssessmentRevision 引用的 SensitiveDataType、SecurityGrade、SecurityClassification 不允许删除。定义删除不得级联删除 Finding、review、Assessment、Policy、Projection 或历史修订。
 
-## 八、Protection Projection v3
+## 八、Protection Projection v4
 
-稳定 Schema 名称为 `addp.protection_projection/v3`。示例：
+稳定 Schema 名称为 `addp.protection_projection/v4`。示例：
 
 ```json
 {
-  "schema_version": "addp.protection_projection/v3",
+  "schema_version": "addp.protection_projection/v4",
   "projection_id": "34bd62a9-b8a1-476e-80aa-80350d13cf87",
   "revision": "00000000000000000017",
   "consumer_owner": "manager",
@@ -299,6 +299,7 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
     "resource_type": "data_item",
     "resource_identity": "<item-fingerprint>"
   },
+  "target_engine_id": 13,
   "source_snapshot_hash": "sha256:<hex>",
   "rules": [
     {
@@ -428,7 +429,7 @@ Owner 必须在单个本地数据库事务中：
 
 `protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。存量 payload 的单向收敛必须复用 `common/dataprotection` 唯一转换器，严格按“投影协议结构升级→投影内算法升级→当前契约校验与 checksum 重算”的顺序执行；Security 中央当前投影、历史变化载荷与 Owner 本地投影不得分别实现协议转换。一次性存储迁移不构成运行时兼容，数据面始终只接受当前协议。
 
-新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v3` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须把存量 v1/v2 记录及历史变化原地单向改写为 v3 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
+新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v4` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须从 Enrollment 的可信引擎归属前像，把存量 v1/v2/v3 记录及历史变化原地单向改写为 v4 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
 
 Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保存 cursor”操作：
 
@@ -485,7 +486,7 @@ Owner 从当前请求解析出专业资源身份后，只允许一条本地门�
 - Locator / 任务绑定出口：Owner 使用服务端已校验的 ResourceLocator、Meta DataItem fingerprint 或不可变发布快照；
 - 查询出口：Owner 只消费 Engine `QueryRuntimeProvider.PrepareQuery()` 生成的 PreparedQuery，根据本地纳管范围决定是否调用其 `ReadSet()`，再按 Engine Catalog Model 转为 DataItem `engine_id + full_name` 指纹；命中纳管资源后继续从同一计划读取 `OutputLineage()`，不解析查询文本。Security、Meta 和 Catalog 不参与用户请求期间的身份或结果来源解析。
 
-`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。当前 v3 实现在当前 Tenant 的本地索引完全没有纳管目标时不展开完整读依赖；只要该 Tenant 存在任一纳管目标，就执行有界的 `ReadSet()` 分析并以本地指纹 map 精确判断本次查询是否命中。Projection v3 只有稳定 DataItem 指纹，没有可作为安全依据的 Engine 归属字段，因此当前实现不得在解析 ReadSet 前猜测“当前 Engine 与纳管无关”。下一版收窄该前置判断的已确认设计见下文“查询保护的引擎范围排除”；该设计尚未落入运行时，不能据此提前放开现有出口。
+`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。当前实现先确认 Tenant 本地投影已完成全量同步，再从同一快照派生保护引擎范围。没有纳管目标或已证明的查询引擎范围与其无交集时，不解析精确 ReadSet；否则消费同一计划的 ReadSet，并按 DataItem 指纹精确匹配。只有命中受保护目标时才获取 OutputLineage。范围未知、交集中的 ReadSet 或输出血缘不可证明时拒绝，不依赖调用方所选引擎猜测归属。
 
 当查询可能涉及已纳管 DataItem 而 Provider 无法得到完整 `QueryReadSet` 时，Owner 必须拒绝当前查询，不得只检查 `TargetPath`、默认 schema 或 SQL 顶层对象。这是当前请求的不可解析失败，不能扩大为租户级全局禁用 SQL。
 
@@ -514,11 +515,11 @@ Manager 的 `downloads/file` 原始下载、`storage-stream` 单叶子内容流�
 
 Owner 可以使用最后一份未过期、checksum 正确且结构仍匹配的投影。Security 暂时不可达不影响当前数据请求；投影过期后必须拒绝已纳管动作。
 
-### 查询保护的引擎范围排除（已确认设计，待实现）
+### 查询保护的引擎范围排除
 
 目标是避免一个引擎的数据纳管影响另一个无关引擎，同时保留同一引擎内的数据项精确匹配。Security 发布受保护目标的引擎归属；Provider / Runtime 约束本次执行的访问范围；Common 根据两个范围是否相交决定是否需要完整 ReadSet。Security 不解析查询语言，Owner 不复制引擎语义分析，也不为 Neo4j 等类型增加跳过名单。
 
-**保护侧事实。** 下一版数据项保护投影增加必填的 `target_engine_id`，值为 System 登记的永久 Engine Instance ID，不是引擎类型、地址或当前连接。字段与既有 DataItem fingerprint 同源：从 Enrollment 冻结的目标身份前像派生，发布前校验 `engine_id + full_name` 重算的指纹与 target 一致；不能由请求者单独指定一个与目标无关的引擎编号。它参与投影 checksum、修订和持久化。数据项身份仍以原 target 为准，不新增引擎 ACL，不向不属于引擎的数据安全专业资源强加引擎归属。
+**保护侧事实。** Projection v4 的数据项保护投影包含必填的 `target_engine_id`，值为 System 登记的永久 Engine Instance ID，不是引擎类型、地址或当前连接。字段与既有 DataItem fingerprint 同源：从 Enrollment 冻结的目标身份前像派生，发布前校验 `engine_id + full_name` 重算的指纹与 target 一致；不能由请求者单独指定一个与目标无关的引擎编号。它参与投影 checksum、修订和持久化。数据项身份仍以原 target 为准，不新增引擎 ACL，不向不属于引擎的数据安全专业资源强加引擎归属。
 
 **读取侧事实。** 查询访问引擎范围是本次执行可能读取来源的完整上界，不要求先解析到每个表、集合或图。已有受控执行路径能够证明仅访问当前实例时，可以直接给出该实例；联邦执行必须覆盖所有可能源实例。只读路由、当前连接、调用方提供的 locator 或所选引擎本身不能作为证明。外部表、远程导入、过程、用户函数、复合数据库及动态数据源可能扩展范围；没有数据库原生分析或执行期约束的路径必须保留未知范围。无法映射到可信 Engine Instance 的外部来源也属于未知，不能从范围中直接省略。不得以关键字排除、字符串匹配或手工引擎类型名单伪造完整性。
 
@@ -531,7 +532,7 @@ Owner 可以使用最后一份未过期、checksum 正确且结构仍匹配的�
 
 `projectionstore` 从投影派生引擎索引，不增加第二份可编辑名单或独立变化流。enrolling、active、过期或校验失败但尚未明确 release 的纳管目标均保留在保护范围内；解除一个资源不能移除同一引擎其他资源的范围。投影、索引及 checkpoint 必须在同一版本下切换，并继续复用既有 acknowledgement / inflight 屏障，避免先放行再补装保护。首次同步或协议重放只有在完整消费至 `has_more=false` 后，才能在同一 checkpoint 事务中持久确认初始化完成；空表或空 cursor 本身不能证明保护范围为空。Security 离线时已完整同步的 Owner 继续按本地状态执行，不引入逐请求远程核对。
 
-本设计涉及投影协议升级，不能向 v3 悄悄加入可忽略字段。实施时只保留下一版协议：Security 中央当前记录和历史变化载荷、Owner 持久投影与消费代码同次收敛。旧记录缺少可信归属时不得由指纹反解或按当前查询引擎补造；应从其 Enrollment 身份前像完成中央升级，前像缺失或指纹不一致时明确报错，不能把目标视为未纳管。Owner 在完成新协议校验及重放前保持不可放行。升级不解除纳管、不改数据项身份、不重新授予权限，不保留双协议运行分支。具体迁移与重放步骤必须在代码实施前闭合验证。
+本设计涉及投影协议升级，不能向 v3 悄悄加入可忽略字段。当前运行时只接受 v4 协议：Security 中央当前记录和历史变化载荷、Owner 持久投影与消费代码同次收敛。旧记录缺少可信归属时不得由指纹反解或按当前查询引擎补造；应从其 Enrollment 身份前像完成中央升级，前像缺失或指纹不一致时明确报错，不能把目标视为未纳管。Owner 在完成新协议校验及重放前保持不可放行。升级不解除纳管、不改数据项身份、不重新授予权限，不保留双协议运行分支。Owner 的 `004_projection_engine_scope_v4` 迁移在事务内清理旧投影并重置 cursor，新增 `initialized=false`；只有完整重放后的最终批次才将其改为 true。已安装当前协议的正常重启不会重复清空投影。
 
 Owner 若从初始 cursor 重放，首轮必须完整消费变化流后再提交 acknowledgement，不能在每个历史分页后回执较小 cursor。Security 当前拒绝 sequence 倒退；保留这一约束。初始化期间按页持久推进本地 checkpoint，失败后从本地进度继续，仍保持未初始化；到 `has_more=false` 后完成同一 checkpoint 的初始化确认、既有在途读取屏障及最终回执。不得通过清除 Security 回执、放宽单调性或提前宣称安装完成来绕过重放。
 
@@ -810,7 +811,7 @@ ProtectionEnrollment 的 `protection_expires_at` 为可空绝对时间，null �
 
 `PUT /protection-enrollments/{id}/validity` 使用既有 security.enrollment.update，正文必填 version、validity_mode，until 必填 expires_at，permanent 的 expires_at 必须为 null 或省略。只允许未退出且未在退出中的资源；租户隔离、乐观版本、期限变更、四 Owner 新投影和变更流必须同事务，失败整体回滚。每次显式修改保留新投影修订及操作者和时间；不增加自动续期、调度或权限。重新发现和策略调整保留资源期限，过期仍保持纳管并拒绝输出；显式改为长期或未来期限后经正式变化流恢复新请求。
 
-Projection 唯一运行协议升级为 v3，expires_at 必须出现，可为 null（长期）或非零且晚于 valid_from 的时间。缺失 expires_at、旧协议及非法日期均拒绝；checksum 包含 null。迁移单向转换中央当前投影、历史变化流及四 Owner 本地副本，保留原日期、ID、revision、cursor 和顺序，重新计算 checksum；不保留运行时兼容。旧 Enrollment 首次回填四 Owner 当前投影中最早截止时间，不能静默变为长期。初始 enrolling deny 也服从资源期限，到期不能解除门禁。
+Projection 唯一运行协议为 v4，expires_at 必须出现，可为 null（长期）或非零且晚于 valid_from 的时间。缺失 expires_at、旧协议及非法日期均拒绝；checksum 包含 null。中央迁移单向转换当前投影和历史变化，保留原日期、ID、revision、cursor 和顺序，重新计算 checksum；四 Owner 清理旧协议副本并完整重放，恢复相同日期、身份及修订，不保留运行时兼容。旧 Enrollment 首次回填四 Owner 当前投影中最早截止时间，不能静默变为长期。初始 enrolling deny 也服从资源期限，到期不能解除门禁。
 
 临时原值授权仍为有截止时间、最长 30 天的独立事实。创建／批准不得超过资源指定截止时间；修改资源期限不会改写既有授权历史，投影中按资源期限截断授权有效区间；资源到期或缩短期限不会延长授权。过期资源的控制面事实可继续调整，但编译为 enrolling deny，直到显式更新有效期。前端默认长期，显式截止时提示到期将拒绝读取；列表和详情显示期限、服务端派生的 7 天内到期提示及四 Owner 同步状态，冲突保留表单，不自动重试。
 
@@ -819,3 +820,7 @@ Manager 原值申请目标可返回 protection_expires_at；长期有效时省�
 Owner 补拉历史变化时允许原子安装结构、checksum 和期限区间均合法但已过截止时间的 active 投影，并推进 cursor；读取和实际输出门禁仍按当前服务端时间拒绝。安装过期事实不是授权生效，不能沿用旧投影或解除纳管，也不能因旧批次过期而永久阻断后续较高修订的恢复。
 
 期限修改、原值申请／审批及所有投影重编译共享 Enrollment 行锁；编译器必须重新读取已提交的资源期限，不能使用调用方此前持有的旧期限覆盖新配置。
+
+Neo4j 普通查询与正式图查询分别使用 `PreparedQuery` / `PreparedGraphQuery`，二者共享 `QueryReadPlan` 事实契约，执行参数、连接和解析语句片段均被冻结。Provider 使用 `github.com/cloudprivacylabs/opencypher/parser@v1.0.0` 的 openCypher 9 ANTLR 语法树证明只读语法，不按查询文本关键字判定。仅接受物理 standard database；通过原生 `SHOW DATABASES` 验证所连数据库，通过 `SHOW FUNCTIONS` 的 `isBuiltIn` 验证 AST 内函数。别名、复合数据库、过程、LOAD CSV、多语句、用户函数与未覆盖的 Neo4j 扩展明确拒绝，保留 `local_read_unsupported` 稳定诊断及中英文说明。函数名区分语法树标识，不通过名称前缀猜测内置资格。语法未覆盖的保留字参数名也应改用普通标识符，例如 `$row_limit`。当前 Neo4j 未提供图资源精确 ReadSet 和字段输出保护；本引擎存在纳管目标时仍拒绝未能精确证明的查询。
+
+最小验证入口：`make test-module MODULE=common GO_ONLY=1`、四个受影响出口及 Security 的对应 Go 模块门禁、`make test-common-postgres`、`make test-security-postgres` 和 `make test-develop-postgres`。新增 `make test-common-neo4j` 使用独占 Compose Project、固定镜像摘要、随机凭据与回环端口，验证跨引擎排除、同引擎拒绝、图与表结果、有界执行、不可变计划和外部来源拒绝，退出销毁并核对容器／卷／网络。它由标准模块门禁自动发现，纳入串行 `test-integration` 与现有 release-and-t2 workflow 的 `common-neo4j` Job；注册检查同时覆盖。真实个人 Console 页面验收需要用户按生命周期重启全部 Common 消费模块后另行执行，不能由上述测试替代。

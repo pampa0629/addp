@@ -342,6 +342,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-oceanbase
 	@$(MAKE) test-common-tidb
 	@$(MAKE) test-common-elasticsearch
+	@$(MAKE) test-common-neo4j
 	@$(MAKE) test-common-hdfs
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
@@ -965,3 +966,7 @@ test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理
 	@node --check --input-type=module < console/frontend/e2e/online/highgo-consumer-flow.spec.js
 	@python3 -m unittest scripts/test/highgo-consumer-flow-online_test.py scripts/test/online-highgo-consumer-fixture_test.py scripts/test/online-hosted-highgo-gate_test.py scripts/test/online-gate_test.py scripts/ci/check-online-ci-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
+.PHONY: test-common-neo4j
+test-common-neo4j: ## 独占 Neo4j 验证只读范围证明、图结果与拒绝边界
+	@bash scripts/test/common-neo4j-gate.sh

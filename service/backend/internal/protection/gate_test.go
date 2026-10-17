@@ -142,6 +142,9 @@ func (p *recordingPurger) PurgeProtectionDerivedData(context.Context, int64) err
 
 func TestAcknowledgementBarrierWaitsForOldRequestAndPurgesOncePerCursor(t *testing.T) {
 	store := serviceProjectionStore(t)
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	gate := NewGate(store)
 	purger := &recordingPurger{}
 	barrier := NewAcknowledgementBarrier(gate, purger)
@@ -194,11 +197,12 @@ func installServiceProjection(t *testing.T, store *projectionstore.Store, identi
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3,
-		ProjectionID:  "projection-service-persons",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "service",
-		State:         dataprotection.ProjectionStateEnrolling,
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		ProjectionID:   "projection-service-persons",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "service",
+		State:          dataprotection.ProjectionStateEnrolling,
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity,
 		},
@@ -240,7 +244,8 @@ func installActiveServiceProjectionAt(t *testing.T, store *projectionstore.Store
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
 		ConsumerOwner: "service", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,

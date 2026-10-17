@@ -567,7 +567,7 @@ type QueryOutputBinding struct {
 
 `PreparedQuery` 是 Provider 从一次 `QueryRequest` 生成的不可变、一次性执行计划。Provider 必须在准备时绑定 Engine、语言、参数、`TargetPath`、只读属性和自身原生解析结果；门禁完成后不再接受新的查询文本、参数或目标路径。`Analysis()`、`ReadSet()`、`OutputLineage()`、`Execute()` 和连续读会话只能消费同一 PreparedQuery，不得重新构造 `QueryRequest`。
 
-查询保护的引擎范围排除正在实施，保护投影升级与运行时接线完成前不得提前放行，具体规则以《ADDP 数据安全与隐私保护实现规范》“查询保护的引擎范围排除”为准。`PreparedQuery.EngineReadScope()` 返回 Provider 对同一不可变执行计划证明的完整引擎访问上界；未建立证明时返回 `ErrQueryEngineReadScopeUnresolved`，不是 nil 成功或空集合。共享计划缓存并深拷贝该事实，后续解析出的 ReadSet 不得超出已证明范围，执行后不能首次补造范围。该范围不是能力开关或调用方自报的 engine_id；没有可信范围保证时继续消费现有 ReadSet，不强迫每个引擎先实现完整资源解析才能表达已受约束的实例内执行。普通查询与 GraphQueryProvider 保持各自结果契约，范围事实与真实执行必须绑定；不为图查询重新引入一套 Owner 查询文本解析。
+查询保护使用 Projection v4 的可信归属与 Provider 范围事实进行排除，具体规则以《ADDP 数据安全与隐私保护实现规范》“查询保护的引擎范围排除”为准。`PreparedQuery.EngineReadScope()` 返回 Provider 对同一不可变执行计划证明的完整引擎访问上界；未建立证明时返回 `ErrQueryEngineReadScopeUnresolved`，不是 nil 成功或空集合。共享计划缓存并深拷贝该事实，后续解析出的 ReadSet 不得超出已证明范围，执行后不能首次补造范围。该范围不是能力开关或调用方自报的 engine_id；没有可信范围保证时继续消费现有 ReadSet，不强迫每个引擎先实现完整资源解析才能表达已受约束的实例内执行。普通查询与 GraphQueryProvider 保持各自结果契约，范围事实与真实执行必须绑定；不为图查询重新引入一套 Owner 查询文本解析。
 
 `QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
 
@@ -1026,3 +1026,5 @@ ES 文档解码使用 `UseNumber`。超出 JavaScript 安全整数范围的整�
 ES PIT 打开前后核对具体索引的原生 `index.uuid`，并核对每条命中的 `_index`，防止索引在解析与读取之间被删除、替换为别名后读取其他索引。原生 UUID 仅作为读取一致性检查，不改变 ADDP 的路径身份和指纹算法。
 
 Mapping 不声明 `_source` 字段的单值/数组基数，`nested` 也不直接视为完整数组结构证明。首版字段保护复用现有结构指纹校验；不能由 Mapping 证明的数组组件、未映射字段及运行时结构不匹配继续按既有保护门禁拒绝，不能借采样或猜测绕过。
+
+`PreparedGraphQueryProvider.PrepareGraphQuery` 返回 `PreparedGraphQuery`，共享 `QueryReadPlan` 的 Analysis / EngineReadScope / ReadSet，并由一次性的 `ExecuteGraph` 返回原有 GraphQueryResult。Develop 正式图查询和共享只读图桥接只执行该计划；原有一般 GraphQueryProvider 保留给已授权图原生操作，不能成为查询工作台的保护旁路。Neo4j 支持范围为 openCypher 9 中可证明的本地只读子集，未覆盖语法返回 `local_read_unsupported`，不以字符串黑名单补充解析。

@@ -19,7 +19,7 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateProtectionValidity(db, hadValidity); err != nil {
 			return err
 		}
-		if err := migrateProtectionProjectionSchemaV3(db); err != nil {
+		if err := migrateProtectionProjectionSchemaV4(db); err != nil {
 			return err
 		}
 		if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {
@@ -86,7 +86,7 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateProtectionValidity(db, hadValidity); err != nil {
 		return err
 	}
-	if err := migrateProtectionProjectionSchemaV3(db); err != nil {
+	if err := migrateProtectionProjectionSchemaV4(db); err != nil {
 		return err
 	}
 	if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {

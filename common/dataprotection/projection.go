@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ProjectionSchemaV3 = "addp.protection_projection/v3"
+	ProjectionSchemaV4 = "addp.protection_projection/v4"
 
 	ProjectionStateEnrolling = "enrolling"
 	ProjectionStateActive    = "active"
@@ -85,6 +85,7 @@ type Projection struct {
 	ConsumerOwner      string            `json:"consumer_owner"`
 	State              string            `json:"state"`
 	Target             ResourceReference `json:"target"`
+	TargetEngineID     uint              `json:"target_engine_id,omitempty"`
 	SourceSnapshotHash string            `json:"source_snapshot_hash"`
 	Rules              []Rule            `json:"rules"`
 	ValidFrom          time.Time         `json:"valid_from"`
@@ -93,7 +94,7 @@ type Projection struct {
 }
 
 func (p Projection) Validate(now time.Time) error {
-	if p.SchemaVersion != ProjectionSchemaV3 {
+	if p.SchemaVersion != ProjectionSchemaV4 {
 		return errors.New("unsupported protection projection schema")
 	}
 	if strings.TrimSpace(p.ProjectionID) == "" || !revisionPattern.MatchString(p.Revision) {
@@ -107,6 +108,13 @@ func (p Projection) Validate(now time.Time) error {
 	}
 	if err := p.Target.Validate(); err != nil {
 		return err
+	}
+	if p.Target.ResourceType == "data_item" {
+		if p.TargetEngineID == 0 {
+			return errors.New("data item protection projection requires target_engine_id")
+		}
+	} else if p.TargetEngineID != 0 {
+		return errors.New("professional resource projection cannot declare a data engine")
 	}
 	if p.ValidFrom.IsZero() || (p.ExpiresAt != nil && (p.ExpiresAt.IsZero() || !p.ExpiresAt.After(p.ValidFrom))) {
 		return errors.New("invalid protection projection validity interval")

@@ -161,11 +161,12 @@ func installTransferProjection(t *testing.T, store *projectionstore.Store, ident
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3,
-		ProjectionID:  "projection-transfer-persons",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "transfer",
-		State:         dataprotection.ProjectionStateEnrolling,
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4,
+		ProjectionID:   "projection-transfer-persons",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "transfer",
+		State:          dataprotection.ProjectionStateEnrolling,
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity,
 		},
@@ -211,7 +212,8 @@ func installActiveTransferProjectionForComponentAt(t *testing.T, store *projecti
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: exportAction, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,

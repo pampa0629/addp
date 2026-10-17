@@ -37,6 +37,9 @@ func (s *Store) CaptureVersion(ctx context.Context, tenantID int64, observe func
 		if err != nil {
 			return err
 		}
+		if !checkpoint.Initialized {
+			return ErrNotInitialized
+		}
 		gate, err := s.transactionGate(tx, tenantID)
 		if err != nil {
 			return err
@@ -67,6 +70,9 @@ func (s *Store) CommitVersion(ctx context.Context, tenantID int64, version Versi
 		}
 		if checkpoint.Cursor != version.cursor {
 			return ErrVersionChanged
+		}
+		if !checkpoint.Initialized {
+			return ErrNotInitialized
 		}
 		gate, err := s.transactionGate(tx, tenantID)
 		if err != nil {

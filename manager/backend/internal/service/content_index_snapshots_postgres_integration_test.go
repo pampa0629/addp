@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/addp/common/dataprotection"
 	"log/slog"
 	"net/http"
 	"os"
@@ -46,6 +47,9 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 	}
 	store, err := projectionstore.Migrate(db, "manager", "manager", nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	client := meilisearch.New(endpoint, meilisearch.WithAPIKey(key), meilisearch.WithCustomClient(&http.Client{Timeout: 10 * time.Second}), meilisearch.DisableRetries())

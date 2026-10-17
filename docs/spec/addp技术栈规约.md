@@ -197,3 +197,8 @@ Business Redis 使用 `public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f
 - **Elasticsearch Business/T2**：官方 `docker.elastic.co/elasticsearch/elasticsearch:9.5.4@sha256:82ac14f43fe701992e601f4cc81e1c0d7dbc5a2576d8cd736006452925df4026`，同一 manifest 支持 linux/amd64 与 linux/arm64。首版仅认证这组服务端与客户端，不启用旧主版本兼容路线。
 
 Model3D Workflow Runtime 使用 `Pillow==12.3.0` 校验生成 GLB 中的 PNG/JPEG 编码和实际解码，Python 版本遵循统一 Python runtime 规约。
+
+#### Neo4j 查询范围证明
+
+- 标准语法解析：`github.com/cloudprivacylabs/opencypher@v1.0.0` 的 `parser` 包，来源提交 `b4c3894568190456f8144fbc4b622e1eb4a78163`，仅消费 ANTLR 生成的 openCypher 9 语法树，不集成其解释器。
+- 匹配生成器的 Go ANTLR Runtime：`github.com/antlr/antlr4/runtime/Go/antlr@v0.0.0-20210803070921-b358b509191a`。两者由 Common 直接依赖，消费模块通过 Go module 锁定同一版本；升级语法后必须同时运行 Neo4j 真实门禁和拒绝边界回归。

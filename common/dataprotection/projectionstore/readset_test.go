@@ -18,6 +18,7 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	initializeTenant(t, store, 7)
 	prepared, calls := preparedReadSet(t, plugin.DynamicSchemaCatalogModel(), "Outdoor", "Persons")
 	protect, err := store.PrepareQueryProtection(context.Background(), 7, plugin.DynamicSchemaCatalogModel(), prepared, "query", dataprotection.SubjectReference{}, time.Now().UTC())
 	if err != nil {
@@ -490,7 +491,8 @@ func activeTableProjection(t *testing.T, owner, action string, model plugin.Engi
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-table", Revision: "00000000000000000001",
+		TargetEngineID: path.EngineID,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-table", Revision: "00000000000000000001",
 		ConsumerOwner: owner, State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: action, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,

@@ -221,3 +221,7 @@ func sampleQueryCatalogPath(collection string) plugin.EngineCatalogPath {
 		},
 	}
 }
+
+func (*sampleQueryProtectionGate) BeginPreparedGraphQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedGraphQuery) (func(), error) {
+	return func() {}, nil
+}

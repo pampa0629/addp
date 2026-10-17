@@ -10,6 +10,7 @@ import (
 type QueryErrorCode string
 
 const (
+	QueryErrorCodeLocalReadUnsupported    QueryErrorCode = "local_read_unsupported"
 	QueryErrorCodeMongoDBDatabaseRequired QueryErrorCode = "mongodb_database_required"
 	QueryErrorCodeSyntaxInvalid           QueryErrorCode = "query_syntax_invalid"
 	QueryErrorCodeTableNotFound           QueryErrorCode = "table_not_found"

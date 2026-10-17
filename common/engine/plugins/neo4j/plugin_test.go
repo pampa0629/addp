@@ -99,7 +99,7 @@ func TestGraphNodeShapeKindDistinguishesSingleLabel(t *testing.T) {
 }
 
 func TestBoundedCypherQueryAppliesOuterLimit(t *testing.T) {
-	if got := boundedCypherQuery(" MATCH (n) RETURN n; ", 25); got != "CALL { MATCH (n) RETURN n } RETURN * LIMIT 25" {
+	if got := boundedCypherQuery(" MATCH (n) RETURN n; ", 25); got != "CALL {\nMATCH (n) RETURN n\n} RETURN * LIMIT 25" {
 		t.Fatalf("boundedCypherQuery() = %q", got)
 	}
 	if got := boundedCypherQuery("MATCH (n) RETURN n;", 0); got != "MATCH (n) RETURN n" {

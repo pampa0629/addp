@@ -2,6 +2,7 @@ package projectionstore
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -78,20 +79,16 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 		t.Fatalf("adopt legacy projection store: %v", err)
 	}
 	assertCurrentMigrations(t, db, legacyStore)
-	var migrated projectionRow
-	if err := db.Table(legacyStore.entriesTable).First(&migrated, "tenant_id = ? AND projection_id = ?", 7, legacyProjection.ProjectionID).Error; err != nil {
-		t.Fatalf("read migrated projection: %v", err)
+	replayStore, err := Open(db, legacySchema, "legacy_owner", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var projection dataprotection.Projection
-	if err := json.Unmarshal([]byte(migrated.ProjectionPayload), &projection); err != nil {
-		t.Fatalf("decode migrated projection: %v", err)
+	if err := replayStore.EnsureCurrent(t.Context(), 7); !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("legacy owner admitted before replay: %v", err)
 	}
-	if projection.SchemaVersion != dataprotection.ProjectionSchemaV3 {
-		t.Fatalf("migrated PostgreSQL owner projection schema = %q", projection.SchemaVersion)
-	}
-	decision := projection.Rules[0].Decision
-	if decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || decision.Parameters["mask_rune"] != "*" || len(decision.Parameters) != 3 {
-		t.Fatalf("migrated PostgreSQL owner decision = %#v", decision)
+	var count int64
+	if err := db.Table(legacyStore.entriesTable).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("legacy rows remain: %d, %v", count, err)
 	}
 
 	driftSchema := "projection_store_drift_it"
@@ -151,11 +148,12 @@ func postgresLegacyStructuredMaskProjection(t *testing.T) dataprotection.Project
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: "addp.protection_projection/v1",
-		ProjectionID:  "11111111-1111-1111-1111-111111111111",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "legacy_owner",
-		State:         dataprotection.ProjectionStateActive,
+		TargetEngineID: 1,
+		SchemaVersion:  "addp.protection_projection/v1",
+		ProjectionID:   "11111111-1111-1111-1111-111111111111",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "legacy_owner",
+		State:          dataprotection.ProjectionStateActive,
 		Target: dataprotection.ResourceReference{
 			OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:postgres-legacy-mask",
 		},
@@ -231,7 +229,7 @@ func assertCurrentMigrations(t *testing.T, db *gorm.DB, store *Store) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatalf("read projection store migration versions: %v", err)
 	}
-	if len(versions) != 3 || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
+	if len(versions) != 4 || versions[3] != "004_projection_engine_scope_v4" || versions[2] != "003_projection_validity_v3" || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("projection store migration versions = %#v", versions)
 	}
 }

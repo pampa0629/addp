@@ -38,6 +38,13 @@ func (s *Store) PrepareQueryProtection(
 	if !s.HasManagedTargets(tenantID) {
 		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
 	}
+	if scope, err := prepared.EngineReadScope(ctx); err == nil {
+		if s.engineScopeDisjoint(tenantID, scope) {
+			return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+		}
+	} else if !errors.Is(err, plugin.ErrQueryEngineReadScopeUnresolved) {
+		return nil, err
+	}
 	readSet, err := prepared.ReadSet(ctx)
 	if err != nil {
 		return nil, err

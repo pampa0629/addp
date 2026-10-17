@@ -932,17 +932,27 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			if e.sqlEngine == nil || e.sqlEngine.protectionGate == nil {
 				return nil, nil, fmt.Errorf("Develop 图查询保护门禁未配置")
 			}
-			// Cypher may traverse resources beyond a caller-selected path. Until
-			// its Provider can prove a complete read set, keep this boundary
-			// conservative whenever the tenant has a managed DataItem.
-			endProtection, protectionErr := e.sqlEngine.protectionGate.BeginUnresolvedRead(execCtx, uint(tenantID))
+			enginePlugin, pluginErr := plugin.Get(engine.EngineType)
+			if pluginErr != nil {
+				return nil, nil, pluginErr
+			}
+			provider, ok := enginePlugin.(plugin.PreparedGraphQueryProvider)
+			if !ok {
+				return nil, nil, fmt.Errorf("引擎未提供可验证的图查询运行时")
+			}
+			prepared, prepareErr := provider.PrepareGraphQuery(execCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+				EngineID: engine.ID, Language: devTask.GetQueryType(), Query: sqlContent, TargetPath: targetPath,
+				Options: plugin.QueryOptions{EngineID: engine.ID, EngineType: engine.EngineType, Limit: devTask.QueryResultLimit + 1, ReadOnly: true, Parameters: devTask.RuntimeParameters},
+			})
+			if prepareErr != nil {
+				return nil, nil, fmt.Errorf("查询执行失败: %w", prepareErr)
+			}
+			endProtection, protectionErr := e.sqlEngine.protectionGate.BeginPreparedGraphQuery(execCtx, uint(tenantID), enginePlugin, prepared)
 			if protectionErr != nil {
 				return nil, nil, fmt.Errorf("查询执行失败: %w", protectionErr)
 			}
-			defer endProtection()
-			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQueryWithPath(
-				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, (devTask.QueryResultLimit + 1), targetPath,
-			)
+			graphResult, graphErr := prepared.ExecuteGraph(execCtx)
+			endProtection()
 			queryErr = graphErr
 			if graphResult != nil {
 				queryResult = &graphResult.QueryResult

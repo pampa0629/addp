@@ -24,12 +24,16 @@ var ErrQueryOutputLineageUnresolved = errors.New("query output lineage unresolve
 // consumed a one-shot PreparedQuery.
 var ErrPreparedQueryConsumed = errors.New("prepared query already consumed")
 
-// PreparedQuery is an immutable, one-shot query plan. ReadSet and Execute are
-// bound to the same request and provider-native preparation result.
-type PreparedQuery interface {
+// QueryReadPlan holds provider-owned facts bound to one immutable request.
+type QueryReadPlan interface {
 	Analysis(context.Context) (*QueryAnalysis, error)
 	EngineReadScope(context.Context) (*QueryEngineReadScope, error)
 	ReadSet(context.Context) (*QueryReadSet, error)
+}
+
+// PreparedQuery executes the same plan once and preserves table output lineage.
+type PreparedQuery interface {
+	QueryReadPlan
 	OutputLineage(context.Context) (*QueryOutputLineage, error)
 	Execute(context.Context) (*QueryResult, error)
 }
@@ -186,16 +190,51 @@ func (p *preparedQuery) OutputLineage(ctx context.Context) (*QueryOutputLineage,
 	return p.lineage.Clone(), p.lineageErr
 }
 
-func (p *preparedQuery) Execute(ctx context.Context) (*QueryResult, error) {
+func (p *preparedQuery) consume() error {
 	p.mu.Lock()
 	if p.consumed {
 		p.mu.Unlock()
-		return nil, ErrPreparedQueryConsumed
+		return ErrPreparedQueryConsumed
 	}
 	p.consumed = true
-	execute := p.execute
 	p.mu.Unlock()
-	return execute(ctx)
+	return nil
+}
+
+func (p *preparedQuery) Execute(ctx context.Context) (*QueryResult, error) {
+	if err := p.consume(); err != nil {
+		return nil, err
+	}
+	return p.execute(ctx)
+}
+
+// PreparedGraphQuery retains the graph result contract while sharing the same
+// immutable read facts and one-shot consumption as ordinary queries.
+type PreparedGraphQuery interface {
+	QueryReadPlan
+	ExecuteGraph(context.Context) (*GraphQueryResult, error)
+}
+type preparedGraphQuery struct {
+	QueryReadPlan
+	state        *preparedQuery
+	executeGraph func(context.Context) (*GraphQueryResult, error)
+}
+
+func NewPreparedGraphQuery(analysis *QueryAnalysis, scope func(context.Context) (*QueryEngineReadScope, error), readSet func(context.Context) (*QueryReadSet, error), execute func(context.Context) (*GraphQueryResult, error)) (PreparedGraphQuery, error) {
+	if err := analysis.Validate(); err != nil {
+		return nil, err
+	}
+	if execute == nil {
+		return nil, fmt.Errorf("prepared graph query execute callback is required")
+	}
+	state := &preparedQuery{analysis: analysis.Clone(), resolveEngineScope: scope, resolveReadSet: readSet}
+	return &preparedGraphQuery{QueryReadPlan: state, state: state, executeGraph: execute}, nil
+}
+func (p *preparedGraphQuery) ExecuteGraph(ctx context.Context) (*GraphQueryResult, error) {
+	if err := p.state.consume(); err != nil {
+		return nil, err
+	}
+	return p.executeGraph(ctx)
 }
 
 // NewQueryReadSet validates, clones, sorts, and de-duplicates catalog leaves.

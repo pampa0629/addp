@@ -114,3 +114,11 @@ func TestQueryProtectionFailureUsesTypedBoundary(t *testing.T) {
 		t.Fatal("inferred protection from free text")
 	}
 }
+
+func TestCypherScopeFailureHasControlledDiagnostic(t *testing.T) {
+	cause := plugin.NewQueryError(plugin.QueryErrorCodeLocalReadUnsupported, errors.New("untrusted query detail"))
+	diagnostic := queryFailureDiagnostic(queryErrorCode(cause), cause.Error(), cause)
+	if diagnostic == nil || diagnostic.Stage != "preparation" || diagnostic.Reason != "local_read_unsupported" {
+		t.Fatalf("diagnostic=%+v", diagnostic)
+	}
+}

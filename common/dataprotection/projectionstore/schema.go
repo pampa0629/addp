@@ -2,14 +2,11 @@ package projectionstore
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/addp/common/dataprotection"
 	"gorm.io/gorm"
 )
 
@@ -25,8 +22,9 @@ type storeMigration struct {
 
 var storeMigrations = []storeMigration{
 	{version: initialProjectionStoreMigration, apply: createInitialProjectionStore},
-	{version: keepPrefixSuffixV2StoreMigration, apply: migrateKeepPrefixSuffixV2},
-	{version: "003_projection_validity_v3", apply: migrateKeepPrefixSuffixV2},
+	{version: keepPrefixSuffixV2StoreMigration, apply: retiredProjectionMigration},
+	{version: "003_projection_validity_v3", apply: retiredProjectionMigration},
+	{version: "004_projection_engine_scope_v4", apply: migrateProjectionEngineScopeV4},
 }
 
 type postgresColumnDefinition struct {
@@ -54,6 +52,7 @@ var expectedPostgresProjectionStoreColumns = map[string][]postgresColumnDefiniti
 		{Name: "tenant_id", DataType: "bigint", NotNull: true},
 		{Name: "cursor", DataType: "text", NotNull: true},
 		{Name: "updated_at", DataType: "timestamp without time zone", NotNull: true},
+		{Name: "initialized", DataType: "boolean", NotNull: true, DefaultExpression: "false"},
 	},
 	"protection_projection_store_migrations": {
 		{Name: "version", DataType: "character varying(255)", NotNull: true},
@@ -210,39 +209,22 @@ func createInitialProjectionStore(tx *gorm.DB, store *Store) error {
 	return nil
 }
 
-func migrateKeepPrefixSuffixV2(tx *gorm.DB, store *Store) error {
-	var rows []projectionRow
-	if err := tx.Table(store.entriesTable).Find(&rows).Error; err != nil {
-		return fmt.Errorf("read protection projections for mask migration: %w", err)
+// Prior payload migrations are superseded by v4's authenticated replay.
+// Their durable IDs remain solely to recognize an existing owner's schema.
+func retiredProjectionMigration(*gorm.DB, *Store) error { return nil }
+
+func resetProjectionReplay(tx *gorm.DB, store *Store) error {
+	if err := tx.Exec("DELETE FROM " + store.entriesTable).Error; err != nil {
+		return err
 	}
-	for _, row := range rows {
-		projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV3([]byte(row.ProjectionPayload))
-		if err != nil {
-			return fmt.Errorf("migrate protection projection %s schema: %w", row.ProjectionID, err)
-		}
-		algorithmChanged, err := dataprotection.MigrateKeepPrefixSuffixAlgorithmV2(&projection)
-		if err != nil {
-			return fmt.Errorf("migrate protection projection %s mask algorithm: %w", row.ProjectionID, err)
-		}
-		if schemaChanged && !algorithmChanged {
-			if err := projection.Seal(); err != nil {
-				return fmt.Errorf("seal protection projection %s after schema migration: %w", row.ProjectionID, err)
-			}
-		}
-		if err := projection.Validate(time.Time{}); err != nil {
-			return fmt.Errorf("validate protection projection %s after migration: %w", row.ProjectionID, err)
-		}
-		payload, err := json.Marshal(projection)
-		if err != nil {
-			return fmt.Errorf("encode protection projection %s after migration: %w", row.ProjectionID, err)
-		}
-		if err := tx.Table(store.entriesTable).
-			Where("tenant_id = ? AND projection_id = ?", row.TenantID, row.ProjectionID).
-			Update("projection_payload", string(payload)).Error; err != nil {
-			return fmt.Errorf("update protection projection %s after migration: %w", row.ProjectionID, err)
-		}
+	return tx.Exec("UPDATE " + store.checkpointTable + " SET cursor = ''").Error
+}
+
+func migrateProjectionEngineScopeV4(tx *gorm.DB, store *Store) error {
+	if err := resetProjectionReplay(tx, store); err != nil {
+		return err
 	}
-	return nil
+	return tx.Exec("ALTER TABLE " + store.checkpointTable + " ADD COLUMN initialized BOOLEAN NOT NULL DEFAULT false").Error
 }
 
 func (s *Store) verifyPostgresSchema(tx *gorm.DB) error {

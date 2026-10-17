@@ -6,8 +6,10 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
 	github.com/alexbrainman/odbc v0.0.0-20250601004241-49e6b2bc0cf0
 	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210803070921-b358b509191a
 	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/beltran/gohive v1.8.1
+	github.com/cloudprivacylabs/opencypher v1.0.0
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c
 	github.com/ebitengine/purego v0.9.0
 	github.com/elastic/go-elasticsearch/v9 v9.3.0

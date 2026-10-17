@@ -5556,6 +5556,9 @@ const docTemplate = `{
                 "target": {
                     "$ref": "#/definitions/dataprotection.ResourceReference"
                 },
+                "target_engine_id": {
+                    "type": "integer"
+                },
                 "valid_from": {
                     "type": "string"
                 }

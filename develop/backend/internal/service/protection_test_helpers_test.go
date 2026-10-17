@@ -19,3 +19,7 @@ func (allowDevelopProtectionGate) BeginCatalogPath(context.Context, uint, plugin
 func (allowDevelopProtectionGate) BeginUnresolvedRead(context.Context, uint) (func(), error) {
 	return func() {}, nil
 }
+
+func (allowDevelopProtectionGate) BeginPreparedGraphQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedGraphQuery) (func(), error) {
+	return func() {}, nil
+}

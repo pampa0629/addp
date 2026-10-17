@@ -430,11 +430,9 @@ type GraphQueryProvider interface {
 	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, cypher string, opts QueryOptions) (*GraphQueryResult, error)
 }
 
-// PathAwareGraphQueryProvider executes a graph query against the selected
-// catalog database when the engine exposes more than one graph namespace.
-type PathAwareGraphQueryProvider interface {
-	GraphQueryProvider
-	ExecuteGraphQueryAtPath(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, cypher string, opts QueryOptions) (*GraphQueryResult, error)
+// PreparedGraphQueryProvider binds graph read facts and execution to one request.
+type PreparedGraphQueryProvider interface {
+	PrepareGraphQuery(context.Context, ConnectionInfo, QueryRequest) (PreparedGraphQuery, error)
 }
 
 type WorkflowRuntimeProvider interface {

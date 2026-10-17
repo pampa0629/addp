@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestMigrateProjectionPayloadV3ConvertsLegacyAllowToProtectiveFallback(t *testing.T) {
+func TestDecodePersistedProjectionForMigrationConvertsLegacyAllowToProtectiveFallback(t *testing.T) {
 	now := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
 	legacy := map[string]any{
 		"schema_version": legacyProjectionSchemaV1,
@@ -45,11 +45,11 @@ func TestMigrateProjectionPayloadV3ConvertsLegacyAllowToProtectiveFallback(t *te
 		t.Fatal(err)
 	}
 
-	projection, changed, err := MigrateProjectionPayloadV3(payload)
+	projection, changed, err := DecodePersistedProjectionForMigration(payload)
 	if err != nil || !changed {
-		t.Fatalf("MigrateProjectionPayloadV3() changed=%v error=%v", changed, err)
+		t.Fatalf("DecodePersistedProjectionForMigration() changed=%v error=%v", changed, err)
 	}
-	if projection.SchemaVersion != ProjectionSchemaV3 || projection.Checksum != "" {
+	if projection.SchemaVersion != "addp.protection_projection/v3" || projection.Checksum != "" {
 		t.Fatalf("migrated projection schema=%q checksum=%q", projection.SchemaVersion, projection.Checksum)
 	}
 	decision := projection.Rules[0].Decision
@@ -60,12 +60,15 @@ func TestMigrateProjectionPayloadV3ConvertsLegacyAllowToProtectiveFallback(t *te
 	if err != nil || !algorithmChanged {
 		t.Fatalf("MigrateKeepPrefixSuffixAlgorithmV2() changed=%v error=%v", algorithmChanged, err)
 	}
+	projection.SchemaVersion = ProjectionSchemaV4
+	projection.TargetEngineID = 1
+	_ = projection.Seal()
 	if err := projection.Validate(time.Time{}); err != nil {
 		t.Fatalf("Validate() migrated projection: %v", err)
 	}
 }
 
-func TestMigrateProjectionPayloadV3LeavesCurrentProjectionUnvalidated(t *testing.T) {
+func TestDecodePersistedProjectionForMigrationLeavesCurrentProjectionUnvalidated(t *testing.T) {
 	projection := testProjection(time.Now().UTC())
 	projection.Rules[0].Decision.Algorithm = legacyAlgorithmKeepPrefixSuffixV1
 	projection.Rules[0].Decision.Parameters = map[string]any{
@@ -80,16 +83,16 @@ func TestMigrateProjectionPayloadV3LeavesCurrentProjectionUnvalidated(t *testing
 		t.Fatal(err)
 	}
 
-	decoded, changed, err := MigrateProjectionPayloadV3(payload)
+	decoded, changed, err := DecodePersistedProjectionForMigration(payload)
 	if err != nil || changed {
-		t.Fatalf("MigrateProjectionPayloadV3() changed=%v error=%v", changed, err)
+		t.Fatalf("DecodePersistedProjectionForMigration() changed=%v error=%v", changed, err)
 	}
 	if decoded.Rules[0].Decision.Algorithm != legacyAlgorithmKeepPrefixSuffixV1 {
 		t.Fatalf("decoded algorithm = %q", decoded.Rules[0].Decision.Algorithm)
 	}
 }
 
-func TestMigrateProjectionPayloadV3RejectsUnsafeOrUnknownLegacyPayload(t *testing.T) {
+func TestDecodePersistedProjectionForMigrationRejectsUnsafeOrUnknownLegacyPayload(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		payload string
 		message string
@@ -106,9 +109,9 @@ func TestMigrateProjectionPayloadV3RejectsUnsafeOrUnknownLegacyPayload(t *testin
 		"unknown schema": {payload: `{"schema_version":"addp.protection_projection/v9"}`, message: "unsupported protection projection schema"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := MigrateProjectionPayloadV3([]byte(testCase.payload))
+			_, _, err := DecodePersistedProjectionForMigration([]byte(testCase.payload))
 			if err == nil || !strings.Contains(err.Error(), testCase.message) {
-				t.Fatalf("MigrateProjectionPayloadV3() error=%v, want %q", err, testCase.message)
+				t.Fatalf("DecodePersistedProjectionForMigration() error=%v, want %q", err, testCase.message)
 			}
 		})
 	}

@@ -165,11 +165,12 @@ func TestProjectionRejectsAllowDefaultAndInvalidAuthorization(t *testing.T) {
 
 func testProjection(now time.Time) Projection {
 	return Projection{
-		SchemaVersion: ProjectionSchemaV3,
-		ProjectionID:  "projection-1",
-		Revision:      "00000000000000000001",
-		ConsumerOwner: "manager",
-		State:         ProjectionStateActive,
+		TargetEngineID: 1,
+		SchemaVersion:  ProjectionSchemaV4,
+		ProjectionID:   "projection-1",
+		Revision:       "00000000000000000001",
+		ConsumerOwner:  "manager",
+		State:          ProjectionStateActive,
 		Target: ResourceReference{
 			OwnerModule:      "meta",
 			ResourceType:     "data_item",
@@ -238,7 +239,7 @@ func TestPermanentProjectionRequiresExplicitNullAndKeepsTemporaryAuthorizationBo
 	if projection.Validate(now) == nil {
 		t.Fatal("runtime accepted the old protocol")
 	}
-	projection.SchemaVersion = ProjectionSchemaV3
+	projection.SchemaVersion = ProjectionSchemaV4
 	projection.ExpiresAt = ProjectionDeadline(time.Time{})
 	_ = projection.Seal()
 	if projection.Validate(now) == nil {
@@ -251,17 +252,42 @@ func TestMigrateV2ProjectionPreservesDeadlineAndRejectsCorruptPayload(t *testing
 	projection.SchemaVersion = "addp.protection_projection/v2"
 	_ = projection.Seal()
 	payload, _ := json.Marshal(projection)
-	migrated, changed, err := MigrateProjectionPayloadV3(payload)
+	migrated, changed, err := DecodePersistedProjectionForMigration(payload)
 	if err != nil || !changed || migrated.ExpiresAt == nil || !migrated.ExpiresAt.Equal(*projection.ExpiresAt) || migrated.Revision != projection.Revision {
 		t.Fatalf("migration changed validity: %#v %v", migrated, err)
 	}
+	migrated.SchemaVersion = ProjectionSchemaV4
 	_ = migrated.Seal()
 	if err := migrated.Validate(time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	projection.Checksum = "sha256:corrupt"
 	payload, _ = json.Marshal(projection)
-	if _, _, err := MigrateProjectionPayloadV3(payload); err == nil {
+	if _, _, err := DecodePersistedProjectionForMigration(payload); err == nil {
 		t.Fatal("corrupt persisted projection accepted")
+	}
+}
+
+func TestProjectionEngineOwnershipIsRequiredAndSealed(t *testing.T) {
+	p := testProjection(time.Now().UTC())
+	_ = p.Seal()
+	p.TargetEngineID = 0
+	if err := p.Validate(time.Time{}); err == nil {
+		t.Fatal("missing engine accepted")
+	}
+	p.TargetEngineID = 2
+	if err := p.Validate(time.Time{}); err == nil {
+		t.Fatal("changed engine escaped checksum")
+	}
+	p.TargetEngineID = 0
+	p.Target.ResourceType = "professional_view"
+	_ = p.Seal()
+	if err := p.Validate(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	p.TargetEngineID = 1
+	_ = p.Seal()
+	if err := p.Validate(time.Time{}); err == nil {
+		t.Fatal("professional resource forced into engine scope")
 	}
 }

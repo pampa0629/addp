@@ -39,7 +39,7 @@ func migrateProtectionValidity(db *gorm.DB, existed bool) error {
 			}
 			var earliest *time.Time
 			for _, record := range records {
-				projection, _, err := dataprotection.MigrateProjectionPayloadV3([]byte(record.ProjectionPayload))
+				projection, _, err := dataprotection.DecodePersistedProjectionForMigration([]byte(record.ProjectionPayload))
 				if err != nil {
 					return err
 				}

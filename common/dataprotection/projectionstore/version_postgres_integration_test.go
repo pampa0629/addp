@@ -47,6 +47,7 @@ func TestProjectionStoreVersionCommitSerializesCleanupAgainstPostgres(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	initializeTenant(t, store, 7)
 	version, err := store.CaptureVersion(context.Background(), 7, func(GateReader) error { return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +120,7 @@ func TestProjectionStoreVersionCommitSerializesCleanupAgainstPostgres(t *testing
 	}
 	// Concurrent first use must create/lock one checkpoint without a duplicate
 	// key failure, including tenants that have not yet received protection.
+	initializeTenant(t, store, 8)
 	start := make(chan struct{})
 	firstUse := make(chan error, 2)
 	for _, reader := range []*Store{store, other} {

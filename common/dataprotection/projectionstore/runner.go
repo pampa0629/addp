@@ -122,6 +122,15 @@ func (r *Runner) syncTenant(ctx context.Context, tenantID int64) error {
 		if err := r.store.ApplyBatch(ctx, tenantID, cursor, batch, time.Now().UTC()); err != nil {
 			return err
 		}
+		initialized, err := r.store.Initialized(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		// Initial/replay pages may precede Security's existing monotonic ack.
+		// Only the final complete replay can be acknowledged.
+		if !initialized {
+			continue
+		}
 		cursorToAcknowledge := batch.NextCursor
 		if cursorToAcknowledge == "" {
 			cursorToAcknowledge = cursor

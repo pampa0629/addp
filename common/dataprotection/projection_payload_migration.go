@@ -37,11 +37,10 @@ type legacyProjectionV1 struct {
 	ExpiresAt          time.Time                `json:"expires_at"`
 }
 
-// MigrateProjectionPayloadV3 performs the one-way persisted-data conversion
-// from persisted projection schemas v1/v2 to v3. It intentionally does not validate or seal
-// the result because callers must migrate embedded algorithms before applying
-// the current v3 contract and recalculating the checksum.
-func MigrateProjectionPayloadV3(payload []byte) (Projection, bool, error) {
+// DecodePersistedProjectionForMigration decodes historical persisted payloads.
+// It is never a runtime decoder: Security must bind trusted enrollment ownership,
+// upgrade algorithms, seal and validate the current protocol before publishing.
+func DecodePersistedProjectionForMigration(payload []byte) (Projection, bool, error) {
 	var envelope struct {
 		SchemaVersion string `json:"schema_version"`
 	}
@@ -49,10 +48,16 @@ func MigrateProjectionPayloadV3(payload []byte) (Projection, bool, error) {
 		return Projection{}, false, fmt.Errorf("decode protection projection schema: %w", err)
 	}
 	switch envelope.SchemaVersion {
-	case ProjectionSchemaV3:
+	case ProjectionSchemaV4, "addp.protection_projection/v3":
 		var projection Projection
 		if err := json.Unmarshal(payload, &projection); err != nil {
 			return Projection{}, false, fmt.Errorf("decode v3 protection projection: %w", err)
+		}
+		if envelope.SchemaVersion == "addp.protection_projection/v3" {
+			expected, err := projection.CalculateChecksum()
+			if err != nil || projection.Checksum != expected {
+				return Projection{}, false, errors.New("legacy protection projection checksum mismatch")
+			}
 		}
 		return projection, false, nil
 	case "addp.protection_projection/v2":
@@ -68,7 +73,7 @@ func MigrateProjectionPayloadV3(payload []byte) (Projection, bool, error) {
 		if err != nil || projection.Checksum != expected {
 			return Projection{}, false, errors.New("legacy protection projection checksum mismatch")
 		}
-		projection.SchemaVersion = ProjectionSchemaV3
+		projection.SchemaVersion = "addp.protection_projection/v3"
 		return projection, true, nil
 	case legacyProjectionSchemaV1:
 		var legacy legacyProjectionV1
@@ -99,7 +104,7 @@ func MigrateProjectionPayloadV3(payload []byte) (Projection, bool, error) {
 			})
 		}
 		return Projection{
-			SchemaVersion:      ProjectionSchemaV3,
+			SchemaVersion:      "addp.protection_projection/v3",
 			ProjectionID:       legacy.ProjectionID,
 			Revision:           legacy.Revision,
 			ConsumerOwner:      legacy.ConsumerOwner,

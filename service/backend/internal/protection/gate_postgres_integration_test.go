@@ -127,7 +127,8 @@ func installActiveFlatServiceProjection(t *testing.T, store interface {
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-service-postgres", Revision: "00000000000000000001",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-service-postgres", Revision: "00000000000000000001",
 		ConsumerOwner: "service", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,

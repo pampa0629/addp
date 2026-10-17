@@ -2,6 +2,7 @@ package projectionstore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/engine/plugin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -56,9 +58,10 @@ type projectionRow struct {
 }
 
 type checkpointRow struct {
-	TenantID  int64     `gorm:"column:tenant_id;primaryKey"`
-	Cursor    string    `gorm:"column:cursor"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	TenantID    int64     `gorm:"column:tenant_id;primaryKey"`
+	Cursor      string    `gorm:"column:cursor"`
+	Initialized bool      `gorm:"column:initialized"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
 }
 
 type resourceKey struct {
@@ -69,16 +72,19 @@ type resourceKey struct {
 }
 
 type Store struct {
-	db              *gorm.DB
-	schema          string
-	consumerOwner   string
-	entriesTable    string
-	checkpointTable string
-	migrationsTable string
-	changeBarrier   ProjectionChangeBarrier
-	mu              sync.RWMutex
-	byResource      map[resourceKey][]dataprotection.Projection
-	localCursors    map[int64]string
+	db               *gorm.DB
+	schema           string
+	consumerOwner    string
+	entriesTable     string
+	checkpointTable  string
+	migrationsTable  string
+	changeBarrier    ProjectionChangeBarrier
+	mu               sync.RWMutex
+	byResource       map[resourceKey][]dataprotection.Projection
+	localCursors     map[int64]string
+	localInitialized map[int64]bool
+	engineScopes     map[int64]*protectedEngineScope
+	refreshMu        sync.Mutex
 }
 
 func newStore(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
@@ -89,12 +95,14 @@ func newStore(db *gorm.DB, schema, consumerOwner string, changeBarrier Projectio
 	}
 	store := &Store{
 		db: db, schema: schema, consumerOwner: consumerOwner,
-		entriesTable:    schema + ".protection_projection_entries",
-		checkpointTable: schema + ".protection_projection_checkpoints",
-		migrationsTable: schema + ".protection_projection_store_migrations",
-		changeBarrier:   changeBarrier,
-		byResource:      make(map[resourceKey][]dataprotection.Projection),
-		localCursors:    make(map[int64]string),
+		entriesTable:     schema + ".protection_projection_entries",
+		checkpointTable:  schema + ".protection_projection_checkpoints",
+		migrationsTable:  schema + ".protection_projection_store_migrations",
+		changeBarrier:    changeBarrier,
+		byResource:       make(map[resourceKey][]dataprotection.Projection),
+		localCursors:     make(map[int64]string),
+		localInitialized: make(map[int64]bool),
+		engineScopes:     make(map[int64]*protectedEngineScope),
 	}
 	return store, nil
 }
@@ -162,7 +170,7 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 	if batch.NextCursor == "" && (expectedCursor != "" || len(batch.Changes) > 0) {
 		return errors.New("invalid protection projection next cursor")
 	}
-	if len(batch.Changes) > 0 && batch.NextCursor == expectedCursor {
+	if (len(batch.Changes) > 0 || batch.HasMore) && batch.NextCursor == expectedCursor {
 		return errors.New("protection projection changes must advance the checkpoint")
 	}
 	if now.IsZero() {
@@ -187,6 +195,7 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 			}
 		}
 		checkpoint.Cursor = batch.NextCursor
+		checkpoint.Initialized = checkpoint.Initialized || !batch.HasMore
 		checkpoint.UpdatedAt = now
 		return tx.Table(s.checkpointTable).Save(checkpoint).Error
 	})
@@ -196,9 +205,6 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 	if err := s.reloadTenant(ctx, tenantID); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.localCursors[tenantID] = batch.NextCursor
-	s.mu.Unlock()
 	return nil
 }
 
@@ -207,26 +213,113 @@ func (s *Store) ApplyBatch(ctx context.Context, tenantID int64, expectedCursor s
 // processes call it once per execution before using Gate or GateAny; this
 // keeps request-time decisions local to the owner database and closes the
 // acknowledgement-to-worker cache race without a Security request.
+var ErrNotInitialized = errors.New("protection projection initial synchronization is incomplete")
+
+func (s *Store) Initialized(ctx context.Context, tenantID int64) (bool, error) {
+	var row checkpointRow
+	err := s.db.WithContext(ctx).Table(s.checkpointTable).Where("tenant_id = ?", tenantID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return row.Initialized, err
+}
+
 func (s *Store) EnsureCurrent(ctx context.Context, tenantID int64) error {
 	if s == nil || tenantID <= 0 {
 		return errors.New("protection projection refresh requires tenant")
 	}
-	durableCursor, err := s.CurrentCursor(ctx, tenantID)
+	var durable checkpointRow
+	err := s.db.WithContext(ctx).Table(s.checkpointTable).Where("tenant_id = ?", tenantID).First(&durable).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrNotInitialized
+	}
 	if err != nil {
 		return err
 	}
+	if !durable.Initialized {
+		return ErrNotInitialized
+	}
 	s.mu.RLock()
-	localCursor, known := s.localCursors[tenantID]
+	local, known := s.localCursors[tenantID]
+	ready := s.localInitialized[tenantID]
 	s.mu.RUnlock()
-	if known && localCursor == durableCursor {
+	if known && ready && local == durable.Cursor {
 		return nil
 	}
 	if err := s.reloadTenant(ctx, tenantID); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.localCursors[tenantID] = durableCursor
-	s.mu.Unlock()
+	s.mu.RLock()
+	ready = s.localInitialized[tenantID]
+	s.mu.RUnlock()
+	if !ready {
+		return ErrNotInitialized
+	}
+	return nil
+}
+
+// protectedEngineScope is derived only from the installed projection snapshot.
+// Expiry and enrolling states do not remove managed ownership.
+type protectedEngineScope struct {
+	ids     map[uint]struct{}
+	unknown bool
+}
+
+func (s *Store) engineScopeDisjoint(tenantID int64, scope *plugin.QueryEngineReadScope) bool {
+	if scope.Validate() != nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if !s.localInitialized[tenantID] {
+		return false
+	}
+	protected := s.engineScopes[tenantID]
+	if protected == nil {
+		return true
+	}
+	if protected.unknown {
+		return false
+	}
+	for _, id := range scope.EngineIDs {
+		if _, found := protected.ids[id]; found {
+			return false
+		}
+	}
+	return true
+}
+
+// RequireReadPlanUnmanaged admits graph reads only after the same local scope
+// exclusion as ordinary queries. A possible protected graph is refused until
+// its provider can prove an exact unmanaged read set.
+func (s *Store) RequireReadPlanUnmanaged(ctx context.Context, tenantID int64, model plugin.EngineCatalogModelSpec, prepared plugin.QueryReadPlan, now time.Time) error {
+	if prepared == nil {
+		return errors.New("prepared query read plan is required")
+	}
+	if err := s.EnsureCurrent(ctx, tenantID); err != nil {
+		return err
+	}
+	if !s.HasManagedTargets(tenantID) {
+		return nil
+	}
+	if scope, err := prepared.EngineReadScope(ctx); err == nil {
+		if s.engineScopeDisjoint(tenantID, scope) {
+			return nil
+		}
+	} else if !errors.Is(err, plugin.ErrQueryEngineReadScopeUnresolved) {
+		return err
+	}
+	readSet, err := prepared.ReadSet(ctx)
+	if err != nil {
+		return err
+	}
+	targets, err := dataprotection.DataItemTargetsFromQueryReadSet(model, readSet)
+	if err != nil {
+		return err
+	}
+	if s.GateAny(tenantID, targets, now) != nil {
+		return dataprotection.ErrDenied
+	}
 	return nil
 }
 
@@ -417,34 +510,44 @@ func (s *Store) applyChange(tx *gorm.DB, tenantID int64, change dataprotection.P
 }
 
 func (s *Store) reload(ctx context.Context) error {
-	var rows []projectionRow
-	if err := s.db.WithContext(ctx).Table(s.entriesTable).Find(&rows).Error; err != nil {
-		return fmt.Errorf("load protection projections: %w", err)
-	}
-	if err := s.replaceRows(rows, 0); err != nil {
+	var tenantIDs []int64
+	if err := s.db.WithContext(ctx).Table(s.checkpointTable).Pluck("tenant_id", &tenantIDs).Error; err != nil {
 		return err
 	}
-	var checkpoints []checkpointRow
-	if err := s.db.WithContext(ctx).Table(s.checkpointTable).Find(&checkpoints).Error; err != nil {
-		return fmt.Errorf("load protection projection checkpoints: %w", err)
+	for _, id := range tenantIDs {
+		if err := s.reloadTenant(ctx, id); err != nil {
+			return err
+		}
 	}
-	s.mu.Lock()
-	for _, checkpoint := range checkpoints {
-		s.localCursors[checkpoint.TenantID] = checkpoint.Cursor
-	}
-	s.mu.Unlock()
 	return nil
 }
 
 func (s *Store) reloadTenant(ctx context.Context, tenantID int64) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	var checkpoint checkpointRow
 	var rows []projectionRow
-	if err := s.db.WithContext(ctx).Table(s.entriesTable).Where("tenant_id = ?", tenantID).Find(&rows).Error; err != nil {
-		return fmt.Errorf("reload tenant protection projections: %w", err)
+	var options []*sql.TxOptions
+	if s.db.Dialector.Name() == "postgres" {
+		options = append(options, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	}
-	return s.replaceRows(rows, tenantID)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Table(s.checkpointTable).Where("tenant_id = ?", tenantID).First(&checkpoint).Error; err != nil {
+			return err
+		}
+		return tx.Table(s.entriesTable).Where("tenant_id = ?", tenantID).Find(&rows).Error
+	}, options...)
+	if err != nil {
+		return err
+	}
+	return s.replaceSnapshot(rows, tenantID, &checkpoint)
 }
 
 func (s *Store) replaceRows(rows []projectionRow, tenantID int64) error {
+	return s.replaceSnapshot(rows, tenantID, nil)
+}
+
+func (s *Store) replaceSnapshot(rows []projectionRow, tenantID int64, checkpoint *checkpointRow) error {
 	loaded := make(map[resourceKey][]dataprotection.Projection)
 	for _, row := range rows {
 		var projection dataprotection.Projection
@@ -457,8 +560,35 @@ func (s *Store) replaceRows(rows []projectionRow, tenantID int64) error {
 	for key := range loaded {
 		sort.Slice(loaded[key], func(i, j int) bool { return loaded[key][i].ProjectionID < loaded[key][j].ProjectionID })
 	}
+	scopes := make(map[int64]*protectedEngineScope)
+	for key, projections := range loaded {
+		scope := scopes[key.tenantID]
+		if scope == nil {
+			scope = &protectedEngineScope{ids: make(map[uint]struct{})}
+			scopes[key.tenantID] = scope
+		}
+		for _, projection := range projections {
+			if projection.Target.ResourceType != "data_item" || projection.TargetEngineID == 0 || projection.Validate(time.Time{}) != nil || projection.Target.OwnerModule != key.owner || projection.Target.ResourceType != key.typeName || projection.Target.ResourceIdentity != key.identity {
+				scope.unknown = true
+			} else {
+				scope.ids[projection.TargetEngineID] = struct{}{}
+			}
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if checkpoint != nil {
+		s.localCursors[tenantID] = checkpoint.Cursor
+		s.localInitialized[tenantID] = checkpoint.Initialized
+	}
+	if s.engineScopes == nil {
+		s.engineScopes = make(map[int64]*protectedEngineScope)
+	}
+	if tenantID == 0 {
+		s.engineScopes = scopes
+	} else {
+		s.engineScopes[tenantID] = scopes[tenantID]
+	}
 	if tenantID == 0 {
 		s.byResource = loaded
 		return nil

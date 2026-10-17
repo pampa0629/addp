@@ -138,6 +138,9 @@ func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64
 }
 
 func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target dataprotection.ResourceReference, snapshot models.ProtectionTargetSnapshot, now time.Time, deadline *time.Time) (models.ProtectionEnrollment, error) {
+	if err := dataprotection.VerifyTargetEngine(target, snapshot.EngineID, snapshot.FullName); err != nil {
+		return models.ProtectionEnrollment{}, err
+	}
 	enrollment := models.ProtectionEnrollment{
 		ProtectionExpiresAt: deadline,
 		ID:                  uuid.NewString(), TenantID: tenantID,
@@ -155,10 +158,10 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 	}
 	for _, owner := range allRequiredProtectionOwners() {
 		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV3,
+			SchemaVersion: dataprotection.ProjectionSchemaV4,
 			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
 			ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
-			Target: target, Rules: []dataprotection.Rule{},
+			Target: target, TargetEngineID: snapshot.EngineID, Rules: []dataprotection.Rule{},
 			ValidFrom: now, ExpiresAt: enrollment.ProtectionExpiresAt,
 		}
 		if err := projection.Seal(); err != nil {

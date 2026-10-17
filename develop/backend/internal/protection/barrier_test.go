@@ -2,6 +2,7 @@ package protection
 
 import (
 	"context"
+	"github.com/addp/common/dataprotection"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,9 @@ func newBarrierTestRuntime(t *testing.T) (*gorm.DB, *Gate) {
 	}
 	store, err := projectionstore.Migrate(db, "develop", "develop", nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	return db, NewGate(store)

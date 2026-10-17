@@ -138,6 +138,9 @@ func TestManagerAcknowledgementKeepsInstalledCursorWhileOldReadFinishes(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := installer.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	reader, err := projectionstore.Open(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +155,8 @@ func TestManagerAcknowledgementKeepsInstalledCursorWhileOldReadFinishes(t *testi
 	now := time.Now().UTC()
 	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection",
 		Revision: "00000000000000000001", ConsumerOwner: "manager",
 		State: dataprotection.ProjectionStateEnrolling, Target: target, Rules: []dataprotection.Rule{},
 		ValidFrom: now.Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(now.Add(time.Hour)),

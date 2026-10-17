@@ -155,6 +155,9 @@ func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
 	other, err := projectionstore.Open(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +167,8 @@ func TestDataProfileServiceRejectsResultWhenProtectionChangesDuringSampling(t *t
 	executions := &dataProfileServiceTestExecutionStore{}
 	sampler := &dataProfileServiceTestSampler{sample: &DataProfileSample{ReadSet: profileReadSetForTest(t)}, onSample: func() {
 		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
+			TargetEngineID: 1,
+			SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "install", Revision: "00000000000000000001", ConsumerOwner: "manager", State: dataprotection.ProjectionStateEnrolling,
 			Target:    dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"},
 			ValidFrom: time.Now().Add(-time.Minute), ExpiresAt: dataprotection.ProjectionDeadline(time.Now().Add(time.Hour)),
 		}
@@ -1148,7 +1152,8 @@ func managedDataProfileServiceTestGate(t *testing.T, itemFingerprint string, fie
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: itemFingerprint},
 		SourceSnapshotHash: snapshotHash,

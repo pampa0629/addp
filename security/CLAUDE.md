@@ -1,6 +1,6 @@
 # Security 模块说明
 
-Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档、邮箱、身份证件号码和银行卡号元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译、显式重新发现和资源级有效期设置。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。原值访问只能由当前用户从 Manager 预览出口发起 ProtectionAccessRequest，再由另一名有审批权限的用户在 Security 审批；ProtectionExemption 只保存审批后形成的按用户、按字段、按 `manager/preview` 出口、最长 30 天的临时授权。Projection v3 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
+Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档、邮箱、身份证件号码和银行卡号元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译、显式重新发现和资源级有效期设置。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。原值访问只能由当前用户从 Manager 预览出口发起 ProtectionAccessRequest，再由另一名有审批权限的用户在 Security 审批；ProtectionExemption 只保存审批后形成的按用户、按字段、按 `manager/preview` 出口、最长 30 天的临时授权。Projection v4 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
 
 ## 边界
 
@@ -143,7 +143,7 @@ MongoDB 查询搬运验收复用上述 suite、普通 User 和标准 `bounded + 
 
 提交 `7a6476b3d` 的 [2026-10-14 Hosted T4 38477006785](https://github.com/pampa0629/addp/actions/runs/38477006785) 已真实通过 v12，场景耗时约 884 秒，并完成下载报告与七张截图的独立核对。普通 User 的九个资源筛选场景全部通过：名称、正确／错误引擎、同步完成／已停止保护状态、保护中／全部范围的交集、百分号字面匹配及重置恢复均核对实际请求、成员、分页总数和表格；四 Owner 当前回执、时间有效状态及截止时间与响应一致。筛选阶段只读，未修改纳管、策略、授权或角色；进入 Security 及返回 Manager 后，验收 API 均绑定本次浏览器成功业务响应并确认同一用户、租户和完整权限集合。既有银行卡四 Owner 五行输出、MongoDB 三算法及十个任务清理、两个 Security 停机窗口与 14 个拒绝连接时间点、四 Owner 显式重新发现继续通过。Console 客户检索、预览、五行 CSV 与 Monitor 通过，零浏览器告警、零业务请求错误；新增三张筛选截图和既有四张客户数据截图已目视核对。领域资源、Hosted 应用、业务容器、Infra 与凭据清理通过，零残留。[同提交 Platform CI 38476933899](https://github.com/pampa0629/addp/actions/runs/38476933899) 全部成功；本地 `make test-online-runner`、`make test-console-frontend` 和 `make test-security-frontend` 均通过，其中 Console 为 173 个确定性用例、134 个浏览器用例及构建，Security 为 212 个确定性用例、26 个浏览器用例及构建。该结果不计为保护投影长周期自然到期或全平台高可用验收。
 
-资源保护有效期改为 Enrollment 级配置：新纳管默认长期有效，指定截止时间必须显式选择。已有期限迁移保留，重新发现不延期，修改期限沿既有权限、version 和唯一投影编译器同步四 Owner；Projection 唯一运行协议为 v3，expires_at=null 表示长期。期限到期仍保持纳管并拒绝输出，原值授权继续限时。此次变更的验收结论须由本次门禁另行记录，历史 v12 结果不能替代。
+资源保护有效期改为 Enrollment 级配置：新纳管默认长期有效，指定截止时间必须显式选择。已有期限迁移保留，重新发现不延期，修改期限沿既有权限、version 和唯一投影编译器同步四 Owner；Projection 唯一运行协议为 v4，expires_at=null 表示长期。期限到期仍保持纳管并拒绝输出，原值授权继续限时。此次变更的验收结论须由本次门禁另行记录，历史 v12 结果不能替代。
 
 2026-10-15，提交 `061e8420f` 的 [Hosted T4 38704771989](https://github.com/pampa0629/addp/actions/runs/38704771989) 未通过：在初始化精确源读取 Grant 前，System 的 `manager-preview` 读取检查返回 `503 authorization_facts_unavailable`，尚未进入 v13 有效期或浏览器场景。该隔离环境未配置独立 `SYSTEM_SERVICE_CLIENT_SECRET`，源授权准备请求还需适配现行 DataItem 指纹与授权边界契约；本次结果不能计为自然到期或长期有效 T4 通过。Hosted 应用、夹具与 Infra 清理通过，零残留。
 
@@ -219,3 +219,5 @@ Hosted 浏览器验收扩展为领域 v16／浏览器 v7：复用同一隔离普
 Hosted 后续扩展 v17／浏览器 v8 补充 Transfer 结果阶段的真实拒绝：复用隔离 MongoDB Persons 的短值、正式 phone 默认掩码及既有 PostgreSQL `mongodb_query_denied` 目标。先执行完整正常输出，再通过正式 Baseline CAS 更新将既有无效值处理临时改为 deny；追加执行在读取数据后的保护检查拒绝，必须持久化精确 result 诊断、零新增写入且既有目标完整不变。专业详情和同 UUID Monitor 留存两张新截图；恢复完整原基线并确认四 Owner 同步后复验正常输出，失败也恢复基线并清理两个测试定义。该夹具只在已有 disposable Hosted 准入下运行，不新增 Grant、Permission、引擎、端点或时钟／异常注入；不扩展目前仅 Manager preview 支持的独立 Policy owner 范围。复用原标准入口、CI 登记守卫与确定性反例，未取得真实 v17 证据前不计通过。
 
 v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅含本会话修改及 Security 登记片段的干净源码复验同样通过，登记一致性及 JavaScript 语法检查通过。新增确定性反例直接执行实际浏览器 helper，拒绝错误阶段、目标变化和非零写入，并验证更新已提交但响应丢失、恢复响应失败、单个任务删除失败时仍恢复完整基线并尝试全部任务清理；CAS 版本只前进，不回滚版本。`make test-console-frontend` 的 173 项单元、138 项浏览器及构建通过。以上不计为真实 v17 通过，亦不将其他 owner 的全仓聚合计为通过。
+
+查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。

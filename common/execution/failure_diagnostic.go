@@ -38,7 +38,7 @@ var failureReasons = map[string]bool{
 	"ambiguous_column": true, "function_or_operator_not_found": true, "division_by_zero": true,
 	"timeout": true, "cancelled": true, "resource_exhausted": true,
 	"query_failed": true, "result_invalid": true,
-	"database_required": true, "data_protection_required": true,
+	"local_read_unsupported": true, "database_required": true, "data_protection_required": true,
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
 	"target_exists": true,

@@ -66,7 +66,8 @@ func TestContentIndexProtectionMasksManagedDocumentBeforeIndexWrite(t *testing.T
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV3, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		TargetEngineID: 1,
+		SchemaVersion:  dataprotection.ProjectionSchemaV4, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "fingerprint-1"},
 		SourceSnapshotHash: hash,

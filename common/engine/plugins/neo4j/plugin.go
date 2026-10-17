@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -117,35 +118,72 @@ func neo4jDatabaseFromCatalogPath(path plugin.EngineCatalogPath) (string, bool) 
 	return segments[0].Name, true
 }
 
-func (p *Neo4jPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	if !strings.EqualFold(strings.TrimSpace(req.Language), "cypher") || strings.TrimSpace(req.Query) == "" {
-		return nil, fmt.Errorf("Neo4j query runtime requires a non-empty Cypher query")
+func (p *Neo4jPlugin) prepareReadRequest(connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.ConnectionInfo, plugin.QueryOptions, *cypherReadProof, error) {
+	if !strings.EqualFold(strings.TrimSpace(req.Language), "cypher") || req.EngineID == 0 {
+		return nil, plugin.QueryOptions{}, nil, fmt.Errorf("Neo4j query runtime requires Cypher and an engine identity")
 	}
+	proof, err := parseLocalReadCypher(req.Query)
+	if err != nil {
+		return nil, plugin.QueryOptions{}, nil, err
+	}
+	connInfo = cloneConnectionInfo(connInfo)
 	if req.TargetPath != nil {
-		if database, ok := neo4jDatabaseFromCatalogPath(*req.TargetPath); ok {
-			connInfo = cloneConnectionInfo(connInfo)
-			connInfo["database"] = database
+		database, ok := neo4jDatabaseFromCatalogPath(*req.TargetPath)
+		if !ok || req.TargetPath.EngineID != req.EngineID {
+			return nil, plugin.QueryOptions{}, nil, fmt.Errorf("invalid Neo4j query target path")
 		}
+		connInfo["database"] = database
 	}
 	if err := commonquery.ValidateCypher(req.Query, req.Options.Parameters); err != nil {
-		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
+		return nil, plugin.QueryOptions{}, nil, err
 	}
-	preparedConnInfo := cloneConnectionInfo(connInfo)
-	preparedOptions := req.Options
-	preparedOptions.Args = cloneCypherValues(req.Options.Args)
-	if req.Options.Parameters != nil {
-		preparedOptions.Parameters = make(map[string]interface{}, len(req.Options.Parameters))
-		for key, value := range req.Options.Parameters {
-			preparedOptions.Parameters[key] = cloneCypherValue(value)
-		}
+	opts := req.Options
+	opts.ReadOnly = true
+	opts.EngineID = req.EngineID
+	opts.Args = cloneCypherValues(req.Options.Args)
+	opts.Parameters, _ = cloneCypherValue(req.Options.Parameters).(map[string]interface{})
+	return connInfo, opts, proof, nil
+}
+
+func (p *Neo4jPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	conn, opts, proof, err := p.prepareReadRequest(connInfo, req)
+	if err != nil {
+		return nil, err
 	}
-	query := strings.TrimSpace(req.Query)
+	resolve := p.localReadResolver(conn, proof, req.EngineID)
 	analysis, err := plugin.NewQueryAnalysis("cypher", plugin.QuerySchemaCoverageUnknown)
 	if err != nil {
 		return nil, err
 	}
-	return plugin.NewPreparedQuery(analysis, nil, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
-		return p.executeQuery(ctx, cloneConnectionInfo(preparedConnInfo), query, preparedOptions)
+	query := proof.statement
+	return plugin.NewPreparedQuery(analysis, resolve, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
+		if _, err := resolve(ctx); err != nil {
+			return nil, err
+		}
+		result, err := p.executeNativeGraphQuery(ctx, conn, query, opts)
+		if err != nil {
+			return nil, err
+		}
+		return &result.QueryResult, nil
+	})
+}
+
+func (p *Neo4jPlugin) PrepareGraphQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedGraphQuery, error) {
+	conn, opts, proof, err := p.prepareReadRequest(connInfo, req)
+	if err != nil {
+		return nil, err
+	}
+	resolve := p.localReadResolver(conn, proof, req.EngineID)
+	analysis, err := plugin.NewQueryAnalysis("cypher", plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	query := proof.statement
+	return plugin.NewPreparedGraphQuery(analysis, resolve, nil, func(ctx context.Context) (*plugin.GraphQueryResult, error) {
+		if _, err := resolve(ctx); err != nil {
+			return nil, err
+		}
+		return p.executeNativeGraphQuery(ctx, conn, query, opts)
 	})
 }
 
@@ -161,34 +199,59 @@ func cloneCypherValues(values []interface{}) []interface{} {
 }
 
 func cloneCypherValue(value interface{}) interface{} {
-	switch typed := value.(type) {
-	case []byte:
-		return append([]byte(nil), typed...)
-	case []interface{}:
-		return cloneCypherValues(typed)
-	case map[string]interface{}:
-		cloned := make(map[string]interface{}, len(typed))
-		for key, item := range typed {
-			cloned[key] = cloneCypherValue(item)
+	if value == nil {
+		return nil
+	}
+	return cloneCypherReflectValue(reflect.ValueOf(value)).Interface()
+}
+
+func cloneCypherReflectValue(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		if value.Kind() == reflect.Pointer {
+			cloned := reflect.New(value.Type().Elem())
+			cloned.Elem().Set(cloneCypherReflectValue(value.Elem()))
+			return cloned
+		}
+		cloned := reflect.New(value.Type()).Elem()
+		cloned.Set(cloneCypherReflectValue(value.Elem()))
+		return cloned
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		cloned := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			cloned.Index(i).Set(cloneCypherReflectValue(value.Index(i)))
+		}
+		return cloned
+	case reflect.Array:
+		cloned := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.Len(); i++ {
+			cloned.Index(i).Set(cloneCypherReflectValue(value.Index(i)))
+		}
+		return cloned
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		cloned := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iterator := value.MapRange()
+		for iterator.Next() {
+			cloned.SetMapIndex(iterator.Key(), cloneCypherReflectValue(iterator.Value()))
 		}
 		return cloned
 	default:
+		// Neo4j temporal and spatial parameter structs are immutable values.
 		return value
 	}
 }
 
 func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	return p.executeGraphQuery(ctx, connInfo, cypher, opts)
-}
-
-func (p *Neo4jPlugin) ExecuteGraphQueryAtPath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
-	database, ok := neo4jDatabaseFromCatalogPath(path)
-	if !ok {
-		return nil, fmt.Errorf("无效的 Neo4j 查询目标路径")
-	}
-	sampleConn := cloneConnectionInfo(connInfo)
-	sampleConn["database"] = database
-	return p.executeGraphQuery(ctx, sampleConn, cypher, opts)
 }
 
 func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
@@ -697,19 +760,29 @@ func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.Con
 	if err := commonquery.ValidateCypher(query, opts.Parameters); err != nil {
 		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
 	}
+	if opts.ReadOnly {
+		proof, err := parseLocalReadCypher(query)
+		if err != nil {
+			return nil, err
+		}
+		query = proof.statement
+		if err := p.verifyLocalReadCypher(ctx, connInfo, proof); err != nil {
+			return nil, err
+		}
+	}
+	return p.executeNativeGraphQuery(ctx, connInfo, query, opts)
+}
+
+func (p *Neo4jPlugin) executeNativeGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
 	}
 	defer driver.Close(ctx) //nolint:errcheck
 
-	isWrite := isCypherWriteQuery(query)
-	if opts.ReadOnly && isWrite {
-		return nil, fmt.Errorf("只读 Cypher 不允许写操作")
-	}
-	routing := neo4jdriver.ExecuteQueryWithReadersRouting()
-	if isWrite {
-		routing = neo4jdriver.ExecuteQueryWithWritersRouting()
+	routing := neo4jdriver.ExecuteQueryWithWritersRouting()
+	if opts.ReadOnly {
+		routing = neo4jdriver.ExecuteQueryWithReadersRouting()
 	}
 	query = boundedCypherQuery(query, opts.Limit)
 
@@ -726,7 +799,7 @@ func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.Con
 		return nil, fmt.Errorf("执行 Cypher 失败：%w", err)
 	}
 
-	if len(result.Records) == 0 {
+	if len(result.Records) == 0 && !opts.ReadOnly {
 		cols := []string{"nodes_created", "nodes_deleted", "relationships_created", "relationships_deleted", "properties_set"}
 		row := map[string]interface{}{
 			"nodes_created":         result.Summary.Counters().NodesCreated(),
@@ -744,7 +817,7 @@ func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.Con
 	nodeMap := make(map[string]plugin.GraphNode)
 	relMap := make(map[string]plugin.GraphRelationship)
 
-	columns := result.Records[0].Keys
+	columns := result.Keys
 	rows := make([]map[string]interface{}, len(result.Records))
 	for i, record := range result.Records {
 		row := make(map[string]interface{}, len(columns))
@@ -858,65 +931,13 @@ func (p *Neo4jPlugin) generateSampleQuery(ctx context.Context, connInfo plugin.C
 }
 
 // query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
-// 写操作（CREATE/MERGE/DELETE/SET/REMOVE/DROP）自动使用写路由，其余使用读路由
+// 只读调用必须通过标准语法与本地范围证明；原生写调用使用写路由。
 func (p *Neo4jPlugin) executeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	if err := commonquery.ValidateCypher(query, opts.Parameters); err != nil {
-		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
-	}
-	driver, err := p.createDriver(ctx, connInfo)
+	result, err := p.executeGraphQuery(ctx, connInfo, query, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer driver.Close(ctx) //nolint:errcheck
-
-	isWrite := isCypherWriteQuery(query)
-	if opts.ReadOnly && isWrite {
-		return nil, fmt.Errorf("只读 Cypher 不允许写操作")
-	}
-	routing := neo4jdriver.ExecuteQueryWithReadersRouting()
-	if isWrite {
-		routing = neo4jdriver.ExecuteQueryWithWritersRouting()
-	}
-	query = boundedCypherQuery(query, opts.Limit)
-
-	result, err := neo4jdriver.ExecuteQuery(
-		ctx,
-		driver,
-		query,
-		opts.Parameters,
-		neo4jdriver.EagerResultTransformer,
-		neo4jdriver.ExecuteQueryWithDatabase(getDatabase(connInfo)),
-		routing,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("执行 Cypher 失败：%w", err)
-	}
-
-	if len(result.Records) == 0 {
-		// 写操作或空结果：返回影响计数
-		cols := []string{"nodes_created", "nodes_deleted", "relationships_created", "relationships_deleted", "properties_set"}
-		row := map[string]interface{}{
-			"nodes_created":         result.Summary.Counters().NodesCreated(),
-			"nodes_deleted":         result.Summary.Counters().NodesDeleted(),
-			"relationships_created": result.Summary.Counters().RelationshipsCreated(),
-			"relationships_deleted": result.Summary.Counters().RelationshipsDeleted(),
-			"properties_set":        result.Summary.Counters().PropertiesSet(),
-		}
-		return &plugin.QueryResult{Columns: cols, Rows: []map[string]interface{}{row}}, nil
-	}
-
-	columns := result.Records[0].Keys
-	rows := make([]map[string]interface{}, len(result.Records))
-	for i, record := range result.Records {
-		row := make(map[string]interface{}, len(columns))
-		for _, col := range columns {
-			val, _ := record.Get(col)
-			row[col] = convertNeo4jValue(val)
-		}
-		rows[i] = row
-	}
-
-	return &plugin.QueryResult{Columns: columns, Rows: rows}, nil
+	return &result.QueryResult, nil
 }
 
 func boundedCypherQuery(query string, limit int) string {
@@ -924,18 +945,7 @@ func boundedCypherQuery(query string, limit int) string {
 	if limit <= 0 {
 		return query
 	}
-	return fmt.Sprintf("CALL { %s } RETURN * LIMIT %d", query, limit)
-}
-
-// isCypherWriteQuery 判断 Cypher 是否包含写操作关键字
-func isCypherWriteQuery(cypher string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(cypher))
-	for _, kw := range []string{"CREATE ", "MERGE ", "DELETE ", "SET ", "REMOVE ", "DROP ", "CALL "} {
-		if strings.Contains(upper, kw) {
-			return true
-		}
-	}
-	return false
+	return fmt.Sprintf("CALL {\n%s\n} RETURN * LIMIT %d", query, limit)
 }
 
 // escapeCypherLabel 转义 Cypher 标签/关系类型中的反引号，防止注入

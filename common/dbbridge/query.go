@@ -439,18 +439,18 @@ func ExecuteReadOnlyGraphQueryWithPath(ctx context.Context, engine *models.Engin
 	if language == "" || !slices.Contains(queryProvider.QueryLanguages(), language) {
 		return nil, fmt.Errorf("引擎不支持查询语言: %s", language)
 	}
-	graphProvider, ok := p.(plugin.GraphQueryProvider)
+	graphProvider, ok := p.(plugin.PreparedGraphQueryProvider)
 	if !ok {
-		return nil, fmt.Errorf("引擎未提供图查询运行时")
+		return nil, fmt.Errorf("引擎未提供可验证的图查询运行时")
 	}
-	if targetPathProvider, ok := p.(plugin.PathAwareGraphQueryProvider); ok && targetPath != nil {
-		return targetPathProvider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, query, plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
-		})
-	}
-	return graphProvider.ExecuteGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
-		EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
+	prepared, err := graphProvider.PrepareGraphQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: engine.ID, Language: language, Query: query, TargetPath: targetPath,
+		Options: plugin.QueryOptions{EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return prepared.ExecuteGraph(ctx)
 }
 
 // ExecuteStatement executes one non-read SQL statement and returns affected

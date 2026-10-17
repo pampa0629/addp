@@ -48,6 +48,23 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 	}, end, nil
 }
 
+func (g *Gate) BeginPreparedGraphQuery(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, prepared plugin.PreparedGraphQuery) (func(), error) {
+	end, err := g.begin(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	model, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
+	if !ok {
+		end()
+		return nil, ErrRequired
+	}
+	if err := g.store.RequireReadPlanUnmanaged(ctx, int64(tenantID), model.EngineCatalogModel(), prepared, time.Now().UTC()); err != nil {
+		end()
+		return nil, fmt.Errorf("%w: %w", ErrRequired, err)
+	}
+	return end, nil
+}
+
 func (g *Gate) BeginCatalogPath(ctx context.Context, tenantID uint, enginePlugin plugin.EnginePlugin, path plugin.EngineCatalogPath) (func(), error) {
 	end, err := g.begin(tenantID)
 	if err != nil {
@@ -65,8 +82,7 @@ func (g *Gate) BeginCatalogPath(ctx context.Context, tenantID uint, enginePlugin
 	return end, nil
 }
 
-// BeginUnresolvedRead is the fail-closed boundary for legacy graph and
-// federated reads whose current Provider contract cannot prove a complete
+// BeginUnresolvedRead is the fail-closed boundary for federated reads whose current Provider contract cannot prove a complete
 // DataItem read set. It is intentionally not used by ordinary SQL/MQL paths.
 func (g *Gate) BeginUnresolvedRead(ctx context.Context, tenantID uint) (func(), error) {
 	end, err := g.begin(tenantID)
