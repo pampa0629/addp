@@ -1,10 +1,10 @@
 # ADDP 栅格计算与成果契约规范
 
-本文维护已实现的 GeoPython 栅格对象、通用算子、成果发布与资源准入约定。DEM 新切片及尚未完成的展示/规模证据见[后续专题](../next/栅格算子体系后续专题.md)。具体公开参数由正式工作流规范和算子元数据维护，不能把验收样例当默认值。
+本文维护已实现的 GeoPython 栅格对象、通用算子、成果发布与资源准入约定。尚未完成的展示／规模证据与后续工作见[后续专题](../next/栅格算子体系后续专题.md)。具体公开参数由正式工作流规范和算子元数据维护，不能把验收样例当默认值。
 
 ## 一、适用范围
 
-适用于已发布的 GeoPython 通用栅格算子、Develop 工作流成果与引擎资源策略。Manager 快显、Service 地图发布及尚在实施的 DEM 算子按各自 owner 契约和后续清单维护。
+适用于已发布的 GeoPython 通用栅格算子、Develop 工作流成果与引擎资源策略。DEM 基础地形分析纳入通用算子；Manager 快显与 Service 地图发布按各自 owner 契约维护。
 
 ## 二、资源与执行模型
 
@@ -21,7 +21,7 @@
 
 加载支持自包含 TIFF、PNG、JPEG，声明格式必须与实际 GDAL driver 一致；拒绝外部 sidecar 和伪装成 TIFF 的 VRT。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
 
-输出限定 `.tif/.tiff`，GeoTIFF 与 COG 是布局 profile。COG 编码复用唯一实现，压缩支持 DEFLATE/LZW/ZSTD/NONE，块大小为 128–4096 内的 16 倍数。目录全局 overview 及其内部金字塔从完整全局网格生成，不复用 leaf 的局部抽样金字塔。
+栅格文件输出限定 `.tif/.tiff`，GeoTIFF 与 COG 是布局 profile。COG 编码复用唯一实现，压缩支持 DEFLATE/LZW/ZSTD/NONE，块大小为 128–4096 内的 16 倍数。目录全局 overview 及其内部金字塔从完整全局网格生成，不复用 leaf 的局部抽样金字塔。
 
 ### 2.2 生命周期与有效性
 
@@ -57,6 +57,10 @@
 | `raster_footprint` | `raster` → `GeoDataFrame` | 所选数据波段有效范围的并集/交集，保留源 CRS、孔洞与分离面片。 |
 | `raster_statistics` | raster、从 1 开始的 band | 按块全量累计 min/max/mean/总体标准差、有效/无效计数与比例；全无效时统计值为 null。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |
+| `raster_slope` | raster、必填高程单位、band、degree/percent | 同网格单波段坡度，默认角度。 |
+| `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
+| `raster_hillshade` | raster、必填高程单位、band、方位角／高度角 | 同网格地形晕渲，常规有效灰度 1–255；不表示三维场景。 |
+| `raster_contour` | raster、必填高程单位、band、等高距或指定高程 | 源 CRS 的二维 LineString GeoDataFrame，`elevation` 为米；可接既有矢量保存节点。 |
 
 除 `raster_to_cog` 外，上表算子只支持 workflow。波段表达式允许 `b1/b2/...`、常量、加减乘除、有限常数幂及 `abs/sqrt/log/minimum/maximum`，拒绝属性访问、索引、导入和任意 Python 执行。
 
@@ -68,6 +72,7 @@
 - 聚合按整数列/行倍数从左上角分组，忽略无效值，全无效组写 NaN，保留不足整组的边缘；有定位时按倍数缩放仿射列、行向量。
 - 区域内裁剪要求与栅格实际覆盖面存在正面积交集；区域外裁剪保留完整源网格，将边界内设为无效，孔洞保留，不按剩余有效值缩小范围。
 - 有效像元轮廓默认取所选数据波段的并集，可选交集；保留孔洞、分离面片、旋转和源 CRS，输出既有 GeoDataFrame，四角 extent 不能替代轮廓。
+- DEM 四项要求二维投影北向无旋转网格和明确的米／国际英尺／美制测量英尺高程单位；水平单位来自 CRS。邻域、边缘、平坦坡向和空等值线等规则以[工作流栅格契约](addp工作流计算引擎接口规范.md#46-栅格计算契约)为准，不依赖 GDAL 默认值推断。
 
 ## 四、工作流使用与批量切片
 
@@ -84,6 +89,8 @@
 | 局部更新 | 基底与更新源分别加载 → 必要时对齐／选波段 → raster_update → raster_save |
 | 自动批量切片 | raster_load → raster_tile → raster_save_tiles |
 | 有效轮廓 | raster_load → raster_footprint → 既有矢量计算／保存节点或 JSON 预览 |
+| DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
+| DEM 等值线 | raster_load → raster_contour → 既有矢量保存节点或 JSON 预览 |
 
 `raster_info`、统计、直方图及只读轮廓结果可在执行详情查看，不虚构持久成果或目标扫描。Manager 普通查看不隐式触发计算和业务保存，私有 COG 仍由显式快显任务生成；相关规则见 `manager/docs/快显实现规范.md`。
 
@@ -148,3 +155,7 @@
 | `make test-online ONLINE_SUITE=raster-workflow` | 原 Raster Hosted T4；仅在 GitHub Hosted 独占部署运行，不接管个人开发环境。 |
 
 最小日常计算验证使用 `make test-geopython-workflow`；修改跨模块成果、授权或扫描链路时补充相应 owner 门禁与原 Hosted T4。连接本地 Infra 前先执行 `bash scripts/infra/status.sh`，PostgreSQL 仅使用规范允许的测试库。服务重启由用户按标准生命周期操作。
+
+### 6.2 DEM 验收边界
+
+DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与归档见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。坡度、坡向和晕渲在 Hosted 中覆盖 COG 保存、自动扫描、资源血缘与页面参数；等值线在 Hosted 中覆盖计算及 JSON 预览，矢量保存已有 Native 异步 DAG 回归，尚未覆盖真实持久化扫描。两种验证层级分别记账，不以 JSON 预览替代持久化、扫描或发布。
