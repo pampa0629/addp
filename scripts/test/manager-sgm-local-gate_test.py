@@ -21,6 +21,20 @@ WORKER = importlib.import_module("scripts.test.manager-sgm-local-worker")
 
 
 class LocalSGMContract(unittest.TestCase):
+    def test_worker_disposes_private_config_between_samples_and_after_execution_failure(self):
+        life = GATE.T2.Lifecycle(prefix='sgm-worker-contract-', label=GATE.LABEL)
+        try:
+            with patch.object(life, 'copy'), patch.object(life, 'docker', return_value='{}'):
+                for sample_id in ('compass', 'autumn-tree'):
+                    GATE.worker(life, 'verify', {'sample_id': sample_id, 'root_secret': 'PRIVATE'})
+                    self.assertFalse((life.work / 'worker-verify.json').exists())
+            with patch.object(life, 'copy'), patch.object(life, 'docker', side_effect=RuntimeError('PRIVATE')):
+                with self.assertRaises(RuntimeError):
+                    GATE.worker(life, 'verify', {'root_secret': 'PRIVATE'})
+                self.assertFalse((life.work / 'worker-verify.json').exists())
+        finally:
+            shutil.rmtree(life.work)
+
     def test_official_autumn_archive_extracts_only_pinned_members_and_preserves_layout(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

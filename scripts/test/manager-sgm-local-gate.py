@@ -184,9 +184,13 @@ def check_network_transport(life):
 
 def worker(life, action, config):
     model = life.run_id + "-model3d-workflow-engine"
-    life.copy(life.private_json("worker-" + action + ".json", config), model + ":/tmp/manager-sgm.json")
-    code = (T2.ROOT / "scripts/test/manager-sgm-local-worker.py").read_bytes()
-    return json.loads(life.docker("exec", "-i", model, "python", "-", action, data=code, timeout=120))
+    path = life.private_json("worker-" + action + ".json", config)
+    try:
+        life.copy(path, model + ":/tmp/manager-sgm.json")
+        code = (T2.ROOT / "scripts/test/manager-sgm-local-worker.py").read_bytes()
+        return json.loads(life.docker("exec", "-i", model, "python", "-", action, data=code, timeout=120))
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def model_tasks(client, fingerprint):
