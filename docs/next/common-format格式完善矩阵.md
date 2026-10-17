@@ -1,6 +1,6 @@
 # common/format 格式后续事项
 
-更新时间：2026-10-16
+更新时间：2026-10-17
 
 当前结论与未决事项列在前；后文保留分阶段验收记录，历史失败和当时待验范围不代表当前状态。
 
@@ -24,13 +24,15 @@
 | OBJ | 无人机航测 | 已接入：基础几何预览及 Model3D GLB 快显 | Hosted 已验证源几何、GLB 内嵌漫反射贴图及下载；引用的 MTL/图片须可访问，不声明复杂材质保真。 |
 | MAX | 无人机航测 | 限定支持：Model3D 内部 Blender 与固定导入器转换静态 GLB | Hosted 已验证五个网格、444 个顶点、基础贴图与毫米换算。识别不了单位且用户未选时默认米；外部 bitmap 须显式映射。不新增 Blender 服务，不声明动画、骨架、修改器或全部版本。 |
 | SKP | 无人机航测 | 限定支持：OpenSKP 转静态 GLB，保留组件实例与内嵌基础贴图 | Hosted 已验证单位换算及两个共享实例；隐藏组件、隐藏面、关闭图层及解析器不支持的输入明确拒绝，不声明动态组件、场景动画或全部版本。 |
-| SGM（SuperMap Global Model） | 无人机航测 | 限定支持：授权 SuperMap → OSGB → Model3D GLB | 本地 NFS/真实 Business MinIO 样例已通过；秋树缺图及叶片 alpha 已修复并完成页面复验。2026-10-16 本机隔离 T2 通过；2026-10-17 指南针样例的隔离普通 User 技术页面验收通过，覆盖十项权限、生成／任务页／GLB 加载、缓存、下载和领域／物理／环境清理。自动读取同目录或 `Textures/` 贴图，缺图/损坏/越界明确失败；需 SuperMap SDK 与有效许可，不声明所有材质、版本或其他目录布局，仍缺正式 Linux Runner T4。 |
+| SGM（SuperMap Global Model） | 无人机航测 | 限定支持：授权 SuperMap → OSGB → Model3D GLB | 本地 NFS/真实 Business MinIO 样例已通过；秋树缺图及叶片 alpha 已修复并完成页面复验。2026-10-16 本机隔离 T2 通过；2026-10-17 指南针与秋树的隔离普通 User 技术页面验收通过，覆盖十项权限、生成／任务页／GLB 加载、缓存、下载和领域／物理／环境清理；秋树两张 1024² 贴图实际绑定，叶片透明像素和 `BLEND` 已核对。自动读取同目录或 `Textures/` 贴图，缺图/损坏/越界明确失败；需 SuperMap SDK 与有效许可，不声明所有材质、版本或其他目录布局，仍缺正式 Linux Runner T4。 |
 | GeoJSON | 设备轨迹 | 已接入：FeatureCollection 的地图＋属性表、几何查看、刷新及完整下载；静态轨迹范围读取已通过 Hosted | Hosted 已验证 Point/LineString 及 `.geojson`/`.json` 两种后缀；Point FeatureCollection 的 3000 点合成源完成显式设备／时间范围读取与静态连线，所选范围最多 2000 点。内置 table 主线不覆盖单个 Feature 或 GeometryCollection；既有 LineString 仍走普通地图预览，未提供轨迹回放。 |
 | JSON（`.json`） | 设备轨迹 | 已接入：普通对象文档、records array/JSON Lines 表格；records array 静态轨迹范围读取已通过 Hosted | Hosted 已验证普通文档、25 行 records array 和 FeatureCollection，另验证 3000 点 records array 的显式设备／时间范围及静态连线；内容确认为 GeoJSON 时按 GeoJSON 展示。任意嵌套 JSON 不保证可转表，JSON Lines 的全部变体不由这些 Hosted 样例认证。 |
 
 本次核对依据为内置格式规范、`common/format/plugins/` 身份和读取实现、Manager 预览与 GLB 算子路由，以及已有真实验收记录；未新增格式、转换路线、业务类型或权限。上述格式清单整理仅更新文档，复用已有产品及 Hosted 证据；后续新增静态轨迹的实现与验收范围单独记录于下文，不沿用旧 Hosted 结果认证新增功能。
 
 当前有效证据：
+
+- SGM 本机隔离技术页面门禁：源码 `c00b95b85aba4546af485dd079dd229bd3af6e97` 的指南针与秋树顺序验收完整通过，两份模型各生成一次；秋树 9589 顶点／7273 面、树干不透明 JPEG 及叶片透明 PNG 实际绑定。原文件下载哈希、缓存、任务及成果删除、物理对象清理均通过，独立环境资源复核为 0。23 项隔离回归、89 项共享回归及 System 身份夹具检查通过；真实报告摘要、失败后修复及最终验收边界见 [SuperMap 验收记录](../../engines/supermap-workflow/README.md#本机隔离技术页面验收)，不计正式 Linux Runner T4。
 
 - [Manager Hosted 38870359936](https://github.com/pampa0629/addp/actions/runs/38870359936)，源码 `dd154bc147aef753fc2df6b02fc1e625e4d51e08`、Job `116872745534`、attempt 1 已通过；CSV／records JSON／Point GeoJSON 的 3000 点源均完成 48／24 点范围读取、超限拒绝、恢复及前后下载哈希核对。八模型转换和缓存预览、GBK CSV/TSV、XLSX 四工作表、JSON/GeoJSON 展示等原场景同时通过，十一类产物／任务领域清理、PDF／COG 物理删除和 Infra 零残留均已独立核对。私有 SGM 不在该 suite 内。
 - [Model3D 验收记录](../../engines/model3d-workflow/README.md)：同一源码的 Linux x86_64 产品构建及 10 种 OSGB 贴图回归通过；2026-10-15 本地秋树 GLB 保留透明叶片、9589 顶点和 7273 面，旋转、刷新缓存与清理通过。
