@@ -1,5 +1,9 @@
 # Manager 模块说明
 
+导入弹窗按 Transfer／Meta 的公开执行响应展示进度：终态 `failed`、`timeout`、`cancelled` 均结束轮询并复用共享 `ExecutionFailure`，只消费 `error_details` 与实际执行 UUID，不读取原始运行错误或已删除的 `error_msg`。Transfer 成功后等待其准确的 Meta 子执行，元数据同步失败不能显示整个导入成功；关闭、重试和卸载必须隔离旧请求。数据保护拒绝的共享提示使用适用于数据读取与结果保护的中性文案，不将导入失败解释为 SQL 拼接错误。受影响层级为共享前端 T1、Manager T1／隔离浏览器 T3／构建，以及既有 Console Hosted T4；标准入口 `make test-common-frontend`、`make test-manager-frontend` 和 `make test-transfer-online-runner` 已自动覆盖，无新增服务或 CI Job。
+
+私有导入 Hosted 场景使用 Console 的真实 Manager 导入弹窗上传相同两点 ZIP，核对目标命名空间、CPG 编码、Transfer 执行及 Meta 子扫描等待和资源树刷新；非上传者拒绝后，经普通 User 的 Console Transfer 执行详情核对零读写和共享安全诊断。上传一经接受即记录当次 task／execution 身份，后续页面失败仍交给既有清理；浏览器不复制后台导入 HTTP 路线。独立回执升级为 `addp.manager-private-import/v2`，包含两阶段 `addp.manager-private-import-browser/v1` 证据，完整 suite 为 v12；必须核对当前 User／Tenant／run 及准确执行 ID，缺少任一页面证明不得登记通过。
+
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `manager.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=manager`；Common 变更按 `make test-changed` 扩散验证。
 
 导入暂存来源按上传者私有：`manager.import_sources` 只保存成功上传的 Tenant、Uploader、UUID、准确 source locator 和一次绑定的 Transfer task ID。`POST /runtime/import-sources/verify` 仅接受持有 `manager.import_provenance.read` 的 `addp-transfer`，核对当前执行主体及任务，不返回文件或凭据。未绑定或不匹配拒绝；不从路径推断所有权。验证沿既有 Manager Go／PostgreSQL、Common Client、System IAM 和 Transfer Hosted 门禁。

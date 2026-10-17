@@ -1374,8 +1374,8 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v11",
-            "record_manager_import_receipt", "manager-private-import.json", "physical_geometry_verified", "user_inspect_rejected", "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v12",
+            "record_manager_import_receipt", "manager-private-import.json", "addp.manager-private-import/v2", "validate_manager_import_browser", "metadata_wait_verified", "failure_ui_verified", "physical_geometry_verified", "user_inspect_rejected", "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_write_failures", "validate_write_failure_execution", "validate_write_failure_physical", "write_failure_details_verified", "ADDP_ONLINE_TRANSFER_WRITE_FAILURES",
             "run_multi_source_lineage", "validate_multi_source_execution", "multiple_origins_verified", "cte_join_union_verified",
@@ -1397,6 +1397,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "container remains after cleanup", "container ownership mismatch", "--tmpfs /var/lib/postgresql/data",
         ),
         "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
+            "addp.manager-private-import-browser/v1", "browserAPIFromResponse", "manager-import-console-success.png", "manager-import-console-rejection.png", "upload_ui_verified", "metadata_wait_verified", "failure_ui_verified",
             "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-fields", "lineage-canvas", "lineageFieldConnections",
             "verifyTaskConfigChecks", "taskExecutionIdentities", "/api/v1/transfer/task-config-checks", "json_representation_not_proven", "constant_encoding_invalid", "forbiddenRequests", "config_checks: configChecks",
             "verifyWideLineage", "manager_wide_field_graph_verified: true", "expect(graph.nodes).toHaveLength(1500)", "expect(graph.edges).toHaveLength(1000)", "expect(requests).toBe(1)",

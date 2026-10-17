@@ -8,11 +8,11 @@
   >
     <el-form :model="form" label-width="120px">
       <el-form-item :label="t('manager.import.targetEngine')">
-        <el-input :value="targetEngineName" disabled />
+        <el-input :model-value="targetEngineName" disabled />
       </el-form-item>
 
       <el-form-item :label="t('manager.import.targetSchema')">
-        <el-input :value="schemaName" disabled />
+        <el-input :model-value="schemaName" disabled />
       </el-form-item>
 
       <el-form-item :label="t('manager.import.targetTable')">
@@ -25,7 +25,7 @@
 
       <el-form-item v-if="detectedEncoding" :label="t('manager.import.encoding')">
         <el-input
-          :value="t('manager.import.encodingFromCpg', { encoding: detectedEncoding })"
+          :model-value="t('manager.import.encodingFromCpg', { encoding: detectedEncoding })"
           disabled
         />
       </el-form-item>
@@ -67,6 +67,17 @@
       <div class="progress-text">{{ progressText }}</div>
     </div>
 
+    <p v-if="failedExecution?.phase === 'meta'" class="progress-text">
+      {{ t('manager.import.metadataSyncIncomplete') }}
+    </p>
+    <ExecutionFailure
+      v-if="failedExecution"
+      :status="failedExecution.status"
+      :error-details="failedExecution.error_details || {}"
+      :execution-id="failedExecution.execution_id"
+      :show-monitor-link="authStore.hasPermission('monitor.execution.read')"
+    />
+
     <template #footer>
       <el-button @click="handleClose" :disabled="importing">{{ t('manager.import.cancel') }}</el-button>
       <el-button
@@ -82,15 +93,17 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution } from '@addp/common-frontend'
+import { ExecutionFailure, openMonitorExecution } from '@addp/common-frontend'
+import { useAuthStore } from '@/store/auth'
 import { importData, getTransferExecutionStatus, getMetaScanExecutionStatus } from '@/api/import'
 import JSZip from 'jszip'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const props = defineProps({
   modelValue: Boolean,
@@ -122,6 +135,9 @@ const progressText = ref('')
 const transferExecutionId = ref(null)
 const pollingTimer = ref(null)
 const metaScanExecutionId = ref(null)
+const failedExecution = ref(null)
+let pollingRun = 0
+let successTimer = null
 
 const targetEngineName = computed(() => {
   const name = String(props.engineName || '').trim()
@@ -196,38 +212,16 @@ const handleExceed = () => {
   ElMessage.warning(t('manager.import.fileLimitExceeded'))
 }
 
-const sleep = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
-
-const metaScanExecutionIdOf = (execution) => {
-  const scan = execution?.metadata?.metadata_scan
-  return String(scan?.execution_id || scan?.executionId || '').trim()
-}
-
-const waitForMetaScanExecution = async (executionId) => {
-  if (!executionId) return
-  progress.value = 95
-  progressText.value = t('manager.import.scanningMetadata')
-
-  for (let i = 0; i < 120; i += 1) {
-    const execution = await getMetaScanExecutionStatus(executionId)
-    const status = String(execution?.status || '').toLowerCase()
-    if (status === 'success') {
-      return
-    }
-    if (['failed', 'timeout', 'cancelled', 'canceled'].includes(status)) {
-      throw new Error(execution?.error_message || execution?.error || execution?.current_step || status)
-    }
-    await sleep(2000)
-  }
-  throw new Error('metadata scan timeout')
-}
-
 const handleImport = async () => {
   if (form.value.files.length === 0) {
     ElMessage.warning(t('manager.import.selectFiles'))
     return
   }
 
+  stopPolling()
+  const run = pollingRun
+  failedExecution.value = null
+  metaScanExecutionId.value = null
   importing.value = true
   progress.value = 0
   progressStatus.value = ''
@@ -245,69 +239,89 @@ const handleImport = async () => {
     }
 
     const result = await importData(formData)
+    if (run !== pollingRun) return
     transferExecutionId.value = result.transfer_execution_id
 
     progress.value = 30
     progressText.value = t('manager.import.uploadSuccess')
 
-    startPolling()
+    startPolling(run)
   } catch (error) {
+    if (run !== pollingRun) return
     importing.value = false
     const errorMsg = error.response?.data?.error || error.message
     ElMessage.error(t('manager.import.importFailed', { msg: errorMsg }))
   }
 }
 
-const startPolling = () => {
-  pollingTimer.value = setInterval(async () => {
+const failExecution = (execution, executionId, phase = 'transfer') => {
+  failedExecution.value = {
+    status: execution.status,
+    error_details: execution.error_details,
+    execution_id: executionId,
+    phase
+  }
+  progressStatus.value = 'exception'
+  stopPolling()
+  importing.value = false
+  ElMessage.error(t('manager.import.importFailedMsg'))
+}
+
+const startPolling = (run) => {
+  const poll = async () => {
     try {
-      const execution = await getTransferExecutionStatus(transferExecutionId.value)
+      const scanId = metaScanExecutionId.value
+      const executionId = scanId || transferExecutionId.value
+      const execution = await (scanId ? getMetaScanExecutionStatus(executionId) : getTransferExecutionStatus(executionId))
+      if (run !== pollingRun) return
 
       if (execution.status === 'pending' || execution.status === 'running') {
-        progress.value = execution.status === 'running' ? 60 : 40
-        progressText.value = t('manager.import.importingData')
+        progress.value = scanId ? 95 : execution.status === 'running' ? 60 : 40
+        progressText.value = t(scanId ? 'manager.import.scanningMetadata' : 'manager.import.importingData')
       } else if (execution.status === 'success') {
-        const scanExecutionId = metaScanExecutionIdOf(execution)
-        metaScanExecutionId.value = scanExecutionId
-        if (scanExecutionId) {
-          stopPolling()
-          try {
-            await waitForMetaScanExecution(scanExecutionId)
-          } catch (error) {
-            progressStatus.value = 'exception'
-            progressText.value = t('manager.import.importFailed', { msg: error.message })
-            importing.value = false
-            ElMessage.error(t('manager.import.importFailed', { msg: error.message }))
+        if (!scanId) {
+          const scan = execution.metadata?.metadata_scan
+          if (scan?.status !== 'submitted' || !scan.execution_id) {
+            failExecution({ status: 'failed', error_details: { category: 'execution_failed', code: scan?.error_code } }, executionId, 'meta')
             return
           }
+          metaScanExecutionId.value = scan.execution_id
+          progress.value = 95
+          progressText.value = t('manager.import.scanningMetadata')
+          pollingTimer.value = setTimeout(poll, 2000)
+          return
         }
         progress.value = 100
         progressStatus.value = 'success'
         progressText.value = t('manager.import.importSuccess')
-        stopPolling()
-        setTimeout(() => {
+        successTimer = setTimeout(() => {
+          if (run !== pollingRun) return
           importing.value = false
           ElMessage.success(t('manager.import.importSuccessMsg'))
+          const completedId = transferExecutionId.value
           emit('success')
           handleClose()
-          void openMonitorExecution(transferExecutionId.value)
+          if (authStore.hasPermission('monitor.execution.read')) void openMonitorExecution(completedId)
         }, 1500)
-      } else if (execution.status === 'failed') {
-        progressStatus.value = 'exception'
-        progressText.value = t('manager.import.importFailed', { msg: execution.error_msg || '' })
-        stopPolling()
-        importing.value = false
-        ElMessage.error(t('manager.import.importFailedMsg'))
+        return
+      } else if (['failed', 'timeout', 'cancelled'].includes(execution.status)) {
+        failExecution(execution, executionId, scanId ? 'meta' : 'transfer')
+        return
       }
     } catch (error) {
       console.error('轮询任务状态失败:', error)
     }
-  }, 2000)
+    if (run === pollingRun) pollingTimer.value = setTimeout(poll, 2000)
+  }
+  pollingTimer.value = setTimeout(poll, 2000)
 }
 
 const stopPolling = () => {
+  pollingRun += 1
+  clearTimeout(successTimer)
+  successTimer = null
   if (pollingTimer.value) {
-    clearInterval(pollingTimer.value)
+    clearTimeout(pollingTimer.value)
     pollingTimer.value = null
   }
 }
@@ -326,11 +340,15 @@ const handleClose = () => {
   progressText.value = ''
   transferExecutionId.value = null
   metaScanExecutionId.value = null
+  failedExecution.value = null
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
   }
   visible.value = false
 }
+
+watch(() => props.modelValue, value => { if (!value) handleClose() })
+onBeforeUnmount(stopPolling)
 </script>
 
 <style scoped>
@@ -341,7 +359,7 @@ const handleClose = () => {
 .progress-text {
   margin-top: 10px;
   text-align: center;
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: 14px;
 }
 

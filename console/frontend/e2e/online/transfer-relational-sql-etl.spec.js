@@ -7,6 +7,7 @@ import { executionFailurePresentation } from '../../../../common-frontend/basic/
 import { resolve } from 'node:path'
 import {
   identity,
+  browserAPIFromResponse,
   json,
   login,
   selectSearchResult,
@@ -14,6 +15,117 @@ import {
   isReadonlyTaskConfigCheckRequest,
   waitForExecution
 } from './transfer-browser-support.js'
+
+test('browser imports a private Manager source through Console', async ({ page }) => {
+  const engineID = process.env.ADDP_ONLINE_TEST_ENGINE_ID
+  const artifactDir = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const runID = process.env.ADDP_ONLINE_TEST_RUN_ID
+  const input = JSON.parse(process.env.ADDP_ONLINE_MANAGER_IMPORT_BROWSER)
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME, process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/')
+  const errors = []
+  const failures = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+  page.on('response', response => {
+    if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400) {
+      failures.push({ path: new URL(response.url()).pathname, status: response.status() })
+    }
+  })
+  const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: {
+    Authorization: `Bearer ${process.env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}`
+  } })
+  let browserAPI
+  try {
+    const actor = identity(await json(await api.get('/api/v1/system/auth/context'), 'read import User'))
+    expect(actor.principalType).toBe('user')
+    expect(actor.tenantID).toBe(process.env.ADDP_ONLINE_TEST_TENANT_ID)
+    const report = { schema_version: 'addp.manager-private-import-browser/v1', run_id: runID,
+      principal_id: actor.principalID, tenant_id: actor.tenantID, stage: input.stage }
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (input.stage === 'upload') {
+      const scanRequests = []
+      page.on('request', req => {
+        const path = new URL(req.url()).pathname
+        if (/^\/api\/v1\/meta\/executions\/[^/]+$/.test(path)) scanRequests.push(path.split('/').at(-1))
+      })
+      await page.goto('/manager/data-explorer')
+      await frame.locator('.el-tree-node__content').filter({ hasText: new RegExp(`^\\s*${process.env.ADDP_ONLINE_TEST_ENGINE_NAME}\\s*$`) }).click()
+      await frame.locator('.el-tree-node__content').filter({ hasText: /^\s*public\s*$/ }).click()
+      await frame.getByRole('button', { name: '导入数据', exact: true }).click()
+      const dialog = frame.getByRole('dialog')
+      await expect(dialog.locator('.el-form-item').filter({ hasText: '目标引擎' }).locator('input')).toHaveValue(process.env.ADDP_ONLINE_TEST_ENGINE_NAME)
+      await expect(dialog.locator('.el-form-item').filter({ hasText: '目标命名空间' }).locator('input')).toHaveValue('public')
+      await dialog.locator('.el-form-item').filter({ hasText: '目标数据项名称' }).locator('input').fill(input.target_table)
+      await dialog.locator('input[type="file"]').setInputFiles(resolve(artifactDir, 'manager-import-points.zip'))
+      await expect(dialog.locator('.el-form-item').filter({ hasText: '文件编码' }).locator('input')).toHaveValue('由 .cpg 声明：UTF-8')
+      const submittedResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/manager/imports')
+      await dialog.getByRole('button', { name: '开始导入', exact: true }).click()
+      const response = await submittedResponse
+      expect(response.status()).toBe(202)
+      const submission = await response.json()
+      // Persist only accepted resource identities immediately, so Python can clean up on later UI failure.
+      report.submission = { transfer_task_id: submission.transfer_task_id, transfer_execution_id: submission.transfer_execution_id }
+      writeFileSync(resolve(artifactDir, 'manager-import-upload-browser.json'), JSON.stringify(report))
+      browserAPI = await browserAPIFromResponse(response, process.env.GATEWAY_URL, actor)
+      const task = await json(await browserAPI.get(`/api/v1/transfer/task-definitions/${submission.transfer_task_id}`), 'read UI import task')
+      const parent = new URL(task.config.target.parent_locator)
+      expect(parent.hostname).toBe('engine')
+      expect(parent.pathname).toBe(`/${engineID}/path/public`)
+      expect(parent.searchParams.get('type')).toBe('schema')
+      expect(task.config.target.name).toBe(input.target_table)
+      await expect(dialog.locator('.execution-failure')).toHaveCount(0)
+      await expect(dialog).toBeHidden({ timeout: 120_000 })
+      const execution = await json(await browserAPI.get(`/api/v1/transfer/executions/${submission.transfer_execution_id}`), 'read UI import execution')
+      expect(execution.status).toBe('success')
+      expect(execution.records_read).toBe(2)
+      expect(execution.records_written).toBe(2)
+      expect(execution.metadata.metadata_scan.status).toBe('submitted')
+      expect(scanRequests).toContain(execution.metadata.metadata_scan.execution_id)
+      report.meta_scan_execution_id = execution.metadata.metadata_scan.execution_id
+      report.upload_ui_verified = true
+      report.metadata_wait_verified = true
+      // The owner refresh is observable through the real resource tree after the modal closes.
+      await expect(frame.locator('.node-panel')).toContainText(input.target_table)
+      await page.screenshot({ path: resolve(artifactDir, 'manager-import-console-success.png'), fullPage: true })
+    } else {
+      expect(input.stage).toBe('rejection')
+      const id = input.rejected_execution_id
+      const read = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/transfer/executions/${id}`)
+      await page.goto(`/transfer/executions/${id}`)
+      const response = await read
+      browserAPI = await browserAPIFromResponse(response, process.env.GATEWAY_URL, actor)
+      const execution = await response.json()
+      expect(execution.execution_id).toBe(id)
+      expect(execution.task_id).toBe(input.transfer_task_id)
+      expect(execution.status).toBe('failed')
+      expect(execution.records_read).toBe(0)
+      expect(execution.records_written).toBe(0)
+      expect(execution.error_details.code).toBe('data_protection_required')
+      const translations = JSON.parse(readFileSync(resolve(process.env.ADDP_ONLINE_REPOSITORY, 'common-frontend/basic/src/i18n/zh-cn.json'), 'utf8'))
+      const translate = key => key.split('.').reduce((value, part) => value?.[part], translations)
+      const presentation = executionFailurePresentation(execution.error_details, translate)
+      const failure = frame.locator('.execution-detail .execution-failure')
+      await expect(failure.locator('h4')).toHaveText(presentation.reason)
+      await expect(failure).toContainText(presentation.action)
+      await expect(failure).toContainText(id)
+      await expect(failure).toContainText('data_protection_required')
+      await expect(failure).not.toContainText('addp-infra://')
+      await expect(failure).not.toContainText('本次查询')
+      report.rejected_execution_id = id
+      report.failure_ui_verified = true
+      await page.screenshot({ path: resolve(artifactDir, 'manager-import-console-rejection.png'), fullPage: true })
+    }
+    expect(errors).toEqual([])
+    expect(failures).toEqual([])
+    report.result = 'passed'
+    writeFileSync(resolve(artifactDir, `manager-import-${input.stage}-browser.json`), JSON.stringify(report))
+  } finally {
+    await browserAPI?.dispose()
+    await api.dispose()
+  }
+})
 
 // Canvas transform scaling can place an 11px label just below 11 in floating point.
 const CANVAS_FONT_EPSILON = 1e-6

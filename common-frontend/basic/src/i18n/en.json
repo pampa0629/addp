@@ -164,7 +164,7 @@
         "query_failed": "Query execution failed without a recorded specific diagnostic.",
         "result_invalid": "The query result could not be saved or does not match the result contract.",
         "database_required": "The query has no database target.",
-        "data_protection_required": "The query was blocked because its results could not be verified against data protection requirements."
+        "data_protection_required": "Execution was blocked because data access or results could not be verified against data protection requirements."
       },
       "actions": {
         "configuration_missing": "Start a new execution. If it fails again, ask an administrator to check configuration preparation.",
@@ -191,7 +191,7 @@
         "query_failed": "Copy the diagnostic information for an administrator to investigate by execution ID.",
         "result_invalid": "Copy the diagnostic information for an administrator to check result processing.",
         "database_required": "Select the target database or collection in data resources, then execute again.",
-        "data_protection_required": "Select protected fields directly or with column aliases; avoid expressions that combine or transform them. If the query is still blocked, ask a security administrator to check protection rules, validity, and synchronization."
+        "data_protection_required": "Check the current account's data access eligibility and ask a security administrator to review protection rules, validity, and synchronization."
       }
     },
     "executionSteps": {

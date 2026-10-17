@@ -980,6 +980,7 @@
       "uploadSuccess": "文件上传成功，正在提交导入请求...",
       "importingData": "正在导入数据...",
       "scanningMetadata": "数据导入完成，正在同步元数据...",
+      "metadataSyncIncomplete": "数据已导入，但元数据同步未完成。请按执行编号检查错误详情。",
       "importSuccess": "导入成功！",
       "importFailed": "导入失败: {msg}",
       "importSuccessMsg": "数据导入成功",

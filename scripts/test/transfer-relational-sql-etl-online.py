@@ -7,8 +7,6 @@ import hashlib
 import io
 import struct
 import zipfile
-import urllib.request
-import urllib.error
 from datetime import datetime
 import importlib.util
 import json
@@ -315,34 +313,70 @@ def import_shapefile_zip() -> bytes:
     return output.getvalue()
 
 
-def submit_manager_import(client, engine_id):
-    boundary = "addp-import-" + uuid.uuid4().hex
-    body = bytearray()
-    for field, value in (("target_node_locator", f"addp://engine/{engine_id}/path/public?type=schema"),
-                         ("target_table", IMPORT_TARGET)):
-        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode())
-    body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="points.zip"\r\nContent-Type: application/zip\r\n\r\n'.encode())
-    body.extend(import_shapefile_zip())
-    body.extend(f"\r\n--{boundary}--\r\n".encode())
-    request = urllib.request.Request(client.base_url + "/api/v1/manager/imports", data=bytes(body), method="POST",
-        headers={"Authorization": f"Bearer {client.token}", "Accept": "application/json",
-                 "Content-Type": "multipart/form-data; boundary=" + boundary})
+def run_manager_import_browser(engine_id, identity, owned_ids, proof=None):
+    repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+    artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
+    run_id = required_environment("ADDP_ONLINE_TEST_RUN_ID")
+    stage = "rejection" if proof is not None else "upload"
+    report_path = artifact_dir / f"manager-import-{stage}-browser.json"
+    report_path.unlink(missing_ok=True)
+    arguments = {"stage": stage, "target_table": IMPORT_TARGET}
+    if proof is None:
+        (artifact_dir / "manager-import-points.zip").write_bytes(import_shapefile_zip())
+    else:
+        arguments.update({"transfer_task_id": proof["transfer_task_id"], "rejected_execution_id": proof["rejected_execution_id"]})
+    environment = dict(os.environ)
+    environment.update({"ADDP_ONLINE_REPOSITORY": str(repository), "ADDP_ONLINE_TEST_ENGINE_ID": str(engine_id),
+                        "ADDP_ONLINE_MANAGER_IMPORT_BROWSER": json.dumps(arguments)})
     try:
-        with urllib.request.urlopen(request, timeout=client.timeout) as response:
-            if response.status != 202:
-                raise SuiteError("Manager import did not return HTTP 202")
-            return _object(json.loads(response.read()), "Manager import")
-    except urllib.error.HTTPError as error:
-        with error:
-            raise SuiteError(f"Manager import returned HTTP {error.code}") from error
-    except (urllib.error.URLError, TimeoutError) as error:
-        raise SuiteError("Manager import transport failed") from error
+        result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
+                                 "e2e/online/transfer-relational-sql-etl.spec.js", "--grep", "^browser imports a private Manager source through Console$"],
+                                cwd=repository / "console/frontend", env=environment, capture_output=True, text=True)
+    finally:
+        report = _object(json.loads(report_path.read_text()), "Manager import browser report") if report_path.is_file() else {}
+        if stage == "upload" and isinstance(report.get("submission"), dict):
+            # Capture accepted identities even if the browser process is interrupted.
+            task_id = positive_int(report["submission"].get("transfer_task_id"), "browser import task id")
+            if task_id not in owned_ids:
+                owned_ids.append(task_id)
+    for output, stream in ((result.stdout, sys.stdout), (result.stderr, sys.stderr)):
+        if output:
+            print(output, file=stream, end="" if output.endswith("\n") else "\n")
+    if result.returncode != 0:
+        raise SuiteError(f"Manager import {stage} browser failed with status {result.returncode}")
+    return validate_manager_import_browser(report, run_id, identity, stage, proof)
+
+
+def validate_manager_import_browser(report, run_id, identity, stage, proof=None):
+    allowed = {"schema_version", "result", "run_id", "principal_id", "tenant_id", "stage"}
+    allowed.update({"submission", "meta_scan_execution_id", "upload_ui_verified", "metadata_wait_verified"} if stage == "upload"
+                   else {"rejected_execution_id", "failure_ui_verified"})
+    if set(report) - allowed:
+        raise SuiteError("Manager import browser proof exposed undeclared fields")
+    if (report.get("schema_version") != "addp.manager-private-import-browser/v1" or report.get("result") != "passed"
+            or report.get("run_id") != run_id or report.get("stage") != stage
+            or report.get("principal_id") != identity["principal_id"] or report.get("tenant_id") != identity["tenant_id"]):
+        raise SuiteError("Manager import browser proof lost its current User, Tenant, run or stage")
+    if stage == "upload":
+        submission = _object(report.get("submission"), "browser import submission")
+        positive_int(submission.get("transfer_task_id"), "browser import task id")
+        for identifier in (submission.get("transfer_execution_id"), report.get("meta_scan_execution_id")):
+            if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
+                raise SuiteError("Manager import browser proof requires actual execution UUIDs")
+        if report.get("upload_ui_verified") is not True or report.get("metadata_wait_verified") is not True:
+            raise SuiteError("Manager import browser proof is missing upload or Meta completion")
+    elif (stage != "rejection" or report.get("failure_ui_verified") is not True
+            or report.get("rejected_execution_id") != proof["rejected_execution_id"]):
+        raise SuiteError("Manager import browser proof is missing the actual cross-user failure")
+    return report
 
 
 def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider):
-    submitted = submit_manager_import(client, engine_id)
+    browser_upload = run_manager_import_browser(engine_id, identity, owned_ids)
+    submitted = browser_upload["submission"]
     task_id = positive_int(submitted.get("transfer_task_id"), "import task id")
-    owned_ids.append(task_id)
+    if task_id not in owned_ids:
+        owned_ids.append(task_id)
     identifier = submitted.get("transfer_execution_id")
     if not isinstance(identifier, str) or str(uuid.UUID(identifier)) != identifier:
         raise SuiteError("Manager import must return the actual Transfer execution UUID")
@@ -374,13 +408,24 @@ def run_manager_import(client, engine_id, identity, timeout, owned_ids, outsider
         user.request("POST", "/api/v1/meta/inspect", (403,), {"locator": source})
     denied_execution = verify_import_private_access(outsider, task_id, identity, timeout)
 
-    return {"transfer_task_id": task_id, "transfer_execution_id": identifier,
+    proof = {"transfer_task_id": task_id, "transfer_execution_id": identifier,
             "meta_scan_execution_id": scan["execution_id"], "target_item_id": item["id"],
             "records_read": 2, "records_written": 2, "current_user_origin_verified": True,
             "automatic_scan_verified": True, "user_inspect_rejected": True, "non_uploader_rejected": True, "rejected_execution_id": denied_execution}
+    if browser_upload["meta_scan_execution_id"] != scan["execution_id"]:
+        raise SuiteError("Manager UI waited for a different Meta child")
+    proof["browser"] = {"upload": browser_upload, "rejection": run_manager_import_browser(engine_id, identity, owned_ids, proof)}
+    return proof
 
 
 def record_manager_import_receipt(repository, artifact_dir, run_id, identity, engine_id, proof):
+    browser = _object(proof.get("browser"), "Manager import browser proofs")
+    for stage in ("upload", "rejection"):
+        validate_manager_import_browser(_object(browser.get(stage), "Manager import browser stage"), run_id, identity, stage, proof)
+    upload = browser["upload"]
+    if (upload["submission"] != {"transfer_task_id": proof["transfer_task_id"], "transfer_execution_id": proof["transfer_execution_id"]}
+            or upload["meta_scan_execution_id"] != proof["meta_scan_execution_id"]):
+        raise SuiteError("Manager import receipt lost its actual browser submission or Meta child")
     checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"],
                              cwd=repository, capture_output=True, text=True, timeout=60)
     if checked.returncode != 0:
@@ -390,7 +435,7 @@ def record_manager_import_receipt(repository, artifact_dir, run_id, identity, en
     if source.returncode != 0 or len(commit) != 40 or any(c not in "0123456789abcdef" for c in commit):
         raise SuiteError("Manager import receipt requires the actual source commit")
     proof["physical_geometry_verified"] = True
-    receipt = {"schema_version": "addp.manager-private-import/v1", "result": "passed", "run_id": run_id,
+    receipt = {"schema_version": "addp.manager-private-import/v2", "result": "passed", "run_id": run_id,
                "git_commit": commit, "identity": identity, "engine_id": engine_id, "manager_import": proof}
     path = Path(artifact_dir) / "manager-private-import.json"
     path.write_text(json.dumps(receipt, sort_keys=True) + "\n")
@@ -1280,6 +1325,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "npm", "exec", "--", "playwright", "test",
             "--config=playwright.online.config.js",
             "e2e/online/transfer-relational-sql-etl.spec.js",
+            "--grep", "^browser executes SQL ETL and verifies native field lineage in Manager$",
         ],
         cwd=repository / "console/frontend",
         env=browser_environment,
@@ -1368,7 +1414,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v11",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v12",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -1395,7 +1441,7 @@ def main() -> int:
         if client is not None and owned_name:
             try:
                 cleanup_definitions(client, owned_paths)
-                cleanup_tasks(client, suite_task_ids(client, exact_name=owned_name))
+                cleanup_tasks(client, list(dict.fromkeys([*owned_ids, *suite_task_ids(client, exact_name=owned_name)])))
             except SuiteError as cleanup_error:
                 print(f"Transfer relational SQL ETL Online cleanup failed: {cleanup_error}", file=sys.stderr)
         print(f"Transfer relational SQL ETL Online failed: {error}", file=sys.stderr)

@@ -980,6 +980,7 @@
       "uploadSuccess": "Files uploaded, submitting import request...",
       "importingData": "Importing data...",
       "scanningMetadata": "Data imported. Synchronizing metadata...",
+      "metadataSyncIncomplete": "Data was imported, but metadata synchronization is incomplete. Check the error details using the execution ID.",
       "importSuccess": "Import successful!",
       "importFailed": "Import failed: {msg}",
       "importSuccessMsg": "Data imported successfully",

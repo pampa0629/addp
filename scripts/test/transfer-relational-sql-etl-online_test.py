@@ -170,25 +170,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             with self.subTest(path=path, field=field), self.assertRaisesRegex(ONLINE.SuiteError, "undeclared fields"):
                 ONLINE.assert_transfer_execution_projection(changed)
 
-    def test_import_upload_contains_complete_two_point_shapefile_and_current_user(self):
-        from email import policy
-        from email.parser import BytesParser
-        client = ONLINE.GatewayClient("http://127.0.0.1:8000", "fixture-user-token", 30)
-        response = Mock(status=202)
-        response.read.return_value = b'{"transfer_task_id":42}'
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        with patch.object(ONLINE.urllib.request, "urlopen", return_value=response) as send:
-            self.assertEqual(ONLINE.submit_manager_import(client, 7), {"transfer_task_id": 42})
-        request = send.call_args.args[0]
-        self.assertEqual(request.full_url, client.base_url + "/api/v1/manager/imports")
-        self.assertEqual(request.get_header("Authorization"), "Bearer fixture-user-token")
-        message = BytesParser(policy=policy.default).parsebytes(
-            ("Content-Type: " + request.get_header("Content-type") + "\r\n\r\n").encode() + request.data)
-        parts = {part.get_param("name", header="Content-Disposition"): part for part in message.iter_parts()}
-        self.assertEqual(parts["target_node_locator"].get_content(), "addp://engine/7/path/public?type=schema")
-        self.assertEqual(parts["target_table"].get_content(), ONLINE.IMPORT_TARGET)
-        with ONLINE.zipfile.ZipFile(io.BytesIO(parts["files"].get_payload(decode=True))) as archive:
+    def test_import_upload_contains_complete_two_point_shapefile(self):
+        with ONLINE.zipfile.ZipFile(io.BytesIO(ONLINE.import_shapefile_zip())) as archive:
             self.assertEqual(set(archive.namelist()), {"points." + ext for ext in ("shp", "shx", "dbf", "prj", "cpg")})
             shp, shx, dbf = (archive.read("points." + ext) for ext in ("shp", "shx", "dbf"))
             self.assertEqual(ONLINE.struct.unpack_from(">i", shp, 24)[0] * 2, len(shp))
@@ -213,7 +196,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                  "triggered_by": 31, "tenant_id": 7, "scan_context": {"engine_id": 8}}
         client = Mock()
         client.request.return_value.payload = task
-        with patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual, patch.object(ONLINE,"verify_import_private_access",return_value=str(uuid.uuid4())):
+        with patch.object(ONLINE, "run_manager_import_browser", return_value={"submission": {"transfer_task_id": 42, "transfer_execution_id": parent}, "meta_scan_execution_id": child_id}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, child]) as wait, patch.object(ONLINE, "wait_transfer_target", return_value={"id": 9}), patch.object(ONLINE, "wait_for_scan") as manual, patch.object(ONLINE,"verify_import_private_access",return_value=str(uuid.uuid4())):
             owned = []
             report = ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
             self.assertEqual(owned, [42])
@@ -222,11 +205,70 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             manual.assert_not_called()
         for change in ({"parent_execution_id": str(uuid.uuid4())}, {"source": "manager"},
                        {"triggered_by": 32}, {"tenant_id": 8}, {"scan_context": {"engine_id": 9}}):
-            with self.subTest(change=change), patch.object(ONLINE, "submit_manager_import", return_value={"transfer_task_id": 42, "transfer_execution_id": parent}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(child, **change)]):
+            with self.subTest(change=change), patch.object(ONLINE, "run_manager_import_browser", return_value={"submission": {"transfer_task_id": 42, "transfer_execution_id": parent}, "meta_scan_execution_id": child_id}), patch.object(ONLINE, "wait_owner_execution", side_effect=[transfer, dict(child, **change)]):
                 owned = []
                 with self.assertRaisesRegex(ONLINE.SuiteError, "actual parent, current User or Tenant"):
                     ONLINE.run_manager_import(client, 8, {"principal_id": "31", "tenant_id": "7"}, 30, owned, Mock())
                 self.assertEqual(owned, [42], "failed verification must still leave the task available to cleanup")
+
+    def import_browser_proof(self):
+        parent, child, denied = (str(uuid.uuid4()) for _ in range(3))
+        identity = {"principal_id": "31", "tenant_id": "7"}
+        common = {"schema_version": "addp.manager-private-import-browser/v1", "result": "passed",
+                  "run_id": "run-fixture", **identity}
+        proof = {"transfer_task_id": 42, "transfer_execution_id": parent, "meta_scan_execution_id": child, "rejected_execution_id": denied}
+        proof["browser"] = {
+            "upload": {**common, "stage": "upload", "submission": {"transfer_task_id": 42, "transfer_execution_id": parent},
+                       "meta_scan_execution_id": child, "upload_ui_verified": True, "metadata_wait_verified": True},
+            "rejection": {**common, "stage": "rejection", "rejected_execution_id": denied, "failure_ui_verified": True}}
+        return identity, proof
+
+    def test_manager_import_browser_requires_current_identity_and_each_real_ui_proof(self):
+        identity, proof = self.import_browser_proof()
+        for stage in ("upload", "rejection"):
+            report = proof["browser"][stage]
+            self.assertEqual(ONLINE.validate_manager_import_browser(report, "run-fixture", identity, stage, proof), report)
+            changes = [{"schema_version": "old"}, {"result": "failed"}, {"run_id": "other"},
+                       {"principal_id": "32"}, {"tenant_id": "8"}, {"stage": "other"}, {"raw_error": "SECRET_MARKER"}]
+            changes += ([{"upload_ui_verified": False}, {"metadata_wait_verified": False}, {"meta_scan_execution_id": None}]
+                        if stage == "upload" else [{"failure_ui_verified": False}, {"rejected_execution_id": str(uuid.uuid4())}])
+            for change in changes:
+                with self.subTest(stage=stage, change=change), self.assertRaises((ONLINE.SuiteError, ValueError)):
+                    ONLINE.validate_manager_import_browser(dict(report, **change), "run-fixture", identity, stage, proof)
+
+    def test_manager_import_browser_keeps_accepted_task_for_cleanup_after_ui_failure(self):
+        identity, proof = self.import_browser_proof()
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted), tempfile.TemporaryDirectory() as directory:
+                def browser(_command, **options):
+                    self.assertEqual(_command[-2:], ["--grep", "^browser imports a private Manager source through Console$"])
+                    arguments = json.loads(options["env"]["ADDP_ONLINE_MANAGER_IMPORT_BROWSER"])
+                    self.assertEqual(arguments, {"stage": "upload", "target_table": ONLINE.IMPORT_TARGET})
+                    self.assertEqual((Path(directory) / "manager-import-points.zip").read_bytes()[:2], b"PK")
+                    (Path(directory) / "manager-import-upload-browser.json").write_text(json.dumps(proof["browser"]["upload"]))
+                    if interrupted:
+                        raise ONLINE.SuiteError("upload browser failed by interruption")
+                    return SimpleNamespace(returncode=1, stdout="", stderr="")
+                with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-fixture"}), patch.object(ONLINE.subprocess, "run", side_effect=browser):
+                    owned = []
+                    with self.assertRaisesRegex(ONLINE.SuiteError, "upload browser failed"):
+                        ONLINE.run_manager_import_browser(8, identity, owned)
+                    self.assertEqual(owned, [42])
+
+    def test_manager_import_browser_observes_failure_without_creating_a_second_import(self):
+        identity, proof = self.import_browser_proof()
+        with tempfile.TemporaryDirectory() as directory:
+            def browser(_command, **options):
+                arguments = json.loads(options["env"]["ADDP_ONLINE_MANAGER_IMPORT_BROWSER"])
+                self.assertEqual(arguments["stage"], "rejection")
+                self.assertEqual(arguments["rejected_execution_id"], proof["rejected_execution_id"])
+                self.assertFalse((Path(directory) / "manager-import-points.zip").exists())
+                (Path(directory) / "manager-import-rejection-browser.json").write_text(json.dumps(proof["browser"]["rejection"]))
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-fixture"}), patch.object(ONLINE.subprocess, "run", side_effect=browser):
+                owned = [42]
+                self.assertEqual(ONLINE.run_manager_import_browser(8, identity, owned, proof), proof["browser"]["rejection"])
+                self.assertEqual(owned, [42])
 
     def test_private_import_rejects_distinct_user_before_any_read_write_or_scan(self):
         identifier = str(uuid.uuid4())
@@ -250,22 +292,31 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
     def test_import_receipt_requires_independent_physical_check_and_actual_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            proof = {"records_read": 2, "records_written": 2, "non_uploader_rejected": True}
+            identity, proof = self.import_browser_proof()
             calls = [SimpleNamespace(returncode=0, stdout=""), SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")]
             with patch.object(ONLINE.subprocess, "run", side_effect=calls) as run:
-                ONLINE.record_manager_import_receipt(root, root, "run-fixture", {"tenant_id": "7"}, 8, proof)
+                ONLINE.record_manager_import_receipt(root, root, "run-fixture", identity, 8, proof)
             self.assertEqual(run.call_args_list[0].args[0], ["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "manager-import"])
             receipt = json.loads((root / "manager-private-import.json").read_text())
-            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v1")
+            self.assertEqual(receipt["schema_version"], "addp.manager-private-import/v2")
             self.assertEqual(receipt["git_commit"], "a" * 40)
             self.assertTrue(receipt["manager_import"]["physical_geometry_verified"])
         for results in ([SimpleNamespace(returncode=1, stdout="SECRET_MARKER")],
                         [SimpleNamespace(returncode=0, stdout=""), SimpleNamespace(returncode=0, stdout="invalid")]):
             with tempfile.TemporaryDirectory() as directory, patch.object(ONLINE.subprocess, "run", side_effect=results):
                 with self.assertRaises(ONLINE.SuiteError) as error:
-                    ONLINE.record_manager_import_receipt(Path(directory), directory, "run-fixture", {}, 8, {})
+                    identity, proof = self.import_browser_proof()
+                    ONLINE.record_manager_import_receipt(Path(directory), directory, "run-fixture", identity, 8, proof)
                 self.assertNotIn("SECRET_MARKER", str(error.exception))
                 self.assertFalse((Path(directory) / "manager-private-import.json").exists())
+
+        for stage in ("upload", "rejection"):
+            identity, proof = self.import_browser_proof()
+            del proof["browser"][stage]
+            with tempfile.TemporaryDirectory() as directory, patch.object(ONLINE.subprocess, "run") as run:
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.record_manager_import_receipt(Path(directory), directory, "run-fixture", identity, 8, proof)
+                run.assert_not_called()
 
     def test_metadata_scan_allows_only_safe_public_feedback(self):
         for scan in ({"status": "submitted", "attempt": 1, "execution_id": str(uuid.uuid4())},
@@ -650,13 +701,16 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                        "ADDP_ONLINE_TEST_USER_USERNAME": "fixture", "ADDP_ONLINE_TEST_USER_PASSWORD": "fixture-only", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN": "fixture-outsider",
                        "ADDP_ONLINE_ARTIFACT_DIR": "/tmp/fixture-only", "ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS": "30"}
         client = object()
+        def imported(*args):
+            args[4].extend([42, 10])
+            return {}
         def interrupt(*args):
             ONLINE.interrupt_online(ONLINE.signal.SIGTERM, None)
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", return_value={}), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", side_effect=imported), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
             self.assertEqual(ONLINE.main(), 1)
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
-        cleanup.assert_called_once_with(client, [10, 11])
+        cleanup.assert_called_once_with(client, [42, 10, 11])
 
     def test_missing_private_import_token_fails_before_network_or_task_creation(self):
         environment = {"ADDP_ONLINE_TEST": "1", "ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_ENGINE_ID": "3",
@@ -694,7 +748,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v11")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v12")
         self.assertEqual(report["created_resources"], 16)
         self.assertEqual(report["deleted_resources"], 16)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])
