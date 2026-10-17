@@ -730,7 +730,7 @@ System 的引擎实例管理拥有每个 GeoPython Runtime 的强类型栅格资
 主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
 
 
-Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [运行监控设计](../next/ADDP平台运行监控与可观测性设计.md#1021-platform-节点资源查询第一批契约)。
+Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [运行监控设计](../next/ADDP平台运行监控与可观测性设计.md#62-资源查询与预算)。
 
 
 本地可选指标 TLS 转发由 `ADDP_METRICS_CONTROL_ENABLED=false` 显式选择，仅在指标中心也启用时生效。`ADDP_METRICS_CONTROL_DIR` 为仓库外服务器证书目录，`ADDP_METRICS_CONTROL_GATEWAY_URL` 为明确的规范 HTTP origin（含端口、无路径）；标准预检生成 nginx.conf，不签发证书。选中此入口后两个 `PROMETHEUS_*_URL` 均须为 `https://metrics-control:9444`，中心信任该入口独立 CA。关闭入口时由部署方提供原有 HTTPS 控制面输入，不校验入口专用目录或上游；关闭中心也停止其可选转发服务。入口只转发 Token POST 与指标发现 GET，不发布宿主端口，不参与业务 Ready。HTTP 上游属于受控开发网络部署边界，生产 TLS 和密钥权限须独立验收。
