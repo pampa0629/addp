@@ -47,6 +47,12 @@ elif a[0] == 'run':
         os.kill(os.getppid(), signal.SIGTERM)
     if os.environ.get('FAIL_RUN') == container: sys.exit(1)
 elif a[0] == 'exec':
+    if os.environ.get('FAIL_MYSQL_READINESS') == '1' and 'addp-hdfs-online-mysql' in a:
+        secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'mysql.env').read_text()
+        password = next(line.split('=', 1)[1] for line in secret.splitlines() if line.startswith('MYSQL_ROOT_PASSWORD='))
+        print('ERROR 2003 simulated readiness failure ' + password); sys.exit(1)
+    if os.environ.get('FAIL_DORIS_READINESS') == '1' and 'addp-hdfs-online-doris' in a:
+        print('ERROR 2003 simulated Doris failure'); sys.exit(1)
     if os.environ.get('FAIL_SEED') == '1' and ('psql' in a or '/opt/spark/bin/spark-submit' in a): sys.exit(1)
     print('HDFS_SAMPLE_PASS rows=20 amount_sum=2100 formats=csv,json,parquet')
 elif a[0] == 'logs':
@@ -129,6 +135,24 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         for flags in ({'GITHUB_ACTIONS': 'false'}, {'ADDP_ONLINE_HOSTED': '0'}, {'ADDP_ONLINE_OWNER_MANAGED': '1'}, {'FAKE_OS': 'Darwin'}):
             self.assertNotEqual(self.run_fixture('start', **flags).returncode, 0)
             self.assertFalse(self.trace.exists())
+
+    def test_readiness_failure_identifies_each_service_redacts_password_and_cleans(self):
+        self.executable('sleep', '#!/bin/sh\nexit 0\n')
+        # Keep the actual probe arguments; reduce only the deterministic wait count.
+        self.executable('seq', '#!/bin/sh\n[ "$2" != 120 ] || { echo 120; exit; }\nexec /usr/bin/seq "$@"\n')
+        artifacts = self.root / 'artifacts'; artifacts.mkdir()
+        for engine in ('mysql', 'doris'):
+            with self.subTest(engine=engine):
+                result = self.run_fixture('start', ADDP_ONLINE_ARTIFACT_DIR=str(artifacts), **{'FAIL_' + engine.upper() + '_READINESS': '1'})
+                self.assertNotEqual(result.returncode, 0)
+                evidence = json.loads((artifacts / 'spark-table-readiness.json').read_text())
+                self.assertEqual(evidence['mysql_ready'], engine != 'mysql')
+                self.assertEqual(evidence['doris_ready'], engine != 'doris')
+                self.assertIn('ERROR 2003', evidence[engine + '-probe'])
+                if engine == 'mysql':
+                    self.assertIn('<redacted>', evidence['mysql-probe'])
+                self.assertEqual(list(self.secret.iterdir()), [])
+                self.assertEqual(list(self.state.iterdir()), [])
 
     def test_existing_or_foreign_container_is_preserved(self):
         foreign = self.state / 'addp-hdfs-online-master'; foreign.write_text('foreign')

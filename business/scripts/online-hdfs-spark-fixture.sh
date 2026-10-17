@@ -168,10 +168,40 @@ docker run -d --name addp-hdfs-online-doris --label "$LABEL=$SUITE" --network ho
     sed -i "s/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g" /opt/apache-doris/fe/conf/fe.conf
     echo "mem_limit = 1024m" >> /opt/apache-doris/be/conf/be.conf
     exec bash /addp/doris/init.sh' >/dev/null
+table_readiness_diagnostics() {
+  local diagnostics
+  diagnostics=$(mktemp -d "$ADDP_ONLINE_SECRET_DIR/table-readiness.XXXXXX")
+  docker exec addp-hdfs-online-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -P15438 -uroot --connect-timeout=2 -e "SELECT 1"' > "$diagnostics/mysql-probe.txt" 2>&1 || true
+  docker exec addp-hdfs-online-doris mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=2 --batch -e 'SHOW FRONTENDS; SHOW BACKENDS;' > "$diagnostics/doris-probe.txt" 2>&1 || true
+  docker logs --tail 100 addp-hdfs-online-doris > "$diagnostics/doris-startup.txt" 2>&1 || true
+  python3 - "$diagnostics" "$mysql_ready" "$doris_ready" <<'PY'
+import json, os, shutil, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+password = next(line.split('=', 1)[1] for line in (secret / 'mysql.env').read_text().splitlines() if line.startswith('MYSQL_ROOT_PASSWORD='))
+try:
+    report = {'mysql_ready': sys.argv[2] == '1', 'doris_ready': sys.argv[3] == '1'}
+    for name in ('mysql-probe', 'doris-probe', 'doris-startup'):
+        report[name] = (root / (name + '.txt')).read_text(errors='replace').replace(password, '<redacted>')[-12000:]
+    text = json.dumps(report, ensure_ascii=False)
+    if os.environ.get('ADDP_ONLINE_ARTIFACT_DIR'):
+        Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'], 'spark-table-readiness.json').write_text(text)
+    print('Spark table readiness diagnostics: ' + text)
+finally:
+    shutil.rmtree(root)
+PY
+}
+mysql_ready=0 doris_ready=0
 for attempt in $(seq 1 120); do
-  if docker exec addp-hdfs-online-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -P15438 -uroot --connect-timeout=2 -e "SELECT 1"' >/dev/null 2>&1 &&
-    docker exec addp-hdfs-online-doris bash /addp/doris/init.sh --health >/dev/null 2>&1; then break; fi
-  [ "$attempt" -lt 120 ] || fail 'MySQL/Doris readiness timed out'
+  mysql_ready=0 doris_ready=0
+  if docker exec addp-hdfs-online-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -P15438 -uroot --connect-timeout=2 -e "SELECT 1"' >/dev/null 2>&1; then mysql_ready=1; fi
+  if docker exec addp-hdfs-online-doris bash /addp/doris/init.sh --health >/dev/null 2>&1; then doris_ready=1; fi
+  if [ "$mysql_ready$doris_ready" = 11 ]; then break; fi
+  if [ "$attempt" -eq 120 ]; then
+    table_readiness_diagnostics
+    fail "MySQL/Doris readiness timed out (mysql=$mysql_ready doris=$doris_ready)"
+  fi
   sleep 2
 done
 docker exec addp-hdfs-online-doris mysql -h127.0.0.1 -P9030 -uroot -e 'CREATE DATABASE spark_results' >/dev/null
