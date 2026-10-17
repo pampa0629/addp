@@ -1,6 +1,7 @@
 import unittest
 import sys
 import types
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -71,6 +72,22 @@ class OperatorMetadataTest(unittest.TestCase):
         self.assertEqual(serialize_json_value({'safe': 9007199254740991,
             'values': [9007199254740993, {'negative': -9007199254740993, 'boolean': True}]}),
             {'safe': 9007199254740991, 'values': ['9007199254740993', {'negative': '-9007199254740993', 'boolean': True}]})
+
+    def test_hosted_boundary_rows_survive_runtime_json_serialization(self):
+        import importlib.util
+        fixture_path = Path(__file__).resolve().parents[2] / 'scripts/test/spark-table-consumer-online.py'
+        spec = importlib.util.spec_from_file_location('spark_table_boundary_fixture', fixture_path)
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        native = [dict(row, id=int(row['id']), value=None if row['value'] is None else Decimal(row['value']))
+                  for row in fixture.ROWS]
+        fixture.validate_rows(serialize_json_value(native))
+
+    def test_decimal_summary_preserves_fixed_notation_scale_and_precision(self):
+        values = ['0.000000000000000001', '0.000000000000000000',
+                  '-100.123456789012345678', '999.987654321098765432', '1.2300']
+        self.assertEqual(serialize_json_value({'values': [Decimal(value) for value in values] + [None]}),
+                         {'values': values + [None]})
 
     def test_collection_parameters_publish_json_schema_types(self):
         operators = {item['name']: item for item in get_operator_metadata()}
