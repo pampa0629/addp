@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "7b337b9c41cb77aee527adcc0a70aa6132c79a3d",
-      "sha256": "8595d5f583f8189305b12bd8f0c10d28869442688cfef33e318c67ebe65c86e6",
+      "commit": "5593d42ae16fec82030b6f3b1f8b1e7714a5072c",
+      "sha256": "7e057790f66418a71f7169fb2de0fa44498c6f9fea2fdcee5379255c355a67b6",
       "use": {
-        "zh-cn": "委托创建的有界快照、禁用调度及扫描约束；复核只读预检按写入策略检查删除能力的双语注释，创建条件与权限不变；复核人工启动、恢复与重放固化当前用户来源，结构审批补扫独立固化当前审批用户来源，创建仍仅保存停止态定义，不创建执行或扫描",
-        "en": "Delegated bounded snapshot creation without scheduling or scanning; reviewed bilingual precheck annotations for apply-policy delete capability checks, without changing creation conditions or permissions; reviewed current User origin capture for manual start, resume and replay; schema approval scans independently capture the current approving User origin; creation still persists a stopped definition without an execution or scan"
+        "zh-cn": "委托创建仍限定 bounded/snapshot、禁用调度与扫描。普通 User 的创建、更新和恢复仅在同步请求内传递当前凭据以授权自有定时任务；人工启动、恢复、重放及结构审批固化各自当前 User 来源。创建只保存停止态定义，不创建执行或扫描；配置预检的权限与三态限制不变。",
+        "en": "Delegated creation remains bounded/snapshot with scheduling and scanning disabled. Ordinary User creation, updates and resume pass the current credential only synchronously to authorize owner schedules. Manual execution actions and schema approval freeze their current User origin. Creation persists a stopped definition without execution or scan; precheck permissions and tri-state limits are unchanged."
       }
     },
     {
@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "ebe4ebb999f142010653d6eb33d4691b50a60703",
-      "sha256": "d605e68e12a017db1ed24adbf4c799a8ba37d890f84f3bee27ba6a2d3d8db72f",
+      "commit": "5593d42ae16fec82030b6f3b1f8b1e7714a5072c",
+      "sha256": "fbc8f28d23ac1c0ac2b9f1beca187e96f8315f380b832d446a9007bae7baeced",
       "use": {
-        "zh-cn": "持久化任务定义及初始状态，不启动 execution；复核人工启动、恢复与重放固化当前用户来源，创建仍仅保存停止态定义，不创建执行或扫描",
-        "en": "Persist task definition and initial state without starting execution; reviewed current User origin capture for manual start, resume and replay; creation still persists a stopped definition without an execution or scan"
+        "zh-cn": "持久化停止态定义，不创建 execution。bounded 定时定义由 System 绑定当前 User 和摘要；更新在锁定事务原子替换主体，暂停清除、恢复重新授权。无 Cron 的创建及委托切片不进入调度授权。人工执行与结构审批的完整当前 User 来源不变。",
+        "en": "Persist a stopped definition without execution. System binds bounded schedules to the current User and definition hash; locked updates atomically replace the subject, pause clears it and resume reauthorizes. No-Cron creation and the delegated slice do not authorize schedules. Complete current User origin for manual execution and schema approval is preserved."
       }
     },
     {
