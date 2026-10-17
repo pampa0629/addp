@@ -143,6 +143,14 @@ Transfer 的 `transfer-relational-sql-etl` Hosted T4 在同一普通 User／Tena
 
 Oracle 的既有 `make test-common-oracle-decimal` 默认使用 Slim 一次性容器验证非空间类型写入及删除；`make test-common-oracle-decimal ORACLE_SPATIAL=1` 使用固定摘要的完整镜像，额外验证原生 SDO_GEOMETRY、空间索引、DROP 后的登记状态、存在／缺失表的精确登记清理、重复删除及其他表登记保留。两种配置均由既有 Hosted Oracle Job 执行，容器只绑定随机回环端口，退出销毁容器及卷；不得连接业务 Oracle 或以模拟视图代替原生空间认证。
 
+#### 血缘采集器回归
+
+`make test-meta-postgres` 覆盖超过单批 500 条执行、同创建时间的键集分页、目标延迟扫描、重复采集幂等性、单条错误隔离、轮内新增与游标后迟到成功执行的下一轮处理、取消，以及重复即时通知不恢复已关闭字段关系。Transfer PostgreSQL T2 另覆盖三个查询输入（含仅参与行筛选的来源）、查询改名、类型转换和完整物理行集合。沿用既有 owner 门禁，不增加部署依赖或公开 API。
+
+| 历史证据 | 层级与结果 | 覆盖边界 |
+| --- | --- | --- |
+| 2026-10-15，`make test-module MODULE=meta GO_ONLY=1`、`make test-meta-postgres` | T1 / T2，通过 | 同创建时间的 601 条执行先采集 600 条，目标元数据入库后补采第 601 条；重复采集保持 601 条 observation 和两条资源关系不变。此记录不作为部署后 T4 结果。 |
+
 ### 4.3 T3
 
 T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态。真实 System、Gateway、owner Backend、真实身份与数据源的浏览器链路归入 T4，不与确定性浏览器测试混跑。
@@ -333,7 +341,58 @@ Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，
 
 Transfer 关系型 SQL ETL T4 `transfer-relational-sql-etl` 唯一使用 GitHub Hosted `ubuntu-24.04` x86_64 临时部署，不保留 macOS 专用 Runner 路径。生命周期复用 `scripts/utils/hosted-online.sh`，从零建立独立 Infra、非默认 Tenant 和最小权限测试 User；System-owned IAM helper 创建身份，独立 Engine Provisioner 通过正式 System API 注册当次 PostgreSQL 与 MongoDB Engine Instance，注册后清除 Provisioner Token；业务 User 不持有 `system.engine.read/execute`，只从 Meta 读取同 Tenant 引擎投影。Business Fixture 只管理独占无持久卷 PostgreSQL 与 MongoDB 容器、固定源表、源集合和目标表，并输出 owner-only Engine 描述，不调用 System API。数据库用户只能读取源表并在指定 schema 创建、管理自己的目标表。真实 User 必须从 Console 选择源表，确认单语言引擎只显示固定 `SQL` 而不提供 MQL、语言下拉或高级 SQL 编辑入口，通过基础构造器选择输出字段并配置两个参数化行过滤，再选择 PostgreSQL 目标位置创建 snapshot 任务。浏览器必须断言保存事实只有标准 `source.query` SQL statement 与类型化 parameters，其中 decimal 过滤值以字符串保存而不是 JavaScript Number；下一步字段映射只包含实际投影字段，并等待 Worker 读写恰好 2 行。Fixture 必须核对目标行集合、金额汇总和列顺序，以同时证明过滤、投影和精确参数绑定语义。临时任务必须通过正式 API 删除并确认 404。成功、失败和中断退出路径均销毁当次业务容器、Infra、平台数据卷及 owner-only 凭据目录，检查零残留；Engine Instance 与身份随平台库销毁。凭据不进入日志或 Artifact。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
+#### 字段级血缘验收
+
 同一个 `transfer-relational-sql-etl` suite 同时覆盖字段血缘首期：使用无管理员角色、具备 `meta.lineage.read`、`manager.data_item.read` 和 `manager.content.read` 的同一 User，经正式 API 执行原生表 snapshot 的字段改名、decimal 精度转换、同目标 replace 映射更新和两跳搬运。Meta 必须从真实成功执行自动采集，断言 direct/derived、精确字段与结构快照、旧入边关闭及两跳查询不串入其他字段；不得用手工 collect 请求代替自动消费。Console 的 Manager iframe 必须通过 `subject_kind=data_item&granularity=field` 一次请求整表字段图，选择真实目标字段时在本地图中聚焦，不重复查询。该普通 User 不授予 `catalog.entry.read`，字段图不得触发 Catalog 摘要请求。浏览器先完成登录并核对同一 User 与 Tenant，再监听所有受保护业务请求的错误；登录前无会话的 refresh 401 不计入业务请求，但登录后的 401、403、503 均不得忽略。Provider 能完整证明单来源输出映射的 SQL 查询源必须记录字段血缘，浏览器核对目标字段来源、转换语义和同一次 execution 的证据；opaque、unresolved 或不完整查询证据仍声明 unavailable，不能伪造同名字段来源。同一套件还必须覆盖 MongoDB 原生集合经透明 MQL `$project` 投影到 PostgreSQL ODS 的六个显式映射，查询输出别名只用于后续字段映射，冻结源结构仍保留 `title.date`、`title.level`、`leader.personid` 和 `leader.userInfo.nickName` 等精确点号字段名。同一个任务连续执行两次，每次均须在不手工扫描目标、不调用 collect 的情况下等待自动元数据与字段图，核对冻结源/目标结构和当次 execution 证据；第二次只允许最新成功执行的活跃入边，目标 DataItem 身份保持稳定。Manager 整表字段图必须展示跨引擎来源，并验证日期、昵称字段在本地切换聚焦。Hosted Fixture 同时管理独占 tmpfs MongoDB 7.0 与 PostgreSQL 容器，MongoDB 登记用户只读源库，核对 ODS 六列的完整行集合并销毁两个容器。新增外部依赖登记到统一 Hosted 清理清单，不访问本地业务容器、不授予消费 User 基础设施管理权限。编排扩展沿用同一 suite，新增 Develop、Orchestrator 与 Monitor 服务预检，消费 User 仅补充两个模块的任务创建、读取、执行、删除权限，以及 Develop 数据读写、Monitor 执行读取与 System 执行授权权限。独立夹具预建空 DIM、DWD 正式表，先扫描结构，再由一个真实编排连续执行两次 ODS Transfer、DIM relation 查询及 DWD JOIN 查询。每轮通过既有 Monitor 安全投影核对三条子执行的父 UUID、实际 owner 与任务身份，Develop 专业执行详情仅核对安全资源引用、顶层 outputs 和实际行数，精确字段映射及结构哈希通过 Meta 字段图核对，不能从安全投影读取被移除的 operations 和 schema_snapshot；Develop 冻结读取 URI 按不带选择器 item_id 的规范资源路径比较；日期字段必须从 MongoDB 经 ODS、DIM 三跳追溯到 DWD，昵称改名与强度表达式分别证明 direct、derived，第二轮不允许第一轮活跃入边或编排父执行伪造资源边。整表字段图展示 DWD 的最新证据，独立物理验证 DIM 三行和 DWD 两行的完整集合、真实日期类型。两个 Develop 任务及一个编排定义通过正式 API 删除并确认 404，目标正式表随 Business 容器销毁。三个 PostgreSQL 原生任务、一个 MongoDB 查询任务与一个 SQL 任务均由本轮 Run ID 命名并通过正式 API 删除、确认 404；源集合、源表和六个目标表由同一个 Business Fixture 在退出时清理。结构演进阶段由同一个 Fixture 在独占 PostgreSQL 中真实改名 DWD 昵称列并将 date 改为 timestamp without time zone，通过正式 Meta 扫描验证旧关系失效、新结构暂不可用，再第三次执行原编排；不增加定义或消费权限。当前图核对新列名、日期 derived、新 DWD hash 与当次子执行，旧 hash + 第二轮父执行完成时间的历史图核对原字段、原 direct 日期与第二轮证据，写入前后分别检查 stale、closed；未变更的源、ODS、DIM hash 与 DataItem 身份保持稳定。浏览器只展示第三轮新结构，物理夹具独立验证新列、timestamp 类型和完整行集合，v5 报告保存两代结构及历史取证。确定性验证沿用 `make test-online-runner` 和 `make test-platform`，真实 T4 沿用 `make test-online ONLINE_SUITE=transfer-relational-sql-etl`，首次真实通过前不增加 schedule。 同一 suite 还须用独占 PostgreSQL 的 500 列、2 行宽表执行两跳原生 Transfer；只扫描初始源，目标元数据与血缘须自动产生。整表图省略 limit 参数，核对 1500 个字段节点、1000 条活跃关系及两次真实 execution 的精确结构证据。真实 Manager iframe 只发起一次整表字段查询，验证首、中、末字段搜索与聚焦、全图适应窗口、卡片拖拽后的曲线端点和自动布局，保存请求／绘制耗时及截图。数据库 owner 独立核对两级目标的全部列、类型和完整行集合；任务经 API 删除，物理表随同一 disposable 容器销毁。本扩展通过 Hosted T4 前不计为已完成真实宽表验收。
+
+现行场景还应满足以下补充约束；字段值来源、schema snapshot、租户授权及 `unavailable` 的定义仍以[数据血缘能力规范](addp数据血缘能力规范.md#61-字段级首期契约)为准。
+
+| 场景 | 必须核对的边界 |
+| --- | --- |
+| 自动扫描与采集 | 等待目标 DataItem 和当次字段证据自动收敛。命名空间锁可能使额外手动扫描跳过范围，即使扫描执行成功也不能证明目标已经入库；不得用手工补扫或 collect 代替自动链路。 |
+| 编排重跑 | 两轮各自的父、子 execution UUID 必须不同，字段及资源边只能引用实际 Transfer / Develop 子执行。按规范资源路径核对 ReadSet 与 relation 参数；不从 Orchestrator 依赖生成来源边，不从安全执行投影读取 operations 或 schema_snapshot。 |
+| 结构演进 | 将 DWD 的 `person_nickname` 改为 `person_display_name`，`activity_date` 从 date 改为 timestamp without time zone；同一编排和任务定义完成第三轮；正式扫描后、重写前，四张当前字段图均为 unavailable、各只保留根节点且无来源边，旧字段名查询为 404。旧 hash + 第二轮父执行完成时间的历史图保留原字段、原 direct 日期及第二轮证据，DWD 入边在第三轮前为 stale、之后为 closed，观察不晚于历史查询时点；第三轮只引用当次子执行。 |
+| Transfer 多来源查询 | 在原生源和已完成 replace 的映射表上声明两个 `query.inputs`，真实 CTE / JOIN / UNION ALL 产生四行结果。每个原始来源结构分别冻结，同一结果字段的多来源记为精确 derived，只有 JOIN / 行筛选作用的输入不生成字段值来源边；三层冻结结构、目标完整行集合和列顺序必须一致。 |
+| 布局与曲线 | 820×667px 的真实三跳图适应窗口后字段行完整可见；表卡向左、向下各移动 30px 后，曲线端点偏差不超过 2px。几何取证等待实际绘制帧，不能读取适应窗口之前的旧帧。自动布局、搜索、收起 / 展开、Console iframe 原生全屏进出与字段精确聚焦保持有效。 |
+| 500 列宽表 | 两行源、两跳搬运形成 1500 个字段节点、1000 条活跃关系；逐项核对三张表的结构 hash 和两次真实 execution。两张目标表各 500 个非空 bigint 列，完整物理行多重集合一致。四表以内适应窗口保留可读字号；宽表概览不要求同时看清 500 行，重新定位字段必须恢复至少 11px。 |
+| 独立验证与清理 | 浏览器与多来源场景全部结束后，由标准 Hosted 生命周期统一验证 ODS / DIM / DWD、多来源目标及宽表的完整物理行集合和类型；浏览器不提前调用同一验证入口。所有本轮任务和编排定义经正式 API 删除并确认 404，业务容器、Infra 与凭据目录零残留。 |
+
+MongoDB 夹具必须等待容器 PID 1 成为正式 `mongod`，再进行认证及 ping 探测；[官方镜像入口](https://github.com/docker-library/mongo/blob/master/7.0/docker-entrypoint.sh) 在初始化阶段会启动临时实例、创建账号，再关闭临时实例并执行正式进程，仅认证及 ping 成功不能证明切换完成。两项就绪条件使用同一个有界等待；数据与最小读取权限只初始化一次，失败时不重试部分写入、不发布引擎描述文件。原始启动及驱动错误只留在退出即清理的凭据目录，CI 日志仅输出固定错误分类和非秘密容器状态。
+
+##### 性能采样口径
+
+宽表交互性能采样沿用同一 Hosted suite，在同一登录上下文的新页面中读取真实 1500 字段节点、1000 条关系图；该页面不安装用于几何取证的 Canvas 观察器。首、中、末字段分别从按钮的真实点击事件计时，到所选字段以至少 11px 字号居中绘制后、下一稳定动画帧结束，并保存 CPU 采样。结果写入 `transfer-wide-native-focus.json` 与三个 `.cpuprofile` 文件，每个页面仍只加载一次字段图。该计时排除字段搜索、Playwright 定位等待和详细几何记录成本，但包含轻量绘制探针及 CPU 采样开销；不能与原有包含导航、请求及自动化验证的总时长直接计算加速比。既有整图完整性、精确映射、拖拽端点与清理断言仍在原验证页面执行。
+
+首次字段图绘制和自动布局复用同一轻量采样实现。首次绘制从字段级切换的真实事件开始，使用浏览器 Resource Timing 中对应字段图请求的 `responseEnd` 分离网络与响应处理，记录响应完成到可读字段稳定绘制的时间；不将 Console 导航或 Playwright 等待计入此段。自动布局从工具栏按钮的真实点击开始，到布局按钮恢复可用且全图下一稳定绘制帧结束；全图适应窗口后的字段字号仅记录，不套用字段聚焦的 11px 要求。两者只观察当前画布实际可见字段，不将图引擎在离屏位置进行的文字测量算作完成。计时与 CPU 采样分别归档为 `transfer-wide-native-render.json`、`transfer-wide-initial.cpuprofile` 和 `transfer-wide-layout.cpuprofile`。该采样不重查字段图、不安装详细几何观察器，也不改变产品布局和 API。
+
+几何验证、包含导航 / 请求 / 自动化等待的端到端时间、原生点击采样和本地受控夹具是不同口径。只有相同环境、相同采样口径的结果才可比较；本机与 Hosted 不直接计算性能倍率。CPU 累计归因可能嵌套，不能相加；采样会话总时长不等于原生点击耗时。单轮独占 Runner 的观察值包含轻量探针和 CPU 采样开销，不构成固定延迟目标或性能保证。
+
+##### 历史证据索引
+
+下表索引已记录通过的业务证据，仅适用于对应源码、运行尝试和覆盖范围，不代表当前 HEAD 已重新通过 T4。不同层级不能相互替代，失败、取消与条件跳过均不计为通过；关联 workflow 的成功或前端步骤跳过不能抵销其他门禁的失败。
+
+| 日期 | 覆盖范围 | 源码 | 已记录通过的 Hosted T4 | 关键观察与清理 |
+| --- | --- | --- | --- | --- |
+| 2026-10-04 | 原生表映射、replace、两跳与可证明单来源 SQL | `8c0a1cc142f2bbbd8880745527c224fae7bd2b2c` | [37206323194](https://github.com/pampa0629/addp/actions/runs/37206323194) | direct / derived / generated、结构快照与整表字段聚焦；4 个临时任务删除并确认 404，隔离部署零残留。 |
+| 2026-10-05 | MongoDB → PostgreSQL ODS 自动采集与重跑 | `e9d030996f664a7b9e31cd37d76e93f15dfaddaf` | [37214989939](https://github.com/pampa0629/addp/actions/runs/37214989939) | 两次各读写 3 行，6 条活跃映射仅引用第二次执行；字段图 12 节点 / 6 边，点号名与 path 保留、日期和昵称本地聚焦仅一次图请求；v3 报告及物理核对通过，5 个定义删除，零残留。 |
+| 2026-10-05 | ODS → DIM → DWD 两轮编排 | `194e0d0ef4f74f534452a81298e47ee5706f6ae6` | [37225393122](https://github.com/pampa0629/addp/actions/runs/37225393122) | 2 个父执行 / 6 个实际子执行；ODS / DIM / DWD 分别 6 / 2 / 4 条映射，DIM 3 行、DWD 2 行，`title.date` 三跳、昵称 direct、强度 derived；ODS 图 18 节点 / 12 边，DWD 图 13 节点 / 9 边；v4 报告通过，8 个定义删除并确认 404，零残留。 |
+| 2026-10-05 | 结构改名、date → timestamp、冻结历史 | `2b5f1c1437a362e2b7f513c41dd6cad1f180d2b0` | [37247522460](https://github.com/pampa0629/addp/actions/runs/37247522460) | 3 轮 / 9 个实际子执行，DIM 每轮 3 行、DWD 2 行；DWD hash 变化，源 / ODS / DIM hash 及 DataItem 身份稳定，旧历史保持原语义并经历 stale → closed；v5 报告保留前后历史与当前图，8 个定义删除并确认 404，零残留。 |
+| 2026-10-05 | 紧凑布局 | `680ce20325a7a20cddeadd6889dafbacb8768e6b` | [37252213496](https://github.com/pampa0629/addp/actions/runs/37252213496) | 13 字段 / 9 边，820×667px 画布最小字段字号 14.22px；截图与 `transfer-field-overview-layout.json` 归档，8 个定义删除并确认 404，零残留。 |
+| 2026-10-05 | 曲线、拖拽、折叠与全屏 | `7665c0b612d83d31a9a418d94af070d321e1bd79` | [37276985688](https://github.com/pampa0629/addp/actions/runs/37276985688) | 13 字段 / 9 边，最小字号 13.96px；双向 30px 拖拽后端点偏差 0.85px；三轮编排及冻结历史同时回归，8 个定义删除，零残留。 |
+| 2026-10-10 | 宽表、多来源查询及预览按需读取 | `3b66c60d93d380ee85551ef5e88e98c39a5bc075` | [37953565525](https://github.com/pampa0629/addp/actions/runs/37953565525) | v7 suite / v6 浏览器报告，1500 节点 / 1000 边，完整响应 1,871,025 字节、一次字段图请求；血缘页不隐式读样本，无非预期失败响应；11 个定义删除并确认 404，零残留。 |
+| 2026-10-10 | 原生点击性能基线 | `9dca0ad9547eea7d0b901952d59fd32a546d113a` | [38018760767](https://github.com/pampa0629/addp/actions/runs/38018760767) | 1500 节点 / 1000 边、一次请求，业务与完整物理数据检查通过；11 个定义删除，零残留。 |
+| 2026-10-10 | 状态更新优化后的原生点击复验 | `87955b919eb8ce26ae61635da9c1a63e11dfc48d` | [38019625180，第 2 次尝试](https://github.com/pampa0629/addp/actions/runs/38019625180) | 首次尝试未执行血缘测试，不计通过；第二次的完整业务、多来源、结构演进、宽表与独立物理验证通过，11 个定义删除并确认 404，零残留。 |
+| 2026-10-10 | 首次绘制、自动布局及完整业务复验 | `e3b444149ef5b0aa6438ca74886acfdc2fd602f6` | [38035920579](https://github.com/pampa0629/addp/actions/runs/38035920579) | 干净工作树与全部服务源码一致；1500 节点 / 1000 边、一次请求，三轮编排 / 9 子执行、冻结历史、宽表交互及物理行集合通过；11 个定义删除并确认 404，零残留。 |
+
+| Hosted 观察 | API / 首次绘制 / 布局 | 首、中、末字段聚焦 | CPU 归因及解释 |
+| --- | --- | --- | --- |
+| 37953565525，原端到端口径 | API 约 172ms；导航、请求与首次聚焦合计约 4.69s，布局及绘制约 1.48s | 布局后再次定位末字段约 1.48s，恢复至少 11px | `requestAndInitialRenderMs` 包含导航、请求及等待，不能作为纯画布绘制时间，也不直接与原生点击采样计算加速比；截图及 `transfer-wide-field-layout.json` 归档。 |
+| 38018760767，原生点击基线 | API 约 173ms | 1141.8 / 1288.7 / 909.0ms | 字段选择累计 909.10 / 981.46 / 729.35ms，热点为样式合并、曲线路径解析和箭头重建。 |
+| 38019625180，第 2 次尝试 | API 约 174ms | 57.7 / 58.8 / 59.1ms，聚焦后至少 11px | 字段选择累计 22.61 / 20.82 / 20.35ms；真实图的关系数量、结构身份与一次图请求不变。 |
+| 38035920579，首次绘制与布局采样 | API 约 172ms；字段模式点击至 responseEnd 236.5ms，响应完成至稳定绘制 948.5ms，合计约 1185ms；自动布局约 165ms | 104.8 / 72.7 / 83.3ms，至少 11px（浮点容差） | 首次绘制中 `graphData` 累计约 2.42ms、`renderGraph` 约 237.3ms，嵌套归因不可相加；图、布局和三次聚焦的计时、CPU 与几何取证均归档。 |
+
+本地只读复核记录：2026-10-10，Outdoor 既有九表图（MongoDB `Outdoor.Persons` / `Outdoor.Outdoors`、三张 ODS、两张 DIM、DWD 和 DWS）在深度 10 下包含 32 个字段节点、25 条关系；`person_nickname` 的多来源昵称与 `metric_value` 的指标路径聚焦、关系详情打开 Monitor 的真实 Transfer / Develop 执行、布局、曲线、全屏、拖拽及全部收起 / 展开均完成检查，图事实数量不变。该复核只核对既有执行，未重新执行业务写入或完整物理行集合验证，不能代替上述 Hosted T4；本地 Engine / Item 编号和执行 UUID 不作为通用契约。
+
 
 ### 5.3 数据、超时与清理
 
