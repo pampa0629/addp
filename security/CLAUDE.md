@@ -235,3 +235,7 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 该查询同时暴露私有原值历史进入 GORM 参数展开日志的缺陷。Develop 共用数据库连接现接入 `common/logger.WithoutSQLValues`，在格式化前移除绑定参数，查询错误日志仅保留固定类别、类型或合法 SQLSTATE；SQL 结构、级别、耗时、行数及业务错误链保留。回归先复现普通／慢查询和错误回显泄露，修正后 Common／Develop Go、全量 `make test-go` 的 22 个模块、Common／Develop PostgreSQL 门禁通过。实际执行事务验证私有历史仍完整持久化、必要过程事件保留、SQL 日志不含私有载荷；尚待用户重启后核对新进程，既有运行日志未删除。
 
 后续 Hosted [39024702645](https://github.com/pampa0629/addp/actions/runs/39024702645) 已通过环境启动，但浏览器初始保护断言失败：API 场景清理在 Security 撤销 Manager 授权后即交接浏览器，浏览器预览比 Manager 撤销投影更新早约 1.4 秒。夹具现须在同一预算内确认真实预览恢复默认掩码后才交接，保持严格三行逐值断言；新增回归先复现缺少此屏障，修正后 `make test-security-online-runner` 的 175 项及 CI 登记检查通过。该次失败 cleanup=passed、infra_cleanup=zero_residuals，不能计为新范围 T4 通过；修正后的真实 Hosted 结果另行核验。
+
+2026-10-17 修正后的 [Hosted 39028729141](https://github.com/pampa0629/addp/actions/runs/39028729141) 在源码 `188da46aed6e39b83cb540fcc66d0ca5c4d915e2` 上真实通过，领域 v5、浏览器 v2 归档报告均经严格字段与类型校验；三张保护状态截图存在，cleanup=passed、infra_cleanup=zero_residuals。两个真实 User 验证按出口审批、旧 Manager 授权不扩大、同一 Develop 执行历史在自然到期和主动撤销后回落掩码、另一用户不继承授权，以及 Security 不可达期间授权到期仍由 Owner 本地生效。归档 Develop 日志包含 3,155 条参数化 SQL trace 和 7 次执行元数据更新，夹具手机号原值与私有历史载荷键命中均为零；没有用关闭 SQL 日志代替过滤。该 T4 已补齐主动撤销的真实输出证据，本地未重复授予新授权。
+
+用户重启后的本地构建 `e857ae775851b44c51c329766266cf64f6dd5ca8` 包含该修复，Develop／Security 均 ready/registered。管理员在 Console 对原 MySQL 验收表的新执行 `a812f451-4f09-4d11-862e-86c351ae6675` 成功返回 10 行默认掩码；新实例 `d2b42415-7fae-413b-bb96-41dfae8c076a` 的实际历史保存 UPDATE 只记录占位符，未展开结果或私有历史载荷。重启后的本地写入与 Hosted 获批原值写入两层证据共同闭环日志修复；修复前的既有运行日志未删除。此处不改变 SQL 脱敏重写、透明加密等仍未实现的边界。
