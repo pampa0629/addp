@@ -1,4 +1,6 @@
 import client from './client'
+import { serializeEngineCatalogTarget } from '@common-ui'
+import { isSharingInt64 } from '../utils/sharingConfirmation'
 
 export async function listEntries(params) {
 	return client.get('/catalog/entries', { params })
@@ -65,6 +67,28 @@ export async function observeSharingRequirement(target) {
 	return client.post(`/system/engines/${encodeURIComponent(target.engine_id)}/access_handling_requirement`, {
 		version: target.version, segments: target.segments
 	})
+}
+
+// Read the direct relation, not a user's combined department/project sources.
+// This optional User observation never replaces System's write-time guard.
+export async function findExistingSharingGrant(candidate) {
+  if (!['user', 'project_group'].includes(candidate?.recipient_type) || !isSharingInt64(candidate?.recipient_id) ||
+      !/^[0-9a-f]{64}$/.test(candidate?.item_fingerprint || '')) throw new Error('invalidSharingGrantObservation')
+  const result = await client.get(`/system/engines/${encodeURIComponent(candidate.target.engine_id)}/access_grants/history`, { params: {
+    catalog_path: serializeEngineCatalogTarget(candidate.target), recipient_type: candidate.recipient_type,
+    recipient_id: candidate.recipient_id, state: 'active', page: 1, page_size: 100
+  } })
+  if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < result.data.length ||
+      result.data.some(row => row.recipient_type !== candidate.recipient_type || row.recipient_id !== candidate.recipient_id ||
+        row.action !== 'read' || row.revocation !== null || !/^[0-9a-f]{64}$/.test(row.item_fingerprint) ||
+        (row.expiry_mode !== 'until_revoked' && row.expiry_mode !== 'at_time') ||
+        (row.expiry_mode === 'until_revoked' ? row.expires_at !== null : !row.expires_at || !Number.isFinite(new Date(row.expires_at).getTime())))) {
+    throw new Error('invalidSharingGrantObservation')
+  }
+  const existing = result.data.find(row => row.item_fingerprint === candidate.item_fingerprint)
+  if (existing) return existing
+  if (result.total !== result.data.length) throw new Error('incompleteSharingGrantObservation')
+  return null
 }
 
 export async function prepareSharingRequest(id, payload) {

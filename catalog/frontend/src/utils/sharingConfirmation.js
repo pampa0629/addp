@@ -2,7 +2,7 @@ import { isCanonicalPositiveID } from './entryEdit'
 
 // Sharing commands require lossless decimal strings within the backend int64
 // contract, rather than accepting normalized or already-rounded numbers.
-function isSharingInt64(value) {
+export function isSharingInt64(value) {
   return typeof value === 'string' && value === value.trim() && value.length <= 19 &&
     isCanonicalPositiveID(value) && BigInt(value) <= 9223372036854775807n
 }

@@ -7,7 +7,7 @@ import en from '../src/i18n/en.json'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
   'createSharingDecision', 'getSharingDecision', 'getSharingBoundary', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
-  'listSharingDecisions', 'observeSharingRequirement', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
+  'listSharingDecisions', 'observeSharingRequirement', 'findExistingSharingGrant', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
 vi.mock('../src/api/catalog', () => fixtures.api)
@@ -77,10 +77,68 @@ beforeEach(() => {
   fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active' }] })
   fixtures.api.listSharingDecisions.mockResolvedValue({ data: [decision], total: 1 })
   fixtures.api.observeSharingRequirement.mockResolvedValue({ mode: 'catalog', requirement_version: '9007199254740993' })
+  fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
 })
 afterEach(() => { mounted.splice(0).forEach(app => app.unmount()); vi.unstubAllGlobals() })
 
 describe('business authorization workspace', () => {
+  it('warns about an existing direct Grant and does not create a handling request', async () => {
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    fixtures.api.findExistingSharingGrant.mockResolvedValue({ ...decision, expiry_mode: 'until_revoked' })
+    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
+    expect(fixtures.api.findExistingSharingGrant).toHaveBeenCalledWith(decision)
+    expect(view.button('sharing-existing-grant').props.title).toBe('catalog.sharing.existingGrant')
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(view.recordRequest).not.toHaveBeenCalled()
+    fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
+    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    expect(view.button('sharing-existing-grant')).toBeUndefined()
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+  })
+
+  it('rechecks before first submission but never blocks same-request recovery with a new precheck', async () => {
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
+    fixtures.api.findExistingSharingGrant.mockResolvedValue({ ...decision, expiry_mode: 'until_revoked' })
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(view.state.requestID).toBe('')
+    fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
+    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    fixtures.api.prepareSharingRequest.mockRejectedValue(new Error('offline'))
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    const reads = fixtures.api.findExistingSharingGrant.mock.calls.length
+    await view.button('sharing-retry-request').props.onClick(); await settle()
+    expect(fixtures.api.findExistingSharingGrant).toHaveBeenCalledTimes(reads)
+    expect(fixtures.api.prepareSharingRequest.mock.calls[1][1]).toEqual(fixtures.api.prepareSharingRequest.mock.calls[0][1])
+  })
+
+  it('keeps preflight read permission separate and labels failure without claiming absence', async () => {
+    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
+    expect(fixtures.api.findExistingSharingGrant).not.toHaveBeenCalled()
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+    fixtures.api.findExistingSharingGrant.mockRejectedValue(new Error('unavailable'))
+    fixtures.auth.permissions.push('system.engine_access_grant.read'); await settle()
+    await switchWorkspace(view, 'handling')
+    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    expect(view.button('sharing-grant-check-unavailable').props.title).toBe('catalog.sharing.grantCheckUnavailable')
+    expect(view.button('sharing-existing-grant')).toBeUndefined()
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+  })
+
+  it('discards stale duplicate results after changing the selected decision', async () => {
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
+    let finish
+    fixtures.api.findExistingSharingGrant.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const observing = view.button('sharing-observe-requirement').props.onClick(); await settle()
+    view.state.decisionID = ''; await settle()
+    finish(decision); await observing; await settle()
+    expect(view.button('sharing-existing-grant')).toBeUndefined()
+    expect(view.button('sharing-prepare').props.disabled).toBe(true)
+  })
   it('keeps exactly one task selected and never mixes creation, handling and history', async () => {
     const view = mount(); await settle()
     const navigation = () => view.button('sharing-workspace').props['model-value']
@@ -172,6 +230,7 @@ describe('business authorization workspace', () => {
       expect(Object.keys(messages.workspace)).toEqual(['create', 'handling', 'records'])
       expect(Object.keys(messages.workspaceHelp)).toEqual(['create', 'handling', 'records'])
       for (const key of ['backRecords', 'recordType', 'openSystem', 'confirmationDetail', 'requestDetail', 'continueHandling', 'resolveBeforeSwitch', 'noRequests']) expect(messages[key]).toBeTruthy()
+      for (const key of ['checkingExistingGrant', 'existingGrant', 'existingGrantDetail', 'grantCheckUnavailable']) expect(messages[key]).toBeTruthy()
     }
     expect(zh.catalog.sharing.title).toBe('业务授权')
     expect(zh.catalog.sharing.issuanceBoundary).toContain('不代表当前仍可访问')

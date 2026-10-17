@@ -16,11 +16,51 @@ import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
-import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
 import { serializeEngineApprovalInitialization } from '../../../common-frontend/basic/src/utils/engineApprovalInitialization.mjs'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('checks only active direct-recipient history, preserving the exact DataItem and int64 path', async () => {
+    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740994',
+      target: { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'a"b' }] } }
+    const grant = { ...candidate, action: 'read', revocation: null, expiry_mode: 'until_revoked', expires_at: null, request_id: 'grant' }
+    client.get.mockResolvedValueOnce({ data: [grant], total: 1 })
+    expect(await findExistingSharingGrant(candidate)).toEqual(grant)
+    expect(client.get).toHaveBeenCalledExactlyOnceWith('/system/engines/9007199254740993/access_grants/history', { params: {
+      catalog_path: '{"engine_id":9007199254740993,"version":"v1","segments":[{"name":"a\\"b"}]}',
+      recipient_type: 'user', recipient_id: '9007199254740994', state: 'active', page: 1, page_size: 100
+    } })
+    client.get.mockResolvedValueOnce({ data: [{ ...grant, item_fingerprint: 'b'.repeat(64) }], total: 1 })
+    expect(await findExistingSharingGrant(candidate)).toBeNull()
+    client.get.mockResolvedValueOnce({ data: [], total: 0 })
+    expect(await findExistingSharingGrant(candidate)).toBeNull()
+  })
+
+  it('never interprets incomplete, malformed or failed checks as no duplicate', async () => {
+    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'project_group', recipient_id: '60',
+      target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
+    for (const result of [undefined, { data: [], total: 1 }, { data: [], total: '0' },
+      { data: [{ ...candidate, revocation: { revoked_at: '2026-01-01' }, action: 'read' }], total: 1 },
+      { data: [{ ...candidate, recipient_id: '61', revocation: null, action: 'read' }], total: 1 }]) {
+      client.get.mockResolvedValueOnce(result)
+      await expect(findExistingSharingGrant(candidate)).rejects.toThrow()
+    }
+    client.get.mockRejectedValueOnce(new Error('offline'))
+    await expect(findExistingSharingGrant(candidate)).rejects.toThrow('offline')
+  })
+
+  it('never broadens a malformed candidate into a recipient-less authorization query', async () => {
+    const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '60',
+      target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
+    for (const invalid of [null, { ...candidate, item_fingerprint: '' }, { ...candidate, recipient_type: '' },
+      { ...candidate, recipient_id: undefined }, { ...candidate, recipient_id: 60 },
+      { ...candidate, recipient_id: '9223372036854775808' }]) {
+      await expect(findExistingSharingGrant(invalid)).rejects.toThrow()
+    }
+    expect(client.get).not.toHaveBeenCalled()
+  })
 
   it('serializes the existing numeric path contract losslessly, including quoted names, under the User client', async () => {
     const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b' }] }

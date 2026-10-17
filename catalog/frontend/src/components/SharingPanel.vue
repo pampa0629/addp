@@ -136,7 +136,11 @@
           <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ candidateLabel(selectedCandidate) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(selectedCandidate) }}</el-descriptions-item>
         </el-descriptions>
-        <el-button v-if="selectedCandidate" data-testid="sharing-observe-requirement" :disabled="initializing || !!handlingAttempt" :loading="requirementLoading" @click="observeRequirement">{{ t('catalog.sharing.observeRequirement') }}</el-button>
+        <p v-if="grantObservationLoading" role="status">{{ t('catalog.sharing.checkingExistingGrant') }}</p>
+        <el-alert v-if="existingGrant" data-testid="sharing-existing-grant" type="warning" :closable="false" :title="t('catalog.sharing.existingGrant')"
+          :description="t('catalog.sharing.existingGrantDetail', { expiry: expiryLabel(existingGrant) })" />
+        <el-alert v-if="grantObservationFailed" data-testid="sharing-grant-check-unavailable" type="info" :closable="false" :title="t('catalog.sharing.grantCheckUnavailable')" />
+        <el-button v-if="selectedCandidate" data-testid="sharing-observe-requirement" :disabled="initializing || !!handlingAttempt || handlingSaving" :loading="requirementLoading" @click="observeRequirement">{{ t('catalog.sharing.observeRequirement') }}</el-button>
         <el-form v-if="canInitialize && selectedCandidate && requirementMissing && !requirementLoading && !handlingAttempt" class="initialization-form" label-position="top" @submit.prevent="initializeRequirement">
           <h4>{{ t('catalog.sharing.setupTitle') }}</h4>
           <el-alert type="info" :closable="false" :title="t('catalog.sharing.initializeBoundary')" />
@@ -145,7 +149,7 @@
           </el-form-item>
           <el-button data-testid="sharing-initialize" :loading="initializing" @click="initializeRequirement">{{ t('catalog.sharing.initialize') }}</el-button>
         </el-form>
-        <el-button data-testid="sharing-prepare" type="primary" :disabled="!requirement || requirementLoading" :loading="handlingSaving" @click="submitRequest">{{ t('catalog.sharing.prepare') }}</el-button>
+        <el-button data-testid="sharing-prepare" type="primary" :disabled="!requirement || requirementLoading || grantObservationLoading || !!existingGrant" :loading="handlingSaving" @click="submitRequest">{{ t('catalog.sharing.prepare') }}</el-button>
       </template>
       <el-alert v-else-if="!requestID" type="info" :closable="false" :title="t('catalog.sharing.noNewHandling')" />
       <div v-if="requestID" class="record-heading">
@@ -199,7 +203,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
-import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
+import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
 import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement } from '../utils/sharingConfirmation'
 import { openConsoleRoute, serializeEngineApprovalInitialization } from '@common-ui'
 import { getSharingBoundary } from '../api/catalog'
@@ -223,6 +227,8 @@ const selectedCandidate = computed(() => candidates.value.find(item => item.id =
 const canInitialize = computed(() => canPrepare.value && auth.hasPermission('system.engine_access_approval_requirement.initialize'))
 const initializationReason = ref(''), initializing = ref(false)
 const requirement = ref(null), requirementMissing = ref(false), requirementLoading = ref(false), handlingAttempt = ref(null), handlingSaving = ref(false), handlingError = ref(''), handlingSucceeded = ref(false)
+const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
+const existingGrant = ref(null), grantObservationLoading = ref(false), grantObservationFailed = ref(false)
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const recipients = ref([]), recipientLoading = ref(false), recipientError = ref('')
 const attempt = ref(null), saving = ref(false), confirmation = ref(null), confirmationError = ref(''), confirmationLoading = ref(false)
@@ -238,7 +244,7 @@ const progress = computed(() => sharingProgress({ decisionID: props.decisionID, 
   error: props.requestID && eligibility.value.history ? !!requestError.value : props.decisionID ? !!confirmationError.value || !!resultsError.value : false,
   results: results.value, resultsPage: resultsPage.value, canCreate: eligibility.value.create,
   canHandle: selectedCandidate.value?.id === props.decisionID }))
-let confirmationsSequence = 0, resultsSequence = 0
+let confirmationsSequence = 0, resultsSequence = 0, grantObservationSequence = 0
 let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0, requirementSequence = 0
 const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
@@ -296,6 +302,7 @@ async function loadCandidates() {
   const preferred = selectedDecision.value || props.decisionID
   const originalDecision = props.decisionID
   candidates.value = []; candidateTotal.value = 0; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false; requirementSequence++
+  clearGrantObservation()
   candidateLoading.value = true; requirementLoading.value = false; handlingError.value = ''
   try {
     const result = await listSharingDecisions(props.entry.id, { page: candidatePage.value, page_size: 20 })
@@ -315,13 +322,17 @@ async function observeRequirement() {
   const candidate = selectedCandidate.value
   const seq = ++requirementSequence, epoch = generation
   requirement.value = null; requirementMissing.value = false; requirementLoading.value = false; handlingError.value = ''
+  clearGrantObservation()
   if (!canPrepare.value || handlingAttempt.value || !candidate) return
   requirementLoading.value = true
   try {
     const result = await observeSharingRequirement(candidate.target)
     // Validate the lossless response before enabling an explicit command.
     validateHandlingRequirement(candidate, result)
-    if (seq === requirementSequence && epoch === generation) requirement.value = result
+    if (seq === requirementSequence && epoch === generation) {
+      requirement.value = result
+      await observeExistingGrant(candidate)
+    }
   } catch (error) {
     if (seq === requirementSequence && epoch === generation) {
       requirementMissing.value = error?.response?.status === 404 && error?.response?.data?.error_code === 'approval_requirement_not_configured'
@@ -329,6 +340,29 @@ async function observeRequirement() {
     }
   }
   finally { if (seq === requirementSequence && epoch === generation) requirementLoading.value = false }
+}
+
+function clearGrantObservation() {
+  grantObservationSequence++; existingGrant.value = null; grantObservationLoading.value = false; grantObservationFailed.value = false
+}
+async function observeExistingGrant(candidate) {
+  clearGrantObservation()
+  if (!canReadGrants.value) return true
+  const seq = grantObservationSequence, epoch = generation
+  grantObservationLoading.value = true
+  try {
+    const result = await findExistingSharingGrant(candidate)
+    if (seq !== grantObservationSequence || epoch !== generation || candidate !== selectedCandidate.value) return false
+    existingGrant.value = result
+    return !result
+  } catch {
+    if (seq !== grantObservationSequence || epoch !== generation || candidate !== selectedCandidate.value) return false
+    // Preflight failure is not an absence claim or a new permission gate.
+    grantObservationFailed.value = true
+    return true
+  } finally {
+    if (seq === grantObservationSequence && epoch === generation) grantObservationLoading.value = false
+  }
 }
 
 async function initializeRequirement() {
@@ -350,15 +384,20 @@ async function initializeRequirement() {
 }
 
 async function submitRequest() {
-  if (handlingSaving.value || !canPrepare.value || handlingSucceeded.value) return
+  if (handlingSaving.value || !canPrepare.value || handlingSucceeded.value ||
+      (!handlingAttempt.value && (requirementLoading.value || grantObservationLoading.value || existingGrant.value))) return
   handlingError.value = ''
-  if (!handlingAttempt.value) {
-    try { handlingAttempt.value = captureSharingRequest(selectedCandidate.value, requirement.value, crypto.randomUUID()) }
-    catch { handlingError.value = t('catalog.sharing.invalidRequirement'); return }
-  }
   const epoch = generation
   handlingSaving.value = true
   try {
+    if (!handlingAttempt.value) {
+      const candidate = selectedCandidate.value
+      // Reobserve before freezing an ID. Transport retries after capture always
+      // recover the original command, without an unrelated new preflight gate.
+      validateHandlingRequirement(candidate, requirement.value)
+      if (!await observeExistingGrant(candidate) || epoch !== generation) return
+      handlingAttempt.value = captureSharingRequest(candidate, requirement.value, crypto.randomUUID())
+    }
     if (props.decisionID !== handlingAttempt.value.decision_id) {
       confirmationSequence++; confirmation.value = null; confirmationError.value = ''; confirmationLoading.value = false
       clearConfirmationResults(); resultsPage.value = 1
@@ -372,7 +411,7 @@ async function submitRequest() {
     handlingSucceeded.value = result.state !== 'pending'
     await loadHistory()
     if (epoch === generation) await loadRequest(handlingAttempt.value.request_id)
-  } catch (error) { if (epoch === generation) handlingError.value = message(error) }
+  } catch (error) { if (epoch === generation) handlingError.value = error.message === 'invalidHandlingRequirement' ? t('catalog.sharing.invalidRequirement') : message(error) }
   finally { if (epoch === generation) handlingSaving.value = false }
 }
 
@@ -488,6 +527,7 @@ async function loadRequest(id) {
 
 watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.owner, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
   generation++; attempt.value = null; confirmation.value = null; request.value = null; recipients.value = []; history.value = []; total.value = 0
+  clearGrantObservation()
   confirmations.value = []; confirmationTotal.value = 0; confirmationPage.value = 1; confirmationsError.value = ''; confirmationsLoading.value = false
   clearConfirmationResults(); resultsPage.value = 1
   recipientLoading.value = saving.value = confirmationLoading.value = requestLoading.value = historyLoading.value = false
@@ -509,6 +549,7 @@ watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.
 watch(() => props.decisionID, value => {
   if (saving.value || handlingSaving.value) return
   candidateSequence++; requirementSequence++; requestSequence++
+  clearGrantObservation()
   candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false
   candidateLoading.value = requirementLoading.value = false; handlingError.value = ''; initializationReason.value = ''
   request.value = null; requestError.value = ''; requestLoading.value = false; handlingAttempt.value = null; handlingSucceeded.value = false
@@ -524,6 +565,10 @@ watch(() => props.requestID, value => {
     handlingError.value = ''; requirementSequence++
   }
   if (value) loadRequest(value)
+})
+watch(canReadGrants, () => {
+  clearGrantObservation()
+  if (canPrepare.value && selectedCandidate.value && requirement.value && !handlingAttempt.value && !handlingSaving.value && !props.requestID) observeExistingGrant(selectedCandidate.value)
 })
 onBeforeUnmount(() => { generation++ })
 </script>
