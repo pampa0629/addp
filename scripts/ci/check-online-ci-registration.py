@@ -1139,7 +1139,8 @@ def validate_opengauss_consumer_flow_profile(
             raise RegistrationError(
                 f"opengauss-consumer-flow identity fixture is missing {fragment}"
             )
-    if '"system.engine.read"' in identity_fixture:
+    consumer_role = re.search(r'(?ms)^var consumerPermissions = \[\]string\{(?P<body>.*?)^\}', identity_fixture)
+    if consumer_role is None or re.search(r'"system\.engine(?:\.|_)[^"]*"', consumer_role.group('body')):
         raise RegistrationError(
             "opengauss-consumer-flow consumer role must not include System Engine permissions"
         )
@@ -2007,7 +2008,7 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
             'playwright install --with-deps chromium', 'export CONSOLE_URL=',
-            'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', '-meta -manager -catalog',
+            'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', '-system -meta -manager -catalog',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',
@@ -2020,13 +2021,19 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'self.approval_mode_flow(', 'approval_switch_preserves_business_grant',
             'old_version_new_catalog_request_closed_without_upgrade', 'self.content_change_flow(',
             'mutate_source_content(', 'deny_survives_content_change_and_basic_rescan',
-            'content_change_and_replay_do_not_restore_withdrawn_grant'),
+            'content_change_and_replay_do_not_restore_withdrawn_grant',
+            'lifecycle.workspace_flow(', 'with WorkspaceObservation(', 'pg-authorization-workspace.json',
+            'browser withdrawal did not preserve its exact Grant history'),
         "business/scripts/online-metric-postgres-fixture.sh": (
             'content-change|content-reset)', 'pg-source-authorization', 'container ownership mismatch',
             'LOCK TABLE public.metric_people', 'pg-content:changed', 'pg-content:baseline'),
         "console/frontend/e2e/online/pg-source-authorization.spec.js": (
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
-            'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value'),
+            'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value',
+            'exclusive_workspace_tabs', 'integrated_create_picker_without_write',
+            'table_text_and_tree_filters', 'recipient_type_and_account_filters',
+            'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read',
+            'expect(writes).toEqual([base +', 'reader.fingerprint'),
         "Makefile": ('test-pg-authorization-online-runner', 'pg-source-authorization-online_test.py',
                      'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner',
                      'scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh',

@@ -563,7 +563,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@node --check --input-type=module < console/frontend/e2e/online/pg-source-authorization.spec.js
 	@bash -n scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
-	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile
+	@python3 -m unittest scripts/test/pg-source-authorization-online_test.py scripts/test/online-hosted-pg-authorization-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pg_authorization_requires_isolated_manual_profile scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_requires_opengauss_hosted_owner_and_identity_contracts
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试

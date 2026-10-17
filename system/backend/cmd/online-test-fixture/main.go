@@ -28,6 +28,7 @@ import (
 const onlineDatabase = "addp_online"
 
 const engineProvisionerRoleKey = "tenant.infrastructure_administrator"
+const pgAuthorizationWorkspaceRoleKey = "tenant.source_data_authorizer"
 
 var consumerPermissions = []string{
 	"develop.data_read.execute",
@@ -428,12 +429,14 @@ func run(args []string, environment []string) error {
 		for key, value := range pgRecipients {
 			values[key] = value
 		}
-		operator, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions)
+		operator, _, operatorPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions, pgAuthorizationWorkspaceRoleKey)
 		if err != nil {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"] = operator.AccessToken
+		values["ADDP_ONLINE_PG_OPERATOR_USERNAME"] = "external-online-pg-authorizer"
+		values["ADDP_ONLINE_PG_OPERATOR_PASSWORD"] = operatorPassword
 		confirmer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-pg-business-owner", pgAuthorizationConfirmerPermissions)
 		if err != nil {
@@ -790,6 +793,7 @@ func createPermissionFixture(
 	tenantID, actorPrincipalID int64,
 	username string,
 	permissions []string,
+	builtinRoleKeys ...string,
 ) (*iam.IssuedBrowserSession, int64, string, error) {
 	user, password, err := createUserCredentials(ctx, identity, username)
 	if err != nil {
@@ -813,16 +817,24 @@ func createPermissionFixture(
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("create %s role: %w", username, err)
 	}
+	roleIDs := []int64{role.ID}
+	for _, key := range builtinRoleKeys {
+		builtin, err := repository.GetActiveBuiltinRoleByKey(ctx, key)
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("resolve %s fixture role: %w", key, err)
+		}
+		roleIDs = append(roleIDs, builtin.ID)
+	}
 	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenantID, MembershipID: membership.Membership.ID,
-		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Disposable Online permission acceptance",
+		RoleIDs: roleIDs, ScopeType: "tenant", Reason: "Disposable Online permission acceptance",
 		ActorPrincipalID: actorPrincipalID,
 		Audit:            audit(username + "-assignment"),
 	})
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("assign %s role: %w", username, err)
 	}
-	if len(assignments) != 1 || assignments[0].ID <= 0 {
+	if len(assignments) != len(roleIDs) || assignments[0].ID <= 0 {
 		return nil, 0, "", fmt.Errorf("%s role assignment was not persisted", username)
 	}
 	session, err := issueSession(ctx, repository, selection, user.PrincipalID, username+"-session")
@@ -967,6 +979,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
+		"ADDP_ONLINE_PG_OPERATOR_USERNAME",
+		"ADDP_ONLINE_PG_OPERATOR_PASSWORD",
 		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN",
 		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID",

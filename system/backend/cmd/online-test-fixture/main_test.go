@@ -308,6 +308,33 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
+	workspaceRoleFound := false
+	for _, role := range catalog.Roles {
+		if role.Key != pgAuthorizationWorkspaceRoleKey {
+			continue
+		}
+		workspaceRoleFound = true
+		if role.RoleType != "tenant_builtin" || !slices.Equal(role.AllowedScopeTypes, []string{"tenant"}) || !slices.Equal(role.AllowedPrincipalTypes, []string{"user"}) {
+			t.Fatal("PG workspace must use the formal Tenant User authorizer role")
+		}
+		combined := slices.Clone(pgAuthorizationOperatorPermissions)
+		for _, key := range role.Permissions {
+			if !slices.Contains(combined, key) {
+				combined = append(combined, key)
+			}
+		}
+		if len(combined) != 17 || slices.Contains(combined, "manager.data_item.read") {
+			t.Fatal("PG workspace widened its exact operator permissions")
+		}
+		for _, key := range []string{"system.engine.read", "system.engine_catalog.read", "system.engine_access_approval_requirement.read", "iam.tenant_membership.read", "iam.department.read", "iam.project_group.read"} {
+			if !slices.Contains(combined, key) {
+				t.Fatalf("PG workspace lacks formal read permission: %s", key)
+			}
+		}
+	}
+	if !workspaceRoleFound {
+		t.Fatal("PG workspace builtin role is missing")
+	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
 	allPermissions = append(allPermissions, transferLineagePermissions...)
@@ -441,6 +468,8 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN":    "addp_at_engine",
 		"ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN":  "addp_at_security_initializer",
 		"ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN":    "addp_at_source_initializer",
+		"ADDP_ONLINE_PG_OPERATOR_USERNAME":           "external-online-pg-authorizer",
+		"ADDP_ONLINE_PG_OPERATOR_PASSWORD":           "operator-private-password",
 		"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN":  "addp_at_pg_outsider",
 		"ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN": "addp_at_pg_business_owner",
 		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID":          "41",
@@ -480,7 +509,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
 		t.Fatal("fixture environment omitted the separate source initialization token")
 	}
-	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID"} {
+	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID", "ADDP_ONLINE_PG_OPERATOR_USERNAME", "ADDP_ONLINE_PG_OPERATOR_PASSWORD"} {
 		if !strings.Contains(string(content), "export "+key+"='"+values[key]+"'\n") {
 			t.Fatalf("owner-only environment omitted PG authorization fixture field %s", key)
 		}

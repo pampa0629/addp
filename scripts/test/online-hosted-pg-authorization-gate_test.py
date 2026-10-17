@@ -171,6 +171,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts / 'summary.txt').read_text())
                 if not overrides:
                     self.assertIn('start:-meta', trace)
+                    self.assertIn('start:-system', trace)
                     self.assertIn('start:-manager', trace)
                     self.assertIn('start:-catalog', trace)
                     self.assertIn('browser-install', trace)

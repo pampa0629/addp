@@ -27,13 +27,18 @@ READER_PERMISSIONS = {'manager.data_item.read', 'meta.catalog.read', 'meta.scan_
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
-    'system.engine_access_approval_requirement.update'}
+    'system.engine_access_approval_requirement.update',
+    'system.engine.read', 'system.engine_catalog.read', 'system.engine_access_approval_requirement.read',
+    'iam.tenant_membership.read', 'iam.department.read', 'iam.project_group.read'}
 CONFIRMER_PERMISSIONS = {'catalog.entry.read', 'catalog.entry.update', 'catalog.inventory.read',
                         'catalog.sharing_decision.create'}
 ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_membership.close',
                             'iam.project_group_membership.read', 'iam.project_group_membership.close'}
 BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh',
                   'same_iframe_without_relogin', 'denied_preview_clears_old_rows']
+WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_without_write',
+                    'table_text_and_tree_filters', 'recipient_type_and_account_filters',
+                    'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read']
 
 
 def require(condition, message):
@@ -237,6 +242,8 @@ class BrowserObservation:
         self.secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
         require(self.secret.is_absolute() and self.secret.is_dir(), 'browser requires the Hosted Secret directory')
         self.process = self.output = self.temporary = None
+        self.test_name = 'PG member exits'
+        self.login_keys = ('ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD')
 
     def __enter__(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='pg-browser-', dir=self.secret)
@@ -246,13 +253,13 @@ class BrowserObservation:
         environment = {key: value for key, value in os.environ.items() if key in {
             'PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'CI', 'PLAYWRIGHT_BROWSERS_PATH', 'NODE_EXTRA_CA_CERTS'}}
         environment.update({key: os.environ[key] for key in (
-            'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_TEST', 'ADDP_ONLINE_ARTIFACT_DIR', 'CONSOLE_URL',
-            'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD')})
+            'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_TEST', 'ADDP_ONLINE_ARTIFACT_DIR', 'CONSOLE_URL', *self.login_keys)})
         environment.update(ADDP_PG_BROWSER_BINDING=json.dumps(self.binding), ADDP_PG_BROWSER_CONTROL=str(self.control))
         try:
             self.output = (self.control / 'output.log').open('w')
             self.process = subprocess.Popen(['npm', 'exec', '--', 'playwright', 'test',
-                '--config=playwright.online.config.js', '--output=' + str(self.control / 'playwright'),
+                '--config=playwright.online.config.js', '--grep', self.test_name,
+                '--output=' + str(self.control / 'playwright'),
                 'e2e/online/pg-source-authorization.spec.js'],
                 cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment,
                 stdout=self.output, stderr=subprocess.STDOUT, start_new_session=True)
@@ -311,6 +318,29 @@ class BrowserObservation:
                 self.temporary.cleanup()
 
 
+class WorkspaceObservation(BrowserObservation):
+    """Use normal browser login; only the known, pretracked Grant may be revoked."""
+
+    def __init__(self, tenant, principal, target, engine, issuer, grant):
+        super().__init__(tenant, principal, target)
+        self.binding.update(engine_id=str(engine), issuer_id=str(issuer), grant_id=grant)
+        self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-authorization-workspace.json'
+        self.test_name = 'PG authorization workspace'
+        self.login_keys += ('ADDP_ONLINE_PG_OPERATOR_USERNAME', 'ADDP_ONLINE_PG_OPERATOR_PASSWORD')
+
+    def finish(self):
+        try:
+            require(self.process.wait(timeout=180) == 0, 'PG browser workspace acceptance failed')
+        except subprocess.TimeoutExpired as error:
+            raise SuiteError('PG browser workspace acceptance timed out') from error
+        require(self.evidence.is_file(), 'PG browser workspace report missing')
+        result = json.loads(self.evidence.read_text())
+        expected = dict(self.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
+                        checks=WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
+        require(result == expected, 'PG browser workspace evidence is incomplete or changed identity')
+        return result
+
+
 class Lifecycle:
     def __init__(self, operator, reader, tenant, engine, recipient, organizations, outsider,
                  organization_operator, login, username, password):
@@ -365,6 +395,20 @@ class Lifecycle:
     def revoke(self, command):
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
+
+    def workspace_flow(self, report, issuer):
+        report['phase'] = 'authorization_workspace_browser'
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
+        command, _ = self.grant(facts, seconds=300)
+        with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command) as browser:
+            report['workspace_browser'] = browser.finish()
+        preview(self.reader, target, False)
+        require(self.listing()['total'] == 0, 'browser withdrawal left current source rules')
+        history = self.listing(history=True, state='revoked')
+        require(any(row.get('request_id') == command and row.get('revocation') for row in history['data']),
+                'browser withdrawal did not preserve its exact Grant history')
+        report['checks'].extend(WORKSPACE_CHECKS)
 
     def deny(self, facts, *, recipient_type='user', recipient_id=None, catalog_path=None):
         command = str(uuid.uuid4())
@@ -1102,6 +1146,7 @@ def main():
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
         lifecycle.catalog_flow(report, business, confirmer)
+        lifecycle.workspace_flow(report, issuer)
         report['result'] = 'passed'
     except (SuiteError, PREFLIGHT.PreflightError, REGISTRATION.RegistrationError, KeyError, ValueError, TypeError, OSError):
         print('PG source authorization acceptance failed; inspect the bounded phase evidence', file=sys.stderr)

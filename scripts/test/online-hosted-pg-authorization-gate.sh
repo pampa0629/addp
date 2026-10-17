@@ -21,7 +21,7 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
-for start_target in -meta -manager -catalog; do
+for start_target in -system -meta -manager -catalog; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

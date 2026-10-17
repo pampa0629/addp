@@ -6,6 +6,191 @@ import { isAnonymousRefreshResponse, login } from './transfer-browser-support.js
 // Login diagnostics may contain fill arguments; only explicitly verified screenshots are public.
 test.use({ screenshot: 'off' })
 
+test('PG authorization workspace filters and revokes the exact Grant through real System and Manager pages', async ({ page, browser }) => {
+  if (process.env.ADDP_ONLINE_HOSTED !== '1' || process.env.ADDP_ONLINE_TEST !== '1') throw new Error('dedicated Hosted entry required')
+  const binding = JSON.parse(process.env.ADDP_PG_BROWSER_BINDING)
+  if (!binding.run_id || !binding.grant_id || !binding.issuer_id || !binding.engine_id || !binding.locator) throw new Error('incomplete workspace binding')
+  const destination = resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pg-authorization-workspace.json')
+  const base = `/api/v1/system/engines/${binding.engine_id}`
+  const checks = [], previewStatuses = [], writes = [], failures = []
+  let phase = 'login', loginRequests = 0
+  const readerContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL })
+  const readerPage = await readerContext.newPage()
+  for (const current of [page, readerPage]) {
+    current.on('pageerror', () => failures.push('uncaught_browser_error'))
+    current.on('request', request => {
+      const path = new URL(request.url()).pathname
+      if (path === '/api/v1/system/login' && request.method() === 'POST') loginRequests++
+      if (path.startsWith(base + '/') && request.method() !== 'GET') writes.push(path)
+    })
+  }
+  const record = result => writeFileSync(destination, JSON.stringify({ ...binding,
+    schema_version: 'addp.pg-authorization-workspace/v1', result, checks,
+    login_requests: loginRequests, preview_statuses: previewStatuses, ...(result === 'failed' ? { phase } : {}) }))
+  const matchesPreview = response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === binding.locator
+  }
+  try {
+    await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    await readerPage.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    await login(page, process.env.ADDP_ONLINE_PG_OPERATOR_USERNAME, process.env.ADDP_ONLINE_PG_OPERATOR_PASSWORD,
+      `/system/engines/${binding.engine_id}?tab=data-authorization`)
+    const system = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const workspace = system.getByTestId('engine-data-authorization')
+    await expect(workspace).toBeVisible()
+    const frame = page.frames().find(frame => frame.url().includes('/module-ui/system/'))
+    const authorizer = await frame.evaluate(sessionSnapshot, 'system-auth')
+    expect(authorizer).toMatchObject({ principal_id: binding.issuer_id, tenant_id: binding.tenant_id, persisted_token: false })
+    expect(authorizer.permissions).toContain('system.engine_access_grant.revoke')
+    expect(authorizer.permissions).not.toContain('manager.data_item.read')
+    const tabs = workspace.getByTestId('authorization-workspace-tabs')
+    const list = system.getByTestId('source-grant-list')
+    async function tab(label) {
+      await tabs.getByText(label, { exact: true }).click()
+      await expect(tabs.getByRole('radio', { checked: true })).toHaveCount(1)
+      await expect(tabs.getByRole('radio', { name: label, exact: true })).toBeChecked()
+    }
+    async function listing(action, expected, history = false) {
+      const pending = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === base + '/access_grants' + (history ? '/history' : '') &&
+          Object.entries(expected).every(([key, value]) => typeof value === 'function' ? value(url.searchParams.get(key)) :
+            value === null ? !url.searchParams.has(key) : url.searchParams.get(key) === value)
+      })
+      await action()
+      const response = await pending
+      expect(response.status()).toBe(200)
+      return response.json()
+    }
+    async function option(testID, label) {
+      await system.getByTestId(testID).click()
+      await system.getByRole('option', { name: label, exact: true }).click()
+    }
+    phase = 'exclusive_navigation'
+    await expect(tabs.getByRole('radio', { name: '当前授权', exact: true })).toBeChecked()
+    const boxes = await Promise.all(['新增授权', '当前授权', '全部授权记录'].map(name => tabs.getByText(name, { exact: true }).boundingBox()))
+    expect(Math.max(...boxes.map(box => box.y + box.height / 2)) - Math.min(...boxes.map(box => box.y + box.height / 2))).toBeLessThan(3)
+    await tab('全部授权记录')
+    await expect(list).toBeVisible()
+    await tab('新增授权')
+    await expect(list).toHaveCount(0)
+    await expect(system.getByTestId('source-grant-filters')).toHaveCount(0)
+    checks.push('exclusive_workspace_tabs')
+
+    phase = 'create_picker'
+    await system.getByTestId('approval-resource-input').fill('metric_people')
+    const result = system.locator('.resource-tree-select__panel button.search-result').filter({ hasText: 'metric_people' })
+    await expect(result).toHaveCount(1)
+    await result.click()
+    await system.getByTestId('approval-add-selection').click()
+    await expect(system.getByTestId('approval-targets')).toContainText('metric_people')
+    await expect(system.getByTestId('source-grant-form')).toBeVisible()
+    await expect(system.getByTestId('approval-basis-status')).toContainText('基础识别完整')
+    expect(writes).toEqual([])
+    checks.push('integrated_create_picker_without_write')
+    await tab('当前授权')
+    await expect(system.getByTestId('approval-targets')).toHaveCount(0)
+
+    phase = 'table_filters'
+    const input = system.getByTestId('source-grant-table-filter')
+    let rows = await listing(() => input.fill('metric_people'), { table_search: 'metric_people' })
+    expect(rows.total).toBe(1)
+    rows = await listing(() => input.fill('definitely_absent_pg_table'), { table_search: 'definitely_absent_pg_table' })
+    expect(rows.total).toBe(0)
+    await expect(list.locator('.el-table__body-wrapper tbody tr')).toHaveCount(0)
+    await listing(() => input.fill(''), { table_search: null })
+    await system.locator('.resource-tree-select__toggle').click()
+    const panel = system.locator('.resource-tree-select__panel')
+    const namespace = panel.getByRole('treeitem', { name: 'public', exact: true })
+    await namespace.locator('.el-tree-node__expand-icon').first().click()
+    const treeRead = listing(() => panel.getByRole('treeitem', { name: 'metric_people', exact: true }).click(), {
+      table_search: null, catalog_path: value => {
+        if (!value) return false
+        const path = JSON.parse(value)
+        return String(path.engine_id) === binding.engine_id && path.segments.map(segment => segment.name).join('/') === '/public/metric_people'
+      }
+    })
+    rows = await treeRead
+    expect(rows.total).toBe(1)
+    expect(rows.data[0].catalog_path.segments.at(-1).name).toBe('metric_people')
+    await expect(system.getByTestId('source-grant-exact-filter')).toBeVisible()
+    checks.push('table_text_and_tree_filters')
+
+    phase = 'recipient_filters'
+    rows = await listing(() => option('source-grant-type-filter', '项目组'), { recipient_type: 'project_group', recipient_id: null })
+    expect(rows.total).toBe(0)
+    rows = await listing(() => option('source-grant-type-filter', '账号'), { recipient_type: 'user', recipient_id: null })
+    expect(rows.total).toBe(1)
+    rows = await listing(async () => {
+      await system.getByTestId('source-grant-recipient-filter').locator('.el-select').click()
+      await system.getByRole('option').filter({ hasText: process.env.ADDP_ONLINE_TEST_USER_USERNAME }).click()
+    }, { recipient_type: 'user', recipient_id: binding.principal_id })
+    expect(rows.total).toBe(1)
+    expect(rows.data[0].inspection).toMatchObject({ account_id: binding.principal_id, reason: 'grant', rule_covered: true,
+      sources: [{ request_id: binding.grant_id, recipient_type: 'user', recipient_id: binding.principal_id }], denies: [] })
+    await list.getByTestId('account-grant-expand').click()
+    await expect(system.getByTestId('account-grant-sources')).toContainText(process.env.ADDP_ONLINE_TEST_USER_USERNAME)
+    checks.push('recipient_type_and_account_filters')
+
+    phase = 'reader_before_revoke'
+    let preview = readerPage.waitForResponse(matchesPreview)
+    await login(readerPage, process.env.ADDP_ONLINE_TEST_USER_USERNAME, process.env.ADDP_ONLINE_TEST_USER_PASSWORD,
+      `/manager/data-explorer?locator=${encodeURIComponent(binding.locator)}`)
+    const initial = await preview
+    previewStatuses.push(initial.status())
+    expect(initial.status()).toBe(200)
+    expect((await initial.json()).data.rows.map(row => row.person_id).sort()).toEqual(['A', 'B'])
+    const manager = readerPage.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(manager.locator('.preview-panel .el-table__body-wrapper tbody tr')).toHaveCount(2)
+    const reader = await readerPage.evaluate(sessionSnapshot, 'console-auth')
+    expect(reader).toMatchObject({ principal_id: binding.principal_id, tenant_id: binding.tenant_id, persisted_token: false })
+
+    phase = 'revoke_and_history'
+    await listing(() => tab('全部授权记录'), { recipient_type: 'user', recipient_id: binding.principal_id }, true)
+    await expect(list).toContainText(binding.grant_id)
+    await expect(system.getByTestId('source-grant-revoke')).toHaveCount(0)
+    await listing(() => tab('当前授权'), { recipient_type: 'user', recipient_id: binding.principal_id })
+    await list.getByTestId('account-grant-expand').click()
+    await system.getByTestId('source-grant-revoke').click()
+    await system.getByTestId('source-grant-revoke-reason').fill('Disposable PG browser workspace withdrawal')
+    const withdrawn = page.waitForResponse(response => new URL(response.url()).pathname === base + `/access_grants/${binding.grant_id}/revoke`)
+    rows = await listing(() => system.getByTestId('source-grant-revoke-confirm').click(), { recipient_id: binding.principal_id })
+    expect((await withdrawn).status()).toBe(200)
+    expect(rows.total).toBe(0)
+    await expect(list.getByTestId('account-grant-expand')).toHaveCount(0)
+    await listing(() => tab('全部授权记录'), { recipient_id: binding.principal_id }, true)
+    rows = await listing(() => option('source-grant-state-filter', '已撤销'), { state: 'revoked', recipient_id: binding.principal_id }, true)
+    expect(rows.data.some(row => row.request_id === binding.grant_id && row.revocation)).toBe(true)
+    await expect(list).toContainText(binding.grant_id)
+    rows = await listing(() => option('source-grant-state-filter', '有效'), { state: 'active', recipient_id: binding.principal_id }, true)
+    expect(rows.total).toBe(0)
+    expect(writes).toEqual([base + `/access_grants/${binding.grant_id}/revoke`])
+    checks.push('browser_revocation_updates_current_and_history')
+
+    phase = 'reader_after_revoke'
+    preview = readerPage.waitForResponse(matchesPreview)
+    await manager.locator('.explorer-tree').getByText('metric_people', { exact: true }).click()
+    const denied = await preview
+    previewStatuses.push(denied.status())
+    expect(denied.status()).toBe(403)
+    await expect(manager.locator('.preview-panel')).toContainText('无权读取此数据项')
+    await expect(manager.locator('.preview-panel .el-table__body-wrapper tbody tr')).toHaveCount(0)
+    expect((await readerPage.evaluate(sessionSnapshot, 'console-auth')).fingerprint).toBe(reader.fingerprint)
+    await expect(readerPage).toHaveURL(url => url.pathname === '/manager/data-explorer')
+    expect(failures).toEqual([])
+    expect(loginRequests).toBe(2)
+    checks.push('browser_revocation_denies_manager_read')
+    record('passed')
+    await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pg-workspace-revoked.png') })
+  } catch {
+    record('failed')
+    throw new Error(`PG authorization workspace failed at ${phase}; inspect bounded evidence`)
+  } finally {
+    await readerContext.close()
+  }
+})
+
 async function sessionSnapshot(storeID) {
   const provides = document.querySelector('#app')?.__vue_app__?._context.provides || {}
   const pinia = Reflect.ownKeys(provides).map(key => provides[key])

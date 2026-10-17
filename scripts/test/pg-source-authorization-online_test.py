@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 ONLINE = importlib.import_module('scripts.test.pg-source-authorization-online')
 REAL_BASIC_SCAN = ONLINE.basic_scan
 REAL_BROWSER_OBSERVATION = ONLINE.BrowserObservation
+REAL_WORKSPACE_OBSERVATION = ONLINE.WorkspaceObservation
 REAL_DEPENDENCY_OUTAGE = ONLINE.DependencyOutage
 REAL_MUTATE_SOURCE_CONTENT = ONLINE.mutate_source_content
 
@@ -274,6 +275,33 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(self.scans.call_count, 6)
         self.assertEqual(server.people, ('A', 'B'))
         self.assertTrue(report['content_changes']['source_baseline_restored'])
+
+    def test_workspace_requires_actual_withdrawal_and_preserves_tracked_history(self):
+        server, lifecycle = self.lifecycle()
+        report = {'checks': []}
+        with patch.object(ONLINE, 'WorkspaceObservation') as observation:
+            observed = observation.return_value.__enter__.return_value
+            observed.finish.side_effect = lambda: lifecycle.revoke(lifecycle.grants[-1]) or {'result': 'passed'}
+            lifecycle.workspace_flow(report, '35')
+            self.assertEqual(observation.call_args.args, (3, '33', ONLINE.locator(2, 'metric_people', 10), 2, '35', lifecycle.grants[-1]))
+        self.assertEqual(report['checks'], ONLINE.WORKSPACE_CHECKS)
+        self.assertIsNotNone(server.grants[lifecycle.grants[-1]]['revocation'])
+        lifecycle.cleanup()
+
+    def test_workspace_missing_withdrawal_or_browser_failure_still_owns_cleanup(self):
+        for fault in ('missing_withdrawal', 'browser_failed'):
+            with self.subTest(fault=fault):
+                server, lifecycle = self.lifecycle()
+                with patch.object(ONLINE, 'WorkspaceObservation') as observation:
+                    observed = observation.return_value.__enter__.return_value
+                    observed.finish.return_value = {'result': 'passed'}
+                    if fault == 'browser_failed':
+                        observed.finish.side_effect = ONLINE.SuiteError('browser failed')
+                    with self.assertRaises(ONLINE.SuiteError):
+                        lifecycle.workspace_flow({'checks': []}, '35')
+                self.assertEqual(len(lifecycle.grants), 1)
+                lifecycle.cleanup()
+                self.assertTrue(all(row['revocation'] for row in server.grants.values()))
 
     def test_content_changes_require_current_data_stable_binding_deny_and_withdrawal(self):
         for fault in ('stale_content', 'content_loses_deny', 'content_restores_withdrawn',
@@ -1048,6 +1076,31 @@ class PGBrowserObservationTest(unittest.TestCase):
                 self.process.wait.side_effect = [ONLINE.subprocess.TimeoutExpired('playwright', 180), 0]
             self.assertEqual([call.args[1] for call in kill.call_args_list], [ONLINE.signal.SIGTERM, ONLINE.signal.SIGKILL])
             self.assertFalse(control.exists())
+
+    def test_workspace_private_logins_exact_completion_and_no_token_inheritance(self):
+        environment = dict(self.environment, ADDP_ONLINE_PG_OPERATOR_USERNAME='external-online-pg-authorizer',
+                           ADDP_ONLINE_PG_OPERATOR_PASSWORD='operator-private-password')
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
+             patch.object(ONLINE.os, 'killpg'):
+            with REAL_WORKSPACE_OBSERVATION(2, '33', 'target', 1, '35', 'owned-grant') as browser:
+                expected = dict(browser.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
+                                checks=ONLINE.WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
+                browser.evidence.write_text(json.dumps(expected))
+                self.assertEqual(browser.finish(), expected)
+                env = popen.call_args.kwargs['env']
+                self.assertFalse(any('TOKEN' in key or 'SECRET' in key for key in env))
+                self.assertEqual(env['ADDP_ONLINE_PG_OPERATOR_PASSWORD'], 'operator-private-password')
+                self.assertIn(browser.test_name, popen.call_args.args[0])
+                for fault in ('missing_check', 'wrong_grant', 'relogin', 'still_readable', 'extra_field'):
+                    bad = dict(expected)
+                    if fault == 'missing_check': bad['checks'] = bad['checks'][:-1]
+                    if fault == 'wrong_grant': bad['grant_id'] = 'unowned'
+                    if fault == 'relogin': bad['login_requests'] = 3
+                    if fault == 'still_readable': bad['preview_statuses'] = [200, 200]
+                    if fault == 'extra_field': bad['raw_token'] = 'must-not-accept'
+                    browser.evidence.write_text(json.dumps(bad))
+                    with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                        browser.finish()
 
 
 if __name__ == '__main__':

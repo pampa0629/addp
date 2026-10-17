@@ -37,6 +37,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin'),
                                    (paths[3], 'self.meta_recovery_flow('), (paths[3], "with DependencyOutage('meta')"),
                                    (paths[3], 'lifecycle.catalog_flow('), (paths[2], '-meta -manager -catalog'),
+                                   (paths[2], '-system -meta'), (paths[3], 'lifecycle.workspace_flow('),
+                                   (paths[5], 'browser_revocation_denies_manager_read'),
+                                   (paths[5], 'integrated_create_picker_without_write'),
                                    (paths[3], "with DependencyOutage('catalog')"),
                                    (paths[3], 'catalog_offline_no_direct_approval_fallback'),
                                    (paths[3], 'catalog_recovery_preserves_original_rules'),
@@ -1445,8 +1448,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'permissions, err := suitePermissions(*suite)\n'
             'PermissionKeys: permissions\n'
             '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"\n',
+            # The guard owns consumer permissions, not unrelated preparation roles.
             encoding="utf-8",
         )
+        identity.write_text(identity.read_text() + 'var consumerPermissions = []string{\n"manager.data_item.read",\n}\n'
+                            + 'var pgPreparationPermissions = []string{"system.engine.read"}\n')
 
         CHECK.validate_opengauss_consumer_flow_profile(
             self.repository, {"opengauss-consumer-flow"}
@@ -1462,7 +1468,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
         identity_text = identity.read_text(encoding="utf-8")
         identity.write_text(
-            identity_text + '"system.engine.read"\n', encoding="utf-8"
+            identity_text.replace('var consumerPermissions = []string{', 'var consumerPermissions = []string{\n"system.engine.read",'), encoding="utf-8"
         )
         with self.assertRaisesRegex(CHECK.RegistrationError, "consumer role must not"):
             CHECK.validate_opengauss_consumer_flow_profile(
