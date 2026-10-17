@@ -344,7 +344,7 @@ def run_manager_import_browser(engine_id, identity, owned_ids, proof=None):
                         "ADDP_ONLINE_MANAGER_IMPORT_BROWSER": json.dumps(arguments)})
     try:
         result = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
-                                 "e2e/online/transfer-relational-sql-etl.spec.js", "--grep", "^browser imports a private Manager source through Console$"],
+                                 "e2e/online/transfer-relational-sql-etl.spec.js", "--grep", "browser imports a private Manager source through Console$"],
                                 cwd=repository / "console/frontend", env=environment, capture_output=True, text=True)
     finally:
         report = _object(json.loads(report_path.read_text()), "Manager import browser report") if report_path.is_file() else {}
@@ -1339,7 +1339,7 @@ def run_browser(repository: Path, environment: Mapping[str, str], expected_task_
             "npm", "exec", "--", "playwright", "test",
             "--config=playwright.online.config.js",
             "e2e/online/transfer-relational-sql-etl.spec.js",
-            "--grep", "^browser executes SQL ETL and verifies native field lineage in Manager$",
+            "--grep", "browser executes SQL ETL and verifies native field lineage in Manager$",
         ],
         cwd=repository / "console/frontend",
         env=browser_environment,

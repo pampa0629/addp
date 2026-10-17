@@ -246,7 +246,9 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         for interrupted in (False, True):
             with self.subTest(interrupted=interrupted), tempfile.TemporaryDirectory() as directory:
                 def browser(_command, **options):
-                    self.assertEqual(_command[-2:], ["--grep", "^browser imports a private Manager source through Console$"])
+                    self.assertEqual(_command[-2:], ["--grep", "browser imports a private Manager source through Console$"])
+                    self.assertRegex("transfer-relational-sql-etl.spec.js browser imports a private Manager source through Console", _command[-1])
+                    self.assertNotRegex("transfer-relational-sql-etl.spec.js browser executes SQL ETL and verifies native field lineage in Manager", _command[-1])
                     arguments = json.loads(options["env"]["ADDP_ONLINE_MANAGER_IMPORT_BROWSER"])
                     self.assertEqual(arguments, {"stage": "upload", "target_table": ONLINE.IMPORT_TARGET})
                     self.assertEqual((Path(directory) / "manager-import-points.zip").read_bytes()[:2], b"PK")
@@ -484,6 +486,8 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
                     json.dumps(payload), encoding="utf-8"
                 )
                 self.assertIn("e2e/online/transfer-relational-sql-etl.spec.js", command)
+                self.assertRegex("transfer-relational-sql-etl.spec.js browser executes SQL ETL and verifies native field lineage in Manager", command[-1])
+                self.assertNotRegex("transfer-relational-sql-etl.spec.js browser imports a private Manager source through Console", command[-1])
                 self.assertEqual(kwargs["cwd"], root / "console/frontend")
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME"], name)
                 self.assertEqual(
