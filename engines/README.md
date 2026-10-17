@@ -44,6 +44,7 @@ engines/
 - GDAL/PROJ 资源目录由所选原生依赖派生，只注入 GeoPython 子进程，隔离终端继承的 `GDAL_DATA`、`GDAL_DRIVER_PATH`、`PROJ_DATA` 与 `PROJ_LIB`，保持离线坐标处理。
 - 按 [PGeo 官方配置要求](https://gdal.org/en/stable/drivers/vector/pgeo.html)补齐 MDBTools ODBC 驱动与 Access 驱动名；优先使用 Runtime 专属 ODBC 配置，不改宿主机其他应用的配置。
 - 标准 start/restart/stop 使用原生进程身份、监听归属和健康检查；预检失败保留已有服务，删除开发镜像启动路径。应用统一使用现有产品的单 Worker、四线程 Gunicorn 语义，先监听再异步注册，不新增另一条 Flask 开发入口。原生消费回环数据源时不注入容器专用的 `GEOPYTHON_WORKFLOW_LOOPBACK_HOST`。System 注册、访问计划与业务引擎连接事实继续由现有模块拥有。
+- 矢量文件 batch 算子和矢量瓦片一样，在同一 Runtime Python 环境的新进程中初始化原生 GDAL／PROJ，避免 macOS 系统 SQLite 在 Gunicorn fork 后的 HTTP 线程中崩溃。批处理访问计划只通过标准输入传递，原生进程异常不回退到 HTTP Worker 内执行。`make test-geopython-workflow` 的真实 Gunicorn 回归覆盖 KML／GML／TopoJSON 的图层读取和 Worker 存活，FileGDB 注册入口回归覆盖独立进程间的写入、错误传递、提交与清理；不新增测试依赖或 CI 入口。
 - 栅格 Hosted T4 通过根 `make build-images` 构建并独立启动产品镜像，核验实际 image ID、默认入口和退出清理；不再借开发入口证明产品构建身份。ArcGIS 集成入口直接使用同一原生环境，不再要求开发容器。
 
 macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`，随后使用 `./scripts/dev/restart.sh -geopython-workflow`。首次切换须先由用户停止旧 GeoPython 开发容器，释放其监听端口；生命周期不会自动接管容器。虚拟环境统一放在 `engines/geopython-workflow/venv`，ODBC 驱动配置位于 `.dev-state/geopython-odbc`，只注入 Runtime 子进程。

@@ -71,6 +71,15 @@ def test_real_gunicorn_listens_before_registration_and_shares_worker_state(tmp_p
              'geometry': {'type': 'Point', 'coordinates': [116.3974, 39.9093]}}
         ]
     }), encoding='utf-8')
+    exchange_sources = {
+        'kml': '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Folder><name>sites</name><Placemark><name>长沙</name><Point><coordinates>112.98,28.19</coordinates></Point></Placemark></Folder></Document></kml>',
+        'gml': '<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml" xmlns:app="urn:test"><gml:featureMember><app:sites><app:name>长沙</app:name><app:position><gml:Point srsName="urn:ogc:def:crs:EPSG::4326"><gml:pos>28.19 112.98</gml:pos></gml:Point></app:position></app:sites></gml:featureMember></gml:FeatureCollection>',
+        'topojson': json.dumps({'type': 'Topology', 'objects': {'sites': {
+            'type': 'GeometryCollection', 'geometries': [{'type': 'Point',
+                'properties': {'name': '长沙'}, 'coordinates': [112.98, 28.19]}]}}, 'arcs': []}),
+    }
+    for format_name, content in exchange_sources.items():
+        (tmp_path / ('sites.' + format_name)).write_text(content, encoding='utf-8')
     script = '''
 import api_server, json, os
 from pathlib import Path
@@ -86,6 +95,23 @@ def probe_vector_crs():
     layer, fields, geometry = _vector_source_facts(os.environ['VECTOR_SOURCE'], {}, {}, 'EPSG:4326')
     extent = _extent_to_wgs84([500000, 3000000, 501000, 3001000], 4549)
     return {'layer': layer, 'fields': fields, 'geometry': geometry, 'extent': extent, 'pid': os.getpid()}
+@api_server.app.route('/probe-vector-exchange/<format_name>')
+def probe_vector_exchange(format_name):
+    from workflow_engine import execute_single_operator
+    plan = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {
+        'kind': 'file', 'format': format_name, 'access': {'method': 'mounted_path',
+        'path': str(Path(os.environ['VECTOR_SOURCE']).parent / ('sites.' + format_name))}}}
+    def invoke(name, **params):
+        result = execute_single_operator('vector_dataset.' + name, {'access_plan': plan, **params})
+        assert result['status'] == 'success', result.get('error')
+        return result['result']
+    inspected = invoke('inspect')
+    layer = inspected['container']['children'][0]['name']
+    opened = invoke('read_open', protocol='gdal.vector-batch/v1', layer=layer)
+    rows = invoke('read_batch', protocol='gdal.vector-batch/v1', layer=layer, offset=0, limit=2)['rows']
+    invoke('read_close', protocol='gdal.vector-batch/v1', layer=layer)
+    return {'pid': os.getpid(), 'count': len(rows), 'srid': opened['spatial'].get('srid'),
+            'name': rows[0].get('Name', rows[0].get('name'))}
 def register():
     with build_opener(ProxyHandler({})).open('http://127.0.0.1:' + os.environ['PORT'] + '/health') as r:
         Path(os.environ['REGISTRATION']).write_text(json.dumps({'health': r.status, 'pid': os.getpid()}))
@@ -111,6 +137,10 @@ api_server.run_runtime()
             assert [r['count'] for r in responses] == [1, 2, 3]
             assert {r['pid'] for r in responses} == {evidence['pid']}
             assert evidence['pid'] != process.pid
+            for format_name in exchange_sources:
+                exchange = json.loads(opener.open(f'http://127.0.0.1:{port}/probe-vector-exchange/{format_name}', timeout=30).read())
+                assert exchange == {'pid': evidence['pid'], 'count': 1, 'name': '长沙',
+                                    'srid': None if format_name == 'topojson' else 4326}
             native = json.loads(opener.open(f'http://127.0.0.1:{port}/probe-vector-crs', timeout=15).read())
             assert native['pid'] == evidence['pid']
             assert native['fields'] == {'name': 'String'}

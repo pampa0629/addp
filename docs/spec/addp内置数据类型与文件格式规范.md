@@ -1204,6 +1204,7 @@ FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdb
 
 - `.kml`、`.gml`、`.topojson` 声明专用扩展名；通用 `.json` 只有内容前缀确认为根 `Topology` 且具有 `objects` 对象时精化为 TopoJSON 候选，完整 `objects` / `arcs` 结构由 Runtime 校验，不占用 JSON 的扩展名或 MIME。通用 XML 仍归 XML。
 - 唯一原生读取路线为已有 GeoPython Runtime 的 GDAL `KML`、`GML`、`TopoJSON` 驱动，Meta / Manager 不嵌入 GDAL；首期只读，不提供这三种格式的写出 Provider。
+- GDAL vector dataset 算子在 Runtime 内通过同一 Python 环境的新进程执行原生操作，沿用矢量瓦片的原生隔离方式，避免在 Gunicorn fork 后的 HTTP 线程中首次初始化 PROJ／系统 SQLite。访问计划只经标准输入传递，不进入进程参数；不新增服务、平台接口或失败后的回退路线。真实 Gunicorn HTTP 回归须覆盖三种交换格式的 inspect／read_open／read_batch／read_close 及 Worker 身份保持，不能仅以进程内函数测试替代。
 - 容器 attributes 只保存图层名称、数量和轻量定位；字段、几何、范围与 CRS 在选择 child 后取得。源文件只读，解析副文件位于可回收的隔离临时目录。
 - KML 的简单要素按格式规定使用 EPSG:4326。GML 保留 GDAL 从 `srsName` 识别的 CRS 和标准轴序；未知 CRS 不默认米或经纬度。TopoJSON 标准允许投影坐标，不能把 GDAL 的默认 WGS84 当作源声明；没有明确 CRS 时只展示属性和源几何，地图按既有 `unknown_crs` 契约暂停定位。
 - 用户可以在共享表格地图预览中临时声明 EPSG:4326 或 EPSG:3857，默认不选，明确选择后才绘图；只用于解释当前响应的源坐标，不覆盖已识别 CRS 或后端已转换的几何。声明不进入 URL、持久视图、Meta 或源文件，同一资源／图层翻页时保留，切换资源、图层、组件或重新打开时清除。清除选择后恢复未知 CRS 的地图暂停状态；显示坐标仍走唯一的共享 CRS registry，不另建 TopoJSON 地图转换路线。

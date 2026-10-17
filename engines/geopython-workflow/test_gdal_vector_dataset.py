@@ -415,6 +415,48 @@ def _exchange_plan(path, format_name):
     }}
 
 
+def test_registered_native_filegdb_batch_commit_error_and_abort(tmp_path):
+    """The public registry must preserve batch state in files across processes."""
+    from workflow_engine import execute_single_operator
+
+    def invoke(operation, **params):
+        return execute_single_operator('vector_dataset.' + operation, params)
+
+    target = tmp_path / 'isolated.gdb'
+    plan = _target_plan(target)
+    fields = [{'name': 'name', 'type': 'string', 'nullable': False}]
+    shared = dict(protocol=BATCH_PROTOCOL, access_plan=plan, layer='sites', fields=fields, spatial=None)
+    assert invoke('write_open', **shared)['status'] == 'success'
+    assert invoke('write_batch', **shared, offset=0, rows=[{'name': '长沙'}])['status'] == 'success'
+    failed = invoke('write_batch', **shared, offset=0, rows=[{'name': '重复'}])
+    assert failed['status'] == 'failed' and 'offset' in failed['error']
+    assert invoke('write_close', **shared, expected_row_count=1)['status'] == 'success'
+    read = dict(protocol=BATCH_PROTOCOL, access_plan=_source_plan(target), layer='sites')
+    assert invoke('read_open', **read)['result']['row_count'] == 1
+    assert invoke('read_batch', **read, offset=0, limit=10)['result']['rows'][0]['name'] == '长沙'
+    assert invoke('write_abort', **shared)['status'] == 'success'
+    assert not target.exists()
+
+
+def test_native_process_keeps_access_plan_out_of_arguments(monkeypatch):
+    import json
+    import subprocess
+    from operators import get_operator
+
+    plan = {'source': {'access': {'secret_key': 'private-test-secret'}}}
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert 'private-test-secret' not in ' '.join(command)
+        assert json.loads(kwargs['input'])['params']['access_plan'] == plan
+        return subprocess.CompletedProcess(command, 0, stdout='{"result": {"ok": true}}')
+
+    monkeypatch.setattr(subprocess, 'run', run)
+    assert get_operator('vector_dataset.inspect')(access_plan=plan) == {'ok': True}
+    assert len(calls) == 1
+
+
 def test_kml_multilayer_geometry_and_pagination(tmp_path):
     source = tmp_path / "sites.kml"
     source.write_text('''<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>

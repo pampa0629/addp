@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+from functools import wraps
 import json
 import math
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import xml.parsers.expat
@@ -924,32 +926,70 @@ _FIELDS_PARAM = _param("fields", "object", "ADDP FieldInfo 数组")
 _SPATIAL_PARAM = _param("spatial", "object", "ADDP SpatialInfo", required=False)
 
 
+_NATIVE_FUNCTIONS = {function.__name__: function for function in (
+    detect, inspect, read_open, read_batch, read_close,
+    write_open, write_batch, write_close, write_abort,
+)}
+
+
+def _native_process_main():
+    """Only the fixed batch operations are exposed to the private stdin protocol."""
+    request = json.load(sys.stdin)
+    try:
+        result = _NATIVE_FUNCTIONS[request["operation"]](**request["params"])
+        response = {"result": result}
+    except Exception as exc:
+        response = {"error": str(exc)}
+    print(json.dumps(response, ensure_ascii=False, allow_nan=False))
+
+
+def _register_native_operator(metadata, function):
+    @wraps(function)
+    def invoke(**params):
+        # A fresh interpreter must initialize PROJ/SQLite, not the forked HTTP
+        # worker. Use this route on every platform, as vector tiles already do.
+        # Access-plan credentials are sent on stdin, never in process arguments.
+        completed = subprocess.run([
+            sys.executable, "-c",
+            "from operators.gdal_vector_dataset import _native_process_main; _native_process_main()",
+        ], input=json.dumps({"operation": function.__name__, "params": params}, allow_nan=False),
+            capture_output=True, text=True, timeout=600)
+        if completed.returncode != 0:
+            raise RuntimeError(f"GDAL vector operation process exited with code {completed.returncode}")
+        response = json.loads(completed.stdout)
+        if "error" in response:
+            raise ValueError(response["error"])
+        return response["result"]
+
+    return register_operator(metadata, invoke)
+
+
 OPERATORS = dict([
-    register_operator(_metadata(DETECT_OPERATORS[0], ["read"], [_ACCESS_PLAN_PARAM]), detect),
-    register_operator(_metadata(INSPECT_OPERATORS[0], ["read"], [
+    _register_native_operator(_metadata(DETECT_OPERATORS[0], ["read"], [_ACCESS_PLAN_PARAM]), detect),
+    _register_native_operator(_metadata(INSPECT_OPERATORS[0], ["read"], [
         _ACCESS_PLAN_PARAM,
         _param("child_limit", "int", "最多返回的轻量 child 数量", required=False, default=100),
     ]), inspect),
-    register_operator(_metadata(READ_OPERATORS[0], ["read"], [_PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM]), read_open),
-    register_operator(_metadata(READ_OPERATORS[1], ["read"], [
+    _register_native_operator(_metadata(READ_OPERATORS[0], ["read"], [_PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM]), read_open),
+    _register_native_operator(_metadata(READ_OPERATORS[1], ["read"], [
         _PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM,
         _param("offset", "int", "逻辑起始行"),
         _param("limit", "int", "本批最大行数"),
     ]), read_batch),
-    register_operator(_metadata(READ_OPERATORS[2], ["read"], [_PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM]), read_close),
-    register_operator(_metadata(WRITE_OPERATORS[0], ["write", "ddl"], [
+    _register_native_operator(_metadata(READ_OPERATORS[2], ["read"], [_PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM]), read_close),
+    _register_native_operator(_metadata(WRITE_OPERATORS[0], ["write", "ddl"], [
         _PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM, _FIELDS_PARAM, _SPATIAL_PARAM,
     ]), write_open),
-    register_operator(_metadata(WRITE_OPERATORS[1], ["write"], [
+    _register_native_operator(_metadata(WRITE_OPERATORS[1], ["write"], [
         _PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM, _FIELDS_PARAM, _SPATIAL_PARAM,
         _param("offset", "int", "目标当前行数"),
         _param("rows", "object", "BatchData 行数组"),
     ]), write_batch),
-    register_operator(_metadata(WRITE_OPERATORS[2], ["write"], [
+    _register_native_operator(_metadata(WRITE_OPERATORS[2], ["write"], [
         _PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM, _FIELDS_PARAM, _SPATIAL_PARAM,
         _param("expected_row_count", "int", "提交时预期总行数"),
     ]), write_close),
-    register_operator(_metadata(WRITE_OPERATORS[3], ["write", "ddl"], [
+    _register_native_operator(_metadata(WRITE_OPERATORS[3], ["write", "ddl"], [
         _PROTOCOL_PARAM, _ACCESS_PLAN_PARAM, _LAYER_PARAM, _FIELDS_PARAM, _SPATIAL_PARAM,
     ]), write_abort),
 ])
