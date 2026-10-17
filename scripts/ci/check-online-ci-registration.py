@@ -1805,6 +1805,7 @@ def validate_vector_pmtiles_profile(repository: Path, registered: set[str]) -> N
     required = {
         "scripts/test/online-hosted-vector-pmtiles-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite vector-pmtiles-workflow',
+            '--wait-protection-owners develop,manager',
             'start_online_geopython_runtime', 'for start_target in -security -develop -manager -monitor',
             'business.scripts.online-vector-pmtiles-fixture stop', 'scripts/test/online-engine-registration.py',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'env -u POSTGRES_PASSWORD make test-online'),

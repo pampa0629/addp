@@ -1015,6 +1015,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, destination)
         CHECK.validate_vector_pmtiles_profile(self.repository, {'vector-pmtiles-workflow'})
         faults = [(paths[0], "inputs.suite != 'vector-pmtiles-workflow'"),
+            (paths[2], '--wait-protection-owners develop,manager'),
             (paths[2], 'for start_target in -security -develop -manager -monitor'),
             (paths[2], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
             (paths[2], 'business.scripts.online-vector-pmtiles-fixture stop'),
