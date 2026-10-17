@@ -286,17 +286,21 @@ func run(args []string, environment []string) error {
 	suite := flags.String("suite", "", "registered Online suite")
 	output := flags.String("output", "", "absolute path for the generated shell environment")
 	observe := flags.String("observe-catalog-grant", "", "read-only Catalog issuance observation for the dedicated Online deployment")
+	waitOwners := flags.String("wait-protection-owners", "", "comma-separated Owner schemas whose protection initialization must complete before exporting identities")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *observe != "" {
-		if flags.NArg() != 0 || *output != "" || *suite != "enterprise-catalog-publishing" {
+		if flags.NArg() != 0 || *output != "" || *waitOwners != "" || *suite != "enterprise-catalog-publishing" {
 			return errors.New("issuance observation requires only the enterprise-catalog-publishing suite and request UUID")
 		}
 		return observeCatalogGrant(*observe, environment, os.Stdout)
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
 		return errors.New("usage: online-test-fixture --suite <suite> --output <absolute-path>")
+	}
+	if *waitOwners != "" && *suite == "platform-node-metrics" {
+		return errors.New("platform-node-metrics has no Tenant protection initialization")
 	}
 	permissions, err := suitePermissions(*suite)
 	if err != nil {
@@ -672,6 +676,11 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"] = provisionerSession.AccessToken
+	}
+	if *waitOwners != "" {
+		if err := waitForOwnerProtection(ctx, db, strings.Split(*waitOwners, ","), tenant.ID); err != nil {
+			return err
+		}
 	}
 	if err := writeEnvironmentFile(*output, values); err != nil {
 		return err

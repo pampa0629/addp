@@ -85,6 +85,12 @@ openssl rand -base64 32
 
 更多问题请查看 [CLAUDE.md](./CLAUDE.md)
 
+## Online 验收身份夹具
+
+独占 Hosted 部署通过 `cmd/online-test-fixture` 创建验收租户和普通用户；仅允许 `addp_online`，不得在本地共享 Infra 调用。依赖保护投影的场景传入 `--wait-protection-owners develop,manager`，在导出身份前等待该新租户的 Owner 持久初始化完成，最多 60 秒。夹具只复用 Common 的 `projectionstore.Open` 与 `Initialized` 读取现有存储，不迁移或写入 checkpoint，不重试业务工作流；读取失败或超时直接失败并交给 Hosted 统一退出清理。服务进程就绪不代表稍后新建租户已完成首次同步。
+
+栅格入口已使用该前置；验证命令为根目录 `make test-raster-online-runner`，涵盖等待、租户与 Owner 范围、错误保留和退出清理。真实数据、浏览器与成果清理仍须通过原 `raster-workflow` Hosted suite，不能用夹具回归代替。
+
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、API 详解）

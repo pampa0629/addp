@@ -57,7 +57,7 @@ done
 start_online_geopython_runtime "$RUNTIME_TAG"
 run_logged python3 business/scripts/online-raster-minio-fixture.py seed
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 for role in source source-b source-c target; do
   run_logged python3 scripts/test/online-engine-registration.py \

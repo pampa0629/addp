@@ -46,6 +46,11 @@ class HostedRasterGateTest(unittest.TestCase):
         ''')
         fixture = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
         fixture.install_spark_container_fixture(self.host, 'raster-workflow', 'addp-raster-online-runtime')
+        go = self.host.bin / 'go'
+        go.write_text(go.read_text().replace('previous=', '''
+            echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_IDENTITY_FAIL:-0}" != 1 ] || exit 1
+            previous=''', 1))
         docker = self.host.bin / 'docker'
         content = docker.read_text().replace('["python","api_server.py"]', '["sh","container_entrypoint.sh"]')
         content = content.replace('case "$1 $2" in', '[ "${ADDP_TEST_MIRROR_FAIL:-0}" != 1 ] || [ "$1" != pull ] || exit 1\ncase "$1 $2" in')
@@ -116,6 +121,7 @@ class HostedRasterGateTest(unittest.TestCase):
         self.assertIn('start:-security', trace)
         self.assertIn('security-url:http://127.0.0.1:8194', trace)
         self.assertLess(trace.index('start:-security'), trace.index('start:-develop'))
+        self.assertIn('--wait-protection-owners develop,manager', trace)
         self.assertIn('docker-rm:addp-raster-online-runtime', trace)
         self.assertLess(trace.index('application-stop'), trace.index('raster-fixture:stop'))
         self.assertFalse(self.host.secrets.exists())
@@ -127,6 +133,16 @@ class HostedRasterGateTest(unittest.TestCase):
     def test_preflight_requires_security_with_the_same_build_identity(self):
         gate = importlib.import_module('scripts.test.online-gate')
         self.assertIn(('security', 'SECURITY_URL'), gate.SUITES['raster-workflow'].services)
+
+    def test_protection_readiness_failure_prevents_business_and_still_cleans(self):
+        result = self.run_gate(ADDP_TEST_IDENTITY_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('--wait-protection-owners develop,manager', trace)
+        self.assertNotIn('make:test-online', trace)
+        for step in ('application-stop', 'raster-fixture:stop', 'infra-down'):
+            self.assertIn(step, trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_security_startup_failure_stops_before_workflows_and_cleans(self):
         self.host._write_repository_script('scripts/dev/start.sh', '''
