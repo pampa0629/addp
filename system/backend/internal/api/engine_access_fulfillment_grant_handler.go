@@ -48,15 +48,15 @@ func (h *EngineAccessFulfillmentGrantHandler) Issue(c *gin.Context) {
 }
 
 // Resolve godoc
-// @Summary 只读查询原请求的签发历史 | Resolve original Grant issuance history without writes
-// @Description 仅当前 Catalog Tenant Service，严格匹配原绑定；未找到不等于关闭，不签发、不续期、不恢复撤销；历史不证明当前数据访问允许 | Current Catalog Tenant Service and exact original binding only; a miss is not closure, never issues, renews or restores a revoked Grant; history is not current access Allow
+// @Summary 只读查询原请求的签发历史及当前阻碍 | Resolve original issuance history and current blockers without writes
+// @Description 仅当前 Catalog Tenant Service，严格匹配原绑定；同一已提交快照优先返回本次签发历史，未签发时可返回 unissued_reason=relation_exists/window_expired/closed；原窗口按 System 数据库时间观察。阻碍不是失败历史或访问许可，不返回其他授权身份，不签发、撤销、续期或关闭请求 | Current Catalog Tenant Service and exact original binding only; one committed snapshot returns original issuance history first, or optional unissued_reason=relation_exists/window_expired/closed using System database time. Blockers are observations, not failure history or access Allow; no other Grant identity or mutation
 // @Tags 源授权办理 | Source Access Fulfillment
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param request_id path string true "原办理 UUID | Original fulfillment UUID"
 // @Param request body authorization.SharingFulfillmentBinding true "完整原绑定 | Complete original binding"
-// @Success 200 {object} authorization.SharingFulfillmentGrantLookup "只读历史；未找到时省略 grant | Read-only history; grant omitted on a miss"
+// @Success 200 {object} authorization.SharingFulfillmentGrantLookup "原签发优先；未签发可含当前阻碍，无阻碍省略原因 | Original issuance first; an unissued request may include a current blocker, omitted when none"
 // @Failure 400,401,403,409,500 {object} IAMErrorResponse "请求失败 | Request failed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.engine_access_fulfillment.execute"]

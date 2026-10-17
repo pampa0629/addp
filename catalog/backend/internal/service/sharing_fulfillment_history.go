@@ -33,10 +33,11 @@ type SharingFulfillmentRequest struct {
 
 type SharingFulfillmentHistory struct {
 	SharingFulfillmentRequest
-	State      string     `json:"state" enums:"pending,accepted,closed"`
-	RecordedAt *time.Time `json:"recorded_at" format:"date-time" extensions:"x-nullable"`
-	Deadline   *time.Time `json:"deadline" format:"date-time" extensions:"x-nullable"`
-	GrantedAt  *time.Time `json:"granted_at" format:"date-time" extensions:"x-nullable"`
+	State          string     `json:"state" enums:"pending,accepted,closed"`
+	RecordedAt     *time.Time `json:"recorded_at" format:"date-time" extensions:"x-nullable"`
+	Deadline       *time.Time `json:"deadline" format:"date-time" extensions:"x-nullable"`
+	GrantedAt      *time.Time `json:"granted_at" format:"date-time" extensions:"x-nullable"`
+	UnissuedReason string     `json:"unissued_reason,omitempty" enums:"relation_exists,window_expired,closed"`
 }
 
 const originalFulfillmentEngine = "CAST(request_binding -> 'path' ->> 'engine_id' AS BIGINT)"
@@ -245,7 +246,7 @@ func (s *EntryService) resolveSharingHistory(ctx context.Context, tenantID int64
 	result.State, result.RecordedAt, result.Deadline = resolution.Outcome, &resolution.RecordedAt, resolution.Deadline
 	if result.State == "accepted" {
 		grant, err := remote.ResolveGrant(ctx, check.RequestID, binding)
-		if err != nil || grant == nil || grant.Found != (grant.Grant != nil) {
+		if err != nil || grant == nil || grant.Validate(check.RequestID) != nil {
 			return nil, ErrReferenceValidationUnavailable
 		}
 		if grant.Found {
@@ -254,6 +255,7 @@ func (s *EntryService) resolveSharingHistory(ctx context.Context, tenantID int64
 			}
 			result.GrantedAt = &grant.Grant.GrantedAt
 		}
+		result.UnissuedReason = grant.UnissuedReason
 	}
 	return result, nil
 }

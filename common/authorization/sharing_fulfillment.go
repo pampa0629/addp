@@ -72,6 +72,32 @@ type SharingFulfillmentGrant struct {
 type SharingFulfillmentGrantLookup struct {
 	Found bool                     `json:"found"`
 	Grant *SharingFulfillmentGrant `json:"grant,omitempty"`
+	// Current System observation, not an immutable failure or access decision.
+	UnissuedReason string `json:"unissued_reason,omitempty" enums:"relation_exists,window_expired,closed"`
+}
+
+const (
+	SharingGrantRelationExists = "relation_exists"
+	SharingGrantWindowExpired  = "window_expired"
+	SharingGrantClosed         = "closed"
+)
+
+func (g SharingFulfillmentGrantLookup) Validate(requestID uuid.UUID) error {
+	if g.Found {
+		if g.Grant == nil || g.Grant.RequestID != requestID || g.Grant.GrantedAt.IsZero() || g.UnissuedReason != "" {
+			return errors.New("invalid fulfillment grant lookup")
+		}
+		return nil
+	}
+	if g.Grant != nil {
+		return errors.New("invalid fulfillment grant lookup")
+	}
+	switch g.UnissuedReason {
+	case "", SharingGrantRelationExists, SharingGrantWindowExpired, SharingGrantClosed:
+		return nil
+	default:
+		return errors.New("invalid fulfillment grant lookup")
+	}
 }
 
 // SharingFulfillmentBasis is returned only by Catalog's dedicated runtime

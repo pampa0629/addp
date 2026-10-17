@@ -56,10 +56,15 @@ func continueSharingFulfillment(ctx context.Context, db *gorm.DB, tenantID int64
 		if err != nil {
 			return nil, err
 		}
-		if lookup == nil || (lookup.Found && !validSharingGrant(requestID, lookup.Grant)) || (!lookup.Found && lookup.Grant != nil) {
+		if lookup == nil || lookup.Validate(requestID) != nil {
 			return nil, ErrSharingDecisionConflict
 		}
-		if !lookup.Found {
+		if lookup.UnissuedReason == shared.SharingGrantRelationExists {
+			// An existing relation is not this request's signature. Observe again
+			// within the original window, without repeatedly attempting an insert.
+			return check, nil
+		}
+		if !lookup.Found && lookup.UnissuedReason == "" {
 			callBinding, err = decodeSharingFulfillmentBinding(check.RequestBinding)
 			if err != nil {
 				return nil, err

@@ -1157,6 +1157,12 @@ definitions:
         type: string
       target:
         $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget'
+      unissued_reason:
+        enum:
+        - relation_exists
+        - window_expired
+        - closed
+        type: string
     type: object
   github_com_addp_catalog_internal_service.SharingFulfillmentRequest:
     properties:

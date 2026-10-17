@@ -11,6 +11,15 @@ const options = [{ id: form.recipientID, recipient_type: 'user', status: 'active
 const auth = permissions => ({ authContext: { principal: { type: 'user', id: '50' } }, hasPermission: permission => permissions.includes(permission) })
 
 describe('explicit human sharing confirmation', () => {
+  it('shows System-observed issuance blockers without guessing from the browser clock', () => {
+    const current = { decisionID: 'decision', requestID: id, request: { request_id: id, decision_id: 'decision', state: 'accepted' } }
+    for (const [reason, status] of [['relation_exists', 'duplicate'], ['window_expired', 'expired'], ['closed', 'closed']]) {
+      const request = { ...current.request, unissued_reason: reason }
+      expect(sharingProgress({ ...current, request })).toMatchObject({ status, next: status })
+      expect(sharingProgress({ decisionID: 'decision', confirmation: { id: 'decision' }, results: [request] })).toMatchObject({ status })
+    }
+    expect(sharingProgress({ ...current, request: { ...current.request, deadline: '2000-01-01T00:00:00Z' } })).toMatchObject({ status: 'issuing' })
+  })
   it('explains the next responsible action without granting either role data access', () => {
     expect(sharingProgress({ canCreate: true })).toMatchObject({ status: 'awaitingConfirmation', step: 0, next: 'confirm' })
     expect(sharingProgress({ canHandle: true })).toMatchObject({ status: 'chooseConfirmation' })

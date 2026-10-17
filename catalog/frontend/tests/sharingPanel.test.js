@@ -179,6 +179,41 @@ describe('business authorization workspace', () => {
 })
 
 describe('task-oriented sharing guidance', () => {
+  it.each([['relation_exists', 'duplicate'], ['window_expired', 'expired']])('renders %s in the request detail without a new command', async (reason, status) => {
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    fixtures.api.getSharingRequest.mockResolvedValue({ request_id: id, decision_id: decision.id,
+      state: 'accepted', target: decision.target, unissued_reason: reason })
+    const view = mount(decision.id, id); await settle()
+    expect(view.button('sharing-progress-status').text).toBe(`catalog.sharing.progress.${status}`)
+    expect(view.nodes().some(node => node.text?.includes(`catalog.sharing.unissued.${reason}`))).toBe(true)
+    expect(view.button('sharing-retry-request')).toBeUndefined()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+  })
+  it('opens the approved record after creation and explicitly continues with the same authoritative candidate', async () => {
+    const approved = { ...decision, id }
+    fixtures.api.createSharingDecision.mockResolvedValue(approved)
+    fixtures.api.getSharingDecision.mockResolvedValue(approved)
+    fixtures.api.listSharingDecisions.mockResolvedValue({ data: [approved], total: 1 })
+    const view = mount(); await settle()
+    await switchWorkspace(view, 'create')
+    await view.control('select', 1).props.onVisibleChange(true); await settle()
+    view.control('select', 1).props['onUpdate:modelValue']('60')
+    view.control('select', 2).props['onUpdate:modelValue']('until_revoked')
+    view.control('input').props['onUpdate:modelValue']('Research')
+    await view.button('sharing-confirm').props.onClick(); await settle()
+    expect(view.button('sharing-workspace').props['model-value']).toBe('records')
+    expect(view.button('sharing-confirmation-detail')).toBeDefined()
+    expect(view.button('sharing-confirm')).toBeUndefined()
+    expect(view.button('sharing-progress').children.flatMap(flatten)).toContain(view.button('sharing-continue-handling'))
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    await view.button('sharing-continue-handling').props.onClick(); await settle()
+    expect(view.button('sharing-workspace').props['model-value']).toBe('handling')
+    expect(view.button('sharing-decision-select').props.modelValue).toBe(id)
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(fixtures.api.createSharingDecision).toHaveBeenCalledTimes(1)
+  })
   it('shows recipient names in history and marks the current account in the new-sharing dropdown', async () => {
     fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [{ ...decision, recipient_label_status: 'resolved', recipient_name: '历史接收方', recipient_code: 'outdoor-develop' }], total: 1 })
     fixtures.api.listSharingRecipients.mockResolvedValue({ data: [

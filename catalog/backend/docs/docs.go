@@ -5677,6 +5677,14 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget"
+                },
+                "unissued_reason": {
+                    "type": "string",
+                    "enum": [
+                        "relation_exists",
+                        "window_expired",
+                        "closed"
+                    ]
                 }
             }
         },

@@ -29,7 +29,7 @@ func exerciseCatalogAutomaticIssuance(t *testing.T, db *gorm.DB) {
 	previousLimit := pool.Stats().MaxOpenConnections
 	pool.SetMaxOpenConns(1) // Remote callbacks must run without a leased DB connection.
 	defer pool.SetMaxOpenConns(previousLimit)
-	for _, scenario := range []string{"restart_after_acceptance", "lost_issuance_response", "local_commit_failure", "issued_history", "closed", "window_expired", "closed_at_issue", "forbidden", "lookup_404", "binding_conflict", "malformed_history"} {
+	for _, scenario := range []string{"restart_after_acceptance", "lost_issuance_response", "local_commit_failure", "issued_history", "closed", "window_expired", "closed_at_issue", "forbidden", "lookup_404", "binding_conflict", "malformed_history", "blocked_relation", "observed_expired"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
 			entry, input := seedSharingEntry(t, db)
@@ -111,6 +111,12 @@ func exerciseCatalogAutomaticIssuance(t *testing.T, db *gorm.DB) {
 						return
 					}
 					lookup := shared.SharingFulfillmentGrantLookup{Found: issued}
+					if scenario == "blocked_relation" {
+						lookup.UnissuedReason = shared.SharingGrantRelationExists
+					}
+					if scenario == "observed_expired" {
+						lookup.UnissuedReason = shared.SharingGrantWindowExpired
+					}
 					if issued {
 						lookup.Grant = &shared.SharingFulfillmentGrant{RequestID: pending.RequestID, GrantedAt: historyTime}
 					}
@@ -176,15 +182,20 @@ func exerciseCatalogAutomaticIssuance(t *testing.T, db *gorm.DB) {
 				}
 			}
 			var after models.FulfillmentCheck
-			if err := db.First(&after, "request_id=?", pending.RequestID).Error; err != nil || (after.GrantReconciledAt == nil) != expectsError || !after.ResolvedAt.Equal(*before.ResolvedAt) || !after.CreatedAt.Equal(before.CreatedAt) || string(after.RequestBinding) != string(before.RequestBinding) {
+			if err := db.First(&after, "request_id=?", pending.RequestID).Error; err != nil || (after.GrantReconciledAt == nil) != (expectsError || scenario == "blocked_relation") || !after.ResolvedAt.Equal(*before.ResolvedAt) || !after.CreatedAt.Equal(before.CreatedAt) || string(after.RequestBinding) != string(before.RequestBinding) {
 				t.Fatalf("recovery marker or original record invalid: %+v %v", after, err)
 			}
-			if scenario == "closed" || scenario == "issued_history" || scenario == "lookup_404" || scenario == "malformed_history" {
+			if scenario == "closed" || scenario == "issued_history" || scenario == "lookup_404" || scenario == "malformed_history" || scenario == "blocked_relation" || scenario == "observed_expired" {
 				if issues != 0 {
 					t.Fatal("history/error triggered issuance")
 				}
 			} else if issues != 1 {
 				t.Fatalf("issuance count=%d", issues)
+			}
+			if scenario == "blocked_relation" {
+				if _, err := continueSharingFulfillment(ctx, db, 7, entry.ID, pending.RequestID, authority); err != nil || issues != 0 {
+					t.Fatalf("blocked continuation repeated issuance: %d %v", issues, err)
+				}
 			}
 			if scenario == "restart_after_acceptance" || scenario == "lost_issuance_response" || scenario == "local_commit_failure" {
 				// A fresh production runner must scan a resolved but unprocessed

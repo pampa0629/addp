@@ -74,6 +74,11 @@ func TestSystemFulfillmentGrantClientRejectsInvalidHistoryAndFailures(t *testing
 	}{
 		{"issued", "issue", validGrant, "", 200, true},
 		{"miss", "resolve", `{"found":false}`, "", 200, true},
+		{"blocked", "resolve", `{"found":false,"unissued_reason":"relation_exists"}`, "", 200, true},
+		{"expired", "resolve", `{"found":false,"unissued_reason":"window_expired"}`, "", 200, true},
+		{"closed_reason", "resolve", `{"found":false,"unissued_reason":"closed"}`, "", 200, true},
+		{"unknown_reason", "resolve", `{"found":false,"unissued_reason":"unknown"}`, "", 200, false},
+		{"issued_with_reason", "resolve", `{"found":true,"grant":` + validGrant + `,"unissued_reason":"relation_exists"}`, "", 200, false},
 		{"found", "resolve", `{"found":true,"grant":` + validGrant + `}`, "", 200, true},
 		{"empty_issue", "issue", `{}`, "", 200, false},
 		{"wrong_issue_id", "issue", wrongGrant, "", 200, false},

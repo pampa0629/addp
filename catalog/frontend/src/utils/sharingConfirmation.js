@@ -52,8 +52,14 @@ export function sharingProgress({ decisionID = '', requestID = '', confirmation,
     if (candidate) return state('awaitingHandling', 1, 'handle')
     return canCreate ? state('awaitingConfirmation', 0, 'confirm') : state('chooseConfirmation', 0)
   }
-  if (outcome.state === 'accepted' && outcome.granted_at) return state('issued', 3)
-  if (outcome.state === 'accepted') return state('issuing', 2)
+  if (outcome.state === 'accepted') {
+    if (outcome.granted_at) return outcome.unissued_reason ? state('unavailable', -1) : state('issued', 3)
+    if (outcome.unissued_reason) {
+      const status = { relation_exists: 'duplicate', window_expired: 'expired', closed: 'closed' }[outcome.unissued_reason]
+      return status ? state(status, 2) : state('unavailable', -1)
+    }
+    return state('issuing', 2)
+  }
   if (outcome.state === 'pending') return state('processing', 1)
   if (outcome.state === 'closed') return state('closed', 1)
   return state('unavailable', -1)

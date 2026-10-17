@@ -400,7 +400,9 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", "record_states")
 			command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(command.CatalogPath)[0].ItemFingerprint, testReadBindings(command.CatalogPath)[0].BoundaryHash
 			command.RequirementVersion, command.InitializeApproval = 1, true
-			expires := time.Now().Add(5 * time.Second)
+			// Issuance and state filtering use the database wall clock. Keep the
+			// fixture's expiry and wait on that same clock, including VM drift.
+			expires := testDatabaseClock(t, db)().Add(5 * time.Second)
 			command.ExpiryMode, command.ExpiresAt = shared.SharingExpiryAtTime, &expires
 			if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
 				t.Fatal(err)
@@ -431,7 +433,9 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			check("active", receiver.PrincipalID, 1)
 			check("revoked", other.PrincipalID, 1)
 			check("expired", receiver.PrincipalID, 0)
-			time.Sleep(time.Until(expires) + 50*time.Millisecond)
+			if err := db.WithContext(ctx).Exec("SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz-clock_timestamp())))+0.05)", expires).Error; err != nil {
+				t.Fatal(err)
+			}
 			check("active", receiver.PrincipalID, 0)
 			check("expired", receiver.PrincipalID, 1)
 			check("expired", other.PrincipalID, 0)

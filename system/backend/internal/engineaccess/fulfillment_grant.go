@@ -37,11 +37,77 @@ func (s *Service) IssueFulfillmentGrant(ctx context.Context, actor FulfillmentRu
 func (s *Service) ResolveFulfillmentGrant(ctx context.Context, actor FulfillmentRuntimeActor, id uuid.UUID,
 	binding shared.SharingFulfillmentBinding,
 ) (*shared.SharingFulfillmentGrantLookup, error) {
-	row, err := s.resolveAcceptedGrant(ctx, actor, id, binding)
+	request, err := recoveryRequest(actor, id, binding)
 	if err != nil {
 		return nil, err
 	}
-	return &shared.SharingFulfillmentGrantLookup{Found: row != nil, Grant: grantHistory(row)}, nil
+	result, readErr := s.repository.readFulfillmentGrantObservation(ctx, request)
+	err = s.withFulfillmentRuntime(ctx, actor, func(_ *Repository, check func() error) error {
+		if readErr != nil && !errors.Is(readErr, gorm.ErrRecordNotFound) {
+			return readErr
+		}
+		return check()
+	})
+	if err != nil {
+		return nil, grantError(err)
+	}
+	if errors.Is(readErr, gorm.ErrRecordNotFound) {
+		return &shared.SharingFulfillmentGrantLookup{}, nil
+	}
+	return result, nil
+}
+
+// Read one committed snapshot before caller IAM locks, as for original history.
+// This does not settle a request, claim another Grant, or decide content access.
+func (r *Repository) readFulfillmentGrantObservation(ctx context.Context, request fulfillmentRequest) (*shared.SharingFulfillmentGrantLookup, error) {
+	path, encoded, err := request.encode()
+	if err != nil {
+		return nil, err
+	}
+	result := &shared.SharingFulfillmentGrantLookup{}
+	err = r.readCommitted(ctx, func(tx *Repository) error {
+		row, err := tx.findFulfillment(ctx, request, path, encoded)
+		if err != nil {
+			return err
+		}
+		if row.Outcome != "accepted" {
+			result.UnissuedReason = shared.SharingGrantClosed
+			return nil
+		}
+		grant, err := tx.findFulfillmentGrant(ctx, request.RequestID)
+		if err == nil {
+			result.Found, result.Grant = true, grantHistory(grant)
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		now, err := tx.wallClock(ctx)
+		if err != nil {
+			return err
+		}
+		if err := grantWindow(row, now); err != nil {
+			// Clock rollback is not terminal expiry; keep recovery pending.
+			if row.Deadline != nil && !now.Before(*row.Deadline) {
+				result.UnissuedReason = shared.SharingGrantWindowExpired
+			}
+			return nil
+		}
+		grants, err := tx.activeRelationGrants(ctx, sourceGrant{TenantID: request.TenantID,
+			EngineID: int64(request.Path.EngineID), ItemFingerprint: request.ItemFingerprint,
+			RecipientType: request.RecipientType, RecipientID: request.RecipientID, Action: request.Action})
+		if err != nil {
+			return err
+		}
+		if len(grants) > 0 {
+			result.UnissuedReason = shared.SharingGrantRelationExists
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (r *Repository) findFulfillmentGrant(ctx context.Context, id uuid.UUID) (*sourceGrant, error) {

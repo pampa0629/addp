@@ -7985,7 +7985,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅当前 Catalog Tenant Service，严格匹配原绑定；未找到不等于关闭，不签发、不续期、不恢复撤销；历史不证明当前数据访问允许 | Current Catalog Tenant Service and exact original binding only; a miss is not closure, never issues, renews or restores a revoked Grant; history is not current access Allow",
+                "description": "仅当前 Catalog Tenant Service，严格匹配原绑定；同一已提交快照优先返回本次签发历史，未签发时可返回 unissued_reason=relation_exists/window_expired/closed；原窗口按 System 数据库时间观察。阻碍不是失败历史或访问许可，不返回其他授权身份，不签发、撤销、续期或关闭请求 | Current Catalog Tenant Service and exact original binding only; one committed snapshot returns original issuance history first, or optional unissued_reason=relation_exists/window_expired/closed using System database time. Blockers are observations, not failure history or access Allow; no other Grant identity or mutation",
                 "consumes": [
                     "application/json"
                 ],
@@ -7995,7 +7995,7 @@ const docTemplate = `{
                 "tags": [
                     "源授权办理 | Source Access Fulfillment"
                 ],
-                "summary": "只读查询原请求的签发历史 | Resolve original Grant issuance history without writes",
+                "summary": "只读查询原请求的签发历史及当前阻碍 | Resolve original issuance history and current blockers without writes",
                 "parameters": [
                     {
                         "type": "string",
@@ -8016,7 +8016,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "只读历史；未找到时省略 grant | Read-only history; grant omitted on a miss",
+                        "description": "原签发优先；未签发可含当前阻碍，无阻碍省略原因 | Original issuance first; an unissued request may include a current blocker, omitted when none",
                         "schema": {
                             "$ref": "#/definitions/authorization.SharingFulfillmentGrantLookup"
                         }
@@ -13708,6 +13708,15 @@ const docTemplate = `{
                 },
                 "grant": {
                     "$ref": "#/definitions/authorization.SharingFulfillmentGrant"
+                },
+                "unissued_reason": {
+                    "description": "Current System observation, not an immutable failure or access decision.",
+                    "type": "string",
+                    "enum": [
+                        "relation_exists",
+                        "window_expired",
+                        "closed"
+                    ]
                 }
             }
         },

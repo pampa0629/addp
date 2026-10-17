@@ -16,11 +16,12 @@
     </div>
     <el-card v-if="(eligibility.confirm || eligibility.history) && ((workspace === 'records' && detailOpen) || (workspace === 'handling' && (decisionID || requestID)))" shadow="never" data-testid="sharing-progress">
       <template #header><strong>{{ t('catalog.sharing.progressTitle') }}</strong></template>
-      <el-steps v-if="progress.step >= 0" :active="progress.step" finish-status="success" align-center>
+      <el-steps v-if="progress.step >= 0" :active="progress.step" :process-status="['duplicate', 'expired'].includes(progress.status) ? 'error' : 'process'" finish-status="success" align-center>
         <el-step v-for="phase in ['confirmation', 'handling', 'issuance']" :key="phase" :title="t(`catalog.sharing.phases.${phase}`)" />
       </el-steps>
       <p data-testid="sharing-progress-status" role="status" aria-live="polite">{{ t(`catalog.sharing.progress.${progress.status}`) }}</p>
       <p class="sharing-help">{{ t('catalog.sharing.nextStep') }}{{ t(`catalog.sharing.next.${progress.next}`) }}</p>
+      <el-button v-if="workspace === 'records' && recordKind === 'confirmations' && confirmation && canPrepare && !requestID" data-testid="sharing-continue-handling" type="primary" :disabled="switchingBlocked" @click="changeWorkspace('handling')">{{ t('catalog.sharing.continueHandling') }}</el-button>
     </el-card>
     <div v-if="workspace === 'records' && !detailOpen && (eligibility.confirm || eligibility.history)" class="record-filter">
       <span>{{ t('catalog.sharing.recordType') }}</span>
@@ -96,9 +97,6 @@
         <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(confirmation) }}</el-descriptions-item>
         <el-descriptions-item :label="t('catalog.sharing.reason')">{{ confirmation.reason }}</el-descriptions-item>
       </el-descriptions>
-      <div v-if="confirmation && canPrepare && !requestID" class="detail-actions">
-        <el-button data-testid="sharing-continue-handling" type="primary" :disabled="switchingBlocked" @click="changeWorkspace('handling')">{{ t('catalog.sharing.continueHandling') }}</el-button>
-      </div>
       <template v-if="confirmation">
         <div class="record-heading"><strong>{{ t('catalog.sharing.resultsTitle') }}</strong>
           <el-button data-testid="sharing-refresh-results" :loading="resultsLoading" @click="loadConfirmationResults">{{ t('catalog.common.refresh') }}</el-button></div>
@@ -108,7 +106,7 @@
           <el-table-column prop="request_id" :label="t('catalog.sharing.requestID')" min-width="240" />
           <el-table-column :label="t('catalog.sharing.acceptance')" min-width="140"><template #default="{ row }"><el-tag :type="stateType(row.state)">{{ t(`catalog.sharing.stateLabel.${row.state}`) }}</el-tag></template></el-table-column>
           <el-table-column :label="t('catalog.sharing.recordedAt')" min-width="170"><template #default="{ row }">{{ formatTime(row.recorded_at) }}</template></el-table-column>
-          <el-table-column :label="t('catalog.sharing.issuance')" min-width="210"><template #default="{ row }">{{ row.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(row.granted_at) : t('catalog.sharing.noIssuance') }}</template></el-table-column>
+          <el-table-column :label="t('catalog.sharing.issuance')" min-width="210"><template #default="{ row }">{{ issuanceLabel(row) }}</template></el-table-column>
         </el-table>
         <el-empty v-if="!resultsLoading && !resultsError && !resultsTotal" :description="t('catalog.sharing.noResults')" />
         <el-pagination data-testid="sharing-results-pagination" layout="prev, pager, next, total" :current-page="resultsPage" :page-size="20" :total="resultsTotal" @current-change="changeResultsPage" />
@@ -188,7 +186,7 @@
           <el-descriptions-item :label="t('catalog.sharing.target')">{{ targetLabel(request.target) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.recordedAt')">{{ formatTime(request.recorded_at) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.deadline')">{{ formatTime(request.deadline) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.sharing.issuance')">{{ request.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(request.granted_at) : t('catalog.sharing.noIssuance') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.sharing.issuance')">{{ issuanceLabel(request) }}</el-descriptions-item>
         </el-descriptions>
         <el-alert type="info" :closable="false" :title="t('catalog.sharing.issuanceBoundary')" />
       </div>
@@ -245,6 +243,8 @@ let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence 
 const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('catalog.sharing.until_revoked') : formatTime(row.expires_at)
+const issuanceLabel = row => row.granted_at ? t('catalog.sharing.issued') + ' · ' + formatTime(row.granted_at)
+  : row.unissued_reason ? t(`catalog.sharing.unissued.${row.unissued_reason}`) : t('catalog.sharing.noIssuance')
 const targetLabel = target => (target?.segments || []).map(segment => segment.name).join(' / ')
 const recipientLabel = row => sharingRecipientLabel(row, auth.authContext, t)
 const recipientOptionLabel = option => sharingRecipientOptionLabel(option, form.recipientType, auth.authContext, t)
@@ -542,7 +542,6 @@ onBeforeUnmount(() => { generation++ })
 .record-filter .el-select { width: 260px; max-width: 100%; }
 .confirmation-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; max-width: 960px; }
 .form-full { grid-column: 1 / -1; }
-.detail-actions { margin: 16px 0; }
 .initialization-form { border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; margin: 16px 0; }
 .sharing-panel :deep(.el-card__header) { padding: 16px 20px; }
 .sharing-panel :deep(.el-descriptions__content) { overflow-wrap: anywhere; }

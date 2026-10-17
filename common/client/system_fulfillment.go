@@ -114,8 +114,9 @@ func (c *SystemFulfillmentClient) ResolveGrant(ctx context.Context, id uuid.UUID
 		return nil, errors.New("invalid fulfillment grant request")
 	}
 	var result struct {
-		Found *bool           `json:"found"`
-		Grant json.RawMessage `json:"grant"`
+		Found          *bool           `json:"found"`
+		Grant          json.RawMessage `json:"grant"`
+		UnissuedReason string          `json:"unissued_reason"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engine-access-fulfillments/"+id.String()+"/grant/resolve", binding, &result); err != nil {
 		return nil, err
@@ -123,20 +124,22 @@ func (c *SystemFulfillmentClient) ResolveGrant(ctx context.Context, id uuid.UUID
 	if result.Found == nil {
 		return nil, errors.New("invalid fulfillment grant lookup")
 	}
-	if !*result.Found {
+	lookup := &authorization.SharingFulfillmentGrantLookup{Found: *result.Found, UnissuedReason: result.UnissuedReason}
+	if !lookup.Found {
 		if len(result.Grant) != 0 {
 			return nil, errors.New("invalid fulfillment grant lookup")
 		}
-		return &authorization.SharingFulfillmentGrantLookup{Found: false}, nil
+	} else {
+		var grant authorization.SharingFulfillmentGrant
+		if err := json.Unmarshal(result.Grant, &grant); err != nil {
+			return nil, errors.New("invalid fulfillment grant lookup")
+		}
+		lookup.Grant = &grant
 	}
-	var grant authorization.SharingFulfillmentGrant
-	if err := json.Unmarshal(result.Grant, &grant); err != nil {
-		return nil, errors.New("invalid fulfillment grant lookup")
-	}
-	if err := validateFulfillmentGrant(id, &grant); err != nil {
+	if err := lookup.Validate(id); err != nil {
 		return nil, err
 	}
-	return &authorization.SharingFulfillmentGrantLookup{Found: true, Grant: &grant}, nil
+	return lookup, nil
 }
 
 func validateFulfillmentGrant(id uuid.UUID, grant *authorization.SharingFulfillmentGrant) error {

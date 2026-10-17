@@ -98,6 +98,7 @@ func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
 		recorded := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
 		deadline, granted := recorded.Add(5*time.Minute), recorded.Add(time.Minute)
 		state, grantFound, failure := "accepted", true, ""
+		unissuedReason := ""
 		calls := 0
 		var before func()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +138,7 @@ func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
 				}
 				_ = json.NewEncoder(w).Encode(lookup)
 			case prefix + "/grant/resolve":
-				lookup := authorization.SharingFulfillmentGrantLookup{Found: grantFound}
+				lookup := authorization.SharingFulfillmentGrantLookup{Found: grantFound, UnissuedReason: unissuedReason}
 				if grantFound {
 					lookup.Grant = &authorization.SharingFulfillmentGrant{RequestID: check.RequestID, GrantedAt: granted}
 					if failure == "grant-binding" {
@@ -171,6 +172,21 @@ func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
 				t.Fatalf("%s review=%+v err=%v", outcome, rows, err)
 			}
 		}
+		state, grantFound = "accepted", false
+		for _, reason := range []string{authorization.SharingGrantRelationExists, authorization.SharingGrantWindowExpired} {
+			unissuedReason = reason
+			rows, _, err = get(auth)
+			if err != nil || len(rows) != 1 || rows[0].UnissuedReason != reason || rows[0].GrantedAt != nil {
+				t.Fatalf("unissued review=%+v %v", rows, err)
+			}
+			// Both the confirmer's list and the original request detail consume
+			// the same projection; neither may issue or settle while reading.
+			detail, err := s.resolveSharingHistory(ctx, 7, *check)
+			if err != nil || detail.UnissuedReason != reason {
+				t.Fatalf("unissued detail=%+v %v", detail, err)
+			}
+		}
+		unissuedReason = ""
 		state, grantFound = "accepted", true
 		for _, bad := range []string{"offline", "binding", "grant-binding", "grant-window"} {
 			failure = bad

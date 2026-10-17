@@ -123,6 +123,11 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatalf("Catalog duplicate=%v", err)
 			}
 			assertCount(t, duplicate, 0)
+			blocked, err := issuer.ResolveFulfillmentGrant(ctx, actor, duplicate, base)
+			if err != nil || blocked == nil || blocked.Found || blocked.Grant != nil || blocked.UnissuedReason != shared.SharingGrantRelationExists {
+				t.Fatalf("duplicate observation=%+v %v", blocked, err)
+			}
+			assertCount(t, duplicate, 0)
 			canonical, err := issuer.repository.findFulfillmentGrant(ctx, id)
 			if err != nil || canonical.CatalogRequestID == nil || *canonical.CatalogRequestID != id ||
 				canonical.TenantID != actor.TenantID || canonical.EngineID != int64(base.Path.EngineID) ||
@@ -153,6 +158,14 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			for _, id := range []uuid.UUID{missing, accepted, closed} {
 				if g, err := issuer.resolveAcceptedGrant(ctx, actor, id, base); g != nil || err != nil {
 					t.Fatalf("lookup issued/failed=%+v %v", g, err)
+				}
+				observed, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, base)
+				wantReason := ""
+				if id == closed {
+					wantReason = shared.SharingGrantClosed
+				}
+				if err != nil || observed == nil || observed.Found || observed.Grant != nil || observed.UnissuedReason != wantReason {
+					t.Fatalf("read-only request observation=%+v %v", observed, err)
 				}
 				assertCount(t, id, 0)
 			}
@@ -197,6 +210,10 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			defer readCancel()
 			if g, err := issuer.resolveAcceptedGrant(readCtx, actor, id, base); g != nil || err != nil {
 				t.Fatalf("lookup waited on arbitration or exposed uncommitted grant=%+v %v", g, err)
+			}
+			observed, err := issuer.ResolveFulfillmentGrant(readCtx, actor, id, base)
+			if err != nil || observed == nil || observed.Found || observed.UnissuedReason != "" {
+				t.Fatalf("observation waited on arbitration or exposed uncommitted grant=%+v %v", observed, err)
 			}
 			if err := tx.Rollback().Error; err != nil {
 				t.Fatal(err)
@@ -370,6 +387,10 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			}
 			assertCount(t, id, 1)
 			// The reference preserves the original at_time; recovery cannot renew it.
+			observed, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, binding)
+			if err != nil || observed == nil || !observed.Found || observed.UnissuedReason != "" || !observed.Grant.GrantedAt.Equal(original.GrantedAt) {
+				t.Fatalf("expired historical signature mislabeled=%+v %v", observed, err)
+			}
 			var row fulfillmentOutcome
 			if err := db.Where("request_id=?", id).Take(&row).Error; err != nil || row.ExpiryMode != binding.ExpiryMode || row.GrantExpiresAt == nil || !row.GrantExpiresAt.Equal(expires) {
 				t.Fatalf("expiry changed=%+v %v", row, err)
@@ -457,6 +478,11 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			t.Cleanup(func() { db.Callback().Create().Remove(callback) })
 			if g, err := issuer.writeAcceptedGrant(ctx, actor, id, binding); g != nil || !errors.Is(err, errFulfillmentExpired) {
 				t.Fatalf("audit wait escaped deadline=%+v %v", g, err)
+			}
+			assertCount(t, id, 0)
+			observed, err := issuer.ResolveFulfillmentGrant(ctx, actor, id, binding)
+			if err != nil || observed == nil || observed.Found || observed.UnissuedReason != shared.SharingGrantWindowExpired {
+				t.Fatalf("unissued expired observation=%+v %v", observed, err)
 			}
 			assertCount(t, id, 0)
 		})

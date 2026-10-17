@@ -181,6 +181,8 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 正式受理后的 Grant HTTP（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/grant` 及其 `/grant/resolve` 查询复用 000182 表和唯一生产签发／只读历史路径；无新迁移、实体或默认赋权。当前 `addp-catalog` Tenant Service 及既有 `.execute` 是机器入口资格，新签发仍独立检查原人类 `.create`、引擎管理委派和接收主体。原编号及 `granted_at` 是最小不可变签发历史；查询 `found=false` 不代表关闭，查询与重试不延长原窗口或恢复撤销。不涉及 Catalog 自动消费、Explicit Deny 或执行侧当前数据访问裁决，完整接口契约见《addp授权上下文规范》§5.5.3。
 
+签发阻碍观察（2026-10-17）：上述只读查询在未签发时可附带 `unissued_reason=relation_exists|window_expired|closed`。原请求和原签发、原窗口及重复关系来自同一已提交只读快照，当前机器身份仍按既有 Runtime 守卫复核。已有原签发历史优先，原窗口结束优先于重复关系；无阻碍省略原因。重复关系只按同租户、引擎、DataItem、接收方及动作检查未撤销且未过期的规则，不查询 Meta、不返回其他 Grant 身份，不证明实际内容可读。观察不持仲裁锁、不保存失败副本、不写审计或 Grant。Catalog 原续办观察到重复关系时暂不重发签发，窗口结束后完成本地核清；没有新的状态存储或授权路径。
+
 ### 源读取显式拒绝
 
 DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及批准边界摘要匹配，Deny 按同 Tenant／Engine 的数据项身份、接收主体和动作匹配，不以当前摘要等于建立时摘要为条件。对同一数据项重扫、扩大边界或签发新 Grant 均不能绕过有效拒绝；解除和到期仍按原有不可变事实处理。当前端到端实施与验收聚焦 PG 的 server → schema → 普通 table。共享协议与数据库约束另外能表达 server → database → 普通 table（MySQL）和 server → database → collection（MongoDB），其持久化回归只证明身份约束与规则存储，不代表这些引擎的实际读取已接入；不扩大本轮 PG 实施范围。三个目标形态共用数据库身份约束；namespace 与 leaf 类型必须成对合法，不能把 schema 下的 collection 或 view 当作已支持目标。
