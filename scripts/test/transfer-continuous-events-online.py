@@ -446,6 +446,16 @@ def scheduled_task_body(name, pg):
             'auto_scan_metadata': True, 'batch_size': 100, 'config': config}
 
 
+def quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate):
+    require(kind in {'scheduled', 'kafka', 'cdc'}, 'unknown cleanup task kind')
+    if kind == 'scheduled':
+        if current.get('enabled') is True:
+            mutate(client, f'{OWNER}/task-definitions/{task_id}/pause')
+    elif current.get('desired_state') != 'stopped':
+        mutate(client, f'{OWNER}/task-definitions/{task_id}/stop',
+               {'confirmed': True, 'confirmation_text': name} if kind == 'cdc' else None)
+
+
 def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_id, pg, kafka, report, checkpoint, faults):
     report.update(schema_version='addp.online-suite/v1', suite=SUITE, run_id=run_id, tenant_id=str(tenant),
                   result='failed', checks=[], resources=[], executions=[], cleanup='not_started',
@@ -695,9 +705,7 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         for task_id, kind, name in reversed(tasks):
             try:
                 current = client.request('GET', f'{OWNER}/task-definitions/{task_id}', (200,)).payload
-                if current.get('desired_state') != 'stopped':
-                    mutate(client, f'{OWNER}/task-definitions/{task_id}/stop',
-                           {'confirmed': True, 'confirmation_text': name} if kind == 'cdc' else None)
+                quiesce_task_for_cleanup(client, task_id, kind, name, current, mutate)
                 # Stop must converge before delete, including recovery admitted concurrently with failure.
                 until(lambda: all(item['status'] in TERMINAL for item in history(client, task_id)))
                 client.request('DELETE', f'{OWNER}/task-definitions/{task_id}', (200,))

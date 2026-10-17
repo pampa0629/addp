@@ -58,6 +58,24 @@ class ContinuousRunnerTest(unittest.TestCase):
         self.assertEqual(body['config']['source']['locator'], 'addp://engine/10/path/public/continuous_scan_sibling?type=table')
         self.assertEqual(body['config']['target']['name'], 'continuous_scheduled_target')
 
+    def test_failed_scheduled_phase_pauses_future_ticks_before_cleanup(self):
+        calls = []
+        def mutate(*args):
+            calls.append(args)
+        actor = object()
+        M.quiesce_task_for_cleanup(actor, 7, 'scheduled', 'scheduled',
+                                  {'enabled': True, 'desired_state': 'stopped'}, mutate)
+        self.assertEqual(calls, [(actor, M.OWNER + '/task-definitions/7/pause')])
+        calls.clear()
+        M.quiesce_task_for_cleanup(actor, 7, 'scheduled', 'scheduled',
+                                  {'enabled': False, 'desired_state': 'stopped'}, mutate)
+        self.assertEqual(calls, [])
+        M.quiesce_task_for_cleanup(actor, 8, 'cdc', 'owned-cdc', {'desired_state': 'paused'}, mutate)
+        self.assertEqual(calls, [(actor, M.OWNER + '/task-definitions/8/stop',
+                                 {'confirmed': True, 'confirmation_text': 'owned-cdc'})])
+        with self.assertRaises(M.SuiteError):
+            M.quiesce_task_for_cleanup(actor, 9, 'unknown', 'foreign', {}, mutate)
+
     def scan_fixture(self):
         sibling = {'id': 5, 'engine_id': 10, 'tenant_id': 2, 'node_id': 9, 'item_type': 'table',
                    'full_name': 'public.continuous_scan_sibling', 'fingerprint': 'sibling',
