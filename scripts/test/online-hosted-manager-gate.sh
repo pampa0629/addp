@@ -54,6 +54,7 @@ source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before Runtime startup'
 export ADDP_ONLINE_TEST_RUN_ID="manager-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
+export SECURITY_URL=http://127.0.0.1:8194
 export MODEL3D_DOCKER_PLATFORM=linux/amd64
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-engine.json"
 export ADDP_ONLINE_MANAGER_MINIO_PORT=59002 ADDP_ONLINE_MANAGER_MINIO_CONSOLE_PORT=59003
@@ -80,7 +81,8 @@ run_logged bash scripts/infra/up.sh
 run_logged bash business/scripts/online-manager-minio-fixture.sh start
 run_logged bash business/scripts/online-manager-nfs-fixture.sh start
 application_owned=1
-for start_target in -meta -manager -monitor -pointcloud-workflow -document-workflow; do
+# Manager must install its initial Security projection before protected reads.
+for start_target in -security -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 start_online_model3d_runtime
@@ -88,7 +90,7 @@ start_online_geopython_runtime "$RUNTIME_TAG"
 export ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT=raster/source.tif
 run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"

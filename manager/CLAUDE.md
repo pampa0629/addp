@@ -1,6 +1,6 @@
 # Manager 模块说明
 
-KML／GML／TopoJSON 的 S3 兼容消费验收复用既有 Manager Hosted suite、GeoPython 产品 Runtime 和隔离 Business MinIO，增加三份固定哈希双图层源；普通 User 权限仍为已批准的十项。Owner/v11、browser/v13 严格要求图层及源几何、实际地图要素和像素、TopoJSON 未知 CRS 默认暂停、临时选择清除／切换／重开、普通刷新及原文件下载哈希证明，旧报告拒绝。标准 `make test-manager-online-runner` 自动覆盖夹具、拒绝边界、浏览器语法和 CI 登记；不新增服务或 workflow，不变更血缘产品实现。本轮端点为 Hosted 的 `http://127.0.0.1:59002`，MinIO 结果只认证 S3 兼容协议，不能登记为外部云 S3 认证；正式 T4 须另行核对当次运行、源码及清理证据后记录。
+KML／GML／TopoJSON 的 S3 兼容消费验收复用既有 Manager Hosted suite、GeoPython 产品 Runtime 和隔离 Business MinIO，增加三份固定哈希双图层源；普通 User 权限仍为已批准的十项。Owner/v11、browser/v13 严格要求图层及源几何、实际地图要素和像素、TopoJSON 未知 CRS 默认暂停、临时选择清除／切换／重开、普通刷新及原文件下载哈希证明，旧报告拒绝。标准 `make test-manager-online-runner` 自动覆盖夹具、拒绝边界、浏览器语法和 CI 登记。隔离环境先启动既有 Security，再由标准身份夹具等待 Manager 持久保护投影初始化；预检核对 Security 健康和源码身份，启动或初始化失败均拒绝进入场景并清理。不新增自定义服务、用户权限或 workflow，不变更血缘产品实现。本轮端点为 Hosted 的 `http://127.0.0.1:59002`，MinIO 结果只认证 S3 兼容协议，不能登记为外部云 S3 认证；正式 T4 须另行核对当次运行、源码及清理证据后记录。
 
 导入弹窗按 Transfer／Meta 的公开执行响应展示进度：终态 `failed`、`timeout`、`cancelled` 均结束轮询并复用共享 `ExecutionFailure`，只消费 `error_details` 与实际执行 UUID，不读取原始运行错误或已删除的 `error_msg`。Transfer 成功后等待其准确的 Meta 子执行，元数据同步失败不能显示整个导入成功；关闭、重试和卸载必须隔离旧请求。数据保护拒绝的共享提示使用适用于数据读取与结果保护的中性文案，不将导入失败解释为 SQL 拼接错误。受影响层级为共享前端 T1、Manager T1／隔离浏览器 T3／构建，以及既有 Console Hosted T4；标准入口 `make test-common-frontend`、`make test-manager-frontend` 和 `make test-transfer-online-runner` 已自动覆盖，无新增服务或 CI Job。
 

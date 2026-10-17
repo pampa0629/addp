@@ -15,6 +15,11 @@ class HostedManagerGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        go = self.host.bin / "go"
+        go.write_text(go.read_text().replace("previous=", '''echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "security-url:${SECURITY_URL:-}" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
+            previous=''', 1))
         shutil.copy2(SCRIPT, self.host.repository / "scripts/test/online-hosted-manager-gate.sh")
         self.host._write_repository_script("business/scripts/online-manager-minio-fixture.sh", '''
             #!/usr/bin/env bash
@@ -199,6 +204,11 @@ class HostedManagerGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
+        self.assertIn("start:-security", trace)
+        self.assertLess(trace.index("start:-security"), trace.index("start:-manager"))
+        self.assertIn("security-url:http://127.0.0.1:8194", trace)
+        self.assertIn("--wait-protection-owners manager", trace)
+        self.assertLess(trace.index("--wait-protection-owners manager"), trace.index("make:test-online"))
         for item in ("raster-seed", "docker-run:addp-manager-raster-runtime", "source-fixture:start", "start:-meta", "start:-manager", "start:-monitor", "start:-pointcloud-workflow", "start:-document-workflow", "docker-run:addp-manager-model3d-runtime",
                      "make:test-online ONLINE_SUITE=manager-internal-artifact-lineage", "application-stop", "source-fixture:stop", "infra-down"):
             self.assertIn(item, trace)
@@ -226,6 +236,38 @@ class HostedManagerGateTest(unittest.TestCase):
             self.assertIn(item, trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("result=failed", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_preflight_requires_security_with_the_same_build_identity(self):
+        gate = importlib.import_module("scripts.test.online-gate")
+        self.assertIn(("security", "SECURITY_URL"), gate.SUITES["manager-internal-artifact-lineage"].services)
+
+    def test_protection_wait_failure_never_runs_the_scenario_and_still_cleans(self):
+        result = self.run_gate(ADDP_TEST_PROTECTION_WAIT_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("--wait-protection-owners manager", trace)
+        self.assertNotIn("make:test-online", trace)
+        for item in ("application-stop", "source-fixture:stop", "nfs-fixture:stop", "infra-down"):
+            self.assertIn(item, trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_security_start_failure_stops_before_manager_and_still_cleans(self):
+        self.host._write_repository_script("scripts/dev/start.sh", '''
+            #!/usr/bin/env bash
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [ "$1" != -security ]
+        ''')
+        subprocess.run(["git", "add", "scripts/dev/start.sh"], cwd=self.host.repository, check=True)
+        subprocess.run(["git", "commit", "-qm", "security startup failure fixture"], cwd=self.host.repository, check=True)
+        result = self.run_gate()
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("start:-security", trace)
+        self.assertNotIn("start:-manager", trace)
+        self.assertNotIn("make:test-online", trace)
+        for item in ("application-stop", "source-fixture:stop", "infra-down"):
+            self.assertIn(item, trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_build_failure_cleans_registry_without_starting_infra(self):
         result = self.run_gate(ADDP_TEST_BUILD_FAIL="1")
