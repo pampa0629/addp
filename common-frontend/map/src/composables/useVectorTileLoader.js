@@ -210,6 +210,7 @@ export function useVectorTileLoader(options = {}) {
 
       // 发起请求 (关联取消信号)
       fetch(src, {
+        cache: options.cache ?? 'default',
         headers: { Authorization: getToken() ? `Bearer ${getToken()}` : '' },
         signal: controller.signal
       })
@@ -245,6 +246,7 @@ export function useVectorTileLoader(options = {}) {
    * @param {Object} options - 可选配置
    * @param {number} options.minZoom - 最小瓦片层级（数据层级，不是地图层级）
    * @param {number} options.maxZoom - 最大瓦片层级（数据层级，不是地图层级）
+   * @param {RequestCache} options.cache - 浏览器 HTTP 缓存策略；可替换业务产物使用 no-store
    * @returns {VectorTileLayer} OpenLayers VectorTileLayer
    */
   function createVectorTileLayer(urlTemplate, getToken, options = {}) {

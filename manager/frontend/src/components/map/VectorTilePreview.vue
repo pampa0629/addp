@@ -205,8 +205,9 @@ function scheduleMapSizeUpdate() {
 
 const createMVTLayer = () => {
   const layer = createVectorTileLayer(tilesURLTemplate.value, token, {
-    minZoom: tileRenderInfo.value?.min_zoom || 6,
+    minZoom: tileRenderInfo.value?.min_zoom ?? 6,
     maxZoom: sourceMaxZoom.value,
+    cache: normalizedRenderSource.value === 'business_pmtiles' ? 'no-store' : 'default',
     cacheSize: 64,
     maxDecodedTileBytes: 8 * 1024 * 1024,
     degradedRetryCooldownMs: 15000,
@@ -220,7 +221,7 @@ const createMVTLayer = () => {
 function applyTileRenderInfoFromProps() {
   const data = props.tileRenderInfo || {}
   tileRenderInfo.value = {
-    min_zoom: data.min_zoom || 6,
+    min_zoom: data.min_zoom ?? 6,
     max_zoom: data.max_zoom || 18,
     extent: data.extent,
     extent_srid: data.extent_srid,
@@ -315,7 +316,7 @@ async function initMap() {
   } else if (tileRenderInfo.value?.extent?.length === 4) {
     const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
     initialCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
-    initialZoom = tileRenderInfo.value.min_zoom || props.zoom
+    initialZoom = tileRenderInfo.value.min_zoom ?? props.zoom
   }
 
   // 3. 创建图层

@@ -656,6 +656,7 @@ func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
 // @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：vector_materialized_view_generation 或 vector_tile_cache_generation | Recommended action when timeout or degraded"
 // @Header 200 {string} X-ADDP-Tile-Retry-Policy "超时或降级后的重试策略：suppress_tile 或 ttl | Retry policy after timeout or degraded"
 // @Header 200 {string} X-Generation-Time "动态生成耗时 | Dynamic generation duration"
+// @Header 200 {string} Cache-Control "Business PMTiles 使用 no-store，替换后读取当前瓦片 | Business PMTiles uses no-store to read current tiles after replacement"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -703,7 +704,7 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 				c.Header("X-ADDP-Tile-Status", "ok")
 			}
 			c.Header("X-ADDP-Tile-Cache", "MISS")
-			c.Header("Cache-Control", "public, max-age=86400")
+			c.Header("Cache-Control", "no-store")
 			c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", data)
 			return
 		}

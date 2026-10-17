@@ -5399,6 +5399,10 @@ paths:
         "200":
           description: MVT瓦片数据 | MVT tile data
           headers:
+            Cache-Control:
+              description: Business PMTiles 使用 no-store，替换后读取当前瓦片 | Business PMTiles
+                uses no-store to read current tiles after replacement
+              type: string
             X-ADDP-Render-Source:
               description: '渲染来源：cached_tile 或 realtime_tile | Render source: cached_tile
                 or realtime_tile'
