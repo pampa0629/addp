@@ -641,7 +641,7 @@
       "writeModeCreate": "Create",
       "engineFallback": "Engine {{id}}",
       "transientResultGenerated": "Result generated for this run",
-      "transientResultDescription": "The result is generated only at runtime; the execution record keeps a summary (about {{size}}), not data in an engine.",
+      "transientResultDescription": "The result is generated only at runtime; the execution record keeps a summary (about {size}), not data in an engine.",
       "noPersistentOutput": "This run produced no saved artifact",
       "noPersistentOutputDescription": "No output target was configured at the end of the workflow, so the calculation is not stored as durable data.",
       "taskId": "Task ID",

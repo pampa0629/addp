@@ -652,7 +652,7 @@
       "writeModeCreate": "新建",
       "engineFallback": "引擎 {{id}}",
       "transientResultGenerated": "已生成本次执行结果",
-      "transientResultDescription": "结果只在本次运行时生成；执行记录仅保留摘要（约 {{size}}），未写入数据引擎。",
+      "transientResultDescription": "结果只在本次运行时生成；执行记录仅保留摘要（约 {size}），未写入数据引擎。",
       "noPersistentOutput": "本次执行没有保存产物",
       "noPersistentOutputDescription": "末端没有配置数据保存目标，计算结果不会作为长期数据保存。",
       "taskId": "任务ID",
