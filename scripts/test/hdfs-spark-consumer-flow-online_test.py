@@ -175,9 +175,12 @@ class HDFSOnlineTest(unittest.TestCase):
         reused = {'metadata': {'result': {'runtime_execution_id': 'runtime-reuse', 'final_result': final_result()}}}
         graph = {'edges': [{'source': {'item_id': source}, 'target': {'item_id': 5},
                  'evidence': {'execution_id': 'saved'}, 'status': 'active', 'relation_kind': 'derive'} for source in (1, 2, 3)]}
-        for wrong in ('', 'amount', 'missing', 'duplicate'):
+        for wrong in ('', 'amount', 'missing', 'duplicate', 'number', 'noncanonical'):
             rows = final_result()['preview_rows']
-            if wrong == 'amount': rows[0]['csv_amount_sum'] += 1
+            rows = [{key: value if key == 'region' else str(value) for key, value in row.items()} for row in rows]
+            if wrong == 'amount': rows[0]['csv_amount_sum'] = '1101'
+            if wrong == 'number': rows[0]['csv_rows'] = 10
+            if wrong == 'noncanonical': rows[0]['csv_rows'] = '010'
             if wrong == 'missing': rows[0].pop('parquet_rows')
             if wrong == 'duplicate': rows.append(rows[0].copy())
             client = Mock()
@@ -195,6 +198,7 @@ class HDFSOnlineTest(unittest.TestCase):
                 else:
                     result = MODULE.run_persistence(client, report, 9, 30)
                     self.assertEqual(result['lineage_sources'], [1, 2, 3])
+                    self.assertEqual(result['manager_preview_rows'], rows)
                     self.assertEqual(result['reuse_final_result'], final_result())
                     self.assertEqual(report['final_result']['preview_rows'][0]['region'], 'west')
 
@@ -216,7 +220,7 @@ class HDFSOnlineTest(unittest.TestCase):
                  patch.object(MODULE, 'validate_persistence', return_value=({'status': 'success', 'rows': 2}, 'scan')), \
                  patch.object(MODULE.SPARK, 'runtime_status_evidence', return_value={}), \
                  patch.object(MODULE.support, 'find_item', return_value=item) as find, \
-                 patch.object(MODULE.support, 'preview_rows', return_value=([], final_result()['preview_rows'])), \
+                 patch.object(MODULE.support, 'preview_rows', return_value=([], [{key: value if key == 'region' else str(value) for key, value in row.items()} for row in final_result()['preview_rows']])), \
                  patch.object(MODULE, 'minio_physical', return_value={'committer': 'magic'}):
                 if layout != 'whole':
                     with self.assertRaisesRegex(MODULE.SuiteError, 'table/parquet/whole'):

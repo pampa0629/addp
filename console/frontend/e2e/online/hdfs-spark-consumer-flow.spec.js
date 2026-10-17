@@ -72,7 +72,7 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
       const persisted = await json(await savedPreview, 'persisted table preview')
       expect(persisted.preview_type).toBe('table')
       expect(persisted.data.rows.slice().sort((a, b) => a.region.localeCompare(b.region)))
-        .toEqual(expected.final_result.preview_rows.slice().sort((a, b) => a.region.localeCompare(b.region)))
+        .toEqual(persistence.manager_preview_rows.slice().sort((a, b) => a.region.localeCompare(b.region)))
       await expect(page.frameLocator('iframe[data-testid="module-iframe"]').locator('.table-preview .el-table__body-wrapper tr')).toHaveCount(2)
       await screenshot(prefix ? 'minio' : 'persisted')
       for (const [name, id, final] of [

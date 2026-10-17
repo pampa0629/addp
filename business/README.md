@@ -537,7 +537,7 @@ Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656]
 
 ## HDFS Simple 实验环境
 
-现有手动 Hosted `hdfs-spark-consumer-flow` 同时验收 Spark → MySQL/Doris 的正式页面链路。Business 夹具复用真实 Worker T2 的固定镜像与 Doris 唯一初始化，为当次 Run 建立独占数据库；`online-spark-table-oracle.py` 只核对原生五行精确值、类型、表身份、DDL 与暂存清理，不访问平台 API。首次创建经 Develop 执行并自动扫描后，System 准备身份签发精确表读取 Grant，随即撤出准备凭据；普通 User 继续覆盖、Manager 预览和 Spark 复用。全部退出路径先检查目标表删除及零暂存，再销毁容器与卷。协议回归仍为 `make test-hdfs-online-runner`，真实页面证据由原 Hosted suite 归档；实现和脚本回归不代表扩展已通过真实 T4。
+现有手动 Hosted `hdfs-spark-consumer-flow` 同时验收 Spark → MySQL/Doris 的正式页面链路。Business 夹具复用真实 Worker T2 的固定镜像与 Doris 唯一初始化，为当次 Run 建立独占数据库；`online-spark-table-oracle.py` 只核对原生五行精确值、类型、表身份、DDL 与暂存清理，不访问平台 API。首次创建经 Develop 执行并自动扫描后，System 准备身份签发精确表读取 Grant，随即撤出准备凭据；普通 User 继续覆盖、Manager 预览和 Spark 复用。全部退出路径先检查目标表删除及零暂存，再销毁容器与卷。原 HDFS 汇总结果的六个计数／金额列均为 bigint：Manager 预览必须按 API 规范返回十进制字符串，Spark Runtime 摘要和下游复用继续核对原生整数；测试分别比较两个边界，不转换实际响应来兼容两种表示。协议回归仍为 `make test-hdfs-online-runner`，真实页面证据由原 Hosted suite 归档；实现和脚本回归不代表扩展已通过真实 T4。
 
 该 Hosted 夹具使用 Linux host 网络，必须显式将 Doris 容器主机名 `doris` 映射到 `127.0.0.1`；只设置 `--hostname` 不会建立地址解析。FE 启用 FQDN 模式后会解析自身主机名，映射缺失时因 `UnknownHostException` 退出，而 BE 仍可能运行并等待心跳。因此就绪核验继续要求 FE 可查询且唯一 BE 为 Alive；失败归档保留 FE 启动初段、日志文件和主机名解析结果，不能通过延长等待或仅检查容器存活掩盖启动失败。
 

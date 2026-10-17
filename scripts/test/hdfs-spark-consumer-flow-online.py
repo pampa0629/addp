@@ -283,8 +283,14 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
     preview_locator = target_locator + '&item_id=' + str(item['id'])
     _, rows = support.preview_rows(client, preview_locator)
     expected_rows = sorted(report['final_result']['preview_rows'], key=lambda row: row['region'])
-    if sorted(rows, key=lambda row: row['region']) != expected_rows:
-        raise SuiteError('Manager persisted result differs from the computed totals')
+    # All six count/sum columns in this fixture are bigint. Manager's HTTP
+    # boundary uses decimal strings; Runtime DataFrame summaries stay numeric.
+    expected_preview_rows = [{key: value if key == 'region' else str(value)
+                              for key, value in row.items()} for row in expected_rows]
+    if sorted(rows, key=lambda row: row['region']) != expected_preview_rows:
+        observed_types = [{key: type(value).__name__ for key, value in row.items()} for row in rows]
+        raise SuiteError('Manager persisted result differs from the computed totals / bigint JSON contract: '
+                         + json.dumps(observed_types, sort_keys=True))
     query = urllib.parse.urlencode({'subject_kind': 'data_item', 'item_id': item['id'], 'direction': 'upstream'})
     expected_sources = {report['item_ids'][name] for name in ('csv', 'json', 'parquet')}
     while time.monotonic() < deadline:
@@ -308,7 +314,7 @@ def run_persistence(client, report, target_engine_id, timeout, target_type="tabl
     reuse_runtime = SPARK.runtime_status_evidence(support.required_environment('ADDP_ONLINE_SPARK_RUNTIME_URL'),
         reused['metadata']['result']['runtime_execution_id'], reused_final, 1)
     return {'engine_id': target_engine_id, 'execution_id': execution_id, 'target_locator': target_locator,
-            'preview_locator': preview_locator, 'item_id': item['id'], 'scan_execution_id': scan_id,
+            'preview_locator': preview_locator, 'manager_preview_rows': rows, 'item_id': item['id'], 'scan_execution_id': scan_id,
             'final_result': final, 'runtime_status': runtime, 'physical': minio_physical(item_path) if target_type == 'file' else persistence_physical(),
             'lineage_sources': sorted(observed), 'reuse_execution_id': reuse_id, 'reuse_final_result': reused_final,
             'reuse_runtime_status': reuse_runtime}
