@@ -30,10 +30,10 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 
 // RefreshItem 强制刷新指定 item 的元数据
 // @Summary 刷新数据项元数据 | Refresh item metadata
-// @Description 强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for an item and wait until completion
+// @Description 当前租户用户以本人凭据同步提交精确 item 深度刷新并等待完成，Meta 独立核验扫描权限 | Current tenant user submits an exact item deep refresh with their own credential and waits; Meta independently checks scan permission
 // @Tags Manager
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.data_item.update"]
+// @x-addp-required-permissions ["manager.data_item.update","meta.scan_task.execute"]
 // @Router /engines/{id}/items/refresh [post]
 // @Accept json
 // @Produce json
@@ -42,10 +42,19 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 // @Param body body models.MetaManualScanRequest false "扫描定位及 CSV/TSV 深度刷新编码（可选）| Item target and CSV/TSV deep refresh encoding (optional)"
 // @Success 200 {object} models.MetaScanResponse "同步扫描结果 | Synchronous scan result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "当前用户无权刷新 | Current user cannot refresh"
+// @Failure 404 {object} map[string]interface{} "数据项不存在 | Item not found"
+// @Failure 409 {object} map[string]interface{} "同范围扫描正在执行 | Scan scope is active"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
+// @Failure 504 {object} map[string]interface{} "刷新等待超时 | Refresh wait timed out"
 // @Security BearerAuth
 func (h *MetadataHandler) RefreshItem(c *gin.Context) {
+	principal, ok := commonAuth.PrincipalFromGin(c)
+	if !ok || principal.Type != "user" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error_code": "permission_denied", "error": commoni18n.T(c, commoni18n.MsgForbidden)})
+		return
+	}
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
@@ -83,7 +92,7 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 	req.Force = true
 
 	tenantID := commonAuth.GetTenantID(c)
-	result, err := h.metadataService.RefreshItem(c.Request.Context(), &tenantID, engineID, &req)
+	result, err := h.metadataService.RefreshItem(c.Request.Context(), &tenantID, engineID, &req, commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")))
 	if err != nil {
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
@@ -97,7 +106,14 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgScanEncodingInvalid), "error_code": code})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		status := http.StatusServiceUnavailable
+		if downstream, ok := client.TenantAPIStatusCode(err); ok {
+			switch downstream {
+			case http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusGatewayTimeout:
+				status = downstream
+			}
+		}
+		c.JSON(status, gin.H{"error_code": "item_refresh_failed", "error": commoni18n.T(c, manageri18n.MsgItemRefreshFailed)})
 		return
 	}
 

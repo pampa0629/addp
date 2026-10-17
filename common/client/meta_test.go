@@ -259,7 +259,7 @@ func TestMetaClientCreateManualScanRunRejectsScheduledTrigger(t *testing.T) {
 	}
 }
 
-func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
+func TestMetaUserRefreshItemUsesItemRefreshPath(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -277,11 +277,9 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestMetaClient(server.URL)
-	tenantID := uint(8)
-	client = client.WithTenantID(tenantID)
+	client := NewMetaScanUserClient(server.URL)
 
-	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true, Encoding: "gbk"})
+	result, err := client.RefreshItem(t.Context(), "current-user", 1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true, Encoding: "gbk"})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -291,7 +289,7 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	if gotPath != "/api/v1/meta/items/1831/refresh" {
 		t.Fatalf("path = %q, want /api/v1/meta/items/1831/refresh", gotPath)
 	}
-	if gotHeader != "Bearer test-token" || gotLegacyHeaders {
+	if gotHeader != "Bearer current-user" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
 	}
 	if gotPayload["encoding"] != "gbk" {
@@ -314,7 +312,7 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 }
 
-func TestMetaClientRefreshItemRejectsScheduledTrigger(t *testing.T) {
+func TestMetaUserRefreshItemRejectsScheduledTrigger(t *testing.T) {
 	t.Parallel()
 
 	called := false
@@ -323,8 +321,8 @@ func TestMetaClientRefreshItemRejectsScheduledTrigger(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestMetaClient(server.URL)
-	_, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
+	client := NewMetaScanUserClient(server.URL)
+	_, err := client.RefreshItem(t.Context(), "current-user", 1831, MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
 	if err == nil {
 		t.Fatal("RefreshItem() should reject scheduled trigger_type")
 	}
@@ -366,13 +364,13 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestMetaClientRefreshItemPreservesErrorContract(t *testing.T) {
+func TestMetaUserRefreshItemPreservesErrorContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":"localized message","error_code":"scan_encoding_invalid"}`))
 	}))
 	defer server.Close()
-	_, err := newTestMetaClient(server.URL).WithTenantID(8).RefreshItem(1, MetaScanOptions{Encoding: "bad"})
+	_, err := NewMetaScanUserClient(server.URL).RefreshItem(t.Context(), "current-user", 1, MetaScanOptions{Encoding: "bad"})
 	if status, ok := TenantAPIStatusCode(err); !ok || status != 400 {
 		t.Fatalf("status: %v", err)
 	}

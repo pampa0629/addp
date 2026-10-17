@@ -96,3 +96,59 @@ func TestMetaUserScanRejectsInvalidInputsAndResponses(t *testing.T) {
 		t.Fatal("cancelled request continued")
 	}
 }
+
+func TestMetaUserRefreshNeverRetriesOrRedirectsCredentials(t *testing.T) {
+	for _, status := range []int{401, 403, 409, 500, 503, 307} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			calls, redirects := 0, 0
+			sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirects++ }))
+			defer sink.Close()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Header.Get("Authorization") != "Bearer current-user" {
+					t.Error("wrong credential")
+				}
+				w.Header().Set("Location", sink.URL)
+				w.WriteHeader(status)
+				io.WriteString(w, `{"error":"private-secret","error_code":"scan_scope_active"}`)
+			}))
+			defer server.Close()
+			_, err := NewMetaScanUserClient(server.URL).RefreshItem(t.Context(), "current-user", 8, MetaScanOptions{Encoding: "gbk"})
+			got, ok := TenantAPIStatusCode(err)
+			if !ok || got != status || calls != 1 || redirects != 0 || strings.Contains(err.Error(), "private-secret") {
+				t.Fatalf("unsafe refresh error: %v calls=%d redirects=%d", err, calls, redirects)
+			}
+		})
+	}
+}
+
+func TestMetaUserRefreshUsesCallCredentialAndContext(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") != []string{"Bearer first-user", "Bearer second-user"}[calls-1] {
+			t.Error("credential persisted between calls")
+		}
+		io.WriteString(w, `{"status":"success","items_scanned":1}`)
+	}))
+	defer server.Close()
+	client := NewMetaScanUserClient(server.URL)
+	for _, token := range []string{"", "user secret", "user\nsecret"} {
+		if _, err := client.RefreshItem(t.Context(), token, 8, MetaScanOptions{}); err == nil {
+			t.Fatal("invalid credential accepted")
+		}
+	}
+	if calls != 0 {
+		t.Fatal("invalid credential reached server")
+	}
+	for _, token := range []string{"first-user", "second-user"} {
+		if _, err := client.RefreshItem(t.Context(), token, 8, MetaScanOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := client.RefreshItem(ctx, "third-user", 8, MetaScanOptions{}); err == nil || calls != 2 {
+		t.Fatal("cancelled refresh continued")
+	}
+}

@@ -21,6 +21,7 @@ const (
 	MsgTrajectorySourceInvalid               = "manager.error.trajectory_source_invalid"
 	MsgUploadScanSubmissionFailed            = "manager.error.upload_scan_submission_failed"
 	MsgScanEncodingInvalid                   = "manager.error.scan_encoding_invalid"
+	MsgItemRefreshFailed                     = "manager.error.item_refresh_failed"
 	MsgCacheCleared                          = "manager.cache.cleared"
 	MsgCacheClearedAll                       = "manager.cache.cleared_all"
 	MsgCacheRefreshed                        = "manager.cache.refreshed"

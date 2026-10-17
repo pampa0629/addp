@@ -26,11 +26,12 @@ import (
 )
 
 type MetadataService struct {
-	metadataRepo *repository.MetadataRepository
-	systemClient *commonClient.SystemClient
-	metaClient   *commonClient.MetaClient
-	previews     *preview.PreviewRegistry
-	content      *objectcontent.ObjectContentRegistry
+	metadataRepo   *repository.MetadataRepository
+	systemClient   *commonClient.SystemClient
+	metaClient     *commonClient.MetaClient
+	metaUserClient *commonClient.MetaScanUserClient
+	previews       *preview.PreviewRegistry
+	content        *objectcontent.ObjectContentRegistry
 }
 
 // StorageDataItem is a server-verified storage item identity. Callers must use
@@ -76,9 +77,13 @@ func (s *MetadataService) ContentRegistry() *objectcontent.ObjectContentRegistry
 	return s.content
 }
 
-func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engineID uint, req *models.MetaManualScanRequest) (*models.MetaScanResponse, error) {
-	if s.metaClient == nil {
-		return nil, fmt.Errorf("meta client not initialized")
+func (s *MetadataService) SetMetaScanUserClient(client *commonClient.MetaScanUserClient) {
+	s.metaUserClient = client
+}
+
+func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engineID uint, req *models.MetaManualScanRequest, userBearer string) (*models.MetaScanResponse, error) {
+	if s.metaUserClient == nil {
+		return nil, fmt.Errorf("Meta user scan client not initialized")
 	}
 
 	opts := commonClient.MetaScanOptions{EngineID: engineID, ScanDepth: commonClient.MetaScanDepthDeep, TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true}
@@ -97,12 +102,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	if _, err := s.getResourceForTenant(ctx, engineID, tenantID); err != nil {
 		return nil, err
 	}
-	metaClient := s.metaClient
-	if tenantID != nil {
-		metaClient = metaClient.WithTenantID(*tenantID)
-	}
-
-	result, err := metaClient.RefreshItem(opts.ItemID, opts)
+	result, err := s.metaUserClient.RefreshItem(ctx, userBearer, opts.ItemID, opts)
 	if err != nil {
 		return nil, err
 	}

@@ -3709,8 +3709,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for
-        an item and wait until completion
+      description: 当前租户用户以本人凭据同步提交精确 item 深度刷新并等待完成，Meta 独立核验扫描权限 | Current tenant
+        user submits an exact item deep refresh with their own credential and waits;
+        Meta independently checks scan permission
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -3739,6 +3740,21 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 当前用户无权刷新 | Current user cannot refresh
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 数据项不存在 | Item not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 同范围扫描正在执行 | Scan scope is active
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -3746,6 +3762,11 @@ paths:
             type: object
         "503":
           description: 引擎不可用 | Engine unavailable
+          schema:
+            additionalProperties: true
+            type: object
+        "504":
+          description: 刷新等待超时 | Refresh wait timed out
           schema:
             additionalProperties: true
             type: object
@@ -3757,6 +3778,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.data_item.update
+      - meta.scan_task.execute
   /engines/{id}/spatial/features/{feature_id}/centroid:
     get:
       description: 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS

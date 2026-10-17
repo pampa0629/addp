@@ -53,7 +53,11 @@
 
 2026-10-17 主线后续补验：以 `ac59b5c2db55c65a8e3e2f734551360556f3974d` 为起始基线，`make test-manager-frontend` 完整退出 0：328 项单元、211 项浏览器及生产构建通过；结束时 Manager／共享前端输入与起始基线无差异。原六项导入诊断失败在主线更新后均通过，彩色 FBX 的真实渲染、旋转、重开和视口变化包含在本次完整回归中。本轮没有修改产品实现，完整 Online 门禁未补跑，不能将本次前端通过外推为全部 Online 通过。
 
-新增 [Manager Hosted 38992669706](https://github.com/pampa0629/addp/actions/runs/38992669706) 的源码为 `cfcecb084116104bf0ecfab5266ac4b57f410fa8`，Job `117278246314`；本次复核仍为 queued、未分配 Runner、步骤为空，尚无本轮真实页面／下载／清理回执，不登记新增 T4 或物理清理通过。已核对无旧的同一 Manager suite 占用其并发组；继续保留原运行，未重复触发。
+新增 [Manager Hosted 38992669706](https://github.com/pampa0629/addp/actions/runs/38992669706) 的源码为 `cfcecb084116104bf0ecfab5266ac4b57f410fa8`，Job `117278246314`，现已结束为 failure。独立 browser/v12 的 generation-entry 阶段通过：彩色 FBX 实际源流与下载 SHA-256、三色像素、旋转、重开均通过；缓存阶段也已执行至八模型显示，但整轮停在 GBK CSV 的“应用编码并刷新”，Manager 和 Meta 对同次 item refresh 均返回 500，尚无完整 cached-preview 成功回执，不能登记完整新增 T4 通过。
+
+2026-10-17 失败排查确认：Manager known-item refresh 使用 Meta 服务客户端，Meta `CreateManualRun` 对没有父执行来源的服务请求拒绝；旧错误映射将该拒绝表现为 500。新增 HTTP 回归以服务身份复现同样的 500。修复遵循既有同步 BFF 规范，迁移到独立 `MetaScanUserClient` 转发当前 User Bearer，仅要求已有的刷新和扫描 Permission，不增加十项测试权限，也不放松 Meta 来源校验；服务客户端的旧刷新方法删除。独立物理清理回执确认 COG/PDF 对象删除、源未变和零残留，Hosted 外层 cleanup=passed、Infra zero_residuals；这些清理证据不代替尚未完成的 CSV/TSV 全流程或完整新增 FBX T4。
+
+修复后 `make test-manager-backend`、`make test-go` 全部退出 0；覆盖当前 User 凭据逐次传递、机器身份与任一缺失权限在读取正文前拒绝、下游错误安全映射、取消及禁止重试／重定向。`make test-manager-online-runner` 的 92 项及既有 SGM 隔离 23 项、System 身份夹具通过；Manager Swagger 生成与 94 个公开路由方法覆盖校验通过。既有标准入口和 CI 自动发现覆盖此次变更，无新增服务、测试部署入口或工作流；新一轮 Hosted 尚未完成，以上仅登记确定性验证。
 
 ### 2026-10-17 FBX 基础预览与 Three.js 升级评估
 

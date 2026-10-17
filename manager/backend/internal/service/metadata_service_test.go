@@ -57,9 +57,9 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	defer systemServer.Close()
 
 	metaClient := newServiceTestMetaClient(metaServer.URL)
-	service := &MetadataService{metaClient: metaClient, systemClient: newTestSystemClient(systemServer.URL)}
+	service := &MetadataService{metaClient: metaClient, metaUserClient: client.NewMetaScanUserClient(metaServer.URL), systemClient: newTestSystemClient(systemServer.URL)}
 	tenantID := uint(11)
-	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831, Encoding: "gbk"})
+	resp, err := service.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831, Encoding: "gbk"}, "current-user")
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	if gotPath != "/api/v1/meta/items/1831/refresh" {
 		t.Fatalf("path = %q, want /api/v1/meta/items/1831/refresh", gotPath)
 	}
-	if gotAuthorization != "Bearer test-token" || gotLegacyHeaders {
+	if gotAuthorization != "Bearer current-user" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotAuthorization, gotLegacyHeaders)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["encoding"] != "gbk" {
@@ -103,11 +103,12 @@ func TestMetadataServiceRefreshItemRejectsOfflineEngineBeforeMetaCall(t *testing
 	defer systemServer.Close()
 
 	svc := &MetadataService{
-		metaClient:   newServiceTestMetaClient(metaServer.URL),
-		systemClient: newTestSystemClient(systemServer.URL),
+		metaUserClient: client.NewMetaScanUserClient(metaServer.URL),
+		metaClient:     newServiceTestMetaClient(metaServer.URL),
+		systemClient:   newTestSystemClient(systemServer.URL),
 	}
 	tenantID := uint(11)
-	_, err := svc.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831})
+	_, err := svc.RefreshItem(t.Context(), &tenantID, 26, &models.MetaManualScanRequest{ItemID: 1831}, "current-user")
 	if !errors.Is(err, engineaccess.ErrUnavailable) {
 		t.Fatalf("RefreshItem() error = %v, want ErrUnavailable", err)
 	}

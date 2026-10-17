@@ -303,7 +303,7 @@ func SetupRouter(
 		downloadHandler := NewDownloadHandler(metadataService, protectionStore)
 
 		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取存储引擎选择项（只读）
-		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
+		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate, "meta.scan_task.execute"), metadataHandler.RefreshItem)
 		api.GET("/preview", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.Preview)
 		api.GET("/resource-facts", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ResourceFacts)
 		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)

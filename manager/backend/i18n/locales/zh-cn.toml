@@ -326,3 +326,6 @@ other = "导入暂存来源不存在"
 
 [manager.import.source_unavailable]
 other = "导入来源核验暂不可用"
+
+[manager.error.item_refresh_failed]
+other = "数据项刷新失败，请核对扫描权限、服务状态后重试"

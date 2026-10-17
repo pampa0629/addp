@@ -326,3 +326,6 @@ other = "Import staging source not found"
 
 [manager.import.source_unavailable]
 other = "Import source verification is unavailable"
+
+[manager.error.item_refresh_failed]
+other = "Item refresh failed. Check scan permission and service availability before retrying."

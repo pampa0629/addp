@@ -187,6 +187,7 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
+	metadataService.SetMetaScanUserClient(commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
 	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, indexDeliveries)
 	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "manager", managerProjectionBarrier)

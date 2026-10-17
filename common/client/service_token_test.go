@@ -260,9 +260,9 @@ func TestMetaClientReplaysRequestBodyAfterServiceTokenRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	metaClient := NewMetaClient(metaServer.URL, source).WithTenantID(7)
-	result, err := metaClient.RefreshItem(12, MetaScanOptions{EngineID: 5, Force: true})
+	result, err := metaClient.CreateManualScanRun(MetaScanOptions{EngineID: 5, Force: true})
 	if err != nil {
-		t.Fatalf("RefreshItem() error = %v", err)
+		t.Fatalf("CreateManualScanRun() error = %v", err)
 	}
 	if result.Status != "completed" || len(requestBodies) != 2 || requestBodies[0] == "" || requestBodies[0] != requestBodies[1] {
 		t.Fatalf("result=%#v request bodies=%q", result, requestBodies)

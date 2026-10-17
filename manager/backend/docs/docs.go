@@ -790,7 +790,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "强制触发一次 item 对应的元数据重扫，并等待扫描完成 | Force a deep metadata rescan for an item and wait until completion",
+                "description": "当前租户用户以本人凭据同步提交精确 item 深度刷新并等待完成，Meta 独立核验扫描权限 | Current tenant user submits an exact item deep refresh with their own credential and waits; Meta independently checks scan permission",
                 "consumes": [
                     "application/json"
                 ],
@@ -838,6 +838,27 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "当前用户无权刷新 | Current user cannot refresh",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "数据项不存在 | Item not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "同范围扫描正在执行 | Scan scope is active",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -851,11 +872,19 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "504": {
+                        "description": "刷新等待超时 | Refresh wait timed out",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "manager.data_item.update"
+                    "manager.data_item.update",
+                    "meta.scan_task.execute"
                 ]
             }
         },
