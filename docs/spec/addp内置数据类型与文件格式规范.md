@@ -1209,6 +1209,8 @@ FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdb
 - 用户可以在共享表格地图预览中临时声明 EPSG:4326 或 EPSG:3857，默认不选，明确选择后才绘图；只用于解释当前响应的源坐标，不覆盖已识别 CRS 或后端已转换的几何。声明不进入 URL、持久视图、Meta 或源文件，同一资源／图层翻页时保留，切换资源、图层、组件或重新打开时清除。清除选择后恢复未知 CRS 的地图暂停状态；显示坐标仍走唯一的共享 CRS registry，不另建 TopoJSON 地图转换路线。
 - 首期支持简单要素与图层读取，不承诺 KML 样式、嵌套 Folder 层次和描述语义的完整还原；Model、Overlay、NetworkLink、gx Track 不作为普通矢量静默处理。TopoJSON 首期只支持二维位置，非法弧索引、额外维度、null object 和嵌套 GeometryCollection 明确拒绝，避免驱动静默丢失；GML 接受普通 schemaLocation 注记，但明确禁用 schema 下载／导入，在隔离副本中按要素推断字段；仅接受标准 EPSG / OGC CRS84 标识，不读取自定义 CRS 外部链接；不支持 XLink、越界 schema 路径或应用 schema 的完整业务语义；XML DTD 和实体声明拒绝读取，不回源下载链接内容。
 
+临时 CRS 交互沿用 `make test-common-frontend` 的共享策略 T1 和 `make test-manager-frontend` 的页面组合 T3，覆盖中英文选择、实际绘图、容器／单文件翻页、清除与重新打开、资源／图层切换，以及声明不进入 API 或持久视图。既有共享表格消费者由 `make test-service-frontend` 验证；已有自动发现和 Platform CI 登记覆盖新增测试，不增加专用服务或 workflow。确定性页面夹具不替代真实扫描、Runtime 读取和 Hosted T4。
+
 最小验证使用 `make test-geopython-workflow`（真实原生驱动、多图层、坐标／轴序、TopoJSON 量化与反向弧、未知 CRS 和拒绝边界）、`make test-go`（格式注册、Meta 和 Manager 路由／读取协议），沿用 Platform CI 已登记的 Go 和 GeoPython 门禁。上述门禁不等同于跨模块 T4 或真实页面验收。升级后，已有 KML 文档项应通过父目录的强制扫描重新发现为容器；known-item refresh 只重建既有身份，不能代替格式分类重识别。
 
 参考：[GDAL KML](https://gdal.org/en/stable/drivers/vector/kml.html)、[GDAL GML](https://gdal.org/en/stable/drivers/vector/gml.html)、[GDAL TopoJSON](https://gdal.org/en/stable/drivers/vector/topojson.html)、[TopoJSON 格式规范](https://github.com/topojson/topojson-specification)。

@@ -283,7 +283,7 @@ const hasSavedViewState = computed(() => {
 })
 
 const handleViewStateChange = (state) => {
-  if (!temporaryCrs.value) emit('view-state-change', state)
+  if (!temporaryCrs.value && !needsSourceCRS.value) emit('view-state-change', state)
 }
 
 const getVisibleSectionCount = () => {

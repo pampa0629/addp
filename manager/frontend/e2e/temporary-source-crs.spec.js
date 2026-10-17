@@ -105,6 +105,7 @@ for (const language of ['zh-cn', 'en']) {
     await expect(page.locator('.table-preview .ol-viewport')).toHaveCount(0)
     await chooseCRS(page, label, 'EPSG:4326')
     await expectPaint(page)
+    expect(managerWrites(state)).toEqual(writes)
     await page.getByRole('treeitem', { name: 'known.gml', exact: true }).click()
     await expect(page.locator('.temporary-crs-select')).toHaveCount(0)
     await expectPaint(page)

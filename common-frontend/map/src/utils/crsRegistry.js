@@ -1,10 +1,11 @@
 import proj4 from 'proj4'
 import { register } from 'ol/proj/proj4'
 import { normalizeCRSDefinition } from './crsDefinition.mjs'
+import { canDeclareSourceCRS, resolvePreviewSourceCRSDeclaration } from './crsDeclaration.mjs'
+export { TEMPORARY_SOURCE_CRS_OPTIONS } from './crsDeclaration.mjs'
 
 const WGS84 = 'EPSG:4326'
 const WEB_MERCATOR = 'EPSG:3857'
-export const TEMPORARY_SOURCE_CRS_OPTIONS = Object.freeze([WGS84, WEB_MERCATOR])
 const SUPPORTED_DEFINITION_ENCODINGS = new Set(['wkt', 'esri_wkt', 'proj4'])
 
 let registered = false
@@ -111,13 +112,10 @@ export const getPreviewCRSTransform = (preview, temporarySourceCRS = '') => {
   ensureBuiltIns()
 
   const transformStatus = String(preview?.transform_status || metadata(preview)?.transform_status || '').trim()
-  let sourceCode = responseGeometryCodeFromPreview(preview, transformStatus)
-  if (transformStatus === 'engine_transformed' && !sourceCode) return { status: 'unknown_crs' }
-  const needsDeclaration = transformStatus === 'unknown_crs' || !sourceCode
-  if (needsDeclaration) {
-    if (!TEMPORARY_SOURCE_CRS_OPTIONS.includes(temporarySourceCRS)) return { status: 'unknown_crs' }
-    sourceCode = temporarySourceCRS
-  }
+  const originalSourceCode = responseGeometryCodeFromPreview(preview, transformStatus)
+  const needsDeclaration = canDeclareSourceCRS(originalSourceCode, transformStatus)
+  const sourceCode = resolvePreviewSourceCRSDeclaration(originalSourceCode, transformStatus, temporarySourceCRS)
+  if (!sourceCode) return { status: 'unknown_crs' }
   if (sourceCode.toUpperCase() === WGS84) {
     return { status: 'direct', sourceCode, targetCode: WGS84 }
   }
@@ -149,7 +147,7 @@ const transformCoordinates = (value, transformCoordinate) => {
 
 export const canDeclarePreviewSourceCRS = (preview) => {
   const status = String(preview?.transform_status || metadata(preview)?.transform_status || '').trim()
-  return status !== 'engine_transformed' && getPreviewCRSTransform(preview).status === 'unknown_crs'
+  return canDeclareSourceCRS(responseGeometryCodeFromPreview(preview, status), status)
 }
 
 export const transformGeoJSONGeometryToWGS84 = (geometry, crsTransform) => {
