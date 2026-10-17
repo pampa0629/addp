@@ -5313,6 +5313,22 @@ const docTemplate = `{
                         "description": "名称或地址片段 | Name or address fragment",
                         "name": "search",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "physical",
+                            "virtual"
+                        ],
+                        "type": "string",
+                        "description": "主机类型；省略为全部 | Host kind; omit for all",
+                        "name": "node_kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "纳管启用状态；省略为全部 | Management enabled state; omit for all",
+                        "name": "enabled",
+                        "in": "query"
                     }
                 ],
                 "responses": {

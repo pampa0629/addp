@@ -2425,3 +2425,20 @@ API 操作完成后先停用并按 CAS 删除本轮规则和通知目标，验�
 按 API 规范 7.2，普通模型时间允许带时区 ISO 8601。规则评估状态、incident 生命周期、delivery 审计沿该契约读取，不能误用仅属于资源观测证据的 UTC `Z` 限制；同一 event 的审计时间与签名正文按绝对时刻比较，其他身份及不可变正文仍精确核对。嵌入 `ResourceAlertEvidence` 的评估、采样区间继续严格要求 UTC，持续时间、新鲜度、整数评估点、配置版本及阈值断言不变。本批只修正原验收器，不改产品 API、数据库、时区配置、IAM、浏览器或 Hosted 时限。实施前沿原 `make test-node-metrics-online-runner` 增加数据库 `+08:00` 与通知 UTC 的完整闭环模拟、等价时间及错误偏移/无时区拒绝反例，默认 `make test-changed` 单独记录；原登记已覆盖，修正后同一 Hosted suite 必须重新执行。
 
 时间格式反例先在原 runner 复现：65 项中完整闭环与来源异常清理分支被错误 UTC 断言提前中断（`/tmp/addp-resource-alert-timezone-red.log`）。修正后同一标准入口退出 0，66 项 Python 回归及 Metrics Go 测试通过（`/tmp/addp-resource-alert-timezone-green.log`）；额外验证等价时区可以比较、错误偏移与无时区时间仍拒绝、嵌入资源证据不得改成带偏移表示。`make test-changed` 因共享工作区 Catalog/Manager 的外部测试连接缺失在预检停止，未执行、不计通过（`/tmp/addp-resource-alert-timezone-changed.log`）；本批不调查或修复这些 Owner 的门禁。任务范围 diff 检查通过；原规范入口与 CI 已覆盖，无产品或环境变更，无需个人服务重启。
+
+### 10.78 平台主机类型与纳管状态组合筛选（2026-10-17，实施契约）
+
+沿原功能表“主机查询”“主机台账与批量管理”补齐已有属性筛选：System 平台主机管理支持名称/地址、physical/virtual 类型、启用/停用状态的 AND 组合，筛选在数据库计数和分页之前完成，同一只读可重复读事务内取得总数与列表。不将纳管启停解释为主机电源状态，不增加主机操作、后台自动登记、业务引擎归属、权限或 IAM 变更。
+
+唯一既有 `GET /api/v1/system/platform/host_nodes` 增加可选 `node_kind=physical|virtual`、`enabled=true|false`；缺省表示不限制。显式空值、重复值、非法类型、大小写/数字布尔及未知参数统一 400。`search` 保持字面片段语义，名称或地址的 OR 条件必须整体与类型、状态相交，不能因地址匹配泄漏不符合条件的节点。原分页边界、顺序、Platform User 与读取权限不变，Swagger 同批同步。
+
+前端沿原 `/host-nodes` 页面和 canonical URL：全部条件省略，类型/状态/搜索改变回到第一页，改变类型或状态同时应用当前搜索框文字，避免丢失已输入条件；翻页与详情返回保留条件，重置一次清空三项筛选和页码但保留每页数量；刷新不清筛选。筛选变化保留现有请求代数隔离，旧列表清除，迟到响应不得覆盖新条件。下拉选择采用现有 Element Plus 和模块中英文词条，窄屏可换行，不新增共享组件或第二套列表。
+
+实施前门禁：System Go T1 的路由/服务拒绝及组合计数；原 PostgreSQL 主机回归覆盖名称/地址 OR 与两条件组合、分页及只读快照；沿原 System PostgreSQL 入口按现有参数模式补充聚焦主机场景的选择并验证，默认 CI 路径仍完整覆盖。`make test-system-frontend` 覆盖 URL、请求映射、分页、重置、详情返回、迟到请求、中英文及构建，Console 消费范围按既有集成门禁核对。Swagger 生成与覆盖、默认 `make test-changed` 分别记录。原 System/前端/脚本自动发现和 CI 路径已覆盖；个人实际使用新查询前需要用户标准重启 System，本批不自行重启，不把确定性浏览器或 PostgreSQL 测试记作真实 Hosted 通过。
+
+
+本批本地验证已完成：`make test-module MODULE=system GO_ONLY=1` 的 System Go T1、`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test host-nodes"` 的真实 PostgreSQL 主机身份/组合过滤/分页/版本与绑定回归、`make test-system-iam-runner` 的 18 项选择器及互斥回归均退出 0。PostgreSQL 使用标准 Infra 状态确认的 `25432` 和既有 `addp_iam_test`，由原门禁重置并互斥运行，未创建或删除 database。Swagger 生成及 217 个公开路由方法的覆盖校验通过；原完整 PostgreSQL CI 默认发现仍覆盖新增断言，聚焦选择器不替代远端完整门禁。
+
+最终 `make test-system-frontend` 退出 0：135 项单元测试、166 项浏览器测试及构建通过；`make test-console-frontend` 退出 0：173 项单元测试、139 项浏览器测试及构建通过。覆盖鼠标与键盘选择、字面搜索与停用条件、分页重置、详情关闭/重载、Console 单一 iframe 和 URL 同步、迟到响应隔离及中英文窄屏。初次完整前端运行有三项失败：两个新用例因 Element Plus 将空字符串当作无选择及输入框点击定位失败，已复用现有 `empty-values` 约定并修正操作定位；既有创建用例出现下拉已关闭的时序失败，在聚焦和最终完整运行未重现，保留 `/tmp/addp-host-filters-frontend-green.log`，不宣称已定位该次时序根因。未以重试或放宽断言替换最终完整门禁。
+
+前端 CI 登记检查通过，21 个前端仍由原入口覆盖。默认 `make test-changed` 因共享工作区 49 项混合变更扩散到 27 个 owner，在外部测试连接预检退出 2，后续未执行、不计通过；不调查或修复其他 owner 门禁。本批日志为 `/tmp/addp-host-filters-go.log`、`/tmp/addp-host-filters-pg.log`、`/tmp/addp-host-filters-gate-runner.log`、`/tmp/addp-host-filters-frontend-final.log`、`/tmp/addp-host-filters-console.log`、`/tmp/addp-host-filters-swagger-coverage.log`、`/tmp/addp-host-filters-frontend-registration.log` 和 `/tmp/addp-host-filters-changed.log`。个人服务尚未由本会话重启，已告知用户通过 `./scripts/dev/restart.sh -system` 加载新参数；真实个人页面与本批远端 CI 尚待验证，不以本地门禁代替。

@@ -173,6 +173,14 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
             arguments = shlex.split(command)
             self.assertEqual(arguments.count("-timeout=20m"), 1, command)
 
+    def test_host_nodes_filter_keeps_default_discovery_and_rejects_other_packages(self):
+        result = self.run_gate(arguments=("--package", "repository", "--test", "host-nodes"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/repository -run ^TestHostNodeIdentityVersionAndBindingAgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "host-nodes"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package repository", result.stderr)
+
     def test_coordination_filter_preserves_complete_default_discovery(self):
         result = self.run_gate(arguments=("--test", "engine-access-coordination"))
         self.assertEqual(result.returncode, 0, result.stderr)

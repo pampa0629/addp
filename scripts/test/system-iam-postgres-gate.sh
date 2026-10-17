@@ -23,6 +23,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
+            echo "Host inventory type/state filters: --package repository --test host-nodes" >&2
             echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
             echo "Standard platform units: --package migration --test standard-platform-units" >&2
             echo "Platform alert publication: --package migration --test platform-alert-management" >&2
@@ -111,6 +112,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    host-nodes)
+        [ "$PACKAGE_FILTER" = repository ] || { echo "host-nodes requires --package repository" >&2; exit 2; }
+        test_pattern='^TestHostNodeIdentityVersionAndBindingAgainstPostgres$'
+        ;;
     unified-data-authorizer)
         [ "$PACKAGE_FILTER" = migration ] || { echo "unified-data-authorizer requires --package migration" >&2; exit 2; }
         test_pattern='^Test(UnifiedDataAuthorizer(AssignedSessionRefresh|ForwardMigration)|Runner)AgainstPostgres$'

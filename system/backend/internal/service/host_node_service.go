@@ -80,11 +80,12 @@ func (s *HostNodeService) Get(ctx context.Context, id string) (*models.HostNode,
 	}
 	return s.repo.Get(ctx, id)
 }
-func (s *HostNodeService) List(ctx context.Context, page, size int, search string) (*models.HostNodePage, error) {
-	if page < 1 || size < 1 || size > 100 || page > 1000000 || utf8.RuneCountInString(search) > 255 || strings.IndexFunc(search, unicode.IsControl) >= 0 {
+func (s *HostNodeService) List(ctx context.Context, page, size int, filter models.HostNodeFilter) (*models.HostNodePage, error) {
+	if page < 1 || size < 1 || size > 100 || page > 1000000 || utf8.RuneCountInString(filter.Search) > 255 || strings.IndexFunc(filter.Search, unicode.IsControl) >= 0 || (filter.NodeKind != "" && filter.NodeKind != "physical" && filter.NodeKind != "virtual") {
 		return nil, commonapi.ErrBadRequest
 	}
-	nodes, total, err := s.repo.List(ctx, page, size, strings.TrimSpace(search))
+	filter.Search = strings.TrimSpace(filter.Search)
+	nodes, total, err := s.repo.List(ctx, page, size, filter)
 	if err != nil {
 		return nil, err
 	}

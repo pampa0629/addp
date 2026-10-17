@@ -2,6 +2,69 @@ import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/brow
 import { expect, test } from '@playwright/test'
 import { HOST_NODE_ID, HOST_NODE_OTHER_ID, mockHostNodesAPI } from './host-nodes.fixture'
 
+test('host filters are server-side, reset pagination and survive detail close and reload', async ({ page }) => {
+  const { calls, writes } = await mockHostNodesAPI(page)
+  await page.goto('/host-nodes?page=2&page_size=50')
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).toContainText('Node A')
+  await page.getByRole('textbox', { name: '搜索主机名称或地址', exact: true }).fill('Node')
+  await page.locator('.node-filter').filter({ has: page.getByRole('combobox', { name: '主机类型', exact: true }) }).click()
+  await page.getByRole('option', { name: '物理主机', exact: true }).click()
+  await page.getByRole('combobox', { name: '纳管状态', exact: true }).press('Enter')
+  await page.getByRole('option', { name: '停用', exact: true }).click()
+  await expect.poll(() => calls.at(-1)?.query).toEqual({ page: '1', page_size: '50', search: 'Node', node_kind: 'physical', enabled: 'false' })
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).toContainText('Node B')
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).not.toContainText('Node A')
+  await page.getByRole('button', { name: '主机详情', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page).toHaveURL(/\/host-nodes\?search=Node&node_kind=physical&enabled=false&page_size=50$/)
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: '纳管状态', exact: true })).toBeVisible()
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).toContainText('Node B')
+  await page.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(page).toHaveURL(/\/host-nodes\?page_size=50$/)
+  await expect.poll(() => calls.at(-1)?.query).toEqual({ page: '1', page_size: '50' })
+  await expect(page.locator('form.node-toolbar')).toContainText('全部主机类型')
+  await expect(page.locator('form.node-toolbar')).toContainText('全部纳管状态')
+  expect(writes).toEqual([])
+})
+
+test('a late old host filter response cannot replace a newer state filter', async ({ page }) => {
+  await mockHostNodesAPI(page)
+  let release
+  await page.route('**/api/v1/system/platform/host_nodes?**', async route => {
+    const query = new URL(route.request().url()).searchParams
+    if (query.get('node_kind') !== 'physical' || query.has('enabled')) return route.fallback()
+    await new Promise(resolve => { release = resolve })
+    return route.fulfill({ json: { data: [{ node_id: HOST_NODE_ID, display_name: 'Obsolete filter row', node_kind: 'physical', addresses: [], enabled: true, allowed_module_bindings: [], version: 1 }], total: 1, page: 1, page_size: 20, total_pages: 1 } })
+  })
+  await page.goto('/host-nodes')
+  await page.getByRole('combobox', { name: '主机类型', exact: true }).press('Enter')
+  await page.getByRole('option', { name: '物理主机', exact: true }).click()
+  await expect.poll(() => typeof release).toBe('function')
+  await page.getByRole('combobox', { name: '纳管状态', exact: true }).press('Enter')
+  await page.getByRole('option', { name: '停用', exact: true }).click()
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).toContainText('Node B')
+  const oldResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname.endsWith('/platform/host_nodes') && url.searchParams.get('node_kind') === 'physical' && !url.searchParams.has('enabled')
+  })
+  release()
+  await (await oldResponse).finished()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)))
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).not.toContainText('Obsolete filter row')
+  await expect(page.getByTestId('host-nodes').locator('.el-table__body-wrapper')).toContainText('Node B')
+})
+
+test('host filter labels are translated in English and fit a narrow viewport', async ({ page }) => {
+  await mockHostNodesAPI(page, { language: 'en' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/host-nodes?node_kind=virtual&enabled=true')
+  await expect(page.getByTestId('host-nodes')).toBeVisible()
+  for (const text of ['Virtual host', 'Enabled']) await expect(page.locator('form.node-toolbar')).toContainText(text)
+  await expect(page.locator('form.node-toolbar')).not.toContainText('system.hostNodes.')
+  expect(await page.locator('form.node-toolbar').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+})
+
 test('node creation submits complete arrays and opens a reloadable node identity', async ({ page }) => {
   const { writes } = await mockHostNodesAPI(page)
   await page.goto('/host-nodes?search=Node&page=2')

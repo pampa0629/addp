@@ -24,15 +24,21 @@ func (r *HostNodeRepository) Get(ctx context.Context, id string) (*models.HostNo
 	}
 	return &node, err
 }
-func (r *HostNodeRepository) List(ctx context.Context, page, size int, search string) ([]models.HostNode, int64, error) {
+func (r *HostNodeRepository) List(ctx context.Context, page, size int, filter models.HostNodeFilter) ([]models.HostNode, int64, error) {
 	var total int64
 	nodes := make([]models.HostNode, 0)
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&models.HostNode{})
-		if search != "" {
+		if filter.Search != "" {
 			// Escape SQL LIKE metacharacters; search is a literal fragment, not a pattern language.
-			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(search)) + "%"
-			query = query.Where("LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER(CAST(addresses AS TEXT)) LIKE ? ESCAPE '!'", pattern, pattern)
+			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(filter.Search)) + "%"
+			query = query.Where("(LOWER(display_name) LIKE ? ESCAPE '!' OR LOWER(CAST(addresses AS TEXT)) LIKE ? ESCAPE '!')", pattern, pattern)
+		}
+		if filter.NodeKind != "" {
+			query = query.Where("node_kind = ?", filter.NodeKind)
+		}
+		if filter.Enabled != nil {
+			query = query.Where("enabled = ?", *filter.Enabled)
 		}
 		if err := query.Count(&total).Error; err != nil {
 			return err

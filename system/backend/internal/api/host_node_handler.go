@@ -56,6 +56,8 @@ func bindHostNode(c *gin.Context, dst interface{}) error {
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Param search query string false "名称或地址片段 | Name or address fragment"
+// @Param node_kind query string false "主机类型；省略为全部 | Host kind; omit for all" Enums(physical,virtual)
+// @Param enabled query bool false "纳管启用状态；省略为全部 | Management enabled state; omit for all"
 // @Success 200 {object} models.HostNodePage
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
@@ -77,7 +79,7 @@ func (h *HostNodeHandler) List(c *gin.Context) {
 		return
 	}
 	for key := range query {
-		if key != "page" && key != "page_size" && key != "search" {
+		if key != "page" && key != "page_size" && key != "search" && key != "node_kind" && key != "enabled" {
 			hostNodeError(c, commonapi.ErrBadRequest)
 			return
 		}
@@ -105,7 +107,23 @@ func (h *HostNodeHandler) List(c *gin.Context) {
 		}
 		size = parsed
 	}
-	result, err := h.service.List(c.Request.Context(), page, size, query.Get("search"))
+	filter := models.HostNodeFilter{Search: query.Get("search")}
+	if values, exists := query["node_kind"]; exists {
+		if values[0] != "physical" && values[0] != "virtual" {
+			hostNodeError(c, commonapi.ErrBadRequest)
+			return
+		}
+		filter.NodeKind = values[0]
+	}
+	if values, exists := query["enabled"]; exists {
+		if values[0] != "true" && values[0] != "false" {
+			hostNodeError(c, commonapi.ErrBadRequest)
+			return
+		}
+		enabled := values[0] == "true"
+		filter.Enabled = &enabled
+	}
+	result, err := h.service.List(c.Request.Context(), page, size, filter)
 	if err != nil {
 		hostNodeError(c, err)
 		return

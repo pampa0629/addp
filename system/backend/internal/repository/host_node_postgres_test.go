@@ -100,7 +100,7 @@ func TestHostNodeIdentityVersionAndBindingAgainstPostgres(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	page, listErr := nodes.List(ctx, 1, 100, "")
+	page, listErr := nodes.List(ctx, 1, 100, models.HostNodeFilter{})
 	if err := db.Callback().Query().Remove(callback); err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +108,38 @@ func TestHostNodeIdentityVersionAndBindingAgainstPostgres(t *testing.T) {
 		t.Fatalf("list=%+v isolation=%s readonly=%s errors=%v/%v", page, isolation, readOnly, listErr, insertErr)
 	}
 	if err := db.Where("node_id = ?", concurrent.NodeID).Delete(&models.HostNode{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Address OR matches must still satisfy both type and false-state filters.
+	seeds := []models.HostNode{
+		{NodeID: uuid.NewString(), DisplayName: "host_%", NodeKind: "physical", Addresses: []string{"first.local"}, Enabled: false, Version: 1, AllowedModuleBindings: []models.HostNodeModuleBinding{}},
+		{NodeID: uuid.NewString(), DisplayName: "second", NodeKind: "physical", Addresses: []string{"host.local"}, Enabled: false, Version: 1, AllowedModuleBindings: []models.HostNodeModuleBinding{}},
+		{NodeID: uuid.NewString(), DisplayName: "enabled", NodeKind: "physical", Addresses: []string{"host.local"}, Enabled: true, Version: 1, AllowedModuleBindings: []models.HostNodeModuleBinding{}},
+		{NodeID: uuid.NewString(), DisplayName: "virtual", NodeKind: "virtual", Addresses: []string{"host.local"}, Enabled: false, Version: 1, AllowedModuleBindings: []models.HostNodeModuleBinding{}},
+	}
+	if err := db.Create(&seeds).Error; err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	filter := models.HostNodeFilter{Search: "host", NodeKind: "physical", Enabled: &disabled}
+	seen := map[string]bool{}
+	for number := 1; number <= 3; number++ {
+		filtered, e := nodes.List(ctx, number, 1, filter)
+		if e != nil || filtered.Total != 2 || filtered.TotalPages != 2 || (number <= 2 && len(filtered.Data) != 1) || (number == 3 && len(filtered.Data) != 0) {
+			t.Fatalf("filtered page=%+v err=%v", filtered, e)
+		}
+		for _, row := range filtered.Data {
+			if row.Enabled || row.NodeKind != "physical" || seen[row.NodeID] {
+				t.Fatalf("filter leaked or repeated node=%+v", row)
+			}
+			seen[row.NodeID] = true
+		}
+	}
+	filtered, e := nodes.List(ctx, 1, 100, models.HostNodeFilter{Search: "_%", NodeKind: "physical", Enabled: &disabled})
+	if e != nil || filtered.Total != 1 || len(filtered.Data) != 1 || filtered.Data[0].NodeID != seeds[0].NodeID {
+		t.Fatalf("literal wildcard filter=%+v err=%v", filtered, e)
+	}
+	if err := db.Where("node_id IN ?", []string{seeds[0].NodeID, seeds[1].NodeID, seeds[2].NodeID, seeds[3].NodeID}).Delete(&models.HostNode{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	// Two updates racing on one version: exactly one commits; the other reports a conflict.

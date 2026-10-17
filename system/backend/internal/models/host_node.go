@@ -39,3 +39,10 @@ type HostNodePage struct {
 	PageSize   int        `json:"page_size"`
 	TotalPages int64      `json:"total_pages"`
 }
+
+// HostNodeFilter narrows the inventory before counting and pagination.
+type HostNodeFilter struct {
+	Search   string
+	NodeKind string
+	Enabled  *bool
+}

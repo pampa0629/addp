@@ -32,6 +32,13 @@ export async function mockHostNodesAPI(page, { scope = 'platform', permissions =
       }
       if (path.endsWith('/host_nodes')) {
         const pageNumber = Number(url.searchParams.get('page'))
+        const kind = url.searchParams.get('node_kind'), enabled = url.searchParams.get('enabled')
+        const pageSize = Number(url.searchParams.get('page_size'))
+        if (kind || enabled) {
+          const rows = [{ ...node, version: 2 }, { ...node, node_id: HOST_NODE_OTHER_ID, display_name: 'Node B', node_kind: 'physical', enabled: false }]
+            .filter(row => (!kind || row.node_kind === kind) && (!enabled || String(row.enabled) === enabled))
+          return reply({ data: rows.slice((pageNumber-1)*pageSize, pageNumber*pageSize), total: rows.length, page: pageNumber, page_size: pageSize, total_pages: Math.ceil(rows.length/pageSize) })
+        }
         return reply({ data: [{ ...node, version: 2 }, { ...node, node_id: HOST_NODE_OTHER_ID, display_name: 'Node B' }], total: 45, page: pageNumber, page_size: Number(url.searchParams.get('page_size')), total_pages: 3 })
       }
       if (detailFailure) return reply({ error: 'Read failed' }, detailFailure)

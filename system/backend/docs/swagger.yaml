@@ -8638,6 +8638,17 @@ paths:
         in: query
         name: search
         type: string
+      - description: 主机类型；省略为全部 | Host kind; omit for all
+        enum:
+        - physical
+        - virtual
+        in: query
+        name: node_kind
+        type: string
+      - description: 纳管启用状态；省略为全部 | Management enabled state; omit for all
+        in: query
+        name: enabled
+        type: boolean
       produces:
       - application/json
       responses:

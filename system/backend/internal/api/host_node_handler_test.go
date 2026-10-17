@@ -91,6 +91,38 @@ func TestHostNodeAPIContextVersionAndAuditAtomicity(t *testing.T) {
 		t.Fatalf("page=%s err=%v", body, err)
 	}
 	request("GET", path+"?search=%25", "", 200)
+	for _, query := range []string{"node_kind=", "node_kind=all", "node_kind=Virtual", "node_kind=physical&node_kind=virtual", "enabled=", "enabled=1", "enabled=TRUE", "enabled=false&enabled=true"} {
+		request("GET", path+"?"+query, "", 400)
+	}
+	for _, entry := range []struct {
+		name, kind, address string
+		enabled             bool
+	}{
+		{"host-a disabled", "physical", "first.local", false},
+		{"other", "physical", "host-a.example", false},
+		{"other enabled", "physical", "host-a.example", true},
+	} {
+		seed := models.HostNode{NodeID: uuid.NewString(), DisplayName: entry.name, NodeKind: entry.kind, Addresses: []string{entry.address}, Enabled: entry.enabled, Version: 1, AllowedModuleBindings: []models.HostNodeModuleBinding{}}
+		if err := db.Create(&seed).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := ""
+	for _, pageNumber := range []string{"1", "2", "3"} {
+		body := request("GET", path+"?search=host-a&node_kind=physical&enabled=false&page_size=1&page="+pageNumber, "", 200)
+		if err := json.Unmarshal([]byte(body), &page); err != nil {
+			t.Fatal(err)
+		}
+		if page.Total != 2 || page.TotalPages != 2 || (pageNumber == "3" && len(page.Data) != 0) || (pageNumber != "3" && len(page.Data) != 1) {
+			t.Fatalf("filtered page=%s", body)
+		}
+		if len(page.Data) > 0 {
+			if page.Data[0].Enabled || page.Data[0].NodeKind != "physical" || page.Data[0].NodeID == first {
+				t.Fatalf("filter leaked or repeated node: %s", body)
+			}
+			first = page.Data[0].NodeID
+		}
+	}
 	update := strings.TrimSuffix(input, "}") + `,"version":1}`
 	body = request("PUT", path+"/"+node.NodeID, update, 200)
 	if !strings.Contains(body, `"version":2`) {
