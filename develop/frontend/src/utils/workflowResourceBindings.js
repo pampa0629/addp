@@ -21,6 +21,8 @@ export function isResourceFormatSupported(parameter, node) {
 }
 
 export function isResourceDataTypeSupported(parameter, node) {
+  const nodeType = String(node?.type || '').toLowerCase()
+  if (['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server'].includes(nodeType)) return true
   const dataTypes = (parameter?.ui_config?.data_types || []).map(value => String(value).toLowerCase())
   if (dataTypes.length === 0) return true
   const dataType = String(node?.data_type || node?.metadata?.data_type || node?.attributes?.data_type || '').toLowerCase()

@@ -53,6 +53,10 @@ const pointCloudPicker = {
 }
 assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { data_type: 'point_cloud' }), true)
 assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { metadata: { data_type: 'model_3d' } }), false)
+for (const type of ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server']) {
+  assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { type }), true)
+}
+assert.equal(mod.isResourceDataTypeSupported(pointCloudPicker, { type: 'file', metadata: {} }), false)
 assert.equal(mod.resourceBindingTargetExtension(pointCloudPicker), '.copc.laz')
 assert.equal(mod.resourceBindingTargetNameKind(pointCloudPicker), 'file')
 assert.deepEqual(

@@ -37,7 +37,7 @@ func (s *WorkflowEngineService) workflowVectorTileFacts(ctx context.Context, ten
 		return invalid()
 	}
 	spatial, err := client.GetItemSpatialMetadataByID(item.ID)
-	if err != nil || spatial == nil || spatial.SRID <= 0 || spatial.ExtentSRID <= 0 || len(spatial.Extent) != 4 {
+	if err != nil || spatial == nil || spatial.SRID <= 0 || len(spatial.Extent) != 4 {
 		return invalid()
 	}
 	for _, value := range spatial.Extent {
@@ -84,5 +84,5 @@ func (s *WorkflowEngineService) workflowVectorTileFacts(ctx context.Context, ten
 		}
 	}
 	return descriptor.Format, commonModels.JSONMap{"min_zoom": minZoom, "max_zoom": maxZoom,
-		"extent": spatial.Extent, "extent_srid": spatial.ExtentSRID, "source_srs": fmt.Sprintf("EPSG:%d", spatial.SRID)}, nil
+		"extent": spatial.Extent, "extent_srid": spatial.SRID, "source_srs": fmt.Sprintf("EPSG:%d", spatial.SRID)}, nil
 }

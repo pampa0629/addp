@@ -59,7 +59,8 @@ func TestVectorTileAccessPlanUsesExactMetaFacts(t *testing.T) {
 		2: {ID: 2, EngineType: "minio", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "minio:9000", "access_key": "key", "secret_key": "secret"}},
 	})
 	item := commonModels.MetaItem{ID: 8, TenantID: 7, EngineID: 1, FullName: "source/scene.geojson", Attributes: map[string]interface{}{"item": map[string]interface{}{"format": "geojson", "layout": "single", "data_type": "table"}}}
-	spatial := commonModels.SpatialMetadata{SRID: 4326, ExtentSRID: 4326, Extent: []float64{116, 39, 117, 40}, GeometryColumn: "shape", Fields: []datatype.FieldInfo{{Name: "name"}, {Name: "shape"}}}
+	// The Meta spatial projection supplies the native SRID and extent, without a separate extent CRS.
+	spatial := commonModels.SpatialMetadata{SRID: 4326, Extent: []float64{116, 39, 117, 40}, GeometryColumn: "shape", Fields: []datatype.FieldInfo{{Name: "name"}, {Name: "shape"}}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer addp_at_develop" {
 			t.Error("missing service identity")
@@ -99,6 +100,16 @@ func TestVectorTileAccessPlanUsesExactMetaFacts(t *testing.T) {
 	if options["min_zoom"] != nil || options["attributes"] == nil || options["layer_name"] != "parks" {
 		t.Fatalf("options: %#v", options)
 	}
+	spatial.SRID, spatial.Extent = 4549, []float64{500000, 3000000, 501000, 3001000}
+	projected, _, err := harness.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedTile := firstTaskParams(t, projected)["tile"].(commonModels.JSONMap)
+	if projectedTile["source_srs"] != "EPSG:4549" || projectedTile["extent_srid"] != 4549 {
+		t.Fatalf("extent must retain the native CRS: %#v", projectedTile)
+	}
+	spatial.Extent = []float64{116, 39, 117, 40}
 	for _, change := range []func(){
 		func() { params["attributes"] = []interface{}{"missing"} },
 		func() { params["attributes"] = "*" },
