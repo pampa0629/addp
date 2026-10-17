@@ -45,12 +45,12 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 42+ |
-| **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 35+ |
-| **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | workflow + direct 转换算子 |
-| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | workflow + direct 转换算子 |
-| **SuperMap Workflow** | 8103 | C++ + SuperMap iObjects C++ | 超图数据格式、空间分析与 C++ DAG 内存对象传递 | 24 个真实算子（20 个支持 workflow，5 个支持 direct，其中 `osgb_scene_to_s3m` 同时支持两种模式） |
-| **Document Workflow** | 8105 | Python wrapper + LibreOffice | Office 文档转换为持久化 PDF | workflow + direct 转换算子 |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 71 个支持 workflow，另有 10 个仅支持 direct |
+| **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 21 个支持 workflow |
+| **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | 12 个，均支持 workflow + direct |
+| **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | 5 个，均支持 workflow + direct |
+| **SuperMap Workflow** | 8103 | C++ + SuperMap iObjects C++ | 超图数据格式、空间分析与 C++ DAG 内存对象传递 | 34 个真实算子（22 个支持 workflow，14 个支持 direct，其中 `osgb_scene_to_s3m`、`sgm_to_osgb` 同时支持两种模式） |
+| **Document Workflow** | 8105 | Python wrapper + LibreOffice | Office 文档转换为持久化 PDF | 1 个，支持 workflow + direct |
 
 ### 1.3 引擎目录结构
 

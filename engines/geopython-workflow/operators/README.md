@@ -4,7 +4,7 @@ GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层�
 
 ## 栅格计算
 
-`raster_compute.py` 提供 22 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+`raster_compute.py` 提供 26 个通用栅格算子：加载、保存、自动切片与批量保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、网格对齐、局部更新、波段组合、波段选择、波段计算、重分类、聚合、有效像元轮廓、坡度、坡向、地形晕渲、等值线、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
 
 跨文件计算先用 `raster_align` 按参考栅格精确对齐，再用 `raster_stack` 成对追加数据波段，最后以 `raster_band_math` 计算加权求和等表达式。`raster_select_bands` 可重排波段，选择三个波段并设置 `color_model=rgb` 可生成 RGB 通道标记；不自动选择最佳波段或拉伸像元。三者统一将源 mask、NoData 和 alpha 覆盖转换为各数据波段独立的 NaN，不保留透明度大小。
 
@@ -42,7 +42,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 67 个算子：通用处理 18 个、矢量处理 26 个、栅格处理 23 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 71 个算子：通用处理 18 个、矢量处理 26 个、栅格处理 27 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -61,9 +61,9 @@ operators/
 | 矢量处理 | 成果生成 | 1 | `vector_to_pmtiles` |
 | 栅格处理 | 数据读写 | 3 | `raster_load`、`raster_save`、`raster_save_tiles` |
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
-| 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
+| 栅格处理 | 范围处理 | 6 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_contour` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 像元计算 | 3 | `raster_band_math`、`raster_reclassify`、`raster_aggregate` |
+| 栅格处理 | 像元计算 | 6 | `raster_band_math`、`raster_reclassify`、`raster_aggregate`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
 | 栅格处理 | 栅格统计 | 2 | `raster_statistics`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
