@@ -36,10 +36,31 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		if _, err := service.GetHandlingScope(ctx, actor, int64(engine.ID)); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("existing governance permission implied handling: %v", err)
 		}
-		var implicit int64
-		if err := db.Raw(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='system.engine_access_fulfillment.create'`).Scan(&implicit).Error; err != nil || implicit != 0 {
-			t.Fatalf("implicit handling grants=%d %v", implicit, err)
+		// The unified authorizer template includes handling permission. Only an
+		// effective assignment to this actor may confer it; publishing a template
+		// must not grant it to the existing engine governance administrator.
+		assertHandlingPermissions := func(want int) {
+			t.Helper()
+			var now time.Time
+			if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+				t.Fatal(err)
+			}
+			permissions, err := identity.ListEffectiveRoleAssignmentPermissions(ctx, actor.PrincipalID, iam.PrincipalTypeUser,
+				iam.ContextTypeTenant, &actor.TenantID, &actor.MembershipID, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			count := 0
+			for _, permission := range permissions {
+				if permission.PermissionKey == "system.engine_access_fulfillment.create" {
+					count++
+				}
+			}
+			if count != want {
+				t.Fatalf("actor effective handling permissions=%d want=%d", count, want)
+			}
 		}
+		assertHandlingPermissions(0)
 		roles := iam.NewTenantRoleService(identity, time.Now)
 		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: actor.TenantID, RoleKey: "custom.source_handler", Name: "Source handling", ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"system.engine_access_fulfillment.create"}, ActorPrincipalID: actor.PrincipalID})
 		if err != nil {
@@ -51,6 +72,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 			t.Fatal(err)
 		}
 		refresh()
+		assertHandlingPermissions(1)
 		target := engineplugin.TabularItemPath(engine.ID, "schema", "public", "governance.target")
 		if _, err := service.GetHandlingScope(ctx, actor, int64(engine.ID)); err != nil {
 			t.Fatalf("administrator without self-delegation=%v", err)
@@ -158,6 +180,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 			t.Fatal(err)
 		}
 		refresh()
+		assertHandlingPermissions(0)
 		if _, err := service.GetHandlingScope(ctx, actor, int64(engine.ID)); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("revoked handling permission=%v", err)
 		}
