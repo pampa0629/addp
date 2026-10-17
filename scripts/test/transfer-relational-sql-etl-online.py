@@ -1226,6 +1226,24 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     }
 
 
+def wait_manager_read_boundary(client: GatewayClient, engine_id: int, deadline: float) -> None:
+    # A new Tenant becomes readable only after the owner's first Security sync.
+    # This is a read-only readiness check; never initialize owner storage here.
+    while time.monotonic() < deadline:
+        response = client.request("GET", "/api/v1/manager/engines", (200, 403))
+        payload = _object(response.payload, "Manager Engines")
+        if response.status == 403:
+            if payload.get("error_code") != "security_protection_required":
+                raise SuiteError("Manager engine readiness was denied by authorization")
+        else:
+            engines = _array(payload.get("data"), "Manager Engines data")
+            if sum(isinstance(engine, dict) and engine.get("id") == engine_id for engine in engines) != 1:
+                raise SuiteError("Manager engine readiness did not return the exact target Engine")
+            return
+        time.sleep(1)
+    raise SuiteError("Manager initial Security protection synchronization did not become ready")
+
+
 def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, engine_type: str, deadline: float) -> dict[str, object]:
     # Engine registration and connection testing belong to the Hosted Provisioner.
     # The consumer verifies the same tenant-visible Meta projection used by the UI.
@@ -1407,6 +1425,7 @@ def main() -> int:
         if convergence_timeout <= 0:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
+        wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
         manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)

@@ -1338,15 +1338,15 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     if "transfer-relational-sql-etl" not in registered:
         return
     suite = load_suite_registry(repository)["transfer-relational-sql-etl"]
-    if not {("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL"), ("monitor", "MONITOR_URL")}.issubset(suite.services):
-        raise RegistrationError("transfer-relational-sql-etl must preflight Manager, Develop, Orchestrator and Monitor")
+    if not {("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL"), ("orchestrator", "ORCHESTRATOR_URL"), ("monitor", "MONITOR_URL"), ("security", "SECURITY_URL")}.issubset(suite.services):
+        raise RegistrationError("transfer-relational-sql-etl must preflight Manager, Develop, Orchestrator, Monitor and Security")
     hosted_path = repository / "scripts/test/online-hosted-transfer-gate.sh"
     if not hosted_path.is_file():
         raise RegistrationError("transfer-relational-sql-etl requires Hosted lifecycle")
     hosted = hosted_path.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
-        'for start_target in -transfer -manager -develop -orchestrator -monitor', 'CONSOLE_URL=',
+        'for start_target in -security -transfer -manager -develop -orchestrator -monitor', 'CONSOLE_URL=', 'SECURITY_URL=',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop',
         'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify',

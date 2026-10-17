@@ -22,6 +22,58 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+    def test_browser_text_selectors_match_real_fixture_labels(self):
+        browser = SCRIPT.parents[2] / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js"
+        program = r'''
+            const { readFileSync } = require('node:fs')
+            const { runInNewContext } = require('node:vm')
+            const source = readFileSync(process.argv[1], 'utf8').split('\n')
+            for (const [fragment, text, other] of [
+              ['process.env.ADDP_ONLINE_TEST_ENGINE_NAME', ' Hosted Transfer PostgreSQL ', 'Other Engine'],
+              ['public', ' public ', 'private'],
+              ['${field}', 'id (bigint)', 'identity (bigint)']
+            ]) {
+              const line = source.find(value => value.includes('hasText:') && value.includes(fragment))
+              if (!line) throw new Error('missing actual browser selector: ' + fragment)
+              const expression = line.match(/hasText: (.+) \}\)/)[1]
+              const pattern = runInNewContext(expression, {
+                process: { env: { ADDP_ONLINE_TEST_ENGINE_NAME: 'Hosted Transfer PostgreSQL' } }, field: 'id'
+              })
+              if (!pattern.test(text) || pattern.test(other)) throw new Error('selector does not match fixture: ' + fragment)
+            }
+        '''
+        result = subprocess.run(["node", "-e", program, str(browser)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_manager_read_boundary_waits_for_initial_sync_without_mutations(self):
+        client = SimpleNamespace(request=Mock(side_effect=[
+            SimpleNamespace(status=403, payload={"error_code": "security_protection_required"}),
+            SimpleNamespace(status=200, payload={"data": [{"id": 7}]}),
+        ]))
+        with patch.object(ONLINE.time, "monotonic", return_value=0), patch.object(ONLINE.time, "sleep") as sleep:
+            ONLINE.wait_manager_read_boundary(client, 7, 10)
+        sleep.assert_called_once_with(1)
+        self.assertEqual(len(client.request.call_args_list), 2)
+        for call in client.request.call_args_list:
+            self.assertEqual(call.args, ("GET", "/api/v1/manager/engines", (200, 403)))
+
+    def test_manager_read_boundary_rejects_permissions_and_wrong_engine_without_retry(self):
+        for response in [SimpleNamespace(status=403, payload={"error_code": "permission_denied"}),
+                         SimpleNamespace(status=200, payload={"data": []}),
+                         SimpleNamespace(status=200, payload={"data": [{"id": 8}]}),
+                         SimpleNamespace(status=200, payload={"data": [{"id": 7}, {"id": 7}]})]:
+            client = SimpleNamespace(request=Mock(return_value=response))
+            with patch.object(ONLINE.time, "monotonic", return_value=0), patch.object(ONLINE.time, "sleep") as sleep, self.assertRaises(ONLINE.SuiteError):
+                ONLINE.wait_manager_read_boundary(client, 7, 10)
+            sleep.assert_not_called()
+            client.request.assert_called_once()
+
+    def test_manager_read_boundary_initial_sync_has_a_deadline(self):
+        client = SimpleNamespace(request=Mock(return_value=SimpleNamespace(status=403, payload={"error_code": "security_protection_required"})))
+        with patch.object(ONLINE.time, "monotonic", side_effect=[0, 11]), patch.object(ONLINE.time, "sleep"), self.assertRaisesRegex(ONLINE.SuiteError, "initial Security protection synchronization"):
+            ONLINE.wait_manager_read_boundary(client, 7, 10)
+        client.request.assert_called_once()
+
     @staticmethod
     def write_failure_execution(scenario=None):
         return {"task_id": 10, "execution_id": str(uuid.uuid4()), "status": "failed", "records_read": 0, "records_written": 0,
@@ -715,7 +767,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             return {}
         def interrupt(*args):
             ONLINE.interrupt_online(ONLINE.signal.SIGTERM, None)
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", side_effect=imported), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE, "wait_manager_read_boundary"), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", side_effect=imported), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
             self.assertEqual(ONLINE.main(), 1)
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
@@ -753,7 +805,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(events, ["import-receipt"], "import proof must survive a later scenario failure")
             return {"two_hop_verified": True}
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", side_effect=native), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE, "wait_manager_read_boundary"), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", side_effect=native), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())

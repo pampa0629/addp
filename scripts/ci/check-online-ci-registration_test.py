@@ -968,6 +968,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 path.write_text(original, encoding="utf-8")
         for relative, fragment, message in (
             ("scripts/test/online-hosted-transfer-gate.sh", "CONSOLE_URL=", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-transfer-gate.sh", "SECURITY_URL=", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-transfer-gate.sh", "-security ", "Hosted profile is missing"),
             ("scripts/test/online-hosted-transfer-gate.sh", "addp-transfer-mongodb-online-disposable", "Hosted profile is missing"),
             ("scripts/test/online-hosted-transfer-gate.sh", "export ADDP_ONLINE_TEST_MONGODB_ENGINE_ID", "Hosted profile is missing"),
             ("scripts/test/online-hosted-transfer-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "Hosted profile is missing"),

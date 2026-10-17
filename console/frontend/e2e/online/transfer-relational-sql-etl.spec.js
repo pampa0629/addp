@@ -55,7 +55,14 @@ test('browser imports a private Manager source through Console', async ({ page }
           refreshRequests.push(url.searchParams.get('locator'))
         }
       })
+      const engineResponse = page.waitForResponse(response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === '/api/v1/manager/engines')
       await page.goto('/manager/data-explorer')
+      const listedEngines = await engineResponse
+      const engines = await json(listedEngines, 'Manager browser engine list')
+      const engineAPI = await browserAPIFromResponse(listedEngines, process.env.GATEWAY_URL, actor)
+      await engineAPI.dispose()
+      expect(engines.data.filter(engine => String(engine.id) === engineID)).toHaveLength(1)
       await frame.locator('.el-tree-node__content').filter({ hasText: new RegExp(`^\\s*${process.env.ADDP_ONLINE_TEST_ENGINE_NAME}\\s*$`) }).click()
       await frame.locator('.el-tree-node__content').filter({ hasText: /^\s*public\s*$/ }).click()
       await frame.getByRole('button', { name: '导入数据', exact: true }).click()

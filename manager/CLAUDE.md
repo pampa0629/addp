@@ -67,7 +67,7 @@ PostgreSQL 渲染目标核验只查 geometry 字段的 typmod 声明；旧目标
 - 后端：Go + Gin + GORM，默认端口 `8081`，环境变量 `MANAGER_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + OpenLayers，开发端口 `5174`，启动脚本环境变量 `MANAGER_FE_PORT`。
 - 数据库：PostgreSQL `manager` schema。
-- 依赖：System、Meta、Inference、Redis、MinIO、Meilisearch。
+- 依赖：System、Meta、Security、Inference、Redis、MinIO、Meilisearch。数据读取须先完成当前租户的 Security 保护投影首次同步；未同步时按保护边界拒绝，验收环境也必须启动 Security。
 
 ## 重要目录
 

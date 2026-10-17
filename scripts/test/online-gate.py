@@ -271,6 +271,7 @@ SUITES: Mapping[str, Suite] = {
             ("develop", "DEVELOP_URL"),
             ("orchestrator", "ORCHESTRATOR_URL"),
             ("monitor", "MONITOR_URL"),
+            ("security", "SECURITY_URL"),
         ),
     ),
     "enterprise-catalog-publishing": Suite(

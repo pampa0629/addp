@@ -66,6 +66,7 @@ class HostedTransferGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 17 ] &&
+              [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$ADDP_ONLINE_TEST_ENGINE_NAME" = 'Hosted Transfer PostgreSQL' ] &&
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_ID" = 18 ] &&
               [ "$ADDP_ONLINE_TEST_DORIS_ENGINE_ID" = 19 ] &&
@@ -115,7 +116,7 @@ class HostedTransferGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'transfer-fixture:start', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
+        sequence = ('infra-up', 'transfer-fixture:start', 'start:-security', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
                     'playwright install --with-deps chromium', '--suite transfer-relational-sql-etl',
                     'engine-register:transfer-engine.json', 'engine-register:transfer-mongodb-engine.json', 'engine-register:transfer-doris-engine.json', 'engine-register:transfer-clickhouse-engine.json', 'make:test-online ONLINE_SUITE=transfer-relational-sql-etl',
                     'transfer-fixture:verify', 'application-stop', 'transfer-fixture:stop', 'infra-down')
