@@ -81,6 +81,7 @@ test('protection refusals remain distinct from data permissions without exposing
   for (const locale of ['zh-cn', 'en']) {
     const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
     assert.doesNotMatch(messages.reasons.data_protection_required, /查询|\bquery\b/i)
+    for (const stage of ['preparation', 'execution']) assert.doesNotMatch(messages.stages[stage], /查询|\bquery\b/i)
     assert.doesNotMatch(messages.actions.data_protection_required, /SQL|字段别名|column aliases/i)
   }
   for (const stage of ['preparation', 'result']) {

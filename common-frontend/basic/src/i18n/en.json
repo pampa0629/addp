@@ -135,8 +135,8 @@
       "stages": {
         "validation": "Validate execution configuration",
         "authorization": "Verify execution authorization",
-        "preparation": "Prepare query",
-        "execution": "Execute query",
+        "preparation": "Prepare execution",
+        "execution": "Execute operation",
         "result": "Save execution result"
       },
       "reasons": {

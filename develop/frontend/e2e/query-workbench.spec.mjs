@@ -86,7 +86,7 @@ test('shows the actual missing-table preparation failure with an actionable corr
   await page.getByRole('button', { name: '执行', exact: true }).click()
   const diagnostic = page.locator('.execution-failure')
   await expect(diagnostic).toContainText('查询引用的数据表不存在或当前连接不可见。')
-  await expect(diagnostic).toContainText('准备查询')
+  await expect(diagnostic).toContainText('准备执行')
   await expect(diagnostic).toContainText('核对数据表参数、Schema 及表的读取权限后重新执行。')
   await expect(diagnostic).not.toContainText('交给管理员')
   await expect(diagnostic).toContainText('数据表 public.farmla1nd')

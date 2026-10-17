@@ -108,7 +108,7 @@ for (const locale of ['zh-cn', 'en']) test(`shows query failure at the top and o
   await expect(diagnostic).toContainText(locale === 'zh-cn' ? '查询引用的数据表不存在' : 'A referenced table does not exist')
   await expect(diagnostic).toContainText('table_not_found')
   await expect(diagnostic).toContainText('diagnostic-run')
-  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '准备查询' : 'Prepare query')
+  await expect(diagnostic).toContainText(locale === 'zh-cn' ? '准备执行' : 'Prepare execution')
   await expect(diagnostic).toContainText('public.farmla1nd')
   await expect(diagnostic).toContainText(locale === 'zh-cn' ? '第 1 行，第 15 列' : 'Line 1, column 15')
   const button = diagnostic.getByRole('button', { name: locale === 'zh-cn' ? '查看查询执行详情' : 'View query execution details', exact: true })

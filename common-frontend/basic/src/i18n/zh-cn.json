@@ -135,8 +135,8 @@
       "stages": {
         "validation": "校验执行配置",
         "authorization": "核验执行授权",
-        "preparation": "准备查询",
-        "execution": "执行查询",
+        "preparation": "准备执行",
+        "execution": "执行操作",
         "result": "保存执行结果"
       },
       "reasons": {

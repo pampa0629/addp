@@ -20,7 +20,7 @@ for (const locale of ['zh-cn', 'en']) {
       await expect(failure).toContainText('data_protection_required')
       await expect(failure).toContainText(transferID)
       await expect(failure).toContainText(locale === 'zh-cn' ? '保护规则' : 'protection rules')
-      await expect(failure).not.toContainText(locale === 'zh-cn' ? '本次查询' : 'The query')
+      await expect(failure).not.toContainText(locale === 'zh-cn' ? '查询' : 'query')
       await expect(dialog).not.toContainText(privateMessage)
       await expect(dialog.getByRole('button', { name: locale === 'zh-cn' ? '开始导入' : 'Start Import', exact: true })).toBeEnabled()
       await page.waitForTimeout(2300)

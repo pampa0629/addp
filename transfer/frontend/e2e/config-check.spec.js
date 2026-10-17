@@ -258,7 +258,7 @@ for (const language of ['zh-cn', 'en']) {
    const panel = page.getByRole('alert', {name:language==='en'?'Execution failure diagnostics':'执行失败诊断'})
    await expect(panel).toContainText(language==='en'?'data protection requirements':'数据保护要求')
    await expect(panel).toContainText(language==='en'?'security administrator':'安全管理员')
-   await expect(panel).toContainText(language==='en'?(stage==='preparation'?'Prepare query':'Save execution result'):(stage==='preparation'?'准备查询':'保存执行结果'))
+   await expect(panel).toContainText(language==='en'?(stage==='preparation'?'Prepare execution':'Save execution result'):(stage==='preparation'?'准备执行':'保存执行结果'))
    await expect(panel).toContainText('data_protection_required')
    await expect(panel).toContainText(id)
    await expect(page.locator('body')).not.toContainText('private-sentinel')
