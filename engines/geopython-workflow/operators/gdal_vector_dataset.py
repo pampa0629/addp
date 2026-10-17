@@ -6,11 +6,14 @@ import base64
 import datetime as dt
 import json
 import math
+import re
 import shutil
 import sys
 import tempfile
+import xml.parsers.expat
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from osgeo import gdal, ogr, osr
 from shapely import from_wkb, set_srid, to_wkb
@@ -45,6 +48,11 @@ READ_OPERATORS = (
     "vector_dataset.read_batch",
     "vector_dataset.read_close",
 )
+
+SOURCE_DRIVERS = {
+    "filegdb": "OpenFileGDB", "pgeo": "PGeo",
+    "kml": "KML", "gml": "GML", "topojson": "TopoJSON",
+}
 WRITE_OPERATORS = (
     "vector_dataset.write_open",
     "vector_dataset.write_batch",
@@ -92,11 +100,15 @@ def inspect(access_plan: dict[str, Any], child_limit: int = 100) -> dict[str, An
             try:
                 layer = dataset.GetLayerByIndex(index)
                 if layer is None:
+                    if plan["source"]["format"] in ("kml", "gml", "topojson"):
+                        raise ValueError(f"vector exchange layer {index} could not be read")
                     skipped_layer_count += 1
                     continue
-                fields, spatial = _describe_layer(layer)
+                fields, spatial = _describe_layer(layer, source_format=plan["source"]["format"])
                 row_count = layer.GetFeatureCount(force=1)
             except RuntimeError:
+                if plan["source"]["format"] in ("kml", "gml", "topojson"):
+                    raise
                 skipped_layer_count += 1
                 continue
             valid_child_count += 1
@@ -146,7 +158,7 @@ def read_open(protocol: str, access_plan: dict[str, Any], layer: str) -> dict[st
     plan = require_source_plan({"access_plan": access_plan})
     with _opened_source(plan) as dataset:
         source_layer = _required_layer(dataset, layer)
-        fields, spatial = _describe_layer(source_layer)
+        fields, spatial = _describe_layer(source_layer, source_format=plan["source"]["format"])
         return {
             "protocol": BATCH_PROTOCOL,
             "fields": fields,
@@ -170,7 +182,7 @@ def read_batch(
     plan = require_source_plan({"access_plan": access_plan})
     with _opened_source(plan) as dataset:
         source_layer = _required_layer(dataset, layer)
-        fields, spatial = _describe_layer(source_layer)
+        fields, spatial = _describe_layer(source_layer, source_format=plan["source"]["format"])
         try:
             seek_result = source_layer.SetNextByIndex(offset)
         except RuntimeError:
@@ -342,13 +354,27 @@ class _opened_source:
         self.temp_dir = tempfile.TemporaryDirectory(prefix="addp-gdal-vector-")
         try:
             work_dir = Path(self.temp_dir.name)
-            path = stage_source_directory(self.plan, work_dir) if source.get("kind") == "directory" else stage_source_file(self.plan, work_dir)
-            driver_name = {"filegdb": "OpenFileGDB", "pgeo": "PGeo"}.get(source.get("format"))
+            source_format = source.get("format")
+            driver_name = SOURCE_DRIVERS.get(source_format)
             if not driver_name:
-                raise ValueError(f"unsupported GDAL vector source format: {source.get('format')}")
+                raise ValueError(f"unsupported GDAL vector source format: {source_format}")
+            expected_kind = "directory" if source_format == "filegdb" else "file"
+            if source.get("kind") != expected_kind:
+                raise ValueError(f"{source_format} source requires {expected_kind} access")
+            path = stage_source_directory(self.plan, work_dir) if expected_kind == "directory" else stage_source_file(self.plan, work_dir)
+            if source_format in ("kml", "gml"):
+                # Mounted access points to the original source. GML may create
+                # .gfs sidecars or discover adjacent schemas: isolate that too.
+                isolated_path = work_dir / ("dataset." + source_format)
+                shutil.copyfile(path, isolated_path)
+                path = isolated_path
+                _validate_vector_xml(path, source_format)
+            elif source_format == "topojson":
+                _validate_topology(path)
             _required_driver(driver_name, writable=False)
             try:
-                self.dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=[driver_name])
+                open_options = ["DOWNLOAD_SCHEMA=NO", "USE_SCHEMA_IMPORT=NO"] if source_format == "gml" else []
+                self.dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=[driver_name], open_options=open_options)
             except RuntimeError:
                 if not (self.inspect_empty_filegdb and driver_name == "OpenFileGDB"):
                     raise
@@ -408,8 +434,133 @@ def _required_layer(dataset, name: str):
     return layer
 
 
-def _describe_layer(layer) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _validate_vector_xml(path: Path, source_format: str) -> None:
+    """Validate the staged file before GDAL can resolve any XML dependencies."""
+    parser = xml.parsers.expat.ParserCreate(namespace_separator="}")
+
+    def reject_declaration(*args):
+        raise ValueError("vector XML DTD and entity declarations are unsupported")
+
+    def start_element(name, attributes):
+        local_name = name.rsplit("}", 1)[-1]
+        if source_format == "kml" and local_name in {
+            "Model", "GroundOverlay", "ScreenOverlay", "PhotoOverlay", "NetworkLink", "Track", "MultiTrack",
+        }:
+            raise ValueError(f"KML {local_name} is unsupported by the simple-feature reader")
+        for attribute, value in attributes.items():
+            if source_format == "gml" and attribute.rsplit("}", 1)[-1] == "srsName" and value.strip():
+                if not re.fullmatch(
+                    r"(?:EPSG:\d+|urn:(?:x-)?ogc:def:crs:EPSG:[^:]*:\d+|"
+                    r"https?://www\.opengis\.net/def/crs/EPSG/[^/]+/\d+|"
+                    r"https?://www\.opengis\.net/gml/srs/epsg\.xml#\d+|"
+                    r"OGC:CRS84|urn:ogc:def:crs:OGC:[^:]*:CRS84)", value.strip(), re.IGNORECASE,
+                ):
+                    raise ValueError("GML external or unsupported CRS references are unsupported")
+            if attribute == "http://www.w3.org/1999/xlink}href" and value.strip():
+                raise ValueError("vector XML XLink dependencies are unsupported")
+            if attribute in {
+                "http://www.w3.org/2001/XMLSchema-instance}schemaLocation",
+                "http://www.w3.org/2001/XMLSchema-instance}noNamespaceSchemaLocation",
+            } and value.strip():
+                # Keep ordinary schema annotations; DOWNLOAD_SCHEMA=NO prevents
+                # network retrieval. Relative basenames cannot escape staging.
+                locations = value.split()
+                if attribute.endswith("}schemaLocation"):
+                    if len(locations) % 2:
+                        raise ValueError("invalid XML schemaLocation")
+                    locations = locations[1::2]
+                for location in locations:
+                    uri = urlsplit(location)
+                    if uri.scheme in {"http", "https"} and uri.netloc:
+                        continue
+                    if uri.scheme or uri.netloc or "/" in location or "\\" in location or location in {".", ".."}:
+                        raise ValueError("vector XML external schema paths are unsupported")
+
+    parser.StartDoctypeDeclHandler = reject_declaration
+    parser.EntityDeclHandler = reject_declaration
+    parser.ExternalEntityRefHandler = reject_declaration
+    parser.StartElementHandler = start_element
+    with path.open("rb") as stream:
+        while chunk := stream.read(65536):
+            parser.Parse(chunk, False)
+        parser.Parse(b"", True)
+
+
+def _validate_topology(path: Path) -> None:
+    """Reject unsupported dimensions and bad arc references that OGR skips."""
+    with path.open("r", encoding="utf-8-sig") as stream:
+        topology = json.load(stream)
+    if not isinstance(topology, dict) or topology.get("type") != "Topology":
+        raise ValueError("TopoJSON requires a Topology root")
+    arcs, objects = topology.get("arcs"), topology.get("objects")
+    if not isinstance(arcs, list) or not isinstance(objects, dict):
+        raise ValueError("TopoJSON requires objects and arcs")
+    transform = topology.get("transform")
+
+    def position(value, *, quantized=False):
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError("TopoJSON reader supports two-dimensional positions only")
+        for number in value:
+            if isinstance(number, bool) or not isinstance(number, (int, float)) or not math.isfinite(number):
+                raise ValueError("TopoJSON positions must contain finite numbers")
+            if quantized and not isinstance(number, int):
+                raise ValueError("quantized TopoJSON positions must be integers")
+
+    if transform is not None:
+        if not isinstance(transform, dict):
+            raise ValueError("invalid TopoJSON transform")
+        position(transform.get("scale"))
+        position(transform.get("translate"))
+    for arc in arcs:
+        if not isinstance(arc, list) or len(arc) < 2:
+            raise ValueError("TopoJSON arcs require at least two positions")
+        for value in arc:
+            position(value, quantized=transform is not None)
+
+    def references(value, depth):
+        if not isinstance(value, list) or not value:
+            raise ValueError("invalid TopoJSON arc references")
+        for item in value:
+            if depth:
+                references(item, depth - 1)
+            elif isinstance(item, bool) or not isinstance(item, int) or not 0 <= (item if item >= 0 else ~item) < len(arcs):
+                raise ValueError("TopoJSON arc reference is out of range")
+
+    def geometry(value, *, nested=False):
+        if value is None:
+            raise ValueError("null TopoJSON geometry objects are unsupported")
+        if not isinstance(value, dict):
+            raise ValueError("invalid TopoJSON geometry")
+        kind = value.get("type")
+        if kind == "GeometryCollection":
+            if nested:
+                raise ValueError("nested TopoJSON geometry collections are unsupported")
+            children = value.get("geometries")
+            if not isinstance(children, list):
+                raise ValueError("invalid TopoJSON geometry collection")
+            for child in children:
+                geometry(child, nested=True)
+        elif kind == "Point":
+            position(value.get("coordinates"), quantized=transform is not None)
+        elif kind == "MultiPoint":
+            coordinates = value.get("coordinates")
+            if not isinstance(coordinates, list):
+                raise ValueError("invalid TopoJSON MultiPoint")
+            for coordinate in coordinates:
+                position(coordinate, quantized=transform is not None)
+        elif kind in {"LineString", "MultiLineString", "Polygon", "MultiPolygon"}:
+            references(value.get("arcs"), {"LineString": 0, "MultiLineString": 1, "Polygon": 1, "MultiPolygon": 2}[kind])
+        else:
+            raise ValueError(f"unsupported TopoJSON geometry type: {kind}")
+
+    for value in objects.values():
+        geometry(value)
+
+
+def _describe_layer(layer, *, source_format: str = "") -> tuple[list[dict[str, Any]], dict[str, Any]]:
     definition = layer.GetLayerDefn()
+    if source_format in ("kml", "gml", "topojson") and definition.GetGeomFieldCount() > 1:
+        raise ValueError("vector exchange layers with multiple geometry fields are unsupported")
     fields: list[dict[str, Any]] = []
     fid_column = layer.GetFIDColumn()
     if fid_column and all(
@@ -431,6 +582,12 @@ def _describe_layer(layer) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if ogr.GT_Flatten(definition.GetGeomType()) == ogr.wkbNone:
         return fields, {}
     geometry_name = layer.GetGeometryColumn() or "geometry"
+    existing_names = {field["name"].casefold() for field in fields}
+    base_geometry_name = geometry_name
+    suffix = 1
+    while geometry_name.casefold() in existing_names:
+        geometry_name = f"{base_geometry_name}_{suffix}"
+        suffix += 1
     geometry_type = _geometry_type_name(definition.GetGeomType())
     fields.append({
         "name": geometry_name,
@@ -439,7 +596,9 @@ def _describe_layer(layer) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         "nullable": True,
         "ordinal_position": len(fields) + 1,
     })
-    srs = layer.GetSpatialRef()
+    # TopoJSON supports projected positions but defines no CRS declaration.
+    # The driver's implicit WGS84 is not evidence about the source coordinates.
+    srs = None if source_format == "topojson" else layer.GetSpatialRef()
     srid = _authority_code(srs)
     geometry_column: dict[str, Any] = {
         "name": geometry_name,
@@ -751,7 +910,7 @@ def _metadata(name: str, effects: list[str], params: list[OperatorParam]) -> Ope
         effects=effects,
         overview="由 ADDP 格式 Provider 调用的 GDAL vector dataset 批处理算子。",
         params=params,
-        use_cases=["MDB 格式识别", "FileGDB child 读取", "FileGDB child 写出", "PGeo child 只读"],
+        use_cases=["MDB 格式识别", "FileGDB child 读取", "FileGDB child 写出", "PGeo / KML / GML / TopoJSON child 只读"],
         notes=["仅供受控 direct 调用", "geometry 固定 EWKB", "Runtime 不解析 locator"],
         workflow_example={},
         attributes={"protocol": BATCH_PROTOCOL, "runtime_session": "stateless"},

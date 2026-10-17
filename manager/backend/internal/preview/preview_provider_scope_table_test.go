@@ -271,3 +271,29 @@ func TestScopeTablePreviewReadsRuntimeContainerChildWithSpatialMetadata(t *testi
 		t.Fatal("runtime scope reader was not closed")
 	}
 }
+
+func TestRuntimeVectorExchangePreviewDoesNotGuessUnknownCRS(t *testing.T) {
+	for _, sourceFormat := range []string{"gml", "topojson"} {
+		t.Run(sourceFormat, func(t *testing.T) {
+			reader := &fakeRuntimeScopeTableReader{
+				fields:  []datatype.FieldInfo{{Name: "source_shape", Type: datatype.FieldTypeGeometry}},
+				spatial: &datatype.SpatialInfo{PrimaryGeometryColumn: "source_shape", GeometryColumns: []datatype.GeometryColumnInfo{{Name: "source_shape", GeometryType: "Point"}}},
+				rows:    []map[string]interface{}{{"source_shape": []byte{1, 2, 3}}},
+			}
+			preview, err := NewScopeTablePreviewProvider().Preview(context.Background(), &PreviewRequest{
+				Engine: &models.Engine{ID: 14, EngineType: "nfs"}, ScopePath: "samples/source." + sourceFormat,
+				ChildName: "sites", Page: 1, PageSize: 20, ScopeTableReaderProvider: &fakeRuntimeScopeTableProvider{reader: reader},
+				Attributes: map[string]interface{}{"item": map[string]interface{}{"format": sourceFormat, "layout": "single", "data_type": "container"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if preview.SourceSRID != 0 || preview.SourceCRS != "" || preview.TransformStatus != "unknown_crs" || preview.GeometryColumn != "source_shape" {
+				t.Fatalf("unexpected CRS contract: %#v", preview)
+			}
+			if len(preview.Rows) != 1 || !reader.closed {
+				t.Fatal("must retain source data and close reader")
+			}
+		})
+	}
+}

@@ -339,7 +339,7 @@ def test_inspect_skips_unreadable_dataset_layers(monkeypatch):
             del exc_type, exc_value, traceback
 
     monkeypatch.setattr("operators.gdal_vector_dataset._opened_source", FakeOpenedSource)
-    monkeypatch.setattr("operators.gdal_vector_dataset._describe_layer", lambda layer: ([{
+    monkeypatch.setattr("operators.gdal_vector_dataset._describe_layer", lambda layer, **kwargs: ([{
         "name": f"{layer.name}_id",
         "type": "int",
     }], {}))
@@ -406,3 +406,196 @@ def test_filegdb_abort_removes_partial_scope(tmp_path):
     assert target.is_dir()
     write_abort(BATCH_PROTOCOL, _target_plan(target), "items", fields, None)
     assert not target.exists()
+
+
+def _exchange_plan(path, format_name):
+    return {"schema_version": "addp.workflow.access-plan/v1", "source": {
+        "kind": "file", "format": format_name,
+        "access": {"method": "mounted_path", "path": str(path)},
+    }}
+
+
+def test_kml_multilayer_geometry_and_pagination(tmp_path):
+    source = tmp_path / "sites.kml"
+    source.write_text('''<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+      <Folder><name>sites</name>
+       <Placemark><name>长沙</name><Point><coordinates>112.98,28.19,8</coordinates></Point></Placemark>
+       <Placemark><name>株洲</name><Point><coordinates>113.13,27.83,9</coordinates></Point></Placemark>
+      </Folder><Folder><name>roads</name><Placemark><name>route</name>
+       <LineString><coordinates>112.98,28.19 113.13,27.83</coordinates></LineString>
+      </Placemark></Folder></Document></kml>''')
+    original = source.read_bytes()
+    plan = _exchange_plan(source, "kml")
+    result = inspect(plan)
+    assert {child["name"] for child in result["container"]["children"]} == {"sites", "roads"}
+    assert result["format_info"]["driver"] == "KML"
+    opened = read_open(BATCH_PROTOCOL, plan, "sites")
+    assert opened["row_count"] == 2
+    assert opened["spatial"]["srid"] == 4326
+    first = read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"][0]
+    second = read_batch(BATCH_PROTOCOL, plan, "sites", 1, 1)["rows"][0]
+    assert first["Name"] == "长沙" and second["Name"] == "株洲"
+    geom_field = opened["spatial"]["primary_geometry_column"]
+    point = from_wkb(base64.b64decode(first[geom_field]))
+    assert get_srid(point) == 4326
+    assert list(point.coords) == [(112.98, 28.19, 8.0)]
+    assert read_batch(BATCH_PROTOCOL, plan, "sites", 2, 1)["rows"] == []
+    assert source.read_bytes() == original and list(tmp_path.iterdir()) == [source]
+
+
+def test_gml_standard_latitude_longitude_axis_and_isolated_sidecars(tmp_path):
+    source = tmp_path / "sites.gml"
+    source.write_text('''<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml" xmlns:app="urn:addp:test">
+      <gml:featureMember><app:sites gml:id="p1"><app:name>长沙</app:name><app:position>
+       <gml:Point srsName="urn:ogc:def:crs:EPSG::4326"><gml:pos>28.19 112.98</gml:pos></gml:Point>
+      </app:position></app:sites></gml:featureMember>
+      <gml:featureMember><app:roads gml:id="r1"><app:name>route</app:name><app:position>
+       <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326"><gml:posList>28.19 112.98 27.83 113.13</gml:posList></gml:LineString>
+      </app:position></app:roads></gml:featureMember>
+     </gml:FeatureCollection>''')
+    # Adjacent schemas must not influence the source-only access contract.
+    schema = tmp_path / "sites.xsd"
+    schema.write_text("not a schema")
+    plan = _exchange_plan(source, "gml")
+    result = inspect(plan)
+    assert {child["name"] for child in result["container"]["children"]} == {"sites", "roads"}
+    opened = read_open(BATCH_PROTOCOL, plan, "sites")
+    assert opened["spatial"]["srid"] == 4326
+    row = read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"][0]
+    point = from_wkb(base64.b64decode(row[opened["spatial"]["primary_geometry_column"]]))
+    assert list(point.coords) == [(112.98, 28.19)]
+    assert row["name"] == "长沙"
+    assert set(tmp_path.iterdir()) == {source, schema}
+
+
+def test_topojson_quantization_reverse_arcs_and_unknown_crs(tmp_path):
+    source = tmp_path / "projected.topojson"
+    source.write_text('''{"type":"Topology","transform":{"scale":[10,20],"translate":[500000,3000000]},
+     "objects":{
+      "routes":{"type":"GeometryCollection","geometries":[
+       {"type":"LineString","properties":{"name":"forward"},"arcs":[0]},
+       {"type":"LineString","properties":{"name":"reverse"},"arcs":[-1]}]},
+      "sites":{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[2,3],"properties":{"name":"station"}}]}},
+     "arcs":[[[0,0],[1,2],[2,1]]]}''')
+    plan = _exchange_plan(source, "topojson")
+    result = inspect(plan)
+    assert {child["name"] for child in result["container"]["children"]} == {"routes", "sites"}
+    assert all("srid" not in child["native"] for child in result["container"]["children"])
+    opened = read_open(BATCH_PROTOCOL, plan, "routes")
+    assert not opened["spatial"].get("srid")
+    assert not opened["spatial"].get("crs_ref")
+    field = opened["spatial"]["primary_geometry_column"]
+    rows = read_batch(BATCH_PROTOCOL, plan, "routes", 0, 10)["rows"]
+    forward, reverse = [from_wkb(base64.b64decode(row[field])) for row in rows]
+    assert get_srid(forward) == 0
+    assert list(forward.coords) == [(500000,3000000),(500010,3000040),(500030,3000060)]
+    assert list(reverse.coords) == list(forward.coords)[::-1]
+    points = read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"]
+    assert list(from_wkb(base64.b64decode(points[0][field])).coords) == [(500020,3000060)]
+
+
+@pytest.mark.parametrize("source_format,content", [
+    ("kml", '<!DOCTYPE kml [<!ENTITY x SYSTEM "file:///etc/passwd">]><kml>&x;</kml>'),
+    ("kml", '<kml><NetworkLink><Link><href>https://example.invalid/data.kml</href></Link></NetworkLink></kml>'),
+    ("kml", '<kml><Placemark><Model/></Placemark></kml>'),
+    ("kml", '<kml><GroundOverlay/></kml>'),
+    ("gml", '<root xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:test file:///outside/test.xsd"/>'),
+    ("gml", '<root xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#missing"/>'),
+    ("gml", '<root srsName="file:///outside/secret.prj"/>'),
+    ("gml", '<root srsName="https://example.invalid/custom-crs.wkt"/>'),
+])
+def test_vector_xml_rejects_dependencies_before_gdal_open(tmp_path, monkeypatch, source_format, content):
+    source = tmp_path / ("unsafe." + source_format)
+    source.write_text(content)
+    def unexpected_open(*args, **kwargs):
+        pytest.fail("GDAL must not open rejected XML")
+    monkeypatch.setattr("operators.gdal_vector_dataset.gdal.OpenEx", unexpected_open)
+    with pytest.raises(ValueError, match="unsupported"):
+        inspect(_exchange_plan(source, source_format))
+    assert list(tmp_path.iterdir()) == [source]
+
+
+def test_topojson_geometry_field_does_not_overwrite_named_attribute(tmp_path):
+    source = tmp_path / "sites.topojson"
+    source.write_text('''{"type":"Topology","objects":{"sites":{"type":"GeometryCollection","geometries":[
+      {"type":"Point","coordinates":[112.98,28.19],"properties":{"geometry":"keep this attribute"}}]}},"arcs":[]}''')
+    plan = _exchange_plan(source, "topojson")
+    opened = read_open(BATCH_PROTOCOL, plan, "sites")
+    field = opened["spatial"]["primary_geometry_column"]
+    assert field != "geometry"
+    row = read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"][0]
+    assert row["geometry"] == "keep this attribute"
+    assert list(from_wkb(base64.b64decode(row[field])).coords) == [(112.98,28.19)]
+
+
+def test_gml_without_srs_preserves_coordinates_without_guessing_crs(tmp_path):
+    source = tmp_path / "local.gml"
+    source.write_text('''<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml" xmlns:app="urn:test">
+      <gml:featureMember><app:sites><app:position><gml:Point><gml:pos>500000 3000000</gml:pos></gml:Point></app:position></app:sites></gml:featureMember>
+      </gml:FeatureCollection>''')
+    plan = _exchange_plan(source, "gml")
+    opened = read_open(BATCH_PROTOCOL, plan, "sites")
+    assert not opened["spatial"].get("srid") and not opened["spatial"].get("crs_ref")
+    row = read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"][0]
+    point = from_wkb(base64.b64decode(row[opened["spatial"]["primary_geometry_column"]]))
+    assert get_srid(point) == 0
+    assert list(point.coords) == [(500000,3000000)]
+
+
+def test_exchange_object_store_uses_exact_file_without_listing(tmp_path, monkeypatch):
+    source_data = b'<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Folder><name>sites</name><Placemark><Point><coordinates>112.98,28.19</coordinates></Point></Placemark></Folder></Document></kml>'
+    downloads = []
+    class Client:
+        def fget_object(self, bucket, object_name, path):
+            downloads.append((bucket, object_name))
+            Path(path).write_bytes(source_data)
+    monkeypatch.setattr("addp_common.workflow_access._object_store_client", lambda access: Client())
+    plan = {"schema_version":"addp.workflow.access-plan/v1", "source":{
+        "kind":"file", "format":"kml", "access":{
+            "method":"object_store", "endpoint":"storage.invalid:9000", "access_key":"test", "secret_key":"test",
+            "bucket":"business", "object":"models/sites.kml"}}}
+    inspected = inspect(plan)
+    assert inspected["container"]["default_child"] == "sites"
+    assert read_open(BATCH_PROTOCOL, plan, "sites")["spatial"]["srid"] == 4326
+    assert len(read_batch(BATCH_PROTOCOL, plan, "sites", 0, 1)["rows"]) == 1
+    assert downloads == [("business", "models/sites.kml")]*3
+
+
+@pytest.mark.parametrize("geometry,arcs", [
+    ({"type":"LineString", "arcs":[9]}, [[[1,2],[3,4]]]),
+    ({"type":"LineString", "arcs":[-2]}, [[[1,2],[3,4]]]),
+    ({"type":"Point", "coordinates":[1,2,3]}, []),
+    ({"type":"Point", "coordinates":[True,2]}, []),
+    ({"type":"Unknown", "coordinates":[1,2]}, []),
+    ({"type":"GeometryCollection", "geometries":[{"type":"GeometryCollection", "geometries":[]}]}, []),
+    (None, []),
+])
+def test_topojson_rejects_lossy_driver_inputs(tmp_path, monkeypatch, geometry, arcs):
+    import json
+    source = tmp_path / "invalid.topojson"
+    source.write_text(json.dumps({"type":"Topology", "objects":{"sample":geometry},"arcs":arcs}))
+    def unexpected_open(*args, **kwargs):
+        pytest.fail("GDAL must not silently discard unsupported source geometry")
+    monkeypatch.setattr("operators.gdal_vector_dataset.gdal.OpenEx", unexpected_open)
+    with pytest.raises(ValueError):
+        inspect(_exchange_plan(source, "topojson"))
+
+
+def test_gml_schema_annotation_does_not_fetch_external_schema(tmp_path, monkeypatch):
+    source = tmp_path / "sites.gml"
+    source.write_text('''<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml" xmlns:app="urn:test"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:test https://example.invalid/test.xsd">
+      <gml:featureMember><app:sites><app:name>station</app:name><app:position>
+       <gml:Point srsName="EPSG:4326"><gml:pos>112.98 28.19</gml:pos></gml:Point>
+      </app:position></app:sites></gml:featureMember></gml:FeatureCollection>''')
+    original_open = gdal.OpenEx
+    calls = []
+    def controlled_open(*args, **kwargs):
+        calls.append(kwargs)
+        assert kwargs["allowed_drivers"] == ["GML"]
+        assert kwargs["open_options"] == ["DOWNLOAD_SCHEMA=NO", "USE_SCHEMA_IMPORT=NO"]
+        return original_open(*args, **kwargs)
+    monkeypatch.setattr("operators.gdal_vector_dataset.gdal.OpenEx", controlled_open)
+    result = inspect(_exchange_plan(source, "gml"))
+    assert result["container"]["default_child"] == "sites"
+    assert calls and list(tmp_path.iterdir()) == [source]

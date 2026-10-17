@@ -7,6 +7,8 @@ const (
 	FormatShapefile  FormatType = "shapefile"
 	FormatGeoPackage FormatType = "geopackage"
 	FormatKML        FormatType = "kml"
+	FormatGML        FormatType = "gml"
+	FormatTopoJSON   FormatType = "topojson"
 	FormatKMZ        FormatType = "kmz"
 
 	FormatCSV   FormatType = "csv"

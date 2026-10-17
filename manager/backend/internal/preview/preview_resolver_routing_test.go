@@ -620,34 +620,40 @@ func TestResolveProviderByMetaUsesScopeTableForWholeRuntimeContainerChild(t *tes
 }
 
 func TestResolveProviderByMetaUsesScopeTableForSingleRuntimeContainerChild(t *testing.T) {
-	registry := NewPreviewRegistry()
-	registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
-	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
-	resolver := NewPreviewResolver(registry, nil, nil)
+	for _, sourceFormat := range []string{"pgeo", "kml", "gml", "topojson"} {
+		for _, engineType := range []string{"nfs", "minio"} {
+			t.Run(sourceFormat+"/"+engineType, func(t *testing.T) {
+				registry := NewPreviewRegistry()
+				registry.Register(namedPreviewProvider{name: "builtin:scope-table"})
+				registry.Register(namedPreviewProvider{name: "builtin:container-child"})
+				resolver := NewPreviewResolver(registry, nil, nil)
 
-	req := &PreviewResolverRequest{
-		Locator: &resourcetree.ResourceLocator{},
-		Engine:  &commonModels.Engine{EngineType: "nfs"},
-		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
-			"item": map[string]interface{}{
-				"data_type": "container",
-				"format":    "pgeo",
-				"layout":    "single",
-			},
-		}},
-		ItemType:  "file",
-		ChildName: "WGS84_Points",
-	}
-	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{
-		Engine:    &models.Engine{EngineType: "nfs"},
-		Table:     "AggDB_v1.2015.1.mdb",
-		ChildName: "WGS84_Points",
-	})
-	if err != nil {
-		t.Fatalf("resolveProviderByMeta() error = %v", err)
-	}
-	if provider.Name() != "builtin:scope-table" {
-		t.Fatalf("provider = %q, want builtin:scope-table", provider.Name())
+				req := &PreviewResolverRequest{
+					Locator: &resourcetree.ResourceLocator{},
+					Engine:  &commonModels.Engine{EngineType: engineType},
+					Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+						"item": map[string]interface{}{
+							"data_type": "container",
+							"format":    sourceFormat,
+							"layout":    "single",
+						},
+					}},
+					ItemType:  map[string]string{"nfs": "file", "minio": "object"}[engineType],
+					ChildName: "WGS84_Points",
+				}
+				provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{
+					Engine:    &models.Engine{EngineType: engineType},
+					Table:     "AggDB_v1.2015.1.mdb",
+					ChildName: "WGS84_Points",
+				})
+				if err != nil {
+					t.Fatalf("resolveProviderByMeta() error = %v", err)
+				}
+				if provider.Name() != "builtin:scope-table" {
+					t.Fatalf("provider = %q, want builtin:scope-table", provider.Name())
+				}
+			})
+		}
 	}
 }
 

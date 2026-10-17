@@ -1196,6 +1196,20 @@ FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdb
 - PGeo 是 legacy source-only 格式，不建立写入 provider 或兼容回退路径。
 - Enterprise Geodatabase、ArcGIS SDE 注册与版本化属于数据库 workspace 能力，不属于 `filegdb` 或 `pgeo` format provider。
 
+## KML / GML / TopoJSON
+
+三种矢量交换文件统一为 `layout=single + data_type=container`，格式分别为 `kml`、`gml`、`topojson`。KML 的 Folder、GML 的 feature type 和 TopoJSON 的命名 object 通过受控 GDAL Runtime 转为轻量图层 children；选择图层后复用 scope table Provider、EWKB 和 Manager 的地图＋属性表，不合并各图层字段，不新增空间数据类型。KML 不再按文本文档读取。
+
+- `.kml`、`.gml`、`.topojson` 声明专用扩展名；通用 `.json` 只有内容前缀确认为根 `Topology` 且具有 `objects` 对象时精化为 TopoJSON 候选，完整 `objects` / `arcs` 结构由 Runtime 校验，不占用 JSON 的扩展名或 MIME。通用 XML 仍归 XML。
+- 唯一原生读取路线为已有 GeoPython Runtime 的 GDAL `KML`、`GML`、`TopoJSON` 驱动，Meta / Manager 不嵌入 GDAL；首期只读，不提供这三种格式的写出 Provider。
+- 容器 attributes 只保存图层名称、数量和轻量定位；字段、几何、范围与 CRS 在选择 child 后取得。源文件只读，解析副文件位于可回收的隔离临时目录。
+- KML 的简单要素按格式规定使用 EPSG:4326。GML 保留 GDAL 从 `srsName` 识别的 CRS 和标准轴序；未知 CRS 不默认米或经纬度。TopoJSON 标准允许投影坐标，不能把 GDAL 的默认 WGS84 当作源声明；没有明确 CRS 时只展示属性和源几何，地图按既有 `unknown_crs` 契约暂停定位。
+- 首期支持简单要素与图层读取，不承诺 KML 样式、嵌套 Folder 层次和描述语义的完整还原；Model、Overlay、NetworkLink、gx Track 不作为普通矢量静默处理。TopoJSON 首期只支持二维位置，非法弧索引、额外维度、null object 和嵌套 GeometryCollection 明确拒绝，避免驱动静默丢失；GML 接受普通 schemaLocation 注记，但明确禁用 schema 下载／导入，在隔离副本中按要素推断字段；仅接受标准 EPSG / OGC CRS84 标识，不读取自定义 CRS 外部链接；不支持 XLink、越界 schema 路径或应用 schema 的完整业务语义；XML DTD 和实体声明拒绝读取，不回源下载链接内容。
+
+最小验证使用 `make test-geopython-workflow`（真实原生驱动、多图层、坐标／轴序、TopoJSON 量化与反向弧、未知 CRS 和拒绝边界）、`make test-go`（格式注册、Meta 和 Manager 路由／读取协议），沿用 Platform CI 已登记的 Go 和 GeoPython 门禁。上述门禁不等同于跨模块 T4 或真实页面验收。升级后，已有 KML 文档项应通过父目录的强制扫描重新发现为容器；known-item refresh 只重建既有身份，不能代替格式分类重识别。
+
+参考：[GDAL KML](https://gdal.org/en/stable/drivers/vector/kml.html)、[GDAL GML](https://gdal.org/en/stable/drivers/vector/gml.html)、[GDAL TopoJSON](https://gdal.org/en/stable/drivers/vector/topojson.html)、[TopoJSON 格式规范](https://github.com/topojson/topojson-specification)。
+
 ## ZIP / 压缩包
 
 ### 识别与组织

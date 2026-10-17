@@ -16,7 +16,7 @@ type fallbackIdentification struct {
 var fallbackIdentifications = []fallbackIdentification{
 	{FormatShapefile, ".shp", "application/x-shapefile", datatype.Table},
 	{FormatGeoPackage, ".gpkg", "application/geopackage+sqlite3", datatype.Container},
-	{FormatKML, ".kml", "application/vnd.google-earth.kml+xml", datatype.Document},
+	{FormatKML, ".kml", "application/vnd.google-earth.kml+xml", datatype.Container},
 	{FormatKMZ, ".kmz", "application/vnd.google-earth.kmz", datatype.Container},
 	{FormatCSV, ".csv", "text/csv", datatype.Table},
 	{FormatExcel, ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", datatype.Container},

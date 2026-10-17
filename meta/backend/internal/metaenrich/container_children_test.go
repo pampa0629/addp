@@ -323,3 +323,31 @@ func zipContainerBytes(t *testing.T, files map[string]string) []byte {
 	}
 	return buf.Bytes()
 }
+
+func TestEnrichVectorExchangeContainerUsesSharedRuntime(t *testing.T) {
+	for _, sourceFormat := range []string{"kml", "gml", "topojson"} {
+		t.Run(sourceFormat, func(t *testing.T) {
+			inspector := &fakeRuntimeContainerInspector{result: &format.ContainerDescribeResult{
+				Container: &datatype.ContainerInfo{ChildCount: 1, DefaultChild: "sites", ResourceCount: 1,
+					Children: []datatype.ContainerChildInfo{{Name: "sites", DataType: datatype.Table, ChildKind: "feature_class", Native: map[string]interface{}{"table": "sites"}}}},
+				FormatInfo: map[string]interface{}{"driver": sourceFormat},
+			}}
+			attrs := models.JSONMap{}
+			item := detectedItemForTest(dataitem.ResolvedItem{DataType: datatype.Container, Format: sourceFormat, Layout: format.LayoutSingle})
+			handled, err := EnrichRuntimeContainerItem(context.Background(), attrs, inspector, &commonModels.Engine{ID: 14}, 1, item, "samples/source."+sourceFormat)
+			if err != nil || !handled || inspector.format != sourceFormat || inspector.layout != format.LayoutSingle {
+				t.Fatalf("handled=%v inspector=%#v err=%v", handled, inspector, err)
+			}
+			container := commonJSON.Section(attrs, "type_info.container")
+			if container["default_child"] != "sites" {
+				t.Fatalf("container=%#v", container)
+			}
+			if commonJSON.Section(attrs, "format_info."+sourceFormat)["driver"] != sourceFormat {
+				t.Fatal("lost driver facts")
+			}
+			if len(commonJSON.Section(attrs, "type_info.table")) > 0 || len(commonJSON.Section(attrs, "capabilities.spatial")) > 0 {
+				t.Fatalf("parent must not receive child facts: %#v", attrs)
+			}
+		})
+	}
+}

@@ -154,3 +154,57 @@ func TestWholeScopePointCloudFormatsExposeScopeProviders(t *testing.T) {
 		t.Fatalf("ept should not expose single-resource point cloud provider: %#v", snapshot.Implementations)
 	}
 }
+
+func TestVectorExchangeFormatsUseReadonlyRuntimeContainers(t *testing.T) {
+	for _, candidate := range []struct {
+		formatType format.FormatType
+		filename   string
+	}{
+		{format.FormatKML, "sites.KML"}, {format.FormatGML, "sites.gml"}, {format.FormatTopoJSON, "sites.topojson"},
+	} {
+		t.Run(string(candidate.formatType), func(t *testing.T) {
+			if got := format.DetectFormat(candidate.filename, nil); got != candidate.formatType {
+				t.Fatalf("detected %s", got)
+			}
+			snapshot, ok := format.GetFormatCapabilitySnapshot(candidate.formatType)
+			if !ok || snapshot.Descriptor.DataType != "container" {
+				t.Fatalf("snapshot = %#v", snapshot)
+			}
+			if _, err := format.GetRuntimeContainerInfoProviderFactory(candidate.formatType); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := format.GetRuntimeScopeTableReaderFactory(candidate.formatType); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := format.GetRuntimeScopeTableWriterFactory(candidate.formatType); err == nil {
+				t.Fatal("unexpected writer")
+			}
+			if format.IsDocumentFormat(candidate.formatType) || !format.IsGeospatialFormat(candidate.formatType) {
+				t.Fatal("wrong format classification")
+			}
+		})
+	}
+}
+
+func TestTopologyIdentityDoesNotClaimOrdinaryJSON(t *testing.T) {
+	for _, candidate := range []struct {
+		content string
+		want    format.FormatType
+	}{
+		{`{"type":"Topology","objects":{},"arcs":[]}`, format.FormatTopoJSON},
+		{`{"type":"Topology","objects":{"large":{"type":"GeometryCollection","geometries":[`, format.FormatTopoJSON},
+		{`{"type":"Topology"}`, format.FormatJSON},
+		{`{"objects":{},"arcs":[],"type":"Topology"}`, format.FormatTopoJSON},
+		{`{"type":"Topology","objects":[] ,"arcs":[]}`, format.FormatJSON},
+		{`{"record":{"type":"Topology","objects":{},"arcs":[]}}`, format.FormatJSON},
+		{`{"type":"FeatureCollection","features":[]}`, format.FormatGeoJSON},
+		{`[{"id":1}]`, format.FormatJSON},
+	} {
+		if got := format.DetectFormat("source.json", []byte(candidate.content)); got != candidate.want {
+			t.Errorf("%s: got %s, want %s", candidate.content, got, candidate.want)
+		}
+	}
+	if got := format.DetectFormat("source.xml", []byte(`<root/>`)); got != format.FormatXML {
+		t.Fatalf("ordinary XML = %s", got)
+	}
+}

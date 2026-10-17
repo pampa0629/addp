@@ -91,6 +91,7 @@ func GuessContentType(filename string, peek []byte) string
 - `.geojson` 返回 `FormatGeoJSON`；`.json` 默认返回 `FormatJSON`，但 `DetectFormat(filename, peek)` 在内容前缀严格匹配 GeoJSON `FeatureCollection` 时返回 `FormatGeoJSON`。
 - `.ejsonl` 返回 `FormatMongoDBExtendedJSONL`；该 descriptor 只声明 MongoDB Canonical Extended JSON Lines 的稳定交换格式身份，编码由 MongoDB `EncodedRecordReadSessionProvider` 完成，不提供 table/document writer。
 - `application/geo+json`、`application/vnd.geo+json` 返回 `FormatGeoJSON`；`application/json` 返回 `FormatJSON`。
+- KML、GML、TopoJSON 是 `single + container`，统一复用 `plugins/gdalvector` 的只读 Runtime 工厂；Meta 深度扫描枚举图层，Manager 选择 child 后读取 EWKB 和源 CRS。TopoJSON 无可靠 CRS 声明时不采用驱动隐含 WGS84，地图返回 `unknown_crs`，仍保留属性和源几何。详细范围及标准门禁见平台内置格式规范。
 - Shapefile 只有 primary content `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等 related content 不单独代表完整 Shapefile，ref 归并由上层基于 format descriptor、related ref 规则和 item 组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。
 - `IsDocumentFormat`、`IsTableFormat`、`IsImageFormat` 等分类 helper 是 descriptor `DataType` / MIME 事实的派生判断，不维护独立格式分类表；例如 Excel 的默认 data type 是 `container`，不属于 `IsTableFormat`。
