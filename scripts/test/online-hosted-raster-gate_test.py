@@ -30,7 +30,7 @@ class HostedRasterGateTest(unittest.TestCase):
                 assert os.environ['ADDP_ONLINE_RASTER_RUNTIME_IMAGE'] == 'localhost:5001/addp-geopython-workflow-engine:raster-online'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream: stream.write('raster-fixture:' + action + '\\n')
             if action == 'start':
-                for role in ('source', 'target'):
+                for role in ('source', 'source-b', 'source-c', 'target'):
                     Path(os.environ['ADDP_ONLINE_SECRET_DIR'], 'raster-' + role + '-engine.json').write_text('{}')
             if os.environ.get('ADDP_TEST_FAIL_ACTION') == action: sys.exit(1)
         ''')
@@ -39,7 +39,9 @@ class HostedRasterGateTest(unittest.TestCase):
             parser = argparse.ArgumentParser()
             parser.add_argument('--descriptor'); parser.add_argument('--output')
             args = parser.parse_args()
-            value = 11 if 'source' in args.descriptor else 12
+            from pathlib import Path
+            value = {'raster-source-engine.json': 11, 'raster-source-b-engine.json': 13,
+                     'raster-source-c-engine.json': 14, 'raster-target-engine.json': 12}[Path(args.descriptor).name]
             with open(args.output, 'w') as stream: stream.write(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={value}\\n')
         ''')
         fixture = importlib.import_module('scripts.test.online-hosted-hdfs-gate_test')
@@ -64,6 +66,8 @@ class HostedRasterGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 1740 ] || exit 1
             [ "$ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID" = 11 ]
             [ "$ADDP_ONLINE_RASTER_TARGET_ENGINE_ID" = 12 ]
+            [ "$ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID" = 13 ]
+            [ "$ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID" = 14 ]
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
@@ -85,7 +89,9 @@ class HostedRasterGateTest(unittest.TestCase):
 
     def test_admission_rejects_personal_or_occupied_environment_without_mutation(self):
         for changes in ({'RUNNER_OS': 'macOS'}, {'GITHUB_ACTIONS': 'false'},
-                        {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-raster-source'}, {'ONLINE_SUITE_INPUT': 'other'}):
+                        {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-raster-source'},
+                        {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-raster-source-b'},
+                        {'ADDP_TEST_PREEXIST_CONTAINER': 'addp-raster-source-c'}, {'ONLINE_SUITE_INPUT': 'other'}):
             result = self.run_gate(check=True, **changes)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.trace.exists())

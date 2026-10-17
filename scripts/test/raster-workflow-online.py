@@ -22,7 +22,7 @@ PERMISSIONS = {'develop.task.read', 'develop.task.execute', 'develop.data_read.e
                'meta.catalog.read', 'meta.scan_task.read', 'meta.scan_task.execute',
                'meta.lineage.read', 'monitor.execution.read'}
 EDITOR_PERMISSIONS = PERMISSIONS | {'develop.task.create', 'develop.task.delete'}
-SCHEMA = 'addp.raster-workflow-online/v1'
+SCHEMA = 'addp.raster-workflow-online/v2'
 
 
 def validate_identity(client, tenant_id, *, required_permissions=PERMISSIONS):
@@ -704,10 +704,21 @@ def browser_editor(repository, env, evidence):
 
 
 def validate_editor_report(report, evidence):
+    if evidence.get('case_name') not in fixture.MOSAIC_EDITOR_CASES:
+        raise SuiteError('unknown raster editor scene')
+    source_ids = evidence.get('source_engine_ids')
+    source_names = evidence.get('source_engine_names')
+    distinct = 3 if evidence['case_name'] == fixture.MOSAIC_EDITOR_CASES[1] else 1
+    if (not isinstance(source_ids, list) or len(source_ids) != 3
+        or any(type(value) is not int or value <= 0 for value in source_ids)
+        or len(set(source_ids)) != distinct or evidence['target_engine_id'] in source_ids
+        or not isinstance(source_names, list) or len(source_names) != 3
+        or any(not isinstance(value, str) or not value for value in source_names)):
+        raise SuiteError('editor source Engines do not match the scene or separate target')
     extra = {'schema_version', 'result', 'task_id', 'execution_id', 'workflow_definition',
              'save_node_id', 'source_task_id', 'reloaded', 'deleted', 'page_requests'}
     if (set(report) != set(evidence) | extra or any(report.get(key) != value for key, value in evidence.items())
-        or report.get('schema_version') != 'addp.raster-workflow-editor/v1' or report.get('result') != 'passed'
+        or report.get('schema_version') != 'addp.raster-workflow-editor/v2' or report.get('result') != 'passed'
         or type(report.get('task_id')) is not int or report['task_id'] <= 0
         or not isinstance(report.get('execution_id'), str) or not report['execution_id']
         or report.get('source_task_id') != str(report['task_id'])
@@ -797,9 +808,12 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     if tenant <= 1:
         raise SuiteError('raster acceptance forbids the default Tenant')
     source_engine = positive(env['ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID'], 'source engine')
+    source_engines = {'source': source_engine,
+                      'source-b': positive(env['ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID'], 'source B engine'),
+                      'source-c': positive(env['ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID'], 'source C engine')}
     target_engine = positive(env['ADDP_ONLINE_RASTER_TARGET_ENGINE_ID'], 'target engine')
-    if source_engine == target_engine:
-        raise SuiteError('raster fixture requires distinct source and target Engines')
+    if len(set(source_engines.values()) | {target_engine}) != 4:
+        raise SuiteError('raster fixture requires three distinct source Engines and a separate target')
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '180'))
     identity = validate_identity(client, tenant, required_permissions=EDITOR_PERMISSIONS)
     pending_outputs = []
@@ -809,7 +823,13 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     if len(runtime) != 1:
         raise SuiteError('exactly one online GeoPython Workflow Runtime must be registered')
     engine_id = positive(runtime[0].get('id'), 'runtime engine')
-    support.wait_for_meta_scan(client, source_engine, time.monotonic() + timeout)
+    for source_id in source_engines.values():
+        support.wait_for_meta_scan(client, source_id, time.monotonic() + timeout)
+    catalog_engines = array(client.request('GET', '/api/v1/meta/engines', (200,)).payload, 'source catalog engines')
+    engine_names = {positive(item.get('id'), 'catalog engine'): item.get('name') for item in catalog_engines}
+    if any(not isinstance(engine_names.get(identifier), str) or not engine_names[identifier]
+           for identifier in source_engines.values()):
+        raise SuiteError('all three registered source Engines must be visible to the same User')
     source = support.find_fixture_item(client, source_engine, 'raster-source/source.tif', 'raster source')
     source_locator = support.build_item_locator(source_engine, source)
     target_locator = f'addp://engine/{target_engine}/path/raster-target/result.cog.tif?type=object'
@@ -996,12 +1016,19 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     outside_cases = []
     update_cases = []
     mosaic_source_cases = []
-    mosaic_editor_case = None
+    mosaic_editor_cases = []
     mosaic_sources = {name: support.find_fixture_item(client, source_engine, 'raster-source/' + name, 'independent mosaic source')
                       for name in fixture.MOSAIC_SOURCE_WINDOWS}
     mosaic_locators = {name: support.build_item_locator(source_engine, item) for name, item in mosaic_sources.items()}
     if len({item['id'] for item in mosaic_sources.values()}) != 3 or len(set(mosaic_locators.values())) != 3:
         raise SuiteError('independent mosaic sources do not have three distinct registered identities')
+    cross_sources = {name: support.find_fixture_item(client, source_engines[role], 'raster-' + role + '/' + name,
+                                                    'cross-engine mosaic source')
+                     for name, role in fixture.MOSAIC_SOURCE_ROLES.items()}
+    cross_locators = {name: support.build_item_locator(source_engines[fixture.MOSAIC_SOURCE_ROLES[name]], item)
+                      for name, item in cross_sources.items()}
+    if len({item['id'] for item in cross_sources.values()}) != 3 or len(set(cross_locators.values())) != 3:
+        raise SuiteError('cross-engine sources must have three independent registered identities')
     patch_source = support.find_fixture_item(client, source_engine, 'raster-source/multiband.tif', 'update source')
     patch_locator = support.build_item_locator(source_engine, patch_source)
     reference_source = support.find_fixture_item(client, target_engine, 'raster-target/mosaic-first.cog.tif', 'reference raster')
@@ -1019,7 +1046,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             case_source = aggregate_sources[fixture.aggregate_config(case_name)['source_name']]
             case_sources = [(case_source, support.build_item_locator(source_engine, case_source), '')]
         if case_name in fixture.MOSAIC_CASES:
-            case_sources = [(mosaic_sources[name], mosaic_locators[name], '-' + name.removesuffix('.tif'))
+            chosen_sources, chosen_locators = ((cross_sources, cross_locators) if case_name == fixture.MOSAIC_EDITOR_CASES[1]
+                                               else (mosaic_sources, mosaic_locators))
+            case_sources = [(chosen_sources[name], chosen_locators[name], '-' + name.removesuffix('.tif'))
                             for name in fixture.MOSAIC_SOURCE_ORDER]
         source_locators = [case_locator for _, case_locator, _ in case_sources]
         expectation = fixture.computed_expectation(case_name)
@@ -1028,12 +1057,15 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
 
         editor_report = None
         output_node = 'save'
-        if case_name == fixture.MOSAIC_EDITOR_CASE:
+        if case_name in fixture.MOSAIC_EDITOR_CASES:
+            source_ids = ([source_engines[fixture.MOSAIC_SOURCE_ROLES[name]] for name in fixture.MOSAIC_SOURCE_ORDER]
+                          if case_name == fixture.MOSAIC_EDITOR_CASES[1] else [source_engine] * 3)
             editor_evidence = {
                 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity,
                 'case_name': case_name, 'workflow_engine_id': engine_id,
-                'task_name': env['ADDP_ONLINE_TEST_RUN_ID'] + '-raster-editor',
+                'task_name': env['ADDP_ONLINE_TEST_RUN_ID'] + '-' + case_name,
                 'source_locators': source_locators,
+                'source_engine_ids': source_ids, 'source_engine_names': [engine_names[value] for value in source_ids],
                 'source_names': [item['full_name'].rsplit('/', 1)[-1] for item, _, _ in case_sources],
                 'source_item_ids': [item['id'] for item, _, _ in case_sources],
                 'target_engine_id': target_engine, 'target_name': name,
@@ -1075,6 +1107,9 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             raise SuiteError('multi-raster bands, colour, validity or preservation evidence differs')
         if case_name == fixture.MOSAIC_SOURCE_CASES[-1] and native.get('sha256') == mosaic_source_cases[0]['physical']['sha256']:
             raise SuiteError('independent-source first/last outputs have identical bytes')
+        if (case_name == fixture.MOSAIC_EDITOR_CASES[1]
+            and native.get('sha256') == preserved[fixture.MOSAIC_EDITOR_CASES[0] + '.cog.tif']):
+            raise SuiteError('cross-engine output reused the same-named original source pixels')
         target = support.find_fixture_item(client, target_engine, 'raster-target/' + name, 'multi-raster target')
         graphs, browsers = [], []
         for case_source, case_locator, suffix in case_sources:
@@ -1088,7 +1123,10 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': scan_id, 'lineage': graphs[0] if single else graphs,
             'physical': native, 'browser': browsers[0] if single else browsers}
         if editor_report:
-            mosaic_editor_case = {**case, 'editor': editor_report}
+            if any(item['editor']['task_id'] == editor_report['task_id'] or item['execution_id'] == identifier
+                   for item in mosaic_editor_cases):
+                raise SuiteError('editor scenes reused a saved task or execution')
+            mosaic_editor_cases.append({**case, 'editor': editor_report})
         else:
             cases.append(case)
         preserved[name] = native['sha256']
@@ -1232,7 +1270,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
             'physical': physical_evidence, 'size_evidence': size_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'spatial_cases': spatial_cases,
-            'mosaic_source_cases': mosaic_source_cases, 'mosaic_editor_case': mosaic_editor_case,
+            'mosaic_source_cases': mosaic_source_cases, 'mosaic_editor_cases': mosaic_editor_cases,
             'analysis_cases': analysis_cases, 'grid_cases': grid_cases, 'multiband_cases': multiband_cases,
             'utility_cases': utility_cases, 'foundation_cases': foundation_cases, 'reclass_cases': reclass_cases,
             'aggregate_cases': aggregate_cases, 'outside_cases': outside_cases, 'update_cases': update_cases, 'footprint_cases': footprint_cases, 'tiling_cases': tiling_results['create']['cases'], 'tiling_replace_cases': tiling_results['replace']['cases'],
@@ -1303,7 +1341,8 @@ def finish_resource_policy(platform, tenant, setup, timeout):
 def main():
     env = dict(os.environ)
     required = ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_TEST_TENANT_ID', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',
-                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',
+                'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID',
+                'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID', 'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID',
                 'ADDP_ONLINE_TEST_USER_USERNAME', 'ADDP_ONLINE_TEST_USER_PASSWORD',
                 'ADDP_ONLINE_ARTIFACT_DIR', 'GATEWAY_URL', 'CONSOLE_URL',
                 'ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN', 'ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN')

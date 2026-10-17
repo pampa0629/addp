@@ -127,6 +127,12 @@ test.describe('栅格真实编辑器', () => {
       expect([...auth.permissions].sort()).toEqual(evidence.permissions_verified)
       expect(auth.permissions.has('develop.task.update')).toBe(false)
       const engines = await json(await api.get('/api/v1/meta/engines'), 'editor engines')
+      expect(evidence.source_engine_ids).toHaveLength(3)
+      expect(evidence.source_engine_names).toHaveLength(3)
+      const sourceEngines = evidence.source_engine_ids.map(id => engines.find(engine => engine.id === id))
+      expect(sourceEngines.every(Boolean)).toBe(true)
+      expect(sourceEngines.map(engine => engine.name)).toEqual(evidence.source_engine_names)
+      expect(new Set(evidence.source_engine_ids).size).toBe(evidence.case_name === 'multiengine-editor-first' ? 3 : 1)
       const targetEngine = engines.find(engine => engine.id === evidence.target_engine_id)
       expect(targetEngine).toBeTruthy()
       const specs = await json(await api.get(`/api/v1/develop/workflow-engines/${evidence.workflow_engine_id}/operators`), 'editor operators')
@@ -173,10 +179,13 @@ test.describe('栅格真实编辑器', () => {
       await selectNode('raster_mosaic')
       await frame.getByRole('button', { name: '选择影像', exact: true }).click()
       const sources = frame.getByRole('dialog', { name: '选择影像', exact: true })
-      for (const name of evidence.source_names) {
+      for (const [index, name] of evidence.source_names.entries()) {
         await sources.locator('.picker-search input').fill(name)
         const result = sources.locator('.search-result').filter({ hasText: name })
+          .filter({ hasText: evidence.source_engine_names[index] })
         await expect(result).toHaveCount(1)
+        await expect(result.locator('.search-result-label')).toHaveText(name)
+        await expect(result.locator('.search-result-engine')).toHaveText(evidence.source_engine_names[index])
         await result.click()
         await expect(result).toHaveAttribute('aria-pressed', 'true')
       }
@@ -270,7 +279,7 @@ test.describe('栅格真实编辑器', () => {
       expect(counts).toEqual({ create: 1, update: 0, execute: 1 })
       expect(pageErrors).toBe(0)
       expect(requestErrors).toEqual([])
-      report = { ...evidence, schema_version: 'addp.raster-workflow-editor/v1', result: 'passed',
+      report = { ...evidence, schema_version: 'addp.raster-workflow-editor/v2', result: 'passed',
         task_id: taskId, execution_id: receipt.execution_id, source_task_id: execution.source_task_id,
         workflow_definition: saved.content.workflow_definition, save_node_id: saveNode.id,
         reloaded: true, deleted: false, page_requests: counts }

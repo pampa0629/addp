@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=raster-workflow
-HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-target addp-raster-fixture-worker addp-raster-cleanup-proxy addp-raster-registry addp-raster-online-runtime)
+HOSTED_FIXTURE_CONTAINERS=(addp-raster-source addp-raster-source-b addp-raster-source-c addp-raster-target addp-raster-fixture-worker addp-raster-cleanup-proxy addp-raster-registry addp-raster-online-runtime)
 RUNTIME_CONTAINER=addp-raster-online-runtime
 RUNTIME_TAG=raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
@@ -57,15 +57,16 @@ run_logged python3 business/scripts/online-raster-minio-fixture.py seed
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-for role in source target; do
+for role in source source-b source-c target; do
   run_logged python3 scripts/test/online-engine-registration.py \
     --descriptor "$ADDP_ONLINE_SECRET_DIR/raster-$role-engine.json" --output "$ENGINE_RESULT_ENV"
   source "$ENGINE_RESULT_ENV"
-  if [ "$role" = source ]; then
-    export ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
-  else
-    export ADDP_ONLINE_RASTER_TARGET_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
-  fi
+  case "$role" in
+    source) export ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID" ;;
+    source-b) export ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID" ;;
+    source-c) export ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID" ;;
+    target) export ADDP_ONLINE_RASTER_TARGET_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID" ;;
+  esac
 done
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged env -u POSTGRES_PASSWORD make test-online "ONLINE_SUITE=$ONLINE_SUITE"

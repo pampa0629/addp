@@ -191,7 +191,7 @@ def assert_physical_size(evidence, name):
 @pytest.fixture
 def physical(tmp_path):
     config = tmp_path / 'fixture.json'
-    config.write_text(json.dumps({role: {'endpoint': role, 'bucket': 'raster-' + role, 'access_key': 'test', 'secret_key': 'test'} for role in ('source', 'target')}))
+    config.write_text(json.dumps({role: {'endpoint': role, 'bucket': 'raster-' + role, 'access_key': 'test', 'secret_key': 'test'} for role in fixture.MINIO_ROLES}))
     LocalMinio.objects = {}
     with patch('minio.Minio', LocalMinio), patch.object(fixture, 'provision_target_writer', return_value={'writer_is_root': False, 'error_code': 'AccessDenied'}):
         seeded = fixture.worker('seed', config)
@@ -756,7 +756,7 @@ def test_finite_source_verifier_checks_pixels_and_declaration_even_with_matching
     LocalMinio.objects['source', 'raster-source', source.name] = source.read_bytes()
     fingerprint_path = physical.with_name('raster-source-sha256.json')
     fingerprints = json.loads(fingerprint_path.read_text())
-    fingerprints[source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
+    fingerprints['source/' + source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
     fingerprint_path.write_text(json.dumps(fingerprints))
     with pytest.raises(fixture.FixtureError, match='source pixels/NoData'):
         fixture.worker('verify-create', physical)
@@ -1694,7 +1694,7 @@ def test_batch_tiles_public_dag_matches_independent_hosted_window_oracle(tmp_pat
 def editor_mosaic_artifacts(independent_mosaic_artifacts, tmp_path):
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
-    case = fixture.MOSAIC_EDITOR_CASE
+    case = fixture.MOSAIC_EDITOR_CASES[0]
     sources = {name: 'registered-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
     result, output = multisource_execution(tmp_path, api_server, case,
         scene.mosaic_source_workflow(sources, 2, case), [('source', name) for name in sources])
@@ -1706,15 +1706,66 @@ def editor_mosaic_artifacts(independent_mosaic_artifacts, tmp_path):
 
 
 def test_editor_mosaic_physical_oracle_uses_complete_first_priority_pixels(editor_mosaic_artifacts):
-    evidence = fixture.worker('verify-' + fixture.MOSAIC_EDITOR_CASE, editor_mosaic_artifacts)
+    evidence = fixture.worker('verify-' + fixture.MOSAIC_EDITOR_CASES[0], editor_mosaic_artifacts)
     assert evidence['source_unchanged'] is True and evidence['cog_valid'] is True
     assert evidence['overview_sizes'] == [[128, 128]]
-    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASE) == fixture.mosaic_source_pixels('multisource-first')
-    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASE, 2) == fixture.mosaic_source_pixels('multisource-first', 2)
+    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASES[0]) == fixture.mosaic_source_pixels('multisource-first')
+    assert fixture.mosaic_source_pixels(fixture.MOSAIC_EDITOR_CASES[0], 2) == fixture.mosaic_source_pixels('multisource-first', 2)
 
 
-def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(editor_mosaic_artifacts, tmp_path):
-    outside_artifacts = editor_mosaic_artifacts
+@pytest.fixture
+def cross_engine_mosaic_artifacts(editor_mosaic_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    case = fixture.MOSAIC_EDITOR_CASES[1]
+    sources = {name: 'registered-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    result, output = multisource_execution(tmp_path, api_server, case,
+        scene.mosaic_source_workflow(sources, 2, case),
+        [(role, name) for name, role in fixture.MOSAIC_SOURCE_ROLES.items()])
+    evidence = fixture.worker('verify-' + case, editor_mosaic_artifacts)
+    assert evidence['size_bytes'] == result['size_bytes'] == output.stat().st_size > 0
+    assert evidence['band_valid_pixels'] == [65534, 65533]
+    assert len(evidence['preserved_sha256']) == 33
+    return editor_mosaic_artifacts
+
+
+def test_cross_engine_mosaic_checks_complete_pixels_and_all_source_endpoints(cross_engine_mosaic_artifacts):
+    evidence = fixture.worker('verify-' + fixture.MOSAIC_EDITOR_CASES[1], cross_engine_mosaic_artifacts)
+    assert evidence['source_unchanged'] is True and evidence['cog_valid'] is True
+    assert evidence['overview_sizes'] == [[128, 128]]
+    assert evidence['sha256'] != evidence['preserved_sha256'][fixture.MOSAIC_EDITOR_CASES[0] + '.cog.tif']
+
+
+def test_cross_engine_seeding_keeps_the_existing_negative_cog_source_crs(physical, tmp_path):
+    path = tmp_path / 'negative-cog-source.tif'
+    path.write_bytes(LocalMinio.objects['source', 'raster-source', fixture.NON_COG_SOURCE])
+    dataset = gdal.Open(str(path))
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(4326)
+    assert osr.SpatialReference(dataset.GetProjection()).IsSame(reference)
+    assert dataset.GetGeoTransform() == fixture.TRANSFORM
+
+
+def test_cross_engine_mosaic_rejects_valid_cog_computed_from_same_named_wrong_engine(editor_mosaic_artifacts, tmp_path):
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    import api_server
+    case = fixture.MOSAIC_EDITOR_CASES[1]
+    sources = {name: 'wrong-engine-' + name for name in fixture.MOSAIC_SOURCE_WINDOWS}
+    multisource_execution(tmp_path, api_server, case, scene.mosaic_source_workflow(sources, 2, case),
+                          [('source', name) for name in sources])
+    with pytest.raises(fixture.FixtureError, match='pixels'):
+        fixture.worker('verify-' + case, editor_mosaic_artifacts)
+
+
+@pytest.mark.parametrize('role,name', [('source-b', 'mosaic-b.tif'), ('source-c', 'mosaic-c.tif')])
+def test_cross_engine_mosaic_rejects_changed_source_bytes(cross_engine_mosaic_artifacts, role, name):
+    key = (role, 'raster-' + role, name)
+    LocalMinio.objects[key] = LocalMinio.objects['source', 'raster-source', name]
+    with pytest.raises(fixture.FixtureError, match='source bytes'):
+        fixture.worker('verify-' + fixture.MOSAIC_EDITOR_CASES[1], cross_engine_mosaic_artifacts)
+
+
+def test_batch_replace_physical_worker_preserves_unrelated_bytes_and_rejects_old_tiles(cross_engine_mosaic_artifacts, tmp_path):
+    outside_artifacts = cross_engine_mosaic_artifacts
     scene = importlib.import_module('scripts.test.raster-workflow-online')
     import api_server
     source = tmp_path/'tiling-source.tif'

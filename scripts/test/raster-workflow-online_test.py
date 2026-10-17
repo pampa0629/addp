@@ -52,6 +52,8 @@ class Client:
         self.topology_source = {'id':17, 'item_type':'object', 'full_name':'raster-source/' + m.fixture.TOPOLOGY_SOURCE, 'fingerprint':'topology-fp'}
         self.mosaic_sources = [{'id': index, 'item_type': 'object', 'full_name': 'raster-source/' + name, 'fingerprint': name}
                                for index, name in enumerate(m.fixture.MOSAIC_SOURCE_WINDOWS, 70)]
+        self.cross_sources = {4: {'id': 73, 'item_type': 'object', 'full_name': 'raster-source-b/mosaic-b.tif', 'fingerprint': 'cross-b'},
+                              5: {'id': 74, 'item_type': 'object', 'full_name': 'raster-source-c/mosaic-c.tif', 'fingerprint': 'cross-c'}}
         self.rotated_source = {'id':16, 'item_type':'object', 'full_name':'raster-source/' + m.fixture.ROTATED_SOURCE, 'fingerprint':'rotated-fp'}
         self.non_cog_source = {'id': 15, 'item_type': 'object', 'full_name': 'raster-source/non-cog.tif', 'fingerprint': 'non-cog-fp'}
         self.targets = {20: self.target}
@@ -133,10 +135,12 @@ class Client:
         elif path == '/api/v1/develop/workflow-engines':
             result = [{'id': 3, 'engine_type': 'geopython_workflow', 'connection_status': 'online'}]
         elif path == '/api/v1/meta/scan/run/manual':
-            assert body['engine_id'] == 1, 'manual target scan must never hide a broken automatic scan'
+            assert body['engine_id'] in (1, 4, 5), 'manual target scan must never hide a broken automatic scan'
             result = {'execution_id': 'source-scan'}
         elif path.startswith('/api/v1/meta/executions/'):
             result = {'status': 'success'}
+        elif path == '/api/v1/meta/engines': result = [{'id': value, 'name': 'engine-' + str(value)} for value in (1, 2, 4, 5)]
+        elif path in ('/api/v1/meta/engines/4/items', '/api/v1/meta/engines/5/items'): result = [self.cross_sources[int(path.split('/')[5])]]
         elif path == '/api/v1/meta/engines/1/items': result = [self.source, self.spatial_source, self.multiband_source, self.average_source, self.finite_source, self.non_cog_source, self.rotated_source, self.topology_source, *self.mosaic_sources]
         elif path == '/api/v1/meta/engines/2/items': result = list(self.targets.values())
         elif path.startswith('/api/v1/meta/items/'): result = self.targets[int(path.rsplit('/', 1)[1])]
@@ -167,10 +171,10 @@ class Client:
                         'final_result': final_result}}})
                 return m.support.Response(200, {'execution_id': identifier}, {})
             if definition['tasks'][-1]['operator'] == 'raster_save_tiles':
-                identifier = f'run-{len(self.executions)+1}'
                 source = definition['tasks'][0]['params']['locator']
                 mode = definition['tasks'][-1]['params']['write_mode']
                 prefix = definition['tasks'][-1]['params']['target_name']
+                identifier = prefix + '-' + mode
                 failed = prefix == m.fixture.TILE_FAILURE_PREFIX or prefix in m.fixture.TILE_CLEANUP_CASES
                 count = m.fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in m.fixture.TILE_CLEANUP_CASES else 1 if failed else 4
                 size = 2048 if mode == 'replace' else 1024
@@ -246,6 +250,7 @@ class Client:
             sources = [self.source, self.spatial_source, self.multiband_source, self.average_source,
                        self.finite_source, self.non_cog_source, self.rotated_source, self.topology_source, *self.mosaic_sources]
             by_locator = {m.support.build_item_locator(1, item): item['id'] for item in sources}
+            by_locator.update({m.support.build_item_locator(engine, item): item['id'] for engine, item in self.cross_sources.items()})
             by_locator.update({m.support.build_item_locator(2, item): item['id'] for item in self.targets.values()})
             result = {'truncated': self.no_graph, 'edges': [
                 {'source': {'item_id': by_locator[source['locator']]}, 'target': {'item_id': target_id},
@@ -258,10 +263,53 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_cross_engine_editor_binds_three_independent_sources_and_new_saved_task(self):
+        report = self.run_scene()
+        first, cross = report['mosaic_editor_cases']
+        self.assertEqual([case['case_name'] for case in report['mosaic_editor_cases']], list(m.fixture.MOSAIC_EDITOR_CASES))
+        self.assertEqual(cross['editor']['source_engine_ids'], [5, 1, 4])
+        self.assertEqual(cross['editor']['source_engine_names'], ['engine-5', 'engine-1', 'engine-4'])
+        self.assertEqual([edge['source_item_id'] for edge in cross['lineage']], [74, 70, 73])
+        self.assertEqual(len(cross['browser']), 3)
+        self.assertEqual(cross['editor']['task_id'], 502)
+        self.assertNotEqual(first['execution_id'], cross['execution_id'])
+        self.assertIn(('GET', '/api/v1/develop/task-definitions/502', None), self.client.calls)
+
+    def test_cross_engine_scene_rejects_engine_aliases_hidden_sources_wrong_nodes_and_task_replay(self):
+        for fault in ('alias', 'hidden', 'source-identity', 'wrong-locator', 'task-replay'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                original = self.client.request
+                def request(method, path, expected, body=None):
+                    result = original(method, path, expected, body)
+                    if fault == 'hidden' and path == '/api/v1/meta/engines':
+                        result.payload[:] = [item for item in result.payload if item['id'] != 5]
+                    return result
+                self.client.request = request
+                if fault == 'alias': self.env['ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID'] = '4'
+                if fault == 'source-identity': self.client.cross_sources[5]['id'] = self.client.mosaic_sources[0]['id']
+                editor = self.editor
+                def altered(repo, env, evidence):
+                    result = editor(repo, env, evidence)
+                    if evidence['case_name'] == m.fixture.MOSAIC_EDITOR_CASES[1]:
+                        if fault == 'wrong-locator': result['workflow_definition']['tasks'][2]['params']['locator'] = m.support.build_item_locator(1, self.client.mosaic_sources[2])
+                        if fault == 'task-replay': result['task_id'] = 501; result['source_task_id'] = '501'
+                    return result
+                with self.assertRaises(m.SuiteError): self.run_scene(editor=altered)
+
+    def test_cross_engine_scene_rejects_original_engine_output_replayed_as_cross_engine(self):
+        def physical(repo, env, action):
+            result = self.physical(repo, env, action)
+            if action == 'verify-' + m.fixture.MOSAIC_EDITOR_CASES[1]:
+                result['sha256'] = result['preserved_sha256'][m.fixture.MOSAIC_EDITOR_CASES[0] + '.cog.tif']
+            return result
+        with self.assertRaisesRegex(m.SuiteError, 'same-named original source pixels'):
+            self.run_scene(physical)
+
     def test_editor_scene_keeps_three_sources_saved_parent_and_confirmed_cleanup(self):
         report = self.run_scene()
-        case = report['mosaic_editor_case']
-        self.assertEqual(case['case_name'], m.fixture.MOSAIC_EDITOR_CASE)
+        case = report['mosaic_editor_cases'][0]
+        self.assertEqual(case['case_name'], m.fixture.MOSAIC_EDITOR_CASES[0])
         self.assertEqual([edge['source_item_id'] for edge in case['lineage']], [72, 70, 71])
         self.assertEqual([edge['target_item_id'] for edge in case['lineage']], [64, 64, 64])
         self.assertEqual(len(case['browser']), 3)
@@ -274,7 +322,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([c['case_name'] for c in report['mosaic_source_cases']], list(m.fixture.MOSAIC_SOURCE_CASES))
 
     def test_editor_report_rejects_replay_bad_graph_order_targets_and_extra_writes(self):
-        original = self.run_scene()['mosaic_editor_case']['editor']
+        original = self.run_scene()['mosaic_editor_cases'][0]['editor']
         extra = {'schema_version', 'result', 'task_id', 'execution_id', 'workflow_definition',
                  'save_node_id', 'source_task_id', 'reloaded', 'deleted', 'page_requests'}
         evidence = {key: value for key, value in original.items() if key not in extra}
@@ -327,7 +375,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         submitted = [body for method, path, body in self.client.calls
                      if method == 'POST' and path == '/api/v1/develop/executions']
         self.assertFalse(any(body['content']['workflow_definition']['tasks'][-1]['params'].get('target_name') ==
-                             m.fixture.MOSAIC_EDITOR_CASE + '.cog.tif' for body in submitted))
+                             m.fixture.MOSAIC_EDITOR_CASES[0] + '.cog.tif' for body in submitted))
 
     def test_editor_execution_must_keep_its_actual_saved_task_parent(self):
         def wrong_parent(repo, env, evidence):
@@ -400,10 +448,10 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_all_confirmed_writes_archive_strict_three_party_sizes(self):
         report = self.run_scene()
         records = [sizes for outputs in report['size_evidence'].values() for sizes in outputs.values()]
-        # 33 final single rasters plus the initial replaced raster, eight tile writes,
+        # 34 final single rasters plus the initial replaced raster, eight tile writes,
         # and six confirmed tiles across the three failed executions.
-        self.assertEqual(len(records), 48)
-        self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 43)
+        self.assertEqual(len(records), 49)
+        self.assertEqual(len({name for outputs in report['size_evidence'].values() for name in outputs}), 44)
         for sizes in records:
             self.assertEqual(set(sizes), {'artifact_size_bytes', 'object_size_bytes', 'data_item_size_bytes'})
             self.assertTrue(all(type(value) is int and value > 0 for value in sizes.values()))
@@ -458,7 +506,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             ['raster_load','raster_load','raster_clip','raster_align','raster_update','raster_build_overviews','raster_save'])
         self.assertEqual(definition['tasks'][4]['params']['input_raster']['$ref'],'base')
         self.assertEqual(definition['tasks'][4]['params']['update_raster']['$ref'],'align')
-        self.assertTrue(all(len(c['physical']['preserved_sha256'])==32 for c in report['footprint_cases']))
+        self.assertTrue(all(len(c['physical']['preserved_sha256'])==33 for c in report['footprint_cases']))
 
     def test_update_rejects_size_band_validity_sources_and_prior_mutation(self):
         for fault in ('declared-size','fractional-size','item-size','grid','colors','second-band','levels','source','prior','input'):
@@ -561,7 +609,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(case['browser']['source_name'], m.fixture.footprint_source_name(case['case_name']))
             self.assertEqual(case['browser']['result_kind'], 'json')
             self.assertEqual(case['browser']['expected_result'], case['json_result'])
-            self.assertEqual(len(case['physical']['preserved_sha256']), 32)
+            self.assertEqual(len(case['physical']['preserved_sha256']), 33)
         definitions = [body['content']['workflow_definition'] for method, path, body in self.client.calls
             if method == 'POST' and path == '/api/v1/develop/executions'
             and body['content']['workflow_definition']['tasks'][-1]['operator'] == 'raster_footprint']
@@ -668,7 +716,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_footprint_holes_rejects_mutating_its_input_cog(self):
         def physical(repo, env, action):
             payload = self.physical(repo, env, action)
-            if (action == 'verify-' + m.fixture.MOSAIC_EDITOR_CASE and
+            if (action == 'verify-' + m.fixture.MOSAIC_EDITOR_CASES[-1] and
                 list(self.client.executions.values())[-1]['metadata']['result']['final_result'] == footprint_result('footprint-holes')):
                 payload['preserved_sha256']['clip-outside.cog.tif'] = 'changed'
             return payload
@@ -703,7 +751,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 self.setUp()
                 def physical(repo, env, action):
                     payload = self.physical(repo, env, action)
-                    if (action == 'verify-' + m.fixture.MOSAIC_EDITOR_CASE and
+                    if (action == 'verify-' + m.fixture.MOSAIC_EDITOR_CASES[-1] and
                         list(self.client.executions.values())[-1]['metadata']['result']['final_result'].get('type') == 'FeatureCollection'):
                         if fault == 'last': payload['sha256'] = 'changed'
                         else: payload['preserved_sha256']['aggregate-sum.cog.tif'] = 'changed'
@@ -712,8 +760,10 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def setUp(self):
         self.client = Client()
+        self.editor_counter = 0
         self.env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_RASTER_SOURCE_ENGINE_ID': '1',
-                    'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'raster-test',
+                    'ADDP_ONLINE_RASTER_TARGET_ENGINE_ID': '2', 'ADDP_ONLINE_RASTER_SOURCE_B_ENGINE_ID': '4',
+                    'ADDP_ONLINE_RASTER_SOURCE_C_ENGINE_ID': '5', 'ADDP_ONLINE_TEST_RUN_ID': 'raster-test',
                     'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '.01'}
         self.physical_actions = []
 
@@ -801,17 +851,19 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         for task in definition['tasks'][:3]: task['params']['source_crs'] = ''
         definition['tasks'][-1]['params'].update(compression='DEFLATE',overview_resampling='nearest')
         identifier=m.submit(self.client,evidence['workflow_engine_id'],definition)
-        self.client.executions[identifier]['source_task_id']='501'
-        return {**evidence,'schema_version':'addp.raster-workflow-editor/v1','result':'passed',
-                'task_id':501,'source_task_id':'501','execution_id':identifier,
+        self.editor_counter += 1
+        task_id = 500 + self.editor_counter
+        self.client.executions[identifier]['source_task_id']=str(task_id)
+        return {**evidence,'schema_version':'addp.raster-workflow-editor/v2','result':'passed',
+                'task_id':task_id,'source_task_id':str(task_id),'execution_id':identifier,
                 'workflow_definition':definition,'save_node_id':'save','reloaded':True,'deleted':True,
                 'page_requests':{'create':1,'update':0,'execute':1}}
 
-    def run_scene(self, physical=None):
+    def run_scene(self, physical=None, editor=None):
         return m.run_scenario(Path('.'), self.env, self.client, physical or self.physical,
                               lambda repo, env, evidence: evidence,
                               lambda repo, env, identifier, timeout: {'execution_id': identifier,
-                                  'cause': 'target_already_exists', 'source': 'develop_runtime_log'},editor_runner=self.editor)
+                                  'cause': 'target_already_exists', 'source': 'develop_runtime_log'},editor_runner=editor or self.editor)
 
     def test_physical_failure_propagates_only_named_private_event_diagnostics(self):
         import json
@@ -905,7 +957,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                         if fault == 'locator': metadata['outputs']['save_tiles']['tiles']['r0_c0']['resource']['locator'] = 'wrong'
                         if fault == 'unconfirmed': metadata['outputs']['save_tiles']['tiles']['r0_c160'] = metadata['outputs']['save_tiles']['tiles']['r0_c0']
                         if fault == 'no-scan': result['meta_scan_runs'] = []
-                        if fault == 'old-scan': result['meta_scan_runs'][0]['execution_id'] = 'auto-run-51-r0_c0'
+                        if fault == 'old-scan': result['meta_scan_runs'][0]['execution_id'] = 'auto-tiles-basic-replace-r0_c0'
                         if fault == 'lineage': metadata['lineage_facts'] = {'outputs': []}
                         if fault in ('size', 'float-size', 'bool-size'): manifest['tiles']['r0_c0']['size_bytes'] = {'size':1025, 'float-size':1024., 'bool-size':True}[fault]
                         if fault == 'meta-size': self.client.targets[52]['size_bytes'] = 1025
@@ -939,7 +991,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         cases = report['tiling_cases']
         self.assertEqual([case['tile_key'] for case in cases], list(m.fixture.TILE_WINDOWS))
         self.assertEqual(len(report['tiling_automatic_scan_runs']),4)
-        self.assertEqual(len(report['tiling_preserved_sha256']),33)
+        self.assertEqual(len(report['tiling_preserved_sha256']),34)
         for case in cases:
             self.assertEqual(case['artifact']['size_bytes'],case['physical']['size_bytes'])
             self.assertEqual(case['artifact']['size_bytes'],case['data_item_size_bytes'])
@@ -959,7 +1011,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             self.assertEqual(after['artifact']['size_bytes'], after['physical']['size_bytes'])
             self.assertEqual(after['artifact']['size_bytes'], after['data_item_size_bytes'])
             self.assertEqual(after['physical']['compression'], 'NONE')
-            self.assertEqual(after['lineage']['execution_id'], 'run-51')
+            self.assertEqual(after['lineage']['execution_id'], 'tiles-basic-replace')
             self.assertEqual(after['browser']['case_name'], 'tiles-replace-' + after['tile_key'])
         self.assertEqual(report['tiling_replace_unrelated_sha256'], m.hashlib.sha256(m.fixture.TILE_KEEP_BYTES).hexdigest())
         self.assertFalse({x['execution_id'] for x in report['tiling_automatic_scan_runs']} &
@@ -975,7 +1027,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 self.setUp()
 
                 def mutate(execution):
-                    if fault == 'same-size' and execution['execution_id'] == 'run-51':
+                    if fault == 'same-size' and execution['execution_id'] == 'tiles-basic-replace':
                         execution['metadata']['result']['final_result']['tiles']['r0_c0']['size_bytes'] = 1024
                         self.client.targets[48]['size_bytes'] = 1024
                     return execution
@@ -1006,20 +1058,20 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 request = self.client.request
 
                 def mutate(execution):
-                    if execution['execution_id'] == 'run-51':
+                    if execution['execution_id'] == 'tiles-basic-replace':
                         if fault == 'meta-size': self.client.targets[48]['size_bytes'] = 2049
-                        if fault == 'scan': execution['metadata']['result']['meta_scan_runs'][0]['execution_id'] = 'auto-run-50-r0_c0'
+                        if fault == 'scan': execution['metadata']['result']['meta_scan_runs'][0]['execution_id'] = 'auto-tiles-basic-create-r0_c0'
                         if fault == 'mode': execution['metadata']['outputs']['save_tiles']['tiles']['r0_c0']['resource']['write_mode'] = 'create'
                     return execution
 
                 def checked_request(method, path, expected, body=None):
                     response = request(method, path, expected, body)
-                    if 'run-51' in self.client.executions:
+                    if 'tiles-basic-replace' in self.client.executions:
                         if fault == 'identity' and path == '/api/v1/meta/engines/2/items':
                             response.payload = copy.deepcopy(response.payload)
                             next(item for item in response.payload if item['id'] == 48)['id'] = 999
                         if fault == 'lineage' and path.startswith('/api/v1/meta/lineage/graph'):
-                            response.payload['edges'][0]['evidence']['execution_id'] = 'run-50'
+                            response.payload['edges'][0]['evidence']['execution_id'] = 'tiles-basic-create'
                     return response
 
                 self.client.mutate = mutate
@@ -1038,7 +1090,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'replacement browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'},editor_runner=self.editor)
-        self.assertEqual(len(checked), 64)
+        self.assertEqual(len(checked), 67)
 
     def test_persistent_lineage_and_all_browsers_finish_after_physical_writes(self):
         request = self.client.request
@@ -1048,14 +1100,14 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         def converged_request(method, path, expected, body=None):
             if path.startswith('/api/v1/meta/lineage/graph'):
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 51 if 'verify-tiles-replace' in self.physical_actions else 50)
+                self.assertEqual(list(self.client.executions)[-1], 'tiles-basic-replace' if 'verify-tiles-replace' in self.physical_actions else 'tiles-basic-create')
                 graphs.append(path)
             return request(method, path, expected, body)
 
         def browser(repo, env, evidence):
             if evidence.get('result_kind') != 'json':
                 self.assertIn('verify-tiles', self.physical_actions)
-                self.assertEqual(len(self.client.executions), 51 if evidence['case_name'].startswith('tiles-replace-') else 50)
+                self.assertEqual(list(self.client.executions)[-1], 'tiles-basic-replace' if evidence['case_name'].startswith('tiles-replace-') else 'tiles-basic-create')
             browsers.append(evidence['case_name'])
             return evidence
 
@@ -1063,9 +1115,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
             lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'},editor_runner=self.editor)
         self.assertEqual(report['result'], 'passed')
-        self.assertEqual(len(browsers), 64)
-        self.assertEqual(len(set(browsers)), 64)
-        self.assertEqual(len(graphs), 50)
+        self.assertEqual(len(browsers), 67)
+        self.assertEqual(len(set(browsers)), 67)
+        self.assertEqual(len(graphs), 53)
         self.assertEqual(report['browser']['case_name'], 'band-math')
         for case in report['tiling_cases']:
             self.assertTrue(case['lineage'])
@@ -1110,7 +1162,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError, 'last tile browser failed'):
             m.run_scenario(Path('.'), self.env, self.client, self.physical, browser,
                 lambda repo, env, identifier, timeout: {'execution_id': identifier, 'cause': 'target_already_exists'},editor_runner=self.editor)
-        self.assertEqual(len(checked), 60)
+        self.assertEqual(len(checked), 63)
         self.assertIn('verify-tiles', self.physical_actions)
 
     def test_tiles_reject_wrong_grid_partial_manifest_scope_locator_and_missing_scan(self):
@@ -1118,7 +1170,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
             with self.subTest(fault=fault):
                 self.setUp()
                 def mutate(execution):
-                    if execution['execution_id']=='run-50':
+                    if execution['execution_id']=='tiles-basic-create':
                         data=execution['metadata']; result=data['result']; manifest=result['final_result']
                         if fault=='grid': manifest['tile_size']=[128,128]
                         if fault=='partial': manifest['completed_tiles']=3
@@ -1155,7 +1207,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         report = self.run_scene()
         self.assertEqual([item['status'] for item in report['executions']], ['success', 'failed', 'success'])
         self.assertEqual(self.physical_actions, ['verify-create', 'verify-create', 'verify-replace',
-            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES] + ['verify-' + m.fixture.MOSAIC_EDITOR_CASE] * len(m.fixture.FOOTPRINT_CASES) + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
+            'verify-mosaic-first', 'verify-mosaic-last'] + ['verify-analysis'] * 4 + ['verify-' + name for name in m.fixture.GRID_CASES + m.fixture.MULTIBAND_CASES + m.fixture.UTILITY_CASES] + ['verify-utility-queries'] * 3 + ['verify-' + name for name in m.fixture.FOUNDATION_CASES + m.fixture.RECLASS_CASES + m.fixture.AGGREGATE_CASES + m.fixture.OUTSIDE_CASES + m.fixture.UPDATE_CASES + m.fixture.MOSAIC_CASES] + ['verify-' + m.fixture.MOSAIC_EDITOR_CASES[-1]] * len(m.fixture.FOOTPRINT_CASES) + ['verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-mid', 'verify-tiles', 'verify-tiles-replace', 'verify-tiles-cleanup-final', 'verify-tiles', 'verify-tiles-replace'])
         self.assertEqual(report['automatic_target_scan_execution_id'], 'auto-run-3')
         self.assertEqual([item['case_name'] for item in report['spatial_cases']], ['mosaic-first', 'mosaic-last'])
         self.assertEqual([item['lineage']['source_item_id'] for item in report['spatial_cases']], [11, 11])
@@ -1163,8 +1215,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         self.assertEqual([item['browser']['target_name'] for item in report['spatial_cases']],
                          ['mosaic-first.cog.tif', 'mosaic-last.cog.tif'])
         manual = [body for method, path, body in self.client.calls if method == 'POST' and 'scan/run' in path]
-        self.assertEqual(len(manual), 1)
-        self.assertEqual(manual[0]['engine_id'], 1)
+        self.assertEqual([body['engine_id'] for body in manual], [1, 4, 5])
         self.assertFalse(any('collect' in path for _, path, _ in self.client.calls))
         self.assertEqual([case['case_name'] for case in report['analysis_cases']], list(m.fixture.ANALYSIS_CASES))
         self.assertEqual([case['case_name'] for case in report['grid_cases']], list(m.fixture.GRID_CASES))

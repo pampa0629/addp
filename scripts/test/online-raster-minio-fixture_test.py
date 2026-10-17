@@ -26,6 +26,15 @@ class FakeS3Error(Exception):
 
 
 class RasterPhysicalFixtureTest(unittest.TestCase):
+    def test_cross_engine_oracle_rejects_same_named_sources_from_the_wrong_engine(self):
+        case = m.MOSAIC_EDITOR_CASES[1]
+        self.assertTrue(m.mosaic_source_pixels(case) != m.mosaic_source_pixels(m.MOSAIC_EDITOR_CASES[0]),
+                        'same-named files from different Engines must have different pixels')
+        self.assertEqual(m.mosaic_source_pixels(case)[200], 9300201.)
+        self.assertEqual(m.mosaic_source_pixels(case, 2)[200], -9300402.)
+        self.assertEqual(m.mosaic_source_expectation(case)['band_valid_pixels'], [65534, 65533])
+        self.assertEqual(m.mosaic_source_pixels(case, 2)[256 + 240], 0.)
+
     def test_multiband_aggregation_oracle_keeps_separate_nan_zero_partial_alpha_and_rotated_edges(self):
         first = list(m.aggregate_pixels('aggregate-multiband-mean', 1))
         second = list(m.aggregate_pixels('aggregate-multiband-mean', 2))
@@ -244,11 +253,14 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
             request.return_value.__enter__.return_value.status = 200
             m.start(self.root)
         config = json.loads((self.root / 'raster-fixture.json').read_text())
+        self.assertEqual(set(config), set(m.MINIO_ROLES))
+        self.assertEqual(len({entry['secret_key'] for entry in config.values()}), 4)
+        self.assertEqual(len({entry['endpoint'] for entry in config.values()}), 4)
         self.assertNotEqual(config['source']['secret_key'], config['target']['secret_key'])
         self.assertNotEqual(config['source']['endpoint'], config['target']['endpoint'])
         for file in self.root.iterdir():
             self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
-        for role in ('source', 'target'):
+        for role in m.MINIO_ROLES:
             descriptor = json.loads((self.root / f'raster-{role}-engine.json').read_text())
             self.assertEqual(descriptor['engine_type'], 'minio')
             self.assertIn('raster-test', descriptor['name'])
@@ -257,7 +269,7 @@ class RasterPhysicalFixtureTest(unittest.TestCase):
                 self.assertEqual(descriptor['connection_info'][key], credentials[key])
                 if role == 'target':
                     self.assertNotEqual(credentials[key], config[role][key])
-        self.assertEqual(len(self.commands), 3)
+        self.assertEqual(len(self.commands), 5)
         proxy = self.commands[-1]
         self.assertIn(m.CONTAINERS[3], proxy)
         self.assertEqual(proxy[proxy.index('--user')+1], '1001:121')

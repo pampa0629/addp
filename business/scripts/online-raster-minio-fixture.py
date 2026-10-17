@@ -24,7 +24,10 @@ import time
 import urllib.request
 
 SUITE = 'raster-workflow'
-CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker', 'addp-raster-cleanup-proxy')
+CONTAINERS = ('addp-raster-source', 'addp-raster-target', 'addp-raster-fixture-worker', 'addp-raster-cleanup-proxy',
+              'addp-raster-source-b', 'addp-raster-source-c')
+MINIO_ROLES = {'source': (CONTAINERS[0], 59012), 'target': (CONTAINERS[1], 59013),
+               'source-b': (CONTAINERS[4], 59015), 'source-c': (CONTAINERS[5], 59016)}
 MINIO_IMAGE = 'addp-minio:RELEASE.2025-10-15T17-29-55Z'
 TRANSFORM = (110, .01, 0, 20.32, 0, -.01)
 ROTATED_TRANSFORM = (110, .01, .004, 20.32, .002, -.02)
@@ -47,12 +50,14 @@ AGGREGATE_CASES = AGGREGATE_SINGLE_BAND_CASES + AGGREGATE_MULTIBAND_CASES
 OUTSIDE_CASES = ('clip-outside',)
 UPDATE_CASES = ('update-valid',)
 MOSAIC_SOURCE_CASES = ('multisource-first', 'multisource-last')
-MOSAIC_EDITOR_CASE = 'multisource-editor-first'
-MOSAIC_CASES = MOSAIC_SOURCE_CASES + (MOSAIC_EDITOR_CASE,)
+MOSAIC_EDITOR_CASES = ('multisource-editor-first', 'multiengine-editor-first')
+MOSAIC_CASES = MOSAIC_SOURCE_CASES + MOSAIC_EDITOR_CASES
 # start column, width, numeric offset; all are independent stored TIFFs.
 MOSAIC_SOURCE_WINDOWS = {'mosaic-a.tif': (0, 160, 100000), 'mosaic-b.tif': (96, 112, 200000),
                          'mosaic-c.tif': (144, 112, 300000)}
 MOSAIC_SOURCE_ORDER = ('mosaic-c.tif', 'mosaic-a.tif', 'mosaic-b.tif')
+MOSAIC_SOURCE_ROLES = {'mosaic-a.tif': 'source', 'mosaic-b.tif': 'source-b', 'mosaic-c.tif': 'source-c'}
+SOURCE_VALUE_OFFSETS = {'source': 0, 'source-b': 5000000, 'source-c': 9000000}
 MOSAIC_SOURCE_HOLES = {
     ('mosaic-a.tif', 1): (127, 150), ('mosaic-b.tif', 1): (127, 151), ('mosaic-c.tif', 1): (127, 152),
     ('mosaic-a.tif', 2): (64, 120), ('mosaic-b.tif', 2): (64, 121), ('mosaic-c.tif', 2): (64, 153)}
@@ -65,6 +70,9 @@ SOURCE_FILES = tuple((name, False, float('nan')) for name in MOSAIC_SOURCE_WINDO
                 ('multiband.tif', False, float('nan')), ('multiband-average.tif', False, float('nan')),
                 ('multiband-average-finite.tif', False, -9999.), (ROTATED_SOURCE, False, float('nan')),
                 (TOPOLOGY_SOURCE, False, -9999.))
+SOURCE_FILES_BY_ROLE = {'source': SOURCE_FILES,
+                        'source-b': (('mosaic-b.tif', False, float('nan')),),
+                        'source-c': (('mosaic-c.tif', False, float('nan')),)}
 TILE_FAILURE_PREFIX = 'tiles-write-failure'
 TILE_FAILURE_KEY = 'r0_c160'
 TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': ('r160_c160', 4)}
@@ -427,8 +435,9 @@ def source_grid(name, spatial):
     return SIZE, SIZE, source_transform(name, spatial), 4326
 
 
-def mosaic_source_value(name, band, row, column):
+def mosaic_source_value(name, band, row, column, role='source'):
     start, width, offset = MOSAIC_SOURCE_WINDOWS[name]
+    offset += SOURCE_VALUE_OFFSETS[role]
     if not start <= column < start + width:
         return None
     if ((row, column) in ((128, 155), (255, 255)) or (row, column) == MOSAIC_SOURCE_HOLES[name, band]
@@ -440,13 +449,14 @@ def mosaic_source_value(name, band, row, column):
     return float(offset + position if band == 1 else -(offset + 2 * position))
 
 
-@lru_cache(maxsize=12)
+@lru_cache(maxsize=4 * len(MOSAIC_CASES))
 def mosaic_source_pixels(case_name, band=1, level=1):
     if case_name not in MOSAIC_CASES:
         raise FixtureError('unknown independent-source mosaic case')
     names = MOSAIC_SOURCE_ORDER if case_name.endswith('-first') else tuple(reversed(MOSAIC_SOURCE_ORDER))
+    roles = MOSAIC_SOURCE_ROLES if case_name == MOSAIC_EDITOR_CASES[1] else dict.fromkeys(names, 'source')
     return tuple(next((value for name in names
-                       if (value := mosaic_source_value(name, band, row, column)) is not None), None)
+                       if (value := mosaic_source_value(name, band, row, column, roles[name])) is not None), None)
                  for row in range(0, SIZE, level) for column in range(0, SIZE, level))
 
 
@@ -623,17 +633,17 @@ def start(root):
         if owned(name):
             raise FixtureError('refusing to reuse an existing raster fixture')
     config = {}
-    for index, role in enumerate(('source', 'target')):
+    for role, (_, port) in MINIO_ROLES.items():
         config[role] = {
-            'endpoint': f'127.0.0.1:{59012 + index}', 'access_key': f'online-raster-{role}',
+            'endpoint': f'127.0.0.1:{port}', 'access_key': f'raster-{role}',
             'secret_key': secrets.token_hex(32), 'bucket': f'raster-{role}',
         }
     config['target']['writer'] = {'access_key': 'online-raster-writer', 'secret_key': secrets.token_hex(32)}
     private_json(root / 'raster-fixture.json', config)
     try:
-        for index, role in enumerate(('source', 'target')):
+        for role, (container, _) in MINIO_ROLES.items():
             entry = config[role]
-            start_minio(root, entry, CONTAINERS[index], SUITE)
+            start_minio(root, entry, container, SUITE)
             private_json(root / f'raster-{role}-engine.json', {
                 'name': f'Hosted Raster {role} {os.environ["ADDP_ONLINE_TEST_RUN_ID"]}', 'description': 'Disposable raster T4 physical fixture',
                 'engine_type': 'minio', 'engine_origin': 'general',
@@ -865,10 +875,10 @@ def provision_target_writer(entry, root):
     return {'writer_is_root': False, 'denied_object': denied, 'error_code': 'AccessDenied'}
 
 
-def source_pixels(name, band, spatial, source_nodata):
+def source_pixels(name, band, spatial, source_nodata, role='source'):
     if name in MOSAIC_SOURCE_WINDOWS:
         start, width, _ = MOSAIC_SOURCE_WINDOWS[name]
-        return tuple(source_nodata if (value := mosaic_source_value(name, band, row, column)) is None else value
+        return tuple(source_nodata if (value := mosaic_source_value(name, band, row, column, role)) is None else value
                      for row in range(SIZE) for column in range(start, start + width))
     if name == TOPOLOGY_SOURCE:
         case = next(case for case, index in TOPOLOGY_BANDS.items() if index == band)
@@ -879,7 +889,7 @@ def source_pixels(name, band, spatial, source_nodata):
     return source_values(band, spatial)
 
 
-def write_source_raster(path, name, spatial, source_nodata):
+def write_source_raster(path, name, spatial, source_nodata, role='source'):
     from osgeo import gdal, osr
     multiband = name.startswith('multiband')
     band_count = 3 if multiband else 2
@@ -889,7 +899,7 @@ def write_source_raster(path, name, spatial, source_nodata):
     crs = osr.SpatialReference(); crs.ImportFromEPSG(srid)
     dataset.SetProjection(crs.ExportToWkt())
     for index in range(1, band_count + 1):
-        values = source_pixels(name, index, spatial, source_nodata)
+        values = source_pixels(name, index, spatial, source_nodata, role)
         band = dataset.GetRasterBand(index)
         band.SetNoDataValue(source_nodata)
         if multiband and index == 3: band.SetColorInterpretation(gdal.GCI_AlphaBand)
@@ -965,47 +975,52 @@ def worker(action, path):
                 client.make_bucket(config[role]['bucket'])
             writer_probe = provision_target_writer(config['target'], root)
             fingerprints = {}
-            for name, spatial, source_nodata in SOURCE_FILES:
-                path = root / name
-                crs = write_source_raster(path, name, spatial, source_nodata)
-                clients['source'].fput_object(config['source']['bucket'], name, str(path), content_type='image/tiff')
-                fingerprints[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            for role, files in SOURCE_FILES_BY_ROLE.items():
+                (root / role).mkdir()
+                for name, spatial, source_nodata in files:
+                    path = root / role / name
+                    write_source_raster(path, name, spatial, source_nodata, role)
+                    clients[role].fput_object(config[role]['bucket'], name, str(path), content_type='image/tiff')
+                    fingerprints[role + '/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
             # A 256px striped TIFF can satisfy the GDAL layout validator. This
             # larger strip has a width > 1024 and is definitively non-tiled.
             path = root / NON_COG_SOURCE
             dataset = gdal.GetDriverByName('GTiff').Create(str(path), 1025, 1025, 1, gdal.GDT_Byte)
             dataset.SetGeoTransform(TRANSFORM)
+            crs = osr.SpatialReference(); crs.ImportFromEPSG(4326)
             dataset.SetProjection(crs.ExportToWkt())
             dataset.GetRasterBand(1).Fill(7)
             dataset = None
             clients['source'].fput_object(config['source']['bucket'], NON_COG_SOURCE, str(path), content_type='image/tiff')
-            fingerprints[NON_COG_SOURCE] = hashlib.sha256(path.read_bytes()).hexdigest()
+            fingerprints['source/' + NON_COG_SOURCE] = hashlib.sha256(path.read_bytes()).hexdigest()
             return {'seeded': True, 'source_pixels': SIZE * SIZE, 'spatial_source_pixels': SIZE * SIZE, 'target_objects': 0, 'source_sha256': fingerprints, 'writer_probe': writer_probe}
         if not fingerprint_path.is_file():
             raise FixtureError('source fingerprints are missing')
         fingerprints = json.loads(fingerprint_path.read_text())
-        for name, spatial, source_nodata in SOURCE_FILES:
-            path = root / name
-            clients['source'].fget_object(config['source']['bucket'], name, str(path))
-            if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(name):
-                raise FixtureError('workflow modified source bytes')
-            source = gdal.Open(str(path))
-            width, height, transform, srid = source_grid(name, spatial)
-            multiband = name.startswith('multiband')
-            for index in range(1, 4 if multiband else 3):
-                band = source.GetRasterBand(index)
-                values = struct.unpack(f'<{width * height}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
-                expected_values = source_pixels(name, index, spatial, source_nodata)
-                nodata = band.GetNoDataValue()
-                if (nodata is None or (not math.isnan(nodata) if math.isnan(source_nodata) else nodata != source_nodata)
-                    or any(not math.isnan(actual) if math.isnan(expected) else actual != expected
-                           for actual, expected in zip(values, expected_values))
-                    or (multiband and index == 3 and band.GetColorInterpretation() != gdal.GCI_AlphaBand)):
-                    raise FixtureError('workflow modified its source pixels/NoData')
-            reference = osr.SpatialReference(); reference.ImportFromEPSG(srid)
-            if (source.GetGeoTransform() != transform or (source.RasterXSize, source.RasterYSize) != (width, height)
-                or source.RasterCount != (3 if multiband else 2) or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
-                raise FixtureError('workflow modified source georeferencing/bands')
+        for role, files in SOURCE_FILES_BY_ROLE.items():
+            (root / role).mkdir()
+            for name, spatial, source_nodata in files:
+                path = root / role / name
+                clients[role].fget_object(config[role]['bucket'], name, str(path))
+                if hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(role + '/' + name):
+                    raise FixtureError('workflow modified source bytes')
+                source = gdal.Open(str(path))
+                width, height, transform, srid = source_grid(name, spatial)
+                multiband = name.startswith('multiband')
+                for index in range(1, 4 if multiband else 3):
+                    band = source.GetRasterBand(index)
+                    values = struct.unpack(f'<{width * height}d', band.ReadRaster(buf_type=gdal.GDT_Float64))
+                    expected_values = source_pixels(name, index, spatial, source_nodata, role)
+                    nodata = band.GetNoDataValue()
+                    if (nodata is None or (not math.isnan(nodata) if math.isnan(source_nodata) else nodata != source_nodata)
+                        or any(not math.isnan(actual) if math.isnan(expected) else actual != expected
+                               for actual, expected in zip(values, expected_values))
+                        or (multiband and index == 3 and band.GetColorInterpretation() != gdal.GCI_AlphaBand)):
+                        raise FixtureError('workflow modified its source pixels/NoData')
+                reference = osr.SpatialReference(); reference.ImportFromEPSG(srid)
+                if (source.GetGeoTransform() != transform or (source.RasterXSize, source.RasterYSize) != (width, height)
+                    or source.RasterCount != (3 if multiband else 2) or not osr.SpatialReference(source.GetProjection()).IsSame(reference)):
+                    raise FixtureError('workflow modified source georeferencing/bands')
         spatial = action.startswith('verify-mosaic-')
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
         target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
@@ -1216,7 +1231,7 @@ def worker(action, path):
             clients['source'].fget_object(config['source']['bucket'], NON_COG_SOURCE, str(path))
             non_cog = gdal.Open(str(path))
             _, errors, _ = validate(non_cog, full_check=True)
-            if (hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get(NON_COG_SOURCE)
+            if (hashlib.sha256(path.read_bytes()).hexdigest() != fingerprints.get('source/' + NON_COG_SOURCE)
                 or not errors or non_cog.GetRasterBand(1).ReadRaster() != bytes([7]) * (1025 * 1025)):
                 raise FixtureError('negative COG source changed or no longer has an invalid layout')
             preserved = {'result.cog.tif': verify('result.cog.tif', factor=3)['sha256'],
