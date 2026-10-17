@@ -49,6 +49,14 @@ on:
         options:
           - postgresql
           - tidb
+      node_metrics_case:
+        description: Acceptance case for platform-node-metrics only
+        required: true
+        type: choice
+        default: regression
+        options:
+          - regression
+          - complete-comparison
 
 permissions:
   contents: read
@@ -1394,7 +1402,7 @@ jobs:
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
   node-metrics-hosted-t4:
-    name: Online T4 (platform-node-metrics, Linux x86_64)
+    name: Online T4 (platform-node-metrics, ${{ inputs.node_metrics_case }}, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-node-metrics'
     concurrency:
       group: online-t4-platform-node-metrics
@@ -1405,6 +1413,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: platform-node-metrics
+      ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

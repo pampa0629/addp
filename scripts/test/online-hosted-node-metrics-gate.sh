@@ -5,6 +5,11 @@
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
+ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
+case "$ADDP_ONLINE_NODE_METRICS_CASE" in
+  regression|complete-comparison) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression or complete-comparison' >&2; exit 2 ;;
+esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-node-metrics addp-metrics-online)

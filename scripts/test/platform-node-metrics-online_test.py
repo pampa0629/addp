@@ -1135,6 +1135,115 @@ class MetricsProtocolTest(unittest.TestCase):
 
 
 
+class CompleteComparisonCaseTest(unittest.TestCase):
+    node = {"node_id": "node-id", "version": 1}
+    target = {"id": "target-id", "version": 2}
+    policy = {"version": 0}
+
+    def reply(self, path, gap=False):
+        query = ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)
+        self.assertEqual(set(query), {"node_id", "metrics", "start", "end"})
+        self.assertEqual(set(query["metrics"][0].split(",")), {"node.cpu.busy_percent", "node.memory.used_percent"})
+        start, end = (ONLINE.utc_timestamp(query[k][0]) for k in ("start", "end"))
+        self.assertEqual(end-start, 600)
+        value = MetricsProtocolTest().resource_reply(query["metrics"][0].split(","), trend=True)
+        value.update(start=query["start"][0], end=query["end"][0], queried_at=query["end"][0])
+        for row in value["series"]:
+            row["points"] = []
+            for offset in range(0, 601, 15):
+                at = datetime.datetime.fromtimestamp(start+offset, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+                row["points"].append({"evaluated_at": at, "sampled_at": at, "value": 0, "data_state": "valid"})
+            if gap and row["metric_key"] == "node.cpu.busy_percent":
+                row["points"][7].update(sampled_at=None, value=None, data_state="no_data")
+        return value
+
+    def test_case_selection_is_closed_and_rejects_before_login(self):
+        for value in ("regression", "complete-comparison"):
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
+                self.assertEqual(ONLINE.acceptance_case(), value)
+        for value in ("", "unknown", "cpu-pressure", "regression "):
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value), patch.object(ONLINE, "login") as login:
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.run("http://example.invalid", Path("/secret"), {})
+                login.assert_not_called()
+
+    def test_renewed_admin_must_keep_role_and_principal(self):
+        for role, principal in (("platform.system_administrator", "admin"), ("platform.system_administrator", "other"), ("platform.security_administrator", "admin")):
+            context=identity(role);context["principal"]["id"]=principal
+            client=unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200,context)))
+            with self.subTest(role=role,principal=principal), patch.object(ONLINE,"login",return_value=client):
+                if role=="platform.system_administrator" and principal=="admin":
+                    self.assertIs(ONLINE.renew_admin("http://example.invalid","admin"),client)
+                else:
+                    with self.assertRaises(ONLINE.SuiteError):ONLINE.renew_admin("http://example.invalid","admin")
+
+    def test_history_waits_for_both_complete_natural_series(self):
+        attempts = []; clock = [0.0]
+        def request(method, path, statuses):
+            attempts.append(path)
+            return ONLINE.API.Response(200, self.reply(path, gap=len(attempts)==1))
+        admin = unittest.mock.Mock(request=unittest.mock.Mock(side_effect=request))
+        with patch.object(ONLINE.time, "monotonic", side_effect=lambda:clock[0]), \
+             patch.object(ONLINE.time, "sleep", side_effect=lambda n:clock.__setitem__(0,clock[0]+n)):
+            evidence = ONLINE.wait_for_complete_comparison_history(admin, self.node, self.target, self.policy)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(evidence["attempts"], 2)
+        self.assertEqual(evidence["duration_ms"], 15000)
+        self.assertTrue(all(len(row["points"])==41 and all(p["data_state"]=="valid" for p in row["points"]) for row in evidence["value"]["series"]))
+
+    def test_history_does_not_fill_gaps_or_exceed_its_bounded_wait(self):
+        clock = [0.0]
+        admin = unittest.mock.Mock(request=unittest.mock.Mock(side_effect=lambda method,path,statuses:ONLINE.API.Response(200,self.reply(path,gap=True))))
+        with patch.object(ONLINE.time, "monotonic", side_effect=lambda:clock[0]), \
+             patch.object(ONLINE.time, "sleep", side_effect=lambda n:clock.__setitem__(0,clock[0]+n)):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "complete comparison history"):
+                ONLINE.wait_for_complete_comparison_history(admin, self.node, self.target, self.policy)
+        self.assertLessEqual(clock[0],720)
+        self.assertLessEqual(admin.request.call_count,49)
+
+    def test_history_rejects_bad_scope_policy_and_grid_without_waiting(self):
+        mutations = (
+            lambda v:v["subject"].update(node_id="foreign"),
+            lambda v:v.update(target_saved_version=3),
+            lambda v:v.update(policy_version=1),
+            lambda v:v["series"][0]["points"].pop(7),
+            lambda v:v["series"][0]["points"][7].update(value=-1),
+        )
+        for change in mutations:
+            def request(method,path,statuses):
+                value=self.reply(path);change(value);return ONLINE.API.Response(200,value)
+            with self.subTest(change=change), patch.object(ONLINE.time,"sleep") as sleep:
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.wait_for_complete_comparison_history(unittest.mock.Mock(request=request),self.node,self.target,self.policy)
+                sleep.assert_not_called()
+
+    def test_comparison_case_requires_all_three_complete_branches_and_cleans_only_its_subjects(self):
+        for completed in (2,3):
+            report={"result":"failed"}; admin=unittest.mock.Mock()
+            def request(method,path,statuses,body=None):
+                if method=="PUT":return ONLINE.API.Response(200,dict(self.node,version=2,enabled=False))
+                return ONLINE.API.Response(next(iter(statuses)),{})
+            admin.request.side_effect=request
+            with self.subTest(completed=completed), tempfile.TemporaryDirectory() as directory, \
+                 patch.dict(ONLINE.os.environ,ADDP_ONLINE_ARTIFACT_DIR=directory), \
+                 patch.object(ONLINE,"renew_admin",return_value=admin), \
+                 patch.object(ONLINE,"wait_for_complete_comparison_history",return_value={"attempts":1,"value":{"series":[]}}), \
+                 patch.object(ONLINE,"run_resource_browser",return_value={"result":"passed","period_comparison":{"complete_cases":completed,"incomplete_cases":3-completed}}), \
+                 patch.object(ONLINE,"run_resource_alert_lifecycle",side_effect=AssertionError("must not repeat pressure")) as memory, \
+                 patch.object(ONLINE,"source_action",side_effect=AssertionError("must not repeat faults")):
+                args=("http://example.invalid",self.node,self.target,self.policy,{"display_name":"owned"},{"principal":{"id":"admin"}},{},[],report)
+                if completed!=3:
+                    with self.assertRaisesRegex(ONLINE.SuiteError,"all three"):
+                        ONLINE.run_complete_comparison_case(*args)
+                    admin.request.assert_not_called()
+                    self.assertEqual(report["result"],"failed")
+                else:
+                    ONLINE.run_complete_comparison_case(*args)
+                    self.assertEqual(report["result"],"passed")
+                    self.assertTrue(report["configuration_retired"])
+                    self.assertEqual([(c.args[0],c.args[1]) for c in admin.request.call_args_list],[("DELETE",ONLINE.TARGETS+"/target-id"),("GET",ONLINE.TARGETS+"/target-id"),("PUT",ONLINE.NODES+"/node-id")])
+                memory.assert_not_called()
+
+
 class ResourceAlertProtocolTest(unittest.TestCase):
     def context(self):
         node = {"node_id": "11111111-1111-4111-8111-111111111111", "version": 1}

@@ -1694,6 +1694,15 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
         raise RegistrationError("platform-node-metrics requires a manual Hosted T4 job")
     if "&& inputs.suite != 'platform-node-metrics'" not in workflow:
         raise RegistrationError("platform-node-metrics must not dispatch on the self-hosted deployment")
+    selection = re.search(r"(?ms)^      node_metrics_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^permissions:|\Z)", workflow)
+    choice = selection.group("body") if selection else ""
+    options = re.search(r"(?m)^        options:\n(?P<body>(?:          - [a-z-]+\n)+)", choice)
+    if ("        type: choice\n" not in choice or "        required: true\n" not in choice
+            or "        default: regression\n" not in choice or options is None
+            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison"]
+            or "      ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}\n" not in job.group("body")
+            or "regression|complete-comparison)" not in gate):
+        raise RegistrationError("platform-node-metrics must select a closed, bounded acceptance case")
 
 
 def validate_orchestrator_execution_profile(repository: Path, registered: set[str]) -> None:

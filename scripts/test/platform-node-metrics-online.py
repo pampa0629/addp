@@ -238,13 +238,13 @@ def source_action(action):
     FIXTURE.command(["docker", action, ids[0]])
 
 
-def resource_path(node, trend=False, keys=None, dimensions=None):
+def resource_path(node, trend=False, keys=None, dimensions=None, range_seconds=60):
     query = {"node_id": node["node_id"], "metrics": ",".join(METRICS if keys is None else keys)}
     if dimensions:
         query.update(dimensions)
     if trend:
         end = int(time.time())
-        for field, timestamp in (("start", end-60), ("end", end)):
+        for field, timestamp in (("start", end-range_seconds), ("end", end)):
             query[field] = datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     return (TRENDS if trend else OBSERVATIONS) + "?" + urllib.parse.urlencode(query)
 
@@ -1477,7 +1477,63 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     write_evidence(report)
 
 
+def acceptance_case():
+    value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
+    require(value in {"regression", "complete-comparison"}, "unsupported Hosted metrics acceptance case")
+    return value
+
+
+def renew_admin(base, principal_id):
+    admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
+    current = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    platform_identity(current, "platform.system_administrator")
+    require(current["principal"]["id"] == principal_id, "renewed metrics administrator changed")
+    return admin
+
+
+def wait_for_complete_comparison_history(admin, node, target, policy):
+    keys = ("node.cpu.busy_percent", "node.memory.used_percent")
+    started = time.monotonic()
+    deadline = started+720
+    attempts = 0
+    while time.monotonic() <= deadline:
+        path = resource_path(node, True, keys=keys, range_seconds=600)
+        value = admin.request("GET", path, (200,)).payload
+        attempts += 1
+        assert_resources(value, node, target, trend=True, keys=keys, range_seconds=600, require_fresh=False)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+        require(all(utc_timestamp(value[k]) == utc_timestamp(query[k][0]) for k in ("start", "end")), "comparison history query bounds changed")
+        require(value["policy_version"] == policy["version"], "comparison history query policy changed")
+        if all(row["points"] and all(point["data_state"] == "valid" for point in row["points"]) for row in value["series"]):
+            return {"attempts": attempts, "duration_ms": round((time.monotonic()-started)*1000), "value": value}
+        remaining = deadline-time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(15, remaining))
+    raise SuiteError("complete comparison history did not converge within 720 seconds")
+
+
+def run_complete_comparison_case(base, node, target, policy, node_input, admin_identity, security_identity, processes, report):
+    report["stage"] = "natural-comparison-history"
+    admin = renew_admin(base, admin_identity["principal"]["id"])
+    report["comparison_history"] = wait_for_complete_comparison_history(admin, node, target, policy)
+    report["stage"] = "console-complete-comparison"
+    write_evidence(report)
+    report["resource_browser"] = run_resource_browser(node, target, policy, node_input["display_name"], admin_identity, security_identity, processes)
+    comparison = report["resource_browser"]["period_comparison"]
+    require(comparison["complete_cases"] == 3 and comparison["incomplete_cases"] == 0, "all three browser comparisons must have complete samples")
+    report["stage"] = "comparison-owned-configuration-cleanup"
+    admin = renew_admin(base, admin_identity["principal"]["id"])
+    admin.request("DELETE", TARGETS+"/"+target["id"], (204,), {"version": target["version"]})
+    admin.request("GET", TARGETS+"/"+target["id"], (404,))
+    retired = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
+    require(retired.get("node_id") == node["node_id"] and retired.get("enabled") is False and retired.get("version") == node["version"]+1, "comparison host retirement failed")
+    report.update(configuration_retired=True, result="passed", stage="complete", cleanup="awaiting-hosted-deployment-destruction")
+
+
 def run(base, directory, report):
+    selected_case = acceptance_case()
+    report["acceptance_case"] = selected_case
     report["stage"] = "platform-login-mfa"
     admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
     security = login(base, "ADDP_ONLINE_METRICS_SECURITY")
@@ -1640,6 +1696,9 @@ def run(base, directory, report):
     report["process_identity_isolation"] = True
     report["process_unbound_automatic_discovery"] = True
     (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "process-resource-query.json").write_text(json.dumps(admin.request("GET", process_path(processes), (200,)).payload))
+    if selected_case == "complete-comparison":
+        run_complete_comparison_case(base, node, target, query_policy, node_input, admin_identity, security_identity, processes, report)
+        return
     report["stage"] = "process-stop-restart-isolation"
     processes = check_process_restart(admin, machine, directory, processes, report)
     report["stage"] = "process-optional-source-business-boundary"
@@ -1649,15 +1708,9 @@ def run(base, directory, report):
     report["resource_browser"] = run_resource_browser(node, target, query_policy, node_input["display_name"], admin_identity, security_identity, processes)
     # Fault phases use a new formal password/MFA session for the same principal;
     # do not extend production TTL or depend on the browser's private session.
-    admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
-    renewed = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
-    platform_identity(renewed, "platform.system_administrator")
-    require(renewed["principal"]["id"] == admin_identity["principal"]["id"], "fault phase principal changed")
+    admin = renew_admin(base, admin_identity["principal"]["id"])
     run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report)
-    admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
-    renewed = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
-    platform_identity(renewed, "platform.system_administrator")
-    require(renewed["principal"]["id"] == admin_identity["principal"]["id"], "post-alert phase principal changed")
+    admin = renew_admin(base, admin_identity["principal"]["id"])
     report["stage"] = "center-query-outage-recovery"
     center_action("stop")
     try:

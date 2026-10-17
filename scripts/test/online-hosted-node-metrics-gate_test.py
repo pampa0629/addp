@@ -52,6 +52,7 @@ class HostedMetricsGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             echo "suite-timeout:${ADDP_ONLINE_TEST_TIMEOUT_SECONDS:-unset}" >> "$ADDP_TEST_GATE_TRACE"
+            echo "metrics-case:${ADDP_ONLINE_NODE_METRICS_CASE:-unset}" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
         self.host._executable("docker", '''
@@ -105,6 +106,19 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         self.assertIn("suite-timeout:1800", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_comparison_case_is_explicit_and_unknown_case_is_readonly(self):
+        result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="complete-comparison")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertIn("metrics-case:complete-comparison", self.host.trace.read_text())
+        self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+        self.host.trace.unlink()
+        for value in ("", "unknown", "regression ", "cpu-pressure"):
+            with self.subTest(value=value):
+                result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE=value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.host.trace.exists())
+                self.assertFalse(self.host.secrets.exists())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):
