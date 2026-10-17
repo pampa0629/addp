@@ -262,6 +262,8 @@ Ontology 修订、审计与历史图在验收期间保留，不增加测试删�
 
 同一 suite 的单真实主机资源总览限定测试用途于 2026-10-13 经用户明确确认：上述临时平台系统管理员可沿真实密码/MFA 新增读取 `GET /api/v1/monitor/platform/resource_overview`，请求不携带 query 或 body，范围只限当次一次性 Hosted 部署内已纳管的完整授权主机集合。当前拓扑仅有一台真实 Linux 主机，验收该范围的 CPU/内存榜单、覆盖率、当前身份与版本、查询预算整份拒绝、自然刷新与关闭恢复、主机详情导航及已有故障/停采/恢复阶段；保留原节点与进程验收、原权限和独立 Prometheus 采集身份。该确认不包含受控多源夹具、角色权限修改或其他 suite，不读取 Tenant 业务数据、不修改生产 IAM，不将单主机通过计为多主机排序、分别撤销两个 Owner 权限、完整资源总览 T4 或生产 T5 通过。所有退出路径继续销毁当次部署、临时身份和凭据并核验零残留；具体场景及逐项证据见设计文档 10.58、10.59 节。
 
+同一 `platform-node-metrics` Hosted 一次性部署的主机资源告警测试用途于 2026-10-17 经用户确认继续推进：临时平台系统管理员可通过既有四项资源规则权限管理当次规则，通过平台告警读取和通知读取/管理权限查询告警、投递以及管理只指向当次回环 HTTPS 接收端的临时 Webhook 目标和凭据。首批仅验证真实内存压力的打开、来源缺样不恢复、释放后的恢复及签名通知重试；资源预算、隔离身份、原 Prometheus 最小权限和全退出清理要求保持原契约。负载只允许专属 Hosted Linux VM 内受限匿名内存，最大 2 GiB 且不超过当前可用内存的 25%；不得加压个人或生产主机、改写指标/历史、直接改数据库或向真实群通知。不新增角色或 IAM 权限，不扩展告警确认/抑制、手动重投、邮件或其他 suite。具体边界和验收状态见上述设计 10.77，未实际执行的场景不计通过。
+
 API 消费方数据面边界由 `workbench-service-consumption` 复用同一 Business MySQL Fixture 和临时 Query Service 验收，不另建平行 suite。该场景必须分离两个真实 User Token：非管理员 Token 只负责 Service / Workbench 发布与消费，专用 Tenant Administrator Token 只负责 API 消费方与凭据生命周期。suite 通过正式 API 创建一个只授权主 Query Service 的 API 消费方，并必须同时证明：已授权服务返回 200；同 Tenant 未授权 Query Service 返回 `403 api_consumer_service_denied`；任一 `/api/v1/*` 控制面路由返回 `401 api_consumer_control_plane_denied`；删除 API 消费方后，旧凭据在 Gateway 30 秒正缓存对应的 45 秒有界收敛窗口内返回 `401 api_consumer_credential_invalid`。报告、日志和错误不得包含完整 API Key，每轮必须按捕获 ID 删除 API 消费方、其级联凭据、Data Application 和两个临时 Query Service，并验证零残留。
 
 模块注册与恢复类 T4 必须使用正式进程入口至少证明：

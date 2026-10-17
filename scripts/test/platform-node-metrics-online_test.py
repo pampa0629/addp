@@ -1134,5 +1134,258 @@ class MetricsProtocolTest(unittest.TestCase):
             compose.assert_not_called()
 
 
+
+class ResourceAlertProtocolTest(unittest.TestCase):
+    def context(self):
+        node = {"node_id": "11111111-1111-4111-8111-111111111111", "version": 1}
+        target = {"id": "22222222-2222-4222-8222-222222222222", "version": 2}
+        policy = {"version": 2}
+        rule = {"id": "33333333-3333-4333-8333-333333333333", "version": 2,
+                "trigger_percent": 40, "recovery_percent": 35, "trigger_seconds": 30, "recovery_seconds": 30}
+        return node, target, policy, rule
+
+    def event(self, kind="opened"):
+        node, target, policy, rule = self.context()
+        evidence = {"rule_id": rule["id"], "rule_version": 2, "policy": {k: rule[k] for k in ONLINE.PRESSURE_FIELDS},
+                    "node_version": 1, "target_id": target["id"], "target_version": 2, "query_policy_version": 2,
+                    "evaluated_at": "2026-10-17T01:01:00Z", "sampled_from": "2026-10-17T01:00:29Z",
+                    "sampled_to": "2026-10-17T01:00:59Z", "samples": 3,
+                    "minimum": 42, "maximum": 44, "latest": 43}
+        if kind == "resolved": evidence.update(minimum=29, maximum=31, latest=30)
+        return {"schema": "addp.platform-resource-alert/v1", "event_id": "44444444-4444-4444-8444-444444444444",
+                "event_type": kind, "incident_id": 1, "category": "resource", "subject_kind": "host_node",
+                "subject_id": node["node_id"], "signal": "node.memory.used_percent", "severity": "warning",
+                "occurred_at": evidence["evaluated_at"], "evidence": evidence}
+
+    def receiver(self):
+        node, target, policy, rule = self.context()
+        receiver = ONLINE.ResourceAlertReceiver(Path("/unused"), node, target, policy)
+        receiver.rule = rule
+        return receiver
+
+    def signed(self, receiver, payload=None, stamp=None, delivery="55555555-5555-4555-8555-555555555555"):
+        body = json.dumps(self.event() if payload is None else payload).encode()
+        stamp = str(int(ONLINE.time.time())) if stamp is None else stamp
+        signature = "v1=" + ONLINE.hmac.new(receiver.secret.encode(), stamp.encode()+b"."+body, ONLINE.hashlib.sha256).hexdigest()
+        return body, {"X-ADDP-Webhook-ID": delivery, "X-ADDP-Webhook-Timestamp": stamp,
+                      "X-ADDP-Webhook-Signature": signature}
+
+    def test_memory_budget_uses_smallest_cap_and_rejects_indistinguishable_or_invalid_pressure(self):
+        gib = 1024**3
+        for total, available, expected in ((8*gib, 6*gib, int(8*gib*.12)), (16*gib, 6*gib, int(1.5*gib)), (20*gib, 18*gib, 2*gib)):
+            plan = ONLINE.memory_pressure_plan(total, available, 100*(1-available/total))
+            self.assertEqual(plan["bytes"], expected)
+            self.assertLess(plan["recovery_percent"], plan["trigger_percent"])
+            self.assertGreaterEqual(plan["delta_percent"], 8)
+            self.assertEqual(plan["trigger_seconds"], 30)
+        for args in ((32*gib, 24*gib, 25), (8*gib, gib, 87.5), (0, 0, 0), (True, 1, 0), (gib, 2*gib, 0), (gib, gib, float("nan")), (gib, gib, 99)):
+            with self.subTest(args=args), self.assertRaises(ONLINE.SuiteError): ONLINE.memory_pressure_plan(*args)
+
+    def test_memory_mapping_cannot_allocate_before_hosted_boundary_and_always_closes(self):
+        plan = ONLINE.memory_pressure_plan(8*1024**3, 6*1024**3, 25)
+        report = {}
+        with patch.object(ONLINE.FIXTURE, "boundary", side_effect=ValueError("not hosted")), patch.object(ONLINE.mmap, "mmap") as allocate:
+            with self.assertRaises(ValueError):
+                with ONLINE.native_memory_pressure(Path("/secret"), plan, report): pass
+            allocate.assert_not_called()
+        mapping = unittest.mock.MagicMock()
+        with patch.object(ONLINE.FIXTURE, "boundary", return_value=Path("/secret")), patch.object(ONLINE.mmap, "mmap", return_value=mapping), patch.object(ONLINE.os, "sysconf", return_value=plan["bytes"]):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "original failure"):
+                with ONLINE.native_memory_pressure(Path("/secret"), plan, report): raise ONLINE.SuiteError("original failure")
+        mapping.close.assert_called_once()
+        self.assertTrue(report["memory_released"])
+
+    def test_resource_event_requires_current_scope_finite_thresholds_and_real_sample_window(self):
+        node, target, policy, rule = self.context()
+        for kind in ("opened", "resolved"):
+            valid = self.event(kind)
+            ONLINE.assert_resource_alert_event(valid, node, target, policy, rule)
+            mutations = [lambda v: v.update(extra="private"), lambda v: v.update(subject_id="foreign"),
+                         lambda v: v.update(incident_id=True), lambda v: v.update(event_type="test"),
+                         lambda v: v["evidence"].update(rule_version=1), lambda v: v["evidence"].update(target_version=1),
+                         lambda v: v["evidence"].update(query_policy_version=1), lambda v: v["evidence"].update(samples=True),
+                         lambda v: v["evidence"].update(minimum=float("nan")), lambda v: v["evidence"].update(latest=101),
+                         lambda v: v["evidence"].update(sampled_from="2026-10-17T01:00:45Z"),
+                         lambda v: v["evidence"].update(sampled_to="2026-10-17T01:01:01Z"),
+                         lambda v: v["evidence"]["policy"].update(trigger_percent=99)]
+            mutations.append((lambda v: v["evidence"].update(minimum=40)) if kind == "opened" else (lambda v: v["evidence"].update(maximum=35)))
+            for mutate in mutations:
+                bad = copy.deepcopy(valid); mutate(bad)
+                with self.subTest(kind=kind, mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.assert_resource_alert_event(bad, node, target, policy, rule)
+
+    def test_signed_receiver_retries_same_delivery_but_rejects_rebinding_and_secret_reflection(self):
+        receiver = self.receiver()
+        body, headers = self.signed(receiver)
+        self.assertEqual(receiver.accept(body, headers), 503)
+        self.assertEqual(receiver.accept(body, headers), 202)
+        self.assertEqual([r["response_status"] for r in receiver.snapshot()], [503, 202])
+        bad = self.event(); bad["incident_id"] = 2
+        changed, signed = self.signed(receiver, bad)
+        self.assertEqual(receiver.accept(changed, signed), 400)
+        self.assertEqual(receiver.invalid, 1)
+        self.assertNotIn(receiver.secret, json.dumps(receiver.snapshot()))
+        self.assertNotIn(headers["X-ADDP-Webhook-Signature"], json.dumps(receiver.snapshot()))
+
+    def test_receiver_rejects_unsigned_stale_duplicate_keys_and_oversized_payloads(self):
+        for mode in ("unsigned", "old", "oversized", "duplicate", "foreign", "wrong_id"):
+            receiver = self.receiver()
+            body, headers = self.signed(receiver)
+            if mode == "unsigned": headers["X-ADDP-Webhook-Signature"] = "v1=bad"
+            if mode == "old": body, headers = self.signed(receiver, stamp=str(int(ONLINE.time.time())-60))
+            if mode == "oversized": body = b" "*65537
+            if mode == "duplicate":
+                body = body[:-1]+b',"category":"resource"}'
+                stamp = headers["X-ADDP-Webhook-Timestamp"]
+                headers["X-ADDP-Webhook-Signature"] = "v1="+ONLINE.hmac.new(receiver.secret.encode(), stamp.encode()+b"."+body, ONLINE.hashlib.sha256).hexdigest()
+            if mode == "foreign":
+                value = self.event(); value["subject_id"] = "foreign"; body, headers = self.signed(receiver, value)
+            if mode == "wrong_id": headers["X-ADDP-Webhook-ID"] = "bad"
+            with self.subTest(mode=mode):
+                self.assertEqual(receiver.accept(body, headers), 400)
+                self.assertEqual(receiver.snapshot(), [])
+                self.assertEqual(receiver.invalid, 1)
+
+    def test_delivery_audit_binds_real_retry_and_rejects_private_fields(self):
+        receiver = self.receiver()
+        body, headers = self.signed(receiver)
+        receiver.accept(body, headers); receiver.accept(body, headers)
+        event = self.event()
+        row = {"id": headers["X-ADDP-Webhook-ID"], "event_id": event["event_id"], "destination_id": 7,
+               "channel": "webhook", "status": "delivered", "attempt_count": 2, "manual_retry_count": 0,
+               "cycle_attempt_count": 2, "event_type": "opened", "occurred_at": event["occurred_at"],
+               "incident_id": 1, "category": "resource", "subject_kind": "host_node", "subject_id": event["subject_id"],
+               "incident_status": "open", "destination_version": 3, "delivered_at": "2026-10-17T01:01:05Z"}
+        ONLINE.assert_alert_delivery(row, receiver.snapshot(), {"id": 7, "version": 3}, "open")
+        for field, value in (("event_id", "foreign"), ("attempt_count", 1), ("manual_retry_count", 1), ("destination_id", 8), ("payload", "private"), ("status", "pending"), ("destination_version", 2)):
+            bad = dict(row); bad[field] = value
+            with self.subTest(field=field), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_alert_delivery(bad, receiver.snapshot(), {"id": 7, "version": 3}, "open")
+
+
+    def test_lifecycle_enforces_identity_cas_missing_source_recovery_and_history_cleanup(self):
+        for fail_at in (None, "destination_enable", "source_unknown"):
+            with self.subTest(fail_at=fail_at):
+                node, target, query_policy, _ = self.context()
+                clock = [1800000000.0]
+                state = {"rule": None, "destination": None, "incident": None, "deliveries": [], "phase": "baseline", "source_actions": []}
+                report = {}
+                receiver = self.receiver()
+                receiver.rule = None
+                receiver.node, receiver.target, receiver.query_policy = node, target, query_policy
+                receiver.url = "https://127.0.0.1:12345/resource-alert"
+                def stamp(at=None):
+                    return datetime.datetime.fromtimestamp(clock[0] if at is None else at, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                def notify(kind):
+                    incident, rule = state["incident"], state["rule"]
+                    evidence = {"rule_id": rule["id"], "rule_version": 2, "policy": {k: rule[k] for k in ONLINE.PRESSURE_FIELDS},
+                                "node_version": 1, "target_id": target["id"], "target_version": 2, "query_policy_version": 2,
+                                "evaluated_at": stamp(), "sampled_from": stamp(clock[0]-31), "sampled_to": stamp(clock[0]-1),
+                                "samples": 3, "minimum": 42 if kind == "opened" else 25, "maximum": 44 if kind == "opened" else 26,
+                                "latest": 43 if kind == "opened" else 25}
+                    if kind == "opened": incident["resource_evidence"] = evidence
+                    event = {"schema": "addp.platform-resource-alert/v1", "event_id": ("4" if kind == "opened" else "6")*8+"-4444-4444-8444-444444444444",
+                             "event_type": kind, "incident_id": 9, "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
+                             "signal": "node.memory.used_percent", "severity": "warning", "occurred_at": stamp(), "evidence": evidence}
+                    body, headers = self.signed(receiver, event, delivery=("5" if kind == "opened" else "7")*8+"-5555-4555-8555-555555555555")
+                    for _ in range(2 if kind == "opened" else 1): receiver.accept(body, headers)
+                    state["deliveries"].append({"id": headers["X-ADDP-Webhook-ID"], "event_id": event["event_id"], "event_type": kind,
+                        "destination_id": 7, "channel": "webhook", "status": "delivered", "attempt_count": 2 if kind == "opened" else 1,
+                        "cycle_attempt_count": 2 if kind == "opened" else 1, "manual_retry_count": 0, "occurred_at": stamp(), "incident_id": 9,
+                        "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"], "delivered_at": stamp()})
+                def page(rows): return {"data": copy.deepcopy(rows), "total": len(rows), "page": 1, "page_size": 100}
+                def request(method, path, expected, body=None, **kwargs):
+                    status, value = 200, {}
+                    route = path.split("?")[0]
+                    if route == ONLINE.OBSERVATIONS:
+                        value = {"series": [{"metric_key": k, "points": [{"value": v, "sampled_at": stamp()}]} for k, v in zip(ONLINE.MEMORY_KEYS, (8*1024**3, 6*1024**3, 25))]}
+                    elif route == ONLINE.RESOURCE_RULES and method == "GET":
+                        rows = [] if state["rule"] is None else [dict(state["rule"])]
+                        if rows and rows[0]["enabled"]:
+                            phase = state["phase"]
+                            verdict = "unknown" if phase == "unknown" else "risk" if phase == "high" else "normal"
+                            rows[0].update(last_verdict=verdict, last_error="no_data" if verdict == "unknown" else "", last_evaluated_at=stamp())
+                            if verdict != "unknown": rows[0].update(last_sample_at=stamp(), last_value=43 if verdict == "risk" else 25)
+                            if fail_at == "source_unknown" and phase == "unknown": raise ONLINE.SuiteError("original source failure")
+                        value = page(rows)
+                    elif route.startswith(ONLINE.RESOURCE_RULES):
+                        old = state["rule"]
+                        if method != "POST" and (body["version"] != old["version"] or method == "DELETE" and state["incident"] and state["incident"]["status"] == "open"):
+                            status = 409
+                        elif method == "DELETE": state["rule"] = None
+                        else:
+                            state["rule"] = dict(body, id="33333333-3333-4333-8333-333333333333", version=1 if old is None else old["version"]+1,
+                                                 last_verdict="unknown" if body["enabled"] else "paused")
+                            value = copy.deepcopy(state["rule"])
+                    elif route == ONLINE.ALERT_DESTINATIONS and method == "GET":
+                        value = [] if state["destination"] is None else [copy.deepcopy(state["destination"])]
+                    elif route.startswith(ONLINE.ALERT_DESTINATIONS):
+                        old = state["destination"]
+                        if method != "POST" and body["version"] != old["version"]: status = 409
+                        elif route.endswith("/credential"):
+                            old.update(version=old["version"]+1, secret_configured=True); value = dict(old)
+                        elif method == "DELETE": state["destination"] = None
+                        elif method == "PUT" and body["enabled"] and fail_at == "destination_enable": raise ONLINE.SuiteError("original destination failure")
+                        else:
+                            state["destination"] = dict(body, id=7, version=1 if old is None else old["version"]+1,
+                                                        secret_configured=False if old is None else old["secret_configured"])
+                            value = dict(state["destination"])
+                    elif route == ONLINE.ALERTS:
+                        if state["phase"] == "high" and state["incident"] is None:
+                            state["incident"] = {"id": 9, "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
+                                                 "signal": "node.memory.used_percent", "severity": "warning", "status": "open", "opened_at": stamp()}
+                            notify("opened")
+                        if state["phase"] == "released" and state["incident"]["status"] == "open":
+                            state["incident"].update(status="resolved", resolved_at=stamp()); notify("resolved")
+                        value = page([] if state["incident"] is None else [state["incident"]])
+                    elif route == ONLINE.ALERT_DELIVERIES:
+                        rows = [dict(r, destination_version=0 if state["destination"] is None else state["destination"]["version"], incident_status=state["incident"]["status"]) for r in state["deliveries"]]
+                        value = page(rows)
+                    else: self.fail("unexpected route")
+                    self.assertIn(status, expected)
+                    return ONLINE.API.Response(status, value)
+                def wait(check, message, timeout=100):
+                    clock[0] += 60
+                    self.assertTrue(check(), message)
+                @ONLINE.contextmanager
+                def pressure(directory, plan, detail):
+                    state["phase"] = "high"; detail["pressure_started_at"] = clock[0]
+                    try: yield
+                    finally:
+                        state["phase"] = "released"; detail.update(memory_released=True, pressure_released_at=clock[0])
+                def action(value):
+                    state["source_actions"].append(value)
+                    state["phase"] = "unknown" if value == "stop" else "high"
+                admin = unittest.mock.Mock(base_url="http://example.invalid", request=unittest.mock.Mock(side_effect=request))
+                denied = unittest.mock.Mock(token="negative", request=unittest.mock.Mock(return_value=ONLINE.API.Response(403, {})))
+                def enter(_receiver): return receiver
+                def close(_receiver, *_args): receiver.closed = True
+                with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_TEST_RUN_ID": "test"}), patch.object(ONLINE.FIXTURE, "boundary", return_value=Path("/secret")), \
+                     patch.object(ONLINE, "assert_resources"), patch.object(ONLINE, "ResourceAlertReceiver", return_value=receiver), \
+                     patch.object(type(receiver), "__enter__", enter), patch.object(type(receiver), "__exit__", close), \
+                     patch.object(ONLINE.API, "GatewayClient", return_value=denied), patch.object(ONLINE, "eventually", side_effect=wait), \
+                     patch.object(ONLINE, "native_memory_pressure", pressure), patch.object(ONLINE, "source_action", side_effect=action), \
+                     patch.object(ONLINE, "source_scrape_failed", return_value=True), patch.object(ONLINE.time, "time", side_effect=lambda: clock[0]), \
+                     patch.object(ONLINE.time, "monotonic", side_effect=lambda: clock[0]), patch.object(ONLINE.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)):
+                    if fail_at:
+                        with self.assertRaisesRegex(ONLINE.SuiteError, "original .* failure"):
+                            ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
+                        self.assertFalse(state["destination"]["enabled"])
+                        self.assertTrue(report["resource_alert_lifecycle"]["receiver_closed"])
+                        if fail_at == "source_unknown":
+                            self.assertTrue(report["resource_alert_lifecycle"]["memory_released"])
+                            self.assertFalse(state["rule"]["enabled"])
+                            self.assertEqual(state["source_actions"], ["stop", "start"])
+                    else:
+                        ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
+                        detail = report["resource_alert_lifecycle"]
+                        self.assertEqual(detail["result"], "passed")
+                        self.assertTrue(detail["configuration_removed_history_retained"])
+                        self.assertIsNone(state["rule"]); self.assertIsNone(state["destination"])
+                        self.assertGreaterEqual(detail["unknown_does_not_resolve"]["duration_seconds"], 45)
+                        self.assertEqual(state["source_actions"], ["stop", "start"])
+                        self.assertEqual(detail["opened_incident"]["id"], detail["resolved_incident"]["id"])
+                        self.assertEqual(len(detail["signed_receipts"]), 3)
+
 if __name__ == "__main__":
     unittest.main()

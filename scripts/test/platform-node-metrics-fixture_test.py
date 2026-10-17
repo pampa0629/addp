@@ -72,6 +72,10 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertIn(env, (self.secret / "runtime.env").read_text())
         import shlex
         values = dict(line.removeprefix("export ").split("=", 1) for line in env.splitlines())
+        self.assertEqual(shlex.split(values["MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS"]), ["true"])
+        self.assertEqual(shlex.split(values["SSL_CERT_FILE"]), [str(self.secret / "center-tls/ca.crt")])
+        subprocess.run(["openssl", "verify", "-verify_ip", "127.0.0.1", "-purpose", "sslserver",
+                        "-CAfile", str(self.secret / "center-tls/ca.crt"), str(self.secret / "center-tls/server.crt")], check=True, capture_output=True)
         self.assertNotIn("ADDP_PROCESS_METRICS_DEPLOYMENTS", values)
         plan = json.loads(shlex.split(values["ADDP_DEV_PROCESS_METRICS_PLAN"])[0])
         self.assertEqual(list(plan), ["system", "monitor"])
@@ -82,6 +86,27 @@ class MetricsFixtureTest(unittest.TestCase):
             self.assertEqual(d["listen"], "172.17.0.1:"+str(FIXTURE.PROCESS_PORTS[d["module_name"]]))
             self.assertEqual(d["endpoint"], "https://"+d["listen"]+"/metrics")
             self.assertEqual(Path(d["tls_dir"]), self.secret / ("process-"+d["module_name"]))
+        # Exercise real HTTPS with the same private CA, then verify listener shutdown on failure.
+        import ssl
+        import urllib.error
+        import urllib.request
+        online = importlib.import_module("scripts.test.platform-node-metrics-online")
+        receiver = online.ResourceAlertReceiver(self.secret, {}, {}, {})
+        with patch.object(online.FIXTURE, "boundary", return_value=self.secret):
+            with self.assertRaisesRegex(online.SuiteError, "original receiver failure"):
+                with receiver:
+                    context = ssl.create_default_context(cafile=str(self.secret / "center-tls/ca.crt"))
+                    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context))
+                    request = urllib.request.Request(receiver.url, data=b"{}", headers={"Content-Type": "application/json"})
+                    with self.assertRaises(urllib.error.HTTPError) as failure:
+                        opener.open(request, timeout=5)
+                    self.assertEqual(failure.exception.code, 400)
+                    failure.exception.close()
+                    raise online.SuiteError("original receiver failure")
+        self.assertTrue(receiver.closed)
+        self.assertEqual(receiver.invalid, 1)
+        self.assertFalse(receiver.thread.is_alive())
+        self.assertEqual(receiver.server.socket.fileno(), -1)
         self.assertFalse(any("up" in args or "run" in args for args in calls))
         with patch.object(FIXTURE, "command") as command:
             with self.assertRaises(ValueError):

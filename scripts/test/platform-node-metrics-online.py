@@ -5,18 +5,23 @@ import base64
 import datetime
 import hashlib
 import hmac
+import http.server
 import json
 import math
+import mmap
 import os
 import re
+import secrets
 import signal
 import ssl
 import struct
 import subprocess
 import sys
 import time
+import threading
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from importlib import import_module
 from pathlib import Path
 
@@ -49,7 +54,10 @@ ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS, **INODE_METRICS, **DISK_METRIC
 REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.host_node.update",
             "monitor.monitoring_target.create", "monitor.monitoring_target.read",
             "monitor.monitoring_target.update", "monitor.monitoring_target.delete",
-            "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update", "platform.module.read"}
+            "monitor.resource_observation.read", "monitor.configuration.read", "monitor.configuration.update", "platform.module.read",
+            "monitor.platform_resource_rule.read", "monitor.platform_resource_rule.create",
+            "monitor.platform_resource_rule.update", "monitor.platform_resource_rule.delete",
+            "monitor.platform_alert.read", "monitor.platform_alert_notification.read", "monitor.platform_alert_notification.update"}
 
 
 def require(ok, message):
@@ -1037,6 +1045,405 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     return result
 
 
+PRESSURE_FIELDS = ("trigger_percent", "recovery_percent", "trigger_seconds", "recovery_seconds")
+RESOURCE_RULES = "/api/v1/monitor/platform/resource-alert-rules"
+ALERTS = "/api/v1/monitor/platform/alerts"
+ALERT_DESTINATIONS = "/api/v1/monitor/platform/alert-notification-destinations"
+ALERT_DELIVERIES = "/api/v1/monitor/platform/alert-notification-deliveries"
+MEMORY_KEYS = ("node.memory.total_bytes", "node.memory.available_bytes", "node.memory.used_percent")
+
+
+def finite_number(value):
+    return type(value) in {int, float} and math.isfinite(value)
+
+
+def memory_pressure_plan(total, available, used):
+    require(all(finite_number(v) for v in (total, available, used)) and total > 0 and 0 < available <= total
+            and 0 <= used < 100 and abs(used - 100*(1-available/total)) < .01, "invalid memory baseline")
+    size = int(min(total*.12, available*.25, 2*1024**3))
+    delta = 100*size/total
+    require(delta >= 8, "Hosted memory budget cannot create a distinguishable pressure window")
+    return {"total_bytes": total, "available_bytes": available, "baseline_percent": used, "bytes": size,
+            "delta_percent": delta, "trigger_percent": used+delta*.65, "recovery_percent": used+delta*.25,
+            "trigger_seconds": 30, "recovery_seconds": 30}
+
+
+@contextmanager
+def native_memory_pressure(directory, plan, report):
+    require(FIXTURE.boundary() == directory, "memory pressure requires the owned Hosted deployment")
+    require(plan == memory_pressure_plan(plan["total_bytes"], plan["available_bytes"], plan["baseline_percent"]),
+            "memory pressure plan changed after validation")
+    mapping = mmap.mmap(-1, plan["bytes"], flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
+                        prot=mmap.PROT_READ | mmap.PROT_WRITE)
+    try:
+        for offset in range(0, plan["bytes"], os.sysconf("SC_PAGE_SIZE")):
+            mapping[offset] = 1
+        report["memory_allocated_bytes"] = plan["bytes"]
+        report["pressure_started_at"] = time.time()
+        yield
+    finally:
+        mapping.close()
+        report["memory_released"] = True
+        report["pressure_released_at"] = time.time()
+
+
+def canonical_uuid(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", value) is not None and value != "00000000-0000-0000-0000-000000000000"
+
+
+def assert_resource_alert_event(value, node, target, query_policy, rule):
+    fields = {"schema", "event_id", "event_type", "incident_id", "category", "subject_kind", "subject_id",
+              "signal", "severity", "occurred_at", "evidence"}
+    require(type(value) is dict and set(value) == fields, "resource alert payload fields mismatch")
+    require(value["schema"] == "addp.platform-resource-alert/v1" and canonical_uuid(value["event_id"])
+            and value["event_type"] in {"opened", "resolved"} and type(value["incident_id"]) is int and value["incident_id"] > 0,
+            "invalid resource event identity")
+    require(value["category"] == "resource" and value["subject_kind"] == "host_node" and value["subject_id"] == node["node_id"]
+            and value["signal"] == "node.memory.used_percent" and value["severity"] == "warning", "resource event scope mismatch")
+    evidence = value["evidence"]
+    require(type(evidence) is dict and set(evidence) == {"rule_id", "rule_version", "policy", "node_version", "target_id", "target_version",
+            "query_policy_version", "evaluated_at", "sampled_from", "sampled_to", "samples", "minimum", "maximum", "latest"}, "resource evidence fields mismatch")
+    for field, expected in (("rule_id", rule["id"]), ("rule_version", rule["version"]), ("node_version", node["version"]),
+                            ("target_id", target["id"]), ("target_version", target["version"]), ("query_policy_version", query_policy["version"])):
+        require(type(evidence[field]) is type(expected) and evidence[field] == expected, "resource evidence configuration mismatch")
+    require(evidence["policy"] == {k: rule[k] for k in PRESSURE_FIELDS}
+            and all(type(evidence["policy"][k]) is int for k in PRESSURE_FIELDS[2:]), "resource event policy mismatch")
+    evaluated, first, last, occurred = (utc_timestamp(v) for v in (evidence["evaluated_at"], evidence["sampled_from"], evidence["sampled_to"], value["occurred_at"]))
+    duration = rule["trigger_seconds" if value["event_type"] == "opened" else "recovery_seconds"]
+    require(evaluated == int(evaluated) and occurred == evaluated and 0 <= evaluated-last <= 16
+            and duration <= last-first <= duration+16 and type(evidence["samples"]) is int
+            and 3 <= evidence["samples"] <= 22, "resource event lacks a continuous sampled window")
+    low, high, latest = (evidence[k] for k in ("minimum", "maximum", "latest"))
+    require(all(finite_number(v) for v in (low, high, latest)) and 0 <= low <= latest <= high <= 100, "invalid resource event values")
+    require(low > rule["trigger_percent"] if value["event_type"] == "opened" else high < rule["recovery_percent"], "resource event threshold not witnessed")
+
+
+def unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "duplicate resource notification JSON key")
+        result[key] = value
+    return result
+
+
+class ResourceAlertReceiver:
+    """Only the owned suite's signed resource events; no credential or arbitrary body logging."""
+    def __init__(self, directory, node, target, query_policy):
+        self.directory, self.node, self.target, self.query_policy = directory, node, target, query_policy
+        self.rule = None
+        self.secret = secrets.token_hex(32)
+        self.lock = threading.Lock()
+        self.receipts, self.invalid = [], 0
+        self.server, self.thread = None, None
+        self.closed = False
+
+    def accept(self, body, headers):
+        with self.lock:
+            try:
+                require(0 < len(body) <= 65536 and self.rule is not None, "notification body outside boundary")
+                stamp, signature, delivery = (headers.get(k, "") for k in ("X-ADDP-Webhook-Timestamp", "X-ADDP-Webhook-Signature", "X-ADDP-Webhook-ID"))
+                require(re.fullmatch(r"[0-9]{1,12}", stamp) is not None and abs(time.time()-int(stamp)) <= 30
+                        and canonical_uuid(delivery), "notification timestamp or delivery identity invalid")
+                expected = "v1="+hmac.new(self.secret.encode(), stamp.encode()+b"."+body, hashlib.sha256).hexdigest()
+                require(hmac.compare_digest(signature, expected), "notification signature invalid")
+                value = json.loads(body, object_pairs_hook=unique_json_object)
+                assert_resource_alert_event(value, self.node, self.target, self.query_policy, self.rule)
+                require(len(self.receipts) < 16, "excess notification attempts")
+                for receipt in self.receipts:
+                    previous = receipt["payload"]
+                    if receipt["delivery_id"] == delivery or previous["event_id"] == value["event_id"] or previous["event_type"] == value["event_type"]:
+                        require(receipt["delivery_id"] == delivery and previous == value, "resource retry identity or body changed")
+                    require(previous["incident_id"] == value["incident_id"], "resource lifecycle incident changed")
+                status = 503 if value["event_type"] == "opened" and not self.receipts else 202
+                self.receipts.append({"delivery_id": delivery, "payload": value, "response_status": status})
+                return status
+            except (SuiteError, ValueError, TypeError, KeyError, UnicodeError):
+                self.invalid += 1
+                return 400
+
+    def snapshot(self):
+        with self.lock:
+            return json.loads(json.dumps(self.receipts))
+
+    def __enter__(self):
+        require(FIXTURE.boundary() == self.directory, "notification receiver requires the owned Hosted deployment")
+        receiver = self
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_args): pass
+            def do_POST(self):
+                length = self.headers.get("Content-Length", "")
+                valid = (self.path == "/resource-alert" and re.fullmatch(r"[0-9]{1,6}", length) is not None
+                         and 0 < int(length) <= 65536 and not self.headers.get("Transfer-Encoding")
+                         and self.headers.get_content_type() == "application/json"
+                         and all(len(self.headers.get_all(k, [])) == 1 for k in ("Content-Length", "X-ADDP-Webhook-ID", "X-ADDP-Webhook-Timestamp", "X-ADDP-Webhook-Signature")))
+                if valid:
+                    status = receiver.accept(self.rfile.read(int(length)), self.headers)
+                else:
+                    with receiver.lock: receiver.invalid += 1
+                    status = 400
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(str(self.directory/"center-tls/server.crt"), str(self.directory/"center-tls/server.key"))
+        class Server(http.server.ThreadingHTTPServer):
+            daemon_threads = False
+            def get_request(self):
+                connection, address = super().get_request()
+                connection.settimeout(5)
+                try:
+                    return context.wrap_socket(connection, server_side=True), address
+                except BaseException:
+                    connection.close()
+                    raise
+        self.server = Server(("127.0.0.1", 0), Handler)
+        self.url = "https://127.0.0.1:"+str(self.server.server_port)+"/resource-alert"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        try:
+            self.thread.start()
+        except BaseException:
+            self.server.server_close()
+            self.closed = True
+            raise
+        return self
+
+    def __exit__(self, *_args):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=6)
+        self.closed = not self.thread.is_alive()
+
+
+def assert_alert_delivery(row, receipts, destination, incident_status, deleted=False):
+    allowed = {"id", "event_id", "destination_id", "channel", "status", "attempt_count", "manual_retry_count", "next_attempt_at", "last_error",
+               "delivered_at", "created_at", "cycle_attempt_count", "event_type", "occurred_at", "incident_id", "category", "subject_kind",
+               "subject_id", "incident_status", "suppressed_until", "destination_name", "destination_version"}
+    require(type(row) is dict and set(row) <= allowed, "private or unknown notification fields exposed")
+    matching = [r for r in receipts if r["delivery_id"] == row.get("id")]
+    require(bool(matching), "delivery audit has no signed receipt")
+    event = matching[0]["payload"]
+    for field in ("event_id", "event_type", "incident_id", "category", "subject_kind", "subject_id", "occurred_at"):
+        require(row.get(field) == event[field], "delivery audit event mismatch")
+    attempts = row.get("attempt_count")
+    require(row.get("destination_id") == destination["id"] and row.get("destination_version") == (0 if deleted else destination["version"])
+            and row.get("channel") == "webhook" and row.get("status") == "delivered" and row.get("incident_status") == incident_status
+            and type(attempts) is int and (2 if event["event_type"] == "opened" else 1) <= attempts <= 8
+            and row.get("cycle_attempt_count") == attempts and row.get("manual_retry_count") == 0
+            and not row.get("last_error") and row.get("next_attempt_at") is None, "delivery audit final state mismatch")
+    require(len(matching) <= attempts and matching[-1]["response_status"] == 202
+            and (event["event_type"] != "opened" or matching[0]["response_status"] == 503), "automatic retry not witnessed")
+    require(utc_timestamp(row.get("delivered_at")) >= utc_timestamp(event["occurred_at"]), "delivery predates event")
+
+
+def alert_page(client, path):
+    value = client.request("GET", path, (200,)).payload
+    rows = value.get("data")
+    require(type(rows) is list and type(value.get("total")) is int and value["total"] == len(rows)
+            and len(rows) <= 100 and value.get("page") == 1 and value.get("page_size") == 100,
+            "alert acceptance page is incomplete")
+    return rows
+
+
+def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report):
+    report["stage"] = "resource-alert-real-memory-lifecycle"
+    detail = {"result": "failed", "memory_released": False, "receiver_closed": False}
+    report["resource_alert_lifecycle"] = detail
+    require(FIXTURE.boundary() == directory, "resource alerts require the owned Hosted deployment")
+    baseline = admin.request("GET", resource_path(node, keys=MEMORY_KEYS), (200,)).payload
+    assert_resources(baseline, node, target, keys=MEMORY_KEYS)
+    points = {row["metric_key"]: row["points"][0] for row in baseline["series"]}
+    require(len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
+    plan = memory_pressure_plan(*(points[k]["value"] for k in MEMORY_KEYS))
+    detail["memory_plan"] = plan
+    rule_body = {"name": "online-memory-"+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_id": node["node_id"],
+                 "metric_key": "node.memory.used_percent", "enabled": False, **{k: plan[k] for k in PRESSURE_FIELDS}}
+    rule, destination, destination_body = None, None, None
+    source_stopped, completed, destination_removed = False, False, False
+    receiver = ResourceAlertReceiver(directory, node, target, query_policy)
+    rule_query = RESOURCE_RULES+"?"+urllib.parse.urlencode({"node_id": node["node_id"], "page": 1, "page_size": 100})
+    incident_query = ALERTS+"?"+urllib.parse.urlencode({"category": "resource", "subject_id": node["node_id"], "page": 1, "page_size": 100})
+    delivery_query = ALERT_DELIVERIES+"?page=1&page_size=100"
+
+    def current_rule():
+        rows = alert_page(admin, rule_query)
+        require(len(rows) == 1 and rows[0].get("id") == rule["id"] and rows[0].get("version") == rule["version"]
+                and all(rows[0].get(k) == rule_body[k] for k in (*PRESSURE_FIELDS, "node_id", "metric_key")), "rule configuration changed during evaluation")
+        detail["latest_rule_evaluation"] = {k: rows[0][k] for k in ("version", "enabled", "last_verdict", "last_error", "last_evaluated_at", "last_sample_at", "last_value") if k in rows[0]}
+        return rows[0]
+
+    def incidents():
+        rows = alert_page(admin, incident_query)
+        require(len(rows) <= 1 and all(r.get("category") == "resource" and r.get("subject_kind") == "host_node"
+                and r.get("subject_id") == node["node_id"] and r.get("signal") == "node.memory.used_percent"
+                and r.get("severity") == "warning" and not r.get("instance_id") for r in rows), "resource incident scope mismatch")
+        return rows
+
+    def check_incident(status, expected=None):
+        rows = incidents()
+        if not rows or rows[0].get("status") != status: return None
+        incident = rows[0]
+        require(type(incident.get("id")) is int and incident["id"] > 0, "invalid resource incident identity")
+        if expected is not None:
+            require(incident["id"] == expected["id"] and incident.get("resource_evidence") == expected["resource_evidence"]
+                    and incident.get("opened_at") == expected["opened_at"], "resource incident opening evidence changed")
+        else:
+            event = {"schema": "addp.platform-resource-alert/v1", "event_id": rule["id"], "event_type": "opened",
+                     "incident_id": incident["id"], "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
+                     "signal": "node.memory.used_percent", "severity": "warning", "occurred_at": incident.get("opened_at"),
+                     "evidence": incident.get("resource_evidence")}
+            assert_resource_alert_event(event, node, target, query_policy, rule)
+            require(utc_timestamp(event["evidence"]["sampled_from"]) >= detail["pressure_started_at"], "opening window predates real pressure")
+        return incident
+
+    def evaluated(verdict, after):
+        row = current_rule()
+        if row.get("last_verdict") != verdict or not row.get("last_evaluated_at"): return False
+        if utc_timestamp(row["last_evaluated_at"]) < after: return False
+        require(row.get("enabled") is True, "enabled rule unexpectedly paused")
+        if verdict == "unknown":
+            require(row.get("last_error") == "no_data" and row.get("last_value") is None and row.get("last_sample_at") is None,
+                    "unknown resource verdict retained a value")
+        else:
+            require(row.get("last_error") == "" and finite_number(row.get("last_value")), "evaluated rule has no valid sample")
+            if utc_timestamp(row.get("last_sample_at")) < after: return False
+            if verdict == "normal" and row["last_value"] >= rule["recovery_percent"]: return False
+            if verdict == "risk" and row["last_value"] <= rule["trigger_percent"]: return False
+        detail["last_"+verdict] = {k: row[k] for k in ("last_evaluated_at", "last_verdict", "last_error", "last_sample_at", "last_value") if k in row}
+        return True
+
+    def deliveries_ready(kinds, incident, deleted=False):
+        require(receiver.invalid == 0, "signed notification receiver rejected a request")
+        receipts = receiver.snapshot()
+        rows = [r for r in alert_page(admin, delivery_query) if r.get("destination_id") == destination["id"]]
+        require(len(rows) <= len(kinds) and len({r.get("event_type") for r in rows}) == len(rows), "duplicate resource lifecycle deliveries")
+        if {r.get("event_type") for r in rows} != set(kinds) or any(r.get("status") != "delivered" for r in rows): return False
+        for row in rows:
+            assert_alert_delivery(row, receipts, destination, incident["status"], deleted=deleted)
+            require(row["incident_id"] == incident["id"], "delivery references another incident")
+        detail["deliveries"] = rows
+        detail["signed_receipts"] = receipts
+        return True
+
+    try:
+        with receiver:
+            destination_body = {"name": "online-resource-"+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "channel": "webhook", "url": receiver.url,
+                                "recipients": [], "categories": ["resource"], "event_types": ["opened", "resolved"], "enabled": False}
+            require(not alert_page(admin, rule_query) and not incidents(), "new Hosted node already has resource alert history")
+            destination = admin.request("POST", ALERT_DESTINATIONS, (200,), destination_body).payload
+            require(type(destination.get("id")) is int and destination["id"] > 0 and destination.get("version") == 1
+                    and not destination.get("enabled") and not destination.get("secret_configured"), "invalid disabled resource destination")
+            destination_path = ALERT_DESTINATIONS+"/"+str(destination["id"])
+            destination = admin.request("PUT", destination_path+"/credential", (200,), {"version": 1, "secret": receiver.secret}).payload
+            require(destination.get("version") == 2 and destination.get("secret_configured") is True, "resource destination credential was not configured")
+            destination_body["enabled"] = True
+            destination = admin.request("PUT", destination_path, (200,), dict(destination_body, version=2)).payload
+            require(destination.get("version") == 3 and destination.get("enabled") is True, "resource destination not enabled")
+            rule = admin.request("POST", RESOURCE_RULES, (200,), rule_body).payload
+            require(canonical_uuid(rule.get("id")) and rule.get("version") == 1 and rule.get("enabled") is False
+                    and rule.get("last_verdict") == "paused", "resource rule was not created disabled")
+            rule_path = RESOURCE_RULES+"/"+rule["id"]
+            detail.update(rule_id=rule["id"], destination_id=destination["id"])
+            for client in [security, machine, *tenant_clients, API.GatewayClient(admin.base_url, "", 10)]:
+                denied = (401,) if not client.token else (403,)
+                for path in (rule_query, incident_query, ALERT_DESTINATIONS, delivery_query):
+                    # Rejections are JSON errors, even when the successful resource is an array.
+                    client.request("GET", path, denied)
+                for method, path, body in (("POST", RESOURCE_RULES, rule_body), ("PUT", rule_path, dict(rule_body, version=1)),
+                    ("DELETE", rule_path, {"version": 1}), ("POST", ALERT_DESTINATIONS, dict(destination_body, enabled=False)),
+                    ("PUT", destination_path, dict(destination_body, version=3)), ("DELETE", destination_path, {"version": 3}),
+                    ("PUT", destination_path+"/credential", {"version": 3, "secret": receiver.secret})):
+                    client.request(method, path, denied, body)
+            require(current_rule()["enabled"] is False, "denied requests changed rule")
+            saved = [d for d in admin.request("GET", ALERT_DESTINATIONS, (200,), response_type=list).payload if d.get("id") == destination["id"]]
+            config_fields = ("id", "version", "name", "channel", "url", "recipients", "categories", "event_types", "enabled", "secret_configured")
+            require(len(saved) == 1 and all(saved[0].get(k) == destination.get(k) for k in config_fields), "denied notification requests changed destination")
+            detail["identity_isolation"] = True
+            enabled_at = time.time()
+            rule = admin.request("PUT", rule_path, (200,), dict(rule_body, version=1, enabled=True)).payload
+            require(rule.get("version") == 2 and rule.get("enabled") is True, "rule enable CAS did not advance")
+            receiver.rule = rule
+            admin.request("PUT", rule_path, (409,), dict(rule_body, version=1, enabled=True))
+            admin.request("PUT", destination_path+"/credential", (409,), {"version": 1, "secret": receiver.secret})
+            eventually(lambda: evaluated("normal", enabled_at), "baseline memory rule evaluation", timeout=150)
+            require(not incidents() and not receiver.snapshot(), "baseline memory falsely opened an incident")
+            with native_memory_pressure(directory, plan, detail):
+                eventually(lambda: check_incident("open"), "real memory pressure incident", timeout=180)
+                opened = check_incident("open")
+                require(opened is not None, "opened incident vanished")
+                detail["opened_incident"] = opened
+                eventually(lambda: deliveries_ready(("opened",), opened), "signed opened notification automatic retry", timeout=90)
+                admin.request("DELETE", rule_path, (409,), {"version": rule["version"]})
+                detail["active_delete_rejected"] = True
+                source_action("stop")
+                source_stopped = True
+                try:
+                    selector = '{job="addp_nodes",addp_node_id="'+node["node_id"]+'"}'
+                    eventually(lambda: source_scrape_failed(prom, selector), "resource alert source failure")
+                    failed_at = time.time()
+                    eventually(lambda: evaluated("unknown", failed_at), "unknown alert verdict after failed source", timeout=100)
+                    held_since = time.monotonic()
+                    first_unknown = dict(detail["last_unknown"])
+                    deadline = held_since+plan["recovery_seconds"]+15
+                    observations = 0
+                    while time.monotonic() < deadline:
+                        require(evaluated("unknown", failed_at) and check_incident("open", opened) is not None,
+                                "missing source falsely recovered resource incident")
+                        require(receiver.invalid == 0 and all(r["payload"]["event_type"] == "opened" for r in receiver.snapshot()),
+                                "missing source emitted a resolved notification")
+                        observations += 1
+                        time.sleep(2)
+                    detail["unknown_does_not_resolve"] = {"duration_seconds": time.monotonic()-held_since, "observations": observations,
+                                                              "first": first_unknown, "last": dict(detail["last_unknown"])}
+                finally:
+                    restarted_at = time.time()
+                    source_action("start")
+                    source_stopped = False
+                eventually(lambda: evaluated("risk", restarted_at), "fresh high memory window after source recovery", timeout=180)
+                require(check_incident("open", opened) is not None, "source recovery replaced the open incident")
+                detail["source_recovery_preserves_incident"] = True
+            eventually(lambda: check_incident("resolved", opened), "memory release recovers the original incident", timeout=180)
+            resolved = check_incident("resolved", opened)
+            require(resolved is not None and utc_timestamp(resolved.get("resolved_at")) >= detail["pressure_released_at"], "resource recovery predates memory release")
+            eventually(lambda: deliveries_ready(("opened", "resolved"), resolved), "signed resolved notification", timeout=90)
+            receipts = receiver.snapshot()
+            events = {r["payload"]["event_type"]: r["payload"] for r in receipts}
+            require(events["opened"]["evidence"] == opened["resource_evidence"] and events["opened"]["event_id"] != events["resolved"]["event_id"]
+                    and utc_timestamp(events["resolved"]["evidence"]["sampled_from"]) >= detail["pressure_released_at"], "notification lifecycle evidence mismatch")
+            detail["resolved_incident"] = resolved
+            rule = admin.request("PUT", rule_path, (200,), dict(rule_body, version=rule["version"], enabled=False)).payload
+            require(rule.get("version") == 3 and rule.get("enabled") is False, "rule disable CAS did not advance")
+            admin.request("DELETE", rule_path, (409,), {"version": 2})
+            admin.request("DELETE", rule_path, (200,), {"version": rule["version"]})
+            rule = None
+            destination = admin.request("PUT", destination_path, (200,), dict(destination_body, version=destination["version"], enabled=False)).payload
+            require(destination.get("version") == 4 and destination.get("enabled") is False, "destination disable CAS did not advance")
+            admin.request("DELETE", destination_path, (409,), {"version": 3})
+            admin.request("DELETE", destination_path, (200,), {"version": destination["version"]})
+            destination_removed = True
+            require(not alert_page(admin, rule_query), "deleted resource rule remains listed")
+            require(all(d.get("id") != destination["id"] for d in admin.request("GET", ALERT_DESTINATIONS, (200,), response_type=list).payload), "deleted notification destination remains listed")
+            require(check_incident("resolved", opened) == resolved and deliveries_ready(("opened", "resolved"), resolved, deleted=True), "config cleanup removed resource alert history")
+            detail["configuration_removed_history_retained"] = True
+            completed = True
+    finally:
+        # Best effort configuration disable must never replace the original failed assertion.
+        if not completed:
+            for obj, path, body in ((rule, RESOURCE_RULES, rule_body), (destination, ALERT_DESTINATIONS, destination_body)):
+                if obj is not None and body is not None and not (path == ALERT_DESTINATIONS and destination_removed):
+                    try:
+                        admin.request("PUT", path+"/"+str(obj["id"]), (200,), dict(body, version=obj["version"], enabled=False))
+                    except (SuiteError, OSError, ValueError):
+                        detail["failure_config_disable_incomplete"] = True
+        if source_stopped:
+            try: source_action("start")
+            except (SuiteError, OSError, ValueError, subprocess.SubprocessError): detail["failure_source_restart_incomplete"] = True
+        detail["receiver_closed"] = receiver.closed
+    require(receiver.invalid == 0, "signed notification receiver rejected a request")
+    require(completed and detail["memory_released"] and detail["receiver_closed"], "resource alert fixture cleanup incomplete")
+    detail["result"] = "passed"
+
+
 def run(base, directory, report):
     report["stage"] = "platform-login-mfa"
     admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
@@ -1213,6 +1620,11 @@ def run(base, directory, report):
     renewed = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
     platform_identity(renewed, "platform.system_administrator")
     require(renewed["principal"]["id"] == admin_identity["principal"]["id"], "fault phase principal changed")
+    run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report)
+    admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
+    renewed = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
+    platform_identity(renewed, "platform.system_administrator")
+    require(renewed["principal"]["id"] == admin_identity["principal"]["id"], "post-alert phase principal changed")
     report["stage"] = "center-query-outage-recovery"
     center_action("stop")
     try:

@@ -100,6 +100,7 @@ def prepare(directory):
     (deployment / "prometheus-client-secret").write_text(secret)
     (deployment / "prometheus-client-secret").chmod(0o644)
     values = {
+        "MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS": "true", "SSL_CERT_FILE": str(directory / "center-tls/ca.crt"),
         "ADDP_OBSERVABILITY_METRICS_ENABLED": "true", "ADDP_OBSERVABILITY_LOGS_ENABLED": "false",
         "ADDP_METRICS_TLS_DIR": str(directory / "center-tls"), "ADDP_METRICS_DEPLOYMENT_DIR": str(deployment),
         "PROMETHEUS_SERVICE_CLIENT_SECRET": secret,

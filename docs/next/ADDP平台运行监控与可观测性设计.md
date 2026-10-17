@@ -2404,3 +2404,18 @@ CI 已核对到包含 `d8044a7cc` 的源码 `23754bafa`：Release and T2 Run `38
 内层报告的 cleanup=awaiting-hosted-deployment-destruction 只是等待外层退出；最终 `summary.txt` 明确 result=passed、cleanup=passed、infra_cleanup=zero_residuals，才作为本轮清理通过证据。归档 `/tmp/addp-source-outage-anchor-hosted-38983748074`、Job 日志 `/tmp/addp-source-outage-anchor-hosted-job-38983748074.log`；归档的凭据文件、私钥 PEM 和 JWT 模式有限检查均为零，不用该扫描替代生命周期销毁证明。
 
 同源码 Platform consistency Job `117250200889` 已结束，仍在其他范围的 `test_common_postgres_group_preserves_full_default_and_scopes_explicitly` 命令断言失败，日志 `/tmp/addp-source-outage-anchor-platform-job-117250200889.log`；本会话未修复或重跑该项，且未把其整体门禁记为通过。本批完成证据是整秒反例的本地 58 项标准 runner 通过、上述固定源码完整 Hosted 通过和退出零残留，不宣称整个仓库 CI 全绿。此次只同步本设计及 Monitor 模块说明，按任务范围检查章节、围栏和 diff；没有新的产品输入，无需为文档同步再次执行产品测试。
+
+
+### 10.77 平台主机资源告警正式身份闭环验收（2026-10-17，实施契约）
+
+用户在 10.76 收尾后确认继续推进主机资源告警正式身份端到端验收。本批沿用唯一 `platform-node-metrics` Hosted Linux 一次性部署及真实密码/MFA 的临时平台系统管理员，以现有公开 Gateway API 管理当次主机的资源规则和临时 Webhook 目标、读取告警及投递。此次明确的测试用途扩展只覆盖四项现有规则权限、平台告警读取、平台通知读取/管理；不发布新权限、不修改角色或 IAM 内核，不读取 Tenant 业务数据，不新增管理员确认/抑制告警、手动重投、邮件或企业微信操作。两名既有 Tenant User、平台安全管理员、独立 Prometheus Service 及无认证请求必须被上述控制面拒绝；Prometheus 权限保持原独立发现权限。
+
+首批用 `node.memory.used_percent` 实际走通规则—后台评估—事件/outbox—正式签名 HTTP sender—接收端的打开和恢复链路。只在 fixture 已验证的专属 GitHub Hosted Linux VM 中创建本测试进程拥有的匿名 mmap，逐页写入真实物理内存；大小为主机总内存的 12%、当前可用内存的 25% 和 2 GiB 三者最小值，且要求至少形成 8 个百分点的可辨识余量，否则明确拒绝本轮，不加压或伪造结果。打开阈值为基线使用率加余量的 65%，恢复阈值加余量的 25%，两者持续 30 秒；四项值走正式规则 API，开始默认停用，再显式启用。触发前先验证正常评估；有活动事件时按正确版本删除规则必须 409。保持真实内存压力时停掉当次自有 node_exporter，验证未知/缺样超过恢复窗口仍不恢复；来源恢复后重新积累高值窗口，释放 mmap 后用真实低值恢复同一 incident，原打开证据保持不变。所有轮询有限时；finally 关闭 mmap，进程退出也由内核回收，不创建独立工作进程、额外镜像或持久资源。该场景不计作 CPU 持续压力或生产容量验收。
+
+接收端为 suite 进程内的临时 HTTPS 服务，仅绑定回环随机端口，复用当次 center CA 和具有 127.0.0.1 SAN 的证书。Hosted fixture 仅为本轮服务导出既有 `MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=true` 和标准 Go 根证书输入 `SSL_CERT_FILE`，不关闭 TLS 校验、不修改生产默认值或系统证书库；指标传输继续使用原独立 mTLS 输入。接收端对真实 sender 的时间戳、HMAC 和有界 JSON 逐项校验，只记录白名单资源事件证据；首个 opened 请求实际返回 503，后续 202，验证同一 event/delivery 的重试和最终投递。只允许当次主机/规则的 resource opened/resolved，不向真实群发送通知，不使用通知 test 端点冒充事件投递。报告将事件证据、API incident 和投递审计交叉绑定，允许至少一次协议下同 ID 的一致重复，不宣称网络恰好一次。不得写 Prometheus 历史、替换 exporter 内容、直接修改数据库或手工调用 evaluator。
+
+API 操作完成后先停用并按 CAS 删除本轮规则和通知目标，验证列表移除，已恢复告警和投递历史保留；异常路径仍释放内存并关闭接收端，外层 Hosted 生命周期销毁当次部署、身份、卷与私密文件，最终按原 summary 检查零残留。原节点、服务、总览和浏览器验收保留；新 API 场景不加入原浏览器 240/300 秒计时段，不扩展原 Job 60 分钟时限。
+
+实施前门禁：原 `make test-node-metrics-online-runner` 增加内存预算/阈值、隔离边界与 mmap/接收端释放、签名/载荷拒绝、证据时间与阈值、重试 ID/状态及 API 清理回归；fixture 原配置回归覆盖两项仅 Hosted 输入。原脚本和测试文件已由同一 root runner、`test-online-runner`、Online 注册及 Hosted workflow 覆盖，不新增入口或技术路线。只消费现有 API，不修改路由、DTO 或 Swagger；标准节点指标 runner 和默认 `make test-changed` 分别记录结果，随后固定源码真实 Hosted 复验，不把本地夹具或受控源 T2 计为 T4 已通过。
+
+本地实现已落在原 Online runner 和 fixture：`make test-node-metrics-online-runner` 的 65 项 Python 回归及原 Metrics Go 测试通过，含真实 TLS 根证书/回环 SAN 校验和监听器异常释放；新增模拟只证明验收器会正确检查身份拒绝、CAS、未知保持、同 incident 恢复和历史保留，不计作正式 T4。`make test-changed` 因共享工作区扩散到其他模块，停在缺少外部 PostgreSQL 等测试连接的预检，未执行或计为通过；日志 `/tmp/addp-resource-alert-changed.log`。原根 runner、Online 注册与 Hosted workflow 已覆盖本批原有文件，无需新增入口或编排。真实 Hosted 尚待固定源码执行。
