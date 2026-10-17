@@ -12,8 +12,18 @@ SCRIPT = Path(__file__).with_name('online-hosted-raster-gate.sh')
 class HostedRasterGateTest(unittest.TestCase):
     def test_online_browser_spec_parses_with_the_existing_node_toolchain(self):
         spec = SCRIPT.resolve().parents[2] / 'console/frontend/e2e/online/raster-workflow.spec.js'
-        result = subprocess.run(['node', '--check', str(spec)], capture_output=True, text=True, timeout=30)
+        expected_major = (SCRIPT.resolve().parents[2] / '.node-version').read_text().strip()
+        version = subprocess.run(['node', '--version'], capture_output=True, text=True, check=True, timeout=30)
+        self.assertEqual(version.stdout.strip().lstrip('v').split('.')[0], expected_major)
+        result = subprocess.run(['node', '--check', '--input-type=module'], input=spec.read_text(),
+                                capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_online_browser_syntax_gate_rejects_await_in_a_non_async_callback(self):
+        result = subprocess.run(['node', '--check', '--input-type=module'],
+                                input='export const callback = response => await response.json()\n',
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
 
     def setUp(self):
         self.host = support.OnlineHostedOpenGaussGateTest()

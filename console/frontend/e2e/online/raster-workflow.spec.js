@@ -19,50 +19,58 @@ async function selectOperatorNode(page, frame, name) {
   await expect(frame.locator('.node-summary')).toContainText(name)
 }
 
-async function verifyTerrainParameterPanel(page, api) {
-  const engines = await json(await api.get('/api/v1/develop/workflow-engines'), 'terrain workflow engines')
+async function verifyTerrainParameterPanel(page, expectedIdentity) {
+  const enginesRead = page.waitForResponse(response => response.request().method() === 'GET' &&
+    new URL(response.url()).pathname === '/api/v1/develop/workflow-engines')
+  await page.goto(`${process.env.CONSOLE_URL}/develop/workflow?action=create`)
+  const response = await enginesRead
+  const engines = await json(response, 'terrain workflow engines')
   const runtime = engines.filter(engine => engine.engine_type === 'geopython_workflow')
   expect(runtime).toHaveLength(1)
-  const catalog = await json(await api.get(`/api/v1/develop/workflow-engines/${runtime[0].id}/operators`), 'terrain operators')
-  await page.goto(`${process.env.CONSOLE_URL}/develop/workflow?action=create`)
-  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-  await expect(frame.locator('.engine-select')).toBeVisible()
-  const palette = frame.getByPlaceholder('搜索算子...')
-  const names = ['raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour']
-  let writes = 0
-  const countWrites = event => {
-    if (['POST', 'PUT', 'DELETE'].includes(event.method()) &&
-      new URL(event.url()).pathname.startsWith('/api/v1/develop/task-definitions')) writes += 1
-  }
-  page.on('request', countWrites)
+  const api = await browserAPIFromResponse(response, process.env.GATEWAY_URL, expectedIdentity)
   try {
-    for (const name of names) {
-      const spec = catalog.operators.find(operator => operator.name === name)
-      expect(spec).toBeTruthy()
-      await palette.fill(name)
-      await frame.getByRole('button', { name: `添加“${spec.display_name}”算子`, exact: true }).click()
-      await palette.clear()
-      await frame.getByRole('button', { name: '自动布局', exact: true }).click()
-      await frame.getByRole('button', { name: '适应窗口', exact: true }).click()
-      await selectOperatorNode(page, frame, name)
-      await frame.locator('[data-param-name="elevation_unit"] .el-select__wrapper').click()
-      await frame.getByRole('option', { name: 'metre', exact: true }).click()
-      await expect(frame.locator('[data-param-name="band"] input')).toHaveValue('1')
-      if (name === 'raster_contour') {
-        const levels = frame.locator('[data-param-name="levels"]').getByRole('textbox')
-        await levels.fill('[110000,120000,150000]')
-        await levels.press('Tab')
-      }
-      const params = await frame.locator('#workflow-dag-container').evaluate((element, operator) =>
-        element.__vueParentComponent.setupState.graph.getNodes().find(node => node.getModel().operator === operator).getModel().params, name)
-      expect(params.elevation_unit).toBe('metre')
-      expect(params.band).toBe(1)
-      if (name === 'raster_contour') expect(params.levels).toEqual([110000, 120000, 150000])
+    const catalog = await json(await api.get(`/api/v1/develop/workflow-engines/${runtime[0].id}/operators`), 'terrain operators')
+    const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.locator('.engine-select')).toBeVisible()
+    const palette = frame.getByPlaceholder('搜索算子...')
+    const names = ['raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour']
+    let writes = 0
+    const countWrites = event => {
+      if (['POST', 'PUT', 'DELETE'].includes(event.method()) &&
+        new URL(event.url()).pathname.startsWith('/api/v1/develop/task-definitions')) writes += 1
     }
-    expect(writes).toBe(0)
-    await frame.locator('#workflow-dag-container').screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-workflow-dem-parameters.png') })
+    page.on('request', countWrites)
+    try {
+      for (const name of names) {
+        const spec = catalog.operators.find(operator => operator.name === name)
+        expect(spec).toBeTruthy()
+        await palette.fill(name)
+        await frame.getByRole('button', { name: `添加“${spec.display_name}”算子`, exact: true }).click()
+        await palette.clear()
+        await frame.getByRole('button', { name: '自动布局', exact: true }).click()
+        await frame.getByRole('button', { name: '适应窗口', exact: true }).click()
+        await selectOperatorNode(page, frame, name)
+        await frame.locator('[data-param-name="elevation_unit"] .el-select__wrapper').click()
+        await frame.getByRole('option', { name: 'metre', exact: true }).click()
+        await expect(frame.locator('[data-param-name="band"] input')).toHaveValue('1')
+        if (name === 'raster_contour') {
+          const levels = frame.locator('[data-param-name="levels"]').getByRole('textbox')
+          await levels.fill('[110000,120000,150000]')
+          await levels.press('Tab')
+        }
+        const params = await frame.locator('#workflow-dag-container').evaluate((element, operator) =>
+          element.__vueParentComponent.setupState.graph.getNodes().find(node => node.getModel().operator === operator).getModel().params, name)
+        expect(params.elevation_unit).toBe('metre')
+        expect(params.band).toBe(1)
+        if (name === 'raster_contour') expect(params.levels).toEqual([110000, 120000, 150000])
+      }
+      expect(writes).toBe(0)
+      await frame.locator('#workflow-dag-container').screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-workflow-dem-parameters.png') })
+    } finally {
+      page.off('request', countWrites)
+    }
   } finally {
-    page.off('request', countWrites)
+    await api.dispose()
   }
 }
 
@@ -140,7 +148,10 @@ test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', as
         edge.evidence?.execution_id === evidence.execution_id)).toBe(true)
       await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-monitor.png`) })
     }
-    if (evidence.case_name === 'dem-contour') await verifyTerrainParameterPanel(page, api)
+    if (evidence.case_name === 'dem-contour') {
+      expect([...auth.permissions].sort()).toEqual(evidence.permissions_verified)
+      await verifyTerrainParameterPanel(page, auth)
+    }
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, `raster-workflow-${evidence.case_name}-browser.json`), JSON.stringify({
       ...evidence, schema_version: 'addp.raster-workflow-browser/v1', result: 'passed'
     }, null, 2))
