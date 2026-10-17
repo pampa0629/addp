@@ -59,6 +59,8 @@
 
 修复后 `make test-manager-backend`、`make test-go` 全部退出 0；覆盖当前 User 凭据逐次传递、机器身份与任一缺失权限在读取正文前拒绝、下游错误安全映射、取消及禁止重试／重定向。`make test-manager-online-runner` 的 92 项及既有 SGM 隔离 23 项、System 身份夹具通过；Manager Swagger 生成与 94 个公开路由方法覆盖校验通过。既有标准入口和 CI 自动发现覆盖此次变更，无新增服务、测试部署入口或工作流；新一轮 Hosted 尚未完成，以上仅登记确定性验证。
 
+修复提交为 `340a8661fd32bad36a9d2a427eaa5d46479f6ed5`，已推送 main，并触发同一套件的 [Hosted 39010572309](https://github.com/pampa0629/addp/actions/runs/39010572309)。本次创建时为 queued，尚未登记该轮页面、下载或清理通过；后续以此源码的新回执核对完整结果。
+
 ### 2026-10-17 FBX 基础预览与 Three.js 升级评估
 
 固定源 `box.fbx`（SHA-256 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`）实际包含 `ByVertice`／`IndexToDirect` 颜色层和 96 个 RGBA 数值，即 24 组颜色，但没有 `ColorIndex`。原记录将其称为空顶点颜色层并直接归为 [Three.js #31247](https://github.com/mrdoob/three.js/issues/31247) 不准确；[Autodesk 的引用模式定义](https://help.autodesk.com/cloudhelp/2020/ENU/FBX-Developer-Help/files/cpp_ref/FBX_Developer_Help_cpp_ref_class_fbx_layer_element_html.html)说明 `IndexToDirect` 通过索引数组引用颜色数组；本轮不据此猜测顺序映射、丢弃颜色或构造索引。
