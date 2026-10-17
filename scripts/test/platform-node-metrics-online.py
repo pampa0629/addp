@@ -1247,6 +1247,26 @@ def alert_page(client, path):
     return rows
 
 
+def fresh_memory_pressure_plan(admin, node, target, after, detail):
+    plans = []
+
+    def observed():
+        baseline = admin.request("GET", resource_path(node, keys=MEMORY_KEYS), (200,)).payload
+        assert_resources(baseline, node, target, keys=MEMORY_KEYS)
+        points = {row["metric_key"]: row["points"][0] for row in baseline["series"]}
+        require(len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
+        sampled_at = next(iter(points.values()))["sampled_at"]
+        if utc_timestamp(sampled_at) < after:
+            return False
+        plans.append(memory_pressure_plan(*(points[k]["value"] for k in MEMORY_KEYS)))
+        detail["memory_baseline"] = {"requested_after": after, "sampled_at": sampled_at,
+                                     "values": {k: points[k]["value"] for k in MEMORY_KEYS}}
+        return True
+
+    eventually(observed, "fresh memory baseline after control setup", timeout=45)
+    return plans[0]
+
+
 def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report):
     report["stage"] = "resource-alert-real-memory-lifecycle"
     detail = {"result": "failed", "memory_released": False, "receiver_closed": False}
@@ -1258,6 +1278,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     require(len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
     plan = memory_pressure_plan(*(points[k]["value"] for k in MEMORY_KEYS))
     detail["memory_plan"] = plan
+    detail["initial_memory_plan"] = dict(plan)
     rule_body = {"name": "online-memory-"+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_id": node["node_id"],
                  "metric_key": "node.memory.used_percent", "enabled": False, **{k: plan[k] for k in PRESSURE_FIELDS}}
     rule, destination, destination_body = None, None, None
@@ -1282,6 +1303,8 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
         return rows
 
     def check_incident(status, expected=None):
+        if rule is not None:
+            current_rule()
         rows = incidents()
         if not rows or rows[0].get("status") != status: return None
         incident = rows[0]
@@ -1361,6 +1384,11 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
             config_fields = ("id", "version", "name", "channel", "url", "recipients", "categories", "event_types", "enabled", "secret_configured")
             require(len(saved) == 1 and all(saved[0].get(k) == destination.get(k) for k in config_fields), "denied notification requests changed destination")
             detail["identity_isolation"] = True
+            # Setup work can release memory after the earlier sample. Finalize thresholds only
+            # from a sample produced after setup, before enablement or any memory allocation.
+            plan = fresh_memory_pressure_plan(admin, node, target, time.time(), detail)
+            detail["memory_plan"] = plan
+            rule_body.update({k: plan[k] for k in PRESSURE_FIELDS})
             enabled_at = time.time()
             rule = admin.request("PUT", rule_path, (200,), dict(rule_body, version=1, enabled=True)).payload
             require(rule.get("version") == 2 and rule.get("enabled") is True, "rule enable CAS did not advance")

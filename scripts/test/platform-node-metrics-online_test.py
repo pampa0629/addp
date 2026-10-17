@@ -1283,12 +1283,33 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                 ONLINE.assert_alert_delivery(bad, receiver.snapshot(), {"id": 7, "version": 3}, "open")
 
 
+    def test_pressure_calibration_ignores_samples_from_before_control_setup(self):
+        node, target, _, _ = self.context()
+        after = ONLINE.utc_timestamp('2026-10-17T01:00:00Z')
+        def sample(stamp, percent):
+            total = 8*1024**3
+            return {'series': [{'metric_key': key, 'points': [{'value': value, 'sampled_at': stamp}]} for key, value in
+                               zip(ONLINE.MEMORY_KEYS, (total, total*(1-percent/100), percent))]}
+        old = sample('2026-10-17T00:59:59Z', 35)
+        fresh = sample('2026-10-17T01:00:01Z', 25)
+        admin = unittest.mock.Mock(request=unittest.mock.Mock(side_effect=[ONLINE.API.Response(200, old), ONLINE.API.Response(200, fresh)]))
+        detail = {}
+        def wait(check, message, timeout):
+            self.assertEqual(timeout, 45)
+            self.assertFalse(check())
+            self.assertNotIn('memory_baseline', detail)
+            self.assertTrue(check())
+        with patch.object(ONLINE, 'assert_resources'), patch.object(ONLINE, 'eventually', side_effect=wait):
+            plan = ONLINE.fresh_memory_pressure_plan(admin, node, target, after, detail)
+        self.assertEqual(plan['baseline_percent'], 25)
+        self.assertEqual(detail['memory_baseline']['sampled_at'], '2026-10-17T01:00:01Z')
+
     def test_lifecycle_enforces_identity_cas_missing_source_recovery_and_history_cleanup(self):
         for fail_at in (None, "destination_enable", "source_unknown"):
             with self.subTest(fail_at=fail_at):
                 node, target, query_policy, _ = self.context()
                 clock = [1800000000.0]
-                state = {"rule": None, "destination": None, "incident": None, "deliveries": [], "phase": "baseline", "source_actions": []}
+                state = {"rule": None, "destination": None, "incident": None, "deliveries": [], "phase": "baseline", "source_actions": [], "baseline_reads": 0}
                 report = {}
                 receiver = self.receiver()
                 receiver.rule = None
@@ -1319,7 +1340,11 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                     status, value = 200, {}
                     route = path.split("?")[0]
                     if route == ONLINE.OBSERVATIONS:
-                        value = {"series": [{"metric_key": k, "points": [{"value": v, "sampled_at": stamp()}]} for k, v in zip(ONLINE.MEMORY_KEYS, (8*1024**3, 6*1024**3, 25))]}
+                        # Setup/browser memory can disappear before enablement. The pressure plan must use a new causal baseline.
+                        percent = 35 if state["baseline_reads"] == 0 else 25
+                        state["baseline_reads"] += 1
+                        total = 8*1024**3
+                        value = {"series": [{"metric_key": k, "points": [{"value": v, "sampled_at": stamp()}]} for k, v in zip(ONLINE.MEMORY_KEYS, (total, total*(1-percent/100), percent))]}
                     elif route == ONLINE.RESOURCE_RULES and method == "GET":
                         rows = [] if state["rule"] is None else [dict(state["rule"])]
                         if rows and rows[0]["enabled"]:
@@ -1370,6 +1395,9 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                     self.assertTrue(check(), message)
                 @ONLINE.contextmanager
                 def pressure(directory, plan, detail):
+                    self.assertGreaterEqual(state["baseline_reads"], 2)
+                    self.assertEqual(plan['baseline_percent'], 25)
+                    self.assertLess(state['rule']['trigger_percent'], 35)
                     state["phase"] = "high"; detail["pressure_started_at"] = clock[0]
                     try: yield
                     finally:
