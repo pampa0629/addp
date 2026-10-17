@@ -45,9 +45,15 @@ test('browser imports a private Manager source through Console', async ({ page }
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     if (input.stage === 'upload') {
       const scanRequests = []
+      const refreshRequests = []
+      let accepted = false
       page.on('request', req => {
-        const path = new URL(req.url()).pathname
+        const url = new URL(req.url())
+        const path = url.pathname
         if (/^\/api\/v1\/meta\/executions\/[^/]+$/.test(path)) scanRequests.push(path.split('/').at(-1))
+        if (accepted && req.method() === 'GET' && path === `/api/v1/meta/resource-tree/${engineID}/ancestors`) {
+          refreshRequests.push(url.searchParams.get('locator'))
+        }
       })
       await page.goto('/manager/data-explorer')
       await frame.locator('.el-tree-node__content').filter({ hasText: new RegExp(`^\\s*${process.env.ADDP_ONLINE_TEST_ENGINE_NAME}\\s*$`) }).click()
@@ -64,6 +70,7 @@ test('browser imports a private Manager source through Console', async ({ page }
       await dialog.getByRole('button', { name: '开始导入', exact: true }).click()
       const response = await submittedResponse
       expect(response.status()).toBe(202)
+      accepted = true
       const submission = await response.json()
       // Persist only accepted resource identities immediately, so Python can clean up on later UI failure.
       report.submission = { transfer_task_id: submission.transfer_task_id, transfer_execution_id: submission.transfer_execution_id }
@@ -83,11 +90,15 @@ test('browser imports a private Manager source through Console', async ({ page }
       expect(execution.records_written).toBe(2)
       expect(execution.metadata.metadata_scan.status).toBe('submitted')
       expect(scanRequests).toContain(execution.metadata.metadata_scan.execution_id)
+      await expect(page).toHaveURL(url => url.pathname === '/monitor/executions'
+        && url.searchParams.get('execution_id') === submission.transfer_execution_id)
+      await expect(frame.locator('.execution-detail-content')).toContainText(submission.transfer_execution_id)
+      expect(refreshRequests).toContain(task.config.target.parent_locator)
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(task.config.target.parent_locator)}`)
+      await expect(frame.locator('.node-panel')).toContainText(input.target_table)
       report.meta_scan_execution_id = execution.metadata.metadata_scan.execution_id
       report.upload_ui_verified = true
       report.metadata_wait_verified = true
-      // The owner refresh is observable through the real resource tree after the modal closes.
-      await expect(frame.locator('.node-panel')).toContainText(input.target_table)
       await page.screenshot({ path: resolve(artifactDir, 'manager-import-console-success.png'), fullPage: true })
     } else {
       expect(input.stage).toBe('rejection')

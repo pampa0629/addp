@@ -4,6 +4,8 @@
 
 私有导入 Hosted 场景使用 Console 的真实 Manager 导入弹窗上传相同两点 ZIP，核对目标命名空间、CPG 编码、Transfer 执行及 Meta 子扫描等待和资源树刷新；非上传者拒绝后，经普通 User 的 Console Transfer 执行详情核对零读写和共享安全诊断。上传一经接受即记录当次 task／execution 身份，后续页面失败仍交给既有清理；浏览器不复制后台导入 HTTP 路线。独立回执升级为 `addp.manager-private-import/v2`，包含两阶段 `addp.manager-private-import-browser/v1` 证据，完整 suite 为 v12；必须核对当前 User／Tenant／run 及准确执行 ID，缺少任一页面证明不得登记通过。
 
+Console 导入完成后按既有桥接导航进入同一执行 UUID 的 Monitor。验收先核对 Meta 等待、导航前的自动资源树刷新请求和准确的 Monitor UUID，再返回原 schema 验证目标节点；不能假定导航后仍显示 Manager 面板。嵌入回归沿既有 Manager 前端 T3 入口自动发现，不新增导航路线。
+
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `manager.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=manager`；Common 变更按 `make test-changed` 扩散验证。
 
 导入暂存来源按上传者私有：`manager.import_sources` 只保存成功上传的 Tenant、Uploader、UUID、准确 source locator 和一次绑定的 Transfer task ID。`POST /runtime/import-sources/verify` 仅接受持有 `manager.import_provenance.read` 的 `addp-transfer`，核对当前执行主体及任务，不返回文件或凭据。未绑定或不匹配拒绝；不从路径推断所有权。验证沿既有 Manager Go／PostgreSQL、Common Client、System IAM 和 Transfer Hosted 门禁。

@@ -103,8 +103,48 @@ test('a failed Meta submission cannot be reported as a successful import', async
   await expect(page.locator('.el-message--success')).toHaveCount(0)
 })
 
+test('embedded import refreshes its schema and opens the exact execution in Console', async ({ page }) => {
+  const state = await installBackend(page, 'zh-cn', { status: 'success', metadata: {
+    metadata_scan: { status: 'submitted', execution_id: scanID }
+  } })
+  const shared = new URL('../../../common-frontend/basic/src/', import.meta.url).pathname
+  await page.route('**/import-navigation-harness', route => route.fulfill({ contentType: 'text/html', body: `
+    <style>iframe{width:100%;height:900px;border:0}</style><output id="navigation"></output>
+    <script type="module">
+      import { createIframeAuthCoordinator } from '/@fs${shared}auth/authSession.js'
+      import { registerConsoleBridgeHandler } from '/@fs${shared}utils/consoleBridge.js'
+      createIframeAuthCoordinator({ allowedOrigins:[location.origin], getToken:()=> 'import-fixture-token',
+        getExpiresAt:()=> Date.now()+300000, refreshToken:async()=> 'import-fixture-token', logout:async()=>{} })
+      registerConsoleBridgeHandler('console-navigation', payload=>{
+        if (!payload.synchronized && payload.route.startsWith('/monitor/executions')) {
+          document.querySelector('#navigation').textContent=payload.route
+          document.querySelector('iframe').remove()
+        }
+        return { route:payload.route }
+      })
+      const frame=document.createElement('iframe')
+      frame.src=${JSON.stringify(`/data-explorer?locator=${encodeURIComponent(schemaLocator)}`)}
+      document.body.append(frame)
+    </script>` }))
+  await page.goto('/import-navigation-harness')
+  const frame = page.frameLocator('iframe')
+  await chooseImport(frame, 'zh-cn')
+  await expect.poll(() => state.scanReads).toBeGreaterThan(0)
+  const ancestors = state.ancestorReads
+  await expect(page.locator('#navigation')).toBeEmpty()
+  state.scan = { status: 'success' }
+  await expect(page.locator('#navigation')).toHaveText(`/monitor/executions?execution_id=${transferID}`)
+  await expect.poll(() => state.ancestorReads).toBeGreaterThan(ancestors)
+  await expect(page.locator('iframe')).toHaveCount(0)
+  expect(state.imports).toHaveLength(1)
+})
+
 async function submitImport(page, locale) {
   await page.goto(`/data-explorer?locator=${encodeURIComponent(schemaLocator)}`)
+  return chooseImport(page, locale)
+}
+
+async function chooseImport(page, locale) {
   await page.getByRole('button', { name: locale === 'zh-cn' ? '导入数据' : 'Import Data', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog.locator('.el-form-item').filter({ hasText: locale === 'zh-cn' ? '目标引擎' : 'Target Engine' }).locator('input')).toHaveValue('Import fixture')
@@ -119,7 +159,7 @@ async function submitImport(page, locale) {
 async function installBackend(page, locale, transfer) {
   const schema = { id: schemaLocator, locator: schemaLocator, label: 'public', type: 'schema', hasChildren: true, children: [] }
   const root = { id: rootLocator, locator: rootLocator, label: 'Import fixture', type: 'server', hasChildren: true, children: [schema] }
-  const state = { transfer, scan: { status: 'running' }, transferReads: 0, scanReads: 0, schemaReads: 0, imports: [] }
+  const state = { transfer, scan: { status: 'running' }, transferReads: 0, scanReads: 0, schemaReads: 0, ancestorReads: 0, imports: [] }
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
   await page.route('**/api/v1/**', route => {
@@ -130,7 +170,7 @@ async function installBackend(page, locale, transfer) {
     if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'import-fixture' })
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 2, name: root.label, engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
-    if (path.endsWith('/ancestors')) return json(route, { target_locator: schemaLocator, ancestors: [{ ...root, children: [] }, schema] })
+    if (path.endsWith('/ancestors')) { state.ancestorReads++; return json(route, { target_locator: schemaLocator, ancestors: [{ ...root, children: [] }, schema] }) }
     if (path.endsWith('/meta/resource-tree/2')) return json(route, root)
     if (path.endsWith('/meta/resource-tree/2/node')) {
       if (url.searchParams.get('locator')?.includes('/public')) { state.schemaReads++; return json(route, schema) }
