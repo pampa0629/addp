@@ -276,6 +276,9 @@ func TestPostgresSharingDecisionIsAtomicImmutableAndRetryable(t *testing.T) {
 		}
 		attempt := input
 		attempt.DecisionID, attempt.Version = uuid.New(), 2
+		// This fixture must reach the audit insert, not the duplicate guard.
+		differentExpiry := input.ExpiresAt.AddDate(0, 0, 1)
+		attempt.ExpiresAt = &differentExpiry
 		failing := NewEntryService(tx, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})
 		_, created, err := failing.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, attempt, auth)
 		var pgError *pgconn.PgError

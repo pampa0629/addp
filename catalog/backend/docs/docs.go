@@ -1649,7 +1649,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前 IAM 资格 | The current Tenant User needs entry read, independent source authorization handling permission and target engine management delegation. Returns paginated summaries with a current source, original owner relation and valid expiry, not purpose text or tenant-wide history. Not acceptance evidence, confirmation permission or data access; submission still rechecks the confirmer's current IAM eligibility\nitem_fingerprint 与 boundary_hash 来自原共享确认冻结的 DataItem 边界，不以当前 Meta 边界替换；正式办理仍核验当前边界 | item_fingerprint and boundary_hash preserve the DataItem boundary frozen by the original sharing decision, not a replacement from current Meta facts; fulfillment still verifies the current boundary",
+                "description": "当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前 IAM 资格 | The current Tenant User needs entry read, independent source authorization handling permission and target engine management delegation. Returns paginated summaries with a current source, original owner relation and valid expiry, not purpose text or tenant-wide history. Not acceptance evidence, confirmation permission or data access; submission still rechecks the confirmer's current IAM eligibility\nitem_fingerprint 与 boundary_hash 来自原共享确认冻结的 DataItem 边界，不以当前 Meta 边界替换；正式办理仍核验当前边界 | item_fingerprint and boundary_hash preserve the DataItem boundary frozen by the original sharing decision, not a replacement from current Meta facts; fulfillment still verifies the current boundary\n同数据项、边界、直接接收方、动作和精确期限的有效批准仅保留最新候选，先去重再计数分页；不删除历史，不合并不同边界或期限 | Equivalent current approvals for the same DataItem, boundary, direct recipient, action and exact expiry produce only the latest candidate before counting and pagination; history and distinct boundaries or expiries remain separate",
                 "produces": [
                     "application/json"
                 ],
@@ -1868,7 +1868,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人、路径或动作。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access",
+                "description": "当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标经共享 MetaClient 读取 Meta 当前 complete 的授权资源事实并核验 System 引擎状态；不接受自报确认人、路径或动作。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The shared MetaClient reads Meta's current complete authorization facts; System still checks Engine lifecycle. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access\n当前来源及责任下，相同 DataItem、边界、接收方和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient and exact validity; existing purpose/history and same-ID recovery are unchanged",
                 "consumes": [
                     "application/json"
                 ],
@@ -2484,7 +2484,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 须具备条目读取及独立共享确认权限，并是可见有效 Meta 数据项的当前业务负责人。可选择同 Tenant 的有效账号或项目组，不要求本人加入该组；仅返回最小显示摘要，不返回成员、角色或数据，不授予共享或访问 | The current tenant user needs entry read, independent sharing confirmation permission and current business ownership of a visible active Meta data item. Active users or project groups in this tenant may be selected without group membership. Only minimal labels are returned, never members, roles, data or access grants",
+                "description": "当前 Tenant User 须具备条目读取及独立共享确认权限，并是可见有效 Meta 数据项的当前业务负责人。可选择同 Tenant 的有效账号或项目组，不要求本人加入该组；仅返回最小显示摘要，不返回成员、角色或数据，不授予共享或访问 | The current tenant user needs entry read, independent sharing confirmation permission and current business ownership of a visible active Meta data item. Active users or project groups in this tenant may be selected without group membership. Only minimal labels are returned, never members, roles, data or access grants\napprovals 仅包含本页接收方在当前来源、原业务责任与 Meta 基础识别边界下仍有效的批准编号及期限摘要；不是 Grant 或访问许可，Meta 依赖不可用时不伪装为没有批准 | approvals contains only current business approval IDs and validity summaries for recipients on this page, matching current source, original ownership and Meta's basic-recognition boundary. It is not a Grant or access Allow; unavailable Meta facts never become an empty approval claim",
                 "produces": [
                     "application/json"
                 ],
@@ -5441,6 +5441,28 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.SharingApprovalSummary": {
+            "type": "object",
+            "properties": {
+                "boundary_hash": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.SharingDecisionCandidate": {
             "type": "object",
             "properties": {
@@ -5748,6 +5770,12 @@ const docTemplate = `{
         "github_com_addp_catalog_internal_service.SharingRecipientCandidate": {
             "type": "object",
             "properties": {
+                "approvals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingApprovalSummary"
+                    }
+                },
                 "code": {
                     "type": "string"
                 },

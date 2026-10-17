@@ -60,7 +60,9 @@
           <el-select v-model="form.recipientID" filterable remote :disabled="!!attempt" :loading="recipientLoading"
             :remote-method="searchRecipients" :placeholder="t('catalog.sharing.selectRecipient')"
             @visible-change="visible => visible && searchRecipients('')">
-            <el-option v-for="option in recipients" :key="option.id" :value="option.id" :label="recipientOptionLabel(option)" />
+            <el-option v-for="option in recipients" :key="option.id" :value="option.id" :label="recipientOptionLabel(option)">
+              <div class="approval-option"><span>{{ recipientOptionLabel(option) }}</span><span v-if="option.approvals?.length" class="approval-status">{{ t('catalog.sharing.alreadyApproved') }}</span></div>
+            </el-option>
           </el-select>
           <el-alert v-if="recipientError" type="error" :closable="false" :title="recipientError" />
         </el-form-item>
@@ -72,10 +74,15 @@
         <el-form-item v-if="form.expiryMode === 'at_time'" :label="t('catalog.sharing.expiresAt')" required>
           <el-date-picker v-model="form.expiresAt" type="datetime" :disabled="!!attempt" />
         </el-form-item>
-        <el-form-item class="form-full" :label="t('catalog.sharing.reason')" required>
+        <el-form-item v-if="!matchingApproval" class="form-full" :label="t('catalog.sharing.reason')" required>
           <el-input v-model="form.reason" type="textarea" :rows="3" maxlength="2000" show-word-limit :disabled="!!attempt" />
         </el-form-item>
-        <div class="form-full"><el-button data-testid="sharing-confirm" type="primary" :loading="saving" @click="submitConfirmation">{{ t('catalog.sharing.confirm') }}</el-button></div>
+        <div v-if="matchingApproval" class="form-full">
+          <el-alert data-testid="sharing-already-approved" type="success" :closable="false" :title="t('catalog.sharing.matchingApproval')" />
+          <el-button data-testid="sharing-use-approval" :disabled="saving" @click="useExistingApproval(false)">{{ t('catalog.sharing.viewConfirmation') }}</el-button>
+          <el-button v-if="canPrepare" data-testid="sharing-use-approval-handle" type="primary" :disabled="saving" @click="useExistingApproval(true)">{{ t('catalog.sharing.continueHandling') }}</el-button>
+        </div>
+        <div v-else class="form-full"><el-button data-testid="sharing-confirm" type="primary" :loading="saving" @click="submitConfirmation">{{ t('catalog.sharing.confirm') }}</el-button></div>
       </el-form>
       <template v-if="attempt && !confirmation">
         <p>{{ t('catalog.sharing.uncertain') }}</p>
@@ -125,7 +132,9 @@
             <el-select v-model="selectedDecision" filterable :loading="candidateLoading" :disabled="initializing || handlingSaving || !!handlingAttempt"
               data-testid="sharing-decision-select"
               :placeholder="t('catalog.sharing.selectDecision')" @visible-change="visible => visible && loadCandidates()" @change="observeRequirement">
-              <el-option v-for="option in candidates" :key="option.id" :value="option.id" :label="candidateLabel(option)" />
+              <el-option v-for="option in candidates" :key="option.id" :value="option.id" :label="candidateLabel(option)">
+                <div class="approval-option"><span>{{ candidateLabel(option) }}</span><span :class="['approval-status', { 'approval-status-pending': candidateGrantStatuses[option.id] !== 'existing' }]">{{ candidateStatusLabel(option) }}</span></div>
+              </el-option>
             </el-select>
             <el-pagination layout="prev, pager, next, total" :current-page="candidatePage" :page-size="20" :total="candidateTotal" @current-change="changeCandidatePage" />
           </el-form-item>
@@ -203,8 +212,8 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
-import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
-import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement } from '../utils/sharingConfirmation'
+import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
+import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement, matchingSharingApproval } from '../utils/sharingConfirmation'
 import { openConsoleRoute, serializeEngineApprovalInitialization } from '@common-ui'
 import { getSharingBoundary } from '../api/catalog'
 import { sharingRecipientLabel, sharingRecipientOptionLabel } from '../utils/sharingRecipientPresentation'
@@ -223,6 +232,7 @@ const systemAuthorizationRoute = computed(() => {
 const canPrepare = computed(() => eligibility.value.history && props.entry?.entry_status === 'active' && props.entry?.governance_status !== 'deprecated' &&
   props.entry?.entry_type === 'data_item' && props.entry?.source?.source_module === 'meta' && props.entry?.source?.source_status === 'active')
 const candidates = ref([]), candidatePage = ref(1), candidateTotal = ref(0), candidateLoading = ref(false), selectedDecision = ref('')
+const candidateGrantStatuses = ref({})
 const selectedCandidate = computed(() => candidates.value.find(item => item.id === selectedDecision.value))
 const canInitialize = computed(() => canPrepare.value && auth.hasPermission('system.engine_access_approval_requirement.initialize'))
 const initializationReason = ref(''), initializing = ref(false)
@@ -231,6 +241,7 @@ const canReadGrants = computed(() => auth.hasPermission('system.engine_access_gr
 const existingGrant = ref(null), grantObservationLoading = ref(false), grantObservationFailed = ref(false)
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
 const recipients = ref([]), recipientLoading = ref(false), recipientError = ref('')
+const matchingApproval = computed(() => matchingSharingApproval(recipients.value.find(row => row.id === form.recipientID), form))
 const attempt = ref(null), saving = ref(false), confirmation = ref(null), confirmationError = ref(''), confirmationLoading = ref(false)
 const history = ref([]), page = ref(1), total = ref(0), historyLoading = ref(false), historyError = ref('')
 const request = ref(null), requestLoading = ref(false), requestError = ref('')
@@ -244,7 +255,7 @@ const progress = computed(() => sharingProgress({ decisionID: props.decisionID, 
   error: props.requestID && eligibility.value.history ? !!requestError.value : props.decisionID ? !!confirmationError.value || !!resultsError.value : false,
   results: results.value, resultsPage: resultsPage.value, canCreate: eligibility.value.create,
   canHandle: selectedCandidate.value?.id === props.decisionID }))
-let confirmationsSequence = 0, resultsSequence = 0, grantObservationSequence = 0
+let confirmationsSequence = 0, resultsSequence = 0, grantObservationSequence = 0, candidateGrantSequence = 0
 let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0, requirementSequence = 0
 const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
@@ -254,7 +265,8 @@ const issuanceLabel = row => row.granted_at ? t('catalog.sharing.issued') + ' ·
 const targetLabel = target => (target?.segments || []).map(segment => segment.name).join(' / ')
 const recipientLabel = row => sharingRecipientLabel(row, auth.authContext, t)
 const recipientOptionLabel = option => sharingRecipientOptionLabel(option, form.recipientType, auth.authContext, t)
-const candidateLabel = row => `${recipientLabel(row)} · ${formatTime(row.confirmed_at)}`
+const candidateLabel = row => `${recipientLabel(row)} · ${expiryLabel(row)}`
+const candidateStatusLabel = row => t(`catalog.sharing.candidateState.${candidateGrantStatuses.value[row.id] || 'unknown'}`)
 const stateType = state => ({ accepted: 'success', pending: 'warning', closed: 'info' }[state])
 function openSystemAuthorization() {
   if (systemAuthorizationRoute.value && !switchingBlocked.value) return openConsoleRoute(systemAuthorizationRoute.value)
@@ -302,12 +314,14 @@ async function loadCandidates() {
   const preferred = selectedDecision.value || props.decisionID
   const originalDecision = props.decisionID
   candidates.value = []; candidateTotal.value = 0; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false; requirementSequence++
+  candidateGrantSequence++; candidateGrantStatuses.value = {}
   clearGrantObservation()
   candidateLoading.value = true; requirementLoading.value = false; handlingError.value = ''
   try {
     const result = await listSharingDecisions(props.entry.id, { page: candidatePage.value, page_size: 20 })
     if (seq === candidateSequence && epoch === generation && originalDecision === props.decisionID) {
       candidates.value = result.data; candidateTotal.value = result.total
+      loadCandidateGrantStatuses(result.data)
       if (result.data.some(row => row.id === preferred)) {
         selectedDecision.value = preferred
         await observeRequirement()
@@ -317,6 +331,16 @@ async function loadCandidates() {
   finally { if (seq === candidateSequence && epoch === generation) candidateLoading.value = false }
 }
 function changeCandidatePage(value) { candidatePage.value = value; loadCandidates() }
+
+async function loadCandidateGrantStatuses(rows) {
+  const seq = ++candidateGrantSequence, epoch = generation
+  candidateGrantStatuses.value = {}
+  if (!canReadGrants.value || !rows.length) return
+  try {
+    const statuses = await observeSharingCandidateGrants(rows)
+    if (seq === candidateGrantSequence && epoch === generation) candidateGrantStatuses.value = statuses
+  } catch { /* Unknown never becomes a claim that no Grant exists. */ }
+}
 
 async function observeRequirement() {
   const candidate = selectedCandidate.value
@@ -427,8 +451,19 @@ async function searchRecipients(search) {
 }
 function changeRecipientType() { form.recipientID = ''; searchRecipients('') }
 
+async function useExistingApproval(handling) {
+  const approval = matchingApproval.value
+  if (!approval || saving.value || attempt.value) return
+  const epoch = generation
+  await props.recordDecision(approval.id)
+  if (epoch !== generation) return
+  if (handling && canPrepare.value) await changeWorkspace('handling')
+  else showConfirmationDetail()
+}
+
 async function submitConfirmation() {
   if (saving.value || !eligibility.value.create) return
+  if (!attempt.value && matchingApproval.value) { await useExistingApproval(false); return }
   const epoch = generation, entry = { ...props.entry }, draft = { ...form }, options = [...recipients.value]
   saving.value = true
   confirmationError.value = ''
@@ -447,7 +482,16 @@ async function submitConfirmation() {
     if (epoch !== generation) return
     const result = await createSharingDecision(props.entry.id, attempt.value)
     if (epoch === generation) { confirmation.value = result; showConfirmationDetail(); loadConfirmations(); loadConfirmationResults(); if (canPrepare.value) loadCandidates() }
-  } catch (error) { if (epoch === generation) confirmationError.value = message(error) }
+  } catch (error) {
+    if (epoch === generation) {
+      confirmationError.value = message(error)
+      if (error?.response?.data?.error_code === 'catalog_sharing_decision_exists') {
+        attempt.value = null
+        await props.recordDecision('')
+        if (epoch === generation) { workspace.value = 'create'; await searchRecipients('') }
+      }
+    }
+  }
   finally { if (epoch === generation) saving.value = false }
 }
 
@@ -528,6 +572,7 @@ async function loadRequest(id) {
 watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.owner, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
   generation++; attempt.value = null; confirmation.value = null; request.value = null; recipients.value = []; history.value = []; total.value = 0
   clearGrantObservation()
+  candidateGrantSequence++; candidateGrantStatuses.value = {}
   confirmations.value = []; confirmationTotal.value = 0; confirmationPage.value = 1; confirmationsError.value = ''; confirmationsLoading.value = false
   clearConfirmationResults(); resultsPage.value = 1
   recipientLoading.value = saving.value = confirmationLoading.value = requestLoading.value = historyLoading.value = false
@@ -549,6 +594,7 @@ watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.
 watch(() => props.decisionID, value => {
   if (saving.value || handlingSaving.value) return
   candidateSequence++; requirementSequence++; requestSequence++
+  candidateGrantSequence++; candidateGrantStatuses.value = {}
   clearGrantObservation()
   candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false
   candidateLoading.value = requirementLoading.value = false; handlingError.value = ''; initializationReason.value = ''
@@ -568,6 +614,7 @@ watch(() => props.requestID, value => {
 })
 watch(canReadGrants, () => {
   clearGrantObservation()
+  loadCandidateGrantStatuses(candidates.value)
   if (canPrepare.value && selectedCandidate.value && requirement.value && !handlingAttempt.value && !handlingSaving.value && !props.requestID) observeExistingGrant(selectedCandidate.value)
 })
 onBeforeUnmount(() => { generation++ })
@@ -578,6 +625,10 @@ onBeforeUnmount(() => { generation++ })
 .sharing-panel .el-select, .sharing-panel :deep(.el-date-editor) { width: 100%; }
 .sharing-panel .el-alert, .sharing-panel .el-pagination { margin-bottom: 12px; }
 .record-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.approval-option { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.approval-option > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.approval-status { flex-shrink: 0; color: var(--el-color-success); font-size: 12px; }
+.approval-status-pending { color: var(--addp-text-secondary); }
 .break-all { overflow-wrap: anywhere; }
 .sharing-help { color: var(--addp-text-secondary); overflow-wrap: anywhere; line-height: 1.6; }
 .workspace-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

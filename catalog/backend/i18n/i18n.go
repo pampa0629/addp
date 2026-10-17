@@ -13,6 +13,7 @@ const (
 	MsgSharingHandlingForbidden              = "catalog.error.sharing_handling_forbidden"
 	MsgSharingConfirmationForbidden          = "catalog.error.sharing_confirmation_forbidden"
 	MsgSharingDecisionConflict               = "catalog.error.sharing_decision_conflict"
+	MsgSharingDecisionExists                 = "catalog.error.sharing_decision_exists"
 	MsgSharingTargetUnsupported              = "catalog.error.sharing_target_unsupported"
 	MsgInvalidParams                         = "catalog.error.invalid_params"
 	MsgEntryNotFound                         = "catalog.error.entry_not_found"

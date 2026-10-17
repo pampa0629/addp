@@ -1471,6 +1471,10 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusConflict
 		message = commoni18n.T(c, catalogi18n.MsgSharingDecisionConflict)
 		errorCode = "catalog_sharing_decision_conflict"
+	case errors.Is(err, service.ErrSharingDecisionExists):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgSharingDecisionExists)
+		errorCode = "catalog_sharing_decision_exists"
 	case errors.Is(err, service.ErrSharingTargetUnsupported):
 		status = http.StatusConflict
 		message = commoni18n.T(c, catalogi18n.MsgSharingTargetUnsupported)

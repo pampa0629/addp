@@ -31,6 +31,19 @@ export function sharingEligibility(entry, auth) {
   }
 }
 
+export function matchingSharingApproval(recipient, form, now = Date.now()) {
+  if (!recipient || recipient.id !== form.recipientID || recipient.recipient_type !== form.recipientType) return null
+  return (recipient.approvals || []).find(approval => {
+    if (!canonicalSharingUUID(approval.id) || !/^[0-9a-f]{64}$/.test(approval.boundary_hash || '') || approval.expiry_mode !== form.expiryMode) return false
+    if (form.expiryMode === 'until_revoked') return approval.expires_at === null && form.expiresAt == null
+    if (!(form.expiresAt instanceof Date) || !approval.expires_at || form.expiresAt.getTime() <= now) return false
+    // The picker has millisecond precision; never collapse distinct server
+    // microseconds by passing both values through Date's rounded representation.
+    const fraction = /\.(\d+)(?:Z|[+-]\d\d:\d\d)$/.exec(approval.expires_at)?.[1] || ''
+    return !/[1-9]/.test(fraction.slice(3)) && new Date(approval.expires_at).getTime() === form.expiresAt.getTime()
+  }) || null
+}
+
 // Explain only the selected record. These labels are not access decisions.
 export function sharingProgress({ decisionID = '', requestID = '', confirmation, request, candidate,
   loading = false, error = false, results = [], resultsPage = 1, canCreate = false, canHandle = false }) {

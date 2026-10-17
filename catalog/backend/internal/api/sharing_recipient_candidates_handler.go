@@ -13,6 +13,7 @@ import (
 // ListSharingRecipientCandidates godoc
 // @Summary 查询本条目的共享接收方候选 | List sharing recipient candidates for this entry
 // @Description 当前 Tenant User 须具备条目读取及独立共享确认权限，并是可见有效 Meta 数据项的当前业务负责人。可选择同 Tenant 的有效账号或项目组，不要求本人加入该组；仅返回最小显示摘要，不返回成员、角色或数据，不授予共享或访问 | The current tenant user needs entry read, independent sharing confirmation permission and current business ownership of a visible active Meta data item. Active users or project groups in this tenant may be selected without group membership. Only minimal labels are returned, never members, roles, data or access grants
+// @Description approvals 仅包含本页接收方在当前来源、原业务责任与 Meta 基础识别边界下仍有效的批准编号及期限摘要；不是 Grant 或访问许可，Meta 依赖不可用时不伪装为没有批准 | approvals contains only current business approval IDs and validity summaries for recipients on this page, matching current source, original ownership and Meta's basic-recognition boundary. It is not a Grant or access Allow; unavailable Meta facts never become an empty approval claim
 // @Tags Catalog Sharing
 // @Produce json
 // @Param id path string true "条目 UUID | Entry UUID"

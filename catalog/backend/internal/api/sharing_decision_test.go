@@ -196,7 +196,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		Data  []map[string]any `json:"data"`
 		Total int64            `json:"total"`
 	}
-	if err := json.Unmarshal([]byte(recipientData), &recipientView); err != nil || recipientView.Total != 1 || len(recipientView.Data) != 1 || len(recipientView.Data[0]) != 5 || recipientView.Data[0]["id"] != "50" {
+	if err := json.Unmarshal([]byte(recipientData), &recipientView); err != nil || recipientView.Total != 1 || len(recipientView.Data) != 1 || len(recipientView.Data[0]) != 6 || recipientView.Data[0]["id"] != "50" {
 		t.Fatalf("recipient response=%s err=%v", recipientData, err)
 	}
 	for _, invalid := range []string{
@@ -225,6 +225,13 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	}
 	request(http.MethodPost, path, strings.TrimSuffix(longBody, "}")+`,"expires_at":null}`, http.StatusOK)
 	request(http.MethodGet, path+"/"+longID.String(), "", http.StatusOK)
+	duplicateID := uuid.New()
+	duplicateBody := strings.Replace(longBody, longID.String(), duplicateID.String(), 1)
+	duplicateResult := request(http.MethodPost, path, duplicateBody, http.StatusConflict)
+	if !strings.Contains(duplicateResult, `"error_code":"catalog_sharing_decision_exists"`) {
+		t.Fatalf("duplicate result=%s", duplicateResult)
+	}
+	request(http.MethodGet, path+"/"+duplicateID.String(), "", http.StatusNotFound)
 	var decisionPage struct {
 		Data  []service.SharingDecisionResult `json:"data"`
 		Total int64                           `json:"total"`

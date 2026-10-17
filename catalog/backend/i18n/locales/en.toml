@@ -10,6 +10,8 @@ other = "Allow only System tenant service to read current Catalog basis for an e
 other = "Current effective business ownership and an independent sharing confirmation permission are required; curation permission is insufficient"
 [catalog.error.sharing_decision_conflict]
 other = "This sharing decision ID is bound to different parameters; read the original record or use a new ID"
+[catalog.error.sharing_decision_exists]
+other = "An effective business approval already exists for the same recipient, boundary and validity; refresh recipients and continue with the existing approval"
 [catalog.error.sharing_target_unsupported]
 other = "The current target must be an active non-deprecated scanned database table with verifiable complete source ancestry"
 [permissions.catalog.sharing_decision.create.name]

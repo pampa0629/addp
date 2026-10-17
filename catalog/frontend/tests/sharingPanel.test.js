@@ -7,7 +7,7 @@ import en from '../src/i18n/en.json'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
   'createSharingDecision', 'getSharingDecision', 'getSharingBoundary', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
-  'listSharingDecisions', 'observeSharingRequirement', 'findExistingSharingGrant', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
+  'listSharingDecisions', 'observeSharingRequirement', 'findExistingSharingGrant', 'observeSharingCandidateGrants', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
 vi.mock('../src/api/catalog', () => fixtures.api)
@@ -78,10 +78,49 @@ beforeEach(() => {
   fixtures.api.listSharingDecisions.mockResolvedValue({ data: [decision], total: 1 })
   fixtures.api.observeSharingRequirement.mockResolvedValue({ mode: 'catalog', requirement_version: '9007199254740993' })
   fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
+  fixtures.api.observeSharingCandidateGrants.mockResolvedValue({ [decision.id]: 'absent' })
 })
 afterEach(() => { mounted.splice(0).forEach(app => app.unmount()); vi.unstubAllGlobals() })
 
 describe('business authorization workspace', () => {
+  it('reuses the approved ID without another confirmation or implicit fulfillment', async () => {
+    fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active', approvals: [
+      { id: decision.id, boundary_hash: decision.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+    ] }] })
+    fixtures.api.getSharingDecision.mockResolvedValue(decision)
+    const view = mount(); await settle(); await switchWorkspace(view, 'create')
+    await view.control('select', 1).props.onVisibleChange(true); await settle()
+    view.control('select', 1).props['onUpdate:modelValue']('60')
+    view.control('select', 2).props['onUpdate:modelValue']('until_revoked'); await settle()
+    expect(view.button('sharing-confirm')).toBeUndefined()
+    expect(view.button('sharing-already-approved')).toBeDefined()
+    await view.button('sharing-use-approval-handle').props.onClick(); await settle()
+    expect(view.state.decisionID).toBe(decision.id)
+    expect(view.button('sharing-workspace').props['model-value']).toBe('handling')
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+  })
+  it('labels candidate grants from current User reads, never from approval history', async () => {
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    fixtures.api.observeSharingCandidateGrants.mockResolvedValue({ [decision.id]: 'existing' })
+    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
+    expect(fixtures.api.observeSharingCandidateGrants).toHaveBeenCalledWith([decision])
+    expect(view.nodes().some(node => node.text === 'catalog.sharing.candidateState.existing')).toBe(true)
+  })
+  it('unlocks a definitively rejected duplicate and refreshes recipients rather than retrying a new ID', async () => {
+    fixtures.api.createSharingDecision.mockRejectedValue({ response: { status: 409, data: { error_code: 'catalog_sharing_decision_exists' } } })
+    const view = mount(); await settle(); await switchWorkspace(view, 'create')
+    await view.control('select', 1).props.onVisibleChange(true); await settle()
+    view.control('select', 1).props['onUpdate:modelValue']('60')
+    view.control('select', 2).props['onUpdate:modelValue']('until_revoked')
+    view.control('input').props['onUpdate:modelValue']('Research')
+    await view.button('sharing-confirm').props.onClick(); await settle()
+    expect(view.state.decisionID).toBe('')
+    expect(view.button('sharing-workspace').props.disabled).toBe(false)
+    expect(view.button('sharing-retry')).toBeUndefined()
+    expect(fixtures.api.listSharingRecipients).toHaveBeenCalledTimes(2)
+    expect(fixtures.api.createSharingDecision).toHaveBeenCalledTimes(1)
+  })
   it('warns about an existing direct Grant and does not create a handling request', async () => {
     fixtures.auth.permissions.push('system.engine_access_grant.read')
     fixtures.api.findExistingSharingGrant.mockResolvedValue({ ...decision, expiry_mode: 'until_revoked' })

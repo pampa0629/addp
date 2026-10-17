@@ -66,6 +66,7 @@ func (h *Handler) GetSharingBoundary(c *gin.Context) {
 // @Param request body createSharingDecisionRequest true "共享确认参数 | Sharing confirmation parameters"
 // @Success 201 {object} service.SharingDecisionResult "新建的不可变业务决定 | New immutable business decision"
 // @Success 200 {object} service.SharingDecisionResult "同参恢复的原决定 | Original decision recovered with identical parameters"
+// @Description 当前来源及责任下，相同 DataItem、边界、接收方和精确期限已有有效批准时，不同新编号返回 409 catalog_sharing_decision_exists；不覆盖原用途或创建重复批准，原编号同参恢复不受影响 | A different new ID returns 409 catalog_sharing_decision_exists when an equivalent effective approval already exists for the current source, original ownership, DataItem, boundary, recipient and exact validity; existing purpose/history and same-ID recovery are unchanged
 // @Failure 400 {object} map[string]interface{} "请求或期限无效 | Invalid request or expiry"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
 // @Failure 403 {object} map[string]interface{} "缺少独立权限或当前业务责任 | Missing independent permission or current business ownership"

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,11 +18,20 @@ import (
 
 // Recipient labels are observations, not organization membership or grants.
 type SharingRecipientCandidate struct {
-	RecipientType string `json:"recipient_type" enums:"user,project_group"`
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Code          string `json:"code,omitempty"`
-	Status        string `json:"status"`
+	RecipientType string                   `json:"recipient_type" enums:"user,project_group"`
+	ID            string                   `json:"id"`
+	Name          string                   `json:"name"`
+	Code          string                   `json:"code,omitempty"`
+	Status        string                   `json:"status"`
+	Approvals     []SharingApprovalSummary `json:"approvals"`
+}
+
+// Current local approval evidence, never a System Grant or access verdict.
+type SharingApprovalSummary struct {
+	ID           uuid.UUID  `json:"id"`
+	BoundaryHash string     `json:"boundary_hash"`
+	ExpiryMode   string     `json:"expiry_mode" enums:"at_time,until_revoked"`
+	ExpiresAt    *time.Time `json:"expires_at" extensions:"x-nullable"`
 }
 
 type sharingRecipientBasis struct {
@@ -73,7 +83,7 @@ func (s *EntryService) sharingRecipientBasis(ctx context.Context, tenantID, prin
 }
 
 func (s *EntryService) ListSharingRecipientCandidates(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, auth authorization.AuthContext, recipientType, search string, page, size int) ([]SharingRecipientCandidate, int64, error) {
-	principal, _, _, err := sharingConfirmer(auth, tenantID)
+	principal, membership, _, err := sharingConfirmer(auth, tenantID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -110,7 +120,47 @@ func (s *EntryService) ListSharingRecipientCandidates(ctx context.Context, tenan
 			return nil, 0, ErrReferenceValidationUnavailable
 		}
 		seen[candidate.ID] = true
-		result = append(result, SharingRecipientCandidate{RecipientType: recipientType, ID: candidate.ID, Name: candidate.Name, Code: candidate.Code, Status: candidate.Status})
+		result = append(result, SharingRecipientCandidate{RecipientType: recipientType, ID: candidate.ID, Name: candidate.Name, Code: candidate.Code, Status: candidate.Status, Approvals: []SharingApprovalSummary{}})
+	}
+	if len(result) > 0 {
+		binding, err := s.GetSharingBoundary(ctx, tenantID, access, entryID, auth)
+		if err != nil {
+			return nil, 0, err
+		}
+		ids := make([]string, 0, len(result))
+		for _, recipient := range result {
+			ids = append(ids, recipient.ID)
+		}
+		err = s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+			if !owner {
+				return ErrSharingConfirmationForbidden
+			}
+			now := time.Now().UTC()
+			if local.db.Dialector.Name() == "postgres" {
+				if err := local.db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+					return err
+				}
+			}
+			var approvals []models.SharingDecision
+			if err := local.sharingCandidateQuery(ctx, tenantID, access, entryID, now).
+				Where("sharing_decisions.source_binding_id = ? AND sharing_decisions.source_version = ? AND sharing_decisions.responsibility_id = ?", before.Source.ID, before.Source.SourceVersion, before.Owner.ID).
+				Where("sharing_decisions.confirmed_by = ? AND sharing_decisions.confirmer_membership_id = ?", principal, membership).
+				Where("sharing_decisions.item_fingerprint = ? AND sharing_decisions.boundary_hash = ? AND sharing_decisions.recipient_type = ? AND sharing_decisions.recipient_id IN ?", binding.ItemFingerprint, binding.BoundaryHash, recipientType, ids).
+				Order("sharing_decisions.created_at DESC, sharing_decisions.id DESC").Find(&approvals).Error; err != nil {
+				return err
+			}
+			for i := range result {
+				for _, approval := range approvals {
+					if result[i].ID == strconv.FormatInt(approval.RecipientID, 10) {
+						result[i].Approvals = append(result[i].Approvals, SharingApprovalSummary{ID: approval.ID, BoundaryHash: approval.BoundaryHash, ExpiryMode: approval.ExpiryMode, ExpiresAt: approval.ExpiresAt})
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 	after, err := s.sharingRecipientBasis(ctx, tenantID, principal, access, entryID, auth)
 	if err != nil {

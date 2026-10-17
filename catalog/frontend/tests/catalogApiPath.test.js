@@ -16,11 +16,22 @@ import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
-import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
 import { serializeEngineApprovalInitialization } from '../../../common-frontend/basic/src/utils/engineApprovalInitialization.mjs'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+  it('batches visible candidate checks and keeps incomplete absence unknown', async () => {
+    const first = { id: 'one', recipient_type: 'user', recipient_id: '60', item_fingerprint: 'a'.repeat(64), target: { engine_id: '2', version: 'v1', segments: [{ name: 'table' }] } }
+    const second = { ...first, id: 'two', recipient_id: '61' }
+    const grant = { ...first, action: 'read', revocation: null, expiry_mode: 'until_revoked', expires_at: null }
+    client.get.mockResolvedValueOnce({ data: [grant], total: 1 })
+    expect(await observeSharingCandidateGrants([first, second])).toEqual({ one: 'existing', two: 'absent' })
+    expect(client.get).toHaveBeenCalledTimes(1)
+    expect(client.get.mock.calls[0][1].params.recipient_id).toBeUndefined()
+    client.get.mockResolvedValueOnce({ data: [grant], total: 101 })
+    expect(await observeSharingCandidateGrants([first, second])).toEqual({ one: 'existing', two: 'unknown' })
+  })
 
   it('checks only active direct-recipient history, preserving the exact DataItem and int64 path', async () => {
     const candidate = { item_fingerprint: 'a'.repeat(64), recipient_type: 'user', recipient_id: '9007199254740994',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalSharingUUID, captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, hasInvalidSharingRouteIdentity } from '../src/utils/sharingConfirmation'
+import { canonicalSharingUUID, captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, hasInvalidSharingRouteIdentity, matchingSharingApproval } from '../src/utils/sharingConfirmation'
 
 const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64) }
 const id = 'cc0a8000-6000-4000-8000-800000000001'
@@ -11,6 +11,17 @@ const options = [{ id: form.recipientID, recipient_type: 'user', status: 'active
 const auth = permissions => ({ authContext: { principal: { type: 'user', id: '50' } }, hasPermission: permission => permissions.includes(permission) })
 
 describe('explicit human sharing confirmation', () => {
+  it('reuses only an exact recipient and expiry without collapsing microseconds', () => {
+    const approval = { id, boundary_hash: binding.boundary_hash, expiry_mode: 'until_revoked', expires_at: null }
+    const recipient = { ...options[0], approvals: [approval] }
+    expect(matchingSharingApproval(recipient, form)).toEqual(approval)
+    expect(matchingSharingApproval({ ...recipient, recipient_type: 'project_group' }, form)).toBeNull()
+    expect(matchingSharingApproval(recipient, { ...form, expiryMode: '' })).toBeNull()
+    const at = new Date('2030-01-01T01:00:00.123Z')
+    const dated = { ...approval, expiry_mode: 'at_time', expires_at: '2030-01-01T09:00:00.123000+08:00' }
+    expect(matchingSharingApproval({ ...recipient, approvals: [dated] }, { ...form, expiryMode: 'at_time', expiresAt: at }, 0)).toEqual(dated)
+    expect(matchingSharingApproval({ ...recipient, approvals: [{ ...dated, expires_at: '2030-01-01T09:00:00.123001+08:00' }] }, { ...form, expiryMode: 'at_time', expiresAt: at }, 0)).toBeNull()
+  })
   it('shows System-observed issuance blockers without guessing from the browser clock', () => {
     const current = { decisionID: 'decision', requestID: id, request: { request_id: id, decision_id: 'decision', state: 'accepted' } }
     for (const [reason, status] of [['relation_exists', 'duplicate'], ['window_expired', 'expired'], ['closed', 'closed']]) {

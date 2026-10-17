@@ -39,9 +39,14 @@ func (r *recipientCandidateResolver) ListReferenceCandidates(_ context.Context, 
 
 func exerciseSharingRecipients(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	entry, _ := seedSharingEntry(t, db)
+	entry, approvalInput := seedSharingEntry(t, db)
 	resolver := &recipientCandidateResolver{result: &ReferenceCandidateList{Data: []ReferenceCandidate{{ReferenceType: "project_group", ID: "50", Name: "Delivery", Code: "delivery", Status: "active"}}, Total: 1, Page: 1, PageSize: 20, TotalPages: 1}}
-	s := NewEntryService(db, nil, nil).WithReferenceCandidateResolvers(nil, resolver)
+	s := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithReferenceCandidateResolvers(nil, resolver).WithSharingTargetResolver(&fakeSharingTargetResolver{})
+	approvalInput.RecipientType, approvalInput.RecipientID, approvalInput.ExpiryMode, approvalInput.ExpiresAt = "project_group", 50, authorization.SharingExpiryUntilRevoked, nil
+	approved, _, err := s.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, approvalInput, sharingAuth())
+	if err != nil {
+		t.Fatal(err)
+	}
 	auth := authtest.NewTenantUserAuthContext("7", "40", []string{"catalog.entry.read", "catalog.inventory.read", "catalog.sharing_decision.create"})
 	list := func(a authorization.AuthContext, access EntryAccess) ([]SharingRecipientCandidate, int64, error) {
 		return s.ListSharingRecipientCandidates(context.Background(), 7, access, entry.ID, a, "project_group", " delivery ", 1, 20)
@@ -50,10 +55,13 @@ func exerciseSharingRecipients(t *testing.T, db *gorm.DB) {
 	if err != nil || len(rows) != 1 || total != 1 || rows[0].ID != "50" || len(auth.Organization.ProjectGroups) != 0 {
 		t.Fatalf("nonmember recipient=%+v total=%d err=%v", rows, total, err)
 	}
+	if len(rows[0].Approvals) != 1 || rows[0].Approvals[0].ID != approved.ID || rows[0].Approvals[0].BoundaryHash != approved.BoundaryHash {
+		t.Fatalf("current approval missing: %+v", rows[0])
+	}
 	body, _ := json.Marshal(rows[0])
 	var fields map[string]any
 	_ = json.Unmarshal(body, &fields)
-	if len(fields) != 5 {
+	if len(fields) != 6 {
 		t.Fatalf("nonminimal recipient: %s", body)
 	}
 	groupResult := resolver.result
@@ -169,7 +177,11 @@ func exerciseSharingRecipients(t *testing.T, db *gorm.DB) {
 	})
 	var count int64
 	for _, model := range []any{&models.SharingDecision{}, &models.FulfillmentCheck{}} {
-		if err := db.Model(model).Count(&count).Error; err != nil || count != 0 {
+		expected := int64(0)
+		if _, ok := model.(*models.SharingDecision); ok {
+			expected = 1
+		}
+		if err := db.Model(model).Count(&count).Error; err != nil || count != expected {
 			t.Fatalf("read created decision or protection: %d %v", count, err)
 		}
 	}

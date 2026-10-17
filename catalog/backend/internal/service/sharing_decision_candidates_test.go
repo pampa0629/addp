@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,113 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != decision.ID || rows[0].ConfirmedBy == p || rows[0].RecipientName != "Recipient" || rows[0].RecipientLabelStatus != "resolved" || len(labels.refs) != 1 || labels.refs[0].ID != input.RecipientID {
 		t.Fatalf("distinct handler list=%+v total=%d err=%v", rows, total, err)
 	}
+	t.Run("new command cannot duplicate a current approval or mutate its history", func(t *testing.T) {
+		rollback := errors.New("rollback new approval fixture")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			local := *s
+			local.db = tx
+			local.system = &fakeSystemReferenceResolver{}
+			duplicate := input
+			duplicate.DecisionID, duplicate.Version, duplicate.Reason = uuid.New(), decision.EntryVersion, "Another click"
+			if _, created, err := local.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, duplicate, sharingAuth()); !errors.Is(err, ErrSharingDecisionExists) || created {
+				t.Fatalf("duplicate created=%v err=%v", created, err)
+			}
+			duplicate.Version = input.Version
+			if _, created, err := local.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, duplicate, sharingAuth()); !errors.Is(err, ErrSharingDecisionExists) || created {
+				t.Fatalf("concurrent stale duplicate created=%v err=%v", created, err)
+			}
+			if restored, created, err := local.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, input, sharingAuth()); err != nil || created || restored.ID != decision.ID {
+				t.Fatalf("same ID retry changed: %v %v", created, err)
+			}
+			var count int64
+			if err := tx.Model(&models.SharingDecision{}).Where("catalog_entry_id = ?", entry.ID).Count(&count).Error; err != nil || count != 1 {
+				t.Fatalf("history mutated=%d %v", count, err)
+			}
+			changedExpiry := duplicate
+			expires := input.ExpiresAt.Add(time.Hour)
+			changedExpiry.DecisionID, changedExpiry.Version, changedExpiry.ExpiresAt = uuid.New(), decision.EntryVersion, &expires
+			if _, created, err := local.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, changedExpiry, sharingAuth()); err != nil || !created {
+				t.Fatalf("different expiry incorrectly blocked: %v %v", created, err)
+			}
+			rejoined := sharingAuth()
+			membershipID := "2"
+			rejoined.Context.TenantMembershipID = &membershipID
+			newMembership := input
+			newMembership.DecisionID, newMembership.Version = uuid.New(), decision.EntryVersion+1
+			if _, created, err := local.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, newMembership, rejoined); err != nil || !created {
+				t.Fatalf("old membership blocked a fresh approval: %v %v", created, err)
+			}
+			return rollback
+		}); !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
+	t.Run("equivalent approvals collapse before pagination but different expiry remains", func(t *testing.T) {
+		rollback := errors.New("rollback duplicate approval fixture")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			local := *s
+			local.db = tx
+			var original models.SharingDecision
+			if err := tx.Where("id = ?", decision.ID).Take(&original).Error; err != nil {
+				t.Fatal(err)
+			}
+			latest := original
+			latest.ID, latest.EntryVersion, latest.CreatedAt = uuid.New(), original.EntryVersion+1, time.Now().UTC()
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Raw("SELECT clock_timestamp()").Scan(&latest.CreatedAt).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tx.Create(&latest).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Model(&models.Entry{}).Where("id = ?", entry.ID).Update("version", latest.EntryVersion).Error; err != nil {
+				t.Fatal(err)
+			}
+			page, count, err := local.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 1, 1)
+			if err != nil || count != 1 || len(page) != 1 || page[0].ID != latest.ID {
+				t.Fatalf("deduplicated page=%+v total=%d err=%v", page, count, err)
+			}
+			different := latest
+			expiry := latest.ExpiresAt.Add(time.Hour)
+			different.ID, different.EntryVersion, different.CreatedAt, different.ExpiresAt = uuid.New(), latest.EntryVersion+1, time.Now().UTC(), &expiry
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Raw("SELECT clock_timestamp()").Scan(&different.CreatedAt).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tx.Create(&different).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Model(&models.Entry{}).Where("id = ?", entry.ID).Update("version", different.EntryVersion).Error; err != nil {
+				t.Fatal(err)
+			}
+			page, count, err = local.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 2, 1)
+			if err != nil || count != 2 || len(page) != 1 || page[0].ID != latest.ID {
+				t.Fatalf("distinct expiry lost=%+v total=%d err=%v", page, count, err)
+			}
+			otherBoundary := different
+			otherBoundary.ID, otherBoundary.EntryVersion, otherBoundary.BoundaryHash, otherBoundary.ExpiresAt = uuid.New(), different.EntryVersion+1, strings.Repeat("c", 64), latest.ExpiresAt
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Raw("SELECT clock_timestamp()").Scan(&otherBoundary.CreatedAt).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tx.Create(&otherBoundary).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Model(&models.Entry{}).Where("id = ?", entry.ID).Update("version", otherBoundary.EntryVersion).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, count, err = local.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 1, 10)
+			if err != nil || count != 3 {
+				t.Fatalf("different boundary collapsed: %d %v", count, err)
+			}
+			return rollback
+		}); !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
 	body, err := json.Marshal(rows[0])
 	if err != nil {
 		t.Fatal(err)

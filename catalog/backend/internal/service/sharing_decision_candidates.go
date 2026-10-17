@@ -48,7 +48,7 @@ type SharingDecisionCandidate struct {
 
 // Query the same current facts for engine selection, count and page. No network
 // call holds Catalog locks, and no candidate becomes a fulfillment basis.
-func (s *EntryService) sharingCandidateQuery(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, now time.Time) *gorm.DB {
+func (s *EntryService) currentSharingDecisionQuery(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, now time.Time) *gorm.DB {
 	visible := s.visibleEntriesQuery(ctx, tenantID, access).Select("entries.id").Where("entries.id = ?", entryID).
 		Where("entries.entry_type = ? AND entries.entry_status = ? AND entries.governance_status <> ?",
 			models.EntryTypeDataItem, models.EntryStatusActive, models.GovernanceStatusDeprecated)
@@ -61,6 +61,17 @@ func (s *EntryService) sharingCandidateQuery(ctx context.Context, tenantID int64
 		Where("sharing_decisions.tenant_id = ? AND sharing_decisions.catalog_entry_id IN (?)", tenantID, visible).
 		Where("sharing_decisions.action = ? AND (sharing_decisions.expiry_mode = ? OR (sharing_decisions.expiry_mode = ? AND sharing_decisions.expires_at > ?))",
 			"read", authorization.SharingExpiryUntilRevoked, authorization.SharingExpiryAtTime, now)
+}
+
+func (s *EntryService) sharingCandidateQuery(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, now time.Time) *gorm.DB {
+	current := s.currentSharingDecisionQuery(ctx, tenantID, access, entryID, now).Select(`sharing_decisions.*,
+ ROW_NUMBER() OVER (PARTITION BY sharing_decisions.source_binding_id, sharing_decisions.source_version,
+ sharing_decisions.responsibility_id, sharing_decisions.confirmed_by, sharing_decisions.confirmer_membership_id,
+ sharing_decisions.item_fingerprint, sharing_decisions.boundary_hash,
+ sharing_decisions.recipient_type, sharing_decisions.recipient_id, sharing_decisions.action,
+ sharing_decisions.expiry_mode, sharing_decisions.expires_at
+ ORDER BY sharing_decisions.created_at DESC, sharing_decisions.id DESC) AS approval_rank`)
+	return s.db.WithContext(ctx).Table("(?) AS sharing_decisions", current).Where("approval_rank = 1")
 }
 
 func (s *EntryService) ListSharingDecisionCandidates(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID,

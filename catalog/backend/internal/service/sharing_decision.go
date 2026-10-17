@@ -388,9 +388,6 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if entry.Version != input.Version {
-			return ErrEntryVersionConflict
-		}
 		if entry.EntryStatus != models.EntryStatusActive || entry.GovernanceStatus == models.GovernanceStatusDeprecated || entry.EntryType != models.EntryTypeDataItem {
 			return ErrSharingTargetUnsupported
 		}
@@ -420,6 +417,28 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		}
 		if !sharingPermissionsAt(auth, now) {
 			return ErrSharingConfirmationForbidden
+		}
+		// All creation commands hold the same entry lock. A fresh ID cannot
+		// manufacture another approval of the same current relation and expiry.
+		duplicate := tx.Model(&models.SharingDecision{}).Where(`tenant_id = ? AND catalog_entry_id = ?
+ AND source_binding_id = ? AND source_version = ? AND responsibility_id = ? AND item_fingerprint = ?
+ AND boundary_hash = ? AND confirmed_by = ? AND confirmer_membership_id = ? AND recipient_type = ? AND recipient_id = ? AND action = 'read' AND expiry_mode = ?`,
+			tenantID, entryID, current.ID, current.SourceVersion, owner.ID, target.ItemFingerprint, target.BoundaryHash,
+			principal, membership, input.RecipientType, input.RecipientID, input.ExpiryMode)
+		if input.ExpiresAt == nil {
+			duplicate = duplicate.Where("expires_at IS NULL")
+		} else {
+			duplicate = duplicate.Where("expires_at = ? AND expires_at > ?", *input.ExpiresAt, now)
+		}
+		var duplicateCount int64
+		if err := duplicate.Count(&duplicateCount).Error; err != nil {
+			return err
+		}
+		if duplicateCount > 0 {
+			return ErrSharingDecisionExists
+		}
+		if entry.Version != input.Version {
+			return ErrEntryVersionConflict
 		}
 		decision = models.SharingDecision{ID: input.DecisionID, TenantID: tenantID, CatalogEntryID: entryID, EntryVersion: entry.Version + 1,
 			SourceBindingID: current.ID, SourceVersion: current.SourceVersion, ResponsibilityID: owner.ID, EngineID: int64(path.EngineID), CatalogPath: pathJSON,

@@ -10,6 +10,8 @@ other = "仅允许 System 租户服务反查精确待核清请求的当前 Catal
 other = "需要当前有效业务负责人身份及独立共享确认权限；编目维护权限不能替代"
 [catalog.error.sharing_decision_conflict]
 other = "该共享确认编号已绑定其他参数，请读取原记录或使用新的编号"
+[catalog.error.sharing_decision_exists]
+other = "相同接收方、授权边界与期限已有有效业务批准，请刷新接收方候选并使用原批准继续办理"
 [catalog.error.sharing_target_unsupported]
 other = "当前目标须为有效且未弃用的已扫描数据库表，并能核对完整来源路径"
 [permissions.catalog.sharing_decision.create.name]
