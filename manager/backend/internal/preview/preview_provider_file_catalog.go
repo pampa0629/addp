@@ -172,6 +172,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 		}
 		dir, name := splitFSPath(contentPath)
 		contentReq := &objectcontent.ObjectContentRequest{
+			Locator:     req.Locator,
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
@@ -181,7 +182,10 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Size:        meta.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildFileStorageStreamURL(req.Locator, engine.ID, contentPath); url != "" {
+		if format.NormalizeFormat(contentFormat) == format.FormatPMTiles {
+			contentReq.PreviewURL = buildPMTilesTileURL(req.Locator)
+			preview.Object.URL = contentReq.PreviewURL
+		} else if url := buildFileStorageStreamURL(req.Locator, engine.ID, contentPath); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}

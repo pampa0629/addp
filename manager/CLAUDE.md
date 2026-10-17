@@ -106,6 +106,7 @@ manager/
 
 - 数据探查：`GET /engines`；资源树事实读取、搜索和刷新统一使用 Meta `/api/v1/meta/resource-tree/:engine_id...`。
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /downloads/file?locator={ResourceLocator}`。
+- 文件和对象存储中的业务 PMTiles 统一返回带原始 locator 的 `GET /quick-view/tiles/{z}/{x}/{y}.mvt` 模板，不能把整文件 `storage-stream` 地址交给 MVT 加载器。NFS 目录预览与 MinIO 对象预览均须保留同一数据项身份；`make test-manager-backend` 自动覆盖该映射和不读取整份归档的回归，既有 Manager Go CI 沿标准入口发现。
 - 数据剖析：`GET /data-profiles/current` 查询当前成功结果、新鲜度和 execution；`POST /data-profile-executions` 创建或复用 `data_profiling` ad-hoc execution。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`；`GET /search` 只负责 DataItem 内容、全文、向量和空间检索，不承担企业业务元数据搜索。Manager 独占 `MEILISEARCH_MANAGER_CONTENT_INDEX`；Meta 只通过 `POST /runtime/content-documents/batch_update` 和 `DELETE /runtime/content-documents` 提交或删除当前 Tenant 投影，不能直接读写该索引。写入载荷必须显式声明 `technical_metadata|extracted_content`；前者不携带数据值且不进入 Security 动作，后者在已纳管时必须本地命中有效 `search_index` 规则并先执行保护。可选 `engine_id` 必须在全文与向量检索 owner 侧同时生效，供查询工作台等调用方把候选严格限定到当前引擎，禁止先全局截断再由调用方过滤。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -235,6 +236,53 @@ func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
 	}
 	if enginePlugin.openContentCalls != 0 {
 		t.Fatalf("OpenContent calls = %d, want 0 when image preview uses storage stream URL", enginePlugin.openContentCalls)
+	}
+}
+
+func TestFileCatalogPMTilesPreviewUsesControlledTileURL(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingFileCatalogPreviewPlugin{
+		engineType: "nfs", contentType: "application/vnd.pmtiles", sizeBytes: 52014,
+		expectedPath: "/vector-tiles/城区.pmtiles",
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+		} else {
+			plugin.Unregister(enginePlugin.Type())
+		}
+	}()
+	registry := objectcontent.NewObjectContentRegistry()
+	objectcontent.LoadObjectContentPlugins(registry, "../../plugins")
+	locator := "addp://engine/26/path/vector-tiles/城区.pmtiles?type=file&item_id=101"
+	preview, err := NewFileCatalogPreviewProvider(nil, registry).Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{EngineType: "nfs", ID: 26}, Locator: locator,
+		Schema: "vector-tiles", Table: "城区.pmtiles",
+		Attributes: map[string]interface{}{
+			"item":        map[string]interface{}{"data_type": "media", "format": "pmtiles", "layout": "single"},
+			"format_info": map[string]interface{}{"pmtiles": map[string]interface{}{"min_zoom": 0, "max_zoom": 10}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("missing PMTiles preview: %#v", preview)
+	}
+	content := preview.Object.Content
+	parsed, err := url.Parse(content.URL)
+	if err != nil || parsed.Path != "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt" || parsed.Query().Get("locator") != locator {
+		t.Fatalf("PMTiles must use the controlled tile route: url=%q err=%v", content.URL, err)
+	}
+	if preview.Object.URL != content.URL || content.Metadata["tile_url_template"] != content.URL || content.Metadata["locator"] != locator {
+		t.Fatalf("inconsistent preview identity or tile URL: %#v", content)
+	}
+	if content.FrontendRenderer != models.ObjectPreviewKindVectorTile || content.Metadata["render_source"] != "business_pmtiles" || content.Metadata["max_zoom"] != 10 {
+		t.Fatalf("incorrect vector tile renderer facts: %#v", content)
+	}
+	if enginePlugin.openContentCalls != 0 {
+		t.Fatalf("preview must not read the whole archive: OpenContent calls=%d", enginePlugin.openContentCalls)
 	}
 }
 
