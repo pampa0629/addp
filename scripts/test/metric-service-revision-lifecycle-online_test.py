@@ -22,6 +22,17 @@ QUERY = {"parameters": {"subject_id": "fixture", "start_date": "2026-01-01",
 DATA = [{"value": 10}]
 
 
+def postgres_initial_seed_sql(source):
+    blocks = re.findall(r"(?ms)<<'SQL'\n(.*?)^SQL$", source)
+    seeds = [block for block in blocks if block.startswith("CREATE TABLE metric_people (")]
+    if len(seeds) != 1:
+        raise AssertionError("one PostgreSQL initialization seed block is required")
+    parts = seeds[0].split("\nCREATE ROLE metric_reader ", 1)
+    if len(parts) != 2:
+        raise AssertionError("the initialization seed must end at its reader role setup")
+    return parts[0]
+
+
 class FixtureGateway:
     """Owner contract double enforces approval, review and aggregate versions."""
     def __init__(self):
@@ -201,7 +212,7 @@ class MetricLifecycleTest(unittest.TestCase):
 
     def test_physical_seed_has_a_nontrivial_deterministic_expected_count(self):
         source = (Path(__file__).parents[2] / "business/scripts/online-metric-postgres-fixture.sh").read_text()
-        sql = source.split("<<'SQL'\n", 1)[1].split("CREATE ROLE", 1)[0]
+        sql = postgres_initial_seed_sql(source)
         # This checks the fixture's data contract, not the PostgreSQL runtime/compiler.
         with closing(sqlite3.connect(":memory:")) as connection:
             connection.executescript(sql)
@@ -237,6 +248,25 @@ class MetricLifecycleTest(unittest.TestCase):
                 totals[city] = totals.get(city, Decimal(0)) + Decimal(value)
         self.assertEqual({row["group_key"]: row["value"] for row in ONLINE.FIXTURE.GROUPED_EXPECTED_DATA},
                          {city: format(value, ".18f") for city, value in totals.items()})
+
+    def test_postgres_seed_selection_is_unique_and_ignores_preceding_content_transactions(self):
+        source = (Path(__file__).parents[2] / "business/scripts/online-metric-postgres-fixture.sh").read_text()
+        blocks = re.findall(r"(?ms)<<'SQL'\n(.*?)^SQL$", source)
+        self.assertTrue(any(block.startswith("BEGIN;\nSET LOCAL") for block in blocks))
+        seed = postgres_initial_seed_sql(source)
+        self.assertTrue(seed.startswith("CREATE TABLE metric_people ("))
+        self.assertIn("INSERT INTO metric_facts ", seed)
+        # Selection is by the initialization block, never a heredoc's ordinal
+        # position or removal of PostgreSQL statements from a mutation block.
+        preceding = "psql <<'SQL'\nBEGIN;\nSET LOCAL lock_timeout = '3s';\nCOMMIT;\nSQL\n"
+        self.assertEqual(postgres_initial_seed_sql(preceding + source), seed)
+        initialization = next(block for block in blocks if block.startswith("CREATE TABLE metric_people ("))
+        with self.assertRaises(AssertionError):
+            postgres_initial_seed_sql(preceding)
+        with self.assertRaises(AssertionError):
+            postgres_initial_seed_sql("psql <<'SQL'\n" + seed + "\nSQL\n")
+        with self.assertRaises(AssertionError):
+            postgres_initial_seed_sql(source + "\npsql <<'SQL'\n" + initialization + "SQL\n")
 
     def run_scenario(self, gateway, report):
         return ONLINE.run_suite(gateway, 42, "run-42", 10, 100, QUERY, DATA, report)
