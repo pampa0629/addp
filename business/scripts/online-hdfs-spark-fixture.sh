@@ -173,7 +173,16 @@ table_readiness_diagnostics() {
   diagnostics=$(mktemp -d "$ADDP_ONLINE_SECRET_DIR/table-readiness.XXXXXX")
   docker exec addp-hdfs-online-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -P15438 -uroot --connect-timeout=2 -e "SELECT 1"' > "$diagnostics/mysql-probe.txt" 2>&1 || true
   docker exec addp-hdfs-online-doris mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=2 --batch -e 'SHOW FRONTENDS; SHOW BACKENDS;' > "$diagnostics/doris-probe.txt" 2>&1 || true
+  docker logs addp-hdfs-online-doris 2>&1 | head -n 80 > "$diagnostics/doris-startup-head.txt" || true
   docker logs --tail 100 addp-hdfs-online-doris > "$diagnostics/doris-startup.txt" 2>&1 || true
+  docker exec addp-hdfs-online-doris bash -c '
+    for file in /opt/apache-doris/fe/log/fe.out /opt/apache-doris/fe/log/fe.log /opt/apache-doris/fe/log/fe.warn.log; do
+      if [ -f "$file" ]; then printf "FE log: %s\n" "$file"; tail -n 80 "$file"; fi
+    done
+    printf "FE hostname resolution\n"
+    hostname
+    getent hosts "$(hostname)" host.docker.internal
+    ps -eo pid,comm' > "$diagnostics/doris-fe.txt" 2>&1 || true
   python3 - "$diagnostics" "$mysql_ready" "$doris_ready" <<'PY'
 import json, os, shutil, sys
 from pathlib import Path
@@ -182,7 +191,7 @@ secret = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 password = next(line.split('=', 1)[1] for line in (secret / 'mysql.env').read_text().splitlines() if line.startswith('MYSQL_ROOT_PASSWORD='))
 try:
     report = {'mysql_ready': sys.argv[2] == '1', 'doris_ready': sys.argv[3] == '1'}
-    for name in ('mysql-probe', 'doris-probe', 'doris-startup'):
+    for name in ('mysql-probe', 'doris-probe', 'doris-startup-head', 'doris-startup', 'doris-fe'):
         report[name] = (root / (name + '.txt')).read_text(errors='replace').replace(password, '<redacted>')[-12000:]
     text = json.dumps(report, ensure_ascii=False)
     if os.environ.get('ADDP_ONLINE_ARTIFACT_DIR'):

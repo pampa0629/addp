@@ -149,6 +149,8 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
                 self.assertEqual(evidence['mysql_ready'], engine != 'mysql')
                 self.assertEqual(evidence['doris_ready'], engine != 'doris')
                 self.assertIn('ERROR 2003', evidence[engine + '-probe'])
+                self.assertIn('doris-startup-head', evidence)
+                self.assertIn('doris-fe', evidence)
                 if engine == 'mysql':
                     self.assertIn('<redacted>', evidence['mysql-probe'])
                 self.assertEqual(list(self.secret.iterdir()), [])
