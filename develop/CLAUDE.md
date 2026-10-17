@@ -479,3 +479,5 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 2026-10-17 原值查询与历史保护：develop/query 消费当前用户显式获批的原值范围。执行记录只保存默认脱敏预览；当次获权结果仅在同一 Backend 有界内存中暂存，通过独立 result 接口每次按当前用户及本地投影重判。历史详情和列表始终默认保护，原值需要重新执行查询。暂存最多五分钟，容量淘汰或重启后不恢复。旧 protected_query_history 通过 Develop 数据迁移移除。通用 Observe、Monitor、TaskProvider 与导出不暴露私有暂存；Notebook 的交互请求继续按当前 session 主体消费统一保护。工作台在暂存或授权截止时清空展示并复核。旧 Hosted v5 只代表旧历史规则，当前规范 10.2 的 T1/T2/T3/T4 须分别验证。
 
 2026-10-17 用户确认收敛查询结果保存：执行记录仅保存默认脱敏预览，原值只在 Backend 有界进程内暂存，通过当次结果接口按当前授权重判；历史不还原原值，需要原值重新查询。规范见数据安全实现规范 10.2，旧私有历史通过单向数据迁移移除。本次实现的 Common／Develop Go、全仓 22 模块 Go、Common／Develop PostgreSQL、Develop 前端 80 项浏览器与构建、IAM／Swagger 及新版 Online 夹具门禁已通过；真实 Hosted v6 和重启后的本地验收待运行，旧 Hosted v5 只代表旧历史规则。
+
+2026-10-17 原值历史迁移的 PostgreSQL 测试复用 `common/execution.EnsureStore` 和正式 `TaskExecution` 模型，不得自行删建简化的共享执行表；断言仅核对本轮 UUID，夹具和迁移在同一测试事务回滚。`make test-execution-fixtures`、Develop Go 与 Develop PostgreSQL 门禁通过。本项仅修正测试夹具，不改变生产实现或新版 v6 待验状态。
