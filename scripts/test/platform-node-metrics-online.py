@@ -1051,6 +1051,8 @@ ALERTS = "/api/v1/monitor/platform/alerts"
 ALERT_DESTINATIONS = "/api/v1/monitor/platform/alert-notification-destinations"
 ALERT_DELIVERIES = "/api/v1/monitor/platform/alert-notification-deliveries"
 MEMORY_KEYS = ("node.memory.total_bytes", "node.memory.available_bytes", "node.memory.used_percent")
+CPU_KEYS = ("node.cpu.logical_cores", "node.cpu.busy_percent")
+PRESSURE_METRICS = {"memory": MEMORY_KEYS, "cpu": CPU_KEYS}
 
 
 def finite_number(value):
@@ -1066,6 +1068,24 @@ def memory_pressure_plan(total, available, used):
     return {"total_bytes": total, "available_bytes": available, "baseline_percent": used, "bytes": size,
             "delta_percent": delta, "trigger_percent": used+delta*.65, "recovery_percent": used+delta*.25,
             "trigger_seconds": 30, "recovery_seconds": 30}
+
+
+def cpu_pressure_plan(cores, used):
+    require(type(cores) is int and cores > 0 and finite_number(used) and 0 <= used < 100, "invalid CPU baseline")
+    quota = min(1_000_000_000, cores*250_000_000)
+    delta = 100*quota/(cores*1_000_000_000)
+    require(delta >= 8 and used+delta*.65 < 100, "Hosted CPU budget cannot create a distinguishable pressure window")
+    return {"logical_cores": cores, "quota_nanos": quota, "baseline_percent": used, "delta_percent": delta,
+            "max_seconds": 300, "trigger_percent": used+delta*.65, "recovery_percent": used+delta*.25,
+            "trigger_seconds": 30, "recovery_seconds": 30}
+
+
+def pressure_plan(kind, points):
+    values = [points[k]["value"] for k in PRESSURE_METRICS[kind]]
+    if kind == "memory": return memory_pressure_plan(*values)
+    # CPU core count is encoded as a JSON number by the metrics catalog.
+    require(finite_number(values[0]) and values[0] == int(values[0]), "CPU core count is not integral")
+    return cpu_pressure_plan(int(values[0]), values[1])
 
 
 @contextmanager
@@ -1099,7 +1119,7 @@ def assert_resource_alert_event(value, node, target, query_policy, rule):
             and value["event_type"] in {"opened", "resolved"} and type(value["incident_id"]) is int and value["incident_id"] > 0,
             "invalid resource event identity")
     require(value["category"] == "resource" and value["subject_kind"] == "host_node" and value["subject_id"] == node["node_id"]
-            and value["signal"] == "node.memory.used_percent" and value["severity"] == "warning", "resource event scope mismatch")
+            and value["signal"] == rule["metric_key"] and value["severity"] == "warning", "resource event scope mismatch")
     evidence = value["evidence"]
     require(type(evidence) is dict and set(evidence) == {"rule_id", "rule_version", "policy", "node_version", "target_id", "target_version",
             "query_policy_version", "evaluated_at", "sampled_from", "sampled_to", "samples", "minimum", "maximum", "latest"}, "resource evidence fields mismatch")
@@ -1247,40 +1267,44 @@ def alert_page(client, path):
     return rows
 
 
-def fresh_memory_pressure_plan(admin, node, target, after, detail):
+def fresh_pressure_plan(admin, node, target, after, detail, kind="memory"):
+    keys = PRESSURE_METRICS[kind]
     plans = []
 
     def observed():
-        baseline = admin.request("GET", resource_path(node, keys=MEMORY_KEYS), (200,)).payload
-        assert_resources(baseline, node, target, keys=MEMORY_KEYS)
+        baseline = admin.request("GET", resource_path(node, keys=keys), (200,)).payload
+        assert_resources(baseline, node, target, keys=keys)
         points = {row["metric_key"]: row["points"][0] for row in baseline["series"]}
-        require(len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
-        sampled_at = next(iter(points.values()))["sampled_at"]
+        require(kind != "memory" or len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
+        sampled_at = min((p["sampled_at"] for p in points.values()), key=utc_timestamp)
         if utc_timestamp(sampled_at) < after:
             return False
-        plans.append(memory_pressure_plan(*(points[k]["value"] for k in MEMORY_KEYS)))
-        detail["memory_baseline"] = {"requested_after": after, "sampled_at": sampled_at,
-                                     "values": {k: points[k]["value"] for k in MEMORY_KEYS}}
+        plans.append(pressure_plan(kind, points))
+        detail[kind+"_baseline"] = {"requested_after": after, "sampled_at": sampled_at,
+                                     "values": {k: points[k]["value"] for k in keys}}
         return True
 
-    eventually(observed, "fresh memory baseline after control setup", timeout=45)
+    eventually(observed, "fresh "+kind+" baseline after control setup", timeout=45)
     return plans[0]
 
 
-def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report):
-    report["stage"] = "resource-alert-real-memory-lifecycle"
-    detail = {"result": "failed", "memory_released": False, "receiver_closed": False}
+def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report, pressure_kind="memory"):
+    require(pressure_kind in PRESSURE_METRICS, "unsupported pressure kind")
+    keys = PRESSURE_METRICS[pressure_kind]
+    metric_key = keys[-1]
+    report["stage"] = "resource-alert-real-"+pressure_kind+"-lifecycle"
+    detail = {"result": "failed", "pressure_kind": pressure_kind, pressure_kind+"_released": False, "receiver_closed": False}
     report["resource_alert_lifecycle"] = detail
     require(FIXTURE.boundary() == directory, "resource alerts require the owned Hosted deployment")
-    baseline = admin.request("GET", resource_path(node, keys=MEMORY_KEYS), (200,)).payload
-    assert_resources(baseline, node, target, keys=MEMORY_KEYS)
+    baseline = admin.request("GET", resource_path(node, keys=keys), (200,)).payload
+    assert_resources(baseline, node, target, keys=keys)
     points = {row["metric_key"]: row["points"][0] for row in baseline["series"]}
-    require(len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
-    plan = memory_pressure_plan(*(points[k]["value"] for k in MEMORY_KEYS))
-    detail["memory_plan"] = plan
-    detail["initial_memory_plan"] = dict(plan)
-    rule_body = {"name": "online-memory-"+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_id": node["node_id"],
-                 "metric_key": "node.memory.used_percent", "enabled": False, **{k: plan[k] for k in PRESSURE_FIELDS}}
+    require(pressure_kind != "memory" or len({p["sampled_at"] for p in points.values()}) == 1, "memory baseline samples differ")
+    plan = pressure_plan(pressure_kind, points)
+    detail[pressure_kind+"_plan"] = plan
+    detail["initial_"+pressure_kind+"_plan"] = dict(plan)
+    rule_body = {"name": "online-"+pressure_kind+"-"+os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node_id": node["node_id"],
+                 "metric_key": metric_key, "enabled": False, **{k: plan[k] for k in PRESSURE_FIELDS}}
     rule, destination, destination_body = None, None, None
     source_stopped, completed, destination_removed = False, False, False
     receiver = ResourceAlertReceiver(directory, node, target, query_policy)
@@ -1298,7 +1322,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     def incidents():
         rows = alert_page(admin, incident_query)
         require(len(rows) <= 1 and all(r.get("category") == "resource" and r.get("subject_kind") == "host_node"
-                and r.get("subject_id") == node["node_id"] and r.get("signal") == "node.memory.used_percent"
+                and r.get("subject_id") == node["node_id"] and r.get("signal") == metric_key
                 and r.get("severity") == "warning" and not r.get("instance_id") for r in rows), "resource incident scope mismatch")
         return rows
 
@@ -1315,7 +1339,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
         else:
             event = {"schema": "addp.platform-resource-alert/v1", "event_id": rule["id"], "event_type": "opened",
                      "incident_id": incident["id"], "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
-                     "signal": "node.memory.used_percent", "severity": "warning", "occurred_at": incident.get("opened_at"),
+                     "signal": metric_key, "severity": "warning", "occurred_at": incident.get("opened_at"),
                      "evidence": incident.get("resource_evidence")}
             assert_resource_alert_event(event, node, target, query_policy, rule)
             require(utc_timestamp(event["evidence"]["sampled_from"]) >= detail["pressure_started_at"], "opening window predates real pressure")
@@ -1384,10 +1408,9 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
             config_fields = ("id", "version", "name", "channel", "url", "recipients", "categories", "event_types", "enabled", "secret_configured")
             require(len(saved) == 1 and all(saved[0].get(k) == destination.get(k) for k in config_fields), "denied notification requests changed destination")
             detail["identity_isolation"] = True
-            # Setup work can release memory after the earlier sample. Finalize thresholds only
-            # from a sample produced after setup, before enablement or any memory allocation.
-            plan = fresh_memory_pressure_plan(admin, node, target, time.time(), detail)
-            detail["memory_plan"] = plan
+            # Finalize thresholds from fresh post-setup evidence, before enablement or load.
+            plan = fresh_pressure_plan(admin, node, target, time.time(), detail, pressure_kind)
+            detail[pressure_kind+"_plan"] = plan
             rule_body.update({k: plan[k] for k in PRESSURE_FIELDS})
             enabled_at = time.time()
             rule = admin.request("PUT", rule_path, (200,), dict(rule_body, version=1, enabled=True)).payload
@@ -1395,46 +1418,48 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
             receiver.rule = rule
             admin.request("PUT", rule_path, (409,), dict(rule_body, version=1, enabled=True))
             admin.request("PUT", destination_path+"/credential", (409,), {"version": 1, "secret": receiver.secret})
-            eventually(lambda: evaluated("normal", enabled_at), "baseline memory rule evaluation", timeout=150)
-            require(not incidents() and not receiver.snapshot(), "baseline memory falsely opened an incident")
-            with native_memory_pressure(directory, plan, detail):
-                eventually(lambda: check_incident("open"), "real memory pressure incident", timeout=180)
+            eventually(lambda: evaluated("normal", enabled_at), "baseline "+pressure_kind+" rule evaluation", timeout=150)
+            require(not incidents() and not receiver.snapshot(), "baseline falsely opened an incident")
+            load = native_memory_pressure if pressure_kind == "memory" else FIXTURE.cpu_pressure
+            with load(directory, plan, detail):
+                eventually(lambda: check_incident("open"), "real "+pressure_kind+" pressure incident", timeout=180)
                 opened = check_incident("open")
                 require(opened is not None, "opened incident vanished")
                 detail["opened_incident"] = opened
                 eventually(lambda: deliveries_ready(("opened",), opened), "signed opened notification automatic retry", timeout=90)
                 admin.request("DELETE", rule_path, (409,), {"version": rule["version"]})
                 detail["active_delete_rejected"] = True
-                source_action("stop")
-                source_stopped = True
-                try:
-                    selector = '{job="addp_nodes",addp_node_id="'+node["node_id"]+'"}'
-                    eventually(lambda: source_scrape_failed(prom, selector), "resource alert source failure")
-                    failed_at = time.time()
-                    eventually(lambda: evaluated("unknown", failed_at), "unknown alert verdict after failed source", timeout=100)
-                    held_since = time.monotonic()
-                    first_unknown = dict(detail["last_unknown"])
-                    deadline = held_since+plan["recovery_seconds"]+15
-                    observations = 0
-                    while time.monotonic() < deadline:
-                        require(evaluated("unknown", failed_at) and check_incident("open", opened) is not None,
-                                "missing source falsely recovered resource incident")
-                        require(receiver.invalid == 0 and all(r["payload"]["event_type"] == "opened" for r in receiver.snapshot()),
-                                "missing source emitted a resolved notification")
-                        observations += 1
-                        time.sleep(2)
-                    detail["unknown_does_not_resolve"] = {"duration_seconds": time.monotonic()-held_since, "observations": observations,
-                                                              "first": first_unknown, "last": dict(detail["last_unknown"])}
-                finally:
-                    restarted_at = time.time()
-                    source_action("start")
-                    source_stopped = False
-                eventually(lambda: evaluated("risk", restarted_at), "fresh high memory window after source recovery", timeout=180)
-                require(check_incident("open", opened) is not None, "source recovery replaced the open incident")
-                detail["source_recovery_preserves_incident"] = True
-            eventually(lambda: check_incident("resolved", opened), "memory release recovers the original incident", timeout=180)
+                if pressure_kind == "memory":
+                    source_action("stop")
+                    source_stopped = True
+                    try:
+                        selector = '{job="addp_nodes",addp_node_id="'+node["node_id"]+'"}'
+                        eventually(lambda: source_scrape_failed(prom, selector), "resource alert source failure")
+                        failed_at = time.time()
+                        eventually(lambda: evaluated("unknown", failed_at), "unknown alert verdict after failed source", timeout=100)
+                        held_since = time.monotonic()
+                        first_unknown = dict(detail["last_unknown"])
+                        deadline = held_since+plan["recovery_seconds"]+15
+                        observations = 0
+                        while time.monotonic() < deadline:
+                            require(evaluated("unknown", failed_at) and check_incident("open", opened) is not None,
+                                    "missing source falsely recovered resource incident")
+                            require(receiver.invalid == 0 and all(r["payload"]["event_type"] == "opened" for r in receiver.snapshot()),
+                                    "missing source emitted a resolved notification")
+                            observations += 1
+                            time.sleep(2)
+                        detail["unknown_does_not_resolve"] = {"duration_seconds": time.monotonic()-held_since, "observations": observations,
+                                                                  "first": first_unknown, "last": dict(detail["last_unknown"])}
+                    finally:
+                        restarted_at = time.time()
+                        source_action("start")
+                        source_stopped = False
+                    eventually(lambda: evaluated("risk", restarted_at), "fresh high memory window after source recovery", timeout=180)
+                    require(check_incident("open", opened) is not None, "source recovery replaced the open incident")
+                    detail["source_recovery_preserves_incident"] = True
+            eventually(lambda: check_incident("resolved", opened), pressure_kind+" release recovers the original incident", timeout=180)
             resolved = check_incident("resolved", opened)
-            require(resolved is not None and instance_timestamp(resolved.get("resolved_at")) >= detail["pressure_released_at"], "resource recovery predates memory release")
+            require(resolved is not None and instance_timestamp(resolved.get("resolved_at")) >= detail["pressure_released_at"], "resource recovery predates pressure release")
             eventually(lambda: deliveries_ready(("opened", "resolved"), resolved), "signed resolved notification", timeout=90)
             receipts = receiver.snapshot()
             events = {r["payload"]["event_type"]: r["payload"] for r in receipts}
@@ -1470,7 +1495,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
             except (SuiteError, OSError, ValueError, subprocess.SubprocessError): detail["failure_source_restart_incomplete"] = True
         detail["receiver_closed"] = receiver.closed
     require(receiver.invalid == 0, "signed notification receiver rejected a request")
-    require(completed and detail["memory_released"] and detail["receiver_closed"], "resource alert fixture cleanup incomplete")
+    require(completed and detail[pressure_kind+"_released"] and detail["receiver_closed"], "resource alert fixture cleanup incomplete")
     detail["result"] = "passed"
     # Preserve this phase if a later fault phase exhausts the outer deadline.
     # The overall report stays failed until the complete scene finishes.
@@ -1479,7 +1504,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -1522,8 +1547,11 @@ def run_complete_comparison_case(base, node, target, policy, node_input, admin_i
     report["resource_browser"] = run_resource_browser(node, target, policy, node_input["display_name"], admin_identity, security_identity, processes)
     comparison = report["resource_browser"]["period_comparison"]
     require(comparison["complete_cases"] == 3 and comparison["incomplete_cases"] == 0, "all three browser comparisons must have complete samples")
-    report["stage"] = "comparison-owned-configuration-cleanup"
-    admin = renew_admin(base, admin_identity["principal"]["id"])
+    retire_owned_configuration(renew_admin(base, admin_identity["principal"]["id"]), node, target, node_input, report)
+
+
+def retire_owned_configuration(admin, node, target, node_input, report):
+    report["stage"] = "owned-configuration-cleanup"
     admin.request("DELETE", TARGETS+"/"+target["id"], (204,), {"version": target["version"]})
     admin.request("GET", TARGETS+"/"+target["id"], (404,))
     retired = admin.request("PUT", NODES+"/"+node["node_id"], (200,), dict(node_input, enabled=False, version=node["version"])).payload
@@ -1696,6 +1724,11 @@ def run(base, directory, report):
     report["process_identity_isolation"] = True
     report["process_unbound_automatic_discovery"] = True
     (Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "process-resource-query.json").write_text(json.dumps(admin.request("GET", process_path(processes), (200,)).payload))
+    if selected_case == "cpu-pressure":
+        admin = renew_admin(base, admin_identity["principal"]["id"])
+        run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom, node, target, query_policy, directory, report, pressure_kind="cpu")
+        retire_owned_configuration(renew_admin(base, admin_identity["principal"]["id"]), node, target, node_input, report)
+        return
     if selected_case == "complete-comparison":
         run_complete_comparison_case(base, node, target, query_policy, node_input, admin_identity, security_identity, processes, report)
         return

@@ -10,6 +10,10 @@ import secrets
 import shlex
 import socket
 import subprocess
+import sys
+import time
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -204,6 +208,126 @@ def configure_query(directory):
     marker.write_text("configured\n")
 
 
+def cpu_pressure_container(row):
+    labels = row.get("Config", {}).get("Labels", {})
+    owner = labels.get("io.addp.cpu-pressure.owner", "")
+    if (not re.fullmatch(r"[0-9a-f]{32}", owner) or row.get("Name") != "/addp-online-cpu-"+owner
+            or not re.fullmatch(r"[0-9a-f]{64}", row.get("Id", ""))
+            or labels.get("com.docker.compose.project") != PROJECT
+            or labels.get("com.docker.compose.service") != "cpu-pressure"
+            or labels.get("com.addp.online-runtime") != "platform-node-metrics"):
+        raise ValueError("CPU pressure container ownership changed")
+    return row
+
+
+def cleanup_cpu_pressure(directory):
+    if boundary() != directory:raise ValueError("CPU cleanup requires the owned Hosted deployment")
+    query = ["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project="+PROJECT,
+             "--filter", "label=com.docker.compose.service=cpu-pressure"]
+    ids = command(query).split()
+    if not ids:return
+    rows = json.loads(command(["docker", "inspect", *ids]))
+    if len(rows) != len(ids) or {cpu_pressure_container(row)["Id"] for row in rows} != set(ids):
+        raise ValueError("CPU cleanup receipt differs from its owned container set")
+    command(["docker", "rm", "-f", "-v", *ids])
+    if command(query).strip():raise ValueError("CPU pressure has a residual container")
+
+
+@contextmanager
+def cpu_pressure(directory, plan, detail):
+    if boundary() != directory:
+        raise ValueError("CPU pressure requires the owned Hosted deployment")
+    cores, quota = plan.get("logical_cores"), plan.get("quota_nanos")
+    if (type(cores) is not int or cores <= 0 or type(quota) is not int
+            or quota != min(1_000_000_000, cores*250_000_000) or plan.get("max_seconds") != 300
+            or os.cpu_count() != cores):
+        raise ValueError("CPU pressure has an invalid host quota")
+    docker = json.loads(command(["docker", "info", "--format", "{{json .}}"]))
+    if type(docker.get("NCPU")) is not int or docker["NCPU"] != cores:
+        raise ValueError("CPU pressure Docker host differs from the observed VM")
+    source = compose(directory, "ps", "-q", "control-tls").split()
+    if len(source) != 1:
+        raise ValueError("CPU pressure requires its existing transport image")
+    transport = json.loads(command(["docker", "inspect", source[0]]))
+    labels = {"com.docker.compose.project": PROJECT, "com.addp.online-runtime": "platform-node-metrics"}
+    if (len(transport) != 1 or not transport[0].get("State", {}).get("Running")
+            or any(transport[0].get("Config", {}).get("Labels", {}).get(k) != v for k,v in labels.items())
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", transport[0].get("Image", ""))):
+        raise ValueError("CPU pressure transport is not owned")
+    image = transport[0]["Image"]
+    nonce = secrets.token_hex(16)
+    name = "addp-online-cpu-"+nonce
+    labels.update({"com.docker.compose.service": "cpu-pressure", "io.addp.cpu-pressure.owner": nonce})
+    identifier, attempted = None, False
+    detail["cpu_released"] = False
+
+    def listed():
+        return command(["docker", "ps", "-aq", "--filter", "name=^/"+name+"$"]).split()
+
+    def owned():
+        rows = json.loads(command(["docker", "inspect", identifier or name]))
+        if (len(rows) != 1 or rows[0].get("Name") != "/"+name
+                or (identifier and rows[0].get("Id") != identifier)
+                or any(rows[0].get("Config", {}).get("Labels", {}).get(k) != v for k,v in labels.items())):
+            raise ValueError("CPU pressure container ownership changed")
+        return cpu_pressure_container(rows[0])
+
+    def usage():
+        values = dict(line.split() for line in command(["docker", "exec", identifier, "cat", "/sys/fs/cgroup/cpu.stat"]).splitlines())
+        value = values.get("usage_usec", "")
+        if not value.isdecimal(): raise ValueError("CPU pressure kernel usage is unavailable")
+        return int(value)
+
+    if listed(): raise ValueError("CPU pressure container name already exists")
+    try:
+        args = ["docker", "create", "--name", name, "--cpus", str(quota/1_000_000_000),
+                "--memory", "64m", "--pids-limit", "16", "--network", "none", "--read-only",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", "65534:65534", "--init"]
+        for key,value in labels.items():args += ["--label", key+"="+value]
+        # Start idle under an independent wall-clock fuse. Admit the real load only after kernel quota verification.
+        args += [image, "/bin/sh", "-c", "exec timeout -s KILL 300 /bin/sh -c 'while :; do sleep 1; done'"]
+        attempted = True
+        receipt = command(args).strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", receipt):raise ValueError("CPU pressure create receipt is invalid")
+        identifier = receipt
+        current=owned();host=current.get("HostConfig", {})
+        if (current.get("Image") != image or current.get("Mounts") != [] or current.get("Config", {}).get("User") != "65534:65534"
+                or host.get("NanoCpus") != quota or host.get("Memory") != 64*1024**2 or host.get("PidsLimit") != 16
+                or host.get("NetworkMode") != "none" or host.get("ReadonlyRootfs") is not True
+                or host.get("Privileged") is not False or host.get("CapDrop") != ["ALL"]):
+            raise ValueError("CPU pressure container limits differ from the authorized plan")
+        started=time.monotonic()
+        command(["docker", "start", identifier])
+        maximum=command(["docker", "exec", identifier, "cat", "/sys/fs/cgroup/cpu.max"]).split()
+        if (len(maximum) != 2 or not all(v.isdecimal() and int(v)>0 for v in maximum)
+                or int(maximum[0])*1_000_000_000 != quota*int(maximum[1])):
+            raise ValueError("CPU pressure kernel quota differs from the authorized plan")
+        before=usage()
+        detail["cpu_limits"]={"logical_cores":cores, "quota_nanos":quota, "kernel_cpu_max":" ".join(maximum), "max_seconds":300, "image":image}
+        detail["pressure_started_at"]=time.time()
+        command(["docker", "exec", "-d", identifier, "/bin/sh", "-c", "while :; do :; done"])
+        yield
+        if not owned().get("State", {}).get("Running") or time.monotonic()-started >= 300:
+            raise ValueError("CPU pressure exceeded its hard wall-clock deadline")
+        detail["cpu_usage_usec"]=usage()-before
+        if detail["cpu_usage_usec"] < 1_000_000:raise ValueError("CPU pressure has no material kernel usage")
+        detail["cpu_duration_seconds"]=time.monotonic()-started
+    finally:
+        failing=sys.exc_info()[0] is not None
+        if attempted:
+            try:
+                ids=listed()
+                if ids:
+                    current=owned()
+                    command(["docker", "rm", "-f", "-v", current["Id"]])
+                if listed():raise ValueError("CPU pressure has a residual container")
+                detail["cpu_released"]=True
+                detail["pressure_released_at"]=time.time()
+            except (OSError, ValueError, subprocess.SubprocessError):
+                detail["cpu_cleanup_incomplete"]=True
+                if not failing:raise
+
+
 def assert_owned(directory):
     ids = command(["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project="+PROJECT]).split()
     if ids:
@@ -237,6 +361,7 @@ def main():
         if args.action == "up":
             compose(directory, "up", "-d", "--wait", "--wait-timeout", "60")
         else:
+            cleanup_cpu_pressure(directory)
             compose(directory, "down", "--volumes", "--remove-orphans")
             for kind, cmd in (("container", ["ps", "-aq"]), ("network", ["network", "ls", "-q"]), ("volume", ["volume", "ls", "-q"])):
                 if command(["docker", *cmd, "--filter", "label=com.docker.compose.project="+PROJECT]).strip():

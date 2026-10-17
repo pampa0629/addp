@@ -57,6 +57,7 @@ on:
         options:
           - regression
           - complete-comparison
+          - cpu-pressure
 
 permissions:
   contents: read

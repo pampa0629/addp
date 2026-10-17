@@ -113,12 +113,18 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertIn("metrics-case:complete-comparison", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
         self.host.trace.unlink()
-        for value in ("", "unknown", "regression ", "cpu-pressure"):
+        for value in ("", "unknown", "regression ", "cpu-pressure "):
             with self.subTest(value=value):
                 result = self.run_gate(check=True, ADDP_ONLINE_NODE_METRICS_CASE=value)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.host.trace.exists())
                 self.assertFalse(self.host.secrets.exists())
+
+    def test_cpu_case_uses_the_same_owned_lifecycle_and_cleanup(self):
+        result=self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="cpu-pressure")
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn("metrics-case:cpu-pressure",self.host.trace.read_text())
+        self.assertIn("infra_cleanup=zero_residuals",(self.host.artifacts/"summary.txt").read_text())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):

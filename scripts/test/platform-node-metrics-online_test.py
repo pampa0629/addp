@@ -1158,10 +1158,10 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison"):
+        for value in ("regression", "complete-comparison", "cpu-pressure"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
-        for value in ("", "unknown", "cpu-pressure", "regression "):
+        for value in ("", "unknown", "cpu-pressure ", "regression "):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value), patch.object(ONLINE, "login") as login:
                 with self.assertRaises(ONLINE.SuiteError): ONLINE.run("http://example.invalid", Path("/secret"), {})
                 login.assert_not_called()
@@ -1250,7 +1250,7 @@ class ResourceAlertProtocolTest(unittest.TestCase):
         target = {"id": "22222222-2222-4222-8222-222222222222", "version": 2}
         policy = {"version": 2}
         rule = {"id": "33333333-3333-4333-8333-333333333333", "version": 2,
-                "trigger_percent": 40, "recovery_percent": 35, "trigger_seconds": 30, "recovery_seconds": 30}
+                "metric_key": "node.memory.used_percent", "trigger_percent": 40, "recovery_percent": 35, "trigger_seconds": 30, "recovery_seconds": 30}
         return node, target, policy, rule
 
     def event(self, kind="opened"):
@@ -1278,6 +1278,24 @@ class ResourceAlertProtocolTest(unittest.TestCase):
         signature = "v1=" + ONLINE.hmac.new(receiver.secret.encode(), stamp.encode()+b"."+body, ONLINE.hashlib.sha256).hexdigest()
         return body, {"X-ADDP-Webhook-ID": delivery, "X-ADDP-Webhook-Timestamp": stamp,
                       "X-ADDP-Webhook-Signature": signature}
+
+    def test_cpu_budget_caps_both_machine_fraction_and_core_count(self):
+        for cores in (1,2,4,8,12):
+            plan=ONLINE.cpu_pressure_plan(cores,5)
+            self.assertLessEqual(plan['quota_nanos'],1_000_000_000)
+            self.assertLessEqual(plan['quota_nanos'],cores*250_000_000)
+            self.assertLess(plan['recovery_percent'],plan['trigger_percent'])
+            self.assertLess(plan['trigger_percent'],100)
+            self.assertEqual(plan['max_seconds'],300)
+        for args in ((True,5),(0,5),(2.5,5),(64,5),(2,float('nan')),(2,99)):
+            with self.subTest(args=args),self.assertRaises(ONLINE.SuiteError):ONLINE.cpu_pressure_plan(*args)
+
+    def test_cpu_event_must_match_the_configured_rule_signal(self):
+        node,target,policy,rule=self.context();rule['metric_key']='node.cpu.busy_percent'
+        event=self.event();event['signal']='node.cpu.busy_percent'
+        ONLINE.assert_resource_alert_event(event,node,target,policy,rule)
+        event['signal']='node.memory.used_percent'
+        with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_resource_alert_event(event,node,target,policy,rule)
 
     def test_memory_budget_uses_smallest_cap_and_rejects_indistinguishable_or_invalid_pressure(self):
         gib = 1024**3
@@ -1409,13 +1427,26 @@ class ResourceAlertProtocolTest(unittest.TestCase):
             self.assertNotIn('memory_baseline', detail)
             self.assertTrue(check())
         with patch.object(ONLINE, 'assert_resources'), patch.object(ONLINE, 'eventually', side_effect=wait):
-            plan = ONLINE.fresh_memory_pressure_plan(admin, node, target, after, detail)
+            plan = ONLINE.fresh_pressure_plan(admin, node, target, after, detail)
         self.assertEqual(plan['baseline_percent'], 25)
         self.assertEqual(detail['memory_baseline']['sampled_at'], '2026-10-17T01:00:01Z')
 
+    def test_cpu_calibration_requires_both_current_core_count_and_busy_sample(self):
+        node,target,_,_=self.context();after=ONLINE.utc_timestamp('2026-10-17T01:00:00Z')
+        old={'series':[{'metric_key':key,'points':[{'value':value,'sampled_at':stamp}]} for key,value,stamp in (
+            (ONLINE.CPU_KEYS[0],2.0,'2026-10-17T00:59:59Z'),(ONLINE.CPU_KEYS[1],5,'2026-10-17T01:00:01Z'))]}
+        fresh=copy.deepcopy(old);fresh['series'][0]['points'][0]['sampled_at']='2026-10-17T01:00:01Z'
+        client=unittest.mock.Mock(request=unittest.mock.Mock(side_effect=[ONLINE.API.Response(200,old),ONLINE.API.Response(200,fresh)]))
+        def wait(check,message,timeout):self.assertFalse(check());self.assertTrue(check())
+        with patch.object(ONLINE,'assert_resources'),patch.object(ONLINE,'eventually',side_effect=wait):
+            detail={};plan=ONLINE.fresh_pressure_plan(client,node,target,after,detail,'cpu')
+        self.assertEqual(plan['logical_cores'],2)
+        self.assertEqual(plan['baseline_percent'],5)
+        self.assertEqual(detail['cpu_baseline']['sampled_at'],'2026-10-17T01:00:01Z')
+
     def test_lifecycle_enforces_identity_cas_missing_source_recovery_and_history_cleanup(self):
-        for fail_at in (None, "destination_enable", "source_unknown"):
-            with self.subTest(fail_at=fail_at):
+        for pressure_kind, fail_at in (("memory",None),("memory","destination_enable"),("memory","source_unknown"),("cpu",None),("cpu","destination_enable"),("cpu","pressure_open")):
+            with self.subTest(pressure_kind=pressure_kind,fail_at=fail_at):
                 node, target, query_policy, _ = self.context()
                 clock = [1800000000.0]
                 state = {"rule": None, "destination": None, "incident": None, "deliveries": [], "phase": "baseline", "source_actions": [], "baseline_reads": 0}
@@ -1437,7 +1468,7 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                     if kind == "opened": incident["resource_evidence"] = evidence
                     event = {"schema": "addp.platform-resource-alert/v1", "event_id": ("4" if kind == "opened" else "6")*8+"-4444-4444-8444-444444444444",
                              "event_type": kind, "incident_id": 9, "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
-                             "signal": "node.memory.used_percent", "severity": "warning", "occurred_at": stamp(), "evidence": evidence}
+                             "signal": ONLINE.PRESSURE_METRICS[pressure_kind][-1], "severity": "warning", "occurred_at": stamp(), "evidence": evidence}
                     body, headers = self.signed(receiver, event, delivery=("5" if kind == "opened" else "7")*8+"-5555-4555-8555-555555555555")
                     for _ in range(2 if kind == "opened" else 1): receiver.accept(body, headers)
                     state["deliveries"].append({"id": headers["X-ADDP-Webhook-ID"], "event_id": event["event_id"], "event_type": kind,
@@ -1453,7 +1484,8 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                         percent = 35 if state["baseline_reads"] == 0 else 25
                         state["baseline_reads"] += 1
                         total = 8*1024**3
-                        value = {"series": [{"metric_key": k, "points": [{"value": v, "sampled_at": stamp()}]} for k, v in zip(ONLINE.MEMORY_KEYS, (total, total*(1-percent/100), percent))]}
+                        values=(total,total*(1-percent/100),percent) if pressure_kind=="memory" else (2,percent)
+                        value = {"series": [{"metric_key": k, "points": [{"value": v, "sampled_at": stamp()}]} for k, v in zip(ONLINE.PRESSURE_METRICS[pressure_kind],values)]}
                     elif route == ONLINE.RESOURCE_RULES and method == "GET":
                         rows = [] if state["rule"] is None else [dict(state["rule"])]
                         if rows and rows[0]["enabled"]:
@@ -1486,9 +1518,10 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                                                         secret_configured=False if old is None else old["secret_configured"])
                             value = dict(state["destination"])
                     elif route == ONLINE.ALERTS:
+                        if fail_at=="pressure_open" and state["phase"]=="high":raise ONLINE.SuiteError("original pressure failure")
                         if state["phase"] == "high" and state["incident"] is None:
                             state["incident"] = {"id": 9, "category": "resource", "subject_kind": "host_node", "subject_id": node["node_id"],
-                                                 "signal": "node.memory.used_percent", "severity": "warning", "status": "open", "opened_at": stamp(database=True)}
+                                                 "signal": ONLINE.PRESSURE_METRICS[pressure_kind][-1], "severity": "warning", "status": "open", "opened_at": stamp(database=True)}
                             notify("opened")
                         if state["phase"] == "released" and state["incident"]["status"] == "open":
                             state["incident"].update(status="resolved", resolved_at=stamp(database=True)); notify("resolved")
@@ -1506,11 +1539,11 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                 def pressure(directory, plan, detail):
                     self.assertGreaterEqual(state["baseline_reads"], 2)
                     self.assertEqual(plan['baseline_percent'], 25)
-                    self.assertLess(state['rule']['trigger_percent'], 35)
+                    self.assertLess(state['rule']['trigger_percent'], 35 if pressure_kind=="memory" else 45)
                     state["phase"] = "high"; detail["pressure_started_at"] = clock[0]
                     try: yield
                     finally:
-                        state["phase"] = "released"; detail.update(memory_released=True, pressure_released_at=clock[0])
+                        state["phase"] = "released"; detail.update({pressure_kind+"_released":True,"pressure_released_at":clock[0]})
                 def action(value):
                     state["source_actions"].append(value)
                     state["phase"] = "unknown" if value == "stop" else "high"
@@ -1522,12 +1555,12 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                      patch.object(ONLINE, "assert_resources"), patch.object(ONLINE, "ResourceAlertReceiver", return_value=receiver), \
                      patch.object(type(receiver), "__enter__", enter), patch.object(type(receiver), "__exit__", close), \
                      patch.object(ONLINE.API, "GatewayClient", return_value=denied), patch.object(ONLINE, "eventually", side_effect=wait), \
-                     patch.object(ONLINE, "write_evidence") as checkpoint, patch.object(ONLINE, "native_memory_pressure", pressure), patch.object(ONLINE, "source_action", side_effect=action), \
+                     patch.object(ONLINE, "write_evidence") as checkpoint, patch.object(ONLINE, "native_memory_pressure", side_effect=pressure) as memory_load, patch.object(ONLINE.FIXTURE,"cpu_pressure",side_effect=pressure) as cpu_load, patch.object(ONLINE, "source_action", side_effect=action), \
                      patch.object(ONLINE, "source_scrape_failed", return_value=True), patch.object(ONLINE.time, "time", side_effect=lambda: clock[0]), \
                      patch.object(ONLINE.time, "monotonic", side_effect=lambda: clock[0]), patch.object(ONLINE.time, "sleep", side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds)):
                     if fail_at:
                         with self.assertRaisesRegex(ONLINE.SuiteError, "original .* failure"):
-                            ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
+                            ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report, pressure_kind=pressure_kind)
                         self.assertFalse(state["destination"]["enabled"])
                         checkpoint.assert_not_called()
                         self.assertTrue(report["resource_alert_lifecycle"]["receiver_closed"])
@@ -1536,16 +1569,25 @@ class ResourceAlertProtocolTest(unittest.TestCase):
                             self.assertFalse(state["rule"]["enabled"])
                             self.assertEqual(state["source_actions"], ["stop", "start"])
                     else:
-                        ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report)
+                        ONLINE.run_resource_alert_lifecycle(admin, denied, denied, [denied, denied], unittest.mock.Mock(), node, target, query_policy, Path("/secret"), report, pressure_kind=pressure_kind)
                         detail = report["resource_alert_lifecycle"]
                         self.assertEqual(detail["result"], "passed")
                         checkpoint.assert_called_once_with(report)
                         self.assertTrue(detail["configuration_removed_history_retained"])
                         self.assertIsNone(state["rule"]); self.assertIsNone(state["destination"])
-                        self.assertGreaterEqual(detail["unknown_does_not_resolve"]["duration_seconds"], 45)
-                        self.assertEqual(state["source_actions"], ["stop", "start"])
+                        if pressure_kind=="memory":
+                            self.assertGreaterEqual(detail["unknown_does_not_resolve"]["duration_seconds"], 45)
+                        else:self.assertNotIn("unknown_does_not_resolve",detail)
+                        self.assertEqual(state["source_actions"], ["stop", "start"] if pressure_kind=="memory" else [])
                         self.assertEqual(detail["opened_incident"]["id"], detail["resolved_incident"]["id"])
                         self.assertEqual(len(detail["signed_receipts"]), 3)
+                    self.assertEqual(memory_load.called,pressure_kind=="memory" and fail_at!="destination_enable")
+                    self.assertEqual(cpu_load.called,pressure_kind=="cpu" and fail_at!="destination_enable")
+                    if fail_at=="pressure_open":
+                        self.assertTrue(report["resource_alert_lifecycle"]["cpu_released"])
+                        self.assertFalse(state["rule"]["enabled"])
+                        self.assertEqual(state["source_actions"],[])
+
 
 class MetricsEvidenceCheckpointTest(unittest.TestCase):
     def test_completed_phase_survives_abrupt_exit_without_passing_the_suite(self):
