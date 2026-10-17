@@ -1,6 +1,69 @@
 import json
 
 
+def test_real_entry_executes_first_crs_workflow_without_worker_replacement(tmp_path):
+    """The real script must initialize native CRS safely in its execution thread."""
+    import os
+    from pathlib import Path
+    import socket
+    import subprocess
+    import sys
+    import time
+    from urllib.request import ProxyHandler, Request, build_opener
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    env = dict(os.environ, PORT=str(port), WORKFLOW_BIND_HOST="127.0.0.1",
+               SYSTEM_URL="http://127.0.0.1:1", GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="",
+               PYTHONFAULTHANDLER="1")
+    opener = build_opener(ProxyHandler({}))
+    base = f"http://127.0.0.1:{port}"
+    log = tmp_path / "native-entry.log"
+    with log.open("w") as stream:
+        process = subprocess.Popen([sys.executable, "api_server.py"], cwd=Path(__file__).parent,
+                                   env=env, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                assert process.poll() is None, log.read_text()
+                try:
+                    with opener.open(base + "/health", timeout=1) as response:
+                        if response.status == 200:
+                            break
+                except OSError:
+                    pass
+                time.sleep(.1)
+            else:
+                raise AssertionError(log.read_text())
+            source = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {},
+                "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]}}]}
+            payload = {"workflow_def": {"tasks": [{"id": "faces", "operator": "polygonize",
+                "params": {"input_gdf": source}, "depends_on": []}]},
+                "runtime": {"tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}}
+            request = Request(base + "/api/workflow", data=json.dumps(payload).encode(),
+                              headers={"Content-Type": "application/json"})
+            with opener.open(request, timeout=10) as response:
+                assert response.status == 202
+                execution_id = json.load(response)["execution_id"]
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                with opener.open(base + "/api/executions/" + execution_id, timeout=3) as response:
+                    state = json.load(response)
+                if state["status"] in {"success", "failed"}:
+                    break
+                time.sleep(.01)
+            assert state["status"] == "success", (state, log.read_text())
+            assert len(json.loads(state["result"])["result"]["features"]) == 1
+            assert log.read_text().count("Booting worker with pid:") == 1, log.read_text()
+        except Exception as exc:
+            raise AssertionError(log.read_text()) from exc
+        finally:
+            process.terminate()
+            process.wait(timeout=15)
+        assert process.returncode == 0, log.read_text()
+
+
 def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
     calls = []
 

@@ -4,6 +4,61 @@ Python 数据处理工作流运行时 API 服务
 提供 REST API 接口供 Develop 和 Orchestrator 调用
 """
 
+
+def run_runtime():
+    """One HTTP process model for native development and the product image."""
+    import os
+    import threading
+    import time
+    from dotenv import find_dotenv, load_dotenv
+    from urllib.request import ProxyHandler, build_opener
+    from gunicorn.app.base import BaseApplication
+
+    load_dotenv(find_dotenv())
+    port = int(os.getenv('PORT', '8099'))
+
+    def register_after_ready():
+        from api_server import register_to_system_with_retry
+
+        opener = build_opener(ProxyHandler({}))
+        while True:
+            try:
+                with opener.open(f'http://127.0.0.1:{port}/health', timeout=2) as response:
+                    if response.status == 200:
+                        break
+            except OSError:
+                pass
+            time.sleep(1)
+        register_to_system_with_retry()
+
+    def post_worker_init(worker):
+        threading.Thread(target=register_after_ready,
+                         name='geopython-runtime-registration', daemon=True).start()
+
+    class RuntimeApplication(BaseApplication):
+        def load_config(self):
+            for key, value in {
+                'bind': f"{os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')}:{port}",
+                'workers': 1, 'worker_class': 'gthread', 'threads': 4,
+                'timeout': int(os.getenv('GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT', '7200')),
+                'preload_app': False, 'post_worker_init': post_worker_init,
+            }.items():
+                self.cfg.set(key, value)
+
+        def load(self):
+            from api_server import app as application
+
+            return application
+
+    RuntimeApplication().run()
+
+
+if __name__ == '__main__':
+    # Native GIS libraries must be imported in the worker, never before fork.
+    run_runtime()
+    raise SystemExit(0)
+
+
 import base64
 
 from flask import Flask, request, jsonify
@@ -553,51 +608,3 @@ def register_to_system_with_retry():
     from addp_common.client import retry_runtime_registration
 
     retry_runtime_registration(register_to_system, "geopython_workflow", logger)
-
-
-# ========================================
-# 主入口
-# ========================================
-
-def run_runtime():
-    """One HTTP process model for native development and the product image."""
-    import threading
-    from urllib.request import ProxyHandler, build_opener
-    from gunicorn.app.base import BaseApplication
-
-    port = int(os.getenv('PORT', '8099'))
-
-    def register_after_ready():
-        opener = build_opener(ProxyHandler({}))
-        while True:
-            try:
-                with opener.open(f'http://127.0.0.1:{port}/health', timeout=2) as response:
-                    if response.status == 200:
-                        break
-            except OSError:
-                pass
-            time.sleep(1)
-        register_to_system_with_retry()
-
-    def post_worker_init(worker):
-        threading.Thread(target=register_after_ready,
-                         name='geopython-runtime-registration', daemon=True).start()
-
-    class RuntimeApplication(BaseApplication):
-        def load_config(self):
-            for key, value in {
-                'bind': f"{os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')}:{port}",
-                'workers': 1, 'worker_class': 'gthread', 'threads': 4,
-                'timeout': int(os.getenv('GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT', '7200')),
-                'preload_app': False, 'post_worker_init': post_worker_init,
-            }.items():
-                self.cfg.set(key, value)
-
-        def load(self):
-            return app
-
-    RuntimeApplication().run()
-
-
-if __name__ == '__main__':
-    run_runtime()
