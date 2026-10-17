@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -767,7 +768,21 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             return {}
         def interrupt(*args):
             ONLINE.interrupt_online(ONLINE.signal.SIGTERM, None)
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE, "wait_manager_read_boundary"), patch.object(ONLINE.signal, "signal") as handlers, patch.object(ONLINE, "validate_user_identity"), patch.object(ONLINE, "validate_engine"), patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]) as owned, patch.object(ONLINE, "wait_for_scan"), patch.object(ONLINE, "find_item"), patch.object(ONLINE, "run_manager_import", side_effect=imported), patch.object(ONLINE, "record_manager_import_receipt"), patch.object(ONLINE, "run_native_lineage", side_effect=interrupt), patch.object(ONLINE, "cleanup_tasks") as cleanup, patch.object(ONLINE.sys, "stderr"):
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(ONLINE.os.environ, environment))
+            stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
+            stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
+            handlers = stack.enter_context(patch.object(ONLINE.signal, "signal"))
+            stack.enter_context(patch.object(ONLINE, "validate_user_identity"))
+            stack.enter_context(patch.object(ONLINE, "validate_engine"))
+            owned = stack.enter_context(patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]))
+            stack.enter_context(patch.object(ONLINE, "wait_for_scan"))
+            stack.enter_context(patch.object(ONLINE, "find_item"))
+            stack.enter_context(patch.object(ONLINE, "run_manager_import", side_effect=imported))
+            stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt"))
+            stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=interrupt))
+            cleanup = stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
+            stack.enter_context(patch.object(ONLINE.sys, "stderr"))
             self.assertEqual(ONLINE.main(), 1)
         self.assertEqual(handlers.call_args_list[0].args, (ONLINE.signal.SIGINT, ONLINE.interrupt_online))
         owned.assert_called_with(client, exact_name=ONLINE.task_name("run-123"))
@@ -805,7 +820,28 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(events, ["import-receipt"], "import proof must survive a later scenario failure")
             return {"two_hop_verified": True}
         output = io.StringIO()
-        with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE, "GatewayClient", return_value=client), patch.object(ONLINE, "wait_manager_read_boundary"), patch.object(ONLINE.signal, "signal"), patch.object(ONLINE, "validate_user_identity", return_value={}), patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]), patch.object(ONLINE, "suite_task_ids", return_value=[]), patch.object(ONLINE, "wait_for_scan", return_value="scan-id"), patch.object(ONLINE, "find_item", side_effect=find), patch.object(ONLINE, "run_native_lineage", side_effect=native), patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}) as mongodb, patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}), patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}), patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}), patch.object(ONLINE, "cleanup_definitions"), patch.object(ONLINE, "run_write_failures", return_value={}), patch.object(ONLINE, "run_browser", return_value={}), patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}), patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt), patch.object(ONLINE, "cleanup_tasks"), patch.object(ONLINE.sys, "stdout", output):
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(ONLINE.os.environ, environment))
+            stack.enter_context(patch.object(ONLINE, "GatewayClient", return_value=client))
+            stack.enter_context(patch.object(ONLINE, "wait_manager_read_boundary"))
+            stack.enter_context(patch.object(ONLINE.signal, "signal"))
+            stack.enter_context(patch.object(ONLINE, "validate_user_identity", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "validate_engine", side_effect=[{"engine_type": "postgresql"}, {"engine_type": "mongodb"}]))
+            stack.enter_context(patch.object(ONLINE, "suite_task_ids", return_value=[]))
+            stack.enter_context(patch.object(ONLINE, "wait_for_scan", return_value="scan-id"))
+            stack.enter_context(patch.object(ONLINE, "find_item", side_effect=find))
+            stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=native))
+            mongodb = stack.enter_context(patch.object(ONLINE, "run_mongodb_lineage", return_value={"rerun_verified": True}))
+            stack.enter_context(patch.object(ONLINE, "run_orchestrated_lineage", return_value={"three_hop_verified": True}))
+            stack.enter_context(patch.object(ONLINE, "run_multi_source_lineage", return_value={"multiple_origins_verified": True}))
+            stack.enter_context(patch.object(ONLINE, "run_wide_lineage", return_value={"node_count": 1500, "edge_count": 1000}))
+            stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
+            stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}))
+            stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt))
+            stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
+            stack.enter_context(patch.object(ONLINE.sys, "stdout", output))
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
