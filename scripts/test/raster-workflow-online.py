@@ -1347,27 +1347,27 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         facts,scan=validate_success(execution,[terrain_locator],locator,'create',expectation)
         wait_execution(client,'meta',scan,timeout)
         if monitor.get('metadata',{}).get('lineage_facts')!=facts:raise SuiteError('DEM Monitor lineage differs')
-        physical_evidence=native['terrain'][case_name];artifact=execution['metadata']['result']['final_result']
-        if (physical_evidence.get('cog_valid') is not True or physical_evidence.get('has_overviews') is not True
-            or physical_evidence.get('source_unchanged') is not True or physical_evidence.get('case_name')!=case_name
-            or not isinstance(physical_evidence.get('sha256'),str) or not physical_evidence['sha256']
-            or physical_evidence.get('valid_pixels')!=expectation['valid_pixels']
-            or physical_evidence.get('invalid_pixels')!=expectation['width']*expectation['height']-expectation['valid_pixels']
-            or physical_evidence.get('color_interpretations')!=['Gray']
-            or physical_evidence.get('overview_sizes')!=[[80,128]]
+        terrain_physical=native['terrain'][case_name];artifact=execution['metadata']['result']['final_result']
+        if (terrain_physical.get('cog_valid') is not True or terrain_physical.get('has_overviews') is not True
+            or terrain_physical.get('source_unchanged') is not True or terrain_physical.get('case_name')!=case_name
+            or not isinstance(terrain_physical.get('sha256'),str) or not terrain_physical['sha256']
+            or terrain_physical.get('valid_pixels')!=expectation['valid_pixels']
+            or terrain_physical.get('invalid_pixels')!=expectation['width']*expectation['height']-expectation['valid_pixels']
+            or terrain_physical.get('color_interpretations')!=['Gray']
+            or terrain_physical.get('overview_sizes')!=[[80,128]]
             or artifact['bands'][0].get('overviews')!=[[80,128]]
             or artifact['bands'][0].get('color_interpretation')!='Gray'):
             raise SuiteError('DEM physical pixels/overview evidence differs')
         pending=[]
-        lineage,browser=queue_output_inspection(pending,client,env['ADDP_ONLINE_TEST_RUN_ID'],terrain_source,
-            terrain_locator,target_engine,name,identifier,case_name,identity,browser_runner,expectation,physical_evidence,
+        terrain_lineage,browser=queue_output_inspection(pending,client,env['ADDP_ONLINE_TEST_RUN_ID'],terrain_source,
+            terrain_locator,target_engine,name,identifier,case_name,identity,browser_runner,expectation,terrain_physical,
             [terrain_locator],artifact,size_evidence)
         finish_output_inspections(pending,repository,env,client,timeout)
         target=support.find_fixture_item(client,target_engine,'raster-target/'+name,'DEM target')
-        terrain_hashes[case_name]=physical_evidence['sha256']
+        terrain_hashes[case_name]=terrain_physical['sha256']
         terrain_cases.append({'case_name':case_name,'execution_id':identifier,'artifact':artifact,
             'data_item_size_bytes':target['size_bytes'],'automatic_target_scan_execution_id':scan,
-            'lineage':lineage,'browser':browser,'physical':native})
+            'lineage':terrain_lineage,'browser':browser,'physical':native})
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,

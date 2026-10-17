@@ -280,6 +280,11 @@ class Client:
 class RasterWorkflowOnlineTest(unittest.TestCase):
     def test_dem_append_keeps_original_scenes_and_checks_three_cogs_and_vector_preview(self):
         report=self.run_scene()
+        self.assertIsInstance(report['physical'], list)
+        self.assertEqual([item['sha256'] for item in report['physical']], ['original', 'original', 'new'])
+        self.assertEqual(report['lineage'], {'source_item_id': 10, 'target_item_id': 20,
+            'execution_id': report['executions'][-1]['execution_id']})
+        self.assertEqual(report['browser']['execution_id'], report['lineage']['execution_id'])
         self.assertEqual([c['case_name'] for c in report['terrain_cases']],list(m.fixture.TERRAIN_CASES)+['dem-contour'])
         self.assertEqual([c['lineage']['source_item_id'] for c in report['terrain_cases'][:3]],[70]*3)
         self.assertEqual(len(report['terrain_cases'][-1]['physical']['preserved_sha256']),45)
