@@ -36,6 +36,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
 import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
+import { fitGraphToViewport } from './graphViewport.js'
 
 const { t } = useI18n()
 
@@ -125,9 +126,7 @@ function initGraph() {
     defaultEdge: { type: 'quadratic' }
   })
 
-  graphInstance.on('afterlayout', () => {
-    graphInstance?.fitView()
-  })
+  graphInstance.on('afterlayout', fitView)
 
   graphInstance.on('node:click', evt => {
     const model = evt.item.getModel()
@@ -143,7 +142,7 @@ function initGraph() {
 }
 
 function fitView() {
-  graphInstance?.fitView()
+  fitGraphToViewport(graphInstance)
 }
 
 let resizeTimer = null
@@ -154,7 +153,7 @@ function resizeGraph() {
   resizeTimer = setTimeout(() => {
     if (!graphInstance || !containerRef.value) return
     graphInstance.changeSize(containerRef.value.offsetWidth, containerRef.value.offsetHeight)
-    graphInstance.fitView()
+    fitView()
   }, 300)
 }
 
