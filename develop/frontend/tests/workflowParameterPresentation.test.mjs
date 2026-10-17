@@ -108,4 +108,19 @@ assert.deepEqual(
   ]
 )
 
+for (const language of ['zh-cn', 'en']) {
+  const messages = JSON.parse(await readFile(resolve(`src/i18n/${language}.json`), 'utf8'))
+  const t = key => key.split('.').reduce((value, segment) => value[segment], messages)
+  const parameter = { name: 'write_mode', type: 'string', required: true, default: 'create', enum: ['create', 'replace'] }
+  assert.equal(mod.workflowParameterLabel(parameter, t), language === 'en' ? 'Write mode' : '写入方式')
+  assert.equal(mod.workflowParameterValueLabel(parameter, 'create', t), language === 'en' ? 'Create' : '新建')
+  assert.equal(mod.workflowParameterValueLabel(parameter, 'replace', t), language === 'en' ? 'Replace' : '替换')
+  assert.deepEqual(mod.workflowExternalParameterSummaries([parameter], { write_mode: 'replace' }, {}, { t }), [{
+    key: 'write_mode', label: language === 'en' ? 'Write mode' : '写入方式', kind: 'value', configured: true,
+    value: language === 'en' ? 'Replace' : '替换'
+  }])
+  assert.equal(mod.workflowParameterValueLabel({ name: 'layer_name' }, 'create', t), 'create')
+  assert.equal(mod.workflowParameterValueLabel(parameter, 'append', t), 'append')
+}
+
 console.log('workflow parameter presentation tests passed')

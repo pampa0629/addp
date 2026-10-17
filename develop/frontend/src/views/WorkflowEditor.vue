@@ -890,7 +890,7 @@ const workflowOutputStatus = computed(() => {
       operator?.public_parameters || operator?.publicParameters || [],
       task.params || {},
       resourceEnginesById.value,
-      { emptyLabel: t('develop.workflow.notConfigured') }
+      { emptyLabel: t('develop.workflow.notConfigured'), t }
     ).find(summary => summary.kind === 'resource' && summary.key === 'target_resource')
     return {
       key: task.id,

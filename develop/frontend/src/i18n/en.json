@@ -423,6 +423,11 @@
       "loadFailed": "Failed to load engine list"
     },
     "operatorParams": {
+      "writeMode": "Write mode",
+      "writeModes": {
+        "create": "Create",
+        "replace": "Replace"
+      },
       "selectImages": "Select images",
       "selectNode": "Please select a node from the canvas",
       "nodeInfo": "Node Info",

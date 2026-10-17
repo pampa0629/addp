@@ -64,6 +64,38 @@ for (const portType of ['number', 'string']) {
   })
 }
 
+for (const language of ['zh-cn', 'en']) {
+  test(`write mode labels are localized while saved values remain canonical (${language})`, async ({ page }) => {
+    const backend = await installMockBackend(page, { includeVectorTiles: true, language })
+    await page.goto(`/workflow?action=edit&id=${SAVED_TASK_ID}`)
+    const save = page.locator('.primary-actions').getByRole('button', { name: language === 'en' ? 'Save' : '保存', exact: true })
+    await expect(save).toBeEnabled()
+    const open = async () => {
+      const canvas = page.getByRole('region', { name: /工作流 DAG 画布|Workflow DAG canvas/ })
+      await canvas.press('ArrowRight')
+      await canvas.press('Enter')
+    }
+    await open()
+    const field = page.locator('[data-param-name="write_mode"]')
+    await expect(field).toContainText(language === 'en' ? 'Write mode' : '写入方式')
+    await expect(field).toContainText(language === 'en' ? 'Create' : '新建')
+    await field.locator('.el-select__wrapper').click()
+    await page.getByRole('option', { name: language === 'en' ? 'Replace' : '替换', exact: true }).click()
+    await save.click()
+    await expect.poll(() => backend.updates.length).toBe(1)
+    expect(backend.updates[0].payload.content.workflow_definition.tasks[0].params.write_mode).toBe('replace')
+    await page.reload()
+    await expect(save).toBeEnabled()
+    await open()
+    await expect(field).toContainText(language === 'en' ? 'Replace' : '替换')
+    await field.locator('.el-select__wrapper').click()
+    await page.getByRole('option', { name: language === 'en' ? 'Create' : '新建', exact: true }).click()
+    await save.click()
+    await expect.poll(() => backend.updates.length).toBe(2)
+    expect(backend.updates[1].payload.content.workflow_definition.tasks[0].params.write_mode).toBe('create')
+  })
+}
+
 test('edits vector tile attributes and keeps the public file workflow after reload', async ({ page }) => {
   const backend = await installMockBackend(page, { includeVectorTiles: true })
   await openSavedWorkflow(page)
@@ -1117,6 +1149,7 @@ function visibleDialogSurface(page) {
 }
 
 async function installMockBackend(page, {
+  language = 'zh-cn',
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
   includeStructuredParameters = false,
@@ -1241,6 +1274,7 @@ async function installMockBackend(page, {
     operator.category_path = ['矢量处理', '成果生成']
     operator.public_parameters = [
       { name: 'attributes', display_name: '保留属性', type: 'array', default: [] },
+      { name: 'write_mode', type: 'string', required: true, default: 'create', enum: ['create', 'replace'] },
       { name: 'min_zoom', display_name: '最小层级', type: 'integer' },
       { name: 'max_zoom', display_name: '最大层级', type: 'integer' },
       { name: 'layer_name', display_name: '输出图层', type: 'string' }
@@ -1284,7 +1318,7 @@ async function installMockBackend(page, {
     })
   }
 
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), language)
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())

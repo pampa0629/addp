@@ -133,7 +133,7 @@ import {
   registerWorkflowEditorNode
 } from './workflowEditorNode'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   initialWorkflow: {
@@ -310,7 +310,7 @@ watch(() => props.operators, () => {
 
 watch(() => props.validationIssues, applyValidationStates, { deep: true })
 
-watch(() => props.resourceEnginesById, () => {
+watch([() => props.resourceEnginesById, locale], () => {
   if (!graph.value) return
   graph.value.getNodes().forEach(node => {
     const model = node.getModel()
@@ -993,7 +993,7 @@ function externalParameterSummaries(parameters, params) {
     parameters,
     params,
     props.resourceEnginesById,
-    { emptyLabel: t('develop.workflow.notConfigured') }
+    { emptyLabel: t('develop.workflow.notConfigured'), t }
   )
 }
 

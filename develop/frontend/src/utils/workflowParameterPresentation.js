@@ -6,6 +6,19 @@ import {
   resourceBindingNameParam
 } from './workflowResourceBindings'
 
+export function workflowParameterLabel(parameter, t) {
+  return parameter.name === 'write_mode' && t
+    ? t('develop.operatorParams.writeMode')
+    : parameter.display_name || parameter.name
+}
+
+export function workflowParameterValueLabel(parameter, value, t) {
+  if (parameter.name === 'write_mode' && t && ['create', 'replace'].includes(value)) {
+    return t(`develop.operatorParams.writeModes.${value}`)
+  }
+  return formatParameterValue(value)
+}
+
 export function workflowResourcePresentation(parameter, params = {}, enginesById = {}) {
   const binding = getResourceBinding(parameter)
   if (!binding) return emptyResourcePresentation()
@@ -50,7 +63,7 @@ export function workflowExternalParameterSummaries(
   parameters = [],
   params = {},
   enginesById = {},
-  { emptyLabel = '-' } = {}
+  { emptyLabel = '-', t } = {}
 ) {
   const resourceParameters = parameters.filter(parameter => parameter.ui_type === 'resource_tree_picker')
   const managedNames = new Set(resourceParameters.flatMap(resourceBindingFieldNames))
@@ -63,7 +76,7 @@ export function workflowExternalParameterSummaries(
       const resource = workflowResourcePresentation(parameter, params, enginesById)
       summaries.push({
         key: parameter.name,
-        label: parameter.display_name || parameter.name,
+        label: workflowParameterLabel(parameter, t),
         kind: 'resource',
         configured: resource.configured,
         engineName: resource.engineName,
@@ -88,10 +101,10 @@ export function workflowExternalParameterSummaries(
     if (!configuredValue.configured && !parameter.required) continue
     summaries.push({
       key: parameter.name,
-      label: parameter.display_name || parameter.name,
+      label: workflowParameterLabel(parameter, t),
       kind: 'value',
       configured: configuredValue.configured,
-      value: configuredValue.configured ? formatParameterValue(configuredValue.value) : emptyLabel
+      value: configuredValue.configured ? workflowParameterValueLabel(parameter, configuredValue.value, t) : emptyLabel
     })
   }
 

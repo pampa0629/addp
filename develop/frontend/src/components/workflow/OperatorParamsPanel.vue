@@ -196,7 +196,7 @@
               <!-- 常规参数渲染 -->
               <el-form-item
                 v-else
-                :label="param.display_name || param.name"
+                :label="workflowParameterLabel(param, t)"
                 :required="param.required"
                 class="param-field"
                 :class="{ 'is-validation-target': highlightedParamName === param.name }"
@@ -206,7 +206,7 @@
               >
                 <template #label>
                   <div class="param-label">
-                    <span>{{ param.display_name || param.name }}</span>
+                    <span>{{ workflowParameterLabel(param, t) }}</span>
                     <el-tooltip v-if="param.description" placement="top">
                       <template #content>{{ param.description }}</template>
                       <el-icon class="help-icon"><QuestionFilled /></el-icon>
@@ -228,7 +228,7 @@
                     <el-option
                       v-for="option in param.enum"
                       :key="option"
-                      :label="option"
+                      :label="workflowParameterValueLabel(param, option, t)"
                       :value="option"
                     />
                   </template>
@@ -295,7 +295,7 @@ import { ElMessage } from 'element-plus'
 import { geometryColumnFactsFromSelection, parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import { isWorkflowInputParameter, isWorkflowCollectionInput } from '@/utils/workflowInputBindings'
 import { validationMessagesForParams } from '@/utils/workflowValidationIssues'
-import { workflowResourcePresentation } from '@/utils/workflowParameterPresentation'
+import { workflowResourcePresentation, workflowParameterLabel, workflowParameterValueLabel } from '@/utils/workflowParameterPresentation'
 import {
   applyResourceBindingSelection,
   clearResourceBindingSelection,
@@ -570,9 +570,11 @@ const getComponentProps = (param) => {
 // 获取 placeholder
 const getPlaceholder = (param) => {
   if (param.default !== undefined && param.default !== null) {
-    return t('develop.operatorParams.defaultValue', { value: param.default })
+    return t('develop.operatorParams.defaultValue', {
+      value: param.name === 'write_mode' ? workflowParameterValueLabel(param, param.default, t) : param.default
+    })
   }
-  return t('develop.operatorParams.inputPlaceholder', { name: param.display_name || param.name })
+  return t('develop.operatorParams.inputPlaceholder', { name: workflowParameterLabel(param, t) })
 }
 
 // 参数变更处理(级联清空逻辑)

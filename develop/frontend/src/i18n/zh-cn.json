@@ -434,6 +434,11 @@
       "loadTreeFailed": "加载文件树失败"
     },
     "operatorParams": {
+      "writeMode": "写入方式",
+      "writeModes": {
+        "create": "新建",
+        "replace": "替换"
+      },
       "selectImages": "选择影像",
       "selectNode": "请从画布中选择一个节点",
       "nodeInfo": "节点信息",
