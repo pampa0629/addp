@@ -1,5 +1,7 @@
 # Manager 模块说明
 
+KML／GML／TopoJSON 的 S3 兼容消费验收复用既有 Manager Hosted suite、GeoPython 产品 Runtime 和隔离 Business MinIO，增加三份固定哈希双图层源；普通 User 权限仍为已批准的十项。Owner/v11、browser/v13 严格要求图层及源几何、实际地图要素和像素、TopoJSON 未知 CRS 默认暂停、临时选择清除／切换／重开、普通刷新及原文件下载哈希证明，旧报告拒绝。标准 `make test-manager-online-runner` 自动覆盖夹具、拒绝边界、浏览器语法和 CI 登记；不新增服务或 workflow，不变更血缘产品实现。本轮端点为 Hosted 的 `http://127.0.0.1:59002`，MinIO 结果只认证 S3 兼容协议，不能登记为外部云 S3 认证；正式 T4 须另行核对当次运行、源码及清理证据后记录。
+
 导入弹窗按 Transfer／Meta 的公开执行响应展示进度：终态 `failed`、`timeout`、`cancelled` 均结束轮询并复用共享 `ExecutionFailure`，只消费 `error_details` 与实际执行 UUID，不读取原始运行错误或已删除的 `error_msg`。Transfer 成功后等待其准确的 Meta 子执行，元数据同步失败不能显示整个导入成功；关闭、重试和卸载必须隔离旧请求。数据保护拒绝的共享提示使用适用于数据读取与结果保护的中性文案，不将导入失败解释为 SQL 拼接错误。受影响层级为共享前端 T1、Manager T1／隔离浏览器 T3／构建，以及既有 Console Hosted T4；标准入口 `make test-common-frontend`、`make test-manager-frontend` 和 `make test-transfer-online-runner` 已自动覆盖，无新增服务或 CI Job。
 
 私有导入 Hosted 场景使用 Console 的真实 Manager 导入弹窗上传相同两点 ZIP，核对目标命名空间、CPG 编码、Transfer 执行及 Meta 子扫描等待和资源树刷新；非上传者拒绝后，经普通 User 的 Console Transfer 执行详情核对零读写和共享安全诊断。上传一经接受即记录当次 task／execution 身份，后续页面失败仍交给既有清理；浏览器不复制后台导入 HTTP 路线。独立回执升级为 `addp.manager-private-import/v2`，包含两阶段 `addp.manager-private-import-browser/v1` 证据，完整 suite 为 v12；必须核对当前 User／Tenant／run 及准确执行 ID，缺少任一页面证明不得登记通过。

@@ -310,6 +310,40 @@ esac
             self.assertIn('cp --quiet /fixture/format-samples/format-validation.xlsx fixture/addp-online/format-samples/format-validation.xlsx', commands)
             self.assertIn('stat fixture/addp-online/format-samples/format-validation.xlsx', commands)
 
+    def test_vector_exchange_sources_are_fixed_dual_layer_and_in_lifecycle(self):
+        expected = {
+            'sites.kml': (521, '5675075f71b41c5fc8f7bf2111d7fd27365b5cd2c57ab24507ef5e04073897a3'),
+            'sites.gml': (634, '5756d3a3a4f2c68fbe17ae0a292a79e13daef3793bb37172f6648c9843a5cd75'),
+            'projected.topojson': (468, '2f8de88ca8ad0024011ee9e2f29c8b50e88407dca8c0efc0f614352debf8c805'),
+        }
+        previous = None
+        for _ in range(2):
+            result = self.run_fixture('start')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sources = {}
+            for name, facts in expected.items():
+                key = 'format-samples/vector-exchange/' + name
+                raw = (self.root / 'model-fixtures' / key).read_bytes()
+                self.assertEqual((len(raw), hashlib.sha256(raw).hexdigest()), facts)
+                self.assertIn(f'cp --quiet /fixture/{key} fixture/addp-online/{key}', self.log.read_text())
+                self.assertIn(f'stat fixture/addp-online/{key}', self.log.read_text())
+                sources[name] = raw
+            kml = ET.fromstring(sources['sites.kml'])
+            self.assertEqual([node.text for node in kml.findall('.//{*}Folder/{*}name')], ['sites', 'roads'])
+            gml = ET.fromstring(sources['sites.gml'])
+            self.assertEqual([node.text.strip() for node in gml.findall('.//{*}pos')], ['28.19 112.98'])
+            topology = json.loads(sources['projected.topojson'])
+            self.assertEqual(list(topology['objects']), ['routes', 'sites'])
+            self.assertNotIn('crs', topology)
+            self.assertEqual(topology['objects']['routes']['geometries'][1]['arcs'], [-1])
+            if previous is not None:
+                self.assertEqual(sources, previous)
+            previous = sources
+        stopped = self.run_fixture('stop')
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn('rm -sf minio', self.log.read_text())
+        self.assertFalse(Path(self.environment['ADDP_TEST_CONTAINER_STATE']).exists())
+
     def test_trajectory_sources_are_deterministic_equivalent_and_large(self):
         expected = [{'format': 'csv', 'object': 'format-samples/trajectory.csv', 'rows': 3000, 'size_bytes': 119352, 'sha256': '3d3a319a7551880a0e6fce80d76812300c92e3e7161a98bca4508b48ac6354a4'}, {'format': 'json', 'object': 'format-samples/trajectory.json', 'rows': 3000, 'size_bytes': 218335, 'sha256': '26bf3a3eca3b6e249be2ac698494d20184808d394fb8bdb1b1dd556a42eb2cb5'}, {'format': 'geojson', 'object': 'format-samples/trajectory.geojson', 'rows': 3000, 'size_bytes': 496708, 'sha256': '1542cb5872982beacf9eadd839b65a644067f4ee7145a130b61d4dcfa4902d7d'}]
         previous = None

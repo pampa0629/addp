@@ -335,6 +335,9 @@ class FakeGatewayClient:
                 {"id": 230, "full_name": "addp-online/model3d/fbx/vCube.fbx", "item_type": "object",
                  "fingerprint": "f" * 64, "size_bytes": SUITE.FBX_BASIC_SOURCE["size_bytes"],
                  "attributes": {"item": {"data_type": "model_3d", "format": "fbx", "layout": "single"}}},
+                *[{"id": 220+i, "full_name": f"addp-online/{spec['object']}", "item_type": "object",
+                   "fingerprint": spec["sha256"], "size_bytes": spec["size_bytes"]}
+                  for i, spec in enumerate(SUITE.VECTOR_EXCHANGE_SOURCES)],
                 *[{"id": 210+i, "full_name": f"addp-online/{spec['object']}", "item_type": "object",
                    "fingerprint": spec["sha256"], "size_bytes": spec["size_bytes"]}
                   for i, spec in enumerate(SUITE.TRAJECTORY_SOURCES)],
@@ -592,17 +595,50 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                  "locator": f"addp://engine/27/path/addp-online/{spec['object']}?type=object&item_id={204+i}"}
                 for i, spec in enumerate(SUITE.STRUCTURED_JSON_SOURCES)]
 
+    def browser_vector_exchange(self):
+        return [{**spec, "item_id": 220+i, "fingerprint": spec['sha256'],
+                 "locator": f"addp://engine/27/path/addp-online/{spec['object']}?type=object&item_id={220+i}"}
+                for i, spec in enumerate(SUITE.VECTOR_EXCHANGE_SOURCES)]
+
     def browser_trajectories(self):
         return [{**spec, "item_id": 210+i, "fingerprint": spec['sha256'],
                  "locator": f"addp://engine/27/path/addp-online/{spec['object']}?type=object&item_id={210+i}"}
                 for i, spec in enumerate(SUITE.TRAJECTORY_SOURCES)]
+
+    def test_vector_exchange_proof_is_mandatory_exact_and_rejects_old_reports(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(),
+                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
+                    "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
+        mutations = [lambda value: value.pop('vector_exchange'), lambda value: value['vector_exchange'].pop(),
+                     lambda value: value.update(schema_version='addp.manager-internal-artifact-lineage-browser/v12')]
+        for index in range(3):
+            for key in ('metadata_verified', 'ordinary_refresh', 'reopened', 'source_unchanged'):
+                mutations.append(lambda value, index=index, key=key: value['vector_exchange'][index].update({key: False}))
+            mutations.append(lambda value, index=index: value['vector_exchange'][index].update(download_sha256='wrong'))
+            for layer in range(2):
+                for key in ('table_verified', 'map_loaded'):
+                    mutations.append(lambda value, index=index, layer=layer, key=key: value['vector_exchange'][index]['layer_proofs'][layer].update({key: False}))
+                mutations.append(lambda value, index=index, layer=layer: value['vector_exchange'][index]['layer_proofs'][layer].update(geometries=[]))
+        mutations.append(lambda value: value['vector_exchange'][2].update(temporary_reset_verified=False))
+        mutations.append(lambda value: value['vector_exchange'][2].update(resource_switch_verified=False))
+        mutations.append(lambda value: value['vector_exchange'][2]['layer_proofs'][0].update(temporary_crs='EPSG:4326'))
+        for change in mutations:
+            report = self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence)
+            change(report)
+            with self.assertRaises(SUITE.SuiteError):
+                SUITE.validate_browser_report(report, run_id='run-1', **evidence)
+        evidence['vector_exchange'][0]['sha256'] = 'wrong'
+        with self.assertRaisesRegex(SUITE.SuiteError, 'vector exchange sources'):
+            SUITE.validate_browser_report(self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence), run_id='run-1', **evidence)
 
     def test_trajectory_proof_is_mandatory_exact_and_rejects_old_reports(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(),
                     "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
-                    "trajectories": self.browser_trajectories()}
+                    "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         mutations = [lambda value: value.pop('trajectories'), lambda value: value['trajectories'].pop(),
                      lambda value: value.update(schema_version='addp.manager-internal-artifact-lineage-browser/v10')]
         for index in range(3):
@@ -621,14 +657,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -647,6 +683,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "raster_generation_requests": 0,
             "raster": {**evidence["raster"], "range_loaded": True, "map_loaded": True},
             "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "model_loaded": True, "content_loaded": True, **({"download_sha256": model["sha256"]} if model["format"] in SUITE.MESH_SOURCE_FACTS else {})} for model in evidence["models"]],
+            "vector_exchange": [{**source, "metadata_verified": True, "ordinary_refresh": True,
+                "reopened": True, "source_unchanged": True, "download_sha256": source["sha256"],
+                "temporary_reset_verified": source["format"] == "topojson", "resource_switch_verified": source["format"] == "topojson",
+                "layer_proofs": [{**layer, "table_verified": True, "map_loaded": True,
+                    "temporary_crs": "EPSG:3857" if source["format"] == "topojson" else ""}
+                    for layer in source["layers"]]} for source in evidence["vector_exchange"]],
             "trajectories": [{**source, "whole_file_refused": True, "selection_verified": True,
                 "matched_rows": 48, "single_device_rows": 24, "scanned_rows": 3000,
                 "rows_verified": True, "map_loaded": True, "oversize_rejected": True,
@@ -783,7 +825,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def test_raster_browser_evidence_is_mandatory(self):
         evidence = {'execution_id': 'execution-1', 'item_id': 91, 'output_name': 'source.copc.laz',
                     'pptx_item_id': 92, 'pptx_page_count': 3, 'models': self.browser_models(), 'raster': self.browser_raster(),
-                    'delimited': self.browser_delimited(), 'workbook': self.browser_workbook(), 'structured_json': self.browser_structured_json(), 'trajectories': self.browser_trajectories()}
+                    'delimited': self.browser_delimited(), 'workbook': self.browser_workbook(), 'structured_json': self.browser_structured_json(), 'trajectories': self.browser_trajectories(), 'vector_exchange': self.browser_vector_exchange()}
         for field in ('range_loaded', 'map_loaded'):
             report = self.browser_report({'ADDP_ONLINE_TEST_RUN_ID': 'run-1'}, evidence)
             report['raster'][field] = False
@@ -1039,7 +1081,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
                         "raster": self.browser_raster(), "delimited": self.browser_delimited(),
                         "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(),
-                        "trajectories": self.browser_trajectories(), "phase": phase}
+                        "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange(), "phase": phase}
             report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
             for key in (*SUITE.FBX_BASIC_PROOF, "download_sha256", "source_stream_sha256"):
                 with self.subTest(phase=phase, missing=key):
@@ -1080,14 +1122,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models, "phase": phase,
                         "raster": self.browser_raster(), "delimited": self.browser_delimited(),
-                        "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                        "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
             report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
             for index in (-2, -1):
                 bad = copy.deepcopy(report)
                 bad["models"][index].pop("download_sha256")
                 with self.assertRaisesRegex(SUITE.SuiteError, "contract mismatch"):
-                    SUITE.validate_browser_report(bad, run_id="run-1", **{k: v for k, v in evidence.items() if k not in ("phase", "delimited", "structured_json", "trajectories")},
-                        delimited=evidence["delimited"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"], phase=phase)
+                    SUITE.validate_browser_report(bad, run_id="run-1", **{k: v for k, v in evidence.items() if k not in ("phase", "delimited", "structured_json", "trajectories", "vector_exchange")},
+                        delimited=evidence["delimited"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"], vector_exchange=evidence["vector_exchange"], phase=phase)
 
     def test_glb_requires_a_textured_mesh_and_embedded_image(self):
         self.assertEqual(SUITE.validate_model_glb(fixture_glb(), "dae")["embedded_images"], 1)
@@ -1433,7 +1475,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         validated = SUITE.validate_browser_report(
@@ -1445,7 +1487,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             pptx_item_id=92,
             pptx_page_count=3,
             models=evidence["models"],
-            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"],
+            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"], vector_exchange=evidence["vector_exchange"],
         )
         self.assertEqual(validated, report)
 
@@ -1456,7 +1498,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
-            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(),
+            "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["pptx_page_after_engine_refresh"] = 1
@@ -1470,12 +1512,12 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 pptx_item_id=92,
                 pptx_page_count=3,
                 models=evidence["models"],
-            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"],
+            raster=evidence["raster"], delimited=evidence["delimited"], workbook=evidence["workbook"], structured_json=evidence["structured_json"], trajectories=evidence["trajectories"], vector_exchange=evidence["vector_exchange"],
             )
 
     def test_browser_model_report_must_match_both_artifacts_and_loaded_content(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         for change in (
             lambda report: report.pop("models"),
             lambda report: report["models"][0].update(result_id=999),
@@ -1491,7 +1533,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes", "basic_preview_source")} for model in self.browser_models()]
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "phase": "generation-entry"}
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange(), "phase": "generation-entry"}
         for mutate in (lambda report: report["models"][0].update(generation_entry_visible=False),
                        lambda report: report["models"].pop(),
                        lambda report: report["models"][1].update(item_id=999),
@@ -1508,7 +1550,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 models = [{key: value for key, value in model.items() if key in ("format", "locator", "item_id", "sha256", "size_bytes", "basic_preview_source")} for model in models]
             evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                         "pptx_item_id": 92, "pptx_page_count": 3, "models": models,
-                        "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "phase": phase}
+                        "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange(), "phase": phase}
             report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
             report["anonymous_refresh_401"] = 1
             SUITE.validate_browser_report(report, run_id="run-1", **evidence)
@@ -1522,7 +1564,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_gpu_diagnostics_validate_source_stage_and_total(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["gpu_performance_diagnostics"] = {"count": 2, "stages": [
             {"source": "chromium-webgl-driver", "stage": "raster-cog:preview", "count": 2}]}
@@ -1543,7 +1585,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
     def test_delimited_browser_proof_is_mandatory_and_exact(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
-                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         for mutate in (
             lambda report: report.pop("delimited_tables"),
             lambda report: report["delimited_tables"].pop(),
@@ -1586,7 +1628,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(),
-                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         mutations = [lambda value: value.pop('structured_json'),
             lambda value: value['structured_json'].pop(),
             lambda value: value['structured_json'][3].update(format='json'),
@@ -1634,7 +1676,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
                     "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(),
                     "raster": self.browser_raster(), "delimited": self.browser_delimited(),
-                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         mutations = [lambda value: value.pop("workbook"),
                      lambda value: value["workbook"]["sheets"].pop(),
                      lambda value: value["workbook"]["sheets"][1].update(columns=["city_id", "city_name"]),
@@ -1687,7 +1729,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
         evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
-                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories()}
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models(), "raster": self.browser_raster(), "delimited": self.browser_delimited(), "workbook": self.browser_workbook(), "structured_json": self.browser_structured_json(), "trajectories": self.browser_trajectories(), "vector_exchange": self.browser_vector_exchange()}
         with tempfile.TemporaryDirectory() as directory:
             environment = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-1"}
             def browser(*args, **kwargs):
@@ -1704,7 +1746,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v12")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v13")
 
 
 if __name__ == "__main__":

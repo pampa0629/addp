@@ -374,6 +374,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "format-samples/trajectory.csv",
         "format-samples/trajectory.json",
         "format-samples/trajectory.geojson",
+        "format-samples/vector-exchange/sites.kml",
+        "format-samples/vector-exchange/sites.gml",
+        "format-samples/vector-exchange/projected.topojson",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -408,6 +411,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "structured_json_sources",
         "TRAJECTORY_SOURCES",
         "trajectory_sources",
+        "VECTOR_EXCHANGE_SOURCES",
+        "vector_exchange_sources",
         "MODEL_FORMATS",
         "MESH_SOURCE_FACTS",
         "FBX_BASIC_SOURCE",
@@ -425,7 +430,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "force=not converging",
         "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
-        "addp.manager-internal-artifact-lineage/v10",
+        "addp.manager-internal-artifact-lineage/v11",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -471,7 +476,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "model_generation_requests",
         "anonymous_refresh_401",
         "failed_business_responses",
-        "addp.manager-internal-artifact-lineage-browser/v12",
+        "addp.manager-internal-artifact-lineage-browser/v13",
         "ADDP_ONLINE_MANAGER_DELIMITED_JSON",
         "verifyDelimitedTable",
         "delimited_tables",
@@ -487,6 +492,11 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON",
         "verifyTrajectoryRange",
         "trajectories: trajectoryEvidence",
+        "ADDP_ONLINE_MANAGER_VECTOR_EXCHANGE_JSON",
+        "verifyVectorExchange",
+        "vector_exchange: vectorEvidence",
+        "layer_proofs",
+        "temporary_reset_verified",
         "content_verified",
         "table_verified",
         "geometry_verified",

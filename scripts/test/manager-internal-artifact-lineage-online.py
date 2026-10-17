@@ -91,6 +91,43 @@ STRUCTURED_JSON_SOURCES = [
         "sha256": "84fcc7faa2b8d226bf5e605ebba862b0465a9895db0d10f13c2f3f75e5b56369"
     }
 ]
+VECTOR_EXCHANGE_SOURCES = [{'format': 'kml',
+  'object': 'format-samples/vector-exchange/sites.kml',
+  'size_bytes': 521,
+  'sha256': '5675075f71b41c5fc8f7bf2111d7fd27365b5cd2c57ab24507ef5e04073897a3',
+  'label_column': 'Name',
+  'layers': [{'name': 'sites',
+              'labels': ['长沙', '株洲'],
+              'geometries': [{'type': 'Point', 'coordinates': [112.98, 28.19, 8]},
+                             {'type': 'Point', 'coordinates': [113.13, 27.83, 9]}]},
+             {'name': 'roads',
+              'labels': ['route'],
+              'geometries': [{'type': 'LineString', 'coordinates': [[112.98, 28.19], [113.13, 27.83]]}]}]},
+ {'format': 'gml',
+  'object': 'format-samples/vector-exchange/sites.gml',
+  'size_bytes': 634,
+  'sha256': '5756d3a3a4f2c68fbe17ae0a292a79e13daef3793bb37172f6648c9843a5cd75',
+  'label_column': 'name',
+  'layers': [{'name': 'sites',
+              'labels': ['长沙'],
+              'geometries': [{'type': 'Point', 'coordinates': [112.98, 28.19]}]},
+             {'name': 'roads',
+              'labels': ['route'],
+              'geometries': [{'type': 'LineString', 'coordinates': [[112.98, 28.19], [113.13, 27.83]]}]}]},
+ {'format': 'topojson',
+  'object': 'format-samples/vector-exchange/projected.topojson',
+  'size_bytes': 468,
+  'sha256': '2f8de88ca8ad0024011ee9e2f29c8b50e88407dca8c0efc0f614352debf8c805',
+  'label_column': 'name',
+  'layers': [{'name': 'routes',
+              'labels': ['forward', 'reverse'],
+              'geometries': [{'type': 'LineString',
+                              'coordinates': [[500000, 3000000], [500010, 3000040], [500030, 3000060]]},
+                             {'type': 'LineString',
+                              'coordinates': [[500030, 3000060], [500010, 3000040], [500000, 3000000]]}]},
+             {'name': 'sites',
+              'labels': ['station'],
+              'geometries': [{'type': 'Point', 'coordinates': [500020, 3000060]}]}]}]
 TRAJECTORY_SOURCES = [
     {
         "format": "csv",
@@ -1339,6 +1376,7 @@ def validate_browser_report(
     workbook: dict[str, object],
     structured_json: list[dict[str, object]],
     trajectories: list[dict[str, object]],
+    vector_exchange: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
@@ -1358,6 +1396,11 @@ def validate_browser_report(
         for source, spec in zip(trajectories, TRAJECTORY_SOURCES)
     ):
         raise SuiteError("browser trajectory sources must match all three fixed fixtures")
+    if len(vector_exchange) != len(VECTOR_EXCHANGE_SOURCES) or any(
+        any(source.get(key) != value for key, value in spec.items())
+        for source, spec in zip(vector_exchange, VECTOR_EXCHANGE_SOURCES)
+    ):
+        raise SuiteError("browser vector exchange sources must match all three fixed fixtures")
     if [model.get("format") for model in models] != list(MODEL_FORMATS):
         raise SuiteError("browser models must match the eight fixed conversion fixtures")
     basic = _object(models[MODEL_FORMATS.index("fbx")].get("basic_preview_source"), "colored FBX source")
@@ -1365,7 +1408,7 @@ def validate_browser_report(
         raise SuiteError("browser colored FBX source must match the pinned original")
     positive_int(basic.get("item_id"), "colored FBX source item id")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v12",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1398,6 +1441,12 @@ def validate_browser_report(
             **({"first_page_rows": 20, "last_page_rows": 5, "last_page_disabled": True} if source["case"] == "records" else {}),
             **({"map_loaded": True, "table_verified": True, "geometry_verified": True, "feature_count": 2, "geometry_types": ["Point", "LineString"],
                 "source_srid": 4326, "source_crs": "EPSG:4326"} if source["format"] == "geojson" else {})} for source in structured_json],
+        "vector_exchange": [{**source, "metadata_verified": True, "ordinary_refresh": True,
+            "reopened": True, "source_unchanged": True, "download_sha256": source["sha256"],
+            "temporary_reset_verified": source["format"] == "topojson", "resource_switch_verified": source["format"] == "topojson",
+            "layer_proofs": [{**layer, "table_verified": True, "map_loaded": True,
+                "temporary_crs": "EPSG:3857" if source["format"] == "topojson" else ""}
+                for layer in source["layers"]]} for source in vector_exchange],
         "trajectories": [{**source, "whole_file_refused": True, "selection_verified": True,
             "matched_rows": 48, "single_device_rows": 24, "scanned_rows": 3000,
             "rows_verified": True, "map_loaded": True, "oversize_rejected": True,
@@ -1460,6 +1509,7 @@ def run_browser(
     workbook: dict[str, object],
     structured_json: list[dict[str, object]],
     trajectories: list[dict[str, object]],
+    vector_exchange: list[dict[str, object]],
     phase: str = "cached-preview",
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
@@ -1482,6 +1532,7 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_WORKBOOK_JSON": json.dumps(workbook),
             "ADDP_ONLINE_MANAGER_STRUCTURED_JSON": json.dumps(structured_json),
             "ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON": json.dumps(trajectories),
+            "ADDP_ONLINE_MANAGER_VECTOR_EXCHANGE_JSON": json.dumps(vector_exchange),
         }
     )
     result = subprocess.run(
@@ -1516,6 +1567,7 @@ def run_browser(
         workbook=workbook,
         structured_json=structured_json,
         trajectories=trajectories,
+        vector_exchange=vector_exchange,
         phase=phase,
     )
 
@@ -1574,6 +1626,13 @@ def run_scenario(
         if item.get("size_bytes") != spec["size_bytes"]:
             raise SuiteError("trajectory fixture source byte count differs from the fixed source")
         trajectories.append({**spec, "locator": build_item_locator(engine_id, item),
+            "item_id": item["id"], "fingerprint": item["fingerprint"]})
+    vector_exchange = []
+    for spec in VECTOR_EXCHANGE_SOURCES:
+        item = find_fixture_item(client, engine_id, f"{bucket}/{spec['object']}", spec['format'])
+        if item.get("size_bytes") != spec["size_bytes"]:
+            raise SuiteError("vector exchange fixture source byte count differs from the fixed source")
+        vector_exchange.append({**spec, "locator": build_item_locator(engine_id, item),
             "item_id": item["id"], "fingerprint": item["fingerprint"]})
     physical = physical_runner or (lambda action, request: raster_physical(repository, environment, action, request))
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
@@ -1747,6 +1806,7 @@ def run_scenario(
             workbook=workbook,
             structured_json=structured_json,
             trajectories=trajectories,
+            vector_exchange=vector_exchange,
         )
         browser_models = [{"format": model.format, "locator": model.locator,
                            "item_id": model.item["id"], **(MESH_SOURCE_FACTS.get(model.format, {})), **({"basic_preview_source": basic_fbx} if model.format == "fbx" else {}), **({"conversion_options": MAX_OPTIONS} if model.format == "max" else {})} for model in model_fixtures]
@@ -1777,7 +1837,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v10",
+            "schema_version": "addp.manager-internal-artifact-lineage/v11",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1791,6 +1851,7 @@ def run_scenario(
             "workbook_source": workbook,
             "structured_json_sources": structured_json,
             "trajectory_sources": trajectories,
+            "vector_exchange_sources": vector_exchange,
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},

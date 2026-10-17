@@ -27,6 +27,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_WORKBOOK_JSON',
   'ADDP_ONLINE_MANAGER_STRUCTURED_JSON',
   'ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON',
+  'ADDP_ONLINE_MANAGER_VECTOR_EXCHANGE_JSON',
   'GATEWAY_URL'
 ]
 
@@ -301,6 +302,157 @@ async function verifyWorkbook(page, api, source, artifactDir) {
   }
 }
 
+async function verifyVectorExchange(page, api, source, artifactDir, knownLocator) {
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const container = frame.locator('.container-preview')
+  const table = container.locator('.table-preview')
+  const received = [], pending = [], readErrors = []
+  const receive = response => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/v1/manager/preview' || url.searchParams.get('locator') !== source.locator) return
+    expect(url.searchParams.has('temporary_crs')).toBe(false)
+    expect(url.searchParams.has('source_crs')).toBe(false)
+    pending.push(response.json().then(body => received.push({ child: url.searchParams.get('child_name'), status: response.status(), ...body }))
+      .catch(error => readErrors.push(error.message)))
+  }
+  const metadata = async () => {
+    const item = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read vector exchange facts')
+    expect(item.id).toBe(source.item_id)
+    expect(item.fingerprint).toBe(source.fingerprint)
+    expect(item.size_bytes).toBe(source.size_bytes)
+    expect(item.attributes.item).toMatchObject({ format: source.format, data_type: 'container', layout: 'single' })
+    const children = item.attributes.type_info.container.children
+    expect(children.map(child => child.name).sort()).toEqual(source.layers.map(layer => layer.name).sort())
+    if (source.format === 'topojson') {
+      for (const child of children) expect(child.native?.srid).toBeUndefined()
+    }
+  }
+  const unknown = async () => {
+    await expect(table.locator('.temporary-crs-select')).not.toContainText('EPSG:3857')
+    await expect(table.getByText(/源坐标系未知，已跳过地图渲染|Source CRS is unknown/)).toBeVisible()
+    await expect(table.locator('.ol-viewport')).toHaveCount(0)
+  }
+  const selectLayer = async layer => {
+    await expect(container.locator('.child-select')).toBeVisible()
+    if (!(await container.locator('.child-select').innerText()).includes(layer.name)) {
+      await container.locator('.child-select').click()
+      await frame.getByRole('option', { name: new RegExp(`^${layer.name}(?:\\s|$)`) }).click()
+    }
+    await expect.poll(() => received.filter(value => value.child === layer.name && value.preview_type === 'table').at(-1)?.data?.rows?.length)
+      .toBe(layer.labels.length)
+    const data = received.filter(value => value.child === layer.name && value.preview_type === 'table').at(-1).data
+    expect(data.total).toBe(layer.labels.length)
+    expect(data.rows.map(row => row[source.label_column])).toEqual(layer.labels)
+    expect(data.rows.map(row => row[data.geometry_column])).toEqual(layer.geometries)
+    expect(data.source_srid).toBe(source.format === 'topojson' ? 0 : 4326)
+    expect(data.transform_status).toBe(source.format === 'topojson' ? 'unknown_crs' : 'not_transformed')
+    for (const label of layer.labels) await expect(table.getByRole('cell', { name: label, exact: true })).toBeVisible()
+    await expect(table.getByRole('button', { name: /下一页|Go to next page/, exact: true })).toBeDisabled()
+    if (source.format === 'topojson') {
+      await unknown()
+      const combo = table.getByRole('combobox', { name: /本次预览的源坐标系|Source CRS for this preview/ })
+      await combo.press('ArrowDown')
+      const list = await combo.getAttribute('aria-controls')
+      await frame.locator(`[id="${list}"]`).getByRole('option', { name: 'EPSG:3857', exact: true }).click()
+    } else {
+      expect(data.source_crs.toUpperCase()).toBe('EPSG:4326')
+      await expect(table.locator('.temporary-crs-select')).toHaveCount(0)
+    }
+    const project = coords => typeof coords[0] === 'number'
+      ? source.format === 'topojson' ? coords : [coords[0] * Math.PI * 6378137 / 180,
+        Math.log(Math.tan(Math.PI / 4 + coords[1] * Math.PI / 360)) * 6378137, ...coords.slice(2)]
+      : coords.map(project)
+    const expected = layer.geometries.map(geometry => ({ type: geometry.type, coordinates: project(geometry.coordinates) }))
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    await expect(table.locator('.map-container canvas').first()).toBeVisible()
+    // Inspect the real OpenLayers feature coordinates, not merely an empty canvas.
+    await expect.poll(async () => {
+      const actual = await table.locator('.openlayers-map-renderer').evaluate(element => {
+        const value = element.__vueParentComponent?.setupState?.mapInstance
+        const map = value?.value || value
+        if (!map || map.getView().getAnimating()) return null
+        return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
+          .map(feature => ({ type: feature.getGeometry().getType(), coordinates: feature.getGeometry().getCoordinates() }))
+      })
+      if (!actual || actual.length !== expected.length) return false
+      actual.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+      return actual.every((geometry, index) => geometry.type === expected[index].type
+        && geometry.coordinates.flat(Infinity).length === expected[index].coordinates.flat(Infinity).length
+        && geometry.coordinates.flat(Infinity).every((value, ordinal) => Math.abs(value - expected[index].coordinates.flat(Infinity)[ordinal]) < 0.00001))
+    }).toBe(true)
+    // Use the visible controls to fit both endpoints in the compact preview.
+    await table.getByRole('button', { name: /Zoom out|缩小/, exact: true }).click()
+    await table.getByRole('button', { name: /Zoom out|缩小/, exact: true }).click()
+    await expect.poll(() => table.locator('.ol-layer canvas').last().evaluate(canvas => {
+      const context = canvas.getContext('2d')
+      if (!context || !canvas.width || !canvas.height) return 0
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      let count = 0
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3] > 0 && (pixels[i + 2] > pixels[i] + 20 || pixels[i + 1] > pixels[i] + 20)) count++
+      }
+      return count
+    })).toBeGreaterThan(10)
+    await container.screenshot({ path: resolve(artifactDir, `vector-${source.format}-${layer.name}.png`) })
+    return { ...layer, geometries: data.rows.map(row => row[data.geometry_column]), table_verified: true,
+      map_loaded: true, temporary_crs: source.format === 'topojson' ? 'EPSG:3857' : '' }
+  }
+  page.on('response', receive)
+  try {
+    await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
+    const proofs = []
+    for (const layer of source.layers) proofs.push(await selectLayer(layer))
+    await metadata()
+    const before = await verifyOriginalDownload(page, frame, source)
+    if (source.format === 'topojson') {
+      const selector = table.locator('.temporary-crs-select')
+      await selector.hover()
+      await selector.locator('.el-select__clear').click()
+      await unknown()
+    }
+    const refresh = page.waitForResponse(response => response.request().method() === 'POST'
+      && /\/api\/v1\/manager\/engines\/[1-9][0-9]*\/items\/refresh$/.test(new URL(response.url()).pathname)
+      && new URL(response.url()).searchParams.get('locator') === source.locator)
+    const previous = received.length
+    await frame.getByRole('treeitem', { name: source.object.split('/').at(-1), exact: true }).locator('.node-action').click()
+    const refreshed = await refresh
+    expect(refreshed.status()).toBe(200)
+    expect(refreshed.request().postData()).toBeNull()
+    const lastLayer = source.layers.at(-1)
+    await expect.poll(() => received.slice(previous).filter(value => value.child === lastLayer.name && value.preview_type === 'table').length)
+      .toBeGreaterThan(0)
+    const refreshedData = received.slice(previous).filter(value => value.child === lastLayer.name && value.preview_type === 'table').at(-1).data
+    expect(refreshedData.rows.map(row => row[refreshedData.geometry_column])).toEqual(lastLayer.geometries)
+    expect(refreshedData.rows.map(row => row[source.label_column])).toEqual(lastLayer.labels)
+    if (source.format === 'topojson') await unknown()
+    await metadata()
+    await Promise.all(pending)
+    received.length = 0
+    await page.reload()
+    await selectLayer(source.layers[0])
+    if (source.format === 'topojson') {
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(knownLocator)}`)
+      await expect(table.getByRole('cell', { name: '长沙', exact: true })).toBeVisible()
+      await expect(table.locator('.temporary-crs-select')).toHaveCount(0)
+      await Promise.all(pending)
+      received.length = 0
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
+      await selectLayer(source.layers[0])
+    }
+    const after = await verifyOriginalDownload(page, frame, source)
+    expect(after.checksum).toBe(before.checksum)
+    await metadata()
+    await Promise.all(pending)
+    expect(readErrors).toEqual([])
+    return { ...source, layer_proofs: proofs, metadata_verified: true, ordinary_refresh: true,
+      reopened: true, source_unchanged: true, download_sha256: after.checksum,
+      temporary_reset_verified: source.format === 'topojson', resource_switch_verified: source.format === 'topojson' }
+  } finally {
+    await Promise.all(pending)
+    page.off('response', receive)
+  }
+}
+
 async function verifyStructuredJSON(page, api, source, artifactDir) {
   const document = { title: '格式验证', settings: { enabled: true, threshold: null }, values: [1, '中文', false] }
   const features = { type: 'FeatureCollection', features: [
@@ -545,7 +697,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
   const pptxPageCount = Number(env.ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT)
   if (!Number.isInteger(pptxItemID) || pptxItemID <= 0) throw new Error('Manager PPTX item ID must be positive')
   if (pptxPageCount !== 3) throw new Error('Manager PPTX fixture must have exactly 3 pages')
-  test.setTimeout(240_000)
+  test.setTimeout(360_000)
   const raster = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_JSON)
   expect(Number.isInteger(raster.item_id) && raster.item_id > 0).toBe(true)
   expect(raster.preview_url).toMatch(/^\/api\/v1\/manager\/raster_cog\/[1-9][0-9]*\/content$/)
@@ -558,6 +710,8 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
   expect(structuredJSON.map(source => source.case)).toEqual(['document', 'records', 'geojson', 'geojson-json'])
   const trajectories = JSON.parse(env.ADDP_ONLINE_MANAGER_TRAJECTORIES_JSON)
   expect(trajectories.map(source => source.format)).toEqual(['csv', 'json', 'geojson'])
+  const vectorExchange = JSON.parse(env.ADDP_ONLINE_MANAGER_VECTOR_EXCHANGE_JSON)
+  expect(vectorExchange.map(source => source.format)).toEqual(['kml', 'gml', 'topojson'])
   const phase = env.ADDP_ONLINE_MANAGER_BROWSER_PHASE
   expect(['generation-entry', 'cached-preview']).toContain(phase)
   const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
@@ -695,7 +849,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v12', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v13', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -793,13 +947,17 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     for (const source of trajectories) {
       trajectoryEvidence.push(await verifyTrajectoryRange(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR))
     }
+    const vectorEvidence = []
+    for (const source of vectorExchange) {
+      vectorEvidence.push(await verifyVectorExchange(page, api, source, env.ADDP_ONLINE_ARTIFACT_DIR, vectorExchange[0].locator))
+    }
     expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v12',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v13',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
@@ -822,6 +980,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       workbook: workbookEvidence,
       structured_json: structuredEvidence,
       trajectories: trajectoryEvidence,
+      vector_exchange: vectorEvidence,
       gpu_performance_diagnostics: gpuDiagnostics.snapshot(),
       browser_warning_errors: 0,
       failed_business_responses: 0,

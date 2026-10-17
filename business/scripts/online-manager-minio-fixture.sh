@@ -9,7 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
-FORMAT_OBJECTS=(format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson)
+FORMAT_OBJECTS=(format-samples/vector-exchange/sites.kml format-samples/vector-exchange/sites.gml format-samples/vector-exchange/projected.topojson format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson)
 MODEL_OBJECTS=(dae/model.dae dae/texture.png 3ds/model.3ds 3ds/texture.png ifc/model.ifc osgb/model.osgb skp/model.skp max/model.max max/texture.png fbx/model.fbx fbx/vCube.fbx fbx/LICENSE-three.txt obj/model.obj obj/model.mtl obj/texture.png)
 
 fail() {
@@ -170,6 +170,12 @@ geojson_features = {"type": "FeatureCollection", "features": [
 for name, value in [("document.json", json_document), ("records.json", json_records),
                     ("features.geojson", geojson_features), ("features.json", geojson_features)]:
     (root / "format-samples" / name).write_bytes((json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode('utf-8'))
+
+# Fixed, self-contained dual-layer exchange files; no schema or texture downloads.
+vector_exchange = {'sites.kml': '<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>\n      <Folder><name>sites</name>\n       <Placemark><name>长沙</name><Point><coordinates>112.98,28.19,8</coordinates></Point></Placemark>\n       <Placemark><name>株洲</name><Point><coordinates>113.13,27.83,9</coordinates></Point></Placemark>\n      </Folder><Folder><name>roads</name><Placemark><name>route</name>\n       <LineString><coordinates>112.98,28.19 113.13,27.83</coordinates></LineString>\n      </Placemark></Folder></Document></kml>', 'sites.gml': '<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml" xmlns:app="urn:addp:test">\n      <gml:featureMember><app:sites gml:id="p1"><app:name>长沙</app:name><app:position>\n       <gml:Point srsName="urn:ogc:def:crs:EPSG::4326"><gml:pos>28.19 112.98</gml:pos></gml:Point>\n      </app:position></app:sites></gml:featureMember>\n      <gml:featureMember><app:roads gml:id="r1"><app:name>route</app:name><app:position>\n       <gml:LineString srsName="urn:ogc:def:crs:EPSG::4326"><gml:posList>28.19 112.98 27.83 113.13</gml:posList></gml:LineString>\n      </app:position></app:roads></gml:featureMember>\n     </gml:FeatureCollection>', 'projected.topojson': '{"type":"Topology","transform":{"scale":[10,20],"translate":[500000,3000000]},\n     "objects":{\n      "routes":{"type":"GeometryCollection","geometries":[\n       {"type":"LineString","properties":{"name":"forward"},"arcs":[0]},\n       {"type":"LineString","properties":{"name":"reverse"},"arcs":[-1]}]},\n      "sites":{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[2,3],"properties":{"name":"station"}}]}},\n     "arcs":[[[0,0],[1,2],[2,1]]]}'}
+(root / 'format-samples/vector-exchange').mkdir()
+for name, content in vector_exchange.items():
+    (root / 'format-samples/vector-exchange' / name).write_bytes(content.encode('utf-8'))
 
 # Three deterministic, interleaved device sources exceed the whole-file point cap.
 from datetime import datetime, timedelta, timezone

@@ -1184,6 +1184,8 @@ FileGDB 的 `.gdb` 目录是一个 data item，目录内 `a*.gdbtable`、`a*.gdb
 
 临时 CRS 交互沿用 `make test-common-frontend` 的共享策略 T1 和 `make test-manager-frontend` 的页面组合 T3，覆盖中英文选择、实际绘图、容器／单文件翻页、清除与重新打开、资源／图层切换，以及声明不进入 API 或持久视图。既有共享表格消费者由 `make test-service-frontend` 验证；已有自动发现和 Platform CI 登记覆盖新增测试，不增加专用服务或 workflow。确定性页面夹具不替代真实扫描、Runtime 读取和 Hosted T4。
 
+三格式的 S3 兼容跨模块验收使用隔离 Business MinIO（本轮 Hosted 端点为 `http://127.0.0.1:59002`），不将该结果登记为外部云 S3 认证；扩展既有 `manager-internal-artifact-lineage` Hosted suite，不新增服务、权限或部署路线。Business 夹具拥有三份固定字节／哈希的双图层源文件；既有普通 User 通过真实 Meta 扫描、GeoPython 原生 Runtime、Manager 和 Console 核对图层、中文属性、源几何／轴序、地图实际要素、未知 CRS 默认暂停及临时选择的清除／图层切换／重开行为、普通刷新和源下载哈希。Owner/v11 与 browser/v13 报告必须包含三份独立来源和逐层证明，旧报告或缺项拒绝；只扩展格式消费断言，不改变血缘产品实现。清理沿用现有领域清理和 disposable Business／Infra 零残留核验。`make test-manager-online-runner` 覆盖确定性夹具、报告拒绝边界、登记和浏览器语法；正式 T4 结果须在对应源码的 Hosted 运行结束后单独登记，不能由 runner 通过推定。
+
 最小验证使用 `make test-geopython-workflow`（真实原生驱动、多图层、坐标／轴序、TopoJSON 量化与反向弧、未知 CRS 和拒绝边界）、`make test-go`（格式注册、Meta 和 Manager 路由／读取协议），沿用 Platform CI 已登记的 Go 和 GeoPython 门禁。上述门禁不等同于跨模块 T4 或真实页面验收。升级后，已有 KML 文档项应通过父目录的强制扫描重新发现为容器；known-item refresh 只重建既有身份，不能代替格式分类重识别。
 
 参考：[GDAL KML](https://gdal.org/en/stable/drivers/vector/kml.html)、[GDAL GML](https://gdal.org/en/stable/drivers/vector/gml.html)、[GDAL TopoJSON](https://gdal.org/en/stable/drivers/vector/topojson.html)、[TopoJSON 格式规范](https://github.com/topojson/topojson-specification)。
