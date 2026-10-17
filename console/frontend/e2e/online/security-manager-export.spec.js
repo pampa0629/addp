@@ -171,8 +171,8 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   async function checkPanel(panel) {
     await expect(panel).toBeVisible()
-    await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
-    await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
+    await expect(panel).toContainText(/执行已被阻止|Execution was blocked/)
+    await expect(panel).toContainText(/请核对当前账号的数据访问资格|Check the current account's data access eligibility/)
     await expect(panel).toContainText('develop.query.protection_required')
     await expect(panel).toContainText(denied.execution_id)
   }
@@ -196,8 +196,8 @@ async function verifyDevelopProtectionRefusal(page, api, env, navigate) {
 async function checkProtectionFailurePanel(panel, executionID, stage) {
   expect(['preparation', 'result']).toContain(stage)
   await expect(panel).toBeVisible()
-  await expect(panel).toContainText(/本次查询已被阻止|The query was blocked/)
-  await expect(panel).toContainText(/请直接选择受保护字段或使用字段别名|Select protected fields directly or with column aliases/)
+  await expect(panel).toContainText(/执行已被阻止|Execution was blocked/)
+  await expect(panel).toContainText(/请核对当前账号的数据访问资格|Check the current account's data access eligibility/)
   await expect(panel).toContainText(stage === 'result' ? /保存执行结果|Save execution result/ : /准备查询|Prepare query/)
   await expect(panel).toContainText('data_protection_required')
   await expect(panel).toContainText(executionID)

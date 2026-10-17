@@ -115,8 +115,8 @@ for (const [code, reason, explanation, action] of [
 })
 
 for (const [locale, explanation, action] of [
-  ['zh-cn', '本次查询已被阻止', '请直接选择受保护字段或使用字段别名'],
-  ['en', 'The query was blocked', 'Select protected fields directly or with column aliases']
+  ['zh-cn', '执行已被阻止', '请核对当前账号的数据访问资格'],
+  ['en', 'Execution was blocked', "Check the current account's data access eligibility"]
 ]) for (const stage of ['preparation', 'result']) test(`explains protection refusal in ${locale} at ${stage} without runtime values`, async ({ page }) => {
   await installMockBackend(page, { resultKind: 'table', locale, errorDetails: {
     category: 'execution_failed', code: 'develop.query.protection_required', message: 'private-value SELECT phone',
