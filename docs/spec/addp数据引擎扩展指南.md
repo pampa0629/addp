@@ -24,9 +24,9 @@ TiDB 的准入基线固定为 8.5.8，并且只使用 PingCAP 在 Docker Hub 公
 
 KingbaseES 的准入基线固定为 V9R1C10 `V009R001C010B0004` 官方 Docker tar：x86_64 SHA-256 为 `16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da`、官方 MD5 为 `26bb99891becc52f533488aac5fabfb6`，ARM64 SHA-256 为 `3d08f5a99f5659723c34315b71d49f783847cba19c7a0c61c2628bf9f131c8ee`、官方 MD5 为 `7b1661123cf7fc34c6be3553e8b6d24d`。Business 按宿主 CPU 选择同一 build 的介质并统一加载为固定中性本地镜像引用，不建立两套 Compose 服务。只开放 `DB_MODE=pg` 与 `engine_type=kingbase`；正式 T5 必须在 Linux x86_64 证明 `KingbaseES V009R001C010`、`database_mode=pg`、`lib/pq`、参数绑定、COPY、`ON CONFLICT`、复合 watermark、唯一键目录查询和查询取消，并显式证明 openGauss `MERGE` 不在本方言路径。真实目录还必须证明 KingbaseES 系统 schema 以及 `public.sys_stat_statements`、`public.sys_stat_statements_all` 不进入业务枚举、leaf count 或直接路径解析。官方镜像内置 90 天试用 License 只允许一次性准入评估，不得通过新建容器重置试用期；长期 T5/T2/T4 仅在受保护的 owner-managed Linux x86_64 Runner 上使用 x86_64 介质和 owner 正规获得、在有效期内且 SHA-256 明确的 License 文件运行。介质、镜像和 License 都不重分发；GitHub Hosted 与 macOS Docker Desktop 不是正式门禁路径。
 
-第三个国产数据库的 T0 取舍固定为 TiDB：[PingCAP 微众银行案例](https://www.pingcap.com/case-study/webank-cuts-costs-scaling-tidb-petabytes/)公开了自 2019 年采用 TiDB、运行 80 余集群和 PB 级数据的金融生产实践，足以证明国内重点行业采用；[TiDB、PD、TiKV 开源仓库](https://github.com/pingcap)采用 Apache 2.0，官方 Docker Hub 三组件镜像可公开拉取并固定 OCI digest，且启动不需要 License 文件、激活或人工申请。[达梦官方行业案例](https://eco.dameng.com/cases/)覆盖银行、政务、能源等大量信创核心场景，市场采用更强，但 [DM8 官方试用说明](https://eco.dameng.com/document/dm/zh-cn/faq/faq-dm-product)明确默认试用期一年、到期后必须购买 License，否则数据库停止服务；[人大金仓官方一汽案例](https://www.kingbase.com.cn/explore/tech-blog/%E6%97%B6%E5%BA%8F%E6%95%B0%E6%8D%AE%E5%BA%93%E9%87%8D%E5%A1%91%E6%99%BA%E9%80%A0%E6%9C%AA%E6%9D%A5%EF%BC%9A%E9%87%91%E4%BB%93%E6%95%B0%E6%8D%AE%E5%BA%93%E5%BC%95%E9%A2%86%E5%B7%A5%E4%B8%9A%E4%BA%92/)说明其已在大型制造业生产环境规模化落地，但 [KingbaseES License 手册](https://help.kingbase.com.cn/v8/install-updata/license-information/license-information-2.html)明确非商用 License 为严格期限的临时授权，开发版也只有一年试用期。后两者不能满足长期、无人值守、免人工申请 License 的 GitHub Actions 基线，因此不进入本阶段实现，也不得以第三方镜像绕过授权条件。
+引擎选型同时考虑重点行业采用、介质可验证性和长期无人值守授权条件。[PingCAP 微众银行案例](https://www.pingcap.com/case-study/webank-cuts-costs-scaling-tidb-petabytes/)、[达梦官方行业案例](https://eco.dameng.com/cases/)和[人大金仓官方一汽案例](https://www.kingbase.com.cn/explore/tech-blog/%E6%97%B6%E5%BA%8F%E6%95%B0%E6%8D%AE%E5%BA%93%E9%87%8D%E5%A1%91%E6%99%BA%E9%80%A0%E6%9C%AA%E6%9D%A5%EF%BC%9A%E9%87%91%E4%BB%93%E6%95%B0%E6%8D%AE%E5%BA%93%E5%BC%95%E9%A2%86%E5%B7%A5%E4%B8%9A%E4%BA%92/)提供金融、政务及制造业采用依据。[TiDB、PD、TiKV 开源仓库](https://github.com/pingcap)采用 Apache 2.0，官方 Docker Hub 三组件镜像可公开拉取并固定 OCI digest，启动不需要 License 文件、激活或人工申请；[DM8 官方试用说明](https://eco.dameng.com/document/dm/zh-cn/faq/faq-dm-product)和[KingbaseES License 手册](https://help.kingbase.com.cn/v8/install-updata/license-information/license-information-2.html)说明试用／临时授权有明确期限，不能作为长期免人工授权的 GitHub Hosted 基线。不得以第三方镜像绕过授权条件。
 
-第四个国产数据库的 T0 取舍固定为 KingbaseES V9R1C10：官方下载中心可公开获取精确 build 的 Linux x86_64 Docker tar 与 MD5，ADDP 已独立计算 SHA-256；官方 License 规则允许非商用或商用授权，但临时授权有严格有效期，商业授权通常绑定稳定主机并由厂商签发。这一路线的信创与重点行业代表性高于可全自动 Hosted 运行的开源候选，代价是 owner 必须维护一台受保护 Linux x86_64 Runner、正规 License、到期续授和介质缓存。不使用来历不明的第三方镜像，不公开归档介质或 License，不以 ephemeral Runner 或重建容器重置试用期。达梦 DM8 留到后续独立阶段，不与 KingbaseES 建立双轨实现。
+KingbaseES V9R1C10 采用受保护的 owner-managed Linux x86_64 Runner 路线：官方精确 build 的 Docker tar 与 MD5、ADDP 独立计算的 SHA-256、有效正规 License 和介质缓存共同构成准入条件。临时授权有严格有效期，商业授权通常绑定稳定主机并由厂商签发；owner 负责到期续授。不公开归档介质或 License，不以 ephemeral Runner 或重建容器重置试用期。KingbaseES 与 DM8 分别遵守各自的介质、架构和授权基线。
 
 达梦 DM8 只保留 `dm8_20260708_HWarm920_kylin10_sp1_64.zip` 一条官方介质路线：ZIP SHA-256 固定为 `d6871147cd4a04e1595d9dedf9d05245c55b17bff2ae738dded37fe568df9824`，其中 ISO SHA-256 固定为 `2a8a4844527e901718a88b4c747d7fd44460bcb2a862956bba98146760b8423e`，服务端版本标识为 `03134284604-20260707-335949-20228`。同介质携带的官方 Go 驱动 ZIP SHA-256 固定为 `96516ecd7c9ec3c405109b81135f2c9d87ed0631632e99cd2de0e06f03b1392e`；驱动只允许内部使用，不进入仓库、镜像仓库或 Artifact，也不修改、派生或重分发。厂商目标环境是鲲鹏 920 与麒麟 10 SP1；macOS ARM64 Docker Desktop 只能在 `linux/arm64` Ubuntu 兼容层中做非认证 ABI 技术验证，不能据此扩展为通用 ARM64 或生产支持声明。Business 只构建本地、不可推送的无卷 disposable 镜像；内置试用授权固定到期日为 2027-07-07，到期后必须停止使用并改为 owner 正规申请、与正式 ARM64 环境匹配且 SHA-256 明确的 License，不得通过重建容器、替换时钟或第三方镜像绕过许可。
 
@@ -48,17 +48,7 @@ HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL
 
 驱动实现标准 `driver.DriverContext`，将调用方 Context 传递到建连过程；TCP、SSL 协商、TLS 和 SM3 握手期间取消或超时必须关闭本次连接并保留 Context 错误，握手完成后解除取消监听，避免误关已交付的连接。System 手动与周期检测共用 10 秒预算，真实失败仍更新离线状态，执行授权仍核验引擎可用性。确定性 SM3、三阶段握手取消、成功后取消监听释放和登记测试由 Common T1 自动发现，探测预算一致性由 System T1 自动发现；现有 Platform CI 的 Go workspace／插件登记及 Release/T2 消费者门禁覆盖相关改动，无新增运行服务或 CI 外部依赖。
 
-2026-10-14 的接入验收确认实例为 x86_64 瀚高 V4.5（构建日期 20250227、`server_version=12.7`），保留 SM3 和 TLS。System 已登记目标为 Engine 28（`bdcdj_qd`），Manager/Meta 显示 `bdcdj_pz` 的 771 张表及基础扫描成功。修复后的原生 Go 探针完成版本与普通配置表两字段 Facts，合计约 1.48 秒。用户通过标准入口重启全部模块后，运行日志确认周期检测使用 10 秒预算；连续五次、间隔约 31 秒的持久状态采样中，Oracle Engine 27 与 HighGo Engine 28 均在线且检测时间持续更新。Develop 对 `bdcdj_pz.bdc_zd_cflx` 的 `SELECT dm, mc ... WHERE FALSE` 执行成功，耗时约 4.8 秒；版本查询返回 `bdcdj_qd`、`bdcdj` 与上述 V4.5 版本，耗时约 3.9 秒。上述只读验收未返回业务行或写入远程数据。工作台直接查询 `information_schema.columns` 被现有数据保护门禁拒绝，原因为系统目录不是可授权的 Engine Catalog 叶节点，未将其计为通过；普通字段 Facts 由 Provider 路径验证。Common/System 完整 Go T1 和插件登记检查通过；`make test-changed` 因共享工作区多 Owner T2 连接条件缺失在预检中止。以上短时观测不代表长期连接稳定性、全量字段扫描、参数化页面查询、完整产品或写入认证。
-
-2026-10-14 的写入扩展通过正式 HighGo Plugin 在 `bdcdj_qd` 的随机独占 schema 完成原生 Go 验收，约 7.6 秒；验证幂等建表准备、COPY 会话提交、INSERT/COPY 批写、COPY Abort、重复主键导致的 COPY 失败回滚，以及分块 INSERT 后续批次失败时前序批次回滚。合成数据覆盖 bigint 极值、38 位 decimal 的 18 位小数、中文／转义文本、布尔、微秒 timestamp、BYTEA、JSON 大整数、文本数组、date/time、UUID、integer、float/double 和 NULL／空值。提交标记为 `highgo.table_write_session`；两个原生测试 schema 均清理并核实零残留，未修改 `bdcdj_pz` 业务表。非空间写定义检查与 `Replace=true` 拒绝纳入 Common T1。Common/System/Transfer Go T1、完整 `make test-common-postgres`（含 HighGo 协议回归）、插件登记、24 项模块门禁测试及 T2 CI 登记检查通过。`make test-platform` 在既有 `infra-runtime-log-lifecycle_test.py` 的四项 10 秒子进程超时处失败，后续平台步骤未运行；`make test-changed` 仍因多 Owner T2 连接条件缺失而预检中止，均不计为通过。Provider 原生通过不等同于 Oracle → HighGo 端到端迁移完成，真实消费链验收另行记录。
-
-2026-10-14 重启后的真实消费链验收确认 System Engine 28 已持久化 `batch_write`、`table_write_prepare`、`table_write_session`；Transfer Console 可选择 HighGo 为原生表目标。通过正式 Manager 单数据项刷新，为 Oracle Engine 27 的 `UNIREALESTATE.CT_TRADE_KIND_T` 补齐 7 字段 Facts，随后由 Console 创建手动 bounded snapshot 任务 12，使用 append 写入此前经原生只读查询确认不存在的随机新表 `bdcdj_pz.addp_hg_probe_kind_mv7sqav2_cn10ep`。执行 `1876acf7-8d3c-4047-9c51-613a04705520` 成功，读取／写入均为 50 行、耗时 6491 毫秒；写后 Meta 数据项 44348 自动深度扫描成功，确认 50 行、7 字段。独立 JDBC 读回事先开启 Oracle 原生只读事务与 HighGo 只读事务，按 CODE 排序并规范化整数、文本、日期时间和空值后，50 行全部字段逐值一致，源与目标 SHA-256 同为 `ba8ba204dfeccb237518396c6a8a7094c1ac21937ef144728139e578fefd68c3`。验收任务与新表保留供复核，无定时调度；未修改 Oracle 源表或瀚高既有业务表。
-
-本次首次执行 `abda08a1-7097-4547-b0e5-f5e8e7367d91` 在 planner 源引擎可用性校验处因 Oracle 当次 10 秒连接检测超时而失败，未进入建表／写入；追加任务的 retry 请求按既有策略拒绝，没有生成新执行。待源库恢复在线且再次确认目标仍不存在后，通过正常执行入口发起上述成功运行。该事实表明公网源库仍存在连接抖动，不能把单次成功扩展为长期稳定性或全量迁移保证。复查成功页面时曾因本地 Console 5170 与 Gateway 8000 未监听而受阻；用户启动服务后，两者恢复访问，Console 成功执行详情页已复核任务 12 的 success 状态及读取／写入各 50 行，成功截图已补齐。执行记录、网页展示与独立数据库读回验证完成，未修改认证或可用性规则。
-
-2026-10-16 的 GitHub Hosted Linux x86_64 T4 [Run 38884152132](https://github.com/pampa0629/addp/actions/runs/38884152132) 已成功，实际源码为 `d04cb65a875aaf7f48aebfc204c4531c94e4454a`；preflight 确认 checkout 干净，System、Gateway、Meta、Manager、Transfer 的运行源码一致。一次性 HighGo V4.5 使用普通 `business` 账号与 TLS，PostgreSQL 源使用只读账号；平台消费由最小权限普通 User 执行，并为 PostgreSQL 订单表建立精确读取 Grant。客户、商品、订单、订单明细四张样例分别验证 3×6、3×7、3×7、4×5 的行列及关系事实，合计 11 个约束、10 个索引。PG → HighGo 两次 snapshot replace 均读取／写入 3 行，覆盖旧哨兵数据后重复执行仍逐字段一致；真实 Console 浏览器验证四张样例与覆盖目标预览，并核验订单外键及有序索引。独立原生 SQL 确认目标 7 字段与源一致、金额合计 `6795.50`，原业务样例行数保持不变；清理日志确认本轮数据库容器与匿名卷零残留。该门禁对应 `make test-online ONLINE_SUITE=highgo-consumer-flow` 的受控 Hosted 入口，不扩展为其他版本、CDC、upsert、空间或 HighGo 独立源数据 Grant 的认证。
-
-本机 Engine 29 的通用实例版本展示另行于用户重启后验收：类型为“瀚高（HighGo）”，`server_version` 为 `HighGo Database Management System 4.5 on aarch64,build on 20250227`，探测时间更新而资源 `updated_at` 不变；这不是上述 x86_64 Hosted 对版本详情页面的专项认证。此前 Hosted 的浏览器语言不一致已由 `efa075744` 统一测试语言并在成功运行中验证；另一次 180 秒数据库启动超时因旧实例已清理、缺少数据库诊断而未能归因，`d04cb65a8` 仅补充带归属校验和脱敏的诊断，未延长预算或调整认证策略。本次成功不能据此宣称该历史超时根因已修复。
+HighGo 的协议回归、原生 Provider、用户环境消费链与 Hosted T4 必须分别认定。短时连通性和只读扫描不代表长期稳定性、全量字段扫描、写入或完整产品认证；原生 Provider 写入不替代跨模块消费链，x86_64 Hosted 消费链也不替代其他架构的实例版本页面验收。普通字段 Facts 由 Provider 路径验证，不以工作台直接查询受保护系统目录替代。历史源码、执行身份、通过范围和未覆盖边界统一见[测试与验收规范的证据索引](addp测试与验收规范.md#附录其他验收证据索引)。
 
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
@@ -177,17 +167,18 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 ## 六、验证命令
 
-建议至少执行：
+新增插件及消费者变更使用标准影响选择入口，按 Common 的真实依赖扩散执行 T0–T3；不得拼接一组语言命令替代标准门禁：
 
 ```bash
+# 当前工作区受影响 owner 的标准门禁
+make test-changed
+
+# 内置插件登记专项，不替代完整影响范围验证
 make test-engine-plugin-registration
-go test ./common/engine/plugin ./common/engine/plugins/...
-go test -tags integration ./common/engine/plugin/integration -run '^TestPluginInterfaceImplementation'
-go test ./system/backend/internal/service ./meta/backend/internal/service ./manager/backend/internal/service
 git diff --check
 ```
 
-涉及前端入口时补跑对应模块构建。
+涉及前端入口时，对应 owner 门禁自动包含前端测试与构建。数据库、官方介质及跨模块真实验收仍按下述独立准入要求分别执行，不以登记检查或 T1 通过替代。
 
 openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 disposable Provider 集成门禁和 `opengauss-consumer-flow` 跨模块 T4 验收；T4 固定在 GitHub Hosted Linux x86_64 disposable 部署执行，复用通用关系引擎消费链路断言，不能用协议认证替代模块能力验收。
 

@@ -232,6 +232,17 @@ class GaussDBCertificationTest(unittest.TestCase):
             GATE.terminate(15, None)
         self.assertEqual(stopped.exception.code, 143)
 
+    def test_common_package_discovery_cannot_resolve_the_external_certification_driver(self):
+        # go mod tidy examines all ordinary build tags. Exercise real discovery
+        # with the former tag enabled, without network or dependency mutations.
+        result = subprocess.run(
+            ["go", "list", "-e", "-json", "-tags=gaussdb_certification", "./engine/certification/..."],
+            cwd=GATE.ROOT / "common", capture_output=True, text=True,
+            env={**GATE.os.environ, "GOWORK": "off", "GOFLAGS": "-mod=readonly", "GOPROXY": "off", "GOSUMDB": "off"},
+            timeout=60, check=True)
+        self.assertNotIn("gitee.com/opengauss/openGauss-connector-go-pq", result.stdout)
+        self.assertNotIn("gitcode.com/opengauss/openGauss-connector-go-pq", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
