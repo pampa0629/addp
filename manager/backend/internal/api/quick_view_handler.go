@@ -647,7 +647,8 @@ func (h *QuickViewHandler) GetQuickViewFlatGeobufByLocator(c *gin.Context) {
 // @Param geometry_column query string false "几何列名 | Geometry column"
 // @Param cols query string false "返回列，逗号分隔 | Return columns, comma-separated"
 // @Success 200 "MVT瓦片数据 | MVT tile data"
-// @Header 200 {string} X-ADDP-Render-Source "渲染来源：cached_tile 或 realtime_tile | Render source: cached_tile or realtime_tile"
+// @Header 200 {string} X-ADDP-Render-Source "渲染来源：business_pmtiles、cached_tile 或 realtime_tile | Render source: business_pmtiles, cached_tile or realtime_tile"
+// @Header 200 {string} Access-Control-Expose-Headers "向跨域浏览器暴露 MVT 渲染来源、缓存及瓦片状态头 | Expose MVT render source, cache and tile status headers to cross-origin browsers"
 // @Header 200 {string} X-ADDP-Tile-Cache "运行时缓存状态：HIT 或 MISS | Runtime cache status: HIT or MISS"
 // @Header 200 {string} X-ADDP-Tile-Cache-ID "命中的瓦片缓存结果 ID | Matched tile cache result ID"
 // @Header 200 {string} X-ADDP-Tile-Status "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
@@ -696,6 +697,7 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 				quickViewLocatorError(c, err)
 				return
 			}
+			exposeTileResponseHeaders(c)
 			c.Header("X-ADDP-Render-Source", "business_pmtiles")
 			if len(data) == 0 {
 				c.Header("X-ADDP-Tile-Status", "empty")
@@ -764,7 +766,7 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 
 func applyTileResponseHeaders(c *gin.Context, response *service.TileResponse) {
 	c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
-	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-ADDP-Tile-Status, X-ADDP-Tile-Performance-Mode, X-ADDP-Tile-Timeout-Budget-MS, X-ADDP-Tile-Recommendation, X-ADDP-Tile-Retry-Policy, Retry-After, X-Generation-Time, Content-Length")
+	exposeTileResponseHeaders(c)
 	renderSource := strings.TrimSpace(response.RenderSource)
 	if renderSource == "" {
 		renderSource = service.QuickViewRenderSourceRealtimeTile
@@ -811,6 +813,10 @@ func applyTileResponseHeaders(c *gin.Context, response *service.TileResponse) {
 		c.Header("X-ADDP-Tile-Cache", "MISS")
 		c.Header("X-Generation-Time", response.Duration.String())
 	}
+}
+
+func exposeTileResponseHeaders(c *gin.Context) {
+	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-ADDP-Tile-Status, X-ADDP-Tile-Performance-Mode, X-ADDP-Tile-Timeout-Budget-MS, X-ADDP-Tile-Recommendation, X-ADDP-Tile-Retry-Policy, Retry-After, X-Generation-Time, Content-Length")
 }
 
 func isDegradedTileStatus(status string) bool {

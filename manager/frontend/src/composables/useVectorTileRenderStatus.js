@@ -25,9 +25,13 @@ export function useVectorTileRenderStatus({
   t,
   getRenderSource,
   getDefaultTileCacheId,
-  rememberTileState
+  rememberTileState,
+  getVisibleTileKeys
 }) {
   const tileStatus = ref(createEmptyTileStatus())
+  const observations = new Map()
+  const maxStatusObservations = 512
+  let sourceGeneration = 0
 
   const normalizedRenderSource = computed(() => String(getRenderSource() || tileStatus.value.renderSource || '').trim())
   const activeTileCacheId = computed(() => String(tileStatus.value.tileCacheId || getDefaultTileCacheId() || '').trim())
@@ -101,50 +105,60 @@ export function useVectorTileRenderStatus({
   })
 
   function resetTileStatus() {
+    sourceGeneration += 1
+    observations.clear()
     tileStatus.value = createEmptyTileStatus()
   }
 
-  function handleTileLoadEnd(meta) {
-    const cacheStatus = String(meta.cacheStatus || '').toUpperCase()
-    const semanticStatus = String(meta.tileStatus || '').toLowerCase()
-    const featureCount = Number.isFinite(Number(meta.featureCount)) ? Number(meta.featureCount) : 0
-    rememberTileState?.({ ...meta, featureCount }, false)
-    const tileStatusCounts = { ...tileStatus.value.tileStatusCounts }
-    if (Object.prototype.hasOwnProperty.call(tileStatusCounts, semanticStatus)) {
-      tileStatusCounts[semanticStatus] += 1
+  function refreshTileStatus() {
+    const visible = new Set(getVisibleTileKeys(observations.keys()))
+    const state = createEmptyTileStatus()
+    for (const key of visible) {
+      const entry = observations.get(key)
+      if (!entry) continue
+      const { meta, hasError } = entry
+      const cacheStatus = String(meta.cacheStatus || '').toUpperCase()
+      const semanticStatus = String(meta.tileStatus || (hasError && meta.oversized ? 'degraded' : '')).toLowerCase()
+      const featureCount = hasError ? 0 : Number.isFinite(Number(meta.featureCount)) ? Number(meta.featureCount) : 0
+      state.renderSource = meta.renderSource || state.renderSource
+      state.tileCacheId = meta.tileCacheId || state.tileCacheId
+      state.cacheStatus = cacheStatus || state.cacheStatus
+      state.tileSemanticStatus = semanticStatus || state.tileSemanticStatus
+      state.generationTime = meta.generationTime || state.generationTime
+      if (Object.prototype.hasOwnProperty.call(state.tileStatusCounts, semanticStatus)) state.tileStatusCounts[semanticStatus] += 1
+      state.hasCacheHit ||= cacheStatus === 'HIT'
+      state.hasCacheMiss ||= cacheStatus === 'MISS'
+      state.hasNonEmptyDynamicTile ||= cacheStatus === 'MISS' && featureCount > 0
+      if (hasError) {
+        if (!meta.cooledDown && !meta.suppressed) state.error = meta.error?.message || String(meta.error || '')
+      } else {
+        state.featureCount = featureCount
+        state.totalFeatureCount += featureCount
+        state.loadedTileCount += 1
+      }
     }
-    tileStatus.value = {
-      ...tileStatus.value,
-      renderSource: meta.renderSource || tileStatus.value.renderSource,
-      tileCacheId: meta.tileCacheId || tileStatus.value.tileCacheId,
-      cacheStatus: cacheStatus || tileStatus.value.cacheStatus,
-      tileSemanticStatus: semanticStatus || tileStatus.value.tileSemanticStatus,
-      generationTime: meta.generationTime || tileStatus.value.generationTime,
-      featureCount,
-      totalFeatureCount: tileStatus.value.totalFeatureCount + featureCount,
-      loadedTileCount: tileStatus.value.loadedTileCount + 1,
-      tileStatusCounts,
-      hasCacheHit: tileStatus.value.hasCacheHit || cacheStatus === 'HIT',
-      hasCacheMiss: tileStatus.value.hasCacheMiss || cacheStatus === 'MISS',
-      hasNonEmptyDynamicTile: tileStatus.value.hasNonEmptyDynamicTile || (cacheStatus === 'MISS' && featureCount > 0),
-      error: ''
-    }
+    tileStatus.value = state
   }
 
-  function handleTileLoadError(meta) {
-    const semanticStatus = String(meta?.tileStatus || (meta?.oversized ? 'degraded' : '')).toLowerCase()
-    rememberTileState?.({ ...meta, tileStatus: semanticStatus }, true)
-    const tileStatusCounts = { ...tileStatus.value.tileStatusCounts }
-    if (Object.prototype.hasOwnProperty.call(tileStatusCounts, semanticStatus)) {
-      tileStatusCounts[semanticStatus] += 1
-    }
-    tileStatus.value = {
-      ...tileStatus.value,
-      renderSource: meta?.renderSource || tileStatus.value.renderSource,
-      tileCacheId: meta?.tileCacheId || tileStatus.value.tileCacheId,
-      tileSemanticStatus: semanticStatus || tileStatus.value.tileSemanticStatus,
-      tileStatusCounts,
-      error: meta?.cooledDown || meta?.suppressed ? '' : (meta?.error?.message || String(meta?.error || ''))
+  function rememberObservation(meta, hasError) {
+    if (!meta.tileKey) return
+    observations.delete(meta.tileKey)
+    observations.set(meta.tileKey, { meta, hasError })
+    while (observations.size > maxStatusObservations) observations.delete(observations.keys().next().value)
+    rememberTileState?.(meta, hasError)
+    refreshTileStatus()
+  }
+
+  function beginTileSource() {
+    resetTileStatus()
+    const generation = sourceGeneration
+    return {
+      onTileLoadEnd: meta => {
+        if (generation === sourceGeneration) rememberObservation(meta, false)
+      },
+      onTileLoadError: meta => {
+        if (generation === sourceGeneration) rememberObservation(meta, true)
+      }
     }
   }
 
@@ -154,7 +168,7 @@ export function useVectorTileRenderStatus({
     renderStatusLabel,
     renderStatusTooltip,
     resetTileStatus,
-    handleTileLoadEnd,
-    handleTileLoadError
+    refreshTileStatus,
+    beginTileSource
   }
 }

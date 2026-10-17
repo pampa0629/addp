@@ -3258,13 +3258,17 @@ const docTemplate = `{
                     "200": {
                         "description": "MVT瓦片数据 | MVT tile data",
                         "headers": {
+                            "Access-Control-Expose-Headers": {
+                                "type": "string",
+                                "description": "向跨域浏览器暴露 MVT 渲染来源、缓存及瓦片状态头 | Expose MVT render source, cache and tile status headers to cross-origin browsers"
+                            },
                             "Cache-Control": {
                                 "type": "string",
                                 "description": "Business PMTiles 使用 no-store，替换后读取当前瓦片 | Business PMTiles uses no-store to read current tiles after replacement"
                             },
                             "X-ADDP-Render-Source": {
                                 "type": "string",
-                                "description": "渲染来源：cached_tile 或 realtime_tile | Render source: cached_tile or realtime_tile"
+                                "description": "渲染来源：business_pmtiles、cached_tile 或 realtime_tile | Render source: business_pmtiles, cached_tile or realtime_tile"
                             },
                             "X-ADDP-Tile-Cache": {
                                 "type": "string",

@@ -84,7 +84,6 @@ const { t } = useI18n()
 const mapEl = ref(null)
 let map
 let mvtGridMoveKey = null
-let mapMoveStartKey = null
 let sizeUpdateFrame = null
 
 const error = ref('')
@@ -149,12 +148,13 @@ const {
   renderStatusLabel,
   renderStatusTooltip,
   resetTileStatus,
-  handleTileLoadEnd,
-  handleTileLoadError
+  refreshTileStatus,
+  beginTileSource
 } = useVectorTileRenderStatus({
   t,
   getRenderSource: () => props.renderSource,
   getDefaultTileCacheId: () => props.defaultTileCacheId,
+  getVisibleTileKeys: visibleTileKeys,
   rememberTileState: (meta, hasError) => {
     rememberMvtGridTileState(meta, hasError, map)
     const recommendation = String(meta?.recommendation || '').toLowerCase()
@@ -185,9 +185,22 @@ const renderStatusTipContent = computed(() => {
   return [label, detail].filter(Boolean).join(': ')
 })
 
-function resetTileRenderState() {
-  resetTileStatus()
-  resetMvtGrid(map)
+function visibleTileKeys(observedKeys) {
+  if (!map || !map.getSize()) return []
+  const source = map.getLayers().getArray().find(layer => layer.get('addpLayerRole') === 'vector-tile')?.getSource()
+  if (!source) return []
+  const grid = source.getTileGrid()
+  const view = map.getView()
+  const z = grid.getZForResolution(view.getResolution())
+  const range = grid.getTileRangeForExtentAndZ(view.calculateExtent(map.getSize()), z)
+  const wrapWidth = source.getWrapX() && source.getProjection()?.canWrapX()
+    ? grid.getFullTileRange(z)?.getWidth() : 0
+  return [...observedKeys].filter(key => {
+    const [tileZ, x, y] = key.split('/').map(Number)
+    if (tileZ !== z || y < range.minY || y > range.maxY) return false
+    const visibleX = wrapWidth ? x + Math.ceil((range.minX - x) / wrapWidth) * wrapWidth : x
+    return visibleX >= range.minX && visibleX <= range.maxX
+  })
 }
 
 function scheduleMapSizeUpdate() {
@@ -211,8 +224,7 @@ const createMVTLayer = () => {
     cacheSize: 64,
     maxDecodedTileBytes: 8 * 1024 * 1024,
     degradedRetryCooldownMs: 15000,
-    onTileLoadEnd: handleTileLoadEnd,
-    onTileLoadError: handleTileLoadError
+    ...beginTileSource()
   })
   layer.set('addpLayerRole', 'vector-tile')
   return layer
@@ -390,10 +402,10 @@ async function initMap() {
   createPopup(map)
 
   mvtGridMoveKey = map.on('moveend', () => {
+    refreshTileStatus()
     updateMvtGrid(map)
     emitMapViewState()
   })
-  mapMoveStartKey = map.on('movestart', resetTileRenderState)
 
   // 8. 监听 zoom 变化
   map.getView().on('change:resolution', () => {
@@ -462,14 +474,11 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  resetTileStatus()
   cleanupTileLoader()
   if (mvtGridMoveKey) {
     unByKey(mvtGridMoveKey)
     mvtGridMoveKey = null
-  }
-  if (mapMoveStartKey) {
-    unByKey(mapMoveStartKey)
-    mapMoveStartKey = null
   }
 
   if (map) {
@@ -488,7 +497,8 @@ watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderI
 
   applyTileRenderInfoFromProps()
   lastWarningZoom = null
-  resetTileRenderState()
+  cleanupTileLoader()
+  resetMvtGrid(map)
 
   if (tileRenderInfo.value?.extent?.length === 4) {
     fitToRenderExtent()
