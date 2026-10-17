@@ -151,6 +151,11 @@ JUPYTER_PYTHON ?= engines/jupyter/venv/bin/python
 test-jupyter: ## 验证 Notebook Runtime 身份、内容摘要与隔离会话
 	@cd engines/jupyter && $(abspath $(JUPYTER_PYTHON)) -m unittest discover -p 'test_*.py'
 
+MATH_WORKFLOW_PYTHON ?= engines/math-workflow/venv/bin/python
+.PHONY: test-math-workflow
+test-math-workflow: ## 运行 Math Workflow 算子、公共 DAG 执行与进程内 API 测试
+	@cd engines/math-workflow && $(abspath $(MATH_WORKFLOW_PYTHON)) -m pytest -q tests
+
 MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
 .PHONY: test-supermap-workflow
 test-supermap-workflow: ## 运行不加载厂商 SDK 的 SuperMap 协议、算子目录和资源主机测试
@@ -889,7 +894,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
-	test-document-workflow test-jupyter test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
+	test-document-workflow test-jupyter test-math-workflow test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \

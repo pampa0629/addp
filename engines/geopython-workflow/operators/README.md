@@ -316,6 +316,8 @@ metadata = OperatorMetadata(
 
 ### 单元测试
 
+在仓库根目录使用 `make test-geopython-workflow` 验证本 Runtime；完整 owner 门禁为 `make test-module MODULE=engines`。下方代码仅说明如何编写用例，不替代标准入口。
+
 ```python
 # 测试算子功能
 def test_buffer():
@@ -339,13 +341,12 @@ def test_buffer():
 ```python
 from operators import OPERATORS, list_operators
 
-# 验证算子数量
-assert len(OPERATORS) == 24
+# 验证注册表非空，不固定随算子扩展变化的数量
+assert OPERATORS
 
-# 验证 API 格式
+# 验证公开元数据与当前注册表一致
 operators_list = list_operators()
-assert len(operators_list) == 24
-assert all('name' in op for op in operators_list)
+assert {op['name'] for op in operators_list} == set(OPERATORS)
 ```
 
 ## 故障排查
@@ -362,12 +363,14 @@ python -c "from operators import OPERATORS; print(len(OPERATORS))"
 
 ### API 返回错误
 
+以下地址使用 GeoPython 的首选端口；实际地址以标准启动输出及 `.dev-state/ports.env` 为准。
+
 ```bash
 # 启动服务
 python api_server.py
 
 # 测试端点
-curl http://localhost:5001/api/operators
+curl http://localhost:8099/api/operators
 ```
 
 ### 元数据不完整
@@ -378,20 +381,7 @@ curl http://localhost:5001/api/operators
 
 ## 重构历史
 
-本模块由原始的 `operators.py` (2109行) 重构而来，重构日期：2025-12-23
-
-**重构前**：
-- 单文件 2109 行
-- 函数实现与元数据分离
-- 新增算子需要修改 2 处
-
-**重构后**：
-- 7 个模块文件（base + 6 个分类文件）
-- 每个文件 200-400 行
-- 元数据与实现共存
-- 使用 Pydantic 提供类型安全
-
-新增算子后使用 `GET /api/operators` 检查元数据是否能被 `WorkflowRuntimeProvider` 动态发现。
+模块化重构将算子实现和元数据放在同一职责模块中，通过分类 `OPERATORS` 与统一公开出口聚合。新增算子后，以当前注册表与 `GET /api/operators` 公开结果的对应关系，验证元数据能被 `WorkflowRuntimeProvider` 动态发现。
 
 ## 参考资料
 

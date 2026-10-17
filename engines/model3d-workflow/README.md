@@ -47,15 +47,9 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量和局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 执行同一准备与转换验证；准备失败的服务不启动，入口返回非零。
 
-2026-10-08 本地页面验收：已运行的 macOS 原生 Runtime 经 Manager 正式快显入口完成 Business NFS 的 DAE、带贴图 3DS、IFC 建筑及单体 OSGB 转换。四个任务均为成功、结果可用，浏览器实际显示几何；3DS 彩色贴图与 OSGB 地表贴图可见，旋转和缩放可操作。OSGB execution `a15774db-d803-424c-8d23-ef5fe11413a7` 的 Monitor 详情记录源 item 766 与平台内部 GLB 产物。此记录证明本机页面链路；产品与 Hosted 验收独立记录如下。
+本机原生转换、产品镜像构建和 Hosted Manager T4 分别验证，历史源码、产物身份、覆盖范围及限制统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。本机页面成功不替代产品镜像或 Hosted 结果，后续成功也不自动证明早期未归因故障已修复。
 
-2026-10-08 产品与 Hosted 验收：提交 `95428d6e3fec29d72c6f1c8634b1252eeae8e2fb` 的 Linux arm64 标准镜像构建、本次 [Linux x86_64 Hosted Manager T4](https://github.com/pampa0629/addp/actions/runs/37742891117) 及同一提交的 [Product binary build](https://github.com/pampa0629/addp/actions/runs/37742303485/job/113195593339) 均通过。两种架构的产品构建覆盖压缩 OSGB、DXT1/DXT1A/DXT3/DXT5 贴图、SKP 米制缩放，以及 MAX 静态 GLB、声明贴图、默认米／手选毫米和失败保留旧产物。Hosted 使用正式 Model3D 产品镜像的默认入口；普通租户 User 经 System/Gateway/Meta/Manager/Monitor 完成真实资源与产物链路，DAE／3DS 的 GLB 及内嵌 PNG 校验、生成入口和缓存预览两项浏览器用例均通过。五类产物（DAE、3DS、点云、PPTX、栅格）的 Manager 与 Monitor 血缘一致，产物回收和 Infra 清理为零残留。Hosted 三维格式覆盖 DAE／3DS；IFC 与单体 OSGB 的页面验证范围为上述 macOS 本地验收。
-
-2026-10-09 复核 IFC／单体 OSGB Hosted 扩展验收：[运行 37788054702](https://github.com/pampa0629/addp/actions/runs/37788054702) 在 OSGB 生成阶段失败，生成入口浏览器检查通过，退出清理及 Infra 零残留通过；缓存预览未执行，不能计为七类产物验收通过。标准产品构建已追加最终 Runtime 中的压缩 OSGB 和多种暂存路径长度验证，复现了上游 Rust → C++ 输入路径未转为 NUL 终止字符串的越界读取。现有统一转换器补丁改用 `CString` 并在转换失败时返回非零；产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线。Linux ARM64 标准产品构建的修复前长路径回归失败，修复后九种路径长度、无效 OSGB 的非零退出及旧产物保留均通过；Model3D 272 项、Manager Online runner 51 项和构建登记门禁通过。macOS 私有工具包通过标准 `native_setup.py prepare` 重建为指纹 `621681c3cf634777`，内置 OSGB／OBJ／IFC 转换预检通过；同一压缩 OSGB 夹具的九种暂存路径、无效输入非零退出及旧产物保留也通过。本轮未重启开发服务。修复已提交为 `245ac18c57dad63fc1c4be612f57a0e7454af691`；[Hosted 复验 37867825873](https://github.com/pampa0629/addp/actions/runs/37867825873) 已通过 Linux x86_64 正式产品链路：四种模型（DAE／3DS／IFC／OSGB）的 GLB、几何及声明贴图校验通过，生成入口与缓存预览两项浏览器用例通过，IFC 立方体和 OSGB 红色贴图三角形截图已复核。七类产物（四种模型、点云、PPTX、栅格）的七项输入／输出血缘一致，Manager／Monitor 事实相等；派生产物回收及 Infra 清理均零残留。同一代码提交的 Product binary build 通过；Platform CI 整轮因 GeoPython Job 被取消而为 cancelled，不计为整轮通过。
-
-2026-10-09 SKP Hosted 扩展已接入同一 Manager suite：Business 自有英寸三角形的两个实例使用同一内嵌彩色 PNG，Runtime 原生实测生成的 GLB 尺寸为 `[0.0762, 0, 0.0508]` 米，保留共享网格、实例位移与贴图。Meta 只核对格式身份，不伪造 SKP 解析事实；生成入口、缓存消费、Manager／Monitor 血缘与领域清理均沿用现有主路径，完整报告扩为八项输入／输出。`make test-manager-online-runner` 的 53 项测试和完整 `make test-online-runner` 均通过；真实 [Hosted SKP 首轮 37877375089](https://github.com/pampa0629/addp/actions/runs/37877375089) 的五种模型生成入口通过，但缓存预览在 COG 检查处因底图与栅格两个画布触发严格匹配错误，尚未走到模型缓存预览；领域清理通过，Infra 零残留。验收脚本已改为在 Range 响应和加载结束后检查 COG 的 WebGL 画布，保留页面错误与缓存请求检查；[复验 37884331256，attempt 2](https://github.com/pampa0629/addp/actions/runs/37884331256/attempts/2) 已通过提交 `8df7e9b5f58c9ea43c8c719b5489bf76cb9bd3c7` 的正式 Linux x86_64 产品链路：五种模型的生成入口与缓存预览均通过；SKP 的 1804 字节 GLB 保留两个共享网格实例、米制尺寸和原始内嵌 PNG，截图可见两个彩色三角形。八类产物的八项输入／输出血缘相等，领域清理和 Infra 清理零残留。该运行 attempt 1 在 vcpkg 下载 GEOS 时因 `download.osgeo.org:443` 连接失败退出，未执行页面验收；同一提交重跑通过，不改动依赖或转换路线。
-
-同轮确定性门禁通过：`make test-model3d-workflow`（272 项）、`make test-manager-online-runner`（47 项）及 `make test-dev-lifecycle`（86 项 Python 测试和后续 Shell／Go 检查）。开发生命周期首轮有三个 Infra 夹具超时，独立诊断及完整重跑通过。ARM64 构建曾遇到镜像和官方文件下载中断，使用相同版本与标准入口重试后完整通过；本轮未修改或重启开发服务。
+统一 OSGB 转换器的 Rust → C++ 输入路径使用 NUL 终止的 `CString`，转换失败返回非零。Linux 产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线；长暂存路径、无效 OSGB 的失败退出和旧产物保留分别验证。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
@@ -64,17 +58,11 @@ SKP 使用固定的 MIT 许可 `openskp[textures]==1.3.0`，在当前 Python Run
 
 MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从专用 Business MinIO 读取未修改的 CC-BY-SA-3.0 马模型及 ADDP 自建 4 × 4 RGB `(220,30,60)` 贴图。页面验证默认米、手选毫米和显式 bitmap 映射；正式生成声明 `source_unit=mm`，核对转换审计、五个静态网格、十二个 primitive、444 个顶点、米制场景尺寸和实际内嵌贴图像素，不固定跨 Blender 版本的 PNG 编码哈希。Meta 仅识别 MAX 格式身份；六种模型与点云、PPTX、栅格共同核对九项输入／输出血缘、缓存加载和零残留清理。确定性入口仍为 `make test-manager-online-runner` 与 `make test-online-runner`；真实验收仍为现有 Hosted suite，实际运行通过前不计为 T4 通过。
 
-2026-10-09 的 [MAX Hosted 首轮 37937857350](https://github.com/pampa0629/addp/actions/runs/37937857350) 在生成入口选择单位时失败：Element Plus 的默认米 placeholder 覆盖只读 combobox，点击超时，尚未执行 MAX 生成与缓存预览；领域清理通过、Infra 零残留。提交 `232410485f4a65e5278b238cab893482a1a12c0c` 将验收点击定位改为页面可见的默认米 placeholder，沿用原单位选择与转换路线；`make test-manager-online-runner` 的 57 项测试及 Manager 默认米／手选毫米两项浏览器用例通过。2026-10-10 核对 [Hosted 复验 37951204666](https://github.com/pampa0629/addp/actions/runs/37951204666)：生成入口用例通过；正式 MAX 生成、毫米换算、五个静态网格、444 个顶点、内嵌贴图像素及 Manager／Monitor 血缘断言均执行通过，六种模型的缓存预览截图已生成，MAX 截图可见红色马模型。缓存预览用例最终因三条 Canvas2D `willReadFrequently` 性能警告失败，完整 T4 仍未通过；领域清理通过、Infra 零残留。本地隔离 Chromium 使用 OpenLayers 9.2.4 的 Float32 数据瓦片从 EPSG:4326 重投影到 EPSG:3857，复现同样三条警告，读取调用栈位于 `ol/reproj/DataTile.js`。地图依赖修复须按平台技术栈规范和受影响消费者门禁单独处理，不能通过忽略页面警告登记整轮通过。
-
-2026-10-10 的地图依赖修复统一升级四个地图消费模块到 OpenLayers 10.7.0，Manager COPC 配套 Giro3D 1.0.1；保留 GeoTIFF 2.1.3 和 Three.js 0.172.0，并移除 FlatGeobuf 嵌套的第二份 OpenLayers/GeoTIFF。Node 24 下共享前端、Manager、Service、Agent、Workbench 的标准门禁通过；Manager 为 308 项单元测试、165 项浏览器测试和正式构建，真实 Float32 重投影验证有效像元且无 Canvas getImageData 读取。Manager Online 脚本 58 项及 Raster Online 脚本 73 项通过。按已确认验收规范，浏览器报告 v5 将精确 Chromium WebGL ReadPixels 性能诊断按来源和观测阶段计数，其他页面警告、错误及失败业务请求仍严格失败。既有 Manager/Raster Hosted T4 需要重新运行，未实际通过前不登记 MAX 完整 T4 完成。
-
 MAX 的工具版本与校验值集中在 `blender-assets.json`。macOS arm64 使用私有工具包内的 Blender 4.5.3；Linux 产品镜像使用 Debian Trixie 的 Blender 4.3.2 和显式安装的 NumPy。两者均使用固定提交的 `io_scene_max` 1.9.2。安装时校验下载归档，保留上游源码及许可：仓库 LICENSE、源码 GPL 许可声明和插件 manifest 的 GPL-3.0-or-later 声明均原样保留。开发工具包逐文件校验完整性，转换不向包内写入 Python 缓存。
 
 MAX 首期覆盖静态网格、实例变换、基础颜色和漫反射图片，不声明动画、骨架或第三方渲染器材质保真。单个 MAX 文件的解析预算为 64 MiB。固定导入器目前不能可靠识别原始系统单位：用户可选择 `options.source_unit`（`mm/cm/m/km/in/ft/mi`）；未选则默认米 `m`。Manager 的 MAX 生成入口提供同一选项，缺省值无需用户确认。结果 `conversion` 记录实际单位、`unit_source=user|default` 与米制换算系数，不把默认米说成自动识别。
 
 外部贴图必须通过 `options.texture_files` 明确映射，key 是 MAX 内保存的 bitmap 引用，value 是输入目录内的相对文件路径。不会读取原电脑绝对路径或猜测同名图片。Manager 的数据探查和任务创建入口提供相同的单位及外部贴图声明组件；声明传入既有快显动作并保存到任务 options，Develop/direct 算子沿用同一映射。缺失贴图、解析错误及不支持的贴图通道会使转换失败，保留旧产物。内置回归样例来自 `tests/fixtures/max/ATTRIBUTION.txt` 所列的 CC-BY-SA-3.0 模型，纹理是 ADDP 自建测试图片。
-
-2026-10-09 本地 Business NFS 的 MAX 页面验收通过：`3d/max/horsewalk02/horsewalk02.max` 经 Manager 任务 11 生成 28016 字节 GLB，未选单位时审计为默认米，五个静态网格、声明的红色贴图、旋转及刷新后的缓存预览正常，源文件不变；Monitor 核对输入／输出血缘。详细记录见 [Manager 预览说明](../../manager/docs/三维模型、点云与高斯泼溅预览说明.md)。该本地结果不替代上述 Hosted T4。
 
 MAX 的确定性测试由 `make test-model3d-workflow` 自动发现，开发生命周期由 `make test-dev-lifecycle` 验证。正式 Linux 镜像构建入口为：
 
@@ -86,7 +74,7 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 
 产品构建的最终 Runtime 转换检查还覆盖 FBX／OBJ 静态网格：FBX 使用 Assimp `v5.4.3`（提交 `c35200e38ea8f058812b83de2ef32c6093b0ece2`）的 [box.fbx](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/models/FBX/box.fbx)，保留在 `tests/fixtures/mesh/`，源 SHA-256 为 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`；原始许可完整保留在同目录 `LICENSE-assimp.txt`。上游 [独立断言](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/unit/utFBXImporterExporter.cpp#L67) 为一个网格、36 个顶点和 12 个三角面。OBJ 使用 ADDP 自建三角形及漫反射 PNG，核对源坐标、三角面、UV 贴图引用、实际内嵌像素与不透明度。两者经正式 access plan 和 operator 发布，并验证源字节不变、无效输入失败且保留旧产物；不扩大为动画、全部 FBX 版本、复杂材质或 Manager Hosted 页面已验收。
 
-2026-10-13，`make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify --jobs 1 --tag meshverify-20261013'` 在 Linux ARM64 最终 Runtime 镜像通过上述 FBX／OBJ 检查，原有 OSGB、SKP、MAX 验证同时通过。FBX 导出为 24 个存储顶点、12 个三角面，源文件也有 24 个存储顶点和八个唯一角点；上游导入测试的 36 个顶点不是 GLB 存储要求，因此检查源角点坐标和三角面数，允许等价顶点合并。OBJ 保留 `[2,3,0]` 的源坐标范围及全部 4 × 4 RGB `(32,180,220)` 内嵌贴图像素。验证镜像只加载独立标签，没有推送镜像或重启开发服务；Linux x86_64 产品构建与 Manager 页面验收仍需各自的 CI／Hosted 实际结果。
+FBX／OBJ 构建检查比较源角点坐标、三角面、UV 与实际贴图像素，允许语义等价的顶点合并，不把上游导入器测试中的顶点数直接作为 GLB 存储要求。Linux ARM64 构建、Linux x86_64 产品链路与 Manager 页面验收分别认定。
 
 ## 启动
 
@@ -115,19 +103,9 @@ make build-images IMAGE_BUILD_ARGS='--services model3d-workflow-engine --verify 
 - `addp/model3d-converter:linux-arm64`：基于 `fanvanzh/3dtiles` 源码构建 对应目标架构的 `_3dtile`，并应用 ADDP 的 Linux patch，同时绑定同架构 `IfcConvert`。
 - `addp/model3d-workflow:linux-arm64`：内置 Python `model3d_workflow` runtime、Linux arm64 `_3dtile`、`IfcConvert`、`assimp` 和 Blender/MAX 导入器。
 
-
-2026-10-15 [Hosted 38695122458](https://github.com/pampa0629/addp/actions/runs/38695122458) 已通过修复源码 `7a3c9a6f2006321a1eec6161d90a21380ecbde22` 的正式 Linux x86_64 产品构建和 Manager 链路。归档的 Runtime 日志核对 DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 八个正式算子均返回 200，八个浏览器缓存预览均加载成功；DAE 和 3DS 分别为 1764／1888 字节，各内嵌一张 PNG，截图均显示有色三角形。MAX 仍使用导入器 1.9.2、用户毫米换算 0.001、五个静态网格和 444 个顶点。测试使用已批准的十项权限普通 User；逐格式结果与任务删除、内容不可用和资源零残留断言通过，最终 Hosted Infra 清理为零残留。该结果补齐上一段尚未完成的完整 Runtime／x86_64 验证，不包含后续 SGM 秋树修复的页面验收。
-
 OSGB 基础颜色贴图统一由 OSG 读取 RGB／RGBA／BGRA 与 DXT1／DXT3／DXT5 像素，含透明或半透明像素时内嵌 RGBA PNG 并给关联材质设置 `alphaMode=BLEND`；全不透明图片继续输出 RGB JPEG。源行对齐和 PNG alpha 必须保留，不能仅改材质模式而丢弃图片 alpha；未知／损坏图片不能替换为白色占位图。该规则同时作用于共享的 OSGB 单体与场景转换代码；不声明源 AlphaFunc 阈值及全部材质保真；透明模式遵循 [glTF 2.0 Alpha Coverage](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#alpha-coverage)。现有 Linux 产品构建和 macOS 原生 prepare／verify 均运行同一 `osgb_compression_smoke.cpp`，增加压缩及原始透明像素、MIME、材质和行对齐断言；根 `make test-model3d-workflow`、`make test-module MODULE=engines`、开发生命周期及已有 Platform CI／产品构建登记覆盖变更，无新服务、API、依赖或公共测试入口。
 
-
-2026-10-15 透明贴图转换验证：已确认真实 SGM 派生 OSGB 的 DXT5 仍保留 alpha，旧转换器在 JPEG 编码时丢弃该通道，GLB 材质也未声明透明模式。压缩图片的 `dataType=0` 是当前 SDK 的真实输出，其像素格式决定 DXT 解码，不按原始 RGB 的 component type 校验；自建透明 DXT 用例覆盖该表达。macOS 新私有工具包 `51fccfb784dbf9a0` 经标准 `native_setup.py prepare` 完成构建及 verify。根 `make test-model3d-workflow` 通过 293 项（279 项常规测试，加 10 个临时真实原生贴图用例和 4 个私有 SGM 派生模型用例）；旧代码先在透明及行对齐用例上复现失败。真实秋树与春树均输出一张 RGBA PNG 和一张不透明 RGB JPEG；秋树 PNG 的 774205 个全透明、126685 个半透明像素与 OSGB 解码一致，9589 顶点、7273 面及材质 UV 保持。冬树 GLB 的 SHA-256 仍为 `dee74aebc05be2d80d552c4c6245ed5c533bed2ca6e67ab515458b21639942e3`，汽车转换通过，四个源 OSGB 字节不变。
-
-同轮 `make test-module MODULE=engines` 首次因 Infra 生命周期夹具的 10 秒超时失败，本轮构建结束后复跑，104 项生命周期单测通过，但随后在独立 Agent restart 夹具的 30 秒超时中止；完整模块门禁未计为通过，待已有 Platform consistency 与 Model3D CI 门禁复验。完整 Linux 产品构建首次直连及临时代理复试均在固定版本 vcpkg 的 GitHub TLS 下载阶段失败，未关闭证书校验或改换版本、软件源；该结果不计为 Linux 编译或 Runtime 镜像通过，后续由已有 Manager Hosted 产品构建及 T4 入口验证。临时代理只作用于当次独立 Docker 配置，退出后已清理，个人 Docker 配置和运行服务保持原样。该轮尚未进行重启后的透明度页面验收，后续结果如下。
-
-2026-10-15 重启后的透明贴图页面验收：健康检查确认运行中的 Model3D 绑定私有工具包 `51fccfb784dbf9a0`。Business MinIO 秋树 `item_id=44563` 通过 Manager 快显任务 17 重新生成，于 23:11:08 成功并可用；GLB 为 1608268 字节，SHA-256 `c6805b7c36b08c26737ccc9ecd8c37223df908545c4b8b2b9ed961b3bd6aee81`，与隔离原生验证结果一致。9589 顶点、7273 面和有效 UV 保持；树干仍使用不透明 RGB JPEG，叶片使用 1024² RGBA PNG，透明／半透明／不透明像素分别为 774205／126685／147686，关联材质为 `BLEND`。真实页面可见透明叶片轮廓，原矩形白底消失，旋转及刷新后的缓存预览通过。211 个业务源文件哈希不变，Manager 当前租户 SGM 临时前缀与 SuperMap Runtime 临时目录均为空。
-
-修复源码 `808a7c72931e516172ece04d510cb3c2a959174f` 的 [Platform CI 38742900337](https://github.com/pampa0629/addp/actions/runs/38742900337) 已通过，包含 279 项 Model3D 测试及 Platform consistency；Product binary build 在 Linux x86_64 实际完成新转换器和最终 Runtime 镜像构建，10 种贴图像素／透明模式／行对齐回归与 Runtime OSGB、FBX／OBJ／3DS、SKP、MAX 检查通过，补齐前述本地 TLS 下载失败未验证的 Linux 产品范围。[Release/T2 38742900319](https://github.com/pampa0629/addp/actions/runs/38742900319) 与 [Quality 38742901116](https://github.com/pampa0629/addp/actions/runs/38742901116) 亦通过。本地完整模块门禁的超时失败记录仍保留，不改计为本地通过；[Hosted 38742956884](https://github.com/pampa0629/addp/actions/runs/38742956884) 已通过同一源码的正式 Linux x86_64 Runtime（镜像 `sha256:3077a1beadca65efd07aa1a175ba22191b2a7cb914c7c8cc98c8c9def96f90eb`，默认入口 `python api_server.py`）。归档 Runtime 日志确认 DAE／3DS／IFC／OSGB／SKP／MAX／FBX／OBJ 八个算子均返回 200；生成入口与八种模型缓存预览通过，MAX 的毫米换算、五个网格和 444 个顶点符合断言。不透明 OSGB 的 JPEG 贴图及页面仍正常；透明贴图由前述 Linux 产品构建的 10 种回归及本地秋树页面证明。CSV／TSV 的 GBK 编码、20＋5 行分页、普通刷新、重新打开和原文件下载 SHA-256 一致，XLSX 未知总数分页／工作表切换与 JSON／GeoJSON 四类展示亦通过。临时普通 User 使用已批准的十项权限；11 类派生产物的任务／结果删除、内容不可用及资源零残留断言通过，领域清理通过，最终 Infra 零残留。该 Hosted suite 不含私有 SGM 样例，SGM 透明叶片的真实页面证据为上述本地验收。
+SDK 压缩图片的 `dataType=0` 由实际压缩像素格式决定 DXT 解码，不套用原始 RGB 的 component type 校验。压缩及原始透明像素、MIME、材质和行对齐由同一构建自检验证。
 
 Linux 静态 OSG 显式注册 zlib compressor，以读取超图等工具导出的压缩 OSGB。Converter 镜像构建在复制生产产物前，用自建三角形生成 zlib 压缩 OSGB、调用同一 `_3dtile` 转换，再校验 GLB 2.0 及顶点/三角面数量；该构建门禁不依赖 SuperMap SDK 或许可。
 
@@ -196,11 +174,9 @@ engines/model3d-workflow/.venv/bin/python -m pip install -r engines/model3d-work
 make test-model3d-workflow
 ```
 
+标准目标通过 `MODEL3D_WORKFLOW_PYTHON` 指定测试解释器。已准备本页原生 Python 3.12 环境时，可显式传入 `MODEL3D_WORKFLOW_PYTHON=engines/model3d-workflow/venv/bin/python`；同一变量也可传给 `make test-module MODULE=engines`。
+
 DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源、PNG/JPEG 实际解码，以及网格索引编码、对齐、范围和绘制数量；稀疏索引按替换后的有效值校验。转换器退出码为零不代表校验通过，校验失败时保留已有快显文件。 图片 URI 校验失败的诊断仅记录图片索引、URI 类型／长度及是否存在 bufferView，不输出 URI 内容；mesh 输出校验失败时在 Runtime 日志保留有界的转换器 stdout／stderr。Manager Hosted 退出前收集属于该 suite 的 Model3D Runtime 日志，再销毁容器；日志收集失败仍执行其余清理并使验收失败。受影响门禁为现有 `make test-model3d-workflow`、`make test-manager-online-runner` 及产品构建／Manager Hosted 编排，现有路径登记覆盖这些改动，无新增依赖或入口。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
-
-2026-10-13 失败诊断门禁：`make test-model3d-workflow` 的 278 项测试通过（实际使用现有 Python 3.12 `venv`；标准入口覆盖新增测试），新增六项先复现 URI 诊断缺失和转换器输出未记录，再验证非法产物继续拒绝、旧文件保留、URI 内容不进入诊断以及日志长度有界。`make test-manager-online-runner` 的 70 项 Python 测试及 Go 身份工具通过；新用例先复现 Model3D 日志丢失及日志收集失败未导致验收失败，再核对成功／失败出口均收集日志、日志早于容器删除、日志失败仍完成其余清理。`make test-changed` 因 `MANAGER_POSTGRES_TEST_DSN` 缺失在 T2 预检中止，未执行数据库测试；完整 Linux 产品镜像和 Hosted 复验沿用已有 CI 门禁，尚未验证的结果不计为通过。以上为诊断能力验证，不宣称已解决 Hosted 的 DAE 非自包含产物问题。
-
-2026-10-13 [Hosted 38274727956](https://github.com/pampa0629/addp/actions/runs/38274727956) 已通过源码 `6b33eb9dcf27e1be1db66b44e260fd859ff9eb51` 的正式 Linux x86_64 产品链路。Model3D Runtime 日志已在删除容器前归档，DAE／3DS／IFC／OSGB／SKP／MAX 六种模型调用均返回 200，GLB 校验和浏览器缓存预览通过；DAE 为 1764 字节、3DS 为 1888 字节，均内嵌一张 PNG。MAX 保持固定导入器 1.9.2、手选毫米换算 0.001、五个静态网格和 444 个顶点；九类产物及 Hosted Infra 清理零残留。本次没有复现上次 DAE 图片 URI 失败，根因仍未确定；诊断能力保留，GLB 自包含校验和转换路线未放宽。同期 Platform CI 的 Model3D 测试及产品二进制构建通过，平台一致性因其他 suite 的共享 Runtime CI 登记检查失败，不能计整轮通过；详见 Manager 的同期门禁记录。
 
 DAE / 3DS 的基础颜色贴图还必须关联到网格实际使用的材质和有效 `TEXCOORD_n`：仅嵌入图片、未绑定材质、UV 缺失、顶点数不匹配或越界，都不能发布为成功产物。发布失败保留之前有效的目标文件。
 
@@ -212,4 +188,4 @@ DAE 的 XML 解析器直接拒绝 DTD 和实体声明，UTF-8 / UTF-16 下执行
 
 所有单体 GLB 快显发布前还校验场景与节点：默认场景（未声明时为第一个场景）必须能引用到网格；节点索引、父子层级及变换必须有效。循环、多父节点、空白场景、非有限变换和非法四元数不能发布为成功。合法单位缩放、上轴转换、平移及负缩放保持原样，沿用转换器与统一 GLB 发布路线。
 
-SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。2026-10-07 的 Linux ARM64 构建及转换通过；amd64 由现有镜像构建门禁验证，本地 Business NFS 的 Manager 页面端到端验收已通过：`3d/skp/static-textured-cubes.skp`（Meta item 20245，9421 字节）经快显任务 8 发布 4312 字节的 GLB 2.0，两个共享组件实例及内嵌彩色贴图显示、旋转正常，产物尺寸符合米制约定。S3 源与 Hosted T4 尚待验证。
+SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。原生构建、NFS 本机页面与 S3／Hosted 的结果分别见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不以某一环境通过替代其他环境的验收。

@@ -52,6 +52,9 @@ docker compose -f docker-compose.runtimes.yml ps duckdb-engine
 ## 验证
 
 ```bash
-cd engines/duckdb
-go test ./...
+# 在仓库根目录运行完整 owner 门禁
+make test-module MODULE=engines
+
+# 仅调试 owner 的 Go T1，不计为完整模块验证
+make test-module MODULE=engines GO_ONLY=1
 ```

@@ -359,6 +359,51 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  math-workflow-tests:
+    name: Math Workflow deterministic tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
+      - name: Prepare Math Workflow test environment
+        if: steps.selection.outputs.run == 'true'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          python-version: "3.12"
+          venv-path: engines/math-workflow/venv
+          cache-dependency-path: |
+            engines/math-workflow/requirements-dev.txt
+            engines/math-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/math-workflow/requirements-dev.txt
+          editable-install: ./common-python
+
+      - name: Run Math Workflow tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-math-workflow
+
+      - name: Summarize Math Workflow gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Math Workflow deterministic tests
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   model3d-workflow-tests:
     name: Model3D Workflow tests
     runs-on: ubuntu-24.04

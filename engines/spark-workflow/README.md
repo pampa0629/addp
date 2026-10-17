@@ -423,11 +423,9 @@ OPERATORS = dict([
 
 ### 运行测试
 
-确定性契约入口为 `make test-spark-workflow`，覆盖公共 WorkflowRunner、跨请求执行快照、PostgreSQL 结果发布及真实 Gunicorn 的先监听、后注册行为；Hosted 编排入口为 `make test-hdfs-online-runner`。HDFS Hosted 场景按 `region` 比较 Spark 聚合、Manager 预览和再次读取的完整结果行，不把无排序 Spark 结果的行顺序作为跨执行契约；同一执行的 Runtime 快照仍须保持原始结果一致。`make test-common-hdfs` 使用独占 HDFS、Spark Worker 和 PostGIS，验证三种文件格式的分布式读取、普通与空间结果的事务发布、回滚和再次读取，并检查暂存表及测试容器清理。产品镜像通过标准 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 构建验证。
+确定性契约入口为 `make test-spark-workflow`，覆盖公共 WorkflowRunner、跨请求执行快照、PostgreSQL 结果发布及真实 Gunicorn 的先监听、后注册行为；Hosted 编排入口为 `make test-hdfs-online-runner`。HDFS Hosted 场景按 `region` 比较 Spark 聚合、Manager 预览和再次读取的完整结果行，不把无排序 Spark 结果的行顺序作为跨执行契约；同一执行的 Runtime 快照仍须保持原始结果一致。`make test-common-hdfs` 使用独占 HDFS、Spark Worker 和 PostGIS，验证三种文件格式的分布式读取、普通与空间结果的事务发布、回滚和再次读取，并检查暂存表及测试容器清理。产品镜像通过标准 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 构建验证。执行快照仅在 Runtime 进程内保存，不提供跨重启恢复。
 
-2026-10-05，提交 `eccfaeeda07a51c471cde67d1fe1d5c624ea3a19` 的 [容器 HDFS T4](https://github.com/pampa0629/addp/actions/runs/37254858559) 完整通过。当次 AMD64 产品镜像使用默认 `python api_server.py` 入口启动，日志确认一个 gthread HTTP worker 在监听后自动登记成功。普通用户发起的八节点正式工作流通过公共 WorkflowRunner 执行，CSV、JSON、Parquet 各 20 行、金额合计 2100；实际 Standalone Worker 完成 37 个任务，Runtime 连续八次状态查询一致。Console 重扫、四文件预览和同一执行详情通过，应用、容器及 Infra 清理均通过且零残留。[Platform CI](https://github.com/pampa0629/addp/actions/runs/37254827587) 与 [Release/T2](https://github.com/pampa0629/addp/actions/runs/37254827477) 均全部通过。执行快照仍仅在 Runtime 进程内保存，不提供跨重启恢复。
-
-2026-10-10，提交 `c7952d49e59af7f6629c15c68346751d8ed2817f` 的 [HDFS/PostgreSQL T4](https://github.com/pampa0629/addp/actions/runs/38034314502) 完整通过：同一普通用户先完成三格式聚合，再以九节点工作流覆盖保存 `results.hdfs_totals` 的两行结果，随后由新的单节点 Spark 工作流读取该表。自动 Meta scan、三个精确上游的 active derive 血缘、Manager 预览与 Console 均通过；目标 OID、ACL 和注释保留，暂存表为 0。读取 Grant 由独立准备用户通过正式 System 命令仅授予结果表，业务用户仍保持原有 13 项 Permission。三次执行各连续八次 Runtime 状态查询一致，真实 Worker 完成 76 个任务，九张 Console 截图及退出清理证据已归档。同提交的 [Release/T2](https://github.com/pampa0629/addp/actions/runs/38034289972) 全部通过，其中 HDFS/Spark/PostgreSQL 门禁覆盖普通与空间结果发布、失败回滚、目标结构和数据库授权保留及再次读取。本地完整 `make test-changed` 因共享工作区其他 owner 的数据库连接参数缺失而在预检阶段退出，不计为通过；本次 owner 的确定性入口、分布式 T2 和上述产品 T4 已通过。
+容器默认入口、HDFS 读取和 PostgreSQL 结果发布的历史验收结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。独立 T1、分布式 T2 与 Hosted T4 按各自源码及实际覆盖范围认定，不合并成全工作区通过。
 
 ```bash
 # 在仓库根目录运行标准入口

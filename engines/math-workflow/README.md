@@ -236,25 +236,22 @@ engines/math-workflow/
 ### 单元测试
 
 ```bash
-# 安装 pytest
-pip install pytest pytest-cov
+# 仓库根目录：准备 Math 的 Python 3.12 测试环境
+python3.12 -m venv engines/math-workflow/venv
+engines/math-workflow/venv/bin/python -m pip install -r engines/math-workflow/requirements-dev.txt -e ./common-python
 
-# 运行所有测试
-pytest tests/ -v
+# Math T1：算子、公共 DAG 执行和进程内 API
+make test-math-workflow
 
-# 生成覆盖率报告
-pytest tests/ --cov=. --cov-report=html
+# Engines owner 门禁：包含平台 T0 和已登记 Runtime 的测试
+make test-module MODULE=engines
 ```
+
+`make test-math-workflow` 自动发现本目录 `tests/` 下的 pytest 用例；根 `make test`、Engines owner 自动发现和 Platform CI 的独立 Math Job 均调用同一入口。默认解释器为 `engines/math-workflow/venv/bin/python`，已有独立测试环境可通过 `MATH_WORKFLOW_PYTHON` 指定。CI 使用 Python 3.12、同一测试依赖文件及 editable Common Python。
 
 ### 集成测试
 
-```bash
-# 启动引擎
-python api_server.py
-
-# 运行 API 集成测试
-pytest tests/test_api.py -v
-```
+`tests/test_api.py` 使用 Flask `test_client()`，属于上述 T1 门禁，不要求启动个人开发服务。真实 System 登记、Develop 工作流及外部数据源的跨模块验收单独认定，不能由进程内 API 测试代替。
 
 ### 工作流测试示例
 
@@ -317,9 +314,9 @@ registration_data = {
 
 - [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md) - 完整规范文档
 - [OpenAPI 3.0 规范](../docs/workflow-engine-api-v1.yaml) - 机器可读的 API 定义
-- [快速开始](../../docs/spec/addp工作流计算引擎接口规范.md#-快速开始) - 5 分钟实现最小引擎
-- [最佳实践](../../docs/spec/addp工作流计算引擎接口规范.md#-最佳实践) - 算子设计和性能优化
-- [常见问题](../../docs/spec/addp工作流计算引擎接口规范.md#-常见问题faq) - FAQ
+- [快速开始](../../docs/spec/addp工作流计算引擎接口规范.md#5-扩展新引擎指南) - 目录、算子与 Runtime 接入步骤
+- [最佳实践](../../docs/spec/addp工作流计算引擎接口规范.md#52-关键要点) - 算子设计和性能优化
+- [常见问题](../../docs/spec/addp工作流计算引擎接口规范.md#53-常见问题) - FAQ
 
 ## 🎯 作为参考实现
 

@@ -71,13 +71,12 @@ GET http://jupyter-engine:8097/api/kernels
 ## 本地开发
 
 ```bash
-# 在仓库根目录构建镜像
-docker build -f engines/jupyter/Dockerfile -t addp-jupyter-engine .
-
-# 运行容器
-docker run -p 8097:8097 \
-  addp-jupyter-engine
+# 在仓库根目录使用标准原生开发生命周期
+bash scripts/dev/start.sh -jupyter
+./scripts/dev/restart.sh -jupyter
 ```
+
+镜像部署使用根 `docker-compose.runtimes.yml` 中的 `jupyter-engine`，不另用 `docker run` 建立开发实例。
 
 ## 环境变量
 

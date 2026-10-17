@@ -64,11 +64,7 @@ HTTP 层使用独立线程池，确保长时间 SuperMap 算子执行期间，`/
 
 这是用户批准的 macOS ARM64 Docker Desktop / Linux ARM64 本机技术 T2，验证真实存储权限与两个 Runtime 的生产入口；没有覆盖 System User/Grant、Gateway、Manager 页面及业务任务生命周期，不计为正式跨模块 T4，也不自动套用 DM8 的 T4 例外。真实入口登记到人工 `test-integration-owner-managed`，不进入公共 Hosted；生命周期、配置和报告边界的确定性测试随既有 `make test-supermap-workflow` 进入平台 CI。
 
-2026-10-16 首次真实通过：`make test-engines-supermap-sgm` 的运行编号为 `addp-sgm-t2-78505770f0944b588e257c966c46c645`。相关产品构建输入 SHA-256 为 `6e1e3cdb76d6d4ca7a281b4b0600ed2f66c6c2573a20b1ae4e4701f492e03f15`；SuperMap／Model3D 最终镜像分别为 `sha256:afe939e74b09beac015663597ee73cf31b1c1ad89ea4cb64d3f73ddbc68f6923`、`sha256:2963d4196436c03a8ac1934fcdc29249d6bd01b02d79e89ee40a16b80c959d60`，均从本轮源码经标准入口构建，只在本机加载。
-
-SDK 指南针与原配 PNG 分别匹配既有 SHA-256 `4ee43ceb4d9d0752a1567bc7a6f01a63be8ece90bb32d13a74e61db59606e188`、`2b41b171d8f529f7d262fccfb9302e98ab17f93ede6e658a69e8abc853977439`。本地文件参照和两种 S3 布局均为 136 顶点、94 三角面，保留 UV、一处实际贴图引用、RGBA PNG、alpha 0–255 及 BLEND；解码纹理哈希均为 `58a36001c39e50073891d69000112e5b301d9e8bfa9903c0f18c752a85895942`。该值与原 PNG 解码像素不同，未登记为源图片无损。真实 MinIO 的 14 条源 GET 按顺序核对：404 才读取 `Textures/`，403／坏图不回退，转换未列举目录。越权读、源写入／删除、缺图／坏图、create 冲突和非法 OSGB 均拒绝；旧产物和所有源字节保持。
-
-报告 SHA-256 为 `8ab0291e404ba3e6b25e9273f1a648221d11c141cd8b125e8e0bc670acc8c791`。独立复核确认本轮容器、网络、卷和四个镜像标签均无残留，私有临时目录已删除，SDK 基础镜像保留。确定性门禁 `make test-supermap-workflow` 为 15 项脚本回归加 4 项 C++ 测试通过；本次只修正测试的响应读取、MinIO 多行 JSON 和合法默认材质处理，未修改产品转换逻辑或开发服务。此前中断及断言失败记录不计通过；本结果仍不替代正式 T4 或新增厂商模型认证。
+该本机技术 T2 的运行身份、私有产物摘要、真实存储拒绝断言及清理结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不由本机结果推导正式 T4 或其他厂商模型认证。
 
 UDBX 升级调试示例：
 
@@ -115,20 +111,7 @@ SuperMap 通过 System 现有扩展工作流登记契约提交完整能力声明
 
 SDK、许可、厂商模型及贴图、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
 
-2026-10-17，已提交源码 `1bd2563c0ac3085d1c7ba2c5a6fe1e0a5e0d29a0` 经上述正式入口完成本机隔离技术页面验收，run 为 `addp-sgm-local-34d6ab1758624a9c9b2b99da210ba8f7`。五个后端的健康构建身份均与源码提交一致，双 Runtime 保持产品默认入口。普通 User 的原十项权限、生成入口、成功任务页、原文件下载 SHA-256、GLB 加载及重开后的缓存复用全部通过；只发起一次生成，浏览器业务告警／错误及失败业务响应均为 0，四次 Chromium ReadPixels 性能提示按既有规则单独记录。成果详情确认 `sgm_to_osgb` → `osgb_to_glb` 两个实际生产阶段；最终 GLB 经 Runtime `validate_glb` 及物理对象比对通过，136 顶点、94 三角面、一张 256×256 内嵌 PNG、有效 UV 与 `BLEND` 材质绑定、alpha 范围 0–255。转换后 RGBA 像素 SHA-256 为 `58a36001c39e50073891d69000112e5b301d9e8bfa9903c0f18c752a85895942`，与此前隔离 T2 参照一致。
-
-GLB SHA-256 为 `3c674d9ab716d212f8417d86a0843f2c8a824d400245b334097d12ea2df99007`；安全报告 SHA-256 为 `45c0e9ff5ef7f34faa85df02190b74bc9e574eaff212542b63b5627998e30bf4`，格式为 `addp.manager-sgm-local/v1`。原始 SGM／PNG 字节未变；普通 User 删除结果与任务、内容后续不可用、原显示模式保持及领域残留 0 均通过，Manager 物理对象与中间 OSGB 对象均为 0。退出后独立复核本轮全部标签的容器（含停止项）、卷、网络、专属镜像标签及私有目录均为 0，保留既有 SDK 基础镜像。该结果只认证指南针样例的本机隔离页面链路，不扩大为所有 SGM 版本／材质或正式 Linux Runner T4。
-
-同日扩展为指南针与秋树顺序验收，最终以源码 `c00b95b85aba4546af485dd079dd229bd3af6e97` 完整通过 `make test-manager-sgm-local`，run 为 `addp-sgm-local-85b03214ae5246fc82ba1e95a35327e5`。五个后端的构建身份均匹配该提交；SDK 基础镜像、许可及原生源码输入摘要与上述指南针基线一致。两份模型均由原十项权限的普通 User 经正式入口生成，各只发起一次转换，成功任务页、完整原文件下载及 SHA-256、GLB 页面与重开缓存全部通过；浏览器业务告警／错误和失败业务响应均为 0，每个模型的四次 Chromium ReadPixels 性能提示单独记录。两个成果均由实际 `sgm_to_osgb` → `osgb_to_glb` 阶段生成，API 内容与物理对象逐字节一致，并通过 Runtime `validate_glb`。
-
-| 样例 | 几何与实际材质绑定 | GLB SHA-256 |
-| --- | --- | --- |
-| 指南针 | 136 顶点／94 三角面，一张 256² RGBA PNG，UV 与 `BLEND`；RGBA 像素摘要保持上述基线 | `3c674d9ab716d212f8417d86a0843f2c8a824d400245b334097d12ea2df99007` |
-| 秋树 | 9589 顶点／7273 三角面，两张 1024² 图片分别实际绑定；树干为不透明 RGB JPEG，叶片为 RGBA PNG、有效 UV 与 `BLEND` | `ec18ceb90bfd713c3b97721b4722c8f1ca262031ca3efa719bba08754e4a315e` |
-
-秋树叶片透明／半透明／不透明像素分别为 774205／126685／147686，RGBA 像素 SHA-256 为 `9d87160415b0c79a5fb9703d2ba04bea3885f41a4efd83ff1aafa10aae4af0f7`；树干全部 1048576 像素不透明。五份原始 SGM／图片字节保持，两个模型均在删除成果与任务后验证内容不可用、显示模式恢复、领域残留 0、Manager 物理对象和中间 OSGB 对象为 0，再退出环境。退出后独立复核本轮容器（含停止项）、卷、网络、专属镜像标签及私有目录均为 0，SDK 基础镜像身份不变。安全报告格式为 `addp.manager-sgm-local/v2`，SHA-256 为 `6d32113c41473699c3827fb2e514f50ef74b4838b0666a0772d28e8dccd8a30e`。
-
-扩展首轮因新增断言错误拒绝 glTF 默认／纯色材质而失败，第二轮因观察器临时配置未及时删除、重复调用触发 `FileExistsError` 而失败，两轮均未登记通过，退出资源复核均为 0。修复后 `make test-manager-online-runner` 的 23 项隔离回归、89 项共享回归和 System 身份夹具检查通过；新增回归先复现上述错误，再验证默认材质与已绑定贴图共存、连续样例调用及异常退出时的配置删除。以上最终结果只认证这两份样例的本机隔离技术页面链路，仍不计为正式 Linux Runner T4。
+指南针与秋树的本机隔离页面结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。该记录与上述原生存储 T2、正式 Linux Runner T4 分开认定；源码、双 Runtime、权限、几何／材质及清理证据不能混用。
 
 ### 许可边界
 
@@ -166,20 +149,9 @@ SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
 
 ### 镜像裁剪结果
 
-以下是 2026-08-04 在 Linux ARM64 镜像上的实测结果。`压缩内容` 取自 `docker image inspect .Size`，`本地展开` 取自 Docker Desktop 的镜像列表；不同基础镜像补丁版本可能产生小幅变化。
+镜像裁剪必须以二维 DAG、PostGIS、CAD、UDBX 和 S3M 等真实场景的动态访问追踪为依据，与已观察依赖保持零冲突。历史体积测量仅代表对应 SDK／架构的构建样本，见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不作为当前所有镜像的体积承诺。运行镜像不包含 `include/`、`help/`、`sample/`、`support/`、编译器、CMake、JRE、ObjectsJava 或 GPA runtime；完整母版不受裁剪影响。
 
-| 镜像 | 压缩内容 | 本地展开 | 说明 |
-| --- | ---: | ---: | --- |
-| 原 Java/GPA 参考镜像 | 1.515 GB | 6.16 GB | ObjectsJava、GPA、JRE 和系统运行库 |
-| 完整 C++ 候选 | 1.510 GB | 6.66 GB | 直接继承完整 SDK 基础镜像，未裁剪 |
-| 第一轮 C++ 运行镜像 | 0.963 GB | 4.75 GB | 多阶段构建，只保留 SDK `bin/bin` 和运行依赖 |
-| 当前 C++ 运行镜像 | 0.478 GB | 2.02 GB | 在第一轮基础上按动态追踪结果裁剪可选插件和资源包 |
-
-当前 C++ 运行镜像相对 Java/GPA 参考镜像，压缩内容减少约 68.4%，本地展开体积减少约 67.2%；相对第一轮 C++ 运行镜像，分别继续减少约 50.4% 和 57.5%。第一轮裁剪排除了 `include/`、`help/`、`sample/`、`support/`、编译器、CMake 和其他开发文件，运行镜像不包含 JRE、ObjectsJava 或 GPA runtime。
-
-第二轮对 20 节点二维 DAG、PostGIS 只读打开、CAD 检查与渲染、UDBX 升级和 OSGB 转 S3M 做了完整动态文件访问追踪，共确认 338 个实际打开的 SDK 文件。在与追踪结果零冲突的前提下，删除了 124 个未使用的 IFC/BIM、天气、海洋和 JVM 顶层插件文件，以及 `SilverLiningResource`、`OceanResource` 两个资源目录；这些文件在完整 SDK 中的展开体积合计约 2.25 GB。
-
-S3M 转换实际会动态加载 PCL、VTK 和 OpenVDB，因此这些库必须保留。CAD 核心实际会加载 `libUDKernel.so`、`libUDDrawing.so`、`libUDComponents.so` 和 `libUDDgn.so`，也必须保留。完整 SDK 母版和基础镜像继续保存全部插件、头文件和开发资源，以支持未来新增算子；后续扩大裁剪范围时仍必须先补充动态追踪场景，再重跑 24 个算子、PostGIS、UDBX、CAD、S3M、动态 NFS 和 MinIO/S3 回归，不能仅按静态链接关系删除 `.so`、`.sdx`、`.spi`、`.l3d` 或资源文件。
+S3M 转换实际会动态加载 PCL、VTK 和 OpenVDB，因此这些库必须保留。CAD 核心实际会加载 `libUDKernel.so`、`libUDDrawing.so`、`libUDComponents.so` 和 `libUDDgn.so`，也必须保留。完整 SDK 母版和基础镜像继续保存全部插件、头文件和开发资源，以支持未来新增算子；后续扩大裁剪范围时仍必须先补充动态追踪场景，再重跑当前全部已登记算子以及 PostGIS、UDBX、CAD、S3M、动态 NFS 和 MinIO/S3 回归，不能仅按静态链接关系删除 `.so`、`.sdx`、`.spi`、`.l3d` 或资源文件。
 
 日常启动和重启统一使用：
 
@@ -213,14 +185,7 @@ SGM 原生转换、NFS / S3 外贴图、大小写扩展名及原始对象键、�
 make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify --jobs 1 --tag <独立验证标签>"
 ```
 
-2026-10-15 大写图片扩展名回归：当前 Linux SDK 读取秋树的 `hongye.PNG` 时丢失红叶贴图绑定，同一图片字节及模型引用统一为小写扩展名后可读取。所有输入统一在执行私有目录由 SDK 准备模型，业务模型和图片不改名、不改写，未增加失败重试路线。新增 `.PNG`／`.PnG` 的 NFS 与签名 S3 回归先在旧代码上复现缺图，再核对修复后的精确对象键、贴图缓冲字节、缺图／损坏／403／500 拒绝、旧产物保留和临时文件清理。标准产品镜像构建通过五项 SDK CTest，镜像 ID 为 `sha256:f33f41f2ff5a49a9bc4a39e30c1d8c5c63aa651c8cb917f298655212c1a4343b`。
-
-用户已有 iDesktopX 样例的隔离验证通过同一生产算子生成 OSGB，再通过 Model3D 正式算子生成并校验 GLB：秋树和春树均为 9589 顶点／7273 面／两张 1024² 图片，冬树为 3154 顶点／1919 面／一张 1024² 图片，汽车为 21012 顶点／11683 面／无图片。春树、冬树及汽车与修复前产物逐项比较坐标、法线、UV、索引、场景节点和绑定图片像素保持一致，不依赖无语义的 primitive 排列顺序。隔离源码副本通过根 `make test-model3d-workflow`（278 既有测试＋4 个临时真实样例测试，共 282 项）；私有样例及临时测试未进入仓库或公共镜像。同轮 `make test-module MODULE=engines` 及 `make test-build-registration test-engine-startup-isolation` 通过；首次模块门禁因 zizmor 下载网络失败，使用已校验离线 wheel 后完整复验通过。该隔离转换验证本身不代替 Manager 页面或 Hosted T4 验收；该轮 JPEG 输出未认证 PNG 透明度，后续透明贴图验收见下文。
-
-
-2026-10-15 用户重启后的真实页面验收：运行镜像 `sha256:012fc2f37ed8c34dafc6742ea8e86e2bde6ff98bfca677b0f89c78dd93955961` 的源码指纹 `1d93e5f0015c3f396e17a8b1fb111ef2843f0add` 与当前 SDK 基础镜像、构建文件和源码完全一致。Business MinIO 秋树 `item_id=44563` 经 Manager 页面重新执行任务 17，于 16:53:54 成功并可用；生成 GLB 为 839688 字节，SHA-256 `d0bc31aad15f561f0c92157f2e0c5c10072fb820a16606d7dae68a12b2aeacbb`，保留 9589 顶点、7273 面和两张 1024² RGB JPEG，两张图片均实际绑定到材质及有效 UV。浏览器首次生成、重新打开缓存和旋转查看均通过；211 个业务源文件哈希不变，Manager 的当前租户 SGM 临时前缀与 SuperMap Runtime 临时目录均为空。源码 `8f17c1d8f` 的 [Platform CI 38706914360](https://github.com/pampa0629/addp/actions/runs/38706914360) 已通过。本记录是本地真实页面验收，不计为 SGM Hosted T4；该轮 JPEG 输出尚未保留叶片透明通道。
-
-2026-10-15 23:11:08，Model3D 重启加载 `51fccfb784dbf9a0` 后，经同一 Manager 任务 17 再次生成秋树快显，完整 SGM → OSGB → GLB 路线保留叶片透明度。新 GLB 为 1608268 字节，SHA-256 `c6805b7c36b08c26737ccc9ecd8c37223df908545c4b8b2b9ed961b3bd6aee81`；9589 顶点、7273 面、两张 1024² 图片及材质 UV 保持，叶片改为 RGBA PNG 和 `BLEND`，树干保持 RGB JPEG。叶片全透明／半透明／不透明像素为 774205／126685／147686，与 OSGB 解码一致；页面白底消失，旋转与刷新缓存正常。211 个业务源文件哈希不变，Manager 当前租户 SGM 临时前缀与 SuperMap Runtime 临时目录为空。转换器源码 `808a7c729` 的 [Platform CI 38742900337](https://github.com/pampa0629/addp/actions/runs/38742900337) 及 Linux x86_64 产品构建通过，同一源码的 Manager Hosted T4 亦通过（八种既有模型及下载／清理回归，不含私有 SGM 样例），完整范围见 [Model3D 验收记录](../model3d-workflow/README.md)。本条为本地真实 SGM 页面验收，不计为 SGM Hosted T4。
+当前 SDK 对图片扩展名大小写存在读取差异。所有输入统一在执行私有目录由 SDK 准备模型，业务模型、图片名称和源字节不改写，不增加失败重试路线。NFS 与签名 S3 的精确对象键、贴图缓冲、拒绝条件、旧产物保留和临时文件清理沿用上述构建门禁；历史转换与页面结果见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。
 
 健康检查：
 

@@ -36,8 +36,6 @@ engines/
 
 ### GeoPython 原生开发
 
-2026-10-05 的本机只读盘点发现：`venv` 与测试用 `.venv` 均继承 Anaconda 的系统包，加载 GDAL 3.6.2，缺少 PGeo 驱动；测试环境的 `pip check` 还报告了继承的 Spyder、Numba 等无关包冲突。Homebrew 已安装 GDAL 3.12.1 和 unixODBC，但尚未安装 MDBTools。Homebrew 的 `ogrinfo --formats` 在隔离 Anaconda 环境变量后可发现 PGeo、ODBC、OpenFileGDB 与 GPKG。这些结果只证明依赖路线可行，尚不代表原生 Python 绑定、真实 MDB 读取或 Runtime 启动验收通过。
-
 开发生命周期采用以下单一路线：
 
 - 以独立 Python 3.12 虚拟环境安装完整 requirements 与 editable Common Python，不继承系统 site-packages；[Python GDAL 绑定](https://gdal.org/en/stable/api/python/python_bindings.html)与所链接的原生 GDAL 版本匹配，不直接加载 Homebrew 为另一 Python 主次版本编译的扩展。
@@ -49,7 +47,7 @@ engines/
 
 macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`，随后使用 `./scripts/dev/restart.sh -geopython-workflow`。首次切换须先由用户停止旧 GeoPython 开发容器，释放其监听端口；生命周期不会自动接管容器。虚拟环境统一放在 `engines/geopython-workflow/venv`，ODBC 驱动配置位于 `.dev-state/geopython-odbc`，只注入 Runtime 子进程。
 
-最小验证范围包括 `make test-dev-lifecycle`、`make test-geopython-workflow`、`make test-raster-online-runner`、`make test-platform` 和按变更影响计算的 `make test-changed`。真实 Access/PGeo 样本及 Oracle Spatial 往返沿用 `make test-arcgis-open-formats`；仅验证 Runtime 读取时使用 `make test-arcgis-open-formats ARCGIS_OPEN_FORMATS_ARGS=--runtime-only`，该范围不包含 Transfer 和 Oracle 往返；完整跨模块栅格与 Console 链路使用已登记的 `raster-workflow` Hosted T4。确定性测试通过不能替代原生依赖和产品镜像各自的真实运行证据。
+完整 owner 验证使用仓库根目录的 `make test-module MODULE=engines`；跨模块工作区变更使用 `make test-changed` 按实际依赖扩散。`make test-dev-lifecycle`、`make test-geopython-workflow` 和 `make test-raster-online-runner` 用于对应专项，不替代完整 owner 门禁。真实 Access/PGeo 样本及 Oracle Spatial 往返沿用 `make test-arcgis-open-formats`；仅验证 Runtime 读取时使用 `make test-arcgis-open-formats ARCGIS_OPEN_FORMATS_ARGS=--runtime-only`，该范围不包含 Transfer 和 Oracle 往返；完整跨模块栅格与 Console 链路使用已登记的 `raster-workflow` Hosted T4。确定性测试通过不能替代原生依赖和产品镜像各自的真实运行证据。
 
 ## 引擎分类
 
@@ -225,6 +223,6 @@ Math Workflow 是参考实现，随无参数全量启动运行服务，但不会
 
 ## 相关文档
 
-- [ADDP架构设计方案](/Users/pampa/.claude/plans/buzzing-bubbling-porcupine.md)
+- [ADDP 引擎体系图](../docs/concepts/addp引擎体系图.md)
 - [Common模块文档](../common/README.md)
 - [System模块文档](../system/CLAUDE.md)
