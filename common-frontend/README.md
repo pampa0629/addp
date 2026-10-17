@@ -172,6 +172,10 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ## 组件列表
 
+### 图查询结果
+
+`@addp/common-frontend/graph` 的 `GraphResultView` 使用平台主题变量绘制画布、工具栏、属性面板和节点关系。主题切换时原位更新 G6 样式，保留布局、缩放与属性选择。`readGraphTheme(element)` 和 `getContrastingTextColor` 是共享图主题读取及标签对比色工具，Graph 业务页面也从该包导入。单元与唯一所有权验证由 `make test-common-frontend` 自动发现，实际画布主题切换由 `make test-develop-frontend` 验证，Graph 消费由 `make test-graph-frontend` 验证；沿用现有 CI 入口，无新增运行依赖。
+
 ### 本体关系查看器
 
 `common-frontend/graph` 的 `OntologyView` 是 Graph 与平台 Ontology 的唯一关系图渲染实现。默认使用层级布局；平台能力核实通过 `layout="grid"` 使用紧凑总览，避免大量并列条件将图拉长。网格列数按实际可用宽度、节点宽度与间距计算，行数按当前概念数量计算，不按画布比例假定节点为正方形。标签分行，详情保留完整名称；共享工具栏提供缩放、原始大小和适应窗口。画布只按可测量的实际容器尺寸初始化，紧凑布局在窗口变化后重新布局并适应边界。共享契约由 `make test-common-frontend` 自动发现，实际 G6 浏览器交互由 `make test-ontology-frontend` 验证，Graph 消费通过 `make test-graph-frontend` 复验；沿用现有 CI，无后端/API 或 Infra 变化。

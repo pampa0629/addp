@@ -172,14 +172,13 @@ import { Search, Refresh, DataAnalysis } from '@element-plus/icons-vue'
 import { browseAPI } from '../api/browse'
 import { analysisAPI } from '../api/analysis'
 import { knowledgeGraphAPI } from '../api/ontology'
+import { getContrastingTextColor, readGraphTheme } from '@addp/common-frontend/graph'
 import GraphCanvas from '../components/GraphCanvas.vue'
 import NodePanel from '../components/NodePanel.vue'
 import AnalysisPanel from '../components/AnalysisPanel.vue'
 import {
   createGraphVisualEncoding,
-  getContrastingTextColor,
-  graphNodeTypeKey,
-  readGraphTheme
+  graphNodeTypeKey
 } from '../utils/graphVisualEncoding'
 import { createLatestOperationController } from '../utils/graphOperationController'
 import { useConsolePageDescriptor } from '@common-ui'

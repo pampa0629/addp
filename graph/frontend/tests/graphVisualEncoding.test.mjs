@@ -2,7 +2,6 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import {
   createGraphVisualEncoding,
-  getContrastingTextColor,
   graphNodeTypeKey
 } from '../src/utils/graphVisualEncoding.js'
 
@@ -45,9 +44,4 @@ test('同一 Schema 的前四种关系覆盖四种不同线型', () => {
     palette
   })
   assert.equal(new Set([...encoding.relationshipTypes.values()].map(item => item.dashIndex)).size, 4)
-})
-
-test('标签文字按填充亮度选择主题文字色', () => {
-  assert.equal(getContrastingTextColor('#FFFFFF', 'light', 'dark'), 'dark')
-  assert.equal(getContrastingTextColor('#111827', 'light', 'dark'), 'light')
 })

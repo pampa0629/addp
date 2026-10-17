@@ -314,6 +314,75 @@ test('renders the desktop workbench and a bounded table result without overlap',
   await expectNoDocumentOverflow(page)
 })
 
+test('graph results follow every theme without replacing the canvas or clearing selection', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'graph' })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  await catalog.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  const canvas = page.locator('.graph-canvas canvas')
+  await expect(canvas).toBeVisible()
+  const originalCanvas = await canvas.elementHandle()
+  // Select a rendered node using its actual fill pixels, independent of force-layout positions.
+  await expect(async () => {
+    const position = await canvas.evaluate(element => {
+      const style = getComputedStyle(element)
+      const palette = Array.from({ length: 12 }, (_, i) => style.getPropertyValue(`--addp-graph-category-${i + 1}`).trim().toLowerCase())
+      const pixels = element.getContext('2d').getImageData(0, 0, element.width, element.height).data
+      const bounds = element.getBoundingClientRect()
+      for (let i = 0; i < pixels.length; i += 4) {
+        const hex = '#' + [...pixels.slice(i, i + 3)].map(value => value.toString(16).padStart(2, '0')).join('')
+        if (pixels[i + 3] === 255 && palette.includes(hex)) {
+          return { x: (i / 4 % element.width) * bounds.width / element.width, y: Math.floor(i / 4 / element.width) * bounds.height / element.height + 8 }
+        }
+      }
+      return null
+    })
+    expect(position).not.toBeNull()
+    await canvas.click({ position })
+    await expect(page.locator('.props-panel')).toBeVisible()
+  }).toPass()
+  const selectedProperties = await page.locator('.props-panel').innerText()
+
+  for (const theme of ['dark', 'blue', 'purple', 'light']) {
+    await page.evaluate(theme => {
+      document.documentElement.classList.remove('dark', 'blue', 'purple')
+      if (theme !== 'light') document.documentElement.classList.add('dark')
+      if (theme === 'blue' || theme === 'purple') document.documentElement.classList.add(theme)
+    }, theme)
+    const colors = await page.locator('.graph-result-view').evaluate(element => {
+      const style = getComputedStyle(element)
+      const resolve = variable => {
+        const probe = document.createElement('span')
+        probe.style.color = style.getPropertyValue(variable)
+        element.append(probe)
+        const color = getComputedStyle(probe).color
+        probe.remove()
+        return color
+      }
+      return { background: resolve('--addp-bg-primary'), toolbar: resolve('--addp-bg-secondary') }
+    })
+    await expect(page.locator('.graph-canvas')).toHaveCSS('background-color', colors.background)
+    await expect(page.locator('.graph-toolbar')).toHaveCSS('background-color', colors.toolbar)
+    await expect(page.locator('.props-panel')).toHaveCSS('background-color', colors.background)
+    await expect(page.locator('.props-panel')).toHaveText(selectedProperties, { useInnerText: true })
+    // Check actual canvas pixels: CSS alone cannot recolor the G6 edges.
+    await expect.poll(() => canvas.evaluate(element => {
+      const color = getComputedStyle(element).getPropertyValue('--addp-graph-edge-default').trim()
+      const rgb = color.slice(1).match(/../g).map(value => parseInt(value, 16))
+      const pixels = element.getContext('2d').getImageData(0, 0, element.width, element.height).data
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3] === 255 && rgb.every((value, index) => pixels[i + index] === value)) return true
+      }
+      return false
+    })).toBe(true)
+    expect(await canvas.evaluate((element, original) => element === original, originalCanvas)).toBe(true)
+  }
+})
+
 test.describe('narrow query workbench', () => {
   test.use({ viewport: { width: 760, height: 700 } })
 

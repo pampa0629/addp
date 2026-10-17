@@ -9,7 +9,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import G6 from '@antv/g6'
-import { getContrastingTextColor, readGraphTheme } from '../utils/graphVisualEncoding'
+import { getContrastingTextColor, readGraphTheme } from '@addp/common-frontend/graph'
 import { placeIncrementalNodes } from '../utils/incrementalGraphLayout'
 import { createGraphLayoutConfig } from '../utils/graphLayoutPolicy'
 

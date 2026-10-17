@@ -14,7 +14,7 @@
     "agent-ui/src"
   ],
   "scripts": {
-    "test": "node --test basic/tests/*.test.mjs chart/tests/*.test.mjs map/tests/*.test.mjs"
+    "test": "node --test basic/tests/*.test.mjs chart/tests/*.test.mjs map/tests/*.test.mjs graph/tests/*.test.mjs"
   },
   "keywords": [
     "addp",
