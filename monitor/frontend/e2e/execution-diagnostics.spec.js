@@ -36,6 +36,55 @@ async function installBackend(page, { empty = false, unavailable = false, events
   return { getTreeRequests: () => treeRequests }
 }
 
+for (const status of [403, 503]) test(`list read failure ${status} clears rows and total until an authorized retry`, async ({ page }) => {
+  await installBackend(page)
+  await page.goto('/executions')
+  const rows = page.locator('.execution-list .el-table__row')
+  const total = page.locator('.el-pagination__total')
+  await expect(rows).toHaveCount(1)
+  await expect(total).toContainText('1')
+  await page.route('**/api/v1/monitor/executions?*', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) }))
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(rows).toHaveCount(0)
+  await expect(total).toContainText('0')
+  await page.unroute('**/api/v1/monitor/executions?*')
+  await page.getByRole('button', { name: '查询', exact: true }).click()
+  await expect(rows).toHaveCount(1)
+  await expect(total).toContainText('1')
+})
+
+test('a delayed list denial cannot clear a newer authorized result', async ({ page }) => {
+  await installBackend(page)
+  await page.goto('/executions')
+  const rows = page.locator('.execution-list .el-table__row')
+  await expect(rows).toHaveCount(1)
+  let release, completed, blocked = false
+  const pending = new Promise(resolve => { release = resolve })
+  const finished = new Promise(resolve => { completed = resolve })
+  await page.route('**/api/v1/monitor/executions?*', async route => {
+    if (blocked) return route.fallback()
+    blocked = true
+    await pending
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error_code: 'execution_owner_unavailable' }) })
+    completed()
+  })
+  try {
+    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await expect.poll(() => blocked).toBe(true)
+    const authorized = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/executions' && response.status() === 200)
+    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await authorized
+    await expect(rows).toHaveCount(1)
+    release()
+    await finished
+    await page.waitForTimeout(300)
+    await expect(rows).toHaveCount(1)
+    await expect(page.locator('.el-pagination__total')).toContainText('1')
+  } finally {
+    release()
+  }
+})
+
 test('a query execution deep link opens its failure details and matching process events without a task definition', async ({ page }) => {
   const executionID = '11111111-1111-4111-8111-111111111111'
   await installBackend(page, { executionID, queryFailure: true })
@@ -111,18 +160,37 @@ test('shows a load failure when the owner cannot authorize details', async ({ pa
   await expect(page.locator('.execution-steps')).toHaveCount(0)
 })
 
-for (const status of [401, 403, 404]) test(`event authorization ${status} clears terminal details after paging`, async ({ page }) => {
+for (const status of [401, 403, 404, 503]) test(`event read failure ${status} clears terminal details after paging`, async ({ page }) => {
   await installBackend(page)
   await page.goto('/executions?execution_id=diagnostic-run')
   const events = page.locator('.execution-events')
   await expect(events.getByText('123', { exact: false })).toBeVisible()
   await events.getByRole('button', { name: '加载后续事件', exact: true }).click()
   await expect(events.getByRole('status')).toBeVisible()
-  await page.route('**/api/v1/monitor/**/events*', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: 'permission_denied' }) }))
+  await page.route('**/api/v1/monitor/**/events*', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) }))
   await events.getByRole('button', { name: '刷新过程', exact: true }).click()
   await expect(page.locator('.execution-detail-content, .execution-tree, .execution-events, .execution-steps')).toHaveCount(0)
   if (status === 401) await expect(page.getByRole('dialog')).not.toBeVisible()
   else await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+  if (status === 503) {
+    await page.unroute('**/api/v1/monitor/**/events*')
+    await page.getByRole('button', { name: '重新加载', exact: true }).click()
+    await expect(page.locator('.execution-steps tbody tr')).toHaveCount(2)
+    await expect(page.locator('.execution-events')).toContainText('123')
+  }
+})
+
+test('an unrelated event service failure clears events without treating the detail as denied', async ({ page }) => {
+  await installBackend(page)
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const events = page.locator('.execution-events')
+  await expect(events).toContainText('123')
+  await page.route('**/api/v1/monitor/**/events*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error_code: 'event_store_unavailable' }) }))
+  await events.getByRole('button', { name: '刷新过程', exact: true }).click()
+  await expect(events.getByRole('alert')).toBeVisible()
+  await expect(events.locator('tbody tr')).toHaveCount(0)
+  await expect(page.locator('.execution-steps tbody tr')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: '重新加载', exact: true })).toHaveCount(0)
 })
 
 
@@ -174,19 +242,24 @@ test('a failed parent keeps refreshing a running visible child until its own ter
   expect(backend.getTreeRequests()).toBe(terminalRequests)
 })
 
-for (const status of [401, 403, 404]) {
-  test(`tree authorization ${status} clears previously displayed steps and events`, async ({ page }) => {
+for (const status of [401, 403, 404, 503]) {
+  test(`tree read failure ${status} clears previously displayed steps and events`, async ({ page }) => {
     await installBackend(page, { executionStatus: 'running' })
     await page.goto('/executions?execution_id=diagnostic-run')
     await expect(page.locator('.execution-steps tbody tr')).toHaveCount(2)
-    await page.route('**/api/v1/monitor/**/tree', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) }))
+    await page.route('**/api/v1/monitor/**/tree', route => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) }))
     await expect(page.locator('.execution-detail-content, .execution-steps, .execution-events, .el-tree')).toHaveCount(0)
     if (status === 401) await expect(page.getByRole('dialog')).not.toBeVisible()
     else await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+    if (status === 503) {
+      await page.unroute('**/api/v1/monitor/**/tree')
+      await page.getByRole('button', { name: '重新加载', exact: true }).click()
+      await expect(page.locator('.execution-steps tbody tr')).toHaveCount(2)
+    }
   })
 }
 
-test('a delayed event denial cannot clear a newly authorized reopening', async ({ page }) => {
+for (const status of [404, 503]) test(`a delayed event read failure ${status} cannot clear a newly authorized reopening`, async ({ page }) => {
   await installBackend(page)
   await page.goto('/executions?execution_id=diagnostic-run')
   const events = page.locator('.execution-events')
@@ -198,7 +271,7 @@ test('a delayed event denial cannot clear a newly authorized reopening', async (
     if (blocked) return route.fallback()
     blocked = true
     await pending
-    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) })
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) })
     completed()
   })
   try {
@@ -219,7 +292,7 @@ test('a delayed event denial cannot clear a newly authorized reopening', async (
   }
 })
 
-test('a delayed denial from a closed detail cannot clear a newly authorized reopening', async ({ page }) => {
+for (const status of [404, 503]) test(`a delayed tree read failure ${status} from a closed detail cannot clear a newly authorized reopening`, async ({ page }) => {
   await installBackend(page, { executionStatus: 'running' })
   await page.goto('/executions?execution_id=diagnostic-run')
   await expect(page.locator('.execution-steps tbody tr')).toHaveCount(2)
@@ -230,7 +303,7 @@ test('a delayed denial from a closed detail cannot clear a newly authorized reop
     if (blocked) return route.fallback()
     blocked = true
     await pending
-    await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) })
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ error_code: status === 503 ? 'execution_owner_unavailable' : 'permission_denied' }) })
     completed()
   })
   try {

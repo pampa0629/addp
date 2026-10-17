@@ -546,6 +546,7 @@ let executionListRefreshTimer = null
 let executionDetailRefreshTimer = null
 let executionListRefreshInFlight = false
 let executionDetailRefreshInFlight = false
+let executionListRequestToken = 0
 let detailRequestToken = 0
 const executionTreeProps = {
   children: 'children'
@@ -846,6 +847,7 @@ async function loadExecutions(options = {}) {
     return
   }
 
+  const requestToken = ++executionListRequestToken
   const silent = options.silent === true
   if (!silent) {
     loading.value = true
@@ -857,15 +859,21 @@ async function loadExecutions(options = {}) {
       page_size: pagination.value.page_size
     }
     const data = await listExecutions(params)
+    if (requestToken !== executionListRequestToken) return
     executions.value = data.executions || []
     pagination.value.total = data.total || 0
   } catch (error) {
+    if (requestToken !== executionListRequestToken) return
+    if (isExecutionReadBlocked(error)) {
+      executions.value = []
+      pagination.value.total = 0
+    }
     if (!silent) {
       ElMessage.error(t('monitor.execution.load_failed'))
     }
     console.error(error)
   } finally {
-    if (!silent) {
+    if (requestToken === executionListRequestToken) {
       loading.value = false
     }
   }
@@ -1110,14 +1118,19 @@ async function refreshOpenedExecution() {
     openExecutionTree(data)
   } catch (error) {
     if (!detailDialogVisible.value || openedExecutionID.value !== executionID || requestToken !== detailRequestToken) return
-    if ([401, 403, 404].includes(error.response?.status)) clearDeniedExecutionDetail()
+    if (isExecutionReadBlocked(error)) clearBlockedExecutionDetail()
     console.error(error)
   } finally {
     executionDetailRefreshInFlight = false
   }
 }
 
-function clearDeniedExecutionDetail() {
+function isExecutionReadBlocked(error) {
+  return [401, 403, 404].includes(error.response?.status) ||
+    (error.response?.status === 503 && error.response?.data?.error_code === 'execution_owner_unavailable')
+}
+
+function clearBlockedExecutionDetail() {
   detailRequestToken += 1
   currentExecution.value = null
   executionTreeData.value = []
@@ -1133,8 +1146,8 @@ async function loadExecutionEventPage(executionID, params) {
     return await getExecutionEvents(executionID, params)
   } catch (error) {
     if (detailDialogVisible.value && requestToken === detailRequestToken &&
-        currentExecution.value?.execution_id === executionID && [401, 403, 404].includes(error.response?.status)) {
-      clearDeniedExecutionDetail()
+        currentExecution.value?.execution_id === executionID && isExecutionReadBlocked(error)) {
+      clearBlockedExecutionDetail()
     }
     throw error
   }
