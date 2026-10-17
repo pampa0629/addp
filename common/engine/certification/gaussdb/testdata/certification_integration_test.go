@@ -1,5 +1,3 @@
-//go:build gaussdb_certification
-
 package gaussdb
 
 import (
@@ -16,11 +14,11 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// The official driver is injected through a temporary modfile by the release
-// owner. This package does not register an ADDP production engine.
+// The release owner copies this source into its temporary standalone module.
+// testdata keeps the external driver outside Common's package/dependency graph.
 func TestGaussDBOfficialMediaCertification(t *testing.T) {
 	if os.Getenv("ADDP_GAUSSDB_CERTIFICATION") != "1" {
-		t.Skip("native GaussDB certification runs only through the T5 owner")
+		t.Fatal("native GaussDB certification runs only through the T5 owner")
 	}
 	if os.Getenv("GOENV_REGIST_ALL") != "false" {
 		t.Fatal("official GaussDB and PostgreSQL drivers must coexist explicitly")

@@ -134,11 +134,11 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertIsNone(GATE.inspect("container", "owned"))
 
     @patch.object(GATE, "command")
-    @patch.object(GATE, "prepare_modfile")
+    @patch.object(GATE, "prepare_probe")
     @patch.object(GATE, "extract_driver")
     @patch.object(GATE, "download")
     def test_compile_only_cross_compiles_without_native_runtime_or_t5_report(self, download, extract, prepare, command):
-        prepare.return_value = self.root / "certification.mod"
+        prepare.return_value = self.root / "probe"
         GATE.compile_probe()
         args = command.call_args.args[0]
         self.assertEqual(args[:3], ["go", "test", "-c"])
@@ -187,7 +187,7 @@ class GaussDBCertificationTest(unittest.TestCase):
              patch.object(GATE, "download", return_value=self.root / "archive"), \
              patch.object(GATE, "extract_kernel"), \
              patch.object(GATE, "extract_driver", return_value=self.root / "driver"), \
-             patch.object(GATE, "prepare_modfile", return_value=self.root / "certification.mod"), \
+             patch.object(GATE, "prepare_probe", return_value=self.root / "probe"), \
              patch.object(GATE, "inspect", side_effect=inspect), \
              patch.object(GATE, "command", side_effect=command), \
              patch.object(GATE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "1\n", "")), \
@@ -242,6 +242,26 @@ class GaussDBCertificationTest(unittest.TestCase):
             timeout=60, check=True)
         self.assertNotIn("gitee.com/opengauss/openGauss-connector-go-pq", result.stdout)
         self.assertNotIn("gitcode.com/opengauss/openGauss-connector-go-pq", result.stdout)
+
+    def test_probe_module_is_standalone_and_preserves_the_pinned_driver_and_assertions(self):
+        driver = self.root / "driver"
+        driver.mkdir()
+        (driver / "go.mod").write_text("module gitee.com/opengauss/openGauss-connector-go-pq\n\ngo 1.13\n")
+        original_mod = (GATE.ROOT / "common/go.mod").read_bytes()
+        original_sum = (GATE.ROOT / "common/go.sum").read_bytes()
+        probe = GATE.prepare_probe(self.root, driver)
+        module = json.loads(subprocess.check_output(["go", "mod", "edit", "-json"],
+                            cwd=probe, text=True, env={**GATE.os.environ, "GOWORK": "off"}))
+        common = json.loads(subprocess.check_output(["go", "mod", "edit", "-json"],
+                            cwd=GATE.ROOT / "common", text=True, env={**GATE.os.environ, "GOWORK": "off"}))
+        self.assertEqual(module["Module"]["Path"], "addp.local/gaussdb-certification")
+        self.assertEqual(module["Go"], common["Go"])
+        postgres = next(item for item in common["Require"] if item["Path"] == "github.com/lib/pq")
+        self.assertIn(postgres, module["Require"])
+        self.assertEqual(module["Replace"][0]["New"]["Path"], str(driver))
+        self.assertEqual((probe / "certification_integration_test.go").read_bytes(), GATE.PROBE_SOURCE.read_bytes())
+        self.assertEqual((GATE.ROOT / "common/go.mod").read_bytes(), original_mod)
+        self.assertEqual((GATE.ROOT / "common/go.sum").read_bytes(), original_sum)
 
 
 if __name__ == "__main__":

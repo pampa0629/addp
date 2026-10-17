@@ -21,6 +21,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+PROBE_SOURCE = ROOT / "common/engine/certification/gaussdb/testdata/certification_integration_test.go"
 LABEL = "com.addp.gaussdb-certification"
 FACT_NAMES = ("GAUSSDB_OFFICIAL_VERSION", "GAUSSDB_OFFICIAL_MEDIA_URL",
               "GAUSSDB_OFFICIAL_MEDIA_SHA256", "GAUSSDB_OFFICIAL_PACKAGE_ROOT",
@@ -112,14 +113,25 @@ def command(args: list[str], *, output: Path | None = None, **kwargs) -> subproc
         return subprocess.run(args, stdout=stream, stderr=subprocess.STDOUT, check=True, **kwargs)
 
 
-def prepare_modfile(work_dir: Path, driver: Path) -> Path:
-    modfile = work_dir / "certification.mod"
-    shutil.copyfile(ROOT / "common/go.mod", modfile)
-    shutil.copyfile(ROOT / "common/go.sum", modfile.with_suffix(".sum"))
-    command(["go", "mod", "edit", "-modfile=" + str(modfile),
+def prepare_probe(work_dir: Path, driver: Path) -> Path:
+    # Ordinary build tags are still loaded by tidy. Keep the source AND the
+    # driver in an owner-created module outside the production module graph.
+    probe = work_dir / "probe"
+    probe.mkdir()
+    environment = {**os.environ, "GOWORK": "off"}
+    common = json.loads(command(["go", "mod", "edit", "-json"],
+                               cwd=ROOT / "common", env=environment,
+                               capture_output=True, text=True).stdout)
+    postgres = [item["Version"] for item in common["Require"] if item["Path"] == "github.com/lib/pq"]
+    if not common.get("Go") or len(postgres) != 1:
+        raise RuntimeError("Common Go and PostgreSQL driver versions must be explicit")
+    (probe / "go.mod").write_text("module addp.local/gaussdb-certification\n\ngo " + common["Go"] + "\n")
+    shutil.copyfile(ROOT / "common/go.sum", probe / "go.sum")
+    shutil.copyfile(PROBE_SOURCE, probe / "certification_integration_test.go")
+    command(["go", "mod", "edit", "-require=github.com/lib/pq@" + postgres[0],
              "-require=gitee.com/opengauss/openGauss-connector-go-pq@v0.0.0",
-             "-replace=gitee.com/opengauss/openGauss-connector-go-pq=" + str(driver)], cwd=ROOT / "common", env={**os.environ, "GOWORK": "off"})
-    return modfile
+             "-replace=gitee.com/opengauss/openGauss-connector-go-pq=" + str(driver)], cwd=probe, env=environment)
+    return probe
 
 
 def compile_probe() -> None:
@@ -130,10 +142,9 @@ def compile_probe() -> None:
     with tempfile.TemporaryDirectory(prefix="addp-gaussdb-compile-") as work:
         work_dir = Path(work)
         driver = extract_driver(archive, facts[FACT_NAMES[3]], work_dir / "driver")
-        modfile = prepare_modfile(work_dir, driver)
+        probe = prepare_probe(work_dir, driver)
         env = {**os.environ, "GOWORK": "off", "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"}
-        command(["go", "test", "-c", "-modfile=" + str(modfile), "-mod=mod", "-tags=gaussdb_certification",
-                 "-o", str(work_dir / "probe.test"), "./engine/certification/gaussdb"], cwd=ROOT / "common", env=env, timeout=180)
+        command(["go", "test", "-c", "-mod=mod", "-o", str(work_dir / "probe.test"), "."], cwd=probe, env=env, timeout=180)
     print("GaussDB Linux x86_64 probe compiled; native startup and protocol tests NOT RUN.")
 
 
@@ -253,13 +264,12 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
             command(["docker", "exec", "-i", container, "gsql", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-p", "5432"], input=sql, text=True, capture_output=True)
             state = inspect("container", container)
             port = state["NetworkSettings"]["Ports"]["5432/tcp"][0]["HostPort"]
-            modfile = prepare_modfile(work_dir, driver)
+            probe = prepare_probe(work_dir, driver)
             probe_env = {**os.environ, "GOWORK": "off", "GOENV_REGIST_ALL": "false",
                          "ADDP_GAUSSDB_CERTIFICATION": "1",
                          "ADDP_TEST_GAUSSDB_DSN": f"host=127.0.0.1 port={port} dbname=postgres user=addp_reader password={password} sslmode=disable connect_timeout=10"}
-            command(["go", "test", "-modfile=" + str(modfile), "-mod=mod", "-tags=gaussdb_certification",
-                     "./engine/certification/gaussdb", "-run=^TestGaussDBOfficialMediaCertification$", "-count=1", "-v"],
-                    output=report_path.with_suffix(".probe.log"), env=probe_env, cwd=ROOT / "common", timeout=180)
+            command(["go", "test", "-mod=mod", ".", "-run=^TestGaussDBOfficialMediaCertification$", "-count=1", "-v"],
+                    output=report_path.with_suffix(".probe.log"), env=probe_env, cwd=probe, timeout=180)
             if "--- SKIP:" in report_path.with_suffix(".probe.log").read_text():
                 raise RuntimeError("native GaussDB certification refuses skipped tests")
             report["result"] = "passed"
