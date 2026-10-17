@@ -78,7 +78,7 @@ def execute_workflow(workflow_def, input_data=None):
         return {'status': 'failed', 'error_code': 'WORKFLOW_INVALID', 'error': str(exc), 'logs': logs}
     except WorkflowExecutionError as exc:
         logger.exception('Workflow execution failed')
-        return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc),
+        return {'status': 'failed', 'error_code': exc.error_code, 'error': str(exc),
                 'all_results': exc.all_results or {}, 'logs': logs}
     except Exception as exc:
         logger.exception('Workflow execution failed')

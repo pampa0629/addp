@@ -24,7 +24,7 @@ import (
 )
 
 func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T) {
-	for _, scenario := range []string{"success", "runtime_failed", "revoked", "authorization_expired", "lease_lost"} {
+	for _, scenario := range []string{"success", "runtime_failed", "target_exists", "revoked", "authorization_expired", "lease_lost"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 			if err != nil {
@@ -59,10 +59,14 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 						t.Error("runtime was polled before its receipt committed")
 					}
 					status := "success"
-					if scenario == "runtime_failed" {
+					if scenario == "runtime_failed" || scenario == "target_exists" {
 						status = "failed"
 					}
-					json.NewEncoder(w).Encode(map[string]interface{}{"status": status, "execution_id": "remote-private-sentinel", "progress": 100, "error": "runtime-private-sentinel"})
+					code := "EXECUTION_FAILED"
+					if scenario == "target_exists" {
+						code = "TARGET_ALREADY_EXISTS"
+					}
+					json.NewEncoder(w).Encode(map[string]interface{}{"status": status, "execution_id": "remote-private-sentinel", "progress": 100, "error": "runtime-private-sentinel", "error_code": code})
 				default:
 					http.NotFound(w, r)
 				}
@@ -144,6 +148,16 @@ func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T
 			if scenario == "success" || scenario == "runtime_failed" {
 				if stored.Metadata["runtime_execution_id"] != "remote-private-sentinel" {
 					t.Fatal("terminal result lost receipt")
+				}
+			}
+			if scenario == "target_exists" {
+				observed := commonExecution.Observe(&stored)
+				encoded, _ := json.Marshal(observed.ErrorDetails)
+				if !strings.Contains(string(encoded), `"reason":"target_exists"`) || !strings.Contains(string(encoded), `"stage":"result"`) || !strings.Contains(string(encoded), `"code":"develop.workflow.target_exists"`) {
+					t.Fatalf("lost controlled conflict after persistence: %s", encoded)
+				}
+				if strings.Contains(string(encoded), "private-sentinel") {
+					t.Fatal("runtime text leaked into conflict diagnostic")
 				}
 			}
 			var events []commonExecution.Event

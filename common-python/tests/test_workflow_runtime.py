@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from addp_common.workflow_access import publish_target_file
+
 from addp_common.workflow_runtime import (
     ExecutionRegistry,
     WorkflowRunner,
@@ -10,6 +12,44 @@ from addp_common.workflow_runtime import (
     WorkflowExecutionError,
     validate_execution_authorization,
 )
+
+
+@pytest.mark.parametrize('projected', [False, True])
+@pytest.mark.parametrize('nested', [False, True])
+def test_create_conflict_keeps_typed_code_through_dag_and_registry(tmp_path, projected, nested):
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'new')
+    target.write_bytes(b'original')
+    plan = {'target': {'kind': 'file', 'write_mode': 'create',
+                       'access': {'method': 'mounted_path', 'path': str(target)}}}
+    workflow = {'tasks': [{'id': 'publish', 'operator': 'publish', 'params': {}, 'depends_on': []}]}
+    executor = lambda _operator, _params: publish_target_file(source, plan)
+    if nested:
+        inner = WorkflowRunner({'publish'}, executor)
+        executor = lambda _operator, _params: inner.execute(workflow)
+    runner = WorkflowRunner({'publish'}, executor, result_projector=json.dumps if projected else None)
+    class InlineThread:
+        def __init__(self, target, args, daemon): self.run = lambda: target(*args)
+        def start(self): self.run()
+    registry = ExecutionRegistry()
+    accepted = registry.submit(runner, workflow, thread_factory=InlineThread)
+    snapshot = registry.get(accepted.execution_id)
+    assert snapshot.status == 'failed'
+    assert snapshot.error_code == 'TARGET_ALREADY_EXISTS'
+    assert target.read_bytes() == b'original'
+    if projected:
+        assert snapshot.all_results == {}
+        assert snapshot.task_order == ['publish']
+
+
+def test_error_text_and_untyped_code_attribute_cannot_fabricate_create_conflict():
+    error = ValueError('target file already exists: private-path')
+    error.error_code = 'TARGET_ALREADY_EXISTS'
+    def execute(_operator, _params): raise error
+    with pytest.raises(WorkflowExecutionError) as caught:
+        WorkflowRunner({'publish'}, execute).execute({'tasks': [
+            {'id': 'publish', 'operator': 'publish', 'params': {}, 'depends_on': []}]})
+    assert caught.value.error_code == 'EXECUTION_FAILED'
 
 
 @pytest.mark.parametrize('explicit_partial', [False, True])

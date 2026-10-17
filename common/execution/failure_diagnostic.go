@@ -41,6 +41,7 @@ var failureReasons = map[string]bool{
 	"database_required": true, "data_protection_required": true,
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
+	"target_exists": true,
 }
 
 func NewFailureDiagnostic(stage, reason string) *FailureDiagnostic {

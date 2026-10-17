@@ -16,6 +16,10 @@ class WorkflowAccessError(ValueError):
     pass
 
 
+class WorkflowTargetExistsError(WorkflowAccessError):
+    """A create publication was rejected because its target already exists."""
+
+
 def require_access_plan(params: dict[str, Any]) -> dict[str, Any]:
     plan = params.get("access_plan")
     if not isinstance(plan, dict):
@@ -151,7 +155,7 @@ def publish_target_file(path: Path, plan: dict[str, Any]) -> dict[str, Any]:
     object_name = _required_text(access, "object").strip("/")
     _ensure_bucket(client, bucket)
     if write_mode == "create" and _object_exists(client, bucket, object_name):
-        raise WorkflowAccessError(f"target object already exists: {bucket}/{object_name}")
+        raise WorkflowTargetExistsError(f"target object already exists: {bucket}/{object_name}")
     client.fput_object(bucket, object_name, str(path), content_type=content_type)
     return {
         "method": "object_store",
@@ -231,7 +235,7 @@ def publish_target_directory(root: Path, plan: dict[str, Any], *, completion_mar
     }
     existing.discard("")
     if write_mode == "create" and existing:
-        raise WorkflowAccessError(f"target prefix already exists: {bucket}/{prefix}")
+        raise WorkflowTargetExistsError(f"target prefix already exists: {bucket}/{prefix}")
     marker_object = f"{prefix}/{completion_marker}"
     if write_mode == "replace" and marker_object in existing:
         client.remove_object(bucket, marker_object)
@@ -279,7 +283,7 @@ def _validate_resource(resource: dict[str, Any], label: str) -> None:
 
 def _publish_local_file(source: Path, destination: Path, write_mode: str) -> None:
     if write_mode == "create" and destination.exists():
-        raise WorkflowAccessError(f"target file already exists: {destination}")
+        raise WorkflowTargetExistsError(f"target file already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.parent / f".{destination.name}.addp-{uuid.uuid4().hex}.tmp"
     try:
@@ -291,7 +295,7 @@ def _publish_local_file(source: Path, destination: Path, write_mode: str) -> Non
 
 def _publish_local_directory(source: Path, destination: Path, write_mode: str) -> None:
     if write_mode == "create" and destination.exists():
-        raise WorkflowAccessError(f"target directory already exists: {destination}")
+        raise WorkflowTargetExistsError(f"target directory already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.parent / f".{destination.name}.addp-{uuid.uuid4().hex}.tmp"
     backup = destination.parent / f".{destination.name}.addp-{uuid.uuid4().hex}.bak"

@@ -174,7 +174,8 @@
         "array_invalid": "Native array value encoding failed",
         "bytes_invalid": "Binary value encoding failed",
         "table_write_failed": "Target table write failed",
-        "execution_failed": "Execution failed without a specific recorded cause"
+        "execution_failed": "Execution failed without a specific recorded cause",
+        "target_exists": "The output target already exists; create mode refused to overwrite it."
       },
       "actions": {
         "configuration_missing": "Start a new execution. If it fails again, ask an administrator to check configuration preparation.",
@@ -206,7 +207,8 @@
         "array_invalid": "Check the array element type, dimensions and format.",
         "bytes_invalid": "Check that binary columns receive byte values.",
         "table_write_failed": "Check target constraints, connectivity and write permissions, and investigate using the execution ID.",
-        "execution_failed": "Use the execution ID to check execution records and relevant resources."
+        "execution_failed": "Use the execution ID to check execution records and relevant resources.",
+        "target_exists": "Choose another output file name or location, then run again."
       },
       "write": "Write column",
       "writeColumn": "Write column {column_index} (declared type: {declared_type})",

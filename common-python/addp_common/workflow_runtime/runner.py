@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..workflow_access import WorkflowTargetExistsError
 from .errors import WorkflowExecutionError
 from .graph import topological_order
 from .references import resolve_references
@@ -53,6 +54,8 @@ class WorkflowRunner:
                 public_results[task_id] = self._project_result(_public_result(ports))
                 port_results[task_id] = ports
             except Exception as exc:
+                code = (exc.error_code if isinstance(exc, WorkflowExecutionError) else
+                        "TARGET_ALREADY_EXISTS" if isinstance(exc, WorkflowTargetExistsError) else "EXECUTION_FAILED")
                 partial = exc.partial_result if isinstance(exc, WorkflowExecutionError) else None
                 if self._result_projector is not None or partial is not None:
                     failed_results = dict(public_results)
@@ -60,10 +63,11 @@ class WorkflowRunner:
                         failed_results[task_id] = self._project_result(partial)
                     raise WorkflowExecutionError(
                         f"任务 {task_id} 执行失败: {exc}",
+                        error_code=code,
                         all_results=failed_results,
                         task_order=order[:index + 1],
                     ) from exc
-                raise WorkflowExecutionError(f"任务 {task_id} 执行失败: {exc}") from exc
+                raise WorkflowExecutionError(f"任务 {task_id} 执行失败: {exc}", error_code=code) from exc
             if progress:
                 progress("running", int((index + 1) * 100 / total), task_id)
         final_result = public_results[order[-1]] if order else None

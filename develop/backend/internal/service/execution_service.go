@@ -90,7 +90,7 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 			status = commonExecution.ExecutionStatusTimeout
 			suffix = "execution_timeout"
 		}
-		fields["error_details"] = commonModels.JSONMap{"code": "develop." + item.TaskType + "." + suffix, "message": message}
+		fields["error_details"] = executionFailureDetails(item.TaskType, suffix, message, result)
 	} else if facts := developLineageFacts(task, outputs); facts != nil {
 		metadata["lineage_facts"] = facts
 	}

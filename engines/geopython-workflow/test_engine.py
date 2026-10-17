@@ -369,3 +369,21 @@ def test_raster_policy_rejects_foreign_engine_quota_and_clamps_saved_quota(monke
     payload['quotas'][0]['engine_id'] = 2
     with pytest.raises(module.RasterPolicyUnavailable): resources.refresh()
     assert not resources.snapshot()['enabled']
+
+
+def test_geopython_workflow_preserves_publisher_conflict_code(tmp_path, monkeypatch):
+    import operators
+    from addp_common.workflow_access import publish_target_file
+    from workflow_engine import execute_workflow
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    source.write_bytes(b'new'); target.write_bytes(b'original')
+    plan = {'target': {'kind': 'file', 'write_mode': 'create',
+                       'access': {'method': 'mounted_path', 'path': str(target)}}}
+    monkeypatch.setitem(operators.OPERATORS, 'publish_conflict', {
+        'function': lambda: publish_target_file(source, plan), 'execution_modes': ['workflow']})
+    response = execute_workflow({'tasks': [
+        {'id': 'publish', 'operator': 'publish_conflict', 'params': {}, 'depends_on': []}]})
+    assert response['status'] == 'failed'
+    assert response['error_code'] == 'TARGET_ALREADY_EXISTS'
+    assert response['all_results'] == {}
+    assert target.read_bytes() == b'original'

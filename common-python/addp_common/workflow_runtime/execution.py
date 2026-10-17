@@ -115,7 +115,7 @@ class ExecutionRegistry:
         except WorkflowValidationError as exc:
             self._fail(execution_id, "WORKFLOW_INVALID", str(exc), started)
         except WorkflowExecutionError as exc:
-            self._fail(execution_id, "EXECUTION_FAILED", str(exc), started,
+            self._fail(execution_id, exc.error_code, str(exc), started,
                        all_results=exc.all_results, task_order=exc.task_order)
         except Exception as exc:
             self._fail(execution_id, "INTERNAL_ERROR", "工作流运行时内部错误", started, details=str(exc))

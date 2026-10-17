@@ -1068,6 +1068,8 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 执行失败诊断使用同一 `error_details.diagnostic`，契约为 `schema_version=addp.execution-failure/v3`、`stage` 和 `reason`，阶段和原因只接受 Common 声明的闭合枚举。可选 `sql` 仅含 `object={kind,name}` 与 `position={line,column}`；对象类型限 table、column、function、operator，名称只来自 Provider 原生语法树中的标识符，最长 256 个字符／512 UTF-8 字节，禁止控制字符。位置为执行前原查询的 1 起始行号与 UTF-16 列号，符合编辑器坐标。禁止错误全文、Hint／Detail、查询片段、参数值、样本、凭据与其他附加字段。阶段为配置校验、授权、准备、执行或保存结果；原因包括执行配置缺失／无效、查询模板无效、关系参数绑定失败、授权失效、引擎访问失败、语法错误、字段／表不存在、类型不匹配、权限不足、连接失败、超时、取消、资源不足及未进一步分类的执行失败。Owner 根据实际失败边界和已知错误事实生成诊断；Common Observation 同时用于 Monitor 和 Owner 专业响应，仅投影合法诊断。界面由共享组件按中英文固定词条展示失败阶段、具体原因、处理建议、错误码和 execution UUID，不从原始错误拼接文案。未记录当前受控诊断的历史错误继续只展示安全类别和稳定码，不猜测具体原因、不回填历史，不保留旧诊断版本解析路线。
 
+工作流发布目标已存在且 `create` 模式拒绝覆盖时，使用 `stage=result`、`reason=target_exists`，提示更换输出名称或位置；只接受 Runtime 明确的 `TARGET_ALREADY_EXISTS` 终态，不根据自由文本推断，也不推断其他节点没有产出。
+
 通用未分类执行失败使用 `execution_failed`。表写入诊断新增受控原因 `json_invalid`、`array_invalid`、`bytes_invalid`、`table_write_failed`。可选 `write={column_index,declared_type}` 仅用于前三种值编码错误，列序号从 1 开始，对应本次 Provider 实际写入列顺序（不是源字段下标或数据库全表列号），声明类型分别为 `json|array|bytes`；不公开列名、业务值、原生物理类型或推测的错误行号，不与 `sql` 同时出现。Provider 通过类型化错误保留原因及底层错误链，Owner 不解析自由文本。数据库拒绝无法确定列时只使用 `table_write_failed`，不得猜列。
 
 可选 `target_change_possible=true` 表示 Owner 已进入目标删除、建表准备、替换或非空写入调用，随后执行失败，目标数据或结构可能已改变。只允许真值；未记录该事实表示未知，不能推断未写入。该事实独立于字段编码诊断，也适用于目标准备后发生的源读取、转换或关闭失败。Transfer 在实际副作用调用边界记录，不在纯定义检查或源打开前记录；不从写入计数、失败状态或提交标记缺失推断回滚、提交数量或目标恢复。共享组件展示该风险，复制诊断保留同一提示；沿用当前执行读取 API 和权限，不增加自动重试或清理。

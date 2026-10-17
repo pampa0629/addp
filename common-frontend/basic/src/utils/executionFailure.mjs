@@ -6,6 +6,7 @@ export const failureReasons = Object.freeze([
   'table_not_found', 'ambiguous_column', 'function_or_operator_not_found', 'division_by_zero',
   'type_mismatch', 'permission_denied', 'connection_failed',
   'json_invalid', 'array_invalid', 'bytes_invalid', 'table_write_failed', 'execution_failed',
+  'target_exists',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required'
 ])
 

@@ -4,6 +4,7 @@ import pytest
 
 from addp_common.workflow_access import (
     WorkflowAccessError,
+    WorkflowTargetExistsError,
     publish_target_directory,
     publish_target_file,
     require_access_plan,
@@ -89,7 +90,7 @@ def test_local_file_create_and_replace(tmp_path):
     assert stage_source_file(plan, tmp_path) == source
     publish_target_file(source, plan)
     assert target.read_bytes() == b"first"
-    with pytest.raises(WorkflowAccessError, match="already exists"):
+    with pytest.raises(WorkflowTargetExistsError, match="already exists"):
         publish_target_file(source, plan)
     source.write_bytes(b"second")
     plan["target"]["write_mode"] = "replace"
@@ -118,3 +119,34 @@ def test_source_and_target_only_access_plans(tmp_path):
         require_source_plan({"access_plan": plan})
     with pytest.raises(WorkflowAccessError, match="must not contain source"):
         require_target_plan({"access_plan": plan})
+
+
+@pytest.mark.parametrize('kind', ['file', 'directory'])
+@pytest.mark.parametrize('method', ['mounted_path', 'object_store'])
+def test_create_conflict_is_typed_and_never_writes(tmp_path, monkeypatch, kind, method):
+    import addp_common.workflow_access as access
+    from types import SimpleNamespace
+    source, target = tmp_path / 'source', tmp_path / 'target'
+    if kind == 'file':
+        source.write_bytes(b'new')
+        target.write_bytes(b'original')
+    else:
+        source.mkdir(); target.mkdir()
+        (source / 'tileset.json').write_text('{}')
+        (target / 'original').write_bytes(b'original')
+    plan = _plan(source, target, kind=kind)
+    writes = []
+    if method == 'object_store':
+        plan['target']['access'] = {'method': method, 'bucket': 'test', 'object': 'target', 'prefix': 'target'}
+        class Client:
+            def bucket_exists(self, bucket): return True
+            def stat_object(self, *args): return object()
+            def list_objects(self, *args, **kwargs): return iter([SimpleNamespace(object_name='target/original', is_dir=False)])
+            def fput_object(self, *args, **kwargs): writes.append(args)
+            def remove_object(self, *args): writes.append(args)
+        monkeypatch.setattr(access, '_object_store_client', lambda _: Client())
+    with pytest.raises(WorkflowTargetExistsError):
+        if kind == 'file': publish_target_file(source, plan)
+        else: publish_target_directory(source, plan, completion_marker='tileset.json')
+    assert writes == []
+    assert (target if kind == 'file' else target / 'original').read_bytes() == b'original'

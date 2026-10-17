@@ -873,7 +873,7 @@ Develop 将该算子显示为“矢量切片”，位于“矢量处理 / 成果
 1. `schema_version` 固定为 `addp.workflow.access-plan/v1`。
 2. `source.kind` / `target.kind` 只表达 `file` 或 `directory`；`format` 使用平台规范格式标识。
 3. `access.method` 第一版只允许 `mounted_path` / `object_store`。对象存储的下载、staging、presigned URL 或本地工作目录属于运行时实现，不扩展为 Public Operator 参数。
-4. `target.write_mode` 只允许 `create` / `replace`，默认 `create`；不得在 `create` 失败后隐式回退为覆盖。
+4. `target.write_mode` 只允许 `create` / `replace`，默认 `create`；不得在 `create` 失败后隐式回退为覆盖。共享发布器确认目标已存在时抛出类型化冲突，Python DAG 包装与异步 execution 快照保留稳定 `error_code=TARGET_ALREADY_EXISTS`；Develop 将该终态映射为 `stage=result`、`reason=target_exists` 的受控诊断。不得解析错误文案判断冲突，通用提示不得携带目标路径或连接信息；该诊断只表示本次发布拒绝覆盖，不保证整个 DAG 尚无其他产出。
 5. 访问计划只在执行期存在，可以携带临时连接信息；用户任务定义只保存 `locator`、`target_parent_locator + target_name` 和公开业务参数。
 6. 调用方必须同时生成不含密钥的 audit plan，用于领域结果或统一执行记录；不得把运行时访问计划原文长期保存。
 7. Manager infra 目标和 Develop 业务目标分别在调用方领域边界内解析，再进入同一个访问计划构造器。Develop 的源和目标存储必须是当前租户的业务 Engine Instance，不得选择 `tenant_id=nil` 的平台 infra 存储；Manager 可按私有 artifact 生命周期显式构造 infra 目标。访问计划不表达 owner module、artifact/data item 归属或 Meta 扫描策略。

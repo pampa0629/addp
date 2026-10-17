@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, executionID = 'diagnostic-run' } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, targetExists = false, executionID = 'diagnostic-run' } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
   execution.execution_id = executionID
@@ -13,6 +13,12 @@ async function installBackend(page, { empty = false, unavailable = false, events
       }
     } })
   }
+
+  if (targetExists) Object.assign(execution, {
+    module: 'develop', task_type: 'workflow', source: 'develop', steps: [],
+    error_details: { code: 'develop.workflow.target_exists', category: 'execution_failed',
+      diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'result', reason: 'target_exists' } }
+  })
   let treeRequests = 0
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
@@ -333,4 +339,20 @@ for (const status of [403, 404]) test(`fresh Monitor-only deep link ${status} sh
   await expect(page.getByRole('dialog').getByRole('status')).toHaveText('未能加载目标执行详情')
   await expect(page.locator('.execution-detail-content, .execution-steps, .execution-events, .el-tree')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+})
+
+
+for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in workflow execution (${locale})`, async ({ page }) => {
+  await installBackend(page, { locale, targetExists: true, empty: true })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const diagnostic = page.locator('.execution-detail-content > .execution-failure')
+  await expect(diagnostic).toContainText(locale === 'zh-cn'
+    ? '输出目标已存在，create 模式已拒绝覆盖。'
+    : 'The output target already exists; create mode refused to overwrite it.')
+  await expect(diagnostic).toContainText(locale === 'zh-cn'
+    ? '请更换输出文件名或输出位置后重新执行。'
+    : 'Choose another output file name or location, then run again.')
+  await expect(diagnostic).toContainText('develop.workflow.target_exists')
+  await page.setViewportSize({ width: 620, height: 700 })
+  expect(await diagnostic.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
 })
