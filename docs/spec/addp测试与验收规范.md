@@ -131,6 +131,8 @@ Doris／ClickHouse 会话失败回归分别沿用 `make test-common-doris-decima
 
 Transfer 的 `transfer-relational-sql-etl` Hosted T4 在同一普通 User／Tenant 下追加 Doris、ClickHouse 各两个合成失败场景，沿用现有 suite、生命周期、浏览器和 CI 入口，不复用个人开发部署。独占目标使用固定摘要镜像和随机回环端口，Doris 复用 Business 唯一 FE／BE 启动入口，在夹具实例开启严格写入并限制目标分区范围；ClickHouse 使用 CHECK 约束。四份 Python 生成的创建配置必须经真实 Go planner 纯解析校验，目标使用 database 父节点的 `parent_locator + name`，不得提交 `target.locator`；此跨语言回归纳入既有 runner、Go T1 与 CI 登记检查。1001 行源输入按显式顺序进入同一批次，先提交 1000 行，再因原生约束拒绝末行；另以末行非法 JSON 验证本批无新增行。两者均保留预置哨兵行，独立物理读取分别必须得到 1001 行与 1 行，不能用 execution 的 `records_written=0` 推断目标为空。每个任务必须为 failed、使用不同执行 UUID 且关闭自动扫描，目标 Meta 事实前后保持未扫描；同一登录身份在真实 Transfer 执行详情页核对安全诊断、终态和执行编号，并生成截图，禁止恢复原始 error_msg 或暴露运行时正文。提交标记仍由原生 T2 验证，专业 API 不为验收暴露私有 checkpoint。任务按当次所有权清理，容器／卷在成功、失败及中断路径销毁并核验零残留。runner 通过不计为 T4 通过，首次真实 Hosted 成功须另记证据。
 
+首次真实 Hosted 通过证据：2026-10-17，[Run 38984701800](https://github.com/pampa0629/addp/actions/runs/38984701800)，源码 `31f7073490d3ac3cd19236c228f97483a7bb893c`。Doris、ClickHouse 的四个执行均为 failed，`records_written=0`；后续 chunk 原生约束失败的目标各保留 1000 条新增行和 1 条哨兵行，末行非法 JSON 的目标各仅保留 1 条哨兵行。独立物理校验确认 JSON、bytes 与普通文本原值、失败末行缺失；浏览器报告 `write_failure_details_verified=4` 并保存四张截图，资源清理报告 `residual_resources=0`。当前页面显示安全分类兜底提示及执行 ID，字段级结构化诊断仍待补齐。
+
 Oracle 的既有 `make test-common-oracle-decimal` 默认使用 Slim 一次性容器验证非空间类型写入及删除；`make test-common-oracle-decimal ORACLE_SPATIAL=1` 使用固定摘要的完整镜像，额外验证原生 SDO_GEOMETRY、空间索引、DROP 后的登记状态、存在／缺失表的精确登记清理、重复删除及其他表登记保留。两种配置均由既有 Hosted Oracle Job 执行，容器只绑定随机回环端口，退出销毁容器及卷；不得连接业务 Oracle 或以模拟视图代替原生空间认证。
 
 ### 4.3 T3
