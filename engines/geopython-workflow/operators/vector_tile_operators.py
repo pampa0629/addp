@@ -166,7 +166,8 @@ dataset = gdal.OpenEx(sys.argv[1], gdal.OF_VECTOR | gdal.OF_READONLY)
 if dataset is None:
     raise ValueError('vector source cannot be opened')
 layers = []
-for layer in dataset:
+for layer_index in range(dataset.GetLayerCount()):
+    layer = dataset.GetLayerByIndex(layer_index)
     definition = layer.GetLayerDefn()
     geometry_fields = []
     for index in range(definition.GetGeomFieldCount()):
