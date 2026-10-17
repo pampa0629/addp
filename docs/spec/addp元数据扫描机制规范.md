@@ -327,11 +327,27 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 - `ref_groups` 进入 Meta 后必须转为 engine 对应的 content ref 或 `plugin.EngineCatalogPath`，再进入统一 detector；不得在 Transfer、Manager 或调用方提前判断 refs 是否构成 data item。
 - 对于 Transfer 写出结果，Transfer 应提交本次实际生成的 refs group，不得为了触发识别而扩大到父目录 `catalog_paths`。
 
+### Transfer 产物扫描
+
+Transfer 写后扫描、持续同步首次扫描和结构审批补扫都受同一精确范围约束：
+
+| 入口 | 扫描范围 |
+|---|---|
+| bounded 执行写后扫描（含自有定时执行） | 原生表提交完整的 `type=table` locator；文件产物提交本次实际内容引用。 |
+| Kafka／数据库 CDC 首次扫描 | 提交已准备完成并保存为本次执行产物的完整目标表 locator。 |
+| 结构审批补扫 | 提交本次审批实际应用的唯一目标表 locator。 |
+
+目标父位置为 schema／database 时，必须结合实际目标表名形成完整表 locator；不得直接提交父位置，也不得按 `.` 截断表名或命名空间。内容引用缺失、目标不完整或来源不可验证时拒绝提交，不回退为父范围或整引擎扫描。
+
+Transfer 通过 Meta 手动扫描入口提交上述扫描，使用 `source=transfer`、`trigger_type=manual`、`scan_depth=deep` 和 `force=true`。即使产物来自 `trigger_type=scheduled` 的 Transfer 执行，子扫描也不因此成为 Meta 定时任务。父执行、实际输出、审批主体及定时授权的核验规则统一见 [任务体系规范](addp任务体系规范.md)。
+
+回归验证必须同时核对请求范围和落库影响：目标产物得到更新，未覆盖的兄弟项及祖先节点扫描事实保持不变。创建必要的结构父链不计为父范围扫描完成。
+
 ## Basic / Deep 边界
 
 ### EngineCatalogEntry / EngineCatalogFacts 消费规则
 
-Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `EngineCatalogEntry`，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `EngineCatalogFacts`。
+Meta 扫描按已解析的 `ScanScope` 获取 `EngineCatalogEntry`：显式 root／branch 范围通过 `EngineCatalogProvider.ListChildren()` 枚举，精确 leaf 通过 `ResolvePath` 直接解析，显式 `ref_groups` 沿内容引用边界进入统一 detector。不得为获取单个 leaf 的条目而枚举父级。取得条目后，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `EngineCatalogFacts`。
 
 对 `meta_node`，通常只消费 `EngineCatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name` 和低成本 `Storage.Path` 足以建立资源树。node 的 `scan_status`、`scanned_depth`、`scanned_at` 来自扫描过程，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
 

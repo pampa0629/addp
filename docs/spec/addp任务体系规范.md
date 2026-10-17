@@ -131,7 +131,7 @@ Infra 文件的即时元数据识别也属于来源读取。Meta `POST /inspect`
 
 Transfer 在既有扫描 claim 状态变化事务中同步这份来源的 claim token、attempt 和期限。Meta 仅允许 `addp-transfer` 提交该来源，在扫描创建事务内锁定同租户 Transfer continuous sync 的结构阻塞历史记录，核验已应用请求及 revision、完整审批主体、有效且匹配的 claim、唯一精确目标表和 `deep + force`，然后只复制审批来源并记录结构审批关联，不复制旧执行身份、授权或 lease，不设置父 execution。缺失事实、过期 claim、错 Tenant、错请求、父范围或额外目标均拒绝；Meta 不跨读 Transfer 私有表。重复审批及 claim 接管仍由 Transfer 原有单一路径裁决，扫描反馈失败不回滚已经应用的结构变更。
 
-Transfer 自有 bounded 定时调度复用 System Task Authorization Subject。任务以不可变 apply identity 作为 task ref，定义摘要覆盖名称、描述、类型、配置、批大小、调度开关、Cron 和自动扫描选项；保存带 Cron 的定义或恢复调度时，由本次 User 同步授权并原子保存完整主体及摘要。暂停清除本地调度授权，恢复不得借用旧主体。无 Cron 和 continuous 任务不建立调度授权，历史定义不得按创建人补齐。
+Transfer 自有 bounded 定时调度复用 System Task Authorization Subject。任务以不可变 apply identity 作为 task ref，定义摘要覆盖名称、描述、类型、配置、批大小、调度开关、Cron 和自动扫描选项；保存带 Cron 的定义或恢复调度时，由本次 User 同步授权并原子保存完整主体及摘要。暂停清除本地调度授权，恢复不得借用旧主体。恢复只更新未来调度计划和授权主体；已有 pending／running 执行不阻止恢复，其配置、状态与发起主体均保持不变。无 Cron 和 continuous 任务不建立调度授权，历史定义不得按创建人补齐。
 
 既有 `POST /auth/task-authorization-subjects` 使用 `system.execution_authorization.create`，再按严格的 owner/type 二元组检查 `orchestrator.workflow.execute` 或 `transfer.task.execute`。User Token 仅在同步调用内使用；任务主体授权及解析请求均拒绝重定向，不能把凭据转发给跳转目标或修改共享 HTTP Client。既有 resolve 入口继续使用不可委派的 `system.task_authorization.execute`，仅分别允许 `addp-orchestrator` 解析 orchestration、`addp-transfer` 解析 sync；该 Permission 只增授 Transfer Runtime，不授予普通用户。System 重核当前 User、Membership、Tenant、模块执行 Permission 和授权版本；Transfer 在 due claim 的同一事务中重核定义摘要、保存主体及返回主体完全一致后，才能创建带完整来源的 pending execution 并推进计划。失败不产生无主体执行、不推进计划，并留下安全失败诊断。来源不授予数据访问权，产物扫描仍走既有精确输出及父执行核验。
 
