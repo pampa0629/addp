@@ -131,10 +131,23 @@ test('embedded import refreshes its schema and opens the exact execution in Cons
   await chooseImport(frame, 'zh-cn')
   await expect.poll(() => state.scanReads).toBeGreaterThan(0)
   const ancestors = state.ancestorReads
+  const schemaReads = state.schemaReads
+  let releaseRefresh
+  state.refreshGate = new Promise(resolve => { releaseRefresh = resolve })
+  let releaseChildren
+  state.childRefreshGate = new Promise(resolve => { releaseChildren = resolve })
   await expect(page.locator('#navigation')).toBeEmpty()
   state.scan = { status: 'success' }
-  await expect(page.locator('#navigation')).toHaveText(`/monitor/executions?execution_id=${transferID}`)
   await expect.poll(() => state.ancestorReads).toBeGreaterThan(ancestors)
+  await expect(page.locator('#navigation')).toBeEmpty()
+  await expect(page.locator('iframe')).toHaveCount(1)
+  expect(state.schemaReads).toBe(schemaReads)
+  releaseRefresh()
+  await expect.poll(() => state.schemaReads).toBeGreaterThan(schemaReads)
+  await expect(page.locator('#navigation')).toBeEmpty()
+  await expect(page.locator('iframe')).toHaveCount(1)
+  releaseChildren()
+  await expect(page.locator('#navigation')).toHaveText(`/monitor/executions?execution_id=${transferID}`)
   await expect(page.locator('iframe')).toHaveCount(0)
   expect(state.imports).toHaveLength(1)
 })
@@ -162,7 +175,7 @@ async function installBackend(page, locale, transfer) {
   const state = { transfer, scan: { status: 'running' }, transferReads: 0, scanReads: 0, schemaReads: 0, ancestorReads: 0, imports: [] }
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
-  await page.route('**/api/v1/**', route => {
+  await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
@@ -170,10 +183,18 @@ async function installBackend(page, locale, transfer) {
     if (path.endsWith('/system/users/me')) return json(route, { id: '1', display_name: 'import-fixture' })
     if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 2, name: root.label, engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
-    if (path.endsWith('/ancestors')) { state.ancestorReads++; return json(route, { target_locator: schemaLocator, ancestors: [{ ...root, children: [] }, schema] }) }
+    if (path.endsWith('/ancestors')) {
+      state.ancestorReads++
+      if (state.refreshGate) await state.refreshGate
+      return json(route, { target_locator: schemaLocator, ancestors: [{ ...root, children: [] }, schema] })
+    }
     if (path.endsWith('/meta/resource-tree/2')) return json(route, root)
     if (path.endsWith('/meta/resource-tree/2/node')) {
-      if (url.searchParams.get('locator')?.includes('/public')) { state.schemaReads++; return json(route, schema) }
+      if (url.searchParams.get('locator')?.includes('/public')) {
+        state.schemaReads++
+        if (state.childRefreshGate) await state.childRefreshGate
+        return json(route, schema)
+      }
       return json(route, root)
     }
     if (path.endsWith('/manager/resource-actions')) return json(route, { actions: { import: { supported: true } } })

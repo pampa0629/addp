@@ -97,7 +97,7 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { ExecutionFailure, openMonitorExecution } from '@addp/common-frontend'
+import { ExecutionFailure } from '@addp/common-frontend'
 import { useAuthStore } from '@/store/auth'
 import { importData, getTransferExecutionStatus, getMetaScanExecutionStatus } from '@/api/import'
 import JSZip from 'jszip'
@@ -299,9 +299,8 @@ const startPolling = (run) => {
           importing.value = false
           ElMessage.success(t('manager.import.importSuccessMsg'))
           const completedId = transferExecutionId.value
-          emit('success')
+          emit('success', { executionId: completedId, targetNodeLocator: props.targetNodeLocator })
           handleClose()
-          if (authStore.hasPermission('monitor.execution.read')) void openMonitorExecution(completedId)
         }, 1500)
         return
       } else if (['failed', 'timeout', 'cancelled'].includes(execution.status)) {

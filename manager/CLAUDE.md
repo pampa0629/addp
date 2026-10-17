@@ -4,7 +4,7 @@
 
 私有导入 Hosted 场景使用 Console 的真实 Manager 导入弹窗上传相同两点 ZIP，核对目标命名空间、CPG 编码、Transfer 执行及 Meta 子扫描等待和资源树刷新；非上传者拒绝后，经普通 User 的 Console Transfer 执行详情核对零读写和共享安全诊断。上传一经接受即记录当次 task／execution 身份，后续页面失败仍交给既有清理；浏览器不复制后台导入 HTTP 路线。独立回执升级为 `addp.manager-private-import/v2`，包含两阶段 `addp.manager-private-import-browser/v1` 证据，完整 suite 为 v12；必须核对当前 User／Tenant／run 及准确执行 ID，缺少任一页面证明不得登记通过。
 
-Console 导入完成后按既有桥接导航进入同一执行 UUID 的 Monitor。验收先核对 Meta 等待、导航前的自动资源树刷新请求和准确的 Monitor UUID，再返回原 schema 验证目标节点；不能假定导航后仍显示 Manager 面板。嵌入回归沿既有 Manager 前端 T3 入口自动发现，不新增导航路线。
+Console 导入完成后由 NodePanel 先等待原 schema 的祖先事实与直接子资源刷新完成，再按既有桥接导航进入同一执行 UUID 的 Monitor；ImportDialog 只提交准确的完成执行与目标 locator，不能并行发起会卸载 iframe 的导航。验收延迟刷新响应，确认刷新未完成时仍保留 Manager iframe，完成后才进入准确的 Monitor UUID，再返回原 schema 验证目标节点。嵌入回归沿既有 Manager 前端 T3 入口自动发现，不新增导航路线。
 
 导出发起用户来源核验复用 `common/exportartifact`：派发前持久化 Transfer UUID 与完整请求摘要，`POST /runtime/export-sessions/{id}/execution-source` 仅允许 `addp-transfer` 持有 `manager.export_provenance.read` 核验有效待执行会话。只返回发起用户事实，不开放文件下载或数据权限。最小验证入口为 `make test-module MODULE=manager`；Common 变更按 `make test-changed` 扩散验证。
 
@@ -31,6 +31,8 @@ Tenant HTTP 请求与有界执行分发先登记在途生命周期，再刷新 O
 Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接创建 Transfer bounded `sync` ad-hoc execution，不创建临时 `transfer.transfer_tasks`。`manager.export_sessions` 只保存 Transfer 的统一 `execution_id` 和短生命周期下载会话事实，不保存 Transfer task ID；状态回查、artifact manifest、发起用户隔离与 infra 暂存清理由 `common/exportartifact` 提供唯一实现，Manager 只负责资源校验和格式能力适配。Manager 导入保留持久 `sync` 任务语义，不与一次性导出混用。Shapefile 导入使用 `runtime.boundary=bounded`、`load.mode=snapshot` 和 `target.policy.apply_mode=replace`；不得提交已删除的根 `mode` 或 `write_mode`。回归必须覆盖暂存上传、按当前 User 身份创建任务及触发执行的实际 HTTP 提交过程。既有 Hosted `transfer-relational-sql-etl` suite 还需验证 Shapefile 实际写入、Meta 自动扫描和当前 User／父 execution 来源，并由 Business fixture 独立核对点坐标与 SRID；入口为 `make test-transfer-online-runner` 和对应 Online T4 workflow。导入场景在该 suite 中前置执行，先经同一 Business fixture 的 `manager-import` 核对实际 PostGIS 行值、坐标及 SRID，再写入 `manager-private-import.json` 独立回执；回执包含真实 source commit、User／Tenant、Transfer／Meta UUID、非上传者零读写拒绝及普通 User 直接 Inspect 拒绝。后续场景失败不得抹去已完成的本领域证据；完整 suite 仍保留全部场景与最终物理校验。
 
 2026-10-17，提交 `68d7cbd03` 的 [Hosted T4 38983723706](https://github.com/pampa0629/addp/actions/runs/38983723706) 已生成 `addp.manager-private-import/v1` 独立通过回执：Tenant 2 的普通 User 33 上传并成功读写两条点数据，自动 Meta 子扫描核对当前 User 和真实父 UUID，Business 独立核对完整行值、坐标及 SRID 4326；非上传者启动同任务时以 `data_protection_required` 在零读写时失败，两名 User 直接调用 Inspect 均被拒绝。八个服务构建提交与回执一致，退出清理 passed、Infra zero_residuals。完整 suite 随后因其他写入失败场景创建任务 HTTP 400 而 failed；此证据仅证明本领域私有导入及 Inspect 边界通过，不计为完整套件通过。
+
+提交 `a238b036b` 的 [Hosted T4 39009814565](https://github.com/pampa0629/addp/actions/runs/39009814565) 已真实通过完整 v12 suite，九个服务（含 Security）的构建提交与回执一致。`addp.manager-private-import/v2` 核对 Tenant 2、普通 User 33 的实际 Console 上传、两条点数据、准确 Transfer／Meta UUID、当前 User／父执行归属、独立坐标与 SRID，以及非上传者零读写拒绝的 Console 安全诊断；两阶段 browser/v1 回执与领域回执一致。16 个临时资源全部删除，领域残留为零，退出清理 passed、Infra zero_residuals。此轮成功不替代延迟刷新响应下的导航顺序回归，该竞态由既有嵌入式 T3 单独验证。
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
 

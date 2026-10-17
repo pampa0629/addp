@@ -138,18 +138,20 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { ExecutionFailure, parseLocator } from '@addp/common-frontend'
+import { ExecutionFailure, openMonitorExecution, parseLocator } from '@addp/common-frontend'
 import { executionFailurePresentation } from '@common-ui/utils/executionFailure.mjs'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import UploadDialog from '@/components/explorer/UploadDialog.vue'
 import { useExplorerStore } from '@/stores/explorer'
+import { useAuthStore } from '@/store/auth'
 import { isVectorizableRangeNode } from '@/utils/vectorization'
 import { buildNodeScanSummary } from '@/utils/nodeScanSummary'
 
 const { t } = useI18n()
 const store = useExplorerStore()
+const authStore = useAuthStore()
 
 const props = defineProps({
   selectedNode: {
@@ -340,12 +342,14 @@ const openNode = (row) => {
   emit('open-node', row?.locator || row?.id)
 }
 
-const handleImportSuccess = async () => {
+const handleImportSuccess = async ({ executionId, targetNodeLocator }) => {
   importDialogVisible.value = false
-  if (!props.selectedNode?.locator) return
+  if (!targetNodeLocator) return
   try {
-    await store.loadNodeChildren(props.selectedNode.locator, true)
+    // Console navigation unmounts this iframe; finish both ancestor and child reads first.
+    await store.loadNodeChildren(targetNodeLocator, true)
     ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
+    if (authStore.hasPermission('monitor.execution.read')) await openMonitorExecution(executionId)
   } catch (error) {
     console.error('刷新节点失败:', error)
   }
