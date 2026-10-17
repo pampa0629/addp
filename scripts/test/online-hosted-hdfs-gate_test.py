@@ -89,6 +89,8 @@ class HostedHDFSGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_IDENTITY_FAIL:-0}" != 1 ] || exit 1
+            [[ "$*" == *'--wait-protection-owners develop,manager'* ]] || exit 1
+            [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
             previous=
             for argument in "$@"; do
               if [ "$previous" = --output ]; then
@@ -191,8 +193,9 @@ class HostedHDFSGateTest(unittest.TestCase):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        sequence = ('infra-up', 'hdfs-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'docker-run:addp-hdfs-online-registry', 'make:build-images', 'docker-run:addp-hdfs-online-runtime',
+        sequence = ('infra-up', 'hdfs-fixture:start', 'start:-security', 'start:-meta', 'start:-manager', 'start:-develop', 'docker-run:addp-hdfs-online-registry', 'make:build-images', 'docker-run:addp-hdfs-online-runtime',
                     'playwright install --with-deps chromium', '--suite hdfs-spark-consumer-flow',
+                    '--wait-protection-owners develop,manager',
                     'engine-register', 'source-grant', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
                     'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'table-domain-cleanup', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
         indices = [trace.index(step) for step in sequence]
@@ -207,6 +210,21 @@ class HostedHDFSGateTest(unittest.TestCase):
         summary = (self.host.artifacts / 'summary.txt').read_text()
         self.assertIn('result=passed', summary)
         self.assertIn('infra_cleanup=zero_residuals', summary)
+
+    def test_protection_initialization_failure_prevents_engine_and_scene_execution(self):
+        result = self.run_gate(ADDP_TEST_PROTECTION_WAIT_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('start:-security', trace)
+        self.assertIn('--wait-protection-owners develop,manager', trace)
+        self.assertNotIn('engine-register', trace)
+        self.assertNotIn('make:test-online', trace)
+        self.assertIn('hdfs-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
+        self.assertFalse(self.host.secrets.exists())
+        summary = (self.host.artifacts / 'summary.txt').read_text()
+        self.assertIn('result=failed', summary)
+        self.assertIn('cleanup=passed', summary)
 
     def test_failures_destroy_owned_resources(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},

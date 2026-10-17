@@ -24,6 +24,7 @@ stop_online_fixture() {
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export CONSOLE_URL=http://127.0.0.1:5170
+export SECURITY_URL=http://127.0.0.1:8194
 export HADOOP_USER_NAME=addp_business_reader SPARK_WORKFLOW_SHARED_HOST=127.0.0.1
 export ADDP_ONLINE_TEST_RUN_ID="run-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 # Explicitly refuse inherited local-mode settings; real Worker evidence is mandatory.
@@ -33,13 +34,13 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-hdfs-spark-fixture.sh start
 application_owned=1
-for start_target in -meta -manager -develop; do
+for start_target in -security -meta -manager -develop; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 start_online_spark_image_registry
 start_online_spark_runtime online-hdfs hdfs
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite hdfs-spark-consumer-flow --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite hdfs-spark-consumer-flow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 for engine in hdfs spark postgres minio mysql doris; do
   run_logged python3 scripts/test/online-engine-registration.py \

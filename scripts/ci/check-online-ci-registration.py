@@ -1956,13 +1956,17 @@ def validate_hdfs_spark_profile(repository: Path, registered: set[str]) -> None:
         raise RegistrationError("HDFS requires a manual Ubuntu Hosted job with Java 11")
     if "&& inputs.suite != 'hdfs-spark-consumer-flow'" not in workflow:
         raise RegistrationError("HDFS must not dispatch on self-hosted")
-    if load_suite_registry(repository)["hdfs-spark-consumer-flow"].nightly:
+    suite = load_suite_registry(repository)["hdfs-spark-consumer-flow"]
+    if suite.nightly:
         raise RegistrationError("HDFS requires real evidence before schedule registration")
+    if ("security", "SECURITY_URL") not in suite.services:
+        raise RegistrationError("HDFS requires Security in the same-source service preflight")
     required = {
         "scripts/test/online-hosted-hdfs-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite hdfs-spark-consumer-flow',
             'start_online_spark_runtime online-hdfs hdfs', 'RUNTIME_IMAGE', 'RUNTIME_CONTAINER',
             'scripts/test/online-engine-registration.py',
+            '-security', '--wait-protection-owners develop,manager', 'SECURITY_URL=http://127.0.0.1:8194',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'SPARK_MODE override is forbidden',
             'run_logged make test-online', 'online-hdfs-spark-fixture.sh stop', 'ADDP_ONLINE_MINIO_ENGINE_ID',
             'ADDP_ONLINE_MYSQL_ENGINE_ID', 'ADDP_ONLINE_DORIS_ENGINE_ID', 'ADDP_ONLINE_TEST_RUN_ID',

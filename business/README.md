@@ -543,6 +543,8 @@ Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656]
 
 五行边界样例的物理列类型与生产建表映射一致：MySQL 为 `BIGINT / LONGTEXT / DECIMAL(38,18)`，Doris 为 `BIGINT / VARCHAR(65533) / DECIMAL(38,18)`。核验须精确匹配类型、符号、字符串容量及数值精度，不能把 Doris 的原生 VARCHAR 错当 STRING，也不接受任意字符串类型替代。物理核验子进程只将 JSON 回执写入 stdout，错误诊断保留在 stderr；凭据继续留在容器环境，不进入命令参数或归档。
 
+该场景的隔离部署同时启动 Security，并将其纳入同提交服务预检；System 身份夹具在导出消费凭据前，通过既有 `--wait-protection-owners develop,manager` 核验新租户的持久保护投影已完成初始化。服务监听就绪不替代租户投影就绪；缺少 Security 或初始化失败须在业务验收前退出并清理，不增加消费用户权限，也不绕过 Manager／Develop 的保护门禁。
+
 在仓库根运行 `bash business/scripts/start.sh -hdfs`，启动固定官方 Hadoop 3.5.0 NameNode 与 DataNode，并使用固定 Spark 3.5.0 容器幂等生成样例。数据保留在两个独立 volume；`stop.sh -hdfs`、`restart.sh -hdfs` 沿用同一标准生命周期，不重新格式化已有 NameNode。初始化只更新 `/addp/samples/orders.csv`、`orders.json`、`orders.parquet` 和根文件 `/addp/订单 100%.csv`；每份 20 条订单，金额总和 2100，其他业务文件不变。
 
 本机 Docker Desktop 部署的 WebHDFS 首选端口 9870，原生 RPC 首选 8020；DataNode 数据端口 9866 与 HTTP 端口 9864 在容器内外保持一致。四个宿主端口均只绑定 `127.0.0.1`，DataNode 广播稳定主机名 `host.docker.internal`。宿主机需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker Desktop 内置解析；标准入口在启动前验证宿主机映射。宿主机 Go 服务、Spark Driver 和容器 Worker 使用同一主机名访问 RPC 与 DataNode，换 Wi-Fi、VPN 或局域网 IP 后无需重绑端口或修改 System 连接。删除 `HDFS_SHARED_HOST` 和自动检测局域网 IP 的旧逻辑；四个端口冲突直接失败。其他部署由部署方提供实际可达的地址，不复用此本机部署的地址假设。

@@ -57,6 +57,7 @@ SUITES: Mapping[str, Suite] = {
     "hdfs-spark-consumer-flow": Suite(
         command=(sys.executable, "scripts/test/hdfs-spark-consumer-flow-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"),
+                  ("security", "SECURITY_URL"),
                   ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
     ),
     "vector-pmtiles-workflow": Suite(

@@ -234,8 +234,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             shutil.copy2(source / relative, destination)
         registered = {"hdfs-spark-consumer-flow"}
         CHECK.validate_hdfs_spark_profile(self.repository, registered)
+        self.assertIn(('security', 'SECURITY_URL'), CHECK.load_suite_registry(self.repository)['hdfs-spark-consumer-flow'].services)
         for relative, fragment in (
             (paths[0], 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+            (paths[0], '-security'), (paths[0], '--wait-protection-owners develop,manager'),
+            (paths[0], 'SECURITY_URL=http://127.0.0.1:8194'),
             (paths[0], 'start_online_spark_runtime online-hdfs hdfs'),
             (paths[8], 'make build-images'), (paths[9], '${RUNTIME_REPORT}-runtime-build.txt'),
             (paths[8], '${RUNTIME_REPORT}-runtime.log'), (paths[8], 'com.addp.online-runtime'),
@@ -253,6 +256,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             with self.subTest(relative=relative, fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_hdfs_spark_profile(self.repository, registered)
             path.write_text(original)
+
+        registry = self.repository / paths[1]
+        original = registry.read_text()
+        registry.write_text(original.replace('("security", "SECURITY_URL"),', ''))
+        with self.assertRaisesRegex(CHECK.RegistrationError, 'Security'):
+            CHECK.validate_hdfs_spark_profile(self.repository, registered)
+        registry.write_text(original)
 
     def test_elasticsearch_spark_requires_product_container_worker_and_console_evidence(self) -> None:
         source = SCRIPT.parents[2]
