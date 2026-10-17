@@ -20,7 +20,7 @@ from workflow_operator_contract import assert_operator_metadata_contract
 from operators import list_operators
 import operators.raster_operators as raster_operators
 from operators.vector_tile_operators import (
-    _build_quick_view_ogr_sql,
+    _build_vector_tile_ogr_sql,
     _extent_to_wgs84,
     _extract_gdal_progress_values,
     _index_generated_tiles,
@@ -160,6 +160,68 @@ def test_vector_to_pmtiles_metadata_uses_access_plan_contract():
     assert "extent_srid=4326" not in notes
 
 
+@pytest.mark.parametrize('source_format', ['geojson', 'shapefile', 'flatgeobuf'])
+def test_vector_to_pmtiles_standard_plan_native_attributes_and_create(tmp_path, source_format, monkeypatch):
+    from osgeo import gdal
+    import operators.vector_tile_operators as module
+    work_dirs = []
+    create_work_dir = module.tempfile.mkdtemp
+    def track_work_dir(*args, **kwargs):
+        directory = create_work_dir(*args, **kwargs)
+        work_dirs.append(Path(directory))
+        return directory
+    monkeypatch.setattr(module.tempfile, 'mkdtemp', track_work_dir)
+    source = tmp_path / 'points.geojson'
+    source.write_text(json.dumps({'type': 'FeatureCollection', 'features': [{
+        'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [116.4, 39.9]},
+        'properties': {'类别': '公园', 'count': 7, 'private_note': 'excluded'}
+    }]}), encoding='utf-8')
+    if source_format != 'geojson':
+        converted = source.with_suffix('.shp' if source_format == 'shapefile' else '.fgb')
+        dataset = gdal.VectorTranslate(str(converted), str(source), format='ESRI Shapefile' if source_format == 'shapefile' else 'FlatGeobuf',
+                                       layerCreationOptions=['ENCODING=UTF-8'] if source_format == 'shapefile' else [])
+        dataset = None
+        source = converted
+    source_bytes = {path: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
+    target = tmp_path / 'points.pmtiles'
+    plan = {'schema_version': 'addp.workflow.access-plan/v1',
+            'source': {'kind': 'file', 'format': source_format, 'access': {'method': 'mounted_path', 'path': str(source)}},
+            'target': {'kind': 'file', 'format': 'pmtiles', 'name': target.name, 'write_mode': 'create',
+                       'access': {'method': 'mounted_path', 'path': str(target)}}}
+    tile = {'min_zoom': 2, 'max_zoom': 2, 'extent': [116.4, 39.9, 116.4, 39.9], 'extent_srid': 4326, 'source_srs': 'EPSG:4326'}
+    result = vector_to_pmtiles(plan, tile, {'layer_name': 'parks', 'attributes': ['类别', 'count']})
+    assert result['archive_format'] == 'pmtiles'
+    assert target.read_bytes().startswith(b'PMTiles\x03')
+    dataset = gdal.OpenEx(str(target), gdal.OF_VECTOR)
+    layer = dataset.GetLayer(0)
+    feature = next(iter(layer))
+    assert feature.GetField('类别') == '公园'
+    assert feature.GetField('count') == 7
+    assert layer.GetLayerDefn().GetFieldIndex('private_note') < 0
+    dataset = None
+    before = target.read_bytes()
+    with pytest.raises(ValueError, match='already exists'):
+        vector_to_pmtiles(plan, tile, {'attributes': []})
+    assert target.read_bytes() == before
+    with pytest.raises(ValueError, match='field'):
+        vector_to_pmtiles(plan, tile, {'attributes': ['missing']})
+    with pytest.raises(ValueError, match='attributes'):
+        vector_to_pmtiles(plan, tile, {'attributes': '*'})
+    with pytest.raises(ValueError, match='zoom'):
+        vector_to_pmtiles(plan, {**tile, 'max_zoom': -1})
+    with pytest.raises(ValueError, match='CRS'):
+        vector_to_pmtiles(plan, {**tile, 'source_srs': 'EPSG:3857'})
+    plan['target']['write_mode'] = 'replace'
+    vector_to_pmtiles(plan, tile, {'layer_name': 'geometry_only'})
+    dataset = gdal.OpenEx(str(target), gdal.OF_VECTOR)
+    layer = dataset.GetLayer(0)
+    assert next(iter(layer)).GetGeometryRef() is not None
+    assert layer.GetLayerDefn().GetFieldIndex('count') < 0
+    assert layer.GetLayerDefn().GetFieldIndex('OGR_GEOMETRY') < 0
+    assert all(path.read_bytes() == content for path, content in source_bytes.items())
+    assert work_dirs and all(not directory.exists() for directory in work_dirs)
+
+
 def test_vector_to_pmtiles_transforms_source_extent_to_wgs84():
     extent = [570841.0277000004, 3404864.0396999996, 598936.5142999999, 3434951.8803000003]
 
@@ -209,8 +271,8 @@ def test_vector_to_pmtiles_emits_progress_from_streaming_command():
 
 
 def test_vector_to_pmtiles_builds_geometry_only_ogr_sql_with_optional_primary_key():
-    assert _build_quick_view_ogr_sql("规划用地") == 'SELECT OGR_GEOMETRY FROM "规划用地"'
-    assert _build_quick_view_ogr_sql('a"b', 'SmID') == 'SELECT OGR_GEOMETRY, "SmID" FROM "a""b"'
+    assert _build_vector_tile_ogr_sql("规划用地") == 'SELECT "_ogr_geometry_" FROM "规划用地"'
+    assert _build_vector_tile_ogr_sql('a"b', 'SmID') == 'SELECT "_ogr_geometry_", "SmID" FROM "a""b"'
 
 
 def test_build_raster_mosaic_metadata_public_contract():
@@ -947,104 +1009,33 @@ def test_vector_reproject_direct_rejects_non_ewkb_arrow_schema_encoding():
     assert "Arrow schema geometry encoding" in result["error"]
 
 
-def test_vector_to_pmtiles_uses_source_env_for_ogr_and_target_env_for_publish():
-    import operators.vector_tile_operators as vector_tile_operators
-
-    command_envs = []
-    published = []
-
-    def fake_run_command(args, extra_env=None, emit=None, min_zoom=0, max_zoom=0):
-        command_envs.append(dict(extra_env or {}))
-        assert "-progress" in args
-        assert "COMPRESS=YES" in args
-        assert "EXTENT=8192" in args
-        assert "BUFFER=160" in args
-        assert "MAX_SIZE=5000000" in args
-        assert "MAX_FEATURES=1000000" in args
-        assert "SIMPLIFICATION=0.0" in args
-        assert "SIMPLIFICATION_MAX_ZOOM=0.0" in args
-        assert "-sql" in args
-        assert args[args.index("-sql") + 1] == 'SELECT OGR_GEOMETRY FROM "规划用地"'
-        assert "-dialect" in args
-        assert args[args.index("-dialect") + 1] == "OGRSQL"
-        output_dir = Path(args[args.index("-f") + 2])
-        assert not output_dir.exists()
-        min_x, min_y, _, _ = vector_tile_operators._tile_bounds([110.0, 20.0, 110.1, 20.1], 9)
-        tile_dir = output_dir / "9" / str(min_x)
-        tile_dir.mkdir(parents=True, exist_ok=True)
-        (tile_dir / f"{min_y}.mvt").write_bytes(b"\x1f\x8bcompressed-mvt")
-
-        class Completed:
-            stdout = "{}"
-
-        return Completed()
-
-    def fake_publish_archive(source_path, target_uri, target_env):
-        published.append((target_uri, dict(target_env or {}), source_path.read_bytes()))
-
-    original_run_command = vector_tile_operators._run_command_with_gdal_progress
-    original_publish_archive = vector_tile_operators._publish_pmtiles_archive
-    vector_tile_operators._run_command_with_gdal_progress = fake_run_command
-    vector_tile_operators._publish_pmtiles_archive = fake_publish_archive
-    try:
-        result = vector_to_pmtiles(
-            access_plan={
-                "source": {
-                    "root_uri": "/vsis3/addp/gis/规划用地.shp",
-                    "gdal_env": {
-                        "AWS_S3_ENDPOINT": "source-minio:9000",
-                        "AWS_ACCESS_KEY_ID": "source-ak",
-                        "AWS_SECRET_ACCESS_KEY": "source-sk",
-                        "AWS_HTTPS": "NO",
-                    },
-                    "item_fingerprint": "fp",
-                    "full_name": "addp/gis/规划用地.shp",
-                },
-                "target": {
-                    "archive_uri": "/vsis3/manager/tenant_7/vector-tile-cache/fp.pmtiles",
-                    "gdal_env": {
-                        "AWS_S3_ENDPOINT": "target-minio:9000",
-                        "AWS_ACCESS_KEY_ID": "target-ak",
-                        "AWS_SECRET_ACCESS_KEY": "target-sk",
-                        "AWS_HTTPS": "NO",
-                    },
-                    "storage_ref": "{}",
-                },
-            },
-            tile={
-                "min_zoom": 9,
-                "max_zoom": 9,
-                "extent": [110.0, 20.0, 110.1, 20.1],
-                "extent_srid": 4326,
-                "source_srs": "EPSG:4326",
-            },
-            options={"geometry_column": "geometry"},
-        )
-    finally:
-        vector_tile_operators._run_command_with_gdal_progress = original_run_command
-        vector_tile_operators._publish_pmtiles_archive = original_publish_archive
-
-    assert result["stop_reason"] == "workflow_ogr2ogr_pmtiles"
-    assert result["archive_format"] == "pmtiles"
-    assert result["spec_version"] == 3
-    assert command_envs
-    assert command_envs[0]["AWS_S3_ENDPOINT"] == "source-minio:9000"
-    assert command_envs[0]["AWS_ACCESS_KEY_ID"] == "source-ak"
-    assert command_envs[0]["AWS_SECRET_ACCESS_KEY"] == "source-sk"
-    assert command_envs[0]["GDAL_NUM_THREADS"] == "ALL_CPUS"
-    assert len(published) == 1
-    assert published[0][0].endswith("fp.pmtiles")
-    assert published[0][1]["AWS_S3_ENDPOINT"] == "target-minio:9000"
-    assert published[0][2].startswith(b"PMTiles\x03")
-    assert result["mvt_options"] == {
-        "extent": 8192,
-        "buffer": 160,
-        "max_size": 5000000,
-        "max_features": 1000000,
-        "simplification": 0.0,
-        "simplification_max_zoom": 0.0,
-        "num_threads": "ALL_CPUS",
-    }
+def test_vector_to_pmtiles_uses_source_env_for_ogr_and_target_access_for_publish(monkeypatch):
+    import operators.vector_tile_operators as module
+    command_envs, published = [], []
+    def run(args, extra_env=None, emit=None, min_zoom=0, max_zoom=0):
+        command_envs.append(extra_env)
+        assert args[args.index('-sql')+1] == 'SELECT "_ogr_geometry_" FROM "规划用地"'
+        output_dir = Path(args[args.index('-f')+2])
+        min_x, min_y, _, _ = module._tile_bounds([110,20,110.1,20.1],9)
+        tile_dir = output_dir / '9' / str(min_x)
+        tile_dir.mkdir(parents=True)
+        (tile_dir / f'{min_y}.mvt').write_bytes(b'\x1f\x8bcompressed-mvt')
+    def publish(path, plan):
+        published.append((path.read_bytes(), plan['target']['access']))
+    monkeypatch.setattr(module, '_run_command_with_gdal_progress', run)
+    monkeypatch.setattr(module, '_vector_source_facts', lambda *args: ('规划用地', {}, '_ogr_geometry_'))
+    monkeypatch.setattr(module, 'publish_target_file', publish)
+    plan = {'schema_version':'addp.workflow.access-plan/v1',
+        'source': {'kind':'file','format':'shapefile','access': {'method':'object_store','endpoint':'source-minio:9000','bucket':'addp','object':'gis/规划用地.shp','access_key':'source-ak','secret_key':'source-sk'}},
+        'target': {'kind':'file','format':'pmtiles','name':'result.pmtiles','write_mode':'create','access': {'method':'object_store','endpoint':'target-minio:9000','bucket':'results','object':'result.pmtiles','access_key':'target-ak','secret_key':'target-sk'}}}
+    result = vector_to_pmtiles(plan, {'min_zoom':9,'max_zoom':9,'extent':[110,20,110.1,20.1],'extent_srid':4326,'source_srs':'EPSG:4326'})
+    assert result['archive_format'] == 'pmtiles'
+    assert command_envs[0]['AWS_ACCESS_KEY_ID'] == 'source-ak'
+    assert command_envs[0]['AWS_S3_ENDPOINT'] == 'source-minio:9000'
+    assert published[0][0].startswith(b'PMTiles\x03')
+    assert published[0][1]['access_key'] == 'target-ak'
+    with pytest.raises(ValueError, match='schema_version'):
+        vector_to_pmtiles({'source':{'root_uri':'/legacy'},'target':{'archive_uri':'/legacy'}}, {})
 
 
 def test_vector_to_pmtiles_indexes_gdal_pbf_output(tmp_path):

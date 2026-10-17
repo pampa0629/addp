@@ -11,6 +11,16 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
+	MsgVectorTileFactsInvalid      = "develop.workflow.vector_tile_facts_invalid"
+	MsgVectorMinZoomLabel          = "develop.workflow.parameters.min_zoom.label"
+	MsgVectorMinZoomDescription    = "develop.workflow.parameters.min_zoom.description"
+	MsgVectorMaxZoomLabel          = "develop.workflow.parameters.max_zoom.label"
+	MsgVectorMaxZoomDescription    = "develop.workflow.parameters.max_zoom.description"
+	MsgVectorLayerLabel            = "develop.workflow.parameters.layer_name.label"
+	MsgVectorLayerDescription      = "develop.workflow.parameters.layer_name.description"
+	MsgVectorAttributesLabel       = "develop.workflow.parameters.attributes.label"
+	MsgVectorAttributesDescription = "develop.workflow.parameters.attributes.description"
+
 	MsgWorkflowSourceUnitLabel             = "develop.workflow.parameters.source_unit.label"
 	MsgWorkflowSourceUnitDescription       = "develop.workflow.parameters.source_unit.description"
 	MsgWorkflowTextureFilesLabel           = "develop.workflow.parameters.texture_files.label"

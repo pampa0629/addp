@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/engine/instanceprovider"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/objectstore"
+	"github.com/addp/common/engine/workflowaccess"
 	commonPMTiles "github.com/addp/common/format/pmtiles"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -85,7 +86,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	targetURI, targetEnv, targetFacts, err := rasterMosaicGDALRoot(targetEngine, targetLoc, req.Config.TargetName)
+	targetURI, _, _, err := rasterMosaicGDALRoot(targetEngine, targetLoc, req.Config.TargetName)
 	if err != nil {
 		return nil, fmt.Errorf("prepare business PMTiles target: %w", err)
 	}
@@ -110,7 +111,7 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		case spatial.IsPostGISEngine(sourceEngine.EngineType):
 			return e.generatePostGISVectorTileSet(ctx, req, targetEngine, targetURI)
 		case strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "mysql"), strings.EqualFold(strings.TrimSpace(sourceEngine.EngineType), "oracle"):
-			return e.generateDatabaseWorkflowVectorTileSet(ctx, req, targetURI, targetEnv, targetFacts)
+			return e.generateDatabaseWorkflowVectorTileSet(ctx, req, targetEngine)
 		default:
 			return nil, fmt.Errorf("database table engine %s does not support vector tile set generation", sourceEngine.EngineType)
 		}
@@ -119,14 +120,14 @@ func (e *ManagerVectorTileSetExecutor) GenerateVectorTileSet(ctx context.Context
 		return nil, errors.New("workflow runtime is required for file vector tile set generation")
 	}
 	sourceResolver := &ManagerVectorTileCacheWorkflowExecutor{systemClient: e.systemClient}
-	sourceURI, sourceEnv, sourceFacts, err := sourceResolver.prepareSourceURI(ctx, req.Task.TenantID, req.Config.Source)
+	source, _, err := sourceResolver.prepareVectorTileSource(ctx, req.Task.TenantID, req.Config.Source)
 	if err != nil {
 		return nil, err
 	}
-	return e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
+	return e.invokeWorkflowVectorTileSet(ctx, req, source, targetEngine)
 }
 
-func (e *ManagerVectorTileSetExecutor) generateDatabaseWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
+func (e *ManagerVectorTileSetExecutor) generateDatabaseWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, targetEngine *commonModels.Engine) (*VectorTileSetExecutionResult, error) {
 	if e.workflowEngines == nil || e.infraObjectStore == nil {
 		return nil, errors.New("workflow runtime and infra object store are required for database vector tile set generation")
 	}
@@ -135,7 +136,7 @@ func (e *ManagerVectorTileSetExecutor) generateDatabaseWorkflowVectorTileSet(ctx
 		minioEndpoint: e.infraEndpoint, minioAccessKey: e.infraAccessKey, minioSecretKey: e.infraSecretKey,
 		minioUseSSL: e.infraUseSSL, defaultBucket: e.infraBucket,
 	}
-	sourceURI, sourceEnv, sourceFacts, cleanup, err := sourceMaterializer.prepareDatabaseTableFlatGeobufSource(
+	source, sourceFacts, cleanup, err := sourceMaterializer.prepareDatabaseTableFlatGeobufSource(
 		ctx, req.Task.TenantID, req.ExecutionID, req.Config.Source, req.Config.Options,
 	)
 	if err != nil {
@@ -147,7 +148,7 @@ func (e *ManagerVectorTileSetExecutor) generateDatabaseWorkflowVectorTileSet(ctx
 		return nil, errors.Join(err, cleanupErr)
 	}
 	req.Config.Tile = tile
-	result, invokeErr := e.invokeWorkflowVectorTileSet(ctx, req, sourceURI, sourceEnv, sourceFacts, targetURI, targetEnv, targetFacts)
+	result, invokeErr := e.invokeWorkflowVectorTileSet(ctx, req, source, targetEngine)
 	cleanupErr := cleanup(context.Background())
 	if invokeErr != nil || cleanupErr != nil {
 		return nil, errors.Join(invokeErr, cleanupErr)
@@ -182,7 +183,7 @@ func applyDatabaseFlatGeobufExtent(tile, sourceFacts commonModels.JSONMap) error
 	return nil
 }
 
-func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, sourceURI string, sourceEnv, sourceFacts commonModels.JSONMap, targetURI string, targetEnv, targetFacts commonModels.JSONMap) (*VectorTileSetExecutionResult, error) {
+func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.Context, req VectorTileSetExecutionRequest, source workflowaccess.Source, targetEngine *commonModels.Engine) (*VectorTileSetExecutionResult, error) {
 	engines, err := e.workflowEngines.ListWorkflowEngines(req.Task.TenantID)
 	if err != nil {
 		return nil, err
@@ -200,12 +201,24 @@ func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.C
 	if err != nil {
 		return nil, err
 	}
+	parent, err := resourcetree.ParseURI(req.Config.TargetLocator)
+	if err != nil {
+		return nil, err
+	}
+	target, _, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{Engine: targetEngine, Locator: parent,
+		Kind: workflowaccess.KindFile, Format: "pmtiles", Name: req.Config.TargetName, WriteMode: workflowaccess.WriteModeCreate,
+		ContentType: "application/vnd.pmtiles"})
+	if err != nil {
+		return nil, err
+	}
+	plan, err := workflowaccess.New(source, target)
+	if err != nil {
+		return nil, err
+	}
+	runtimePlan := plan.JSONMap()
+	runtimePlan["progress_callback"] = progressCallback
 	result, err := dbbridge.InvokeOperator(ctx, &workflowEngine, operator.Name, plugin.OperatorInvokeRequest{Params: map[string]interface{}{
-		"access_plan": commonModels.JSONMap{
-			"source":            commonModels.JSONMap{"root_uri": sourceURI, "layer_name": sourceFacts["layer_name"], "gdal_env": sourceEnv, "metadata": sourceFacts},
-			"target":            commonModels.JSONMap{"archive_uri": targetURI, "gdal_env": targetEnv, "metadata": targetFacts},
-			"progress_callback": progressCallback,
-		}, "tile": req.Config.Tile, "options": req.Config.Options,
+		"access_plan": runtimePlan, "tile": req.Config.Tile, "options": req.Config.Options,
 	}, Timeout: e.invokeTimeout})
 	if err != nil {
 		return nil, operatorInvokeError("invoke vector to PMTiles operator", result, err)

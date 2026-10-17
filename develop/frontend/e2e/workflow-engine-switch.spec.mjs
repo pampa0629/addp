@@ -64,6 +64,31 @@ for (const portType of ['number', 'string']) {
   })
 }
 
+test('edits vector tile attributes and keeps the public file workflow after reload', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeVectorTiles: true })
+  await openSavedWorkflow(page)
+  const open = async () => {
+    await page.getByRole('region', { name: '工作流 DAG 画布', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.right-panel')).toBeVisible()
+  }
+  await open()
+  const attributes = page.locator('[data-param-name="attributes"]').getByRole('textbox')
+  await expect(attributes).toHaveValue('[]')
+  await attributes.fill(JSON.stringify(['名称', '类型']))
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const task = backend.updates[0].payload.content.workflow_definition.tasks[0]
+  expect(task.operator).toBe('vector_to_pmtiles')
+  expect(task.params).toMatchObject({ attributes: ['名称', '类型'], max_zoom: 2, target_name: 'parks.pmtiles' })
+  for (const key of ['access_plan', 'tile', 'options', 'connection_info']) expect(task.params).not.toHaveProperty(key)
+  await page.reload()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  await open()
+  await expect(attributes).toHaveValue(JSON.stringify(['名称', '类型']))
+})
+
 test('edits saved structured conversion parameters without losing their JSON types', async ({ page }) => {
   const backend = await installMockBackend(page, { includeStructuredParameters: true })
   await openSavedWorkflow(page)
@@ -1095,6 +1120,7 @@ async function installMockBackend(page, {
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
   includeStructuredParameters = false,
+  includeVectorTiles = false,
   includeExecutionDependency = false,
   validationErrors = [],
   deferValidation = false,
@@ -1206,6 +1232,25 @@ async function installMockBackend(page, {
   }
 
   operatorsByEngine[ENGINE_A.id][0].output_ports[0].type = portType
+
+  if (includeVectorTiles) {
+    const operator = operatorsByEngine[ENGINE_A.id][0]
+    operator.id = operator.name = 'vector_to_pmtiles'
+    operator.display_name = '矢量切片'
+    operator.category = '成果生成'
+    operator.category_path = ['矢量处理', '成果生成']
+    operator.public_parameters = [
+      { name: 'attributes', display_name: '保留属性', type: 'array', default: [] },
+      { name: 'min_zoom', display_name: '最小层级', type: 'integer' },
+      { name: 'max_zoom', display_name: '最大层级', type: 'integer' },
+      { name: 'layer_name', display_name: '输出图层', type: 'string' }
+    ]
+    Object.assign(task.content.workflow_definition.tasks[0], { operator: 'vector_to_pmtiles', params: {
+      locator: 'addp://engine/7/path/source/parks.geojson?type=object&item_id=701',
+      target_parent_locator: 'addp://engine/7/path/results?type=bucket', target_name: 'parks.pmtiles', write_mode: 'create',
+      min_zoom: 0, max_zoom: 2, layer_name: 'parks', attributes: []
+    } })
+  }
 
   if (includeNestedCategories) {
     operatorsByEngine[ENGINE_A.id][0].category_path = ['通用处理', '数据读写']
@@ -1401,7 +1446,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
-      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency) Object.assign(task, payload)
+      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency || includeVectorTiles) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)

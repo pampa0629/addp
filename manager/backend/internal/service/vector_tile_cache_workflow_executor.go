@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/engine/plugins/objectstore"
+	"github.com/addp/common/engine/workflowaccess"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/tilecache"
@@ -78,14 +81,14 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if strings.TrimSpace(req.ExecutionID) == "" {
 		return nil, nil, errors.New("vector tile cache execution_id is required")
 	}
-	var sourceURI string
-	var sourceEnv, sourceFacts commonModels.JSONMap
+	var source workflowaccess.Source
+	var sourceFacts commonModels.JSONMap
 	var err error
 	cleanupSource := func(context.Context) error { return nil }
 	if req.Identity.SourceKind == "table" {
-		sourceURI, sourceEnv, sourceFacts, cleanupSource, err = e.prepareDatabaseTableFlatGeobufSource(ctx, req.Task.TenantID, req.ExecutionID, req.Identity, req.Options)
+		source, sourceFacts, cleanupSource, err = e.prepareDatabaseTableFlatGeobufSource(ctx, req.Task.TenantID, req.ExecutionID, req.Identity, req.Options)
 	} else {
-		sourceURI, sourceEnv, sourceFacts, err = e.prepareSourceURI(ctx, req.Task.TenantID, req.Identity)
+		source, sourceFacts, err = e.prepareVectorTileSource(ctx, req.Task.TenantID, req.Identity)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -104,7 +107,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if err := e.ensureTargetBucket(ctx, bucket); err != nil {
 		return nil, nil, err
 	}
-	targetURI, targetEnv, err := e.prepareTargetArchiveURI(bucket, objectName)
+	targetAccess, err := e.vectorTileObjectAccess(bucket, objectName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -132,32 +135,16 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if err != nil {
 		return nil, nil, err
 	}
+	plan, err := workflowaccess.New(source, workflowaccess.Target{
+		Kind: workflowaccess.KindFile, Format: "pmtiles", Name: path.Base(objectName), WriteMode: workflowaccess.WriteModeReplace, Access: targetAccess,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	runtimePlan := plan.JSONMap()
+	runtimePlan["progress_callback"] = progressCallback
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
-		Params: map[string]interface{}{
-			"access_plan": commonModels.JSONMap{
-				"source": commonModels.JSONMap{
-					"root_uri":         sourceURI,
-					"layer_name":       sourceFacts["layer_name"],
-					"gdal_env":         sourceEnv,
-					"engine_id":        req.Identity.EngineID,
-					"source_kind":      req.Identity.SourceKind,
-					"full_name":        req.Identity.FullName,
-					"item_fingerprint": req.Identity.ItemFingerprint,
-					"row_count":        int64FromConfig(req.Tile["row_count"], 0),
-					"metadata":         sourceFacts,
-				},
-				"target": commonModels.JSONMap{
-					"archive_uri": targetURI,
-					"object":      objectName,
-					"storage_ref": req.StorageRef,
-					"gdal_env":    targetEnv,
-				},
-				"progress_callback": progressCallback,
-			},
-			"tile":    tile,
-			"options": req.Options.Clone(),
-		},
-		Timeout: e.invokeTimeout,
+		Params: map[string]interface{}{"access_plan": runtimePlan, "tile": tile, "options": req.Options.Clone()}, Timeout: e.invokeTimeout,
 	})
 	if err != nil {
 		return nil, nil, operatorInvokeError("invoke vector to PMTiles operator", invokeResult, err)
@@ -190,88 +177,35 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	return result, metadata, nil
 }
 
-func (e *ManagerVectorTileCacheWorkflowExecutor) prepareSourceURI(ctx context.Context, tenantID uint, identity tileCacheTaskTargetIdentity) (string, commonModels.JSONMap, commonModels.JSONMap, error) {
+func (e *ManagerVectorTileCacheWorkflowExecutor) prepareVectorTileSource(ctx context.Context, tenantID uint, identity tileCacheTaskTargetIdentity) (workflowaccess.Source, commonModels.JSONMap, error) {
 	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, identity.EngineID)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("get source engine: %w", err)
+		return workflowaccess.Source{}, nil, err
 	}
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
-		return "", nil, nil, err
+		return workflowaccess.Source{}, nil, err
 	}
 	if engine.TenantID != nil && *engine.TenantID != tenantID {
-		return "", nil, nil, ErrEngineAccessDenied
+		return workflowaccess.Source{}, nil, ErrEngineAccessDenied
 	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	fullName := strings.Trim(strings.TrimSpace(identity.FullName), "/")
-	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		basePath := firstNonEmptyConfig(plugin.GetString(connInfo, "mount_path"), plugin.GetString(connInfo, "export_path"), plugin.GetString(connInfo, "base_path"))
-		if basePath == "" {
-			return "", nil, nil, errors.New("file engine requires mount_path, export_path, or base_path for vector tile generation")
-		}
-		return joinFilePath(basePath, fullName), commonModels.JSONMap{}, commonModels.JSONMap{
-			"engine_type":   engine.EngineType,
-			"access_method": "mounted_path",
-		}, nil
-	case "minio", "s3":
-		sourceURI, env, facts, err := prepareObjectStoreGDALSource(engine.EngineType, engineType, connInfo, fullName)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		return sourceURI, env, facts, nil
-	default:
-		return "", nil, nil, fmt.Errorf("source engine %s is not supported by vector tile workflow runtime", engine.EngineType)
-	}
-}
-
-func prepareObjectStoreGDALSource(displayEngineType, engineType string, connInfo plugin.ConnectionInfo, fullName string) (string, commonModels.JSONMap, commonModels.JSONMap, error) {
-	fullName = strings.Trim(strings.TrimSpace(fullName), "/")
-	if fullName == "" {
-		return "", nil, nil, errors.New("object store source full_name is required for vector tile GDAL access")
-	}
-	if _, _, err := splitObjectFullName(fullName); err != nil {
-		return "", nil, nil, err
-	}
-	cfg, err := sourceObjectClientConfig(engineType, connInfo)
+	locator, err := resourcetree.ParseURI(identity.Locator)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("parse object store config: %w", err)
+		return workflowaccess.Source{}, nil, err
 	}
-	endpoint, useSSL := objectstore.ParseEndpoint(cfg.Endpoint, cfg.UseSSL)
-	endpoint = objectstore.NormalizeEndpoint(endpoint)
-	if endpoint == "" {
-		return "", nil, nil, errors.New("object store endpoint is required for vector tile GDAL access")
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator,
+		Kind: workflowaccess.KindFile, Format: string(format.DetectFormat(identity.FullName, nil)),
+		Metadata: commonModels.JSONMap{"engine_type": engine.EngineType}})
+	if err != nil {
+		return workflowaccess.Source{}, nil, err
 	}
-	env := commonModels.JSONMap{
-		"AWS_S3_ENDPOINT":       endpoint,
-		"AWS_ACCESS_KEY_ID":     cfg.AccessKey,
-		"AWS_SECRET_ACCESS_KEY": cfg.SecretKey,
-		"AWS_VIRTUAL_HOSTING":   "FALSE",
-		"AWS_HTTPS":             gdalHTTPSValue(useSSL),
-	}
-	return "/vsis3/" + fullName, env, commonModels.JSONMap{
-		"engine_type":   displayEngineType,
-		"access_method": "vsis3_object_storage",
-	}, nil
+	source.Metadata["access_method"] = source.Access.Method
+	return source, source.Metadata.Clone(), nil
 }
 
-func (e *ManagerVectorTileCacheWorkflowExecutor) prepareTargetArchiveURI(bucket, objectName string) (string, commonModels.JSONMap, error) {
-	if e.minioEndpoint == "" || e.minioAccessKey == "" || e.minioSecretKey == "" {
-		return "", nil, errors.New("infra MinIO config is required for vector tile cache generation")
-	}
-	gdalEndpoint, gdalUseSSL := objectstore.ParseEndpoint(e.minioEndpoint, e.minioUseSSL)
-	gdalEndpoint = objectstore.NormalizeEndpoint(gdalEndpoint)
-	if gdalEndpoint == "" {
-		return "", nil, errors.New("infra MinIO endpoint is required for vector tile GDAL environment")
-	}
-	env := commonModels.JSONMap{
-		"AWS_S3_ENDPOINT":       gdalEndpoint,
-		"AWS_ACCESS_KEY_ID":     e.minioAccessKey,
-		"AWS_SECRET_ACCESS_KEY": e.minioSecretKey,
-		"AWS_VIRTUAL_HOSTING":   "FALSE",
-		"AWS_HTTPS":             gdalHTTPSValue(gdalUseSSL),
-	}
-	return "/vsis3/" + strings.Trim(bucket, "/") + "/" + strings.Trim(objectName, "/"), env, nil
+func (e *ManagerVectorTileCacheWorkflowExecutor) vectorTileObjectAccess(bucket, objectName string) (workflowaccess.Access, error) {
+	return workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+		"endpoint": e.minioEndpoint, "access_key": e.minioAccessKey, "secret_key": e.minioSecretKey, "use_ssl": e.minioUseSSL,
+	}, bucket, objectName, workflowaccess.KindFile)
 }
 
 func (e *ManagerVectorTileCacheWorkflowExecutor) ensureTargetBucket(ctx context.Context, bucket string) error {

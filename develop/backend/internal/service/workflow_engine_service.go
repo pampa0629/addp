@@ -856,7 +856,14 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 			}
 		}
 		sourceFormat := spec.SourceFormat
-		if len(spec.SourceFormats) > 0 {
+		if adapter.OperatorID == "vector_to_pmtiles" {
+			var tile commonModels.JSONMap
+			sourceFormat, tile, err = s.workflowVectorTileFacts(ctx, tenantID, locator, params)
+			if err != nil {
+				return nil, err
+			}
+			params["tile"] = tile
+		} else if len(spec.SourceFormats) > 0 {
 			sourceFormat = string(format.DetectFormat(lastPathSegment(locator.Path), nil))
 			supported := false
 			for _, candidate := range spec.SourceFormats {
@@ -957,6 +964,10 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	}
 	params["access_plan"] = plan
 	if len(options) > 0 {
+		if adapter.OperatorID == "vector_to_pmtiles" {
+			delete(options, "min_zoom")
+			delete(options, "max_zoom")
+		}
 		params["options"] = options
 	}
 	if targetLocator == nil {

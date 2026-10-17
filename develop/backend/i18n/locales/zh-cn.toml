@@ -319,3 +319,30 @@ other = "移除嵌入媒体"
 
 [develop.workflow.parameters.strip_embedded_media.description]
 other = "转换 PPTX 前移除嵌入的音视频，默认开启；生成静态 PDF。"
+
+[develop.workflow.parameters.min_zoom.label]
+other = "最小层级"
+
+[develop.workflow.parameters.min_zoom.description]
+other = "0–24 的整数。"
+
+[develop.workflow.parameters.max_zoom.label]
+other = "最大层级"
+
+[develop.workflow.parameters.max_zoom.description]
+other = "0–24 的整数，不小于最小层级；层级越高生成成本越大。"
+
+[develop.workflow.parameters.layer_name.label]
+other = "输出图层"
+
+[develop.workflow.parameters.layer_name.description]
+other = "PMTiles 中的图层名称。"
+
+[develop.workflow.parameters.attributes.label]
+other = "保留属性"
+
+[develop.workflow.parameters.attributes.description]
+other = "显式字段名 JSON 数组，如 [\"名称\", \"类型\"]；空数组仅保留几何。"
+
+[develop.workflow.vector_tile_facts_invalid]
+other = "矢量切片参数或源元数据无效；请核对层级、属性字段，并对源数据执行深度扫描。"

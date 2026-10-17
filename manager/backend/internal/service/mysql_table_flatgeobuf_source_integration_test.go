@@ -89,15 +89,15 @@ func TestMySQLTableFlatGeobufSourceIntegration(t *testing.T) {
 		objectStore:  store, minioEndpoint: "http://minio:9000", minioAccessKey: "ak", minioSecretKey: "sk", defaultBucket: "manager",
 	}
 	identity := tileCacheTaskTargetIdentity{EngineID: 11, SourceKind: "table", Schema: database, Table: "features", FullName: database + ".features"}
-	uri, _, facts, cleanup, err := executor.prepareDatabaseTableFlatGeobufSource(context.Background(), 7, "exec-1", identity, commonModels.JSONMap{
+	source, facts, cleanup, err := executor.prepareDatabaseTableFlatGeobufSource(context.Background(), 7, "exec-1", identity, commonModels.JSONMap{
 		"geometry_column": "geom",
 		"max_features":    1,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if uri != "/vsis3/manager/tenant_7/executions/exec-1/source.fgb" || facts["access_method"] != "temporary_flatgeobuf" {
-		t.Fatalf("source uri=%q facts=%#v", uri, facts)
+	if source.Access.Bucket != "manager" || source.Access.Object != "tenant_7/executions/exec-1/source.fgb" || facts["access_method"] != "temporary_flatgeobuf" {
+		t.Fatalf("source=%+v facts=%#v", source, facts)
 	}
 	if len(store.data) < 12 || string(store.data[:3]) != "fgb" {
 		t.Fatalf("temporary FlatGeobuf size=%d header=%q", len(store.data), store.data[:min(3, len(store.data))])
@@ -123,7 +123,7 @@ func TestMySQLTableFlatGeobufSourceIntegration(t *testing.T) {
 
 	failedStore := &recordingTemporaryFlatGeobufStore{exists: true, putErr: errors.New("injected upload failure")}
 	executor.objectStore = failedStore
-	_, _, _, _, err = executor.prepareDatabaseTableFlatGeobufSource(context.Background(), 7, "exec-failed", identity, commonModels.JSONMap{"geometry_column": "geom"})
+	_, _, _, err = executor.prepareDatabaseTableFlatGeobufSource(context.Background(), 7, "exec-failed", identity, commonModels.JSONMap{"geometry_column": "geom"})
 	if err == nil {
 		t.Fatal("failed temporary FlatGeobuf upload unexpectedly succeeded")
 	}

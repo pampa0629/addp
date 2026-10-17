@@ -319,3 +319,30 @@ other = "Remove embedded media"
 
 [develop.workflow.parameters.strip_embedded_media.description]
 other = "Remove embedded audio and video before converting PPTX to static PDF. Enabled by default."
+
+[develop.workflow.parameters.min_zoom.label]
+other = "Minimum zoom"
+
+[develop.workflow.parameters.min_zoom.description]
+other = "An integer between 0 and 24."
+
+[develop.workflow.parameters.max_zoom.label]
+other = "Maximum zoom"
+
+[develop.workflow.parameters.max_zoom.description]
+other = "An integer between 0 and 24, at least the minimum zoom; higher zoom increases generation cost."
+
+[develop.workflow.parameters.layer_name.label]
+other = "Output layer"
+
+[develop.workflow.parameters.layer_name.description]
+other = "The layer name inside the PMTiles archive."
+
+[develop.workflow.parameters.attributes.label]
+other = "Retained attributes"
+
+[develop.workflow.parameters.attributes.description]
+other = "An explicit JSON array of field names, such as [\"name\", \"type\"]; an empty array retains geometry only."
+
+[develop.workflow.vector_tile_facts_invalid]
+other = "Invalid vector tile parameters or source metadata; check zoom levels and attributes, and run a deep scan of the source."

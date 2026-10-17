@@ -47,14 +47,14 @@ func TestOracleTableFlatGeobufSourceIntegration(t *testing.T) {
 		EngineID: 22, SourceKind: "table", Schema: "BUSINESS", Table: "CUSTOMER_LOCATIONS",
 		FullName: "BUSINESS.CUSTOMER_LOCATIONS",
 	}
-	uri, _, facts, cleanup, err := executor.prepareDatabaseTableFlatGeobufSource(context.Background(), tenantID, "oracle-exec-1", identity, commonModels.JSONMap{
+	source, facts, cleanup, err := executor.prepareDatabaseTableFlatGeobufSource(context.Background(), tenantID, "oracle-exec-1", identity, commonModels.JSONMap{
 		"geometry_column": "SHAPE",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if uri != "/vsis3/manager/tenant_7/executions/oracle-exec-1/source.fgb" || facts["access_method"] != "temporary_flatgeobuf" || facts["engine_type"] != "oracle" {
-		t.Fatalf("Oracle source uri=%q facts=%#v", uri, facts)
+	if source.Access.Bucket != "manager" || source.Access.Object != "tenant_7/executions/oracle-exec-1/source.fgb" || facts["access_method"] != "temporary_flatgeobuf" || facts["engine_type"] != "oracle" {
+		t.Fatalf("Oracle source=%+v facts=%#v", source, facts)
 	}
 	extent, ok := floatSliceFromConfig(facts["extent"])
 	if !ok || extent[0] != 116.397 || extent[1] != 31.230 || extent[2] != 121.474 || extent[3] != 39.908 || intFromTileCacheConfig(facts["extent_srid"], 0) != 4326 {

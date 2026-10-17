@@ -80,6 +80,8 @@ Spark MinIO 保存固定普通 Parquet + create，由执行 UUID 和节点身份
 
 Model3D 的 DAE、3DS、MAX 转 GLB，SuperMap 的 SGM 转 OSGB，以及 Document 的 PPTX 转 PDF 均通过显式 Adapter 接入。DAE、3DS、MAX 从所选主文件定位父目录并保留 entrypoint，以供运行时读取相邻资源；SGM 和 PPTX 使用单文件源。MAX 公开 `source_unit` 与 `texture_files`，PPTX 公开 `strip_embedded_media`；选项的名称和说明使用 Develop 国际化消息，算子发现按请求语言返回。输出只写用户选择的业务存储，复用现有授权、稳定输出与 Meta 扫描，不登记 Manager 私有快显结果，也不在单引擎工作流中隐式调用另一运行时。验证沿用 `make test-module MODULE=develop`，新增 Go 测试由现有 Go CI 自动发现，无新增依赖或门禁。
 
+`vector_to_pmtiles`（矢量切片）复用标准访问计划和业务产物主线，首版只接受已扫描的 Shapefile／GeoJSON 文件或对象。Develop 根据精确 Meta item 身份、格式、字段、范围及 SRID 派生内部 tile；用户只保存源和目标 locator、层级、图层名与显式属性数组。默认不带业务属性，拒绝几何列、未知／重复字段、无效层级、过期 item 身份和缺失空间事实。Runtime 的 access_plan、tile、options 不公开；保存重开继续复用结构化数组参数。验证沿 `make test-module MODULE=develop`、`make test-develop-frontend` 及既有 Develop Go／Frontend CI；GeoPython 原生 GDAL 与 Manager 调用契约另由各 owner 既有门禁覆盖，不新增 CI 路线。
+
 参数面板中的公开 `array/object/json` 参数统一以 JSON 文本编辑，保存时还原结构化值；重新打开已保存节点必须保留数组和对象内容，不得显示 `[object Object]` 或将数组退化为逗号拼接的字符串。浏览器回归由既有 `make test-develop-frontend` 和 Frontend CI 自动发现。
 
 **注意**：Meta、Transfer、Manager 模块提供的是**任务**（Tasks），不是算子，它们主要用于 Orchestrator 工作流编排。

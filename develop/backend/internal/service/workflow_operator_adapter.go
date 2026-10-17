@@ -51,6 +51,7 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 		"raster_save_tiles": workflowRasterAdapterSpec("raster_save_tiles"),
 		"raster_to_cog":     workflowRasterAdapterSpec("raster_to_cog"),
 		"save":              workflowPythonSaveAdapterSpec(),
+		"vector_to_pmtiles": workflowVectorTileAdapterSpec(),
 	},
 	"spark_workflow": {
 		"load": workflowLoadAdapterSpec("load"),
@@ -69,6 +70,24 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 			{Name: "strip_embedded_media", Type: "boolean", Default: true, DisplayName: developi18n.MsgWorkflowStripMediaLabel, Description: developi18n.MsgWorkflowStripMediaDescription},
 		}),
 	},
+}
+
+func workflowVectorTileAdapterSpec() workflowOperatorAdapterSpec {
+	spec := conversionAdapterSpec("vector_to_pmtiles", "矢量", "", "file", "file", []string{"table"}, "pmtiles", "file", ".pmtiles", "application/vnd.pmtiles", []commonModels.ParameterDescriptor{
+		{Name: "min_zoom", Type: "integer", Required: true, Default: 0, DisplayName: developi18n.MsgVectorMinZoomLabel, Description: developi18n.MsgVectorMinZoomDescription},
+		{Name: "max_zoom", Type: "integer", Required: true, DisplayName: developi18n.MsgVectorMaxZoomLabel, Description: developi18n.MsgVectorMaxZoomDescription},
+		{Name: "layer_name", Type: "string", Required: true, DisplayName: developi18n.MsgVectorLayerLabel, Description: developi18n.MsgVectorLayerDescription},
+		{Name: "attributes", Type: "array", Default: []string{}, DisplayName: developi18n.MsgVectorAttributesLabel, Description: developi18n.MsgVectorAttributesDescription},
+	})
+	spec.RuntimeParams = []string{"access_plan", "tile", "options"}
+	spec.AccessPlan.SourceFormats = []string{"shapefile", "geojson"}
+	for i := range spec.PublicParameters {
+		if spec.PublicParameters[i].Name == "source_resource" {
+			spec.PublicParameters[i].UIConfig["file_formats"] = spec.AccessPlan.SourceFormats
+			spec.PublicParameters[i].UIConfig["selectable_node_types"] = []string{"file", "object"}
+		}
+	}
+	return spec
 }
 
 // Raster IO uses the same access-plan adapter, with source/target independently optional.

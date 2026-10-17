@@ -830,6 +830,12 @@ Develop Adapter Spec registry 为 Public Operator Spec 提供资源选择器 `ui
 
 #### 持久化转换访问计划
 
+`vector_to_pmtiles` 统一消费下述 `addp.workflow.access-plan/v1`，删除 `source.root_uri/source.gdal_env/target.archive_uri/target.gdal_env` 参数路径。Manager 的快显、业务瓦片集及数据库临时 FlatGeobuf 均使用同一契约；数据库源的准备和临时材料生命周期仍归 Manager。进度回调是执行期计划的附加字段，不进入用户定义。
+
+Develop 将该算子显示为“矢量切片”，位于“矢量处理 / 成果生成”。首版输入为已扫描的 Shapefile 或 GeoJSON 文件／对象，公开参数为 `locator`、`target_parent_locator`、`target_name`、`write_mode`、`min_zoom`、`max_zoom`、`layer_name` 和 `attributes`。`attributes` 是显式属性字段名数组，缺省为空；输出始终保留几何，Manager 的可选主键仍按原配置保留，不隐式输出全部属性。字段、源格式、范围和 CRS 从 Meta 事实校验／派生，缺失或失配时要求扫描，不允许用户提交内部 `tile`、访问计划、GDAL URI 或凭据。Develop 不接入数据库空间表或多图层容器。
+
+运行时参数仍为 `access_plan + tile + options`，`tile` 只由调用方派生；运行时复核字段和 CRS。输出必须是 `format=pmtiles + layout=single` 的 PMTiles v3 单文件，复用标准 `create/replace` 发布。Develop 生成命名稳定输出、`produced_targets`、真实来源血缘和 Meta 扫描；Manager 私有缓存与业务瓦片集各自保留现有归属。两端访问参数不进入长期结果。
+
 文件、对象和目录型持久化转换统一使用以下内部契约：
 
 ```json

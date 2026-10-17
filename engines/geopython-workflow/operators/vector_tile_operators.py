@@ -1,28 +1,28 @@
 """
 向量瓦片算子模块
 
-Manager 负责把 ADDP locator、engine、源路径和目标对象存储解析为 GDAL
-可访问的 access_plan；GeoPython Workflow 只负责读取物理源、生成 MVT、
+调用方负责把 ADDP 资源和授权解析为标准 access_plan；GeoPython Workflow
+只负责读取受控物理源、生成 MVT、
 写入 PMTiles v3 单文件并上报进度。
 """
 
 import json
-import hashlib
 import logging
+import hashlib
 import math
 import os
 import posixpath
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict
 
-from pyproj import Transformer
+from pyproj import CRS, Transformer
+from addp_common.workflow_access import require_access_plan, publish_target_file
 from pmtiles.tile import Compression, TileType, zxy_to_tileid
 from pmtiles.writer import Writer
 
@@ -33,23 +33,13 @@ from .base import (
     OperatorCategory,
     register_operator,
 )
-from .raster_operators import (
-    _import_gdal,
-    _prepare_target_path,
-    _ensure_gdal_dir,
-    _gdal_config_env,
-    _is_gdal_virtual_path,
-    _path_parent,
-    _progress_reporter,
-    _set_path_specific_gdal_options,
-)
+from .raster_operators import _progress_reporter
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MVT_EXTENT = 8192
 DEFAULT_MVT_MAX_SIZE_BYTES = 5_000_000
 DEFAULT_MVT_MAX_FEATURES = 1_000_000
-DEFAULT_MVT_PUBLISH_CONCURRENCY = 8
 DEFAULT_MVT_GDAL_NUM_THREADS = "ALL_CPUS"
 MVT_GENERATE_PROGRESS_START = 1.0
 MVT_GENERATE_PROGRESS_SPAN = 39.0
@@ -114,55 +104,6 @@ def _extent_to_wgs84(extent: list[float], extent_srid: int, source_srs: str = ""
     return [min(lon_values), min(lat_values), max(lon_values), max(lat_values)]
 
 
-def _copy_tile_payload(source_tile: Path, target_uri: str, target_env: Dict[str, Any], use_configured_path_options: bool = False) -> int:
-    data = source_tile.read_bytes()
-    if use_configured_path_options:
-        _write_binary_with_configured_path_options(target_uri, data)
-    else:
-        _write_binary(target_uri, data, target_env)
-    return len(data)
-
-
-def _write_binary(target_uri: str, data: bytes, target_env: Dict[str, Any]) -> None:
-    if _is_gdal_virtual_path(target_uri):
-        with _gdal_config_env(target_env) as gdal:
-            handle = gdal.VSIFOpenL(target_uri, "wb")
-            if handle is None:
-                raise RuntimeError(f"GDAL cannot open target for writing: {target_uri}")
-            try:
-                written = gdal.VSIFWriteL(data, 1, len(data), handle)
-            finally:
-                close_result = gdal.VSIFCloseL(handle)
-            if written != len(data):
-                raise RuntimeError(f"GDAL wrote incomplete payload to {target_uri}: {written}/{len(data)} bytes")
-            if close_result != 0:
-                raise RuntimeError(f"GDAL failed to close target after writing: {target_uri}")
-        return
-    target_path = Path(target_uri)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(data)
-
-
-def _write_binary_with_configured_path_options(target_uri: str, data: bytes) -> None:
-    if _is_gdal_virtual_path(target_uri):
-        gdal = _import_gdal()
-        handle = gdal.VSIFOpenL(target_uri, "wb")
-        if handle is None:
-            raise RuntimeError(f"GDAL cannot open target for writing: {target_uri}")
-        try:
-            written = gdal.VSIFWriteL(data, 1, len(data), handle)
-        finally:
-            close_result = gdal.VSIFCloseL(handle)
-        if written != len(data):
-            raise RuntimeError(f"GDAL wrote incomplete payload to {target_uri}: {written}/{len(data)} bytes")
-        if close_result != 0:
-            raise RuntimeError(f"GDAL failed to close target after writing: {target_uri}")
-        return
-    target_path = Path(target_uri)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(data)
-
-
 def _positive_int(value: Any, default: int, minimum: int = 1, maximum: int | None = None) -> int:
     try:
         parsed = int(value)
@@ -191,31 +132,74 @@ def _ogr_sql_identifier(value: str) -> str:
     return '"' + str(value or "").replace('"', '""') + '"'
 
 
-def _source_layer_name(source_plan: Dict[str, Any], source_uri: str) -> str:
-    metadata = source_plan.get("metadata") if isinstance(source_plan.get("metadata"), dict) else {}
-    explicit = str(source_plan.get("layer_name") or metadata.get("layer_name") or "").strip()
-    if explicit:
-        return explicit
-    candidates = [
-        source_plan.get("full_name"),
-        source_uri,
-    ]
-    for candidate in candidates:
-        text = str(candidate or "").strip().rstrip("/")
-        if not text:
-            continue
-        text = text.split("?", 1)[0]
-        name = Path(text).stem
-        if name:
-            return name
-    return "layer"
+def _vector_source_access(source):
+    access = source["access"]
+    if source["kind"] != "file":
+        raise ValueError("vector source must be a file")
+    if access["method"] == "mounted_path":
+        return access["path"], {}
+    endpoint = str(access["endpoint"]).rstrip("/")
+    use_ssl = access.get("use_ssl", False)
+    if endpoint.startswith(("http://", "https://")):
+        use_ssl = endpoint.startswith("https://")
+        endpoint = endpoint.split("://", 1)[1]
+    return "/vsis3/" + access["bucket"] + "/" + access["object"], {
+        "AWS_S3_ENDPOINT": endpoint, "AWS_ACCESS_KEY_ID": access["access_key"],
+        "AWS_SECRET_ACCESS_KEY": access["secret_key"], "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "YES" if use_ssl else "NO",
+    }
 
 
-def _build_quick_view_ogr_sql(source_layer: str, primary_key: str = "") -> str:
-    fields = ["OGR_GEOMETRY"]
-    primary_key = str(primary_key or "").strip()
-    if primary_key:
-        fields.append(_ogr_sql_identifier(primary_key))
+def _vector_source_facts(source_uri, source_plan, source_env, source_srs):
+    # Each GDAL process receives only this source's environment; no process-global credentials.
+    # Use the existing Python binding, including product images without ogrinfo's newer JSON option.
+    inspect_source = """
+import json, sys
+from osgeo import gdal
+gdal.UseExceptions()
+dataset = gdal.OpenEx(sys.argv[1], gdal.OF_VECTOR | gdal.OF_READONLY)
+if dataset is None:
+    raise ValueError('vector source cannot be opened')
+layers = []
+for layer in dataset:
+    definition = layer.GetLayerDefn()
+    geometry_fields = []
+    for index in range(definition.GetGeomFieldCount()):
+        geometry = definition.GetGeomFieldDefn(index)
+        crs = geometry.GetSpatialRef()
+        geometry_fields.append({'name': geometry.GetName(), 'coordinateSystem': {'wkt': crs.ExportToWkt() if crs else None}})
+    layers.append({'name': layer.GetName(), 'geometryFields': geometry_fields, 'fields': [
+        {'name': definition.GetFieldDefn(index).GetName(), 'type': definition.GetFieldDefn(index).GetTypeName()}
+        for index in range(definition.GetFieldCount())]})
+print(json.dumps({'layers': layers}))
+"""
+    completed = subprocess.run([sys.executable, "-c", inspect_source, source_uri],
+        env={**os.environ, **{key: str(value) for key, value in source_env.items()}},
+        capture_output=True, text=True, check=True, timeout=60)
+    layers = json.loads(completed.stdout).get("layers", [])
+    requested_layer = str(source_plan.get("metadata", {}).get("layer_name") or "").strip()
+    selected = [layer for layer in layers if layer["name"] == requested_layer] if requested_layer else layers
+    if len(selected) != 1:
+        raise ValueError("vector source requires exactly one selected source layer")
+    layer = selected[0]
+    geometries = layer.get("geometryFields", [])
+    if len(geometries) != 1:
+        raise ValueError("vector source requires exactly one geometry field")
+    coordinate_system = geometries[0].get("coordinateSystem") or {}
+    wkt = coordinate_system.get("wkt")
+    if not wkt or (source_srs and not CRS.from_wkt(wkt).equals(CRS.from_user_input(source_srs), ignore_axis_order=True)):
+        raise ValueError("vector source CRS is missing or differs from source facts")
+    return layer["name"], {field["name"]: field["type"] for field in layer.get("fields", [])}, geometries[0].get("name") or "_ogr_geometry_"
+
+
+def _build_vector_tile_ogr_sql(source_layer: str, primary_key: str = "", attributes=None, geometry_column="_ogr_geometry_") -> str:
+    if attributes is None:
+        attributes = []
+    if not isinstance(attributes, list) or any(not isinstance(field, str) or not field.strip() or field == "*" for field in attributes):
+        raise ValueError("attributes must be an explicit field name array")
+    fields = [_ogr_sql_identifier(geometry_column)]
+    for field in dict.fromkeys(([primary_key] if primary_key else []) + attributes):
+        fields.append(_ogr_sql_identifier(field))
     return f"SELECT {', '.join(fields)} FROM {_ogr_sql_identifier(source_layer)}"
 
 
@@ -252,55 +236,8 @@ def _mvt_quality_options(tile: Dict[str, Any], options: Dict[str, Any]) -> Dict[
             0.0,
         ),
         "num_threads": str(options.get("num_threads") or tile.get("num_threads") or DEFAULT_MVT_GDAL_NUM_THREADS).strip(),
-        "publish_concurrency": _positive_int(
-            options.get("publish_concurrency", tile.get("publish_concurrency", DEFAULT_MVT_PUBLISH_CONCURRENCY)),
-            DEFAULT_MVT_PUBLISH_CONCURRENCY,
-            minimum=1,
-            maximum=64,
-        ),
+
     }
-
-
-def _publish_tile_jobs(tile_jobs: list[Dict[str, Any]], target_env: Dict[str, Any], publish_concurrency: int) -> list[Dict[str, Any]]:
-    if not tile_jobs:
-        return []
-
-    def publish(job: Dict[str, Any]) -> Dict[str, Any]:
-        size = _copy_tile_payload(Path(job["source"]), str(job["target_uri"]), target_env, use_configured_path_options=True)
-        return {"zoom": int(job["zoom"]), "size": int(size)}
-
-    if publish_concurrency <= 1 or len(tile_jobs) == 1:
-        return [publish(job) for job in tile_jobs]
-
-    results: list[Dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(publish_concurrency, len(tile_jobs))) as executor:
-        futures = [executor.submit(publish, job) for job in tile_jobs]
-        for future in as_completed(futures):
-            results.append(future.result())
-    return results
-
-
-def _write_json(target_uri: str, payload: Dict[str, Any], target_env: Dict[str, Any]) -> None:
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    _write_binary(target_uri, data, target_env)
-
-
-def _find_generated_tile(tile_root: Path, z: int, x: int, y: int) -> Path | None:
-    candidates = [
-        tile_root / str(z) / str(x) / f"{y}.pbf",
-        tile_root / str(z) / str(x) / f"{y}.mvt",
-        tile_root / str(z) / f"{x}" / f"{y}.pbf",
-        tile_root / str(z) / f"{x}" / f"{y}.mvt",
-    ]
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    for suffix in ("*.pbf", "*.mvt"):
-        for candidate in tile_root.glob(f"**/{suffix}"):
-            parts = candidate.relative_to(tile_root).parts
-            if len(parts) >= 3 and parts[-3] == str(z) and parts[-2] == str(x) and Path(parts[-1]).stem == str(y):
-                return candidate
-    return None
 
 
 def _index_generated_tiles(tile_root: Path) -> Dict[tuple[int, int, int], Path]:
@@ -428,36 +365,6 @@ def _emit_progress(
     })
 
 
-def _publish_pmtiles_archive(source_path: Path, target_uri: str, target_env: Dict[str, Any]) -> None:
-    if _is_gdal_virtual_path(target_uri):
-        with _gdal_config_env(target_env) as gdal:
-            target = gdal.VSIFOpenL(target_uri, "wb")
-            if target is None:
-                raise RuntimeError(f"GDAL cannot open PMTiles target for writing: {target_uri}")
-            try:
-                with source_path.open("rb") as source:
-                    while True:
-                        chunk = source.read(8 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        if gdal.VSIFWriteL(chunk, 1, len(chunk), target) != len(chunk):
-                            raise RuntimeError(f"GDAL wrote incomplete PMTiles payload to {target_uri}")
-            finally:
-                close_result = gdal.VSIFCloseL(target)
-            if close_result != 0:
-                raise RuntimeError(f"GDAL failed to close PMTiles target: {target_uri}")
-        return
-
-    target_path = Path(target_uri)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = target_path.with_name(f".{target_path.name}.{os.getpid()}.partial")
-    try:
-        shutil.copyfile(source_path, temporary_path)
-        os.replace(temporary_path, target_path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
-
-
 def vector_to_pmtiles(
     access_plan: Dict[str, Any],
     tile: Dict[str, Any],
@@ -467,31 +374,23 @@ def vector_to_pmtiles(
     """
     生成 ADDP PMTiles v3 矢量瓦片归档。
 
-    access_plan 只包含物理 URI 和对象存储发布信息；本算子不识别 ADDP locator。
+    access_plan 使用共享标准；本算子不识别 ADDP locator。
     """
-    if not isinstance(access_plan, dict):
-        raise ValueError("access_plan is required and must be an object")
+    access_plan = require_access_plan({"access_plan": access_plan})
+    if access_plan["target"]["kind"] != "file" or access_plan["target"]["format"] != "pmtiles":
+        raise ValueError("target must be a PMTiles file")
     if not isinstance(tile, dict):
         raise ValueError("tile is required and must be an object")
     options = dict(options or {})
-    source_plan = access_plan.get("source")
-    target_plan = access_plan.get("target")
-    if not isinstance(source_plan, dict):
-        raise ValueError("access_plan.source is required and must be an object")
-    if not isinstance(target_plan, dict):
-        raise ValueError("access_plan.target is required and must be an object")
-
-    source_uri = str(source_plan.get("root_uri") or "").strip()
-    if not source_uri:
-        raise ValueError("access_plan.source.root_uri is required")
-    target_uri = str(target_plan.get("archive_uri") or "").strip()
-    if not target_uri:
-        raise ValueError("access_plan.target.archive_uri is required")
-    target_env = target_plan.get("gdal_env") if isinstance(target_plan.get("gdal_env"), dict) else {}
-    source_env = source_plan.get("gdal_env") if isinstance(source_plan.get("gdal_env"), dict) else {}
+    source_plan = access_plan["source"]
+    source_uri, source_env = _vector_source_access(source_plan)
+    for key in ("min_zoom", "max_zoom"):
+        value = tile.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 24:
+            raise ValueError(f"tile.{key} must be an integer zoom between 0 and 24")
     primary_key = str(options.get("primary_key") or "").strip()
-    source_layer = _source_layer_name(source_plan, source_uri)
-    layer_name = str(options.get("layer_name") or source_layer or "layer").strip() or "layer"
+    attributes = options.get("attributes", [])
+    _build_vector_tile_ogr_sql("source", primary_key, attributes)
     min_zoom = int(tile.get("min_zoom") or 0)
     max_zoom = int(tile.get("max_zoom") or min_zoom)
     if max_zoom < min_zoom:
@@ -504,15 +403,16 @@ def vector_to_pmtiles(
 
     progress_plan = access_plan.get("progress_callback") if isinstance(access_plan.get("progress_callback"), dict) else {}
     emit = _progress_reporter(progress_plan)
-    cleanup_path_options = _set_path_specific_gdal_options([
-        (source_uri, source_env),
-        (target_uri, target_env),
-    ])
     started_at = perf_counter()
     work_dir = Path(tempfile.mkdtemp(prefix="addp-pmtiles-"))
     tile_dir = work_dir / "tiles"
     archive_path = work_dir / "result.pmtiles"
     try:
+        source_layer, source_fields, geometry_column = _vector_source_facts(source_uri, source_plan, source_env, source_srs)
+        selected_fields = list(dict.fromkeys(([primary_key] if primary_key else []) + attributes))
+        if any(field not in source_fields for field in selected_fields):
+            raise ValueError("selected attribute field is not present in vector source")
+        layer_name = str(options.get("layer_name") or source_layer).strip()
         _emit_progress(emit, "prepare", 0, 1, min_zoom, max_zoom)
         ogr_cmd = [
             "ogr2ogr",
@@ -521,6 +421,8 @@ def vector_to_pmtiles(
             "MVT",
             str(tile_dir),
             source_uri,
+            "-nln",
+            layer_name,
             "-dsco",
             f"MINZOOM={min_zoom}",
             "-dsco",
@@ -538,7 +440,7 @@ def vector_to_pmtiles(
             "-dsco",
             f"MAX_FEATURES={quality_options['max_features']}",
             "-sql",
-            _build_quick_view_ogr_sql(source_layer, primary_key),
+            _build_vector_tile_ogr_sql(source_layer, primary_key, attributes, geometry_column),
             "-dialect",
             "OGRSQL",
         ]
@@ -628,7 +530,7 @@ def vector_to_pmtiles(
             "format": "pbf",
             "type": "overlay",
             "version": "2",
-            "vector_layers": [{"id": layer_name, "fields": {}}],
+            "vector_layers": [{"id": layer_name, "fields": {field: ("Number" if source_fields[field] in {"Integer", "Integer64", "Real"} else "String") for field in selected_fields}}],
             "generator": "ADDP GeoPython Workflow",
         }
         header = {
@@ -653,7 +555,7 @@ def vector_to_pmtiles(
         with archive_path.open("rb") as archive_input:
             header_hash = hashlib.sha256(archive_input.read(127)).hexdigest()
         _emit_progress(emit, "publish", generated, generated, actual_max_zoom, max_zoom, overall_progress=95)
-        _publish_pmtiles_archive(archive_path, target_uri, target_env)
+        publish_target_file(archive_path, access_plan)
         processed = total_estimate
         duration = perf_counter() - started_at
         result = {
@@ -696,7 +598,6 @@ def vector_to_pmtiles(
         _emit_progress(emit, "complete", processed, total_estimate, actual_max_zoom, max_zoom, overall_progress=100)
         return result
     finally:
-        cleanup_path_options()
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
@@ -704,19 +605,19 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
     name="vector_to_pmtiles",
     type=OperatorType.GENERAL,
     category=OperatorCategory.VECTOR_OUTPUT,
-    description="PMTiles v3 矢量瓦片集生成",
+    description="矢量切片",
     brief_description="从空间数据生成单文件 PMTiles v3 矢量瓦片集",
     execution_modes=["workflow", "direct"],
     effects=["read", "write"],
-    overview="面向 Manager vector_tile_cache_generation 和 vector_tile_set_generation 的文件、对象来源 PMTiles 生成算子。Manager 负责 locator、源访问计划、目标存储和任务状态；GeoPython Workflow 负责 MVT 生成、PMTiles v3 封装和原子发布。PostgreSQL/PostGIS 表由 Manager 原生生成器处理。",
+    overview="从文件或对象生成 PMTiles v3 业务瓦片集或受管缓存；Develop、Manager 负责资源、授权和访问计划，运行时负责 MVT 生成与标准发布。默认仅几何，可显式保留属性字段。",
     params=[
         OperatorParam(
             name="access_plan",
             type="param",
             data_type="object",
             required=True,
-            description="Manager 解析后的向量瓦片访问计划",
-            notes="包含 source.root_uri/source.gdal_env、target.archive_uri/target.gdal_env、progress_callback 等技术访问参数。原始 ADDP locator 不由 Python 解析。",
+            description="调用方解析后的标准源和目标访问计划",
+            notes="使用 addp.workflow.access-plan/v1，source.access 和 target.access 分别授权；可附加执行期 progress_callback。",
         ),
         OperatorParam(
             name="tile",
@@ -732,7 +633,7 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
             data_type="object",
             required=False,
             description="生成选项",
-            notes="包含 geometry_column、layer_name 等。",
+            notes="包含 layer_name、primary_key 和显式属性字段数组 attributes；缺省不保留其他属性。",
         ),
     ],
     use_cases=[
@@ -740,7 +641,7 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
         "空间 data item 生成可长期治理和跨平台交换的 Business PMTiles。",
     ],
     notes=[
-        "该算子不识别 ADDP locator，只处理 Manager 传入的物理访问计划。",
+        "该算子不识别 ADDP locator，只处理调用方传入的标准访问计划。",
         "输出是一个 PMTiles v3 文件，不生成 ADDP 私有 sidecar manifest。",
         "MVT 生成依赖 GDAL/OGR 的 MVT driver。",
         "tile.extent 可使用源 CRS；算子按 tile.extent_srid/source_srs 转为 EPSG:4326 后计算瓦片范围。",
@@ -750,22 +651,10 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
         "operator": "vector_to_pmtiles",
         "params": {
             "access_plan": {
-                "source": {
-                    "root_uri": "/mnt/data/shp/farmland.shp",
-                    "gdal_env": {},
-                    "metadata": {"full_name": "shp/farmland.shp"},
-                },
-                "target": {
-                    "archive_uri": "/vsis3/manager/tenant_7/vector-tile-cache/fp.pmtiles",
-                    "gdal_env": {},
-                },
-                "progress_callback": {
-                    "endpoint": "http://manager:8081/api/v1/manager/executions/{execution_id}/events",
-                    "tenant_id": 7,
-                    "execution_id": "execution-uuid",
-                    "attempt": 1,
-                    "lease_token": "attempt-scoped-lease-token",
-                },
+                "schema_version": "addp.workflow.access-plan/v1",
+                "source": {"kind": "file", "format": "shapefile", "access": {"method": "mounted_path", "path": "/mnt/data/farmland.shp"}},
+                "target": {"kind": "file", "format": "pmtiles", "name": "farmland.pmtiles", "write_mode": "create",
+                           "access": {"method": "mounted_path", "path": "/mnt/results/farmland.pmtiles"}},
             },
             "tile": {
                 "min_zoom": 0,
@@ -774,7 +663,7 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
                 "extent_srid": 4326,
                 "source_srs": "EPSG:4326",
             },
-            "options": {"geometry_column": "geometry", "layer_name": "geometry"},
+            "options": {"layer_name": "farmland", "attributes": []},
         },
     },
 )

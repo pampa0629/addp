@@ -6,17 +6,67 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strings"
+	"net/http/httptest"
+	"net/url"
+
 	"testing"
 
-	"github.com/addp/common/engine/plugins/objectstore"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
 )
 
-func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *testing.T) {
+func TestManagerBusinessVectorTilesUseStandardPlan(t *testing.T) {
+	var captured map[string]interface{}
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/operators" {
+			writeVectorTileOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
+			return
+		}
+		var request struct {
+			Params map[string]interface{} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		captured = request.Params
+		_, _ = w.Write([]byte(`{"status":"success","result":{"archive_format":"pmtiles","header_hash":"verified"}}`))
+	}))
+	defer runtime.Close()
+	endpoint, _ := url.Parse(runtime.URL)
+	host, port, _ := net.SplitHostPort(endpoint.Host)
+	tenantID := uint(7)
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.Engine{ID: 9, TenantID: &tenantID, EngineType: "minio", LifecycleState: "active", ConnectionStatus: commonModels.EngineConnectionOnline,
+			ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "source:9000", "access_key": "source-key", "secret_key": "source-secret"}})
+	}))
+	defer system.Close()
+	executor := NewManagerVectorTileSetExecutor(newTestSystemClient(system.URL), recordingWorkflowLister{engines: []commonModels.Engine{{
+		ID: 99, EngineType: testRasterWorkflowEngineType, LifecycleState: "active", ConnectionStatus: commonModels.EngineConnectionOnline,
+		ConnectionInfo: commonModels.ConnectionInfo{"protocol": "http", "host": host, "port": port}, Capabilities: testRasterWorkflowCapabilities(t, testRasterWorkflowEngineType),
+	}}}, nil, "http://manager:8081", 0)
+	_, err := executor.GenerateVectorTileSet(managerExecutionLeaseContextForServiceTest("business-vector", 7), VectorTileSetExecutionRequest{
+		Task: &models.VectorTileSetTask{TenantID: 7}, ExecutionID: "business-vector", Config: VectorTileSetExecutionConfig{
+			Source:         tileCacheTaskTargetIdentity{EngineID: 9, SourceKind: "object", FullName: "source/roads.geojson", Locator: "addp://engine/9/path/source/roads.geojson?type=object&item_id=8"},
+			TargetEngineID: 9, TargetLocator: "addp://engine/9/path/results?type=bucket", TargetName: "roads.pmtiles", ProfileHash: "test",
+			Tile: commonModels.JSONMap{"min_zoom": 0, "max_zoom": 2, "extent": []float64{110, 20, 111, 21}, "extent_srid": 4326}, Options: commonModels.JSONMap{"layer_name": "roads"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := captured["access_plan"].(map[string]interface{})
+	target := plan["target"].(map[string]interface{})
+	access := target["access"].(map[string]interface{})
+	if plan["schema_version"] != "addp.workflow.access-plan/v1" || access["bucket"] != "results" || access["object"] != "roads.pmtiles" || target["write_mode"] != "create" {
+		t.Fatalf("business output plan = %#v", plan)
+	}
+}
+
+func TestManagerVectorTileCacheWorkflowExecutorUsesStandardIndependentObjectAccess(t *testing.T) {
 	var capturedParams map[string]interface{}
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,30 +183,19 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	sourcePlan := accessPlan["source"].(map[string]interface{})
 	targetPlan := accessPlan["target"].(map[string]interface{})
 	progress := accessPlan["progress_callback"].(map[string]interface{})
-	if sourcePlan["root_uri"] != "/vsis3/addp/gis/规划用地.shp" {
-		t.Fatalf("source root_uri = %#v, want /vsis3/addp/gis/规划用地.shp", sourcePlan["root_uri"])
+	if accessPlan["schema_version"] != "addp.workflow.access-plan/v1" || sourcePlan["format"] != "shapefile" {
+		t.Fatalf("invalid standard plan: %#v", accessPlan)
 	}
-	sourceEnv := sourcePlan["gdal_env"].(map[string]interface{})
-	if sourceEnv["AWS_S3_ENDPOINT"] != objectstore.NormalizeEndpoint("localhost:9002") ||
-		sourceEnv["AWS_ACCESS_KEY_ID"] != "source-ak" ||
-		sourceEnv["AWS_SECRET_ACCESS_KEY"] != "source-sk" ||
-		sourceEnv["AWS_VIRTUAL_HOSTING"] != "FALSE" ||
-		sourceEnv["AWS_HTTPS"] != "NO" {
-		t.Fatalf("source gdal_env = %#v, want source object store credentials", sourceEnv)
+	sourceAccess := sourcePlan["access"].(map[string]interface{})
+	if sourceAccess["method"] != "object_store" || sourceAccess["bucket"] != "addp" || sourceAccess["object"] != "gis/规划用地.shp" || sourceAccess["access_key"] != "source-ak" || sourceAccess["secret_key"] != "source-sk" {
+		t.Fatalf("source access = %#v", sourceAccess)
 	}
-	sourceMetadata := sourcePlan["metadata"].(map[string]interface{})
-	if sourceMetadata["access_method"] != "vsis3_object_storage" || sourceMetadata["engine_type"] != "s3" {
-		t.Fatalf("source metadata = %#v, want vsis3 object storage audit", sourceMetadata)
+	targetAccess := targetPlan["access"].(map[string]interface{})
+	if targetAccess["bucket"] != "manager" || targetAccess["object"] != "tenant_7/vector-tile-cache/fp-planning/profile-planning.pmtiles" || targetAccess["access_key"] != "manager-ak" || targetAccess["secret_key"] != "manager-sk" {
+		t.Fatalf("target access = %#v", targetAccess)
 	}
-	if strings.HasPrefix(sourcePlan["root_uri"].(string), "/vsicurl/") {
-		t.Fatalf("source root_uri must not use single-file presigned URL: %#v", sourcePlan["root_uri"])
-	}
-	if targetPlan["archive_uri"] != "/vsis3/manager/tenant_7/vector-tile-cache/fp-planning/profile-planning.pmtiles" {
-		t.Fatalf("target archive_uri = %#v", targetPlan["archive_uri"])
-	}
-	targetEnv := targetPlan["gdal_env"].(map[string]interface{})
-	if targetEnv["AWS_S3_ENDPOINT"] != "minio:9000" || targetEnv["AWS_ACCESS_KEY_ID"] != "manager-ak" || targetEnv["AWS_SECRET_ACCESS_KEY"] != "manager-sk" {
-		t.Fatalf("target gdal_env = %#v, want manager infra MinIO credentials", targetEnv)
+	if sourcePlan["root_uri"] != nil || sourcePlan["gdal_env"] != nil || targetPlan["archive_uri"] != nil || targetPlan["gdal_env"] != nil {
+		t.Fatal("legacy URI parameters exposed")
 	}
 	if progress["endpoint"] != "http://manager:8081/api/v1/manager/executions/mvt-exec-1/events" ||
 		progress["tenant_id"] != float64(7) ||
