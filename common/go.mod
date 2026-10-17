@@ -4,6 +4,7 @@ go 1.24.2
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
+	github.com/FalkorDB/falkordb-go/v2 v2.1.0
 	github.com/alexbrainman/odbc v0.0.0-20250601004241-49e6b2bc0cf0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210803070921-b358b509191a
@@ -54,11 +55,21 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/clipperhouse/displaywidth v0.6.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.1.3 // indirect
+	github.com/olekukonko/tablewriter v1.1.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

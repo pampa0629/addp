@@ -348,7 +348,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 | --- | --- |
 | 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、TiDB、Doris、ClickHouse、Spark SQL |
 | 动态 schema 记录集合型 | MongoDB |
-| 图数据库 | Neo4j |
+| 图数据库 | Neo4j、FalkorDB |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |
 | 消息流 | Kafka（common 插件与 Transfer keyed JSON -> PostgreSQL/MySQL continuous v1 已实现，Console Wizard 已开放该单一路线） |

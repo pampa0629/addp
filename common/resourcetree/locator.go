@@ -2,6 +2,7 @@ package resourcetree
 
 import (
 	"fmt"
+	"github.com/addp/common/engine/plugin"
 	"net/url"
 	"strconv"
 	"strings"
@@ -95,6 +96,16 @@ func ParseFullNamePath(engineType, resourceType, fullName string) []string {
 	}
 	if strings.EqualFold(strings.TrimSpace(resourceType), string(TypeTopic)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeIndex)) || strings.EqualFold(strings.TrimSpace(resourceType), string(TypeKeyspace)) {
 		return []string{fullName}
+	}
+	// A server model with one leaf stores an opaque native name. Dots and
+	// slashes inside that name are not namespace separators.
+	if registered, err := plugin.Get(engineType); err == nil {
+		if provider, ok := registered.(plugin.EngineCatalogModelProvider); ok {
+			model := provider.EngineCatalogModel()
+			if model.RootTerm == plugin.EngineCatalogTermServer && len(model.Levels) == 1 && model.Levels[0].Role == plugin.EngineCatalogRoleLeaf && resourceTypeMatchesLevel(ResourceType(resourceType), model.Levels[0]) {
+				return []string{fullName}
+			}
+		}
 	}
 	if UsesSlashFullName(engineType, resourceType) {
 		return splitLocatorSlashPath(fullName)

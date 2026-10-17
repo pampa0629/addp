@@ -186,6 +186,7 @@ type EngineCatalogLevelSpec struct {
 | MySQL / Doris / ClickHouse | `server -> database -> table/view` |
 | MongoDB | `server -> database -> collection` |
 | Neo4j | `server -> database -> graph` |
+| FalkorDB | `server -> graph`；Redis database 固定在连接身份中 |
 | S3 / MinIO | `service -> bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
 | Kafka | `service -> topic` |

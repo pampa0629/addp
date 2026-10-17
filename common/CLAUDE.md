@@ -100,3 +100,6 @@ ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data
 `runtimelog` 接收器将不可变模块／角色／节点／实例身份、首次采集时间和最后观测时间写入受控 status 元数据（UTC 微秒精度）；`DiscoverSources` 独立发现历史来源，扫描上限和错误明确标为不完整，`addp.log-sources/v2` 仅发送封闭原因码和实际发现次数，不发送文件路径或错误原文。`runtime-log observe` 向 System 上报目录，向 Monitor 上报健康，独立发送且不上传正文；不能从 EOF 推断业务退出结果。
 
 查询保护引擎范围排除采用 Projection v4：Security 在发布前核对 Enrollment 的引擎 ID／完整名称前像与 DataItem 指纹，Owner 由投影派生范围索引。Owner 首次同步及旧协议重放须消费到 `has_more=false` 后持久确认 initialized，期间拒绝读取；重放只在最后一页 ack，保持 Security 确认游标单调。Neo4j 用标准 openCypher 9 AST、物理数据库与内置函数事实证明本地只读范围，模板和正式图查询执行同一不可变计划；同引擎纳管而精确 ReadSet 未覆盖时仍拒绝。验证使用对应 Go 模块门禁、Common／Security／Develop PostgreSQL 门禁和 `make test-common-neo4j`，新增 Compose 门禁已接入标准自动发现与 T2 CI。
+
+
+业务 `falkordb` 插件与 Ontology Infra 分离，使用单端点、连接固定 Redis database 和 `server -> graph` 目录，完整 graph key 是 leaf 名称。共享 openCypher 9 AST 唯一位于 `common/query/cypherread`；Neo4j 保留原生物理数据库／内置函数证明，FalkorDB 在已认证 4.20.6 的原生函数与 GRAPH.RO_QUERY 边界内证明精确目标图。正式查询消费 PreparedGraphQuery 与 Projection v4，不由 Develop 按引擎类型跳过保护。`make test-common-falkordb-unit` 和 `make test-common-falkordb` 分别承接 T1 和独占真实 Common／Meta／Develop T2；两者均不操作已有业务图或 Ontology 投影。Graph 领域适配仍须完成全文索引管理权确认，不将基础插件验收冒充 Graph 完整支持。

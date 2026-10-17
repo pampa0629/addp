@@ -36,6 +36,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.69.0 // indirect
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0 // indirect
+	github.com/FalkorDB/falkordb-go/v2 v2.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
@@ -53,6 +54,9 @@ require (
 	github.com/bytedance/sonic/loader v0.4.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/clipperhouse/displaywidth v0.6.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudprivacylabs/opencypher v1.0.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cristalhq/jwt/v4 v4.0.2 // indirect
@@ -66,6 +70,7 @@ require (
 	github.com/elastic/go-elasticsearch/v9 v9.3.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/emmansun/gmsm v0.34.1 // indirect
+	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
@@ -115,7 +120,9 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
 	github.com/minio/crc64nvme v1.1.0 // indirect
@@ -129,6 +136,10 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.1.3 // indirect
+	github.com/olekukonko/tablewriter v1.1.2 // indirect
 	github.com/openzipkin/zipkin-go v0.4.3 // indirect
 	github.com/ory/go-acc v0.2.9-0.20230103102148-6b1c9a70dbbe // indirect
 	github.com/ory/go-convenience v0.1.0 // indirect

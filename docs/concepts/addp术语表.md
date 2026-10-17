@@ -675,6 +675,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| business graph engine | 业务图引擎 | 由 System 登记、供用户查询或 Graph 知识图谱使用的图数据库实例。 | Neo4j 与 FalkorDB 是不同 engine_type；Ontology 私有 Infra FalkorDB 不因产品相同而变成业务 Engine。 |
 | ontology entity type | 本体实体类型 | Graph 模块中对一类实体的概念定义，包含属性、约束、继承关系和图引擎执行映射。 | 不等同于 Neo4j label；具体执行映射由 `NodeLabels` 表达。 |
 | node display property | 节点展示字段 | 本体实体类型指定的字符串属性，用作图谱节点标题、搜索结果标题和图分析节点名称。 | 可引用本类型或继承属性，并自动纳入该实体类型的全文搜索索引。 |
 

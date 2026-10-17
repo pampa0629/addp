@@ -557,3 +557,10 @@ Redis 数据集的 `keyspace` 目录术语与 `key_value` 数据类型保持分�
 ## Elasticsearch 索引路径
 
 Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为空；index 的 `full_name` 等于完整索引名。索引名中的 `.` 不分层，ResourceLocator 只有一个业务路径段，例如 `addp://engine/31/path/orders.v1?type=index`。连接端点和认证主体属于 ConnectionSpec，不进入数据路径。首版只列出当前身份可见的普通、打开、非隐藏索引；别名、data stream、隐藏/系统索引不投影为普通索引。解析明确的 index 路径必须验证它是具体索引，不允许别名或通配符扩大读取范围。
+
+
+## FalkorDB 业务图引擎
+
+`falkordb` 使用 `server(root) -> graph` 目录。一个 Engine Instance 的 `database` 固定一个 Redis 逻辑数据库，属于连接身份，不进入业务路径；原生 graph key 是图 leaf 的名称，`full_name` 为完整 graph key，不附加虚构的 database 或 graph 后缀。目录由 GRAPH.LIST 枚举，ResolvePath 精确验证目标 key 的 graph 原生类型；不存在或无权限明确失败，不创建图。不同 graph key 分别生成 DataItem 指纹，label、relationship type 和 endpoint pattern 只作为 graph facts。
+
+业务实例与 Ontology 私有 Infra 分离：System 注册使用用户提供的业务连接；不读取 `INFRA_FALKORDB_*`，不枚举或改写 Ontology 投影。正式图查询必须指定 graph leaf 的 EngineCatalogPath，不能静默选择某个图。

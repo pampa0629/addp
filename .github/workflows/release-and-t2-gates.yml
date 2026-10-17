@@ -1011,6 +1011,34 @@ jobs:
           gate: Neo4j local read scope and graph contracts
           status: ${{ job.status }}
 
+  common-falkordb:
+    name: FalkorDB business graph and prepared query contracts
+    needs: selection
+    if: needs.selection.outputs.business == 'true' || needs.selection.outputs.meta == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run FalkorDB gate
+        run: make test-common-falkordb
+
+      - name: Summarize FalkorDB gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: FalkorDB business graph and prepared query contracts
+          status: ${{ job.status }}
+
   common-elasticsearch:
     name: Elasticsearch 9.5.4 and distributed Spark contracts
     needs: selection

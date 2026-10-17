@@ -112,6 +112,9 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 				metaattr.ApplyTableItemAttributes(attrs, table)
 				rowCount, sizeBytes = table.RowCount, table.SizeBytes
 			}
+			if graph := plugin.EngineCatalogFactsGraphInfo(facts); graph != nil {
+				metaattr.ApplyGraphItemAttributes(attrs, graph)
+			}
 			if facts != nil && facts.Keyspace != nil {
 				metaattr.SetItem(attrs, "data_type", string(datatype.KeyValue))
 			}

@@ -24,19 +24,30 @@ require (
 )
 
 require (
+	github.com/FalkorDB/falkordb-go/v2 v2.1.0 // indirect
 	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210803070921-b358b509191a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/clipperhouse/displaywidth v0.6.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudprivacylabs/opencypher v1.0.0 // indirect
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
 	github.com/elastic/go-elasticsearch/v9 v9.3.0 // indirect
 	github.com/emmansun/gmsm v0.34.1 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogama/flatgeobuf v1.0.1 // indirect
 	github.com/jonas-p/go-shp v0.1.1 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.1.3 // indirect
+	github.com/olekukonko/tablewriter v1.1.2 // indirect
 	github.com/parquet-go/parquet-go v0.25.1 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect

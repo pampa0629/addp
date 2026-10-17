@@ -179,13 +179,22 @@
 
       <el-card v-if="!editing && activeDetailTab === 'professional'" shadow="never" class="owner-card">
         <template #header><strong>{{ t('catalog.entry.sourceFacts') }}</strong></template>
-        <el-descriptions :column="2" border>
+        <el-descriptions class="source-facts-descriptions" :column="2" border>
           <el-descriptions-item :label="t('catalog.entry.sourceModule')">{{ entry.source.source_module }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entries.sourceStatus')">{{ t(`catalog.status.source.${entry.source.source_status}`) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><span class="break-all">{{ entry.source.source_identity }}</span></el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><el-tooltip :content="entry.source.source_identity" placement="top"><span class="source-identity" tabindex="0">{{ entry.source.source_identity }}</span></el-tooltip></el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entry.observedAt')">{{ formatDate(entry.source.observed_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entries.engineId')">{{ entry.source.observed_snapshot?.engine_id ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.metaItemId')">{{ entry.source.observed_snapshot?.item_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entries.sourceEngine')">
+            <div class="break-all">{{ sourceEngineName }}</div>
+            <el-text v-if="entry.source_engine?.status === 'current' && entry.source_engine.engine_type" size="small">{{ entry.source_engine.engine_type }}</el-text>
+            <div><el-text type="info" size="small">{{ t('catalog.entries.engineId') }}: {{ entry.source.observed_snapshot?.engine_id ?? '-' }}</el-text></div>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.sourceDataItem')">
+            <div class="break-all">{{ entry.source.observed_snapshot?.name || t('catalog.entry.sourceNameUnavailable') }}</div>
+            <el-text v-if="entry.source.observed_snapshot?.item_type" size="small">{{ entry.source.observed_snapshot.item_type }}</el-text>
+            <div><el-text type="info" size="small">{{ t('catalog.entry.metaItemId') }}: {{ entry.source.observed_snapshot?.item_id ?? '-' }}</el-text></div>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.sourceFullName')" :span="2"><span class="break-all">{{ entry.source.observed_snapshot?.full_name || '-' }}</span></el-descriptions-item>
           <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.scannedDepth')">{{ entry.source.observed_snapshot?.scanned_depth || '-' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
@@ -581,6 +590,7 @@ import SharingPanel from '../components/SharingPanel.vue'
 import { canonicalSharingUUID, hasInvalidSharingRouteIdentity } from '../utils/sharingConfirmation'
 import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, listDomainOverviews, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance, transferEntryResponsibilities } from '../api/catalog'
 import client from '../api/client'
+import { getMeasurementUnit, listMetricCategories } from '../api/standard'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDataDictionaryExport } from '../utils/dataDictionaryExport'
@@ -687,6 +697,9 @@ const ownerDomainID = computed(() => {
   return String(summary.domain_id || '')
 })
 const ownerDomain = ref(null)
+const ownerCategory = ref(null)
+const ownerUnit = ref(null)
+let ownerReferencesRequestVersion = 0
 const ownerDomainState = ref('idle')
 let ownerDomainRequestVersion = 0
 const primaryDomainName = computed(() => {
@@ -709,6 +722,11 @@ const isDataDictionaryEntry = computed(() => (
   entry.value?.source?.source_status === 'active'
 ))
 const ownerModuleName = computed(() => professionalOwnerName(entry.value?.source?.source_module))
+const sourceEngineName = computed(() => {
+  const engine = entry.value?.source_engine
+  if (engine?.status === 'current' && engine.name) return engine.name
+  return t(engine?.status === 'missing' ? 'catalog.entry.sourceEngineMissing' : 'catalog.entry.sourceEngineUnavailable')
+})
 const ownerDetailUrl = computed(() => resolveConsoleRouteUrl(entry.value?.source_resolution?.detail_path || ''))
 const sourceResolutionText = computed(() => {
   const status = entry.value?.source_resolution?.status || 'unavailable'
@@ -743,7 +761,17 @@ const ownerSummaryItems = computed(() => {
   ]
   return fields
     .filter(([key]) => summary[key] !== null && summary[key] !== undefined && String(summary[key]).trim() !== '')
-    .map(([key, label]) => ({ key, label: t(`catalog.entry.${label}`, { module: ownerModuleName.value }), value: summary[key] }))
+    .map(([key, label]) => {
+      let value = summary[key]
+      if (key === 'domain_id') value = primaryDomainName.value
+      if (key === 'category_id') value = ownerCategory.value?.name || t('catalog.entry.referenceNameUnavailable')
+      if (key === 'unit_id') value = ownerUnit.value?.name || t('catalog.entry.referenceNameUnavailable')
+      if (['engine_id', 'runtime_engine_id'].includes(key)) {
+        const reference = entry.value?.source_resolution?.engine_references?.[key]
+        value = reference?.status === 'current' ? [reference.name, reference.engine_type].filter(Boolean).join(' · ') : t(reference?.status === 'missing' ? 'catalog.entry.sourceEngineMissing' : 'catalog.entry.sourceEngineUnavailable')
+      }
+      return { key, label: t(`catalog.entry.${label}`, { module: ownerModuleName.value }), value }
+    })
 })
 const qualityStatusText = computed(() => t(`catalog.quality.${entry.value?.quality_summary?.status || 'unavailable'}`))
 const qualityAlertType = computed(() => {
@@ -1187,12 +1215,12 @@ function professionalRelationDetails(edge) {
   if (edge.name) details.push(edge.name)
   if (edge.source_component) {
     details.push(t('catalog.professionalRelations.sourceComponent', {
-      value: edge.source_component.name || edge.source_component.resource_id
+      value: edge.source_component.name || t('catalog.entry.referenceNameUnavailable')
     }))
   }
   if (edge.target_component) {
     details.push(t('catalog.professionalRelations.targetComponent', {
-      value: edge.target_component.name || edge.target_component.resource_id
+      value: edge.target_component.name || t('catalog.entry.referenceNameUnavailable')
     }))
   }
   if (edge.coefficient != null) {
@@ -1346,6 +1374,21 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+watch(() => [entry.value, authStore.authContext?.principal?.id, authStore.authContext?.context?.tenant_id,
+  authStore.hasPermission('standard.metric.read'), authStore.hasPermission('standard.unit.read')], async () => {
+  const version = ++ownerReferencesRequestVersion
+  ownerCategory.value = null
+  ownerUnit.value = null
+  if (entry.value?.source?.source_module !== 'standard') return
+  const summary = entry.value?.source_resolution?.summary || entry.value?.source?.observed_snapshot || {}
+  const results = await Promise.allSettled([
+    summary.category_id && authStore.hasPermission('standard.metric.read') ? listMetricCategories() : Promise.resolve([]),
+    summary.unit_id && authStore.hasPermission('standard.unit.read') ? getMeasurementUnit(summary.unit_id) : Promise.resolve(null)
+  ])
+  if (version !== ownerReferencesRequestVersion) return
+  if (results[0].status === 'fulfilled') ownerCategory.value = results[0].value.find(item => String(item.id) === String(summary.category_id)) || null
+  if (results[1].status === 'fulfilled' && String(results[1].value?.id) === String(summary.unit_id)) ownerUnit.value = results[1].value
+}, { immediate: true })
 watch(entry, async () => {
   const version = ++ownerDomainRequestVersion
   const domainID = ownerDomainID.value
@@ -1393,6 +1436,10 @@ watch(
 .detail-grid { row-gap: 16px; margin-bottom: 16px; }
 .detail-card { height: 100%; }
 .break-all { overflow-wrap: anywhere; }
+.source-facts-descriptions :deep(.el-descriptions__table) { width: 100%; table-layout: fixed; }
+.source-facts-descriptions :deep(.el-descriptions__label) { width: 140px; }
+.source-facts-descriptions :deep(.el-descriptions__content) { overflow-wrap: anywhere; }
+.source-identity { display: block; max-width: min(100%, 24ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .component-card { margin-bottom: 16px; }
 .owner-card { margin-bottom: 16px; }
 .professional-relation-card { margin-bottom: 16px; }

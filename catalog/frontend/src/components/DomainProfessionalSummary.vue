@@ -93,7 +93,7 @@
           <template v-else-if="section.status === 'ready'">
             <ul class="definition-list">
               <li v-for="item in section.items" :key="item.id" class="definition-item">
-                <span class="definition-name">{{ item.name }}</span>
+                <span class="definition-name">{{ item.name || t('catalog.entries.unnamed') }}</span>
                 <span v-if="item.code && item.code !== item.name" class="definition-code">{{ item.code }}</span>
               </li>
             </ul>

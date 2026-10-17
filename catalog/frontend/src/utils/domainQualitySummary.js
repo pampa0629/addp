@@ -16,7 +16,7 @@ export function domainQualityQuery(domainId, key) {
 export function domainQualityDisplay(item, key) {
   if (key === 'issues') {
     const target = [item?.table_name, item?.column_name].filter(Boolean).join('.')
-    return { id: item?.id, name: target || item?.type || String(item?.id || ''), code: item?.type || '' }
+    return { id: item?.id, name: target || item?.type || '', code: item?.type || '' }
   }
   return { id: item?.id, name: item?.name || item?.code || '', code: item?.code || '' }
 }

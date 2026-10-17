@@ -1,0 +1,8 @@
+services:
+  falkordb:
+    extends:
+      file: ../infra/falkordb.yml
+      service: falkordb
+    ports:
+      - "127.0.0.1::6379"
+    restart: "no"

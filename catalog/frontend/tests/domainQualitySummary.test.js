@@ -15,6 +15,7 @@ describe('domain-owned Quality summary', () => {
   it('uses owner labels without treating issue targets as Catalog resource identity', () => {
     expect(domainQualityDisplay({ id: 1, name: 'Check participation', code: 'check_participation' }, 'plans')).toEqual({ id: 1, name: 'Check participation', code: 'check_participation' })
     expect(domainQualityDisplay({ id: 2, table_name: 'activities', column_name: 'member_id', type: 'not_null' }, 'issues')).toEqual({ id: 2, name: 'activities.member_id', code: 'not_null' })
+    expect(domainQualityDisplay({ id: 33 }, 'issues')).toEqual({ id: 33, name: '', code: '' })
   })
 
   it('does not call a professional owner when read permission is absent', async () => {

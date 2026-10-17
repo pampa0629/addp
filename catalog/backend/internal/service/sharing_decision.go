@@ -45,6 +45,7 @@ type SharingDecisionTarget struct {
 
 type SharingDecisionResult struct {
 	models.SharingDecision
+	SharingRecipientDisplay
 	Target SharingDecisionTarget `json:"target"`
 }
 
@@ -172,7 +173,17 @@ func (s *EntryService) GetSharingDecision(ctx context.Context, tenantID int64, a
 	if err != nil {
 		return nil, err
 	}
-	return sharingDecisionResult(row)
+	result, err := sharingDecisionResult(row)
+	if err != nil {
+		return nil, err
+	}
+	result.SharingRecipientDisplay = s.resolveSharingRecipientDisplays(ctx, tenantID, []commonClient.SystemCatalogReference{{SubjectType: row.RecipientType, ID: row.RecipientID}})[0]
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+		return sharingBasisReadError(local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner).Where("id = ?", decisionID).Take(&row).Error)
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // History review is distinct from a new confirmation or fulfillment command.
@@ -228,7 +239,8 @@ func (s *EntryService) ListSharingDecisions(ctx context.Context, tenantID int64,
 	}
 	rows := make([]SharingDecisionResult, 0)
 	var total int64
-	err = s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, func(local *EntryService, owner bool) error {
+	read := func(local *EntryService, owner bool) error {
+		rows = make([]SharingDecisionResult, 0)
 		query := func() *gorm.DB { return local.sharingHistoryQuery(ctx, tenantID, entryID, principal, owner) }
 		if err := query().Count(&total).Error; err != nil {
 			return err
@@ -245,8 +257,29 @@ func (s *EntryService) ListSharingDecisions(ctx context.Context, tenantID int64,
 			rows = append(rows, *result)
 		}
 		return nil
-	})
-	return rows, total, err
+	}
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, read); err != nil {
+		return nil, 0, err
+	}
+	refs := make([]commonClient.SystemCatalogReference, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, commonClient.SystemCatalogReference{SubjectType: row.RecipientType, ID: row.RecipientID})
+	}
+	labels := s.resolveSharingRecipientDisplays(ctx, tenantID, refs)
+	before, beforeTotal := rows, total
+	if err := s.readSharingHistorySnapshot(ctx, tenantID, access, entryID, auth, read); err != nil {
+		return nil, 0, err
+	}
+	if len(rows) != len(before) || total != beforeTotal {
+		return nil, 0, ErrSharingDecisionConflict
+	}
+	for i := range rows {
+		if rows[i].ID != before[i].ID {
+			return nil, 0, ErrSharingDecisionConflict
+		}
+		rows[i].SharingRecipientDisplay = labels[i]
+	}
+	return rows, total, nil
 }
 
 func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64, access EntryAccess, entryID uuid.UUID, input SharingDecisionInput, auth authorization.AuthContext) (*SharingDecisionResult, bool, error) {
@@ -278,6 +311,9 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 			return nil, false, ErrSharingDecisionConflict
 		}
 		result, err := sharingDecisionResult(existing)
+		if err == nil {
+			result.SharingRecipientDisplay = s.resolveSharingRecipientDisplays(ctx, tenantID, []commonClient.SystemCatalogReference{{SubjectType: existing.RecipientType, ID: existing.RecipientID}})[0]
+		}
 		return result, false, err
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -422,6 +458,9 @@ func (s *EntryService) CreateSharingDecision(ctx context.Context, tenantID int64
 		return nil, false, err
 	}
 	result, err := sharingDecisionResult(decision)
+	if err == nil {
+		result.SharingRecipientDisplay = s.resolveSharingRecipientDisplays(ctx, tenantID, []commonClient.SystemCatalogReference{{SubjectType: decision.RecipientType, ID: decision.RecipientID}})[0]
+	}
 	return result, created, err
 }
 

@@ -41,8 +41,8 @@ func TestCypherFunctionsComeFromAST(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(proof.functions, []string{"apoc.load`er", "custom.fetch", "type"}) {
-		t.Fatalf("functions=%v", proof.functions)
+	if !reflect.DeepEqual(proof.Functions, []string{"apoc.load`er", "custom.fetch", "type"}) {
+		t.Fatalf("functions=%v", proof.Functions)
 	}
 }
 
@@ -52,8 +52,8 @@ func TestCypherProofUsesStatementTokenSpan(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if proof.statement != "MATCH (n) RETURN n" {
-			t.Fatalf("statement=%q", proof.statement)
+		if proof.Statement != "MATCH (n) RETURN n" {
+			t.Fatalf("statement=%q", proof.Statement)
 		}
 	}
 }

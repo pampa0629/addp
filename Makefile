@@ -343,6 +343,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-tidb
 	@$(MAKE) test-common-elasticsearch
 	@$(MAKE) test-common-neo4j
+	@$(MAKE) test-common-falkordb
 	@$(MAKE) test-common-hdfs
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
@@ -970,3 +971,11 @@ test-highgo-online-runner: ## 验证瀚高 Online 场景、普通身份、物理
 .PHONY: test-common-neo4j
 test-common-neo4j: ## 独占 Neo4j 验证只读范围证明、图结果与拒绝边界
 	@bash scripts/test/common-neo4j-gate.sh
+
+
+.PHONY: test-common-falkordb-unit test-common-falkordb
+test-common-falkordb-unit: ## 图引擎契约、共享 Cypher AST 与 FalkorDB 查询边界 T1
+	@cd common && GOWORK=off go test ./query/cypherread ./resourcetree ./engine/plugins/neo4j ./engine/plugins/falkordb
+
+test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保护边界和结果
+	@bash scripts/test/common-falkordb-gate.sh

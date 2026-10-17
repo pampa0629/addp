@@ -877,7 +877,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回目录条目、当前来源绑定和组件；映射的数据元名称与修订号按固定修订从 Standard 动态解析，失败时只标记展示摘要不可用而保留映射事实；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; mapping element names and revision numbers are resolved dynamically from pinned Standard revisions, and resolution failures mark only the display summary unavailable; catalog visibility does not grant data content access",
+                "description": "返回目录条目、当前来源绑定和组件；Meta 来源引擎的名称和类型从 System 动态解析，状态区分 current、missing 和 unavailable；映射的数据元名称与修订号按固定修订从 Standard 动态解析，解析失败只影响展示摘要；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; Meta source engine names and types are resolved dynamically from System with current, missing, or unavailable status; mapping element names and revision numbers are resolved from pinned Standard revisions; resolution failures affect only display summaries; catalog visibility does not grant data content access",
                 "produces": [
                     "application/json"
                 ],
@@ -4976,6 +4976,9 @@ const docTemplate = `{
                 "source": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_models.SourceBinding"
                 },
+                "source_engine": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceEngineReference"
+                },
                 "source_resolution": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceResolution"
                 },
@@ -5556,9 +5559,23 @@ const docTemplate = `{
                 "reason": {
                     "type": "string"
                 },
+                "recipient_code": {
+                    "type": "string"
+                },
                 "recipient_id": {
                     "type": "string",
                     "example": ""
+                },
+                "recipient_label_status": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "not_found",
+                        "unavailable"
+                    ]
+                },
+                "recipient_name": {
+                    "type": "string"
                 },
                 "recipient_type": {
                     "type": "string"
@@ -5744,6 +5761,31 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.SourceEngineReference": {
+            "type": "object",
+            "properties": {
+                "engine_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "current",
+                        "missing",
+                        "unavailable"
+                    ]
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.SourceEntryResolution": {
             "type": "object",
             "properties": {
@@ -5797,6 +5839,12 @@ const docTemplate = `{
             "properties": {
                 "detail_path": {
                     "type": "string"
+                },
+                "engine_references": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceEngineReference"
+                    }
                 },
                 "last_observed_at": {
                     "type": "string"

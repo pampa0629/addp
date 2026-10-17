@@ -1028,3 +1028,12 @@ ES PIT 打开前后核对具体索引的原生 `index.uuid`，并核对每条命
 Mapping 不声明 `_source` 字段的单值/数组基数，`nested` 也不直接视为完整数组结构证明。首版字段保护复用现有结构指纹校验；不能由 Mapping 证明的数组组件、未映射字段及运行时结构不匹配继续按既有保护门禁拒绝，不能借采样或猜测绕过。
 
 `PreparedGraphQueryProvider.PrepareGraphQuery` 返回 `PreparedGraphQuery`，共享 `QueryReadPlan` 的 Analysis / EngineReadScope / ReadSet，并由一次性的 `ExecuteGraph` 返回原有 GraphQueryResult。Develop 正式图查询和共享只读图桥接只执行该计划；原有一般 GraphQueryProvider 保留给已授权图原生操作，不能成为查询工作台的保护旁路。Neo4j 支持范围为 openCypher 9 中可证明的本地只读子集，未覆盖语法返回 `local_read_unsupported`，不以字符串黑名单补充解析。
+
+
+### FalkorDB 业务图查询
+
+FalkorDB 插件声明 `engine_family=graph`、原生 `server -> graph` Catalog、Catalog/Facts、Cypher QueryRuntime、GraphSample、GraphQuery 与 PreparedGraphQuery 能力。普通查询和图查询分别保持现有结果契约，均冻结查询、参数、连接和显式目标图。Develop 沿已有 preflight/execution/GraphResultView 路径消费，不增加 FalkorDB 私有查询 API。
+
+openCypher 9 的语法分析在 Common 共用实现，Neo4j 继续用本引擎的物理数据库及内置函数事实验证。FalkorDB 通过单端点 standalone、固定 Redis database、显式 graph key、已审查的本地内置函数集合和 GRAPH.RO_QUERY 建立实例内只读范围。过程、UDF、外部数据导入、额外语句及未覆盖语法拒绝，不能仅凭只读命令声明范围完整。参数使用协议的 CYPHER 参数头编码，保持类型并严格校验名称和值，不替换查询里的参数引用。
+
+首期查询只声明读取。共享 Projection v4 门禁依同一 PreparedGraphQuery 的 EngineReadScope/ReadSet 判断保护；同步未完成、证明未知或命中不具备图字段保护的纳管目标时拒绝，不恢复租户级一刀切或按引擎类型跳过保护。

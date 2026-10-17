@@ -5,6 +5,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/dameng"
 	_ "github.com/addp/common/engine/plugins/doris"
 	_ "github.com/addp/common/engine/plugins/elasticsearch"
+	_ "github.com/addp/common/engine/plugins/falkordb"
 	_ "github.com/addp/common/engine/plugins/hdfs"
 	_ "github.com/addp/common/engine/plugins/highgo"
 	_ "github.com/addp/common/engine/plugins/kafka"

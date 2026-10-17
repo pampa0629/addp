@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ type EntryDetail struct {
 	DisplayName          string                       `json:"display_name"`
 	RecommendedSuccessor *EntrySummary                `json:"recommended_successor,omitempty"`
 	Source               *models.SourceBinding        `json:"source,omitempty"`
+	SourceEngine         *SourceEngineReference       `json:"source_engine,omitempty"`
 	Components           []models.Component           `json:"components"`
 	SemanticLinks        []models.SemanticAssociation `json:"semantic_links"`
 	Responsibilities     []models.Responsibility      `json:"responsibilities"`
@@ -89,6 +91,22 @@ type QualitySummary struct {
 	DetailPath          string     `json:"detail_path,omitempty"`
 }
 
+// SourceEngineReference is a transient System-owned display reference.
+type SourceEngineReference struct {
+	Status         string `json:"status" enums:"current,missing,unavailable"`
+	ID             string `json:"id"`
+	Name           string `json:"name,omitempty"`
+	EngineType     string `json:"engine_type,omitempty"`
+	LifecycleState string `json:"lifecycle_state,omitempty"`
+}
+
+func (s *EntryService) resolveSourceEngine(ctx context.Context, tenantID int64, source models.SourceBinding) *SourceEngineReference {
+	if source.SourceModule != models.SourceModuleMeta {
+		return nil
+	}
+	return s.resolveSummaryEngineReferences(ctx, tenantID, map[string]any{"engine_id": source.ObservedSnapshot["engine_id"]})["engine_id"]
+}
+
 type QualitySummaryResolver interface {
 	ResolveCatalogSummaries(context.Context, int64, []commonClient.QualityCatalogSummaryReference) ([]commonClient.QualityCatalogSummaryResolution, error)
 }
@@ -111,13 +129,14 @@ func (r *qualityClientSummaryResolver) ResolveCatalogSummaries(ctx context.Conte
 }
 
 type SourceResolution struct {
-	Status         string         `json:"status"`
-	OwnerStatus    string         `json:"owner_status,omitempty"`
-	OwnerVersion   int64          `json:"owner_version,omitempty"`
-	Summary        map[string]any `json:"summary,omitempty"`
-	DetailPath     string         `json:"detail_path,omitempty"`
-	ResolvedAt     *time.Time     `json:"resolved_at,omitempty"`
-	LastObservedAt time.Time      `json:"last_observed_at"`
+	Status           string                            `json:"status"`
+	OwnerStatus      string                            `json:"owner_status,omitempty"`
+	OwnerVersion     int64                             `json:"owner_version,omitempty"`
+	Summary          map[string]any                    `json:"summary,omitempty"`
+	DetailPath       string                            `json:"detail_path,omitempty"`
+	ResolvedAt       *time.Time                        `json:"resolved_at,omitempty"`
+	LastObservedAt   time.Time                         `json:"last_observed_at"`
+	EngineReferences map[string]*SourceEngineReference `json:"engine_references,omitempty"`
 }
 
 type ProfessionalSourceReference struct {
@@ -557,6 +576,7 @@ func (s *EntryService) Get(ctx context.Context, tenantID int64, access EntryAcce
 	}
 	detail := &EntryDetail{
 		Entry: entry, DisplayName: displayName, Source: &source, Components: components,
+		SourceEngine:  s.resolveSourceEngine(ctx, tenantID, source),
 		SemanticLinks: semanticLinks, Responsibilities: responsibilities,
 		StandardMappings: s.resolveStandardMappingDetails(ctx, tenantID, standardMappings),
 	}
@@ -666,9 +686,52 @@ func (s *EntryService) resolveProfessionalSource(ctx context.Context, tenantID i
 	resolution.OwnerStatus = result.Status
 	resolution.OwnerVersion = result.Version
 	resolution.Summary = result.Summary
+	resolution.EngineReferences = s.resolveSummaryEngineReferences(ctx, tenantID, result.Summary)
 	resolution.DetailPath = result.DetailPath
 	resolution.ResolvedAt = &now
 	return resolution
+}
+
+func (s *EntryService) resolveSummaryEngineReferences(ctx context.Context, tenantID int64, summary map[string]any) map[string]*SourceEngineReference {
+	references := make(map[string]*SourceEngineReference)
+	ids := make([]int64, 0, 2)
+	for _, field := range []string{"engine_id", "runtime_engine_id"} {
+		id, ok := numericInt64(summary[field])
+		if value, isString := summary[field].(string); isString {
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			id, ok = parsed, err == nil && parsed > 0 && strconv.FormatInt(parsed, 10) == value
+		}
+		if !ok || id <= 0 {
+			continue
+		}
+		references[field] = &SourceEngineReference{Status: "unavailable", ID: strconv.FormatInt(id, 10)}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 || s.engine == nil {
+		return references
+	}
+	resolved, err := s.engine.ResolveEngineReferences(ctx, tenantID, ids)
+	if err != nil || len(resolved) != len(ids) {
+		return references
+	}
+	for i, result := range resolved {
+		if result.ID != ids[i] {
+			return references
+		}
+	}
+	for _, ref := range references {
+		for _, result := range resolved {
+			if strconv.FormatInt(result.ID, 10) != ref.ID {
+				continue
+			}
+			if !result.Found {
+				ref.Status = "missing"
+			} else if strings.TrimSpace(result.Name) != "" {
+				ref.Status, ref.Name, ref.EngineType, ref.LifecycleState = "current", result.Name, result.EngineType, result.LifecycleState
+			}
+		}
+	}
+	return references
 }
 
 func (s *EntryService) visibleEntriesQuery(ctx context.Context, tenantID int64, access EntryAccess) *gorm.DB {

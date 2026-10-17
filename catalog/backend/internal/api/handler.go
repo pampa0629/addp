@@ -709,7 +709,7 @@ func (h *Handler) ListReferenceCandidates(c *gin.Context) {
 
 // GetEntry 获取企业目录聚合详情。
 // @Summary 获取企业目录详情 | Get enterprise catalog entry
-// @Description 返回目录条目、当前来源绑定和组件；映射的数据元名称与修订号按固定修订从 Standard 动态解析，失败时只标记展示摘要不可用而保留映射事实；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; mapping element names and revision numbers are resolved dynamically from pinned Standard revisions, and resolution failures mark only the display summary unavailable; catalog visibility does not grant data content access
+// @Description 返回目录条目、当前来源绑定和组件；Meta 来源引擎的名称和类型从 System 动态解析，状态区分 current、missing 和 unavailable；映射的数据元名称与修订号按固定修订从 Standard 动态解析，解析失败只影响展示摘要；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; Meta source engine names and types are resolved dynamically from System with current, missing, or unavailable status; mapping element names and revision numbers are resolved from pinned Standard revisions; resolution failures affect only display summaries; catalog visibility does not grant data content access
 // @Tags Catalog
 // @Produce json
 // @Param id path string true "CatalogEntry UUID"

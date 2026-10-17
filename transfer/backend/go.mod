@@ -27,6 +27,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.69.0 // indirect
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0 // indirect
+	github.com/FalkorDB/falkordb-go/v2 v2.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
@@ -39,6 +40,9 @@ require (
 	github.com/beltran/gssapi v0.0.0-20200324152954-d86554db4bab // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/clipperhouse/displaywidth v0.6.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudprivacylabs/opencypher v1.0.0 // indirect
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
@@ -46,6 +50,7 @@ require (
 	github.com/elastic/go-elasticsearch/v9 v9.3.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/emmansun/gmsm v0.34.1 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -63,11 +68,17 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.1.3 // indirect
+	github.com/olekukonko/tablewriter v1.1.2 // indirect
 	github.com/parquet-go/parquet-go v0.25.1 // indirect
 	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pganalyze/pg_query_go/v6 v6.2.2 // indirect

@@ -155,7 +155,7 @@ func (p *Neo4jPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connection
 	if err != nil {
 		return nil, err
 	}
-	query := proof.statement
+	query := proof.Statement
 	return plugin.NewPreparedQuery(analysis, resolve, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
 		if _, err := resolve(ctx); err != nil {
 			return nil, err
@@ -178,7 +178,7 @@ func (p *Neo4jPlugin) PrepareGraphQuery(_ context.Context, connInfo plugin.Conne
 	if err != nil {
 		return nil, err
 	}
-	query := proof.statement
+	query := proof.Statement
 	return plugin.NewPreparedGraphQuery(analysis, resolve, nil, func(ctx context.Context) (*plugin.GraphQueryResult, error) {
 		if _, err := resolve(ctx); err != nil {
 			return nil, err
@@ -765,7 +765,7 @@ func (p *Neo4jPlugin) executeGraphQuery(ctx context.Context, connInfo plugin.Con
 		if err != nil {
 			return nil, err
 		}
-		query = proof.statement
+		query = proof.Statement
 		if err := p.verifyLocalReadCypher(ctx, connInfo, proof); err != nil {
 			return nil, err
 		}
