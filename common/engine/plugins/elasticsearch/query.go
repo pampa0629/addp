@@ -274,7 +274,7 @@ func (p *ElasticsearchPlugin) PrepareQuery(ctx context.Context, c plugin.Connect
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return plugin.NewPreparedQuery(analysis,
+	return plugin.NewPreparedQuery(analysis, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(ctx context.Context, _ *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			facts, err := p.DescribeEngineCatalogFacts(ctx, conn, path, plugin.EngineCatalogFactsOptions{})

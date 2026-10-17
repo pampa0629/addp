@@ -23,7 +23,7 @@ type profilePageProvider struct {
 func (p *profilePageProvider) PrepareQuery(ctx context.Context, conn plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	index := len(p.prepareCalls)
 	p.prepareCalls = append(p.prepareCalls, req)
-	return plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, func(context.Context) (*plugin.QueryReadSet, error) {
+	return plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil, func(context.Context) (*plugin.QueryReadSet, error) {
 		if index < len(p.errs) && p.errs[index] != nil {
 			return nil, p.errs[index]
 		}

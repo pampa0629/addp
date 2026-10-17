@@ -28,6 +28,7 @@ var ErrPreparedQueryConsumed = errors.New("prepared query already consumed")
 // bound to the same request and provider-native preparation result.
 type PreparedQuery interface {
 	Analysis(context.Context) (*QueryAnalysis, error)
+	EngineReadScope(context.Context) (*QueryEngineReadScope, error)
 	ReadSet(context.Context) (*QueryReadSet, error)
 	OutputLineage(context.Context) (*QueryOutputLineage, error)
 	Execute(context.Context) (*QueryResult, error)
@@ -41,24 +42,29 @@ type QueryReadSet struct {
 }
 
 type preparedQuery struct {
-	mu             sync.Mutex
-	consumed       bool
-	analysis       *QueryAnalysis
-	readSetReady   bool
-	readSet        *QueryReadSet
-	readSetErr     error
-	resolveReadSet func(context.Context) (*QueryReadSet, error)
-	lineageReady   bool
-	lineage        *QueryOutputLineage
-	lineageErr     error
-	resolveLineage func(context.Context, *QueryReadSet) (*QueryOutputLineage, error)
-	execute        func(context.Context) (*QueryResult, error)
+	mu                 sync.Mutex
+	consumed           bool
+	analysis           *QueryAnalysis
+	engineScopeReady   bool
+	engineScope        *QueryEngineReadScope
+	engineScopeErr     error
+	resolveEngineScope func(context.Context) (*QueryEngineReadScope, error)
+	readSetReady       bool
+	readSet            *QueryReadSet
+	readSetErr         error
+	resolveReadSet     func(context.Context) (*QueryReadSet, error)
+	lineageReady       bool
+	lineage            *QueryOutputLineage
+	lineageErr         error
+	resolveLineage     func(context.Context, *QueryReadSet) (*QueryOutputLineage, error)
+	execute            func(context.Context) (*QueryResult, error)
 }
 
 // NewPreparedQuery builds the shared one-shot state machine used by Provider
 // plans. Callbacks must close over provider-owned immutable values.
 func NewPreparedQuery(
 	analysis *QueryAnalysis,
+	resolveEngineScope func(context.Context) (*QueryEngineReadScope, error),
 	resolveReadSet func(context.Context) (*QueryReadSet, error),
 	resolveLineage func(context.Context, *QueryReadSet) (*QueryOutputLineage, error),
 	execute func(context.Context) (*QueryResult, error),
@@ -69,7 +75,38 @@ func NewPreparedQuery(
 	if execute == nil {
 		return nil, fmt.Errorf("prepared query execute callback is required")
 	}
-	return &preparedQuery{analysis: analysis.Clone(), resolveReadSet: resolveReadSet, resolveLineage: resolveLineage, execute: execute}, nil
+	return &preparedQuery{analysis: analysis.Clone(), resolveEngineScope: resolveEngineScope, resolveReadSet: resolveReadSet, resolveLineage: resolveLineage, execute: execute}, nil
+}
+
+func (p *preparedQuery) EngineReadScope(ctx context.Context) (*QueryEngineReadScope, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.resolveEngineScopeLocked(ctx)
+	return p.engineScope.Clone(), p.engineScopeErr
+}
+
+func (p *preparedQuery) resolveEngineScopeLocked(ctx context.Context) {
+	if p.engineScopeReady {
+		return
+	}
+	p.engineScopeReady = true
+	if p.consumed {
+		p.engineScopeErr = ErrPreparedQueryConsumed
+		return
+	}
+	if p.resolveEngineScope == nil {
+		p.engineScopeErr = ErrQueryEngineReadScopeUnresolved
+		return
+	}
+	p.engineScope, p.engineScopeErr = p.resolveEngineScope(ctx)
+	if p.engineScopeErr == nil {
+		p.engineScopeErr = p.engineScope.Validate()
+	}
+	if p.engineScopeErr != nil {
+		p.engineScope = nil
+		return
+	}
+	p.engineScope = p.engineScope.Clone()
 }
 
 func (p *preparedQuery) Analysis(context.Context) (*QueryAnalysis, error) {
@@ -102,6 +139,21 @@ func (p *preparedQuery) resolveReadSetLocked(ctx context.Context) {
 	p.readSet, p.readSetErr = p.resolveReadSet(ctx)
 	if p.readSet != nil {
 		p.readSet = p.readSet.Clone()
+	}
+	if p.readSetErr == nil {
+		p.resolveEngineScopeLocked(ctx)
+		if p.engineScopeErr != nil && !errors.Is(p.engineScopeErr, ErrQueryEngineReadScopeUnresolved) {
+			p.readSet, p.readSetErr = nil, p.engineScopeErr
+			return
+		}
+		if p.engineScopeErr == nil && p.readSet != nil {
+			for _, path := range p.readSet.Paths {
+				if !p.engineScope.Contains(path.EngineID) {
+					p.readSet, p.readSetErr = nil, fmt.Errorf("%w: read set exceeds the prepared engine scope", ErrQueryReadSetUnresolved)
+					return
+				}
+			}
+		}
 	}
 }
 

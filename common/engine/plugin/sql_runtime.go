@@ -321,7 +321,7 @@ func PrepareSQLRuntimeQuery(
 			return result, err
 		}
 	}
-	prepared, err := NewPreparedQuery(analysis, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
+	prepared, err := NewPreparedQuery(analysis, nil, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
 		request := cloneQueryRequest(preparedReq)
 		request.Options.analytical = request.analytical
 		if request.analytical != nil && request.Options.Timeout > 0 {

@@ -871,6 +871,10 @@ type fakePreparedQuery struct {
 	readSetCalls int
 }
 
+func (p *fakePreparedQuery) EngineReadScope(context.Context) (*engineplugin.QueryEngineReadScope, error) {
+	return nil, engineplugin.ErrQueryEngineReadScopeUnresolved
+}
+
 func (p *fakePreparedQuery) Analysis(context.Context) (*engineplugin.QueryAnalysis, error) {
 	return engineplugin.NewQueryAnalysis("sql", engineplugin.QuerySchemaCoverageUnknown)
 }

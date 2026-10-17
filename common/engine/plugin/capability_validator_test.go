@@ -390,7 +390,7 @@ func (p *queryParameterCapabilityPlugin) PrepareQuery(context.Context, Connectio
 	if err != nil {
 		return nil, err
 	}
-	return NewPreparedQuery(analysis, nil, nil, func(context.Context) (*QueryResult, error) { return &QueryResult{}, nil })
+	return NewPreparedQuery(analysis, nil, nil, nil, func(context.Context) (*QueryResult, error) { return &QueryResult{}, nil })
 }
 
 func TestValidatePluginCapabilitiesAcceptsQueryParameters(t *testing.T) {

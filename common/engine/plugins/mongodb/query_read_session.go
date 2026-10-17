@@ -42,6 +42,10 @@ type mongoPreparedQuery struct {
 	lineageErr   error
 }
 
+func (q *mongoPreparedQuery) EngineReadScope(context.Context) (*plugin.QueryEngineReadScope, error) {
+	return nil, plugin.ErrQueryEngineReadScopeUnresolved
+}
+
 func (q *mongoPreparedQuery) Analysis(context.Context) (*plugin.QueryAnalysis, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()

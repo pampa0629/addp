@@ -89,7 +89,7 @@ func TestGatePreparesBoundedNativeAndQueryExportProtection(t *testing.T) {
 	}
 
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageComplete},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{

@@ -7,7 +7,7 @@ const transferID = 'e15e1b10-196d-416e-8b50-97e4a9657475'
 const scanID = '9f145d6f-cd67-401a-a31d-0744f356a8c3'
 const privateMessage = 'PRIVATE_RUNTIME_DETAIL addp-infra://minio/private/source password=sentinel'
 const failureDetails = { category: 'execution_failed', code: 'data_protection_required', diagnostic: {
-  schema_version: 'addp.execution-failure/v2', stage: 'preparation', reason: 'data_protection_required'
+  schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required'
 } }
 
 for (const locale of ['zh-cn', 'en']) {

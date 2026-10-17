@@ -457,7 +457,7 @@ func (*recordingDatabasePreviewPlugin) GenerateSampleQuery(context.Context, plug
 }
 func (p *recordingDatabasePreviewPlugin) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	p.prepareCalls = append(p.prepareCalls, req)
-	return plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, func(context.Context) (*plugin.QueryReadSet, error) {
+	return plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil, func(context.Context) (*plugin.QueryReadSet, error) {
 		return plugin.NewQueryReadSet(*req.TargetPath)
 	}, nil, func(context.Context) (*plugin.QueryResult, error) {
 		p.executeCalls++

@@ -87,7 +87,7 @@ func TestPreparedQueryCachesReadSetAndExecutesOnce(t *testing.T) {
 	resolved := 0
 	executed := 0
 	prepared, err := NewPreparedQuery(
-		&QueryAnalysis{Language: "sql", SchemaCoverage: QuerySchemaCoverageUnknown},
+		&QueryAnalysis{Language: "sql", SchemaCoverage: QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*QueryReadSet, error) {
 			resolved++
 			return NewQueryReadSet(TabularItemPath(9, EngineCatalogTermSchema, "business", "persons"))
@@ -126,7 +126,7 @@ func TestPreparedQueryCachesReadSetAndExecutesOnce(t *testing.T) {
 
 func TestPreparedQueryCannotResolveReadSetAfterExecution(t *testing.T) {
 	prepared, err := NewPreparedQuery(
-		&QueryAnalysis{Language: "sql", SchemaCoverage: QuerySchemaCoverageUnknown},
+		&QueryAnalysis{Language: "sql", SchemaCoverage: QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*QueryReadSet, error) { return NewQueryReadSet() },
 		nil,
 		func(context.Context) (*QueryResult, error) { return &QueryResult{}, nil },

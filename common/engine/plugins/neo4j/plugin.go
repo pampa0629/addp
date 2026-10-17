@@ -144,7 +144,7 @@ func (p *Neo4jPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connection
 	if err != nil {
 		return nil, err
 	}
-	return plugin.NewPreparedQuery(analysis, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
+	return plugin.NewPreparedQuery(analysis, nil, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
 		return p.executeQuery(ctx, cloneConnectionInfo(preparedConnInfo), query, preparedOptions)
 	})
 }

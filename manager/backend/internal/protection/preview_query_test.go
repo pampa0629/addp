@@ -23,6 +23,9 @@ type previewTestPlan struct {
 }
 
 func (*previewTestPlan) Analysis(context.Context) (*plugin.QueryAnalysis, error) { return nil, nil }
+func (*previewTestPlan) EngineReadScope(context.Context) (*plugin.QueryEngineReadScope, error) {
+	return nil, plugin.ErrQueryEngineReadScopeUnresolved
+}
 func (p *previewTestPlan) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
 	return p.set, p.readErr
 }

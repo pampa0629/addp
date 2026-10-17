@@ -42,7 +42,7 @@ func executableProfilePlanForTest(t *testing.T) (*PreviewDataProfileSampleProvid
 	pages := &executableProfilePagesForTest{profilePreparedPagesForTest: profilePreparedPagesForTest{set: set, positions: positions}}
 	calls := new(int)
 	for _, page := range positions {
-		query, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete},
+		query, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil,
 			func(context.Context) (*plugin.QueryReadSet, error) { return set.Clone(), nil }, nil,
 			func(context.Context) (*plugin.QueryResult, error) {
 				*calls++
@@ -120,7 +120,7 @@ func TestProfileProductionSamplingRejectsResultStructureAndBudgetChanges(t *test
 			if name == "positions" {
 				pages.positions[0].Limit++
 			} else {
-				query, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete},
+				query, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil,
 					func(context.Context) (*plugin.QueryReadSet, error) { return pages.set.Clone(), nil }, nil,
 					func(context.Context) (*plugin.QueryResult, error) {
 						*calls++

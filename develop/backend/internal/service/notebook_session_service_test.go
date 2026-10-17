@@ -170,7 +170,7 @@ func (p *notebookTestQueryPlugin) PrepareQuery(_ context.Context, _ plugin.Conne
 	if err != nil {
 		return nil, err
 	}
-	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+	return plugin.NewPreparedQuery(analysis, nil, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
 		return p.result, nil
 	})
 }

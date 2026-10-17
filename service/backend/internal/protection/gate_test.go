@@ -65,7 +65,7 @@ func TestGateMasksManagedMongoQueryForServiceExecute(t *testing.T) {
 	}
 	installActiveServiceProjection(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"), fields)
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
@@ -105,7 +105,7 @@ func TestGateAllowsUnmanagedPostgresQueryWithoutOutputLineage(t *testing.T) {
 	path := plugin.TabularItemPath(2, plugin.EngineCatalogTermSchema, "outdoor", "ods_outdoor_activities")
 	lineageCalls := 0
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			lineageCalls++
@@ -270,7 +270,7 @@ func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
 	installActiveServiceProjectionAt(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"), fields, time.Now().UTC().Add(-2*time.Hour))
 	executions := 0
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil

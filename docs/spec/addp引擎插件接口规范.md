@@ -517,6 +517,7 @@ type QueryRuntimeProvider interface {
 
 type PreparedQuery interface {
     Analysis(ctx context.Context) (*QueryAnalysis, error)
+    EngineReadScope(ctx context.Context) (*QueryEngineReadScope, error)
     ReadSet(ctx context.Context) (*QueryReadSet, error)
     OutputLineage(ctx context.Context) (*QueryOutputLineage, error)
     Execute(ctx context.Context) (*QueryResult, error)
@@ -541,6 +542,10 @@ type QueryReadSet struct {
     Paths []EngineCatalogPath
 }
 
+type QueryEngineReadScope struct {
+    EngineIDs []uint // 完整上界；正整数、排序去重；非 nil 空范围表示证明不读取引擎数据
+}
+
 type QueryOutputLineage struct {
     Sources []QueryOutputSource
 }
@@ -561,6 +566,8 @@ type QueryOutputBinding struct {
 ```
 
 `PreparedQuery` 是 Provider 从一次 `QueryRequest` 生成的不可变、一次性执行计划。Provider 必须在准备时绑定 Engine、语言、参数、`TargetPath`、只读属性和自身原生解析结果；门禁完成后不再接受新的查询文本、参数或目标路径。`Analysis()`、`ReadSet()`、`OutputLineage()`、`Execute()` 和连续读会话只能消费同一 PreparedQuery，不得重新构造 `QueryRequest`。
+
+查询保护的引擎范围排除正在实施，保护投影升级与运行时接线完成前不得提前放行，具体规则以《ADDP 数据安全与隐私保护实现规范》“查询保护的引擎范围排除”为准。`PreparedQuery.EngineReadScope()` 返回 Provider 对同一不可变执行计划证明的完整引擎访问上界；未建立证明时返回 `ErrQueryEngineReadScopeUnresolved`，不是 nil 成功或空集合。共享计划缓存并深拷贝该事实，后续解析出的 ReadSet 不得超出已证明范围，执行后不能首次补造范围。该范围不是能力开关或调用方自报的 engine_id；没有可信范围保证时继续消费现有 ReadSet，不强迫每个引擎先实现完整资源解析才能表达已受约束的实例内执行。普通查询与 GraphQueryProvider 保持各自结果契约，范围事实与真实执行必须绑定；不为图查询重新引入一套 Owner 查询文本解析。
 
 `QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
 

@@ -58,7 +58,7 @@ func TestGateAllowsUnmanagedPostgresReadSetWhenTenantHasMongoProtection(t *testi
 	path := plugin.TabularItemPath(2, plugin.EngineCatalogTermSchema, "outdoor", "ods_outdoor_activities")
 	lineageCalls := 0
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			lineageCalls++
@@ -96,7 +96,7 @@ func TestGateMasksManagedQueryResultFromProviderLineage(t *testing.T) {
 	}
 	installActiveDevelopProjection(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"), fields)
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
@@ -136,7 +136,7 @@ func TestGateRejectsDerivedProtectedOutput(t *testing.T) {
 	fields := []datatype.FieldInfo{{Name: "phone", Type: datatype.FieldTypeString, Nullable: true}}
 	installActiveDevelopProjection(t, store, models.GenerateItemFingerprint(11, "outdoor.persons"), fields)
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{
@@ -165,7 +165,7 @@ func TestGateRejectsDerivedProtectedOutput(t *testing.T) {
 func preparedMongoRead(t *testing.T, model plugin.EngineCatalogModelSpec, collection string) plugin.PreparedQuery {
 	t.Helper()
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) {
 			return plugin.NewQueryReadSet(plugin.EngineCatalogBranchLeafPath(
 				model, 11,
@@ -277,7 +277,7 @@ func TestGateRejectsExpiredActiveProjectionBeforeQueryExecution(t *testing.T) {
 	installActiveDevelopProjectionAt(t, store, models.GenerateItemFingerprint(11, "Outdoor.Persons"), fields, time.Now().UTC().Add(-2*time.Hour))
 	executions := 0
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil

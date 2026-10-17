@@ -85,7 +85,7 @@ func (p *executableSampleQueryProvider) PrepareQuery(_ context.Context, _ plugin
 	if err != nil {
 		return nil, err
 	}
-	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+	return plugin.NewPreparedQuery(analysis, nil, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
 		return p.result, p.executeErr
 	})
 }

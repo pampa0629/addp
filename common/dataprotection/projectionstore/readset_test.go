@@ -71,7 +71,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 		}
 	}
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
@@ -135,7 +135,7 @@ func assertPreparedOutputExpiry(t *testing.T, store *Store, owner, action string
 		t.Fatal(err)
 	}
 	joined, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(neighborPath, path) },
 		func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 			return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{
@@ -313,7 +313,7 @@ func TestPrepareQueryProtectionUsesExactSubjectForMetadataAndOutput(t *testing.T
 					t.Fatal(err)
 				}
 				prepared, err := plugin.NewPreparedQuery(
-					&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+					&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 					func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
 					func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
 						return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"phone"}, OutputPath: []string{"contact"}, Transformation: plugin.QueryOutputTransformationDirect}}}}}, nil
@@ -508,7 +508,7 @@ func preparedReadSet(t *testing.T, model plugin.EngineCatalogModelSpec, database
 	t.Helper()
 	calls := 0
 	prepared, err := plugin.NewPreparedQuery(
-		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown},
+		&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
 		func(context.Context) (*plugin.QueryReadSet, error) {
 			calls++
 			return plugin.NewQueryReadSet(plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, database, plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, collection))
