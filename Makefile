@@ -619,7 +619,7 @@ test-gaussdb-official-media-release:
 	@python3 scripts/test/gaussdb-official-media-release-gate.py
 
 .PHONY: test-gaussdb-certification-build
-test-gaussdb-certification-build: ## 交叉编译 GaussDB Linux 认证探针，不运行原生验收
+test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱动共存，不代替原生验收
 	@python3 scripts/test/gaussdb-official-media-release-gate.py --compile-only
 
 .PHONY: test-infra-runtime-log-lifecycle

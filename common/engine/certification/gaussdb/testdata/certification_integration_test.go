@@ -10,18 +10,34 @@ import (
 	"testing"
 	"time"
 
-	_ "gitee.com/opengauss/openGauss-connector-go-pq"
+	_ "github.com/HuaweiCloudDeveloper/gaussdb-go/stdlib"
 	_ "github.com/lib/pq"
 )
 
 // The release owner copies this source into its temporary standalone module.
 // testdata keeps the external driver outside Common's package/dependency graph.
+func TestGaussDBDriverCoexistence(t *testing.T) {
+	if _, present := os.LookupEnv("GOENV_REGIST_ALL"); present {
+		t.Fatal("driver coexistence must not rely on GOENV_REGIST_ALL")
+	}
+	for name, wanted := range map[string]string{
+		"gaussdb":  "github.com/HuaweiCloudDeveloper/gaussdb-go/stdlib",
+		"postgres": "github.com/lib/pq",
+	} {
+		db, err := sql.Open(name, "host=127.0.0.1 port=1 connect_timeout=1")
+		if err != nil {
+			t.Fatal("driver not registered: " + name)
+		}
+		if got := reflect.TypeOf(db.Driver()).Elem().PkgPath(); got != wanted {
+			t.Fatalf("driver %s registered by %s instead of %s", name, got, wanted)
+		}
+		db.Close()
+	}
+}
+
 func TestGaussDBOfficialMediaCertification(t *testing.T) {
 	if os.Getenv("ADDP_GAUSSDB_CERTIFICATION") != "1" {
 		t.Fatal("native GaussDB certification runs only through the T5 owner")
-	}
-	if os.Getenv("GOENV_REGIST_ALL") != "false" {
-		t.Fatal("official GaussDB and PostgreSQL drivers must coexist explicitly")
 	}
 	dsn := os.Getenv("ADDP_TEST_GAUSSDB_DSN")
 	if dsn == "" {
@@ -32,10 +48,11 @@ func TestGaussDBOfficialMediaCertification(t *testing.T) {
 		t.Fatal("cannot create official driver connection")
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("official driver SHA256 authentication failed: %v", err)
+		t.Fatalf("candidate driver SHA256 authentication failed: %v", err)
 	}
 	var version string
 	if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
@@ -45,14 +62,6 @@ func TestGaussDBOfficialMediaCertification(t *testing.T) {
 		t.Fatalf("unexpected official kernel: %s", version)
 	}
 	t.Logf("official kernel: %s", version)
-	postgres, err := sql.Open("postgres", "host=127.0.0.1 port=1 connect_timeout=1")
-	if err != nil {
-		t.Fatal("existing PostgreSQL driver registration was lost")
-	}
-	defer postgres.Close()
-	if got := reflect.TypeOf(postgres.Driver()).Elem().PkgPath(); got != "github.com/lib/pq" {
-		t.Fatalf("PostgreSQL driver replaced by %s", got)
-	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatal(err)

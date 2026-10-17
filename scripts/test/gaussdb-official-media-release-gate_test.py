@@ -36,11 +36,16 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_facts_pin_official_version_architecture_and_driver(self):
-        facts = GATE.media_facts()
+        facts = GATE.media_facts("x86_64")
         self.assertEqual(facts["GAUSSDB_OFFICIAL_VERSION"], "V2.0-10.0.0")
         self.assertIn("_Ubuntu_X86_20260915102549.zip", facts["GAUSSDB_OFFICIAL_MEDIA_URL"])
         self.assertEqual(facts["GAUSSDB_OFFICIAL_MEDIA_SHA256"], "c53cf2021d86c4820e8c6fddf13a098e1b2b1f4a2ca142c6dcf1ff2fa9ab54a8")
-        self.assertEqual(facts["GAUSSDB_OFFICIAL_DRIVER_SHA256"], "d3735c8f1906491e9789d0a11bfda6020ef6db34583306fe4a0c4eedf1498da7")
+        self.assertEqual(facts["GAUSSDB_GO_MODULE"], "github.com/HuaweiCloudDeveloper/gaussdb-go")
+        self.assertEqual(facts["GAUSSDB_GO_VERSION"], "v1.0.0-rc1")
+        self.assertTrue(facts["GAUSSDB_GO_SUM"].startswith("h1:"))
+        arm = GATE.media_facts("aarch64")
+        self.assertIn("_Ubuntu_ARM_", arm["GAUSSDB_OFFICIAL_MEDIA_URL"])
+        self.assertEqual(arm["GAUSSDB_OFFICIAL_MEDIA_SHA256"], "a6442f7c12c396aae2e96e3dde8b4eca2eac45ab26dce1735efc530f447990e5")
         self.assertIn("ubuntu:22.04@sha256:", facts["GAUSSDB_OFFICIAL_BASE_IMAGE"])
         with self.assertRaises(subprocess.CalledProcessError):
             subprocess.check_call(["bash", "-ec", 'source "$1"; gaussdb_select_official_media invalid', "facts", str(GATE.ROOT / "scripts/lib/gaussdb-official-media.sh")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -74,23 +79,47 @@ class GaussDBCertificationTest(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as package:
             package.writestr("Ubuntu/server/media_Server_X86_Developer.tar.gz", outer)
         destination = self.root / "kernel.bin"
-        GATE.extract_kernel(archive, destination)
+        GATE.extract_kernel(archive, destination, "amd64")
         self.assertEqual(destination.read_bytes(), binary)
 
     def test_rejects_ambiguous_archive_member(self):
         with self.assertRaisesRegex(RuntimeError, "exactly one"):
             GATE.unique_member(["a.bin", "b.bin"], ".bin")
 
-    def test_driver_extraction_refuses_path_traversal(self):
-        inner = tar_bytes({"../escaped": b"must reject"})
-        outer = tar_bytes({"driver.tar.gz": inner})
-        archive = self.root / "driver.zip"
+    def test_arm_kernel_is_selected_without_x86_fallback(self):
+        binary = b"synthetic arm installer"
+        inner = tar_bytes({"./kernel_64bit.bin": binary, "./kernel_64bit.sha256": hashlib.sha256(binary).hexdigest().encode()})
+        outer = tar_bytes({"server_64bit_Server.tar.gz": inner})
+        archive = self.root / "arm.zip"
         with zipfile.ZipFile(archive, "w") as package:
-            package.writestr("Ubuntu/client/go/driver.tar.gz", outer)
-        destination = self.root / "output"
-        with self.assertRaisesRegex(RuntimeError, "escapes"):
-            GATE.extract_driver(archive, "Ubuntu", destination)
-        self.assertFalse((self.root / "escaped").exists())
+            package.writestr("Ubuntu/media_Server_ARM_Developer.tar.gz", outer)
+        destination = self.root / "kernel.bin"
+        GATE.extract_kernel(archive, destination, "arm64")
+        self.assertEqual(destination.read_bytes(), binary)
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            GATE.extract_kernel(archive, destination, "amd64")
+
+    @patch.object(GATE, "command")
+    def test_public_driver_requires_both_pinned_checksums(self, command):
+        facts = GATE.media_facts("x86_64")
+        valid = {"Path": facts["GAUSSDB_GO_MODULE"], "Version": facts["GAUSSDB_GO_VERSION"],
+                 "Sum": facts["GAUSSDB_GO_SUM"], "GoModSum": facts["GAUSSDB_GO_MOD_SUM"]}
+        for field in ("Path", "Version", "Sum", "GoModSum"):
+            invalid = {**valid, field: "mismatch"}
+            command.return_value = subprocess.CompletedProcess([], 0, json.dumps(invalid))
+            with self.assertRaisesRegex(RuntimeError, "driver identity or checksum"):
+                GATE.verify_driver(facts, self.root, {})
+        command.return_value = subprocess.CompletedProcess([], 0, json.dumps(valid))
+        GATE.verify_driver(facts, self.root, {})
+
+    def test_native_architecture_must_match_daemon_without_emulation(self):
+        self.assertEqual(GATE.go_architecture("aarch64"), "arm64")
+        self.assertEqual(GATE.go_architecture("x86_64"), "amd64")
+        with self.assertRaisesRegex(RuntimeError, "unsupported"):
+            GATE.go_architecture("riscv64")
+        GATE.verify_daemon_architecture("arm64", "linux/aarch64")
+        with self.assertRaisesRegex(RuntimeError, "matching native"):
+            GATE.verify_daemon_architecture("arm64", "linux/x86_64")
 
     @patch.object(GATE, "command")
     @patch.object(GATE, "inspect")
@@ -122,7 +151,7 @@ class GaussDBCertificationTest(unittest.TestCase):
 
     @patch.object(GATE.platform, "system", return_value="Darwin")
     def test_macos_is_not_reported_as_linux_t5(self, system):
-        with self.assertRaisesRegex(RuntimeError, "native Linux x86_64"):
+        with self.assertRaisesRegex(RuntimeError, "native Linux amd64/arm64"):
             GATE.main()
 
     @patch.object(GATE.subprocess, "run")
@@ -135,18 +164,17 @@ class GaussDBCertificationTest(unittest.TestCase):
 
     @patch.object(GATE, "command")
     @patch.object(GATE, "prepare_probe")
-    @patch.object(GATE, "extract_driver")
-    @patch.object(GATE, "download")
-    def test_compile_only_cross_compiles_without_native_runtime_or_t5_report(self, download, extract, prepare, command):
+    def test_compile_only_checks_all_four_targets_and_host_registration_without_t5_report(self, prepare, command):
         prepare.return_value = self.root / "probe"
         GATE.compile_probe()
-        args = command.call_args.args[0]
-        self.assertEqual(args[:3], ["go", "test", "-c"])
-        self.assertEqual(command.call_args.kwargs["env"]["GOOS"], "linux")
-        self.assertEqual(command.call_args.kwargs["env"]["GOARCH"], "amd64")
+        builds = [call for call in command.call_args_list if call.args[0][:3] == ["go", "test", "-c"]]
+        self.assertEqual({(call.kwargs["env"]["GOOS"], call.kwargs["env"]["GOARCH"]) for call in builds},
+                         {("linux", "amd64"), ("linux", "arm64"), ("darwin", "amd64"), ("darwin", "arm64")})
+        self.assertTrue(all(call.kwargs["env"]["CGO_ENABLED"] == "0" for call in builds))
+        self.assertIn("-run=^TestGaussDBDriverCoexistence$", command.call_args.args[0])
         self.assertEqual(list(self.root.iterdir()), [])
 
-    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False, fail_initial_password=False):
+    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False, fail_initial_password=False, architecture="x86_64"):
         resources = {}
         probes = []
         initialization = []
@@ -182,16 +210,18 @@ class GaussDBCertificationTest(unittest.TestCase):
 
         def command(args, **kwargs):
             if args[:2] == ["docker", "info"]:
-                return subprocess.CompletedProcess(args, 0, "linux/x86_64\n", "")
+                return subprocess.CompletedProcess(args, 0, "linux/" + architecture + "\n", "")
             if kwargs.get("output"):
                 kwargs["output"].write_text("native log\n")
             if args[:2] == ["docker", "build"]:
                 entrypoint = (Path(args[-1]) / "entrypoint.sh").read_text()
+                dockerfile = (Path(args[-1]) / "Dockerfile").read_text()
+                self.assertIn("gsql --version && gaussdb --version", dockerfile)
                 self.assertIn("/data/db/gs_hba.conf", entrypoint)
                 self.assertNotIn("/data/db/pg_hba.conf", entrypoint)
                 self.assertIn("sha256", entrypoint)
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
-                resources[("image", args[args.index("-t") + 1])] = {"Config": {"Labels": {GATE.LABEL: owner}}}
+                resources[("image", args[args.index("-t") + 1])] = {"Id": "sha256:fixture", "Architecture": GATE.go_architecture(architecture), "Config": {"Labels": {GATE.LABEL: owner}}}
             elif args[:3] == ["docker", "network", "create"]:
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
                 resources[("network", args[-1])] = {"Labels": {GATE.LABEL: owner}}
@@ -216,11 +246,10 @@ class GaussDBCertificationTest(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0)
 
         with patch.object(GATE.platform, "system", return_value="Linux"), \
-             patch.object(GATE.platform, "machine", return_value="x86_64"), \
+             patch.object(GATE.platform, "machine", return_value=architecture), \
              patch.object(GATE.shutil, "which", return_value="/available"), \
              patch.object(GATE, "download", return_value=self.root / "archive"), \
              patch.object(GATE, "extract_kernel"), \
-             patch.object(GATE, "extract_driver", return_value=self.root / "driver"), \
              patch.object(GATE, "prepare_probe", return_value=self.root / "probe"), \
              patch.object(GATE, "inspect", side_effect=inspect), \
              patch.object(GATE, "command", side_effect=command), \
@@ -248,11 +277,18 @@ class GaussDBCertificationTest(unittest.TestCase):
         if fail_readiness or fail_initial_password:
             self.assertEqual(probes, [])
             return json.loads(report.read_text())
-        self.assertEqual(probes[0]["GOENV_REGIST_ALL"], "false")
+        self.assertNotIn("GOENV_REGIST_ALL", probes[0])
         self.assertEqual(probes[0]["ADDP_GAUSSDB_CERTIFICATION"], "1")
         self.assertNotIn("password=", report.read_text())
         self.assertIn("password=[REDACTED]", report.with_suffix(".probe.log").read_text())
         return json.loads(report.read_text())
+
+    def test_arm_native_lifecycle_has_separate_architecture_and_image_evidence(self):
+        report = self.run_fake_lifecycle(architecture="aarch64")
+        self.assertEqual(report["result"], "passed")
+        self.assertEqual(report["runner"]["architecture"], "arm64")
+        self.assertEqual(report["image"]["id"], "sha256:fixture")
+        self.assertEqual(report["image"]["architecture"], "arm64")
 
     def test_owner_success_waits_for_probe_and_all_cleanup(self):
         report = self.run_fake_lifecycle()
@@ -285,6 +321,10 @@ class GaussDBCertificationTest(unittest.TestCase):
         job = re.search(r"(?ms)^  gaussdb-official-media-certification:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow).group(1)
         self.assertNotIn("needs: selection", job)
         self.assertIn("make test-release RELEASE_SUITE=gaussdb-official-media", job)
+        self.assertIn("ubuntu-24.04-arm", job)
+        self.assertIn("fail-fast: false", job)
+        self.assertIn("name: gaussdb-official-media-certification-${{ matrix.arch }}", job)
+        self.assertIn("make test-gaussdb-certification-build", job)
 
     def test_term_becomes_an_unwindable_exit_instead_of_bypassing_cleanup(self):
         with self.assertRaises(SystemExit) as stopped:
@@ -317,14 +357,14 @@ class GaussDBCertificationTest(unittest.TestCase):
             timeout=60, check=True)
         self.assertNotIn("gitee.com/opengauss/openGauss-connector-go-pq", result.stdout)
         self.assertNotIn("gitcode.com/opengauss/openGauss-connector-go-pq", result.stdout)
+        self.assertNotIn("github.com/HuaweiCloudDeveloper/gaussdb-go", result.stdout)
 
     def test_probe_module_is_standalone_and_preserves_the_pinned_driver_and_assertions(self):
-        driver = self.root / "driver"
-        driver.mkdir()
-        (driver / "go.mod").write_text("module gitee.com/opengauss/openGauss-connector-go-pq\n\ngo 1.13\n")
         original_mod = (GATE.ROOT / "common/go.mod").read_bytes()
         original_sum = (GATE.ROOT / "common/go.sum").read_bytes()
-        probe = GATE.prepare_probe(self.root, driver)
+        with patch.object(GATE, "verify_driver") as verify:
+            probe = GATE.prepare_probe(self.root, GATE.media_facts("x86_64"))
+        verify.assert_called_once()
         module = json.loads(subprocess.check_output(["go", "mod", "edit", "-json"],
                             cwd=probe, text=True, env={**GATE.os.environ, "GOWORK": "off"}))
         common = json.loads(subprocess.check_output(["go", "mod", "edit", "-json"],
@@ -333,7 +373,8 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertEqual(module["Go"], common["Go"])
         postgres = next(item for item in common["Require"] if item["Path"] == "github.com/lib/pq")
         self.assertIn(postgres, module["Require"])
-        self.assertEqual(module["Replace"][0]["New"]["Path"], str(driver))
+        self.assertFalse(module.get("Replace"))
+        self.assertIn({"Path": "github.com/HuaweiCloudDeveloper/gaussdb-go", "Version": "v1.0.0-rc1"}, module["Require"])
         self.assertEqual((probe / "certification_integration_test.go").read_bytes(), GATE.PROBE_SOURCE.read_bytes())
         self.assertEqual((GATE.ROOT / "common/go.mod").read_bytes(), original_mod)
         self.assertEqual((GATE.ROOT / "common/go.sum").read_bytes(), original_sum)

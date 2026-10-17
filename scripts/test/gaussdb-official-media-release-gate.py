@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Own the isolated Linux x86_64 GaussDB developer media certification."""
+"""Own the isolated Linux amd64/arm64 GaussDB developer media certification."""
 from __future__ import annotations
 
 import hashlib
@@ -24,16 +24,30 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBE_SOURCE = ROOT / "common/engine/certification/gaussdb/testdata/certification_integration_test.go"
 LABEL = "com.addp.gaussdb-certification"
 FACT_NAMES = ("GAUSSDB_OFFICIAL_VERSION", "GAUSSDB_OFFICIAL_MEDIA_URL",
-              "GAUSSDB_OFFICIAL_MEDIA_SHA256", "GAUSSDB_OFFICIAL_PACKAGE_ROOT",
-              "GAUSSDB_OFFICIAL_DRIVER_URL", "GAUSSDB_OFFICIAL_DRIVER_SHA256",
-              "GAUSSDB_OFFICIAL_BASE_IMAGE")
+              "GAUSSDB_OFFICIAL_MEDIA_SHA256", "GAUSSDB_OFFICIAL_BASE_IMAGE",
+              "GAUSSDB_GO_MODULE", "GAUSSDB_GO_VERSION", "GAUSSDB_GO_SUM", "GAUSSDB_GO_MOD_SUM")
 
 
-def media_facts() -> dict[str, str]:
-    script = 'source "$1"; gaussdb_select_official_media x86_64; '
+def go_architecture(machine: str) -> str:
+    if machine in {"x86_64", "amd64"}:
+        return "amd64"
+    if machine in {"aarch64", "arm64"}:
+        return "arm64"
+    raise RuntimeError("unsupported GaussDB architecture: " + machine)
+
+
+def verify_daemon_architecture(architecture: str, daemon: str) -> None:
+    system, _, machine = daemon.partition("/")
+    if system != "linux" or go_architecture(machine) != architecture:
+        raise RuntimeError("matching native Linux Docker architecture is required")
+
+
+def media_facts(machine: str | None = None) -> dict[str, str]:
+    architecture = go_architecture(machine or platform.machine())
+    script = 'source "$1"; gaussdb_select_official_media "$2"; '
     script += 'printf "%s\\n" ' + " ".join('"$' + name + '"' for name in FACT_NAMES)
     values = subprocess.check_output(
-        ["bash", "-eu", "-c", script, "facts", str(ROOT / "scripts/lib/gaussdb-official-media.sh")],
+        ["bash", "-eu", "-c", script, "facts", str(ROOT / "scripts/lib/gaussdb-official-media.sh"), architecture],
         text=True).splitlines()
     if len(values) != len(FACT_NAMES) or not all(values):
         raise RuntimeError("incomplete official media facts")
@@ -69,10 +83,11 @@ def unique_member(names: list[str], suffix: str) -> str:
     return matches[0]
 
 
-def extract_kernel(archive: Path, destination: Path) -> None:
+def extract_kernel(archive: Path, destination: Path, architecture: str) -> None:
     # Explicit member selection keeps both nested archives and architectures apart.
     with zipfile.ZipFile(archive) as package:
-        outer = unique_member(package.namelist(), "_Server_X86_Developer.tar.gz")
+        suffix = "ARM" if go_architecture(architecture) == "arm64" else "X86"
+        outer = unique_member(package.namelist(), "_Server_" + suffix + "_Developer.tar.gz")
         with tarfile.open(fileobj=io.BytesIO(package.read(outer))) as first:
             inner = unique_member(first.getnames(), "_64bit_Server.tar.gz")
             with tarfile.open(fileobj=first.extractfile(inner)) as second:
@@ -85,27 +100,6 @@ def extract_kernel(archive: Path, destination: Path) -> None:
                 destination.write_bytes(binary)
 
 
-def extract_driver(archive: Path, package_root: str, destination: Path) -> Path:
-    with zipfile.ZipFile(archive) as package:
-        names = [n for n in package.namelist() if n.startswith(package_root + "/client/go/")]
-        outer = unique_member(names, ".tar.gz")
-        with tarfile.open(fileobj=io.BytesIO(package.read(outer))) as first:
-            inner = unique_member(first.getnames(), ".tar.gz")
-            with tarfile.open(fileobj=first.extractfile(inner)) as source:
-                for member in source.getmembers():
-                    if not member.isfile():
-                        continue
-                    target = (destination / member.name).resolve()
-                    if not target.is_relative_to(destination.resolve()):
-                        raise RuntimeError("driver archive path escapes its owner directory")
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(source.extractfile(member).read())
-    driver = destination / "openGauss-connector-go-pq"
-    if not (driver / "go.mod").is_file() or not (driver / "LICENSE.md").is_file():
-        raise RuntimeError("official driver module or license is missing")
-    return driver
-
-
 def command(args: list[str], *, output: Path | None = None, **kwargs) -> subprocess.CompletedProcess:
     if output is None:
         return subprocess.run(args, check=True, **kwargs)
@@ -113,7 +107,17 @@ def command(args: list[str], *, output: Path | None = None, **kwargs) -> subproc
         return subprocess.run(args, stdout=stream, stderr=subprocess.STDOUT, check=True, **kwargs)
 
 
-def prepare_probe(work_dir: Path, driver: Path) -> Path:
+def verify_driver(facts: dict[str, str], directory: Path, environment: dict) -> None:
+    identity = facts["GAUSSDB_GO_MODULE"] + "@" + facts["GAUSSDB_GO_VERSION"]
+    downloaded = json.loads(command(["go", "mod", "download", "-json", identity],
+                                   cwd=directory, env=environment, capture_output=True, text=True, timeout=180).stdout)
+    expected = {"Path": facts["GAUSSDB_GO_MODULE"], "Version": facts["GAUSSDB_GO_VERSION"],
+                "Sum": facts["GAUSSDB_GO_SUM"], "GoModSum": facts["GAUSSDB_GO_MOD_SUM"]}
+    if downloaded.get("Error") or any(downloaded.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("candidate driver identity or checksum differs from pinned facts")
+
+
+def prepare_probe(work_dir: Path, facts: dict[str, str]) -> Path:
     # Ordinary build tags are still loaded by tidy. Keep the source AND the
     # driver in an owner-created module outside the production module graph.
     probe = work_dir / "probe"
@@ -128,24 +132,30 @@ def prepare_probe(work_dir: Path, driver: Path) -> Path:
     (probe / "go.mod").write_text("module addp.local/gaussdb-certification\n\ngo " + common["Go"] + "\n")
     shutil.copyfile(ROOT / "common/go.sum", probe / "go.sum")
     shutil.copyfile(PROBE_SOURCE, probe / "certification_integration_test.go")
+    verify_driver(facts, probe, environment)
     command(["go", "mod", "edit", "-require=github.com/lib/pq@" + postgres[0],
-             "-require=gitee.com/opengauss/openGauss-connector-go-pq@v0.0.0",
-             "-replace=gitee.com/opengauss/openGauss-connector-go-pq=" + str(driver)], cwd=probe, env=environment)
+             "-require=" + facts["GAUSSDB_GO_MODULE"] + "@" + facts["GAUSSDB_GO_VERSION"]], cwd=probe, env=environment)
     return probe
 
 
 def compile_probe() -> None:
-    """Cross-compile the real probe without executing it or writing T5 evidence."""
+    """Check native driver registration and four builds, without T5 evidence."""
     facts = media_facts()
-    cache = Path(os.environ.get("ADDP_GAUSSDB_MEDIA_CACHE", "/tmp/addp-gaussdb-official-media"))
-    archive = download(facts[FACT_NAMES[4]], facts[FACT_NAMES[5]], cache)
     with tempfile.TemporaryDirectory(prefix="addp-gaussdb-compile-") as work:
         work_dir = Path(work)
-        driver = extract_driver(archive, facts[FACT_NAMES[3]], work_dir / "driver")
-        probe = prepare_probe(work_dir, driver)
-        env = {**os.environ, "GOWORK": "off", "GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"}
-        command(["go", "test", "-c", "-mod=mod", "-o", str(work_dir / "probe.test"), "."], cwd=probe, env=env, timeout=180)
-    print("GaussDB Linux x86_64 probe compiled; native startup and protocol tests NOT RUN.")
+        probe = prepare_probe(work_dir, facts)
+        environment = {**os.environ, "GOWORK": "off", "CGO_ENABLED": "0"}
+        if "GOENV_REGIST_ALL" in environment:
+            raise RuntimeError("candidate driver verification forbids GOENV_REGIST_ALL")
+        for system in ("linux", "darwin"):
+            for architecture in ("amd64", "arm64"):
+                env = {**environment, "GOOS": system, "GOARCH": architecture}
+                command(["go", "test", "-c", "-mod=mod", "-o", str(work_dir / (system + "-" + architecture + ".test")), "."],
+                        cwd=probe, env=env, timeout=180)
+                print("GaussDB probe compiled: " + system + "/" + architecture, flush=True)
+        command(["go", "test", "-mod=mod", ".", "-run=^TestGaussDBDriverCoexistence$", "-count=1", "-v"],
+                cwd=probe, env=environment, timeout=180)
+    print("Four probe builds and host driver coexistence passed; native database T5 NOT RUN.")
 
 
 def inspect(resource: str, name: str) -> dict | None:
@@ -200,14 +210,16 @@ def probe_sql(container: str, statement: str, log_path: Path) -> subprocess.Comp
 
 
 def main() -> None:
-    if platform.system() != "Linux" or platform.machine() != "x86_64":
-        raise RuntimeError("GaussDB official-media T5 requires native Linux x86_64")
+    if platform.system() != "Linux":
+        raise RuntimeError("GaussDB official-media T5 requires native Linux amd64/arm64")
+    architecture = go_architecture(platform.machine())
+    if "GOENV_REGIST_ALL" in os.environ:
+        raise RuntimeError("candidate driver verification forbids GOENV_REGIST_ALL")
     for executable in ("docker", "go", "bash"):
         if not shutil.which(executable):
             raise RuntimeError(executable + " is required")
     daemon = command(["docker", "info", "--format", "{{.OSType}}/{{.Architecture}}"], capture_output=True, text=True).stdout.strip()
-    if daemon not in {"linux/x86_64", "linux/amd64"}:
-        raise RuntimeError("native Linux x86_64 Docker daemon is required")
+    verify_daemon_architecture(architecture, daemon)
     report_path = Path(os.environ["ADDP_GAUSSDB_CERTIFICATION_REPORT"])
     facts = media_facts()
     run_id = uuid.uuid4().hex
@@ -219,7 +231,7 @@ def main() -> None:
             raise RuntimeError("refusing to replace preexisting resource")
     report = {"schema_version": "addp.gaussdb-official-media-certification/v1",
               "result": "failed", "phase": "media", "media": facts,
-              "runner": {"os": "linux", "architecture": "x86_64"},
+              "runner": {"os": "linux", "architecture": architecture},
               "scope": "developer-single-node-protocol-only", "cleanup": {"result": "not-run"}}
     password = ""
     initial_password = ""
@@ -228,12 +240,10 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="addp-gaussdb-certification-") as work:
             work_dir = Path(work)
             cache = Path(os.environ.get("ADDP_GAUSSDB_MEDIA_CACHE", "/tmp/addp-gaussdb-official-media"))
-            media = download(facts[FACT_NAMES[1]], facts[FACT_NAMES[2]], cache)
-            driver_media = download(facts[FACT_NAMES[4]], facts[FACT_NAMES[5]], cache)
-            extract_kernel(media, work_dir / "kernel.bin")
-            driver = extract_driver(driver_media, facts[FACT_NAMES[3]], work_dir / "driver")
+            media = download(facts["GAUSSDB_OFFICIAL_MEDIA_URL"], facts["GAUSSDB_OFFICIAL_MEDIA_SHA256"], cache)
+            extract_kernel(media, work_dir / "kernel.bin", architecture)
             report["phase"] = "image"
-            (work_dir / "Dockerfile").write_text(f'''FROM {facts[FACT_NAMES[6]]}
+            (work_dir / "Dockerfile").write_text(f'''FROM {facts["GAUSSDB_OFFICIAL_BASE_IMAGE"]}
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libaio1 libnuma1 libreadline8 libncurses6 libncurses5 libtinfo5 zlib1g libatomic1 libltdl7 libtirpc3 locales && rm -rf /var/lib/apt/lists/*
 COPY kernel.bin /tmp/kernel.bin
 RUN chmod 700 /tmp/kernel.bin && /tmp/kernel.bin -y -o/opt/gauss && rm /tmp/kernel.bin && useradd -m -u 10001 omm && mkdir /data && chown -R omm:omm /opt/gauss /data
@@ -258,6 +268,11 @@ exec gaussdb --single_node -D /data/db -p 5432 -c listen_addresses='*' -c max_co
 ''')
             command(["docker", "build", "--label", LABEL + "=" + run_id, "-t", image, work],
                     output=report_path.with_suffix(".build.log"), timeout=900)
+            built = inspect("image", image)
+            if not built or built.get("Architecture") != architecture or not built.get("Id"):
+                raise RuntimeError("built image must match native architecture")
+            report["image"] = {"id": built["Id"], "architecture": built["Architecture"],
+                               "source": "addp-built-from-verified-official-media"}
             command(["docker", "network", "create", "--label", LABEL + "=" + run_id, network], capture_output=True)
             # Preserve 96 random bits within the kernel's default 32-character
             # maximum; the four-character prefix guarantees all four classes.
@@ -298,12 +313,13 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
             command(["docker", "exec", "-i", container, "gsql", "-v", "ON_ERROR_STOP=1", "-d", "postgres", "-p", "5432"], input=sql, text=True, capture_output=True)
             state = inspect("container", container)
             port = state["NetworkSettings"]["Ports"]["5432/tcp"][0]["HostPort"]
-            probe = prepare_probe(work_dir, driver)
+            report["phase"] = "driver"
+            probe = prepare_probe(work_dir, facts)
             report["phase"] = "probe"
-            probe_env = {**os.environ, "GOWORK": "off", "GOENV_REGIST_ALL": "false",
+            probe_env = {**os.environ, "GOWORK": "off",
                          "ADDP_GAUSSDB_CERTIFICATION": "1",
                          "ADDP_TEST_GAUSSDB_DSN": f"host=127.0.0.1 port={port} dbname=postgres user=addp_reader password={password} sslmode=disable connect_timeout=10"}
-            command(["go", "test", "-mod=mod", ".", "-run=^TestGaussDBOfficialMediaCertification$", "-count=1", "-v"],
+            command(["go", "test", "-mod=mod", ".", "-run=^TestGaussDB(DriverCoexistence|OfficialMediaCertification)$", "-count=1", "-v"],
                     output=report_path.with_suffix(".probe.log"), env=probe_env, cwd=probe, timeout=180)
             if "--- SKIP:" in report_path.with_suffix(".probe.log").read_text():
                 raise RuntimeError("native GaussDB certification refuses skipped tests")

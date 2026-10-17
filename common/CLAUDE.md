@@ -53,7 +53,7 @@ common/
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。
 - `common/engine/contentadapter` 负责把 engine content provider 适配为 `contentio.Reader` / `Writer`。
 - `common/engine/selection` 只按规范化 Engine capabilities 解析和筛选 Engine Instance，不定义 capabilities Schema，也不保存 Engine 事实。
-- `common/engine/certification` 只承载尚未形成生产插件的新引擎官方介质与协议认证测试，不登记 `engine_type`，也不作为上层模块可消费能力；认证通过后生产实现仍必须进入独立插件包和正式能力门禁。GaussDB 的认证源保存在该 owner 的 `gaussdb/testdata/`，仅复制到仓库外独立临时 Go module 构建；普通 build tag 不能隔离 `go mod tidy` 的依赖扫描，不得把离线认证驱动引入 Common go.mod、包图或全仓 workspace。
+- `common/engine/certification` 只承载尚未形成生产插件的新引擎官方介质与协议认证测试，不登记 `engine_type`，也不作为上层模块可消费能力；认证通过后生产实现仍必须进入独立插件包和正式能力门禁。GaussDB 的认证源保存在该 owner 的 `gaussdb/testdata/`，仅复制到仓库外独立临时 Go module 构建；普通 build tag 不能隔离 `go mod tidy` 的依赖扫描，候选公开驱动固定版本及校验和，只在独立 module 验证；Linux amd64／arm64 实库与 Linux／Darwin 四组合构建分别认定。不得将未经正式准入的认证驱动引入 Common go.mod、包图或全仓 workspace。
 - `common/resourcetree` 负责把 Meta 已落库的 Engine Catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `EngineCatalogPath` 的纯转换能力。
 - `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。

@@ -450,7 +450,7 @@ T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必
 
 ## 六、T5 发布认证协议
 
-GaussDB 开发者版官方介质准入使用 `make test-release RELEASE_SUITE=gaussdb-official-media`，仅在原生 Linux x86_64 Runner 内运行独占 Ubuntu 22.04 容器。GitHub `Release and T2 gates` 手工选择 `release_suite=gaussdb-official-media` 时只运行该认证，不启动其他 Owner 门禁；Tag 发布仍调用相同入口。固定版本、校验和及授权边界见《数据引擎扩展指南》。`make test-release-runner` 验证介质完整性、解包边界、所有权和残留拒绝；原生 T5 另外验证官方 SHA-256 认证驱动与现有 PostgreSQL 驱动同进程共存、只读事务、参数化精确数值／中文、目录和取消。认证源只保存于 Common owner 的 `testdata`，由入口复制到仓库外的独立临时 Go module；该模块使用与 Common 一致的 Go／lib/pq 版本，仅以本地 replace 注入未修改的固定官方驱动。普通包发现、Common tidy 与 workspace 不得解析认证驱动，确定性门禁必须实际检查带标签的包发现；报告、日志不包含密码、原始介质或驱动。实际启动、协议或清理失败均不得登记通过；当前尚不注册生产 `engine_type`，不以此替代后续 T2／T4。固定10.0介质的原生认证文件为 `gs_hba.conf`，不得新建无效的 PG 命名配置代替。容器镜像构建先实际执行官方客户端／服务端版本命令检查动态依赖；运行期将日志写至 stderr，并保留就绪探测的返回码、stdout 和 stderr，清理前统一脱敏。首次 Run 39030070597 在240秒就绪检查超时，未进入驱动协议验证；初始化成功及清理零残留不能代替原生T5通过。
+GaussDB 开发者版官方介质准入使用 `make test-release RELEASE_SUITE=gaussdb-official-media`，在原生 Linux x86_64、ARM64 Runner 的独占 Ubuntu 22.04 容器分别运行；GitHub 手工选择相应 `release_suite` 仅运行该 owner 的双架构矩阵，任何一个架构失败不得声明支持 ARM。固定介质、驱动与授权边界见《数据引擎扩展指南》。`make test-release-runner` 验证下载完整性、架构匹配、独立 module、所有权和失败清理；`make test-gaussdb-certification-build` 以 `CGO_ENABLED=0` 编译 Linux／Darwin × amd64／arm64，并在当前宿主执行 GaussDB／PostgreSQL 驱动共存断言，只是构建验证。原生 T5 验证 SHA-256 认证、只读事务、中文／参数化精确数值、目录及取消后的连接池恢复，禁止跳过。认证源仅保存于 Common owner 的 `testdata`，由入口复制到仓库外独立 module，采用固定公开驱动与校验和，不使用离线驱动 replace 或 `GOENV_REGIST_ALL`；Common 普通包图、tidy 与 workspace 不加载候选驱动。镜像由对应官方介质构建并记录 ID，不冒称官方发行镜像；报告不含密码、原始介质或驱动。容器、网络、镜像和临时凭据必须全路径清理。Mac 上 Docker 或交叉编译不冒充 Linux 原生 T5，未注册生产 `engine_type`，也不替代后续 T2／T4。
 
 T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain、安装包生命周期、HA、故障切换或在线厂商证据。统一 `test-release` 分发器只选择 owner 门禁并生成 `addp.release-gate/v1` 报告，不合并不同产品的运行条件。
 

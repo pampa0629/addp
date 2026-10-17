@@ -336,9 +336,17 @@ jobs:
           details-file: ${{ runner.temp }}/addp-opengauss-official-media/release-summary.md
 
   gaussdb-official-media-certification:
-    name: GaussDB developer 10.0 official media certification (Linux x86_64)
+    name: GaussDB developer 10.0 official media certification (Linux ${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.release_suite == 'gaussdb-official-media' || inputs.release_suite == 'all'))
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:
       - name: Check out repository
@@ -350,6 +358,8 @@ jobs:
         with:
           go-version-file: common/go.mod
           cache: false
+      - name: Verify driver builds and coexistence
+        run: make test-gaussdb-certification-build
       - name: Run GaussDB official-media certification
         env:
           ADDP_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/addp-gaussdb-official-media
@@ -358,7 +368,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: gaussdb-official-media-certification
+          name: gaussdb-official-media-certification-${{ matrix.arch }}
           path: ${{ runner.temp }}/addp-gaussdb-official-media/
           if-no-files-found: error
           retention-days: 7
@@ -366,7 +376,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: GaussDB official media certification (Linux x86_64)
+          gate: GaussDB official media certification (Linux ${{ matrix.arch }})
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-gaussdb-official-media/release-summary.md
 
