@@ -115,6 +115,7 @@ class ReleaseGateTest(unittest.TestCase):
                 "dameng-official-media",
                 "kingbase-official-media",
                 "opengauss-official-media",
+                "gaussdb-official-media",
             },
         )
         self.assertEqual(

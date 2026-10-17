@@ -66,6 +66,12 @@ SUITES: Mapping[str, Suite] = {
         owner_report="opengauss-official-media.json",
         workflow_job="opengauss-official-media-certification",
     ),
+    "gaussdb-official-media": Suite(
+        target="test-gaussdb-official-media-release",
+        artifact_environment=(("ADDP_GAUSSDB_CERTIFICATION_REPORT", "gaussdb-official-media.json"),),
+        owner_report="gaussdb-official-media.json",
+        workflow_job="gaussdb-official-media-certification",
+    ),
     "kingbase-official-media": Suite(
         target="test-kingbase-official-media-release",
         artifact_environment=(

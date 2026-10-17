@@ -606,8 +606,16 @@ test-workflow-security: ## 使用固定版本 zizmor 审计发布工作流
 	@python3 scripts/test/workflow-security-gate.py --repository "$(CURDIR)"
 
 test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
-	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/gaussdb-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
+
+.PHONY: test-gaussdb-official-media-release
+test-gaussdb-official-media-release:
+	@python3 scripts/test/gaussdb-official-media-release-gate.py
+
+.PHONY: test-gaussdb-certification-build
+test-gaussdb-certification-build: ## 交叉编译 GaussDB Linux 认证探针，不运行原生验收
+	@python3 scripts/test/gaussdb-official-media-release-gate.py --compile-only
 
 .PHONY: test-infra-runtime-log-lifecycle
 test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界

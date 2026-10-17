@@ -450,6 +450,8 @@ T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain�
 
 厂商只提供离线 Docker tar、且 Runtime 受 OS/CPU 架构约束时，官方介质认证归 T5：owner 脚本必须在一处固定官方 HTTPS 地址和 SHA-256，负责下载、校验、`docker load`、原生启动、真实驱动/SQL 断言及所有退出路径清理；workflow 只选择匹配架构的 Runner 并调用统一 `test-release` 入口。此类 suite 不声明 `ADDP_T2_SERVICES`、不进入 `test-integration` 或辅助 macOS 巡检，也不能替代插件实现后的 T2 Provider 集成与 T4 跨模块验收。
 
+GaussDB 开发者版官方介质准入使用 `make test-release RELEASE_SUITE=gaussdb-official-media`，仅在原生 Linux x86_64 Runner 内运行独占 Ubuntu 22.04 容器。GitHub `Release and T2 gates` 手工选择 `release_suite=gaussdb-official-media` 时只运行该认证，不启动其他 Owner 门禁；Tag 发布仍调用相同入口。固定版本、校验和及授权边界见《数据引擎扩展指南》。`make test-release-runner` 验证介质完整性、解包边界、所有权和残留拒绝；原生 T5 另外验证官方 SHA-256 认证驱动与现有 PostgreSQL 驱动同进程共存、只读事务、参数化精确数值／中文、目录和取消。认证使用的未修改官方驱动只注入临时 modfile；报告、日志不包含密码、原始介质或驱动。实际启动、协议或清理失败均不得登记通过；当前尚不注册生产 `engine_type`，不以此替代后续 T2／T4。
+
 官方介质包含限时试用 License 时，T5 只允许将其用于首次准入评估，不得以重新下载介质、重建容器、替换主机或清除状态的方式重置试用期。长期门禁必须由 owner 提供来源合法、当前有效且 SHA-256 明确的 License，门禁报告只记录授权元数据与摘要，不归档 License 原文。
 
 发布 workflow 只准备环境、调用标准 Make 入口、归档证据和执行发布动作，不在 YAML 内重写业务测试。System IAM PostgreSQL 属于 T2，不因与发布流程共用 workflow 而变成 T5。
