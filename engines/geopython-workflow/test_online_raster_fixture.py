@@ -5,6 +5,7 @@ import math
 import importlib
 import json
 from pathlib import Path
+from subprocess import CompletedProcess
 import struct
 import time
 from unittest.mock import patch
@@ -201,12 +202,19 @@ def physical(tmp_path):
 
 
 @pytest.fixture
-def terrain_artifacts(physical,tmp_path):
+def terrain_artifacts(physical,tmp_path,monkeypatch):
     from operators.raster_compute import (raster_workspace,raster_load,raster_slope,raster_aspect,
         raster_hillshade,raster_build_overviews,raster_save)
+    monkeypatch.syspath_prepend(str(ROOT))
+    scene = importlib.import_module('scripts.test.raster-workflow-online')
+    def verify_manifest(action):
+        evidence = fixture.worker(action, physical)
+        with patch.object(scene.subprocess, 'run', return_value=CompletedProcess([], 0, json.dumps(evidence), '')):
+            assert scene.physical(ROOT, {}, action) == evidence
+        return evidence
     for name in fixture.preterrain_target_names():
         LocalMinio.objects['target','raster-target',name]=('earlier-'+name).encode()
-    baseline=fixture.worker('prepare-terrain',physical)
+    baseline=verify_manifest('prepare-terrain')
     assert set(baseline['preserved_sha256'])==fixture.preterrain_target_names()
     fixture.private_json(physical.with_name('raster-terrain-baseline.json'),baseline['preserved_sha256'])
     source=tmp_path/'terrain-source.tif'
@@ -223,7 +231,7 @@ def terrain_artifacts(physical,tmp_path):
                 'access':{'method':'mounted_path','path':str(output)}}},profile='cog',blocksize=128)
         assert artifact['size_bytes']==output.stat().st_size>0
         LocalMinio.objects['target','raster-target',output.name]=output.read_bytes()
-        proof=fixture.worker('verify-'+case,physical)
+        proof=verify_manifest('verify-'+case)
         assert proof['terrain'][case]['size_bytes']==artifact['size_bytes']
     return physical
 
@@ -234,6 +242,8 @@ def test_dem_hosted_physical_oracle_checks_all_pixels_pyramids_prior_and_sources
     assert set(evidence['terrain'])==set(fixture.TERRAIN_CASES)
     monkeypatch.syspath_prepend(str(ROOT))
     scene=importlib.import_module('scripts.test.raster-workflow-online')
+    with patch.object(scene.subprocess, 'run', return_value=CompletedProcess([], 0, json.dumps(evidence), '')):
+        assert scene.physical(ROOT, {}, 'verify-dem-contour') == evidence
     from operators.raster_compute import raster_workspace,raster_load,raster_contour
     source=tmp_path/'contour-source.tif';source.write_bytes(LocalMinio.objects['source','raster-source','mosaic-a.tif'])
     with raster_workspace():

@@ -720,6 +720,24 @@ def physical(repository, env, action):
             raise SuiteError('physical tiling evidence is incomplete')
         return payload
     case_name = action.removeprefix('verify-')
+    if action == 'prepare-terrain' or case_name in fixture.TERRAIN_CASES + ('dem-contour',):
+        count = (0 if action == 'prepare-terrain' else len(fixture.TERRAIN_CASES)
+                 if case_name == 'dem-contour' else fixture.TERRAIN_CASES.index(case_name) + 1)
+        terrain = obj(payload.get('terrain'), 'physical DEM artifacts')
+        preserved = obj(payload.get('preserved_sha256'), 'physical DEM baseline')
+        if (payload.get('source_unchanged') is not True
+            or set(preserved) != fixture.preterrain_target_names()
+            or any(not isinstance(digest, str) or not digest for digest in preserved.values())
+            or set(terrain) != set(fixture.TERRAIN_CASES[:count])):
+            raise SuiteError('physical DEM manifest is incomplete')
+        for name, evidence in terrain.items():
+            evidence = obj(evidence, 'physical DEM artifact')
+            if (evidence.get('case_name') != name or evidence.get('cog_valid') is not True
+                or evidence.get('source_unchanged') is not True
+                or type(evidence.get('valid_pixels')) is not int
+                or evidence['valid_pixels'] != fixture.terrain_expectation()['valid_pixels']):
+                raise SuiteError('physical DEM artifact verification is incomplete')
+        return payload
     expectation = fixture.utility_expectation() if case_name in fixture.UTILITY_CASES or action == 'verify-utility-queries' else fixture.computed_expectation(case_name) if case_name in fixture.GRID_CASES + fixture.MULTIBAND_CASES + fixture.FOUNDATION_CASES + fixture.RECLASS_CASES + fixture.AGGREGATE_CASES + fixture.OUTSIDE_CASES + fixture.UPDATE_CASES + fixture.MOSAIC_CASES else fixture.artifact_expectation(action.startswith('verify-mosaic-'))
     if payload.get('cog_valid') is not True or payload.get('source_unchanged') is not True or payload.get('valid_pixels') != expectation['valid_pixels']:
         raise SuiteError('physical raster verification is incomplete')

@@ -278,6 +278,59 @@ class Client:
 
 
 class RasterWorkflowOnlineTest(unittest.TestCase):
+    def test_physical_adapter_dispatches_each_dem_manifest(self):
+        import json
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        actions = ['prepare-terrain'] + ['verify-'+name for name in m.fixture.TERRAIN_CASES+('dem-contour',)]
+        for action in actions:
+            payload = self.physical(Path('.'), {}, action)
+            with self.subTest(action=action), patch.object(m.subprocess, 'run',
+                    return_value=CompletedProcess([], 0, json.dumps(payload), '')):
+                self.assertEqual(m.physical(Path('.'), {}, action), payload)
+
+    def test_dem_scene_uses_the_subprocess_manifest_adapter(self):
+        import json
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        def physical(repo, env, action):
+            payload = self.physical(repo, env, action)
+            if action == 'prepare-terrain' or action.startswith('verify-dem-'):
+                with patch.object(m.subprocess, 'run', return_value=CompletedProcess([], 0, json.dumps(payload), '')):
+                    return m.physical(repo, env, action)
+            return payload
+        report = self.run_scene(physical)
+        self.assertEqual(len(report['terrain_cases']), 4)
+        self.assertEqual(sum(len(items) for items in report['size_evidence'].values()), 52)
+
+    def test_physical_dem_adapter_rejects_incomplete_manifests_and_invalid_artifacts(self):
+        import json
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        for action in ['prepare-terrain'] + ['verify-'+name for name in m.fixture.TERRAIN_CASES+('dem-contour',)]:
+            faults = ['source', 'baseline', 'digest', 'terrain', 'extra']
+            if action != 'prepare-terrain':
+                faults += ['artifact', 'case', 'cog', 'artifact-source', 'pixels', 'fractional-pixels']
+            for fault in faults:
+                payload = self.physical(Path('.'), {}, action)
+                if fault == 'source': payload['source_unchanged'] = False
+                if fault == 'baseline': payload['preserved_sha256'].pop('result.cog.tif')
+                if fault == 'digest': payload['preserved_sha256']['result.cog.tif'] = ''
+                if fault == 'terrain': payload['terrain'] = None
+                if fault == 'extra': payload['terrain']['unexpected'] = {}
+                if fault in ('artifact', 'case', 'cog', 'artifact-source', 'pixels', 'fractional-pixels'):
+                    evidence = payload['terrain']['dem-slope']
+                    if fault == 'artifact': payload['terrain']['dem-slope'] = None
+                    if fault == 'case': evidence['case_name'] = 'dem-aspect'
+                    if fault == 'cog': evidence['cog_valid'] = False
+                    if fault == 'artifact-source': evidence['source_unchanged'] = False
+                    if fault == 'pixels': evidence['valid_pixels'] -= 1
+                    if fault == 'fractional-pixels': evidence['valid_pixels'] = float(evidence['valid_pixels'])
+                with self.subTest(action=action, fault=fault), patch.object(m.subprocess, 'run',
+                        return_value=CompletedProcess([], 0, json.dumps(payload), '')):
+                    with self.assertRaises(m.SuiteError):
+                        m.physical(Path('.'), {}, action)
+
     def test_dem_append_keeps_original_scenes_and_checks_three_cogs_and_vector_preview(self):
         report=self.run_scene()
         self.assertIsInstance(report['physical'], list)
