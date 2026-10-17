@@ -92,7 +92,7 @@ func TestBuildSubgraphMarksRealGraphElements(t *testing.T) {
 }
 
 func TestAggregateSeedQueryMatchesCompleteLabelSet(t *testing.T) {
-	query := aggregateSeedQuery([]string{"Person", "Employee"}, 20)
+	query := aggregateSeedQuery(plugin.PropertyGraphDialect{IDTemplate: "elementId(%s)", DegreeTemplate: "COUNT { (%s)--() }"}, []string{"Person", "Employee"}, 20)
 
 	for _, fragment := range []string{
 		"size(labels(n)) = 2",
@@ -136,7 +136,7 @@ func TestMergeExpandedSubgraphEnforcesBudgetsAndDeduplicates(t *testing.T) {
 }
 
 func TestExpandFrontierQueryExcludesSeenRelationshipsBeforeLimit(t *testing.T) {
-	query := expandFrontierQuery([]string{"node-a", "node-b"}, []string{"rel-1"}, 20)
+	query := expandFrontierQuery(plugin.PropertyGraphDialect{IDTemplate: "elementId(%s)"}, []string{"node-a", "node-b"}, []string{"rel-1"}, 20)
 
 	for _, fragment := range []string{
 		"NOT elementId(r) IN ['rel-1']",

@@ -235,6 +235,8 @@ definitions:
     type: object
   github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest:
     properties:
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
       conflict:
         description: '"skip" | "overwrite"'
         type: string
@@ -249,6 +251,7 @@ definitions:
           type: string
         type: array
     required:
+    - catalog_path
     - engine_id
     type: object
   github_com_addp_graph_internal_models.ApplyInferredSchemaRequest:
@@ -448,19 +451,25 @@ definitions:
     type: object
   github_com_addp_graph_internal_models.CreateKnowledgeGraphRequest:
     properties:
-      database:
-        type: string
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
       description:
         type: string
       engine_id:
         type: integer
+      index_management:
+        enum:
+        - managed
+        - external
+        type: string
       name:
         type: string
       ontology_id:
         type: integer
     required:
-    - database
+    - catalog_path
     - engine_id
+    - index_management
     - name
     - ontology_id
     type: object
@@ -549,7 +558,7 @@ definitions:
         description: 本体概念标识
         type: string
       node_labels:
-        description: Neo4j 节点标签执行映射
+        description: 图节点标签执行映射
         items:
           type: integer
         type: array
@@ -620,7 +629,7 @@ definitions:
         description: 是否按本体定义显示方向
         type: boolean
       id:
-        description: Neo4j elementId
+        description: 引擎节点/关系 ID
         type: string
       kind:
         description: entity | aggregate
@@ -662,13 +671,13 @@ definitions:
         description: 匹配到的本体实体类型 name
         type: string
       id:
-        description: Neo4j elementId
+        description: 引擎节点/关系 ID
         type: string
       kind:
         description: entity | aggregate
         type: string
       labels:
-        description: Neo4j 标签列表
+        description: 图节点标签列表
         items:
           type: string
         type: array
@@ -678,20 +687,32 @@ definitions:
         additionalProperties: true
         type: object
     type: object
+  github_com_addp_graph_internal_models.InferGraphSchemaRequest:
+    properties:
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      engine_id:
+        type: integer
+      ontology_id:
+        type: integer
+    required:
+    - catalog_path
+    - engine_id
+    type: object
   github_com_addp_graph_internal_models.KnowledgeGraph:
     properties:
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
       created_at:
-        type: string
-      database:
-        description: Neo4j database 名称
         type: string
       description:
         type: string
       engine_id:
-        description: Neo4j 引擎 ID (来自 System)
         type: integer
       id:
         type: integer
+      index_management:
+        type: string
       is_public:
         type: boolean
       name:
@@ -1174,6 +1195,26 @@ definitions:
   models.JSONMap:
     additionalProperties: true
     type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
   taskprovider.ExecutionContract:
     properties:
       input_defaults:
@@ -1350,8 +1391,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建新的知识图谱实例，绑定本体和 Neo4j 引擎 | Create a new knowledge graph instance,
-        binding ontology and Neo4j engine
+      description: 创建新的知识图谱实例，绑定本体、业务图目录路径和索引管理范围 | Bind ontology, business graph
+        catalog path and index management scope
       parameters:
       - description: 创建知识图谱请求 | Create knowledge graph request
         in: body
@@ -1368,6 +1409,14 @@ paths:
             $ref: '#/definitions/github_com_addp_graph_internal_models.KnowledgeGraph'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
@@ -2460,6 +2509,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2528,7 +2581,15 @@ paths:
       x-addp-auth-mode: public
   /kg/{graphId}/search:
     get:
-      responses: {}
+      responses:
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       summary: 全文搜索实体 | Full-text search entities
       tags:
       - 知识服务 | Knowledge Service
@@ -3283,17 +3344,16 @@ paths:
       x-addp-required-permissions:
       - graph.ontology.read
   /ontologies/infer-schema/from-engine:
-    get:
+    post:
+      consumes:
+      - application/json
       parameters:
-      - description: 引擎 ID | Engine ID
-        in: query
-        name: engine_id
+      - description: 目标图与本体 | Target graph and ontology
+        in: body
+        name: request
         required: true
-        type: integer
-      - description: 本体 ID | Ontology ID
-        in: query
-        name: ontology_id
-        type: integer
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.InferGraphSchemaRequest'
       produces:
       - application/json
       responses:

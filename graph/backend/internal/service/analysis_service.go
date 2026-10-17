@@ -3,13 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/propertygraph"
 	"strings"
-	"sync"
 	"time"
 
-	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/dbbridge"
-	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 )
@@ -36,19 +34,7 @@ var (
 type AnalysisService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
 	ontologyRepo *repository.OntologyRepository
-	systemClient *commonClient.SystemServiceClient
-	neo4jSvc     *Neo4jService
-
-	// GDS 能力缓存（实例级）
-	gdsChecked bool
-	gdsAvail   bool
-	gdsVersion string
-	gdsCacheMu sync.RWMutex
-
-	// Spatial 能力缓存（实例级）
-	spatialChecked bool
-	spatialAvail   bool
-	spatialCacheMu sync.RWMutex
+	graphDataSvc *GraphDataService
 }
 
 type analysisNodeShapeFilter struct {
@@ -59,14 +45,13 @@ type analysisNodeShapeFilter struct {
 func NewAnalysisService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
-	systemClient *commonClient.SystemServiceClient,
-	neo4jSvc *Neo4jService,
+	graphDataSvc *GraphDataService,
 ) *AnalysisService {
 	return &AnalysisService{
 		graphRepo:    graphRepo,
 		ontologyRepo: ontologyRepo,
-		systemClient: systemClient,
-		neo4jSvc:     neo4jSvc,
+
+		graphDataSvc: graphDataSvc,
 	}
 }
 
@@ -106,8 +91,8 @@ func nodeShapeWhereClause(nodeVar string, filters []analysisNodeShapeFilter) str
 	return "(" + strings.Join(clauses, " OR ") + ")"
 }
 
-func nodeShapeQueryPredicate(nodeVar string, filters []analysisNodeShapeFilter) string {
-	businessPredicate := businessNodePredicate(nodeVar)
+func nodeShapeQueryPredicate(dialect plugin.PropertyGraphDialect, nodeVar string, filters []analysisNodeShapeFilter) string {
+	businessPredicate := propertygraph.NodePredicate(dialect, nodeVar)
 	clause := nodeShapeWhereClause(nodeVar, filters)
 	if clause == "" {
 		return businessPredicate
@@ -115,88 +100,27 @@ func nodeShapeQueryPredicate(nodeVar string, filters []analysisNodeShapeFilter) 
 	return businessPredicate + " AND " + clause
 }
 
-// getGraphAndEngine 与 Neo4jService 复用相同逻辑
-func (s *AnalysisService) getGraphAndEngine(graphID, tenantID uint) (*models.KnowledgeGraph, *commonmodels.Engine, error) {
-	kg, err := s.graphRepo.GetByID(graphID, tenantID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("knowledge graph not found: %w", err)
-	}
-	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(context.Background(), kg.EngineID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get engine (id=%d): %w", kg.EngineID, err)
-	}
-	engineCopy := *engine
-	connCopy := make(commonmodels.ConnectionInfo, len(engine.ConnectionInfo))
-	for k, v := range engine.ConnectionInfo {
-		connCopy[k] = v
-	}
-	if kg.Database != "" {
-		connCopy["database"] = kg.Database
-	}
-	engineCopy.ConnectionInfo = connCopy
-	return kg, &engineCopy, nil
+func (s *AnalysisService) getGraphAndEngine(ctx context.Context, graphID, tenantID uint) (*models.KnowledgeGraph, *graphTarget, error) {
+	return s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
 }
 
-// checkGDS 检测 GDS 可用性（实例级缓存）
-func (s *AnalysisService) checkGDS(ctx context.Context, engine *commonmodels.Engine) (bool, string) {
-	s.gdsCacheMu.RLock()
-	if s.gdsChecked {
-		avail, ver := s.gdsAvail, s.gdsVersion
-		s.gdsCacheMu.RUnlock()
-		return avail, ver
-	}
-	s.gdsCacheMu.RUnlock()
-
-	s.gdsCacheMu.Lock()
-	defer s.gdsCacheMu.Unlock()
-	// double-check
-	if s.gdsChecked {
-		return s.gdsAvail, s.gdsVersion
-	}
-
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, "RETURN gds.version() AS version")
-	s.gdsChecked = true
-	if err != nil || len(result.Rows) == 0 {
-		s.gdsAvail = false
-		s.gdsVersion = ""
+// Native extension availability is checked for this exact engine, never shared across engines.
+func (s *AnalysisService) checkGDS(ctx context.Context, target *graphTarget) (bool, string) {
+	if !target.provider.GraphDialect().GDS {
 		return false, ""
 	}
-	s.gdsAvail = true
-	s.gdsVersion = fmt.Sprintf("%v", result.Rows[0]["version"])
-	return true, s.gdsVersion
+	result, err := executeGraphQuery(ctx, target, "RETURN gds.version() AS version")
+	if err != nil || len(result.Rows) == 0 {
+		return false, ""
+	}
+	return true, fmt.Sprint(result.Rows[0]["version"])
 }
-
-// checkSpatial 检测 Neo4j Spatial 插件可用性（实例级缓存）
-func (s *AnalysisService) checkSpatial(ctx context.Context, engine *commonmodels.Engine) bool {
-	s.spatialCacheMu.RLock()
-	if s.spatialChecked {
-		avail := s.spatialAvail
-		s.spatialCacheMu.RUnlock()
-		return avail
-	}
-	s.spatialCacheMu.RUnlock()
-
-	s.spatialCacheMu.Lock()
-	defer s.spatialCacheMu.Unlock()
-	if s.spatialChecked {
-		return s.spatialAvail
-	}
-
-	// 直接调用 spatial.procedures()：安装了插件才会成功，否则报错
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"CALL spatial.procedures() YIELD signature RETURN count(signature) AS cnt")
-	s.spatialChecked = true
-	if err != nil {
-		s.spatialAvail = false
+func (s *AnalysisService) checkSpatial(ctx context.Context, target *graphTarget) bool {
+	if !target.provider.GraphDialect().Spatial {
 		return false
 	}
-	if len(result.Rows) == 0 {
-		s.spatialAvail = false
-		return false
-	}
-	cnt := toInt64(result.Rows[0]["cnt"])
-	s.spatialAvail = cnt > 0
-	return s.spatialAvail
+	result, err := executeGraphQuery(ctx, target, "CALL spatial.procedures() YIELD signature RETURN count(signature) AS cnt")
+	return err == nil && len(result.Rows) > 0 && toInt64(result.Rows[0]["cnt"]) > 0
 }
 
 // getAllEffectiveSpatialTypes 从本体中获取所有有效空间实体类型（含继承）
@@ -210,7 +134,7 @@ func getAllEffectiveSpatialTypes(ontology *models.Ontology) map[string]SpatialLa
 
 // CheckCapabilities 探测算法能力
 func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenantID uint) (*models.AlgorithmCapabilities, error) {
-	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -222,9 +146,12 @@ func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenant
 		SpatialAvailable: spatialAvail,
 		SpatialLayers:    []models.SpatialLayerInfo{},
 		PendingLayers:    []string{},
-		CypherAlgos:      cypherAlgos,
+		CypherAlgos:      []string{"degree_centrality", "khop_neighbors"},
 		GDSAlgos:         []string{},
 		SpatialAlgos:     []string{},
+	}
+	if engine.provider.GraphDialect().AllShortestPaths {
+		caps.CypherAlgos = append(caps.CypherAlgos, "multi_path")
 	}
 	if gdsAvail {
 		caps.GDSAlgos = gdsAlgos
@@ -238,7 +165,7 @@ func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenant
 
 		// 查询 Neo4j 中已有的空间图层
 		existingLayerNames := make(map[string]bool)
-		layersResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+		layersResult, err := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
 		if err == nil && layersResult != nil {
 			for _, row := range layersResult.Rows {
 				name, ok := row["name"].(string)
@@ -267,9 +194,12 @@ func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenant
 // SyncAllSpatialLayers 将本体中所有有效空间类型（含继承）的图层同步到 Neo4j，并注册已有节点
 // 幂等操作：图层已存在则跳过创建；节点注册用 MERGE 语义（spatial.addNode 本身幂等）
 func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, tenantID uint) ([]string, error) {
-	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if !engine.provider.GraphDialect().Spatial {
+		return nil, fmt.Errorf("SPATIAL_UNAVAILABLE")
 	}
 
 	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
@@ -284,7 +214,7 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 
 	// 查询已有图层
 	existingLayers := make(map[string]bool)
-	layersResult, _ := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	layersResult, _ := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
 	if layersResult != nil {
 		for _, row := range layersResult.Rows {
 			if name, ok := row["name"].(string); ok && name != "" {
@@ -316,7 +246,7 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 					escapeCypher(layerName), escapeCypher(cfg.LonField), escapeCypher(cfg.LatField),
 				)
 			}
-			if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, createCypher); err != nil {
+			if _, err := executeGraphQuery(ctx, engine, createCypher); err != nil {
 				return synced, fmt.Errorf("创建空间图层 %q 失败: %w", layerName, err)
 			}
 		}
@@ -339,7 +269,7 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 				escapeCypher(layerName),
 			)
 		}
-		if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, addNodesCypher); err != nil {
+		if _, err := executeGraphQuery(ctx, engine, addNodesCypher); err != nil {
 			return synced, fmt.Errorf("注册节点到空间图层 %q 失败: %w", layerName, err)
 		}
 
@@ -357,7 +287,7 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 		return s.runKhopNeighbors(ctx, graphID, tenantID, req)
 	}
 
-	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
+	_, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -415,30 +345,17 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 }
 
 // runDegreeCentrality 度中心性（Cypher）
-func (s *AnalysisService) runDegreeCentrality(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runDegreeCentrality(ctx context.Context, graphID, tenantID uint, engine *graphTarget, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	labelFilter := ""
-	if clause := nodeShapeQueryPredicate("n", analysisNodeShapeFilters(req)); clause != "" {
+	if clause := nodeShapeQueryPredicate(engine.provider.GraphDialect(), "n", analysisNodeShapeFilters(req)); clause != "" {
 		labelFilter = "WHERE " + clause
 	}
 
-	cypher := fmt.Sprintf(`
-MATCH (n) %s
-CALL {
-  WITH n
-  OPTIONAL MATCH (n)-[r]-()
-  WHERE NOT (`+internalRelationshipTypePredicate+`)
-  RETURN count(r) AS degree
-}
-RETURN elementId(n) AS node_id,
-       properties(n) AS node_properties,
-       labels(n) AS node_labels,
-       toFloat(degree) AS score
-ORDER BY degree DESC
-LIMIT %d`, labelFilter, req.Limit)
+	cypher := fmt.Sprintf(`MATCH (n) %s OPTIONAL MATCH (n)-[r]-(m) WHERE %s WITH n,count(r) AS degree RETURN %s AS node_id, properties(n) AS node_properties,labels(n) AS node_labels,toFloat(degree) AS score ORDER BY degree DESC LIMIT %d`, labelFilter, propertygraph.RelationshipPredicate(engine.provider.GraphDialect(), "r", "n", "m"), engine.provider.GraphDialect().ID("n"), req.Limit)
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	result, err := executeGraphQuery(ctx, engine, cypher)
 	if err != nil {
 		return nil, fmt.Errorf("degree centrality failed: %w", err)
 	}
@@ -479,7 +396,7 @@ func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantI
 	if hops > MaxExpandDepth {
 		hops = MaxExpandDepth
 	}
-	subgraph, err := s.neo4jSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
+	subgraph, err := s.graphDataSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
 		Target:            models.ExpandTarget{Kind: "entity", ID: nodeID},
 		Depth:             hops,
 		NodeLimit:         req.Limit,
@@ -505,7 +422,10 @@ func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantI
 }
 
 // runMultiPath 多路最短路径（Cypher）
-func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID uint, engine *graphTarget, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+	if !engine.provider.GraphDialect().AllShortestPaths {
+		return nil, fmt.Errorf("target graph does not support all shortest paths")
+	}
 	start := time.Now()
 
 	// 从 params.pairs 中读取 source-target 对（最多5对）
@@ -550,10 +470,10 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 
 	for _, pair := range pairs {
 		cypher := fmt.Sprintf(
-			"MATCH p = allShortestPaths((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' AND NONE(rel IN relationships(p) WHERE type(rel) IN "+internalRelationshipTypeList+") RETURN p LIMIT 5",
+			"MATCH p = allShortestPaths((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' AND NONE(rel IN relationships(p) WHERE type(rel) IN "+cypherStringList(engine.provider.GraphDialect().ExcludedRelationshipTypes)+") RETURN p LIMIT 5",
 			escapeCypher(pair[0]), escapeCypher(pair[1]),
 		)
-		result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+		result, err := executeGraphQuery(ctx, engine, cypher)
 		if err != nil {
 			continue
 		}
@@ -587,7 +507,7 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 }
 
 // runGDSAlgo 执行 GDS 算法（含投影管理）
-func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.Engine, graphID, tenantID uint, algo string, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *graphTarget, graphID, tenantID uint, algo string, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	projName := fmt.Sprintf("addp_tmp_%d_%d_%d", graphID, tenantID, time.Now().UnixMilli())
@@ -595,7 +515,7 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 	selectedRelTypes := make([]string, 0, len(req.RelTypes))
 	if len(req.RelTypes) > 0 {
 		for _, r := range req.RelTypes {
-			if isInternalRelationshipType(r) {
+			if propertygraph.IsExcludedRelationship(engine.provider.GraphDialect(), r) {
 				continue
 			}
 			selectedRelTypes = append(selectedRelTypes, r)
@@ -606,8 +526,8 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 	}
 
 	filters := analysisNodeShapeFilters(req)
-	projCypher := buildGDSProjectionCypher(projName, selectedRelTypes, filters)
-	_, err := dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
+	projCypher := buildGDSProjectionCypher(engine.provider.GraphDialect(), projName, selectedRelTypes, filters)
+	_, err := executeGraphQuery(ctx, engine, projCypher)
 	if err != nil {
 		return nil, fmt.Errorf("GDS projection failed: %w", err)
 	}
@@ -617,7 +537,7 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		dropCypher := fmt.Sprintf("CALL gds.graph.drop('%s', false)", projName)
-		_, _ = dbbridge.ExecuteGraphQuery(cleanCtx, engine, dropCypher)
+		_, _ = executeGraphQuery(cleanCtx, engine, dropCypher)
 	}()
 
 	// 执行算法
@@ -676,7 +596,7 @@ ORDER BY componentId ASC
 LIMIT %d`, projName, req.Limit)
 	}
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, algoCypher)
+	result, err := executeGraphQuery(ctx, engine, algoCypher)
 	if err != nil {
 		return nil, fmt.Errorf("GDS %s failed: %w", algo, err)
 	}
@@ -704,8 +624,8 @@ LIMIT %d`, projName, req.Limit)
 	}, nil
 }
 
-func buildGDSProjectionCypher(projName string, selectedRelTypes []string, filters []analysisNodeShapeFilter) string {
-	relWhereParts := []string{businessRelationshipPredicate("r", "source", "target")}
+func buildGDSProjectionCypher(dialect plugin.PropertyGraphDialect, projName string, selectedRelTypes []string, filters []analysisNodeShapeFilter) string {
+	relWhereParts := []string{propertygraph.RelationshipPredicate(dialect, "r", "source", "target")}
 	if len(selectedRelTypes) > 0 {
 		relWhereParts = append(relWhereParts, fmt.Sprintf("type(r) IN %s", cypherStringList(selectedRelTypes)))
 	}
@@ -714,13 +634,13 @@ func buildGDSProjectionCypher(projName string, selectedRelTypes []string, filter
 		return fmt.Sprintf(
 			"CALL gds.graph.project.cypher('%s', 'MATCH (n) WHERE %s RETURN id(n) AS id', 'MATCH (source)-[r]->(target) WHERE %s RETURN id(source) AS source, id(target) AS target') YIELD graphName, nodeCount, relationshipCount",
 			escapeCypher(projName),
-			escapeCypher(businessNodePredicate("n")),
+			escapeCypher(propertygraph.NodePredicate(dialect, "n")),
 			escapeCypher(relWhere),
 		)
 	}
-	nodeWhere := nodeShapeQueryPredicate("n", filters)
-	sourceWhere := nodeShapeQueryPredicate("source", filters)
-	targetWhere := nodeShapeQueryPredicate("target", filters)
+	nodeWhere := nodeShapeQueryPredicate(dialect, "n", filters)
+	sourceWhere := nodeShapeQueryPredicate(dialect, "source", filters)
+	targetWhere := nodeShapeQueryPredicate(dialect, "target", filters)
 	return fmt.Sprintf(
 		"CALL gds.graph.project.cypher('%s', 'MATCH (n) WHERE %s RETURN id(n) AS id', 'MATCH (source)-[r]->(target) WHERE %s AND %s AND %s RETURN id(source) AS source, id(target) AS target') YIELD graphName, nodeCount, relationshipCount",
 		escapeCypher(projName),
@@ -733,7 +653,7 @@ func buildGDSProjectionCypher(projName string, selectedRelTypes []string, filter
 
 // runNearbyNodes 邻近节点查询（Spatial 插件：spatial.withinDistance）
 // params: lon(float), lat(float), radius_km(float, 默认10), layer(string, 必须指定)
-func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID uint, engine *graphTarget, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	lon := floatParam(req.Params, "lon", 0)
@@ -758,7 +678,7 @@ LIMIT %d`,
 		req.Limit,
 	)
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	result, err := executeGraphQuery(ctx, engine, cypher)
 	if err != nil {
 		return nil, fmt.Errorf("nearby nodes query failed: %w", err)
 	}
@@ -783,7 +703,7 @@ LIMIT %d`,
 // runWithinArea 区域内节点查询（Spatial 插件：spatial.withinGeometry）
 // 取面图层中指定区域节点的 WKT 几何，查询点图层中落在该范围内的所有节点
 // params: area_layer(string), area_node_id(string), area_geom_field(string), point_layer(string)
-func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID uint, engine *graphTarget, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
 	start := time.Now()
 
 	areaLayer := stringParam(req.Params, "area_layer", "")
@@ -817,7 +737,7 @@ func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID u
 		req.Limit,
 	)
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	result, err := executeGraphQuery(ctx, engine, cypher)
 	if err != nil {
 		return nil, fmt.Errorf("within area query failed: %w", err)
 	}

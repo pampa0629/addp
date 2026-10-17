@@ -31,7 +31,7 @@ func (h *KnowledgeGraphHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	graphs, err := h.svc.List(tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, graphs)
@@ -62,7 +62,7 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 
 // Create godoc
 // @Summary      创建知识图谱 | Create knowledge graph
-// @Description  创建新的知识图谱实例，绑定本体和 Neo4j 引擎 | Create a new knowledge graph instance, binding ontology and Neo4j engine
+// @Description  创建新的知识图谱实例，绑定本体、业务图目录路径和索引管理范围 | Bind ontology, business graph catalog path and index management scope
 // @Tags         知识图谱 | Knowledge Graph
 // @Accept       json
 // @Produce      json
@@ -70,6 +70,8 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 // @Param        request body models.CreateKnowledgeGraphRequest true "创建知识图谱请求 | Create knowledge graph request"
 // @Success      201 {object} models.KnowledgeGraph
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.create"]
@@ -81,9 +83,9 @@ func (h *KnowledgeGraphHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	kg, err := h.svc.Create(tenantID, &req)
+	kg, err := h.svc.Create(c.Request.Context(), tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, kg)
@@ -114,7 +116,7 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 	}
 	kg, err := h.svc.Update(id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, kg)
@@ -136,7 +138,7 @@ func (h *KnowledgeGraphHandler) Delete(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
 	if err := h.svc.Delete(id, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

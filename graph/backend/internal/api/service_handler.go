@@ -80,7 +80,7 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	entities, total, err := h.knowledgeSvc.ListEntitiesByType(
 		c.Request.Context(), graphID, tenantID, entityType, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
@@ -125,7 +125,7 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 
 	result, err := h.knowledgeSvc.GetEntityNeighbors(c.Request.Context(), graphID, tenantID, nodeID, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -147,7 +147,7 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	}
 	result, err := h.knowledgeSvc.FindPaths(c.Request.Context(), graphID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -169,7 +169,7 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	}
 	result, err := h.knowledgeSvc.GetSubgraph(c.Request.Context(), graphID, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -178,6 +178,8 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 // @Summary 全文搜索实体 | Full-text search entities
 // @Tags         知识服务 | Knowledge Service
 // @x-addp-auth-mode "public"
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
 // @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
@@ -202,7 +204,7 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	entities, total, err := h.knowledgeSvc.SearchEntities(
 		c.Request.Context(), graphID, tenantID, q, entityType, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
@@ -226,7 +228,7 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	}
 	result, err := h.knowledgeSvc.GetOntologyDescription(c.Request.Context(), graphID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -243,7 +245,7 @@ func (h *ServiceHandler) GetStats(c *gin.Context) {
 	}
 	result, err := h.knowledgeSvc.GetStats(c.Request.Context(), graphID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/graph/internal/models"
 	"gorm.io/driver/postgres"
@@ -30,7 +31,7 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Ontology{}, &models.KnowledgeGraph{}, &models.BuildTask{}, &models.BuildMaterial{}, &models.ReviewItem{}); err != nil {
+	if err := MigrateGraphTables(db); err != nil {
 		t.Fatalf("migrate graph build tables: %v", err)
 	}
 
@@ -48,7 +49,7 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 		t.Fatalf("create integration ontology: %v", err)
 	}
 	graph := models.KnowledgeGraph{
-		TenantID: tenantID, OntologyID: ontology.ID, EngineID: 1, Database: "neo4j",
+		TenantID: tenantID, OntologyID: ontology.ID, EngineID: 1, IndexManagement: models.GraphIndexesExternal, CatalogPath: plugin.EngineCatalogPath{Version: plugin.EngineCatalogPathVersion, EngineID: 1, Segments: []plugin.EngineCatalogSegment{{Term: "server", Kind: "server", Name: ""}, {Term: "graph", Kind: "graph", Name: "build-fixture"}}},
 		Name: "integration-graph", Status: "active", Stats: []byte(`{}`),
 	}
 	if err := db.Create(&graph).Error; err != nil {

@@ -6,7 +6,7 @@
         <el-radio-button value="handling" :disabled="!eligibility.history" :title="!eligibility.history ? t('catalog.sharing.noPermission') : undefined">{{ t('catalog.sharing.workspace.handling') }}</el-radio-button>
         <el-radio-button value="records">{{ t('catalog.sharing.workspace.records') }}</el-radio-button>
       </el-radio-group>
-      <el-button v-if="systemAuthorizationRoute" data-testid="sharing-open-system" :disabled="switchingBlocked" @click="openSystemAuthorization">{{ t('catalog.sharing.openSystem') }}</el-button>
+      <el-button v-if="systemAuthorizationRoute" class="system-authorization-link" data-testid="sharing-open-system" :disabled="switchingBlocked" @click="openSystemAuthorization">{{ t('catalog.sharing.openSystem') }}</el-button>
     </div>
     <p v-if="eligibility.confirm || eligibility.history" class="sharing-help workspace-help">{{ t(`catalog.sharing.workspaceHelp.${workspace}`) }}</p>
     <el-alert v-if="switchingBlocked" type="warning" :closable="false" :title="t('catalog.sharing.resolveBeforeSwitch')" />
@@ -536,6 +536,7 @@ onBeforeUnmount(() => { generation++ })
 .break-all { overflow-wrap: anywhere; }
 .sharing-help { color: var(--addp-text-secondary); overflow-wrap: anywhere; line-height: 1.6; }
 .workspace-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.system-authorization-link { margin-inline-start: auto; }
 .workspace-help { margin: 0; }
 .record-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .record-filter .el-select { width: 260px; max-width: 100%; }

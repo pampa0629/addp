@@ -52,7 +52,7 @@ func SetupRouter(
 			ontologies.GET("", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.List)
 			ontologies.POST("", permission(graphauthorization.PermissionGraphOntologyCreate), ontologyHandler.Create)
 			ontologies.GET("/import-preview/from-model", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.ImportPreviewFromModel)
-			ontologies.GET("/infer-schema/from-engine", permission(graphauthorization.PermissionGraphOntologyRead, "system.engine_catalog.read"), ontologyHandler.InferSchemaFromEngine)
+			ontologies.POST("/infer-schema/from-engine", permission(graphauthorization.PermissionGraphOntologyRead, "system.engine_catalog.read"), ontologyHandler.InferSchemaFromEngine)
 
 			ontology := ontologies.Group("/:id")
 			{

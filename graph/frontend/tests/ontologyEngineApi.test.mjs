@@ -1,27 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
 import client from '../src/api/client'
-import { engineAPI } from '../src/api/ontology'
-
-vi.mock('../src/api/client', () => ({
-  default: {
-    get: vi.fn(),
-    post: vi.fn()
-  }
-}))
-
-describe('ontology engine API', () => {
-  beforeEach(() => {
-    client.get.mockReset()
+import { engineAPI, ontologyAPI } from '../src/api/ontology'
+vi.mock('../src/api/client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+describe('business graph target API', () => {
+  beforeEach(() => { client.get.mockReset(); client.post.mockReset() })
+  it('lists both supported business engines through the narrow catalog API', async () => {
+    client.get.mockImplementation((_, { params }) => Promise.resolve([{ id: params.engine_type === 'neo4j' ? 7 : 8, engine_type: params.engine_type }]))
+    expect((await engineAPI.getGraphEngines()).map(engine => engine.engine_type)).toEqual(['neo4j', 'falkordb'])
+    expect(client.get.mock.calls.every(([path]) => path === '/system/engine-catalog/engines')).toBe(true)
   })
-
-  it('returns the complete engine array already extracted by the shared client', async () => {
-    const engines = [{ id: 7, engine_type: 'neo4j' }]
-    client.get.mockResolvedValue(engines)
-
-    await expect(engineAPI.getNeo4jEngines()).resolves.toBe(engines)
-    expect(client.get).toHaveBeenCalledWith('/system/engine-catalog/engines', {
-      params: { engine_type: 'neo4j' }
-    })
+  it('preserves native graph paths and traverses namespace branches without guessing names', async () => {
+    const graph = { role: 'leaf', kind: 'graph', name: '中文.a/b', path: { version: 'catalog.path/v1', engine_id: 8, segments: [{ term: 'server', kind: 'server', name: '' }, { term: 'graph', kind: 'graph', name: '中文.a/b' }] } }
+    const branch = { role: 'branch', path: { segments: [{ term: 'server', kind: 'server', name: '' }, { term: 'database', kind: 'namespace', name: 'business' }] } }
+    client.post.mockResolvedValueOnce({ nodes: [graph, branch] }).mockResolvedValueOnce({ nodes: [{ ...graph, name: 'graph' }] })
+    const targets = await engineAPI.getGraphTargets(8)
+    expect(targets[0].path).toEqual(graph.path)
+    expect(client.post.mock.calls[1][1].path).toEqual(branch.path)
+  })
+  it('passes the explicit graph target to schema inference in the request body', async () => {
+    const target = { engine_id: 8, catalog_path: { segments: [] } }
+    await ontologyAPI.inferSchemaFromEngine(target, 4)
+    expect(client.post).toHaveBeenCalledWith('/graph/ontologies/infer-schema/from-engine', { ...target, ontology_id: 4 })
   })
 })

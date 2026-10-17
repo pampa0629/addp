@@ -9,27 +9,12 @@
     <!-- 第一步：选择引擎 -->
     <div v-if="!preview && !loading" class="engine-select-panel">
       <el-form label-width="100px">
-        <el-form-item :label="t('graph.inferFromEngine.selectEngine')">
-          <el-select
-            v-model="selectedEngineId"
-            :placeholder="t('graph.inferFromEngine.selectEnginePlaceholder')"
-            style="width: 320px"
-            :loading="loadingEngines"
-          >
-            <el-option
-              v-for="e in engines"
-              :key="e.id"
-              :label="e.name"
-              :value="e.id"
-              :disabled="!isEngineSelectable(e)"
-            />
-          </el-select>
-        </el-form-item>
+        <GraphTargetFields v-model="target" />
       </el-form>
       <div style="text-align:right;margin-top:8px">
         <el-button
           type="primary"
-          :disabled="!selectedEngine"
+          :disabled="!target.catalog_path"
           @click="runInference"
         >{{ t('graph.inferFromEngine.startInfer') }}</el-button>
       </div>
@@ -143,9 +128,9 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { ontologyAPI, engineAPI } from '../api/ontology'
+import { ontologyAPI } from '../api/ontology'
 import { useI18n } from 'vue-i18n'
-import { isEngineSelectable } from '@common-ui'
+import GraphTargetFields from './GraphTargetFields.vue'
 
 const { t } = useI18n()
 
@@ -157,10 +142,7 @@ const emit = defineEmits(['applied'])
 const visible = ref(false)
 const loading = ref(false)
 const applying = ref(false)
-const loadingEngines = ref(false)
-const engines = ref([])
-const selectedEngineId = ref(null)
-const selectedEngine = computed(() => engines.value.find(engine => engine.id === selectedEngineId.value && isEngineSelectable(engine)))
+const target = ref({ engine_id: null, catalog_path: null })
 const preview = ref(null)
 const conflict = ref('skip')
 const selectedEntityNames = ref([])
@@ -178,18 +160,10 @@ function open() {
 
 async function handleOpen() {
   preview.value = null
-  selectedEngineId.value = null
+  target.value = { engine_id: null, catalog_path: null }
   selectedEntityNames.value = []
   selectedRelationKeys.value = []
-  loadingEngines.value = true
-  try {
-    const res = await engineAPI.getNeo4jEngines()
-    engines.value = res
-  } catch (e) {
-    ElMessage.error(t('graph.inferFromEngine.loadEnginesFailed', { msg: e.message || e }))
-  } finally {
-    loadingEngines.value = false
-  }
+
 }
 
 async function runInference() {
@@ -198,7 +172,7 @@ async function runInference() {
   selectedEntityNames.value = []
   selectedRelationKeys.value = []
   try {
-    preview.value = await ontologyAPI.inferSchemaFromEngine(selectedEngineId.value, props.ontologyId)
+    preview.value = await ontologyAPI.inferSchemaFromEngine(target.value, props.ontologyId)
   } catch (e) {
     ElMessage.error(t('graph.inferFromEngine.inferFailed', { msg: e.response?.data?.error || e.message || e }))
   } finally {
@@ -224,7 +198,7 @@ async function handleApply() {
   applying.value = true
   try {
     const result = await ontologyAPI.applyInferredSchemaFromEngine(props.ontologyId, {
-      engine_id: selectedEngineId.value,
+      ...target.value,
       entity_type_names: selectedEntityNames.value,
       relation_type_keys: selectedRelationKeys.value,
       conflict: conflict.value

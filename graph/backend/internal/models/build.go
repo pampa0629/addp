@@ -65,7 +65,7 @@ type ReviewItem struct {
 	SourceText   string         `json:"source_text"`                              // 原始文本片段（审核上下文）
 	Status       string         `gorm:"not null;default:'pending'" json:"status"` // pending/approved/rejected/modified
 	FinalContent datatypes.JSON `gorm:"type:jsonb" json:"final_content"`          // 修改后内容（status=modified 时）
-	Neo4jID      string         `json:"neo4j_id"`                                 // 写入 Neo4j 后的节点/关系 elementId
+	ElementID    string         `json:"element_id"`                               // 写入图数据库 后的节点/关系 elementId
 	ReviewedBy   *uint          `json:"reviewed_by"`
 	ReviewedAt   *time.Time     `json:"reviewed_at"`
 	CreatedAt    time.Time      `json:"created_at"`

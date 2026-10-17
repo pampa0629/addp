@@ -69,9 +69,9 @@ func TestEngineSchemaInferenceRequiresCatalogAndOntologyPermissions(t *testing.T
 		name, method, path, token string
 		want                      int
 	}{
-		{name: "ontology read cannot inspect engine", method: http.MethodGet, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "ontology-read", want: http.StatusForbidden},
-		{name: "catalog read cannot inspect ontology", method: http.MethodGet, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "catalog-read", want: http.StatusForbidden},
-		{name: "preview enters handler", method: http.MethodGet, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "preview", want: http.StatusServiceUnavailable},
+		{name: "ontology read cannot inspect engine", method: http.MethodPost, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "ontology-read", want: http.StatusForbidden},
+		{name: "catalog read cannot inspect ontology", method: http.MethodPost, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "catalog-read", want: http.StatusForbidden},
+		{name: "preview enters handler", method: http.MethodPost, path: "/api/v1/graph/ontologies/infer-schema/from-engine", token: "preview", want: http.StatusServiceUnavailable},
 		{name: "ontology update cannot infer from engine", method: http.MethodPost, path: "/api/v1/graph/ontologies/1/infer-schema/from-engine/apply", token: "ontology-update", want: http.StatusForbidden},
 		{name: "catalog read cannot update ontology", method: http.MethodPost, path: "/api/v1/graph/ontologies/1/infer-schema/from-engine/apply", token: "catalog-read", want: http.StatusForbidden},
 		{name: "apply enters handler", method: http.MethodPost, path: "/api/v1/graph/ontologies/1/infer-schema/from-engine/apply", token: "apply", want: http.StatusServiceUnavailable},

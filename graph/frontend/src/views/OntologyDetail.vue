@@ -11,7 +11,7 @@
       <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" @click="openEdit">{{ t('graph.common.edit') }}</el-button>
       <el-button v-if="authStore.hasPermission('graph.ontology.create')" size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
       <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
-      <el-button v-if="authStore.hasPermission('graph.ontology.update') && authStore.hasPermission('system.engine_catalog.read')" size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.update') && authStore.hasPermission('system.engine_catalog.read')" size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromGraph') }}</el-button>
     </div>
 
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
@@ -348,7 +348,7 @@
       @imported="handleImported"
     />
 
-    <!-- F5b: 从 Neo4j 引擎推导对话框 -->
+    <!-- 从业务图推导本体 -->
     <InferFromEngineDialog
       ref="inferFromEngineRef"
       :ontology-id="Number(ontologyId)"
@@ -556,7 +556,7 @@ const importFromModelRef = ref(null)
 const openImportFromModel = () => { importFromModelRef.value?.open() }
 const handleImported = () => { loadOntology() }
 
-// F5b: 从 Neo4j 引擎推导
+// 从业务图推导
 const inferFromEngineRef = ref(null)
 const openInferFromEngine = () => { inferFromEngineRef.value?.open() }
 

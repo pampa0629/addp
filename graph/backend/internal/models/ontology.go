@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"gorm.io/datatypes"
 )
 
@@ -32,7 +33,7 @@ type EntityType struct {
 	Name               string         `gorm:"not null" json:"name"` // 本体概念标识
 	Label              string         `json:"label"`                // 显示名称
 	Description        string         `json:"description"`
-	NodeLabels         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"node_labels,omitempty"` // Neo4j 节点标签执行映射
+	NodeLabels         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"node_labels,omitempty"` // 图节点标签执行映射
 	Color              string         `gorm:"default:'#5B8FF9'" json:"color"`                       // 可视化颜色
 	Icon               string         `json:"icon"`
 	ParentID           *uint          `json:"parent_id"`                                                     // 继承关系 (subClassOf)
@@ -167,18 +168,24 @@ type OntologyVersion struct {
 
 // KnowledgeGraph 知识图谱实例
 type KnowledgeGraph struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	TenantID    uint           `gorm:"not null;index" json:"tenant_id"`
-	OntologyID  uint           `gorm:"not null;index" json:"ontology_id"`
-	EngineID    uint           `gorm:"not null" json:"engine_id"` // Neo4j 引擎 ID (来自 System)
-	Database    string         `gorm:"not null" json:"database"`  // Neo4j database 名称
-	Name        string         `gorm:"not null" json:"name"`
-	Description string         `json:"description"`
-	Status      string         `gorm:"default:'active'" json:"status"` // active, building, error, archived
-	IsPublic    bool           `gorm:"column:is_public;default:false" json:"is_public"`
-	Stats       datatypes.JSON `gorm:"type:jsonb;default:'{}'" json:"stats"` // 统计信息缓存
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID              uint                     `gorm:"primaryKey" json:"id"`
+	TenantID        uint                     `gorm:"not null;index;uniqueIndex:idx_graph_target" json:"tenant_id"`
+	OntologyID      uint                     `gorm:"not null;index" json:"ontology_id"`
+	EngineID        uint                     `gorm:"not null;uniqueIndex:idx_graph_target" json:"engine_id"`
+	CatalogPath     plugin.EngineCatalogPath `gorm:"serializer:json;type:jsonb;not null;uniqueIndex:idx_graph_target" json:"catalog_path"`
+	IndexManagement string                   `gorm:"not null" json:"index_management"`
+	Name            string                   `gorm:"not null" json:"name"`
+	Description     string                   `json:"description"`
+	Status          string                   `gorm:"default:'active'" json:"status"` // active, building, error, archived
+	IsPublic        bool                     `gorm:"column:is_public;default:false" json:"is_public"`
+	Stats           datatypes.JSON           `gorm:"type:jsonb;default:'{}'" json:"stats"` // 统计信息缓存
+	CreatedAt       time.Time                `json:"created_at"`
+	UpdatedAt       time.Time                `json:"updated_at"`
 
 	Ontology *Ontology `gorm:"foreignKey:OntologyID" json:"ontology,omitempty"`
 }
+
+const (
+	GraphIndexesManaged  = "managed"
+	GraphIndexesExternal = "external"
+)

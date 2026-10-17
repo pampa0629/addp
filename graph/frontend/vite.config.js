@@ -8,7 +8,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 export default defineConfig(withModuleFrontend('graph', {
   plugins: [
     vue(),
-    Components({ resolvers: [ElementPlusResolver()] })
+    Components({ resolvers: [ElementPlusResolver({ importStyle: process.env.VITEST ? false : 'css' })] })
   ],
   resolve: {
     alias: {

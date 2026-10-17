@@ -26,6 +26,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/engine/contentadapter"
 	commonPlugin "github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/engine/plugins/minio"
 	"github.com/addp/common/events"
 	commonLogger "github.com/addp/common/logger"
@@ -89,7 +90,6 @@ func main() {
 
 	// 初始化 services
 	ontologySvc := service.NewOntologyService(ontologyRepo, entityTypeRepo, relationTypeRepo, versionRepo)
-	graphSvc := service.NewKnowledgeGraphService(graphRepo)
 	graphTokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemServiceURL,
 		"addp-graph",
@@ -101,11 +101,13 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, graphTokenSource, nil)
-	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemServiceClient)
-	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
-	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemServiceClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
-	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemServiceClient, neo4jSvc)
+	graphDataSvc := service.NewGraphDataService(graphRepo, ontologyRepo, systemServiceClient)
+	graphSvc := service.NewKnowledgeGraphService(graphRepo, graphDataSvc)
+
+	knowledgeSvc := service.NewKnowledgeService(graphDataSvc, ontologyRepo, graphRepo)
+	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, graphDataSvc, ontologySvc)
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, graphDataSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
+	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, graphDataSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		logger.Warn("Graph 资源回收执行方启动失败", "error", err)
@@ -120,9 +122,9 @@ func main() {
 	}
 
 	// 初始化 handlers
-	ontologyHandler := api.NewOntologyHandler(ontologySvc, neo4jSvc, modelImportSvc, schemaInferenceSvc)
+	ontologyHandler := api.NewOntologyHandler(ontologySvc, graphDataSvc, modelImportSvc, schemaInferenceSvc)
 	graphHandler := api.NewKnowledgeGraphHandler(graphSvc)
-	browseHandler := api.NewBrowseHandler(neo4jSvc, schemaInferenceSvc)
+	browseHandler := api.NewBrowseHandler(graphDataSvc, schemaInferenceSvc)
 	buildHandler := api.NewBuildHandler(buildSvc)
 	taskProviderHandler := api.NewTaskProviderHandler(buildSvc, taskExecutionRepo)
 	analysisHandler := api.NewAnalysisHandler(analysisSvc)

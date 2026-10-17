@@ -136,7 +136,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建新的知识图谱实例，绑定本体和 Neo4j 引擎 | Create a new knowledge graph instance, binding ontology and Neo4j engine",
+                "description": "创建新的知识图谱实例，绑定本体、业务图目录路径和索引管理范围 | Bind ontology, business graph catalog path and index management scope",
                 "consumes": [
                     "application/json"
                 ],
@@ -167,6 +167,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -1849,6 +1861,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1946,7 +1964,20 @@ const docTemplate = `{
                     "知识服务 | Knowledge Service"
                 ],
                 "summary": "全文搜索实体 | Full-text search entities",
-                "responses": {},
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
                 "x-addp-auth-mode": "public"
             }
         },
@@ -2103,11 +2134,14 @@ const docTemplate = `{
             }
         },
         "/ontologies/infer-schema/from-engine": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -2118,17 +2152,13 @@ const docTemplate = `{
                 "summary": "从引擎推断 Schema | Infer schema from engine",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "本体 ID | Ontology ID",
-                        "name": "ontology_id",
-                        "in": "query"
+                        "description": "目标图与本体 | Target graph and ontology",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.InferGraphSchemaRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -3741,9 +3771,13 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest": {
             "type": "object",
             "required": [
+                "catalog_path",
                 "engine_id"
             ],
             "properties": {
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
                 "conflict": {
                     "description": "\"skip\" | \"overwrite\"",
                     "type": "string"
@@ -4054,20 +4088,28 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.CreateKnowledgeGraphRequest": {
             "type": "object",
             "required": [
-                "database",
+                "catalog_path",
                 "engine_id",
+                "index_management",
                 "name",
                 "ontology_id"
             ],
             "properties": {
-                "database": {
-                    "type": "string"
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
                 "description": {
                     "type": "string"
                 },
                 "engine_id": {
                     "type": "integer"
+                },
+                "index_management": {
+                    "type": "string",
+                    "enum": [
+                        "managed",
+                        "external"
+                    ]
                 },
                 "name": {
                     "type": "string"
@@ -4202,7 +4244,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "node_labels": {
-                    "description": "Neo4j 节点标签执行映射",
+                    "description": "图节点标签执行映射",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -4307,7 +4349,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "id": {
-                    "description": "Neo4j elementId",
+                    "description": "引擎节点/关系 ID",
                     "type": "string"
                 },
                 "kind": {
@@ -4366,7 +4408,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
-                    "description": "Neo4j elementId",
+                    "description": "引擎节点/关系 ID",
                     "type": "string"
                 },
                 "kind": {
@@ -4374,7 +4416,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "labels": {
-                    "description": "Neo4j 标签列表",
+                    "description": "图节点标签列表",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4389,25 +4431,44 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.InferGraphSchemaRequest": {
+            "type": "object",
+            "required": [
+                "catalog_path",
+                "engine_id"
+            ],
+            "properties": {
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "ontology_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.KnowledgeGraph": {
             "type": "object",
             "properties": {
-                "created_at": {
-                    "type": "string"
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
-                "database": {
-                    "description": "Neo4j database 名称",
+                "created_at": {
                     "type": "string"
                 },
                 "description": {
                     "type": "string"
                 },
                 "engine_id": {
-                    "description": "Neo4j 引擎 ID (来自 System)",
                     "type": "integer"
                 },
                 "id": {
                     "type": "integer"
+                },
+                "index_management": {
+                    "type": "string"
                 },
                 "is_public": {
                     "type": "boolean"
@@ -5130,6 +5191,37 @@ const docTemplate = `{
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
         },
         "taskprovider.ExecutionContract": {
             "type": "object",

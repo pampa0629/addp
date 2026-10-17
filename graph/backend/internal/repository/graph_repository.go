@@ -36,7 +36,13 @@ func (r *KnowledgeGraphRepository) GetByIDGlobal(id uint) (*models.KnowledgeGrap
 }
 
 func (r *KnowledgeGraphRepository) Create(kg *models.KnowledgeGraph) error {
-	return r.db.Create(kg).Error
+	err := r.db.Create(kg).Error
+	if err != nil {
+		if translator, ok := r.db.Dialector.(gorm.ErrorTranslator); ok {
+			return translator.Translate(err)
+		}
+	}
+	return err
 }
 
 func (r *KnowledgeGraphRepository) Update(kg *models.KnowledgeGraph) error {

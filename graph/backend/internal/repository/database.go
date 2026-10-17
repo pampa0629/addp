@@ -7,7 +7,6 @@ import (
 	"github.com/addp/common/schema"
 
 	"github.com/addp/graph/internal/config"
-	"github.com/addp/graph/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -31,16 +30,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// 自动迁移
-	if err := db.AutoMigrate(
-		&models.Ontology{},
-		&models.EntityType{},
-		&models.RelationType{},
-		&models.OntologyVersion{},
-		&models.KnowledgeGraph{},
-		&models.BuildTask{},
-		&models.BuildMaterial{},
-		&models.ReviewItem{},
-	); err != nil {
+	if err := MigrateGraphTables(db); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 

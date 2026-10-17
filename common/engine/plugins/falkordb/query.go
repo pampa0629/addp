@@ -167,6 +167,9 @@ func (p *FalkorDBPlugin) ExecuteGraphQueryAtPath(ctx context.Context, c plugin.C
 		return nil, err
 	}
 	defer close()
+	if err = verifyLocal(ctx, client, name); err != nil {
+		return nil, err
+	}
 	return runQuery(ctx, client, name, query, params, opts.Limit, false)
 }
 func (p *FalkorDBPlugin) ExecuteGraphQuery(ctx context.Context, c plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {

@@ -799,7 +799,7 @@ func (p *Neo4jPlugin) executeNativeGraphQuery(ctx context.Context, connInfo plug
 		return nil, fmt.Errorf("执行 Cypher 失败：%w", err)
 	}
 
-	if len(result.Records) == 0 && !opts.ReadOnly {
+	if len(result.Records) == 0 && len(result.Keys) == 0 && !opts.ReadOnly {
 		cols := []string{"nodes_created", "nodes_deleted", "relationships_created", "relationships_deleted", "properties_set"}
 		row := map[string]interface{}{
 			"nodes_created":         result.Summary.Counters().NodesCreated(),

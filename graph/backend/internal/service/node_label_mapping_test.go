@@ -1,6 +1,10 @@
 package service
 
 import (
+	"github.com/addp/common/engine/plugins/falkordb"
+	"github.com/addp/common/engine/plugins/neo4j"
+	"github.com/addp/common/engine/propertygraph"
+	"strings"
 	"testing"
 
 	"github.com/addp/graph/internal/models"
@@ -50,43 +54,13 @@ func TestEntityTypeNodeLabelsFallsBackToShapeName(t *testing.T) {
 	}
 }
 
-func TestBusinessGraphFilterDetectsInternalSpatialNodes(t *testing.T) {
-	if !isInternalNodeLabelSet([]string{"SpatialLayer"}) {
-		t.Fatal("expected SpatialLayer to be treated as an internal node label")
+func TestBusinessGraphExclusionsAreNativeToNeo4j(t *testing.T) {
+	neo := (&neo4j.Neo4jPlugin{}).GraphDialect()
+	falkor := (&falkordb.FalkorDBPlugin{}).GraphDialect()
+	if !strings.Contains(propertygraph.NodePredicate(neo, "n"), "SpatialLayer") || strings.Contains(propertygraph.NodePredicate(falkor, "n"), "SpatialLayer") {
+		t.Fatal("native node exclusion leaked across engines")
 	}
-	if !isInternalNodeLabelSet([]string{"Business", "SpatialLayer"}) {
-		t.Fatal("expected label set containing SpatialLayer to be internal")
-	}
-	if isInternalNodeLabelSet([]string{"City", "POI"}) {
-		t.Fatal("expected business label set to be visible")
-	}
-}
-
-func TestBusinessNodePredicateRequiresBusinessLabel(t *testing.T) {
-	got := businessNodePredicate("node")
-	want := "size(labels(node)) > 0 AND NOT (any(label IN labels(node) WHERE label IN ['SpatialLayer']))"
-	if got != want {
-		t.Fatalf("unexpected predicate:\nwant: %s\n got: %s", want, got)
-	}
-}
-
-func TestBusinessRelationshipPredicateFiltersInternalEndpoints(t *testing.T) {
-	got := businessRelationshipPredicate("r", "source", "target")
-	want := "NOT (type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT']) AND size(labels(source)) > 0 AND NOT (any(label IN labels(source) WHERE label IN ['SpatialLayer'])) AND size(labels(target)) > 0 AND NOT (any(label IN labels(target) WHERE label IN ['SpatialLayer']))"
-	if got != want {
-		t.Fatalf("unexpected predicate:\nwant: %s\n got: %s", want, got)
-	}
-}
-
-func TestDisplayGraphPropertiesFiltersTechnicalFields(t *testing.T) {
-	got := displayGraphProperties(map[string]interface{}{
-		"_created_at": int64(1775635237141),
-		"_updated_at": int64(1775655573528),
-		"name":        "刘洋",
-		"role":        "CTO",
-	})
-
-	if len(got) != 2 || got["name"] != "刘洋" || got["role"] != "CTO" {
-		t.Fatalf("unexpected display properties: %#v", got)
+	if !strings.Contains(propertygraph.RelationshipPredicate(neo, "r", "a", "b"), "RTREE_ROOT") || strings.Contains(propertygraph.RelationshipPredicate(falkor, "r", "a", "b"), "RTREE_ROOT") {
+		t.Fatal("native relationship exclusion leaked across engines")
 	}
 }

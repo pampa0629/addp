@@ -19,7 +19,7 @@ Graph 模块是 ADDP 平台的**知识图谱领域模块**，覆盖知识图谱�
 | 决策 | 结论 |
 |------|------|
 | 模块形态 | 独立 `graph/` 模块，Go 后端 + Vue 前端 |
-| 多图谱支持 | 每个图谱对应一个 Neo4j database（engine+database 绑定） |
+| 多图谱支持 | 每个图谱绑定业务图 Engine + 显式 catalog_path；支持 Neo4j 与 FalkorDB |
 | 本体存储 | PostgreSQL（graph schema），与图谱数据分离 |
 | 本体版本 | 支持多本体模型并行维护，含版本快照管理 |
 | AI 图谱构建 | Graph 使用 `addp-graph` Tenant Service Access Token 调用 Copilot `knowledge_graph_extraction` 场景；Graph 不直连 Inference 或厂商模型 |
@@ -37,7 +37,7 @@ Graph 模块是 ADDP 平台的**知识图谱领域模块**，覆盖知识图谱�
 | `entity_types` | 实体类型定义，含继承关系（subClassOf） |
 | `relation_types` | 关系类型定义，含来源/目标约束 |
 | `ontology_versions` | 本体版本快照 |
-| `knowledge_graphs` | 知识图谱实例（绑定本体 + Neo4j engine + database） |
+| `knowledge_graphs` | 知识图谱实例（绑定本体 + 业务图 engine + catalog_path + index_management） |
 
 ## 五、代码结构
 
@@ -67,7 +67,7 @@ graph/
 │       └── service/
 │           ├── ontology_service.go
 │           ├── knowledge_graph_service.go
-│           ├── neo4j_service.go     # Neo4j 查询和写入服务
+│           ├── graph_data_service.go # 图谱领域查询与写入组合；原生差异由 Common Provider 承担
 │           └── ontology_semantics.go # 本体执行映射和全文索引定义
 └── frontend/
     ├── package.json                 # @antv/g6 依赖
@@ -172,7 +172,7 @@ Graph 是以下 Permission 的唯一 owner：
 路由与 Permission 语义映射固定如下：
 
 - Ontology 的实体类、关系类、版本、Model 导入、Schema 推导和约束/空间映射都是 Ontology 聚合内部能力，按操作语义映射到 `graph.ontology.read/create/update/delete`。
-- 从 Neo4j 引擎直接推导本体时，选择器使用 System 的 `system.engine_catalog.read` 窄目录；预览与应用 API 在本体读取或更新权限之外还要求该目录权限。Graph 不返回完整引擎对象供前端选择。
+- 从业务图引擎的显式 graph leaf 推导本体时，选择器使用 System 的 `system.engine_catalog.read` 窄目录；预览与应用 API 在本体读取或更新权限之外还要求该目录权限。Graph 不返回完整引擎对象供前端选择。
 - 图谱实例 CRUD 映射到 `graph.graph.*`；Schema 预览、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。从图谱推导 Schema 并写入本体时同时要求 `graph.graph.read` 与 `graph.ontology.update`，不能用图谱更新权代替本体更新权。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
 - 用户构建任务使用 `graph.build_task.*`；Graph TaskProvider 只允许 `addp-orchestrator` Service Client，并使用 `graph.task_provider.read|execute`。上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
 - Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
@@ -232,3 +232,14 @@ bash scripts/dev/restart.sh -graph
 - 本体详情默认 `entities` Tab 省略，其他稳定 Tab 使用 `tab`；审核队列默认 `entity` 省略；知识服务当前图谱使用 `graph_id`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`，不得直接操作父窗口或在页面中调用 `router.push/replace/back`。
 - 图构建页只保留当前图谱的任务定义、材料、审核和单任务领域上下文；模块级与单任务执行历史都通过共享 `MonitorExecutionsButton(module=graph, task_type=kg_build)` 进入 Monitor，不新增 Graph 通用执行列表。
+
+
+## 业务图引擎与索引管理
+
+GraphDataService 是浏览、构建审核、Schema 推导和知识服务的唯一图谱数据组合入口。目标使用 EngineCatalogPath，原生 ID 表达式、全文索引和唯一约束由 Common PropertyGraphProvider 提供，不修改引擎连接的 database 配置。Neo4j 路径为 server/database/graph，FalkorDB 为 server/graph，原生 graph key 作为完整一段保存。
+
+创建图谱必须明确选择 `index_management=managed|external`，同一租户与 Engine 的同一 graph 只能绑定一个实例。managed 按本体维护索引；external 只复用已有完全匹配索引，缺失或冲突返回 409，绝不自动修改。FalkorDB 同 label 多定义取字段并集创建物理索引，搜索仍按每个定义的字段和标签执行。基础度中心性与 K 跳已验证；FalkorDB 不声明 GDS、Spatial 或多路最短路径。单条无向最短路径采用共享逐层遍历，最多 10 跳、每层最多 10000 行、最多访问 10000 节点；超出预算返回 400，不作为无路径结果。
+
+数据库结构统一由 MigrateGraphTables 原子迁移并删除退役 database/neo4j_id 列。不自动猜测已有旧图谱实例的目录路径或索引管理范围；非空旧绑定无法满足新结构时，迁移失败并完整回滚，需显式重新配置；不删除业务图数据。
+
+验证入口：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-falkordb`、`make test-common-neo4j`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`。PostgreSQL 分组验证目标路径保真、目标唯一性、旧字段移除、失败回滚和构建 execution 并发；默认 Common PostgreSQL 完整门禁包含该分组。Graph 路径已在三项 Common T2 的输入元数据登记，因此 Graph 后端变更会自动选中 Common owner 的既有 CI Job。Swagger 使用标准 graph 生成与覆盖入口。

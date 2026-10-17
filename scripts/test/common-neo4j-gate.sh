@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=neo4j
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.neo4j-t2.yml
-# ADDP_T2_INPUT_FILES=common/engine/plugins/neo4j/ common/dataprotection/projectionstore/ develop/backend/internal/protection/ develop/backend/internal/service/dev_executor.go
+# ADDP_T2_INPUT_FILES=common/engine/propertygraph/ common/engine/plugin/property_graph.go graph/backend/ common/engine/plugins/neo4j/ common/dataprotection/projectionstore/ develop/backend/internal/protection/ develop/backend/internal/service/dev_executor.go
 # Own a disposable deployment; never reuse a business engine.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -27,6 +27,8 @@ compose up -d --wait --wait-timeout 240
 export ADDP_NEO4J_INTEGRATION=1
 export NEO4J_T2_ENDPOINT="$(compose port neo4j 7687)"
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/neo4j -run '^TestIntegrationNeo4j' -count=1 -v) 2>&1 | tee "$WORK_DIR/tests.log"
+(cd "$ROOT_DIR/graph/backend" && GOWORK=off go test ./internal/service -run '^TestIntegrationNeo4jGraphDomain$' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
+grep -q -- '--- PASS: TestIntegrationNeo4jGraphDomain ' "$WORK_DIR/tests.log" || { echo 'Neo4j gate requires Graph domain contract test' >&2; exit 1; }
 if grep -q -- '--- SKIP:' "$WORK_DIR/tests.log"; then echo 'Neo4j T2 refuses skipped tests' >&2; exit 1; fi
 grep -q -- '--- PASS: TestIntegrationNeo4j' "$WORK_DIR/tests.log"
 echo 'NEO4J_T2_PASS local read scope, prepared graph, bounded results and rejection boundaries'

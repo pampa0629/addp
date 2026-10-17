@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=falkordb
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.falkordb-engine-t2.yml
-# ADDP_T2_INPUT_FILES=common/engine/plugins/falkordb/ common/query/cypherread/ common/dataprotection/projectionstore/ develop/backend/internal/protection/ develop/backend/internal/service/ meta/backend/internal/scanruntime/ scripts/infra/falkordb.yml
+# ADDP_T2_INPUT_FILES=common/engine/propertygraph/ common/engine/plugin/property_graph.go graph/backend/ common/engine/plugins/falkordb/ common/query/cypherread/ common/dataprotection/projectionstore/ develop/backend/internal/protection/ develop/backend/internal/service/ meta/backend/internal/scanruntime/ scripts/infra/falkordb.yml
 # Own a disposable graph service; never connect to Ontology Infra or business graphs.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -29,6 +29,8 @@ export FALKORDB_T2_ENDPOINT="$(compose port falkordb 6379)"
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/falkordb -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee "$WORK_DIR/tests.log"
 (cd "$ROOT_DIR/meta/backend" && GOWORK=off go test ./internal/scanruntime -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
 (cd "$ROOT_DIR/develop/backend" && GOWORK=off go test ./internal/service -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
+(cd "$ROOT_DIR/graph/backend" && GOWORK=off go test ./internal/service -run '^TestIntegrationFalkorDBGraphDomain$' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
+grep -q -- '--- PASS: TestIntegrationFalkorDBGraphDomain ' "$WORK_DIR/tests.log" || { echo 'FalkorDB gate requires Graph domain contract test' >&2; exit 1; }
 if grep -q -- '--- SKIP:' "$WORK_DIR/tests.log"; then echo 'FalkorDB T2 refuses skipped tests' >&2; exit 1; fi
 grep -q -- '--- PASS: TestIntegrationFalkorDB' "$WORK_DIR/tests.log"
 echo 'FALKORDB_T2_PASS catalog, parameters, prepared reads, graph results and protection boundaries'

@@ -228,7 +228,7 @@ function handleSelectionChange(rows) {
 async function handleApprove(itemId) {
   try {
     await buildAPI.approveItem(graphId, itemId)
-    ElMessage.success(t('graph.review.writtenToNeo4j'))
+    ElMessage.success(t('graph.review.writtenToGraph'))
     await loadItems()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('graph.review.operationFailed'))

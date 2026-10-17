@@ -26,10 +26,16 @@ const (
 	MsgDisplayPropertyNotString = "graph.ontology.display_property_not_string"
 
 	// 图谱
-	MsgGraphCreated        = "graph.kg.created"
-	MsgGraphUpdated        = "graph.kg.updated"
-	MsgGraphDeleted        = "graph.kg.deleted"
-	MsgExpandTargetInvalid = "graph.browse.expand_target_invalid"
+	MsgTargetInvalid        = "graph.kg.target_invalid"
+	MsgTargetConflict       = "graph.kg.target_conflict"
+	MsgIndexConflict        = "graph.kg.index_conflict"
+	MsgSearchLimit          = "graph.kg.search_limit"
+	MsgTraversalLimit       = "graph.kg.traversal_limit"
+	MsgGraphOperationFailed = "graph.kg.operation_failed"
+	MsgGraphCreated         = "graph.kg.created"
+	MsgGraphUpdated         = "graph.kg.updated"
+	MsgGraphDeleted         = "graph.kg.deleted"
+	MsgExpandTargetInvalid  = "graph.browse.expand_target_invalid"
 
 	// 构建
 	MsgTaskStarted         = "graph.build.task_started"

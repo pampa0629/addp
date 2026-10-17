@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -16,13 +15,13 @@ import (
 
 type OntologyHandler struct {
 	svc                *service.OntologyService
-	neo4jSvc           *service.Neo4jService
+	graphDataSvc       *service.GraphDataService
 	modelImportSvc     *service.ModelImportService
 	schemaInferenceSvc *service.SchemaInferenceService
 }
 
-func NewOntologyHandler(svc *service.OntologyService, neo4jSvc *service.Neo4jService, modelImportSvc *service.ModelImportService, schemaInferenceSvc *service.SchemaInferenceService) *OntologyHandler {
-	return &OntologyHandler{svc: svc, neo4jSvc: neo4jSvc, modelImportSvc: modelImportSvc, schemaInferenceSvc: schemaInferenceSvc}
+func NewOntologyHandler(svc *service.OntologyService, graphDataSvc *service.GraphDataService, modelImportSvc *service.ModelImportService, schemaInferenceSvc *service.SchemaInferenceService) *OntologyHandler {
+	return &OntologyHandler{svc: svc, graphDataSvc: graphDataSvc, modelImportSvc: modelImportSvc, schemaInferenceSvc: schemaInferenceSvc}
 }
 
 // List godoc
@@ -489,7 +488,7 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 		return
 	}
 
-	if err := h.neo4jSvc.SyncConstraints(c.Request.Context(), req.GraphID, tenantID, et.Name, h.svc.EntityTypeNodeLabels(ontologyID, tenantID, et.Name), props); err != nil {
+	if err := h.graphDataSvc.SyncConstraints(c.Request.Context(), req.GraphID, tenantID, et.Name, h.svc.EntityTypeNodeLabels(ontologyID, tenantID, et.Name), props); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -534,7 +533,7 @@ func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
 		return
 	}
 
-	if err := h.neo4jSvc.SyncSpatialLayer(c.Request.Context(), req.GraphID, tenantID, *et); err != nil {
+	if err := h.graphDataSvc.SyncSpatialLayer(c.Request.Context(), req.GraphID, tenantID, *et); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -624,8 +623,8 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 // @Tags         本体管理 | Ontology Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        engine_id   query int true  "引擎 ID | Engine ID"
-// @Param        ontology_id query int false "本体 ID | Ontology ID"
+// @Accept       json
+// @Param        request body models.InferGraphSchemaRequest true "目标图与本体 | Target graph and ontology"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
@@ -633,7 +632,7 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.ontology.read","system.engine_catalog.read"]
-// @Router       /ontologies/infer-schema/from-engine [get]
+// @Router       /ontologies/infer-schema/from-engine [post]
 func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "schema inference not available"})
@@ -641,21 +640,13 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	}
 	tenantID := getTenantID(c)
 
-	var engineID uint
-	if _, err := fmt.Sscanf(c.Query("engine_id"), "%d", &engineID); err != nil || engineID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "engine_id required"})
+	var req models.InferGraphSchemaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
 		return
 	}
+	preview, err := h.schemaInferenceSvc.InferSchemaFromEngine(c.Request.Context(), req.EngineID, tenantID, req.CatalogPath, req.OntologyID)
 
-	var ontologyID *uint
-	if oidStr := c.Query("ontology_id"); oidStr != "" {
-		var oid uint
-		if _, err := fmt.Sscanf(oidStr, "%d", &oid); err == nil && oid > 0 {
-			ontologyID = &oid
-		}
-	}
-
-	preview, err := h.schemaInferenceSvc.InferSchemaFromEngine(c.Request.Context(), engineID, tenantID, ontologyID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})

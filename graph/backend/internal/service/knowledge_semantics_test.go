@@ -1,7 +1,6 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/addp/graph/internal/models"
@@ -88,26 +87,6 @@ func TestBuildSearchIndexDefinitionsKeepPropertiesScopedToEntityTypes(t *testing
 	}
 	if got := definitions[1]; got.EntityType != "Person" || len(got.Labels) != 2 || got.Labels[0] != "Employee" || got.Labels[1] != "Person" || len(got.Properties) != 1 || got.Properties[0] != "name" {
 		t.Fatalf("person index = %#v", got)
-	}
-}
-
-func TestFulltextSearchSubqueryUsesEntityScopedIndexesAndLabelSets(t *testing.T) {
-	definitions := []searchIndexDefinition{
-		{Name: "person-index", EntityType: "Person", Labels: []string{"Employee", "Person"}, Properties: []string{"name"}},
-		{Name: "company-index", EntityType: "Company", Labels: []string{"Company"}, Properties: []string{"title"}},
-	}
-
-	query := fulltextSearchSubquery(definitions, `Ada "Lovelace"`)
-	for _, fragment := range []string{
-		"db.index.fulltext.queryNodes('person-index'",
-		"all(label IN ['Employee','Person'] WHERE label IN labels(node))",
-		"db.index.fulltext.queryNodes('company-index'",
-		"UNION ALL",
-		`'"Ada \\"Lovelace\\""'`,
-	} {
-		if !strings.Contains(query, fragment) {
-			t.Fatalf("fulltextSearchSubquery() = %q, missing %q", query, fragment)
-		}
 	}
 }
 

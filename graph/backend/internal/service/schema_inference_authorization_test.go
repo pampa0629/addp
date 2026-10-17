@@ -17,7 +17,7 @@ func TestApplyInferredSchemaRejectsOtherTenantOntologyBeforeReadingGraph(t *test
 		t.Fatalf("create ontology: %v", err)
 	}
 
-	svc := NewSchemaInferenceService(nil, repository.NewOntologyRepository(db), nil, nil, nil)
+	svc := NewSchemaInferenceService(nil, repository.NewOntologyRepository(db), nil, nil)
 	_, err := svc.ApplyInferredSchema(
 		context.Background(), 999, 7,
 		&models.ApplyInferredSchemaRequest{OntologyID: otherTenantOntology.ID},
@@ -34,7 +34,7 @@ func TestApplyInferredSchemaFromEngineRejectsOtherTenantOntologyBeforeReadingEng
 		t.Fatalf("create ontology: %v", err)
 	}
 
-	svc := NewSchemaInferenceService(nil, repository.NewOntologyRepository(db), nil, nil, nil)
+	svc := NewSchemaInferenceService(nil, repository.NewOntologyRepository(db), nil, nil)
 	_, err := svc.ApplyInferredSchemaFromEngine(
 		context.Background(), 999, otherTenantOntology.ID, 7,
 		&models.ApplyInferredSchemaFromEngineRequest{},

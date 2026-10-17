@@ -5,25 +5,26 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/propertygraph"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 )
 
 // KnowledgeService 知识服务：向外暴露知识图谱的语义化查询能力
 type KnowledgeService struct {
-	neo4jSvc     *Neo4jService
+	graphDataSvc *GraphDataService
 	ontologyRepo *repository.OntologyRepository
 	graphRepo    *repository.KnowledgeGraphRepository
 }
 
 func NewKnowledgeService(
-	neo4jSvc *Neo4jService,
+	graphDataSvc *GraphDataService,
 	ontologyRepo *repository.OntologyRepository,
 	graphRepo *repository.KnowledgeGraphRepository,
 ) *KnowledgeService {
 	return &KnowledgeService{
-		neo4jSvc:     neo4jSvc,
+		graphDataSvc: graphDataSvc,
 		ontologyRepo: ontologyRepo,
 		graphRepo:    graphRepo,
 	}
@@ -46,7 +47,7 @@ func (s *KnowledgeService) ListEntitiesByType(
 	entityTypeName string,
 	page, pageSize int,
 ) ([]models.KSEntity, int64, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -54,8 +55,8 @@ func (s *KnowledgeService) ListEntitiesByType(
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	semantics := newOntologySemantics(ontology)
 	entityLabels := entityTypeNodeLabels(ontology, entityTypeName)
-	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS total", nodeLabelsPattern(entityLabels), businessNodePredicate("n")))
+	countResult, err := executeGraphQuery(ctx, engine,
+		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS total", nodeLabelsPattern(entityLabels), propertygraph.NodePredicate(engine.provider.GraphDialect(), "n")))
 	if err != nil {
 		return nil, 0, fmt.Errorf("count failed: %w", err)
 	}
@@ -68,9 +69,9 @@ func (s *KnowledgeService) ListEntitiesByType(
 	}
 
 	skip := (page - 1) * pageSize
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+	result, err := executeGraphQuery(ctx, engine,
 		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN n SKIP %d LIMIT %d",
-			nodeLabelsPattern(entityLabels), businessNodePredicate("n"), skip, pageSize))
+			nodeLabelsPattern(entityLabels), propertygraph.NodePredicate(engine.provider.GraphDialect(), "n"), skip, pageSize))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list failed: %w", err)
 	}
@@ -100,13 +101,13 @@ func (s *KnowledgeService) GetEntityDetail(
 	graphID, tenantID uint,
 	nodeID string,
 ) (*models.KSEntity, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' AND %s RETURN n", escapeCypher(nodeID), businessNodePredicate("n")))
+	result, err := executeGraphQuery(ctx, engine,
+		fmt.Sprintf("MATCH (n) WHERE %s = '%s' AND %s RETURN n", engine.provider.GraphDialect().ID("n"), escapeCypher(nodeID), propertygraph.NodePredicate(engine.provider.GraphDialect(), "n")))
 	if err != nil {
 		return nil, fmt.Errorf("get entity failed: %w", err)
 	}
@@ -134,7 +135,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 	nodeID string,
 	limit int,
 ) (*models.KSNeighborsResponse, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +146,8 @@ func (s *KnowledgeService) GetEntityNeighbors(
 	semantics := newOntologySemantics(ontology)
 
 	// 获取中心节点
-	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' AND %s RETURN n", escapeCypher(nodeID), businessNodePredicate("n")))
+	nodeResult, err := executeGraphQuery(ctx, engine,
+		fmt.Sprintf("MATCH (n) WHERE %s = '%s' AND %s RETURN n", engine.provider.GraphDialect().ID("n"), escapeCypher(nodeID), propertygraph.NodePredicate(engine.provider.GraphDialect(), "n")))
 	if err != nil || nodeResult.GraphData == nil || len(nodeResult.GraphData.Nodes) == 0 {
 		return nil, fmt.Errorf("node not found: %s", nodeID)
 	}
@@ -162,12 +163,12 @@ func (s *KnowledgeService) GetEntityNeighbors(
 
 	// 查询邻居：显式返回 elementId(m) 以便对齐
 	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND "+businessRelationshipPredicate("r", "n", "m")+" "+
-			"RETURN m, type(r) AS rel_type, (startNode(r) = n) AS is_out, elementId(m) AS m_eid "+
+		"MATCH (n)-[r]-(m) WHERE %s = '%s' AND "+propertygraph.RelationshipPredicate(engine.provider.GraphDialect(), "r", "n", "m")+" "+
+			"RETURN m, type(r) AS rel_type, (startNode(r) = n) AS is_out, %s AS m_eid "+
 			"LIMIT %d",
-		escapeCypher(nodeID), limit,
+		engine.provider.GraphDialect().ID("n"), escapeCypher(nodeID), engine.provider.GraphDialect().ID("m"), limit,
 	)
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	result, err := executeGraphQuery(ctx, engine, cypher)
 	if err != nil {
 		return nil, fmt.Errorf("neighbors failed: %w", err)
 	}
@@ -223,7 +224,7 @@ func (s *KnowledgeService) SearchEntities(
 	query, entityType string,
 	page, pageSize int,
 ) ([]models.KSEntity, int64, error) {
-	kg, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -237,8 +238,12 @@ func (s *KnowledgeService) SearchEntities(
 	if strings.TrimSpace(query) == "" {
 		return []models.KSEntity{}, 0, nil
 	}
-	if err := syncSearchIndexes(ctx, engine, graphID, allDefinitions); err != nil {
-		return nil, 0, fmt.Errorf("sync search indexes failed: %w", err)
+	indexes, err := syncSearchIndexes(ctx, engine, graphID, allDefinitions)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range allDefinitions {
+		allDefinitions[i].Name = indexes[i].Name
 	}
 	definitions := allDefinitions
 	if entityType != "" {
@@ -253,31 +258,13 @@ func (s *KnowledgeService) SearchEntities(
 	if len(definitions) == 0 {
 		return []models.KSEntity{}, 0, nil
 	}
-	searchSubquery := fulltextSearchSubquery(definitions, query)
-	countCypher := fmt.Sprintf(
-		"%s WITH node, max(score) AS score WHERE %s RETURN count(node) AS total",
-		searchSubquery, businessNodePredicate("node"),
-	)
-	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, countCypher)
+	selected := make([]plugin.GraphSearchIndex, 0, len(definitions))
+	for _, d := range definitions {
+		selected = append(selected, plugin.GraphSearchIndex{Name: d.Name, Labels: d.Labels, Properties: d.Properties})
+	}
+	result, total, err := propertygraph.Search(ctx, engine.provider, engine.conn, engine.path, selected, query, propertygraph.NodePredicate(engine.provider.GraphDialect(), "node"), (page-1)*pageSize, pageSize)
 	if err != nil {
-		return nil, 0, fmt.Errorf("search count failed: %w", err)
-	}
-	var total int64
-	if len(countResult.Rows) > 0 {
-		total = toInt64(countResult.Rows[0]["total"])
-	}
-	if total == 0 {
-		return []models.KSEntity{}, 0, nil
-	}
-
-	skip := (page - 1) * pageSize
-	cypher := fmt.Sprintf(
-		"%s WITH node, max(score) AS score WHERE %s RETURN node ORDER BY score DESC, elementId(node) SKIP %d LIMIT %d",
-		searchSubquery, businessNodePredicate("node"), skip, pageSize,
-	)
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
-	if err != nil {
-		return nil, 0, fmt.Errorf("search failed: %w", err)
+		return nil, 0, err
 	}
 
 	entities := make([]models.KSEntity, 0)
@@ -296,13 +283,13 @@ func (s *KnowledgeService) SearchEntities(
 	return entities, total, nil
 }
 
-// FindPaths 路径查找（复用现有 neo4jSvc.FindPath）
+// FindPaths 路径查找（复用现有 graphDataSvc.FindPath）
 func (s *KnowledgeService) FindPaths(
 	ctx context.Context,
 	graphID, tenantID uint,
 	req *models.KSPathRequest,
 ) (*models.SubgraphResult, error) {
-	return s.neo4jSvc.FindPath(ctx, graphID, tenantID, req.SourceNodeID, req.TargetNodeID)
+	return s.graphDataSvc.FindPath(ctx, graphID, tenantID, req.SourceNodeID, req.TargetNodeID)
 }
 
 // GetSubgraph 实体中心子图（可配置深度，最大 3）
@@ -326,7 +313,7 @@ func (s *KnowledgeService) GetSubgraph(
 		limit = 200
 	}
 
-	return s.neo4jSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
+	return s.graphDataSvc.Expand(ctx, graphID, tenantID, &models.ExpandRequest{
 		Target:            models.ExpandTarget{Kind: "entity", ID: req.NodeID},
 		Depth:             depth,
 		NodeLimit:         limit,
@@ -349,7 +336,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 		return nil, fmt.Errorf("get ontology failed: %w", err)
 	}
 
-	snapshot, err := s.neo4jSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
+	snapshot, err := s.graphDataSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get browse snapshot failed: %w", err)
 	}
@@ -418,7 +405,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 
 // GetStats 复用统一浏览快照。
 func (s *KnowledgeService) GetStats(ctx context.Context, graphID, tenantID uint) (*models.BrowseStats, error) {
-	snapshot, err := s.neo4jSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
+	snapshot, err := s.graphDataSvc.GetBrowseSnapshot(ctx, graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}

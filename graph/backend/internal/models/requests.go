@@ -1,5 +1,7 @@
 package models
 
+import "github.com/addp/common/engine/plugin"
+
 // CreateOntologyRequest 创建本体请求
 type CreateOntologyRequest struct {
 	Name        string                 `json:"name" binding:"required"`
@@ -98,11 +100,12 @@ type PropertyDefinition struct {
 
 // CreateKnowledgeGraphRequest 创建知识图谱实例请求
 type CreateKnowledgeGraphRequest struct {
-	OntologyID  uint   `json:"ontology_id" binding:"required"`
-	EngineID    uint   `json:"engine_id" binding:"required"`
-	Database    string `json:"database" binding:"required"`
-	Name        string `json:"name" binding:"required"`
-	Description string `json:"description"`
+	OntologyID      uint                     `json:"ontology_id" binding:"required"`
+	EngineID        uint                     `json:"engine_id" binding:"required"`
+	CatalogPath     plugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
+	IndexManagement string                   `json:"index_management" binding:"required,oneof=managed external"`
+	Name            string                   `json:"name" binding:"required"`
+	Description     string                   `json:"description"`
 }
 
 // UpdateKnowledgeGraphRequest 更新知识图谱实例请求
@@ -135,7 +138,7 @@ type SyncSpatialLayersRequest struct {
 	GraphID uint `json:"graph_id" binding:"required"`
 }
 
-// ConstraintInfo Neo4j 已有约束信息
+// ConstraintInfo 原生图约束信息
 type ConstraintInfo struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`

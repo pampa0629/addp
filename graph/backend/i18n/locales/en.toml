@@ -59,13 +59,13 @@ other = "This service instance does not own the task runtime, so it cannot cance
 other = "Graph build task operation failed"
 
 [graph.review.approved]
-other = "Written to Neo4j"
+other = "Written to graph database"
 
 [graph.review.rejected]
 other = "Rejected"
 
 [graph.review.modified]
-other = "Modified and written to Neo4j"
+other = "Modified and written to graph database"
 
 [graph.review.batch_approved]
 other = "Batch approved successfully"
@@ -78,3 +78,21 @@ other = "Algorithm execution failed"
 
 [graph.service.not_public]
 other = "This graph is not publicly accessible"
+
+[graph.kg.target_invalid]
+other = "The target graph is invalid or unavailable. Select the engine and graph again."
+
+[graph.kg.target_conflict]
+other = "This target graph is already bound to a knowledge graph. Select another graph."
+
+[graph.kg.index_conflict]
+other = "The existing fulltext indexes are missing or differ from the ontology search fields. Ask the index owner to resolve the conflict, or explicitly assign management to Graph."
+
+[graph.kg.search_limit]
+other = "The search matches more than 10000 nodes. Narrow the search or select an entity type."
+
+[graph.kg.traversal_limit]
+other = "The path query exceeds the traversal budget. Query a smaller target graph."
+
+[graph.kg.operation_failed]
+other = "The graph operation failed. Check the service logs."

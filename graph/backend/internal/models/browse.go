@@ -1,10 +1,12 @@
 package models
 
+import "github.com/addp/common/engine/plugin"
+
 // GraphNodeDTO 图视图节点。kind 区分 Neo4j 实体与仅用于概览的聚合桶。
 type GraphNodeDTO struct {
-	ID          string                 `json:"id"`           // Neo4j elementId
+	ID          string                 `json:"id"`           // 引擎节点/关系 ID
 	Kind        string                 `json:"kind"`         // entity | aggregate
-	Labels      []string               `json:"labels"`       // Neo4j 标签列表
+	Labels      []string               `json:"labels"`       // 图节点标签列表
 	EntityType  string                 `json:"entity_type"`  // 匹配到的本体实体类型 name
 	Color       string                 `json:"color"`        // 本体中定义的颜色
 	DisplayName string                 `json:"display_name"` // 用于图标签的展示名称
@@ -14,7 +16,7 @@ type GraphNodeDTO struct {
 
 // GraphEdgeDTO 图视图关系。聚合关系的 count 表示桶之间的真实关系数。
 type GraphEdgeDTO struct {
-	ID           string                 `json:"id"`            // Neo4j elementId
+	ID           string                 `json:"id"`            // 引擎节点/关系 ID
 	Kind         string                 `json:"kind"`          // entity | aggregate
 	Type         string                 `json:"type"`          // 关系类型名称（大写）
 	RelationType string                 `json:"relation_type"` // 本体关系类型 name
@@ -119,9 +121,16 @@ type ApplyInferredSchemaRequest struct {
 }
 
 // ApplyInferredSchemaFromEngineRequest 应用推导结果到本体（从 engine_id）
+type InferGraphSchemaRequest struct {
+	EngineID    uint                     `json:"engine_id" binding:"required"`
+	CatalogPath plugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
+	OntologyID  *uint                    `json:"ontology_id"`
+}
+
 type ApplyInferredSchemaFromEngineRequest struct {
-	EngineID         uint     `json:"engine_id" binding:"required"`
-	EntityTypeNames  []string `json:"entity_type_names"`
-	RelationTypeKeys []string `json:"relation_type_keys"`
-	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
+	CatalogPath      plugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
+	EngineID         uint                     `json:"engine_id" binding:"required"`
+	EntityTypeNames  []string                 `json:"entity_type_names"`
+	RelationTypeKeys []string                 `json:"relation_type_keys"`
+	Conflict         string                   `json:"conflict"` // "skip" | "overwrite"
 }

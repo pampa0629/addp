@@ -168,12 +168,12 @@ func seedGraphCleanupEngineCandidate(t *testing.T, db *gorm.DB, tenantID uint, e
 		t.Fatalf("create ontology: %v", err)
 	}
 	graph := models.KnowledgeGraph{
-		TenantID:   tenantID,
-		OntologyID: ontology.ID,
-		EngineID:   engineID,
-		Database:   "neo4j",
-		Name:       "graph",
-		Status:     "active",
+		TenantID:        tenantID,
+		OntologyID:      ontology.ID,
+		EngineID:        engineID,
+		IndexManagement: models.GraphIndexesExternal,
+		Name:            "graph",
+		Status:          "active",
 	}
 	if err := db.Create(&graph).Error; err != nil {
 		t.Fatalf("create graph: %v", err)
@@ -211,7 +211,7 @@ func seedGraphCleanupTenantState(t *testing.T, db *gorm.DB, tenantID uint) {
 	if err := db.Create(&version).Error; err != nil {
 		t.Fatalf("create version: %v", err)
 	}
-	graph := models.KnowledgeGraph{TenantID: tenantID, OntologyID: ontology.ID, EngineID: 7, Database: "neo4j", Name: "graph", Status: "active"}
+	graph := models.KnowledgeGraph{TenantID: tenantID, OntologyID: ontology.ID, EngineID: 7, IndexManagement: models.GraphIndexesExternal, Name: "graph", Status: "active"}
 	if err := db.Create(&graph).Error; err != nil {
 		t.Fatalf("create graph: %v", err)
 	}

@@ -499,3 +499,10 @@ Meta PostgreSQL 门禁登记 `TestPreciseNativePostgresScanAgainstPostgres`：�
 `make test-raster-mosaic-runtime` 是 Manager-owned Python T1 入口，覆盖已有瓦片渲染单测及真实 GDAL/COG、NumPy、坐标系与瓦片输出。`make test-module MODULE=manager` 自动发现该具名 Runtime 入口；Platform CI 的 Raster Mosaic job 按 Manager 变更选择，使用独立 Python 3.12 环境和匹配原生版本的 GDAL 绑定。共享 GDAL 生命周期修复另由 `make test-dev-lifecycle` 覆盖来源选择、失效绑定重建、环境隔离及停止归属；涉及共享入口时同时运行 `make test-geopython-workflow`。
 
 受保护资源有效期与筛选、银行卡号元数据识别扩展：`make test-module MODULE=security` 继续自动发现 Go T1、前端确定性/浏览器/构建及既有 Security PostgreSQL T2。`TestEnrollmentLifecycleAgainstPostgres` 增加与 SQLite 共用的字面子串转义、引擎/状态交集、分页总数、租户隔离以及有效期起点/截止点/退出状态回归；不新增测试数据库或入口。银行卡号能力 T1 验证元数据正例、模糊名称及非字符串反例，并沿正式发现执行将结果编译为四 Owner 规则。前端 T3 验证已同步投影的独立到期警示、日期展示、重新发现入口保留及服务端筛选/重置；使用隔离模拟 API，不计为真实部署 T4。API 字段与筛选参数由 Security Swagger 生成及路由覆盖验证。
+
+
+### 业务图双引擎领域验收
+
+Graph 的 Neo4j/FalkorDB 领域回归复用 `make test-common-neo4j` 与 `make test-common-falkordb` 的独占容器。相同领域测试覆盖显式目标绑定、实体/关系写入、原生唯一约束、构建审核、浏览展开、无向最短路径、全文搜索字段范围、外部索引冲突不修改、managed 按本体重建及知识服务。FalkorDB 同 label 的多定义物理索引取并集，但搜索仍必须限定各定义字段；不能用匹配数量相同替代字段隔离断言。Develop PreparedGraphQuery 与保护边界继续使用原有执行链路测试，不以 Graph 领域可信写入入口代替。
+
+目标路径的 PostgreSQL JSONB 保真、数据库唯一性、退役字段删除、迁移失败回滚和构建 execution 并发进入默认 `make test-common-postgres`。可在同样测试连接与清理约束下运行 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`，只证明该分组。三项 Common T2 都登记 `graph/backend/` 为输入，沿现有 owner 影响计算自动选中 CI；没有新增服务或测试 database。Go T1、Graph 前端与 Swagger 使用现有标准入口。上述验收不声明真实用户、Console、Gateway、Copilot 或运行中服务已重启验收。

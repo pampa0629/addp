@@ -2,7 +2,7 @@ package models
 
 // KSEntity 知识服务 API：单个实体（本体感知）
 type KSEntity struct {
-	ID          string                 `json:"id"`           // Neo4j elementId
+	ID          string                 `json:"id"`           // 引擎节点/关系 ID
 	DisplayName string                 `json:"display_name"` // 本体展示字段对应的节点名称
 	Type        string                 `json:"type"`         // 本体实体类型 name
 	TypeLabel   string                 `json:"type_label"`   // 本体实体类型显示名

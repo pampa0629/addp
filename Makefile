@@ -384,7 +384,7 @@ test-monitor-postgres: ## 使用隔离 PostgreSQL 验证 Monitor 读取隔离、
 	@bash scripts/test/monitor-postgres-gate.sh
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
-	@bash scripts/test/common-postgres-gate.sh
+	@bash scripts/test/common-postgres-gate.sh $(COMMON_POSTGRES_TEST_ARGS)
 
 test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Provider 与四个 Owner 的数据保护契约
 	@bash scripts/test/common-mysql-data-protection-gate.sh
@@ -975,7 +975,7 @@ test-common-neo4j: ## 独占 Neo4j 验证只读范围证明、图结果与拒绝
 
 .PHONY: test-common-falkordb-unit test-common-falkordb
 test-common-falkordb-unit: ## 图引擎契约、共享 Cypher AST 与 FalkorDB 查询边界 T1
-	@cd common && GOWORK=off go test ./query/cypherread ./resourcetree ./engine/plugins/neo4j ./engine/plugins/falkordb
+	@cd common && GOWORK=off go test ./query/cypherread ./resourcetree ./engine/propertygraph ./engine/plugins/neo4j ./engine/plugins/falkordb
 
 test-common-falkordb: ## 独占 FalkorDB 验证图目录、参数化查询、保护边界和结果
 	@bash scripts/test/common-falkordb-gate.sh

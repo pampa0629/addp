@@ -37,7 +37,7 @@ type BuildService struct {
 	ontologySvc        *OntologyService
 	graphRepo          *repository.KnowledgeGraphRepository
 	taskExecutionRepo  *commonExecution.TaskExecutionRepository
-	neo4jSvc           *Neo4jService
+	graphDataSvc       *GraphDataService
 	materialReader     contentio.Reader
 	materialWriter     contentio.Writer
 	copilotURL         string
@@ -60,7 +60,7 @@ func NewBuildService(
 	ontologySvc *OntologyService,
 	graphRepo *repository.KnowledgeGraphRepository,
 	taskExecutionRepo *commonExecution.TaskExecutionRepository,
-	neo4jSvc *Neo4jService,
+	graphDataSvc *GraphDataService,
 	materialReader contentio.Reader,
 	materialWriter contentio.Writer,
 	copilotURL string,
@@ -72,7 +72,7 @@ func NewBuildService(
 		ontologySvc:        ontologySvc,
 		graphRepo:          graphRepo,
 		taskExecutionRepo:  taskExecutionRepo,
-		neo4jSvc:           neo4jSvc,
+		graphDataSvc:       graphDataSvc,
 		materialReader:     materialReader,
 		materialWriter:     materialWriter,
 		copilotURL:         copilotURL,
@@ -466,7 +466,7 @@ func (s *BuildService) finishTask(ctx context.Context, task *models.BuildTask, t
 // syncSpatialLayersBeforeBuild 在构建前自动同步所有空间图层（幂等，含继承类型）
 func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]SpatialLayerMapping) {
 	for _, mapping := range spatialLayerLookup {
-		_ = s.neo4jSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, mapping.Config)
+		_ = s.graphDataSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, mapping.Config)
 	}
 }
 
@@ -496,7 +496,7 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 
 	autoWritten := 0
 	pendingReview := 0
-	// 材料内去重：key = "type::uniqueVal"，value = neo4jID 或 "queued"
+	// 材料内去重：key = "type::uniqueVal"，value = elementID 或 "queued"
 	seenEntities := make(map[string]string)
 
 	startFrom := mat.ProcessedChunks
@@ -547,21 +547,21 @@ func (s *BuildService) processChunkResult(
 
 		if entity.Confidence >= task.ConfidenceThreshold {
 			// 不跳过已见实体：后续 chunk 可能携带更完整的属性（如空间坐标），
-			// 始终调用 MergeEntity 实现"渐进叠加"语义，配合 buildSetClause 的
+			// 始终调用 MergeEntity 实现"渐进叠加"语义，配合 nonEmptyProperties 的
 			// nil/空值过滤，确保属性只增不减。
 			labels := ancestorChains[entity.Type]
 			if len(labels) == 0 {
 				labels = []string{entity.Type}
 			}
-			neo4jID, err := s.neo4jSvc.MergeEntity(ctx, task.GraphID, tenantID,
+			elementID, err := s.graphDataSvc.MergeEntity(ctx, task.GraphID, tenantID,
 				labels, uniqueField, uniqueVal, entity.Properties)
 			if err == nil {
-				seenEntities[key] = neo4jID
+				seenEntities[key] = elementID
 				autoWritten++
 				// 注册到空间图层（若该 label 或其祖先有空间图层配置）
-				if neo4jID != "" && spatialLayerLookup != nil {
+				if elementID != "" && spatialLayerLookup != nil {
 					if mapping, ok := spatialLayerLookup[entity.Type]; ok && mapping.Config != nil {
-						_ = s.neo4jSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, neo4jID, mapping.Config.LayerName)
+						_ = s.graphDataSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, elementID, mapping.Config.LayerName)
 					}
 				}
 			}
@@ -611,7 +611,7 @@ func (s *BuildService) processChunkResult(
 		seenRelations[relKey] = true
 
 		if rel.Confidence >= task.ConfidenceThreshold {
-			// 只有 source/target 节点已写入 Neo4j 才写关系
+			// 只有 source/target 节点已写入图数据库 才写关系
 			srcKey := srcEntity.Type + "::" + fmt.Sprint(srcVal)
 			tgtKey := tgtEntity.Type + "::" + fmt.Sprint(tgtVal)
 			if seenEntities[srcKey] == "" || seenEntities[srcKey] == "queued" {
@@ -622,7 +622,7 @@ func (s *BuildService) processChunkResult(
 			}
 			srcLabels := nodeLabelsForEntityType(srcEntity.Type, ancestorChains)
 			tgtLabels := nodeLabelsForEntityType(tgtEntity.Type, ancestorChains)
-			_, err := s.neo4jSvc.MergeRelation(ctx, task.GraphID, tenantID,
+			_, err := s.graphDataSvc.MergeRelation(ctx, task.GraphID, tenantID,
 				rel.Type,
 				srcLabels, srcUniqueField, srcVal,
 				tgtLabels, tgtUniqueField, tgtVal,
@@ -684,14 +684,14 @@ func (s *BuildService) ApproveReviewItem(ctx context.Context, itemID, tenantID, 
 		return fmt.Errorf("该条目已被处理")
 	}
 
-	neo4jID, err := s.writeReviewItemToNeo4j(ctx, item)
+	elementID, err := s.writeReviewItemToGraph(ctx, item)
 	if err != nil {
-		return fmt.Errorf("写入 Neo4j 失败: %w", err)
+		return fmt.Errorf("写入图数据库 失败: %w", err)
 	}
 
 	now := time.Now()
 	item.Status = models.ReviewStatusApproved
-	item.Neo4jID = neo4jID
+	item.ElementID = elementID
 	item.ReviewedBy = &userID
 	item.ReviewedAt = &now
 	return s.buildRepo.UpdateReviewItem(item)
@@ -725,15 +725,15 @@ func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, itemID, t
 	finalBytes := mustMarshalJSON(finalContent)
 	item.FinalContent = finalBytes
 
-	// 用修改后的内容覆盖写入 Neo4j
-	neo4jID, err := s.writeReviewItemToNeo4jWithContent(ctx, item, finalContent)
+	// 用修改后的内容覆盖写入图数据库
+	elementID, err := s.writeReviewItemToGraphWithContent(ctx, item, finalContent)
 	if err != nil {
-		return fmt.Errorf("写入 Neo4j 失败: %w", err)
+		return fmt.Errorf("写入图数据库 失败: %w", err)
 	}
 
 	now := time.Now()
 	item.Status = models.ReviewStatusModified
-	item.Neo4jID = neo4jID
+	item.ElementID = elementID
 	item.ReviewedBy = &userID
 	item.ReviewedAt = &now
 	return s.buildRepo.UpdateReviewItem(item)
@@ -755,17 +755,17 @@ func (s *BuildService) CountPendingReview(graphID, tenantID uint) (int64, error)
 	return s.buildRepo.CountPendingReview(graphID, tenantID)
 }
 
-// ============ 辅助：将审核项写入 Neo4j ============
+// ============ 辅助：将审核项写入图数据库 ============
 
-func (s *BuildService) writeReviewItemToNeo4j(ctx context.Context, item *models.ReviewItem) (string, error) {
+func (s *BuildService) writeReviewItemToGraph(ctx context.Context, item *models.ReviewItem) (string, error) {
 	var content map[string]interface{}
 	if err := json.Unmarshal(item.Content, &content); err != nil {
 		return "", err
 	}
-	return s.writeReviewItemToNeo4jWithContent(ctx, item, content)
+	return s.writeReviewItemToGraphWithContent(ctx, item, content)
 }
 
-func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, item *models.ReviewItem, content map[string]interface{}) (string, error) {
+func (s *BuildService) writeReviewItemToGraphWithContent(ctx context.Context, item *models.ReviewItem, content map[string]interface{}) (string, error) {
 	if item.ItemType == models.ReviewItemEntity {
 		entityType, _ := content["type"].(string)
 		labels := jsonStringSlice(content["node_labels"])
@@ -778,7 +778,7 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 		if properties == nil {
 			properties = make(map[string]interface{})
 		}
-		return s.neo4jSvc.MergeEntity(ctx, item.GraphID, item.TenantID,
+		return s.graphDataSvc.MergeEntity(ctx, item.GraphID, item.TenantID,
 			labels, uniqueField, uniqueValue, properties)
 	}
 
@@ -802,7 +802,7 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 	if props == nil {
 		props = make(map[string]interface{})
 	}
-	return s.neo4jSvc.MergeRelation(ctx, item.GraphID, item.TenantID,
+	return s.graphDataSvc.MergeRelation(ctx, item.GraphID, item.TenantID,
 		relType,
 		srcLabels, srcField, srcVal,
 		tgtLabels, tgtField, tgtVal,

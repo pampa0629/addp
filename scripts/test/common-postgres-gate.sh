@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_INPUT_FILES=graph/backend/
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # common-postgres-gate.sh - Run Common PostgreSQL Engine Provider integration tests.
 
@@ -11,12 +12,12 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write] [--highgo-native]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph] [--highgo-native]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write] [--highgo-native]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph] [--highgo-native]" >&2; exit 2 ;;
     esac
 done
 
@@ -64,6 +65,20 @@ source "$ROOT_DIR/scripts/infra/ports.sh"
 addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "$database"
 if [ -n "${ADDP_TEST_EXECUTION_POSTGRES_DSN:-}" ]; then
     addp_infra_verify_test_postgres_dsn "$ADDP_TEST_EXECUTION_POSTGRES_DSN"
+fi
+
+run_graph_postgres() {
+    (cd "$ROOT_DIR/graph/backend" && ADDP_POSTGRES_INTEGRATION=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationPostgresGraph' -count=1 -v) 2>&1 | tee "$WORK_DIR/graph-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/graph-postgres.log"; then echo 'Graph PostgreSQL gate refuses skipped tests' >&2; exit 1; fi
+    grep -q -- '--- PASS: TestIntegrationPostgresGraphTargetContract' "$WORK_DIR/graph-postgres.log" || {
+        echo 'Graph PostgreSQL gate requires the real target contract test' >&2
+        exit 1
+    }
+}
+if [ "$test_group" = graph ]; then
+    run_graph_postgres
+    echo 'Graph PostgreSQL target, schema and execution contracts passed'
+    exit 0
 fi
 
 cd "$ROOT_DIR/common"
@@ -149,3 +164,5 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-table-result-postgres.log"; then
     echo "Common table result PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+
+run_graph_postgres

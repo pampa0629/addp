@@ -59,13 +59,13 @@ other = "当前服务实例未持有该任务的运行实例，无法取消；�
 other = "图谱构建任务操作失败"
 
 [graph.review.approved]
-other = "已写入 Neo4j"
+other = "已写入 图数据库"
 
 [graph.review.rejected]
 other = "已拒绝"
 
 [graph.review.modified]
-other = "已修改并写入 Neo4j"
+other = "已修改并写入 图数据库"
 
 [graph.review.batch_approved]
 other = "批量通过成功"
@@ -78,3 +78,21 @@ other = "算法执行失败"
 
 [graph.service.not_public]
 other = "该图谱未开放公开访问"
+
+[graph.kg.target_invalid]
+other = "目标图无效或不可用，请重新选择引擎和目标图。"
+
+[graph.kg.target_conflict]
+other = "该目标图已绑定知识图谱，请选择其他目标图。"
+
+[graph.kg.index_conflict]
+other = "已有全文索引与本体搜索字段不一致或缺失。请由索引维护方处理，或明确改由 Graph 维护。"
+
+[graph.kg.search_limit]
+other = "搜索匹配超过 10000 个节点，请收窄关键词或限定实体类型。"
+
+[graph.kg.traversal_limit]
+other = "路径查询超过遍历预算，请在更小的目标图中查询。"
+
+[graph.kg.operation_failed]
+other = "图谱操作失败，请查看服务日志。"

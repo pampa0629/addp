@@ -182,7 +182,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -222,7 +222,7 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
         result, calls = self._run_common_postgres_group([])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(5, len(calls))
+        self.assertEqual(6, len(calls))
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
@@ -234,6 +234,8 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
         self.assertIn("./dataprotection/projectionstore", calls[3])
         self.assertIn("./dbbridge", calls[4])
+        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[5])
+
 
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
         self.assertEqual(0, result.returncode, result.stderr)
@@ -241,6 +243,20 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)|TestIntegrationPostgresQueryReadSession)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_graph_scope_requires_real_target_contract_and_rejects_skips(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "graph"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[0])
+        self.assertNotIn("engine/plugins", calls[0])
+        self.assertIn("Graph PostgreSQL target", result.stdout)
+        result, _ = self._run_common_postgres_group(["--test", "graph"], "--- SKIP: fixture")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("refuses skipped tests", result.stderr)
+        result, _ = self._run_common_postgres_group(["--test", "graph"], "testing: warning: no tests to run\nPASS")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("requires the real target contract", result.stderr)
 
     def test_common_postgres_highgo_scope_requires_explicit_native_target(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "highgo-write"])

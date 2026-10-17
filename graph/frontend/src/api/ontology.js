@@ -71,10 +71,9 @@ export const ontologyAPI = {
     return client.post(`/graph/ontologies/${ontologyId}/import-from-model`, data)
   },
 
-  // F5b: 从 Neo4j 引擎推导本体（不依赖知识图谱）
-  inferSchemaFromEngine(engineId, ontologyId) {
-    const params = `engine_id=${engineId}${ontologyId ? `&ontology_id=${ontologyId}` : ''}`
-    return client.get(`/graph/ontologies/infer-schema/from-engine?${params}`)
+  // Explicit business graph target, shared by both graph engines.
+  inferSchemaFromEngine(target, ontologyId) {
+    return client.post('/graph/ontologies/infer-schema/from-engine', { ...target, ontology_id: ontologyId })
   },
   applyInferredSchemaFromEngine(ontologyId, data) {
     return client.post(`/graph/ontologies/${ontologyId}/infer-schema/from-engine/apply`, data)
@@ -100,22 +99,22 @@ export const knowledgeGraphAPI = {
 }
 
 export const engineAPI = {
-  // 获取 Neo4j 引擎列表
-  getNeo4jEngines() {
-    return client.get('/system/engine-catalog/engines', {
-      params: { engine_type: 'neo4j' }
-    })
+  async getGraphEngines() {
+    const groups = await Promise.all(['neo4j', 'falkordb'].map(engine_type =>
+      client.get('/system/engine-catalog/engines', { params: { engine_type } })
+    ))
+    return groups.flat()
   },
-  // 获取指定引擎的数据库列表（Neo4j database 对应顶层 catalog 节点）
-  getDatabases(engineId) {
-    return client.post(`/system/engines/${engineId}/catalog/children`, {
-      path: { segments: [] },
-      options: {}
-    }).then(res => {
-      const nodes = Array.isArray(res?.nodes) ? res.nodes : (Array.isArray(res?.data?.nodes) ? res.data.nodes : [])
-      return nodes
-        .filter(node => node.role === 'branch')
-        .map(node => node.name)
-    })
+  async getGraphTargets(engineId) {
+    const children = async path => {
+      const response = await client.post(`/system/engines/${engineId}/catalog/children`, { path, options: {} })
+      return response.nodes
+    }
+    const nodes = await children({ segments: [] })
+    const groups = await Promise.all(nodes.map(async node => {
+      if (node.role === 'leaf') return node.kind === 'graph' ? [node] : []
+      return (await children(node.path)).filter(child => child.role === 'leaf' && child.kind === 'graph')
+    }))
+    return groups.flat()
   }
 }

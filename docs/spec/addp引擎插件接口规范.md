@@ -1037,3 +1037,14 @@ FalkorDB 插件声明 `engine_family=graph`、原生 `server -> graph` Catalog�
 openCypher 9 的语法分析在 Common 共用实现，Neo4j 继续用本引擎的物理数据库及内置函数事实验证。FalkorDB 通过单端点 standalone、固定 Redis database、显式 graph key、已审查的本地内置函数集合和 GRAPH.RO_QUERY 建立实例内只读范围。过程、UDF、外部数据导入、额外语句及未覆盖语法拒绝，不能仅凭只读命令声明范围完整。参数使用协议的 CYPHER 参数头编码，保持类型并严格校验名称和值，不替换查询里的参数引用。
 
 首期查询只声明读取。共享 Projection v4 门禁依同一 PreparedGraphQuery 的 EngineReadScope/ReadSet 判断保护；同步未完成、证明未知或命中不具备图字段保护的纳管目标时拒绝，不恢复租户级一刀切或按引擎类型跳过保护。
+
+
+### 知识图谱目标与原生操作
+
+Graph 实例统一绑定 `engine_id + catalog_path`，路径必须是 Provider 验证存在的业务 graph leaf；不再使用 database 字段或修改 Engine 连接的目标数据库。Common `PropertyGraphProvider` 提供显式路径的可信领域查询、ID/度数表达式、全文索引同步与搜索、原生唯一约束；Graph 组合本体与领域过滤。Develop 用户查询继续使用 PreparedGraphQuery，不能复用领域写入入口绕过保护。
+
+创建图谱时必须选择 `index_management=managed|external`，创建后不可隐式切换。managed 目标由 Graph 根据本体维护全文索引；Neo4j 仅维护该实例命名前缀，FalkorDB 的 label 共享索引按本体的字段并集合并和重建，移除不再使用的 label 全文索引。external 目标任何全文索引均不可自动创建、追加、删除或重建；预检全部本体搜索定义后，只复用字段完全匹配的原生索引，缺失或冲突明确返回错误。多个实体类型映射同一 FalkorDB label 时，以字段并集维护物理索引，每个搜索定义仍限定自己的字段。索引变更不删除业务节点、关系或属性。相同租户和 Engine 中的同一目标 graph 只能绑定一个知识图谱，避免不同本体争夺共享索引。
+
+全文搜索使用原生索引，不能降级为属性 contains 扫描。跨定义合并按节点 ID 去重、取最高分后稳定分页；匹配集合超过 10000 时明确要求收窄查询，不返回伪造总数。FalkorDB 的 GDS、Spatial 和未经验证的高级算法不开放；基于原生 Cypher 验证的基础算法按实际支持能力声明。创建、搜索、构建和浏览的错误必须保留原因，不能以空结果伪装成功。
+
+业务图内部节点/关系排除由 PropertyGraphProvider 的原生视图声明：Neo4j Spatial 内部标签和关系仅在 Neo4j 排除，不能把这些名称变为全局保留词；FalkorDB 中的同名业务数据保持可见。Graph 的结果映射不再重复维护 Neo4j 专属名单。

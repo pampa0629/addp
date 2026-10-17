@@ -15,7 +15,7 @@ ADDP 已具备完整的 Neo4j 基础设施层（引擎注册、元数据扫描�
 | 决策 | 结论 |
 |------|------|
 | 模块形态 | 独立的 `graph/` 模块，Go 后端 + Vue 前端 |
-| 多图谱支持 | 支持，每个图谱对应一个 Neo4j database |
+| 多图谱支持 | 支持，每个图谱绑定一个业务图 Engine + catalog_path（Neo4j / FalkorDB） |
 | 本体存储 | PostgreSQL（graph schema），与图谱数据分离 |
 | 本体版本 | 支持多本体模型并行维护，含版本管理 |
 | LLM 图谱构建 | 调用 Copilot 模块（新增 KG extraction chains），不在 graph 模块内实现 LLM |
@@ -99,7 +99,7 @@ entity_types（实体类型）
 relation_types（关系类型）
 attribute_defs（属性定义）
 ontology_versions（版本记录）
-knowledge_graphs（知识图谱实例，绑定 ontology + neo4j engine + database）
+knowledge_graphs（知识图谱实例，绑定 ontology + engine_id + catalog_path + index_management）
 ```
 
 ---
@@ -374,6 +374,12 @@ agent/backend/tools/（扩展）
 
 Graph 同时支持 Neo4j 与 FalkorDB，保持本体、构建审核、浏览和知识服务的一套领域流程。知识图谱实例目标收敛到 Engine Instance + EngineCatalogPath；一个实例只绑定一个确定图，不隐式双写或跨图联邦。同一本体可以被不同图谱实例使用。引擎原生连接、目录、查询、索引、约束和写入属于 Common Provider，Graph 保留领域组合。替换后删除 Neo4j 专属的领域主路径，不保留旧 database 字段作为兼容入口。
 
-按以下依赖顺序交付：先完成 FalkorDB 插件与 Develop 参数化只读 Cypher 表格/子图闭环，再完成 Graph 目标绑定、写入/索引/约束能力与构建审核、浏览展开、全文搜索、知识服务。算法和空间能力按真实验证结果开放，不能以不同算法冒充相同语义。Graph 并列接入尚未实施完成，不将基础查询认证算作 Graph 完整验收。
+按以下依赖顺序交付：先完成 FalkorDB 插件与 Develop 参数化只读 Cypher 表格/子图闭环，再完成 Graph 目标绑定、写入/索引/约束能力与构建审核、浏览展开、全文搜索、知识服务。算法和空间能力按真实验证结果开放，不能以不同算法冒充相同语义。Graph 领域并列接入按上述范围实施；验收以两类数据库的同一领域测试为准，不将基础查询认证或组件测试算作真实 Console/Gateway 验收。
 
 Develop 查询原生图不依赖 Graph 知识图谱实例。本期复用已有 Cypher 参数、执行监督器、共享图结果展示与 Projection v4 保护门禁；Neo4j 最新本地只读范围证明避免其他引擎纳管误伤，本引擎或目标图的保护仍按共享门禁判断。
+
+
+2026-10-17 索引管理范围已确认：图谱创建时显式选择 managed（Graph 按本体维护目标图索引）或 external（保留外部索引，只复用完全匹配定义，冲突报错）。FalkorDB 同 label 的本体搜索字段取并集维护物理索引，搜索仍按各实体类型声明的字段执行；不删除任何业务数据。目标以 engine_id + catalog_path 唯一绑定，移除 Neo4j 专属 database 契约。验收在既有 Common FalkorDB/Neo4j disposable T2 增加 Graph 构建、浏览、搜索和知识服务；Go T1、Graph 前端及 Swagger 为必需门禁，共享改动按现有依赖发现扩散。
+
+
+实现验证范围：两类数据库均覆盖实体/关系幂等写入、原生唯一约束、构建审核、浏览快照与展开、无向最短路径、全文搜索及知识服务。全文搜索跨定义去重后按分数分页，最多 10000 匹配，超限报错；无向路径使用同一共享 BFS，最多 10 跳、每层 10000 行和 10000 访问节点，超预算报错。external 索引冲突返回 409。基础度中心性和 K 跳开放，FalkorDB 的 GDS、Spatial、多路最短路径保持不支持，不用其他算法替代。旧非空绑定不猜测路径或索引所有权，结构迁移失败原子回滚；运行主路径不存在 database 或 neo4j_id 兼容字段。

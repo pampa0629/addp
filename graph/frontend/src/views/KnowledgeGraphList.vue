@@ -12,7 +12,7 @@
       <el-table-column :label="t('graph.knowledgeGraph.bindOntology')" min-width="150">
         <template #default="{ row }">{{ row.ontology?.name || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="database" :label="t('graph.knowledgeGraph.neo4jDatabase')" width="160" />
+      <el-table-column :label="t('graph.knowledgeGraph.targetGraph')" min-width="180"><template #default="{ row }">{{ row.catalog_path?.segments.slice(1).map(segment => segment.name).join(' / ') }}</template></el-table-column>
       <el-table-column prop="status" :label="t('graph.common.status')" width="100">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
@@ -47,15 +47,13 @@
             <el-option v-for="o in ontologies" :key="o.id" :label="o.name" :value="o.id" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('graph.knowledgeGraph.engine')" prop="engine_id">
-          <el-select v-model="form.engine_id" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectEngine')" :loading="enginesLoading" @change="onEngineChange" @visible-change="handleEngineDropdownVisible">
-            <el-option v-for="e in neo4jEngines" :key="e.id" :label="engineOptionLabel(e)" :value="e.id" :disabled="!isEngineSelectable(e)" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('graph.knowledgeGraph.databaseName')" prop="database">
-          <el-select v-model="form.database" style="width:100%" :placeholder="t('graph.knowledgeGraph.selectDatabase')" :loading="dbLoading" :disabled="!formEngineSelectable">
-            <el-option v-for="db in databases" :key="db" :label="db" :value="db" />
-          </el-select>
+        <GraphTargetFields v-if="showCreateDialog" v-model="form" />
+        <el-form-item :label="t('graph.knowledgeGraph.indexManagement')" prop="index_management">
+          <el-radio-group v-model="form.index_management">
+            <el-radio value="managed">{{ t('graph.knowledgeGraph.indexManaged') }}</el-radio>
+            <el-radio value="external">{{ t('graph.knowledgeGraph.indexExternal') }}</el-radio>
+          </el-radio-group>
+          <div class="index-help">{{ t(form.index_management === 'managed' ? 'graph.knowledgeGraph.indexManagedHelp' : 'graph.knowledgeGraph.indexExternalHelp') }}</div>
         </el-form-item>
         <el-form-item :label="t('graph.common.description')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
@@ -63,7 +61,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">{{ t('graph.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" :disabled="!formEngineSelectable" @click="handleCreate">{{ t('graph.common.create') }}</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!form.catalog_path" @click="handleCreate">{{ t('graph.common.create') }}</el-button>
       </template>
     </el-dialog>
 
@@ -94,16 +92,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { ontologyAPI, knowledgeGraphAPI, engineAPI } from '../api/ontology'
+import { ontologyAPI, knowledgeGraphAPI } from '../api/ontology'
 import { buildAPI } from '../api/graphBuild'
 import SchemaInferenceDialog from '../components/SchemaInferenceDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
-import { engineSelectionState, isEngineSelectable } from '@common-ui'
+import GraphTargetFields from '../components/GraphTargetFields.vue'
 import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
@@ -111,18 +109,11 @@ const loading = ref(false)
 const saving = ref(false)
 const graphs = ref([])
 const ontologies = ref([])
-const neo4jEngines = ref([])
-const databases = ref([])
-const enginesLoading = ref(false)
-const dbLoading = ref(false)
 const showCreateDialog = ref(false)
 const showEditDialog = ref(false)
 const formRef = ref(null)
 const editFormRef = ref(null)
-const form = ref({ name: '', ontology_id: null, engine_id: null, database: '', description: '' })
-const formEngineSelectable = computed(() => isEngineSelectable(
-  neo4jEngines.value.find(engine => engine.id === form.value.engine_id)
-))
+const form = ref({ name: '', ontology_id: null, engine_id: null, catalog_path: null, index_management: 'external', description: '' })
 const editForm = ref({ id: null, name: '', description: '' })
 const pendingCounts = ref({})
 const editRules = computed(() => ({
@@ -134,46 +125,9 @@ const rules = computed(() => ({
   name: [{ required: true, message: t('graph.knowledgeGraph.nameRequired'), trigger: 'change' }],
   ontology_id: [{ required: true, message: t('graph.knowledgeGraph.ontologyRequired'), trigger: 'change' }],
   engine_id: [{ required: true, message: t('graph.knowledgeGraph.engineRequired'), trigger: 'change' }],
-  database: [{ required: true, message: t('graph.knowledgeGraph.databaseRequired'), trigger: 'change' }]
+  catalog_path: [{ required: true, message: t('graph.knowledgeGraph.graphRequired'), trigger: 'change' }],
+  index_management: [{ required: true, trigger: 'change' }]
 }))
-
-const loadEngines = async () => {
-  enginesLoading.value = true
-  try {
-    neo4jEngines.value = await engineAPI.getNeo4jEngines()
-  } catch {
-    ElMessage.error(t('graph.knowledgeGraph.loadEnginesFailed'))
-  } finally {
-    enginesLoading.value = false
-  }
-}
-
-const handleEngineDropdownVisible = visible => {
-  if (visible) loadEngines()
-}
-
-const engineOptionLabel = engine => (
-  `${engine.name} · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
-)
-
-const onEngineChange = async (engineId) => {
-  form.value.database = ''
-  databases.value = []
-  const engine = neo4jEngines.value.find(item => item.id === engineId)
-  if (!isEngineSelectable(engine)) return
-  dbLoading.value = true
-  try {
-    databases.value = await engineAPI.getDatabases(engineId)
-  } catch {
-    ElMessage.error(t('graph.knowledgeGraph.loadDatabasesFailed'))
-  } finally {
-    dbLoading.value = false
-  }
-}
-
-watch(showCreateDialog, (val) => {
-  if (val) loadEngines()
-})
 
 const load = async () => {
   loading.value = true
@@ -275,6 +229,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.index-help { color: var(--addp-text-secondary); font-size: 12px; }
 .page-container { padding: 20px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .page-header h2 { margin: 0; font-size: 18px; }

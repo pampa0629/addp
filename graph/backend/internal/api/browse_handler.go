@@ -18,12 +18,12 @@ import (
 )
 
 type BrowseHandler struct {
-	neo4jSvc        *service.Neo4jService
+	graphDataSvc    *service.GraphDataService
 	schemaInference *service.SchemaInferenceService
 }
 
-func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.SchemaInferenceService) *BrowseHandler {
-	return &BrowseHandler{neo4jSvc: neo4jSvc, schemaInference: schemaInference}
+func NewBrowseHandler(graphDataSvc *service.GraphDataService, schemaInference *service.SchemaInferenceService) *BrowseHandler {
+	return &BrowseHandler{graphDataSvc: graphDataSvc, schemaInference: schemaInference}
 }
 
 // GetBrowseSnapshot godoc
@@ -41,9 +41,9 @@ func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.S
 func (h *BrowseHandler) GetBrowseSnapshot(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
-	snapshot, err := h.neo4jSvc.GetBrowseSnapshot(c.Request.Context(), id, tenantID)
+	snapshot, err := h.graphDataSvc.GetBrowseSnapshot(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, snapshot)
@@ -60,6 +60,7 @@ func (h *BrowseHandler) GetBrowseSnapshot(c *gin.Context) {
 // @Param        request body models.SearchRequest  true "搜索请求 | Search request"
 // @Success      200 {object} models.SubgraphResult
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
@@ -72,9 +73,9 @@ func (h *BrowseHandler) SearchNodes(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	result, err := h.neo4jSvc.SearchNodes(c.Request.Context(), id, tenantID, req.Query, req.Limit)
+	result, err := h.graphDataSvc.SearchNodes(c.Request.Context(), id, tenantID, req.Query, req.Limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -107,9 +108,9 @@ func (h *BrowseHandler) ExpandTarget(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgExpandTargetInvalid)})
 		return
 	}
-	result, err := h.neo4jSvc.Expand(c.Request.Context(), id, tenantID, &req)
+	result, err := h.graphDataSvc.Expand(c.Request.Context(), id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -162,9 +163,9 @@ func (h *BrowseHandler) FindPath(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	result, err := h.neo4jSvc.FindPath(c.Request.Context(), id, tenantID, req.SourceID, req.TargetID)
+	result, err := h.graphDataSvc.FindPath(c.Request.Context(), id, tenantID, req.SourceID, req.TargetID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -184,9 +185,9 @@ func (h *BrowseHandler) FindPath(c *gin.Context) {
 func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
-	constraints, err := h.neo4jSvc.GetConstraints(c.Request.Context(), id, tenantID)
+	constraints, err := h.graphDataSvc.GetConstraints(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, constraints)
@@ -233,7 +234,7 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, preview)
@@ -270,7 +271,7 @@ func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
