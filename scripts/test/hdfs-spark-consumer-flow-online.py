@@ -12,6 +12,7 @@ import time
 import urllib.parse
 import uuid
 import urllib.request
+from types import SimpleNamespace
 
 path = Path(__file__).with_name('security-transfer-protection-online.py')
 spec = importlib.util.spec_from_file_location('hdfs_online_support', path)
@@ -25,12 +26,19 @@ spec.loader.exec_module(SPARK)
 spec = importlib.util.spec_from_file_location('hdfs_online_registration', Path(__file__).with_name('online-engine-registration.py'))
 REGISTRATION = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(REGISTRATION)
+spec = importlib.util.spec_from_file_location('spark_table_online', Path(__file__).with_name('spark-table-consumer-online.py'))
+TABLES = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(TABLES)
 PERMISSIONS = {'system.engine_catalog.read', 'meta.catalog.read', 'meta.scan_task.execute', 'meta.scan_task.read',
                'manager.data_item.read', 'manager.content.read', 'develop.task.read', 'develop.task.execute',
                'develop.data_read.execute', 'develop.data_write.execute', 'develop.data_ddl.execute',
                'meta.lineage.read', 'system.execution_authorization.create'}
 FILES = {'csv': 'samples/orders.csv', 'json': 'samples/orders.json', 'parquet': 'samples/orders.parquet',
          'original': '订单 100%.csv'}
+
+
+def table_host():
+    return SimpleNamespace(support=support, SPARK=SPARK, submit_and_wait=submit_and_wait)
 
 
 def locator(engine_id, item):
@@ -338,18 +346,30 @@ def run_browser(report):
                 'reuse_execution_id': report['persistence']['reuse_execution_id'],
                 'minio_execution_id': report['minio']['execution_id'],
                 'minio_reuse_execution_id': report['minio']['reuse_execution_id']}
+    expected['tables'] = {engine: {name: facts[name]['execution_id'] for name in ('created', 'overwrite', 'reuse')}
+                          for engine, facts in report['tables'].items()}
     if evidence != expected:
         raise SuiteError('HDFS browser identity or execution evidence differs from API acceptance')
     for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse', 'minio', 'minio-save', 'minio-reuse'):
         if not (artifacts / ('hdfs-' + name + '-console.png')).is_file():
             raise SuiteError('HDFS Console screenshot evidence is missing')
+    for engine in ('mysql', 'doris'):
+        for phase in ('created', 'overwrite', 'reuse', 'preview'):
+            if not (artifacts / f'hdfs-{engine}-{phase}-console.png').is_file():
+                raise SuiteError('table Console screenshot evidence is missing')
     return evidence
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--initialize-table-read', action='store_true')
+    parser.add_argument('--cleanup-tables', action='store_true')
     arguments = parser.parse_args()
+    if arguments.cleanup_tables:
+        if os.environ.get('ADDP_ONLINE_HOSTED') != '1' or os.environ.get('GITHUB_ACTIONS') != 'true':
+            raise SuiteError('table cleanup requires the disposable Hosted profile')
+        TABLES.cleanup()
+        return 0
     if arguments.initialize_table_read:
         REGISTRATION.require_external_environment(os.environ)
         if os.environ.get('ADDP_ONLINE_HOSTED') != '1':
@@ -357,19 +377,41 @@ def main():
         require = support.required_environment
         tenant_id = support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'Tenant')
         consumer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), 30)
-        validate_identity(consumer, tenant_id)
+        principal = validate_identity(consumer, tenant_id)
         authorizer = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'), 30)
         postgres_id = support.positive_int(require('ADDP_ONLINE_POSTGRES_ENGINE_ID'), 'PostgreSQL')
         support.wait_for_scan(consumer, postgres_id, time.monotonic() + 180)
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, [
             (postgres_id, 'schema', 'results', 'hdfs_totals')])
-        print('Disposable PostgreSQL result exact table read Grant is ready')
+        runtimes = support._array(consumer.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
+        selected = [runtime for runtime in runtimes if runtime.get('engine_type') == 'spark_workflow' and runtime.get('connection_status') == 'online']
+        if len(selected) != 1:
+            raise SuiteError('table preparation requires exactly one online Spark Runtime')
+        runtime = support.positive_int(selected[0]['id'], 'Runtime')
+        cluster = support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark')
+        prepared = TABLES.prepare(table_host(), consumer, principal, tenant_id, runtime, cluster, 300)
+        try:
+            for engine, facts in prepared['tables'].items():
+                REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
+                    [(facts['engine_id'], 'database', 'spark_results', TABLES.target_name())])
+        except BaseException:
+            TABLES.cleanup()
+            raise
+        print('Disposable PostgreSQL/MySQL/Doris exact table read Grants are ready')
         return 0
     if os.environ.get('ADDP_ONLINE_TEST') != '1' or os.environ.get('ADDP_ONLINE_HOSTED') != '1':
         raise SuiteError('HDFS suite requires the Hosted Online entry')
     require = support.required_environment
     timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
     client = support.GatewayClient(require('GATEWAY_URL'), require('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
+    try:
+        return run_scenario(client, timeout)
+    finally:
+        TABLES.cleanup()
+
+
+def run_scenario(client, timeout):
+    require = support.required_environment
     report = run(client, support.positive_int(require('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant'),
                  support.positive_int(require('ADDP_ONLINE_HDFS_ENGINE_ID'), 'HDFS'),
                  support.positive_int(require('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark'), timeout)
@@ -382,6 +424,8 @@ def main():
     _, old_rows = support.preview_rows(client, report['minio']['preview_locator'])
     if sorted(old_rows, key=lambda row: row['region']) != sorted(report['final_result']['preview_rows'], key=lambda row: row['region']):
         raise SuiteError('Second publication changed the first MinIO result')
+    report['tables'] = TABLES.run(table_host(), client, report, timeout)
+    Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'spark-table-consumer-flow.json').write_text(json.dumps(report['tables'], ensure_ascii=False, indent=2))
     report['worker'] = worker_evidence(report['cluster_id'])
     report['browser'] = run_browser(report)
     Path(require('ADDP_ONLINE_ARTIFACT_DIR'), 'hdfs-spark-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))

@@ -70,6 +70,8 @@ Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未�
 
 Elasticsearch 正式 T4 浏览器用例 `e2e/online/elasticsearch-consumer-flow.spec.js` 通过真实 Console 登录同一普通用户，覆盖 Meta 重扫及稳定索引身份、Manager 文档分页与空索引、Develop Monaco 编辑器的 ES DSL 执行。多行 JSON 使用浏览器剪贴板和粘贴键输入，核对实际预检请求的完整查询及允许结果，避免逐字输入触发括号自动补全；执行结果读取页面自身的轮询响应并核对同一 execution_id，不使用整页导航前捕获的旧令牌。对应编辑器输入与执行响应回归由 `make test-develop-frontend` 验证；真实部署用例只由 Hosted Online 专用部署执行，产出四张截图和同一身份的报告，不计入确定性前端夹具 T3。
 
+MySQL/Doris 结果页面扩展既有 `hdfs-spark-consumer-flow.spec.js`，同一普通 User 核对首次创建、覆盖、下游读取的 Develop 执行页及 Manager 五行精确预览。真实 DOM 单元格逐值比较 bigint、Decimal、null、空串、emoji 尾随空格和百字符文本，不使用会压缩空白的文本断言。API、原生物理结果、浏览器身份和执行 UUID 必须一致，八张新增截图与原十二张截图共同进入报告；缺少任一引擎或证据均失败。标准入口和手工 Hosted Job 保持不变，真实运行前不计为 T4 通过。
+
 Manager 的 `manager-internal-artifact-lineage` Hosted suite 使用同一普通消费身份分两阶段验证 DAE／3DS：生成前检查真实 Console 中的 `generate_model_3d_glb` 入口；API 生成完成后再检查 ready GLB 的缓存消费、内容与渲染，此时生成按钮必须消失且浏览器不得重复生成。两个阶段共用现有 Playwright 用例和报告校验，点云、PPTX、COG 及领域清理断言保持完整。`make test-manager-online-runner` 验证阶段顺序、报告完整性和失败清理；真实链路仍由原 Hosted suite 验收。
 
 PPTX PDF 与 COG 的物理观察结果在同一次检查完成后分别写入 `manager-artifact-physical-<action>.json`，即使后续浏览器验收失败也保留原始观察证据；领域清理仍由原删除接口执行，不得以 Hosted Infra 的最终销毁替代对象不存在与源文件保留检查。

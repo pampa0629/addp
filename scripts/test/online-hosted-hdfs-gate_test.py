@@ -76,6 +76,8 @@ class HostedHDFSGateTest(unittest.TestCase):
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/spark-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/postgres-engine.json"
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/minio-engine.json"
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/mysql-engine.json"
+              printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/doris-engine.json"
             fi
             if [ "$1" = stop ]; then
               remaining=$(docker ps -aq --filter label=com.addp.online-fixture=hdfs-spark-consumer-flow)
@@ -112,13 +114,20 @@ class HostedHDFSGateTest(unittest.TestCase):
             if os.environ.get('ADDP_TEST_REGISTRATION_FAIL') == '1':
                 sys.exit(1)
             assert os.environ['ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'] == 'provisioner-token'
-            identifier = 17 if 'hdfs-engine.json' in sys.argv[-3] else (19 if 'postgres-engine.json' in sys.argv[-3] else (20 if 'minio-engine.json' in sys.argv[-3] else 18))
+            identifier = next((value for key, value in {'hdfs': 17, 'spark': 18, 'postgres': 19, 'minio': 20, 'mysql': 21, 'doris': 22}.items() if key + '-engine.json' in sys.argv[-3]), 0)
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
         self.host._write_repository_script('scripts/test/hdfs-spark-consumer-flow-online.py', '''
             import os, sys
+            if sys.argv[1:] == ['--cleanup-tables']:
+                with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
+                    trace.write('table-domain-cleanup\\n')
+                sys.exit(1 if os.environ.get('ADDP_TEST_TABLE_CLEANUP_FAIL') == '1' else 0)
             assert sys.argv[1:] == ['--initialize-table-read']
             assert os.environ['ADDP_ONLINE_POSTGRES_ENGINE_ID'] == '19'
+            assert os.environ['ADDP_ONLINE_MYSQL_ENGINE_ID'] == '21'
+            assert os.environ['ADDP_ONLINE_DORIS_ENGINE_ID'] == '22'
+            assert os.environ['ADDP_ONLINE_TEST_RUN_ID'].startswith('run-')
             assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'] == 'source-token'
             with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as trace:
                 trace.write('source-grant\\n')
@@ -185,11 +194,12 @@ class HostedHDFSGateTest(unittest.TestCase):
         sequence = ('infra-up', 'hdfs-fixture:start', 'start:-meta', 'start:-manager', 'start:-develop', 'docker-run:addp-hdfs-online-registry', 'make:build-images', 'docker-run:addp-hdfs-online-runtime',
                     'playwright install --with-deps chromium', '--suite hdfs-spark-consumer-flow',
                     'engine-register', 'source-grant', 'make:test-online ONLINE_SUITE=hdfs-spark-consumer-flow',
-                    'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
+                    'docker-rm:addp-hdfs-online-runtime', 'application-stop', 'table-domain-cleanup', 'hdfs-fixture:stop', 'docker-rm:addp-hdfs-online-registry', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
         self.assertNotIn('start:-all', trace)
         self.assertNotIn('start:-spark-workflow', trace)
+        self.assertEqual(trace.count('engine-register'), 6)
         self.assertIn('default_entry=python api_server.py', (self.host.artifacts / 'hdfs-runtime-build.txt').read_text())
         self.assertFalse(list(self.host.root.glob('trace.log.addp-hdfs-*')))
         self.assertFalse(Path(str(self.host.trace) + '.image').exists())
@@ -220,6 +230,13 @@ class HostedHDFSGateTest(unittest.TestCase):
         self.assertIn('result=failed', summary)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra-down', self.host.trace.read_text())
+
+    def test_domain_cleanup_failure_still_destroys_services_and_fails_gate(self):
+        result = self.run_gate(ADDP_TEST_TABLE_CLEANUP_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('hdfs-fixture:stop', self.host.trace.read_text())
+        self.assertIn('infra-down', self.host.trace.read_text())
+        self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
 
     def test_runtime_cleanup_failure_cannot_pass(self):
         result = self.run_gate(ADDP_TEST_RUNTIME_CLEANUP_FAIL='1')

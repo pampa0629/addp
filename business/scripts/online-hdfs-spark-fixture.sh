@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SUITE=hdfs-spark-consumer-flow
 LABEL=com.addp.online-fixture
-CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres addp-hdfs-online-minio)
+CONTAINERS=(addp-hdfs-online-namenode addp-hdfs-online-datanode addp-hdfs-online-master addp-hdfs-online-worker addp-hdfs-online-postgres addp-hdfs-online-minio addp-hdfs-online-mysql addp-hdfs-online-doris)
 fail() { echo "Online HDFS fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOST:-}" = 1 ] && [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] &&
@@ -12,7 +12,7 @@ fail() { echo "Online HDFS fixture failed: $*" >&2; exit 1; }
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail 'requires GitHub Hosted Linux x86_64'
 [ "$#" -eq 1 ] || fail 'usage: start|stop'
 stop() {
-  local container remaining status=0
+  local container remaining volume volumes='' status=0
   for container in "${CONTAINERS[@]}"; do
     if docker container inspect "$container" >/dev/null 2>&1; then
       if [ "$(docker container inspect --format "{{index .Config.Labels \"$LABEL\"}}" "$container")" != "$SUITE" ]; then
@@ -20,11 +20,12 @@ stop() {
         status=1
         continue
       fi
+      volumes="$volumes $(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$container")" || status=1
       # Only the public disposable fixture enters diagnostics, before deletion.
       # Archive only State and public service logs; PostgreSQL credentials stay in owner-only files.
       if [ -n "${ADDP_ONLINE_ARTIFACT_DIR:-}" ]; then
         docker container inspect --format '{{json .State}}' "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container-state.json" || status=1
-        if [[ "$container" != *-postgres && "$container" != *-minio ]]; then
+        if [[ "$container" != *-postgres && "$container" != *-minio && "$container" != *-mysql && "$container" != *-doris ]]; then
           docker logs --tail 80 "$container" > "$ADDP_ONLINE_ARTIFACT_DIR/$container.log" 2>&1 || status=1
         fi
         if [[ "$container" = *-master || "$container" = *-worker ]]; then
@@ -32,6 +33,12 @@ stop() {
         fi
       fi
       docker rm -fv "$container" >/dev/null || status=1
+    fi
+  done
+  for volume in $volumes; do
+    if docker volume inspect "$volume" >/dev/null 2>&1; then
+      echo 'fixture data volume remains' >&2
+      status=1
     fi
   done
   remaining=$(docker ps -aq --filter "label=$LABEL=$SUITE") || status=1
@@ -48,7 +55,7 @@ from pathlib import Path
 root = Path(os.environ['ADDP_ONLINE_SECRET_DIR']).resolve(strict=True)
 if stat.S_IMODE(root.stat().st_mode) != 0o700:
     raise SystemExit('secret directory must have mode 0700')
-for name in ('hdfs-engine.json', 'spark-engine.json', 'postgres-engine.json', 'minio-engine.json', 'minio.env', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
+for name in ('hdfs-engine.json', 'spark-engine.json', 'postgres-engine.json', 'minio-engine.json', 'mysql-engine.json', 'doris-engine.json', 'mysql.env', 'minio.env', 'postgres.env', 'postgres-seed.sql', 'postgres-before.json'):
     output = root / name
     if output.exists() or output.is_symlink():
         raise SystemExit('descriptors must be new secret files')
@@ -70,13 +77,26 @@ IMAGE_PY
 )
 [[ "$HADOOP_IMAGE" =~ ^ghcr.io/apache/hadoop:3\.5\.0@sha256:[a-f0-9]{64}$ ]] || fail 'Hadoop must use its fixed official digest'
 [[ "$SPARK_IMAGE" =~ ^apache/spark:3\.5\.0-scala2\.12-java11-python3-ubuntu@sha256:[a-f0-9]{64}$ ]] || fail 'Spark must use its fixed official digest'
+# Use the exact MySQL/Doris artifacts already certified by the real Worker T2.
+table_image() {
+  python3 - "$ROOT_DIR/scripts/test/common-spark-table-gate.sh" "$1" <<'PY'
+import re, sys
+from pathlib import Path
+match = re.search(r"(?m)^" + sys.argv[2] + r"_IMAGE='([^']+@sha256:[a-f0-9]{64})'$", Path(sys.argv[1]).read_text())
+if not match:
+    raise SystemExit('Spark table T2 requires a fixed image digest')
+print(match[1])
+PY
+}
+MYSQL_IMAGE=$(table_image MYSQL)
+DORIS_IMAGE=$(table_image DORIS)
 # Reuse the freshly built Infra binary image, with independent Business data/credentials.
 MINIO_IMAGE=$(docker container inspect --format '{{.Image}}' addp-minio)
 [[ "$MINIO_IMAGE" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'MinIO must use the current immutable Infra build'
 # Check all fixed ports before claiming any resource.
 python3 - <<'PY'
 import socket
-for port in (8020, 9870, 9864, 9866, 9867, 7077, 10000, 18080, 18081, 15435, 15436, 15437):
+for port in (8020, 9870, 9864, 9866, 9867, 7077, 10000, 18080, 18081, 15435, 15436, 15437, 15438, 8030, 9030, 8040, 9050, 9060, 8060):
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', port))
 PY
@@ -86,7 +106,7 @@ finish_start() {
   trap - EXIT INT TERM
   if [ "$status" -ne 0 ] && [ "$created" -eq 1 ]; then
     stop || status=1
-    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,postgres-engine.json,minio-engine.json,minio.env,postgres.env,postgres-seed.sql,postgres-before.json}
+    rm -f "$ADDP_ONLINE_SECRET_DIR"/{hdfs-engine.json,spark-engine.json,postgres-engine.json,minio-engine.json,mysql-engine.json,doris-engine.json,mysql.env,minio.env,postgres.env,postgres-seed.sql,postgres-before.json}
   fi
   exit "$status"
 }
@@ -103,9 +123,15 @@ from pathlib import Path
 root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 admin_password, writer_password = secrets.token_hex(24), secrets.token_hex(24)
 minio_access, minio_secret = 'online_' + secrets.token_hex(12), secrets.token_hex(24)
+mysql_password = secrets.token_hex(24)
 columns = ', '.join(f'{name}_{suffix} bigint NOT NULL CHECK ({name}_{suffix} >= 0)'
                     for name in ('csv', 'json', 'parquet') for suffix in ('rows', 'amount_sum'))
 values = {
+ 'mysql.env': f'MYSQL_ROOT_PASSWORD={mysql_password}\nMYSQL_DATABASE=spark_results\n',
+ 'mysql-engine.json': json.dumps({'name': 'Hosted MySQL', 'engine_type': 'mysql', 'engine_origin': 'general',
+    'connection_info': {'host': '127.0.0.1', 'port': 15438, 'database': 'spark_results', 'user': 'root', 'password': mysql_password}}),
+ 'doris-engine.json': json.dumps({'name': 'Hosted Doris', 'engine_type': 'doris', 'engine_origin': 'general',
+    'connection_info': {'host': '127.0.0.1', 'port': 9030, 'http_port': 8030, 'database': 'spark_results', 'user': 'root', 'password': ''}}),
  'minio.env': f'MINIO_ROOT_USER={minio_access}\nMINIO_ROOT_PASSWORD={minio_secret}\n',
  'minio-engine.json': json.dumps({'name': 'Hosted MinIO', 'engine_type': 'minio',
     'engine_origin': 'general', 'description': 'Disposable Spark Parquet results',
@@ -131,6 +157,24 @@ for name, content in values.items():
     with os.fdopen(os.open(root / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
         stream.write(content)
 POSTGRES_PY
+docker run -d --name addp-hdfs-online-mysql --label "$LABEL=$SUITE" --network host --memory 1g \
+  --env-file "$ADDP_ONLINE_SECRET_DIR/mysql.env" --tmpfs /var/lib/mysql \
+  "$MYSQL_IMAGE" --port=15438 --bind-address=127.0.0.1 --mysqlx=0 >/dev/null
+docker run -d --name addp-hdfs-online-doris --label "$LABEL=$SUITE" --network host --memory 3g \
+  --add-host host.docker.internal:127.0.0.1 --hostname doris -e BUILD_TYPE=production \
+  --mount "type=bind,source=$ROOT_DIR/business/doris/init.sh,target=/addp/doris/init.sh,readonly" \
+  --entrypoint bash "$DORIS_IMAGE" -c '
+    set -euo pipefail
+    sed -i "s/-Xmx8192m/-Xmx1024m/g; s/-Xms8192m/-Xms1024m/g" /opt/apache-doris/fe/conf/fe.conf
+    echo "mem_limit = 1024m" >> /opt/apache-doris/be/conf/be.conf
+    exec bash /addp/doris/init.sh' >/dev/null
+for attempt in $(seq 1 120); do
+  if docker exec addp-hdfs-online-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -P15438 -uroot --connect-timeout=2 -e "SELECT 1"' >/dev/null 2>&1 &&
+    docker exec addp-hdfs-online-doris bash /addp/doris/init.sh --health >/dev/null 2>&1; then break; fi
+  [ "$attempt" -lt 120 ] || fail 'MySQL/Doris readiness timed out'
+  sleep 2
+done
+docker exec addp-hdfs-online-doris mysql -h127.0.0.1 -P9030 -uroot -e 'CREATE DATABASE spark_results' >/dev/null
 docker run -d --name addp-hdfs-online-minio --label "$LABEL=$SUITE" --network host --memory 512m \
   --env-file "$ADDP_ONLINE_SECRET_DIR/minio.env" --tmpfs /data \
   "$MINIO_IMAGE" server /data --address 127.0.0.1:15436 --console-address 127.0.0.1:15437 >/dev/null
@@ -168,6 +212,7 @@ docker run -d --name addp-hdfs-online-master --label "$LABEL=$SUITE" --network h
     /opt/spark/sbin/start-thriftserver.sh --master spark://127.0.0.1:7077 --conf spark.driver.host=127.0.0.1 --conf spark.driver.bindAddress=127.0.0.1 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
     exec tail -f /dev/null' >/dev/null
 docker run -d --name addp-hdfs-online-worker --label "$LABEL=$SUITE" --network host --user root --memory 3g \
+  --add-host host.docker.internal:127.0.0.1 \
   --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker \
     --host 127.0.0.1 --cores 2 --memory 2g --webui-port 18081 spark://127.0.0.1:7077 >/dev/null
 docker exec --env HADOOP_USER_NAME=root addp-hdfs-online-master /opt/spark/bin/spark-submit /addp/hdfs/init.py

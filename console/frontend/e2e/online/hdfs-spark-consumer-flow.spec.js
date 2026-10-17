@@ -90,12 +90,64 @@ test('HDFS 扫描、四个文件预览及正式 Spark 结果通过 Console 收�
         await screenshot(prefix + name)
       }
     }
+    const tables = {}
+    for (const engine of ['mysql', 'doris']) {
+      const facts = expected.tables[engine]
+      const received = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/preview' &&
+        new URL(response.url()).searchParams.get('locator') === facts.overwrite.preview_locator)
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(facts.overwrite.preview_locator)}`)
+      const preview = await json(await received, `${engine} exact preview`)
+      expect(preview.preview_type).toBe('table')
+      expect(preview.data.columns).toEqual(['id', 'label', 'value'])
+      expect(preview.data.rows.every(row => typeof row.id === 'string')).toBe(true)
+      const sort = rows => rows.slice().sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0)
+      expect(sort(preview.data.rows)).toEqual(facts.physical_after.rows)
+      const manager = page.frameLocator('iframe[data-testid="module-iframe"]')
+      const rows = manager.locator('.table-preview .el-table__body-wrapper tr')
+      await expect(rows).toHaveCount(5)
+      // Read real DOM cells without whitespace normalization: trailing spaces,
+      // empty strings and null must remain three distinct states.
+      const observed = []
+      for (const row of await rows.all()) {
+        const cells = row.locator('td .scalar-cell')
+        await expect(cells).toHaveCount(3)
+        const values = []
+        for (const cell of await cells.all()) {
+          values.push((await cell.getAttribute('class')).split(' ').includes('is-null')
+            ? null : await cell.locator(':scope > span').first().textContent())
+        }
+        observed.push({ id: values[0], label: values[1], value: values[2] })
+      }
+      expect(sort(observed)).toEqual(facts.physical_after.rows)
+      await screenshot(`${engine}-preview`)
+      tables[engine] = {}
+      for (const phase of ['created', 'overwrite', 'reuse']) {
+        const accepted = facts[phase]
+        const response = page.waitForResponse(value => new URL(value.url()).pathname === `/api/v1/develop/executions/${accepted.execution_id}` && value.request().method() === 'GET')
+        await page.goto(`/develop/executions/${accepted.execution_id}`)
+        const execution = await json(await response, `${engine} ${phase} execution`)
+        expect(execution.status).toBe('success')
+        expect(execution.metadata.result.final_result).toEqual(accepted.final_result)
+        expect(execution.metadata.result.runtime_execution_id).toBe(accepted.runtime_status.execution_id)
+        if (phase !== 'reuse') {
+          expect(execution.outputs.save.resource).toEqual({ locator: accepted.target_locator, type: 'table', write_mode: 'replace' })
+          expect(execution.metadata.result.meta_scan_runs[0].execution_id).toBe(accepted.scan_execution_id)
+        }
+        const detail = page.frameLocator('iframe[data-testid="module-iframe"]').locator('.execution-detail-page')
+        await expect(detail).toContainText(accepted.execution_id)
+        await expect(detail.locator('.toolbar .el-tag').filter({ hasText: /成功|Success/i })).toBeVisible()
+        await expect.poll(async () => JSON.parse(await detail.locator('.workflow-final-result-json').innerText())).toEqual(accepted.final_result)
+        await screenshot(`${engine}-${phase}`)
+        tables[engine][phase] = accepted.execution_id
+      }
+    }
     writeFileSync(process.env.ADDP_ONLINE_HDFS_BROWSER_REPORT, JSON.stringify({
       run_id: process.env.ADDP_ONLINE_TEST_RUN_ID, engine_id: expected.engine_id, tenant_id: expected.tenant_id,
       principal_id: auth.principalID, execution_id: expected.execution_id,
       meta_ui_scan: true, previews: 6, develop_result: true,
       persist_execution_id: expected.persistence.execution_id, reuse_execution_id: expected.persistence.reuse_execution_id,
-      minio_execution_id: expected.minio.execution_id, minio_reuse_execution_id: expected.minio.reuse_execution_id
+      minio_execution_id: expected.minio.execution_id, minio_reuse_execution_id: expected.minio.reuse_execution_id,
+      tables
     }))
   } finally {
     await api.dispose()

@@ -248,10 +248,13 @@ class HDFSOnlineTest(unittest.TestCase):
 
     def test_browser_requires_matching_identity_execution_and_all_screenshots(self):
         report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42', 'execution_id': 'execution', 'persistence': {'execution_id': 'save-execution', 'reuse_execution_id': 'reuse-execution'}, 'minio': {'execution_id': 'minio-save', 'reuse_execution_id': 'minio-reuse'}}
-        for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', ''):
+        report['tables'] = {engine: {phase: {'execution_id': engine + '-' + phase} for phase in ('created', 'overwrite', 'reuse')} for engine in ('mysql', 'doris')}
+        for failure in ('process', 'missing_report', 'identity', 'execution', 'screenshot', 'table-screenshot', 'table-execution', ''):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
-                evidence = {key: value for key, value in report.items() if key not in ('persistence', 'minio')}
+                evidence = {key: value for key, value in report.items() if key not in ('persistence', 'minio', 'tables')}
+                evidence['tables'] = {engine: {phase: facts['execution_id'] for phase, facts in table.items()} for engine, table in report['tables'].items()}
+                if failure == 'table-execution': evidence['tables']['doris']['reuse'] = 'other'
                 evidence.update(run_id='hdfs-run', meta_ui_scan=True, previews=6, develop_result=True,
                                 persist_execution_id='save-execution', reuse_execution_id='reuse-execution', minio_execution_id='minio-save', minio_reuse_execution_id='minio-reuse')
                 if failure in ('identity', 'execution'): evidence['principal_id' if failure == 'identity' else 'execution_id'] = 'other'
@@ -260,6 +263,10 @@ class HDFSOnlineTest(unittest.TestCase):
                     if failure != 'missing_report': Path(env['ADDP_ONLINE_HDFS_BROWSER_REPORT']).write_text(json.dumps(evidence))
                     for name in ('meta', 'csv', 'json', 'parquet', 'original', 'workflow', 'persisted', 'save', 'reuse', 'minio', 'minio-save', 'minio-reuse'):
                         if failure != 'screenshot' or name != 'workflow': (root / ('hdfs-' + name + '-console.png')).write_bytes(b'proof')
+                    for engine in ('mysql', 'doris'):
+                        for phase in ('created', 'overwrite', 'reuse', 'preview'):
+                            if failure != 'table-screenshot' or (engine, phase) != ('doris', 'preview'):
+                                (root / f'hdfs-{engine}-{phase}-console.png').write_bytes(b'proof')
                     return SimpleNamespace(returncode=int(failure == 'process'))
                 with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='hdfs-run'), patch.object(MODULE.subprocess, 'run', side_effect=browser):
                     if failure:

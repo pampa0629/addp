@@ -537,6 +537,8 @@ Hosted T4 已于 2026-10-04（北京时间）复验通过：[运行 37169297656]
 
 ## HDFS Simple 实验环境
 
+现有手动 Hosted `hdfs-spark-consumer-flow` 同时验收 Spark → MySQL/Doris 的正式页面链路。Business 夹具复用真实 Worker T2 的固定镜像与 Doris 唯一初始化，为当次 Run 建立独占数据库；`online-spark-table-oracle.py` 只核对原生五行精确值、类型、表身份、DDL 与暂存清理，不访问平台 API。首次创建经 Develop 执行并自动扫描后，System 准备身份签发精确表读取 Grant，随即撤出准备凭据；普通 User 继续覆盖、Manager 预览和 Spark 复用。全部退出路径先检查目标表删除及零暂存，再销毁容器与卷。协议回归仍为 `make test-hdfs-online-runner`，真实页面证据由原 Hosted suite 归档；实现和脚本回归不代表扩展已通过真实 T4。
+
 在仓库根运行 `bash business/scripts/start.sh -hdfs`，启动固定官方 Hadoop 3.5.0 NameNode 与 DataNode，并使用固定 Spark 3.5.0 容器幂等生成样例。数据保留在两个独立 volume；`stop.sh -hdfs`、`restart.sh -hdfs` 沿用同一标准生命周期，不重新格式化已有 NameNode。初始化只更新 `/addp/samples/orders.csv`、`orders.json`、`orders.parquet` 和根文件 `/addp/订单 100%.csv`；每份 20 条订单，金额总和 2100，其他业务文件不变。
 
 本机 Docker Desktop 部署的 WebHDFS 首选端口 9870，原生 RPC 首选 8020；DataNode 数据端口 9866 与 HTTP 端口 9864 在容器内外保持一致。四个宿主端口均只绑定 `127.0.0.1`，DataNode 广播稳定主机名 `host.docker.internal`。宿主机需在 `/etc/hosts` 配置 `127.0.0.1 host.docker.internal`，容器继续使用 Docker Desktop 内置解析；标准入口在启动前验证宿主机映射。宿主机 Go 服务、Spark Driver 和容器 Worker 使用同一主机名访问 RPC 与 DataNode，换 Wi-Fi、VPN 或局域网 IP 后无需重绑端口或修改 System 连接。删除 `HDFS_SHARED_HOST` 和自动检测局域网 IP 的旧逻辑；四个端口冲突直接失败。其他部署由部署方提供实际可达的地址，不复用此本机部署的地址假设。

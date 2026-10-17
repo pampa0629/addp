@@ -62,6 +62,7 @@ start_online_spark_runtime() {
   export ADDP_ONLINE_SPARK_RUNTIME_URL="http://127.0.0.1:$SPARK_WORKFLOW_PORT"
   # No command override: exercise exactly the product image's default entry.
   run_logged docker run -d --name "$RUNTIME_CONTAINER" --network host \
+    --add-host host.docker.internal:127.0.0.1 \
     --label "com.addp.online-runtime=$ONLINE_SUITE" \
     -e "PORT=$SPARK_WORKFLOW_PORT" -e WORKFLOW_BIND_HOST=127.0.0.1 -e SYSTEM_URL -e SPARK_WORKFLOW_SERVICE_CLIENT_SECRET \
     -e HADOOP_USER_NAME -e SPARK_WORKFLOW_SHARED_HOST -e RUNTIME_HOST=127.0.0.1 "$RUNTIME_IMAGE"

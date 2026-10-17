@@ -18,6 +18,7 @@ class HDFSOnlineFixtureTest(unittest.TestCase):
         (self.root / 'business/scripts').mkdir(parents=True)
         (self.root / 'scripts/test').mkdir(parents=True)
         shutil.copy2(SCRIPT.parents[2] / 'scripts/test/docker-compose.hdfs-t2.yml', self.root / 'scripts/test/docker-compose.hdfs-t2.yml')
+        shutil.copy2(SCRIPT.parents[2] / 'scripts/test/common-spark-table-gate.sh', self.root / 'scripts/test/common-spark-table-gate.sh')
         shutil.copy2(SCRIPT, self.root / 'business/scripts' / SCRIPT.name)
         self.bin = self.root / 'bin'; self.bin.mkdir()
         self.secret = self.root / 'secret'; self.secret.mkdir(mode=0o700)
@@ -35,6 +36,8 @@ if a[0] == 'container':
     state = root / a[-1]
     if not state.exists(): sys.exit(1)
     if '--format' in a: print(state.read_text())
+elif a[0] == 'inspect':
+    pass  # Deterministic fixture has no anonymous volumes.
 elif a[0] == 'compose':
     print(json.dumps({'services': {'hdfs-namenode': {'image': os.environ['HADOOP_IMAGE']}, 'spark-master': {'image': os.environ['SPARK_IMAGE']}}}))
 elif a[0] == 'run':
@@ -44,7 +47,7 @@ elif a[0] == 'run':
         os.kill(os.getppid(), signal.SIGTERM)
     if os.environ.get('FAIL_RUN') == container: sys.exit(1)
 elif a[0] == 'exec':
-    if os.environ.get('FAIL_SEED') == '1' and 'pg_isready' not in a and 'curl' not in a: sys.exit(1)
+    if os.environ.get('FAIL_SEED') == '1' and ('psql' in a or '/opt/spark/bin/spark-submit' in a): sys.exit(1)
     print('HDFS_SAMPLE_PASS rows=20 amount_sum=2100 formats=csv,json,parquet')
 elif a[0] == 'logs':
     if os.environ.get('FAIL_LOGS') == '1': sys.exit(1)
@@ -88,7 +91,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
     def test_shared_images_samples_host_network_and_distinct_owner_only_descriptors(self):
         result = self.run_fixture('start')
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        for engine in ('hdfs', 'spark', 'postgres', 'minio'):
+        for engine in ('hdfs', 'spark', 'postgres', 'minio', 'mysql', 'doris'):
             descriptor = self.secret / (engine + '-engine.json')
             self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
             self.assertEqual(json.loads(descriptor.read_text())['engine_type'], 'postgresql' if engine == 'postgres' else engine)
@@ -106,11 +109,18 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         minio = json.loads((self.secret / 'minio-engine.json').read_text())['connection_info']
         self.assertEqual(minio['bucket'], 'result')
         self.assertNotIn(minio['secret_key'], result.stdout + result.stderr)
-        self.assertEqual(len(list(self.state.iterdir())), 6)
+        mysql = json.loads((self.secret / 'mysql-engine.json').read_text())['connection_info']
+        self.assertEqual(mysql['port'], 15438)
+        self.assertNotIn(mysql['password'], result.stdout + result.stderr)
+        self.assertEqual(stat.S_IMODE((self.secret / 'mysql.env').stat().st_mode), 0o600)
+        self.assertEqual(len(list(self.state.iterdir())), 8)
         commands = [json.loads(line) for line in self.trace.read_text().splitlines()]
         for command in commands:
             if command[0] == 'run': self.assertIn('host', command)
         self.assertTrue(any('/addp/hdfs/init.py' in command for command in commands))
+        for container in ('doris', 'worker'):
+            run = next(command for command in commands if command[0] == 'run' and 'addp-hdfs-online-' + container in command)
+            self.assertIn('host.docker.internal:127.0.0.1', run)
         self.assertNotIn('local[*]', self.trace.read_text())
         self.assertEqual(self.run_fixture('stop').returncode, 0)
         self.assertEqual(list(self.state.iterdir()), [])
@@ -128,6 +138,7 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
 
     def test_partial_creation_or_seed_failure_cleans_all_owned_containers(self):
         for flags in ({'FAIL_RUN': 'addp-hdfs-online-postgres'}, {'FAIL_RUN': 'addp-hdfs-online-namenode'}, {'FAIL_RUN': 'addp-hdfs-online-minio'}, {'FAIL_RUN': 'addp-hdfs-online-worker'},
+                      {'FAIL_RUN': 'addp-hdfs-online-mysql'}, {'FAIL_RUN': 'addp-hdfs-online-doris'},
                       {'FAIL_SEED': '1'}, {'FAIL_SIGNAL': 'addp-hdfs-online-worker'}):
             with self.subTest(flags=flags):
                 result = self.run_fixture('start', **flags)
