@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	commonlogger "github.com/addp/common/logger"
 	"github.com/addp/common/schema"
 
 	"github.com/addp/common/exportartifact"
@@ -167,7 +168,7 @@ func ConnectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: commonlogger.WithoutSQLValues(logger.Default.LogMode(logger.Info)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)

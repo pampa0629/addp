@@ -229,3 +229,9 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 结构化投影启动补齐仅处理 enrolling/active Enrollment，必须先锁定并核对 Enrollment 生命周期，再解析与检查 Owner 投影。released 保留的 active 投影记录是解除审计，不要求补出后续新加入的 Graph Owner，也不得重建已解除资源的保护。releasing/activating 同样不进入该字段升级路径。回归覆盖旧四 Owner 已解除资源在 Graph 初始化与结构化补齐顺序执行后的幂等性、历史内容不变，纳入既有 Security Go 与 PostgreSQL Lifecycle 门禁。
 
 2026-10-17 原值授权 v5 Hosted 首次运行 [39018432898](https://github.com/pampa0629/addp/actions/runs/39018432898) 未进入领域验收：标准启动入口在 Hosted 跳过本地端口解析时，Graph 前端缺少默认端口，导致环境启动超时。归档 summary 确认 cleanup=passed、infra_cleanup=zero_residuals；不能计为原值授权或历史回落 T4 通过。已按现有默认配置补齐 GRAPH_FE_PORT，并在既有生命周期门禁中对照唯一端口清单验证全部前端默认值和显式覆盖。新增回归先复现未定义变量，修正后 make test-dev-lifecycle 全部通过；新增 Hosted 结果另行核验。本地 Security 后端与 Worker 重启后已稳定运行。
+
+2026-10-17 本地 MySQL 原值范围验收：outdoor开发者的 Develop 单出口申请由另一管理员批准后，实际查询返回 10 行原值；同一用户的 Manager 预览和另一用户的 Develop 查询仍默认掩码。19:00 自然到期后，未重跑 SQL，同一执行 `00adf789-ec22-4f01-9875-add997566ebd` 的历史自动恢复掩码，原行数与执行耗时保留，Owner 对该历史的读取返回 200；控制面授权显示已到期。本次临时授权没有继续生效，既有 Manager 授权未修改。主动撤销的本地历史回落仍未验收。
+
+该查询同时暴露私有原值历史进入 GORM 参数展开日志的缺陷。Develop 共用数据库连接现接入 `common/logger.WithoutSQLValues`，在格式化前移除绑定参数，查询错误日志仅保留固定类别、类型或合法 SQLSTATE；SQL 结构、级别、耗时、行数及业务错误链保留。回归先复现普通／慢查询和错误回显泄露，修正后 Common／Develop Go、全量 `make test-go` 的 22 个模块、Common／Develop PostgreSQL 门禁通过。实际执行事务验证私有历史仍完整持久化、必要过程事件保留、SQL 日志不含私有载荷；尚待用户重启后核对新进程，既有运行日志未删除。
+
+后续 Hosted [39024702645](https://github.com/pampa0629/addp/actions/runs/39024702645) 已通过环境启动，但浏览器初始保护断言失败：API 场景清理在 Security 撤销 Manager 授权后即交接浏览器，浏览器预览比 Manager 撤销投影更新早约 1.4 秒。夹具现须在同一预算内确认真实预览恢复默认掩码后才交接，保持严格三行逐值断言；新增回归先复现缺少此屏障，修正后 `make test-security-online-runner` 的 175 项及 CI 登记检查通过。该次失败 cleanup=passed、infra_cleanup=zero_residuals，不能计为新范围 T4 通过；修正后的真实 Hosted 结果另行核验。

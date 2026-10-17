@@ -710,6 +710,10 @@ def run_scenario(
         target_identity, assessment_id, [applicant_identity, approver_identity], deadline, engine_id)
     develop_scopes = exercise_develop_scopes(applicant, approver, engine_id, source_locator, target_identity, assessment_id, deadline)
 
+    # Revocation commits at Security before Manager receives its projection.
+    # Hand the same fixture to the browser only after its actual output is masked.
+    wait_for_manager_values(applicant, source_locator, MASKED_VALUES, "post-cleanup", deadline)
+
     return {
         "schema_version": "addp.security-plaintext-access-online/v5",
         "result": "passed",

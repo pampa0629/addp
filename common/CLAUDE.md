@@ -8,6 +8,8 @@
 
 ## 重要包
 
+`common/logger.WithoutSQLValues` 是 ORM 查询日志的统一值过滤器。它保留委托日志器的级别、SQL 结构、耗时和影响行数，在 GORM 格式化前移除绑定参数，且只向日志器提供固定错误类别、错误类型或合法 SQLSTATE；不修改实际数据库错误或绑定值。当前由 Develop 数据库连接消费，覆盖私有原值历史的所有执行写入；其他模块的连接配置不在本轮扩大。
+
 `common/exportartifact` 独占导出会话、请求摘要和发起用户来源核验实现。派发前保存绑定 execution UUID 与完整请求摘要；仅固定 Transfer 服务经过 owner 专用 Permission 核验后取得发起用户事实。`common/client` 通过 System 活动 Backend 注册信息调用来源接口，禁止客户端自报用户、回调 URL 或传递 User Token。来源只用于 `triggered_by` 与本人观测隔离，不派生执行或数据授权。
 
 ```text

@@ -1,17 +1,21 @@
 package repository
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"testing"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonlogger "github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func TestQueryExecutionEvents(t *testing.T) {
@@ -30,6 +34,10 @@ func runTaskEventCases(t *testing.T, database func(*testing.T) *gorm.DB, taskTyp
 	for _, status := range []string{"success", "failed", "cancelled", "timeout"} {
 		t.Run(status, func(t *testing.T) {
 			db := database(t)
+			var trace bytes.Buffer
+			db = db.Session(&gorm.Session{Logger: commonlogger.WithoutSQLValues(gormlogger.New(
+				log.New(&trace, "", 0), gormlogger.Config{LogLevel: gormlogger.Info},
+			))})
 			repo, item, task := seedExecutionEvent(t, db, taskType)
 			claimed, lease := claimExecutionEvent(t, repo, taskType)
 			assertExecutionEvents(t, db, taskType, item.ExecutionID, "started")
@@ -44,8 +52,26 @@ func runTaskEventCases(t *testing.T, database func(*testing.T) *gorm.DB, taskTyp
 				t.Fatal(err)
 			}
 			fields := map[string]interface{}{"metadata": commonModels.JSONMap{"result": "query-private-sentinel"}}
+			if taskType == commonExecution.TaskTypeQuery {
+				fields["metadata"].(commonModels.JSONMap)["protected_query_history"] = commonModels.JSONMap{
+					"rows": []interface{}{commonModels.JSONMap{"phone": "query-private-sentinel"}},
+				}
+			}
 			if err := repo.CompleteWithLease(t.Context(), claimed, *lease, status, time.Now(), fields); err != nil {
 				t.Fatal(err)
+			}
+			var persisted commonExecution.TaskExecution
+			if err := db.Where("execution_id = ?", item.ExecutionID).First(&persisted).Error; err != nil || persisted.Metadata["result"] != "query-private-sentinel" {
+				t.Fatal("filtered SQL logging changed persisted execution metadata")
+			}
+			if taskType == commonExecution.TaskTypeQuery && persisted.Metadata["protected_query_history"] == nil {
+				t.Fatal("filtered SQL logging removed private query history")
+			}
+			if strings.Contains(trace.String(), "query-private-sentinel") || strings.Contains(trace.String(), "protected_query_history") {
+				t.Fatal("execution completion SQL trace exposed private metadata")
+			}
+			if !strings.Contains(trace.String(), "UPDATE") || !strings.Contains(trace.String(), "task_executions") {
+				t.Fatal("execution completion SQL trace lost its operation")
 			}
 			terminal := status
 			if status == "success" {

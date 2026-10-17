@@ -172,10 +172,11 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
              patch.object(ONLINE, 'exercise_security_unavailability', side_effect=lambda *args: events.append('outage') or {'request_id': 'outage-request', 'exemption_id': 'outage-grant', 'develop_exemption_id': 'outage-develop-grant'}), \
              patch.object(ONLINE.DEVELOP, 'develop_execution', return_value={}), \
              patch.object(ONLINE, 'develop_history_evidence', return_value={}), \
-             patch.object(ONLINE, 'exercise_develop_scopes', return_value={'request_ids': [], 'exemption_ids': []}):
+             patch.object(ONLINE, 'exercise_develop_scopes', side_effect=lambda *args: events.append('develop-scopes') or {'request_ids': [], 'exemption_ids': []}):
             report = ONLINE.run_scenario(applicant, approver, 2, 17, 120)
         self.assertEqual(events, ['baseline', 'approve', 'authorized', 'other-subject', 'expired', 'history-expired',
-                                  'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked', 'outage'])
+                                  'approve', 'second-approval', 'other-subject-second-approval', 'revoke', 'revoked', 'history-revoked', 'outage',
+                                  'develop-scopes', 'post-cleanup'])
         self.assertEqual(report['schema_version'], 'addp.security-plaintext-access-online/v5')
         self.assertIn('outage-request', report['audit_retained']['access_request_ids'])
         self.assertIn('outage-grant', report['audit_retained']['exemption_ids'])
