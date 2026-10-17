@@ -24,9 +24,10 @@ type sourceReadRequest struct {
 }
 
 type sourceReadTargetRule struct {
-	Path    engineplugin.EngineCatalogPath
-	Covered bool
-	Reason  string
+	Path      engineplugin.EngineCatalogPath
+	Covered   bool
+	Reason    string
+	ExpiresAt *time.Time
 }
 
 // Covered means only that current source rules cover ALL targets. It is not an
@@ -36,6 +37,10 @@ type sourceReadRules struct {
 	ObservedAt time.Time
 	Covered    bool
 	Targets    []sourceReadTargetRule
+	// ExpiresAt is the earliest effective source deadline in this observation.
+	// Nil means until revoked ONLY when Covered is true. This is not a lease
+	// or an issued produced-data Grant; future issuance must freeze its own facts.
+	ExpiresAt *time.Time
 }
 
 func (request sourceReadRequest) encode() ([]engineplugin.EngineCatalogPath, json.RawMessage, error) {
@@ -99,6 +104,7 @@ type sourceReadRuleRow struct {
 	Position   int64
 	ObservedAt time.Time
 	Reason     string
+	ExpiresAt  *time.Time
 }
 
 func sourceReadObservation(paths []engineplugin.EngineCatalogPath, rows []sourceReadRuleRow) (*sourceReadRules, error) {
@@ -117,7 +123,21 @@ func sourceReadObservation(paths []engineplugin.EngineCatalogPath, rows []source
 		}
 		covered := row.Reason == "grant"
 		result.Targets[i] = sourceReadTargetRule{Path: paths[i], Covered: covered, Reason: row.Reason}
+		if row.ExpiresAt != nil {
+			if !covered || !row.ExpiresAt.After(result.ObservedAt) {
+				return nil, errSourceReadRules
+			}
+			expiresAt := row.ExpiresAt.UTC()
+			result.Targets[i].ExpiresAt = &expiresAt
+			if result.ExpiresAt == nil || expiresAt.Before(*result.ExpiresAt) {
+				deadline := expiresAt
+				result.ExpiresAt = &deadline
+			}
+		}
 		result.Covered = result.Covered && covered
+	}
+	if !result.Covered {
+		result.ExpiresAt = nil
 	}
 	return result, nil
 }
@@ -162,7 +182,7 @@ WITH input AS MATERIALIZED (
 	SELECT ?::bigint AS tenant_id, ?::bigint AS principal_id,
 	       ?::bigint AS membership_id, ?::bigint AS authorization_version,
 	       ?::jsonb AS targets, clock_timestamp() AS observed_at
-)` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason FROM rules ORDER BY position`
+)` + sourceReadRuleCTEs + ` SELECT position, observed_at, reason, expires_at FROM rules ORDER BY position`
 
 // Both actual reads and management inspection consume these exact predicates.
 // The caller supplies input from trusted credential resolution or IAM lookup.
@@ -172,7 +192,7 @@ const sourceReadRuleCTEs = `, targets AS (
        target.value->>'item_fingerprint' AS item_fingerprint, target.value->>'boundary_hash' AS boundary_hash
 	FROM input, jsonb_array_elements(input.targets) WITH ORDINALITY AS target(value, ordinality)
 ), current_source AS (
-	SELECT input.* FROM input
+ SELECT input.*, m.expires_at AS membership_expires_at FROM input
 	JOIN system.principals p ON p.id = input.principal_id AND p.principal_type = 'user'
 	  AND p.status = 'active' AND p.authorization_version = input.authorization_version
 	JOIN system.users u ON u.id = p.id
@@ -193,7 +213,9 @@ const sourceReadRuleCTEs = `, targets AS (
 	  AND m.tenant_membership_id = s.membership_id AND m.status = 'active'
 	JOIN system.project_groups g ON g.tenant_id = m.tenant_id AND g.id = m.project_group_id AND g.status = 'active'
 ), matched_grants AS MATERIALIZED (
-	SELECT g.*, target.position FROM targets target CROSS JOIN input
+	SELECT g.*, target.position,
+	 LEAST(g.expires_at, (SELECT membership_expires_at FROM current_source)) AS effective_expires_at
+	FROM targets target CROSS JOIN input
 	JOIN system.engine_access_grants g ON g.tenant_id = input.tenant_id
   AND g.engine_id = target.engine_id AND g.item_fingerprint = target.item_fingerprint AND g.boundary_hash = target.boundary_hash
 	JOIN recipients r ON r.recipient_type = g.recipient_type AND r.recipient_id = g.recipient_id
@@ -210,7 +232,11 @@ const sourceReadRuleCTEs = `, targets AS (
   AND ((d.expiry_mode = 'until_revoked' AND d.expires_at IS NULL)
        OR (d.expiry_mode = 'at_time' AND d.expires_at > input.observed_at))
   AND NOT EXISTS (SELECT 1 FROM system.engine_access_deny_releases release WHERE release.deny_id = d.deny_id)
-), rules AS (
+), grant_deadlines AS (
+ SELECT position,
+ CASE WHEN bool_or(effective_expires_at IS NULL) THEN NULL ELSE max(effective_expires_at) END AS expires_at
+ FROM matched_grants GROUP BY position
+), rule_reasons AS (
 SELECT target.position, input.observed_at,
 CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN NOT EXISTS (SELECT 1 FROM system.engines e WHERE e.tenant_id = input.tenant_id
@@ -218,4 +244,7 @@ CASE WHEN NOT EXISTS (SELECT 1 FROM current_source) THEN 'source_unavailable'
      WHEN EXISTS (SELECT 1 FROM matched_denies d WHERE d.position = target.position) THEN 'explicit_deny'
      WHEN EXISTS (SELECT 1 FROM matched_grants g WHERE g.position = target.position) THEN 'grant'
      ELSE 'no_grant' END AS reason
-FROM targets target CROSS JOIN input)`
+FROM targets target CROSS JOIN input
+), rules AS (
+ SELECT r.*, CASE WHEN r.reason = 'grant' THEN d.expires_at END AS expires_at
+ FROM rule_reasons r LEFT JOIN grant_deadlines d USING (position))`

@@ -112,3 +112,64 @@ func TestSourceReadRulesConsumeOnlyCanonicalGrantFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceReadObservationCombinesEffectiveDeadlines(t *testing.T) {
+	now := time.Date(2026, 10, 17, 8, 0, 0, 0, time.UTC)
+	early, late := now.Add(time.Hour), now.Add(2*time.Hour)
+	paths := []engineplugin.EngineCatalogPath{testFulfillmentRequest().Path, testFulfillmentRequest().Path}
+	for _, tc := range []struct {
+		name         string
+		first, next  *time.Time
+		nextReason   string
+		covered      bool
+		wantDeadline *time.Time
+	}{
+		{"all unlimited", nil, nil, "grant", true, nil},
+		{"finite and unlimited", &late, nil, "grant", true, &late},
+		{"unlimited and finite", nil, &early, "grant", true, &early},
+		{"earliest required source", &late, &early, "grant", true, &early},
+		{"same deadline", &early, &early, "grant", true, &early},
+		{"missing source", &late, nil, "no_grant", false, nil},
+		{"denied source", &late, nil, "explicit_deny", false, nil},
+		{"unavailable source", &late, nil, "target_unavailable", false, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []sourceReadRuleRow{
+				{Position: 1, ObservedAt: now, Reason: "grant", ExpiresAt: tc.first},
+				{Position: 2, ObservedAt: now, Reason: tc.nextReason, ExpiresAt: tc.next},
+			}
+			result, err := sourceReadObservation(paths, rows)
+			if err != nil || result == nil || result.Covered != tc.covered {
+				t.Fatalf("observation=%+v error=%v", result, err)
+			}
+			if (result.ExpiresAt == nil) != (tc.wantDeadline == nil) ||
+				(result.ExpiresAt != nil && !result.ExpiresAt.Equal(*tc.wantDeadline)) {
+				t.Fatalf("deadline=%v want=%v", result.ExpiresAt, tc.wantDeadline)
+			}
+		})
+	}
+	result, err := sourceReadObservation(paths[:1], []sourceReadRuleRow{{Position: 1, ObservedAt: now, Reason: "grant", ExpiresAt: &early}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	*result.Targets[0].ExpiresAt = late
+	if !early.Equal(now.Add(time.Hour)) || !result.ExpiresAt.Equal(early) {
+		t.Fatal("source deadline aliases input or the complete-set deadline")
+	}
+}
+
+func TestSourceReadObservationRejectsInvalidDeadlines(t *testing.T) {
+	now := time.Date(2026, 10, 17, 8, 0, 0, 0, time.UTC)
+	past, future := now.Add(-time.Second), now.Add(time.Hour)
+	path := []engineplugin.EngineCatalogPath{testFulfillmentRequest().Path}
+	for _, row := range []sourceReadRuleRow{
+		{Position: 1, ObservedAt: now, Reason: "grant", ExpiresAt: &past},
+		{Position: 1, ObservedAt: now, Reason: "grant", ExpiresAt: &now},
+		{Position: 1, ObservedAt: now, Reason: "explicit_deny", ExpiresAt: &future},
+		{Position: 1, ObservedAt: now, Reason: "no_grant", ExpiresAt: &future},
+	} {
+		if result, err := sourceReadObservation(path, []sourceReadRuleRow{row}); result != nil || !errors.Is(err, errSourceReadRules) {
+			t.Fatalf("invalid source deadline accepted: %+v %v", result, err)
+		}
+	}
+}

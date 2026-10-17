@@ -191,6 +191,58 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 				t.Fatal(err)
 			}
 		}
+		t.Run("effective source deadline merges current personal and organization grants", func(t *testing.T) {
+			user, membershipExpiry := newUser(t, time.Hour)
+			group, err := organizations.CreateProjectGroup(ctx, iam.CreateProjectGroupInput{TenantID: runtime.TenantID, ActorPrincipalID: adminID, Code: "deadline_group", Name: "Deadline group"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := organizations.CreateProjectGroupMembership(ctx, iam.CreateProjectGroupMembershipInput{TenantID: runtime.TenantID, ProjectGroupID: group.ID, TenantMembershipID: user.MembershipID, ActorPrincipalID: adminID, RelationRole: "member"}); err != nil {
+				t.Fatal(err)
+			}
+			user = refresh(t, user)
+			early, late := membershipExpiry.Add(-50*time.Minute), membershipExpiry.Add(-20*time.Minute)
+			personal := grant(t, "user", user.PrincipalID, &early)
+			project := grant(t, "project_group", group.ID, &late)
+			checkDeadline := func(want *time.Time) *sourceReadRules {
+				t.Helper()
+				observation := read(t, user, base.Path)
+				if !observation.Covered || (observation.ExpiresAt == nil) != (want == nil) ||
+					(observation.ExpiresAt != nil && !observation.ExpiresAt.Equal(*want)) {
+					t.Fatalf("effective deadline=%v want=%v observation=%+v", observation.ExpiresAt, want, observation)
+				}
+				return observation
+			}
+			frozenObservation := checkDeadline(&late)
+			revoke(t, project)
+			checkDeadline(&early)
+			if !frozenObservation.ExpiresAt.Equal(late) {
+				t.Fatal("a later observation changed the original deadline")
+			}
+			denyID := deny(t, "user", user.PrincipalID, nil)
+			blocked := read(t, user, base.Path)
+			if blocked.Covered || blocked.ExpiresAt != nil || blocked.Targets[0].ExpiresAt != nil {
+				t.Fatalf("Deny returned a usable deadline: %+v", blocked)
+			}
+			release(t, denyID)
+			checkDeadline(&early)
+			// Until-revoked organization access still has the current account's
+			// known tenant-membership limit. No date sentinel represents infinity.
+			unlimited := grant(t, "project_group", group.ID, nil)
+			checkDeadline(&membershipExpiry)
+			if err := db.Table("system.tenant_memberships").Where("id=?", user.MembershipID).Update("expires_at", nil).Error; err != nil {
+				t.Fatal(err)
+			}
+			user = refresh(t, user)
+			checkDeadline(nil)
+			revoke(t, unlimited)
+			checkDeadline(&early)
+			revoke(t, personal)
+			missing := read(t, user, base.Path)
+			if missing.Covered || missing.ExpiresAt != nil {
+				t.Fatalf("missing Grant interpreted as unlimited: %+v", missing)
+			}
+		})
 		t.Run("current account lists minimal Deny anchors without a remaining Grant", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			grantID := grant(t, "user", user.PrincipalID, nil)
@@ -317,7 +369,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			assert(t, user, "grant")
 			d := engineplugin.TabularItemPath(base.Path.EngineID, "schema", "public", "ungranted_D")
 			result := read(t, user, base.Path, d, base.Path)
-			if result.Covered || len(result.Targets) != 2 || !result.Targets[0].Covered || result.Targets[1].Reason != "no_grant" {
+			if result.Covered || result.ExpiresAt != nil || len(result.Targets) != 2 || !result.Targets[0].Covered || result.Targets[1].Reason != "no_grant" {
 				t.Fatalf("C+D=%+v", result)
 			}
 			wrong := user
@@ -587,7 +639,7 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 			// permission is claimed. These facts belong to this disposable fixture.
 			for _, kind := range []string{"user", "department", "project_group"} {
 				t.Run(kind, func(t *testing.T) {
-					user, _ := newUser(t, time.Hour)
+					user, membershipExpiry := newUser(t, time.Hour)
 					recipientID := user.PrincipalID
 					switch kind {
 					case "department":
@@ -654,9 +706,17 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					if _, err := repo.findFulfillmentGrant(ctx, row.RequestID); !errors.Is(err, gorm.ErrRecordNotFound) {
 						t.Fatalf("independent issuance was exposed as Catalog fulfillment history: %v", err)
 					}
-					if result := read(t, user, path); !result.Covered {
-						t.Fatalf("canonical independent Allow missing: %+v", result)
+					if result := read(t, user, path); !result.Covered || result.ExpiresAt == nil || !result.ExpiresAt.Equal(membershipExpiry) {
+						t.Fatalf("canonical independent Allow or membership deadline missing: %+v", result)
 					}
+					limitedExpiry := membershipExpiry.Add(-15 * time.Minute)
+					limited := grant(t, "user", user.PrincipalID, &limitedExpiry)
+					combined := read(t, user, path, base.Path)
+					if !combined.Covered || combined.ExpiresAt == nil || !combined.ExpiresAt.Equal(limitedExpiry) ||
+						combined.Targets[0].ExpiresAt == nil || !combined.Targets[0].ExpiresAt.Equal(membershipExpiry) {
+						t.Fatalf("complete required-source set lost the earliest deadline: %+v", combined)
+					}
+					revoke(t, limited)
 					outsider, _ := newUser(t, time.Hour)
 					if read(t, outsider, path).Covered {
 						t.Fatal("independent grant leaked to unrelated user")
