@@ -2459,3 +2459,15 @@ API 操作完成后先停用并按 CAS 删除本轮规则和通知目标，验�
 两个 owner 的写入不是跨服务事务。提交期间禁止修改或重复点击；主机创建成功后冻结该次主体，采集失败时保留返回的 node_id 并显示“主机已登记，采集尚未完成/待核验”，提供原主机监控/配置入口。任何写入响应不确定时停止本次提交，不自动重试、不按名称/IP寻找所谓已成功主机，也不删除已建主机；由管理员在原管理入口核验后选择既有主机或配置继续。离开页面、身份/权限切换或取消的文件读取产生的迟到结果不得回填新草稿；不自动创建副本或扩大准入。完成配置不等于已经取得有效采样，仍由既有采集状态反馈。
 
 实施前识别门禁：原 `metrics-deployment-config_test.py`/`make test-dev-lifecycle` 覆盖导出白名单、Desktop/原生 Linux 边界、禁用/远端/跨工作区拒绝及无变更动作；Monitor 单元与浏览器门禁覆盖协议边界、权限、导入、已有/新建主机、两阶段部分完成、未知结果不重试及迟到身份隔离；Console 标准门禁覆盖真实 iframe 集成。新增文件仍按原前端路径自动发现，节点脚本仍在原 Metrics T2 输入登记范围；编码同批核对 CI，必要时补登记。复用现有 API，不修改后端 DTO、数据库、Swagger、IAM 或部署开关。个人服务不自行重启，本地与 T3 结果不能冒充新交互的 Hosted T4。
+
+
+本批代码已在共享版本提交 `0ff564cb9` 中纳入 main；随后本会话补充提交前的空采集地址检查（不先创建主机），以及显式空显示名拒绝（不回落到默认名）。实现只复用现有公开接口、权限和审计；没有新增后端路由、数据库或无人值守身份。已在个人 Docker Desktop 上通过只读导出得到 `/tmp/addp-host-admission-desktop.json`，再以正式浏览器协议解析器校验通过；Linux VM 类型、空主机地址、空允许模块集合均符合声明，文件不含证书路径、Secret 或预分配 node_id。
+
+前端本地验证：`make test-monitor-frontend` 的 75 项单元测试、223 项浏览器测试及构建退出 0；最后的空地址预检新增后，再沿标准浏览器入口聚焦运行 13 项接入场景，全部通过。`make test-system-frontend` 的 135 项单元测试、166 项浏览器测试及构建退出 0；`make test-console-frontend` 的 173 项单元测试、140 项浏览器测试及构建退出 0。Console 覆盖从 System 主机管理到 Monitor 原新建页的共享导航、文件导入、既有主机确认、唯一身份写入及重载。覆盖两步写入的部分完成、400 可明确修正、503 未知结果及 409 CAS 冲突禁止重复写入、类型/启用状态重新核验、身份变化取消和迟到读取、权限及英文窄屏。初次聚焦运行在 Element Plus 禁用控件的断言定位失败：禁用 Select 不渲染 combobox 输入，由 wrapper 表示 disabled，已按其真实结构检查；未改产品禁用行为或使用强制点击。
+
+标准部署门禁、实际 Metrics T2、默认 changed 预检与退出清理结果在本节收尾时分别记录。首次中断的 Metrics T2 只执行到来源停止，不计通过；已核对该次自建项目与 Compose 文件归属，沿原 Compose down/volumes 清理，确认容器、网络、卷和私密工作目录零残留，再启动新的一次性门禁。中断的三条前端门禁同样不计通过，以上均为恢复后的完整执行结果。个人 Safari 只验证到新增确认页和导入按钮可见，随后 Console `5170` 返回 502、Monitor `5179` 超时；尚未完成真实文件导入或写入，没有新建第二个个人主机/目标，也没有自行重启个人服务。远端 CI 与告警 Hosted `39010969884`（源码 `a2932e427`）仍在排队，不计通过；原 Hosted 失败原因与修复证据保留在 10.77。
+
+
+最终部署验证：`make test-dev-lifecycle` 退出 0（77 项原生/部署配置回归、38 项日志生命周期回归、端口/所有权/构建生命周期以及原 Go 编译检查），包含最后的显式空名称拒绝；日志 `/tmp/addp-host-admission-lifecycle-final.log`。`make test-monitor-metrics` 退出 0，26 项配置回归及真实 mTLS、作用域、两独立 Desktop 进程来源、真实 node_exporter 的完整/受限采样、故障与新样本恢复、中心 SIGKILL 后历史持久化、六来源总览和资源告警联合回归完成。告警 T2 的同一 incident 真实恢复、两条事件/两条 delivered/三次 HTTP 请求通过，最终明确 `zero owned containers/networks/volumes and temporary files`；日志 `/tmp/addp-host-admission-metrics-t2-final.log`。此次 T2 中途仅调整导出分支的空显示名校验，未改变正在执行的采集/部署路径；新分支断言另由最终完整生命周期门禁覆盖，没有把旧输入下未执行的新增断言计作 T2 覆盖。
+
+前端 CI 登记（21 个前端）、新增中英文键一致性、设计章节/围栏和任务范围 diff 检查通过。最新默认 `make test-changed` 对六项变更命中 Console/Monitor，在 Monitor PostgreSQL 参数未注入的预检退出 2；后续未执行、不计通过。本批未修改数据库或后端实现，新增导出路径由生命周期门禁、原采集/告警链路由独立 Metrics T2、前端由三条标准入口验证；不把未执行的 Monitor 完整 PostgreSQL 门禁计为通过，其既有远端门禁仍需实际结果。日志分别为 `/tmp/addp-host-admission-monitor-full-final.log`、`/tmp/addp-host-admission-browser-last.log`、`/tmp/addp-host-admission-system-full-final.log`、`/tmp/addp-host-admission-console-full-final.log`、`/tmp/addp-host-admission-ci-registration-final.log` 和 `/tmp/addp-host-admission-changed-final.log`。本批只完成管理员确认的节点/采集接入，ADDP 启动单元和 Business Engine 的明确承载关联尚未因此实现。

@@ -67,10 +67,12 @@ def admission_document(env, runtime, node_kind=None, display_name=None, addresse
         if node_kind not in (None, 'virtual'):
             raise ValueError('Docker Desktop is a virtual Linux node')
         node_kind = 'virtual'
-        display_name = display_name or 'Docker Desktop Linux VM'
+        if display_name is None:
+            display_name = 'Docker Desktop Linux VM'
     elif runtime != 'linux' or node_kind not in ('physical', 'virtual'):
         raise ValueError('Native Linux requires an explicit physical or virtual node kind')
-    display_name = display_name or platform.node()
+    if display_name is None:
+        display_name = platform.node()
     if (not isinstance(display_name, str) or not display_name.strip()
             or display_name != display_name.strip() or len(display_name) > 255
             or any(ord(char) < 32 or ord(char) == 127 for char in display_name)):

@@ -131,6 +131,17 @@ test('invalid or oversized input never creates a host or collection configuratio
   expect(state.hostWrites).toEqual([]); expect(state.writes).toEqual([])
 })
 
+test('an empty edited endpoint is rejected before registering a new host', async ({ page }) => {
+  const state = await admissionBackend(page)
+  await page.goto('/monitoring-targets/new')
+  await upload(page)
+  await page.getByText('按清单新建主机', { exact: true }).click()
+  await page.getByTestId('target-endpoint').fill('')
+  await page.getByTestId('target-save').click()
+  await expect(page.getByTestId('target-save-error')).toBeVisible()
+  expect(state.hostWrites).toEqual([]); expect(state.writes).toEqual([])
+})
+
 test('an identity change during host creation cannot create a collection or restore the old proposal', async ({ page }) => {
   const state = await admissionBackend(page, { holdHost: true })
   await page.goto('/monitoring-targets/new')

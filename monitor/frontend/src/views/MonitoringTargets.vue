@@ -330,6 +330,7 @@ function writeError(error) {
 async function save() {
   if (!canWrite.value || !formReady.value || saving.value || conflicted.value) return
   const generation = epoch, id = targetID.value, isCreate = creating.value
+  if (!form.endpoint.trim() || form.endpoint.trim().length > 512) { saveError.value = t('monitor.targets.invalidForm'); return }
   if (!(admission.value && admissionMode.value === 'new') && !targetInput(form, target.value)) { saveError.value = t('monitor.targets.invalidForm'); return }
   saving.value = true; saveError.value = ''; statusMessage.value = t('monitor.targets.saving')
   let writeStage = ''

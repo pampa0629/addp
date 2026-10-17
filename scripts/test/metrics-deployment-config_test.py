@@ -365,6 +365,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
 
     def test_admission_host_kind_and_attributes_must_be_explicit_and_bounded(self):
         for arguments in [(self.env, 'desktop', 'physical'), (self.env, 'linux'), (self.env, 'other', 'virtual'),
+                          (self.env, 'desktop', 'virtual', ''), (self.env, 'linux', 'physical', ''),
                           (self.env, 'linux', 'virtual', 'name\ncontrol'), (self.env, 'linux', 'physical', 'x' * 256),
                           (self.env, 'linux', 'physical', 'host', ['same', 'same']),
                           (self.env, 'linux', 'physical', 'host', ['https://not-an-address']),
