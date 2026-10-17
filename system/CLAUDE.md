@@ -1,8 +1,10 @@
 # CLAUDE.md
 
+数据授权办理员统一角色：`tenant.source_data_authorizer` 同时组合直接 Grant 创建与 Catalog 人类办理 Permission，并包含 Catalog 条目读取。两种流程继续按当前目标批准方式、引擎管理范围及业务确认分别核验；不增加确认、Deny、模式切换、机器 execute 或数据读取权限。000217 仅扩展该既有角色，推进已分配主体授权版本并撤销旧会话，不新增账号分配、委派或 Grant，不修改租户自定义角色。下文 000178／000197 的描述记录原迁移范围，当前模板以 `system/authorization/builtin_roles.yaml` 为准。
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-批准方式显式切换（2026-10-08）：`PUT /api/v1/system/engines/:id/access_approval_requirements/:requirement_id` 是已有精确目标安排的唯一更新入口，只接受正整数 `version`、`mode` 和原因，目标及当次承接人从原记录和当前用户派生。独立 `.update` 功能权限与当前引擎管理资格取交集；000200 默认仅加入引擎授权管理员模板，并推进已分配人员的授权版本、撤销旧会话。普通源数据授权办理员不默认获此权限。切到直接批准还核验本人 `.engine_access_grant.create`，记录本人为当次承接人，但不授予读取权、不成为永久唯一审批人。事务复用身份→引擎／委派→精确目标锁；等待及审计后按数据库墙钟重核资格，版本冲突返回 409，同模式不递增版本或追加切换审计。跨租户／引擎返回 404。切换不改既有 Grant、撤销关系、旧业务决定或已受理原请求。前端已有表的批准方式旁提供切换、原因及确认；失败保留输入，须显式只读刷新核对后再确认，不自动补版本或重试。下文“已有要求不可覆盖”仅限定首次初始化，不能阻止此显式更新。
+批准方式显式切换（2026-10-08）：`PUT /api/v1/system/engines/:id/access_approval_requirements/:requirement_id` 是已有精确目标安排的唯一更新入口，只接受正整数 `version`、`mode` 和原因，目标及当次承接人从原记录和当前用户派生。独立 `.update` 功能权限与当前引擎管理资格取交集；000200 默认仅加入引擎授权管理员模板，并推进已分配人员的授权版本、撤销旧会话。普通数据授权办理员不默认获此权限。切到直接批准还核验本人 `.engine_access_grant.create`，记录本人为当次承接人，但不授予读取权、不成为永久唯一审批人。事务复用身份→引擎／委派→精确目标锁；等待及审计后按数据库墙钟重核资格，版本冲突返回 409，同模式不递增版本或追加切换审计。跨租户／引擎返回 404。切换不改既有 Grant、撤销关系、旧业务决定或已受理原请求。前端已有表的批准方式旁提供切换、原因及确认；失败保留输入，须显式只读刷新核对后再确认，不自动补版本或重试。下文“已有要求不可覆盖”仅限定首次初始化，不能阻止此显式更新。
 
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 

@@ -2328,8 +2328,8 @@
         "description": "Manages ontologies, graphs, build tasks, analysis, and reviews."
       },
       "source_data_authorizer": {
-        "name": "Source Data Authorizer",
-        "description": "Configures table approval modes, issues independent read grants, reads history, and revokes grants within an active engine management delegation; selects users, departments, or project groups without automatically gaining data read or delegation management access."
+        "name": "Data Authorization Operator",
+        "description": "Initializes DataItem approval modes, handles direct approval or read grants backed by a valid business confirmation, views history, and revokes grants within an authorized engine scope. Does not grant business confirmation, approval mode changes, delegation management, or data read access."
       },
       "engine_access_delegation_administrator": {
         "name": "Engine Authorization Administrator",

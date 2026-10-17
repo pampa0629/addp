@@ -116,10 +116,10 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 11 || len(sourceInitializerPermissions) != 4 {
+	if len(permissions) != 4 || len(pgAuthorizationOperatorPermissions) != 5 || len(sourceInitializerPermissions) != 4 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
-	for _, key := range []string{"system.engine_access_grant.create", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_approval_requirement.update"} {
+	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read", "system.engine_access_approval_requirement.update"} {
 		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
 			t.Fatalf("operator lacks explicit command permission: %s", key)
 		}
@@ -318,10 +318,16 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 			t.Fatal("PG workspace must use the formal Tenant User authorizer role")
 		}
 		combined := slices.Clone(pgAuthorizationOperatorPermissions)
-		for _, key := range role.Permissions {
-			if !slices.Contains(combined, key) {
-				combined = append(combined, key)
+		for _, key := range []string{"catalog.entry.read", "system.engine_access_fulfillment.create"} {
+			if !slices.Contains(role.Permissions, key) || slices.Contains(pgAuthorizationOperatorPermissions, key) {
+				t.Fatalf("PG business handling must come from the unified builtin role, not the fixture supplement: %s", key)
 			}
+		}
+		for _, key := range role.Permissions {
+			if slices.Contains(combined, key) {
+				t.Fatalf("PG fixture supplement duplicates the formal authorizer role: %s", key)
+			}
+			combined = append(combined, key)
 		}
 		if len(combined) != 17 || slices.Contains(combined, "manager.data_item.read") {
 			t.Fatal("PG workspace widened its exact operator permissions")

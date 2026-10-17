@@ -102,6 +102,14 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         result = self.run_gate(arguments=('--package', 'api', '--test', 'task-authorization'))
         self.assertEqual(result.returncode, 2)
 
+    def test_unified_data_authorizer_filter_is_bound_to_migration(self):
+        result = self.run_gate(arguments=("--package", "migration", "--test", "unified-data-authorizer"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run ^Test(UnifiedDataAuthorizer(AssignedSessionRefresh|ForwardMigration)|Runner)AgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "unified-data-authorizer"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires --package migration", result.stderr)
+
     def test_standard_unit_publication_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "standard-platform-units"))
         self.assertEqual(result.returncode, 0, result.stderr)

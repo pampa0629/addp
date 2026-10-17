@@ -20,6 +20,15 @@ func TestSourceDataAuthorizerRoleForwardMigrationAgainstPostgres(t *testing.T) {
 		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
 }
 
+func TestUnifiedDataAuthorizerForwardMigrationAgainstPostgres(t *testing.T) {
+	exerciseEngineAccessRolePublication(t, "000217_unified_data_authorizer.up.sql", "tenant.source_data_authorizer",
+		"catalog.entry.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_fulfillment.create,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
+}
+
+func TestUnifiedDataAuthorizerAssignedSessionRefreshAgainstPostgres(t *testing.T) {
+	exerciseEngineRoleSessionRefresh(t, "000217_unified_data_authorizer.up.sql", "tenant.source_data_authorizer")
+}
+
 func TestEngineAuthorizationAdministratorForwardMigrationAgainstPostgres(t *testing.T) {
 	exerciseEngineAccessRolePublication(t, "000198_engine_authorization_administrator.up.sql", "tenant.engine_access_delegation_administrator",
 		"iam.department.read,iam.project_group.read,iam.tenant_membership.read,system.engine.read,system.engine_access_approval_requirement.initialize,system.engine_access_approval_requirement.read,system.engine_access_delegation.create,system.engine_access_delegation.read,system.engine_access_delegation.revoke,system.engine_access_grant.create,system.engine_access_grant.read,system.engine_access_grant.revoke,system.engine_catalog.read")
@@ -39,6 +48,11 @@ func TestEngineApprovalModeUpdateForwardMigrationAgainstPostgres(t *testing.T) {
 }
 
 func exerciseEngineAdministratorSessionRefresh(t *testing.T, migrationFile string) {
+	t.Helper()
+	exerciseEngineRoleSessionRefresh(t, migrationFile, "tenant.engine_access_delegation_administrator")
+}
+
+func exerciseEngineRoleSessionRefresh(t *testing.T, migrationFile, roleKey string) {
 	t.Helper()
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -61,7 +75,7 @@ func exerciseEngineAdministratorSessionRefresh(t *testing.T, migrationFile strin
 	}
 	user, tenant := seedInitializedMigrationTenant(t, db, "engine-admin-migration", "Engine admin migration")
 	if _, err := db.Exec(`INSERT INTO system.role_assignments(principal_id,role_id,scope_type,tenant_id,status,valid_from,source_type)
-	    SELECT $1,id,'tenant',$2,'active',now(),'bootstrap' FROM system.roles WHERE tenant_id IS NULL AND role_key='tenant.engine_access_delegation_administrator'`, user, tenant); err != nil {
+	    SELECT $1,id,'tenant',$2,'active',now(),'bootstrap' FROM system.roles WHERE tenant_id IS NULL AND role_key=$3`, user, tenant, roleKey); err != nil {
 		t.Fatal(err)
 	}
 	var membership, priorVersion, family int64
@@ -72,6 +86,24 @@ func exerciseEngineAdministratorSessionRefresh(t *testing.T, migrationFile strin
 	    VALUES($1,'tenant',$2,$3,'addp-web','first_party',ARRAY['addp.api'],ARRAY[]::text[],ARRAY['password'],'aal1',now()-interval '1 minute',now()+interval '1 hour') RETURNING id`, user, membership, priorVersion).Scan(&family); err != nil {
 		t.Fatal(err)
 	}
+	unassignedUser, unassignedTenant := seedInitializedMigrationTenant(t, db, "unassigned-migration", "Unassigned migration")
+	if _, err := db.Exec(`INSERT INTO system.refresh_token_families(principal_id,context_type,tenant_membership_id,issued_authorization_version,client_id,auth_type,audiences,scopes,authentication_methods,assurance_level,authenticated_at,expires_at)
+	    SELECT p.id,'tenant',m.id,p.authorization_version,'addp-web','first_party',ARRAY['addp.api'],ARRAY[]::text[],ARRAY['password'],'aal1',now()-interval '1 minute',now()+interval '1 hour'
+	    FROM system.principals p JOIN system.tenant_memberships m ON m.principal_id=p.id WHERE p.id=$1 AND m.tenant_id=$2`, unassignedUser, unassignedTenant); err != nil {
+		t.Fatal(err)
+	}
+	unassignedSnapshot := func() string {
+		t.Helper()
+		var value string
+		if err := db.QueryRow(`SELECT jsonb_build_object(
+		    'principal', (SELECT to_jsonb(p) FROM system.principals p WHERE p.id=$1),
+		    'sessions', (SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM system.refresh_token_families f WHERE f.principal_id=$1)
+		)::text`, unassignedUser).Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	priorUnassigned := unassignedSnapshot()
 	var priorAssignments int
 	if err := db.QueryRow(`SELECT count(*) FROM system.role_assignments`).Scan(&priorAssignments); err != nil {
 		t.Fatal(err)
@@ -98,12 +130,18 @@ func exerciseEngineAdministratorSessionRefresh(t *testing.T, migrationFile strin
 	if assignments != priorAssignments || delegations != 0 || grants != 0 {
 		t.Fatalf("migration manufactured access: %d %d %d", assignments, delegations, grants)
 	}
+	if unassignedSnapshot() != priorUnassigned {
+		t.Fatal("migration changed an unassigned principal or its sessions")
+	}
 	if err := runner.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	var repeatedVersion int64
 	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id=$1`, user).Scan(&repeatedVersion); err != nil || repeatedVersion != currentVersion {
 		t.Fatalf("second startup changed authorization: %d %v", repeatedVersion, err)
+	}
+	if unassignedSnapshot() != priorUnassigned {
+		t.Fatal("second startup changed an unassigned principal or its sessions")
 	}
 }
 

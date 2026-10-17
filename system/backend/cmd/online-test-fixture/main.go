@@ -75,10 +75,13 @@ var pgAuthorizationConsumerPermissions = []string{
 	"manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 }
 
-var pgAuthorizationOperatorPermissions = append(append([]string{}, sourceInitializerPermissions...),
-	"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release",
-	"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create",
-	"system.engine_access_approval_requirement.update")
+// The formal authorizer role supplies both handling workflows and their reads.
+// This fixture supplements only the commands needed by the isolated PG suite.
+var pgAuthorizationOperatorPermissions = []string{
+	"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release",
+	"catalog.inventory.read",
+	"system.engine_access_approval_requirement.update",
+}
 
 var pgAuthorizationConfirmerPermissions = []string{
 	"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read", "catalog.sharing_decision.create",

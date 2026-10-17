@@ -81,6 +81,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "system.engine_access_fulfillment.execute" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants Catalog recovery", role.Key)
 			}
+			if key == "system.engine_access_fulfillment.create" && role.Key != "tenant.source_data_authorizer" {
+				t.Fatalf("built-in role %q unexpectedly grants human business handling", role.Key)
+			}
 			if (key == "system.engine_access_approval_requirement.initialize" || key == "system.engine_access_approval_requirement.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants approval requirement permission %q", role.Key, key)
 			}
@@ -98,8 +101,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.source_data_authorizer", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.source_data_authorizer", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.source_data_authorizer", []string{
+		"catalog.entry.read",
 		"iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "system.engine.read",
 		"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read",
+		"system.engine_access_fulfillment.create",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
 	})
