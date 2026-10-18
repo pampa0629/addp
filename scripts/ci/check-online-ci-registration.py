@@ -2284,13 +2284,20 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             "online-graph-falkordb-fixture.py stop", "develop,graph,manager,service,transfer", "graph-falkordb.json",
         ),
         "scripts/test/graph-falkordb-protection-online.py": (
-            "addp.graph-falkordb-protection-online/v2", "public_unmanaged", "public_protected",
+            "addp.graph-falkordb-protection-online/v3", "public_unmanaged", "public_protected",
             "same_engine_control", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-falkordb-protection.spec.js',
+            'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
+            'e2e/online/develop-falkordb-query.spec.js',
         ),
         "console/frontend/e2e/online/graph-falkordb-protection.spec.js": (
             "addp.graph-falkordb-protection-browser/v1", "browserAPIFromResponse", "login(",
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
+        ),
+        "console/frontend/e2e/online/develop-falkordb-query.spec.js": (
+            "addp.develop-falkordb-query-browser/v1", "browserAPIFromResponse", "login(",
+            "typed_parameters: true", "graph_table_visible: true", "protected_result_absent: true", "control_readable: true",
+            "develop.query.protection_required", "unexpected_writes: 0",
         ),
         "business/scripts/online-graph-falkordb-fixture.py": (
             "--volumes", "owned_resources", "127\\.0\\.0\\.1", "0o600", "graph_protection_control",
@@ -2309,6 +2316,8 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             raise RegistrationError("Graph protection regression must enter test-online-runner")
     if "console/frontend/e2e/online/graph-falkordb-protection.spec.js" not in commands:
         raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
+    if "console/frontend/e2e/online/develop-falkordb-query.spec.js" not in commands:
+        raise RegistrationError("Develop FalkorDB browser syntax must enter test-online-runner")
     lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
     if 'if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
         raise RegistrationError("Graph Console requires Chromium in the same Hosted lifecycle")

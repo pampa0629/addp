@@ -58,6 +58,10 @@ var securityPermissions = []string{
 }
 
 var graphProtectionReaderPermissions = []string{"graph.graph.read"}
+var graphDevelopReaderPermissions = []string{
+	"develop.task.read", "develop.task.execute", "develop.data_read.execute",
+	"system.execution_authorization.create", "meta.catalog.read",
+}
 var graphProtectionPreparerPermissions = []string{
 	"graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
 	"graph.graph.create", "graph.graph.read", "graph.graph.update", "graph.graph.delete",
@@ -637,6 +641,14 @@ func run(args []string, environment []string) error {
 		}
 		values["ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN"] = preparer.AccessToken
 		values["ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
+		developReader, _, developPassword, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-graph-develop-reader", graphDevelopReaderPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN"] = developReader.AccessToken
+		values["ADDP_ONLINE_GRAPH_DEVELOP_USERNAME"] = "external-online-graph-develop-reader"
+		values["ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD"] = developPassword
 	}
 	if *suite == "security-plaintext-access" {
 		approver, _, approverPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
@@ -1043,6 +1055,9 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN",
 		"ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_DEVELOP_USERNAME",
+		"ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD",
 		"ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID",
 		"ADDP_ONLINE_PARENT_ASSIGNMENT_ID",

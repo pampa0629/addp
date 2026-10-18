@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 
 SPEC = importlib.util.spec_from_file_location("graph_online_support", Path(__file__).with_name("security-transfer-protection-online.py"))
@@ -19,6 +20,8 @@ Client, SuiteError = SUPPORT.GatewayClient, SUPPORT.SuiteError
 OWNERS = {"graph", "develop", "manager", "service", "transfer"}
 GRAPHS = ("graph_protection_fixture", "graph_protection_control")
 READER_PERMISSIONS = {"graph.graph.read"}
+DEVELOP_PERMISSIONS = {"develop.task.read", "develop.task.execute", "develop.data_read.execute",
+                       "system.execution_authorization.create", "meta.catalog.read"}
 OUTSIDER_PERMISSIONS = {"meta.catalog.read"}
 PREPARER_PERMISSIONS = {
     "graph.ontology.create", "graph.ontology.read", "graph.ontology.delete",
@@ -167,6 +170,50 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     return evidence
 
 
+def run_develop_browser(report, engine_id, tenant_id, phase):
+    require(phase in {"unmanaged", "protected"}, "Unknown Develop acceptance phase")
+    env = SUPPORT.required_environment
+    developer = identity(Client(env("GATEWAY_URL"), env("ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN"), 30), tenant_id, DEVELOP_PERMISSIONS)
+    others = {entry["principal_id"] for key, entry in report["identities"].items() if key != "develop"}
+    require(developer["principal_id"] not in others, "Develop must use its separate minimum-permission User")
+    require(report["identities"].get("develop", developer) == developer, "Develop User changed between protection phases")
+    report["identities"]["develop"] = developer
+    artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
+    output = artifacts / f"develop-falkordb-{phase}-browser.json"
+    names = ("graph", "table") if phase == "unmanaged" else ("protected", "control")
+    screenshots = [artifacts / f"develop-falkordb-{name}-console.png" for name in names]
+    for path in [output, *screenshots]:
+        path.unlink(missing_ok=True)
+    expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
+                "principal_id": developer["principal_id"], "engine_id": engine_id, "phase": phase}
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.endswith(("_ACCESS_TOKEN", "_USERNAME", "_PASSWORD"))}
+    environment.update(ADDP_ONLINE_GRAPH_DEVELOP_USERNAME=env("ADDP_ONLINE_GRAPH_DEVELOP_USERNAME"),
+                       ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD=env("ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD"),
+                       ADDP_ONLINE_DEVELOP_FALKORDB_EXPECTATIONS=json.dumps(expected),
+                       ADDP_ONLINE_DEVELOP_FALKORDB_REPORT=str(output))
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/develop-falkordb-query.spec.js",
+                             "--config=playwright.online.config.js"],
+                            cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
+    require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
+            "Ordinary Develop Console acceptance failed or omitted evidence")
+    evidence = json.loads(output.read_text())
+    expected.update(schema_version="addp.develop-falkordb-query-browser/v1", result="passed", permissions=sorted(DEVELOP_PERMISSIONS),
+                    graph_nodes=3, graph_relationships=2, graph_rows=2, graph_canvas=True,
+                    browser_errors=0, failed_business_responses=0, unexpected_writes=0)
+    if phase == "unmanaged":
+        expected.update(typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+    else:
+        expected.update(protection_required=True, protected_result_absent=True, protection_stage="preparation", control_readable=True)
+    require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401", "execution_ids"} and
+            all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()) and
+            type(evidence["anonymous_refresh_401"]) is int and 0 <= evidence["anonymous_refresh_401"] <= 1 and
+            isinstance(evidence["execution_ids"], list) and len(set(evidence["execution_ids"])) == 2 and
+            all(isinstance(value, str) and uuid.UUID(value).version == 4 for value in evidence["execution_ids"]),
+            "Develop evidence differs from its same User, native query, protection boundary or clean diagnostics")
+    return evidence
+
+
 def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, direct_anonymous, engine_id, tenant_id, deadline, report):
     report["identities"] = {"reader": identity(reader, tenant_id, READER_PERMISSIONS),
                             "outsider": identity(outsider, tenant_id, OUTSIDER_PERMISSIONS),
@@ -199,9 +246,10 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             o.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
             r.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
         report["browser"] = run_browser(report, target, engine_id, tenant_id)
+        SUPPORT.wait_for_scan(preparer, engine_id, deadline)
+        report["develop_unmanaged"] = run_develop_browser(report, engine_id, tenant_id, "unmanaged")
         set_public(preparer, target, True)
         report["public_unmanaged"] = {"gateway": probe(anonymous, target, ids, 200), "graph": probe(direct_anonymous, target, ids, 200)}
-        SUPPORT.wait_for_scan(preparer, engine_id, deadline)
         item = SUPPORT.find_item(preparer, engine_id, GRAPHS[0], "graph")
         locator = f"addp://engine/{engine_id}/path/{urllib.parse.quote(GRAPHS[0], safe='')}?type=graph&item_id={item['id']}"
         enrollment = preparer.request("POST", "/api/v1/security/protection-enrollments", (201,), {"locator": locator, "validity_mode": "permanent"}).payload
@@ -214,6 +262,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         report["authenticated_protected"] = {"gateway": probe(reader, target, ids, 403, "protection"), "graph": probe(direct_reader, target, ids, 403, "protection")}
         report["public_outsider_protected"] = {"gateway": probe(outsider, target, ids, 403, "protection"), "graph": probe(direct_outsider, target, ids, 403, "protection")}
         report["same_engine_control"] = {"gateway": probe(reader, control, control_ids, 200), "graph": probe(direct_reader, control, control_ids, 200)}
+        report["develop_protected"] = run_develop_browser(report, engine_id, tenant_id, "protected")
         set_public(preparer, target, False)
         report["private_protected_anonymous"] = probe(anonymous, target, ids, 401)
         report["private_protected_reader"] = probe(reader, target, ids, 403, "protection")
@@ -254,7 +303,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
 
 
 def main():
-    report = {"schema_version": "addp.graph-falkordb-protection-online/v2", "passed": False}
+    report = {"schema_version": "addp.graph-falkordb-protection-online/v3", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-falkordb-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

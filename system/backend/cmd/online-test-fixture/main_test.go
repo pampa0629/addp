@@ -354,6 +354,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
 	allPermissions = append(allPermissions, graphProtectionReaderPermissions...)
+	allPermissions = append(allPermissions, graphDevelopReaderPermissions...)
 	allPermissions = append(allPermissions, graphProtectionPreparerPermissions...)
 	allPermissions = append(allPermissions, graphProtectionOutsiderPermissions...)
 	for _, key := range allPermissions {
@@ -393,6 +394,10 @@ func contains(values []string, target string) bool {
 }
 
 func TestGraphProtectionFixtureKeepsReaderAndPreparationSeparate(t *testing.T) {
+	expectedDevelop := []string{"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create", "meta.catalog.read"}
+	if !slices.Equal(graphDevelopReaderPermissions, expectedDevelop) {
+		t.Fatalf("Develop reader must have exactly the approved five permissions: %v", graphDevelopReaderPermissions)
+	}
 	permissions, err := suitePermissions("graph-falkordb-protection")
 	if err != nil || !slices.Equal(permissions, []string{"graph.graph.read"}) || !needsEngineProvisioner("graph-falkordb-protection") {
 		t.Fatalf("Graph reader must have only graph.graph.read: %v %v", permissions, err)
@@ -506,6 +511,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":      "addp_at_foreign",
 		"ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN":    "addp_at_graph_preparer",
 		"ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN":    "addp_at_graph_outsider",
+		"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN":     "addp_at_graph_develop_reader",
+		"ADDP_ONLINE_GRAPH_DEVELOP_USERNAME":         "external-online-graph-develop-reader",
+		"ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD":         "develop'quoted-password",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":              "84",
 		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":   "addp_at_raster_platform",
 		"ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN":     "addp_at_raster_tenant",
@@ -530,6 +538,11 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, key := range []string{"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN", "ADDP_ONLINE_GRAPH_DEVELOP_USERNAME", "ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD"} {
+		if !strings.Contains(string(content), "export "+key+"='"+strings.ReplaceAll(values[key], "'", "'\"'\"'")+"'\n") {
+			t.Fatalf("Develop identity export omitted or incorrectly quoted %s", key)
+		}
 	}
 	if !strings.Contains(string(content), "addp_at_user'\"'\"'quoted") {
 		t.Fatalf("fixture environment is not shell quoted: %s", content)

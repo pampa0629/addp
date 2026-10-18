@@ -63,7 +63,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',
                  'scripts/test/online-hosted-security-gate.sh', 'scripts/test/graph-falkordb-protection-online.py',
                  'business/scripts/online-graph-falkordb-fixture.py', 'business/docker-compose.online-graph-falkordb.yml',
-                 'console/frontend/e2e/online/graph-falkordb-protection.spec.js')
+                 'console/frontend/e2e/online/graph-falkordb-protection.spec.js',
+                 'console/frontend/e2e/online/develop-falkordb-query.spec.js')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -74,7 +75,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[3], 'same_engine_control'), (paths[4], '--volumes'), (paths[5], 'tmpfs:'),
                                    (paths[6], 'public_switch_disabled: true'), (paths[3], 'report["browser"] = run_browser('),
                                    (paths[2], 'playwright install --with-deps chromium'),
-                                   (paths[1], 'console/frontend/e2e/online/graph-falkordb-protection.spec.js')):
+                                   (paths[1], 'console/frontend/e2e/online/graph-falkordb-protection.spec.js'),
+                                   (paths[3], 'report["develop_unmanaged"] = run_develop_browser('),
+                                   (paths[3], 'report["develop_protected"] = run_develop_browser('),
+                                   (paths[7], 'typed_parameters: true'), (paths[7], 'protected_result_absent: true'),
+                                   (paths[1], 'console/frontend/e2e/online/develop-falkordb-query.spec.js')):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'removed'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):

@@ -14,6 +14,59 @@ SUITE = importlib.import_module('scripts.test.graph-falkordb-protection-online')
 
 
 class GraphProtectionOnlineTest(unittest.TestCase):
+    def test_develop_browser_requires_its_own_five_permissions_and_both_protection_phases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            environment = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'develop-run',
+                           'ADDP_ONLINE_GRAPH_DEVELOP_USERNAME': 'developer', 'ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD': 'private-password',
+                           'ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN': 'develop-secret', 'GATEWAY_URL': 'http://127.0.0.1:8000',
+                           'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret',
+                           'ADDP_ONLINE_TEST_USER_PASSWORD': 'graph-password'}
+            def launch(command, **kwargs):
+                self.assertIn('e2e/online/develop-falkordb-query.spec.js', command)
+                self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
+                self.assertNotIn('ADDP_ONLINE_TEST_USER_PASSWORD', kwargs['env'])
+                self.assertEqual(kwargs['env']['ADDP_ONLINE_GRAPH_DEVELOP_USERNAME'], 'developer')
+                expected = json.loads(kwargs['env']['ADDP_ONLINE_DEVELOP_FALKORDB_EXPECTATIONS'])
+                self.assertEqual(expected, dict(run_id='develop-run', tenant_id='2', principal_id='5', engine_id=13, phase=phase))
+                payload = dict(expected, schema_version='addp.develop-falkordb-query-browser/v1', result='passed',
+                               permissions=sorted(SUITE.DEVELOP_PERMISSIONS), graph_nodes=3, graph_relationships=2, graph_rows=2,
+                               graph_canvas=True, browser_errors=0, failed_business_responses=0, unexpected_writes=0,
+                               anonymous_refresh_401=1, execution_ids=['71a09155-b1ec-4ae4-af2f-6689237a62f9', 'e2429cf6-a201-4ba2-8a0b-cfeff00365ca'])
+                names = ('graph', 'table') if phase == 'unmanaged' else ('protected', 'control')
+                if phase == 'unmanaged': payload.update(typed_parameters=True, table_rows=1, table_visible=True, graph_table_visible=True)
+                else: payload.update(protection_required=True, protected_result_absent=True, protection_stage='preparation', control_readable=True)
+                payload.update(mutation)
+                Path(kwargs['env']['ADDP_ONLINE_DEVELOP_FALKORDB_REPORT']).write_text(json.dumps(payload))
+                if screenshots:
+                    for name in names: (artifacts / f'develop-falkordb-{name}-console.png').write_bytes(b'unit-test-screenshot')
+                return type('Process', (), {'returncode': 0})()
+            for phase in ('unmanaged', 'protected'):
+                negative = {'typed_parameters': False} if phase == 'unmanaged' else {'protected_result_absent': False}
+                for mutation, screenshots in (({}, True), ({'principal_id': '4'}, True),
+                        ({'permissions': ['graph.graph.read']}, True), ({'browser_errors': 1}, True),
+                        (negative, True), ({'execution_ids': ['same', 'same']}, True), ({}, False)):
+                    report = {'identities': {'reader': {'principal_id': '4'}}}
+                    for path in artifacts.glob('*.png'): path.unlink()
+                    with self.subTest(phase=phase, mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
+                         patch.object(SUITE, 'identity', return_value={'principal_id': '5', 'permissions': sorted(SUITE.DEVELOP_PERMISSIONS), 'administrator': False}) as identity, \
+                         patch.object(SUITE.subprocess, 'run', side_effect=launch):
+                        if mutation or not screenshots:
+                            with self.assertRaises(SUITE.SuiteError): SUITE.run_develop_browser(report, 13, 2, phase)
+                        else:
+                            self.assertEqual(SUITE.run_develop_browser(report, 13, 2, phase)['principal_id'], '5')
+                            self.assertEqual(identity.call_args.args[1:], (2, SUITE.DEVELOP_PERMISSIONS))
+
+    def test_develop_does_not_reuse_the_graph_reader_or_change_between_phases(self):
+        environment = {'GATEWAY_URL': 'http://127.0.0.1:8000', 'ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN': 'develop-secret'}
+        for previous, current in ((None, '4'), ('5', '6')):
+            report = {'identities': {'reader': {'principal_id': '4'}}}
+            if previous: report['identities']['develop'] = {'principal_id': previous}
+            with self.subTest(previous=previous, current=current), patch.dict(SUITE.os.environ, environment), \
+                 patch.object(SUITE, 'identity', return_value={'principal_id': current}), patch.object(SUITE.subprocess, 'run') as launch:
+                with self.assertRaises(SUITE.SuiteError): SUITE.run_develop_browser(report, 13, 2, 'protected')
+                launch.assert_not_called()
+
     def test_browser_requires_same_reader_real_ui_evidence_and_clean_diagnostics(self):
         api_report = {'identities': {'reader': {'principal_id': '4'}}}
         with tempfile.TemporaryDirectory() as directory:
@@ -91,6 +144,32 @@ class GraphProtectionOnlineTest(unittest.TestCase):
              patch.object(SUITE, 'set_public', side_effect=lambda client, gid, public: closed.append((gid, public))), \
              patch.object(SUITE, 'run_browser', side_effect=SUITE.SuiteError('browser failed')):
             with self.assertRaisesRegex(SUITE.SuiteError, 'browser failed'):
+                SUITE.run(*([Client()] * 7), 13, 2, 0, report)
+        self.assertEqual(closed, [(1, False), (2, False)])
+        self.assertEqual(deleted, ['/api/v1/graph/graphs/1', '/api/v1/graph/graphs/2', '/api/v1/graph/ontologies/9'])
+        self.assertEqual(report['cleanup']['domain_resources_remaining'], 0)
+
+    def test_develop_browser_failure_still_closes_and_deletes_all_graph_domain_resources(self):
+        deleted, closed = [], []
+        class Client:
+            next_graph = 0
+            def request(self, method, path, expected, body=None):
+                if method == 'POST' and path.endswith('/graphs'):
+                    self.next_graph += 1
+                    return SUITE.SUPPORT.Response(201, {'id': self.next_graph, 'is_public': False})
+                if method == 'GET' and path.endswith('/entities/Person'):
+                    return SUITE.SUPPORT.Response(200, {'data': [
+                        {'id': str(i), 'properties': {'id': 'p' + str(i + 1)}} for i in range(3)]})
+                if method == 'DELETE': deleted.append(path)
+                return SUITE.SUPPORT.Response(expected[0], {})
+        report = {}
+        with patch.object(SUITE, 'identity', side_effect=[{'principal_id': str(i)} for i in range(3)]), \
+             patch.object(SUITE, 'create_ontology', return_value=9), patch.object(SUITE, 'create_schema'), \
+             patch.object(SUITE, 'probe'), patch.object(SUITE.SUPPORT, 'wait_for_scan'), \
+             patch.object(SUITE, 'set_public', side_effect=lambda client, gid, public: closed.append((gid, public))), \
+             patch.object(SUITE, 'run_browser', return_value={}), \
+             patch.object(SUITE, 'run_develop_browser', side_effect=SUITE.SuiteError('Develop browser failed')):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'Develop browser failed'):
                 SUITE.run(*([Client()] * 7), 13, 2, 0, report)
         self.assertEqual(closed, [(1, False), (2, False)])
         self.assertEqual(deleted, ['/api/v1/graph/graphs/1', '/api/v1/graph/graphs/2', '/api/v1/graph/ontologies/9'])
