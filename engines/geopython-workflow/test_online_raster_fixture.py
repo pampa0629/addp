@@ -1973,3 +1973,50 @@ def test_batch_failure_public_dag_and_physical_oracle_preserve_confirmed_prefix(
         assert events[0]['workspace'] not in json.dumps(result)
     assert source.read_bytes() == original
     assert 'private storage diagnostic' not in json.dumps(result)
+
+
+@pytest.fixture
+def contour_persistence(tmp_path):
+    spec = importlib.util.spec_from_file_location('contour_fixture', ROOT / 'business/scripts/online-raster-contour-fixture.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    from operators.raster_compute import raster_workspace, raster_load, raster_contour
+    from operators.io_operators import save
+    root = tmp_path / 'export'; root.mkdir(); (root / 'outputs').mkdir()
+    initial = module.seed(root)
+    source = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {'kind': 'file',
+        'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(root / 'dem.tif')}}}
+    for name in module.TARGETS:
+        with raster_workspace():
+            loaded = raster_load(source)
+            workspace = loaded.workspace
+            params = {'levels': module.TARGETS[name]} if name == 'levels.gpkg' else {'interval': 100}
+            contours = raster_contour(loaded, elevation_unit='metre', **params)
+            save(contours, connection_info={'export_path': str(root)}, path='outputs/' + name, mode='replace')
+        assert not workspace.exists()
+    return module, root, initial
+
+
+def test_contour_persistence_real_gdal_independent_plane_and_both_save_modes(contour_persistence):
+    module, root, initial = contour_persistence
+    actual = module.verify(root, list(module.TARGETS))
+    assert actual['source'] == initial['source']
+    assert [entry['feature_count'] for entry in actual['targets'].values()] == [3, 6]
+    assert all(entry['crs'] == 'EPSG:3857' and entry['size_bytes'] > 0 for entry in actual['targets'].values())
+
+
+@pytest.mark.parametrize('corruption', ['elevation', 'vertex', 'sidecar', 'inventory'])
+def test_contour_persistence_oracle_rejects_real_file_corruption(contour_persistence, corruption):
+    from osgeo import ogr
+    module, root, _ = contour_persistence
+    names = list(module.TARGETS)
+    if corruption in {'elevation', 'vertex'}:
+        file = ogr.Open(str(root / 'outputs/levels.gpkg'), 1)
+        layer = file.GetLayer(0); feature = layer.GetNextFeature()
+        if corruption == 'elevation': feature.SetField('elevation', 201.)
+        else:
+            geometry = feature.GetGeometryRef(); x, y, _ = geometry.GetPoint(1)
+            geometry.SetPoint_2D(1, x + .2, y)
+        layer.SetFeature(feature); file = None
+    elif corruption == 'sidecar': (root / 'outputs/unexpected.gpkg-wal').write_bytes(b'leftover')
+    else: names = ['../levels.gpkg']
+    with pytest.raises(module.FixtureError): module.verify(root, names)

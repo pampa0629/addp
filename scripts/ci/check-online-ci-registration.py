@@ -1886,6 +1886,37 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
 
 
+def validate_raster_contour_profile(repository: Path, registered: set[str]) -> None:
+    if "raster-contour-persistence" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  raster-contour-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-contour-persistence'" not in job.group("body")
+        or "&& inputs.suite != 'raster-contour-persistence'" not in workflow
+        or "nfs-kernel-server nfs-common" not in job.group("body")
+        or load_suite_registry(repository)["raster-contour-persistence"].nightly):
+        raise RegistrationError("contour persistence requires a manual isolated Hosted NFS job")
+    required = {
+        "scripts/test/online-hosted-raster-contour-gate.sh": ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+            'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+            '--wait-protection-owners develop,manager', 'online-raster-contour-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+        "scripts/test/raster-contour-persistence-online.py": ('validate_identity', 'validate_success', 'validate_item',
+            'wait_lineage', 'actor_principal_id', 'meta_scan_runs', 'physical_size_bytes'),
+        "business/scripts/online-raster-contour-fixture.py": ('owned_root', 'root_squash', 'IsSame', 'GetPoint',
+            'runtime_workspaces_removed', 'nfs_export_removed'),
+        "engines/geopython-workflow/test_online_raster_fixture.py": ('test_contour_persistence_real_gdal_independent_plane_and_both_save_modes',
+            'test_contour_persistence_oracle_rejects_real_file_corruption'),
+        "Makefile": ('scripts/test/raster-contour-persistence-online_test.py',
+            'scripts/test/online-raster-contour-fixture_test.py', 'scripts/test/online-hosted-raster-contour-gate_test.py',
+            'test_contour_requires_manual_nfs_identity_and_registered_regressions'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"contour persistence contract is incomplete: {relative}")
+
+
 def validate_raster_capacity_profile(repository: Path, registered: set[str]) -> None:
     if "raster-workflow-capacity" not in registered:
         return
@@ -2259,6 +2290,7 @@ def check_registration(repository: Path) -> None:
     validate_vector_pmtiles_profile(repository, registered)
     validate_raster_workflow_profile(repository, registered)
     validate_raster_capacity_profile(repository, registered)
+    validate_raster_contour_profile(repository, registered)
     validate_hdfs_spark_profile(repository, registered)
     validate_elasticsearch_spark_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)

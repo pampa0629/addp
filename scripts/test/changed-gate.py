@@ -103,6 +103,8 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path in {
         "business/scripts/online-raster-minio-fixture.py",
         "business/scripts/online-raster-capacity-fixture.py",
+        "business/scripts/online-raster-contour-fixture.py",
+        "scripts/test/raster-contour-persistence-online.py",
         "scripts/test/raster-workflow-online.py",
         "scripts/test/raster-workflow-capacity-online.py",
     } for path in files):

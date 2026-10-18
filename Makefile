@@ -539,7 +539,7 @@ test-vector-pmtiles-online-runner: ## 验证 PMTiles T4 场景、物理夹具与
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
-	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions
+	@python3 -m unittest scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-hdfs-online-runner
