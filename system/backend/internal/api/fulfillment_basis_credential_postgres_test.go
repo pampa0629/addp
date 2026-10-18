@@ -64,7 +64,7 @@ func exerciseSystemBasisCredential(t *testing.T, ctx context.Context, db *gorm.D
 		}
 		permissions := slices.Clone(ac.Authorization.RoleAssignments[0].Permissions)
 		slices.Sort(permissions)
-		if !slices.Equal(permissions, []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read"}) {
+		if !slices.Equal(permissions, []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "transfer.production_receipt.read"}) {
 			t.Fatalf("unexpected System runtime permissions: %v", permissions)
 		}
 		if response := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-system", secret); response.Code != http.StatusBadRequest {

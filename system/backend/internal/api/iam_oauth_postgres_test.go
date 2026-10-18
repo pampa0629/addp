@@ -42,6 +42,27 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		defer func() {
+			if err := sqlDB.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		cleanup, done := context.WithTimeout(context.Background(), 30*time.Second)
+		defer done()
+		if err := db.WithContext(cleanup).Exec("DROP SCHEMA IF EXISTS system CASCADE").Error; err != nil {
+			t.Error("clean OAuth client credentials fixture", err)
+			return
+		}
+		var remaining int64
+		if err := db.WithContext(cleanup).Raw("SELECT count(*) FROM pg_namespace WHERE nspname='system'").Scan(&remaining).Error; err != nil || remaining != 0 {
+			t.Errorf("OAuth fixture residual=%d error=%v", remaining, err)
+		}
+	})
 	if err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE`).Error; err != nil {
 		t.Fatalf("reset IAM OAuth client credentials test schema: %v", err)
 	}
