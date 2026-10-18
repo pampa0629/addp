@@ -30,19 +30,19 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			t.Errorf("rewrite fixture residual check failed: exists=%v error=%v", exists, err)
 		}
 	})
-	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text`)
+	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text, amount numeric(30,6)`)
 	for index, value := range []any{"张三李四王五", "a", "", nil, "abcdef", "x.y", "🧭甲乙丙丁"} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2)`, index+1, value); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2,$3)`, index+1, value, "9007199254740993.123456"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	allSQL := `SELECT id, phone FROM ` + qualified + ` ORDER BY id`
+	allSQL := `SELECT id, phone, amount FROM ` + qualified + ` ORDER BY id`
 	before, err := pg.ExecuteSQL(ctx, conn, allSQL, plugin.QueryOptions{ReadOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, order := range []string{"contact DESC NULLS LAST", "2 DESC NULLS FIRST", "p.phone ASC NULLS LAST", "p.id"} {
-		query := `SELECT p.id, p.phone AS contact FROM ` + qualified + ` p JOIN ` + qualified + ` q ON p.id=q.id WHERE p.id >= $1 AND q.id <= $2 ORDER BY ` + order + ` LIMIT 5 OFFSET 1`
+		query := `SELECT p.id, p.phone AS contact, p.amount FROM ` + qualified + ` p JOIN ` + qualified + ` q ON p.id=q.id WHERE p.id >= $1 AND q.id <= $2 ORDER BY ` + order + ` LIMIT 5 OFFSET 1`
 		originalArgs := []any{1, 7}
 		prepared, err := pg.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: originalArgs}})
 		if err != nil {
@@ -89,10 +89,17 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				for _, invalid := range plan.invalid {
+					for _, row := range actual.Rows {
+						if row[invalid.flag] == true && row[invalid.column] != nil {
+							t.Fatal("native SQL returned plaintext for an invalid value")
+						}
+					}
+				}
 				if err := plan.finish(actual); err != nil {
 					t.Fatal(err)
 				}
-				if !reflect.DeepEqual(actual.Columns, expected.Columns) || !reflect.DeepEqual(actual.Rows, expected.Rows) {
+				if !reflect.DeepEqual(actual.Columns, expected.Columns) || !reflect.DeepEqual(actual.Fields, expected.Fields) || !reflect.DeepEqual(actual.Rows, expected.Rows) {
 					t.Fatal("native rewrite differs from canonical protection in values, missing fields, order or pagination")
 				}
 			})

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 	"google.golang.org/protobuf/proto"
@@ -226,8 +227,13 @@ func (p *postgresOutputRewrite) finish(result *plugin.QueryResult) error {
 	for _, invalid := range p.invalid {
 		expected = append(expected, invalid.flag)
 	}
-	if !slices.Equal(result.Columns, expected) {
+	if !slices.Equal(result.Columns, expected) || len(result.Fields) != len(expected) {
 		return errPostgresOutputRewriteUnsupported
+	}
+	for index, field := range result.Fields {
+		if field.Name != expected[index] || index >= len(p.columns) && field.Type != datatype.FieldTypeBool {
+			return errPostgresOutputRewriteUnsupported
+		}
 	}
 	for _, row := range result.Rows {
 		for _, invalid := range p.invalid {
@@ -249,5 +255,6 @@ func (p *postgresOutputRewrite) finish(result *plugin.QueryResult) error {
 		}
 	}
 	result.Columns = slices.DeleteFunc(append([]string(nil), p.columns...), func(column string) bool { return slices.Contains(p.omitted, column) })
+	result.Fields = slices.DeleteFunc(slices.Clone(result.Fields[:len(p.columns)]), func(field datatype.FieldInfo) bool { return slices.Contains(p.omitted, field.Name) })
 	return nil
 }

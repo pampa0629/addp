@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
@@ -99,7 +100,8 @@ func TestPostgresOutputRewritePrivateFlagsAndInvalidValues(t *testing.T) {
 	if flag == "__addp_output_invalid_0" {
 		t.Fatal("private flag must not shadow an actual output")
 	}
-	result := &plugin.QueryResult{Columns: []string{"__addp_output_invalid_0", "phone", flag}, Rows: []map[string]any{
+	fields := []datatype.FieldInfo{{Name: "__addp_output_invalid_0", Type: datatype.FieldTypeBigInt}, {Name: "phone", Type: datatype.FieldTypeString}, {Name: flag, Type: datatype.FieldTypeBool}}
+	result := &plugin.QueryResult{Columns: []string{"__addp_output_invalid_0", "phone", flag}, Fields: fields, Rows: []map[string]any{
 		{"__addp_output_invalid_0": 1, "phone": nil, flag: true},
 		{"__addp_output_invalid_0": 2, "phone": nil, flag: false},
 		{"__addp_output_invalid_0": 3, "phone": "a#c", flag: false},
@@ -107,12 +109,12 @@ func TestPostgresOutputRewritePrivateFlagsAndInvalidValues(t *testing.T) {
 	if err := plan.finish(result); err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := result.Rows[0]["phone"]; exists || len(result.Columns) != 2 || len(result.Rows[0]) != 1 || result.Rows[1]["phone"] != nil || result.Rows[2]["phone"] != "a#c" {
+	if _, exists := result.Rows[0]["phone"]; exists || len(result.Columns) != 2 || len(result.Fields) != 2 || len(result.Rows[0]) != 1 || result.Rows[1]["phone"] != nil || result.Rows[2]["phone"] != "a#c" {
 		t.Fatal("invalid values, NULL or private-column stripping changed")
 	}
 	plan.invalid[0].reject = true
 	for _, invalid := range []any{true, nil, "true"} {
-		result := &plugin.QueryResult{Columns: []string{"__addp_output_invalid_0", "phone", flag}, Rows: []map[string]any{{flag: invalid}}}
+		result := &plugin.QueryResult{Columns: []string{"__addp_output_invalid_0", "phone", flag}, Fields: fields, Rows: []map[string]any{{flag: invalid}}}
 		if !errors.Is(plan.finish(result), errPostgresOutputRewriteUnsupported) {
 			t.Fatal("invalid or missing evidence must reject")
 		}
@@ -135,9 +137,34 @@ func TestPostgresOutputRewriteKeepsPrivateFlagsUniqueAcrossFieldsAndOriginalOutp
 	}
 	result := &plugin.QueryResult{
 		Columns: []string{"__addp_output_invalid_0", "phone", "email", plan.invalid[0].flag, plan.invalid[1].flag},
-		Rows:    []map[string]any{{"__addp_output_invalid_0": 8, "phone": nil, "email": "a*b", plan.invalid[0].flag: true, plan.invalid[1].flag: false}},
+		Fields: []datatype.FieldInfo{
+			{Name: "__addp_output_invalid_0", Type: datatype.FieldTypeBigInt}, {Name: "phone", Type: datatype.FieldTypeString}, {Name: "email", Type: datatype.FieldTypeString},
+			{Name: plan.invalid[0].flag, Type: datatype.FieldTypeBool}, {Name: plan.invalid[1].flag, Type: datatype.FieldTypeBool},
+		},
+		Rows: []map[string]any{{"__addp_output_invalid_0": 8, "phone": nil, "email": "a*b", plan.invalid[0].flag: true, plan.invalid[1].flag: false}},
 	}
 	if err := plan.finish(result); err != nil || !reflect.DeepEqual(result.Rows, []map[string]any{{"__addp_output_invalid_0": 8, "email": "a*b"}}) {
 		t.Fatal("private flag stripping mixed field validity or removed a user column")
+	}
+	if !reflect.DeepEqual(result.Fields, []datatype.FieldInfo{{Name: "__addp_output_invalid_0", Type: datatype.FieldTypeBigInt}, {Name: "phone", Type: datatype.FieldTypeString}, {Name: "email", Type: datatype.FieldTypeString}}) {
+		t.Fatal("private metadata escaped or actual output types changed")
+	}
+}
+
+func TestPostgresOutputRewriteRejectsMissingOrInconsistentOutputTypes(t *testing.T) {
+	plan, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []postgresOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flag := plan.invalid[0].flag
+	for _, fields := range [][]datatype.FieldInfo{
+		nil,
+		{{Name: "different", Type: datatype.FieldTypeString}, {Name: flag, Type: datatype.FieldTypeBool}},
+		{{Name: "phone", Type: datatype.FieldTypeString}, {Name: flag, Type: datatype.FieldTypeString}},
+	} {
+		result := &plugin.QueryResult{Columns: []string{"phone", flag}, Fields: fields, Rows: []map[string]any{{"phone": "a*c", flag: false}}}
+		if !errors.Is(plan.finish(result), errPostgresOutputRewriteUnsupported) {
+			t.Fatal("missing, misnamed or incorrectly typed metadata must reject")
+		}
 	}
 }
