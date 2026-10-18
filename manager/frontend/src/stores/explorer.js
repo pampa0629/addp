@@ -588,12 +588,13 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       const newSet = new Set()
+      const descendantPrefix = targetPath.endsWith('/') ? targetPath : `${targetPath}/`
       for (const key of this.expandedLocators) {
         if (!key || typeof key !== 'string') continue
 
         const currentPath = normalizeLocatorPath(key)
         // 仅保留不在目标节点子树内的展开键
-        if (!currentPath.startsWith(targetPath)) {
+        if (currentPath !== targetPath && !currentPath.startsWith(descendantPrefix)) {
           newSet.add(key)
         }
       }

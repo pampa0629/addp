@@ -30,6 +30,20 @@ describe('explorer revealLocator', () => {
     vi.clearAllMocks()
   })
 
+  it('collapses only the exact subtree, preserving similarly named siblings and other engines', () => {
+    const store = useExplorerStore()
+    const root = 'addp://engine/12/path/?type=service&node_id=1'
+    const folder = 'addp://engine/12/path/data?type=prefix&node_id=2'
+    const child = 'addp://engine/12/path/data/child?type=prefix&node_id=3'
+    const sibling = 'addp://engine/12/path/database?type=prefix&node_id=4'
+    const other = 'addp://engine/13/path/data?type=prefix&node_id=5'
+    store.expandedLocators = new Set([root, folder, child, sibling, other])
+    store.collapseNode(folder)
+    expect([...store.expandedLocators]).toEqual([root, sibling, other])
+    store.collapseNode(root)
+    expect([...store.expandedLocators]).toEqual([other])
+  })
+
   it('reloads authoritative ancestor statistics after upload without losing siblings or selection', async () => {
     const store = useExplorerStore()
     const root = 'addp://engine/12/path/?type=service&node_id=268'

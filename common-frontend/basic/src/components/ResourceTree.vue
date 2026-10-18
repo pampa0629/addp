@@ -58,7 +58,7 @@
           :highlight-current="true"
           :expand-on-click-node="expandOnClickNode"
           :default-expanded-keys="computedExpandedKeys"
-          :current-node-key="currentNodeKey"
+          :auto-expand-parent="false"
           :filter-node-method="currentFilterMethod"
           :lazy="lazy"
           :load="load"
@@ -537,37 +537,23 @@ watch(
   { deep: true }
 )
 
-let appliedExpandedKeys = new Set()
-
 // 同步受控展开状态，不触发选中或滚动。
 const updateExpandState = () => {
   const tree = treeRef.value
   if (!tree?.store) return
 
   const nextExpandedKeys = new Set(computedExpandedKeys.value)
-  for (const key of appliedExpandedKeys) {
-    if (nextExpandedKeys.has(key)) continue
-    const node = tree.store.getNode(key)
-    if (node?.expanded) {
-      if (typeof node.collapse === 'function') {
-        node.collapse()
-      } else {
-        node.expanded = false
-      }
+  // Element Plus 的 setData 会按当前选中项自动展开祖先，即使该祖先
+  // 已不在上一次展开集合中。必须校准全部节点，不能只处理集合差值。
+  const syncNodes = (nodes) => {
+    for (const node of nodes) {
+      const shouldExpand = nextExpandedKeys.has(node.key)
+      if (shouldExpand && !node.expanded) node.expand(null, false)
+      if (!shouldExpand && node.expanded) node.collapse()
+      syncNodes(node.childNodes)
     }
   }
-
-  for (const key of nextExpandedKeys) {
-    const node = tree.store.getNode(key)
-    if (node && !node.expanded) {
-      if (typeof node.expand === 'function') {
-        node.expand()
-      } else {
-        node.expanded = true
-      }
-    }
-  }
-  appliedExpandedKeys = nextExpandedKeys
+  syncNodes(tree.store.root.childNodes)
 }
 
 // 全量同步：展开状态 + 选中节点（仅在挂载和数据加载后调用）
@@ -575,8 +561,8 @@ const updateTreeState = () => {
   updateExpandState()
   const tree = treeRef.value
   if (!tree) return
-  if (typeof tree.setCurrentKey === 'function' && props.currentNodeKey) {
-    tree.setCurrentKey(props.currentNodeKey)
+  if (typeof tree.setCurrentKey === 'function') {
+    tree.setCurrentKey(props.currentNodeKey || null, false)
   }
 }
 
@@ -630,10 +616,10 @@ const scrollToCurrentNode = (block = 'center', behavior = 'smooth') => {
 }
 
 const selectAndScrollToNode = async (key, options = {}) => {
-  if (!key) return false
   const tree = treeRef.value
   if (!tree || typeof tree.setCurrentKey !== 'function') return false
-  tree.setCurrentKey(key)
+  tree.setCurrentKey(key || null, false)
+  if (!key) return false
   await nextTick()
   return scrollToCurrentNode(options.block || 'center', options.behavior || 'smooth')
 }
