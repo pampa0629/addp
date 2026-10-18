@@ -3,8 +3,8 @@ import client from './client'
 const endpoint = '/system/platform/host_nodes'
 
 export const hostNodesAPI = {
-  list: params => client.get(endpoint, { params }),
-  get: nodeID => client.get(`${endpoint}/${encodeURIComponent(nodeID)}`),
-  create: body => client.post(endpoint, body),
+  list: (params, config) => client.get(endpoint, { ...config, params }),
+  get: (nodeID, config) => client.get(`${endpoint}/${encodeURIComponent(nodeID)}`, config),
+  create: (body, config) => client.post(endpoint, body, config),
   update: (nodeID, body) => client.put(`${endpoint}/${encodeURIComponent(nodeID)}`, body)
 }

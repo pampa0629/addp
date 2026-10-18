@@ -161,3 +161,6 @@ export { default as ParameterCaption } from './components/ParameterCaption.vue'
 
 export { createModelMetricAPI, publishedMetricSources } from './api/modelMetrics.js'
 export { default as ProtectionAccessRequestDialog } from './components/ProtectionAccessRequestDialog.vue'
+
+export { createNavigationDraftSlot, takeConsoleNavigationDraft } from './utils/navigationDraft.mjs'
+export { default as HostNodeSelect } from './components/HostNodeSelect.vue'

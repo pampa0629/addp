@@ -64,6 +64,7 @@ const routes = [
         component: () => import('../views/Modules.vue'),
         meta: { requiresAuth: true, title: '模块管理-addp', requiredPermissions: ['platform.module.read'] }
       },
+      { path: 'host-admission', name: 'HostAdmission', component: () => import('../views/HostAdmission.vue'), meta: { requiresAuth: true, requiredPermissions: ['platform.host_node.read'] } },
       {
         path: 'host-nodes',
         name: 'HostNodes',

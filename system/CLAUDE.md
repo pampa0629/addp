@@ -146,6 +146,8 @@ System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试经共享启�
 
 实例登记地址的展示直接复用 `common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs` 的唯一 `getRegisteredEndpoint`；旧私有解析器已移除，与 Monitor 服务监控保持同一契约。共享端点单测归 `make test-common-frontend`，System 只验证组合与自身运行时长口径，既有 System/Console 前端门禁覆盖引用及页面，不新增 API 或依赖。
 
+部署清单统一由 Console 中 `/system/host-admission` 接入，独立模块先进入 Console 后接受文件；仅 Platform User、非委托、既有主机读取/创建权限。v2 清单可省略采集，选择已有主机必须当前读取并核对启用、类型与允许服务，不能覆盖原配置；新建结果冻结并 replace 保存稳定 `node_id`，部署参数只供实际宿主上的新进程使用。需采集时沿共享一次性内存导航草稿到 Monitor，来源不进 URL 或浏览器存储；System 不保存 Monitor 配置。旧 Monitor 导入编排删除；共享、System、Monitor、Console 和 Infra 生命周期及原 Hosted 专项同批验证，实际新流程 T4 未通过前保留缺口。
+
 ## 项目结构
 
 ### 后端架构（Go）

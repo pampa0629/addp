@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseHostAdmission } from '../src/utils/hostAdmission.js'
+import { parseHostAdmission } from '../src/utils/hostAdmission.mjs'
 
-const manifest = () => ({ schema: 'addp.host-admission/v1', host: {
+const manifest = () => ({ schema: 'addp.host-admission/v2', host: {
   display_name: 'Docker Desktop Linux VM', node_kind: 'virtual', addresses: [], allowed_module_bindings: []
 }, collection: { monitor_kind: 'host_resources', source: { type: 'node_exporter', endpoint: 'https://127.0.0.1:19091/metrics' } } })
 
@@ -16,7 +16,7 @@ test('a deployment manifest contains facts but no allocated host identity or cre
 
 test('manifest version, field ownership, bounded shape and field types are closed', () => {
   for (const change of [
-    value => { value.schema = 'addp.host-admission/v2' },
+    value => { value.schema = 'addp.host-admission/v1' },
     value => { value.node_id = '10000000-0000-4000-8000-000000000001' },
     value => { value.host.node_id = '10000000-0000-4000-8000-000000000001' },
     value => { value.host.node_kind = 'container' },
@@ -49,3 +49,5 @@ test('source is only an explicit HTTPS metrics address; no credential, query or 
   const value = manifest(); value.collection.source.endpoint = 'https://[::1]:9100/metrics'
   assert.equal(parseHostAdmission(JSON.stringify(value)).collection.source.endpoint, value.collection.source.endpoint)
 })
+
+test('a native host can omit collection but cannot provide an empty collection', () => { const value = manifest(); delete value.collection; assert.deepEqual(parseHostAdmission(JSON.stringify(value)), value); value.collection = {}; assert.throws(() => parseHostAdmission(JSON.stringify(value))); })

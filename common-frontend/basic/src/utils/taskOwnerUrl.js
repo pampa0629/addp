@@ -1,5 +1,6 @@
 import { requestConsoleBridge } from './consoleBridge'
 import { resolveConsoleOrigin } from './consoleOrigin'
+import { copyNavigationDraft } from './navigationDraft.mjs'
 
 export const CONSOLE_NAVIGATION_CHANNEL = 'console-navigation'
 const CONSOLE_NAVIGATION_HISTORY = new Set(['push', 'replace'])
@@ -44,6 +45,8 @@ export function buildConsoleNavigationRequest(route, options = {}) {
     history,
     synchronized: options.synchronized === true
   }
+
+  if (options.draft !== undefined) request.draft = copyNavigationDraft(options.draft)
 
   const pageDescriptor = options.pageDescriptor
   if (pageDescriptor && hasValue(pageDescriptor.title)) {
@@ -127,7 +130,7 @@ export async function openConsoleRoute(route, options = {}) {
     windowFeatures = 'noopener,noreferrer',
     history = 'push'
   } = options
-  const request = buildConsoleNavigationRequest(route, { history })
+  const request = buildConsoleNavigationRequest(route, { history, draft: options.draft })
 
   if (typeof window !== 'undefined' && window.parent !== window) {
     const result = await requestConsoleBridge(
@@ -138,6 +141,7 @@ export async function openConsoleRoute(route, options = {}) {
     return result?.cancelled !== true
   }
 
+  if (request.draft) throw new Error('navigation drafts require Console')
   const url = resolveConsoleRouteUrl(request.route, options)
   if (!url || typeof window === 'undefined') return false
 

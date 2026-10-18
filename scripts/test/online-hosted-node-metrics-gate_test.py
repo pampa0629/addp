@@ -130,6 +130,7 @@ class HostedMetricsGateTest(unittest.TestCase):
         result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="host-admission")
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         self.assertIn("metrics-case:host-admission", self.host.trace.read_text())
+        self.assertIn("start:-monitor -system", self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
 
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):

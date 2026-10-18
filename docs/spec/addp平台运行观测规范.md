@@ -65,20 +65,15 @@ Monitor 不直接查询 System 私有表，不直接读取主机文件，不复�
 
 ### 4.2 管理员确认的部署清单接入
 
-唯一入口 `scripts/infra/node-metrics.py export-admission` 只读核验实际本地 Docker Engine、来源项目归属与显式部署输入，输出 `schema=addp.host-admission/v1` 的 JSON；不启动服务、不调用 System/Monitor、不分配 `node_id`。
+唯一导出入口 `scripts/infra/node-metrics.py export-admission` 输出 `schema=addp.host-admission/v2`。默认核验已运行的本地 Linux/Docker Desktop 受控 node_exporter，包含主机和采集配置；显式 `--host-only` 只声明当前原生 macOS/Linux 宿主，不访问 Docker 或采集凭据，要求明确物理/虚拟类型。`--module` 可重复指定该宿主允许的 ADDP 模块，生成既有固定模块 Client 对应关系；不按进程名、地址或容器名发现承载，不包含 Business 租户引擎。
 
-清单最多 16 KiB，只包含：
+清单最多 16 KiB，根字段仅为 `schema/host` 和可选 `collection`。主机字段为 `display_name/node_kind/addresses/allowed_module_bindings`；采集存在时仅允许 `monitor_kind=host_resources`、`source.type=node_exporter` 及显式 HTTPS `/metrics` 端点。拒绝旧版本、未知字段、身份和凭据；空采集对象不等于省略。Desktop 来源声明独立 Linux VM，原生宿主不得据此归入 VM。名称与地址不作为稳定身份或自动合并键，清单本身不授予权限。
 
-- `host`：`display_name/node_kind/addresses/allowed_module_bindings`。
-- `collection`：`monitor_kind=host_resources`、`source.type=node_exporter` 和显式 HTTPS 指标端点。
+System `/host-admission` 是 Console 中唯一接入编排入口；独立模块打开该跨模块流程时先进入 Console，再接受草稿。管理员导入后预览并显式选择已有主机或按清单创建；已有主机不被改写，当前读取必须仍启用且类型匹配，创建仅用既有 `platform.host_node.create`。主机保存结果或当前读取结果生成 `ADDP_HOST_NODE_ID` 部署参数；只应用于实际部署在该宿主上的新进程，不修改全局 `.env`、不自动重启、不在线改挂已有实例。
 
-严格校验版本、字段、类型与数组边界；不包含 Token、私钥、证书路径、数据库连接或脚本。Desktop 声明 Linux VM 的 `virtual` 类型，地址和允许模块集合默认空；原生 Linux 的 physical/virtual 由部署方明确声明。采集访问地址不反推为主机网卡，名称不作为去重键。清单不是签名或独立物理位置证明，不能授予权限。
+采集可选。存在来源且用户有独立 Monitor 管理权限时，System 通过共享 Console 内存导航草稿将同一主机和来源交给 Monitor 原新建页面。草稿最多 4 KiB、60 秒、一次消费，绑定当前身份/权限及精确目的路由；只允许当前同源 iframe 取回，不写 URL、浏览器存储或最近访问。取消、另行导航、身份或权限变化、退出与超时均清除；端点仍由 Monitor 重新验证，不据草稿授予权限。页面刷新仅恢复 URL 中稳定主机 ID，不恢复未保存来源。
 
-System 主机管理提供“从部署清单接入”导航，复用 Monitor 唯一新建采集页面。导入仅进入当前草稿，预览后由管理员明确选择已有主机；有 `platform.host_node.create` 才能按清单新建。已有主机不被改写，停用或类型不符时拒绝接入。保存先由 System 创建主机，再由 Monitor 沿原 API 和 mTLS/端点准入保存采集配置。
-
-两个 Owner 的写入不是跨服务事务：主机成功后冻结主体，采集失败保留返回的 ID 并标明已完成步骤。明确可修正的失败只重试未完成步骤；503、未知结果或冲突须先到原管理入口核验，不从头自动创建，不按名称猜测成功，也不自动删除已建主机。显式空端点在写入前拒绝，显式空显示名不回退默认名。身份变化、离开页面或取消读取后，迟到结果不得恢复旧草稿。
-
-首批只接入主机与主机采集；ADDP 服务和 Business 引擎的承载清单、无人值守注册身份均不在已实现范围。
+两个 Owner 分别写入：System 创建成功后冻结该主机，未知创建结果或版本冲突阻止再次创建并要求核验；明确拒绝可修正重试。转到 Monitor 后固定所交接的主机，只保存采集，不再创建主机；明确的采集失败仅重试该配置，未知结果或冲突先到原列表核验。清单与主机身份选择在授权/页面变化后失效，迟到响应不能恢复旧草稿。Monitor 原导入、主机创建编排及私有解析器删除，采集管理只消费已存在的 System 身份。
 
 ### 4.3 采集目标与认证发现
 

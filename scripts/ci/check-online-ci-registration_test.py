@@ -397,6 +397,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(root / relative, target)
         CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+        gate = self.repository / "scripts/test/online-hosted-node-metrics-gate.sh"
+        original_gate = gate.read_text()
+        for fragment in ('modules=(-monitor)', 'modules+=(-system)', 'scripts/dev/start.sh "${modules[@]}"'):
+            gate.write_text(original_gate.replace(fragment, "removed"))
+            with self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_platform_node_metrics_profile(self.repository, {"platform-node-metrics"})
+        gate.write_text(original_gate)
         original = self.workflow.read_text()
         for changed in (
             original.replace("github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-node-metrics'", "github.event_name == 'schedule'"),

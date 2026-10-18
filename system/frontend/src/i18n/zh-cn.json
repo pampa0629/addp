@@ -2157,6 +2157,29 @@
       "title": "配置管理",
       "engines": "引擎配置",
       "registeredEngine": "已注册引擎"
+    },
+    "hostAdmission": {
+      "import": "导入部署清单",
+      "hostFacts": "清单中的主机信息",
+      "mode": "主机接入方式",
+      "existing": "选择已有主机",
+      "new": "按清单新建主机",
+      "existingHint": "确认已有主机及允许关联的服务模块，不修改该主机的信息。",
+      "newHint": "按以上清单信息新建并启用主机；主机确认后可继续配置采集。",
+      "hostUnknown": "主机登记结果待核实。请先在平台主机管理中核对，再选择已有主机继续。",
+      "hostMismatch": "所选主机必须已启用，类型与清单一致，并允许清单中声明的服务模块关联。",
+      "invalid": "部署清单无效。请选择标准节点入口导出的 JSON 文件，大小不超过 16 KiB。",
+      "title": "部署清单接入",
+      "collection": "主机采集来源",
+      "noCollection": "不配置主机采集",
+      "search": "搜索主机名称或地址",
+      "more": "加载更多主机",
+      "readFailed": "未能核验主机或交接草稿，请刷新后重试。",
+      "confirm": "确认接入主机",
+      "deploymentHint": "将此参数用于实际部署在该主机上的新进程；已有实例不会在线改挂。",
+      "collectionPending": "主机已确认，采集配置尚未完成。",
+      "configure": "继续配置主机采集",
+      "collectionDenied": "当前账号没有采集配置权限，可由具备权限的管理员继续配置。"
     }
   },
   "roles": {

@@ -26,7 +26,7 @@
         <el-form-item :label="t('monitor.platformAlerts.name')"><el-input v-model="draft.name" maxlength="100" data-testid="rule-name" /></el-form-item>
         <el-form-item :label="t('monitor.targets.node')">
           <el-input v-if="editing" :model-value="selected?.display_name || draft.node_id" readonly />
-          <HostNodeSelect v-else v-model="draft.node_id" :selected="selected" @selected="selected = $event" />
+          <HostNodeSelect v-else v-model="draft.node_id" :selected="selected" :allowed="canReadHosts" :identity="JSON.stringify([auth.authContext, auth.permissions])" :api="nodeResourcesAPI" :label="t('monitor.targets.node')" :placeholder="t('monitor.targets.nodeSearch')" :more-label="t('monitor.targets.moreNodes')" :error-message="t('monitor.targets.nodeLoadingFailed')" @selected="selected = $event" />
         </el-form-item>
         <el-form-item :label="t('monitor.resourceRules.metric')"><el-select v-model="draft.metric_key" :disabled="!!editing" @change="applyPreset" :aria-label="t('monitor.resourceRules.metric')"><el-option v-for="preset in presets" :key="preset.metric_key" :value="preset.metric_key" :label="metricLabel(preset.metric_key)" /></el-select></el-form-item>
         <el-form-item :label="t('monitor.resourceRules.trigger')"><div class="rule-condition"><el-input-number v-model="draft.trigger_percent" :min="0" :max="100" :aria-label="t('monitor.resourceRules.triggerPercent')" /><span>%</span><el-input-number v-model="draft.trigger_seconds" :min="15" :max="300" :step="15" step-strictly :aria-label="t('monitor.resourceRules.triggerSeconds')" /><span>{{ t('monitor.resourceRules.seconds') }}</span></div><small>{{ t('monitor.resourceRules.triggerHint') }}</small></el-form-item>
@@ -44,7 +44,7 @@ import { ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { nodeResourcesAPI } from '../api/nodeResources'
-import HostNodeSelect from './HostNodeSelect.vue'
+import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
 import { loadHostReferences } from '../utils/hostReferences'
 const props = defineProps({ page: { type: Number, required: true } })
 defineEmits(['page'])

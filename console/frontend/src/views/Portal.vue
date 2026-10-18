@@ -152,6 +152,7 @@ import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
 import {
   CONSOLE_NAVIGATION_CHANNEL,
+  createNavigationDraftSlot,
   createIframeAuthCoordinator,
   getAccessToken,
   getAccessTokenExpiresAt,
@@ -228,6 +229,9 @@ const authorizationIdentity = computed(() => {
     context.context?.tenant_id, context.context?.tenant_membership_id
   ]) : ''
 })
+const navigationDraft = createNavigationDraftSlot()
+const draftIdentity = computed(() => JSON.stringify([authStore.authContext?.principal, authStore.authContext?.context, authStore.authContext?.delegation, navigationPermissions.value]))
+watch([() => route.fullPath, draftIdentity], ([path, identity]) => navigationDraft.retain(path, identity), { flush: 'sync' })
 async function retryAuthorization() {
   try {
     if (authStore.token && authStore.sessionStatus === 'authenticated') {
@@ -310,6 +314,7 @@ onBeforeUnmount(() => {
   if (narrowViewportQuery && syncNarrowViewport) narrowViewportQuery.removeEventListener('change', syncNarrowViewport)
   narrowViewportQuery = null
   syncNarrowViewport = null
+  navigationDraft.clear()
   stopConsoleNavigationBridge?.()
   stopConsoleNavigationBridge = null
   stopEngineScanPolicyBridge?.()
@@ -319,16 +324,13 @@ onBeforeUnmount(() => {
 })
 
 const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
-  const targetRoute = typeof payload.route === 'string' ? payload.route.trim() : ''
-  if (!targetRoute || !targetRoute.startsWith('/') || targetRoute.startsWith('//')) {
-    throw new Error('route must be an absolute console route')
-  }
-
   const iframe = document.querySelector('iframe.module-iframe')
-  if (!iframe || event?.source !== iframe.contentWindow) {
-    throw new Error('navigation request must come from the active module iframe')
+  if (!iframe || event?.source !== iframe.contentWindow || event.origin !== new URL(iframe.src).origin) {
+    throw new Error('navigation request must come from the active same-origin module iframe')
   }
-
+  if (payload.operation === 'take-draft') return navigationDraft.take(route.fullPath, draftIdentity.value)
+  const targetRoute = typeof payload.route === 'string' ? payload.route.trim() : ''
+  if (!targetRoute || !targetRoute.startsWith('/') || targetRoute.startsWith('//')) throw new Error('route must be an absolute console route')
   const resolvedRoute = router.resolve(targetRoute).fullPath
   const targetModule = consoleRouteModule(resolvedRoute)
   const history = payload.history === 'replace' ? 'replace' : 'push'
@@ -342,19 +344,21 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
     synchronizedIframeRoute = resolvedRoute
   }
 
+  if (payload.draft && (synchronized || !canOpenPage(resolvedRoute))) throw new Error('invalid draft destination')
+  const draftTicket = payload.draft ? navigationDraft.publish(resolvedRoute, draftIdentity.value, payload.draft) : undefined
   let failure
   try {
     if (router.currentRoute.value.fullPath !== resolvedRoute) {
       failure = await router[history](resolvedRoute)
     }
     await nextTick()
-  } finally {
+  } catch (error) { if (draftTicket !== undefined) navigationDraft.clear(draftTicket); throw error } finally {
     if (synchronizedIframeRoute === resolvedRoute) {
       synchronizedIframeModule = ''
       synchronizedIframeRoute = ''
     }
   }
-  if (failure) return { cancelled: true }
+  if (failure) { if (draftTicket !== undefined) navigationDraft.clear(draftTicket); return { cancelled: true } }
   if (payload.pageDescriptor && targetModule) {
     recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
   }

@@ -48,7 +48,9 @@ run_logged bash scripts/infra/up.sh
 run_logged python3 scripts/test/platform-node-metrics-fixture.py query
 source "$ADDP_ONLINE_SECRET_DIR/metrics.env"
 application_owned=1
-run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -monitor
+modules=(-monitor)
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ]; then modules+=(-system); fi
+run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "${modules[@]}"
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-node-metrics --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"

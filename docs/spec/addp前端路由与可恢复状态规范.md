@@ -81,10 +81,11 @@ Develop TaskProvider 的 canonical 前端路由为：
 | 模块 | 页面或状态 | Canonical 表达 |
 | --- | --- | --- |
 | System | 平台主机管理及详情 | 列表 `/system/host-nodes`、详情 `/system/host-nodes/:node_id`；query 为 `search/node_kind/enabled/page/page_size`，类型只允许 `physical/virtual`，纳管状态只允许 `true/false`，不限制时省略；默认第 1 页及每页 20 条省略，改变筛选回到第一页，重置保留每页条数；创建弹窗与未保存草稿不进入 URL |
+| System | 部署清单接入 | `/system/host-admission`；主机确认后唯一 query `node_id` 保存稳定身份，刷新重新读取；唯一 Console 编排入口，不将导入文件、未保存来源或部署参数写入 URL；主机保存/选择后传递当前稳定 ID 到 Monitor，来源仅经下述内存草稿交接 |
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
-| Monitor | 平台监测目标管理 | 列表 `/monitor/monitoring-targets`、新建 `/monitor/monitoring-targets/new`、详情 `/monitor/monitoring-targets/:id`；query 为 `page/page_size`，默认第 1 页及每页 20 条省略；新建成功 replace 为详情，关闭详情 replace 回列表并保留分页；未保存来源端点不进入 URL |
+| Monitor | 平台监测目标管理 | 列表 `/monitor/monitoring-targets`、新建 `/monitor/monitoring-targets/new`、详情 `/monitor/monitoring-targets/:id`；query 为 `page/page_size`，新建另可带稳定主机 `node_id`；默认第 1 页及每页 20 条省略；新建成功 replace 为详情，关闭详情 replace 回列表并保留分页；未保存来源端点不进入 URL |
 | Monitor | 平台资源总览 | `/monitor/resource-overview`；唯一 query `refresh=10/30/60/off`，默认 15 秒省略；不接受主机筛选或分页，刷新选择 replace，从完整授权集合的榜单到主机详情或服务监控使用 push，返回恢复原总览间隔 |
 | Monitor | 平台节点资源 | 列表 `/monitor/node-resources`、详情 `/monitor/node-resources/:node_id`；query 为 `search/page/page_size` 与详情 `range/metric/refresh`；文件系统趋势使用完整 `device/mountpoint/fstype` 精确挂载维度，只与 `node.filesystem.*` 指标同时出现，不完整或非法挂载参数显示错误，不回落到另一个资源；默认第 1 页、每页 20 条、近 1 小时、内存使用率、15 秒刷新省略；`refresh` 非默认值只允许 `10/30/60/off`，列表不保留；详情返回保留列表上下文，趋势及刷新选择 replace，后台刷新不改变历史，节点切换 push |
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
@@ -186,3 +187,7 @@ Console iframe 模式下，一次用户导航只能产生一条公开历史记�
 7. URL 中不包含 Token、票据、凭据或未保存业务内容。
 
 Model ER 图的 `domain_id` 省略表示等待选择，`all` 表示显式全域总览，正整数表示业务域；`related=1` 只在指定域时展示一跳跨域关联。Model 默认入口为 `/modeling/entities`。Model 页内关联流程查询与执行直接消费 Orchestrator 公开 API，执行使用共享确认组件，完整步骤范围必须在执行前可见。
+
+## Console 内存导航草稿
+
+跨模块的未保存草稿复用共享 Console navigation bridge：4 KiB 内纯 JSON，60 秒有效且一次消费，绑定身份、权限快照和精确目的路由；Console 只传输，不裁决领域有效性。发送与读取均校验当前同源 iframe，取消导航及另行导航、权限/身份变化时清除，不进入 URL、history state、浏览器存储、最近访问或日志。此类编排在独立模块模式先转入 Console 再接收输入，不维护第二套存储路线。接收 Owner 取得后再验证其领域结构与主体，并按自己的接口权限保存；刷新不恢复未保存草稿。

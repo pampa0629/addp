@@ -2157,6 +2157,29 @@
       "title": "Configuration Management",
       "engines": "Engine Configuration",
       "registeredEngine": "Registered engine"
+    },
+    "hostAdmission": {
+      "import": "Import deployment manifest",
+      "hostFacts": "Host proposed by the manifest",
+      "mode": "Host admission mode",
+      "existing": "Select an existing host",
+      "new": "Create the proposed host",
+      "existingHint": "Verify the existing host and allowed service modules without changing its details.",
+      "newHint": "Create and enable the proposed host. Collection can be configured after confirmation.",
+      "hostUnknown": "Host registration needs verification. Check host management first, then select the existing host to continue.",
+      "hostMismatch": "The selected host must be enabled, match the declared type and allow every service module in the manifest.",
+      "invalid": "Invalid deployment manifest. Select JSON exported by the standard node entry, no larger than 16 KiB.",
+      "title": "Deployment manifest admission",
+      "collection": "Host collection source",
+      "noCollection": "No host collection",
+      "search": "Search host name or address",
+      "more": "Load more hosts",
+      "readFailed": "Unable to verify the host or transfer the draft. Refresh and retry.",
+      "confirm": "Confirm host admission",
+      "deploymentHint": "Use this parameter only for new processes deployed on this host. Existing instances are not rebound.",
+      "collectionPending": "Host confirmed; collection configuration is not yet saved.",
+      "configure": "Continue to host collection",
+      "collectionDenied": "This account cannot configure collection. An authorized administrator can continue."
     }
   },
   "roles": {

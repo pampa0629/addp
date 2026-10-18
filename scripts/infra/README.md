@@ -1002,9 +1002,9 @@ macOS 本地验证需要避免 DHCP 地址变化时，可显式将 `ADDP_NODE_ME
 python3 scripts/infra/node-metrics.py export-admission > /tmp/addp-host-admission.json
 ```
 
-Desktop 自动声明 `virtual` 与 Linux VM 名称。原生 Linux 必须额外传 `--node-kind physical` 或 `--node-kind virtual`；显示名可通过 `--display-name` 提供，主机地址可通过重复的 `--address` 明确提供，缺省地址为空，不将监听地址推作节点地址。上述属性参数只用于导出，不用于 `up/down/status`。导出核验本地 Engine、内核、当前运行的唯一来源与工作区 Owner，仅读取状态，不执行 Compose 变更；禁用、远端、异工作区或来源未运行时拒绝，不导出其他环境键或证书路径。
+Desktop 自动声明 `virtual` 与 Linux VM 名称。原生 Linux 必须额外传 `--node-kind physical` 或 `--node-kind virtual`；显示名可通过 `--display-name` 提供，主机地址可通过重复的 `--address` 明确提供，缺省地址为空，不将监听地址推作节点地址。`--module` 最多 64 项且不能重复；导出的整个 UTF-8 文件最多 16 KiB。上述属性参数只用于导出，不用于 `up/down/status`。导出核验本地 Engine、内核、当前运行的唯一来源与工作区 Owner，仅读取状态，不执行 Compose 变更；禁用、远端、异工作区或来源未运行时拒绝，不导出其他环境键或证书路径。
 
-在“平台主机管理 → 从部署清单接入”或“运行监控 → 采集配置 → 新增采集配置”导入 JSON，预览后明确选择已有主机或按清单新建；只在确认时写入。System 创建新 node_id，Monitor 执行原 mTLS 和端点准入并保存配置，不自动修改根 `.env` 或当前进程声明。已有主机信息保留；新建主机和采集保存分步完成，失败时页面标明已完成步骤，未知结果先核验，不能从头自动重试。文件不含身份凭据，不是独立物理位置证明；首批仅覆盖节点与主机采集，不根据 Docker 容器名、数据库地址或资源使用量建立模块/引擎关联。协议及门禁见平台运行监控设计 4.2 节。
+仅在 Console“平台主机管理 → 从部署清单接入”导入 v2 JSON，预览后明确选择已有主机或按清单新建；只在确认时写入。System 创建新 node_id，Monitor 执行原 mTLS 和端点准入并保存配置，不自动修改根 `.env` 或当前进程声明。已有主机信息保留；新建主机和采集保存分步完成，失败时页面标明已完成步骤，未知结果先核验，不能从头自动重试。文件不含身份凭据，不是独立物理位置证明；无主机采集的原生 macOS/Linux 服务宿主可显式使用 `--host-only --node-kind physical`（或明确的 virtual），不访问 Docker、来源证书或中心；重复 `--module monitor --module meta` 声明允许的 ADDP 服务，不自动探测服务位置。省略采集的宿主清单只用于 System 登记及生成部署参数，仍由新进程首次声明绑定。含来源的清单在主机确认后通过 Console 内存草稿到 Monitor 独立保存；不根据 Docker 容器名、数据库地址或资源量建立引擎关联。协议及门禁见平台运行监控设计 4.2 节。
 
 `make test-monitor-metrics` 还以相同基础/Web 模板运行真实 node_exporter，验证客户端认证、资源样本进入唯一原生 HTTP SD 作业、来源中断与恢复。独占 T2 使用 bridge、随机回环端口和临时证书，不挂载宿主根、不使用 host 网络/PID。同一临时来源再部署为 Desktop 受限层，实际对照 Engine 核数、内存和内核，检查仅七采集器、不同命名空间容器的原始磁盘计数对照、被禁用指标族缺失、mTLS、唯一 HTTP SD 磁盘即时/趋势查询及恢复。macOS Docker Desktop 上的执行证明 VM 内核全局基础资源，Linux CI 只证明受限部署层；完整文件系统、cAdvisor、真实 System/Monitor 控制面和生产权限仍按各自验收范围验证，不以 T2 协议夹具替代。
 

@@ -1081,7 +1081,7 @@ def run_host_admission_case(base, directory, admin_identity, report):
     manifest = json.loads(subprocess.check_output(["python3", str(FIXTURE.ROOT / "scripts/infra/node-metrics.py"), "export-admission",
                                                   "--node-kind", "virtual", "--display-name", name,
                                                   "--address", os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], text=True, timeout=30))
-    require(manifest == {"schema": "addp.host-admission/v1", "host": {"display_name": name, "node_kind": "virtual",
+    require(manifest == {"schema": "addp.host-admission/v2", "host": {"display_name": name, "node_kind": "virtual",
                 "addresses": [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], "allowed_module_bindings": []},
                 "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter",
                 "endpoint": "https://"+os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":19100/metrics"}}}, "deployment manifest differs from the owned source")

@@ -32,39 +32,14 @@
       <div v-loading="detailLoading">
         <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" show-icon />
         <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon data-testid="target-save-error" />
-        <section v-if="creating && canCreate" class="target-admission" data-testid="target-admission">
-          <input ref="admissionFileInput" type="file" accept="application/json,.json" hidden data-testid="admission-file" @change="importAdmission" />
-          <el-button :loading="admissionReading" :disabled="saving || Boolean(admissionHostCreated) || admissionBlocked" @click="admissionFileInput?.click()">{{ t('monitor.targets.admission.import') }}</el-button>
-          <el-button v-if="(admission || admissionError) && !admissionHostCreated && !admissionBlocked" :disabled="saving" @click="clearAdmission">{{ t('monitor.targets.admission.clear') }}</el-button>
-          <el-alert v-if="admissionError" :title="t(admissionError)" type="error" :closable="false" show-icon />
-          <template v-if="admission">
-            <h3>{{ t('monitor.targets.admission.hostFacts') }}</h3>
-            <dl class="admission-facts">
-              <dt>{{ t('monitor.targets.node') }}</dt><dd>{{ admission.host.display_name }}</dd>
-              <dt>{{ t('monitor.targets.admission.hostKind') }}</dt><dd>{{ t(`monitor.targets.admission.kinds.${admission.host.node_kind}`) }}</dd>
-              <dt>{{ t('monitor.targets.admission.addresses') }}</dt><dd>{{ admission.host.addresses.join(', ') || '—' }}</dd>
-              <dt>{{ t('monitor.targets.admission.modules') }}</dt><dd>{{ admission.host.allowed_module_bindings.map(binding => binding.module_name).join(', ') || '—' }}</dd>
-            </dl>
-            <el-radio-group v-if="!admissionHostCreated" :model-value="admissionMode" :disabled="saving || admissionBlocked" :aria-label="t('monitor.targets.admission.mode')" @update:model-value="selectAdmissionMode">
-              <el-radio value="existing">{{ t('monitor.targets.admission.existing') }}</el-radio>
-              <el-radio v-if="canCreateNode" value="new">{{ t('monitor.targets.admission.new') }}</el-radio>
-            </el-radio-group>
-            <p class="target-hint">{{ t(admissionMode === 'new' ? 'monitor.targets.admission.newHint' : 'monitor.targets.admission.existingHint') }}</p>
-          </template>
-          <el-alert v-if="admissionHostCreated" :title="t('monitor.targets.admission.created', { name: admissionHostCreated.display_name, id: admissionHostCreated.node_id })" type="success" :closable="false" show-icon data-testid="admission-created" />
-          <el-alert v-if="admissionProgress" :title="t(admissionProgress)" type="warning" :closable="false" show-icon data-testid="admission-progress" />
-          <template v-if="admissionHostCreated || (admissionBlocked && selectedNode)">
-            <el-button text type="primary" @click="navigate('/monitoring-targets', {})">{{ t('monitor.targets.admission.verifyCollection') }}</el-button>
-            <el-button v-if="canObserve" text type="primary" @click="navigate(`/node-resources/${selectedNode.node_id}`, {})">{{ t('monitor.targets.admission.verify') }}</el-button>
-          </template>
-        </section>
+        <el-alert v-if="creationBlocked" :title="t('monitor.targets.createUnknown')" type="warning" :closable="false" show-icon data-testid="target-create-unknown" />
         <el-form v-if="formReady" label-position="top" :disabled="!(creating ? canCreate : canRead && auth.hasPermission('monitor.monitoring_target.update')) || saving || conflicted" @submit.prevent>
-          <el-form-item v-if="!admission || admissionMode === 'existing'" :label="t('monitor.targets.node')">
-            <HostNodeSelect v-if="creating" :key="route.fullPath" ref="nodeInput" v-model="form.node_id" :selected="selectedNode" :disabled="Boolean(admissionHostCreated) || admissionBlocked" @selected="selectedNode = $event" />
+          <el-form-item :label="t('monitor.targets.node')">
+            <HostNodeSelect v-if="creating" :key="route.fullPath" ref="nodeInput" v-model="form.node_id" :selected="selectedNode" :allowed="canRead" :identity="identity" :disabled="Boolean(state.query.node_id)" :api="hostsAPI" :label="t('monitor.targets.node')" :placeholder="t('monitor.targets.nodeSearch')" :more-label="t('monitor.targets.moreNodes')" :error-message="t('monitor.targets.nodeLoadingFailed')" @selected="selectedNode = $event" />
             <el-input v-else :model-value="selectedNode?.display_name || t('monitor.targets.nodeMissing')" readonly data-testid="target-node" />
             <p v-if="selectedNode" class="target-hint">{{ selectedNode.addresses.join(', ') }}</p>
           </el-form-item>
-          <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating || Boolean(admission)" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in Object.keys(targetKinds)" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
+          <el-form-item :label="t('monitor.targets.kind')"><el-select v-model="form.monitor_kind" :disabled="!creating" :aria-label="t('monitor.targets.kind')"><el-option v-for="kind in Object.keys(targetKinds)" :key="kind" :value="kind" :label="t(`monitor.targets.kinds.${kind}`)" /></el-select></el-form-item>
           <el-form-item :label="t('monitor.targets.endpoint')"><el-input ref="endpointInput" v-model="form.endpoint" maxlength="512" :placeholder="t('monitor.targets.endpointHint')" data-testid="target-endpoint" /></el-form-item>
           <el-form-item :label="t('monitor.targets.configState')"><el-switch v-model="form.enabled" :active-text="t('monitor.targets.enabled')" :inactive-text="t('monitor.targets.disabled')" :aria-label="t('monitor.targets.configState')" data-testid="target-enabled" /></el-form-item>
         </el-form>
@@ -97,7 +72,7 @@
         <el-popconfirm v-if="canRemove && formReady" :title="t('monitor.targets.deleteConfirm')" :confirm-button-text="t('common.confirm')" :cancel-button-text="t('common.cancel')" @confirm="remove">
           <template #reference><el-button type="danger" :disabled="saving || conflicted" data-testid="target-delete">{{ t('common.delete') }}</el-button></template>
         </el-popconfirm>
-        <el-button v-if="canWrite && formReady" type="primary" :loading="saving" :disabled="conflicted" data-testid="target-save" @click="save">{{ t(admission ? 'monitor.targets.admission.submit' : 'common.save') }}</el-button>
+        <el-button v-if="canWrite && formReady" type="primary" :loading="saving" :disabled="conflicted" data-testid="target-save" @click="save">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
     <StatusAnnouncer :message="statusMessage" />
@@ -115,8 +90,9 @@ import { openConsoleRoute, StatusAnnouncer, useConsolePageDescriptor } from '@co
 import { useAuthStore } from '../store/auth'
 import { monitoringTargetsAPI as api } from '../api/monitoringTargets'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
-import HostNodeSelect from '../components/HostNodeSelect.vue'
-import { parseHostAdmission } from '../utils/hostAdmission'
+import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
+import { takeConsoleNavigationDraft } from '../../../../common-frontend/basic/src/utils/navigationDraft.mjs'
+import { validateHostCollection } from '../../../../common-frontend/basic/src/utils/hostAdmission.mjs'
 import { loadHostReferences } from '../utils/hostReferences'
 import { isTargetUUID, resolveTargetRoute, targetInput, targetKinds, validateTargetCollectionReference } from '../utils/monitoringTargets'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
@@ -127,14 +103,12 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.monitoring_target.read') && auth.hasPermission('platform.host_node.read'))
 const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.create'))
-const canCreateNode = computed(() => canCreate.value && auth.hasPermission('platform.host_node.create'))
 const canObserve = computed(() => canRead.value && auth.hasPermission('monitor.resource_observation.read'))
 const creating = computed(() => route.name === 'MonitoringTargetNew')
 const targetID = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
 const dialogOpen = computed(() => creating.value || Boolean(targetID.value))
-const canWrite = computed(() => !admissionReading.value && !admissionError.value && !admissionBlocked.value
-  && (Boolean(selectedNode.value) || (admission.value && admissionMode.value === 'new' && canCreateNode.value))
-  && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
+const creationBlocked = ref(false)
+const canWrite = computed(() => !creationBlocked.value && Boolean(selectedNode.value) && (creating.value ? canCreate.value : canRead.value && auth.hasPermission('monitor.monitoring_target.update')))
 const canRemove = computed(() => !creating.value && canRead.value && auth.hasPermission('monitor.monitoring_target.delete'))
 const state = computed(() => resolveTargetRoute(route.query, creating.value))
 const rows = ref([]), total = ref(0), loading = ref(false), loaded = ref(false), listError = ref('')
@@ -142,9 +116,6 @@ const target = ref(null), formReady = ref(false), detailLoading = ref(false), de
 const collection = ref(null), collectionLoading = ref(false), collectionError = ref('')
 let collectionTicket = 0, collectionController = null
 const selectedNode = ref(null)
-const admission = ref(null), admissionMode = ref('existing'), admissionFileInput = ref(null), admissionReading = ref(false), admissionError = ref('')
-const admissionHostCreated = ref(null), admissionBlocked = ref(false), admissionProgress = ref('')
-let admissionReadTicket = 0
 const hostReferences = ref({})
 const nodeNames = computed(() => Object.fromEntries(Object.entries(hostReferences.value).map(([id, host]) => [id, host.display_name])))
 const listCollections = ref(new Map()), listCollectionLoading = ref(false), listCollectionError = ref('')
@@ -197,29 +168,8 @@ function clearCollection() {
   collectionTicket++; collectionController?.abort(); collectionController = null
   collection.value = null; collectionError.value = ''; collectionLoading.value = false
 }
-function resetForm() { clearCollection(); clearAdmission(); admissionHostCreated.value = null; admissionBlocked.value = false; admissionProgress.value = ''; Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
+function resetForm() { clearCollection(); creationBlocked.value = false; Object.assign(form, { node_id: '', monitor_kind: 'host_resources', endpoint: '', enabled: true }); formReady.value = false; target.value = null; selectedNode.value = null }
 
-function clearAdmission() {
-  admissionReadTicket++; admission.value = null; admissionMode.value = 'existing'; admissionReading.value = false; admissionError.value = ''
-}
-function selectAdmissionMode(value) {
-  if (saving.value || admissionBlocked.value || admissionHostCreated.value || !['existing', 'new'].includes(value) || (value === 'new' && !canCreateNode.value)) return
-  admissionMode.value = value; form.node_id = ''; selectedNode.value = null; saveError.value = ''
-}
-async function importAdmission(event) {
-  if (!creating.value || !canCreate.value || saving.value || admissionHostCreated.value || admissionBlocked.value) return
-  const file = event.target.files?.[0], generation = epoch
-  clearAdmission(); const ticket = admissionReadTicket
-  if (!file) return
-  admissionReading.value = true
-  try {
-    if (file.size > 16384) throw new Error('invalid_host_admission')
-    const value = parseHostAdmission(await file.text())
-    if (generation !== epoch || ticket !== admissionReadTicket || !canCreate.value) return
-    admission.value = value; form.monitor_kind = value.collection.monitor_kind; form.endpoint = value.collection.source.endpoint; form.enabled = true; saveError.value = ''
-  } catch { if (generation === epoch && ticket === admissionReadTicket) admissionError.value = 'monitor.targets.admission.invalid' }
-  finally { event.target.value = ''; if (generation === epoch && ticket === admissionReadTicket) admissionReading.value = false }
-}
 function populate(value) {
   clearCollection()
   target.value = value
@@ -331,28 +281,10 @@ async function save() {
   if (!canWrite.value || !formReady.value || saving.value || conflicted.value) return
   const generation = epoch, id = targetID.value, isCreate = creating.value
   if (!form.endpoint.trim() || form.endpoint.trim().length > 512) { saveError.value = t('monitor.targets.invalidForm'); return }
-  if (!(admission.value && admissionMode.value === 'new') && !targetInput(form, target.value)) { saveError.value = t('monitor.targets.invalidForm'); return }
+  if (!targetInput(form, target.value)) { saveError.value = t('monitor.targets.invalidForm'); return }
   saving.value = true; saveError.value = ''; statusMessage.value = t('monitor.targets.saving')
   let writeStage = ''
   try {
-    if (admission.value) {
-      let host
-      if (admissionMode.value === 'new') {
-        if (!canCreateNode.value) return
-        writeStage = 'host'
-        host = await request(config => hostsAPI.createNode({ ...admission.value.host, enabled: true }, config))
-        if (generation !== epoch) return
-        if (!isTargetUUID(host?.node_id)) throw new Error('invalid_host_response')
-        admissionHostCreated.value = host; admissionMode.value = 'existing'; selectedNode.value = host; form.node_id = host.node_id
-        admissionProgress.value = 'monitor.targets.admission.partial'
-      } else {
-        host = await request(config => hostsAPI.node(form.node_id, config))
-        if (generation !== epoch) return
-      }
-      if (host?.node_id !== form.node_id || host.node_kind !== admission.value.host.node_kind || host.enabled !== true) {
-        saveError.value = t('monitor.targets.admission.hostMismatch'); return
-      }
-    }
     const body = targetInput(form, target.value)
     if (!body) { saveError.value = t('monitor.targets.invalidForm'); return }
     writeStage = 'collection'
@@ -365,10 +297,7 @@ async function save() {
     if (generation !== epoch) return
     writeError(error)
     const conflict = error.response?.status === 409 && error.response?.data?.error_code === 'resource_version_conflict'
-    if (admission.value && writeStage && (!error.response || error.response.status >= 500 || conflict)) {
-      admissionBlocked.value = true
-      admissionProgress.value = conflict ? 'monitor.targets.admission.conflict' : writeStage === 'host' ? 'monitor.targets.admission.hostUnknown' : 'monitor.targets.admission.collectionUnknown'
-    }
+    if (isCreate && writeStage && (!error.response || error.response.status >= 500 || conflict)) creationBlocked.value = true
   }
   finally { if (generation === epoch) { saving.value = false; statusMessage.value = '' } }
 }
@@ -395,7 +324,19 @@ watch([() => route.fullPath, identity], async () => {
     formReady.value = canCreate.value
     const generation = epoch
     if (generation !== epoch) return
-    if (state.value.query.node_id) form.node_id = state.value.query.node_id
+    if (state.value.query.node_id) {
+      form.node_id = state.value.query.node_id
+      if (window.parent !== window) {
+        try {
+          const draft = await takeConsoleNavigationDraft()
+          if (generation !== epoch) return
+          if (draft) {
+            if (Object.keys(draft).sort().join(',') !== 'kind,node_id,source' || draft.kind !== 'addp.host-collection/v1' || draft.node_id !== form.node_id) throw new Error('invalid_draft')
+            form.endpoint = validateHostCollection({ monitor_kind: 'host_resources', source: draft.source }).source.endpoint
+          }
+        } catch { if (generation === epoch) detailError.value = t('monitor.targets.invalidForm') }
+      }
+    }
   }
   await Promise.all([loadList(), creating.value ? Promise.resolve() : loadDetail()])
 }, { immediate: true, flush: 'sync' })
@@ -414,11 +355,6 @@ onBeforeUnmount(invalidate)
 .target-collection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .target-collection-toolbar h3 { flex: 1; margin: 0; }
 .target-collection p { overflow-wrap: anywhere; }
-.target-admission { margin-bottom: 16px; }
-.target-admission h3 { margin-bottom: 12px; }
-.admission-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
-.admission-facts dt { color: var(--addp-text-secondary); }
-.admission-facts dd { margin: 0; overflow-wrap: anywhere; }
 .el-alert { margin-bottom: 12px; }
 :deep(.el-dialog__footer) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 :deep(.el-dialog__footer .el-button + .el-button) { margin-left: 0; }

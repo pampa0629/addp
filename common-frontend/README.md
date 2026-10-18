@@ -807,3 +807,9 @@ MIT
 测试由 `make test-common-frontend` 自动发现，消费模块浏览器回归由原有前端门禁负责，CI 无需新建任务。
 
 资源数量展示复用 `basic/src/utils/formatters.js`：`scaleByteValue` 返回唯一 IEC 1024 进制量级、值和除数，`formatBytes` 可指定精度及当前语言；Map 的字节格式化入口转发此实现，`formatFileSize` 同样委托。`formatDurationSeconds` 将非负秒数转换为当前语言的日/小时/分钟/秒，最多三个非零分量，不依赖时区。Monitor 容量曲线使用一个固定量级，不改写 API 的 bytes 原值。
+
+## 部署清单与跨模块草稿
+
+`HostNodeSelect` 是受控主机选择的唯一组件，消费者传入 `api.nodes/api.node`、当前 `allowed/identity` 与标签；共享组件负责分页、搜索、读取取消、迟到排除，不读取私有 Store 或模块 API。`hostAdmission.mjs` 唯一校验有界 v2 文件与可选主机采集，System 负责身份写入，Monitor 负责自己的配置。旧私有实现和测试已迁除，唯一所有权与协议归 `make test-common-frontend`。
+
+`openConsoleRoute(route, { draft })` 通过既有导航桥移交最多 4 KiB 的纯 JSON；接收模块用 `takeConsoleNavigationDraft()` 一次读取。Console 的 `createNavigationDraftSlot` 仅在内存中保存 60 秒，绑定当前身份/权限及精确路由，取消、导航、身份变化和销毁清除；不得写 URL、history state、浏览器存储、最近访问或日志。编排入口先进入 Console 再接受输入，不提供第二套 standalone 缓存。实际使用和拒绝边界由 Console/System/Monitor 浏览器门禁覆盖，CI 沿现有注册自动发现。

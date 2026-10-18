@@ -1692,7 +1692,9 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
             raise RegistrationError(f"platform-node-metrics regression is missing {filename}")
     gate = (repository / "scripts/test/online-hosted-node-metrics-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', "scripts/infra/node-metrics.py up",
-                     "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", "scripts/dev/start.sh -monitor",
+                     "scripts/infra/node-metrics.py down", "--suite platform-node-metrics", 'modules=(-monitor)',
+                     'if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = host-admission ]; then modules+=(-system); fi',
+                     'scripts/dev/start.sh "${modules[@]}"',
                      'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if fragment not in gate:
             raise RegistrationError(f"platform-node-metrics lifecycle is missing {fragment}")

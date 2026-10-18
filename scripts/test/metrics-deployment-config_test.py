@@ -353,7 +353,7 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
 
     def test_admission_export_is_a_secret_free_proposal_without_host_identity(self):
         value = node_config.admission_document(dict(self.env, PASSWORD='secret-never-export', ADDP_HOST_NODE_ID='not-this-vm'), 'desktop')
-        self.assertEqual(value, {'schema': 'addp.host-admission/v1', 'host': {
+        self.assertEqual(value, {'schema': 'addp.host-admission/v2', 'host': {
             'display_name': 'Docker Desktop Linux VM', 'node_kind': 'virtual', 'addresses': [], 'allowed_module_bindings': []},
             'collection': {'monitor_kind': 'host_resources', 'source': {'type': 'node_exporter', 'endpoint': 'https://192.0.2.10:9100/metrics'}}})
         serialized = json.dumps(value)
@@ -372,6 +372,19 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
                           (self.env, 'linux', 'physical', 'host', [f'host-{i}' for i in range(33)])]:
             with self.subTest(arguments=arguments[1:]), self.assertRaises(ValueError):
                 node_config.admission_document(*arguments)
+
+    def test_native_host_only_export_has_no_docker_or_collection_dependency(self):
+        output = io.StringIO()
+        with mock.patch.object(node_config.platform, 'system', return_value='Darwin'), mock.patch.object(node_config, 'docker_json', side_effect=AssertionError('Docker called')), redirect_stdout(output):
+            node_config.run('export-admission', {'PASSWORD': 'never-export'}, host_only=True, node_kind='physical', display_name='Native Mac', modules=['monitor', 'meta'])
+        value = json.loads(output.getvalue())
+        self.assertEqual(value['schema'], 'addp.host-admission/v2')
+        self.assertNotIn('collection', value)
+        self.assertEqual(value['host']['allowed_module_bindings'], [{'module_name': n, 'client_id': 'addp-'+n} for n in ['monitor', 'meta']])
+        self.assertNotIn('never-export', output.getvalue())
+        for modules in (['monitor', 'monitor'], ['bad/name'], ['x'+str(i) for i in range(65)]):
+            with self.assertRaises(ValueError): node_config.admission_document({}, 'native', 'physical', modules=modules)
+        with self.assertRaises(ValueError): node_config.run('up', {}, host_only=True)
 
     def test_admission_export_only_reads_the_owned_local_running_source(self):
         context = [{'Endpoints': {'docker': {'Host': 'unix:///local/docker.sock'}}}]

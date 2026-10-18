@@ -26,7 +26,8 @@ test('resource rules retain a canonical independent page and reuse the only host
   assert.match(read(path), /<HostNodeSelect/u)
   assert.doesNotMatch(read(path), /remote-method="searchNodes"/u)
  }
- assert.match(read('../src/components/HostNodeSelect.vue'), /platform\.host_node\.read/u)
+ assert.match(read('../src/views/MonitoringTargets.vue'), /platform\.host_node\.read/u)
+ assert.match(read('../src/components/ResourceAlertRules.vue'), /platform\.host_node\.read/u)
 })
 
 test('resource evidence stays frozen and only valid host signals build historical navigation', async () => {

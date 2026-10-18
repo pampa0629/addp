@@ -1202,7 +1202,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
     def admission_browser_reply(artifacts):
         host_id = "10000000-0000-4000-8000-000000000001"
         target_id = "20000000-0000-4000-8000-000000000001"
-        manifest = {"schema": "addp.host-admission/v1", "host": {"display_name": "Online admission run", "node_kind": "virtual",
+        manifest = {"schema": "addp.host-admission/v2", "host": {"display_name": "Online admission run", "node_kind": "virtual",
                     "addresses": ["127.0.0.1"], "allowed_module_bindings": []},
                     "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter", "endpoint": "https://127.0.0.1:19100/metrics"}}}
         expected = {"run_id": "run", "admin_id": "admin", "admission": manifest}
