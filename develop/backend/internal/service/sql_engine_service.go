@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -77,6 +78,7 @@ func NewSQLEngineService(
 }
 
 type SQLResult struct {
+	Fields       []datatype.FieldInfo     `json:"fields"`
 	Columns      []string                 `json:"columns"`
 	Rows         []map[string]interface{} `json:"rows"`
 	RowsAffected int64                    `json:"rows_affected"`
@@ -492,7 +494,7 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 			rows = []map[string]interface{}{}
 		}
 		return &SQLResult{
-			Columns: queryResult.Columns, Rows: rows, RowsAffected: int64(len(rows)), Effect: executionEffect,
+			Columns: queryResult.Columns, Fields: queryResult.Fields, Rows: rows, RowsAffected: int64(len(rows)), Effect: executionEffect,
 		}, nil
 	}
 

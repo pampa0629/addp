@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -69,7 +69,12 @@ func assertQueryResultPersistence(t *testing.T, db *gorm.DB) {
 		executor := &DevExecutor{queryResults: cache, sqlEngine: &SQLEngineService{protectionGate: &resultReadGate{}}}
 		svc := &QueryExecutionService{executor: executor, queries: repository.NewExecutionRepository(db)}
 		raw := authorizedResultFixture()
-		preview := commonModels.JSONMap{"result_kind": "table", "summary": map[string]interface{}{"preview_rows": []map[string]interface{}{{"phone": "138****5678"}}}}
+		preview, _, encodeErr := executor.queryResult(1, []string{"phone", "id", "small", "amount"}, []datatype.FieldInfo{
+			{Name: "phone", Type: datatype.FieldTypeString}, {Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "small", Type: datatype.FieldTypeInt}, {Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 38, Scale: 18},
+		}, []map[string]interface{}{{"phone": "138****5678", "id": int64(9007199254740993), "small": int64(2), "amount": "12345678901234567890.123456789012345678"}}, 1, SQLExecutionEffectRead, "table", nil)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
 		err := svc.completeQueryResult(t.Context(), execution, lease, now, preview, nil, &protection.QueryCapture{Subject: raw.Subject, Result: raw}, 1)
 		if (err != nil) != stale {
 			t.Fatal("completion did not enforce lease")
@@ -85,6 +90,9 @@ func assertQueryResultPersistence(t *testing.T, db *gorm.DB) {
 		_, cached := cache.get(execution.ExecutionID, 1, 7, dataprotection.SubjectReference{Type: "user", ID: "9"})
 		if cached == stale {
 			t.Fatal("result delivery not fenced by committed execution")
+		}
+		if !stale && (!strings.Contains(encoded, `"id":"9007199254740993"`) || !strings.Contains(encoded, `"small":2`) || !strings.Contains(encoded, `"amount":"12345678901234567890.123456789012345678"`)) {
+			t.Fatal("persisted query DTO lost precision")
 		}
 		if !stale && !strings.Contains(encoded, "138****5678") {
 			t.Fatal("default preview missing from history")

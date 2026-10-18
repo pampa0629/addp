@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/addp/common/datatype"
+
 	"gorm.io/gorm"
 )
 
@@ -179,6 +181,7 @@ type TablePartitioningFacts struct {
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）
 type QueryResult struct {
 	Columns []string                 `json:"columns"` // 有序列名列表
+	Fields  []datatype.FieldInfo     `json:"fields"`  // Provider-owned output types, never source-field guesses.
 	Rows    []map[string]interface{} `json:"rows"`    // 每行：列名 → 值
 }
 

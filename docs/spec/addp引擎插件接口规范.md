@@ -512,6 +512,10 @@ type RangeWritableProvider interface {
 
 普通查询是计算能力，不等于表格型存储目录能力。普通查询返回 `QueryResult`，面向表格化、记录集或标量结果消费方，例如 Develop 查询编辑器、Manager 表格预览和查询服务。
 
+查询结果的输出字段类型是 Provider 事实，不能用来源表结构、Go 值类型或首行数据猜测。`QueryResult.Fields` 与 `Columns` 同序，使用 `datatype.FieldInfo` 保存输出名称、原生类型、统一类型及可获知的 precision／scale；表达式和别名取实际结果列的数据库描述。共享 SQL Runtime 从同一 `sql.Rows.ColumnTypes()` 读取，由具体 Provider 注入已有原生类型映射函数；没有原生描述的结果显式为 unknown，不补造精度。Provider 的行值保持原生精确表示。
+
+Develop 的默认保护结果是面向专业读取接口的观察 DTO：字段保护之后，按真实输出类型复制并编码 bigint／decimal，再将该 DTO 冻结到 execution metadata，避免通用 JSONMap 读回把整数变成浮点。用于临时原值授权的进程内缓存仍保留 Provider 原生结果和字段事实，当前授权重投影之后才构造同一精确 JSON 表示。HTTP 表示和内部读取／搬运行值不混用；字段抑制时同步移除对应输出字段事实，不泄漏被抑制列。
+
 ```go
 type QueryRuntimeProvider interface {
     EnginePlugin

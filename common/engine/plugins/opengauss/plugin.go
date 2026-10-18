@@ -156,7 +156,7 @@ func (p *Plugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBou
 }
 
 func (p *Plugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, postgresql.SQLResultField)
 }
 
 func (p *Plugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

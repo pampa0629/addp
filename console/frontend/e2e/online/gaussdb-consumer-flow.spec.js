@@ -69,7 +69,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       await page.keyboard.press('ControlOrMeta+V')
       if (parameterized) {
         await frame.locator('.editor-heading-actions').getByRole('button', { name: /查询参数|Query Parameters/ }).click()
-        for (const [index, name, type, value] of [[0, 'text', '文本', textValue], [1, 'minimum', '整数', '2']]) {
+        for (const [index, name, type, value] of [[0, 'text', '文本', textValue], [1, 'minimum', '整数', '3']]) {
           await frame.locator('.parameter-toolbar').getByRole('button', { name: /添加参数|Add Parameter/ }).click()
           const parameter = frame.locator('.parameter-item').nth(index)
           await parameter.locator('.parameter-reference-field input').fill(name)
@@ -85,7 +85,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
         if (new URL(response.url()).pathname !== '/api/v1/develop/query-preflight' || response.request().method() !== 'POST') return false
         const body = response.request().postDataJSON()
         if (body.query !== query) return false
-        return !parameterized || (body.query_parameters?.length === 2 && body.query_parameters[0].default === textValue && body.query_parameters[1].default === 2)
+        return !parameterized || (body.query_parameters?.length === 2 && body.query_parameters[0].default === textValue && body.query_parameters[1].default === 3)
       })
       const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
       const finished = page.waitForResponse(async response => {
@@ -108,7 +108,7 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       expect(decodeURIComponent(locator.pathname)).toBe(`/${expected.engine_id}/path/addp_acceptance/source`)
       expect(locator.searchParams.get('type')).toBe('table')
       expect(body.content.query_parameters.map(({ name, type, default: value }) => ({ name, type, value }))).toEqual(parameterized ? [
-        { name: 'text', type: 'string', value: textValue }, { name: 'minimum', type: 'integer', value: 2 }
+        { name: 'text', type: 'string', value: textValue }, { name: 'minimum', type: 'integer', value: 3 }
       ] : [])
       const started = await json(response, 'GaussDB workbench submission')
       expect(started.execution_id).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
@@ -119,22 +119,28 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
       expect(execution.status).toBe('success')
       expect(execution.metadata.result.result_kind).toBe('table')
       const rows = execution.metadata.result.summary.preview_rows
-      expect(rows).toHaveLength(2)
+      const expectedRows = parameterized ? expected.rows.filter(row => BigInt(row.id) >= 3n) : expected.rows
+      expect(rows).toHaveLength(expectedRows.length)
+      const fields = execution.metadata.result.fields
+      expect(fields.map(field => field.name)).toEqual(parameterized
+        ? ['id', 'name', 'amount', 'optional_text', 'bound_text'] : ['id', 'name', 'amount', 'optional_text'])
+      expect(fields.find(field => field.name === 'id')).toMatchObject({ type: 'bigint' })
+      expect(fields.find(field => field.name === 'amount')).toMatchObject({ type: 'decimal', precision: 38, scale: 18 })
       const canonical = rows => rows.map(({ id, name, amount, optional_text }) => {
         expect(typeof id).toBe('string')
         expect(typeof amount).toBe('string')
         return { id, name, amount: amount.replace(/^(-?)0\./, '$1.'), optional_text }
       }).sort((a, b) => a.id.localeCompare(b.id))
-      expect(canonical(rows)).toEqual(canonical(expected.rows))
+      expect(canonical(rows)).toEqual(canonical(expectedRows))
       if (parameterized) expect(rows.every(row => row.bound_text === textValue)).toBe(true)
       const table = frame.locator('.query-result .result-table.el-table')
-      await expect(table.locator('.el-table__body-wrapper tr')).toHaveCount(2)
+      await expect(table.locator('.el-table__body-wrapper tr')).toHaveCount(expectedRows.length)
       for (const value of ['9007199254740993', '12345678901234567890.123456789012345678', '高斯正式接入中文']) {
         await expect(table.getByRole('cell', { name: value, exact: true })).toBeVisible()
       }
       if (parameterized) await expect(table).toContainText(textValue)
       await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `gaussdb-query-${parameterized ? 'parameters' : 'source'}-console.png`) })
-      queries.push({ execution_id: started.execution_id, status: execution.status, effect: analysis.effect, rows })
+      queries.push({ execution_id: started.execution_id, status: execution.status, effect: analysis.effect, rows, fields })
     }
     await execute('SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id', false)
     await execute('SELECT id,name,amount,optional_text,CAST(:text AS TEXT) AS bound_text FROM addp_acceptance.source WHERE id >= :minimum ORDER BY id', true)

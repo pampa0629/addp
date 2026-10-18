@@ -161,7 +161,7 @@ func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Connection
 			return nil, fmt.Errorf("Doris 只读查询校验失败：%w", err)
 		}
 	}
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(dorisCatalogFieldType))
 }
 
 func (p *DorisPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

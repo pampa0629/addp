@@ -189,7 +189,7 @@ func (q CompiledQuery) normalizeResult(raw *QueryResult) (*QueryResult, error) {
 		expected["eval:"+strconv.Itoa(i+1)] = true
 	}
 	failed := map[string]bool{}
-	result := &QueryResult{Columns: columns[:len(columns)-1], Rows: make([]map[string]interface{}, 0)}
+	result := &QueryResult{Columns: columns[:len(columns)-1], Fields: append([]datatype.FieldInfo(nil), q.output.Fields...), Rows: make([]map[string]interface{}, 0)}
 	for _, row := range raw.Rows {
 		if len(row) != len(columns) {
 			return nil, ErrAnalyticalResultInvalid

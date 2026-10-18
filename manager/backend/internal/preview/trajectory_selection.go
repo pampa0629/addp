@@ -348,7 +348,7 @@ func (p *FileTablePreviewProvider) previewTrajectory(ctx context.Context, conten
 			}
 			device := row[req.TrajectorySelection.DeviceField]
 			if deviceBigint && device != nil {
-				device, err = BigintJSONText(device)
+				device, err = datatype.BigintJSONText(device)
 				if err != nil {
 					return nil, ErrTrajectorySource
 				}

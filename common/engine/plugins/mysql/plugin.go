@@ -188,7 +188,7 @@ func (p *MySQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlyS
 }
 
 func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(mysqlCatalogFieldType))
 }
 
 func (p *MySQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

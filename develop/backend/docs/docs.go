@@ -780,7 +780,7 @@ const docTemplate = `{
         },
         "/executions/{execution_id}/result": {
             "get": {
-                "description": "仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.",
+                "description": "仅本人查询；原值仅从有界进程内暂存按当前授权返回。历史详情始终脱敏；暂存失效后需重新查询。| Own queries only. Plaintext is reauthorized from bounded process memory; history stays protected and expired delivery requires a new query.\n共享 SQL Runtime 的结果含真实输出 fields；bigint/decimal 单元格以精确字符串表示。| Shared SQL Runtime results include native output fields; bigint/decimal cells use exact strings.",
                 "produces": [
                     "application/json"
                 ],
@@ -6094,6 +6094,13 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "fields": {
+                    "description": "Provider-owned output types, never source-field guesses.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
                     }
                 },
                 "graph_data": {

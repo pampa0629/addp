@@ -49,11 +49,12 @@ class GaussDBConsumerTest(unittest.TestCase):
     def test_workbench_evidence_requires_two_distinct_successful_exact_reads(self):
         report={'run_id':'run','tenant_id':2,'principal_id':'33','engine_id':17}
         rows=self.sample()['data']['rows']
+        fields=[{'name':'id','type':'bigint'},{'name':'name','type':'string'},{'name':'amount','type':'decimal','precision':38,'scale':18},{'name':'optional_text','type':'string'}]
         evidence={**report,'queries':[
-            {'execution_id':'first','status':'success','effect':'read','rows':rows},
-            {'execution_id':'second','status':'success','effect':'read','rows':[{**row,'bound_text':"中文' OR 1=1 --"} for row in rows]}]}
+            {'execution_id':'first','status':'success','effect':'read','rows':rows,'fields':fields},
+            {'execution_id':'second','status':'success','effect':'read','rows':[{**row,'bound_text':"中文' OR 1=1 --"} for row in rows if int(row['id'])>=3],'fields':fields+[{'name':'bound_text','type':'string'}]}]}
         FLOW.validate_browser_report(evidence,report)
-        for change in ('identity','missing','duplicate','failed','write','precision','parameter'):
+        for change in ('identity','missing','duplicate','failed','write','precision','schema','schema_order','parameter','integer_filter'):
             bad=copy.deepcopy(evidence)
             if change=='identity':bad['principal_id']='other'
             elif change=='missing':bad['queries'].pop()
@@ -61,6 +62,9 @@ class GaussDBConsumerTest(unittest.TestCase):
             elif change=='failed':bad['queries'][0]['status']='failed'
             elif change=='write':bad['queries'][0]['effect']='write'
             elif change=='precision':bad['queries'][1]['rows'][0]['amount']='123.5'
+            elif change=='schema':bad['queries'][1]['fields'][2]['scale']=0
+            elif change=='schema_order':bad['queries'][1]['fields'].reverse()
+            elif change=='integer_filter':bad['queries'][1]['rows'].append(rows[1])
             else:bad['queries'][1]['rows'][0]['bound_text']='rewritten'
             with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):
                 FLOW.validate_browser_report(bad,report)

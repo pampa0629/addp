@@ -289,7 +289,7 @@ func (p *PostgreSQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledRead
 }
 
 func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	result, err := plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
+	result, err := plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, SQLResultField)
 	return result, postgresNativeQueryError(err, sql, opts)
 }
 

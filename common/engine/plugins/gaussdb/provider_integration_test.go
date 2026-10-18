@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -143,6 +144,17 @@ func TestIntegrationGaussDBPreparedReadAndCancellation(t *testing.T) {
 	boundary, err := p.ExecuteSQL(ctx, info, "SELECT current_setting('transaction_read_only') AS mode", plugin.QueryOptions{ReadOnly: true})
 	if err != nil || len(boundary.Rows) != 1 || boundary.Rows[0]["mode"] != "on" {
 		t.Fatalf("native read-only transaction not active: result=%+v err=%v", boundary, err)
+	}
+	typed, typeErr := p.ExecuteSQL(ctx, info, "SELECT id AS big_id,CAST(id AS INTEGER) AS small_id,amount FROM addp_acceptance.source WHERE id=2", plugin.QueryOptions{ReadOnly: true})
+	if typeErr != nil || len(typed.Fields) != 3 || typed.Fields[0].Type != datatype.FieldTypeBigInt || typed.Fields[1].Type != datatype.FieldTypeInt || typed.Fields[2].Type != datatype.FieldTypeDecimal || typed.Fields[2].Precision != 38 || typed.Fields[2].Scale != 18 {
+		t.Fatalf("native SQL output schema lost: %+v %v", typed, typeErr)
+	}
+	if typed.Rows[0]["big_id"] != int64(2) || typed.Rows[0]["small_id"] != int64(2) {
+		t.Fatal("Provider must retain native SQL integer values")
+	}
+	unbounded, err := p.ExecuteSQL(ctx, info, "SELECT CAST(1.25 AS NUMERIC) AS amount", plugin.QueryOptions{ReadOnly: true})
+	if err != nil || len(unbounded.Fields) != 1 || unbounded.Fields[0].Type != datatype.FieldTypeDecimal || unbounded.Fields[0].Precision != 0 || unbounded.Fields[0].Scale != 0 {
+		t.Fatalf("unbounded native numeric must not invent precision: %+v %v", unbounded, err)
 	}
 	req := plugin.QueryRequest{EngineID: 71, Language: "sql", Query: "SELECT id,name,amount,optional_text FROM addp_acceptance.source WHERE id >= $1", Options: plugin.QueryOptions{ReadOnly: true, Args: []interface{}{int64(1)}}}
 	prepared, err := p.PrepareQuery(ctx, info, req)

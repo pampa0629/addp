@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -875,12 +876,11 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		if executeErr != nil {
 			return nil, nil, fmt.Errorf("联邦查询执行失败: %w", executeErr)
 		}
-		response, affected := e.queryResult(
+		return e.queryResult(
 			devTask.QueryResultLimit,
-			federatedResult.Columns, federatedResult.Rows, int64(federatedResult.RowCount),
+			federatedResult.Columns, nil, federatedResult.Rows, int64(federatedResult.RowCount),
 			SQLExecutionEffectRead, "table", nil,
 		)
-		return response, affected, nil
 	}
 	if authorization == nil {
 		return nil, nil, fmt.Errorf("异步 SQL 执行缺少 Execution Authorization")
@@ -1000,30 +1000,29 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				resultKind = "graph"
 			}
 			result = &SQLResult{
-				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
+				Columns: queryResult.Columns, Fields: queryResult.Fields, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
 			}
 			if err == nil {
-				response, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
-				return response, affected, nil
+				return e.queryResult(devTask.QueryResultLimit, result.Columns, result.Fields, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
 			}
 		}
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("查询执行失败: %w", err)
 	}
-	response, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
-	return response, affected, nil
+	return e.queryResult(devTask.QueryResultLimit, result.Columns, result.Fields, result.Rows, result.RowsAffected, result.Effect, "table", nil)
 }
 
 func (e *DevExecutor) queryResult(
 	limit int,
 	columns []string,
+	fields []datatype.FieldInfo,
 	rows []map[string]interface{},
 	rowsAffected int64,
 	effect SQLExecutionEffect,
 	resultKind string,
 	graphData *plugin.GraphData,
-) (commonModels.JSONMap, *int64) {
+) (commonModels.JSONMap, *int64, error) {
 	if rows == nil {
 		rows = []map[string]interface{}{}
 	}
@@ -1034,10 +1033,15 @@ func (e *DevExecutor) queryResult(
 	if truncated {
 		rows = rows[:limit]
 	}
+	wireRows, err := datatype.RowsForJSON(fields, rows)
+	if err != nil {
+		return nil, nil, err
+	}
 	graphData, graphTruncated := truncateGraphData(graphData, limit)
 	truncated = truncated || graphTruncated
 	result := commonModels.JSONMap{
 		"columns":      columns,
+		"fields":       fields,
 		"rows_count":   len(rows),
 		"effect":       effect,
 		"result_kind":  resultKind,
@@ -1045,17 +1049,17 @@ func (e *DevExecutor) queryResult(
 		"truncated":    truncated,
 		"summary": map[string]interface{}{
 			"column_count": len(columns),
-			"preview_rows": rows,
+			"preview_rows": wireRows,
 		},
 	}
 	if graphData != nil {
 		result["graph_data"] = graphData
 	}
 	if effect == SQLExecutionEffectRead {
-		return result, nil
+		return result, nil, nil
 	}
 	result["rows_affected"] = rowsAffected
-	return result, &rowsAffected
+	return result, &rowsAffected, nil
 }
 
 func executionStatusForError(errorMessage string) string {

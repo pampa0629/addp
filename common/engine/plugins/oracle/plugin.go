@@ -216,7 +216,7 @@ func (p *OraclePlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnly
 }
 
 func (p *OraclePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, query, opts)
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, query, opts, plugin.SQLResultFieldMapper((&oraclemapping.TypeMapper{}).ToCommon))
 }
 
 func (p *OraclePlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {

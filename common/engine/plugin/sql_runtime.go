@@ -38,7 +38,7 @@ func ExecutedSQLForError(err error) (string, bool) {
 func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	ConnectionPoolPlugin
 	SQLQueryRuntimeProvider
-}, connInfo ConnectionInfo, querySQL string, opts QueryOptions) (*QueryResult, error) {
+}, connInfo ConnectionInfo, querySQL string, opts QueryOptions, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
 	if opts.analytical != nil && !opts.ReadOnly {
 		return nil, ErrAnalyticalInvalid
 	}
@@ -112,20 +112,20 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 				return validator.ValidateAnalyticalExecution(ctx, tx, opts.analytical.sourceBindings())
 			}
 		}
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight, mapField)
 	}
 	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 	}
-	result, err := scanRuntimeSQLRows(rows)
+	result, err := scanRuntimeSQLRows(rows, mapField)
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: querySQL, cause: err}
 	}
 	return result, nil
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error) (*QueryResult, error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
@@ -156,7 +156,7 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
-	result, err := scanRuntimeSQLRows(rows)
+	result, err := scanRuntimeSQLRows(rows, mapField)
 	if err != nil {
 		return nil, &sqlStatementFailure{statement: query, cause: err}
 	}
@@ -210,7 +210,7 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 	}
 }
 
-func scanRuntimeSQLRows(rows *sql.Rows) (*QueryResult, error) {
+func scanRuntimeSQLRows(rows *sql.Rows, mapField func(*sql.ColumnType) datatype.FieldInfo) (*QueryResult, error) {
 	defer rows.Close()
 
 	columns, err := rows.Columns()
@@ -218,6 +218,24 @@ func scanRuntimeSQLRows(rows *sql.Rows) (*QueryResult, error) {
 		return nil, fmt.Errorf("获取列名失败：%w", err)
 	}
 
+	if mapField == nil {
+		return nil, fmt.Errorf("SQL result type mapper is required")
+	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("read SQL result column types: %w", err)
+	}
+	fields := make([]datatype.FieldInfo, len(types))
+	seen := make(map[string]bool, len(types))
+	for i, column := range types {
+		if seen[column.Name()] {
+			return nil, fmt.Errorf("SQL result contains duplicate output column names")
+		}
+		seen[column.Name()] = true
+		field := mapField(column)
+		field.Name = column.Name()
+		fields[i] = field
+	}
 	var resultRows []map[string]interface{}
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
@@ -243,7 +261,29 @@ func scanRuntimeSQLRows(rows *sql.Rows) (*QueryResult, error) {
 		return nil, fmt.Errorf("遍历结果失败：%w", err)
 	}
 
-	return &QueryResult{Columns: columns, Rows: resultRows}, nil
+	return &QueryResult{Columns: columns, Fields: fields, Rows: resultRows}, nil
+}
+
+// SQLResultFieldMapper derives output fields from native result metadata using
+// the Provider's existing type mapping. Providers can normalize protocol-specific
+// metadata before returning the field; the scanner never guesses from row values.
+func SQLResultFieldMapper(mapType func(string) datatype.FieldType) func(*sql.ColumnType) datatype.FieldInfo {
+	return func(column *sql.ColumnType) datatype.FieldInfo {
+		native := column.DatabaseTypeName()
+		declaration := native
+		precision, scale, hasDecimal := column.DecimalSize()
+		if hasDecimal && precision > 0 && scale >= 0 && !strings.Contains(native, "(") {
+			declaration = fmt.Sprintf("%s(%d,%d)", native, precision, scale)
+		}
+		field := datatype.FieldInfo{Name: column.Name(), NativeType: native, Type: mapType(declaration), Nullable: true}
+		if nullable, ok := column.Nullable(); ok {
+			field.Nullable = nullable
+		}
+		if field.Type == datatype.FieldTypeDecimal && hasDecimal && precision > 0 && scale >= 0 {
+			field.Precision, field.Scale = int(precision), int(scale)
+		}
+		return field
+	}
 }
 
 // BindSQLRuntimeParameters applies the same parameter contract used by SQL

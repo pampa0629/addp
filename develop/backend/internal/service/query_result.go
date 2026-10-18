@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/protection"
@@ -171,7 +172,12 @@ func (e *DevExecutor) queryResultResponse(ctx context.Context, response *models.
 		return nil, protection.ErrResultRequired
 	}
 	visible["columns"], visible["rows_count"], visible["truncated"] = result.Columns, len(result.Rows), item.value.Truncated
-	visible["summary"] = map[string]interface{}{"column_count": len(result.Columns), "preview_rows": result.Rows}
+	wireRows, err := datatype.RowsForJSON(result.Fields, result.Rows)
+	if err != nil {
+		return nil, protection.ErrResultRequired
+	}
+	visible["fields"] = result.Fields
+	visible["summary"] = map[string]interface{}{"column_count": len(result.Columns), "preview_rows": wireRows}
 	if result.PlaintextExpiresAt == nil {
 		e.queryResults.remove(response.ExecutionID, item.generation)
 	}

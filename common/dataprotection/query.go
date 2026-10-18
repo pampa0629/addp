@@ -45,6 +45,13 @@ func ProtectQueryResultSourceAt(result *plugin.QueryResult, source plugin.QueryO
 		}
 		if mappedRule.Decision.Effect == EffectSuppress && len(mappedRule.Component.Path) == 1 {
 			result.Columns = removeQueryColumn(result.Columns, mappedRule.Component.Path[0].Name)
+			fields := result.Fields[:0:0]
+			for _, field := range result.Fields {
+				if field.Name != mappedRule.Component.Path[0].Name {
+					fields = append(fields, field)
+				}
+			}
+			result.Fields = fields
 		}
 	}
 	return nil

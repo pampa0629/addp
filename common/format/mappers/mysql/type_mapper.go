@@ -18,6 +18,10 @@ func (m *TypeMapper) Name() string {
 // ToCommon 将MySQL类型转换为通用类型
 func (m *TypeMapper) ToCommon(mysqlType string) datatype.FieldType {
 	mysqlType = strings.ToLower(strings.TrimSpace(mysqlType))
+	// database/sql reports unsigned result types with a prefix; catalog DDL
+	// uses a suffix. Both are native declarations of the same logical type.
+	mysqlType = strings.TrimSpace(strings.TrimPrefix(mysqlType, "unsigned "))
+	mysqlType = strings.TrimSpace(strings.TrimSuffix(mysqlType, " unsigned"))
 
 	// 处理带精度的类型
 	if idx := strings.Index(mysqlType, "("); idx > 0 {

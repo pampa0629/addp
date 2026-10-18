@@ -514,15 +514,19 @@ func TestWorkflowProducedTargetScanOptionsUseTargetsForTableTargets(t *testing.T
 
 func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 	executor := &DevExecutor{}
-	result, rowsAffected := executor.queryResult(
+	result, rowsAffected, err := executor.queryResult(
 		2,
 		[]string{"id"},
+		nil,
 		[]map[string]interface{}{{"id": 1}, {"id": 2}, {"id": 3}},
 		3,
 		SQLExecutionEffectRead,
 		"table",
 		nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rowsAffected != nil {
 		t.Fatalf("rowsAffected = %v", rowsAffected)
 	}
@@ -544,8 +548,9 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 
 func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
 	executor := &DevExecutor{}
-	result, rowsAffected := executor.queryResult(
+	result, rowsAffected, err := executor.queryResult(
 		2,
+		nil,
 		nil,
 		nil,
 		7,
@@ -553,6 +558,9 @@ func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
 		"table",
 		nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rowsAffected == nil || *rowsAffected != 7 {
 		t.Fatalf("rowsAffected = %v", rowsAffected)
 	}

@@ -67,9 +67,18 @@ def validate_browser_report(actual,report):
     require({key:actual.get(key) for key in expected}==expected,'Console consumer identity evidence differs')
     queries=actual.get('queries',[])
     require(len(queries)==2 and len({q.get('execution_id') for q in queries})==2, 'two distinct workbench executions required')
-    for query in queries:
+    for index,query in enumerate(queries):
         require(query.get('status')=='success' and query.get('effect')=='read', 'workbench read execution failed')
-        validate_preview({'preview_type':'table','data':{'columns':['id','name','amount','optional_text'],'total':2,'rows':query.get('rows')}})
+        fields=query.get('fields',[])
+        require([field.get('name') for field in fields]==['id','name','amount','optional_text']+(['bound_text'] if index else []), 'workbench output schema differs')
+        require(fields[0].get('type')=='bigint' and fields[2].get('type')=='decimal' and fields[2].get('precision')==38 and fields[2].get('scale')==18, 'workbench real bigint/Decimal schema lost')
+        if index==0:
+            validate_preview({'preview_type':'table','data':{'columns':['id','name','amount','optional_text'],'total':2,'rows':query.get('rows')}})
+        else:
+            rows=query.get('rows',[])
+            expected_rows=[row for row in queries[0]['rows'] if int(row['id'])>=3]
+            require(len(rows)==len(expected_rows)==1, 'integer parameter did not filter the source')
+            require({key:rows[0].get(key) for key in expected_rows[0]}==expected_rows[0], 'parameter query changed exact values')
     require(all(row.get('bound_text')=="中文' OR 1=1 --" for row in queries[1]['rows']), 'text parameter was not bound exactly')
 
 
