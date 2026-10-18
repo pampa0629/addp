@@ -51,7 +51,9 @@ def converged(enrollment, released=False):
     require(len(progress) == len(OWNERS) and {p.get("consumer_owner") for p in progress} == OWNERS, "All five protection Owners must be present exactly once")
     if released:
         return enrollment.get("state") == "released" and all(p.get("acknowledged") is True and p.get("validity") == "released" for p in progress)
-    require(enrollment.get("state") in {"enrolling", "active"}, "Enrollment unexpectedly stopped protecting")
+    require(enrollment.get("state") in {"activating", "enrolling", "active"}, "Enrollment unexpectedly stopped protecting")
+    if enrollment["state"] == "activating":
+        return False
     return all(p.get("acknowledged") is True and p.get("validity") == "valid" and p.get("projection_id") and p.get("revision") and p.get("published_cursor") for p in progress)
 
 
@@ -173,6 +175,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
     ontology_id = None
     graph_ids = []
     enrollment_id = None
+    operation_failed = False
     try:
         ontology_id = create_ontology(preparer)
         create_schema(preparer, ontology_id)
@@ -214,6 +217,10 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         set_public(preparer, target, False)
         report["private_protected_anonymous"] = probe(anonymous, target, ids, 401)
         report["private_protected_reader"] = probe(reader, target, ids, 403, "protection")
+    except Exception as error:
+        operation_failed = True
+        report["failure"] = {"error_type": type(error).__name__, "message": str(error)}
+        raise
     finally:
         cleanup_errors = []
         for gid in graph_ids:
@@ -242,7 +249,8 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
                 cleanup_errors.append("delete synthetic ontology")
         report["cleanup"] = {"errors": cleanup_errors, "domain_resources_remaining": 0 if not cleanup_errors else None,
                              "identity_and_native_data_lifecycle": "disposable Hosted Infra and graph fixture"}
-        require(not cleanup_errors, "Synthetic Graph domain cleanup failed")
+        if not operation_failed:
+            require(not cleanup_errors, "Synthetic Graph domain cleanup failed")
 
 
 def main():

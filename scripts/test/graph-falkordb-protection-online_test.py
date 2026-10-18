@@ -119,6 +119,31 @@ class GraphProtectionOnlineTest(unittest.TestCase):
             else:
                 with self.assertRaises(SUITE.SuiteError): SUITE.converged(value)
 
+    def test_activating_waits_for_the_formal_security_installation_barrier(self):
+        activating = self.progress(); activating['state'] = 'activating'
+        self.assertFalse(SUITE.converged(activating))
+        class Client:
+            def __init__(self): self.responses = iter([activating, activating, self_ready])
+            def request(self, *args): return SUITE.SUPPORT.Response(200, next(self.responses))
+        self_ready = self.progress()
+        with patch.object(SUITE.time, 'monotonic', return_value=0), patch.object(SUITE.time, 'sleep') as sleep:
+            self.assertEqual(SUITE.wait_owners(Client(), 'enrollment', 10), self_ready)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_cleanup_error_never_hides_the_original_operation_failure(self):
+        class Client:
+            def request(self, method, path, expected, body=None):
+                if method == 'POST': return SUITE.SUPPORT.Response(201, {'id': 9})
+                raise SUITE.SuiteError('ontology cleanup failed')
+        report = {}
+        with patch.object(SUITE, 'identity', side_effect=[{'principal_id': str(i)} for i in range(3)]), \
+             patch.object(SUITE, 'create_schema', side_effect=SUITE.SuiteError('initial operation failed')):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'initial operation failed'):
+                SUITE.run(*([Client()] * 7), 13, 2, 0, report)
+        self.assertEqual(report['failure'], {'error_type': 'SuiteError', 'message': 'initial operation failed'})
+        self.assertEqual(report['cleanup']['errors'], ['delete synthetic ontology'])
+        self.assertIsNone(report['cleanup']['domain_resources_remaining'])
+
     def test_release_requires_all_owners_and_released_validity(self):
         value = self.progress(); value['state'] = 'released'
         self.assertFalse(SUITE.converged(value, True))
