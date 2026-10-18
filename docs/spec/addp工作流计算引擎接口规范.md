@@ -906,6 +906,8 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 跨任务输出只允许声明可持久定位、可序列化且能在任务边界外重新解析的稳定结果，例如保存算子生成的 ResourceLocator。DataFrame、GeoDataFrame、Spark DataFrame、SuperMap 内存句柄和其他 Runtime 私有对象只能通过当前工作流内部连线传递，不得进入 TaskProvider 输出契约。每个可编排输出必须使用稳定输出名而不是数组下标；Develop execution 结果应按产生节点返回命名输出，并继续保留 `produced_targets` 作为产物摘要。资源输出的 `resource` 包含 `locator`、`type` 和可选 `write_mode`，输出 Schema 必须声明该已有写入事实以供血缘消费；模式为 `create/replace/append/upsert`，栅格访问计划仅允许 `create/replace`。
 
+GeoPython 通用文件保存的公开 `mode=fail` 表示目标已存在时失败，成功保存后的文件稳定输出和血缘事实必须记录标准 `write_mode=create`。该映射以已确认的 `file` 目标为边界，不改变运行时原有拒绝覆盖行为，不将未知写入模式或表目标推断为 `create`。多个保存节点分别保留各自写入事实；Meta 继续对缺少已知模式的 derive 只保存观察、不投影当前关系。
+
 Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保存值、设置 Step 固定覆盖值、引用显式 `depends_on` 上游 Step 的已声明稳定输出。不得继续让用户手写未校验的结果路径或把整个上游原始响应作为下游输入。
 
 同一算子能够读取多类资源时，应使用一个资源选择参数并由 locator 对应的资源事实决定运行时访问方式，不得要求用户预先选择 `source_type`。文件格式应优先由所选资源的格式事实或路径扩展名确定；支持格式列表属于资源选择器过滤条件，不应作为必选算子参数。内存对象输入应通过算子输入端口传递，不得在资源加载算子中另设 `geojson` 等旁路参数。

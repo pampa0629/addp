@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"slices"
@@ -10,6 +11,52 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
 )
+
+func TestWorkflowFileFailModeRetainsCreateFactsForBothPolygonizeOutputs(t *testing.T) {
+	source := "addp://engine/3/path/source.geojson?type=file&item_id=11"
+	task := lineageWorkflowTask(
+		lineageWorkflowNode("load", "load", map[string]interface{}{"locator": source}),
+		lineageWorkflowNode("build", "polygonize", map[string]interface{}{"input_gdf": map[string]interface{}{"$ref": "load"}}, "load"),
+		lineageWorkflowNode("faces", "save", map[string]interface{}{"input_df": map[string]interface{}{"$ref": "build"}, "target_parent_locator": "addp://engine/3/path/outputs?type=directory", "target_name": "faces.geojson", "mode": "fail"}, "build"),
+		lineageWorkflowNode("diagnostics", "save", map[string]interface{}{"input_df": map[string]interface{}{"$ref": "build", "port": "diagnostics"}, "target_parent_locator": "addp://engine/3/path/outputs?type=directory", "target_name": "diagnostics.geojson", "mode": "fail"}, "build"),
+	)
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		3: {ID: 3, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+	})
+	prepared, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", task.Content["workflow_definition"].(map[string]interface{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ := workflowTasksFromInterface(prepared["tasks"])
+	for _, node := range nodes {
+		if node["operator"] == "save" && node["params"].(map[string]interface{})["mode"] != "fail" {
+			t.Fatal("lineage normalization changed the Runtime no-overwrite policy")
+		}
+	}
+	facts := developLineageFacts(task, workflowExecutionOutputs(targets))
+	assertWorkflowLineageEdges(t, facts, source+" -> addp://engine/3/path/outputs/faces.geojson?type=file", source+" -> addp://engine/3/path/outputs/diagnostics.geojson?type=file")
+	for _, output := range facts.Outputs {
+		if output.WriteMode != "create" {
+			t.Fatalf("successful fail-mode file save lost its create fact: %#v", output)
+		}
+	}
+}
+
+func TestWorkflowFailModeDoesNotInventCreateForTablesOrUnknownModes(t *testing.T) {
+	for _, tc := range []struct{ parent, mode string }{
+		{"addp://engine/9/path/public?type=schema", "fail"},
+		{"addp://engine/3/path/outputs?type=directory", "unknown"},
+	} {
+		params := map[string]interface{}{"target_parent_locator": tc.parent, "target_name": "result", "mode": tc.mode}
+		targets, err := deriveWorkflowResourceParams(params, workflowPythonSaveAdapterSpec())
+		if err != nil || len(targets) != 1 {
+			t.Fatalf("derive targets: %+v, %v", targets, err)
+		}
+		if targets[0].WriteMode != "" {
+			t.Fatalf("unproven create fact: %+v", targets[0])
+		}
+	}
+}
 
 func lineageWorkflowNode(id, operator string, params map[string]interface{}, dependencies ...string) map[string]interface{} {
 	return map[string]interface{}{"id": id, "operator": operator, "params": params, "depends_on": dependencies}

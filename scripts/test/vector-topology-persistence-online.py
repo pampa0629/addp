@@ -30,13 +30,14 @@ def definition(source, parent):
 def validate_success(execution, source, targets):
     metadata = obj(execution.get('metadata'), 'execution metadata')
     outputs = obj(execution.get('outputs'), 'stable outputs')
-    expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file'}} for key, target in targets.items()}
+    expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file', 'write_mode': 'create'}} for key, target in targets.items()}
     if outputs != expected:
         raise SuiteError('expected both exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
         or [entry.get('locator') for entry in array(facts.get('inputs'), 'inputs')] != [source]
-        or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())):
+        or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())
+        or any(entry.get('write_mode') != 'create' for entry in facts['outputs'])):
         raise SuiteError('dual-output resource lineage differs')
     scans = array(obj(metadata.get('result'), 'result').get('meta_scan_runs'), 'automatic scans')
     if (len(scans) != 2 or {scan.get('target_locator') for scan in scans} != set(targets.values())

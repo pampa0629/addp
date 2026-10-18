@@ -14,8 +14,8 @@ base = importlib.import_module('scripts.test.raster-contour-persistence-online_t
 def execution():
     source = 'addp://engine/3/path/source.geojson?type=file&item_id=10'
     outputs = {key: f'addp://engine/3/path/outputs/{name}?type=file' for key, name in zip(('faces','diagnostics'), m.fixture.TARGETS)}
-    facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}], 'outputs': [{'locator': uri} for uri in outputs.values()]}
-    return {'status': 'success', 'outputs': {'save_'+key: {'resource': {'locator': uri, 'type': 'file'}} for key, uri in outputs.items()},
+    facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': [{'locator': source}], 'outputs': [{'locator': uri, 'write_mode': 'create'} for uri in outputs.values()]}
+    return {'status': 'success', 'outputs': {'save_'+key: {'resource': {'locator': uri, 'type': 'file', 'write_mode': 'create'}} for key, uri in outputs.items()},
         'metadata': {'lineage_facts': facts, 'result': {'meta_scan_runs': [{'status': 'submitted', 'target_locator': uri, 'execution_id': 'scan-'+key} for key, uri in outputs.items()]}}}
 
 
@@ -76,6 +76,9 @@ class TopologyOnlineTest(unittest.TestCase):
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in ('faces','diagnostics')}
         m.validate_success(value, source, targets)
         for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['metadata']['result']['meta_scan_runs'].pop(),
+            lambda v: v['outputs']['save_faces']['resource'].pop('write_mode'),
+            lambda v: v['metadata']['lineage_facts']['outputs'][0].pop('write_mode'),
+            lambda v: v['metadata']['lineage_facts']['outputs'][1].update(write_mode='fail'),
             lambda v: v['metadata']['result']['meta_scan_runs'][1].update(execution_id='scan-faces'),
             lambda v: v['metadata']['result']['meta_scan_runs'][0].update(target_locator='parent'),
             lambda v: v['metadata']['lineage_facts']['outputs'].pop()):

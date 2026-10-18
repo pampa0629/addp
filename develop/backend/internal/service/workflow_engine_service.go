@@ -1012,7 +1012,6 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 		return nil, fmt.Errorf("%s", commoni18n.ForLanguage("", developi18n.MsgWorkflowResourceBindingConflict))
 	}
 	producedTargets := make([]WorkflowProducedTarget, 0)
-	writeMode := workflowLineageWriteMode(params)
 	for _, inputSpec := range spec.ResourceInputs {
 		locator := stringParam(params, inputSpec.PublicParam)
 		if locator == "" {
@@ -1053,7 +1052,7 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 		if err != nil {
 			return nil, err
 		}
-		target.WriteMode = writeMode
+		target.WriteMode = workflowLineageWriteMode(params, target.Type)
 		producedTargets = append(producedTargets, target)
 		delete(params, outputSpec.ParentParam)
 		delete(params, outputSpec.NameParam)
@@ -1062,7 +1061,7 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 	return producedTargets, nil
 }
 
-func workflowLineageWriteMode(params map[string]interface{}) string {
+func workflowLineageWriteMode(params map[string]interface{}, targetType string) string {
 	raw := strings.ToLower(strings.TrimSpace(stringParam(params, "write_mode")))
 	if raw == "" {
 		raw = strings.ToLower(strings.TrimSpace(stringParam(params, "mode")))
@@ -1072,6 +1071,10 @@ func workflowLineageWriteMode(params map[string]interface{}) string {
 		return "replace"
 	case "create", "replace", "append", "upsert":
 		return raw
+	case "fail":
+		if targetType == string(resourcetree.TypeFile) {
+			return "create"
+		}
 	case "":
 		if overwrite, ok := params["overwrite"].(bool); ok {
 			if overwrite {
