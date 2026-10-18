@@ -46,6 +46,7 @@ go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WOR
 if [ "$test_group" = all ]; then
     go test ./internal/scanadapter -run '^(TestPrecise(Catalog|NativePostgres)ScanAgainstPostgres|TestPreciseContentStorageFactsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
     go test ./internal/scanprocessor -run '^(TestDelimitedEncodingRefreshAgainstPostgres|TestDelimitedSourceVersionRefreshAgainstPostgres|TestBasicRediscoveryPreservesDeepJSONTableSemanticsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+    go test ./internal/scanruntime -run '^TestObjectModelRelatedRefsAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
     go test ./internal/api -run '^TestMetaScanExecutionReadAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 fi
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then

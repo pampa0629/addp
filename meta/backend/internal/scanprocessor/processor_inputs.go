@@ -103,7 +103,10 @@ func ObjectSingleInput(
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
 ) input {
+	// The resolved item may also own MTL/texture refs. Catalog facts
+	// still describe the primary object, not the complete item size.
 	return input{
+		ClaimedFullNames:     itemPlan.DataItem.ClaimPaths,
 		Resource:             resource,
 		TenantID:             tenantID,
 		EngineID:             engineID,
@@ -121,7 +124,7 @@ func ObjectSingleInput(
 		IndexRootName:        catalogResource.RootName,
 		IndexPath:            catalogResource.Path,
 		IndexRelativePath:    trimmedPath,
-		SizeBytes:            catalogResource.SizeBytes,
+		SizeBytes:            itemPlan.DataItem.Size(),
 		DataUpdatedAt:        catalogResource.LastModified,
 		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
