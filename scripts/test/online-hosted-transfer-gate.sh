@@ -11,6 +11,8 @@ stop_online_fixture() {
   run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+[ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_RUN_ATTEMPT:-}" ] || fail 'GitHub run ID and attempt are required before fixture startup'
+export ADDP_ONLINE_TEST_RUN_ID="transfer-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export ORCHESTRATOR_URL=http://127.0.0.1:8084 MONITOR_URL=http://127.0.0.1:8100
 export CONSOLE_URL=http://127.0.0.1:5170
 export SECURITY_URL=http://127.0.0.1:8194

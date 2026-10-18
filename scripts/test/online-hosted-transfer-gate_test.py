@@ -19,6 +19,7 @@ class HostedTransferGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "transfer-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = start ]; then
+              [ "${ADDP_ONLINE_TEST_RUN_ID:-}" = transfer-39099575717-2 ] || exit 1
               printf '{}\\n' > "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"
               printf '{}\\n' > "$ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE"
             fi
@@ -72,6 +73,7 @@ class HostedTransferGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_TEST_DORIS_ENGINE_ID" = 19 ] &&
               [ "$ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID" = 20 ] &&
               [ "$ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID" = 21 ] &&
+              [ "$ADDP_ONLINE_TEST_RUN_ID" = transfer-39099575717-2 ] &&
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME" = 'Hosted Transfer MongoDB' ] &&
               [ -z "${TRANSFER_MONGODB_PASSWORD:-}" ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
@@ -94,6 +96,7 @@ class HostedTransferGateTest(unittest.TestCase):
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f"{self.host.bin}:{os.environ['PATH']}",
                    GITHUB_ACTIONS='true', RUNNER_OS='Linux', RUNNER_TEMP=str(self.host.root),
+                   GITHUB_RUN_ID='39099575717', GITHUB_RUN_ATTEMPT='2',
                    ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1', ONLINE_SUITE_INPUT='transfer-relational-sql-etl',
                    ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts), ADDP_ONLINE_SECRET_DIR=str(self.host.secrets),
                    ADDP_TEST_GATE_TRACE=str(self.host.trace), ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids))
@@ -114,7 +117,7 @@ class HostedTransferGateTest(unittest.TestCase):
             self.assertFalse(self.host.trace.exists())
 
     def test_success_uses_same_suite_then_verifies_rows_and_zero_residuals(self):
-        result = self.run_gate()
+        result = self.run_gate(ADDP_ONLINE_TEST_RUN_ID='stale-inherited-run')
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
         sequence = ('infra-up', 'transfer-fixture:start', 'start:-security', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
@@ -128,6 +131,18 @@ class HostedTransferGateTest(unittest.TestCase):
         summary = (self.host.artifacts / 'summary.txt').read_text()
         self.assertIn('result=passed', summary)
         self.assertIn('infra_cleanup=zero_residuals', summary)
+
+    def test_missing_run_identity_is_rejected_before_infra_or_fixture_start(self):
+        for variable in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'):
+            with self.subTest(variable=variable):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(**{variable: ''})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('GitHub run ID and attempt are required', result.stderr)
+                trace = self.host.trace.read_text() if self.host.trace.exists() else ''
+                self.assertNotIn('infra-up', trace)
+                self.assertNotIn('transfer-fixture:start', trace)
+                self.assertFalse(self.host.secrets.exists())
 
     def test_failures_destroy_owned_resources(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
