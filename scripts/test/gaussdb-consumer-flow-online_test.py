@@ -46,6 +46,25 @@ class GaussDBConsumerTest(unittest.TestCase):
             else:wrong['attributes']['capabilities']={'indexes':[],'indexing':{}}
             with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):FLOW.validate_item(wrong)
 
+    def test_workbench_evidence_requires_two_distinct_successful_exact_reads(self):
+        report={'run_id':'run','tenant_id':2,'principal_id':'33','engine_id':17}
+        rows=self.sample()['data']['rows']
+        evidence={**report,'queries':[
+            {'execution_id':'first','status':'success','effect':'read','rows':rows},
+            {'execution_id':'second','status':'success','effect':'read','rows':[{**row,'bound_text':"中文' OR 1=1 --"} for row in rows]}]}
+        FLOW.validate_browser_report(evidence,report)
+        for change in ('identity','missing','duplicate','failed','write','precision','parameter'):
+            bad=copy.deepcopy(evidence)
+            if change=='identity':bad['principal_id']='other'
+            elif change=='missing':bad['queries'].pop()
+            elif change=='duplicate':bad['queries'][1]['execution_id']='first'
+            elif change=='failed':bad['queries'][0]['status']='failed'
+            elif change=='write':bad['queries'][0]['effect']='write'
+            elif change=='precision':bad['queries'][1]['rows'][0]['amount']='123.5'
+            else:bad['queries'][1]['rows'][0]['bound_text']='rewritten'
+            with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):
+                FLOW.validate_browser_report(bad,report)
+
     def test_fixture_rejects_public_or_repository_state_before_docker(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp).resolve()
@@ -97,7 +116,10 @@ class GaussDBConsumerTest(unittest.TestCase):
             self.assertIn(f"{facts['GAUSSDB_GO_MODULE']} {facts['GAUSSDB_GO_VERSION']}{suffix} {facts[key]}",sums)
 
     def test_hosted_scope_contains_no_transfer_or_service_registration_privileges(self):
-        self.assertFalse(any(p.startswith(('transfer.','develop.','system.engine.')) for p in FLOW.PERMISSIONS))
+        self.assertFalse(any(p.startswith(('transfer.','service.','system.engine.')) for p in FLOW.PERMISSIONS))
+        self.assertEqual({p for p in FLOW.PERMISSIONS if p.startswith('develop.')}, {'develop.task.read','develop.task.execute','develop.data_read.execute'})
+        self.assertIn('system.execution_authorization.create',FLOW.PERMISSIONS)
+        self.assertEqual(len(FLOW.PERMISSIONS),10)
         hosted=(FIXTURE.ROOT/'scripts/test/online-hosted-gaussdb-gate.sh').read_text()
         self.assertIn('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',hosted)
         self.assertIn('online-gaussdb-consumer-fixture.py stop',hosted)

@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 API=import_module('scripts.utils.online-api')
 SUPPORT=import_module('scripts.test.security-transfer-protection-online')
-PERMISSIONS={'system.engine_catalog.read','meta.catalog.read','meta.scan_task.execute','meta.scan_task.read','manager.data_item.read','manager.content.read'}
+PERMISSIONS={'system.engine_catalog.read','meta.catalog.read','meta.scan_task.execute','meta.scan_task.read','manager.data_item.read','manager.content.read','develop.task.read','develop.task.execute','develop.data_read.execute','system.execution_authorization.create'}
 
 
 def require(ok,message):
@@ -58,9 +58,19 @@ def run_browser(report):
     result=subprocess.run(['npm','exec','--','playwright','test','e2e/online/gaussdb-consumer-flow.spec.js','--config=playwright.online.config.js'],cwd=Path(__file__).resolve().parents[2]/'console/frontend',env=environment)
     require(result.returncode==0 and output.is_file(), 'GaussDB Console acceptance failed or omitted evidence')
     actual=json.loads(output.read_text())
-    expected={key:report[key] for key in ('run_id','tenant_id','principal_id','engine_id')}
-    require(actual==expected,'Console consumer identity evidence differs')
+    validate_browser_report(actual,report)
     return actual
+
+
+def validate_browser_report(actual,report):
+    expected={key:report[key] for key in ('run_id','tenant_id','principal_id','engine_id')}
+    require({key:actual.get(key) for key in expected}==expected,'Console consumer identity evidence differs')
+    queries=actual.get('queries',[])
+    require(len(queries)==2 and len({q.get('execution_id') for q in queries})==2, 'two distinct workbench executions required')
+    for query in queries:
+        require(query.get('status')=='success' and query.get('effect')=='read', 'workbench read execution failed')
+        validate_preview({'preview_type':'table','data':{'columns':['id','name','amount','optional_text'],'total':2,'rows':query.get('rows')}})
+    require(all(row.get('bound_text')=="中文' OR 1=1 --" for row in queries[1]['rows']), 'text parameter was not bound exactly')
 
 
 def run(client,tenant,engine,timeout):
@@ -82,7 +92,7 @@ def run(client,tenant,engine,timeout):
     target=SUPPORT.build_item_locator(engine,item)
     preview=client.request('GET','/api/v1/manager/preview?'+urlencode({'locator':target,'page':1,'page_size':20}),(200,)).payload
     rows=validate_preview(preview)
-    report={'suite':'gaussdb-consumer-flow','run_id':SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),'tenant_id':tenant,'principal_id':str(context['principal']['id']),'engine_id':engine,'scan_execution_id':scan,'item_id':item['id'],'locator':target,'rows':rows,'identity':identity}
+    report={'suite':'gaussdb-consumer-flow','run_id':SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),'tenant_id':tenant,'principal_id':str(context['principal']['id']),'engine_id':engine,'engine_name':matches[0]['name'],'scan_execution_id':scan,'item_id':item['id'],'locator':target,'rows':rows,'identity':identity}
     report['browser']=run_browser(report)
     return report
 

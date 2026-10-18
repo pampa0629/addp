@@ -23,7 +23,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         # System-owned readiness observation before any consumer is exported.
         identity=(self.host.bin/'go').read_text()
         self.host._executable('go',identity.replace('previous=', '''
-            [[ "$*" == *'--wait-protection-owners manager'* ]] || exit 1
+            [[ "$*" == *'--wait-protection-owners manager,develop'* ]] || exit 1
             [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
             previous=''',1))
         self.host._executable('make','''
@@ -31,6 +31,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_CONSUMER_ENGINE_ID" = 17 ] &&
               [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
+              [ "$DEVELOP_URL" = http://127.0.0.1:8185 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
@@ -51,8 +52,8 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         result=self.run_gate()
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         trace=self.host.trace.read_text()
-        order=['infra-up','gaussdb-fixture:start','start:-security','start:-manager','--suite gaussdb-consumer-flow',
-            '--wait-protection-owners manager',
+        order=['infra-up','gaussdb-fixture:start','start:-security','start:-manager','start:-develop','--suite gaussdb-consumer-flow',
+            '--wait-protection-owners manager,develop',
             'register:gaussdb-engine.json','make:test-online ONLINE_SUITE=gaussdb-consumer-flow',
             'application-stop','gaussdb-fixture:stop','infra-down']
         positions=[trace.index(step) for step in order]

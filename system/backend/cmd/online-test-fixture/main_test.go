@@ -1211,7 +1211,8 @@ func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
 
 func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
 	permissions, err := suitePermissions("gaussdb-consumer-flow")
-	if err != nil || !reflect.DeepEqual(permissions, redisConsumerPermissions) {
+	expected := append(append([]string{}, redisConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create")
+	if err != nil || !reflect.DeepEqual(permissions, expected) {
 		t.Fatalf("minimal read-only permissions: %v", err)
 	}
 	if !needsEngineProvisioner("gaussdb-consumer-flow") {

@@ -227,7 +227,9 @@ func suitePermissions(suite string) ([]string, error) {
 		return readWorkflowConsumerPermissions, nil
 	case "hdfs-spark-consumer-flow":
 		return append(append([]string{}, readWorkflowConsumerPermissions...), "develop.data_write.execute", "develop.data_ddl.execute", "meta.lineage.read"), nil
-	case "redis-consumer-flow", "gaussdb-consumer-flow":
+	case "gaussdb-consumer-flow":
+		return append(append([]string{}, redisConsumerPermissions...), "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"), nil
+	case "redis-consumer-flow":
 		return redisConsumerPermissions, nil
 	case "highgo-consumer-flow":
 		return append(append([]string{}, redisConsumerPermissions...), "transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read", "system.execution_authorization.create"), nil
