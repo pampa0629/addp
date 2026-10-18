@@ -34,7 +34,14 @@
         </el-table-column>
         <el-table-column :label="t('monitor.process.online')" min-width="100"><template #default="{ row }">{{ t(`monitor.process.status.${row.status}`) }}</template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
-        <el-table-column :label="t('monitor.process.host')" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.node_id ? row.host_node_name || row.node_id : t('monitor.process.unbound') }}</template></el-table-column>
+        <el-table-column :label="t('monitor.process.host')" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span data-testid="process-host" :title="row.node_id || undefined">
+              <el-button v-if="canReadHost && Object.hasOwn(hostReferences, row.node_id)" text type="primary" :title="`${t('monitor.resources.view')} · ${row.node_id}`" @click="openHost(row)">{{ hostReferences[row.node_id].display_name }}</el-button>
+              <span v-else>{{ row.node_id || t('monitor.process.unbound') }}</span>
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column v-for="metric in processMetrics" :key="metric.key" min-width="200">
           <template #header><span>{{ t(`monitor.process.metrics.${metric.name}`) }}</span><p class="process-hint">{{ t(`monitor.process.hints.${metric.name}`) }}</p></template>
           <template #default="{ row }"><strong>{{ value(row, metric) }}</strong><p v-if="point(row, metric)?.data_state !== 'valid'" class="process-hint">{{ pointState(row, metric) }}</p></template>
@@ -79,15 +86,19 @@ import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.v
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
 import { processResourcesAPI as api } from '../api/processResources'
+import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
+import { loadHostReferences } from '../utils/hostReferences'
 import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.module.read'))
+const canReadHost = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveProcessRoute(route.query))
 const instances = ref([]), summaries = ref(new Map()), total = ref(0), loading = ref(false), errorKey = ref(''), summaryErrorKey = ref('')
+const hostReferences = ref({})
 const trend = ref(null), trendErrorKey = ref('')
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
@@ -122,6 +133,15 @@ function sampledAt(row) {
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
 const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
+function openHost(row) {
+  if (canReadHost.value && Object.hasOwn(hostReferences.value, row.node_id)) return navigateMonitorRoute(router, { path: `/node-resources/${row.node_id}` }, { history: 'push' })
+}
+async function loadHosts(rows, ticket) {
+  if (!canReadHost.value) return
+  const current = () => requests.current(ticket) && canReadHost.value
+  const value = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
+  if (current()) hostReferences.value = value
+}
 function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state.value.query, refresh }).query) }
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, instance_id: String(instanceID), range }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, ...query } = state.value.query; return navigate(query) }
@@ -144,7 +164,7 @@ async function reload({ automatic = false } = {}) {
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  if (!automatic) { instances.value = []; summaries.value = new Map(); total.value = 0; trend.value = null; refreshBlocked.value = false }
+  if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; refreshBlocked.value = false }
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
@@ -185,12 +205,13 @@ async function reload({ automatic = false } = {}) {
       }
     }
     instances.value = list.data; total.value = list.total; summaries.value = currentSummaries; trend.value = currentTrend
+    hostReferences.value = {}; void loadHosts(list.data, ticket)
   } catch (error) {
     if (!requests.current(ticket)) return
     errorKey.value = processErrorKey(error)
     if ([401, 403, 404].includes(error.response?.status)) refreshBlocked.value = true
     trend.value = null; trendErrorKey.value = errorKey.value
-    instances.value = []; summaries.value = new Map(); total.value = 0
+    instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0
   } finally { if (requests.current(ticket)) { loading.value = false; refreshCycle.schedule() } }
 }
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })

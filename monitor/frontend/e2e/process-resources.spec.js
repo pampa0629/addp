@@ -1,7 +1,49 @@
 import { expect, test } from '@playwright/test'
 import { identity, setIdentity } from './monitoring-targets.fixture'
 
-import { backend } from './process-resources.fixture'
+import { backend, permissions as processPermissions } from './process-resources.fixture'
+
+const boundHostID = '10000000-0000-4000-8000-000000000001'
+const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 2, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 3, node_id: '', host_node_name: 'Current managed host' }]
+const hostPermissions = [...processPermissions, 'platform.host_node.read']
+
+test('bound services resolve one current managed name and discard names when its read fails', async ({ page }) => {
+  const hosts = [{ node_id: boundHostID, display_name: 'Current managed host', enabled: true, version: 1 }]
+  const state = await backend(page, { instances: boundInstances(), hosts, identity: identity(hostPermissions) })
+  await page.goto('/service-resources?refresh=off')
+  const list = page.getByTestId('process-list')
+  await expect(list.getByRole('button', { name: 'Current managed host', exact: true })).toHaveCount(2)
+  await expect(list).not.toContainText('old-deployment-alias')
+  await expect(page.getByTestId('process-host').nth(2)).toHaveText('未关联主机')
+  expect(state.hostReads).toEqual([boundHostID])
+  hosts[0].display_name = 'Renamed managed host'
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(list.getByRole('button', { name: 'Renamed managed host', exact: true })).toHaveCount(2)
+  await expect(list).not.toContainText('Current managed host')
+  expect(state.hostReads).toEqual([boundHostID, boundHostID])
+  await page.route(`**/api/v1/system/platform/host_nodes/${boundHostID}`, route => route.fulfill({ status: 403, json: { error_code: 'permission_denied' } }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(list).toContainText('1.50 核')
+  await expect(list).not.toContainText('Renamed managed host')
+  await expect(page.getByTestId('process-host').first()).toHaveText(boundHostID)
+  await expect(page.getByTestId('process-host').getByRole('button')).toHaveCount(0)
+})
+
+test('host names are never read without host permission and a late name cannot survive its removal', async ({ page }) => {
+  const state = await backend(page, { instances: boundInstances(), hosts: [{ node_id: boundHostID, display_name: 'Late host name' }], holdHosts: true, identity: identity(hostPermissions) })
+  await page.goto('/service-resources?refresh=off')
+  await expect(page.getByTestId('process-list')).toContainText('1.50 核')
+  await expect.poll(() => state.hostReads.length).toBe(1)
+  await setIdentity(page, identity(processPermissions))
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+  state.releaseHosts()
+  await expect(page.getByTestId('process-host').getByRole('button')).toHaveCount(0)
+  await expect(page.getByTestId('process-list')).not.toContainText('Late host name')
+  expect(state.hostReads).toEqual([boundHostID])
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(() => state.calls.length).toBe(3)
+  expect(state.hostReads).toEqual([boundHostID])
+})
 
 async function visibility(page, hidden) {
   await page.evaluate(hidden => {

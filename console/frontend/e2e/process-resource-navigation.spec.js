@@ -1,6 +1,39 @@
 import { expect, test } from '@playwright/test'
 import { backend, permissions } from '../../../monitor/frontend/e2e/process-resources.fixture'
 import { identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
+import { observations, serverEnd } from '../../../monitor/frontend/e2e/resource-observations.fixture'
+
+test('Console opens the exact managed host without reloading and one Back restores service filters', async ({ page }, testInfo) => {
+  const nodeID = '10000000-0000-4000-8000-000000000001'
+  await backend(page, { instances: [{ id: 1, node_id: nodeID, host_node_name: 'old-deployment-alias' }],
+    hosts: [{ node_id: nodeID, display_name: 'Current managed host', node_kind: 'virtual', addresses: [], enabled: true, version: 1 }],
+    identity: identity([...permissions, 'platform.host_node.read']) })
+  await page.route('**/api/v1/monitor/platform/resource_*', route => {
+    const url = new URL(route.request().url()), trend = url.pathname.endsWith('/resource_trends')
+    const body = observations(url.searchParams.get('node_id'), url.searchParams.get('metrics').split(','), trend, '', trend ? url.searchParams.get('end') : serverEnd)
+    if (trend) body.start = url.searchParams.get('start')
+    return route.fulfill({ json: body })
+  })
+  await page.goto('/monitor/service-resources?module_name=monitor&role=worker&refresh=off')
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const host = frame.getByTestId('process-host').getByRole('button', { name: 'Current managed host', exact: true })
+  await expect(host).toBeVisible()
+  await expect(frame.getByTestId('process-list')).not.toContainText('old-deployment-alias')
+  const documentID = await frame.locator('body').evaluate(() => performance.timeOrigin), listURL = page.url()
+  await host.click()
+  await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${nodeID}$`))
+  await expect(frame.getByRole('heading', { name: 'Current managed host', exact: true })).toBeVisible()
+  await expect(frame.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  expect(await frame.locator('body').evaluate(() => performance.timeOrigin)).toBe(documentID)
+  await page.goBack()
+  await expect(page).toHaveURL(listURL)
+  await expect(host).toBeVisible()
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+  await page.screenshot({ path: testInfo.outputPath('service-managed-host.png'), fullPage: true })
+  await page.reload()
+  await expect(host).toBeVisible()
+  await expect(page).toHaveURL(listURL)
+})
 
 test('Console service auto refresh preserves one iframe and restores the shared interval after reload', async ({ page }) => {
   const state = await backend(page)

@@ -62,6 +62,8 @@ monitor/
 
 服务监控 `/service-resources` 默认显示当前在线且已启用进程采集的实例；采集失败或暂无样本的行保留。`status` 默认 `up`、`process_metrics_declared` 默认 `true`，页面 URL 省略默认值；显式 `all` 仅用于页面表达不限制，对 System 请求省略该参数。“全部实例”与恢复默认范围保留模块/角色、重置分页；筛选由 System 在计数及分页前执行，不在浏览器裁剪当前页或按观测成功隐藏故障。新增范围交互和 Console 刷新由既有两模块前端门禁覆盖，设计见平台运行监控 6.3。
 
+关联主机列只使用 System 已裁决的 `node_id`，有独立主机读取权限时复用唯一 `loadHostReferences` 解析当页当前名称并进入主机资源；失败或无权时仅显示 ID，未绑定仍显示未关联，不从部署别名推断。名称解析在后台进行，不阻断进程资源；刷新、权限变化和离页后旧名称及迟到响应不能保留。Console 内部跳转保留 iframe 和单历史，后退与刷新恢复原服务筛选。沿现有 Monitor、Console 前端门禁验证，不新增 API 或权限，真实绑定场景另计 T4。
+
 服务实例行内的 Worker 用途只读取 System 既有 `metadata.runtime_name`：`scan/sync/continuous_sync` 分别显示扫描、单次同步、持续同步任务进程；未知或缺失时仅显示正式角色，不从模块名、主机或 UUID 推断。role 筛选仍为 `worker`，用途不表示当前任务正在执行，也不替代采集状态；中英文及刷新由上述前端门禁覆盖，设计见 6.3。
 
 父执行终态下仍为 `pending|running` 的步骤只表示最后记录。共享 `ExecutionSteps` 必须接收父执行状态，标注历史状态/阶段并提示核对子执行，不把旧 `waiting` 解释为当前编排仍在等待；展示及中英文回归由 `make test-common-frontend` 和 `make test-monitor-frontend` 覆盖，既有前端 CI 自动发现。
