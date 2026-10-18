@@ -20,7 +20,9 @@ TCP 自动化查询使用原生 `-o /dev/fd/4` 独立结果通道，调用方只
 
 Schema 使用[该版本通用 SQL 参考](https://support.huaweicloud.com/intl/en-us/centralized-ref-v10-gaussdb/gaussdb-38-0274.html)支持的普通 `CREATE SCHEMA`，只在首次初始化执行；已完成卷直接复用。`CREATE TABLE IF NOT EXISTS`、索引和缺失样例的幂等维护仍在同一条初始化路径，不切换数据库模式来接受其他方言。
 
-构建／初始化由 `business/gaussdb/` 唯一维护，既有 `make test-release RELEASE_SUITE=gaussdb-official-media` 双架构门禁复用它，新增独占数据卷、删除并重建容器后用户数据及样例修改保留的检查；所有退出路径核对容器、网络、卷、镜像零残留。确定性验证为 `make test-business-config` 和 `make test-release-runner`。本轮真实双架构持久化验收尚待运行；此前协议 T5 通过不能代替本次生命周期验收。正式 `engine_type=gaussdb` 插件、平台 T2/T4 和 macOS Docker 运行仍未验收。
+构建／初始化由 `business/gaussdb/` 唯一维护，既有 `make test-release RELEASE_SUITE=gaussdb-official-media` 双架构门禁复用它，新增独占数据卷、删除并重建容器后用户数据及样例修改保留的检查；所有退出路径核对容器、网络、卷、镜像零残留。确定性验证为 `make test-business-config` 和 `make test-release-runner`。
+
+2026-10-18：[原生验收39090295754](https://github.com/pampa0629/addp/actions/runs/39090295754)，运行源码 `454b71ec7f94310a29c4d06664cd21697a4e16a3`。Linux ARM64 已通过：五张样例表准确位于 `business.addp_business`，普通账号新连接核验基础记录，删除并重建容器后数据卷、用户修改“持久化保留中文”及额外记录42均保留；同轮四平台编译、驱动共存、精确数值、只读事务及取消恢复通过，清理零残留。该证据确认 `-f` 采用可定位的常规文件后完整样例初始化与重建持久化可用；此前管道输入只有客户端成功退出而无样例表的失败不计通过。amd64 同轮任务仍待调度，不计双架构通过。用户本机此前首启失败的旧卷仍保留，macOS Docker 运行尚未重新验收；正式 `engine_type=gaussdb` 插件及平台 T2/T4 尚未实现。此前协议 T5 通过不替代本次 Business 生命周期证明。
 
 ## 概述
 
