@@ -36,7 +36,9 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+import { graphEdgeType } from './graphGeometry.js'
 import { readGraphTheme, getContrastingTextColor } from './graphTheme.js'
+import { fitGraphToViewport } from './graphViewport.js'
 
 const { t } = useI18n()
 
@@ -80,6 +82,7 @@ function buildG6Data() {
       .filter(rt => rt.source_type_id && rt.target_type_id)
       .map(rt => ({
         id: `rel_${rt.id}`,
+        type: graphEdgeType(String(rt.source_type_id), String(rt.target_type_id)),
         source: String(rt.source_type_id),
         target: String(rt.target_type_id),
         label: rt.label || rt.name,
@@ -91,6 +94,7 @@ function buildG6Data() {
       .filter(et => et.parent_id)
       .map(et => ({
         id: `inherit_${et.id}`,
+        type: graphEdgeType(String(et.parent_id), String(et.id)),
         source: String(et.parent_id),
         target: String(et.id),
         label: t('graph.inherits'),
@@ -138,7 +142,7 @@ function layoutOptions(width, height) {
 }
 
 function fitView() {
-  graphInstance?.fitView(32)
+  fitGraphToViewport(graphInstance)
 }
 
 function zoomBy(factor) {
@@ -163,7 +167,7 @@ function initGraph() {
     container: canvasRef.value,
     width,
     height,
-    fitView: true,
+    fitView: false,
     fitViewPadding: 32,
     minZoom: 0.02,
     maxZoom: 2,
@@ -176,6 +180,8 @@ function initGraph() {
     defaultNode: { type: 'rect', size: [168, 72] },
     defaultEdge: { type: 'quadratic' }
   })
+
+  graphInstance.on('afterlayout', fitView)
 
   graphInstance.on('node:click', evt => {
     const model = evt.item.getModel()
@@ -228,7 +234,6 @@ onMounted(async () => {
         if (w === graphInstance.get('width') && h === graphInstance.get('height')) return
         graphInstance.changeSize(w, h)
         if (props.layout === 'grid') {
-          graphInstance.once('afterlayout', fitView)
           graphInstance.updateLayout(layoutOptions(w, h))
         } else fitView()
       }

@@ -2,6 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
+import { graphEdgeType } from '../../graph/src/graphGeometry.js'
+import { fitGraphToViewport } from '../../graph/src/graphViewport.js'
 import { getContrastingTextColor } from '../../graph/src/graphTheme.js'
 
 const source = readFileSync(new URL('../../graph/src/OntologyView.vue', import.meta.url), 'utf8')
@@ -18,7 +20,7 @@ function fixture(layout = 'dagre') {
     getZoom() { return this.zoom }
     zoomTo(zoom) { this.zoom = zoom }
     fitCenter() { this.centered = true }
-    fitView(padding) { this.padding = padding }
+    fitView(padding, options) { this.padding = padding; this.fitOptions = options }
     changeSize(width, height) { Object.assign(this.options, { width, height }) }
     updateLayout(options) { this.options.layout = options; this.events.afterlayout?.() }
     data(data) { this.dataValue = data }
@@ -32,7 +34,8 @@ function fixture(layout = 'dagre') {
     document: { documentElement: {} },
     MutationObserver: class { constructor(fn) { callbacks.theme = fn } observe() {} disconnect() { callbacks.themeDisconnected = true } },
     readGraphTheme: () => ({ primary: '#409eff', border: '#dddddd', edgeDefault: '#999999', edgeLabel: '#777777', textTertiary: '#aaaaaa', labelLight: '#ffffff', labelDark: '#111827' }),
-    getContrastingTextColor,
+    getContrastingTextColor, graphEdgeType,
+    fitGraphToViewport,
     getComputedStyle:() => ({ getPropertyValue:() => 'theme-color' }),
     onMounted:fn => { callbacks.mount = fn }, onBeforeUnmount:fn => { callbacks.unmount = fn },
     watch:() => {}, nextTick:fn => fn ? Promise.resolve().then(fn) : Promise.resolve(),
@@ -76,7 +79,8 @@ test('compact ontology layout has explicit spacing and refits only after resized
   Object.assign(state.canvas, { offsetWidth:600, offsetHeight:400 })
   state.callbacks.resize()
   assert.equal(graph.options.layout.width, 536)
-  assert.equal(graph.padding, 32)
+  assert.equal(graph.options.fitViewPadding, 32)
+  assert.equal(graph.fitOptions.onlyOutOfViewPort, true)
 })
 
 test('compact layout sizes columns from rectangular nodes and recomputes both axes on resize', async () => {

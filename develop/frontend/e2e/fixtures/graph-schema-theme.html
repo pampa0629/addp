@@ -27,6 +27,9 @@
     schema.relationships = schema.nodes.slice(1).map((node, index) => ({
       type: 'WORKS_AT', count: 1, from_labels: [schema.nodes[index].label], to_labels: [node.label]
     }))
+    if (parameters.has('self') && schema.nodes.length) schema.relationships.push({
+      type: 'SELF_LINK', count: 1, from_labels: [schema.nodes[0].label], to_labels: [schema.nodes[0].label]
+    })
     createApp({
       setup() {
         const visible = ref(true)

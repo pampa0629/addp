@@ -37,6 +37,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+import { graphEdgeType } from './graphGeometry.js'
 import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
 import { fitGraphToViewport } from './graphViewport.js'
 
@@ -88,6 +89,7 @@ function buildGraphData() {
         edgeCount[key] = (edgeCount[key] || 0) + 1
         edges.push({
           id: `${rel.type}-${from}-${to}-${edgeCount[key]}`,
+          type: graphEdgeType(from, to),
           source: from,
           target: to,
           label: rel.type,

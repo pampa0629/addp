@@ -35,6 +35,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+import { graphEdgeType } from './graphGeometry.js'
 import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
 import { graphNodeItemId, graphEdgeItemId } from './graphIdentity.js'
 import { fitGraphToViewport } from './graphViewport.js'
@@ -81,6 +82,7 @@ function buildG6Data() {
 
   const edges = (props.graphData?.relationships || []).map((rel, i) => ({
     id: graphEdgeItemId(rel.element_id || `generated-${i}`),
+    type: graphEdgeType(graphNodeItemId(rel.start_node_id), graphNodeItemId(rel.end_node_id)),
     source: graphNodeItemId(rel.start_node_id),
     target: graphNodeItemId(rel.end_node_id),
     label: rel.type,

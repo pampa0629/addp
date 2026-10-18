@@ -16,7 +16,7 @@ createApp({ setup() {
     h('button', { onClick: () => { visible.value = !visible.value } }, '切换画布'),
     h('main', visible.value ? h(OntologyView, {
       entityTypes: [{ id: 'a', name: 'Light', label: '浅色节点', color: '#ffffff' }, { id: 'b', name: 'Default', label: '默认节点', parent_id: 'a' }],
-      relationTypes: [{ id: 'r', name: 'Default edge', source_type_id: 'a', target_type_id: 'b' }, { id: 'c', name: 'Custom edge', color: '#123456', source_type_id: 'b', target_type_id: 'a' }]
+      relationTypes: [{ id: 'self', name: 'Self reference', source_type_id: 'a', target_type_id: 'a' }, { id: 'r', name: 'Default edge', source_type_id: 'a', target_type_id: 'b' }, { id: 'c', name: 'Custom edge', color: '#123456', source_type_id: 'b', target_type_id: 'a' }]
     }) : null)
   ]
 } }).use(ElementPlus).use(createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': graphMessagesZhCn } })).mount('#app')
