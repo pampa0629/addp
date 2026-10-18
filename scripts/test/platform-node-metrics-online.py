@@ -1100,7 +1100,8 @@ def validate_host_binding_browser(value, expected, artifacts):
     require(batch.get("query") == {"instance_ids": str(owner["id"])}, "host binding process query expanded scope")
     assert_process_summaries(batch.get("value", {}), [owner])
     resources = detail.get("resources", {})
-    require(resources.get("query", {}).get("node_id") == host["node_id"]
+    require(resources.get("path") == "/api/v1/monitor/platform/resource_observations"
+            and resources.get("query", {}).get("node_id") == host["node_id"]
             and set(resources["query"]) == {"node_id", "metrics"}, "host binding resource query changed subject")
     metrics = resources["query"]["metrics"].split(",")
     require(len(metrics) == len(METRICS) and set(metrics) == set(METRICS)

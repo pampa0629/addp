@@ -7,6 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
+import { scalarResourceReceipts } from './node-resource-receipts.js'
 
 // Login failures must never capture MFA input or credentials.
 test.use({ screenshot: 'off', trace: 'off' })
@@ -187,13 +188,20 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
       await expect.poll(async () => {
         await Promise.all(pending)
-        return resources.some(row => row.path.endsWith('/resource_observations') && row.query.node_id === host.node_id)
+        return scalarResourceReceipts(resources, host.node_id).length > 0
       }).toBe(true)
-      const resource = resources.filter(row => row.path.endsWith('/resource_observations') && row.query.node_id === host.node_id).at(-1)
+      const resource = scalarResourceReceipts(resources, host.node_id).at(-1)
       expect(resource.value.node_version).toBe(host.version)
       expect(resource.value.target_id).toBe(target.id)
       expect(resource.value.collection.state).toBe('collecting')
+      expect(resource.value.series.map(series => series.metric_key).sort()).toEqual(resourceMetrics.map(metric => metric.key).sort())
       expect(resource.value.series.every(series => series.points[0].data_state === 'valid')).toBe(true)
+      for (const metric of resourceMetrics) {
+        const card = monitor.getByTestId(`resource-${metric.name}`)
+        await expect(card).toBeVisible()
+        await expect(card).toContainText('有效')
+        await expect(card.locator('strong')).not.toHaveText('—')
+      }
       expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
       await page.screenshot({ path: resolve(artifact, 'node-binding-resources.png'), animations: 'disabled' })
       await page.goBack()
@@ -233,7 +241,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
     expect(await documentOrigin()).toBe(documentID)
     await Promise.all(pending)
-    const instant = resources.find(item => item.path.endsWith('resource_observations'))
+    const instant = scalarResourceReceipts(resources, expected.node.node_id)[0]
     expect(instant.query.node_id).toBe(expected.node.node_id)
     expect(instant.query.metrics.split(',').sort()).toEqual(resourceMetrics.map(item => item.key).sort())
     for (const metric of resourceMetrics) {
@@ -274,22 +282,25 @@ test('platform node resources through real Console password MFA and Monitor ifra
     for (let index = 0; index < resources.length; index++) {
       const item = resources[index]
       if (!item.path.endsWith('resource_trends')) continue
-      const anchor = resources.find(row => row.path.endsWith('resource_observations') && Date.parse(row.value.end) === Date.parse(item.query.end))
+      const anchor = scalarResourceReceipts(resources, expected.node.node_id).find(row => Date.parse(row.value.end) === Date.parse(item.query.end))
       expect(anchor).toBeTruthy()
       expect([300_000, 3_600_000]).toContain(Date.parse(item.query.end) - Date.parse(item.query.start))
     }
     save('natural-auto-refresh-and-off-restore')
-    const beforeAuto = resources.filter(item => item.path.endsWith('resource_observations')).length
-    const priorEnd = resources.filter(item => item.path.endsWith('resource_observations')).at(-1).value.end
+    const beforeAuto = scalarResourceReceipts(resources, expected.node.node_id).length
+    const priorEnd = scalarResourceReceipts(resources, expected.node.node_id).at(-1).value.end
     const refreshURL = page.url()
     await expect(monitor.getByTestId('resource-refresh')).toContainText('每 15 秒')
-    const autoInstant = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('resource_observations') && response.ok())
+    const autoInstant = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return response.ok() && scalarResourceReceipts([{ path: url.pathname, query: Object.fromEntries(url.searchParams) }], expected.node.node_id).length === 1
+    })
     const autoTrend = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('resource_trends') && response.ok())
     await autoInstant
     await autoTrend
     await Promise.all(pending)
-    expect(resources.filter(item => item.path.endsWith('resource_observations')).length).toBeGreaterThan(beforeAuto)
-    expect(Date.parse(resources.filter(item => item.path.endsWith('resource_observations')).at(-1).value.end)).toBeGreaterThan(Date.parse(priorEnd))
+    expect(scalarResourceReceipts(resources, expected.node.node_id).length).toBeGreaterThan(beforeAuto)
+    expect(Date.parse(scalarResourceReceipts(resources, expected.node.node_id).at(-1).value.end)).toBeGreaterThan(Date.parse(priorEnd))
     expect(page.url()).toBe(refreshURL)
     await monitor.getByTestId('resource-refresh').click()
     await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()

@@ -1298,7 +1298,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
             value = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": expected["run_id"],
                      "identity": admission["identity"], "binding": {"host": host, "instance": owner, "same_iframe": True, "back_restored": True, "reload_restored": True,
                      "process_summary": {"query": {"instance_ids": str(owner["id"])}, "value": process},
-                     "resources": {"query": {"node_id": host["node_id"], "metrics": ",".join(ONLINE.METRICS)}, "value": resource}}}
+                     "resources": {"path": "/api/v1/monitor/platform/resource_observations", "query": {"node_id": host["node_id"], "metrics": ",".join(ONLINE.METRICS)}, "value": resource}}}
             for name in ("node-binding-services.png", "node-binding-resources.png"):
                 (artifacts / name).write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*1100)
             self.assertEqual(ONLINE.validate_host_binding_browser(value, expected, artifacts)["result"], "passed")
@@ -1306,8 +1306,12 @@ class CompleteComparisonCaseTest(unittest.TestCase):
                            lambda v: v["binding"].update(back_restored=False), lambda v: v["binding"]["host"].update(version=9),
                            lambda v: v["binding"]["instance"].update(instance_id="old"),
                            lambda v: v["binding"]["process_summary"]["query"].update(instance_ids="7,9"),
+                           lambda v: v["binding"]["resources"].update(path="/api/v1/monitor/platform/resource_trends"),
                            lambda v: v["binding"]["resources"]["query"].update(node_id="another"),
                            lambda v: v["binding"]["resources"]["query"].update(metrics="node.memory.total_bytes"),
+                           lambda v: v["binding"]["resources"]["query"].update(metrics="node.network.receive_bytes_per_second,node.network.transmit_bytes_per_second"),
+                           lambda v: v["binding"]["resources"]["query"].update(metrics=",".join([*list(ONLINE.METRICS)[:-1], next(iter(ONLINE.METRICS))])),
+                           lambda v: v["binding"]["resources"]["query"].update(end="2026-10-19T00:00:00Z"),
                            lambda v: v["binding"]["resources"]["value"]["collection"].update(state="failed")):
                 bad = copy.deepcopy(value); mutate(bad)
                 with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError):
