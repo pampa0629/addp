@@ -504,6 +504,8 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID":          "41",
 		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID":       "51",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":      "addp_at_foreign",
+		"ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN":    "addp_at_graph_preparer",
+		"ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN":    "addp_at_graph_outsider",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":              "84",
 		"ADDP_ONLINE_RASTER_POLICY_PLATFORM_TOKEN":   "addp_at_raster_platform",
 		"ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN":     "addp_at_raster_tenant",
@@ -538,9 +540,9 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	if !strings.Contains(string(content), "export ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='addp_at_source_initializer'\n") {
 		t.Fatal("fixture environment omitted the separate source initialization token")
 	}
-	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID", "ADDP_ONLINE_PG_OPERATOR_USERNAME", "ADDP_ONLINE_PG_OPERATOR_PASSWORD"} {
+	for _, key := range []string{"ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_CONFIRMER_ACCESS_TOKEN", "ADDP_ONLINE_FIXTURE_DEPARTMENT_ID", "ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID", "ADDP_ONLINE_PG_OPERATOR_USERNAME", "ADDP_ONLINE_PG_OPERATOR_PASSWORD", "ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN", "ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN"} {
 		if !strings.Contains(string(content), "export "+key+"='"+values[key]+"'\n") {
-			t.Fatalf("owner-only environment omitted PG authorization fixture field %s", key)
+			t.Fatalf("owner-only environment omitted Online fixture field %s", key)
 		}
 	}
 	if !strings.Contains(string(content), "export ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN='addp_at_approver'\"'\"'quoted'\n") {
