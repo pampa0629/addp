@@ -35,16 +35,30 @@ func TestIntegrationFalkorDBDirectGraphScan(t *testing.T) {
 	}
 	client := rdb.NewClient(&rdb.Options{Addr: os.Getenv("FALKORDB_T2_ENDPOINT"), Password: os.Getenv("INFRA_FALKORDB_PASSWORD"), Protocol: 2, DisableIdentity: true})
 	defer client.Close()
-	const name = "scan.图/opaque"
+	const name = "/scan.图/opaque/"
 	if err = client.Do(t.Context(), "GRAPH.QUERY", name, "CREATE (:Person {name:'甲'})").Err(); err != nil {
 		t.Fatal(err)
 	}
 	defer client.Do(context.Background(), "GRAPH.DELETE", name)
+	otherNames := []string{"scan.图/opaque", "/"}
+	for _, other := range otherNames {
+		if err := client.Do(t.Context(), "GRAPH.QUERY", other, "CREATE (:Person {name:'乙'})").Err(); err != nil {
+			t.Fatal(err)
+		}
+		defer client.Do(context.Background(), "GRAPH.DELETE", other)
+	}
 	db := metatest.OpenMetadataDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	p := &falkor.FalkorDBPlugin{}
 	engine := &commonModels.Engine{ID: 91, Name: "FalkorDB T2", EngineType: p.Type(), ConnectionInfo: commonModels.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD")}}
 	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	entries, err := p.ListChildren(t.Context(), plugin.ConnectionInfo(engine.ConnectionInfo), plugin.EngineCatalogRootPath(p.EngineCatalogModel(), engine.ID), plugin.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := runtime.ScanRoot(t.Context(), p, engine, 1, models.ScannedDepthDeep, true); err != nil || count != len(entries) {
+		t.Fatalf("root scan count=%d err=%v", count, err)
+	}
 	path, err := resourcetree.EngineCatalogPathFromLocator(p.EngineCatalogModel(), &resourcetree.ResourceLocator{EngineID: 91, Type: resourcetree.TypeGraph, Path: []string{name}})
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +73,12 @@ func TestIntegrationFalkorDBDirectGraphScan(t *testing.T) {
 	item, found, err := repo.FindItemByFullName(1, 91, name)
 	if err != nil || !found || item.ItemType != "graph" {
 		t.Fatal(item, found, err)
+	}
+	for _, other := range otherNames {
+		otherItem, found, err := repo.FindItemByFullName(1, engine.ID, other)
+		if err != nil || !found || otherItem.ID == item.ID || otherItem.Fingerprint != commonModels.GenerateItemFingerprint(engine.ID, other) {
+			t.Fatalf("distinct graph key %q lost identity: item=%+v found=%v err=%v", other, otherItem, found, err)
+		}
 	}
 	encoded, _ := json.Marshal(item.Attributes)
 	if !strings.Contains(string(encoded), `"data_type":"graph"`) || !strings.Contains(string(encoded), `"node_shapes"`) {

@@ -270,6 +270,6 @@ Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服
 Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引用 `schema_change_source`，与父 execution 互斥。仅允许 `addp-transfer`；创建事务锁定 Common 中 Transfer 保存的结构阻塞历史，核验已应用 request/revision、实际目标、独立审批主体和有效 claim 后创建无父扫描，按审批人隔离读取，不读取 Transfer 私表。私有来源不进入专业诊断；新扫描的审批关联在进度和收尾写入时保留。现有 HTTP 读取隔离用例同时进入 Meta SQLite T1 与 PostgreSQL T2，覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大及来源缺失拒绝；无需新增路由、权限或数据库。
 
 
-根节点直连 graph leaf 的引擎由既有 DirectLeafRuntime 扫描，通用运行时必须消费 Graph Facts 并通过 `ApplyGraphItemAttributes` 写入 `data_type=graph` 与 `type_info.graph`；不将图伪装成表或 Unknown。FalkorDB 完整 graph key 保留为单段目录名称和 full_name，稳定重扫不改变 DataItem ID／fingerprint。真实扫描回归纳入 `make test-common-falkordb`，与 Common／Develop 共享同次 disposable 实例并自动销毁；不借用 Ontology Infra。
+根节点直连 graph leaf 的引擎由既有 DirectLeafRuntime 扫描，通用运行时必须消费 Graph Facts 并通过 `ApplyGraphItemAttributes` 写入 `data_type=graph` 与 `type_info.graph`；不将图伪装成表或 Unknown。直接叶子扫描复用 `DataItemIdentityFromCatalogPath`，与保护目标生成保持一致；不使用 `StringPath()` 生成数据项身份。FalkorDB 完整 graph key 保留为单段目录名称和 full_name，包含首尾斜杠的名字不得裁剪，稳定重扫不改变 DataItem ID／fingerprint。真实扫描回归纳入 `make test-common-falkordb`，与 Common／Develop 共享同次 disposable 实例并自动销毁；不借用 Ontology Infra。
 
 FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条记录观察，500 项预算统计去重后的属性名／原生类型组合；相同属性在多条记录出现不能耗尽结构预算，同名不同类型仍合并为 mixed，真正超出预算必须明确失败，不能截断后声明结构完整。节点和关系两侧的重复观察、混合类型及 500/501 边界由同一 Common FalkorDB T2 覆盖。

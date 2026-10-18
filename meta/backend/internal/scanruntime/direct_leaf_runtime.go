@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
@@ -91,9 +92,12 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 		if entry.Role != plugin.EngineCatalogRoleLeaf {
 			continue
 		}
-		itemType := catalogLeafItemType(entry)
-		fullName := entry.Path.StringPath()
-		if itemType == "" || strings.TrimSpace(entry.Name) == "" || strings.TrimSpace(fullName) == "" {
+		identity, identityErr := resourcetree.DataItemIdentityFromCatalogPath(*model, entry.Path)
+		if identityErr != nil {
+			failures.Add(entry.Name, fmt.Errorf("invalid direct catalog leaf identity: %w", identityErr))
+			continue
+		}
+		if strings.TrimSpace(entry.Name) == "" {
 			failures.Add(entry.Name, fmt.Errorf("direct catalog leaf has incomplete identity"))
 			continue
 		}
@@ -124,9 +128,9 @@ func (s *DirectLeafRuntime) scan(ctx context.Context, enginePlugin plugin.Engine
 			tenantID,
 			resource.ID,
 			rootNode,
-			itemType,
+			identity.ItemType,
 			entry.Name,
-			fullName,
+			identity.FullName,
 			attrs,
 			rowCount,
 			sizeBytes,

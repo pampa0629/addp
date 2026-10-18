@@ -209,3 +209,32 @@ func TestDirectLeafFactsFailurePreservesPreviouslyScannedItems(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectLeafRuntimePreservesOpaqueNamesAndDistinctIdentities(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	names := []string{"opaque.图", "/opaque.图/", "/"}
+	p := &directLeafRuntimeTestPlugin{}
+	for _, name := range names {
+		p.entries = append(p.entries, directLeafRuntimeTestEntry(41, name, "topic"))
+	}
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	resource := &commonModels.Engine{ID: 41, Name: "opaque leaves", EngineType: p.Type()}
+	for scan := 0; scan < 2; scan++ {
+		count, err := runtime.ScanRoot(t.Context(), p, resource, 1, models.ScannedDepthBasic, true)
+		if err != nil || count != len(names) {
+			t.Fatalf("scan %d: count=%d, error=%v", scan, count, err)
+		}
+		ids := map[uint]bool{}
+		for _, name := range names {
+			item, found, err := repo.FindItemByFullName(1, resource.ID, name)
+			if err != nil || !found || item.Name != name || item.Fingerprint != commonModels.GenerateItemFingerprint(resource.ID, name) {
+				t.Fatalf("scan %d: opaque name %q lost its identity: item=%+v, found=%v, error=%v", scan, name, item, found, err)
+			}
+			if ids[item.ID] {
+				t.Fatalf("scan %d: distinct names merged into item %d", scan, item.ID)
+			}
+			ids[item.ID] = true
+		}
+	}
+}
