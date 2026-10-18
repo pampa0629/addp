@@ -1384,9 +1384,11 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         '--suite transfer-relational-sql-etl', 'scripts/test/online-engine-registration.py',
         'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
         'export ADDP_ONLINE_TEST_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"',
-        'HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable addp-transfer-doris-online-disposable addp-transfer-clickhouse-online-disposable)',
+        'HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable addp-transfer-doris-online-disposable addp-transfer-clickhouse-online-disposable addp-transfer-upload-online-disposable)',
         'ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE',
         'export ADDP_ONLINE_TEST_MONGODB_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"',
+        'transfer-minio-engine.json',
+        'ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID',
         'playwright install --with-deps chromium',
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
@@ -1414,7 +1416,8 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v12",
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v13",
+            "run_object_upload", "validate_object_upload_facts", "manager-object-upload.json", "addp.manager-object-upload/v1", "single_source_facts_verified", "multi_physical_size_verified", "ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID",
             "record_manager_import_receipt", "manager-private-import.json", "addp.manager-private-import/v2", "validate_manager_import_browser", "metadata_wait_verified", "failure_ui_verified", "physical_geometry_verified", "user_inspect_rejected", "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
             "run_write_failures", "validate_write_failure_execution", "validate_write_failure_physical", "write_failure_details_verified", "ADDP_ONLINE_TRANSFER_WRITE_FAILURES",
@@ -1426,6 +1429,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "addp.transfer-relational-sql-etl-browser/v7",
         ),
         "business/scripts/online-transfer-relational-sql-etl-fixture.sh": (
+            "object-facts", "start_minio", "addp.manager-object-physical/v1", "addp-transfer-upload-online-disposable",
             "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}", "read-only configuration check created a target table",
             "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
             "WIDE_SOURCE", "WIDE_DOWNSTREAM", "generate_series(0,499)", "EXCEPT ALL", "wide target complete row multiset differs",

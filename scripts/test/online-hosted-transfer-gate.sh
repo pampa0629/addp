@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=transfer-relational-sql-etl
-HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable addp-transfer-doris-online-disposable addp-transfer-clickhouse-online-disposable)
+HOSTED_FIXTURE_CONTAINERS=(addp-transfer-online-disposable addp-transfer-mongodb-online-disposable addp-transfer-doris-online-disposable addp-transfer-clickhouse-online-disposable addp-transfer-upload-online-disposable)
 stop_online_fixture() {
   run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop
 }
@@ -50,6 +50,11 @@ for target_type in doris clickhouse; do
     export ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   fi
 done
+MINIO_ENGINE_RESULT_ENV="$ADDP_ONLINE_SECRET_DIR/transfer-minio-engine.env"
+run_logged python3 scripts/test/online-engine-registration.py \
+  --descriptor "$ADDP_ONLINE_SECRET_DIR/transfer-minio-engine.json" --output "$MINIO_ENGINE_RESULT_ENV"
+source "$MINIO_ENGINE_RESULT_ENV"
+export ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
 run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify

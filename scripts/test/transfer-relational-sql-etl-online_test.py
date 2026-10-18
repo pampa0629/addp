@@ -23,6 +23,105 @@ SPEC.loader.exec_module(ONLINE)
 
 
 class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
+
+    def object_facts_case(self):
+        files = ONLINE.object_upload_files()
+        physical = {"schema_version":"addp.manager-object-physical/v1", "bucket":"transfer-upload", "objects":{
+            name:{"size_bytes":len(content), "sha256":ONLINE.hashlib.sha256(content).hexdigest(), "etag":"opaque-"+name,
+                  "last_modified":"2026-10-18T01:02:03Z"} for name,content in files.items()}}
+        items = []
+        for name in ('upload-check.csv','points.shp'):
+            single = name.endswith('.csv')
+            size = len(files[name]) if single else sum(len(content) for key,content in files.items() if key != 'upload-check.csv')
+            storage = {"total_size":size}
+            if single: storage.update(etag='opaque-upload-check.csv',last_modified_at='2026-10-18T09:02:03+08:00')
+            descriptor = {"layout":"single" if single else "multi","format":"csv" if single else "shapefile"}
+            if not single: descriptor['refs']=[{"path":"transfer-upload/"+key} for key in files if key != 'upload-check.csv']
+            items.append({"id":len(items)+1,"engine_id":9,"full_name":"transfer-upload/"+name,"fingerprint":"hash-"+name,
+                "scanned_depth":"deep","size_bytes":size,"data_updated_at":"2026-10-18T01:02:03Z",
+                "attributes":{"item":descriptor,"storage":storage}})
+        return files,physical,items
+
+    def test_object_upload_compares_physical_bytes_single_version_and_multi_sum(self):
+        files,physical,items = self.object_facts_case()
+        proof = ONLINE.validate_object_upload_facts(items,physical,files,9)
+        self.assertTrue(proof['single_source_facts_verified'])
+        self.assertTrue(proof['multi_physical_size_verified'])
+        self.assertEqual((proof['logical_items'],proof['physical_objects']),(2,6))
+
+    def test_object_upload_refuses_zero_float_missing_facts_and_wrong_source_version(self):
+        for mutation in ('zero','float','bool','missing-size','wrong-bytes','wrong-hash','missing-etag','wrong-etag','missing-mtime','wrong-mtime','naive-time','wrong-engine','extra-item','wrong-multi-size','missing-ref'):
+            files,physical,items = self.object_facts_case()
+            item=items[0]; storage=item['attributes']['storage']; source=physical['objects']['upload-check.csv']
+            if mutation=='zero': item['size_bytes']=0
+            elif mutation=='float': storage['total_size']=float(storage['total_size'])
+            elif mutation=='bool': item['size_bytes']=True
+            elif mutation=='missing-size': storage.pop('total_size')
+            elif mutation=='wrong-bytes': source['size_bytes']+=1
+            elif mutation=='wrong-hash': source['sha256']='0'*64
+            elif mutation=='missing-etag': source.pop('etag')
+            elif mutation=='wrong-etag': storage['etag']='other'
+            elif mutation=='missing-mtime': item.pop('data_updated_at')
+            elif mutation=='wrong-mtime': storage['last_modified_at']='2026-10-17T00:00:00Z'
+            elif mutation=='naive-time': source['last_modified']='2026-10-18T01:02:03'
+            elif mutation=='wrong-engine': item['engine_id']=10
+            elif mutation=='extra-item': items.append(copy.deepcopy(items[1]))
+            elif mutation=='wrong-multi-size': items[1]['size_bytes']-=1
+            elif mutation=='missing-ref': items[1]['attributes']['item']['refs'].pop()
+            with self.subTest(mutation=mutation), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_object_upload_facts(items,physical,files,9)
+
+
+    def test_object_upload_waits_for_returned_uuid_without_manual_scan_or_private_actor(self):
+        for mutation in ('valid','wrong-user','private-actor-only','wrong-source','fake-parent','wrong-engine','wrong-depth','old-api-proof','wrong-locator','bad-uuid'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                files,physical,items=self.object_facts_case()
+                identifier=str(uuid.uuid4())
+                identity={"principal_id":"7","tenant_id":"2"}
+                target='addp://engine/9/path/transfer-upload?type=bucket'
+                report={"schema_version":"addp.manager-object-upload-api/v1","run_id":"object-run",**identity,
+                    "submission":{"target_node_locator":target,"scan_execution_id":identifier,
+                        "files":[{"file_name":name,"locator":f'addp://engine/9/path/transfer-upload/{name}?type=object'} for name in files]}}
+                execution={"execution_id":identifier,"status":"success","module":"meta","source":"manager","triggered_by":7,"tenant_id":2,
+                    "scan_context":{"engine_id":9,"scan_depth":"deep"}}
+                if mutation=='wrong-user': execution['triggered_by']=8
+                elif mutation=='private-actor-only': execution.pop('triggered_by');execution['actor_principal_id']=7
+                elif mutation=='wrong-source': execution['source']='transfer'
+                elif mutation=='fake-parent': execution['parent_execution_id']=str(uuid.uuid4())
+                elif mutation=='wrong-engine': execution['scan_context']['engine_id']=8
+                elif mutation=='wrong-depth': execution['scan_context']['scan_depth']='basic'
+                elif mutation=='old-api-proof': report['run_id']='old-run'
+                elif mutation=='wrong-locator': report['submission']['files'][0]['locator']='addp://engine/8/path/outside?type=object'
+                elif mutation=='bad-uuid': report['submission']['scan_execution_id']='bad'
+                listings=iter([[],items])
+                def request(method,path,status):
+                    self.assertEqual(method,'GET', 'target metadata must come only from Manager automatic submission')
+                    value=next(listings) if path.endswith('/9/items') else items[int(path.rsplit('/',1)[1])-1]
+                    return SimpleNamespace(payload=value)
+                client=SimpleNamespace(request=Mock(side_effect=request))
+                calls=[]
+                def run(command,**kwargs):
+                    calls.append(command)
+                    if command[0]=='npm':
+                        Path(directory,'manager-object-upload-api.json').write_text(json.dumps(report))
+                        return SimpleNamespace(returncode=0,stdout='',stderr='')
+                    if command[0]=='bash': return SimpleNamespace(returncode=0,stdout=json.dumps(physical))
+                    if command[0]=='git': return SimpleNamespace(returncode=0,stdout='a'*40)
+                    raise AssertionError(command)
+                with patch.dict(ONLINE.os.environ, {"ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID":"9","ADDP_ONLINE_ARTIFACT_DIR":directory,"ADDP_ONLINE_TEST_RUN_ID":"object-run"}), patch.object(ONLINE,'validate_engine'), patch.object(ONLINE,'wait_manager_read_boundary'), patch.object(ONLINE,'wait_owner_execution',return_value=execution) as wait, patch.object(ONLINE.subprocess,'run',side_effect=run):
+                    if mutation=='valid':
+                        proof=ONLINE.run_object_upload(client,Path('/repository'),identity,30)
+                        self.assertTrue(proof['single_source_facts_verified'])
+                        receipt=json.loads(Path(directory,'manager-object-upload.json').read_text())
+                        self.assertEqual(receipt['git_commit'],'a'*40)
+                        self.assertEqual(receipt['scan_execution_id'],identifier)
+                        self.assertEqual(receipt['scan']['triggered_by'],7)
+                        wait.assert_called_once_with(client,'meta',identifier,30)
+                    else:
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.run_object_upload(client,Path('/repository'),identity,30)
+                        self.assertFalse(Path(directory,'manager-object-upload.json').exists())
+                        self.assertFalse(any(command[0]=='bash' for command in calls))
+
     def test_browser_text_selectors_match_real_fixture_labels(self):
         browser = SCRIPT.parents[2] / "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js"
         program = r'''
@@ -778,6 +877,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             owned = stack.enter_context(patch.object(ONLINE, "suite_task_ids", side_effect=[[], [10, 11]]))
             stack.enter_context(patch.object(ONLINE, "wait_for_scan"))
             stack.enter_context(patch.object(ONLINE, "find_item"))
+            stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import", side_effect=imported))
             stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt"))
             stack.enter_context(patch.object(ONLINE, "run_native_lineage", side_effect=interrupt))
@@ -838,6 +938,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             stack.enter_context(patch.object(ONLINE, "cleanup_definitions"))
             stack.enter_context(patch.object(ONLINE, "run_write_failures", return_value={}))
             stack.enter_context(patch.object(ONLINE, "run_browser", return_value={}))
+            stack.enter_context(patch.object(ONLINE, "run_object_upload", return_value={"single_source_facts_verified": True}))
             stack.enter_context(patch.object(ONLINE, "run_manager_import", return_value={"automatic_scan_verified": True}))
             stack.enter_context(patch.object(ONLINE, "record_manager_import_receipt", side_effect=receipt))
             stack.enter_context(patch.object(ONLINE, "cleanup_tasks"))
@@ -845,7 +946,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             self.assertEqual(ONLINE.main(), 0)
         self.assertEqual(mongodb.call_args.args[:5], (client, 4, 3, mongo_source, pg_source))
         report = json.loads(output.getvalue())
-        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v12")
+        self.assertEqual(report["schema_version"], "addp.transfer-relational-sql-etl-online/v13")
         self.assertEqual(report["created_resources"], 16)
         self.assertEqual(report["deleted_resources"], 16)
         self.assertTrue(report["mongodb_field_lineage"]["rerun_verified"])

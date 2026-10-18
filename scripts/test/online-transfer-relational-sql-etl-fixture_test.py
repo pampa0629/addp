@@ -19,6 +19,7 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.mongodb_state = self.root / 'mongodb-running'
         self.doris_state = self.root / 'doris-running'
         self.clickhouse_state = self.root / 'clickhouse-running'
+        self.minio_state = self.root / 'minio-running'
         self.schema_state = self.root / 'evolved-schema'
         self.log = self.root / 'fixture.log'
         self.secrets = self.root / 'addp-online-secret-test'
@@ -26,6 +27,14 @@ class OnlineTransferRelationalSQLETLFixtureTest(unittest.TestCase):
         self.bin.mkdir()
         self.secrets.mkdir(mode=0o700)
         shutil.copy2(SCRIPT, self.root / 'business/scripts/online-transfer-relational-sql-etl-fixture.sh')
+        shutil.copy2(SCRIPT.with_name('online-raster-minio-fixture.py'), self.root / 'business/scripts/online-raster-minio-fixture.py')
+        (self.root / 'sitecustomize.py').write_text('''import urllib.request
+class Ready:
+ status=200
+ def __enter__(self): return self
+ def __exit__(self,*args): pass
+urllib.request.urlopen=lambda *args,**kwargs: Ready()
+''')
         self._executable('uname', '#!/bin/bash\n[ "$1" != -s ] || { echo "${ADDP_TEST_OS:-Linux}"; exit; }\necho x86_64\n')
         self._executable('sleep', '#!/bin/bash\nexit 0\n')
         self._executable('docker', '''#!/bin/bash
@@ -35,6 +44,7 @@ case "$*" in
  *addp-transfer-mongodb-online-disposable*) state=$ADDP_TEST_MONGODB_STATE ;;
  *addp-transfer-doris-online-disposable*) state=$ADDP_TEST_DORIS_STATE ;;
  *addp-transfer-clickhouse-online-disposable*) state=$ADDP_TEST_CLICKHOUSE_STATE ;;
+ *addp-transfer-upload-online-disposable*) state=$ADDP_TEST_MINIO_STATE ;;
 esac
 case "$1" in
   container)
@@ -49,6 +59,7 @@ case "$1" in
     esac
     ;;
   run)
+    if [ "$state" = "$ADDP_TEST_MINIO_STATE" ] && [ "${ADDP_TEST_MINIO_START_FAIL:-0}" = 1 ]; then exit 1; fi
     printf '%s\n' "$*" >> "$ADDP_TEST_FIXTURE_LOG"
     echo transfer-relational-sql-etl > "$state"
     ;;
@@ -57,6 +68,7 @@ case "$1" in
     [ ! -f "$state" ] || echo fixture-container
     ;;
   rm)
+    if [ "$state" = "$ADDP_TEST_MINIO_STATE" ] && [ "${ADDP_TEST_MINIO_RESIDUAL:-0}" = 1 ]; then exit 0; fi
     if [ "$state" = "$ADDP_TEST_MONGODB_STATE" ] && [ "${ADDP_TEST_MONGODB_REMOVE_FAIL:-0}" = 1 ]; then exit 0; fi
     [ "${ADDP_TEST_REMOVE_FAIL:-0}" = 1 ] || rm -f "$state"
     ;;
@@ -67,6 +79,17 @@ case "$1" in
   exec)
     [ -f "$state" ] || exit 1
     case " $* " in
+      *" exec mc "*)
+        case " $* " in
+          *" stat "*) echo '{"status":"success","type":"file","size":7,"etag":"physical-etag","lastModified":"2026-10-18T00:00:00Z"}' ;;
+          *" ls "*)
+            for name in upload-check.csv points.shp points.shx points.dbf points.cpg points.prj; do
+              printf '{"status":"success","type":"file","key":"%s"}\n' "$name"
+            done
+            [ "${ADDP_TEST_MINIO_EXTRA_OBJECT:-0}" != 1 ] || echo '{"status":"success","type":"file","key":"unowned.txt"}' ;;
+          *" cat "*) printf fixture ;;
+        esac
+        exit 0 ;;
       *pg_isready*) exit 0 ;;
       */addp-doris-init.sh*) [ "${ADDP_TEST_DORIS_READY_FAIL:-0}" != 1 ]; exit $? ;;
       */proc/1/cmdline*) [ "${ADDP_TEST_CLICKHOUSE_READY_FAIL:-0}" != 1 ]; exit $? ;;
@@ -156,7 +179,9 @@ esac
                                 ADDP_ONLINE_SECRET_DIR=str(self.secrets),
                                 ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-engine.json'),
                                 ADDP_ONLINE_FIXTURE_MONGODB_ENGINE_DESCRIPTOR_FILE=str(self.secrets / 'transfer-mongodb-engine.json'),
-                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_DORIS_STATE=str(self.doris_state), ADDP_TEST_CLICKHOUSE_STATE=str(self.clickhouse_state), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
+                                ADDP_TEST_MONGODB_STATE=str(self.mongodb_state), ADDP_TEST_DORIS_STATE=str(self.doris_state), ADDP_TEST_CLICKHOUSE_STATE=str(self.clickhouse_state),
+                                ADDP_TEST_MINIO_STATE=str(self.minio_state),
+                                ADDP_ONLINE_TEST_RUN_ID='transfer-fixture-run', PYTHONPATH=str(self.root), ADDP_TEST_SCHEMA_STATE=str(self.schema_state),
                                 ADDP_TEST_POSTGRES_STATE=str(self.postgres_state), ADDP_TEST_FIXTURE_LOG=str(self.log))
 
     def tearDown(self):
@@ -172,6 +197,45 @@ esac
         environment.update(overrides)
         return subprocess.run(['bash', 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', action],
                               cwd=self.root, env=environment, capture_output=True, text=True, timeout=20)
+
+
+    def test_object_fixture_reads_independent_stat_and_bytes_and_cleans_source(self):
+        started = self.run_fixture('start')
+        self.assertEqual(started.returncode, 0, started.stderr)
+        descriptor = self.secrets / 'transfer-minio-engine.json'
+        self.assertEqual(stat.S_IMODE(descriptor.stat().st_mode), 0o600)
+        self.assertEqual(json.loads(descriptor.read_text())['engine_type'], 'minio')
+        proof = self.run_fixture('object-facts')
+        self.assertEqual(proof.returncode, 0, proof.stderr)
+        value = json.loads(proof.stdout)
+        self.assertEqual(value['schema_version'], 'addp.manager-object-physical/v1')
+        self.assertEqual(len(value['objects']), 6)
+        self.assertEqual(value['objects']['upload-check.csv']['size_bytes'], 7)
+        extra = self.run_fixture('object-facts', ADDP_TEST_MINIO_EXTRA_OBJECT='1')
+        self.assertNotEqual(extra.returncode, 0)
+        stopped = self.run_fixture('stop')
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertFalse(self.minio_state.exists())
+
+
+    def test_object_fixture_failure_and_foreign_ownership_do_not_escape_cleanup(self):
+        failed=self.run_fixture('start',ADDP_TEST_MINIO_START_FAIL='1')
+        self.assertNotEqual(failed.returncode,0)
+        self.assertEqual(self.run_fixture('stop').returncode,0)
+        self.assertFalse(self.postgres_state.exists())
+        self.assertFalse(self.mongodb_state.exists())
+        self.minio_state.write_text('different-owner')
+        offset=len(self.log.read_text())
+        self.assertNotEqual(self.run_fixture('stop').returncode,0)
+        self.assertTrue(self.minio_state.exists())
+        self.assertNotIn('docker:rm:',self.log.read_text()[offset:])
+
+    def test_object_fixture_residual_cannot_claim_zero_resources(self):
+        self.assertEqual(self.run_fixture('start').returncode,0)
+        result=self.run_fixture('stop',ADDP_TEST_MINIO_RESIDUAL='1')
+        self.assertNotEqual(result.returncode,0)
+        self.assertTrue(self.minio_state.exists())
+        self.assertEqual(self.run_fixture('stop').returncode,0)
 
     def test_import_physical_proof_is_independent_of_other_scenarios(self):
         self.assertEqual(self.run_fixture('start').returncode, 0)

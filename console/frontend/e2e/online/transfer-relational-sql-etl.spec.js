@@ -1010,3 +1010,37 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     await api.dispose()
   }
 })
+
+test('Manager object upload submits its actual automatic Meta scan', async () => {
+  const artifactDir = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  const input = JSON.parse(readFileSync(resolve(artifactDir, 'manager-object-upload-input.json'), 'utf8'))
+  const api = await request.newContext({ baseURL: process.env.GATEWAY_URL, extraHTTPHeaders: {
+    Authorization: `Bearer ${process.env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}`
+  } })
+  try {
+    const actor = identity(await json(await api.get('/api/v1/system/auth/context'), 'read upload User'))
+    expect(actor.principalType).toBe('user')
+    expect(actor.tenantID).toBe(process.env.ADDP_ONLINE_TEST_TENANT_ID)
+    expect(actor.permissions.has('manager.data_item.create')).toBe(true)
+    const form = new FormData()
+    form.append('target_node_locator', input.target_node_locator)
+    for (const name of input.files) {
+      const content = readFileSync(resolve(artifactDir, 'manager-object-upload', name))
+      form.append('files', new Blob([content], { type: name.endsWith('.csv') ? 'text/csv' : 'application/octet-stream' }), name)
+    }
+    const response = await api.post('/api/v1/manager/uploads', { multipart: form })
+    expect(response.status()).toBe(201)
+    const submission = await json(response, 'upload actual objects')
+    expect(Object.keys(submission).sort()).toEqual(['files', 'scan_execution_id', 'target_node_locator'])
+    for (const file of submission.files) expect(Object.keys(file).sort()).toEqual(['file_name', 'locator'])
+    expect(submission.target_node_locator).toBe(input.target_node_locator)
+    expect(submission.files.map(file => file.file_name).sort()).toEqual([...input.files].sort())
+    expect(submission.scan_execution_id).toMatch(/^[0-9a-f-]{36}$/)
+    writeFileSync(resolve(artifactDir, 'manager-object-upload-api.json'), JSON.stringify({
+      schema_version: 'addp.manager-object-upload-api/v1', run_id: process.env.ADDP_ONLINE_TEST_RUN_ID,
+      principal_id: actor.principalID, tenant_id: actor.tenantID, submission
+    }))
+  } finally {
+    await api.dispose()
+  }
+})

@@ -58,7 +58,7 @@ class HostedTransferGateTest(unittest.TestCase):
             if mongodb and os.environ.get('ADDP_TEST_MONGODB_REGISTRATION_FAIL') == '1':
                 sys.exit(1)
             native = Path(sys.argv[2]).name
-            identifier = {'transfer-engine.json': 17, 'transfer-mongodb-engine.json': 18, 'transfer-doris-engine.json': 19, 'transfer-clickhouse-engine.json': 20}[native]
+            identifier = {'transfer-engine.json': 17, 'transfer-mongodb-engine.json': 18, 'transfer-doris-engine.json': 19, 'transfer-clickhouse-engine.json': 20, 'transfer-minio-engine.json': 21}[native]
             if os.environ.get('ADDP_TEST_NATIVE_REGISTRATION_FAIL') == native: sys.exit(1)
             Path(sys.argv[-1]).write_text(f'export ADDP_ONLINE_CONSUMER_ENGINE_ID={identifier}\\n')
         ''')
@@ -71,6 +71,7 @@ class HostedTransferGateTest(unittest.TestCase):
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_ID" = 18 ] &&
               [ "$ADDP_ONLINE_TEST_DORIS_ENGINE_ID" = 19 ] &&
               [ "$ADDP_ONLINE_TEST_CLICKHOUSE_ENGINE_ID" = 20 ] &&
+              [ "$ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID" = 21 ] &&
               [ "$ADDP_ONLINE_TEST_MONGODB_ENGINE_NAME" = 'Hosted Transfer MongoDB' ] &&
               [ -z "${TRANSFER_MONGODB_PASSWORD:-}" ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
@@ -118,7 +119,7 @@ class HostedTransferGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         sequence = ('infra-up', 'transfer-fixture:start', 'start:-security', 'start:-transfer', 'start:-manager', 'start:-develop', 'start:-orchestrator', 'start:-monitor',
                     'playwright install --with-deps chromium', '--suite transfer-relational-sql-etl',
-                    'engine-register:transfer-engine.json', 'engine-register:transfer-mongodb-engine.json', 'engine-register:transfer-doris-engine.json', 'engine-register:transfer-clickhouse-engine.json', 'make:test-online ONLINE_SUITE=transfer-relational-sql-etl',
+                    'engine-register:transfer-engine.json', 'engine-register:transfer-mongodb-engine.json', 'engine-register:transfer-doris-engine.json', 'engine-register:transfer-clickhouse-engine.json', 'engine-register:transfer-minio-engine.json', 'make:test-online ONLINE_SUITE=transfer-relational-sql-etl',
                     'transfer-fixture:verify', 'application-stop', 'transfer-fixture:stop', 'infra-down')
         indices = [trace.index(step) for step in sequence]
         self.assertEqual(indices, sorted(indices))
@@ -130,7 +131,7 @@ class HostedTransferGateTest(unittest.TestCase):
 
     def test_failures_destroy_owned_resources(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL': 'start'}, {'ADDP_TEST_IDENTITY_FAIL': '1'},
-                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_MONGODB_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_NATIVE_REGISTRATION_FAIL': 'transfer-doris-engine.json'}, {'ADDP_TEST_NATIVE_REGISTRATION_FAIL': 'transfer-clickhouse-engine.json'},
+                      {'ADDP_TEST_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_MONGODB_REGISTRATION_FAIL': '1'}, {'ADDP_TEST_SUITE_FAIL': '1'}, {'ADDP_TEST_NATIVE_REGISTRATION_FAIL': 'transfer-doris-engine.json'}, {'ADDP_TEST_NATIVE_REGISTRATION_FAIL': 'transfer-clickhouse-engine.json'}, {'ADDP_TEST_NATIVE_REGISTRATION_FAIL': 'transfer-minio-engine.json'},
                       {'ADDP_TEST_FIXTURE_FAIL': 'verify'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)

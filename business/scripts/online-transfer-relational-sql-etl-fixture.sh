@@ -31,12 +31,13 @@ container=addp-transfer-online-disposable
 mongodb_container=addp-transfer-mongodb-online-disposable
 doris_container=addp-transfer-doris-online-disposable
 clickhouse_container=addp-transfer-clickhouse-online-disposable
+minio_container=addp-transfer-upload-online-disposable
 database=transfer_fixture
 owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
-  start|evolve|write-failures|manager-import|verify|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|manager-import|verify|stop|status" ;;
+  start|evolve|write-failures|manager-import|object-facts|verify|stop|status) ;;
+  *) fail "usage: bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start|evolve|write-failures|manager-import|object-facts|verify|stop|status" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
@@ -320,9 +321,58 @@ verify_fixture() {
   [ "$columns" = 'activity_id,activity_date,person_display_name,intensity' ] || fail "evolved DWD columns differ: $columns"
 }
 
+
+object_storage_fixture() {
+  python3 - "$1" <<'PY_OBJECT'
+import hashlib, importlib, json, os, secrets, subprocess, sys
+from pathlib import Path
+shared = importlib.import_module('business.scripts.online-raster-minio-fixture')
+root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+name, owner, bucket = 'addp-transfer-upload-online-disposable', 'transfer-relational-sql-etl', 'transfer-upload'
+def mc(*arguments, binary=False):
+    result = subprocess.run(['docker', 'exec', name, 'sh', '-ec',
+        'export MC_HOST_fixture="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@127.0.0.1:9000"; exec mc "$@"', '_', *arguments], capture_output=True, timeout=20)
+    if result.returncode:
+        raise shared.FixtureError('object storage physical command failed')
+    return result.stdout if binary else result.stdout.decode()
+if sys.argv[1] == 'start':
+    port = int(os.environ.get('ADDP_ONLINE_TRANSFER_MINIO_PORT', '59032'))
+    if not 1024 <= port <= 65535: raise shared.FixtureError('invalid fixture MinIO port')
+    entry = {'endpoint': f'127.0.0.1:{port}', 'access_key': 'transfer-upload', 'secret_key': secrets.token_hex(32), 'bucket': bucket}
+    shared.start_minio(root, entry, name, owner)
+    mc('mb', 'fixture/' + bucket)
+    shared.private_json(root / 'transfer-minio-engine.json', {
+        'name': 'Hosted Transfer MinIO', 'engine_type': 'minio', 'engine_origin': 'general',
+        'description': 'Disposable Manager object upload source facts acceptance',
+        'connection_info': {key: entry[key] for key in ('endpoint','access_key','secret_key')} | {'use_ssl': False}})
+else:
+    expected = {'upload-check.csv','points.shp','points.shx','points.dbf','points.cpg','points.prj'}
+    pending = mc('--json', 'ls', '--recursive', 'fixture/' + bucket + '/').strip()
+    entries = []
+    while pending:
+        entry, offset = json.JSONDecoder().raw_decode(pending)
+        entries.append(entry)
+        pending = pending[offset:].lstrip()
+    if len(entries) != len(expected) or any(entry.get('status') != 'success' or entry.get('type') != 'file' for entry in entries) or {entry.get('key') for entry in entries} != expected:
+        raise shared.FixtureError('physical object listing differs from the exact upload scope')
+    objects = {}
+    for filename in sorted(expected):
+        physical = json.loads(mc('--json', 'stat', '--no-list', 'fixture/' + bucket + '/' + filename))
+        if physical.get('status') != 'success' or physical.get('type') != 'file':
+            raise shared.FixtureError('physical object stat is not a file')
+        content = mc('cat', 'fixture/' + bucket + '/' + filename, binary=True)
+        size = physical.get('size')
+        if type(size) is not int or size <= 0 or len(content) != size:
+            raise shared.FixtureError('physical object size differs from downloaded bytes')
+        objects[filename] = {'size_bytes': size, 'etag': physical.get('etag'), 'last_modified': physical.get('lastModified'),
+                            'sha256': hashlib.sha256(content).hexdigest()}
+    print(json.dumps({'schema_version': 'addp.manager-object-physical/v1', 'bucket': bucket, 'objects': objects}, sort_keys=True))
+PY_OBJECT
+}
+
 case "$action" in
   start)
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
       ! docker container inspect "$candidate" >/dev/null 2>&1 || fail "refusing an existing source container"
     done
     [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
@@ -368,7 +418,12 @@ PY_DESCRIPTOR
     unset TRANSFER_FIXTURE_PASSWORD
     start_mongodb
     start_write_failure_targets
+    object_storage_fixture start
     echo "Online Transfer relational SQL ETL fixture is ready"
+    ;;
+  object-facts)
+    assert_owned "$minio_container"
+    object_storage_fixture facts
     ;;
   write-failures)
     verify_write_failures
@@ -404,11 +459,11 @@ SQL_EVOLVE
     ;;
   stop)
     # Check ownership before deleting either container; cleanup also covers partial startup.
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then assert_owned "$candidate"; fi
     done
     cleanup_failed=0
-    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container"; do
+    for candidate in "$container" "$mongodb_container" "$doris_container" "$clickhouse_container" "$minio_container"; do
       if docker container inspect "$candidate" >/dev/null 2>&1; then
         if ! docker rm -fv "$candidate" >/dev/null; then cleanup_failed=1; fi
       fi
@@ -424,6 +479,8 @@ SQL_EVOLVE
     echo "Online Transfer relational SQL ETL fixture is stopped; zero residuals"
     ;;
   status)
+    assert_owned "$minio_container"
+    docker exec "$minio_container" curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null || fail "upload MinIO is not ready"
     assert_owned
     postgres_running || fail "source PostgreSQL is not running"
     assert_owned "$mongodb_container"

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 import io
 import struct
 import zipfile
@@ -326,6 +327,126 @@ def import_shapefile_zip() -> bytes:
             archive.writestr("points." + extension, content)
     return output.getvalue()
 
+
+
+
+def object_upload_files():
+    with zipfile.ZipFile(io.BytesIO(import_shapefile_zip())) as archive:
+        return {"upload-check.csv": b"id,value\n1,alpha\n2,beta\n", **{name: archive.read(name) for name in archive.namelist()}}
+
+
+def source_instant(value):
+    if not isinstance(value, str):
+        raise SuiteError("object source modification time is missing")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SuiteError("object source modification time is invalid") from error
+    if parsed.tzinfo is None or parsed.year < 2000:
+        raise SuiteError("object source modification time must identify an actual UTC instant")
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_object_upload_facts(items, physical, files, engine_id):
+    if physical.get("schema_version") != "addp.manager-object-physical/v1" or physical.get("bucket") != "transfer-upload":
+        raise SuiteError("object physical evidence has the wrong schema or bucket")
+    objects = _object(physical.get("objects"), "physical objects")
+    if set(objects) != set(files):
+        raise SuiteError("physical object set differs from upload")
+    for name, content in files.items():
+        facts = _object(objects[name], "physical object facts")
+        if type(facts.get("size_bytes")) is not int or facts["size_bytes"] <= 0 or facts["size_bytes"] != len(content) or facts.get("sha256") != hashlib.sha256(content).hexdigest():
+            raise SuiteError("physical uploaded bytes differ from the independent fixture")
+        if not isinstance(facts.get("etag"), str) or not facts["etag"]:
+            raise SuiteError("physical source ETag is missing")
+        source_instant(facts.get("last_modified"))
+    by_name = {item.get("full_name"): item for item in items}
+    if len(items) != 2 or set(by_name) != {"transfer-upload/upload-check.csv", "transfer-upload/points.shp"}:
+        raise SuiteError("automatic upload scan must create exactly two logical items")
+    for name, item in by_name.items():
+        if item.get("engine_id") != engine_id or not item.get("fingerprint") or item.get("scanned_depth") != "deep":
+            raise SuiteError("uploaded Meta item lost its actual engine identity or deep scan")
+        attrs = _object(item.get("attributes"), "uploaded item attributes")
+        storage = _object(attrs.get("storage"), "uploaded item storage")
+        descriptor = _object(attrs.get("item"), "uploaded item descriptor")
+        single = name.endswith(".csv")
+        expected = objects["upload-check.csv"]["size_bytes"] if single else sum(objects[key]["size_bytes"] for key in files if key != "upload-check.csv")
+        if type(item.get("size_bytes")) is not int or type(storage.get("total_size")) is not int or item["size_bytes"] != expected or storage["total_size"] != expected:
+            raise SuiteError("Meta source size must equal the actual physical object bytes")
+        if descriptor.get("layout") != ("single" if single else "multi") or descriptor.get("format") != ("csv" if single else "shapefile"):
+            raise SuiteError("upload logical composition changed")
+        if single:
+            facts = objects["upload-check.csv"]
+            if storage.get("etag") != facts["etag"] or source_instant(item.get("data_updated_at")) != source_instant(facts["last_modified"]) or source_instant(storage.get("last_modified_at")) != source_instant(facts["last_modified"]):
+                raise SuiteError("single object source ETag or modification time differs from Meta")
+        else:
+            refs = _array(descriptor.get("refs"), "uploaded Shapefile refs")
+            expected_refs = {"transfer-upload/" + key for key in files if key != "upload-check.csv"}
+            if len(refs) != 5 or {ref.get("path") for ref in refs} != expected_refs:
+                raise SuiteError("Shapefile refs differ from the uploaded objects")
+    return {"logical_items": 2, "physical_objects": len(objects), "single_source_facts_verified": True,
+            "multi_physical_size_verified": True}
+
+
+def run_object_upload(client, repository, identity, timeout):
+    engine_id = positive_int(required_environment("ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID"), "upload MinIO engine id")
+    validate_engine(client, engine_id, "Hosted Transfer MinIO", "minio", time.monotonic() + timeout)
+    wait_manager_read_boundary(client, engine_id, time.monotonic() + timeout)
+    if _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "fresh object items"):
+        raise SuiteError("object upload requires a fresh engine without scanned items")
+    artifact = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
+    files = object_upload_files()
+    directory = artifact / "manager-object-upload"
+    directory.mkdir()
+    for name, content in files.items():
+        (directory / name).write_bytes(content)
+    target = f"addp://engine/{engine_id}/path/transfer-upload?type=bucket"
+    (artifact / "manager-object-upload-input.json").write_text(json.dumps({"files": sorted(files), "target_node_locator": target}))
+    report_path = artifact / "manager-object-upload-api.json"
+    report_path.unlink(missing_ok=True)
+    response = subprocess.run(["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
+        "e2e/online/transfer-relational-sql-etl.spec.js", "--grep", "Manager object upload submits its actual automatic Meta scan$"],
+        cwd=repository / "console/frontend", capture_output=True, text=True)
+    if response.returncode:
+        raise SuiteError("Manager public object upload API failed")
+    report = _object(json.loads(report_path.read_text()), "object upload API proof")
+    if set(report) != {"schema_version", "run_id", "principal_id", "tenant_id", "submission"} or report.get("schema_version") != "addp.manager-object-upload-api/v1" or report.get("run_id") != os.environ["ADDP_ONLINE_TEST_RUN_ID"] or report.get("principal_id") != identity["principal_id"] or report.get("tenant_id") != identity["tenant_id"]:
+        raise SuiteError("object upload API proof lost its current User/Tenant/run")
+    submission = _object(report.get("submission"), "object upload submission")
+    identifier = submission.get("scan_execution_id")
+    try:
+        actual_uuid = isinstance(identifier, str) and str(uuid.UUID(identifier)) == identifier
+    except ValueError:
+        actual_uuid = False
+    if set(submission) != {"scan_execution_id", "target_node_locator", "files"} or not actual_uuid or submission.get("target_node_locator") != target:
+        raise SuiteError("object upload must return its actual Meta UUID and target")
+    uploaded = _array(submission.get("files"), "uploaded objects")
+    if len(uploaded) != len(files) or {entry.get("file_name") for entry in uploaded} != set(files):
+        raise SuiteError("upload response lost actual object identities")
+    for entry in uploaded:
+        if set(entry) != {"file_name", "locator"}:
+            raise SuiteError("upload response contains undeclared source fields")
+        expected = f"addp://engine/{engine_id}/path/transfer-upload/{entry['file_name']}?type=object"
+        if entry.get("locator") != expected:
+            raise SuiteError("uploaded source locator is outside the exact engine/bucket")
+    execution = wait_owner_execution(client, "meta", identifier, timeout)
+    if execution.get("module") != "meta" or execution.get("source") != "manager" or execution.get("parent_execution_id") not in (None, "") or str(execution.get("triggered_by")) != identity["principal_id"] or str(execution.get("tenant_id")) != identity["tenant_id"] or execution.get("scan_context") != {"engine_id": engine_id, "scan_depth": "deep"}:
+        raise SuiteError("object automatic scan lost its direct User origin or exact engine")
+    listed = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "uploaded items")
+    items = [_object(client.request("GET", f"/api/v1/meta/items/{positive_int(item.get('id'), 'uploaded item id')}", (200,)).payload, "uploaded item") for item in listed]
+    checked = subprocess.run(["bash", "business/scripts/online-transfer-relational-sql-etl-fixture.sh", "object-facts"], cwd=repository, capture_output=True, text=True, timeout=60)
+    if checked.returncode:
+        raise SuiteError("independent object physical facts failed")
+    physical = _object(json.loads(checked.stdout), "physical object proof")
+    proof = validate_object_upload_facts(items, physical, files, engine_id)
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repository, capture_output=True, text=True, check=True).stdout.strip()
+    receipt = {"schema_version": "addp.manager-object-upload/v1", "result": "passed", "git_commit": commit,
+        "run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "identity": identity, "engine_id": engine_id,
+        "api": report, "scan_execution_id": identifier,
+        "scan": {key: execution.get(key) for key in ("execution_id", "status", "module", "source", "parent_execution_id", "triggered_by", "tenant_id", "scan_context")},
+        "items": items, "physical": physical, **proof}
+    (artifact / "manager-object-upload.json").write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    return {"engine_id": engine_id, "scan_execution_id": identifier, **proof}
 
 def run_manager_import_browser(engine_id, identity, owned_ids, proof=None):
     repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
@@ -1426,6 +1547,7 @@ def main() -> int:
             raise SuiteError("ADDP_ONLINE_CONVERGENCE_TIMEOUT_SECONDS must be greater than zero")
         repository = Path(os.environ.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         wait_manager_read_boundary(client, engine_id, time.monotonic() + convergence_timeout)
+        object_upload = run_object_upload(client, repository, identity_report, convergence_timeout)
         manager_import = run_manager_import(client, engine_id, identity_report, convergence_timeout, owned_ids, outsider)
         record_manager_import_receipt(repository, required_environment("ADDP_ONLINE_ARTIFACT_DIR"), run_id, identity_report, engine_id, manager_import)
         lineage = run_native_lineage(client, engine_id, source, owned_name, convergence_timeout, owned_ids)
@@ -1447,7 +1569,7 @@ def main() -> int:
         if residual:
             raise SuiteError("browser left the owned Transfer relational SQL ETL task behind")
         report = {
-            "schema_version": "addp.transfer-relational-sql-etl-online/v12",
+            "schema_version": "addp.transfer-relational-sql-etl-online/v13",
             "suite": "transfer-relational-sql-etl",
             "run_id": run_id,
             "result": "passed",
@@ -1463,6 +1585,7 @@ def main() -> int:
             "multi_source_field_lineage": multi,
             "wide_field_lineage": wide,
             "manager_import": manager_import,
+            "object_upload": object_upload,
             "write_failures": write_failures,
             "created_resources": 16,
             "deleted_resources": 16,
