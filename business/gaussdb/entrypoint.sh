@@ -31,15 +31,9 @@ local_sql() {
 
 tcp_sql() {
     local user=$1 password=$2 database=$3
-    # libpq password file escapes ':' and '\'; never put a password in argv.
-    local escaped=${password//\\/\\\\}
-    escaped=${escaped//:/\\:}
-    local passfile result=0
-    passfile=$(mktemp "$DATA_DIR"/run/password.XXXXXX)
-    printf '127.0.0.1:5432:%s:%s:%s\n' "$database" "$user" "$escaped" > "$passfile"
-    PGPASSFILE="$passfile" PGCONNECT_TIMEOUT=5 gsql -X -w -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At || result=$?
-    rm -f "$passfile"
-    return "$result"
+    # The fixed GaussDB libpq exposes PGPASSWORD but has no PGPASSFILE support.
+    # Credentials stay in the child environment, never in argv or a file.
+    PGPASSWORD="$password" PGCONNECT_TIMEOUT=5 gsql -X -w -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At
 }
 
 check_volume() {
@@ -111,7 +105,7 @@ main() {
             echo 'GaussDB 初始改密或业务账号初始化失败，数据已保留。' >&2; return 1
         fi
     fi
-    printf 'SELECT 1;\n' | tcp_sql omm "$GAUSSDB_PASSWORD" postgres >/dev/null 2>&1 || {
+    printf 'SELECT 1;\n' | tcp_sql omm "$GAUSSDB_PASSWORD" postgres >/dev/null || {
         echo '管理员密码校验失败；不自动重置已有数据库。' >&2; return 1;
     }
     if ! {

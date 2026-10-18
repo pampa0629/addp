@@ -59,20 +59,19 @@ class BusinessGaussDBTest(unittest.TestCase):
                 marker.write_text(marker_value)
                 self.assertNotEqual(run().returncode, 0)
 
-    def test_password_file_is_private_escaped_and_removed_on_client_failure(self):
+    def test_native_client_password_is_in_environment_only_and_preserves_failure(self):
         for status in (0, 3):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = self.run_shell('''
-DATA_DIR="$TEST_DATA"; mkdir "$DATA_DIR/run"
 gsql() {
-    python3 -c 'import os,pathlib,stat; p=pathlib.Path(os.environ["PGPASSFILE"]); assert stat.S_IMODE(p.stat().st_mode)==0o600; escaped=os.environ["GAUSSDB_APP_PASSWORD"].replace(chr(92),chr(92)*2).replace(":",chr(92)+":"); assert p.read_text()=="127.0.0.1:5432:business:business:"+escaped+chr(10)' || return 97
+    [ "$PGPASSWORD" = "$GAUSSDB_APP_PASSWORD" ] || return 98
+    [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
     return "$TEST_STATUS"
 }
 status=0
-printf 'SELECT 1;\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business || status=$?
+printf 'SELECT 1;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business || status=$?
 test "$status" = "$TEST_STATUS"
-test -z "$(ls -A "$DATA_DIR/run")"
-''', {'TEST_DATA': directory, 'TEST_STATUS': str(status)})
+''', {'TEST_STATUS': str(status)})
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("App9@", result.stdout + result.stderr)
 
