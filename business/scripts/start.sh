@@ -40,6 +40,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 for arg in "$@"; do
+    if [ "$arg" = "-gaussdb" ]; then
+        [ "$#" -eq 1 ] || { echo "-gaussdb 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/gaussdb.sh" start
+    fi
     if [ "$arg" = "-highgo" ]; then
         [ "$#" -eq 1 ] || { echo "-highgo 必须独立使用" >&2; exit 1; }
         exec bash "$SCRIPT_DIR/highgo.sh" start
@@ -164,6 +168,7 @@ for arg in "$@"; do
             ENABLE_NFS=true
             ;;
         -h|--help)
+            echo "  -gaussdb                                  # 独立 GaussDB profile，不属于 -all"
             echo "使用方法:"
             echo "  bash scripts/start.sh                       # 默认启动 PostgreSQL + MinIO"
             echo "  bash scripts/start.sh -all                  # 启动所有服务"

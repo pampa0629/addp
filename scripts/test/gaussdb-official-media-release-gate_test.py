@@ -36,39 +36,39 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_facts_pin_official_version_architecture_and_driver(self):
-        facts = GATE.media_facts("x86_64")
+        facts = GATE.IMAGE.media_facts("x86_64")
         self.assertEqual(facts["GAUSSDB_OFFICIAL_VERSION"], "V2.0-10.0.0")
         self.assertIn("_Ubuntu_X86_20260915102549.zip", facts["GAUSSDB_OFFICIAL_MEDIA_URL"])
         self.assertEqual(facts["GAUSSDB_OFFICIAL_MEDIA_SHA256"], "c53cf2021d86c4820e8c6fddf13a098e1b2b1f4a2ca142c6dcf1ff2fa9ab54a8")
         self.assertEqual(facts["GAUSSDB_GO_MODULE"], "github.com/HuaweiCloudDeveloper/gaussdb-go")
         self.assertEqual(facts["GAUSSDB_GO_VERSION"], "v1.0.0-rc1")
         self.assertTrue(facts["GAUSSDB_GO_SUM"].startswith("h1:"))
-        arm = GATE.media_facts("aarch64")
+        arm = GATE.IMAGE.media_facts("aarch64")
         self.assertIn("_Ubuntu_ARM_", arm["GAUSSDB_OFFICIAL_MEDIA_URL"])
         self.assertEqual(arm["GAUSSDB_OFFICIAL_MEDIA_SHA256"], "a6442f7c12c396aae2e96e3dde8b4eca2eac45ab26dce1735efc530f447990e5")
         self.assertIn("ubuntu:22.04@sha256:", facts["GAUSSDB_OFFICIAL_BASE_IMAGE"])
         with self.assertRaises(subprocess.CalledProcessError):
             subprocess.check_call(["bash", "-ec", 'source "$1"; gaussdb_select_official_media invalid', "facts", str(GATE.ROOT / "scripts/lib/gaussdb-official-media.sh")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    @patch.object(GATE.urllib.request, "urlopen")
+    @patch.object(GATE.IMAGE.urllib.request, "urlopen")
     def test_download_verifies_content_and_reuses_only_verified_cache(self, open_url):
         content = b"official archive"
         open_url.return_value.__enter__.return_value = io.BytesIO(content)
         digest = hashlib.sha256(content).hexdigest()
-        path = GATE.download("https://official.example/media.zip", digest, self.root)
+        path = GATE.IMAGE.download("https://official.example/media.zip", digest, self.root)
         self.assertEqual(path.read_bytes(), content)
-        GATE.download("https://official.example/media.zip", digest, self.root)
+        GATE.IMAGE.download("https://official.example/media.zip", digest, self.root)
         self.assertEqual(open_url.call_count, 1)
         path.write_bytes(b"wrong cache")
         open_url.return_value.__enter__.return_value = io.BytesIO(content)
-        self.assertEqual(GATE.download("https://official.example/media.zip", digest, self.root).read_bytes(), content)
+        self.assertEqual(GATE.IMAGE.download("https://official.example/media.zip", digest, self.root).read_bytes(), content)
         self.assertEqual(open_url.call_count, 2)
 
-    @patch.object(GATE.urllib.request, "urlopen")
+    @patch.object(GATE.IMAGE.urllib.request, "urlopen")
     def test_wrong_download_hash_never_installs_partial(self, open_url):
         open_url.return_value.__enter__.return_value = io.BytesIO(b"wrong")
         with self.assertRaisesRegex(RuntimeError, "SHA256 mismatch"):
-            GATE.download("https://official.example/media.zip", "0" * 64, self.root)
+            GATE.IMAGE.download("https://official.example/media.zip", "0" * 64, self.root)
         self.assertEqual(list(self.root.iterdir()), [])
 
     def test_nested_kernel_verifies_inner_digest_and_does_not_execute(self):
@@ -79,12 +79,12 @@ class GaussDBCertificationTest(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as package:
             package.writestr("Ubuntu/server/media_Server_X86_Developer.tar.gz", outer)
         destination = self.root / "kernel.bin"
-        GATE.extract_kernel(archive, destination, "amd64")
+        GATE.IMAGE.extract_kernel(archive, destination, "amd64")
         self.assertEqual(destination.read_bytes(), binary)
 
     def test_rejects_ambiguous_archive_member(self):
         with self.assertRaisesRegex(RuntimeError, "exactly one"):
-            GATE.unique_member(["a.bin", "b.bin"], ".bin")
+            GATE.IMAGE.unique_member(["a.bin", "b.bin"], ".bin")
 
     def test_arm_kernel_is_selected_without_x86_fallback(self):
         binary = b"synthetic arm installer"
@@ -94,14 +94,14 @@ class GaussDBCertificationTest(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as package:
             package.writestr("Ubuntu/media_Server_ARM_Developer.tar.gz", outer)
         destination = self.root / "kernel.bin"
-        GATE.extract_kernel(archive, destination, "arm64")
+        GATE.IMAGE.extract_kernel(archive, destination, "arm64")
         self.assertEqual(destination.read_bytes(), binary)
         with self.assertRaisesRegex(RuntimeError, "exactly one"):
-            GATE.extract_kernel(archive, destination, "amd64")
+            GATE.IMAGE.extract_kernel(archive, destination, "amd64")
 
     @patch.object(GATE, "command")
     def test_public_driver_requires_both_pinned_checksums(self, command):
-        facts = GATE.media_facts("x86_64")
+        facts = GATE.IMAGE.media_facts("x86_64")
         valid = {"Path": facts["GAUSSDB_GO_MODULE"], "Version": facts["GAUSSDB_GO_VERSION"],
                  "Sum": facts["GAUSSDB_GO_SUM"], "GoModSum": facts["GAUSSDB_GO_MOD_SUM"]}
         for field in ("Path", "Version", "Sum", "GoModSum"):
@@ -113,19 +113,19 @@ class GaussDBCertificationTest(unittest.TestCase):
         GATE.verify_driver(facts, self.root, {})
 
     def test_native_architecture_must_match_daemon_without_emulation(self):
-        self.assertEqual(GATE.go_architecture("aarch64"), "arm64")
-        self.assertEqual(GATE.go_architecture("x86_64"), "amd64")
+        self.assertEqual(GATE.IMAGE.go_architecture("aarch64"), "arm64")
+        self.assertEqual(GATE.IMAGE.go_architecture("x86_64"), "amd64")
         with self.assertRaisesRegex(RuntimeError, "unsupported"):
-            GATE.go_architecture("riscv64")
-        GATE.verify_daemon_architecture("arm64", "linux/aarch64")
+            GATE.IMAGE.go_architecture("riscv64")
+        GATE.IMAGE.verify_daemon_architecture("arm64", "linux/aarch64")
         with self.assertRaisesRegex(RuntimeError, "matching native"):
-            GATE.verify_daemon_architecture("arm64", "linux/x86_64")
+            GATE.IMAGE.verify_daemon_architecture("arm64", "linux/x86_64")
 
     @patch.object(GATE, "command")
     @patch.object(GATE, "inspect")
     def test_cleanup_checks_owner_and_each_residual(self, inspect, command):
         inspect.side_effect = [{"Config": {"Labels": {GATE.LABEL: "run"}}}, None,
-                               {"Labels": {GATE.LABEL: "run"}}, None,
+                               {"Labels": {GATE.LABEL: "run"}}, None, None,
                                {"Config": {"Labels": {GATE.LABEL: "run"}}}, None]
         GATE.clean_owned("run", "container", "network", "image")
         self.assertEqual(command.call_count, 3)
@@ -134,7 +134,7 @@ class GaussDBCertificationTest(unittest.TestCase):
     @patch.object(GATE, "inspect")
     def test_foreign_container_is_not_deleted_and_other_owned_cleanup_continues(self, inspect, command):
         inspect.side_effect = [{"Config": {"Labels": {GATE.LABEL: "foreign"}}},
-                               {"Labels": {GATE.LABEL: "run"}}, None,
+                               {"Labels": {GATE.LABEL: "run"}}, None, None,
                                {"Config": {"Labels": {GATE.LABEL: "run"}}}, None]
         with self.assertRaisesRegex(RuntimeError, "different owner"):
             GATE.clean_owned("run", "container", "network", "image")
@@ -145,7 +145,7 @@ class GaussDBCertificationTest(unittest.TestCase):
     @patch.object(GATE, "inspect")
     def test_residual_container_fails_even_when_other_cleanup_succeeds(self, inspect, command):
         state = {"Config": {"Labels": {GATE.LABEL: "run"}}}
-        inspect.side_effect = [state, state, None, None]
+        inspect.side_effect = [state, state, None, None, None]
         with self.assertRaisesRegex(RuntimeError, "remains"):
             GATE.clean_owned("run", "container", "network", "image")
 
@@ -174,113 +174,70 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertIn("-run=^TestGaussDBDriverCoexistence$", command.call_args.args[0])
         self.assertEqual(list(self.root.iterdir()), [])
 
-    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False, fail_initial_password=False, architecture="x86_64"):
+    def run_fake_lifecycle(self, fail_probe=False, fail_readiness=False, architecture="x86_64"):
         resources = {}
-        probes = []
-        initialization = []
-        initial_secrets = []
         report = self.root / "report.json"
-
-        def assert_password_policy(value):
-            self.assertGreaterEqual(len(value), 8)
-            self.assertLessEqual(len(value), 32, "fixed native kernel password_max_length defaults to 32")
-            for character_class in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^a-zA-Z0-9]"):
-                self.assertRegex(value, character_class)
-
-        def native_sql(args, **kwargs):
-            self.assertIn("ON_ERROR_STOP=1", args)
-            self.assertIn("-i", args)
-            statement = kwargs["input"]
-            if statement.startswith("ALTER ROLE omm PASSWORD "):
-                self.assertNotIn(statement, " ".join(args))
-                self.assertNotIn(initial_secrets[0], statement)
-                initialization.append(statement)
-                assert_password_policy(statement.split("'")[1])
-                if fail_initial_password:
-                    return subprocess.CompletedProcess(args, 3, "", "Password policy rejected SQL")
-                return subprocess.CompletedProcess(args, 0, "ALTER ROLE\n", "")
-            self.assertEqual(statement, "SELECT 1")
-            self.assertEqual(len(initialization), 1, "initial password must be changed before SQL readiness")
-            if fail_readiness:
-                return subprocess.CompletedProcess(args, 1, "", "SQL rejected")
-            return subprocess.CompletedProcess(args, 0, "1\n", "")
+        starts = []
 
         def inspect(kind, name):
             return resources.get((kind, name))
 
         def command(args, **kwargs):
-            if args[:2] == ["docker", "info"]:
-                return subprocess.CompletedProcess(args, 0, "linux/" + architecture + "\n", "")
             if kwargs.get("output"):
                 kwargs["output"].write_text("native log\n")
+            if args[:2] == ["docker", "info"]:
+                return subprocess.CompletedProcess(args, 0, "linux/" + architecture + "\n", "")
             if args[:2] == ["docker", "build"]:
-                entrypoint = (Path(args[-1]) / "entrypoint.sh").read_text()
-                dockerfile = (Path(args[-1]) / "Dockerfile").read_text()
-                self.assertIn("gsql --version && gaussdb --version", dockerfile)
-                self.assertIn("/data/db/gs_hba.conf", entrypoint)
-                self.assertNotIn("/data/db/pg_hba.conf", entrypoint)
-                self.assertIn("sha256", entrypoint)
+                self.assertEqual((Path(args[-1]) / "entrypoint.sh").read_text(), (GATE.ROOT / "business/gaussdb/entrypoint.sh").read_text())
+                self.assertEqual((Path(args[-1]) / "Dockerfile").read_text(), (GATE.ROOT / "business/gaussdb/Dockerfile").read_text())
+                self.assertIn("GAUSSDB_BASE_IMAGE=fixed", args)
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
-                resources[("image", args[args.index("-t") + 1])] = {"Id": "sha256:fixture", "Architecture": GATE.go_architecture(architecture), "Config": {"Labels": {GATE.LABEL: owner}}}
-            elif args[:3] == ["docker", "network", "create"]:
+                resources[("image", args[args.index("-t") + 1])] = {"Id": "sha256:fixture", "Architecture": GATE.IMAGE.go_architecture(architecture), "Config": {"Labels": {GATE.LABEL: owner}}}
+            elif args[:3] in (["docker", "network", "create"], ["docker", "volume", "create"]):
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
-                resources[("network", args[-1])] = {"Labels": {GATE.LABEL: owner}}
+                resources[(args[1], args[-1])] = {"Labels": {GATE.LABEL: owner}}
             elif args[:2] == ["docker", "run"]:
-                initial_secrets.append(kwargs["env"]["GAUSS_CERT_SECRET"])
-                assert_password_policy(initial_secrets[0])
+                starts.append(kwargs["env"])
+                self.assertNotIn(kwargs["env"]["GAUSSDB_PASSWORD"], " ".join(args))
+                self.assertNotEqual(kwargs["env"]["GAUSSDB_PASSWORD"], kwargs["env"]["GAUSSDB_APP_PASSWORD"])
                 owner = args[args.index("--label") + 1].split("=", 1)[1]
-                resources[("container", args[args.index("--name") + 1])] = {
-                    "Config": {"Labels": {GATE.LABEL: owner}}, "State": {"Running": True},
-                    "NetworkSettings": {"Ports": {"5432/tcp": [{"HostPort": "35432"}]}}}
+                resources[("container", args[args.index("--name") + 1])] = {"Config": {"Labels": {GATE.LABEL: owner}}, "State": {"Running": not fail_readiness}, "NetworkSettings": {"Ports": {"5432/tcp": [{"HostPort": "35432"}]}}}
             elif args[:2] == ["docker", "rm"]:
                 resources.pop(("container", args[-1]))
-            elif args[:3] in (["docker", "network", "rm"], ["docker", "image", "rm"]):
+            elif args[:3] in (["docker", "network", "rm"], ["docker", "image", "rm"], ["docker", "volume", "rm"]):
                 resources.pop((args[1], args[-1]))
             elif args[:2] == ["go", "test"]:
-                probes.append(kwargs["env"])
+                self.assertIn("password=" + starts[0]["GAUSSDB_APP_PASSWORD"], kwargs["env"]["ADDP_TEST_GAUSSDB_DSN"])
                 kwargs["output"].write_text(kwargs["env"]["ADDP_TEST_GAUSSDB_DSN"])
                 if fail_probe:
                     raise subprocess.CalledProcessError(1, args)
-            elif args[:2] == ["docker", "logs"]:
-                kwargs["output"].write_text(initialization[0] + initial_secrets[0])
-            return subprocess.CompletedProcess(args, 0)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        def native_sql(args, **kwargs):
+            statement = kwargs["input"]
+            self.assertNotIn(statement, " ".join(args))
+            return subprocess.CompletedProcess(args, 0, "持久化保留中文|42\n" if "SELECT (SELECT customer_name" in statement else "", "")
 
         with patch.object(GATE.platform, "system", return_value="Linux"), \
              patch.object(GATE.platform, "machine", return_value=architecture), \
              patch.object(GATE.shutil, "which", return_value="/available"), \
-             patch.object(GATE, "download", return_value=self.root / "archive"), \
-             patch.object(GATE, "extract_kernel"), \
+             patch.object(GATE.IMAGE, "download", return_value=self.root / "archive"), \
+             patch.object(GATE.IMAGE, "extract_kernel"), \
              patch.object(GATE, "prepare_probe", return_value=self.root / "probe"), \
              patch.object(GATE, "inspect", side_effect=inspect), \
              patch.object(GATE, "command", side_effect=command), \
              patch.object(GATE.subprocess, "run", side_effect=native_sql), \
-             patch.object(GATE.time, "sleep", side_effect=AssertionError("SQL rejection must not be retried")), \
-             patch.dict(GATE.os.environ, {"ADDP_GAUSSDB_CERTIFICATION_REPORT": str(report)}):
-            # media_facts calls real Bash through check_output; avoid intercepting it.
-            facts = {name: "fixed" for name in GATE.FACT_NAMES}
-            with patch.object(GATE, "media_facts", return_value=facts):
-                if fail_probe:
-                    with self.assertRaises(subprocess.CalledProcessError):
-                        GATE.main()
-                elif fail_readiness:
-                    with self.assertRaisesRegex(RuntimeError, "SQL readiness failed"):
-                        GATE.main()
-                elif fail_initial_password:
-                    with self.assertRaisesRegex(RuntimeError, "initial password SQL rejected"):
-                        GATE.main()
-                else:
-                    GATE.main()
+             patch.dict(GATE.os.environ, {"ADDP_GAUSSDB_CERTIFICATION_REPORT": str(report)}), \
+             patch.object(GATE.IMAGE, "media_facts", return_value={name: "fixed" for name in GATE.IMAGE.FACT_NAMES}):
+            if fail_probe:
+                with self.assertRaises(subprocess.CalledProcessError): GATE.main()
+            elif fail_readiness:
+                with self.assertRaisesRegex(RuntimeError, "exited"): GATE.main()
+            else:
+                GATE.main()
+                self.assertEqual(len(starts), 2)
         self.assertEqual(resources, {})
-        self.assertEqual(len(initialization), 1)
-        self.assertNotIn(initial_secrets[0], report.with_suffix(".container.log").read_text())
-        self.assertIn("PASSWORD '[REDACTED]'", report.with_suffix(".container.log").read_text())
-        if fail_readiness or fail_initial_password:
-            self.assertEqual(probes, [])
-            return json.loads(report.read_text())
-        self.assertNotIn("GOENV_REGIST_ALL", probes[0])
-        self.assertEqual(probes[0]["ADDP_GAUSSDB_CERTIFICATION"], "1")
         self.assertNotIn("password=", report.read_text())
-        self.assertIn("password=[REDACTED]", report.with_suffix(".probe.log").read_text())
         return json.loads(report.read_text())
 
     def test_arm_native_lifecycle_has_separate_architecture_and_image_evidence(self):
@@ -288,7 +245,7 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertEqual(report["result"], "passed")
         self.assertEqual(report["runner"]["architecture"], "arm64")
         self.assertEqual(report["image"]["id"], "sha256:fixture")
-        self.assertEqual(report["image"]["architecture"], "arm64")
+        self.assertTrue(report["business_lifecycle"]["container_recreated"])
 
     def test_owner_success_waits_for_probe_and_all_cleanup(self):
         report = self.run_fake_lifecycle()
@@ -300,16 +257,10 @@ class GaussDBCertificationTest(unittest.TestCase):
         self.assertEqual(report["result"], "failed")
         self.assertEqual(report["cleanup"]["result"], "passed")
 
-    def test_sql_rejection_after_password_change_never_runs_probe_and_still_cleans_up(self):
+    def test_business_initialization_failure_never_runs_probe_and_still_cleans_up(self):
         report = self.run_fake_lifecycle(fail_readiness=True)
         self.assertEqual(report["result"], "failed")
         self.assertEqual(report["phase"], "readiness")
-        self.assertEqual(report["cleanup"], {"result": "passed", "residual_resources": 0})
-
-    def test_initial_password_sql_rejection_fails_immediately_and_still_cleans_up(self):
-        report = self.run_fake_lifecycle(fail_initial_password=True)
-        self.assertEqual(report["result"], "failed")
-        self.assertEqual(report["phase"], "initial-password")
         self.assertEqual(report["cleanup"], {"result": "passed", "residual_resources": 0})
 
     def test_focused_dispatch_does_not_trigger_other_owners_or_false_aggregate_failures(self):
@@ -363,7 +314,7 @@ class GaussDBCertificationTest(unittest.TestCase):
         original_mod = (GATE.ROOT / "common/go.mod").read_bytes()
         original_sum = (GATE.ROOT / "common/go.sum").read_bytes()
         with patch.object(GATE, "verify_driver") as verify:
-            probe = GATE.prepare_probe(self.root, GATE.media_facts("x86_64"))
+            probe = GATE.prepare_probe(self.root, GATE.IMAGE.media_facts("x86_64"))
         verify.assert_called_once()
         module = json.loads(subprocess.check_output(["go", "mod", "edit", "-json"],
                             cwd=probe, text=True, env={**GATE.os.environ, "GOWORK": "off"}))

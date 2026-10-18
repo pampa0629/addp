@@ -1,5 +1,21 @@
 # Business Database
 
+## GaussDB Business 部署
+
+采用固定官方混合云开发者版 V2.0-10.0.0 Ubuntu 22.04 ARM64／amd64 介质，构建 ADDP 本地镜像；不是厂商预制镜像，也不对外发布。仅限开发者版声明允许的学习、适配及测试。介质 URL、内外层哈希与基础镜像固定事实复用 `scripts/lib/gaussdb-official-media.sh`，不替换为 openGauss。
+
+在 `business/.env` 设置不同的 `GAUSSDB_PASSWORD`（管理员 omm）、`GAUSSDB_APP_PASSWORD`（普通账号），密码8至32字符且符合原生复杂度策略。`GAUSSDB_USER` 默认 `business`，SQL 默认 `127.0.0.1:5437`，可显式配置 `GAUSSDB_PORT`，冲突失败。由用户执行：
+
+```bash
+bash business/scripts/start.sh -gaussdb
+bash business/scripts/stop.sh -gaussdb
+bash business/scripts/restart.sh -gaussdb
+```
+
+`-gaussdb` 必须独立使用，不进入 `-all`。首次下载校验介质后构建本机架构镜像，首次空卷创建 `business` 数据库及 `addp_business` 下探针、客户、商品、订单和明细；样例事务仅补缺失主键，不覆盖用户修改。`gaussdb_data` 卷在停止及重启后保留；已有数据库缺少完成标记、版本／账号不匹配或密码错误时拒绝启动，不重新格式化，不自动轮换密码。管理密码变更须先通过原生数据库维护完成，再同步配置。Business 不登记 System 引擎。
+
+构建／初始化由 `business/gaussdb/` 唯一维护，既有 `make test-release RELEASE_SUITE=gaussdb-official-media` 双架构门禁复用它，新增独占数据卷、删除并重建容器后用户数据及样例修改保留的检查；所有退出路径核对容器、网络、卷、镜像零残留。确定性验证为 `make test-business-config` 和 `make test-release-runner`。本轮真实双架构持久化验收尚待运行；此前协议 T5 通过不能代替本次生命周期验收。正式 `engine_type=gaussdb` 插件、平台 T2/T4 和 macOS Docker 运行仍未验收。
+
 ## 概述
 
 业务库为 ADDP 平台提供业务数据存储，与 ADDP 系统库完全独立部署。
