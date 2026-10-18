@@ -113,7 +113,12 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	for index, id := range ids {
 		tenant := 7 + index
 		record := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: tenant, ExecutionID: id, Attempt: 1, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetCreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
-		item := execution.TaskExecution{TenantID: tenant, ExecutionID: id, Module: "transfer", TaskType: "sync", Source: "transfer", TriggerType: "manual", ExecutionBoundary: "bounded", Status: "success", Attempt: 1, Metadata: commonmodels.JSONMap{models.TargetProductionMetadataKey: record, "private": "private-sentinel"}}
+		record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(uint(9007199254740993), "schema", "outdoor", "source"))
+		encoded, err := models.EncodeTargetProduction(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		item := execution.TaskExecution{TenantID: tenant, ExecutionID: id, Module: "transfer", TaskType: "sync", Source: "transfer", TriggerType: "manual", ExecutionBoundary: "bounded", Status: "success", Attempt: 1, Metadata: commonmodels.JSONMap{models.TargetProductionMetadataKey: encoded, "private": "private-sentinel"}}
 		if err := db.Create(&item).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -137,6 +142,9 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	receipt, err := consumer.ReadProductionReceipt(t.Context(), 7, ids[0])
 	if err != nil || receipt.ExecutionID != ids[0] || receipt.UserOrigin != nil || receipt.Preparation != plugin.TableTargetCreated {
 		t.Fatalf("shared client receipt=%+v error=%v", receipt, err)
+	}
+	if receipt.SourceReadSet == nil || receipt.SourceReadSet.Paths[0].EngineID != uint(9007199254740993) {
+		t.Fatal("stored owner evidence or HTTP client rounded the source Engine ID")
 	}
 	if _, err := consumer.ReadProductionReceipt(t.Context(), 7, ids[1]); err == nil {
 		t.Fatal("cross tenant receipt returned")

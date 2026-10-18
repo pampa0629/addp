@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
+	"unicode/utf8"
 
 	plugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 )
 
 const TargetProductionMetadataKey = "target_production"
 
 const (
-	TargetProductionSchema    = "transfer.target-production/v1"
+	TargetProductionSchema    = "transfer.target-production/v2"
 	TargetProductionPending   = "pending"
 	TargetProductionPrepared  = "prepared"
 	TargetProductionCommitted = "committed"
@@ -33,18 +36,22 @@ type TargetProduction struct {
 	StartedAt          time.Time                     `json:"started_at"`
 	PreparedAt         *time.Time                    `json:"prepared_at,omitempty"`
 	CommittedAt        *time.Time                    `json:"committed_at,omitempty"`
+	SourceReadSet      *plugin.QueryReadSet          `json:"source_read_set"`
 }
 
 func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
 	var result TargetProduction
-	data, err := json.Marshal(value)
-	if err != nil || len(data) > 4096 {
+	data, ok := value.(string)
+	if !ok || len(data) > 256<<10 || !utf8.ValidString(data) {
 		return result, fmt.Errorf("invalid target production record")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder := json.NewDecoder(bytes.NewBufferString(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil {
 		return result, fmt.Errorf("invalid target production record: %w", err)
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return result, fmt.Errorf("trailing target production record")
 	}
 	if result.SchemaVersion != TargetProductionSchema || result.TenantID <= 0 || result.ExecutionID == "" || result.Attempt <= 0 || result.TargetLocator == "" || result.StartedAt.IsZero() ||
 		(result.RetryOfExecutionID != nil && (*result.RetryOfExecutionID == "" || *result.RetryOfExecutionID == result.ExecutionID)) {
@@ -71,5 +78,23 @@ func DecodeTargetProduction(value interface{}) (TargetProduction, error) {
 	default:
 		return result, fmt.Errorf("unknown production phase")
 	}
+	if execution.ValidateProductionReadSet(result.SourceReadSet) != nil || (result.Phase != TargetProductionCommitted && result.SourceReadSet != nil) {
+		return result, fmt.Errorf("invalid committed production sources")
+	}
 	return result, nil
+}
+
+// Store the sealed owner record as one JSON string inside JSONMap. JSONMap's
+// general decoder uses float64; round-tripping typed path IDs through an object
+// would silently change large Engine IDs before System consumes the evidence.
+func EncodeTargetProduction(record TargetProduction) (string, error) {
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return "", err
+	}
+	value := string(encoded)
+	if _, err := DecodeTargetProduction(value); err != nil {
+		return "", err
+	}
+	return value, nil
 }

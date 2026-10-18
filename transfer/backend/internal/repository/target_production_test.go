@@ -52,7 +52,7 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 	item, lease := productionExecutionFixture(t, db)
 	repo := NewTaskRepository(db)
 	ctx := context.Background()
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator); err == nil {
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil); err == nil {
 		t.Fatal("commit without intent accepted")
 	}
 	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err != nil {
@@ -65,7 +65,7 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err == nil {
 		t.Fatal("pending receipt reset to allow replay")
 	}
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator); err == nil {
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil); err == nil {
 		t.Fatal("pending receipt promoted directly to commit")
 	}
 	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{}); err == nil {
@@ -82,14 +82,14 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err == nil {
 		t.Fatal("rebuild rewritten as creation")
 	}
-	if err := repo.RecordTargetCommit(ctx, lease, "addp://engine/2/path/outdoor/other?type=table"); err == nil {
+	if err := repo.RecordTargetCommit(ctx, lease, "addp://engine/2/path/outdoor/other?type=table", nil); err == nil {
 		t.Fatal("target rebound")
 	}
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator); err != nil {
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil); err != nil {
 		t.Fatal(err)
 	}
 	committed := readProductionRecord(t, db, item.ID)
-	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator); err != nil {
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, prepared); err != nil {
@@ -98,6 +98,44 @@ func TestTargetProductionDurableLifecycle(t *testing.T) {
 	after := readProductionRecord(t, db, item.ID)
 	if after.Phase != models.TargetProductionCommitted || after.Preparation != plugin.TableTargetRecreated || !after.CommittedAt.Equal(*committed.CommittedAt) || !after.PreparedAt.Equal(*before.PreparedAt) {
 		t.Fatal("duplicate receipt changed original facts/times")
+	}
+	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources); err == nil {
+		t.Fatal("unavailable historical source evidence was backfilled")
+	}
+}
+
+func TestTargetProductionFreezesActualReadSetWithCommit(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	item, lease := productionExecutionFixture(t, db)
+	repo := NewTaskRepository(db)
+	ctx := t.Context()
+	if err := repo.BeginTargetProduction(ctx, lease, productionTestLocator); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordTargetPreparation(ctx, lease, productionTestLocator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetCreated}); err != nil {
+		t.Fatal(err)
+	}
+	const largeEngine = uint(9007199254740993)
+	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(largeEngine, "schema", "outdoor", "source"))
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources); err != nil {
+		t.Fatal(err)
+	}
+	frozen := readProductionRecord(t, db, item.ID)
+	if frozen.SourceReadSet == nil || frozen.SourceReadSet.Paths[0].Segments[2].Name != "source" || frozen.SourceReadSet.Paths[0].EngineID != largeEngine {
+		t.Fatal("actual sources not persisted with commit")
+	}
+	if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, sources); err != nil {
+		t.Fatal("same source evidence retry failed", err)
+	}
+	sources.Paths[0].Segments[2].Name = "other"
+	for _, changed := range []*plugin.QueryReadSet{nil, sources, {Paths: []plugin.EngineCatalogPath{sources.Paths[0], sources.Paths[0]}}} {
+		if err := repo.RecordTargetCommit(ctx, lease, productionTestLocator, changed); err == nil {
+			t.Fatal("committed sources changed, cleared or normalized on retry")
+		}
+	}
+	if again := readProductionRecord(t, db, item.ID); again.SourceReadSet.Paths[0].Segments[2].Name != "source" || !again.CommittedAt.Equal(*frozen.CommittedAt) {
+		t.Fatal("source proof or first commit time was rewritten")
 	}
 }
 

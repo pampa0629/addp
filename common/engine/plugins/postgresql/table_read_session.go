@@ -68,6 +68,7 @@ func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo pl
 	}
 
 	return &postgresTableReadSession{
+		readSet:          p.observeSessionReadSet(ctx, tx, plugin.QueryRequest{EngineID: path.EngineID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true}}),
 		db:               db,
 		tx:               tx,
 		cursorName:       cursorName,
@@ -631,6 +632,7 @@ func hintString(values map[string]interface{}, key string) string {
 }
 
 type postgresTableReadSession struct {
+	readSet          *plugin.QueryReadSet
 	db               *sql.DB
 	tx               *sql.Tx
 	cursorName       string
@@ -639,6 +641,13 @@ type postgresTableReadSession struct {
 	geometryEncoding format.GeometryEncoding
 	closed           bool
 	offset           int64
+}
+
+func (s *postgresTableReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	if s.readSet == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return s.readSet.Clone(), nil
 }
 
 func (s *postgresTableReadSession) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {

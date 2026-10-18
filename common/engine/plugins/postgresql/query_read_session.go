@@ -32,11 +32,19 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		_ = db.Close()
 		return nil, fmt.Errorf("begin PostgreSQL query read transaction: %w", err)
 	}
-	rows, err := tx.QueryContext(ctx, request.Query, request.Options.Args...)
+	const cursor = "addp_query_read_cursor"
+	_, err = tx.ExecContext(ctx, "DECLARE "+cursor+" NO SCROLL CURSOR FOR "+request.Query, request.Options.Args...)
 	if err != nil {
 		_ = tx.Rollback()
 		_ = db.Close()
-		return nil, fmt.Errorf("execute PostgreSQL query read session: %w", err)
+		return nil, fmt.Errorf("declare PostgreSQL query read session: %w", err)
+	}
+	readSet := p.observeSessionReadSet(ctx, tx, request)
+	rows, err := tx.QueryContext(ctx, "FETCH FORWARD 0 FROM "+cursor)
+	if err != nil {
+		_ = tx.Rollback()
+		_ = db.Close()
+		return nil, fmt.Errorf("describe PostgreSQL query read session: %w", err)
 	}
 	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
@@ -51,7 +59,12 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		columns[index] = columnType.Name()
 		binaryColumns[index] = strings.EqualFold(columnType.DatabaseTypeName(), "BYTEA")
 	}
-	return &postgresQueryReadSession{db: db, tx: tx, rows: rows, columns: columns, binaryColumns: binaryColumns}, nil
+	if err := rows.Close(); err != nil {
+		_ = tx.Rollback()
+		_ = db.Close()
+		return nil, err
+	}
+	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, binaryColumns: binaryColumns}, nil
 }
 
 func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
@@ -67,28 +80,43 @@ func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
 type postgresQueryReadSession struct {
 	db            *sql.DB
 	tx            *sql.Tx
-	rows          *sql.Rows
+	cursor        string
+	readSet       *plugin.QueryReadSet
 	columns       []string
 	binaryColumns []bool
 	offset        int64
 	closed        bool
 }
 
-func (s *postgresQueryReadSession) ReadBatch(_ context.Context, limit int) (*plugin.BatchData, error) {
+func (s *postgresQueryReadSession) ReadSet(context.Context) (*plugin.QueryReadSet, error) {
+	if s.readSet == nil {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return s.readSet.Clone(), nil
+}
+
+func (s *postgresQueryReadSession) ReadBatch(ctx context.Context, limit int) (*plugin.BatchData, error) {
 	if s.closed {
 		return nil, fmt.Errorf("PostgreSQL query read session is closed")
 	}
 	if limit <= 0 {
 		return nil, fmt.Errorf("PostgreSQL query read batch limit must be positive")
 	}
+	rows, err := s.tx.QueryContext(ctx, fmt.Sprintf("FETCH FORWARD %d FROM %s", limit, s.cursor))
+	if err != nil {
+		_ = s.abort()
+		return nil, fmt.Errorf("fetch PostgreSQL query read rows: %w", err)
+	}
+	defer rows.Close()
 	batch := &plugin.BatchData{Offset: s.offset, Rows: make([]map[string]interface{}, 0, limit)}
-	for len(batch.Rows) < limit && s.rows.Next() {
+	for rows.Next() {
 		values := make([]interface{}, len(s.columns))
 		pointers := make([]interface{}, len(s.columns))
 		for index := range values {
 			pointers[index] = &values[index]
 		}
-		if err := s.rows.Scan(pointers...); err != nil {
+		if err := rows.Scan(pointers...); err != nil {
+			_ = rows.Close()
 			_ = s.abort()
 			return nil, fmt.Errorf("scan PostgreSQL query read row: %w", err)
 		}
@@ -109,9 +137,14 @@ func (s *postgresQueryReadSession) ReadBatch(_ context.Context, limit int) (*plu
 		}
 		batch.Rows = append(batch.Rows, row)
 	}
-	if err := s.rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
 		_ = s.abort()
 		return nil, fmt.Errorf("iterate PostgreSQL query read rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		_ = s.abort()
+		return nil, err
 	}
 	s.offset += int64(len(batch.Rows))
 	if len(batch.Rows) < limit {
@@ -135,12 +168,10 @@ func (s *postgresQueryReadSession) finish() error {
 	}
 	s.closed = true
 	var firstErr error
-	if s.rows != nil {
-		if err := s.rows.Close(); err != nil {
+	if s.tx != nil {
+		if _, err := s.tx.ExecContext(context.Background(), "CLOSE "+s.cursor); err != nil {
 			firstErr = err
 		}
-	}
-	if s.tx != nil {
 		if err := s.tx.Commit(); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -161,9 +192,6 @@ func (s *postgresQueryReadSession) abort() error {
 		return nil
 	}
 	s.closed = true
-	if s.rows != nil {
-		_ = s.rows.Close()
-	}
 	var firstErr error
 	if s.tx != nil {
 		firstErr = s.tx.Rollback()

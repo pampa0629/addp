@@ -38,6 +38,7 @@ func (s *ExecutionService) ReadProductionReceipt(ctx context.Context, tenantID u
 		return nil, commonapi.ErrConflict
 	}
 	result := &client.TransferProductionReceipt{SchemaVersion: client.TransferProductionReceiptSchema, TenantID: int64(item.TenantID), ExecutionID: item.ExecutionID, Attempt: item.Attempt, RetryOfExecutionID: record.RetryOfExecutionID, Target: path, Preparation: record.Preparation, CommittedAt: *record.CommittedAt}
+	result.SourceReadSet = record.SourceReadSet.Clone()
 	if item.ActorPrincipalID != nil || item.ActorTenantMembershipID != nil || item.IssuedAuthorizationVersion != nil {
 		copy := execution.TaskExecution{TenantID: item.TenantID}
 		if execution.CopyActorOrigin(&copy, item) != nil {

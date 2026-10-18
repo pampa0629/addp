@@ -65,6 +65,7 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			db := productionBindingDB(t)
 			receipt := productionBindingReceipt(7, 2)
+			receipt.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
 			facts := factstest.Single(receipt.Target)
 			var receiptErr, factsErr, want error
 			wantReceiptCalls, wantFactsCalls := 1, 1
@@ -174,6 +175,10 @@ func TestTransferProductionBindingUsesCompleteExactMetaProof(t *testing.T) {
 			// Neither reader-owned references nor later fixture mutations may
 			// enlarge the already resolved evidence. This is not cached permission.
 			receipt.Target.Segments[2].Name = "other"
+			receipt.SourceReadSet.Paths[0].Segments[2].Name = "changed"
+			if result.receipt.SourceReadSet.Paths[0].Segments[2].Name != "source" {
+				t.Fatal("actual source evidence aliases the producer response")
+			}
 			if receipt.UserOrigin != nil {
 				receipt.UserOrigin.PrincipalID++
 				if result.receipt.UserOrigin.PrincipalID != 31 {

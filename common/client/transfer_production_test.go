@@ -15,12 +15,17 @@ import (
 func TestTransferProductionReceiptBoundedServiceClient(t *testing.T) {
 	receipt := TransferProductionReceipt{SchemaVersion: TransferProductionReceiptSchema, TenantID: 7, ExecutionID: uuid.NewString(), Attempt: 1, Target: plugin.TabularItemPath(2, "schema", "outdoor", "persons"), Preparation: plugin.TableTargetCreated, CommittedAt: time.Now().UTC()}
 	encoded, _ := json.Marshal(receipt)
+	sources, _ := plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+	sourceJSON, _ := json.Marshal(sources)
 	for _, tc := range []struct {
 		name, body string
 		status     int
 		ok         bool
 	}{
 		{"valid machine origin", string(encoded), 200, true},
+		{"valid actual sources", strings.Replace(string(encoded), `"source_read_set":null`, `"source_read_set":`+string(sourceJSON), 1), 200, true},
+		{"empty actual sources", strings.Replace(string(encoded), `"source_read_set":null`, `"source_read_set":{"paths":[]}`, 1), 200, false},
+		{"retired receipt schema", strings.Replace(string(encoded), TransferProductionReceiptSchema, "transfer.production-receipt/v1", 1), 200, false},
 		{"valid user origin", strings.Replace(string(encoded), `"user_origin":null`, `"user_origin":{"principal_id":"31","tenant_membership_id":"33","authorization_version":"5"}`, 1), 200, true},
 		{"incomplete user origin", strings.Replace(string(encoded), `"user_origin":null`, `"user_origin":{"principal_id":"31"}`, 1), 200, false},
 		{"invalid UTF8 target", strings.Replace(string(encoded), "persons", string([]byte{255}), 1), 200, false},
@@ -28,7 +33,7 @@ func TestTransferProductionReceiptBoundedServiceClient(t *testing.T) {
 		{"other execution", strings.Replace(string(encoded), receipt.ExecutionID, uuid.NewString(), 1), 200, false},
 		{"unknown field", strings.Replace(string(encoded), `"attempt":1`, `"attempt":1,"token":"secret"`, 1), 200, false},
 		{"trailing", string(encoded) + `{}`, 200, false},
-		{"oversized", strings.Repeat(" ", 16<<10) + string(encoded), 200, false},
+		{"oversized", strings.Repeat(" ", 256<<10) + string(encoded), 200, false},
 		{"not ready", `{"error":"secret"}`, 409, false},
 		{"not found", `{"error":"secret"}`, 404, false},
 		{"dependency failed", `{"error":"secret"}`, 503, false},

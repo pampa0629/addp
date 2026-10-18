@@ -64,6 +64,7 @@ func (s *Service) prepareTransferProduction(ctx context.Context, tenantID int64,
 	}
 	// The reader's pointers must not alias evidence retained during Meta IO.
 	copy := *receipt
+	copy.SourceReadSet = receipt.SourceReadSet.Clone()
 	copy.Target.Segments = append([]plugin.EngineCatalogSegment(nil), receipt.Target.Segments...)
 	if receipt.UserOrigin != nil {
 		origin := *receipt.UserOrigin

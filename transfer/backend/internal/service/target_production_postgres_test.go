@@ -129,10 +129,14 @@ func TestIntegrationPostgresProductionMetadataSerialization(t *testing.T) {
 	}, func(tx *gorm.DB) error {
 		return repository.NewTaskRepository(tx).RecordTargetPreparation(ctx, lease, locator, plugin.TableTargetPreparation{Disposition: plugin.TableTargetRecreated})
 	})
+	sources, err := plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeWhileLocked(func() error {
 		return svc.FinishExecution(ctx, uint(item.ID), models.ExecutionStatusSuccess, nil, commonmodels.JSONMap{"lineage_facts": map[string]interface{}{"test": true}})
 	}, func(tx *gorm.DB) error {
-		return repository.NewTaskRepository(tx).RecordTargetCommit(ctx, lease, locator)
+		return repository.NewTaskRepository(tx).RecordTargetCommit(ctx, lease, locator, sources)
 	})
 	var stored execution.TaskExecution
 	if err := db.First(&stored, item.ID).Error; err != nil {
@@ -146,7 +150,7 @@ func TestIntegrationPostgresProductionMetadataSerialization(t *testing.T) {
 		t.Fatal("private production receipt leaked into observation")
 	}
 	receipt, err := svc.ReadProductionReceipt(ctx, uint(item.TenantID), item.ExecutionID)
-	if err != nil || receipt.Attempt != item.Attempt || receipt.Preparation != plugin.TableTargetRecreated || receipt.UserOrigin != nil {
+	if err != nil || receipt.Attempt != item.Attempt || receipt.Preparation != plugin.TableTargetRecreated || receipt.UserOrigin != nil || receipt.SourceReadSet == nil || receipt.SourceReadSet.Paths[0].Segments[2].Name != "source" {
 		t.Fatalf("persisted production receipt not readable as owner evidence: %+v %v", receipt, err)
 	}
 }

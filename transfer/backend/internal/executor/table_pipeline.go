@@ -13,11 +13,13 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
 )
 
 type TablePipelineMetrics struct {
+	SourceReadSet     *engineplugin.QueryReadSet
 	TargetPreparation engineplugin.TableTargetPreparation
 	FieldLineage      *TableFieldLineage
 	RecordsRead       int64
@@ -145,6 +147,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 		return nil, fmt.Errorf("open table source: %w", err)
 	}
 	defer reader.Close(ctx)
+	actualSources := productionSourcesFromReader(ctx, reader)
 
 	tableInfo := reader.TableInfo()
 	spatialInfo := reader.SpatialInfo()
@@ -180,7 +183,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (result *TablePipelineMetri
 		}
 	}()
 
-	metrics := &TablePipelineMetrics{}
+	metrics := &TablePipelineMetrics{SourceReadSet: actualSources}
 	if target, ok := p.Target.(*nativeTableBatchTarget); ok {
 		metrics.TargetPreparation = target.preparation
 	}
@@ -316,6 +319,15 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 	if err != nil {
 		return nil, fmt.Errorf("open query read session: %w", err)
 	}
+	if evidence, ok := session.(engineplugin.ReadSessionEvidence); ok {
+		actual, proofErr := evidence.ReadSet(ctx)
+		if proofErr == nil && actual != nil {
+			if err := validateExpectedQueryReadSet(readSet, actual); err != nil {
+				_ = session.Close(context.Background())
+				return nil, err
+			}
+		}
+	}
 	reader := TableBatchReader(&queryTableBatchReader{session: session, tableInfo: s.tableInfo})
 	if protect == nil {
 		return reader, nil
@@ -381,6 +393,25 @@ type queryTableBatchReader struct {
 	session   engineplugin.QueryReadSession
 	tableInfo *datatype.TableInfo
 	closed    bool
+}
+
+func (r *queryTableBatchReader) ReadSet(ctx context.Context) (*engineplugin.QueryReadSet, error) {
+	return readActualSessionSet(ctx, r.session)
+}
+
+func readActualSessionSet(ctx context.Context, session interface{}) (*engineplugin.QueryReadSet, error) {
+	if evidence, ok := session.(engineplugin.ReadSessionEvidence); ok {
+		return evidence.ReadSet(ctx)
+	}
+	return nil, engineplugin.ErrQueryReadSetUnresolved
+}
+
+func productionSourcesFromReader(ctx context.Context, reader TableBatchReader) *engineplugin.QueryReadSet {
+	set, err := readActualSessionSet(ctx, reader)
+	if err != nil || execution.ValidateProductionReadSet(set) != nil {
+		return nil
+	}
+	return set.Clone()
 }
 
 func (r *queryTableBatchReader) TableInfo() *datatype.TableInfo { return r.tableInfo }
@@ -467,6 +498,10 @@ type nativeTableSessionBatchReader struct {
 	tableInfo   *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
 	closed      bool
+}
+
+func (r *nativeTableSessionBatchReader) ReadSet(ctx context.Context) (*engineplugin.QueryReadSet, error) {
+	return readActualSessionSet(ctx, r.session)
 }
 
 func (r *nativeTableSessionBatchReader) TableInfo() *datatype.TableInfo {

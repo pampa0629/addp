@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/authorization"
 	plugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/execution"
 )
 
 // TransferProductionReceipt is owner evidence, never an Allow or an assertion
@@ -27,6 +28,7 @@ type TransferProductionReceipt struct {
 	Preparation        plugin.TableTargetDisposition `json:"preparation"`
 	CommittedAt        time.Time                     `json:"committed_at"`
 	UserOrigin         *TransferProductionUserOrigin `json:"user_origin"`
+	SourceReadSet      *plugin.QueryReadSet          `json:"source_read_set"`
 }
 
 type TransferProductionUserOrigin struct {
@@ -35,7 +37,7 @@ type TransferProductionUserOrigin struct {
 	AuthorizationVersion int64 `json:"authorization_version,string" swaggertype:"string"`
 }
 
-const TransferProductionReceiptSchema = "transfer.production-receipt/v1"
+const TransferProductionReceiptSchema = "transfer.production-receipt/v2"
 
 func (r TransferProductionReceipt) Validate() error {
 	if r.SchemaVersion != TransferProductionReceiptSchema || r.TenantID <= 0 || !nonzeroExecutionUUID(r.ExecutionID) || r.Attempt <= 0 || r.CommittedAt.IsZero() {
@@ -52,6 +54,9 @@ func (r TransferProductionReceipt) Validate() error {
 	}
 	if r.UserOrigin != nil && (r.UserOrigin.PrincipalID <= 0 || r.UserOrigin.TenantMembershipID <= 0 || r.UserOrigin.AuthorizationVersion <= 0) {
 		return errors.New("incomplete Transfer production user origin")
+	}
+	if err := execution.ValidateProductionReadSet(r.SourceReadSet); err != nil {
+		return err
 	}
 	return nil
 }
@@ -85,7 +90,7 @@ func (c *TransferClient) ReadProductionReceipt(ctx context.Context, tenantID uin
 	if response.StatusCode != http.StatusOK {
 		return nil, &TenantAPIError{Method: req.Method, Path: path, StatusCode: response.StatusCode}
 	}
-	const limit = 16 << 10
+	const limit = 256 << 10
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil || len(body) > limit || !utf8.Valid(body) {
 		return nil, errors.New("invalid Transfer production receipt response size")

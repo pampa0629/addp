@@ -311,6 +311,7 @@ type StoreProvider interface {
 - `RangeWritableProvider.WriteRange()`：按 byte range / offset 写入内容。
 - `BatchReadableProvider.ReadBatch()`：执行一次有界的固定 schema 批量读取；大表连续扫描优先使用 `TableReadSessionProvider`，动态 schema collection 使用 `RecordReadSessionProvider`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
+- 实际读取来源证据使用既有读取会话的可选 `ReadSessionEvidence.ReadSet(ctx)`，值类型复用 `QueryReadSet`。它证明同一会话实际绑定的完整读取集合，而不是任务声明或另一次预查；不会成为第二条读取路线。Provider 在同一读取事务和实际游标约束下证明来源，处理解析至执行之间的 DDL 变化，返回深拷贝；证明不可用须返回 `ErrQueryReadSetUnresolved`，不得用目标表补齐。会话关闭后可保留这份不可变执行事实，但不能作为当前访问许可。首个实现仅覆盖 PostgreSQL 中可证明的、显式 schema 限定的普通基表及透明查询；视图、RLS、继承／分区、用户类型、函数、可见用户运算符、未证明的索引／访问方法及表达式不宣称来源完整。证据不可用不改变既有读取行为，但不能触发成果自动授权。
 - `RecordReadSessionProvider.OpenRecordReadSession()`：打开动态 schema 记录游标，连续返回原生 record map；适合 MongoDB cursor。collection 不得实现或复用表语义的 `TableReadSessionProvider`。
 - `EncodedRecordReadSessionProvider.OpenEncodedRecordReadSession()`：按 Provider 声明的类型保真交换格式连续返回已编码 record 批次；适合 MongoDB Canonical Extended JSON Lines 原始记录导出。它不等于对象内容 `stream_read`，也不得被用于表格化转换。
 - `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
@@ -653,9 +654,13 @@ type QueryReadSession interface {
 }
 ```
 
-查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。PostgreSQL 从同一 PreparedQuery 取出已绑定 SQL 与参数，使用数据库强制的 repeatable-read 只读事务和流式 `Rows` 游标返回批次；不得为打开会话重新绑定或重新准备 SQL。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
+查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。PostgreSQL 从同一 PreparedQuery 取出已绑定 SQL 与参数，使用数据库强制的 repeatable-read 只读事务和服务器游标返回批次；不得为打开会话重新绑定或重新准备 SQL。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
 
 PostgreSQL 查询读取会话按实际结果列的数据库类型保留值表示：BYTEA（包括别名和返回 BYTEA 的表达式）必须返回独立的 `[]byte`，SQL NULL、非 NULL 空字节与非 UTF-8 字节不得混同；文本、精确 numeric、JSON 和空间结果沿用各自原有表示，不能把所有驱动字节切片一律转为字符串。字段映射仅声明目标类型，不能修复读取时已丢失的二进制语义。
+
+PostgreSQL 表和查询读取均使用同一只读 repeatable-read 事务中的服务器游标。打开游标后以该事务目录事实核验 `ReadSessionEvidence`，而不是把 `PreparedQuery.ReadSet()` 的预查结果当作实际读取证据；原计划的预执行保护门禁仍然独立保留。证明失败通过事务内 savepoint 回收证明查询的失败，不污染已有游标或补造来源；查询读取仍消费原一次性 PreparedQuery，不重新绑定参数或提交另一份业务查询。
+
+首期来源证明不接受显式排序算子（`ORDER BY ... USING`）或 `TABLESAMPLE`，因为它们可能执行额外的用户定义函数；不能仅凭表名清单认定来源完整。该限制仅收紧证明范围，不改变原查询的执行支持范围。
 
 联邦查询运行时使用独立 Provider，不把多数据源连接塞入普通 `QueryRequest`：
 

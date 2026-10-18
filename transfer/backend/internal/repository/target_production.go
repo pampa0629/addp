@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -47,7 +48,11 @@ func (r *TaskRepository) RecordTargetPreparation(ctx context.Context, lease exec
 	})
 }
 
-func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string) error {
+func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution.Lease, locator string, sources *plugin.QueryReadSet) error {
+	if err := execution.ValidateProductionReadSet(sources); err != nil {
+		return err
+	}
+	sources = sources.Clone()
 	return r.changeTargetProduction(ctx, lease, locator, func(item execution.TaskExecution, now time.Time) (models.TargetProduction, error) {
 		record, err := targetProductionForExecution(item, locator)
 		if err != nil {
@@ -58,6 +63,9 @@ func (r *TaskRepository) RecordTargetCommit(ctx context.Context, lease execution
 		}
 		if record.Phase == models.TargetProductionPrepared {
 			record.Phase, record.CommittedAt = models.TargetProductionCommitted, &now
+			record.SourceReadSet = sources
+		} else if !reflect.DeepEqual(record.SourceReadSet, sources) {
+			return record, fmt.Errorf("%w: committed production sources are immutable", commonapi.ErrConflict)
 		}
 		return record, nil
 	})
@@ -104,13 +112,14 @@ func (r *TaskRepository) changeTargetProduction(ctx context.Context, lease execu
 		if err != nil {
 			return err
 		}
-		if _, err := models.DecodeTargetProduction(record); err != nil {
+		encoded, err := models.EncodeTargetProduction(record)
+		if err != nil {
 			return err
 		}
 		if item.Metadata == nil {
 			item.Metadata = commonmodels.JSONMap{}
 		}
-		item.Metadata[models.TargetProductionMetadataKey] = record
+		item.Metadata[models.TargetProductionMetadataKey] = encoded
 		guarded := tx
 		if tx.Dialector.Name() == "postgres" {
 			guarded = tx.Where("lease_expires_at > clock_timestamp()")

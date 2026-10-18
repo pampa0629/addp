@@ -47,6 +47,9 @@ func TestIntegrationPlannerTargetPreparationOutcomes(t *testing.T) {
 			if metrics.TargetPreparation.Disposition != step.disposition || metrics.RecordsWritten != 2 {
 				t.Fatalf("target operation was not preserved: %+v", metrics)
 			}
+			if metrics.SourceReadSet == nil || len(metrics.SourceReadSet.Paths) != 1 || metrics.SourceReadSet.Paths[0].Segments[2].Name != "source" {
+				t.Fatalf("actual PG cursor source evidence was lost: %+v", metrics.SourceReadSet)
+			}
 			var count int
 			if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM "%s".target`, schema)).Scan(&count); err != nil || count != step.rows {
 				t.Fatalf("actual rows=%d want=%d error=%v", count, step.rows, err)

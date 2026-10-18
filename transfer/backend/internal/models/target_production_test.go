@@ -40,15 +40,27 @@ func TestDecodeTargetProductionRejectsUnprovenFacts(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			record := valid
 			change(&record)
-			if _, err := DecodeTargetProduction(record); err == nil {
+			if _, err := EncodeTargetProduction(record); err == nil {
 				t.Fatal("invalid provenance accepted")
 			}
 		})
 	}
-	if _, err := DecodeTargetProduction(valid); err != nil {
+	encoded, err := EncodeTargetProduction(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTargetProduction(encoded); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := DecodeTargetProduction(map[string]interface{}{"unexpected": true}); err == nil {
 		t.Fatal("unknown record fields accepted")
+	}
+	if _, err := DecodeTargetProduction(encoded + `{}`); err == nil {
+		t.Fatal("trailing private record accepted")
+	}
+	retired := valid
+	retired.SchemaVersion = "transfer.target-production/v1"
+	if _, err := EncodeTargetProduction(retired); err == nil {
+		t.Fatal("retired production evidence upgraded implicitly")
 	}
 }

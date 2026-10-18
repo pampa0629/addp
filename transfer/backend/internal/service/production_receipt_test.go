@@ -20,7 +20,12 @@ func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testin
 	by := 31
 	principal, member, version := int64(31), int64(33), int64(5)
 	record := models.TargetProduction{SchemaVersion: models.TargetProductionSchema, TenantID: 7, ExecutionID: id, Attempt: 2, RetryOfExecutionID: &retry, TargetLocator: "addp://engine/2/path/outdoor/persons?type=table", Phase: models.TargetProductionCommitted, Preparation: plugin.TableTargetRecreated, StartedAt: now, PreparedAt: &now, CommittedAt: &now}
-	item := execution.TaskExecution{TenantID: 7, ExecutionID: id, Module: "transfer", TaskType: "sync", Source: "transfer", TriggerType: "manual", ExecutionBoundary: "bounded", Status: "success", Attempt: 2, RetryOfExecutionID: &retry, TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &member, IssuedAuthorizationVersion: &version, Metadata: commonmodels.JSONMap{models.TargetProductionMetadataKey: record, "private": "secret"}}
+	record.SourceReadSet, _ = plugin.NewQueryReadSet(plugin.TabularItemPath(3, "schema", "outdoor", "source"))
+	encoded, err := models.EncodeTargetProduction(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := execution.TaskExecution{TenantID: 7, ExecutionID: id, Module: "transfer", TaskType: "sync", Source: "transfer", TriggerType: "manual", ExecutionBoundary: "bounded", Status: "success", Attempt: 2, RetryOfExecutionID: &retry, TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &member, IssuedAuthorizationVersion: &version, Metadata: commonmodels.JSONMap{models.TargetProductionMetadataKey: encoded, "private": "secret"}}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +33,9 @@ func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testin
 	result, err := svc.ReadProductionReceipt(t.Context(), 7, id)
 	if err != nil || result.UserOrigin == nil || result.UserOrigin.PrincipalID != 31 || result.Preparation != plugin.TableTargetRecreated || result.RetryOfExecutionID == nil || *result.RetryOfExecutionID != retry {
 		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if result.SourceReadSet == nil || result.SourceReadSet.Paths[0].Segments[2].Name != "source" {
+		t.Fatal("machine receipt lost actual committed sources")
 	}
 	if _, err := svc.ReadProductionReceipt(t.Context(), 8, id); err == nil {
 		t.Fatal("cross tenant receipt returned")

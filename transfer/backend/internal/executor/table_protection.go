@@ -25,6 +25,10 @@ type protectedTableBatchReader struct {
 	derivedFields []string
 }
 
+func (r *protectedTableBatchReader) ReadSet(ctx context.Context) (*engineplugin.QueryReadSet, error) {
+	return readActualSessionSet(ctx, r.inner)
+}
+
 func protectTableBatchReader(inner TableBatchReader, protect func(*engineplugin.QueryResult) error, derivedFields []string) (TableBatchReader, error) {
 	if inner == nil || protect == nil {
 		return inner, nil
