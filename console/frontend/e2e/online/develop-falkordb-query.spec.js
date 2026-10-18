@@ -39,7 +39,7 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
   })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const engineResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/engines')
-  await login(page, required('ADDP_ONLINE_GRAPH_DEVELOP_USERNAME'), required('ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD'), '/develop/sql')
+  await login(page, required('ADDP_ONLINE_GRAPH_DEVELOP_USERNAME'), required('ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD'), '/develop/sql?action=create')
   const engines = await engineResponse
   const api = await browserAPIFromResponse(engines, required('GATEWAY_URL'), {
     principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: new Set(permissions)
