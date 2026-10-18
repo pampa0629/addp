@@ -8,8 +8,9 @@ const itemName = 'ods_outdoor_activities_source_facts_display_verification'
 const fullName = `outdoor.${itemName}`
 const entryURL = `/catalog/entries/${entryID}?tab=professional`
 
-async function openSourceFacts(page, width) {
+async function openSourceFacts(page, width, { audit = false } = {}) {
   const writes = [], unexpected = [], errors = [], reads = []
+  let historyReads = 0
   await page.setViewportSize({ width, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => errors.push(error.message))
@@ -24,7 +25,8 @@ async function openSourceFacts(page, width) {
     if (path === '/api/v1/system/auth/context') return route.fulfill({ json: {
       principal: { id: '32', type: 'user' },
       context: { type: 'tenant', tenant_id: '3', tenant_membership_id: '7' },
-      authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '3' }, permissions: ['catalog.entry.read'] }] }
+      authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '3' },
+        permissions: ['catalog.entry.read', ...(audit ? ['catalog.audit.read'] : [])] }] }
     } })
     if (request.method() !== 'GET') writes.push(`${request.method()} ${path}`)
     reads.push({ path, authorization: request.headers().authorization })
@@ -43,6 +45,13 @@ async function openSourceFacts(page, width) {
     if (path === `/api/v1/catalog/entries/${entryID}/data-dictionary`) return route.fulfill({ json: {
       as_of: '2026-10-17T02:58:00Z', generated_at: '2026-10-17T02:58:00Z', fields: []
     } })
+    if (audit && path === `/api/v1/catalog/entries/${entryID}/history`) {
+      historyReads++
+      return route.fulfill({ json: { audit_events: [], source_bindings: [
+        { source_identity: fingerprint, source_status: 'active', is_current: true, bound_at: '2026-10-17T02:58:00Z' },
+        { source_identity: 'a'.repeat(64), source_status: 'missing', is_current: false, bound_at: '2026-10-16T02:58:00Z' }
+      ] } })
+    }
     unexpected.push(`${request.method()} ${path}`)
     return route.fulfill({ status: 500, json: { error: 'unexpected_request' } })
   })
@@ -51,7 +60,7 @@ async function openSourceFacts(page, width) {
   const detail = catalog.getByTestId('catalog-entry-detail')
   await expect(detail).toHaveAttribute('data-load-state', 'loaded')
   const facts = detail.locator('.source-facts-descriptions')
-  return { catalog, facts, verifyReadOnly() {
+  return { catalog, facts, historyReadCount: () => historyReads, verifyReadOnly() {
     expect(writes).toEqual([])
     expect(unexpected).toEqual([])
     expect(errors).toEqual([])
@@ -59,6 +68,33 @@ async function openSourceFacts(page, width) {
     expect(reads.every(read => read.authorization === 'Bearer catalog-source-facts-reader-token')).toBe(true)
   } }
 }
+
+test('Catalog source binding history translates canonical statuses when Console language changes in the same iframe', async ({ page }) => {
+  const fixture = await openSourceFacts(page, 1440, { audit: true }), { catalog } = fixture
+  await catalog.getByRole('tab', { name: '关系与历史', exact: true }).click()
+  const rows = catalog.locator('.history-card .el-table__body tbody tr')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).locator('td').nth(1)).toHaveText('有效')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveText('来源缺失')
+  const origin = await catalog.locator('body').evaluate(() => performance.timeOrigin)
+  const historyURL = await catalog.locator('body').evaluate(() => location.href)
+  const consoleURL = page.url()
+  const reads = fixture.historyReadCount()
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await expect(rows.nth(0).locator('td').nth(1)).toHaveText('Active')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveText('Missing source')
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await page.getByRole('menuitem', { name: '中文', exact: true }).click()
+  await expect(rows.nth(0).locator('td').nth(1)).toHaveText('有效')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveText('来源缺失')
+  expect(await catalog.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  expect(fixture.historyReadCount()).toBe(reads)
+  await expect(catalog.getByRole('tab', { name: '关系与历史', exact: true })).toHaveAttribute('aria-selected', 'true')
+  expect(await catalog.locator('body').evaluate(() => location.href)).toBe(historyURL)
+  await expect(page).toHaveURL(consoleURL)
+  fixture.verifyReadOnly()
+})
 
 for (const width of [1440, 900]) {
   test(`Catalog technical source keeps balanced columns and readable names at ${width}px`, async ({ page }) => {

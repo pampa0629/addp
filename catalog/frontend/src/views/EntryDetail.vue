@@ -527,7 +527,9 @@
 		  <h3>{{ t('catalog.history.sourceBindings') }}</h3>
 		  <el-table :data="history?.source_bindings || []" v-loading="historyLoading">
 			<el-table-column prop="source_identity" :label="t('catalog.entry.sourceIdentity')" min-width="260" show-overflow-tooltip />
-			<el-table-column prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130" />
+			<el-table-column prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130">
+			  <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}</template>
+			</el-table-column>
 			<el-table-column :label="t('catalog.history.current')" width="100">
 			  <template #default="{ row }">{{ row.is_current ? t('catalog.history.yes') : t('catalog.history.no') }}</template>
 			</el-table-column>
