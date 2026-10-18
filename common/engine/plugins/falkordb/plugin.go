@@ -249,7 +249,21 @@ func (p *FalkorDBPlugin) ListChildren(ctx context.Context, c plugin.ConnectionIn
 	}
 	sort.Strings(names)
 	entries := make([]plugin.EngineCatalogEntry, 0, len(names))
+	seen := map[string]bool{}
 	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		// GRAPH.LIST uses a global registry, including graphs in other Redis
+		// databases. TYPE is scoped to this connection's fixed database.
+		kind, err := client.Type(ctx, name).Result()
+		if err != nil {
+			return nil, err
+		}
+		if kind != "graphdata" {
+			continue
+		}
 		if !validGraphName(name) {
 			return nil, fmt.Errorf("FalkorDB graph key cannot be represented as a catalog name")
 		}

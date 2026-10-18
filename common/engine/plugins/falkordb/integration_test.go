@@ -20,6 +20,79 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestIntegrationFalkorDBLogicalDatabaseIsolation(t *testing.T) {
+	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
+		t.Skip("owned FalkorDB T2 gate required")
+	}
+	host, portText, err := net.SplitHostPort(os.Getenv("FALKORDB_T2_ENDPOINT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &FalkorDBPlugin{}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	const graph = "logical-database-shared-name"
+	uniqueGraph := func(database int) string { return fmt.Sprintf("logical-database-only-%d", database) }
+	for _, database := range []int{0, 1} {
+		conn := plugin.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD"), "database": database}
+		client, close, err := p.open(ctx, conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer close()
+		defer func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cleanupCancel()
+			for _, name := range []string{graph, uniqueGraph(database)} {
+				if err := client.Do(cleanupCtx, "GRAPH.DELETE", name).Err(); err != nil {
+					t.Errorf("delete owned DB %d graph: %v", database, err)
+				}
+			}
+			if err := client.Del(cleanupCtx, uniqueGraph(1-database)).Err(); err != nil {
+				t.Errorf("delete owned DB %d non-graph key: %v", database, err)
+			}
+		}()
+		for _, name := range []string{graph, uniqueGraph(database)} {
+			if _, err := runQuery(ctx, client, name, "CREATE (:Record {database:$database})", map[string]interface{}{"database": int64(database)}, 1, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// A graph name in the other DB may be an ordinary key in this DB.
+		if err := client.Set(ctx, uniqueGraph(1-database), "not a graph", 0).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 13)
+	path := p.graphPath(13, graph)
+	for _, database := range []int{0, 1} {
+		conn := plugin.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD"), "database": database}
+		entries, err := p.ListChildren(ctx, conn, root, plugin.ListOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts := map[string]int{}
+		for _, entry := range entries {
+			counts[entry.Name]++
+		}
+		if counts[graph] != 1 || counts[uniqueGraph(database)] != 1 || counts[uniqueGraph(1-database)] != 0 {
+			t.Fatalf("DB %d catalog crossed database or key-type boundaries: %+v", database, counts)
+		}
+		plan, err := p.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 13, Language: "cypher", TargetPath: &path, Query: "MATCH (n:Record) RETURN n.database AS database"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn["database"] = 1 - database
+		result, err := plan.Execute(ctx)
+		if err != nil || len(result.Rows) != 1 || result.Rows[0]["database"] != int64(database) {
+			t.Fatalf("DB %d prepared graph crossed logical database identity: %+v %v", database, result, err)
+		}
+	}
+}
+
 func TestIntegrationFalkorDBCatalogRepeatedPropertyObservations(t *testing.T) {
 	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
 		t.Skip("owned FalkorDB T2 gate required")

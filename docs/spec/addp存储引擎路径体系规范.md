@@ -563,6 +563,6 @@ Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为�
 
 ## FalkorDB 业务图引擎
 
-`falkordb` 使用 `server(root) -> graph` 目录。一个 Engine Instance 的 `database` 固定一个 Redis 逻辑数据库，属于连接身份，不进入业务路径；原生 graph key 是图 leaf 的名称，`full_name` 为完整 graph key，不附加虚构的 database 或 graph 后缀。目录由 GRAPH.LIST 枚举，ResolvePath 精确验证目标 key 的 graph 原生类型；不存在或无权限明确失败，不创建图。不同 graph key 分别生成 DataItem 指纹，label、relationship type 和 endpoint pattern 只作为 graph facts。
+`falkordb` 使用 `server(root) -> graph` 目录。一个 Engine Instance 的 `database` 固定一个 Redis 逻辑数据库，属于连接身份，不进入业务路径；原生 graph key 是图 leaf 的名称，`full_name` 为完整 graph key，不附加虚构的 database 或 graph 后缀。GRAPH.LIST 来自原生全局图注册表，目录必须对名称去重，并在连接指定的逻辑数据库中用 TYPE 确认 key 为 graphdata 后返回；其他数据库的图或当前数据库的同名非图 key 不进入目录。TYPE 的权限或连接错误明确失败，不作为不存在忽略。ResolvePath 同样精确验证目标 key 的 graph 原生类型；不存在或无权限明确失败，不创建图。不同 graph key 分别生成 DataItem 指纹，label、relationship type 和 endpoint pattern 只作为 graph facts。
 
 业务实例与 Ontology 私有 Infra 分离：System 注册使用用户提供的业务连接；不读取 `INFRA_FALKORDB_*`，不枚举或改写 Ontology 投影。正式图查询必须指定 graph leaf 的 EngineCatalogPath，不能静默选择某个图。
