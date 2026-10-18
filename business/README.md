@@ -16,6 +16,8 @@ bash business/scripts/restart.sh -gaussdb
 
 原生 `gsql` 的凭据通道固定采用[厂商文档](https://support.huaweicloud.com/centralized-ref-v10-gaussdb/gaussdb-38-0862.html)的 `-2`：密码走标准输入管道，SQL 由独立文件描述符交给 `-f /dev/fd/3`，不生成临时凭据文件、不把密码放入参数。固定介质的客户端不能套用 PostgreSQL `psql` 的 `-w`、`PGPASSFILE` 或 `PGPASSWORD` 登录方式；介质中 `libpq` 出现某个环境变量字符串，不能证明 `gsql` 会使用它。连接失败保留原生诊断，认证与密码策略不降低。
 
+TCP 自动化查询统一加 `-q`，只输出查询结果；固定原生客户端默认会在 `SELECT` 结果后附加 `total time: … ms`，即使使用 `-At` 也会影响健康检查的精确比较。Release 归档保留每次健康检查的退出码和诊断并脱敏；初始化阶段的临时内核不计为最终就绪。
+
 Schema 使用[该版本通用 SQL 参考](https://support.huaweicloud.com/intl/en-us/centralized-ref-v10-gaussdb/gaussdb-38-0274.html)支持的普通 `CREATE SCHEMA`，只在首次初始化执行；已完成卷直接复用。`CREATE TABLE IF NOT EXISTS`、索引和缺失样例的幂等维护仍在同一条初始化路径，不切换数据库模式来接受其他方言。
 
 构建／初始化由 `business/gaussdb/` 唯一维护，既有 `make test-release RELEASE_SUITE=gaussdb-official-media` 双架构门禁复用它，新增独占数据卷、删除并重建容器后用户数据及样例修改保留的检查；所有退出路径核对容器、网络、卷、镜像零残留。确定性验证为 `make test-business-config` 和 `make test-release-runner`。本轮真实双架构持久化验收尚待运行；此前协议 T5 通过不能代替本次生命周期验收。正式 `engine_type=gaussdb` 插件、平台 T2/T4 和 macOS Docker 运行仍未验收。

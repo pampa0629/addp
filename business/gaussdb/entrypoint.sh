@@ -36,7 +36,7 @@ tcp_sql() {
     # Neither credentials nor SQL need a temporary file or command argument.
     {
         printf '%s\n' "$password" |
-            PGCONNECT_TIMEOUT=5 gsql -X -2 -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At -f /dev/fd/3
+            PGCONNECT_TIMEOUT=5 gsql -X -q -2 -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At -f /dev/fd/3
     } 3<&0
 }
 

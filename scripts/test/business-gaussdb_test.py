@@ -78,6 +78,8 @@ gsql() {
     IFS= read -r supplied_password
     [ "$supplied_password" = "$GAUSSDB_APP_PASSWORD" ] || return 98
     [[ " $* " = *" -2 "* && " $* " = *" -f /dev/fd/3 "* ]] || return 96
+    # Native gsql otherwise appends "total time: ... ms" to SELECT output.
+    [[ " $* " = *" -q "* ]] || return 94
     [ "$(cat /dev/fd/3)" = "SELECT 1;" ] || return 95
     [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
     # The fixed native gsql has no PostgreSQL psql -w/--no-password option.
