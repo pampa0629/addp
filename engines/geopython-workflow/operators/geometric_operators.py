@@ -170,6 +170,58 @@ def dissolve(input_gdf: gpd.GeoDataFrame, by: str = None) -> gpd.GeoDataFrame:
     return result
 
 
+def _active_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    if not isinstance(input_gdf, gpd.GeoDataFrame):
+        raise ValueError("input_gdf must be a GeoDataFrame")
+    try:
+        return input_gdf.geometry
+    except AttributeError as exc:
+        raise ValueError("input_gdf requires an active geometry column") from exc
+
+
+def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    geometry = _active_geometry(input_gdf)
+    if shapely.has_z(geometry.array).any() or shapely.has_m(geometry.array).any():
+        raise ValueError("input_gdf requires two-dimensional XY geometries")
+    if not np.isfinite(shapely.get_coordinates(geometry.array)).all():
+        raise ValueError("input_gdf requires finite XY coordinates")
+    return geometry
+
+
+def check_geometry(
+    input_gdf: gpd.GeoDataFrame,
+    valid_field: str = "geometry_valid",
+    reason_field: str = "geometry_reason",
+) -> gpd.GeoDataFrame:
+    """Annotate each source feature's planar validity without changing geometry."""
+    geometry = _finite_xy_geometry(input_gdf)
+    fields = (valid_field, reason_field)
+    if any(not isinstance(field, str) or not field or field != field.strip() for field in fields):
+        raise ValueError("output field names must be non-empty strings without surrounding whitespace")
+    if valid_field == reason_field or any(field in input_gdf.columns for field in fields):
+        raise ValueError("output field names must be distinct and must not overwrite source fields")
+    result = input_gdf.copy()
+    result[valid_field] = shapely.is_valid(geometry.array)
+    reasons = shapely.is_valid_reason(geometry.array)
+    result[reason_field] = pd.array(
+        ["Missing Geometry" if reason is None else reason for reason in reasons], dtype="string",
+    )
+    return result
+
+
+def repair_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Repair invalid XY geometries using linework, retaining collapsed components."""
+    geometry = _finite_xy_geometry(input_gdf)
+    values = geometry.array.copy()
+    invalid = ~shapely.is_missing(values) & ~shapely.is_valid(values)
+    values[invalid] = shapely.make_valid(values[invalid], method="linework", keep_collapsed=True)
+    if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
+        raise ValueError("geometry repair did not produce valid geometries")
+    result = input_gdf.copy()
+    result[result.geometry.name] = values
+    return result
+
+
 def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
     """Build planar faces and report unused edges without changing source linework."""
     if not isinstance(input_gdf, gpd.GeoDataFrame):
@@ -209,6 +261,36 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+CHECK_GEOMETRY_METADATA = OperatorMetadata(
+    name="check_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="几何检查", brief_description="逐要素检查平面几何有效性，保留原要素并标注原因",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按 GEOS 平面有效性规则检查每个几何，在原数据副本中增加有效性和原因字段。"
+             "保留属性、行顺序、几何及源坐标系，不判断要素间的重叠或缝隙。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待检查的二维矢量要素", notes="要求有限 XY 坐标，不接受 Z/M"),
+        OperatorParam(name="valid_field", type="param", data_type="str", required=False, default="geometry_valid", description="有效性结果字段名", notes="不能覆盖已有字段或与原因字段同名"),
+        OperatorParam(name="reason_field", type="param", data_type="str", required=False, default="geometry_reason", description="有效性原因字段名", notes="原因保留 GEOS 原始诊断文本"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="原要素及有效性、原因字段", is_default=True)],
+    use_cases=["定位自相交几何", "修复前后对比几何有效性"],
+    notes=["空几何有效，缺失几何无效；不丢弃任何记录", "仅检查有限 XY 几何；Z/M 和非有限坐标明确拒绝", "输出字段名冲突时失败，不自动改名或覆盖业务属性"],
+    workflow_example={"id": "check", "operator": "check_geometry", "params": {"input_gdf": {"$ref": "load"}}, "depends_on": ["load"]},
+)
+
+REPAIR_GEOMETRY_METADATA = OperatorMetadata(
+    name="repair_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="几何修复", brief_description="修复单个无效几何，完整保留多部件及退化部分",
+    execution_modes=["workflow"], effects=["read"],
+    overview="以 linework 方法修复二维无效几何，保留原边线形成的多部件、几何集合和退化线点。"
+             "一条输入仍对应一条输出，保留源属性和坐标系，不自动吸附或处理图层间拓扑。",
+    params=[OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待修复的二维矢量要素", notes="拒绝非有限 XY 坐标和 Z/M，不静默降维")],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="修复后的完整几何及原属性", is_default=True)],
+    use_cases=["修复自相交面", "几何检查后修复并复查"],
+    notes=["固定 linework 和 keep_collapsed=True，不提供另一套推断修复路线", "合法几何、缺失值和空几何保持原样；缺失值须另行补充或过滤", "可能输出多面、GeometryCollection 或线点，不自动拆行或丢弃低维部分", "不补缝、不吸附、不纠正跨要素重叠；混合几何保存受目标格式约束"],
+    workflow_example={"id": "repair", "operator": "repair_geometry", "params": {"input_gdf": {"$ref": "check"}}, "depends_on": ["check"]},
+)
 
 POLYGONIZE_METADATA = OperatorMetadata(
     name="polygonize",
@@ -737,4 +819,6 @@ OPERATORS = dict([
     register_operator(ENVELOPE_METADATA, envelope),
     register_operator(DISSOLVE_METADATA, dissolve),
     register_operator(POLYGONIZE_METADATA, polygonize),
+    register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
+    register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
 ])

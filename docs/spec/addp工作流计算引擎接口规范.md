@@ -944,6 +944,16 @@ Develop 按 Runtime 元数据动态发现和显示端口，默认引用选取 `r
 
 验证沿用 `make test-geopython-workflow`，覆盖真实线网构面、交点与重合、孔洞、余线类型、零容差边界、输入拒绝、CRS/属性/源数据不变及两端口 DAG 保存重载。新用例加入根入口的显式文件列表，既有 Platform CI 的 GeoPython Job 和 engines 路径选择自动覆盖，无新增依赖、API 或 CI Job；确定性回归不替代完整 ADDP T4 验收。
 
+### 几何检查与修复契约
+
+GeoPython `check_geometry`（几何检查）和 `repair_geometry`（几何修复）属于“矢量处理 / 几何处理”，只支持 workflow、效果为 `read`，使用既有 `geodataframe` 输入与默认 `result` 输出。两者要求有限二维 XY 坐标（空值和空几何按下文处理），拒绝 Z/M 和非有限坐标，不静默降维；逐要素处理，不改写源，保留原属性、行数、顺序、索引、active geometry 列名及源 CRS（包括未定义事实）。它们检查和修复单个几何的平面有效性，不判断跨要素重叠、覆盖缝隙、悬挂线或业务质量，不吸附、补缝、延伸或重投影。
+
+`check_geometry(input_gdf, valid_field="geometry_valid", reason_field="geometry_reason")` 在原数据副本中增加布尔有效性字段和字符串原因字段，使用 GEOS 平面有效性定义。空几何是有效几何；缺失几何为 false、原因为 `Missing Geometry`；其余原因为 GEOS 的 `Valid Geometry` 或具体无效原因（底层诊断文本，不作为界面翻译词条）。输出字段名须为非空、无首尾空白的不同字符串，且不能与任何源列冲突；冲突明确失败，不覆盖业务字段、不自动改名。
+
+`repair_geometry(input_gdf)` 固定使用 GEOS/Shapely `make_valid(method="linework", keep_collapsed=True)`，仅修复非空且无效的几何。按边线和奇偶内外规则恢复有效性，不按 shell/hole 标签猜测业务意图。合法几何、缺失值及空几何保持原样；非有限 XY 或 Z/M 输入明确拒绝，不能静默删点或降维。一个源要素仍对应一行，完整保留修复产生的多部件、GeometryCollection 和退化线／点，不筛掉低维部分、不自动拆行。下游如需纯面须显式筛选，并遵守目标格式对混合几何的限制。若修复结果仍无效则执行失败，不能冒充修复成功。
+
+验证沿用 `make test-geopython-workflow` 的既有 `test_topology_operators.py`、元数据和协议文件，Platform CI GeoPython Job 自动覆盖 engines 路径；不新增依赖、标准入口、HTTP API、Adapter、保存或扫描路径。覆盖真实自交与塌缩几何、属性及 CRS 不变、字段冲突、空批、源不变、工作流发现和检查→修复→复查→保存重载。原拓扑构面完整 T4 证据仅证明 `polygonize`；新增算子的确定性回归不冒充新的真实 T4。
+
 ### 4.6 栅格计算契约
 
 GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 ResourceLocator，`raster_load` 派生 source-only 访问计划，`raster_save` 派生 target-only 访问计划，`raster_to_cog` 使用 source/target 计划；访问协议固定 `addp.workflow.access-plan/v1`。源、目标分别授权，凭据只在执行期传递。输出文件限定 `.tif/.tiff`，COG 是 TIFF 的 profile，不是另一种格式身份。

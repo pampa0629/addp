@@ -42,7 +42,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 72 个算子：通用处理 18 个、矢量处理 27 个、栅格处理 27 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 74 个算子：通用处理 18 个、矢量处理 29 个、栅格处理 27 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -51,7 +51,7 @@ operators/
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 10 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize` |
+| 矢量处理 | 几何处理 | 12 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -75,6 +75,14 @@ operators/
 `polygonize(input_gdf)` 接受二维 LineString / MultiLineString 线网，先按真实交点打断、去除重合段，再提取闭合区域。默认 `result` 端口每行一个 Polygon，仅含几何；`diagnostics` 端口含 `issue_type + geometry`，区分 `dangle`、`cut_edge`、`invalid_ring`。两端口均保留源 CRS，可分别连接 `save`；空批和无闭合区域返回同 Schema 的空面结果。
 
 不自动吸附、补缝、延伸或删除短线，不改写源，也不继承源线业务属性。拒绝空值、空几何、Z/M、非有限坐标及无效线。嵌套闭合区域保留孔洞及独立内面；诊断来自打断去重后的线网，不含原始线 ID，不等同完整拓扑质检。完整线网在内存中计算，不承诺固定内存或大规模容量。详细契约见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md#拓扑构面契约)。
+
+## 几何检查与修复
+
+`check_geometry(input_gdf, valid_field="geometry_valid", reason_field="geometry_reason")` 保留全部原要素和属性，追加平面有效性和 GEOS 原因；空几何有效，缺失值无效。字段名可配置，冲突明确失败，不覆盖业务属性。两算子仅接受有限二维 XY，拒绝 Z/M 和非有限坐标，不静默降维。
+
+`repair_geometry(input_gdf)` 固定使用 `make_valid(method="linework", keep_collapsed=True)`，仅修复无效几何，保留合法、空及缺失几何。要求有限二维 XY；不丢弃修复产生的线点或 GeometryCollection、不拆行，保留源属性、索引、active geometry 名和 CRS。缺失几何不会被凭空补造，可接现有过滤算子；纯面目标须显式处理混合类型。复查请设置新的结果字段名，保留修复前诊断。
+
+两者均在“矢量处理 / 几何处理”中，仅支持 workflow/read，输出接既有 `save`。不检查或修复跨要素重叠、缝隙，不吸附或补缝；单要素有效性与完整拓扑质量不同。详细边界见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md#几何检查与修复契约)。
 
 ## 使用方式
 

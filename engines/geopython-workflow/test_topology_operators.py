@@ -224,3 +224,150 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         with pytest.raises(fixture.FixtureError):
             fixture.worker('verify', tmp_path)
         path.write_bytes(original)
+
+
+# Single-feature validity is distinct from polygonize's whole-network face building.
+def test_geometry_check_preserves_features_and_reports_valid_invalid_missing_and_empty():
+    bow = Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])
+    frame = lines([box(0, 0, 1, 1), bow, None, Polygon(), Point(2, 3)])
+    frame.index = [9, 9, 3, 7, 1]
+    before = frame.copy(deep=True)
+    checked = get_operator("check_geometry")(frame)
+    assert checked.geometry_valid.tolist() == [True, False, False, True, True]
+    assert checked.geometry_reason.iloc[0] == "Valid Geometry"
+    assert checked.geometry_reason.iloc[1].startswith("Self-intersection")
+    assert checked.geometry_reason.iloc[2] == "Missing Geometry"
+    assert str(checked.geometry_valid.dtype) == "bool"
+    assert str(checked.geometry_reason.dtype) == "string"
+    assert_geodataframe_equal(checked.drop(columns=["geometry_valid", "geometry_reason"]), before)
+    assert_geodataframe_equal(frame, before)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"valid_field": "source_name"}, {"reason_field": "boundary"},
+    {"valid_field": "x", "reason_field": "x"}, {"valid_field": ""},
+    {"reason_field": " reason "}, {"valid_field": 2},
+])
+def test_geometry_check_rejects_output_field_collision_and_bad_names(kwargs):
+    with pytest.raises(ValueError, match="field"):
+        get_operator("check_geometry")(lines([Point(0, 0)]), **kwargs)
+
+
+def test_geometry_repair_keeps_multipart_collapsed_parts_and_valid_source_exactly():
+    bow = Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])
+    collapsed = Polygon([(0, 0), (1, 1), (1, 2), (1, 1), (0, 0)])
+    mixed = Polygon([(0, 0), (2, 0), (2, 2), (1, 1), (1, 2), (1, 1), (0, 0)])
+    frame = lines([bow, collapsed, mixed, box(9, 9, 10, 10), None, Polygon()])
+    frame.index = [5, 5, 2, 8, 4, 1]
+    before = frame.copy(deep=True)
+    repaired = get_operator("repair_geometry")(frame)
+    assert repaired.geometry.iloc[0].geom_type == "MultiPolygon"
+    assert sorted(part.area for part in repaired.geometry.iloc[0].geoms) == [1, 1]
+    assert repaired.geometry.iloc[1].geom_type == "MultiLineString"
+    assert repaired.geometry.iloc[1].equals(MultiLineString([[(0, 0), (1, 1)], [(1, 1), (1, 2)]]))
+    assert repaired.geometry.iloc[2].geom_type == "GeometryCollection"
+    assert {part.geom_type for part in repaired.geometry.iloc[2].geoms} == {"Polygon", "LineString"}
+    assert repaired.geometry.iloc[3].wkb == frame.geometry.iloc[3].wkb
+    assert repaired.geometry.iloc[4] is None and repaired.geometry.iloc[5].is_empty
+    assert repaired.geometry.dropna().is_valid.all()
+    assert repaired.drop(columns="boundary").equals(frame.drop(columns="boundary"))
+    assert repaired.geometry.name == "boundary" and repaired.crs == frame.crs
+    assert_geodataframe_equal(frame, before)
+
+
+@pytest.mark.parametrize("crs", [None, "OGC:CRS84", "EPSG:3857"])
+def test_geometry_validity_empty_batch_and_custom_fields_keep_crs(crs):
+    frame = lines([], crs=crs)
+    checked = get_operator("check_geometry")(frame, valid_field="ok", reason_field="why")
+    assert checked.columns.tolist() == ["source_name", "boundary", "ok", "why"]
+    assert checked.empty and checked.crs == frame.crs
+    assert str(checked.ok.dtype) == "bool" and str(checked.why.dtype) == "string"
+    assert_geodataframe_equal(get_operator("repair_geometry")(frame), frame)
+
+
+@pytest.mark.parametrize("name", ["check_geometry", "repair_geometry"])
+@pytest.mark.parametrize("frame", [None, pd.DataFrame({"x": [1]}), gpd.GeoDataFrame({"x": [1]})])
+def test_geometry_validity_requires_active_geodataframe(name, frame):
+    with pytest.raises(ValueError, match="GeoDataFrame|geometry"):
+        get_operator(name)(frame)
+
+
+@pytest.mark.parametrize("name", ["check_geometry", "repair_geometry"])
+@pytest.mark.parametrize("wkt", ["POINT Z (1 2 3)", "POINT M (1 2 3)", "GEOMETRYCOLLECTION (POINT Z (1 2 3))", "POINT (Infinity 2)"])
+def test_geometry_validity_rejects_nonfinite_or_extra_dimensions(name, wkt):
+    frame = lines([shapely.from_wkt(wkt)])
+    with pytest.raises(ValueError, match="finite|XY"):
+        get_operator(name)(frame)
+
+
+def test_geometry_repair_workflow_check_recheck_save_reload_and_discovery(tmp_path):
+    source = lines([Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])], crs="OGC:CRS84")
+    source.to_file(tmp_path / "invalid.geojson", driver="GeoJSON")
+    original = (tmp_path / "invalid.geojson").read_bytes()
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    execution = execute_workflow({"tasks": [
+        {"id": "load", "operator": "load", "params": {"connection_info": connection, "path": "invalid.geojson"}, "depends_on": []},
+        {"id": "check", "operator": "check_geometry", "params": {"input_gdf": {"$ref": "load"}}, "depends_on": ["load"]},
+        {"id": "repair", "operator": "repair_geometry", "params": {"input_gdf": {"$ref": "check"}}, "depends_on": ["check"]},
+        {"id": "recheck", "operator": "check_geometry", "params": {"input_gdf": {"$ref": "repair"}, "valid_field": "after_valid", "reason_field": "after_reason"}, "depends_on": ["repair"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "recheck"}, "connection_info": connection, "path": "repaired.geojson", "mode": "fail"}, "depends_on": ["recheck"]},
+    ]})
+    assert execution["status"] == "success", execution.get("error")
+    output = gpd.read_file(tmp_path / "repaired.geojson")
+    assert output.source_name.tolist() == ["line-0"]
+    assert output.geometry_valid.tolist() == [False] and output.after_valid.tolist() == [True]
+    assert output.geometry.iloc[0].geom_type == "MultiPolygon" and output.geometry.iloc[0].area == 2
+    assert output.crs == source.crs
+    assert (tmp_path / "invalid.geojson").read_bytes() == original
+    import api_server
+    with api_server.app.test_client() as client:
+        discovered = {op["id"]: op for op in client.get("/api/operators").get_json()["operators"]}
+        for name in ["check_geometry", "repair_geometry"]:
+            op = discovered[name]
+            assert op["category_path"] == ["矢量处理", "几何处理"]
+            assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
+            assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
+
+
+@pytest.mark.parametrize("name", ["check_geometry", "repair_geometry"])
+def test_geometry_validity_runtime_async_requires_context_and_rejects_direct(name, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
+    frame = lines([Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])])
+    params = {"input_gdf": json.loads(frame.to_json())}
+    with api_server.app.test_client() as client:
+        assert client.post(f"/api/operators/{name}/invoke", json={"params": params}).status_code == 403
+        workflow = {"tasks": [{"id": "compute", "operator": name, "params": params, "depends_on": []}]}
+        assert client.post("/api/workflow", json={"workflow_def": workflow}).status_code == 400
+        response = client.post("/api/workflow", json={"workflow_def": workflow, "runtime": {
+            "tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]},
+        }})
+        assert response.status_code == 202
+        execution_id = response.get_json()["execution_id"]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + execution_id).get_json()
+            if state["status"] in {"success", "failed"}:
+                break
+            time.sleep(0.01)
+        assert state["status"] == "success", state
+        feature = json.loads(state["result"])["features"][0]
+        if name == "check_geometry":
+            assert feature["properties"]["geometry_valid"] is False
+            assert feature["geometry"]["type"] == "Polygon"
+        else:
+            assert feature["geometry"]["type"] == "MultiPolygon"
+        assert feature["properties"]["source_name"] == "line-0"
+
+
+@pytest.mark.parametrize("crs", [None, "OGC:CRS84", "EPSG:3857"])
+def test_geometry_repair_keeps_crs_and_repairs_hole_outside_shell_and_degenerate_line(crs):
+    misplaced_hole = Polygon(box(0, 0, 2, 2).exterior.coords, [box(3, 3, 4, 4).exterior.coords])
+    frame = lines([misplaced_hole, LineString([(5, 5), (5, 5)]), Point(6, 6)], crs=crs)
+    repaired = get_operator("repair_geometry")(frame)
+    assert repaired.crs == frame.crs and repaired.geometry.name == frame.geometry.name
+    assert repaired.geometry.iloc[0].equals(shapely.union_all([box(0, 0, 2, 2), box(3, 3, 4, 4)]))
+    assert repaired.geometry.iloc[1].equals(Point(5, 5))
+    assert repaired.geometry.iloc[2].wkb == frame.geometry.iloc[2].wkb
+    assert repaired.is_valid.all()
