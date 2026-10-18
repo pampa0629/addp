@@ -10,6 +10,8 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 编码只由声明的字段类型决定，不把普通文本、`bytes` 或原生 `array` 自动解释为 JSON。PostgreSQL 空间 `[]byte` 继续使用十六进制 EWKB，MySQL 空间值继续使用 WKB 与显式 SRID；普通 `bytes` 保持各引擎原生二进制语义。PostgreSQL 协议的 `bytes` 字段在进入 lib/pq 前将 `[]byte(nil)` 规范为 SQL NULL，非 nil 空切片仍为空 BYTEA；不能依赖驱动把 typed nil 切片视作 NULL。Session 的类型来自打开时的字段定义，upsert 类型来自 options，不由后续批次覆盖。验证入口为 `make test-go`、`make test-common-postgres`；真实 JSONB 回归由现有 Common PostgreSQL T2 门禁和 Release/T2 CI 执行；MySQL、OceanBase、TiDB 的 JSON、NULL、二进制及失败回滚回归分别由 `make test-common-mysql-data-protection`、`make test-common-oceanbase`、`make test-common-tidb` 自动发现，MySQL 同时验证空间混合表。
 
+PostgreSQL COPY 会话保存关闭阶段的失败，包括 COPY 收尾、语句关闭、事务提交及取消；重复 `Close` 保留原始失败链。已有 `--test typed-write` 原生分组验证 append／事务内 replace 下的延迟约束提交失败和收尾失败，失败无成功标记，成功／空会话语义保持；这不承诺会话外 DROP／Prepare 回滚。
+
 MySQL／TiDB／OceanBase 的共用 INSERT 与 upsert、MySQL 空间路径的普通字段及 openGauss MERGE 使用同一安全写入诊断：编码失败返回实际写入列的 1 起始序号和冻结声明类型；原生 SQL 错误保留错误链且不猜列。复用既有 JSON 和类型写入门禁，不改变编码或事务路线。
 
 MySQL 空间写会话与 MySQL／TiDB／OceanBase 共用的非空间写会话记录首次编码、执行或取消错误；后续批次拒绝继续写入，Close 即使没有显式 Abort 也回滚整个会话，并保留原错误和重复关闭的失败结果，不发布成功标记。Close 提交前已取消时同样回滚。该保护包括此前成功批次和失败批次中已执行的 chunk，不恢复会话外的建表或删表。既有三引擎 JSON 标准门禁共用直接会话失败回归，MySQL 同时覆盖空间混合表；检查跨 1000 行 chunk 的错误、关闭取消、旧行保留、新会话恢复及 JSON／bytes／几何保真。

@@ -1,6 +1,10 @@
 package postgresql
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	_ "github.com/mattn/go-sqlite3"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -70,5 +74,54 @@ func TestPostgresTableWriteSessionBuildCommitMarker(t *testing.T) {
 	freshColumns := fresh.Fingerprint["columns"].([]string)
 	if freshColumns[0] != "id" {
 		t.Fatalf("CommitMarker() exposed mutable columns: %#v", freshColumns)
+	}
+}
+
+// T1 checks the shared close state machine; native COPY is covered by typed-write T2.
+func TestPostgresTableWriteSessionRetainsCloseFailure(t *testing.T) {
+	for _, failure := range []string{"closed_statement", "canceled_close"} {
+		t.Run(failure, func(t *testing.T) {
+			db, err := sql.Open("sqlite3", ":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			tx, err := db.BeginTx(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			stmt, err := tx.PrepareContext(t.Context(), "SELECT 1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := &postgresTableWriteSession{db: db, tx: tx, stmt: stmt}
+			ctx := t.Context()
+			if failure == "closed_statement" {
+				if err := stmt.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			first := session.Close(ctx)
+			var typed *plugin.TableWriteError
+			if !errors.As(first, &typed) || typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+				t.Fatalf("close diagnostic: %#v error=%v", typed, first)
+			}
+			if failure == "canceled_close" && !errors.Is(first, context.Canceled) {
+				t.Fatalf("cancel cause lost: %v", first)
+			}
+			for i := 0; i < 2; i++ {
+				if err := session.Close(t.Context()); !errors.Is(err, first) {
+					t.Fatalf("repeated Close lost failure: got=%v first=%v", err, first)
+				}
+			}
+			if session.CommitMarker() != nil {
+				t.Fatal("failed close published marker")
+			}
+		})
 	}
 }

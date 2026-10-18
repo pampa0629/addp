@@ -155,7 +155,12 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 }
 
 func (s *postgresTableWriteSession) Close(ctx context.Context) (err error) {
-	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
+	defer func() {
+		err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
+		if err != nil {
+			s.writeErr = err
+		}
+	}()
 	if s.closed {
 		return s.writeErr
 	}

@@ -16,6 +16,7 @@ import (
 )
 
 func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
+	t.Run("session_close_outcomes", testPostgresCopyCloseOutcomes)
 	db, pg, connInfo := openPostgresPrepareIntegration(t, true)
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
@@ -161,5 +162,168 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 				t.Fatalf("native rejection changed rows: count=%d error=%v", count, err)
 			}
 		})
+	}
+}
+
+// Both statements and deferred constraints can fail only when closing COPY.
+// A failed replacement must preserve the original rows and repeat its failure.
+func testPostgresCopyCloseOutcomes(t *testing.T) {
+	db, pg, info := openPostgresPrepareIntegration(t, false)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	schema := fmt.Sprintf("copy_close_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA "+pq.QuoteIdentifier(schema)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, done := context.WithTimeout(context.Background(), 20*time.Second)
+		defer done()
+		if _, err := db.ExecContext(cleanup, "DROP SCHEMA "+pq.QuoteIdentifier(schema)+" RESTRICT"); err != nil {
+			t.Errorf("cleanup close schema: %v", err)
+		}
+		var exists bool
+		if err := db.QueryRowContext(cleanup, "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=$1)", schema).Scan(&exists); err != nil || exists {
+			t.Errorf("close schema cleanup not proven: exists=%v error=%v", exists, err)
+		}
+	})
+	for _, replace := range []bool{false, true} {
+		for _, outcome := range []string{"finalize_not_null", "deferred_unique", "encoding_failure", "canceled_close", "success", "empty_success"} {
+			t.Run(fmt.Sprintf("replace=%t/%s", replace, outcome), func(t *testing.T) {
+				table := fmt.Sprintf("target_%t_%s", replace, outcome)
+				qualified := pq.QuoteIdentifier(schema) + "." + pq.QuoteIdentifier(table)
+				if _, err := db.ExecContext(ctx, "CREATE TABLE "+qualified+" (id BIGINT NOT NULL, document JSONB NOT NULL, payload BYTEA, PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED)"); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					cleanup, done := context.WithTimeout(context.Background(), 20*time.Second)
+					defer done()
+					if _, err := db.ExecContext(cleanup, "DROP TABLE "+qualified+" RESTRICT"); err != nil {
+						t.Errorf("cleanup close table: %v", err)
+					}
+					var gone bool
+					if err := db.QueryRowContext(cleanup, "SELECT to_regclass($1) IS NULL", qualified).Scan(&gone); err != nil || !gone {
+						t.Errorf("close table cleanup not proven: gone=%v error=%v", gone, err)
+					}
+				})
+				if _, err := db.ExecContext(ctx, "INSERT INTO "+qualified+" VALUES (1,'{\"sentinel\":true}',$1)", []byte{0, 255}); err != nil {
+					t.Fatal(err)
+				}
+				fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "document", Type: datatype.FieldTypeJSON}, {Name: "payload", Type: datatype.FieldTypeBytes, Nullable: true}}
+				opened, err := pg.OpenTableWriteSession(ctx, info, postgresPrepareTablePath(schema, table), plugin.TableWriteSessionOptions{Fields: fields, Replace: replace, Method: "copy"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := opened.Abort(context.Background()); err != nil {
+						t.Errorf("abort close fixture: %v", err)
+					}
+				})
+				if outcome != "empty_success" {
+					if err := opened.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{{"id": int64(2), "document": map[string]interface{}{"ok": true}, "payload": []byte{0, 1, 255}}}}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var writeErr error
+				if outcome == "finalize_not_null" || outcome == "deferred_unique" || outcome == "encoding_failure" {
+					row := map[string]interface{}{"id": int64(3), "document": true, "payload": []byte{}}
+					if outcome == "finalize_not_null" {
+						row["document"] = nil
+					}
+					if outcome == "deferred_unique" {
+						row["id"] = int64(2)
+					}
+					if outcome == "encoding_failure" {
+						row["document"] = make(chan int)
+					}
+					writeErr = opened.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row}})
+					if outcome != "encoding_failure" && writeErr != nil {
+						t.Fatalf("failure must occur during close: %v", writeErr)
+					}
+				}
+				closeCtx := ctx
+				if outcome == "canceled_close" {
+					var done context.CancelFunc
+					closeCtx, done = context.WithCancel(ctx)
+					done()
+				}
+				first := opened.Close(closeCtx)
+				success := outcome == "success" || outcome == "empty_success"
+				if success {
+					if first != nil {
+						t.Fatal(first)
+					}
+					if err := opened.Close(ctx); err != nil {
+						t.Fatalf("repeated successful Close: %v", err)
+					}
+					marker := opened.(plugin.CommitMarkerProvider).CommitMarker()
+					wantRows := int64(1)
+					if outcome == "empty_success" {
+						wantRows = 0
+					}
+					if marker == nil || marker.CommitPosition["rows_committed"] != wantRows {
+						t.Fatalf("success marker: %#v", marker)
+					}
+				} else {
+					var typed *plugin.TableWriteError
+					if !errors.As(first, &typed) {
+						t.Fatalf("missing close diagnostic: %v", first)
+					}
+					if outcome == "encoding_failure" {
+						var native *json.UnsupportedTypeError
+						if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || !errors.As(first, &native) || !errors.Is(first, writeErr) {
+							t.Fatalf("encoding close evidence: %#v error=%v", typed, first)
+						}
+					} else {
+						if typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+							t.Fatalf("close failure guessed column: %#v", typed)
+						}
+						if outcome == "canceled_close" {
+							if !errors.Is(first, context.Canceled) {
+								t.Fatalf("cancel cause lost: %v", first)
+							}
+						} else {
+							var native *pq.Error
+							code, stage := "23502", "finalize postgresql copy session"
+							if outcome == "deferred_unique" {
+								code, stage = "23505", "commit postgresql copy session"
+							}
+							if !errors.As(first, &native) || string(native.Code) != code || !strings.Contains(first.Error(), stage) {
+								t.Fatalf("native close stage/error lost: %v", first)
+							}
+						}
+					}
+					for i := 0; i < 2; i++ {
+						if err := opened.Close(ctx); !errors.Is(err, first) {
+							t.Errorf("repeated Close lost failure: got=%v first=%v", err, first)
+						}
+					}
+					if opened.(plugin.CommitMarkerProvider).CommitMarker() != nil {
+						t.Error("failed close published success marker")
+					}
+				}
+				wantIDs := "1"
+				if success && replace {
+					wantIDs = ""
+				}
+				if outcome == "success" {
+					if replace {
+						wantIDs = "2"
+					} else {
+						wantIDs = "1,2"
+					}
+				}
+				var ids string
+				if err := db.QueryRowContext(ctx, "SELECT coalesce(string_agg(id::text,',' ORDER BY id),'') FROM "+qualified).Scan(&ids); err != nil || ids != wantIDs {
+					t.Fatalf("close changed rows: ids=%q want=%q error=%v", ids, wantIDs, err)
+				}
+				if !success || !replace {
+					var intact bool
+					if err := db.QueryRowContext(ctx, "SELECT document='{"+"\"sentinel\":true}'::jsonb AND payload=$1 FROM "+qualified+" WHERE id=1", []byte{0, 255}).Scan(&intact); err != nil || !intact {
+						t.Fatalf("sentinel changed: intact=%v error=%v", intact, err)
+					}
+				}
+			})
+		}
 	}
 }
