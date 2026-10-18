@@ -24,8 +24,9 @@ const decisions = cases.map((item, index) => ({
   reason: '接收方名称展示验收', target: { engine_id: '2', version: 'v1', segments: [{ name: 'outdoor' }, { name: 'activities' }] }
 }))
 
-async function openSharing(page) {
+async function openSharing(page, { withoutHistoryCodes = false } = {}) {
   const unexpected = [], writes = [], errors = [], reads = []
+  const history = withoutHistoryCodes ? decisions.map(({ recipient_code, ...row }) => row) : decisions
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/v1/**', route => {
@@ -56,14 +57,14 @@ async function openSharing(page) {
       if (suffix === '/data-dictionary') return route.fulfill({ json: {
         as_of: '2026-10-17T02:26:58Z', generated_at: '2026-10-17T02:26:58Z', fields: []
       } })
-      if (suffix === '/sharing_decisions') return route.fulfill({ json: { data: decisions, total: decisions.length } })
+      if (suffix === '/sharing_decisions') return route.fulfill({ json: { data: history, total: history.length } })
       if (suffix === '/sharing_recipient_candidates') {
         const type = url.searchParams.get('recipient_type'), search = url.searchParams.get('search') || ''
         const options = cases.filter(item => item.status === 'resolved' && item.type === type && `${item.name} ${item.code}`.includes(search))
           .map(item => ({ id: item.id, recipient_type: item.type, name: item.name, code: item.code, status: 'active' }))
         return route.fulfill({ json: { data: options, total: options.length } })
       }
-      const decision = decisions.find(item => suffix === `/sharing_decisions/${item.id}`)
+      const decision = history.find(item => suffix === `/sharing_decisions/${item.id}`)
       if (decision) return route.fulfill({ json: decision })
       if (decisions.some(item => suffix === `/sharing_decisions/${item.id}/fulfillments`)) {
         return route.fulfill({ json: { data: [], total: 0 } })
@@ -85,6 +86,21 @@ async function openSharing(page) {
     expect(reads.every(read => read.authorization === 'Bearer catalog-sharing-owner-token')).toBe(true)
   } }
 }
+
+test('Catalog current account remains readable when historical recipient codes are absent', async ({ page }) => {
+  const fixture = await openSharing(page, { withoutHistoryCodes: true }), { catalog } = fixture
+  const nameOnly = '账号 · 目录业务负责人 (当前账号)'
+  const row = catalog.getByTestId('sharing-confirmations').locator('.el-table__body tbody tr').first()
+  await expect(row.locator('td').first()).toHaveText(nameOnly)
+  await row.getByTestId('sharing-open-confirmation').click()
+  const recipient = catalog.getByTestId('sharing-confirmation-detail').locator('td.el-descriptions__label')
+    .filter({ hasText: /^接收方$/ }).locator('xpath=following-sibling::td[1]')
+  await expect(recipient).toHaveText(nameOnly)
+  await catalog.getByTestId('sharing-workspace').getByText('批准数据使用', { exact: true }).click()
+  await catalog.getByTestId('sharing-create-panel').locator('.el-select').nth(1).click()
+  await expect(catalog.getByRole('option', { name: cases[0].label, exact: true })).toBeVisible()
+  fixture.verifyNoCommands()
+})
 
 test('Catalog recipient options show names and mark only the exact current user across recipient type changes', async ({ page }) => {
   const fixture = await openSharing(page), { catalog } = fixture

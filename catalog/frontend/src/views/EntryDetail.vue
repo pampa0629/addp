@@ -182,7 +182,7 @@
         <el-descriptions class="source-facts-descriptions" :column="2" border>
           <el-descriptions-item :label="t('catalog.entry.sourceModule')">{{ entry.source.source_module }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entries.sourceStatus')">{{ t(`catalog.status.source.${entry.source.source_status}`) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><el-tooltip :content="entry.source.source_identity" placement="top"><span class="source-identity" tabindex="0">{{ entry.source.source_identity }}</span></el-tooltip></el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><el-tooltip :content="entry.source.source_identity" :trigger="['hover', 'focus']" placement="top"><span class="source-identity" tabindex="0">{{ entry.source.source_identity }}</span></el-tooltip></el-descriptions-item>
           <el-descriptions-item :label="t('catalog.entry.observedAt')">{{ formatDate(entry.source.observed_at) }}</el-descriptions-item>
           <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entries.sourceEngine')">
             <div class="break-all">{{ sourceEngineName }}</div>

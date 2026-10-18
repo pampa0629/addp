@@ -880,7 +880,7 @@ def run_suite(
     department_id: int,
     principal_id: int,
     convergence_timeout: float,
-    browser_runner: Callable[[str, str, str, int, int, int], dict[str, object]] | None = None,
+    browser_runner: Callable[[str, str, str, int, int, int, str], dict[str, object]] | None = None,
     grant_observer: Callable[[str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     deadline = time.monotonic() + convergence_timeout
@@ -990,6 +990,7 @@ def run_suite(
                 int(coverage_after["total_entries"]),
                 asset_category_id,
                 asset_id,
+                str(sharing["decision_id"]),
             )
 
         return {
@@ -1090,10 +1091,11 @@ def validate_browser_report(
     total_entries: int,
     category_id: int,
     asset_id: int,
+    decision_id: str,
 ) -> dict[str, object]:
     payload = _object(report, "Enterprise Catalog browser report")
     expected = {
-        "schema_version": "addp.enterprise-catalog-publishing-browser/v2",
+        "schema_version": "addp.enterprise-catalog-publishing-browser/v3",
         "suite": "enterprise-catalog-publishing",
         "run_id": run_id,
         "result": "passed",
@@ -1104,12 +1106,24 @@ def validate_browser_report(
         "coverage_dimensions": len(COVERAGE_DIMENSIONS),
         "human_readable_filter_selectors": 3,
         "explicit_batch_governance_ui": True,
+        "technical_source_names": True,
+        "source_fingerprint_interactions": True,
+        "source_layout_viewports": [1440, 900],
+        "source_facts_reload": True,
+        "sharing_current_account": True,
+        "sharing_decision_id": decision_id,
+        "sharing_browser_commands": 0,
         "portal_category_id": str(category_id),
         "portal_asset_id": str(asset_id),
         "portal_category_assets": 1,
         "browser_warning_errors": 0,
+        "failed_business_responses": 0,
     }
-    mismatches = [key for key, value in expected.items() if payload.get(key) != value]
+    mismatches = [key for key, value in expected.items()
+                  if type(payload.get(key)) is not type(value) or payload.get(key) != value]
+    anonymous = payload.get("anonymous_refresh_401")
+    if type(anonymous) is not int or not 0 <= anonymous <= 1:
+        mismatches.append("anonymous_refresh_401")
     if mismatches:
         raise SuiteError("Enterprise Catalog browser report contract mismatch: " + ", ".join(mismatches))
     return payload
@@ -1124,6 +1138,7 @@ def run_browser(
     total_entries: int,
     category_id: int,
     asset_id: int,
+    decision_id: str,
 ) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
     report_path = artifact_dir / "enterprise-catalog-publishing-browser.json"
@@ -1136,6 +1151,7 @@ def run_browser(
             "ADDP_ONLINE_CATALOG_SOURCE_IDENTITY": fingerprint,
             "ADDP_ONLINE_CATALOG_BUSINESS_NAME": business_name,
             "ADDP_ONLINE_CATALOG_COVERAGE_TOTAL": str(total_entries),
+            "ADDP_ONLINE_CATALOG_SHARING_DECISION_ID": decision_id,
             "ADDP_ONLINE_ASSET_CATEGORY_ID": str(category_id),
             "ADDP_ONLINE_ASSET_ID": str(asset_id),
         }
@@ -1168,6 +1184,7 @@ def run_browser(
         total_entries,
         category_id,
         asset_id,
+        decision_id,
     )
 
 
@@ -1203,7 +1220,7 @@ def main() -> int:
             department_id,
             positive_int(identity["principal_id"], "Online principal id"),
             convergence_timeout,
-            lambda entry_id, fingerprint, business_name, total_entries, category_id, asset_id: run_browser(
+            lambda entry_id, fingerprint, business_name, total_entries, category_id, asset_id, decision_id: run_browser(
                 repository,
                 environment,
                 entry_id,
@@ -1212,6 +1229,7 @@ def main() -> int:
                 total_entries,
                 category_id,
                 asset_id,
+                decision_id,
             ),
         )
         report["identity"] = identity

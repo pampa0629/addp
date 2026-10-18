@@ -1,5 +1,7 @@
 import copy
 import importlib.util
+import json
+import tempfile
 import sys
 import unittest
 from unittest.mock import patch
@@ -376,8 +378,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
         browser_calls = []
 
-        def browser(entry_id, fingerprint, business_name, total_entries, category_id, asset_id):
-            browser_calls.append((entry_id, fingerprint, business_name, total_entries, category_id, asset_id))
+        def browser(entry_id, fingerprint, business_name, total_entries, category_id, asset_id, decision_id):
+            browser_calls.append((entry_id, fingerprint, business_name, total_entries, category_id, asset_id, decision_id))
             return {"result": "passed"}
 
         report = SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, browser, client.observe_grant)
@@ -398,7 +400,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(len(client.receipts), 1)
         self.assertEqual(
             browser_calls,
-            [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1, 20, 30)],
+            [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1, 20, 30, report["catalog_sharing"]["decision_id"])],
         )
         self.assertEqual(report["residual_resources"], 0)
         self.assertFalse(client.asset_exists)
@@ -815,9 +817,10 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(SUITE.SuiteError, "missing required permissions: catalog.entry.deprecate"):
             SUITE.validate_user_identity(missing_deprecation, 42)
 
-    def test_validates_browser_report_contract(self) -> None:
-        report = {
-            "schema_version": "addp.enterprise-catalog-publishing-browser/v2",
+    @property
+    def browser_report(self) -> dict:
+        return {
+            "schema_version": "addp.enterprise-catalog-publishing-browser/v3",
             "suite": "enterprise-catalog-publishing",
             "run_id": "run-1",
             "result": "passed",
@@ -828,17 +831,83 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             "coverage_dimensions": 7,
             "human_readable_filter_selectors": 3,
             "explicit_batch_governance_ui": True,
+            "technical_source_names": True,
+            "source_fingerprint_interactions": True,
+            "source_layout_viewports": [1440, 900],
+            "source_facts_reload": True,
+            "sharing_current_account": True,
+            "sharing_decision_id": self.decision_id,
+            "sharing_browser_commands": 0,
             "portal_category_id": "20",
             "portal_asset_id": "30",
             "portal_category_assets": 1,
             "browser_warning_errors": 0,
+            "failed_business_responses": 0,
+            "anonymous_refresh_401": 1,
         }
 
+    def test_validates_browser_report_contract(self) -> None:
+        report = self.browser_report
         validated = SUITE.validate_browser_report(
-            report, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30
+            report, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id
         )
 
         self.assertEqual(validated, report)
+        for key, invalid in [
+            ("anonymous_refresh_401", 2), ("anonymous_refresh_401", False), ("failed_business_responses", 1),
+            ("technical_source_names", False), ("technical_source_names", 1),
+            ("source_fingerprint_interactions", False), ("source_layout_viewports", [1440]),
+            ("source_facts_reload", False), ("sharing_current_account", False),
+            ("sharing_decision_id", "different-decision"), ("sharing_browser_commands", 1),
+            ("sharing_browser_commands", False), ("schema_version", "addp.enterprise-catalog-publishing-browser/v2"),
+        ]:
+            with self.subTest(key=key, invalid=invalid):
+                broken = {**report, key: invalid}
+                with self.assertRaisesRegex(SUITE.SuiteError, key):
+                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id)
+        for key in ["anonymous_refresh_401", "failed_business_responses", "technical_source_names", "source_fingerprint_interactions", "source_layout_viewports",
+                    "source_facts_reload", "sharing_current_account", "sharing_decision_id", "sharing_browser_commands"]:
+            with self.subTest(missing=key):
+                broken = dict(report)
+                del broken[key]
+                with self.assertRaisesRegex(SUITE.SuiteError, key):
+                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id)
+
+    def test_browser_receives_exact_decision_and_requires_a_fresh_matching_report(self) -> None:
+        environment = {"ADDP_ONLINE_TEST_RUN_ID": "run-1", "ADDP_ONLINE_TEST_TENANT_ID": "42"}
+        for outcome in ["passed", "missing", "mismatch", "process_failure"]:
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temporary:
+                report_path = Path(temporary) / "enterprise-catalog-publishing-browser.json"
+                report_path.write_text(json.dumps(self.browser_report))
+
+                def browser_process(command, **kwargs):
+                    self.assertFalse(report_path.exists(), "stale evidence must be removed before launching")
+                    self.assertEqual(kwargs["env"]["ADDP_ONLINE_CATALOG_SHARING_DECISION_ID"], self.decision_id)
+                    self.assertEqual(kwargs["env"]["ADDP_ONLINE_CATALOG_ENTRY_ID"], self.entry_id)
+                    self.assertEqual(command[-1], "e2e/online/enterprise-catalog-publishing.spec.js")
+                    if outcome in {"passed", "mismatch"}:
+                        report = self.browser_report
+                        if outcome == "mismatch":
+                            report["sharing_decision_id"] = "different-decision"
+                        report_path.write_text(json.dumps(report))
+                    return SUITE.subprocess.CompletedProcess(command, 1 if outcome == "process_failure" else 0,
+                                                             stdout="", stderr="")
+
+                with patch.dict(SUITE.os.environ, {"ADDP_ONLINE_ARTIFACT_DIR": temporary}), \
+                     patch.object(SUITE.subprocess, "run", side_effect=browser_process):
+                    if outcome == "passed":
+                        self.assertEqual(SUITE.run_browser(Path("/fixture"), environment, self.entry_id,
+                            "fingerprint-1", "Fixture", 1, 20, 30, self.decision_id), self.browser_report)
+                    else:
+                        expected = {"missing": "did not write", "mismatch": "sharing_decision_id",
+                                    "process_failure": "exited with status"}[outcome]
+                        with self.assertRaisesRegex(SUITE.SuiteError, expected):
+                            SUITE.run_browser(Path("/fixture"), environment, self.entry_id,
+                                              "fingerprint-1", "Fixture", 1, 20, 30, self.decision_id)
+
+    @property
+    def decision_id(self) -> str:
+        return "20000000-0000-0000-0000-000000000002"
 
     @property
     def entry_id(self) -> str:

@@ -1,6 +1,8 @@
 import { expect, request, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { json, login, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse } from './transfer-browser-support.js'
+import { expectSourceFactsLayout, expectFingerprintHover, expectFingerprintFocus } from '../helpers/catalog-source-facts.js'
 
 const requiredNames = [
   'ADDP_ONLINE_ARTIFACT_DIR',
@@ -13,6 +15,7 @@ const requiredNames = [
   'ADDP_ONLINE_CATALOG_SOURCE_IDENTITY',
   'ADDP_ONLINE_CATALOG_BUSINESS_NAME',
   'ADDP_ONLINE_CATALOG_COVERAGE_TOTAL',
+  'ADDP_ONLINE_CATALOG_SHARING_DECISION_ID',
   'ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID',
   'ADDP_ONLINE_ASSET_CATEGORY_ID',
   'ADDP_ONLINE_ASSET_ID',
@@ -23,14 +26,6 @@ function environment() {
   const missing = requiredNames.filter(name => !process.env[name])
   if (missing.length > 0) throw new Error(`missing Online environment: ${missing.join(', ')}`)
   return Object.fromEntries(requiredNames.map(name => [name, process.env[name]]))
-}
-
-async function json(response, operation) {
-  const payload = await response.json()
-  if (!response.ok()) {
-    throw new Error(`${operation} returned HTTP ${response.status()} (${payload?.error_code || 'unknown'})`)
-  }
-  return payload
 }
 
 function findDomain(nodes, id) {
@@ -49,29 +44,6 @@ function grantedPermissions(identity) {
     .flatMap(assignment => assignment.permissions || []))
 }
 
-async function login(page, username, password, redirect) {
-  let browserAccessToken = ''
-  page.on('request', requestEvent => {
-    if (!requestEvent.url().endsWith('/api/v1/system/auth/context')) return
-    browserAccessToken = (requestEvent.headers().authorization || '').replace(/^Bearer\s+/i, '')
-  })
-  await page.goto(`/login?redirect=${encodeURIComponent(redirect)}`)
-  await page.locator('input[autocomplete="username"]').fill(username)
-  await page.locator('input[autocomplete="current-password"]').fill(password)
-  await page.locator('button.auth-login-primary').click()
-  const contextStep = page.locator('.auth-login-contexts')
-  const needsContext = await contextStep.waitFor({ state: 'visible', timeout: 5000 })
-    .then(() => true)
-    .catch(() => false)
-  if (needsContext) await contextStep.locator('button.auth-login-primary').click()
-  if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
-    throw new Error('the dedicated Online browser user must not require MFA')
-  }
-  await page.waitForURL(url => url.pathname === redirect)
-  await expect.poll(() => browserAccessToken, { timeout: 20_000 }).not.toBe('')
-  return browserAccessToken
-}
-
 test('enterprise Catalog renders governance coverage, human-readable navigation, and the canonical entry', async ({ page }) => {
   const env = environment()
   const coveragePath = '/catalog/governance/coverage'
@@ -83,14 +55,26 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     baseURL: env.GATEWAY_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}` }
   })
-  const browserMessages = []
+  const browserMessages = [], failedBusinessResponses = []
+  let businessStarted = false, anonymousRefresh401 = 0
+  page.on('request', observed => {
+    if (new URL(observed.url()).pathname === '/api/v1/system/auth/context' && observed.headers().authorization) businessStarted = true
+  })
+  page.on('response', response => {
+    const pathname = new URL(response.url()).pathname
+    if (isAnonymousRefreshResponse(response, businessStarted)) { anonymousRefresh401++; return }
+    if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
+      failedBusinessResponses.push({ pathname, status: response.status() })
+    }
+  })
   page.on('console', message => {
-    if (['warning', 'error'].includes(message.type())) {
+    if (['warning', 'error'].includes(message.type()) && !isAnonymousRefreshConsoleError(message, businessStarted)) {
       browserMessages.push({ type: message.type(), text: message.text() })
     }
   })
   page.on('pageerror', error => browserMessages.push({ type: 'pageerror', text: error.message }))
 
+  let browserAPI
   try {
     const apiIdentity = await json(await api.get('/api/v1/system/auth/context'), 'read API AuthContext')
     expect(apiIdentity?.principal?.type).toBe('user')
@@ -102,7 +86,7 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       env.ADDP_ONLINE_TEST_USER_PASSWORD,
       coveragePath
     )
-    const browserAPI = await request.newContext({
+    browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
       extraHTTPHeaders: { Authorization: `Bearer ${browserAccessToken}` }
     })
@@ -111,14 +95,36 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       'read browser AuthContext'
     )
     expect(String(browserIdentity?.principal?.id)).toBe(String(apiIdentity?.principal?.id))
+    expect(browserIdentity?.principal?.type).toBe('user')
     expect(String(browserIdentity?.context?.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
-    await browserAPI.dispose()
-
-    const failedBusinessResponses = []
-    page.on('response', response => {
-      const pathname = new URL(response.url()).pathname
-      if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
-        failedBusinessResponses.push({ pathname, status: response.status() })
+    const currentUser = await json(await browserAPI.get('/api/v1/system/users/me'), 'read current browser user')
+    expect(String(currentUser.id)).toBe(String(browserIdentity.principal.id))
+    expect(currentUser.username).toBe(env.ADDP_ONLINE_TEST_USER_USERNAME)
+    expect(typeof currentUser.display_name).toBe('string')
+    expect(currentUser.display_name.trim()).not.toBe('')
+    const currentEntry = await json(await browserAPI.get(`/api/v1/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}`), 'read technical source names')
+    expect(currentEntry.source_engine?.status).toBe('current')
+    expect(currentEntry.source.source_identity).toBe(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
+    const snapshot = currentEntry.source.observed_snapshot
+    const expectedSource = { engineName: currentEntry.source_engine.name, engineType: currentEntry.source_engine.engine_type,
+      itemName: snapshot.name, itemType: snapshot.item_type, fullName: snapshot.full_name }
+    const decisionID = env.ADDP_ONLINE_CATALOG_SHARING_DECISION_ID
+    const decision = await json(await browserAPI.get(`/api/v1/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}/sharing_decisions/${decisionID}`), 'read exact sharing confirmation')
+    expect(decision.id).toBe(decisionID)
+    expect(decision.recipient_type).toBe('user')
+    expect(decision.recipient_id).toBe(browserIdentity.principal.id)
+    expect(decision.recipient_label_status).toBe('resolved')
+    expect(decision.recipient_name).toBe(currentUser.display_name)
+    if (decision.recipient_code) expect(decision.recipient_code).toBe(currentUser.username)
+    expect(decision.reason).toContain(env.ADDP_ONLINE_TEST_RUN_ID)
+    const historyName = [currentUser.display_name, decision.recipient_code].filter(Boolean).join(' · ')
+    const recipientLabel = `账号 · ${historyName} (当前账号)`
+    const candidateLabel = `账号 · ${currentUser.display_name} · ${currentUser.username} (当前账号)`
+    const sharingCommands = []
+    page.on('request', observed => {
+      const path = new URL(observed.url()).pathname
+      if (observed.method() !== 'GET' && path.startsWith(`/api/v1/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}/sharing_`)) {
+        sharingCommands.push(`${observed.method()} ${path}`)
       }
     })
 
@@ -159,9 +165,45 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(frame.getByTestId('catalog-deprecate-action')).toBeVisible()
     await expect(frame.getByTestId('catalog-withdraw-curation-action')).toBeVisible()
     await page.keyboard.press('Escape')
-    await detail.getByRole('tab').nth(2).click()
-    await expect(detail).toContainText(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
+    await detail.getByRole('tab', { name: '专业事实', exact: true }).click()
+    const facts = detail.locator('.source-facts-descriptions')
+    for (const width of [1440, 900]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expectSourceFactsLayout(facts, expectedSource)
+      await expectFingerprintHover(frame, facts, env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
+      await expectFingerprintFocus(frame, facts, env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
+    }
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.reload()
+    await expect(detail.getByRole('tab', { name: '专业事实', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expectSourceFactsLayout(facts, expectedSource)
+    await expectFingerprintFocus(frame, facts, env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
     await expect(detail).not.toContainText('undefined')
+
+    await page.goto(`/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}?tab=sharing&sharing_decision_id=${decisionID}`)
+    const confirmation = frame.getByTestId('sharing-confirmation-detail')
+    const recipient = confirmation.locator('td.el-descriptions__label').filter({ hasText: /^接收方$/ })
+      .locator('xpath=following-sibling::td[1]')
+    await expect(recipient).toHaveText(recipientLabel)
+    await page.reload()
+    await expect(recipient).toHaveText(recipientLabel)
+    await frame.getByTestId('sharing-back-records').click()
+    const record = frame.getByTestId('sharing-confirmations').locator('.el-table__body tbody tr')
+      .filter({ hasText: decision.reason })
+    await expect(record).toHaveCount(1)
+    await expect(record.locator('td').first()).toHaveText(recipientLabel)
+    await record.getByTestId('sharing-open-confirmation').click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('sharing_decision_id')).toBe(decisionID)
+    await expect(recipient).toHaveText(recipientLabel)
+    await frame.getByTestId('sharing-workspace').getByText('批准数据使用', { exact: true }).click()
+    const recipientSelect = frame.getByTestId('sharing-create-panel').locator('.el-select').nth(1)
+    await recipientSelect.click()
+    await recipientSelect.getByRole('combobox').fill(currentUser.username)
+    const currentOption = frame.getByRole('option').filter({ hasText: candidateLabel })
+    await expect(currentOption).toHaveCount(1)
+    await currentOption.click()
+    await expect(recipientSelect).toContainText(candidateLabel)
+    expect(sharingCommands).toEqual([])
 
     await page.goto(`/catalog/entries?view=governance&source_identity=${encodeURIComponent(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)}`)
     frame = page.frameLocator('iframe[data-testid="module-iframe"]')
@@ -264,10 +306,12 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(portalAsset).toHaveAttribute('data-asset-id', env.ADDP_ONLINE_ASSET_ID)
     await expect(portalCategory).not.toContainText('undefined')
 
+    expect(anonymousRefresh401).toBeLessThanOrEqual(1)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
+    expect(sharingCommands).toEqual([])
     const report = {
-      schema_version: 'addp.enterprise-catalog-publishing-browser/v2',
+      schema_version: 'addp.enterprise-catalog-publishing-browser/v3',
       suite: 'enterprise-catalog-publishing',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
       result: 'passed',
@@ -278,11 +322,20 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       coverage_dimensions: 7,
       human_readable_filter_selectors: 3,
       explicit_batch_governance_ui: true,
+      technical_source_names: true,
+      source_fingerprint_interactions: true,
+      source_layout_viewports: [1440, 900],
+      source_facts_reload: true,
+      sharing_current_account: true,
+      sharing_decision_id: decisionID,
+      sharing_browser_commands: sharingCommands.length,
       catalog_lifecycle_actions: ['edit', 'certify', 'deprecate', 'withdraw-curation'],
       portal_category_id: env.ADDP_ONLINE_ASSET_CATEGORY_ID,
       portal_asset_id: env.ADDP_ONLINE_ASSET_ID,
       portal_category_assets: 1,
-      browser_warning_errors: 0
+      browser_warning_errors: 0,
+      failed_business_responses: 0,
+      anonymous_refresh_401: anonymousRefresh401
     }
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'enterprise-catalog-publishing-browser.json'),
@@ -290,6 +343,7 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       'utf8'
     )
   } finally {
+    await browserAPI?.dispose()
     await api.dispose()
   }
 })
