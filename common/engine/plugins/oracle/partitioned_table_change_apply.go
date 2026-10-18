@@ -149,7 +149,7 @@ func (p *OraclePlugin) ApplyPartitionedTableChanges(ctx context.Context, connInf
 		committedOffset = endOffset
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit Oracle partitioned change apply: %w", err)
+		return nil, plugin.NewTableWriteError(plugin.TableWriteFailed, fmt.Errorf("commit Oracle partitioned change apply: %w", err))
 	}
 	return &plugin.PartitionedTableChangeApplyResult{
 		AppliedRecords: len(changes),
@@ -577,12 +577,13 @@ func updateOracleApplyLedger(ctx context.Context, tx *sql.Tx, schema, applyIdent
 	return nil
 }
 
-func mergeOracleApplyRow(ctx context.Context, tx *sql.Tx, schema, table string, row map[string]interface{}, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, keys []string) error {
+func mergeOracleApplyRow(ctx context.Context, tx *sql.Tx, schema, table string, row map[string]interface{}, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, keys []string) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	dialect := commonquery.ForDialect("oracle")
 	selects := make([]string, 0, len(fields))
 	args := make([]interface{}, 0, len(fields))
 	columns := make([]string, 0, len(fields))
-	for _, field := range fields {
+	for fieldIndex, field := range fields {
 		value, ok := row[field.Name]
 		if !ok {
 			return fmt.Errorf("oracle upsert row is missing field %q", field.Name)
@@ -590,7 +591,7 @@ func mergeOracleApplyRow(ctx context.Context, tx *sql.Tx, schema, table string, 
 		quoted := dialect.QuoteIdentifier(field.Name)
 		expression, valueArgs, err := oracleApplyValueExpression(field, value, spatialInfo, len(args)+1)
 		if err != nil {
-			return err
+			return plugin.WithTableWriteField(err, fieldIndex+1, field.Type)
 		}
 		selects = append(selects, expression+" "+quoted)
 		args = append(args, valueArgs...)
@@ -714,7 +715,7 @@ func oracleScalarWriteValue(field datatype.FieldInfo, value interface{}) (interf
 	case datatype.FieldTypeBytes:
 		bytes, ok := value.([]byte)
 		if !ok {
-			return nil, fmt.Errorf("oracle bytes field %q requires []byte", field.Name)
+			return nil, plugin.NewTableWriteError(plugin.TableWriteBytesInvalid, fmt.Errorf("oracle bytes field %q requires []byte", field.Name))
 		}
 		return go_ora.Blob{Data: bytes}, nil
 	default:

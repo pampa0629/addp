@@ -13,6 +13,62 @@ CONTAINERFILE = Path(__file__).parents[2] / "business/dameng/Containerfile"
 
 
 class DamengOfficialMediaReleaseGateTest(unittest.TestCase):
+    def test_provider_recovery_refuses_active_test_container_before_sql(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="addp-dameng-recovery-owner-") as temporary:
+            root = Path(temporary)
+            gate = root / "scripts/test/common-dameng-gate.sh"
+            helper = root / "scripts/lib/dameng-official-media.sh"
+            gate.parent.mkdir(parents=True)
+            helper.parent.mkdir(parents=True)
+            gate.write_text(GATE.with_name("common-dameng-gate.sh").read_text(encoding="utf-8"), encoding="utf-8")
+            helper.write_text(
+                'dameng_require_arm64_docker() { :; }\n'
+                'dameng_validate_local_image() { :; }\n'
+                'dameng_container_ready() { :; }\n'
+                'dameng_business_disql() { echo SQL >> "$SQL_CALLS"; }\n', encoding="utf-8",
+            )
+            docker = root / "docker"
+            docker.write_text(
+                '#!/bin/bash\n'
+                'case "$*" in *State.Running*) echo true;; *com.addp.business-fixture*) echo dameng;; esac\n'
+                'exit 0\n', encoding="utf-8",
+            )
+            docker.chmod(0o700)
+            calls = root / "sql-calls"
+            result = subprocess.run(
+                ["bash", str(gate), "--cleanup-owned-tables", "ADDP_FAIL_012345ABCDEF"],
+                env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                     "TMPDIR": temporary, "SQL_CALLS": str(calls)},
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to overlap", result.stderr)
+            self.assertFalse(calls.exists(), "active owner run reached cleanup SQL")
+
+    def test_provider_recovery_rejects_non_owned_names_before_docker(self) -> None:
+        for arguments in (
+            ["--unknown"], ["--cleanup-owned-tables"],
+            ["--cleanup-owned-tables", "OUTDOOR_PERSONS"],
+            ["--cleanup-owned-tables", "ADDP_FAIL_012345abcdef"],
+            ["--cleanup-owned-tables", "ADDP_FAIL_012345ABCDEF;DROP TABLE X"],
+            ["--cleanup-owned-tables", "ADDP_FAIL_012345ABCDEF", "ADDP_FAIL_%"],
+        ):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory(prefix="addp-dameng-recovery-") as temporary:
+                root = Path(temporary)
+                calls = root / "docker-calls"
+                docker = root / "docker"
+                docker.write_text('#!/bin/bash\nprintf called >> "$DOCKER_CALLS"\nexit 1\n', encoding="utf-8")
+                docker.chmod(0o700)
+                result = subprocess.run(
+                    ["bash", str(GATE.with_name("common-dameng-gate.sh")), *arguments],
+                    env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                         "TMPDIR": temporary, "DOCKER_CALLS": str(calls)},
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(calls.exists(), "invalid scope reached Docker")
+                self.assertEqual(list(root.glob("addp-common-dameng.*")), [], "argument rejection left a temporary directory")
+
     def test_provider_preflight_never_removes_unowned_container(self) -> None:
         with tempfile.TemporaryDirectory(prefix="addp-dameng-preflight-") as temporary:
             root = Path(temporary)

@@ -20,6 +20,8 @@ ClickHouse session 与批量 INSERT 使用同一共享 JSON 编码，按打开�
 
 达梦的 `json` 表格写入沿用 `CLOB`，INSERT session 与 MERGE upsert 共用 `plugins/shared` 的 JSON 编码契约，在当前批次第一条写入 SQL 前校验全部行；编码后的 SQL NULL 遵守非空约束。INSERT 会话保留首次编码、执行或取消错误，后续写入拒绝继续；Close 即使没有显式 Abort 也回滚此前批次及事务内 replace 的 DELETE，返回原错误，重复 Close 保留失败结果且不发布成功标记。Close 提交前已取消时同样回滚；Prepare DDL 不属于此事务。原生 array／空间类型仍拒绝，bytes 保留 BLOB 绑定。`make test-common-dameng` 在固定官方介质与驱动的 Linux ARM64 Docker 进程中验证真实 CLOB/BLOB、幂等 MERGE、replace Abort 回滚，以及 append／replace 的错误后 Close、旧行保留和新会话恢复，合成表逐个清理并核验零残留；宿主无官方驱动时拒绝数据面操作。该入口不登记 Hosted，也不证明生产 License 或正式部署认证。
 
+Oracle 与达梦的 INSERT session／MERGE 将可确定的编码错误接入现有 `TableWriteError`，JSON 编码失败附带实际写入列序号及冻结声明类型，Oracle 既有 bytes 类型拒绝同样提供定位。Oracle MERGE 的 NULL 常量不占参数，定位仍按字段顺序；达梦 upsert 使用实际 SQL 的字段顺序。数据库执行及提交错误保留原始错误链，不猜列；取消、缺字段或非空错误不标为 JSON 编码失败。该诊断不改变原有输入、空间、二进制与回滚规则，不证明整个 replace 原子回滚。T1 沿 Common 模块门禁发现，原生回归复用 `make test-common-oracle-decimal` 与 `make test-common-dameng` 的现有 JSON／会话用例，不新增接口、权限或 CI Job。达梦失败夹具在 DROP 前先中止本次所有会话；意外中断留下的已知合成表可通过标准脚本 `bash scripts/test/common-dameng-gate.sh --cleanup-owned-tables <本轮确切表名> ...` 清理，只接受显式 `ADDP_FAIL_` 加 12 位大写十六进制后缀，拒绝通配符和业务表，不枚举前缀或读取业务行。该清理结果不作为 Provider T2 通过。
+
 openGauss 的独立原生 MERGE 与 PostgreSQL COPY／INSERT 共用 `postgresql.ProtocolTableWriteValue`，不再原样绑定容器。字段类型只来自 upsert options；JSON、SQL NULL／JSON null、一维 TEXT[] 及 BYTEA 沿用同一协议编码，整批编码与非空校验先于目标连接，错误含行和字段。批次元数据不补全或覆盖目标类型，空间目标仍拒绝。`make test-common-opengauss` 的既有 Hosted-only Linux x86_64 官方介质门禁自动发现 COPY、INSERT session 与 MERGE 的真实 JSONB／TEXT[]／BYTEA 回归，覆盖大数、64 KiB 文本、NULL、幂等 MERGE 和失败批次无新增行；本地只用标准 PostgreSQL 类型写入门禁复核被复用编码，不将其计为真实 openGauss 验证。
 
 MySQL 可通过相同测试连接条件运行 `bash scripts/test/common-mysql-data-protection-gate.sh --test typed-write`，仅验证类型感知写入；默认入口仍运行完整门禁。

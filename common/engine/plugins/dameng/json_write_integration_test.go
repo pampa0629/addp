@@ -7,12 +7,15 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	dm "dm"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -138,10 +141,24 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), `row 1 field "DOC"`) {
 					t.Fatalf("bad value %T: want field error, got %v", bad, err)
 				}
+				var typed *plugin.TableWriteError
+				if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost native JSON write diagnosis: %#v error=%v", typed, err)
+				}
 				var count int
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != len(cases) {
 					t.Fatalf("failed write changed table: count=%d error=%v", count, err)
 				}
+			}
+			nativeErr := write([]map[string]interface{}{{"ID": "native_integer_invalid", "DOC": true, "PAYLOAD": []byte{1}, "LABEL": "plain {"}})
+			var native *plugin.TableWriteError
+			var driverCause *dm.DmError
+			if !errors.As(nativeErr, &native) || native.Code != plugin.TableWriteFailed || native.Field != nil || !errors.As(nativeErr, &driverCause) {
+				t.Fatalf("native failure lost its chain or guessed a column: %#v error=%v", native, nativeErr)
+			}
+			var countAfterNativeError int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&countAfterNativeError); err != nil || countAfterNativeError != len(cases) {
+				t.Fatalf("native rejection changed committed rows: count=%d error=%v", countAfterNativeError, err)
 			}
 			// Replace DELETE and earlier valid batches must remain abortable even
 			// when a later JSON batch is invalid; this does not include Prepare DDL.
@@ -186,6 +203,7 @@ func testDM8SessionFailureClose(t *testing.T) {
 				table := "ADDP_FAIL_" + strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:12])
 				path := plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, schema, table)
 				qualified := `"` + strings.ReplaceAll(schema, `"`, `""`) + `"."` + table + `"`
+				var sessions []plugin.TableWriteSession
 				var count int
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME=?", table).Scan(&count); err != nil || count != 0 {
 					t.Fatalf("occupied fixture: count=%d err=%v", count, err)
@@ -193,6 +211,13 @@ func testDM8SessionFailureClose(t *testing.T) {
 				defer func() {
 					cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 					defer cancel()
+					// Fatal assertions run defers before t.Cleanup: release every
+					// owned transaction before attempting the table DROP.
+					for _, session := range sessions {
+						if err := session.Abort(cleanup); err != nil {
+							t.Error(err)
+						}
+					}
 					if err := p.DeleteResource(cleanup, info, path); err != nil {
 						t.Error(err)
 					}
@@ -209,7 +234,7 @@ func testDM8SessionFailureClose(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					t.Cleanup(func() { _ = session.Abort(context.Background()) })
+					sessions = append(sessions, session)
 					return session
 				}
 				commit := func(id int64) {

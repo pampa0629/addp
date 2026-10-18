@@ -113,6 +113,19 @@ func assertDM8SessionFailureClose(t *testing.T, ctx context.Context, session plu
 		if firstErr == nil {
 			t.Fatal("expected write failure")
 		}
+		if failure == "invalid_json" || failure == "duplicate_key" {
+			var typed *plugin.TableWriteError
+			if !errors.As(firstErr, &typed) {
+				t.Fatalf("lost typed write error: %v", firstErr)
+			}
+			if failure == "invalid_json" {
+				if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost JSON column/type: %#v", typed)
+				}
+			} else if typed.Code != plugin.TableWriteFailed || typed.Field != nil || errors.Unwrap(typed) == nil {
+				t.Fatalf("native failure guessed column or lost cause: %#v", typed)
+			}
+		}
 		if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(40, true)}}); !errors.Is(err, firstErr) {
 			t.Errorf("write after failure lost first error: got=%v first=%v", err, firstErr)
 		}
@@ -245,8 +258,22 @@ func TestDM8SessionEncodedNullAndRequiredFields(t *testing.T) {
 	s = jsonUnitSession(t, false)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := s.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(4, true)}}); err != context.Canceled {
+	if err := s.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{jsonUnitRow(4, true)}}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled batch: %v", err)
+	}
+}
+
+func TestDM8UpsertFailureUsesActualSQLColumnOrder(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "ID", Type: datatype.FieldTypeBigInt, PrimaryKey: true}, {Name: "DOC", Type: datatype.FieldTypeJSON}}
+	for _, metadata := range [][]datatype.FieldInfo{nil, {{Name: "DOC", Type: datatype.FieldTypeString}, {Name: "ID", Type: datatype.FieldTypeBigInt}}} {
+		batch := &plugin.BatchData{Fields: metadata, Rows: []map[string]interface{}{{"ID": int64(1), "DOC": make(chan int)}}}
+		err := (&Plugin{}).UpsertBatch(t.Context(), nil, plugin.TabularItemPath(98001, plugin.EngineCatalogTermSchema, "SYNTHETIC", "TARGET"), batch, plugin.TableUpsertOptions{Fields: fields, Keys: []string{"ID"}})
+		var typed *plugin.TableWriteError
+		var cause *json.UnsupportedTypeError
+		// With no metadata the actual SQL columns are sorted DOC, ID, rather than opts.Fields order.
+		if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 1 || typed.Field.DeclaredType != datatype.FieldTypeJSON || !errors.As(err, &cause) {
+			t.Fatalf("lost actual column, frozen type or encoder cause: %#v error=%v", typed, err)
+		}
 	}
 }
 

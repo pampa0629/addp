@@ -36,6 +36,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Recover only explicitly named synthetic tables from an interrupted owner run.
+# Never enumerate a prefix or accept SQL identifiers supplied without validation.
+CLEANUP_TABLES=()
+if [ "$#" -gt 0 ]; then
+    [ "$1" = --cleanup-owned-tables ] || fail "unknown argument"
+    shift
+    [ "$#" -gt 0 ] || fail "explicit owned test table names are required"
+    for table in "$@"; do
+        [[ "$table" =~ ^ADDP_FAIL_[0-9A-F]{12}$ ]] || fail "refusing a non-fixture table name"
+        CLEANUP_TABLES+=("$table")
+    done
+fi
+
 for command in docker unzip; do
     command -v "$command" >/dev/null 2>&1 || fail "$command is required"
 done
@@ -46,8 +59,16 @@ docker container inspect "$DATABASE_CONTAINER" >/dev/null 2>&1 || fail "start DM
 [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.business-fixture" }}' "$DATABASE_CONTAINER")" = dameng ] || fail "$DATABASE_CONTAINER is not the ADDP Business fixture"
 dameng_validate_local_image || fail "$DAMENG_OFFICIAL_IMAGE does not match the pinned official media"
 dameng_container_ready "$DATABASE_CONTAINER" || fail "$DATABASE_CONTAINER is not ready"
-docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1 && fail "refusing to replace existing container: $TEST_CONTAINER"
-
+docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1 && fail "refusing to overlap existing test container: $TEST_CONTAINER"
+if [ "${#CLEANUP_TABLES[@]}" -gt 0 ]; then
+    for table in "${CLEANUP_TABLES[@]}"; do
+        printf 'DROP TABLE "%s"."%s";\nEXIT\n' "$DAMENG_BUSINESS_USER" "$table" | dameng_business_disql "$DATABASE_CONTAINER" >/dev/null 2>&1
+        remaining=$(printf "SET HEADING OFF\nSET FEEDBACK OFF\nSELECT COUNT(*) FROM USER_OBJECTS WHERE OBJECT_NAME='%s';\nEXIT\n" "$table" | dameng_business_disql "$DATABASE_CONTAINER" 2>/dev/null)
+        printf '%s\n' "$remaining" | grep -Eq '^[[:space:]]*0[[:space:]]*$' || fail "owned test table cleanup not proven"
+    done
+    echo "Explicitly named DM8 test tables cleaned; no table enumeration performed."
+    exit 0
+fi
 docker cp "$DATABASE_CONTAINER:$DAMENG_HOME/drivers/go/dm-go-driver.zip" "$DRIVER_ZIP" >/dev/null
 dameng_verify_sha256 "$DAMENG_OFFICIAL_GO_DRIVER_SHA256" "$DRIVER_ZIP" || fail "official Go driver SHA-256 mismatch"
 mkdir -p "$DRIVER_DIR"

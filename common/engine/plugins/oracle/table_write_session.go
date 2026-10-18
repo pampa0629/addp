@@ -162,6 +162,7 @@ func (s *oracleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.
 	// encoding errors never reach the driver. Neither may permit partial commit.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -180,7 +181,7 @@ func (s *oracleTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.
 			}
 			converted, err := oracleTableWriteValue(field, value, s.spatialInfo)
 			if err != nil {
-				return fmt.Errorf("oracle insert row %d: %w", rowIndex, err)
+				return fmt.Errorf("oracle insert row %d: %w", rowIndex, plugin.WithTableWriteField(err, fieldIndex+1, field.Type))
 			}
 			values[fieldIndex] = converted
 		}
@@ -200,6 +201,7 @@ func (s *oracleTableWriteSession) Close(ctx context.Context) (err error) {
 	s.closed = true
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()

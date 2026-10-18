@@ -2,11 +2,13 @@ package oracle
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	go_ora "github.com/sijms/go-ora/v2"
 )
 
@@ -53,5 +55,40 @@ func TestOracleJSONWriteValues(t *testing.T) {
 	value, err := oracleTableWriteValue(datatype.FieldInfo{Name: "PAYLOAD", Type: datatype.FieldTypeBytes}, []byte{0, 255}, nil)
 	if err != nil || !reflect.DeepEqual(value, go_ora.Blob{Data: []byte{0, 255}}) {
 		t.Fatalf("binary semantics changed: %#v %v", value, err)
+	}
+}
+
+func TestOracleWriteFailureUsesColumnRatherThanBindPosition(t *testing.T) {
+	for _, tc := range []struct {
+		typ   datatype.FieldType
+		value interface{}
+		code  plugin.TableWriteErrorCode
+	}{
+		{datatype.FieldTypeJSON, make(chan int), plugin.TableWriteJSONInvalid},
+		{datatype.FieldTypeBytes, "private value", plugin.TableWriteBytesInvalid},
+	} {
+		fields := []datatype.FieldInfo{
+			{Name: "NULL_ONE", Type: datatype.FieldTypeString, Nullable: true},
+			{Name: "NULL_TWO", Type: datatype.FieldTypeJSON, Nullable: true},
+			{Name: "VALUE", Type: tc.typ},
+		}
+		row := map[string]interface{}{"NULL_ONE": nil, "NULL_TWO": json.RawMessage(nil), "VALUE": tc.value}
+		session := &oracleTableWriteSession{fields: fields}
+		for name, err := range map[string]error{
+			"insert": session.WriteBatch(t.Context(), &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "VALUE", Type: datatype.FieldTypeString}}, Rows: []map[string]interface{}{row}}),
+			// Both preceding NULLs consume no MERGE bindings. VALUE is still column 3.
+			"merge": mergeOracleApplyRow(t.Context(), nil, "SYNTHETIC", "TARGET", row, fields, nil, []string{"VALUE"}),
+		} {
+			var typed *plugin.TableWriteError
+			if !errors.As(err, &typed) || typed.Code != tc.code || typed.Field == nil || typed.Field.ColumnIndex != 3 || typed.Field.DeclaredType != tc.typ {
+				t.Fatalf("%s lost column/type: %#v error=%v", name, typed, err)
+			}
+			if tc.typ == datatype.FieldTypeJSON {
+				var cause *json.UnsupportedTypeError
+				if !errors.As(err, &cause) {
+					t.Fatalf("%s lost encoder cause: %v", name, err)
+				}
+			}
+		}
 	}
 }

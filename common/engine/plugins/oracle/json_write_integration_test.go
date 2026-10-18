@@ -17,6 +17,7 @@ import (
 	pluginshared "github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 	"github.com/google/uuid"
+	"github.com/sijms/go-ora/v2/network"
 	"github.com/twpayne/go-geom"
 	"github.com/twpayne/go-geom/encoding/ewkb"
 )
@@ -141,6 +142,10 @@ func TestIntegrationOracleTypedJSONWrites(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "DOCUMENT") {
 					t.Fatalf("invalid %T: expected field error, got %v", invalid, err)
 				}
+				var typed *plugin.TableWriteError
+				if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost native JSON write diagnosis: %#v error=%v", typed, err)
+				}
 				var count int
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified+" WHERE \"ID\" >= 100").Scan(&count); err != nil || count != 0 {
 					t.Fatalf("failed write left %d rows, err=%v", count, err)
@@ -152,6 +157,14 @@ func TestIntegrationOracleTypedJSONWrites(t *testing.T) {
 						t.Fatalf("failed JSON advanced ledger: got %d want %d err=%v", committed, offset, err)
 					}
 				}
+			}
+			// A value rejected by the native numeric conversion has no proven column
+			// context; retain the driver chain without parsing its message.
+			nativeErr := write([]map[string]interface{}{{"ID": "native_integer_invalid", "DOCUMENT": true, "PAYLOAD": []byte{1}}})
+			var native *plugin.TableWriteError
+			var driverCause *network.OracleError
+			if !errors.As(nativeErr, &native) || native.Code != plugin.TableWriteFailed || native.Field != nil || !errors.As(nativeErr, &driverCause) {
+				t.Fatalf("native failure lost its chain or guessed a column: %#v error=%v", native, nativeErr)
 			}
 			// Recovery at the same offset must remain possible after rejected JSON.
 			if err := write([]map[string]interface{}{{"ID": int64(999), "DOCUMENT": []interface{}{true}, "PAYLOAD": []byte{1}}}); err != nil {
@@ -290,6 +303,17 @@ func testOracleSessionFailureClose(t *testing.T) {
 						firstErr = session.WriteBatch(writeCtx, &plugin.BatchData{Rows: []map[string]interface{}{row(base + 1), bad}})
 						if firstErr == nil {
 							t.Fatal("expected write failure")
+						}
+						var typed *plugin.TableWriteError
+						if !errors.As(firstErr, &typed) {
+							t.Fatalf("lost typed session failure: %v", firstErr)
+						}
+						if failure == "invalid_json" {
+							if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+								t.Fatalf("lost native JSON column/type: %#v", typed)
+							}
+						} else if typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+							t.Fatalf("non-encoding failure guessed a column/type: %#v", typed)
 						}
 						if err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{row(base + 3)}}); !errors.Is(err, firstErr) {
 							t.Errorf("write after failure lost original error: got=%v first=%v", err, firstErr)

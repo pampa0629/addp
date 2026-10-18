@@ -35,6 +35,17 @@ func TestOracleTableWriteSessionRetainsWriteFailure(t *testing.T) {
 			if firstErr == nil {
 				t.Fatal("expected failure before database access")
 			}
+			var typed *plugin.TableWriteError
+			if !errors.As(firstErr, &typed) {
+				t.Fatalf("lost typed session error: %v", firstErr)
+			}
+			if failure == "json" {
+				if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 1 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+					t.Fatalf("lost JSON field context: %#v", typed)
+				}
+			} else if typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+				t.Fatalf("non-encoding error guessed a field: %#v", typed)
+			}
 			if failure == "canceled" && !errors.Is(firstErr, context.Canceled) {
 				t.Fatalf("cancellation cause lost: %v", firstErr)
 			}

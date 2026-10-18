@@ -162,6 +162,7 @@ func (s *tableWriteSession) WriteBatch(ctx context.Context, batch *plugin.BatchD
 	// not abort the transaction. Close must not commit prior rows or DELETE.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -189,6 +190,7 @@ func (s *tableWriteSession) Close(ctx context.Context) (err error) {
 	s.closed = true
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -310,11 +312,11 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	defer tx.Rollback()
 	for rowIndex, args := range rows {
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
-			return fmt.Errorf("execute DM8 MERGE row %d: %w", rowIndex, err)
+			return plugin.NewTableWriteError(plugin.TableWriteFailed, fmt.Errorf("execute DM8 MERGE row %d: %w", rowIndex, err))
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit DM8 upsert: %w", err)
+		return plugin.NewTableWriteError(plugin.TableWriteFailed, fmt.Errorf("commit DM8 upsert: %w", err))
 	}
 	return nil
 }
@@ -351,7 +353,7 @@ func damengWriteRows(ctx context.Context, fields []datatype.FieldInfo, rows []ma
 			}
 			value, err := shared.EncodeTableWriteValue(value, field.Type)
 			if err != nil {
-				return nil, fmt.Errorf("DM8 write row %d field %q: %w", rowIndex, field.Name, err)
+				return nil, fmt.Errorf("DM8 write row %d field %q: %w", rowIndex, field.Name, plugin.WithTableWriteField(err, fieldIndex+1, field.Type))
 			}
 			if binary, ok := value.([]byte); field.Type == datatype.FieldTypeBytes && ok && binary == nil {
 				value = nil
