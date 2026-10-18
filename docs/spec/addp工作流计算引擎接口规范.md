@@ -912,6 +912,8 @@ Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保�
 
 Spark 文件加载的 `format` 是 Develop 资源 Adapter 派生的运行时参数。文件和对象 locator 使用共享格式识别器根据原始文件名确定格式，任务不保存独立的格式参数；Spark 必须显式消费该结果，不得在缺失时默认按 Parquet 读取。无法识别或运行时不支持的格式必须拒绝读取。
 
+资源 Adapter 只派生其声明的运行时参数。GeoPython 通用 `load` 从派生后的文件路径扩展名识别格式，其运行时签名与 Adapter 均不声明 `format`，Develop 不得向该算子注入 Spark 的 `format` 参数；文件和对象来源遵守同一规则。
+
 Spark 的 `load` 同时支持 Elasticsearch 的具体 `index` locator。目录仍为 `service → index`，索引的结构化消费仍使用既有 `table` 数据类型；`source_type=index` 只是运行时访问分支，不是新增数据类型。Develop 按当前用户授权，在执行期从 locator 派生单段索引名 `index` 和 System 连接事实；任务不保存这些派生字段，Spark 集群仍通过独立的 `spark_cluster_id` 选择。GeoPython 的加载和所有保存算子不因此获得 ES 能力。
 
 ES 首版 Spark 加载固定使用官方 `elasticsearch-spark-30_2.12:9.5.4` 完整 JAR，校验 SHA256 并由 Spark 分发给 Executor，不通过该制品的 Maven POM 引入另一版 Spark/Scala。仅支持 HTTP Basic 认证的普通具体索引批量读取；HTTPS 明确拒绝，不自动降级，不开放别名、data stream、隐藏索引、通配符、任意连接器选项、DSL、流式或写回。关闭节点发现，只访问登记端点；Driver 和 Executor 必须同时可达该端点。本地回环地址按既有 `SPARK_WORKFLOW_SHARED_HOST` 部署事实派生，不能修改 System 中的原始连接。

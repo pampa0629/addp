@@ -57,6 +57,30 @@ func TestPreprocessWorkflowParamsDerivesTableSourceFromLocator(t *testing.T) {
 	}
 }
 
+func TestWorkflowSourceFormatFollowsDeclaredRuntimeParameters(t *testing.T) {
+	for _, engineType := range []string{"geopython_workflow", "spark_workflow"} {
+		for _, resourceType := range []string{"file", "object"} {
+			t.Run(engineType+"/"+resourceType, func(t *testing.T) {
+				spec, ok := workflowOperatorAdapterSpecFor(engineType, "load")
+				if !ok {
+					t.Fatal("load adapter missing")
+				}
+				params := map[string]interface{}{"locator": "addp://engine/3/path/sources/source.geojson?type=" + resourceType}
+				if _, err := deriveWorkflowResourceParams(params, spec); err != nil {
+					t.Fatal(err)
+				}
+				if engineType == "spark_workflow" {
+					if params["format"] != "geojson" {
+						t.Fatalf("Spark source format = %#v", params["format"])
+					}
+				} else if _, exists := params["format"]; exists {
+					t.Fatal("GeoPython load received an undeclared format parameter")
+				}
+			})
+		}
+	}
+}
+
 func TestPreprocessWorkflowParamsDerivesSuperMapPostgisSourceFromLocator(t *testing.T) {
 	svc := newWorkflowEngineServiceForTest(t, 12, "postgresql")
 	workflow := map[string]interface{}{

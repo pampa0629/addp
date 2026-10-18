@@ -1030,6 +1030,9 @@ func deriveWorkflowResourceParams(params map[string]interface{}, spec workflowOp
 		if err := deriveWorkflowSourceParams(params, loc); err != nil {
 			return nil, err
 		}
+		if _, declared := workflowAdapterRuntimeParams(spec)["format"]; declared && (loc.Type == resourcetree.TypeFile || loc.Type == resourcetree.TypeObject) {
+			params["format"] = string(format.DetectFormat(lastPathSegment(loc.Path), nil))
+		}
 		delete(params, inputSpec.PublicParam)
 	}
 
@@ -1107,7 +1110,6 @@ func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree
 		}
 		params["engine_id"] = loc.EngineID
 		params["path"] = filePath
-		params["format"] = string(format.DetectFormat(lastPathSegment(loc.Path), nil))
 		params["__workflow_resource_derived"] = true
 		params["__workflow_resource_kind"] = "file"
 	case resourcetree.TypeObject:
@@ -1117,7 +1119,6 @@ func deriveWorkflowSourceParams(params map[string]interface{}, loc *resourcetree
 		}
 		params["engine_id"] = loc.EngineID
 		params["path"] = objectPath
-		params["format"] = string(format.DetectFormat(lastPathSegment(loc.Path), nil))
 		params["__workflow_resource_derived"] = true
 		params["__workflow_resource_kind"] = "object"
 	default:
