@@ -552,7 +552,7 @@ function buildNodeModel(operator, id, point = null, params = null) {
 }
 
 function buildLoadedEdge(sourceId, targetId, sourceNode, targetNode, binding) {
-  const sourcePort = binding?.ref?.port || 'default'
+  const sourcePort = binding?.ref?.port || sourceNode?.outputPorts?.find(port => port.is_default)?.name
   const sourceIndex = (sourceNode?.outputPorts || []).findIndex(port => port.name === sourcePort)
   const targetIndex = (targetNode?.inputPorts || []).findIndex(port => port.name === binding?.parameterName)
   return {

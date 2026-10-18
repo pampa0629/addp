@@ -45,6 +45,33 @@ const orderedWorkflowEngines = [
   'geopython', 'model3d', 'pointcloud', 'supermap', 'spark', 'document'
 ].map((type, index) => ({ ...ENGINE_A, id: index + 11, name: type, engine_type: `${type}_workflow` }))
 
+test('restores omitted named default output ports when editing and saving a multi-output workflow', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeInputConnections: true, includeConnectedEdge: true, includeNamedOutputPorts: true, portType: 'geodataframe'
+  })
+  await openSavedWorkflow(page)
+  for (let save = 1; save <= 2; save++) {
+    const box = await requiredBoundingBox(page.locator('#workflow-dag-container canvas'))
+    await page.mouse.click(box.x + 650, box.y + 180)
+    const panel = page.locator('.right-panel')
+    await expect(panel.locator('.input-connection-field').filter({ hasText: 'left_value' })).toContainText('Operator A (operator_a_1) / result')
+    await expect(panel.locator('.input-connection-field').filter({ hasText: 'right_value' })).toContainText('Operator A (operator_a_1) / diagnostics')
+    await panel.locator('[data-param-name="note"]').getByRole('textbox').fill(`edited-${save}`)
+    await primarySaveButton(page).click()
+    await expect.poll(() => backend.updates.length).toBe(save)
+    const target = backend.updates.at(-1).payload.content.workflow_definition.tasks.find(task => task.id === 'operator_input_1')
+    expect(target.params).toEqual({
+      left_value: { $ref: 'operator_a_1', port: 'result' },
+      right_value: { $ref: 'operator_a_1', port: 'diagnostics' }, note: `edited-${save}`
+    })
+    expect(target.depends_on).toEqual(['operator_a_1'])
+    if (save === 1) {
+      await page.reload()
+      await expect(primarySaveButton(page)).toBeEnabled()
+    }
+  }
+})
+
 for (const portType of ['number', 'string']) {
   test(`preserves pure execution dependencies without inventing ${portType} data references`, async ({ page }) => {
     const backend = await installMockBackend(page, { includeExecutionDependency: true, portType })
@@ -1171,6 +1198,7 @@ async function installMockBackend(page, {
   includeCrossingEdges = false,
   includeCollectionInputs = false,
   includeRasterResourceBatch = false,
+  includeNamedOutputPorts = false,
   portType = 'number'
 } = {}) {
   const updates = []
@@ -1265,6 +1293,18 @@ async function installMockBackend(page, {
   }
 
   operatorsByEngine[ENGINE_A.id][0].output_ports[0].type = portType
+
+  if (includeNamedOutputPorts) {
+    operatorsByEngine[ENGINE_A.id][0].output_ports = [
+      { name: 'diagnostics', type: portType, is_default: false },
+      { name: 'result', type: portType, is_default: true }
+    ]
+    operatorsByEngine[ENGINE_A.id][1].public_parameters.push({ name: 'note', type: 'string' })
+    task.content.workflow_definition.tasks[1].params = {
+      left_value: { $ref: 'operator_a_1' },
+      right_value: { $ref: 'operator_a_1', port: 'diagnostics' }, note: 'initial'
+    }
+  }
 
   if (includeVectorTiles) {
     const operator = operatorsByEngine[ENGINE_A.id][0]
@@ -1480,7 +1520,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
-      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency || includeVectorTiles) Object.assign(task, payload)
+      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency || includeVectorTiles || includeNamedOutputPorts) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)
