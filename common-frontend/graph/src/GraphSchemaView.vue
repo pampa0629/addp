@@ -34,7 +34,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
 import { readGraphTheme, getContrastingTextColor, graphLabelColor } from './graphTheme.js'
@@ -166,35 +166,32 @@ function resizeGraph() {
 let resizeObserver = null
 let themeObserver = null
 
-onMounted(async () => {
-  await nextTick()
+function resetGraph() {
+  clearTimeout(resizeTimer)
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  graphInstance?.destroy()
+  graphInstance = null
+}
+
+onMounted(() => {
   themeObserver = new MutationObserver(updateTheme)
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
-  if (!isEmpty.value) {
-    initGraph()
-    resizeObserver = new ResizeObserver(resizeGraph)
-    resizeObserver.observe(wrapperRef.value)
-  }
 })
 
 onUnmounted(() => {
-  clearTimeout(resizeTimer)
-  resizeObserver?.disconnect()
+  resetGraph()
   themeObserver?.disconnect()
-  graphInstance?.destroy()
-  graphInstance = null
 })
 
-watch(() => props.schema, async () => {
-  if (graphInstance) {
-    graphInstance.destroy()
-    graphInstance = null
-  }
-  await nextTick()
-  if (!isEmpty.value) {
-    initGraph()
-  }
-}, { deep: true })
+watch([() => props.schema, containerRef], () => {
+  resetGraph()
+  selectedNode.value = null
+  if (!containerRef.value || isEmpty.value) return
+  initGraph()
+  resizeObserver = new ResizeObserver(resizeGraph)
+  resizeObserver.observe(wrapperRef.value)
+}, { deep: true, flush: 'post' })
 </script>
 
 <style scoped>

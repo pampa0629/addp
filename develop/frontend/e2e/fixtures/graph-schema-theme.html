@@ -4,7 +4,7 @@
 <body>
   <div id="app"></div>
   <script type="module">
-    import { createApp, h, ref } from 'vue'
+    import { createApp, h, ref, computed } from 'vue'
     import { createI18n } from 'vue-i18n'
     import ElementPlus from 'element-plus'
     import 'element-plus/dist/index.css'
@@ -27,15 +27,16 @@
     schema.relationships = schema.nodes.slice(1).map((node, index) => ({
       type: 'WORKS_AT', count: 1, from_labels: [schema.nodes[index].label], to_labels: [node.label]
     }))
-    const graphData = {
-      nodes: schema.nodes.map(node => ({ element_id: node.label, labels: [node.label], properties: { name: node.label } })),
-      relationships: schema.relationships.map((rel, index) => ({ element_id: `r${index}`, type: rel.type, start_node_id: rel.from_labels[0], end_node_id: rel.to_labels[0] }))
-    }
     createApp({
       setup() {
         const visible = ref(true)
         const clicked = ref('')
         const theme = ref('dark')
+        const currentSchema = ref(parameters.has('empty') ? { nodes: [], relationships: [] } : schema)
+        const graphData = computed(() => ({
+          nodes: currentSchema.value.nodes.map(node => ({ element_id: node.label, labels: [node.label], properties: { name: node.label } })),
+          relationships: currentSchema.value.relationships.map((rel, index) => ({ element_id: `r${index}`, type: rel.type, start_node_id: rel.from_labels[0], end_node_id: rel.to_labels[0] }))
+        }))
         return () => [
           h('header', [
             h('select', {
@@ -46,11 +47,22 @@
               }
             }, ['dark', 'blue', 'purple', 'light'].map(theme => h('option', { value: theme }, theme))),
             h('button', { onClick: () => { visible.value = !visible.value } }, '显示或卸载图'),
+            h('button', { onClick: () => { currentSchema.value = structuredClone(schema) } }, '加载数据'),
+            h('button', { onClick: () => { currentSchema.value = { nodes: [], relationships: [] } } }, '清空数据'),
+            h('button', { onClick: () => {
+              currentSchema.value = {
+                nodes: schema.nodes.map(node => ({ ...node, label: `${node.label}Next` })),
+                relationships: schema.relationships.map(rel => ({ ...rel,
+                  from_labels: rel.from_labels.map(label => `${label}Next`),
+                  to_labels: rel.to_labels.map(label => `${label}Next`)
+                }))
+              }
+            } }, '替换数据'),
             h('output', { 'aria-label': '选中节点' }, clicked.value)
           ]),
           h('main', visible.value ? parameters.get('view') === 'result'
-            ? h(GraphResultView, { graphData })
-            : h(GraphSchemaView, { schema, onNodeClick: label => { clicked.value = label } }) : null)
+            ? h(GraphResultView, { graphData: graphData.value })
+            : h(GraphSchemaView, { schema: currentSchema.value, onNodeClick: label => { clicked.value = label } }) : null)
         ]
       }
     }).use(ElementPlus).use(createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': graphMessagesZhCn } })).mount('#app')
