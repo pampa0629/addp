@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +80,7 @@ func TestManagerProgressEndpointRecordsPointCloudCOPCEvent(t *testing.T) {
 	if got.Progress != 48 {
 		t.Fatalf("progress = %d, want 48", got.Progress)
 	}
-	if got.CurrentStep == nil || *got.CurrentStep != "生成点云 COPC 文件" {
+	if got.CurrentStep != nil {
 		t.Fatalf("current_step = %#v, want point cloud progress message", got.CurrentStep)
 	}
 }
@@ -99,7 +100,7 @@ func TestManagerProgressEndpointRecordsVectorTileCacheEvent(t *testing.T) {
 	})
 	router.POST("/executions/:execution_id/events", handler.RecordManagerExecutionProgressEvent)
 
-	body := fmt.Sprintf(`{"attempt":%d,"lease_token":%q,"phase":"generate","event":"progress","message":"生成矢量瓦片缓存","current_zoom":10,"max_zoom":18,"tiles_processed":367,"tiles_total_estimate":1000,"progress_percent":36.7,"overall_progress":36.7,"metadata":{"worker":"geopython-workflow"}}`, lease.Attempt, lease.Token)
+	body := fmt.Sprintf(`{"attempt":%d,"lease_token":%q,"phase":"generate","event":"progress","message":"callback-private-sentinel","current_zoom":10,"max_zoom":18,"tiles_processed":367,"tiles_total_estimate":1000,"progress_percent":36.7,"overall_progress":36.7,"metadata":{"worker":"geopython-workflow"}}`, lease.Attempt, lease.Token)
 	req := httptest.NewRequest(http.MethodPost, "/executions/tile-cache-progress-http-1/events", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -115,7 +116,20 @@ func TestManagerProgressEndpointRecordsVectorTileCacheEvent(t *testing.T) {
 	if got.Progress != 37 {
 		t.Fatalf("progress = %d, want 37", got.Progress)
 	}
-	if got.CurrentStep == nil || *got.CurrentStep != "生成矢量瓦片缓存" {
+	var events []commonExecution.Event
+	if err := db.Where("execution_id = ?", lease.ExecutionID).Find(&events).Error; err != nil || len(events) != 1 {
+		t.Fatalf("callback did not commit one event: %v", err)
+	}
+	counter, ok := events[0].Counters.GetInt("progress")
+	if !ok || counter != 37 || len(events[0].Counters) != 1 || events[0].StepID != "" || events[0].Kind != "progress" {
+		t.Fatalf("callback event is not closed: %+v", events[0])
+	}
+	observed, _ := json.Marshal(commonExecution.Observe(got))
+	eventPayload, _ := json.Marshal(events)
+	if strings.Contains(string(observed), "callback-private-sentinel") || strings.Contains(string(eventPayload), "callback-private-sentinel") || strings.Contains(string(eventPayload), lease.Token) {
+		t.Fatal("Runtime callback body or lease entered generic diagnostics")
+	}
+	if got.CurrentStep == nil || *got.CurrentStep != "生成瓦片缓存 z10/18：367/1000" {
 		t.Fatalf("current_step = %#v, want vector tile progress message", got.CurrentStep)
 	}
 }

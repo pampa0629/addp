@@ -279,7 +279,6 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 
 	now := time.Now()
 	nextProgress := pointCloudCOPCProgressPercent(event, exec.Progress)
-	currentStep := pointCloudCOPCProgressStep(event)
 	metadata := pointCloudCOPCProgressMetadata(exec.Metadata, event)
 	elapsedMs := int64(0)
 	if exec.StartedAt != nil {
@@ -288,7 +287,7 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 
 	fields := map[string]interface{}{
 		"progress":     nextProgress,
-		"current_step": currentStep,
+		"current_step": nil,
 		"metadata":     metadata,
 		"updated_at":   now,
 	}
@@ -619,13 +618,6 @@ func pointCloudCOPCProgressPercent(event PointCloudCOPCProgressEvent, current in
 		return clampPointCloudCOPCProgress(current)
 	}
 	return next
-}
-
-func pointCloudCOPCProgressStep(event PointCloudCOPCProgressEvent) string {
-	if event.Message != "" {
-		return event.Message
-	}
-	return fmt.Sprintf("生成点云 COPC：%s", event.Phase)
 }
 
 func pointCloudCOPCProgressMetadata(existing commonModels.JSONMap, event PointCloudCOPCProgressEvent) commonModels.JSONMap {

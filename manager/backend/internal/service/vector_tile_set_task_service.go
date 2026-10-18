@@ -175,16 +175,14 @@ func (s *VectorTileSetTaskService) RecordProgressEvent(ctx context.Context, tena
 		return err
 	}
 	nextProgress := tileCacheEventProgressPercent(event, exec.Progress)
-	currentStep := event.Message
-	if currentStep == "" || currentStep == "生成矢量瓦片缓存" {
-		currentStep = "生成业务矢量瓦片集"
-		if event.MaxZoom > 0 {
-			currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d", event.CurrentZoom, event.MaxZoom)
-		}
-		if event.TilesTotalEstimate > 0 {
-			currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d：%d/%d", event.CurrentZoom, event.MaxZoom, event.TilesProcessed, event.TilesTotalEstimate)
-		}
+	currentStep := "生成业务矢量瓦片集"
+	if event.MaxZoom > 0 {
+		currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d", event.CurrentZoom, event.MaxZoom)
 	}
+	if event.TilesTotalEstimate > 0 {
+		currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d：%d/%d", event.CurrentZoom, event.MaxZoom, event.TilesProcessed, event.TilesTotalEstimate)
+	}
+
 	now := time.Now()
 	fields := map[string]interface{}{
 		"progress": nextProgress, "current_step": currentStep,
@@ -193,7 +191,7 @@ func (s *VectorTileSetTaskService) RecordProgressEvent(ctx context.Context, tena
 	if exec.StartedAt != nil {
 		fields["execution_time_ms"] = int64(math.Max(0, float64(now.Sub(*exec.StartedAt).Milliseconds())))
 	}
-	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
+	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
 
 func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string) (string, error) {

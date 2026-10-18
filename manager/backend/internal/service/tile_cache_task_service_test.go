@@ -280,7 +280,7 @@ func TestTileCacheRecordProgressEventUpdatesExecution(t *testing.T) {
 	overall := 55.0
 	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "progress-1", 7)
 	if err := svc.RecordProgressEvent(leaseCtx, 7, "progress-1", TileCacheProgressEvent{
-		Phase: "publish", Event: "progress", Message: "写入 PMTiles", CurrentZoom: 1, MaxZoom: 2,
+		Phase: "publish", Event: "progress", Message: "runtime-private-sentinel", CurrentZoom: 1, MaxZoom: 2,
 		TilesProcessed: 55, TilesTotalEstimate: 100, OverallProgress: &overall,
 	}); err != nil {
 		t.Fatalf("record progress: %v", err)
@@ -289,7 +289,7 @@ func TestTileCacheRecordProgressEventUpdatesExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get execution: %v", err)
 	}
-	if exec.Progress != 55 || exec.CurrentStep == nil || *exec.CurrentStep != "写入 PMTiles" {
+	if exec.Progress != 55 || exec.CurrentStep == nil || *exec.CurrentStep != "生成瓦片缓存 z1/2：55/100" {
 		t.Fatalf("execution progress=%d step=%v", exec.Progress, exec.CurrentStep)
 	}
 }

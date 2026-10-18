@@ -85,12 +85,6 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 		})
 		return
 	}
-	c.Request = c.Request.WithContext(commonExecution.ContextWithLease(c.Request.Context(), commonExecution.Lease{
-		ExecutionID: executionID,
-		TenantID:    int(tenantID),
-		Attempt:     req.Attempt,
-		Token:       strings.TrimSpace(req.LeaseToken),
-	}))
 	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
@@ -100,6 +94,14 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	lease, leaseErr := commonExecution.LeaseFromExecution(*exec)
+	if leaseErr != nil || lease.Attempt != req.Attempt || lease.Token != strings.TrimSpace(req.LeaseToken) {
+		writeExecutionLeaseConflict(c)
+		return
+	}
+	// Owner is a stored lease fact, never a Runtime-supplied field. The event
+	// transaction rechecks this complete identity and expiry under the row lock.
+	c.Request = c.Request.WithContext(commonExecution.ContextWithLease(c.Request.Context(), lease))
 	switch exec.TaskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		h.recordTileCacheProgressEvent(c, tenantID, executionID, req)

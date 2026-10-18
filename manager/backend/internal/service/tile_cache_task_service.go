@@ -203,7 +203,7 @@ func (s *tileCacheExecutionProgressSink) UpdateProgress(ctx context.Context, pro
 	s.mu.Lock()
 	s.lastMetadata = metadata.Clone()
 	s.mu.Unlock()
-	return s.repo.UpdateFields(ctx, s.executionID, int(s.tenantID), map[string]interface{}{
+	return updateManagerExecutionProgress(ctx, s.repo, s.tenantID, s.executionID, nextProgress, map[string]interface{}{
 		"progress":          nextProgress,
 		"current_step":      currentStep,
 		"metadata":          metadata,
@@ -327,10 +327,7 @@ func (s *TileCacheTaskService) RecordProgressEvent(ctx context.Context, tenantID
 		ElapsedSeconds:        optionalFloat64(event.ElapsedSeconds),
 		EstimatedRemainingSec: optionalFloat64(event.RemainingSeconds),
 	}
-	currentStep := event.Message
-	if currentStep == "" {
-		currentStep = tileCacheProgressStep(progress)
-	}
+	currentStep := tileCacheProgressStep(progress)
 	metadata := tileCacheProgressEventMetadata(exec.Metadata, event, nextProgress)
 	elapsedMs := int64(0)
 	if exec.StartedAt != nil {
@@ -346,7 +343,7 @@ func (s *TileCacheTaskService) RecordProgressEvent(ctx context.Context, tenantID
 	if elapsedMs >= 0 {
 		fields["execution_time_ms"] = elapsedMs
 	}
-	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
+	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
 
 func tileCacheEventProgressPercent(event TileCacheProgressEvent, current int) int {

@@ -83,6 +83,11 @@ func (r *TaskExecutionRepository) UpdateWithLease(ctx context.Context, lease Lea
 	return UpdateWithLease(ctx, r.db, lease, fields)
 }
 
+// UpdateWithEvent commits a closed process event with its matching leased update.
+func (r *TaskExecutionRepository) UpdateWithEvent(ctx context.Context, lease Lease, fields map[string]interface{}, event EventInput) error {
+	return UpdateWithEvent(ctx, r.db, lease, fields, event)
+}
+
 // CompleteWithLease writes a terminal state only while the exact bounded
 // execution attempt still owns its lease.
 func (r *TaskExecutionRepository) CompleteWithLease(ctx context.Context, lease Lease, status string, completedAt time.Time, fields map[string]interface{}) error {

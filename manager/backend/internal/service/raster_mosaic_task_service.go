@@ -270,7 +270,6 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 
 	now := time.Now()
 	nextProgress := rasterMosaicProgressPercent(event, exec.Progress)
-	currentStep := rasterMosaicProgressStep(event)
 	metadata := rasterMosaicProgressMetadata(exec.Metadata, event)
 	elapsedMs := int64(0)
 	if exec.StartedAt != nil {
@@ -279,14 +278,14 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 
 	fields := map[string]interface{}{
 		"progress":     nextProgress,
-		"current_step": currentStep,
+		"current_step": nil,
 		"metadata":     metadata,
 		"updated_at":   now,
 	}
 	if elapsedMs >= 0 {
 		fields["execution_time_ms"] = elapsedMs
 	}
-	return s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), fields)
+	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
 
 func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context, task *models.RasterMosaicTask, executionID string) {
@@ -346,10 +345,10 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 			if err == nil {
 				// Save the association before polling; timeout or loss of the worker
 				// must not lose the already submitted child or generated files.
-				err = s.taskExecRepo.UpdateWithLease(ctx, lease, map[string]interface{}{
+				err = s.taskExecRepo.UpdateWithEvent(ctx, lease, map[string]interface{}{
 					"metadata": s.mergeRasterMosaicExistingExecutionMetadata(ctx, executionID, int(task.TenantID), metadata),
 					"progress": 99, "current_step": "等待元数据扫描与成果登记",
-				})
+				}, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": 99}})
 			}
 		}
 		if err == nil {
@@ -560,16 +559,6 @@ func rasterMosaicProgressPercent(event RasterMosaicProgressEvent, current int) i
 		return clampPercent(current)
 	}
 	return next
-}
-
-func rasterMosaicProgressStep(event RasterMosaicProgressEvent) string {
-	if event.Message != "" {
-		return event.Message
-	}
-	if event.TotalFiles > 0 {
-		return fmt.Sprintf("构建栅格 mosaic：%s %d/%d", event.Phase, event.ProcessedFiles, event.TotalFiles)
-	}
-	return fmt.Sprintf("构建栅格 mosaic：%s", event.Phase)
 }
 
 func rasterMosaicProgressMetadata(existing commonModels.JSONMap, event RasterMosaicProgressEvent) commonModels.JSONMap {

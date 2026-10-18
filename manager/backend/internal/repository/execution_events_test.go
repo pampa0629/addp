@@ -185,6 +185,47 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 			}
 		})
 	}
+	for _, phase := range []string{"progress", "progress_lease", "progress_storage"} {
+		t.Run(phase, func(t *testing.T) {
+			db := database(t)
+			item, _ := seedManagerEventExecution(t, db, commonExecution.TaskTypeVectorTileCacheGeneration)
+			_, lease, err := NewBoundedExecutionQueueRepository(db).ClaimNext(t.Context(), []string{item.TaskType}, "event-owner", time.Now().UTC(), time.Minute)
+			if err != nil || lease == nil {
+				t.Fatal(err)
+			}
+			if phase == "progress_lease" {
+				lease.Token = uuid.NewString()
+			}
+			if phase == "progress_storage" {
+				const callback = "test:manager-progress-failure"
+				if err := db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+					if _, ok := tx.Statement.Dest.(*commonExecution.Event); ok {
+						tx.AddError(errors.New("event store unavailable"))
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { db.Callback().Create().Remove(callback) })
+			}
+			fields := map[string]interface{}{"progress": 37, "current_step": "private-event-sentinel", "metadata": commonModels.JSONMap{"runtime_response": "private-event-sentinel"}}
+			err = UpdateExecutionWithOwnership(commonExecution.ContextWithLease(t.Context(), *lease), db, item.ExecutionID, item.TenantID, fields)
+			var stored commonExecution.TaskExecution
+			if readErr := db.First(&stored, item.ID).Error; readErr != nil {
+				t.Fatal(readErr)
+			}
+			if phase == "progress" {
+				if err != nil || stored.Progress != 37 || stored.Metadata["runtime_response"] != "private-event-sentinel" {
+					t.Fatalf("progress fact not committed: %v", err)
+				}
+				assertManagerEvents(t, db, item, "started", "progress")
+			} else {
+				if err == nil || stored.Progress != 0 || stored.Metadata["runtime_response"] != nil {
+					t.Fatalf("progress escaped lease/storage rollback: %v", err)
+				}
+				assertManagerEvents(t, db, item, "started")
+			}
+		})
+	}
 	for _, phase := range []string{"owner_failure", "expired", "unleased", "missing_task", "ad_hoc_embedding", "missing_summary"} {
 		t.Run(phase, func(t *testing.T) {
 			db := database(t)
@@ -317,7 +358,12 @@ func assertManagerEvents(t *testing.T, db *gorm.DB, item *commonExecution.TaskEx
 	}
 	for i, event := range events {
 		payload, _ := json.Marshal(event)
-		if event.Kind != kinds[i] || event.Attempt != 1 || event.TenantID != item.TenantID || event.Module != "manager" || event.TaskType != item.TaskType || event.StepID != "" || len(event.Counters) != 0 || strings.Contains(string(payload), "private-event-sentinel") {
+		validCounters := len(event.Counters) == 0
+		if kinds[i] == "progress" {
+			progress, ok := event.Counters.GetInt("progress")
+			validCounters = ok && progress == 37 && len(event.Counters) == 1
+		}
+		if event.Kind != kinds[i] || event.Attempt != 1 || event.TenantID != item.TenantID || event.Module != "manager" || event.TaskType != item.TaskType || event.StepID != "" || !validCounters || strings.Contains(string(payload), "private-event-sentinel") {
 			t.Fatalf("invalid or private lifecycle event: %s", payload)
 		}
 	}

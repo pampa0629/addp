@@ -101,7 +101,11 @@ func UpdateExecutionWithOwnership(ctx context.Context, db *gorm.DB, executionID 
 	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID {
 		return fmt.Errorf("%w: execution lease does not match %s", commonAPI.ErrConflict, executionID)
 	}
-	return commonExecution.UpdateWithLease(ctx, db, lease, fields)
+	progress, ok := fields["progress"].(int)
+	if !ok || progress < 0 || progress > 100 {
+		return fmt.Errorf("invalid Manager execution progress update")
+	}
+	return commonExecution.UpdateWithEvent(ctx, db, lease, fields, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
 func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTypes []string, owner string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {

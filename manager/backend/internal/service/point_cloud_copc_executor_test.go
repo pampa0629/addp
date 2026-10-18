@@ -393,7 +393,7 @@ func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
 	if err := taskSvc.RecordProgressEvent(leaseCtx, 7, "point-cloud-progress-1", PointCloudCOPCProgressEvent{
 		Phase:           "convert",
 		Event:           "progress",
-		Message:         "生成点云 COPC 文件",
+		Message:         "runtime-private-sentinel",
 		OverallProgress: &overall,
 		Metadata:        commonModels.JSONMap{"output_size_bytes": int64(2048)},
 	}); err != nil {
@@ -406,7 +406,7 @@ func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
 	if exec.Progress != 42 {
 		t.Fatalf("progress = %d, want 42", exec.Progress)
 	}
-	if exec.CurrentStep == nil || *exec.CurrentStep != "生成点云 COPC 文件" {
+	if exec.CurrentStep != nil {
 		t.Fatalf("current_step = %#v, want progress message", exec.CurrentStep)
 	}
 	progressEvent, ok := asJSONMap(exec.Metadata["progress_event"])

@@ -246,7 +246,7 @@ func TestRasterMosaicRecordProgressEventUpdatesExecution(t *testing.T) {
 	if got.Progress != 22 {
 		t.Fatalf("progress = %d, want 22", got.Progress)
 	}
-	if got.CurrentStep == nil || *got.CurrentStep != "构建栅格 mosaic：leaf_cog 25/100" {
+	if got.CurrentStep != nil {
 		t.Fatalf("current_step = %#v", got.CurrentStep)
 	}
 	if got.Metadata["keep"] != "value" {
