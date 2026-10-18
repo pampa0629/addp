@@ -99,7 +99,11 @@ def prepare_context(directory: Path, architecture: str, cache: Path) -> dict[str
     media = download(facts["GAUSSDB_OFFICIAL_MEDIA_URL"], facts["GAUSSDB_OFFICIAL_MEDIA_SHA256"], cache)
     extract_kernel(media, directory / "kernel.bin", architecture)
     for name in ("Dockerfile", "entrypoint.sh", "init.sql"):
-        shutil.copyfile(DIRECTORY / name, directory / name)
+        destination = directory / name
+        shutil.copyfile(DIRECTORY / name, destination)
+        # These contain no credentials. Docker COPY preserves their modes, and
+        # the runtime user omm must read init.sql regardless of the caller umask.
+        destination.chmod(0o644)
     return facts
 
 

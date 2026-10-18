@@ -25,7 +25,7 @@ def validate_item(item):
     require(item.get('item_type')=='table' and item.get('full_name')=='addp_acceptance.source' and bool(item.get('fingerprint')), 'scanned GaussDB item identity differs')
     attrs=item.get('attributes',{})
     require(attrs.get('schema_version')==1 and attrs.get('item',{}).get('data_type')=='table', 'Meta item attributes required')
-    table=attrs.get('table',{})
+    table=attrs.get('type_info',{}).get('table',{})
     fields=table.get('fields',[])
     require(table.get('primary_key')==['name','id'] and {f['name'] for f in fields if f.get('primary_key')}=={'name','id'} and table.get('row_count')==2 and [f['name'] for f in fields]==['id','name','amount','optional_text'], 'GaussDB field/PK/count facts differ')
     require(fields[0].get('type')=='bigint' and fields[0].get('primary_key') is True and fields[2].get('type')=='decimal' and fields[2].get('precision')==38 and fields[2].get('scale')==18, 'GaussDB bigint/Decimal schema lost')

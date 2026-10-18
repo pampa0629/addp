@@ -43,8 +43,8 @@ test('GaussDB SELECT-only source retains precise values and field facts in Conso
     const dialog = manager.getByRole('dialog', { name: '完整属性 JSON', exact: true })
     await expect(dialog).toBeVisible()
     const attrs = JSON.parse(await dialog.locator('pre.attribute-json').innerText())
-    expect(attrs.table.primary_key).toEqual(['name', 'id'])
-    expect(attrs.table.fields.find(f => f.name === 'amount')).toMatchObject({ type: 'decimal', precision: 38, scale: 18 })
+    expect(attrs.type_info.table.primary_key).toEqual(['name', 'id'])
+    expect(attrs.type_info.table.fields.find(f => f.name === 'amount')).toMatchObject({ type: 'decimal', precision: 38, scale: 18 })
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'gaussdb-facts-console.png') })
     writeFileSync(required('ADDP_ONLINE_GAUSSDB_BROWSER_REPORT'), JSON.stringify(Object.fromEntries(
       ['run_id', 'tenant_id', 'principal_id', 'engine_id'].map(key => [key, expected[key]]))))

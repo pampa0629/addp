@@ -14,6 +14,8 @@ bash business/scripts/restart.sh -gaussdb
 
 `-gaussdb` 必须独立使用，不进入 `-all`。首次下载校验介质后构建本机架构镜像，首次空卷创建 `business` 数据库及 `addp_business` 下探针、客户、商品、订单和明细；样例事务仅补缺失主键，不覆盖用户修改。初始化脚本退出后，由普通业务账号另建连接，只读核对五张表中的基础样例主键全部存在，再写完成标记；表缺失、样例不全或查询失败均不写标记，不把客户端空跑当作初始化成功。`gaussdb_data` 卷在停止及重启后保留；已有数据库缺少完成标记、版本／账号不匹配或密码错误时拒绝启动，不重新格式化，不自动轮换密码。管理密码变更须先通过原生数据库维护完成，再同步配置。Business 不登记 System 引擎。
 
+构建上下文中的 `Dockerfile`、`entrypoint.sh` 和 `init.sql` 不含凭据，由唯一构建入口显式设置为0644；镜像内入口另设为可执行。不能依赖调用终端的 umask：本机启动脚本使用077时，原先复制出的 `init.sql` 为0600，Docker 保留该权限，导致普通运行用户 `omm` 报 `cat: /addp/gaussdb/init.sql: Permission denied`。此错误会保留缺少完成标记的不完整卷；修复镜像权限后仍须先核对数据并获得用户许可才能清理重建，启动脚本不会自动删除或接续初始化。`make test-business-config` 覆盖077下的上下文权限，`umask 077; make test-common-gaussdb` 复验实际初始化和 Provider 读取。
+
 原生 `gsql` 的凭据通道固定采用[厂商文档](https://support.huaweicloud.com/centralized-ref-v10-gaussdb/gaussdb-38-0862.html)的 `-2`：密码走标准输入管道，SQL 由独立文件描述符交给 `-f /dev/fd/3`，不生成临时凭据文件、不把密码放入参数。SQL 在私有 `/data/run` 中写入0600临时常规文件，打开只读描述符后立即删除路径，再启动客户端，使 `-f` 接收可定位的完整脚本；函数在子 shell 中关闭描述符，异常退出也清理临时路径。固定介质的客户端不能套用 PostgreSQL `psql` 的 `-w`、`PGPASSFILE` 或 `PGPASSWORD` 登录方式；介质中 `libpq` 出现某个环境变量字符串，不能证明 `gsql` 会使用它。连接失败保留原生诊断，认证与密码策略不降低。
 
 TCP 自动化查询使用原生 `-o /dev/fd/4` 独立结果通道，调用方只接收查询数据，客户端普通运行信息不进入结果；SQL、密码和结果分别走独立描述符。固定客户端的 `-f` 模式即使带 `-q -At` 也仍会打印 `total time: … ms`，因此不能用安静模式保证健康检查的精确比较，也不通过过滤文本修补。Release 归档保留每次健康检查的退出码和诊断并脱敏；初始化阶段的临时内核不计为最终就绪。

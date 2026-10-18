@@ -30,18 +30,19 @@ class GaussDBConsumerTest(unittest.TestCase):
 
     def test_scanned_item_requires_precise_schema_and_primary_key(self):
         item={'item_type':'table','full_name':'addp_acceptance.source','fingerprint':'demo',
-              'attributes':{'schema_version':1,'item':{'data_type':'table'},'table':{
+              'attributes':{'schema_version':1,'item':{'data_type':'table'},'type_info':{'table':{
                   'primary_key':['name','id'],'row_count':2,'fields':[
                       {'name':'id','type':'bigint','primary_key':True},
                       {'name':'name','type':'string','primary_key':True},
                       {'name':'amount','type':'decimal','precision':38,'scale':18},
-                      {'name':'optional_text','type':'string'}]}}}
+                      {'name':'optional_text','type':'string'}]}}}}
         FLOW.validate_item(item)
-        for change in ('precision','primary_key','type','uncertified'):
+        for change in ('precision','primary_key','type','uncertified','wrong_partition'):
             wrong=copy.deepcopy(item)
-            if change=='precision':wrong['attributes']['table']['fields'][2]['precision']=18
-            elif change=='type':wrong['attributes']['table']['fields'][0]['type']='double'
-            elif change=='primary_key':wrong['attributes']['table']['primary_key']=[]
+            if change=='precision':wrong['attributes']['type_info']['table']['fields'][2]['precision']=18
+            elif change=='type':wrong['attributes']['type_info']['table']['fields'][0]['type']='double'
+            elif change=='primary_key':wrong['attributes']['type_info']['table']['primary_key']=[]
+            elif change=='wrong_partition':wrong['attributes']['table']=wrong['attributes'].pop('type_info')['table']
             else:wrong['attributes']['capabilities']={'indexes':[],'indexing':{}}
             with self.subTest(change=change),self.assertRaises(FLOW.API.SuiteError):FLOW.validate_item(wrong)
 

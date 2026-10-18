@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY = ROOT / 'business/gaussdb/entrypoint.sh'
@@ -16,6 +17,23 @@ SPEC.loader.exec_module(IMAGE)
 
 
 class BusinessGaussDBTest(unittest.TestCase):
+    def test_build_context_sql_is_readable_by_nonroot_runtime_under_private_umask(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context = Path(directory)
+            previous = os.umask(0o077)
+            try:
+                with patch.object(IMAGE, 'media_facts', return_value={
+                    'GAUSSDB_OFFICIAL_MEDIA_URL': 'unused',
+                    'GAUSSDB_OFFICIAL_MEDIA_SHA256': 'unused',
+                }), patch.object(IMAGE, 'download'), patch.object(IMAGE, 'extract_kernel'):
+                    IMAGE.prepare_context(context, 'arm64', context / 'cache')
+            finally:
+                os.umask(previous)
+            for name in ('Dockerfile', 'entrypoint.sh', 'init.sql'):
+                artifact = context / name
+                self.assertEqual(artifact.read_bytes(), (IMAGE.DIRECTORY / name).read_bytes())
+                self.assertEqual(artifact.stat().st_mode & 0o777, 0o644, name)
+
     def run_shell(self, script, extra=None):
         env = dict(os.environ, ENTRY=str(ENTRY), GAUSSDB_PASSWORD='Admin9@123456',
                    GAUSSDB_APP_PASSWORD="App9@'\\:$12345", GAUSSDB_USER='business', GAUSSDB_VERSION='V2.0-10.0.0')
