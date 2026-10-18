@@ -478,6 +478,11 @@ FalkorDB 业务引擎复用现有 Cypher preflight、参数、Execution Authoriz
 
 2026-10-17 原值查询与历史保护：develop/query 消费当前用户显式获批的原值范围。执行记录只保存默认脱敏预览；当次获权结果仅在同一 Backend 有界内存中暂存，通过独立 result 接口每次按当前用户及本地投影重判。历史详情和列表始终默认保护，原值需要重新执行查询。暂存最多五分钟，容量淘汰或重启后不恢复。旧 protected_query_history 通过 Develop 数据迁移移除。通用 Observe、Monitor、TaskProvider 与导出不暴露私有暂存；Notebook 的交互请求继续按当前 session 主体消费统一保护。工作台在暂存或授权截止时清空展示并复核。旧 Hosted v5 只代表旧历史规则，当前规范 10.2 的 T1/T2/T3/T4 须分别验证。
 
-2026-10-17 用户确认收敛查询结果保存：执行记录仅保存默认脱敏预览，原值只在 Backend 有界进程内暂存，通过当次结果接口按当前授权重判；历史不还原原值，需要原值重新查询。规范见数据安全实现规范 10.2，旧私有历史通过单向数据迁移移除。本次实现的 Common／Develop Go、全仓 22 模块 Go、Common／Develop PostgreSQL、Develop 前端 80 项浏览器与构建、IAM／Swagger 及新版 Online 夹具门禁已通过；真实 Hosted v6 和重启后的本地验收待运行，旧 Hosted v5 只代表旧历史规则。
+2026-10-17 用户确认收敛查询结果保存：执行记录仅保存默认脱敏预览，原值只在 Backend 有界进程内暂存，通过当次结果接口按当前授权重判；历史不还原原值，需要原值重新查询。规范见数据安全实现规范 10.2，旧私有历史通过单向数据迁移移除。本次实现的 Common／Develop Go、全仓 22 模块 Go、Common／Develop PostgreSQL、Develop 前端 80 项浏览器与构建、IAM／Swagger 及新版 Online 夹具门禁已通过；当时真实 Hosted v6 和重启后的本地验收尚待运行；2026-10-18 的新版验证结果见下文，旧 Hosted v5 只代表旧历史规则。
 
 2026-10-17 原值历史迁移的 PostgreSQL 测试复用 `common/execution.EnsureStore` 和正式 `TaskExecution` 模型，不得自行删建简化的共享执行表；断言仅核对本轮 UUID，夹具和迁移在同一测试事务回滚。`make test-execution-fixtures`、Develop Go 与 Develop PostgreSQL 门禁通过。本项仅修正测试夹具，不改变生产实现或新版 v6 待验状态。
+
+
+2026-10-18 新历史规则验收闭环：[Hosted v6 39041158723](https://github.com/pampa0629/addp/actions/runs/39041158723) 通过，Job `117420768709`，运行源码 `293fdafe2290955c15272056b627c8fad721be2a`。领域 `addp.security-plaintext-access-online/v6` 与浏览器 `addp.security-plaintext-access-browser/v2` 归档均经独立校验。两个真实 User 验证获批当次结果接口返回原值，而授权有效时的历史接口已经默认脱敏；同一历史在自然到期、主动撤销后仍脱敏，另一用户不继承授权，Manager 单出口授权不扩大至 Develop，Security 不可达期间本地授权期限继续生效。浏览器 v2 证明 Console 申请／审批及 Manager 保护状态，不扩大为 Develop 当次原值工作台的真实浏览器专项。Hosted 生命周期 `cleanup=passed`、`infra_cleanup=zero_residuals`；新 Develop 日志 9,681 条中测试手机号原值命中为零，旧私有历史键的两处命中均为单向迁移 SQL。
+
+同日用户重启后的本地 Develop／Security ready/registered，运行构建 `53be389c5e434b8e1f045796b7f892dd9aef7b1b` 已包含本次实现。只读数据库核对迁移 `2026101701` 已安装、Develop Query 旧私有历史键剩余零条；旧执行 `a812f451-4f09-4d11-862e-86c351ae6675` 与旧获批执行 `00adf789-ec22-4f01-9875-add997566ebd` 均保留成功状态和十行默认预览，完整手机号行数为零。Chrome 管理员真实打开前一执行的历史详情，十行预览保持掩码／NULL。本地未新增原值授权或重跑源查询；旧获批执行的移除事实来自只读数据库核对。结合已通过的 Common／Develop Go、全仓 Go、真实 PostgreSQL、Develop 前端、授权／Swagger 和 Online 夹具门禁，本切片已验收；不外推为 SQL 自动重写或透明加密已实现。
