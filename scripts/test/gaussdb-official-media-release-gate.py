@@ -208,6 +208,10 @@ def main() -> None:
 
             report["phase"] = "readiness"
             start_and_wait()
+            report["phase"] = "business_lifecycle"
+            # Record native database/schema placement before mutating the fixture.
+            catalog = "\\connect business\nSELECT current_database(), current_schema();\nSELECT n.nspname,c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.relname IN ('customers','products','orders','order_items','addp_engine_probe') ORDER BY 1,2;"
+            probe_sql(container, catalog, report_path.with_suffix(".catalog.log"))
             # Probe both container recreation and preservation of a user edit.
             statement = "\\connect business\nUPDATE addp_business.customers SET customer_name='持久化保留中文' WHERE id=1;\nCREATE TABLE addp_business.lifecycle_sentinel(id integer PRIMARY KEY);\nINSERT INTO addp_business.lifecycle_sentinel VALUES (42);"
             result = probe_sql(container, statement, report_path.with_suffix(".lifecycle.log"))
@@ -258,7 +262,7 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
                     clean_owned(run_id, container, network, image)
                 finally:
                     if password:
-                        for suffix in (".build.log", ".probe.log", ".container.log", ".lifecycle.log", ".health.log"):
+                        for suffix in (".build.log", ".probe.log", ".container.log", ".lifecycle.log", ".health.log", ".catalog.log"):
                             log_path = report_path.with_suffix(suffix)
                             if log_path.exists():
                                 content = log_path.read_text(errors="replace")
