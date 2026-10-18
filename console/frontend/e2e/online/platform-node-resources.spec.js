@@ -449,7 +449,11 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect([instancePages.length, serviceBatches.length, serviceTrends.length]).toEqual(offCounts)
     report.service_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
       iframe_preserved: true, off_restored: true, off_no_requests: true, batches: [beforeAutoBatch, afterAutoBatch], trends: [beforeServiceAuto, afterAuto] }
+    // Closing the trend changes its URL and reloads the service list; finish that batch before navigating.
+    const closedServiceBatch = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/process_resource_summaries' && response.ok())
     await monitor.locator('.el-dialog__headerbtn').click()
+    await closedServiceBatch
+    await checkServices()
     save('host-list-natural-refresh-and-off-restore')
     await page.goto('/monitor/node-resources')
     await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')

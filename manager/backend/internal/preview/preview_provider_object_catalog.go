@@ -360,9 +360,14 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	canonicalContentType := objectcontent.InferContentType(objectPath, rawContentType)
 	preview.Object.ContentType = canonicalContentType
 
+	dir, name := commonModels.SplitObjectPath(objectPath)
+	if content := containerPreviewContentFromMetaAttributes(combinedAttributes, preview.Object.SizeBytes, dir, name); content != nil {
+		preview.Object.Content = content
+		return preview, nil
+	}
+
 	if p.content != nil && objectPath != "" {
 		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
-		dir, name := commonModels.SplitObjectPath(objectPath)
 		contentReq := &objectcontent.ObjectContentRequest{
 			Locator:     req.Locator,
 			Bucket:      bucket,

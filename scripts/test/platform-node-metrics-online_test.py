@@ -216,6 +216,38 @@ class MetricsProtocolTest(unittest.TestCase):
             screenshot.unlink()
             with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_overview_browser({"overview": evidence}, expected, artifacts)
 
+    def test_process_dialog_close_finishes_its_real_batch_before_host_navigation(self):
+        source=Path(__file__).resolve().parents[2]/"console/frontend/e2e/online/platform-node-resources.spec.js"
+        script=r"""
+import {readFileSync} from 'node:fs'
+const text=readFileSync(process.argv[1],'utf8')
+const boundary='trends: [beforeServiceAuto, afterAuto] }\n'
+if(!text.includes(boundary))throw new Error('service refresh boundary missing')
+const code=text.split(boundary)[1].split("    await expect(monitor.getByTestId('resource-node-list'))")[0]
+const FunctionAsync=Object.getPrototypeOf(async()=>{}).constructor
+for(const failBody of [false,true]){
+ const pending=[];let responseWaiter;let bodyFinished=false;let navigated=false;let checked=false
+ const response={url:()=> 'http://example.invalid/api/v1/monitor/platform/process_resource_summaries',ok:()=>true}
+ const page={
+  waitForResponse:predicate=>new Promise(resolve=>{responseWaiter=()=>{if(!predicate(response))throw new Error('wrong response scope');resolve(response)}}),
+  goto:async path=>{if(!bodyFinished)throw new Error('navigation aborted unfinished close response');if(path!='/monitor/node-resources')throw new Error('wrong host route');navigated=true}
+ }
+ const monitor={locator:selector=>({click:async()=>{
+  if(selector!=='.el-dialog__headerbtn')throw new Error('wrong close control')
+  const body=new Promise((resolve,reject)=>setTimeout(()=>{if(failBody)reject(new Error('close response failed'));else{bodyFinished=true;resolve({data:[]})}},10))
+  pending.push(body);responseWaiter?.()
+ }})}
+ const checkServices=async()=>{await Promise.all(pending);checked=true}
+ let error
+ try{await new FunctionAsync('page','monitor','checkServices','save',code)(page,monitor,checkServices,()=>{})}catch(e){error=e}
+ await Promise.allSettled(pending)
+ if(failBody){if(error?.message!=='close response failed'||navigated)throw new Error('failed close response was hidden')}
+ else{if(error)throw error;if(!navigated||!checked)throw new Error('closed service batch was not validated')}
+}
+"""
+        result=ONLINE.subprocess.run(["node","--input-type=module","-e",script,str(source)],capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_online_module_syntax_rejects_duplicate_callback_before_other_gate_stages(self):
         root = Path(__file__).resolve().parents[2]
         for name, target, separated in (("platform-node-resources", "test-node-metrics-online-runner", False),
