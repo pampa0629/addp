@@ -491,7 +491,7 @@ class ContinuousRunnerTest(unittest.TestCase):
         gate = import_module('scripts.test.online-gate')
         suite = gate.SUITES[M.SUITE]
         self.assertFalse(suite.nightly)
-        self.assertEqual({name for name, _ in suite.services}, {'gateway', 'system', 'meta', 'transfer', 'monitor'})
+        self.assertEqual({name for name, _ in suite.services}, {'gateway', 'system', 'meta', 'security', 'transfer', 'monitor'})
         workflow = (M.ROOT / '.github/workflows/online-t4-gates.yml').read_text()
         self.assertIn("inputs.suite != 'transfer-continuous-events'", workflow)
         job = workflow.split('  continuous-hosted-t4:', 1)[1].split('\n  redis-hosted-t4:', 1)[0]

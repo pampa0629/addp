@@ -13,6 +13,7 @@ stop_online_fixture() {
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export MONITOR_URL=http://127.0.0.1:8100
 export CONSOLE_URL=http://127.0.0.1:5170
+export SECURITY_URL=http://127.0.0.1:8194
 export TRANSFER_CONTINUOUS_LEASE_DURATION=8s TRANSFER_CONTINUOUS_HEARTBEAT_INTERVAL=2s
 export TRANSFER_CONTINUOUS_CLAIM_INTERVAL=500ms
 infra_owned=1
@@ -22,7 +23,7 @@ run_logged bash business/scripts/online-continuous-fixture.sh start
 # Reject invalid private descriptors before spending time on application builds.
 run_logged python3 -c 'import importlib,sys; from pathlib import Path; module=importlib.import_module("scripts.test.online-engine-registration"); [module.load_descriptor(Path(sys.argv[1])/f"continuous-{kind}.json") for kind in ("pg","kafka")]' "$ADDP_ONLINE_SECRET_DIR"
 application_owned=1
-for start_target in -transfer -monitor; do
+for start_target in -security -transfer -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium

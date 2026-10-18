@@ -1,15 +1,63 @@
 from importlib import import_module
 import os
+import json
 from pathlib import Path
 import signal
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 M = import_module('scripts.test.continuous-execution-faults')
 
 
 class ContinuousFaultsTest(unittest.TestCase):
+    def test_protection_readiness_uses_only_the_proven_hosted_owner_checkpoint(self):
+        faults = object.__new__(M.HostedFaults)
+        faults.root, faults.secret = Path('/owned'), Path('/private')
+        container = {'Id': 'owned-container', 'State': {'Running': True}, 'Config': {
+            'Labels': {'com.docker.compose.service': 'postgres', 'com.docker.compose.project.working_dir': '/owned'},
+            'Env': ['POSTGRES_DB=addp_online', 'POSTGRES_USER=fixture', 'POSTGRES_PASSWORD=private']}}
+        with patch.dict(os.environ, POSTGRES_USER='fixture', POSTGRES_PASSWORD='private'), \
+                patch.object(M.SUPPORT, 'deployment_secret', return_value=faults.secret):
+            for state, expected in [('', False), ('false', False), ('true', True)]:
+                with self.subTest(state=state), patch.object(M.subprocess, 'run', side_effect=[
+                        SimpleNamespace(stdout=json.dumps([container])), SimpleNamespace(stdout=state)]) as run:
+                    self.assertEqual(faults.protection_ready(2), expected)
+                    sql = run.call_args.kwargs['input']
+                    self.assertEqual(sql, 'BEGIN READ ONLY; SELECT initialized::text FROM transfer.protection_projection_checkpoints WHERE tenant_id = 2; COMMIT;')
+                    self.assertIn('owned-container', run.call_args.args[0])
+                    self.assertNotIn('private', ' '.join(run.call_args.args[0]))
+            for field, value in [('POSTGRES_DB', 'addp'), ('POSTGRES_PASSWORD', 'foreign')]:
+                changed = json.loads(json.dumps(container))
+                changed['Config']['Env'] = [v for v in changed['Config']['Env'] if not v.startswith(field + '=')] + [field + '=' + value]
+                with self.subTest(field=field), patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([changed]))) as run, self.assertRaises(ValueError):
+                    faults.protection_ready(2)
+                self.assertEqual(run.call_count, 1)
+            for field in ['com.docker.compose.service', 'com.docker.compose.project.working_dir']:
+                changed = json.loads(json.dumps(container)); changed['Config']['Labels'][field] = 'foreign'
+                with self.subTest(field=field), patch.object(M.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps([changed]))) as run, self.assertRaises(ValueError):
+                    faults.protection_ready(2)
+                self.assertEqual(run.call_count, 1)
+
+    def test_protection_readiness_fails_before_docker_on_wrong_deployment_or_tenant(self):
+        faults = object.__new__(M.HostedFaults); faults.secret = Path('/private')
+        with patch.object(M.subprocess, 'run') as run:
+            for tenant in [True, 1, 0, '2']:
+                with self.subTest(tenant=tenant), self.assertRaises(ValueError): faults.protection_ready(tenant)
+            with patch.object(M.SUPPORT, 'deployment_secret', return_value=Path('/foreign')), self.assertRaises(ValueError):
+                faults.protection_ready(2)
+            run.assert_not_called()
+
+    def test_protection_wait_requires_a_true_durable_fact_and_has_a_deadline(self):
+        faults = object.__new__(M.HostedFaults)
+        with patch.object(faults, 'protection_ready', side_effect=[False, True]) as ready, patch.object(M.time, 'sleep'):
+            faults.wait_protection_ready(2)
+            self.assertEqual(ready.call_count, 2)
+        with patch.object(faults, 'protection_ready', return_value=False), \
+                patch.object(M.time, 'monotonic', side_effect=[0, 91]), self.assertRaises(ValueError):
+            faults.wait_protection_ready(2)
+
     def test_local_deployment_is_rejected_before_pid_or_network_access(self):
         with patch.dict(os.environ, {'GITHUB_ACTIONS': 'false'}, clear=False), self.assertRaises(ValueError):
             M.HostedFaults()

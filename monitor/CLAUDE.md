@@ -74,6 +74,8 @@ monitor/
 
 Owner 不可用的真实页面验收扩展复用 `transfer-continuous-events` Hosted suite：同一普通 User 先打开真实终态事件、运行中执行树及非空列表；外部夹具只对当次隔离部署中经 pidfd、可执行文件、UID、数据库和私有目录核验的 Transfer Backend 发出 SIGSTOP，确认进程停止后等待真实 Monitor `503 execution_owner_unavailable`。浏览器必须清空详情、树、步骤、事件、列表及总数；SIGCONT 恢复同一进程后，通过原查询／重新加载取得新授权结果。另以终态事件页的浏览器网络中断核对普通事件传输失败只清空事件，恢复网络后可重新读取；不伪造 Owner 响应、不替代业务接口。控制文件与失败日志仅在私有目录，公开回执只保留身份、执行 UUID、闭合检查项及进程停止／恢复证据。标准入口仍为 `make test-transfer-continuous-online-runner` 和既有 continuous Hosted Job；真实运行通过前不登记为 T4 完成。
 
+首轮 `39026543398` 在故障阶段前因隔离入口漏启 Security 而失败，清理通过、Infra 零残留，不计 Owner 故障通过。该 suite 必须先启动并预检 Security；真实 User 夹具创建后，只读等待当次独占 `addp_online` 中 Transfer 正式 projection checkpoint 的 `initialized`，不能在夹具写入保护事实、跳过保护校验或用失败任务重试冒充就绪。读取前核验容器服务／工作区标签、运行状态、数据库和当次凭据；本地共享数据库不允许进入这条 Hosted 探针。
+
 2026-10-13 提交 `bfc305953` 的 [Hosted T4 38329160596](https://github.com/pampa0629/addp/actions/runs/38329160596) 在真实页面验证了过程自动刷新、恢复来源与稳定失败码，随后在撤权后的 `old_content_cleared` 失败：事件行被清空，但终态概览／步骤未清空；新 Monitor-only 浏览器和后续 CDC 阶段未运行。suite 清理通过、残留为 0，不能据此把整个 T4 计为通过。已将事件拒绝绑定到 Monitor 详情清空；本地 `make test-monitor-frontend` 的 56 项单元、118 项浏览器及构建通过，包含三种拒绝及关闭后迟到事件的回归。首次 401 用例错误要求会话失效后仍显示重新加载按钮，改为验证既有会话失效导航且全部旧详情消失；没有放宽内容清空断言。真实撤权复验仍待运行。
 
 详情刷新依据整棵已授权可见树：父执行结束但任一可见子执行仍运行时继续刷新，全部可见执行达到终态才停止；不根据私有步骤引用补查隐藏节点。每次刷新复用 Owner 裁决；返回 403/404 时清空旧树、步骤和事件并显示重新加载入口。异步响应必须属于当前详情请求，不能覆盖关闭后重新打开的页面。

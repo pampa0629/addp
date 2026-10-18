@@ -93,10 +93,11 @@ class HostedContinuousGateTest(unittest.TestCase):
         result = self.gate()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         trace = self.host.trace.read_text()
-        for fragment in ['start:-transfer', 'start:-monitor', 'engine-register:continuous-pg.json',
+        for fragment in ['start:-security', 'start:-transfer', 'start:-monitor', 'engine-register:continuous-pg.json',
                          'engine-register:continuous-kafka.json', 'make:test-online ONLINE_SUITE=transfer-continuous-events',
                          'continuous-fixture:verify-clean', 'application-stop', 'continuous-fixture:stop', 'infra-down']:
             self.assertIn(fragment, trace)
+        self.assertLess(trace.index('start:-security'), trace.index('start:-transfer'))
         self.assertIn('cleanup=passed', (self.host.artifacts / 'summary.txt').read_text())
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('playwright install --with-deps chromium', SCRIPT.read_text())

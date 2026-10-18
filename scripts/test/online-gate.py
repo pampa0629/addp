@@ -91,7 +91,7 @@ SUITES: Mapping[str, Suite] = {
     "transfer-continuous-events": Suite(
         command=(sys.executable, "-m", "scripts.test.transfer-continuous-events-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
-                  ("meta", "META_URL"), ("transfer", "TRANSFER_URL"), ("monitor", "MONITOR_URL")),
+                  ("meta", "META_URL"), ("transfer", "TRANSFER_URL"), ("monitor", "MONITOR_URL"), ("security", "SECURITY_URL")),
     ),
     "orchestrator-execution": Suite(
         command=(sys.executable, "-m", "scripts.test.orchestrator-execution-online"),

@@ -808,6 +808,8 @@ def main():
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
         signal.alarm(850)
+        faults.wait_protection_ready(tenant)
+        report['protection_projection_ready'] = True
         run_suite(client, denied, foreign, peer, reader, admin, API.GatewayClient(gateway, '', timeout),
                   tenant, run_id, pg, kafka, report, checkpoint, faults)
     except (KeyError, ValueError, SuiteError, subprocess.SubprocessError, OSError) as error:

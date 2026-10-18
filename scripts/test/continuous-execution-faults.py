@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 import os
 from pathlib import Path
 import select
@@ -58,6 +59,38 @@ class HostedFaults:
             os.close(descriptor)
             raise
         return pid, descriptor
+
+    def protection_ready(self, tenant_id):
+        # Read the Owner's canonical durable readiness fact, never set it in a fixture.
+        # This probe is admitted only for this exclusive Hosted Infra and its actual credentials.
+        if type(tenant_id) is not int or tenant_id <= 1 or SUPPORT.deployment_secret() != self.secret:
+            raise ValueError('invalid protection readiness boundary')
+        inspected = subprocess.run(['docker', 'inspect', 'addp-postgres'], check=True,
+                                   capture_output=True, text=True, timeout=10)
+        container = json.loads(inspected.stdout)[0]
+        labels = container['Config']['Labels']
+        environment = dict(value.split('=', 1) for value in container['Config']['Env'] if '=' in value)
+        if (not container['State']['Running'] or labels.get('com.docker.compose.service') != 'postgres'
+                or labels.get('com.docker.compose.project.working_dir') != str(self.root)
+                or environment.get('POSTGRES_DB') != 'addp_online' or not environment.get('POSTGRES_PASSWORD')
+                or any(environment.get(key) != os.environ.get(key) for key in ('POSTGRES_USER', 'POSTGRES_PASSWORD'))):
+            raise ValueError('protection readiness PostgreSQL is not owned by this deployment')
+        sql = ('BEGIN READ ONLY; SELECT initialized::text FROM transfer.protection_projection_checkpoints '
+               f'WHERE tenant_id = {tenant_id}; COMMIT;')
+        result = subprocess.run(['docker', 'exec', '-i', container['Id'], 'psql', '-X', '-qAt',
+                                 '-v', 'ON_ERROR_STOP=1', '-U', environment['POSTGRES_USER'], '-d', 'addp_online'],
+                                input=sql, check=True, capture_output=True, text=True, timeout=10)
+        state = result.stdout.strip()
+        if state not in {'', 'false', 'true'}:
+            raise ValueError('invalid Owner protection readiness fact')
+        return state == 'true'
+
+    def wait_protection_ready(self, tenant_id):
+        deadline = time.monotonic() + 90
+        while not self.protection_ready(tenant_id):
+            if time.monotonic() >= deadline:
+                raise ValueError('Owner initial protection synchronization did not become ready')
+            time.sleep(.5)
 
     def kill_worker_and_replace(self):
         pid, descriptor = self.pin('transfer-continuous-worker')
