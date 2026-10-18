@@ -132,3 +132,63 @@ func TestExecutionTreeBudgetMarksOnlyOmittedAccessibleEvidence(t *testing.T) {
 		t.Fatal("complete depth-boundary leaf marked as truncated")
 	}
 }
+
+func TestExecutionTreeFiltersHiddenChildrenBeforeBudgetAndKeepsDirectParents(t *testing.T) {
+	db := newExecutionQueryServiceTestDB(t)
+	query := NewExecutionQueryService(commonExecution.NewTaskExecutionRepository(db))
+	root := "scoped-budget-parent"
+	insert := func(id int, tenant, actor int, identifier, module, taskType string, parent *string, taskID *string) {
+		t.Helper()
+		row := commonExecution.TaskExecution{ID: int64(id), TenantID: tenant, ExecutionID: identifier,
+			Module: module, TaskType: taskType, Source: module, ParentExecutionID: parent, SourceTaskID: taskID,
+			TriggeredBy: &actor, Status: commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
+			CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	taskID := "scoped-budget-task"
+	insert(98000, 7, 33, root, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, nil, &taskID)
+	// More hidden children than the entire tree budget must not displace a
+	// later visible child or reveal their existence through truncation.
+	for i := 0; i < 205; i++ {
+		insert(98001+i, 7, 36, fmt.Sprintf("scoped-hidden-%03d", i), commonExecution.ModuleMeta, commonExecution.TaskTypeScan, &root, nil)
+	}
+	insert(98206, 8, 33, "scoped-other-tenant", commonExecution.ModuleMeta, commonExecution.TaskTypeScan, &root, nil)
+	visible := "scoped-own-scan"
+	insert(98207, 7, 33, visible, commonExecution.ModuleMeta, commonExecution.TaskTypeScan, &root, nil)
+	hiddenParent := "scoped-hidden-000"
+	insert(98208, 7, 33, "scoped-own-below-hidden", commonExecution.ModuleMeta, commonExecution.TaskTypeScan, &hiddenParent, nil)
+	ctx := commonExecution.WithReadScopes(context.Background(), []commonExecution.ReadScope{
+		{Module: commonExecution.ModuleTransfer, TenantID: 7, PrincipalID: 33, Grants: []commonExecution.ReadGrant{{TaskType: commonExecution.TaskTypeSync, TaskHistory: true}}},
+		{Module: commonExecution.ModuleMeta, TenantID: 7, PrincipalID: 33, Grants: []commonExecution.ReadGrant{{TaskType: commonExecution.TaskTypeScan, OwnAdHoc: true}}},
+	})
+	for _, lookup := range []func() (*ExecutionTreeNode, error){
+		func() (*ExecutionTreeNode, error) { return query.GetExecutionTreeByExecutionID(ctx, root, 7) },
+		func() (*ExecutionTreeNode, error) { return query.GetExecutionTree(ctx, 98000, 7) },
+	} {
+		tree, err := lookup()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tree.Truncated || len(tree.Children) != 1 || tree.Children[0].Execution.ExecutionID != visible || tree.Children[0].Truncated {
+			t.Fatalf("hidden executions consumed the visible budget: %#v", tree)
+		}
+		child := tree.Children[0]
+		if child.Execution.ParentExecutionID == nil || *child.Execution.ParentExecutionID != root || len(child.Children) != 0 {
+			t.Fatalf("direct scan lineage changed: %#v", child)
+		}
+	}
+	// Removing the Meta Owner grant leaves a readable task parent, with no
+	// child or truncation hint. An empty scope cannot read even that root.
+	parentOnly := commonExecution.WithReadScopes(context.Background(), []commonExecution.ReadScope{
+		{Module: commonExecution.ModuleTransfer, TenantID: 7, PrincipalID: 36, Grants: []commonExecution.ReadGrant{{TaskType: commonExecution.TaskTypeSync, TaskHistory: true}}},
+	})
+	tree, err := query.GetExecutionTreeByExecutionID(parentOnly, root, 7)
+	if err != nil || len(tree.Children) != 0 || tree.Truncated {
+		t.Fatalf("parent read leaked children: tree=%#v err=%v", tree, err)
+	}
+	if _, err := query.GetExecutionTreeByExecutionID(commonExecution.WithReadScopes(context.Background(), nil), root, 7); err == nil {
+		t.Fatal("empty Owner scope exposed the root execution")
+	}
+}
