@@ -154,6 +154,7 @@
 | `make test-common-frontend` / `make test-develop-frontend` | 共享资源选择与批量构图；跨引擎／搜索勾选同步、顺序、取消、整批撤销／重做、保存重载及窄屏操作。 |
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
+| `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
 | `make test-online ONLINE_SUITE=raster-workflow` | 原 Raster Hosted T4；仅在 GitHub Hosted 独占部署运行，不接管个人开发环境。 |
 
 最小日常计算验证使用 `make test-geopython-workflow`；修改跨模块成果、授权或扫描链路时补充相应 owner 门禁与原 Hosted T4。连接本地 Infra 前先执行 `bash scripts/infra/status.sh`，PostgreSQL 仅使用规范允许的测试库。服务重启由用户按标准生命周期操作。
@@ -161,3 +162,7 @@
 ### 6.2 DEM 验收边界
 
 DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与归档见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。坡度、坡向和晕渲在 Hosted 中覆盖 COG 保存、自动扫描、资源血缘与页面参数；等值线在原 Hosted 中覆盖计算及 JSON 预览，另由独立 `raster-contour-persistence` 在 `54acffb1c` 完成两种高程模式的 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人归属、严格物理／Meta 大小、Monitor、当前执行血缘和零残留清理。Runtime 沿现有挂载路径写入，Meta 经真实 NFS 读取；GeoPackage 内部图层遵守容器边界。该 API 闭环不替代 Manager 绘制、HTTP Range、业务删除、覆盖冲突或容量验收；原 Raster T4 保留原版本和 1740 秒预算。
+
+### 6.3 分类栅格转面验收边界
+
+`raster_polygonize` 已在 `6cd2bb7b0` 的独立 `raster-polygonize-persistence` 完成四邻接、八邻接和重分类接转面三条真实 DAG。完整像元与连通区域、Int64 分类字段、二维 MultiPolygon、源 CRS、严格物理／Meta 大小、原普通用户三个自动扫描、Monitor 与各自当前执行血缘、源及先前成果不变和零残留均通过，最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。原 Raster T4 与等值线独立基线保持；该结论不替代矢量栅格化、Manager 绘制、业务删除、覆盖冲突或容量验收。
