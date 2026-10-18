@@ -11,6 +11,12 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name == 'repaired.geojson':
+        return [{'geometry': {'type': 'MultiPolygon', 'coordinates': [
+            [[[x,30],[x+2,30],[x+1,31],[x,30]]], [[[x,32],[x+2,32],[x+1,31],[x,32]]]]},
+            'properties': {'source_name': f'bow-{i}', 'grade': 7+i, 'geometry_valid': False,
+                'geometry_reason': 'Self-intersection', 'after_valid': True, 'after_reason': 'Valid Geometry'}}
+            for i,x in enumerate((120,124))]
     if name == 'faces.geojson':
         coordinates = [[[[x,y],[x+2,y],[x+2,y+2],[x,y+2],[x,y]]] for x in (120,122) for y in (30,32)]
         return [{'geometry': {'type': 'Polygon', 'coordinates': c}, 'properties': {}} for c in coordinates]
@@ -40,6 +46,21 @@ class TopologyFixtureTest(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(m.FixtureError): m.validate_features(name, value)
         value = records('diagnostics.geojson'); value[0]['geometry']['coordinates'][0][0] = 118
         with self.assertRaises(m.FixtureError): m.validate_features('diagnostics.geojson', value)
+
+    def test_repair_oracle_rejects_false_validity_dropped_parts_and_changed_attributes(self):
+        m.validate_features('repaired.geojson', records('repaired.geojson'))
+        for mutate in (
+            lambda value: value[0]['properties'].update(geometry_valid=True),
+            lambda value: value[0]['properties'].update(after_valid=False),
+            lambda value: value[0]['properties'].update(after_valid=1),
+            lambda value: value[0]['properties'].update(grade=8),
+            lambda value: value[0]['properties'].update(geometry_reason='Valid Geometry'),
+            lambda value: value[0]['geometry']['coordinates'].pop(),
+            lambda value: value[0]['geometry']['coordinates'][0][0][0].__setitem__(0, 119),
+        ):
+            value = records('repaired.geojson'); mutate(value)
+            with self.subTest(mutate=mutate), self.assertRaises(m.FixtureError):
+                m.validate_features('repaired.geojson', value)
 
     def test_admission_rejects_personal_environment_before_system_commands(self):
         with patch.object(m, 'command') as command:

@@ -46,21 +46,25 @@ CSV／TSV 索引源版本复验复用同一 Hosted 独占 NFS 导出和原十项
 
 ## 拓扑构面双输出持久化（vector-topology-persistence）
 
-独立手工 Hosted Linux x86_64 T4，仅验收既有 `load → polygonize → save_faces / save_diagnostics`，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
+独立手工 Hosted Linux x86_64 T4，验收 `load → polygonize → save_faces / save_diagnostics`，以及独立自相交面源的 `load → check_geometry → repair_geometry → check_geometry → save_repaired`，两条计算分支在同一 execution 中执行，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
 
 System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，精确授予 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。执行使用既有 ad-hoc API，无任务定义编辑或引擎管理权限；Engine 登记身份与业务 User 分离，登记后移除基础设施 Token。入口和 Console 浏览器均核对同一 User、Tenant 与精确权限集合，拒绝管理员和多余权限。
 
-确定性 NFS 线网声明 EPSG:4326，包含闭合方框、两条贯穿线及重复边。默认输出引用省略 `port`，诊断显式引用 `port=diagnostics`；两个既有保存节点分别写入新 GeoJSON，使用 `mode=fail`。独立物理 oracle 按预定义坐标核对四个面、四条外围 dangle、字段和 CRS，不调用构面算子生成期望；同时核对源 SHA/大小、准确目标清单及无临时旁路文件。两个目标必须各自具备一次精确自动扫描、正式 DataItem、物理与 Meta 相等的正整数大小、同一 actor/Tenant、指向同一 Develop execution 的 derive 及一致 Monitor 事实。不得手动补扫输出伪装自动扫描成功。
+确定性 NFS 线网声明 EPSG:4326，包含闭合方框、两条贯穿线及重复边。默认输出引用省略 `port`，诊断显式引用 `port=diagnostics`；两个既有保存节点分别写入新 GeoJSON，使用 `mode=fail`。独立物理 oracle 按预定义坐标核对四个面、四条外围 dangle、字段和 CRS，不调用构面算子生成期望；同时核对源 SHA/大小、准确目标清单及无临时旁路文件。三个目标必须各自具备一次精确自动扫描、正式 DataItem、物理与 Meta 相等的正整数大小、同一 actor/Tenant、指向同一 Develop execution 的 derive 及一致 Monitor 事实。不得手动补扫输出伪装自动扫描成功。
 
 自动扫描身份沿 Meta `ScanExecutionResponse` 的公开 `tenant_id` 与 `triggered_by` 核对，两者必须为正整数并分别等于当前 Tenant 和 User Principal；不读取或回退到私有 `actor_principal_id`，不为验收扩展 Meta DTO 或权限。
 
-文件保存继续使用 `mode=fail`，成功后的两份稳定输出及 `lineage_facts.outputs` 必须分别包含标准 `write_mode=create`，不能将缺少该事实或原始值 `fail` 视为合格。血缘仍须匹配同一 Develop execution 的当前 active derive；不修改 Meta 对未知写入模式只保留观察的规则。
+文件保存继续使用 `mode=fail`，成功后的三份稳定输出及 `lineage_facts.outputs` 必须分别包含标准 `write_mode=create`，不能将缺少该事实或原始值 `fail` 视为合格。血缘仍须匹配同一 Develop execution 的当前 active derive；不修改 Meta 对未知写入模式只保留观察的规则。
 
-GDAL 保存成果中的显式 CRS84 声明必须进入标准空间事实 `crs_ref=OGC:CRS84`，不得补造 EPSG SRID。浏览器核对 `source_crs=OGC:CRS84`、SRID 为零或省略、`not_transformed` / `direct_renderable`，并以原经纬坐标验证四面四余线和两幅真实地图；不得临时选择坐标系或改文件声明来通过验收。
+GDAL 保存成果中的显式 CRS84 声明必须进入标准空间事实 `crs_ref=OGC:CRS84`，不得补造 EPSG SRID。浏览器核对 `source_crs=OGC:CRS84`、SRID 为零或省略、`not_transformed` / `direct_renderable`，并以原经纬坐标验证四面四余线、修复后两条 MultiPolygon 及三幅真实地图；不得临时选择坐标系或改文件声明来通过验收。
 
-等待血缘前先核对两份成果的严格大小，并归档 `topology-before-lineage.json`：仅含本轮身份、公开扫描主体、资源血缘事实、物理哈希及双份大小证据，标记 `result=incomplete`。即使后续超时，已验证阶段仍可复核；该文件不能替代最终成功报告、血缘、浏览器或退出清理证据。
+等待血缘前先核对三份成果的严格大小，并归档 `topology-before-lineage.json`：包含本轮身份、公开扫描主体、资源血缘事实、Monitor 响应、物理哈希及三份大小证据，标记 `result=incomplete`。即使后续超时，已验证阶段仍可复核；该文件不能替代最终成功报告、血缘、浏览器或退出清理证据。
 
-同一普通 User 经 Console 查看专业结果与两份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
+同一普通 User 经 Console 查看专业结果与三份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
+
+新增 `invalid.geojson` 含两条带业务属性的自相交面；`repaired.geojson` 必须一源要素一行、每行精确两个三角面，保留 source_name/grade，修复前 false 和自交原因、复查后 true/Valid Geometry 均须物理和预览核对。两份源文件的内容与 Meta 事实在浏览器访问前后不变；不增加 User 权限、等待预算或手工补扫。旧双输出版本的真实 T4 证据仍只证明原范围，不外推本次增强。
+
+增强版最终报告使用 `addp.vector-topology-persistence/v2` 与 `addp.topology-browser/v2`；浏览器按本次导航的真实请求身份读取两源 Meta 和三个当前 active derive 原始图，归档到 `topology-source-lineage-raw.json`，不跨导航持有旧 Token。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费
 

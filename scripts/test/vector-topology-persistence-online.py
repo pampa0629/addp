@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ordinary User -> GeoPython dual outputs -> exact scans/lineage -> Console."""
+"""Ordinary User -> polygonize and geometry repair -> exact scans/lineage -> Console."""
 import importlib
 import json
 import os
@@ -16,34 +16,39 @@ SUITE = fixture.SUITE
 PERMISSIONS = raster.PERMISSIONS | {'manager.data_item.read'}
 
 
-def definition(source, parent):
+def definition(source, parent, invalid_source):
     return {'tasks': [
         {'id': 'load', 'operator': 'load', 'params': {'locator': source}, 'depends_on': []},
         {'id': 'build', 'operator': 'polygonize', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
         *[{'id': 'save_' + port, 'operator': 'save', 'depends_on': ['build'], 'params': {
             'input_df': {'$ref': 'build'} if port == 'faces' else {'$ref': 'build', 'port': 'diagnostics'},
             'target_parent_locator': parent, 'target_name': name, 'mode': 'fail'}}
-          for port, name in zip(('faces','diagnostics'), fixture.TARGETS)]
+          for port, name in zip(('faces','diagnostics'), fixture.TARGETS[:2])],
+        {'id': 'load_invalid', 'operator': 'load', 'params': {'locator': invalid_source}, 'depends_on': []},
+        {'id': 'check', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'load_invalid'}}, 'depends_on': ['load_invalid']},
+        {'id': 'repair', 'operator': 'repair_geometry', 'params': {'input_gdf': {'$ref': 'check'}}, 'depends_on': ['check']},
+        {'id': 'recheck', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'repair'}, 'valid_field': 'after_valid', 'reason_field': 'after_reason'}, 'depends_on': ['repair']},
+        {'id': 'save_repaired', 'operator': 'save', 'params': {'input_df': {'$ref': 'recheck'}, 'target_parent_locator': parent, 'target_name': 'repaired.geojson', 'mode': 'fail'}, 'depends_on': ['recheck']}
     ]}
 
 
-def validate_success(execution, source, targets):
+def validate_success(execution, sources, targets):
     metadata = obj(execution.get('metadata'), 'execution metadata')
     outputs = obj(execution.get('outputs'), 'stable outputs')
     expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file', 'write_mode': 'create'}} for key, target in targets.items()}
     if outputs != expected:
-        raise SuiteError('expected both exact named file outputs')
+        raise SuiteError('expected three exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
-        or [entry.get('locator') for entry in array(facts.get('inputs'), 'inputs')] != [source]
+        or [entry.get('locator') for entry in array(facts.get('inputs'), 'inputs')] != sources
         or sorted(entry.get('locator') for entry in array(facts.get('outputs'), 'outputs')) != sorted(targets.values())
         or any(entry.get('write_mode') != 'create' for entry in facts['outputs'])):
-        raise SuiteError('dual-output resource lineage differs')
+        raise SuiteError('topology and repair resource lineage differs')
     scans = array(obj(metadata.get('result'), 'result').get('meta_scan_runs'), 'automatic scans')
-    if (len(scans) != 2 or {scan.get('target_locator') for scan in scans} != set(targets.values())
+    if (len(scans) != 3 or {scan.get('target_locator') for scan in scans} != set(targets.values())
         or any(scan.get('status') != 'submitted' or not isinstance(scan.get('execution_id'), str) or not scan['execution_id'] for scan in scans)
-        or len({scan['execution_id'] for scan in scans}) != 2):
-        raise SuiteError('expected exactly two distinct automatic precise file scans')
+        or len({scan['execution_id'] for scan in scans}) != 3):
+        raise SuiteError('expected exactly three distinct automatic precise file scans')
     return facts, scans
 
 
@@ -73,7 +78,7 @@ def browser(repository, env, evidence):
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    if report != {**evidence, 'schema_version': 'addp.topology-browser/v1', 'result': 'passed'}:
+    if report != {**evidence, 'schema_version': 'addp.topology-browser/v2', 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
@@ -85,20 +90,22 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     identity = raster.validate_identity(client, tenant, required_permissions=PERMISSIONS)
     timeout = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     engine = positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'], 'NFS engine')
-    source_scope = f'addp://engine/{engine}/path/source.geojson?type=file'
-    source_scan = support.wait_for_meta_scan(client, engine, time.monotonic()+timeout, scope={'targets': [source_scope]})
-    source = support.find_fixture_item(client, engine, 'source.geojson', 'topology source')
-    source_locator = source_scope + f'&item_id={source["id"]}'
-    source_before = client.request('GET', f'/api/v1/meta/items/{source["id"]}', (200,)).payload
+    sources = []
+    for name in fixture.SOURCES:
+        scope = f'addp://engine/{engine}/path/{name}?type=file'
+        scan = support.wait_for_meta_scan(client, engine, time.monotonic()+timeout, scope={'targets': [scope]})
+        item = support.find_fixture_item(client, engine, name, 'topology source')
+        before = client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload
+        sources.append({'name': name, 'id': item['id'], 'locator': scope+f'&item_id={item["id"]}', 'scan_execution_id': scan, 'before': before})
     runtimes = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
     selected = [value for value in runtimes if value.get('engine_type') == 'geopython_workflow' and value.get('connection_status') == 'online']
     if len(selected) != 1:
         raise SuiteError('expected exactly one online product GeoPython Runtime')
     parent = f'addp://engine/{engine}/path/outputs?type=directory'
-    targets = {key: f'addp://engine/{engine}/path/outputs/{name}?type=file' for key, name in zip(('faces','diagnostics'), fixture.TARGETS)}
-    identifier = raster.submit(client, positive(selected[0]['id'], 'Runtime'), definition(source_locator, parent))
+    targets = {key: f'addp://engine/{engine}/path/outputs/{name}?type=file' for key, name in zip(('faces','diagnostics','repaired'), fixture.TARGETS)}
+    identifier = raster.submit(client, positive(selected[0]['id'], 'Runtime'), definition(sources[0]["locator"], parent, sources[1]["locator"]))
     execution = raster.wait_execution(client, 'develop', identifier, timeout)
-    facts, scans = validate_success(execution, source_locator, targets)
+    facts, scans = validate_success(execution, [source["locator"] for source in sources], targets)
     scan_observations = []
     for scan in scans:
         scanned = raster.wait_execution(client, 'meta', scan['execution_id'], timeout)
@@ -114,31 +121,34 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     if native.get('exact_inventory_verified') is not True or set(native.get('targets', {})) != set(fixture.TARGETS):
         raise SuiteError('missing exact physical target inventory')
     outputs = []
-    for key, name in zip(('faces','diagnostics'), fixture.TARGETS):
+    for key, name in zip(('faces','diagnostics','repaired'), fixture.TARGETS):
         item = support.find_fixture_item(client, engine, 'outputs/' + name, 'topology output')
         item = obj(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload, 'output item')
         sizes = validate_item(item, native['targets'][name], name)
         outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes})
     # Persist the verified physical facts before any potentially long convergence
     # wait. This checkpoint cannot stand in for the final successful suite report.
-    checkpoint = {'schema_version': 'addp.topology-checkpoint/v1', 'suite': SUITE, 'result': 'incomplete',
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v2', 'suite': SUITE, 'result': 'incomplete',
         'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
-        'execution_id': identifier, 'source_item_id': source['id'], 'lineage_facts': facts,
-        'automatic_scans': scan_observations, 'outputs': outputs, 'physical': native, 'monitor_lineage_verified': True}
+        'execution_id': identifier, 'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'lineage_facts': facts,
+        'automatic_scans': scan_observations, 'outputs': outputs, 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json').write_text(json.dumps(checkpoint, indent=2)+'\n')
     for output in outputs:
-        output['lineage'] = raster.wait_lineage(client, source['id'], output['item_id'], identifier, timeout)
-    if client.request('GET', f'/api/v1/meta/items/{source["id"]}', (200,)).payload != source_before:
-        raise SuiteError('source metadata changed')
+        source_id = sources[1 if output['port'] == 'repaired' else 0]['id']
+        output['lineage'] = raster.wait_lineage(client, source_id, output['item_id'], identifier, timeout)
+    for source in sources:
+        if client.request('GET', f'/api/v1/meta/items/{source["id"]}', (200,)).payload != source['before']:
+            raise SuiteError('source metadata changed')
     # Browser evidence deliberately contains only stable identities and expected content.
     evidence = {'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity, 'execution_id': identifier,
-                'outputs': [{key: output[key] for key in ('port','name','locator','item_id')} for output in outputs]}
+                'outputs': [{key: output[key] for key in ('port','name','locator','item_id')} for output in outputs],
+                'sources': [{'id': source['id'], 'before': source['before']} for source in sources]}
     report = browser_runner(repository, env, evidence)
     if physical_runner(repository, env) != native:
         raise SuiteError('browser reads changed source or saved outputs')
-    return {'schema_version': 'addp.vector-topology-persistence/v1', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.vector-topology-persistence/v2', 'suite': SUITE, 'result': 'passed',
         'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'execution_id': identifier,
-        'source_scan_execution_id': source_scan, 'source_unchanged': True, 'automatic_scans': scans,
+        'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'source_unchanged': True, 'automatic_scans': scans, 'automatic_scan_observations': scan_observations, 'monitor': monitor,
         'outputs': outputs, 'physical': native, 'browser': report,
         'cleanup_boundary': 'owned NFS export/directory and disposable deployment; no business DELETE acceptance'}
 

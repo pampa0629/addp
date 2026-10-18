@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned Hosted linework and an independent coordinate oracle; no platform APIs."""
+"""Owned Hosted linework/self-crossing faces and independent coordinate oracles."""
 import hashlib
 import json
 import math
@@ -10,7 +10,8 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson')
+SOURCES = ('source.geojson', 'invalid.geojson')
 
 
 class FixtureError(RuntimeError):
@@ -42,6 +43,32 @@ def linework():
                       'geometry': {'type': 'LineString', 'coordinates': points}} for i, points in enumerate(coordinates)]}
 
 
+def invalid_polygons():
+    return {'type': 'FeatureCollection', 'crs': {'type': 'name', 'properties': {'name': 'EPSG:4326'}},
+        'features': [{'type': 'Feature', 'properties': {'source_name': f'bow-{i}', 'grade': 7+i},
+            'geometry': {'type': 'Polygon', 'coordinates': [[[x,30],[x+2,32],[x,32],[x+2,30],[x,30]]]}}
+            for i, x in enumerate((120,124))]}
+
+
+def validate_repaired(features):
+    if len(features) != 2:
+        raise FixtureError('repair must retain both source rows')
+    for i, (feature, x) in enumerate(zip(features, (120,124))):
+        props = feature['properties']; geometry = feature['geometry']
+        expected_fields = {'source_name', 'grade', 'geometry_valid', 'geometry_reason', 'after_valid', 'after_reason'}
+        if (set(props) != expected_fields or props['source_name'] != f'bow-{i}' or props['grade'] != 7+i
+            or props['geometry_valid'] is not False or not props['geometry_reason'].startswith('Self-intersection')
+            or props['after_valid'] is not True or props['after_reason'] != 'Valid Geometry'):
+            raise FixtureError('repair lost source attributes or before/after validity')
+        expected = {canonical([[x,30],[x+2,30],[x+1,31],[x,30]], True),
+                    canonical([[x,32],[x+2,32],[x+1,31],[x,32]], True)}
+        if geometry['type'] != 'MultiPolygon' or len(geometry['coordinates']) != 2 or any(len(part) != 1 for part in geometry['coordinates']):
+            raise FixtureError('repair must retain two triangles per source feature')
+        actual = [canonical(part[0], True) for part in geometry['coordinates']]
+        if len(set(actual)) != 2 or set(actual) != expected:
+            raise FixtureError('repair differs from independent triangle coordinates')
+
+
 def canonical(points, ring=False):
     if any(len(point) != 2 or any(type(value) not in (int, float) or not math.isfinite(value) for value in point) for point in points):
         raise FixtureError('expected finite XY coordinates')
@@ -66,6 +93,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name == 'repaired.geojson':
+        return validate_repaired(features)
     actual = []
     for feature in features:
         geometry = feature['geometry']; coordinates = geometry['coordinates']
@@ -83,14 +112,15 @@ def validate_features(name, features):
 
 def worker(action, root):
     if action == 'seed':
-        if (root / 'source.geojson').exists() or list((root / 'outputs').iterdir()):
+        if any((root / name).exists() for name in SOURCES) or list((root / 'outputs').iterdir()):
             raise FixtureError('refusing existing data')
         (root / 'source.geojson').write_text(json.dumps(linework(), sort_keys=True))
-        return {'source': digest(root / 'source.geojson')}
+        (root / 'invalid.geojson').write_text(json.dumps(invalid_polygons(), sort_keys=True))
+        return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
     from osgeo import ogr, osr
-    if sorted(path.name for path in root.iterdir()) != ['.addp-online-owner', 'outputs', 'source.geojson'] or sorted(path.name for path in (root / 'outputs').iterdir()) != sorted(TARGETS):
+    if sorted(path.name for path in root.iterdir()) != sorted(['.addp-online-owner', 'outputs', *SOURCES]) or sorted(path.name for path in (root / 'outputs').iterdir()) != sorted(TARGETS):
         raise FixtureError('unexpected source, output, sidecar or temporary file')
     crs = osr.SpatialReference()
     if crs.ImportFromEPSG(4326) != 0:
@@ -107,10 +137,12 @@ def worker(action, root):
         layer = dataset.GetLayer(0)
         if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):
             raise FixtureError('source CRS was not preserved')
-        results[name] = {**digest(path), 'feature_count': 4, 'crs': 'EPSG:4326',
-                         'fields': [] if name == 'faces.geojson' else ['issue_type']}
+        if layer.GetFeatureCount() != len(features) or any(not item.GetGeometryRef().IsValid() for item in layer):
+            raise FixtureError('persisted geometries must all be valid')
+        results[name] = {**digest(path), 'feature_count': len(features), 'crs': 'EPSG:4326',
+                         'fields': sorted(features[0]['properties'])}
         dataset = None
-    return {'source': digest(root / 'source.geojson'), 'targets': results, 'exact_inventory_verified': True}
+    return {'sources': {name: digest(root / name) for name in SOURCES}, 'targets': results, 'exact_inventory_verified': True}
 
 
 def runtime_worker(action, root):
@@ -132,7 +164,7 @@ def main(action):
     baseline = secret / 'topology-source.json'
     if action == 'seed':
         baseline.write_text(json.dumps(result))
-    elif result['source'] != json.loads(baseline.read_text())['source']:
+    elif result['sources'] != json.loads(baseline.read_text())['sources']:
         raise FixtureError('source file changed')
     return result
 

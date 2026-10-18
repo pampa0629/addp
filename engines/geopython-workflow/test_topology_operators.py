@@ -207,19 +207,28 @@ def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corr
         reference = {'$ref': 'build'} if port == 'result' else {'$ref': 'build', 'port': port}
         tasks.append({'id': 'save_' + port, 'operator': 'save', 'depends_on': ['build'], 'params': {
             'input_df': reference, 'connection_info': connection, 'path': 'outputs/' + name, 'mode': 'fail'}})
+    tasks.extend([
+        {'id': 'invalid', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'invalid.geojson'}, 'depends_on': []},
+        {'id': 'check', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'invalid'}}, 'depends_on': ['invalid']},
+        {'id': 'repair', 'operator': 'repair_geometry', 'params': {'input_gdf': {'$ref': 'check'}}, 'depends_on': ['check']},
+        {'id': 'recheck', 'operator': 'check_geometry', 'params': {'input_gdf': {'$ref': 'repair'}, 'valid_field': 'after_valid', 'reason_field': 'after_reason'}, 'depends_on': ['repair']},
+        {'id': 'save_repaired', 'operator': 'save', 'params': {'input_df': {'$ref': 'recheck'}, 'connection_info': connection, 'path': 'outputs/repaired.geojson', 'mode': 'fail'}, 'depends_on': ['recheck']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
-    assert actual['source'] == seeded['source']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4]
+    assert actual['sources'] == seeded['sources']
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2]
     for name in fixture.TARGETS:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
         content = json.loads(original)
         if name == 'faces.geojson':
             content['features'][0]['geometry']['coordinates'][0][0][0] += .1
-        else:
+        elif name == 'diagnostics.geojson':
             content['features'][0]['properties']['issue_type'] = 'cut_edge'
+        else:
+            content['features'][0]['properties']['after_valid'] = False
         path.write_text(json.dumps(content))
         with pytest.raises(fixture.FixtureError):
             fixture.worker('verify', tmp_path)
@@ -371,3 +380,17 @@ def test_geometry_repair_keeps_crs_and_repairs_hole_outside_shell_and_degenerate
     assert repaired.geometry.iloc[1].equals(Point(5, 5))
     assert repaired.geometry.iloc[2].wkb == frame.geometry.iloc[2].wkb
     assert repaired.is_valid.all()
+
+
+def test_geometry_repair_saves_geometry_collection_and_collapsed_lines_without_discarding(tmp_path):
+    mixed = Polygon([(0, 0), (2, 0), (2, 2), (1, 1), (1, 2), (1, 1), (0, 0)])
+    collapsed = Polygon([(0, 0), (1, 1), (1, 2), (1, 1), (0, 0)])
+    frame = lines([mixed, collapsed], crs="OGC:CRS84")
+    repaired = get_operator("repair_geometry")(frame)
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    get_operator("save")(input_df=repaired, connection_info=connection, path="mixed.geojson", mode="fail")
+    reloaded = get_operator("load")(connection_info=connection, path="mixed.geojson")
+    assert reloaded.geom_type.tolist() == ["GeometryCollection", "MultiLineString"]
+    assert reloaded.source_name.tolist() == frame.source_name.tolist()
+    assert reloaded.crs == frame.crs
+    assert all(actual.equals(expected) for actual, expected in zip(reloaded.geometry, repaired.geometry))
