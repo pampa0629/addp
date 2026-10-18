@@ -137,7 +137,8 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
       await parameter.locator('.el-select').click()
       await frame.getByRole('option', { name: type, exact: true }).click()
       await parameter.locator('.parameter-default-scalar .el-checkbox').click()
-      await parameter.locator('.parameter-default-scalar input').last().fill(value)
+      await expect(parameter.getByRole('checkbox')).toBeChecked()
+      await parameter.locator('.parameter-default-scalar .el-input__inner').fill(value)
     }
     await frame.getByRole('button', { name: '关闭查询参数面板' }).click()
     const typed = await execute(tableQuery, 'graph_protection_fixture', true)
