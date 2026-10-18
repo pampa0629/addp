@@ -1269,11 +1269,46 @@ class CompleteComparisonCaseTest(unittest.TestCase):
                     paths = [ONLINE.NODES+"/"+host["node_id"], ONLINE.TARGETS+"/"+target["id"]]
                     self.assertEqual([c.args[1] for c in client.request.call_args_list], paths if mismatch else paths+[ONLINE.NODES, ONLINE.TARGETS])
 
+    def test_renewal_after_browser_mfa_uses_a_later_natural_counter(self):
+        clock = [186.5]
+        secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        previous = int(clock[0])//30
+        sleeps, writes = [], []
+        context = identity(); context["principal"]["id"] = "admin"
+        def sleep(seconds):
+            sleeps.append(seconds); clock[0] += seconds
+        def request(method, path, statuses, body=None):
+            if path.endswith("/system/login"):
+                writes.append("password")
+                return ONLINE.API.Response(200, {"next_action": "verify_mfa", "mfa": {"method": "totp", "challenge_token": "test-challenge"}})
+            if path.endswith("/auth/mfa-verifications"):
+                writes.append("mfa")
+                if int(clock[0])//30 <= previous: raise ONLINE.SuiteError("TOTP replay rejected")
+                self.assertTrue(body["code"] == ONLINE.totp(secret, clock[0]))
+                return ONLINE.API.Response(200, {"next_action": "session_issued", "session": {"access_token": "addp_at_test-only"}})
+            self.assertEqual(path, "/api/v1/system/auth/context")
+            return ONLINE.API.Response(200, context)
+        with patch.dict(ONLINE.os.environ, ADDP_ONLINE_METRICS_ADMIN_USERNAME="test-admin", ADDP_ONLINE_METRICS_ADMIN_PASSWORD="test-password", ADDP_ONLINE_METRICS_ADMIN_TOTP=secret), \
+             patch.object(ONLINE.time, "time", side_effect=lambda: clock[0]), patch.object(ONLINE.time, "sleep", side_effect=sleep), \
+             patch.object(ONLINE.API.GatewayClient, "request", side_effect=request):
+            ONLINE.renew_admin("http://example.invalid", "admin")
+        self.assertEqual(writes, ["password", "mfa"])
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreater(sleeps[0], 0); self.assertLessEqual(sleeps[0], 30.15)
+        self.assertEqual(int(clock[0])//30, previous+1)
+
+    def test_renewal_does_not_retry_a_failed_authentication(self):
+        with patch.object(ONLINE.time, "time", return_value=186.5), patch.object(ONLINE.time, "sleep"), \
+             patch.object(ONLINE, "login", side_effect=ONLINE.SuiteError("MFA 401")) as login:
+            with self.assertRaisesRegex(ONLINE.SuiteError, "MFA 401"):
+                ONLINE.renew_admin("http://example.invalid", "admin")
+            login.assert_called_once_with("http://example.invalid", "ADDP_ONLINE_METRICS_ADMIN")
+
     def test_renewed_admin_must_keep_role_and_principal(self):
         for role, principal in (("platform.system_administrator", "admin"), ("platform.system_administrator", "other"), ("platform.security_administrator", "admin")):
             context=identity(role);context["principal"]["id"]=principal
             client=unittest.mock.Mock(request=unittest.mock.Mock(return_value=ONLINE.API.Response(200,context)))
-            with self.subTest(role=role,principal=principal), patch.object(ONLINE,"login",return_value=client):
+            with self.subTest(role=role,principal=principal), patch.object(ONLINE.time,"time",return_value=186.5), patch.object(ONLINE.time,"sleep"), patch.object(ONLINE,"login",return_value=client):
                 if role=="platform.system_administrator" and principal=="admin":
                     self.assertIs(ONLINE.renew_admin("http://example.invalid","admin"),client)
                 else:

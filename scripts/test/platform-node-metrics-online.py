@@ -1571,6 +1571,9 @@ def acceptance_case():
 
 
 def renew_admin(base, principal_id):
+    # The browser may have just consumed this principal's current TOTP.
+    # Wait for a new natural counter before one fresh password/MFA exchange.
+    time.sleep(30 - time.time() % 30 + 0.15)
     admin = login(base, "ADDP_ONLINE_METRICS_ADMIN")
     current = admin.request("GET", "/api/v1/system/auth/context", (200,)).payload
     platform_identity(current, "platform.system_administrator")
