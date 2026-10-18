@@ -1,8 +1,11 @@
 import copy
 import importlib
+import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 m = importlib.import_module('scripts.test.vector-topology-persistence-online')
 base = importlib.import_module('scripts.test.raster-contour-persistence-online_test')
@@ -56,6 +59,11 @@ ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID': 
 
 
 class TopologyOnlineTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.env = {**ENV, "ADDP_ONLINE_ARTIFACT_DIR": directory.name}
+
     def test_public_dag_selects_default_faces_and_named_diagnostics(self):
         tasks = m.definition('source','parent')['tasks']
         self.assertEqual([node['operator'] for node in tasks], ['load','polygonize','save','save'])
@@ -76,10 +84,26 @@ class TopologyOnlineTest(unittest.TestCase):
 
     def test_complete_chain_preserves_same_user_and_does_not_manually_scan_outputs(self):
         client = Client()
-        report = m.run_scenario(Path('.'), ENV, client, physical, lambda repo, env, evidence: evidence)
+        report = m.run_scenario(Path('.'), self.env, client, physical, lambda repo, env, evidence: evidence)
         self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 2)
         self.assertEqual(len(report['identity']['permissions_verified']), 11)
         self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 1)
+
+    def test_lineage_failure_retains_both_strict_sizes_and_incomplete_physical_checkpoint(self):
+        self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'] = 'must-not-archive'
+        with patch.object(m.raster, 'wait_lineage', side_effect=m.SuiteError('lineage unavailable')):
+            with self.assertRaisesRegex(m.SuiteError, 'lineage unavailable'):
+                m.run_scenario(Path('.'), self.env, Client(), physical)
+        saved = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json'
+        checkpoint = json.loads(saved.read_text())
+        self.assertEqual((checkpoint['stage'], checkpoint['result']), ('before_lineage', 'incomplete'))
+        self.assertEqual(checkpoint['physical'], physical())
+        self.assertEqual([entry['size_evidence'] for entry in checkpoint['outputs']],
+                         [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000}]*2)
+        self.assertTrue(all(entry['triggered_by'] == 33 and entry['tenant_id'] == 2 for entry in checkpoint['automatic_scans']))
+        self.assertEqual(checkpoint['lineage_facts'], execution()['metadata']['lineage_facts'])
+        self.assertNotIn('must-not-archive', saved.read_text())
+        self.assertFalse((saved.parent/'topology-persistence.json').exists())
 
     def test_extra_permission_or_wrong_scan_actor_blocks_acceptance(self):
         for change in ('permission','actor'):
@@ -87,7 +111,7 @@ class TopologyOnlineTest(unittest.TestCase):
             if change == 'permission': client.permissions.append('develop.task.create')
             else: client.actor = 44
             with self.subTest(change=change), self.assertRaises(m.SuiteError):
-                m.run_scenario(Path('.'), ENV, client, lambda *args: self.fail('must stop before physical acceptance'))
+                m.run_scenario(Path('.'), self.env, client, lambda *args: self.fail('must stop before physical acceptance'))
 
     def test_scan_identity_requires_public_integer_user_and_tenant(self):
         for field, values in (('actor', (None, True, 0, -1, '33', 33.)),
@@ -95,7 +119,7 @@ class TopologyOnlineTest(unittest.TestCase):
             for value in values:
                 client = Client(); setattr(client, field, value)
                 with self.subTest(field=field, value=value), self.assertRaisesRegex(m.SuiteError, 'User or Tenant'):
-                    m.run_scenario(Path('.'), ENV, client, lambda *args: self.fail('must stop before physical acceptance'))
+                    m.run_scenario(Path('.'), self.env, client, lambda *args: self.fail('must stop before physical acceptance'))
 
     def test_private_actor_cannot_replace_public_initiator(self):
         class PrivateOnlyClient(Client):
@@ -104,7 +128,7 @@ class TopologyOnlineTest(unittest.TestCase):
                     return SimpleNamespace(payload={'status': 'success', 'tenant_id': 2, 'actor_principal_id': 33})
                 return super().request(method, path, expected, body)
         with self.assertRaisesRegex(m.SuiteError, 'User or Tenant'):
-            m.run_scenario(Path('.'), ENV, PrivateOnlyClient(), lambda *args: self.fail('private actor must not be consumed'))
+            m.run_scenario(Path('.'), self.env, PrivateOnlyClient(), lambda *args: self.fail('private actor must not be consumed'))
 
     def test_invalid_size_or_browser_modification_cannot_pass(self):
         for size in (True, 0, 1000., '1000', 999):
@@ -116,4 +140,4 @@ class TopologyOnlineTest(unittest.TestCase):
             if len(calls) > 1: value['source']['sha256'] = 'modified'
             return value
         with self.assertRaisesRegex(m.SuiteError, 'browser reads changed'):
-            m.run_scenario(Path('.'), ENV, Client(), changed, lambda repo, env, evidence: evidence)
+            m.run_scenario(Path('.'), self.env, Client(), changed, lambda repo, env, evidence: evidence)

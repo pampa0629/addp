@@ -50,6 +50,8 @@ System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，
 
 自动扫描身份沿 Meta `ScanExecutionResponse` 的公开 `tenant_id` 与 `triggered_by` 核对，两者必须为正整数并分别等于当前 Tenant 和 User Principal；不读取或回退到私有 `actor_principal_id`，不为验收扩展 Meta DTO 或权限。
 
+等待血缘前先核对两份成果的严格大小，并归档 `topology-before-lineage.json`：仅含本轮身份、公开扫描主体、资源血缘事实、物理哈希及双份大小证据，标记 `result=incomplete`。即使后续超时，已验证阶段仍可复核；该文件不能替代最终成功报告、血缘、浏览器或退出清理证据。
+
 同一普通 User 经 Console 查看专业结果与两份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费

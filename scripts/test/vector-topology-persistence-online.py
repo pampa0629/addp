@@ -98,11 +98,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     identifier = raster.submit(client, positive(selected[0]['id'], 'Runtime'), definition(source_locator, parent))
     execution = raster.wait_execution(client, 'develop', identifier, timeout)
     facts, scans = validate_success(execution, source_locator, targets)
+    scan_observations = []
     for scan in scans:
         scanned = raster.wait_execution(client, 'meta', scan['execution_id'], timeout)
         if (type(scanned.get('tenant_id')) is not int or scanned['tenant_id'] != tenant
             or type(scanned.get('triggered_by')) is not int or scanned['triggered_by'] != int(identity['principal_id'])):
             raise SuiteError('automatic scan User or Tenant differs')
+        scan_observations.append({'execution_id': scan['execution_id'], 'tenant_id': scanned['tenant_id'],
+                                  'triggered_by': scanned['triggered_by'], 'status': scanned['status']})
     monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor')
     if monitor.get('status') != 'success' or monitor.get('module') != 'develop' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts:
         raise SuiteError('Monitor status, owner or lineage differs')
@@ -114,8 +117,16 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         item = support.find_fixture_item(client, engine, 'outputs/' + name, 'topology output')
         item = obj(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload, 'output item')
         sizes = validate_item(item, native['targets'][name], name)
-        lineage = raster.wait_lineage(client, source['id'], item['id'], identifier, timeout)
-        outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes, 'lineage': lineage})
+        outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes})
+    # Persist the verified physical facts before any potentially long convergence
+    # wait. This checkpoint cannot stand in for the final successful suite report.
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v1', 'suite': SUITE, 'result': 'incomplete',
+        'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
+        'execution_id': identifier, 'source_item_id': source['id'], 'lineage_facts': facts,
+        'automatic_scans': scan_observations, 'outputs': outputs, 'physical': native, 'monitor_lineage_verified': True}
+    (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json').write_text(json.dumps(checkpoint, indent=2)+'\n')
+    for output in outputs:
+        output['lineage'] = raster.wait_lineage(client, source['id'], output['item_id'], identifier, timeout)
     if client.request('GET', f'/api/v1/meta/items/{source["id"]}', (200,)).payload != source_before:
         raise SuiteError('source metadata changed')
     # Browser evidence deliberately contains only stable identities and expected content.
