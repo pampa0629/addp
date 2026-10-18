@@ -1428,7 +1428,8 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
         "transfer/backend/internal/planner/online_write_failure_contract_test.go": ("TestHostedWriteFailureTaskContract", "ParseTableExportTaskSpec", "module.write_failure_task"),
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
-            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v13",
+            "evolve_fixture", "verify_unproven_schema", "verify_historical_schema", "history_before_write", "history_after_write", "addp.transfer-relational-sql-etl-online/v14",
+            "verify_scan_trace_visibility", "record_scan_trace_receipt", "scan-trace-visibility.json", "addp.scan-trace-visibility/v1", "parent_read_does_not_grant_scan_read", "peer_hidden_endpoints", "owner_visible_observations", "peer_denials",
             "run_object_upload", "validate_object_upload_facts", "manager-object-upload.json", "addp.manager-object-upload/v1", "single_source_facts_verified", "multi_physical_size_verified", "ADDP_ONLINE_TRANSFER_MINIO_ENGINE_ID",
             "record_manager_import_receipt", "manager-private-import.json", "addp.manager-private-import/v2", "validate_manager_import_browser", "metadata_wait_verified", "failure_ui_verified", "physical_geometry_verified", "user_inspect_rejected", "run_manager_import", "current_user_origin_verified", "automatic_scan_verified", "non_uploader_rejected", "ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN", '"manager.data_item.create"',
             "run_wide_lineage", "validate_wide_graph", "WIDE_FIELDS", "manager_wide_field_graph_verified", "config_checks",
