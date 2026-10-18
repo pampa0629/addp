@@ -3,6 +3,7 @@ package falkordb
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -19,6 +20,71 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationFalkorDBTLSVerification(t *testing.T) {
+	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
+		t.Skip("owned FalkorDB T2 gate required")
+	}
+	host, portText, err := net.SplitHostPort(os.Getenv("FALKORDB_T2_TLS_ENDPOINT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := os.ReadFile(os.Getenv("FALKORDB_T2_TLS_CA_FILE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &FalkorDBPlugin{}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	conn := plugin.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD"), "use_ssl": true, "tls_ca_cert": string(ca)}
+	if probe, err := p.ProbeConnection(ctx, conn); err != nil || probe.ServerVersion != "4.20.6" {
+		t.Fatalf("trusted native TLS probe failed: %+v %v", probe, err)
+	}
+	client, close, err := p.open(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer close()
+	const graph = "tls-connection-fixture"
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		if err := client.Do(cleanupCtx, "GRAPH.DELETE", graph).Err(); err != nil {
+			t.Errorf("delete owned TLS graph: %v", err)
+		}
+	}()
+	if _, err := runQuery(ctx, client, graph, "CREATE (:Record {name:'TLS fixture'})", nil, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	path := p.graphPath(13, graph)
+	plan, err := p.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 13, Language: "cypher", TargetPath: &path, Query: "MATCH (n:Record) RETURN n.name AS name"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := plan.Execute(ctx)
+	if err != nil || len(result.Rows) != 1 || result.Rows[0]["name"] != "TLS fixture" {
+		t.Fatalf("trusted TLS prepared query failed: %+v %v", result, err)
+	}
+	// Trust and hostname are independent requirements; no insecure retry may
+	// turn either certificate failure into a successful connection.
+	conn["tls_ca_cert"] = ""
+	_, err = p.ProbeConnection(ctx, conn)
+	var authorityError x509.UnknownAuthorityError
+	if !errors.As(err, &authorityError) {
+		t.Fatalf("untrusted certificate must fail verification: %v", err)
+	}
+	conn["tls_ca_cert"] = string(ca)
+	conn["host"] = "localhost" // Certificate only has the exact 127.0.0.1 IP SAN.
+	_, err = p.ProbeConnection(ctx, conn)
+	var hostnameError x509.HostnameError
+	if !errors.As(err, &hostnameError) {
+		t.Fatalf("mismatched hostname must fail verification: %v", err)
+	}
+}
 
 func TestIntegrationFalkorDBLogicalDatabaseIsolation(t *testing.T) {
 	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {

@@ -23,9 +23,26 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+command -v openssl >/dev/null || { echo 'FalkorDB T2 requires OpenSSL for its disposable TLS identity' >&2; exit 1; }
+export ADDP_FALKORDB_T2_TLS_DIR="$WORK_DIR/tls"
+mkdir -m 700 "$ADDP_FALKORDB_T2_TLS_DIR"
+openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+    -subj /CN=addp-falkordb-t2 -addext 'subjectAltName=IP:127.0.0.1' \
+    -keyout "$ADDP_FALKORDB_T2_TLS_DIR/server.key" \
+    -out "$ADDP_FALKORDB_T2_TLS_DIR/server.crt" >"$WORK_DIR/tls-generation.log" 2>&1
+chmod 600 "$ADDP_FALKORDB_T2_TLS_DIR/server.key"
+cat >"$ADDP_FALKORDB_T2_TLS_DIR/redis-tls.conf" <<'EOF'
+tls-port 6380
+tls-cert-file /run/addp-test-tls/server.crt
+tls-key-file /run/addp-test-tls/server.key
+tls-ca-cert-file /run/addp-test-tls/server.crt
+tls-auth-clients no
+EOF
 compose up -d --wait --wait-timeout 120
 export ADDP_FALKORDB_INTEGRATION=1
 export FALKORDB_T2_ENDPOINT="$(compose port falkordb 6379)"
+export FALKORDB_T2_TLS_ENDPOINT="$(compose port falkordb 6380)"
+export FALKORDB_T2_TLS_CA_FILE="$ADDP_FALKORDB_T2_TLS_DIR/server.crt"
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/falkordb -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee "$WORK_DIR/tests.log"
 (cd "$ROOT_DIR/meta/backend" && GOWORK=off go test ./internal/scanruntime -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
 (cd "$ROOT_DIR/develop/backend" && GOWORK=off go test ./internal/service -run '^TestIntegrationFalkorDB' -count=1 -v) 2>&1 | tee -a "$WORK_DIR/tests.log"
@@ -33,4 +50,4 @@ export FALKORDB_T2_ENDPOINT="$(compose port falkordb 6379)"
 grep -q -- '--- PASS: TestIntegrationFalkorDBGraphDomain ' "$WORK_DIR/tests.log" || { echo 'FalkorDB gate requires Graph domain contract test' >&2; exit 1; }
 if grep -q -- '--- SKIP:' "$WORK_DIR/tests.log"; then echo 'FalkorDB T2 refuses skipped tests' >&2; exit 1; fi
 grep -q -- '--- PASS: TestIntegrationFalkorDB' "$WORK_DIR/tests.log"
-echo 'FALKORDB_T2_PASS catalog, parameters, prepared reads, graph results and protection boundaries'
+echo 'FALKORDB_T2_PASS TLS verification, database-scoped catalog, parameters, prepared reads, graph results and protection boundaries'

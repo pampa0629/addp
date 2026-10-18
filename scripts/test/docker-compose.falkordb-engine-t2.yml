@@ -3,6 +3,12 @@ services:
     extends:
       file: ../infra/falkordb.yml
       service: falkordb
+    # Keep the shared module/configuration command and prepend only the owned
+    # test TLS config. Business and Ontology Infra retain their own lifecycle.
+    entrypoint: ["/bin/sh", "-ec", 'exec redis-server /run/addp-test-tls/redis-tls.conf "$$@"', "redis-server"]
+    volumes:
+      - "${ADDP_FALKORDB_T2_TLS_DIR:?owned TLS directory is required}:/run/addp-test-tls:ro"
     ports:
       - "127.0.0.1::6379"
+      - "127.0.0.1::6380"
     restart: "no"
