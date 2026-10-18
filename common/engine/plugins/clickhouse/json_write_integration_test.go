@@ -146,7 +146,7 @@ func TestIntegrationClickHouseTypedJSONWrites(t *testing.T) {
 				t.Fatalf("read %d/%d rows error=%v", index, len(cases), err)
 			}
 			stored.Close()
-			for _, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int)} {
+			for _, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				invalidRows := make([]map[string]interface{}, clickhouseDefaultInsertChunkSize+1)
 				for i := range invalidRows {
 					invalidRows[i] = map[string]interface{}{"id": int64(100 + i), "document": map[string]interface{}{"valid": true}}

@@ -135,7 +135,7 @@ func TestIntegrationDM8TypedJSONWrites(t *testing.T) {
 					t.Fatalf("row %d JSON, SQL NULL, text or binary changed", i)
 				}
 			}
-			for _, bad := range []interface{}{"{", []byte{}, json.RawMessage(`[] []`), math.NaN(), make(chan int)} {
+			for _, bad := range []interface{}{"{", []byte{}, json.RawMessage(`[] []`), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				badRows := []map[string]interface{}{jsonUnitRow(1000, true), jsonUnitRow(1001, bad)}
 				err := write(badRows)
 				if err == nil || !strings.Contains(err.Error(), `row 1 field "DOC"`) {

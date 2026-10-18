@@ -8,6 +8,10 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 `engine/plugins/shared.EncodeTableWriteValue` 独占 JSON 值编码。PostgreSQL COPY session、批量 COPY、INSERT（含 upsert），以及 MySQL／TiDB／OceanBase 的 INSERT session 和 upsert，按 `FieldInfo.Type` 使用同一入口；MySQL 空间表中的非空间 JSON 列也使用该入口。`json` 字段中的 Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil 字节切片和 nil `RawMessage` 为 SQL NULL，非 nil 的空数组／对象分别为 `[]`／`{}`，typed nil 数组／对象编码为 JSON `null`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法的 JSON，不重复编码；JSON 字符串标量应包含 JSON 引号。非法 JSON 或不可 JSON 编码的 Go 值返回带字段定位的错误，不转换为普通字符串兜底。
 
+Common MySQL 原生门禁记录本轮成功创建的精确合成库清单，测试成功或失败退出后均核对清理；超时恢复使用同一脚本的只读 `--inspect-owned-databases` 和显式 `--cleanup-owned-databases <本轮确切名称> ...`，不按前缀批量删除业务库。清理失败保留清单；恢复或目录检查不作为 T2 通过。
+
+预编码 JSON 文档还须通过 UTF-8 校验：非法字节返回既有 `json_invalid`，不交给驱动猜测或替换字符。合法文档仍逐字节保留；普通 bytes 不受此校验影响。该检查也覆盖 `json.Marshal` 后仍含非法原始字节的文档，不改变 Go 标准编码器对普通容器值的既有编码规则。
+
 编码只由声明的字段类型决定，不把普通文本、`bytes` 或原生 `array` 自动解释为 JSON。PostgreSQL 空间 `[]byte` 继续使用十六进制 EWKB，MySQL 空间值继续使用 WKB 与显式 SRID；普通 `bytes` 保持各引擎原生二进制语义。PostgreSQL 协议的 `bytes` 字段在进入 lib/pq 前将 `[]byte(nil)` 规范为 SQL NULL，非 nil 空切片仍为空 BYTEA；不能依赖驱动把 typed nil 切片视作 NULL。Session 的类型来自打开时的字段定义，upsert 类型来自 options，不由后续批次覆盖。验证入口为 `make test-go`、`make test-common-postgres`；真实 JSONB 回归由现有 Common PostgreSQL T2 门禁和 Release/T2 CI 执行；MySQL、OceanBase、TiDB 的 JSON、NULL、二进制及失败回滚回归分别由 `make test-common-mysql-data-protection`、`make test-common-oceanbase`、`make test-common-tidb` 自动发现，MySQL 同时验证空间混合表。
 
 PostgreSQL COPY 会话保存关闭阶段的失败，包括 COPY 收尾、语句关闭、事务提交及取消；重复 `Close` 保留原始失败链。已有 `--test typed-write` 原生分组验证 append／事务内 replace 下的延迟约束提交失败和收尾失败，失败无成功标记，成功／空会话语义保持；这不承诺会话外 DROP／Prepare 回滚。

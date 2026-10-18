@@ -124,7 +124,7 @@ func TestIntegrationPostgresTypedJSONWrites(t *testing.T) {
 					t.Fatalf("row %d: json=%v bytes=%v geometry=%v error=%v", i+1, jsonOK, bytesOK, geometryOK, err)
 				}
 			}
-			for _, bad := range []interface{}{"{", []byte(`bad`), json.RawMessage(`[] []`), math.NaN(), make(chan int)} {
+			for _, bad := range []interface{}{"{", []byte(`bad`), json.RawMessage(`[] []`), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				// A valid row before the invalid value must roll back with its transaction.
 				err := write([]map[string]interface{}{
 					{"id": 1000, "label": "valid", "caredOutdoors": []interface{}{1}},

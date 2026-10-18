@@ -142,8 +142,11 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 					// nor conflicting per-batch metadata may change the JSON encoding.
 					sessionFields[2].Type = datatype.FieldTypeString
 					batch.Fields = sessionFields
-					for _, row := range rows {
-						batch.Rows = []map[string]interface{}{row}
+					// Retain multiple batches while sending a real bulk batch, not
+					// thousands of single-row network round trips per invalid value.
+					batchSize := max(1, len(rows)-1)
+					for start := 0; start < len(rows); start += batchSize {
+						batch.Rows = rows[start:min(start+batchSize, len(rows))]
 						if err := session.WriteBatch(ctx, batch); err != nil {
 							return err
 						}
@@ -219,7 +222,7 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 					t.Fatalf("row %d geometry changed", i+1)
 				}
 			}
-			for _, bad := range []interface{}{"{", []byte("bad"), json.RawMessage(`[] []`), math.NaN(), make(chan int)} {
+			for _, bad := range []interface{}{"{", []byte("bad"), json.RawMessage(`[] []`), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				// Cross the INSERT chunk boundary so a successful first chunk must roll
 				// back when encoding a later chunk fails (upsert and batch paths).
 				badRows := make([]map[string]interface{}, 1001)

@@ -184,6 +184,7 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 				value interface{}
 			}{
 				{"document", "{"}, {"document", []byte{}}, {"document", json.RawMessage(`[] []`)}, {"document", math.NaN()}, {"document", make(chan int)},
+				{"document", string([]byte{'"', 0xff, '"'})}, {"document", []byte{'"', 0xff, '"'}}, {"document", json.RawMessage([]byte{'"', 0xff, '"'})},
 				{"members", []interface{}{map[string]interface{}{"a": 1}}}, {"members", []int{1}}, {"members", []interface{}{[]string{"a"}}}, {"members", "{bad"},
 			} {
 				badRows := []map[string]interface{}{{"id": int64(1000), "document": true, "members": []string{}, "payload": nil, "label": nil}, {"id": int64(1001), "document": true, "members": []string{}, "payload": nil, "label": nil}}

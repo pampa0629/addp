@@ -146,7 +146,7 @@ func TestIntegrationDorisTypedJSONWrites(t *testing.T) {
 			stored.Close()
 			// The invalid JSON follows a complete INSERT chunk. Preflight must
 			// reject the batch before the first chunk is committed.
-			for _, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int)} {
+			for _, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				invalidRows := make([]map[string]interface{}, dorisDefaultInsertChunkSize+1)
 				for i := range invalidRows {
 					invalidRows[i] = map[string]interface{}{"id": int64(100 + i), "document": map[string]interface{}{"valid": true}}

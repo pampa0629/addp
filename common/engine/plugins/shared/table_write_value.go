@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -52,7 +53,9 @@ func EncodeTableWriteValue(value interface{}, fieldType datatype.FieldType) (int
 			return nil, plugin.NewTableWriteError(plugin.TableWriteJSONInvalid, fmt.Errorf("encode JSON value: %w", err))
 		}
 	}
-	if !json.Valid(encoded) {
+	// json.Valid checks JSON syntax but accepts invalid UTF-8 inside strings.
+	// Reject those raw bytes before an engine can replace or reject them.
+	if !utf8.Valid(encoded) || !json.Valid(encoded) {
 		return nil, plugin.NewTableWriteError(plugin.TableWriteJSONInvalid, fmt.Errorf("invalid encoded JSON value (%T)", value))
 	}
 	return string(encoded), nil

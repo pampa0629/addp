@@ -133,7 +133,7 @@ func TestIntegrationOracleTypedJSONWrites(t *testing.T) {
 				assertOracleJSONRows(t, ctx, db, qualified, reversed)
 			}
 			// A valid earlier row and invalid later row must roll back together.
-			for i, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int)} {
+			for i, invalid := range []interface{}{"{", []byte{}, json.RawMessage("{} []"), math.NaN(), make(chan int), string([]byte{'"', 0xff, '"'}), []byte{'"', 0xff, '"'}, json.RawMessage([]byte{'"', 0xff, '"'})} {
 				id := int64(100 + i*2)
 				err := write([]map[string]interface{}{
 					{"ID": id, "DOCUMENT": map[string]interface{}{"valid": true}, "PAYLOAD": []byte{1}},

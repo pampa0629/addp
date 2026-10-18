@@ -72,3 +72,15 @@ func TestMySQLSpatialUpsertDiagnosticUsesActualOrder(t *testing.T) {
 		t.Fatalf("actual spatial upsert column: %#v error=%v", typed, err)
 	}
 }
+
+func TestMySQLOwnedFixtureNamesRejectUnsafeRecovery(t *testing.T) {
+	for _, value := range []string{"Outdoor", "addp_common_mysql_it_*", "addp_common_mysql_it_1", "addp_common_mysql_it_1234567890123456789; DROP DATABASE Outdoor", "addp_common_mysql_it_1234567890123456789\nOutdoor", " addp_common_mysql_it_1234567890123456789"} {
+		if _, err := parseMySQLOwnedFixtures(value); err == nil {
+			t.Fatalf("unsafe recovery name accepted: %q", value)
+		}
+	}
+	names, err := parseMySQLOwnedFixtures("addp_common_mysql_it_1234567890123456789\naddp_common_mysql_it_1234567890123456789\n")
+	if err != nil || len(names) != 1 {
+		t.Fatalf("exact recovery names: %v %v", names, err)
+	}
+}

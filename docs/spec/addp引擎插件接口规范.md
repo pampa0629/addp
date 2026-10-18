@@ -350,7 +350,7 @@ Transfer 的正式只读配置检查入口为 `POST /api/v1/transfer/task-config
 
 表格写入的值编码必须依据请求中已声明的 `FieldInfo.Type`，不能只完成建表类型映射后把容器原样交给数据库驱动。Table write session 固定使用打开时的字段类型；upsert 使用 `TableUpsertOptions.Fields`，不能由后续批次覆盖。批量写入使用 `BatchData.Fields`。
 
-`json` 字段的统一输入契约为：Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil `[]byte` 和 nil `json.RawMessage` 表达 SQL NULL，typed nil 数组／对象表达 JSON `null`，非 nil 空数组／对象表达 `[]`／`{}`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整合法文档，不能再次编码或先解码为浮点数；JSON 字符串标量必须带 JSON 引号。非法 JSON 或不可编码的 Go 值必须返回带字段定位的错误，不得用普通字符串格式化兜底。该契约不把普通文本、`bytes`、原生 `array` 或空间字段解释成 JSON；空间与二进制转换仍归引擎 Provider。
+`json` 字段的统一输入契约为：Go 数组、对象、数字和布尔值编码为 JSON 文本；`nil`、nil `[]byte` 和 nil `json.RawMessage` 表达 SQL NULL，typed nil 数组／对象表达 JSON `null`，非 nil 空数组／对象表达 `[]`／`{}`。`string`、`[]byte` 和 `json.RawMessage` 表达已编码 JSON，必须是完整、合法 UTF-8 的 JSON 文档；非法 UTF-8 原始字节须在交给驱动前以 JSON 编码错误拒绝，不进行字符集猜测或替换，不能再次编码或先解码为浮点数；JSON 字符串标量必须带 JSON 引号。非法 JSON 或不可编码的 Go 值必须返回带字段定位的错误，不得用普通字符串格式化兜底。该契约不把普通文本、`bytes`、原生 `array` 或空间字段解释成 JSON；空间与二进制转换仍归引擎 Provider。
 
 统一编码由 `common/engine/plugins/shared` 独占实现。PostgreSQL（含协议复用 Provider）、MySQL、TiDB、OceanBase、Oracle、Doris、ClickHouse 与达梦的表格写入使用该入口；Oracle 的 INSERT session 与分区变更 MERGE 共用此编码，编码后的 SQL NULL 仍须遵守字段非空约束。Doris 的 `json` 沿用现有 `STRING` 映射，ClickHouse 沿用 `String`／`Nullable(String)` 映射，不因此开放原生 JSON 列写入。ClickHouse 的 bytes 字节切片按原始二进制字符串绑定到 String 存储，避免驱动解释为 SQL 数组；nil、空字节与非 UTF-8 字节分别保留，不改变原生 array 或空间值的解释。两者的结构校验依据同一建表映射比较物理类型，不拿逻辑 `json` 与物理 `string` 直接比较；session 与批量 INSERT 在当前批次第一条 SQL 前完成全部值编码与校验。其 chunk 自动提交，`Abort` 不撤销此前提交的 chunk 或批次，数据库执行失败也不保证整批回滚。
 

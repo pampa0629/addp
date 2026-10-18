@@ -2,6 +2,8 @@ package shared
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/addp/common/engine/plugin"
 	"math"
 	"reflect"
 	"testing"
@@ -65,6 +67,33 @@ func TestEncodeTableWriteValuePreservesNonJSON(t *testing.T) {
 			got, err := EncodeTableWriteValue(value, typ)
 			if err != nil || !reflect.DeepEqual(got, value) {
 				t.Fatalf("type %s: got %#v, %v; want %#v", typ, got, err, value)
+			}
+		}
+	}
+}
+
+func TestEncodedJSONRejectsInvalidUTF8WithoutChangingBytes(t *testing.T) {
+	for _, invalid := range [][]byte{
+		{'"', 0xff, '"'}, {'"', 0xc0, 0xaf, '"'}, {'"', 0xe4, 0xb8, '"'},
+		{'{', '"', 0x80, '"', ':', '1', '}'}, {'"', 0xed, 0xa0, 0x80, '"'},
+	} {
+		for _, value := range []interface{}{string(invalid), invalid, json.RawMessage(invalid)} {
+			_, err := EncodeTableWriteValue(value, datatype.FieldTypeJSON)
+			var typed *plugin.TableWriteError
+			if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid {
+				t.Fatalf("invalid UTF-8 JSON accepted: type=%T error=%v", value, err)
+			}
+		}
+		got, err := EncodeTableWriteValue(invalid, datatype.FieldTypeBytes)
+		if err != nil || !reflect.DeepEqual(got, invalid) {
+			t.Fatalf("binary changed: %v", err)
+		}
+	}
+	for _, encoded := range []string{`"中文😀"`, `"�"`, `"\ufffd"`, `{"key":"中文"}`} {
+		for _, value := range []interface{}{encoded, []byte(encoded), json.RawMessage(encoded)} {
+			got, err := EncodeTableWriteValue(value, datatype.FieldTypeJSON)
+			if err != nil || got != encoded {
+				t.Fatalf("valid Unicode JSON changed: type=%T error=%v", value, err)
 			}
 		}
 	}

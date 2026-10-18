@@ -207,6 +207,10 @@ Doris／ClickHouse 会话失败回归分别沿用 `make test-common-doris-decima
 
 Oracle／达梦的同一类型化诊断由 Common T1 和既有 JSON／会话原生门禁验证。Oracle 使用 `make test-common-oracle-decimal` 的 Hosted Slim／Spatial 配置，达梦使用本机官方驱动入口 `make test-common-dameng`，不将达梦登记为 Hosted。回归须核对 NULL 不占绑定参数时的实际写入列、达梦 MERGE 的实际字段顺序、冻结类型、原生驱动错误链及不猜列；编码失败和 SQL 执行失败分别保留原有回滚、关闭及提交标记断言。达梦清理参数的范围拒绝与活跃测试容器保护由现有 `dameng-official-media-release-gate_test.py` 验证，沿 `make test-business-config`／平台 T0 自动发现；此检查及显式残留清理均不能替代原生 T2。
 
+Common MySQL 标准门禁在测试建库成功后记录本轮精确 database 名称，正常或失败退出后逐项清理并核对零残留；若清理失败，保留只含确切名称的清单供恢复，不将其记为 T2 通过。`--inspect-owned-databases` 仅只读列出受限测试前缀的库及表目录，`--cleanup-owned-databases <确切名称> ...` 只接受 `addp_common_mysql_it_` 加 19 位时间戳，不接受业务库、通配符或 SQL 片段，不按前缀自动删除。JSON 会话夹具保留多批次及跨分块失败语义，按批发送，避免用逐行网络调用替代批量写入验收。
+
+JSON 编码门禁同时验证已编码文档的 UTF-8：string／[]byte／json.RawMessage 中的非法字节必须在 SQL 前拒绝，保持 `json_invalid` 及实际写入列；合法中文、emoji、真实替换字符与显式 JSON 转义不被重编码。Common T1 覆盖过长、截断、孤立续字节和代理区编码，既有各 Provider JSON 原生矩阵覆盖三种预编码输入及失败后目标行数，普通 bytes 的非 UTF-8 原样保留。继续使用现有标准入口和 CI，不新增字符集配置或权限。
+
 PostgreSQL COPY 的关闭失败保持由 Common T1 及既有 `common-postgres-gate.sh --test typed-write` 的 JSON 写入分组验证，默认完整门禁及已有 Hosted Common PostgreSQL Job 同时发现。真实回归覆盖 append／事务内 replace 下的 COPY 收尾非空拒绝、延迟唯一约束提交失败、编码失败和取消关闭；重复关闭须保留错误链和失败结果、不发布成功标记，物理读回与合成表／schema 清理独立核对。成功与空会话也保留原提交行为。
 
 MySQL／TiDB／OceanBase 复用同一 JSON 原生夹具，沿既有 MySQL `--test typed-write`、TiDB 和 OceanBase 门禁验证安全列定位、原生错误链、失败回滚与提交标记。MySQL 空间路径仍验证几何及 bytes 保真。openGauss MERGE 的 JSON／数组错误由 Common T1 和既有 Hosted `make test-common-opengauss` 验证；列号来自实际批次字段顺序，类型来自冻结声明，原生执行错误不能猜列。上述入口已由现有 Common 共享依赖变更发现覆盖，无需新增 CI 作业。

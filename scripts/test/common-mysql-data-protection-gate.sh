@@ -6,19 +6,50 @@
 set -euo pipefail
 
 test_group=all
+recovery_mode=
+recovery_names=()
 if [ "$#" -gt 0 ]; then
-    if [ "$#" -ne 2 ] || [ "$1" != --test ]; then
-        echo "usage: $0 [--test all|typed-write]" >&2; exit 2
-    fi
-    case "$2" in
-        all|typed-write) test_group="$2" ;;
-        *) echo "usage: $0 [--test all|typed-write]" >&2; exit 2 ;;
+    case "$1" in
+        --test)
+            [ "$#" -eq 2 ] || { echo 'expected --test all|typed-write' >&2; exit 2; }
+            case "$2" in all|typed-write) test_group="$2" ;; *) echo 'unknown MySQL test group' >&2; exit 2 ;; esac
+            ;;
+        --inspect-owned-databases)
+            [ "$#" -eq 1 ] || { echo 'inspection takes no names' >&2; exit 2; }
+            recovery_mode=inspect
+            ;;
+        --cleanup-owned-databases)
+            shift
+            [ "$#" -gt 0 ] || { echo 'explicit owned fixture names required' >&2; exit 2; }
+            for name in "$@"; do
+                [[ "$name" =~ ^addp_common_mysql_it_[0-9]{19}$ ]] || { echo 'invalid owned MySQL fixture name' >&2; exit 2; }
+                recovery_names+=("$name")
+            done
+            recovery_mode=cleanup
+            ;;
+        *) echo 'unknown Common MySQL gate argument' >&2; exit 2 ;;
     esac
 fi
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-mysql-data-protection.XXXXXX")
-trap 'rm -rf "$WORK_DIR"' EXIT
+export ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST="$WORK_DIR/owned-databases"
+: > "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST"
+chmod 600 "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST"
+cleanup() {
+    local status=$?
+    trap - EXIT
+    if [ -s "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST" ]; then
+        if ! (cd "$ROOT_DIR/common" && ADDP_MYSQL_INTEGRATION=1 go test ./engine/plugins/mysql \
+            -run '^TestIntegrationMySQLProviderFixtureCleanup$' -count=1 -v); then
+            echo "MySQL fixture cleanup failed; exact ownership manifest retained: $ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST" >&2
+            exit 1
+        fi
+    fi
+    rm -rf "$WORK_DIR"
+    exit "$status"
+}
+trap cleanup EXIT
 
 # 本地巡检只向聚合门禁传递作用域标记；真实连接参数在本 owner 门禁内生成，
 # 避免其他集成门禁继承 MySQL 凭据或意外连接外部 MySQL。
@@ -32,6 +63,18 @@ fi
 if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
     echo "ADDP_TEST_MYSQL_PASSWORD is required for the disposable MySQL protection gate" >&2
     exit 1
+fi
+
+if [ "$recovery_mode" = inspect ]; then
+    (cd "$ROOT_DIR/common" && ADDP_MYSQL_INTEGRATION=1 ADDP_MYSQL_PROVIDER_FIXTURE_INSPECT=1 \
+        go test ./engine/plugins/mysql -run '^TestIntegrationMySQLProviderFixtureInspect$' -count=1 -v)
+    echo 'Read-only test catalog inspection finished (not a Provider T2 pass)'
+    exit 0
+fi
+if [ "$recovery_mode" = cleanup ]; then
+    printf '%s\n' "${recovery_names[@]}" > "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST"
+    echo 'Explicit test fixture recovery requested (not a Provider T2 pass)'
+    exit 0
 fi
 
 test_pattern='^TestIntegrationMySQL(TypedJSONWrites|AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$'

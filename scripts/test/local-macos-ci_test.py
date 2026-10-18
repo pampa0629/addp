@@ -599,6 +599,42 @@ class LocalMacOSCiTest(unittest.TestCase):
             self._make_environments(),
         )
 
+    def test_mysql_gate_retains_failure_and_cleans_exact_manifest(self) -> None:
+        (self.fake_bin / "go").write_text(textwrap.dedent("""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            case "$*" in
+                *TestIntegrationMySQLProviderFixtureCleanup*)
+                    cat "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST" > "$GO_LOG"
+                    printf '%s\\n' "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST" >> "$GO_LOG"
+                    ;;
+                *)
+                    printf '%s\\n' addp_common_mysql_it_1234567890123456789 > "$ADDP_MYSQL_PROVIDER_FIXTURE_MANIFEST"
+                    exit 9
+                    ;;
+            esac
+            """), encoding="utf-8")
+        result = self._run_mysql_gate()
+        self.assertEqual(result.returncode, 9, result.stdout + result.stderr)
+        recovery = self.go_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(recovery[0], "addp_common_mysql_it_1234567890123456789")
+        self.assertFalse(Path(recovery[1]).exists())
+
+    def test_mysql_recovery_rejects_unsafe_names_before_connections(self) -> None:
+        for arguments in (
+            ["--cleanup-owned-databases"],
+            ["--cleanup-owned-databases", "Outdoor"],
+            ["--cleanup-owned-databases", "addp_common_mysql_it_*"],
+            ["--cleanup-owned-databases", "addp_common_mysql_it_1234567890123456789;DROP DATABASE Outdoor"],
+            ["--inspect-owned-databases", "Outdoor"],
+        ):
+            environment = os.environ.copy()
+            environment.pop("ADDP_TEST_MYSQL_PASSWORD", None)
+            result = subprocess.run(["bash", str(MYSQL_GATE), *arguments],
+                                    env=environment, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertNotIn("PASSWORD is required", result.stderr)
+
     def test_mysql_connection_is_materialized_only_inside_mysql_gate(self) -> None:
         result = self._run("--no-fetch")
 
