@@ -247,3 +247,9 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 
 
 2026-10-18 补齐此前 v17 的归档核对：[Hosted 38987833025](https://github.com/pampa0629/addp/actions/runs/38987833025)／Job `117263317878` 已真实通过，精确源码 `8025781f5c825b00f3b9046441c236d9d4d7e768`，九个服务与干净预检一致，领域耗时 975,283 ms。领域 v17 与浏览器 v8 报告交叉一致，浏览器完整字段／类型严格校验和十五张 PNG 完整性检查通过，新增 Transfer／Monitor 两图已目视核对。普通 User 33、Tenant 2 的执行 `e975d6f4-5e36-4a02-9fab-d6b54a32cf9d` 在读取后的结果保护阶段精确返回 `data_protection_required`／`result`，零新增写入，既有目标完整不变；恢复原默认保护后再次执行正常，原基线恢复与临时定义清理通过。领域资源 11／11／0、MongoDB 任务 10／10／0、原输出浏览器定义 2／2／0、新结果浏览器定义 2／2／0 分别核对；Hosted 生命周期清理通过、Infra 零残留。浏览器额外业务失败和告警／异常均为零。该证据属于上述固定源码，不声称其运行了后续原值历史新规则；原值新规则另由前述 v6 证明。本轮沿用既有 Hosted 成功运行，不重复触发；当前 `make test-security-online-runner` 的 180 项、独立 Graph 夹具 13 项及 CI 登记检查通过，不外推为完整平台门禁通过。
+
+
+2026-10-18 四出口字段策略扩展（用户已确认，本轮验收中）：正式字段 Policy 可独立绑定 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export`，继续只允许在当前默认保护的算法许可、保留参数上限和异常值规则内收紧。唯一 Owner 契约派生可编辑范围，既有 Policy 列表通过 `supported_scopes` 发布；同一策略表单选择出口，完整读取策略分页，不复制前端可编辑名单。创建、更新、撤销只重新发布该 Owner 投影，默认保护收紧或算法许可收回仍统一重编译；恢复默认不解除纳管。Graph、文档正文、Manager profile 不新增可编辑策略，原值申请仍只限 Manager 与 Develop。各 Owner 既有结果保护器直接执行新投影，不新增数据请求中的 Security 依赖；不改变 SQL 读取范围、血缘或不支持形态的保守拒绝边界。真实 Hosted 扩展为领域 v18：同一空间表的三个普通属性字段在四个出口分别设置不同算法／参数，并核对四种真实输出、规则持久恢复与撤销回落；这不是栅格任务。具体门禁与运行结果另行记录，未通过前不计真实验收完成。
+
+
+本轮分层验证：`make test-module MODULE=security GO_ONLY=1`、`make test-security-postgres`（包含四出口字段算法许可／参数上限／许可撤回与撤销回落）、`make test-authorization`、Security Swagger 生成与 63 个公开路由覆盖通过；新版 `make test-security-online-runner` 的 182 项、独立 Graph 夹具 15 项及登记检查通过。完整 `make test-module MODULE=security` 已尝试，但平台 T0 在既有 `test-pg-authorization-online-runner` 的 `HostedPGAuthorizationTest.test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources`（3 个失败、1 个错误）退出，未进入模块阶段；不能将完整模块聚合计为通过。本会话不扩修该源授权夹具。Security 前端最终复验已通过 223 项单元、30 项浏览器与构建；真实 v18 Hosted 尚待运行，历史 v17 不替代新配置范围的真实运行证据。

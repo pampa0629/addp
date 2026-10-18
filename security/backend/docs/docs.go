@@ -4465,7 +4465,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为正式 Assessment 的 Manager preview 创建只能收紧当前保护基线的策略，并在同一事务重新编译投影 | Create a policy that can only tighten the current baseline for a formal Assessment's Manager preview and recompile the projection in the same transaction",
+                "description": "为正式字段评估的指定结构化出口创建收紧策略，仅重编译对应 Owner 投影；支持 manager/preview、develop/query、service/service_execute、transfer/export | Create a tightening policy for one formal field assessment outlet and recompile only its Owner projection; supports manager/preview, develop/query, service/service_execute and transfer/export",
                 "consumes": [
                     "application/json"
                 ],
@@ -6752,6 +6752,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.ProtectionPolicyScope": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "consumer_owner": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.ProtectionTargetSnapshot": {
             "type": "object",
             "properties": {
@@ -7646,6 +7657,12 @@ const docTemplate = `{
                 },
                 "page_size": {
                     "type": "integer"
+                },
+                "supported_scopes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionPolicyScope"
+                    }
                 },
                 "total": {
                     "type": "integer"

@@ -1242,20 +1242,24 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
             baseline_version = positive_int(updated["version"], "Baseline version")
             wait_for_algorithm_projections(client, enrollment_id, deadline)
             defaults = {field: spatial_expected(algorithm, parameters) for field in assessed}
-            manager_expected = dict(defaults)
+            expected_by_owner = {owner: dict(defaults) for owner in OWNER_ACTIONS}
+            manager_expected = expected_by_owner["manager"]
             if index == 0:
-                for field, (field_algorithm, field_parameters) in zip(assessed, [
-                    (STRUCTURED_MASK_ALGORITHM, {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "#"}), ALGORITHM_CASES[1], ALGORITHM_CASES[2]
-                ]):
-                    request = {"effect": "mask", "algorithm": field_algorithm, "parameters": field_parameters, "invalid_value_effect": "suppress", "rationale": "Online independent spatial field acceptance"}
-                    old = [item for item in bound if item.get("assessment_id") == assessed[field]]
-                    if old:
-                        path = f"/api/v1/security/protection-policies/{old[0]['id']}"
-                        created = _object(client.request("PUT", path, (200,), dict(request, version=old[0]["version"])).payload, "field Policy")
-                    else:
-                        created = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), dict(request, assessment_id=assessed[field], consumer_owner="manager", action="preview")).payload, "field Policy")
-                    policy_ids.append(str(created["id"]))
-                    manager_expected[field] = spatial_expected(field_algorithm, field_parameters)
+                field_cases = [(STRUCTURED_MASK_ALGORITHM, {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "#"}), ALGORITHM_CASES[1], ALGORITHM_CASES[2]]
+                for owner_index, (owner, action) in enumerate(OWNER_ACTIONS.items()):
+                    for field_index, field in enumerate(assessed):
+                        field_algorithm, field_parameters = field_cases[(field_index + owner_index) % len(field_cases)]
+                        if owner == "transfer" and field_algorithm == STRUCTURED_MASK_ALGORITHM:
+                            field_parameters = dict(field_parameters, mask_rune="@")
+                        request = {"effect": "mask", "algorithm": field_algorithm, "parameters": field_parameters, "invalid_value_effect": "suppress", "rationale": "Online independent outlet and field acceptance"}
+                        old = [item for item in bound if item.get("assessment_id") == assessed[field] and item.get("consumer_owner") == owner and item.get("action") == action]
+                        if old:
+                            path = f"/api/v1/security/protection-policies/{old[0]['id']}"
+                            created = _object(client.request("PUT", path, (200,), dict(request, version=old[0]["version"])).payload, "field Policy")
+                        else:
+                            created = _object(client.request("POST", "/api/v1/security/protection-policies", (201,), dict(request, assessment_id=assessed[field], consumer_owner=owner, action=action)).payload, "field Policy")
+                        policy_ids.append(str(created["id"]))
+                        expected_by_owner[owner][field] = spatial_expected(field_algorithm, field_parameters)
                 wait_for_algorithm_projections(client, enrollment_id, deadline)
             _, manager_rows = preview_rows(client, locator)
             manager = assert_spatial_rows(manager_rows, "manager", manager_expected)
@@ -1265,17 +1269,17 @@ def exercise_spatial_algorithms(client: GatewayClient, engine_id: int, run_id: s
                 manager["restart_recovery"] = exercise_restart_recovery(
                     client, engine_id, source, enrollment_id, baseline_id, policy_ids, manager_expected, deadline)
             query = "SELECT id, value_a, value_b, value_c, location_point FROM addp_online_security.spatial_algorithm_source ORDER BY id"
-            develop = assert_spatial_rows(develop_rows(client, engine_id, locator, deadline, query), "develop", defaults)
-            service = assert_spatial_rows(service_rows(client, service_name, SPATIAL_FIELDS), "service", defaults)
+            develop = assert_spatial_rows(develop_rows(client, engine_id, locator, deadline, query), "develop", expected_by_owner["develop"])
+            service = assert_spatial_rows(service_rows(client, service_name, SPATIAL_FIELDS), "service", expected_by_owner["service"])
             _, execution = create_and_run_task(client, transfer_payload("addp_online_security_spatial_" + run_suffix(run_id, "_") + "_" + str(index), locator, build_schema_locator(engine_id, target), SPATIAL_TARGET), deadline, task_ids)
             wait_for_scan(client, engine_id, deadline)
             target = find_item(client, engine_id, f"{TARGET_SCHEMA}.{SPATIAL_TARGET}", "table")
             assert_spatial_item(target)
             _, transferred = preview_rows(client, build_item_locator(engine_id, target))
-            transfer = assert_spatial_rows(transferred, "transfer", defaults)
+            transfer = assert_spatial_rows(transferred, "transfer", expected_by_owner["transfer"])
             if positive_int(execution.get("records_written"), "spatial records_written") != 5:
                 raise SuiteError("spatial Transfer must write exactly five rows")
-            evidence.append({"algorithm": algorithm, "owners": {"manager": manager, "develop": develop, "service": service, "transfer": transfer}, "independent_manager_fields": index == 0})
+            evidence.append({"algorithm": algorithm, "owners": {"manager": manager, "develop": develop, "service": service, "transfer": transfer}, "independent_outlet_fields": index == 0})
             if index == 0:
                 for policy_id in policy_ids:
                     path = f"/api/v1/security/protection-policies/{policy_id}"
@@ -2119,7 +2123,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v17",
+            "schema_version": "addp.security-mysql-owner-protection-online/v18",
             "result": "passed",
             "identity": identity,
             "governance": governance,

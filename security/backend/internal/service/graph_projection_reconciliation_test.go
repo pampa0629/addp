@@ -123,7 +123,7 @@ func TestGraphProjectionDoesNotAdvertiseFieldMaskingOrExemption(t *testing.T) {
 	if rule.Action != graphReadAction || rule.Decision.Effect != dataprotection.EffectDeny || len(rule.Authorizations) != 0 {
 		t.Fatalf("Graph overstates its protection capability: %+v", rule)
 	}
-	if validExemptionBinding(graphProtectionOwner, graphReadAction) {
+	if validPolicyBinding(graphProtectionOwner, graphReadAction) {
 		t.Fatal("Graph raw-value exemption admitted")
 	}
 }

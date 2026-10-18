@@ -22,6 +22,7 @@ export function useProtectionEnrollmentPresentation({
   protectionBaselines,
   assessments,
   policies,
+  policyScopes,
   canReadPolicies,
   canCreatePolicies,
   canUpdatePolicies
@@ -123,6 +124,7 @@ export function useProtectionEnrollmentPresentation({
     protectionBaselines,
     assessments,
     policies,
+    policyScopes,
     canReadPolicies,
     canCreatePolicies,
     canUpdatePolicies,

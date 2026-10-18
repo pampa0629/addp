@@ -30,7 +30,7 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 	request.Action = strings.TrimSpace(request.Action)
 	request.Effect = strings.TrimSpace(request.Effect)
 	request.Rationale = strings.TrimSpace(request.Rationale)
-	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || request.ConsumerOwner != managerProtectionOwner || request.Action != managerPreviewAction || !validPolicyEffect(request.Effect) || !validPolicyRationale(request.Rationale) {
+	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || !validPolicyBinding(request.ConsumerOwner, request.Action) || !validPolicyEffect(request.Effect) || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
 
@@ -39,6 +39,9 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 		assessment, current, enrollment, baseline, err := policyDependencies(tx, tenantID, request.AssessmentID)
 		if err != nil {
 			return err
+		}
+		if current.Component.Key == dataprotection.DocumentTextComponentKey {
+			return commonapi.ErrBadRequest
 		}
 		decision := policyDecision(request.Effect, request.Algorithm, request.Parameters, request.InvalidValueEffect)
 		if err := validatePolicyDecision(baseline, current.Component.ValueType, decision); err != nil {
@@ -63,7 +66,7 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 		if err := tx.Create(&revision).Error; err != nil {
 			return policyDBError(err)
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{"manager"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{request.ConsumerOwner}); err != nil {
 			return err
 		}
 		result = &models.ProtectionPolicyResponse{ProtectionPolicy: policy, Current: revision, History: []models.ProtectionPolicyRevision{revision}}
@@ -141,7 +144,7 @@ func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int
 		policy.Version++
 		policy.CurrentRevision = revisionNumber
 		policy.UpdatedAt = now
-		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{"manager"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{policy.ConsumerOwner}); err != nil {
 			return err
 		}
 		_ = assessment
@@ -179,7 +182,7 @@ func (s *PolicyService) List(ctx context.Context, tenantID, page, pageSize int64
 		}
 		data = append(data, *built)
 	}
-	return &models.ProtectionPolicyListResponse{Data: data, Total: total, Page: int(page), PageSize: int(pageSize), TotalPages: int((total + pageSize - 1) / pageSize)}, nil
+	return &models.ProtectionPolicyListResponse{SupportedScopes: supportedPolicyScopes(), Data: data, Total: total, Page: int(page), PageSize: int(pageSize), TotalPages: int((total + pageSize - 1) / pageSize)}, nil
 }
 
 func (s *PolicyService) Get(ctx context.Context, tenantID int64, policyID string) (*models.ProtectionPolicyResponse, error) {

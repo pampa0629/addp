@@ -131,6 +131,39 @@ test('saves permitted SM3 and constant field algorithms independently from the d
   expect(backend.unhandledRequests).toEqual([])
 })
 
+for (const [owner, action, label] of [['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]) {
+  test(`configures and restores only the selected ${owner} field policy`, async ({ page }) => {
+    const backend = await installMockBackend(page, { governanceValidation: true })
+    backend.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1')
+    backend.conflictNextPolicyRevoke = false
+    await page.goto('/protection-enrollments')
+    await page.getByRole('button', { name: '查看详情' }).click()
+    const drawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+    await drawer.getByRole('button', { name: '收紧保护' }).click()
+    const dialog = page.getByRole('dialog', { name: '资源级保护策略' })
+    await formCombobox(dialog, '生效出口').click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+    await dialog.getByText('脱敏', { exact: true }).click()
+    await formCombobox(dialog, '脱敏算法').click()
+    await page.getByRole('option', { name: 'SM3 哈希', exact: true }).click()
+    await formTextbox(dialog, '调整依据').fill('本出口独立使用哈希')
+    await dialog.getByRole('button', { name: '保存策略' }).click()
+    await expect.poll(() => backend.policyCreateRequests.length).toBe(1)
+    expect(backend.policyCreateRequests[0]).toMatchObject({ consumer_owner: owner, action, algorithm: 'addp.mask.sm3/v1' })
+    await expect(dialog).toHaveCount(0)
+    await expect(drawer.getByText(`${label}：默认 脱敏，字段规则配置为 脱敏；执行时遵守当前基线约束`, { exact: true })).toBeVisible()
+    await drawer.getByRole('button', { name: '恢复默认保护' }).click()
+    const restore = page.getByRole('dialog', { name: '恢复默认保护' })
+    await expect(formCombobox(restore, '生效出口')).toContainText(label)
+    await formTextbox(restore, '恢复依据').fill('恢复本出口默认保护')
+    await restore.getByRole('button', { name: '确认恢复' }).click()
+    await expect.poll(() => backend.policyRevokeRequests.length).toBe(1)
+    expect(backend.policies[0].consumer_owner).toBe(owner)
+    expect(backend.policies[0].state).toBe('revoked')
+    expect(backend.unhandledRequests).toEqual([])
+  })
+}
+
 test('classification-only access lands on foundations and denies sensitive definitions', async ({ page }) => {
   await installMockBackend(page, { permissions: ['security.classification.read', 'security.grade.read'] })
   await page.goto('/')
@@ -822,7 +855,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await page.getByRole('button', { name: '查看详情' }).click()
   const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
   await expect(detailDrawer.getByText('customer.phone', { exact: true }).first()).toBeVisible()
-  await expect(detailDrawer.getByText('数据预览执行默认保护：脱敏', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText('默认保护：脱敏', { exact: true })).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '调整结论' }).click()
   const revisionDialog = page.getByRole('dialog', { name: '调整正式安全结论' })
@@ -880,7 +913,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await detailDrawer.getByRole('button', { name: '收紧保护' }).click()
 
   const policyDialog = page.getByRole('dialog', { name: '资源级保护策略' })
-  await expect(policyDialog.getByRole('textbox', { name: '生效出口' })).toHaveValue('数据预览')
+  await expect(formCombobox(policyDialog, '生效出口')).toContainText('数据预览')
   await policyDialog.getByText('移除', { exact: true }).click()
   await expect(policyDialog.getByRole('radio', { name: '移除' })).toBeChecked()
   await policyDialog.getByRole('button', { name: '保存策略' }).click()
@@ -935,7 +968,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
 
   await detailDrawer.getByRole('button', { name: '恢复默认' }).click()
   const restoreDialog = page.getByRole('dialog', { name: '恢复默认保护' })
-  await expect(restoreDialog.getByText('撤销资源级收紧策略后，该字段将回落到当前默认保护；资源仍保持纳管，也不会因此放行明文。', { exact: true })).toBeVisible()
+  await expect(restoreDialog.getByText('撤销所选出口的字段收紧策略后，该出口回落到当前默认保护，其他出口策略保持不变；资源仍保持纳管，也不会因此放行明文。', { exact: true })).toBeVisible()
   await restoreDialog.getByRole('button', { name: '确认恢复' }).click()
   await expect(restoreDialog.locator('.el-form-item__error')).toHaveText('请完整填写恢复依据')
   expect(backend.policyRevokeRequests).toHaveLength(0)
@@ -965,7 +998,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     version: 4,
     rationale: '重新加载后确认恢复平台默认规则'
   })
-  await expect(detailDrawer.getByText('数据预览执行默认保护：脱敏', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText('默认保护：脱敏', { exact: true })).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '提前撤销' }).click()
   const exemptionRevokeDialog = page.getByRole('dialog', { name: '提前撤销临时授权' })
@@ -1917,7 +1950,7 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { ...state.assessment, history: state.assessmentHistory })
     }
     if (method === 'GET' && path === '/api/v1/security/protection-policies') {
-      return fulfillJSON(route, { data: state.policies, total: state.policies.length, page: 1, page_size: 100, total_pages: state.policies.length ? 1 : 0 })
+      return fulfillJSON(route, { supported_scopes: [{ consumer_owner: 'manager', action: 'preview' }, { consumer_owner: 'develop', action: 'query' }, { consumer_owner: 'service', action: 'service_execute' }, { consumer_owner: 'transfer', action: 'export' }], data: state.policies, total: state.policies.length, page: 1, page_size: 100, total_pages: state.policies.length ? 1 : 0 })
     }
     if (method === 'POST' && path === '/api/v1/security/protection-policies') {
       const body = request.postDataJSON()

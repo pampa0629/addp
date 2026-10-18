@@ -870,6 +870,13 @@ definitions:
       state:
         type: string
     type: object
+  github_com_addp_security_internal_models.ProtectionPolicyScope:
+    properties:
+      action:
+        type: string
+      consumer_owner:
+        type: string
+    type: object
   github_com_addp_security_internal_models.ProtectionTargetSnapshot:
     properties:
       engine_id:
@@ -1478,6 +1485,10 @@ definitions:
         type: integer
       page_size:
         type: integer
+      supported_scopes:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyScope'
+        type: array
       total:
         type: integer
       total_pages:
@@ -4716,9 +4727,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 为正式 Assessment 的 Manager preview 创建只能收紧当前保护基线的策略，并在同一事务重新编译投影 |
-        Create a policy that can only tighten the current baseline for a formal Assessment's
-        Manager preview and recompile the projection in the same transaction
+      description: 为正式字段评估的指定结构化出口创建收紧策略，仅重编译对应 Owner 投影；支持 manager/preview、develop/query、service/service_execute、transfer/export
+        | Create a tightening policy for one formal field assessment outlet and recompile
+        only its Owner projection; supports manager/preview, develop/query, service/service_execute
+        and transfer/export
       parameters:
       - description: 创建请求 | Create request
         in: body

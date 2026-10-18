@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useProtectionPolicyChange } from '../src/composables/useProtectionPolicyChange.mjs'
 
@@ -10,6 +10,7 @@ const assessment = {
 const activePolicy = {
   id: 'policy-1',
   assessment_id: 'assessment-1',
+  consumer_owner: 'manager', action: 'preview',
   state: 'active',
   version: 2,
   current: { effect: 'suppress', rationale: 'existing rationale' }
@@ -23,7 +24,9 @@ function createPolicyChange(options = {}) {
   }
   const { currentPolicy: _currentPolicy, ...overrides } = options
   const dependencies = {
-    policyForAssessment: vi.fn(() => state.policy),
+    policyScopes: ref([{ consumer_owner: 'manager', action: 'preview' }, { consumer_owner: 'develop', action: 'query' }, { consumer_owner: 'service', action: 'service_execute' }, { consumer_owner: 'transfer', action: 'export' }]),
+    canConfigureScope: vi.fn(() => true),
+    policyForAssessment: vi.fn((_assessment, scope) => state.policy?.consumer_owner === scope.consumer_owner && state.policy?.action === scope.action ? state.policy : null),
     stricterEffects: vi.fn(() => ['suppress', 'deny']),
     getPolicy: vi.fn().mockResolvedValue(activePolicy),
     getAssessment: vi.fn().mockResolvedValue(assessment),
@@ -292,5 +295,49 @@ describe('protection policy change sessions', () => {
     await expect(reload).resolves.toEqual({ status: 'stale' })
     expect(pendingRestore.dependencies.applyLatestContext).not.toHaveBeenCalled()
     expect(pendingRestore.policyChange.restoreReloading.value).toBe(false)
+  })
+})
+
+
+describe('outlet-specific policy changes', () => {
+  it.each([['develop', 'query'], ['service', 'service_execute'], ['transfer', 'export']])('creates a %s policy without changing the Manager binding', async (owner, action) => {
+    const { dependencies, policyChange } = createPolicyChange()
+    allowEditValidation(policyChange)
+    policyChange.openEdit(assessment)
+    expect(policyChange.selectEditScope(`${owner}/${action}`)).toBe(true)
+    expect(policyChange.editScope.value).toEqual({ consumer_owner: owner, action })
+    policyChange.editForm.effect = 'suppress'
+    policyChange.editForm.rationale = ' selected outlet only '
+    await expect(policyChange.submitEdit()).resolves.toMatchObject({ status: 'saved', operation: 'created' })
+    expect(dependencies.createPolicy).toHaveBeenCalledWith(expect.objectContaining({ assessment_id: assessment.id, consumer_owner: owner, action, effect: 'suppress' }))
+    expect(dependencies.updatePolicy).not.toHaveBeenCalled()
+  })
+
+  it('does not switch an outlet while validation or submission is pending', async () => {
+    let resolve
+    const { policyChange } = createPolicyChange({ createPolicy: vi.fn(() => new Promise(done => { resolve = done })) })
+    allowEditValidation(policyChange)
+    policyChange.openEdit(assessment)
+    policyChange.selectEditScope('transfer/export')
+    policyChange.editForm.rationale = 'selected'
+    const pending = policyChange.submitEdit()
+    await nextTick()
+    expect(policyChange.selectEditScope('develop/query')).toBe(false)
+    expect(policyChange.editScope.value.consumer_owner).toBe('transfer')
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+    resolve({})
+    await pending
+  })
+
+  it('restores only the selected active policy and refuses unknown outlets', async () => {
+    const develop = { ...activePolicy, id: 'develop-policy', consumer_owner: 'develop', action: 'query', version: 5 }
+    const { dependencies, policyChange } = createPolicyChange({ policyForAssessment: vi.fn((_assessment, scope) => scope.consumer_owner === 'develop' ? develop : scope.consumer_owner === 'manager' ? activePolicy : null) })
+    allowRestoreValidation(policyChange)
+    policyChange.openRestore(assessment)
+    expect(policyChange.selectRestoreScope('graph/graph_read')).toBe(false)
+    expect(policyChange.selectRestoreScope('develop/query')).toBe(true)
+    policyChange.restoreForm.rationale = 'restore query only'
+    await expect(policyChange.submitRestore()).resolves.toEqual({ status: 'restored' })
+    expect(dependencies.revokePolicy).toHaveBeenCalledWith('develop-policy', { version: 5, rationale: 'restore query only' })
   })
 })

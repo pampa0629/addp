@@ -76,10 +76,17 @@ type ProtectionPolicyResponse struct {
 	History []ProtectionPolicyRevision `json:"history,omitempty"`
 }
 
+// ProtectionPolicyScope is a platform-supported structured-field policy outlet.
+type ProtectionPolicyScope struct {
+	ConsumerOwner string `json:"consumer_owner"`
+	Action        string `json:"action"`
+}
+
 type ProtectionPolicyListResponse struct {
-	Data       []ProtectionPolicyResponse `json:"data"`
-	Total      int64                      `json:"total"`
-	Page       int                        `json:"page"`
-	PageSize   int                        `json:"page_size"`
-	TotalPages int                        `json:"total_pages"`
+	SupportedScopes []ProtectionPolicyScope    `json:"supported_scopes"`
+	Data            []ProtectionPolicyResponse `json:"data"`
+	Total           int64                      `json:"total"`
+	Page            int                        `json:"page"`
+	PageSize        int                        `json:"page_size"`
+	TotalPages      int                        `json:"total_pages"`
 }

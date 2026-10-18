@@ -1,5 +1,7 @@
 package service
 
+import "github.com/addp/security/internal/models"
+
 const (
 	managerProtectionOwner  = "manager"
 	developProtectionOwner  = "develop"
@@ -17,18 +19,18 @@ const (
 )
 
 type protectionOwnerContract struct {
-	owner           string
-	exemptionAction string
+	owner       string
+	fieldAction string
 }
 
 // requiredProtectionOwnerContracts is the single Security-owned source of
-// truth for enrollment activation owners and their primary exemption action, if supported.
+// truth for enrollment activation owners and their primary structured-field action, if supported.
 // Keep the order stable because projection changes are append-only.
 var requiredProtectionOwnerContracts = [...]protectionOwnerContract{
-	{owner: developProtectionOwner, exemptionAction: developQueryAction},
-	{owner: managerProtectionOwner, exemptionAction: managerPreviewAction},
-	{owner: serviceProtectionOwner, exemptionAction: serviceExecuteAction},
-	{owner: transferProtectionOwner, exemptionAction: transferExportAction},
+	{owner: developProtectionOwner, fieldAction: developQueryAction},
+	{owner: managerProtectionOwner, fieldAction: managerPreviewAction},
+	{owner: serviceProtectionOwner, fieldAction: serviceExecuteAction},
+	{owner: transferProtectionOwner, fieldAction: transferExportAction},
 	{owner: graphProtectionOwner},
 }
 
@@ -45,9 +47,9 @@ func isRequiredOwner(owner string) bool {
 	return exists
 }
 
-func validExemptionBinding(owner, action string) bool {
+func validPolicyBinding(owner, action string) bool {
 	contract, exists := requiredProtectionOwnerContract(owner)
-	return exists && contract.exemptionAction != "" && action == contract.exemptionAction
+	return exists && contract.fieldAction != "" && action == contract.fieldAction
 }
 
 func requiredProtectionOwnerContract(owner string) (protectionOwnerContract, bool) {
@@ -57,4 +59,14 @@ func requiredProtectionOwnerContract(owner string) (protectionOwnerContract, boo
 		}
 	}
 	return protectionOwnerContract{}, false
+}
+
+func supportedPolicyScopes() []models.ProtectionPolicyScope {
+	scopes := make([]models.ProtectionPolicyScope, 0, len(requiredProtectionOwnerContracts))
+	for _, contract := range requiredProtectionOwnerContracts {
+		if contract.fieldAction != "" {
+			scopes = append(scopes, models.ProtectionPolicyScope{ConsumerOwner: contract.owner, Action: contract.fieldAction})
+		}
+	}
+	return scopes
 }

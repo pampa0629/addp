@@ -28,6 +28,7 @@ function createPresentation(overrides = {}) {
       { id: 'assessment-1', component_key: 'phone', current: { source_kind: 'manual', conclusion: 'sensitive', sensitive_data_type_id: 11, security_classification_id: 12, security_grade_id: 13, rationale: 'confirmed' } },
       { id: 'assessment-2', component_key: 'nickname', current: { source_kind: 'finding', conclusion: 'not_sensitive', rationale: 'not sensitive' } }
     ]),
+    policyScopes: ref([{ consumer_owner: 'manager', action: 'preview' }, { consumer_owner: 'develop', action: 'query' }, { consumer_owner: 'service', action: 'service_execute' }, { consumer_owner: 'transfer', action: 'export' }]),
     policies: ref([
       { id: 'policy-1', assessment_id: 'assessment-1', consumer_owner: 'manager', action: 'preview', state: 'active', current: { effect: 'deny' } }
     ]),
@@ -558,12 +559,15 @@ describe('protected-resource presentation model', () => {
     const assessment = dependencies.assessments.value[0]
 
     expect(presentation.baselineForAssessment(assessment)?.id).toBe(15)
-    expect(presentation.policyForAssessment(assessment)?.id).toBe('policy-1')
+    expect(presentation.policyForAssessment(assessment, { consumer_owner: 'manager', action: 'preview' })?.id).toBe('policy-1')
     expect(presentation.stricterPolicyEffects(assessment)).toEqual(['mask', 'suppress', 'deny'])
     expect(presentation.activeGradesForType(11).map(item => item.id)).toEqual([13])
     expect(presentation.canConfigurePolicy(assessment)).toBe(true)
 
     dependencies.canUpdatePolicies.value = false
+    expect(presentation.canConfigurePolicy(assessment, { consumer_owner: 'manager', action: 'preview' })).toBe(false)
+    expect(presentation.canConfigurePolicy(assessment)).toBe(true)
+    dependencies.canCreatePolicies.value = false
     expect(presentation.canConfigurePolicy(assessment)).toBe(false)
   })
 
@@ -789,4 +793,11 @@ describe('protected-resource presentation model', () => {
     const grant = { id: 'grant-1', assessment_id: 'assessment-1', component_key: 'userInfo.phone', effective_state: 'active' }
     expect(presentation.exemptionRowView(grant).componentKey).toBe('userInfo.phone')
   })
+})
+
+
+it('does not expose structured-field Policy editing for document body components', () => {
+  const { dependencies, presentation } = createPresentation()
+  const assessment = { ...dependencies.assessments.value[0], component_key: '$document.text' }
+  expect(presentation.canConfigurePolicy(assessment)).toBe(false)
 })

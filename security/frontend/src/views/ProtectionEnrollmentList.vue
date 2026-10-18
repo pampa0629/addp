@@ -240,6 +240,7 @@
       :form="policyForm"
       :rules="policyRules"
       @reload="reloadPolicyBaseline"
+      @scope-change="selectPolicyScope"
       @close="closePolicyDialog"
       @closed="closePolicyDialog"
       @submit="savePolicy"
@@ -256,6 +257,7 @@
       :form="policyRestoreForm"
       :rules="policyRestoreRules"
       @reload="reloadPolicyRestoreBaseline"
+      @scope-change="selectPolicyRestoreScope"
       @close="closePolicyRestoreDialog"
       @closed="closePolicyRestoreDialog"
       @submit="submitPolicyRestore"
@@ -548,6 +550,7 @@ const {
   findingsLoading,
   assessments,
   policies,
+  policyScopes,
   exemptions,
   exemptionsLoading,
   governanceLoading,
@@ -617,6 +620,7 @@ const {
   protectionBaselines,
   assessments,
   policies,
+  policyScopes,
   canReadPolicies,
   canCreatePolicies,
   canUpdatePolicies
@@ -801,6 +805,8 @@ const {
   editReloading: policyReloading,
   editConflict: policyVersionConflict,
   editAssessment: policyAssessment,
+  editScope: policyScope,
+  selectEditScope: selectPolicyScope,
   editForm: policyForm,
   editRules: policyRules,
   editEffects: policyEffects,
@@ -814,6 +820,8 @@ const {
   restoreReloading: policyRestoreReloading,
   restoreConflict: policyRestoreConflict,
   restoreAssessment: policyRestoreAssessment,
+  restoreScope: policyRestoreScope,
+  selectRestoreScope: selectPolicyRestoreScope,
   restoreForm: policyRestoreForm,
   restoreRules: policyRestoreRules,
   openRestore: openPolicyRestore,
@@ -823,6 +831,8 @@ const {
   dispose: disposeProtectionPolicyChange
 } = useProtectionPolicyChange({
   policyForAssessment,
+  policyScopes,
+  canConfigureScope: canConfigurePolicy,
   baselineForAssessment,
   stricterEffects: stricterPolicyEffects,
   getPolicy: id => protectionPolicyAPI.get(id),
@@ -1070,10 +1080,10 @@ const assessmentRevokePresentation = computed(() => revokingAssessment.value
   ? assessmentChangeDialogView(revokingAssessment.value)
   : null)
 const policyDialogPresentation = computed(() => policyAssessment.value
-  ? protectionPolicyDialogView(policyAssessment.value, { effects: policyEffects.value })
+  ? protectionPolicyDialogView(policyAssessment.value, { effects: policyEffects.value, scope: policyScope.value })
   : null)
 const policyRestoreDialogPresentation = computed(() => policyRestoreAssessment.value
-  ? protectionPolicyDialogView(policyRestoreAssessment.value)
+  ? protectionPolicyDialogView(policyRestoreAssessment.value, { scope: policyRestoreScope.value, restore: true })
   : null)
 const exemptionRevokePresentation = computed(() => revokingExemption.value
   ? exemptionRowView(revokingExemption.value)

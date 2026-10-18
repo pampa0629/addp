@@ -63,49 +63,61 @@ func verifyFieldAlgorithmPermissions(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	policies := NewPolicyService(db)
-	tooMuch := models.CreateProtectionPolicyRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: "manager", Action: "preview", Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 4, "suffix_runes": 4, "mask_rune": "*"}, Rationale: "超出前缀上限"}
-	if _, err := policies.Create(context.Background(), 7, 31, tooMuch); err != commonapi.ErrBadRequest {
-		t.Fatalf("retention limit rejection: %v", err)
+	bindings := []struct{ ConsumerOwner, Action string }{
+		{ConsumerOwner: "manager", Action: "preview"},
+		{ConsumerOwner: "develop", Action: "query"},
+		{ConsumerOwner: "service", Action: "service_execute"},
+		{ConsumerOwner: "transfer", Action: "export"},
 	}
-	tooMuch.Algorithm = dataprotection.AlgorithmSM3V1
-	tooMuch.Parameters = map[string]any{}
-	created, err := policies.Create(context.Background(), 7, 31, tooMuch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	changes, err := enrollments.ListChanges(context.Background(), 7, "manager", "", 100)
-	if err != nil {
-		t.Fatal(err)
-	}
-	latest := changes.Changes[len(changes.Changes)-1].Projection
-	if latest.Rules[0].Decision.Algorithm != dataprotection.AlgorithmSM3V1 {
-		t.Fatal("independent hash did not reach preview projection")
-	}
-	document := map[string]any{"userInfo": map[string]any{"phone": "abc"}}
-	if err := dataprotection.ProtectDocument(document, "preview", latest.Rules, dataprotection.SubjectReference{}); err != nil {
-		t.Fatal(err)
-	}
-	if document["userInfo"].(map[string]any)["phone"] != "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0" {
-		t.Fatal("hash was not executed")
+	created := make([]models.ProtectionPolicyResponse, 0, len(bindings))
+	for _, scope := range bindings {
+		tooMuch := models.CreateProtectionPolicyRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: scope.ConsumerOwner, Action: scope.Action, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 4, "suffix_runes": 4, "mask_rune": "*"}, Rationale: "超出前缀上限"}
+		if _, err := policies.Create(context.Background(), 7, 31, tooMuch); err != commonapi.ErrBadRequest {
+			t.Fatalf("%s retention limit rejection: %v", scope.ConsumerOwner, err)
+		}
+		tooMuch.Algorithm = dataprotection.AlgorithmSM3V1
+		tooMuch.Parameters = map[string]any{}
+		policy, err := policies.Create(context.Background(), 7, 31, tooMuch)
+		if err != nil {
+			t.Fatalf("%s policy create: %v", scope.ConsumerOwner, err)
+		}
+		created = append(created, *policy)
+		changes, err := enrollments.ListChanges(context.Background(), 7, scope.ConsumerOwner, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		latest := changes.Changes[len(changes.Changes)-1].Projection
+		document := map[string]any{"userInfo": map[string]any{"phone": "abc"}}
+		if err := dataprotection.ProtectDocument(document, scope.Action, latest.Rules, dataprotection.SubjectReference{}); err != nil {
+			t.Fatal(err)
+		}
+		if document["userInfo"].(map[string]any)["phone"] != "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0" {
+			t.Fatalf("%s independent hash was not executed", scope.ConsumerOwner)
+		}
 	}
 	request.Version = baseline.Version
 	request.AllowedAlgorithms = []string{baseline.Algorithm}
 	if _, err := definitions.UpdateBaseline(baseline.ID, 7, 11, request); err != nil {
 		t.Fatal(err)
 	}
-	changes, err = enrollments.ListChanges(context.Background(), 7, "manager", "", 100)
-	if err != nil {
-		t.Fatal(err)
+	for i, scope := range bindings {
+		changes, err := enrollments.ListChanges(context.Background(), 7, scope.ConsumerOwner, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, rule := range changes.Changes[len(changes.Changes)-1].Projection.Rules {
+			if rule.Action == scope.Action && rule.Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 {
+				t.Fatalf("%s did not restore baseline after permission withdrawal", scope.ConsumerOwner)
+			}
+		}
+		if _, err := policies.Update(context.Background(), 7, 31, created[i].ID, models.UpdateProtectionPolicyRequest{Version: created[i].Version, Effect: "mask", Algorithm: dataprotection.AlgorithmSM3V1, Parameters: map[string]any{}, Rationale: "不再许可"}); err != commonapi.ErrBadRequest {
+			t.Fatalf("%s withdrawn algorithm accepted: %v", scope.ConsumerOwner, err)
+		}
+		if _, err := policies.Revoke(context.Background(), 7, 31, created[i].ID, models.RevokeProtectionPolicyRequest{Version: created[i].Version, Rationale: "撤销字段规则"}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if changes.Changes[len(changes.Changes)-1].Projection.Rules[0].Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 {
-		t.Fatal("permission withdrawal did not restore baseline")
-	}
-	if _, err := policies.Update(context.Background(), 7, 31, created.ID, models.UpdateProtectionPolicyRequest{Version: created.Version, Effect: "mask", Algorithm: dataprotection.AlgorithmSM3V1, Parameters: map[string]any{}, Rationale: "不再许可"}); err != commonapi.ErrBadRequest {
-		t.Fatalf("withdrawn algorithm accepted: %v", err)
-	}
-	if _, err := policies.Revoke(context.Background(), 7, 31, created.ID, models.RevokeProtectionPolicyRequest{Version: created.Version, Rationale: "撤销字段规则"}); err != nil {
-		t.Fatal(err)
-	}
+
 }
 
 func TestBaselineAlgorithmConfigurationRejectsImplicitPermissionAndGeometry(t *testing.T) {

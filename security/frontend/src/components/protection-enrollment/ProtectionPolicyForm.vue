@@ -11,11 +11,13 @@
     <span>{{ presentation.assessmentSummary }}</span>
     <span>{{ presentation.protectionSummary }}</span>
   </div>
-  <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+  <el-form ref="formRef" :model="form" :rules="rules" :disabled="disabled || reloading" label-position="top">
+    <el-form-item :label="t('security.policy.scope')" required>
+      <el-select :model-value="presentation.scopeValue" :disabled="disabled || conflict || reloading" @change="emit('scopeChange', $event)">
+        <el-option v-for="scope in presentation.scopeOptions" :key="scope.value" :value="scope.value" :label="scope.label" :disabled="scope.disabled" />
+      </el-select>
+    </el-form-item>
     <template v-if="mode === 'tighten'">
-      <el-form-item :label="t('security.policy.scope')">
-        <el-input :model-value="t('security.policy.managerPreview')" disabled />
-      </el-form-item>
       <el-form-item :label="t('security.policy.effect')" prop="effect" required>
         <el-radio-group v-model="form.effect">
           <el-radio-button v-for="option in presentation.effectOptions" :key="option.value" :value="option.value">
@@ -58,13 +60,14 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps({
   mode: { type: String, required: true, validator: value => ['tighten', 'restore'].includes(value) },
   presentation: { type: Object, required: true },
+  disabled: { type: Boolean, default: false },
   conflict: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   form: { type: Object, required: true },
   rules: { type: Object, required: true }
 })
 
-const emit = defineEmits(['reload'])
+const emit = defineEmits(['reload', 'scopeChange'])
 const { t } = useI18n()
 const formRef = ref(null)
 const algorithmEditor = ref(null)

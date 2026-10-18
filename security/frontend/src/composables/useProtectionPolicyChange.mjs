@@ -1,3 +1,4 @@
+import { protectionPolicyScopeKey } from '../utils/protectionPolicy.mjs'
 import { initialProtectionConfiguration } from '../utils/protectionAlgorithm.mjs'
 import { computed, nextTick, reactive, ref } from 'vue'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
@@ -5,6 +6,8 @@ import { isResourceVersionConflict } from '../utils/protectionEnrollment.mjs'
 
 export function useProtectionPolicyChange({
   policyForAssessment,
+  policyScopes,
+  canConfigureScope,
   baselineForAssessment = () => null,
   stricterEffects,
   getPolicy,
@@ -36,6 +39,7 @@ export function useProtectionPolicyChange({
   const editConflict = ref(false)
   const editAssessment = ref(null)
   const editPolicy = ref(null)
+  const editScope = ref(null)
   const editForm = reactive({ ...initialProtectionConfiguration(), effect: '', rationale: '', invalid_value_effect: 'suppress' })
 
   const restoreDialog = ref(false)
@@ -45,6 +49,7 @@ export function useProtectionPolicyChange({
   const restoreConflict = ref(false)
   const restoreAssessment = ref(null)
   const restorePolicy = ref(null)
+  const restoreScope = ref(null)
   const restoreForm = reactive({ rationale: '' })
 
   let editReloadRequest = 0
@@ -97,6 +102,7 @@ export function useProtectionPolicyChange({
     editDialog.value = false
     editAssessment.value = null
     editPolicy.value = null
+    editScope.value = null
     editForm.effect = ''
     editForm.rationale = ''
     editSaving.value = false
@@ -109,9 +115,22 @@ export function useProtectionPolicyChange({
     editReloadRequest += 1
     editSubmitRequest += 1
     clearEditSession()
-    if (!applyEditBaseline(assessment, policyForAssessment(assessment))) return false
+    const scope = policyScopes.value.find(item => policyForAssessment(assessment, item)?.state === 'active' && canConfigureScope(assessment, item))
+      || policyScopes.value.find(item => item.consumer_owner === 'manager' && canConfigureScope(assessment, item))
+      || policyScopes.value.find(item => canConfigureScope(assessment, item))
+    if (!scope) return false
+    editScope.value = scope
+    if (!applyEditBaseline(assessment, policyForAssessment(assessment, scope))) return false
     editDialog.value = true
     return true
+  }
+
+  function selectEditScope(key) {
+    if (disposed || editSaving.value || editReloading.value || editConflict.value || !editAssessment.value) return false
+    const scope = policyScopes.value.find(item => protectionPolicyScopeKey(item) === key)
+    if (!scope || !canConfigureScope(editAssessment.value, scope)) return false
+    editScope.value = scope
+    return applyEditBaseline(editAssessment.value, policyForAssessment(editAssessment.value, scope))
   }
 
   function closeEdit() {
@@ -177,8 +196,8 @@ export function useProtectionPolicyChange({
       } else {
         await createPolicy({
           assessment_id: assessment.id,
-          consumer_owner: 'manager',
-          action: 'preview',
+          consumer_owner: editScope.value.consumer_owner,
+          action: editScope.value.action,
           effect: editForm.effect,
           algorithm: editForm.effect === 'mask' ? editForm.algorithm : '',
           parameters: editForm.effect === 'mask' ? editForm.parameters : {},
@@ -219,6 +238,7 @@ export function useProtectionPolicyChange({
     restoreDialog.value = false
     restoreAssessment.value = null
     restorePolicy.value = null
+    restoreScope.value = null
     restoreForm.rationale = ''
     restoreSaving.value = false
     restoreReloading.value = false
@@ -226,14 +246,27 @@ export function useProtectionPolicyChange({
   }
 
   function openRestore(assessment) {
-    const policy = policyForAssessment(assessment)
+    const scope = policyScopes.value.find(item => policyForAssessment(assessment, item)?.state === 'active')
+    const policy = scope && policyForAssessment(assessment, scope)
     if (disposed || !assessment?.id || !policy?.id || policy.state !== 'active') return false
     restoreReloadRequest += 1
     restoreSubmitRequest += 1
     clearRestoreSession()
+    restoreScope.value = scope
     restoreAssessment.value = assessment
     restorePolicy.value = policy
     restoreDialog.value = true
+    return true
+  }
+
+  function selectRestoreScope(key) {
+    if (disposed || restoreSaving.value || restoreReloading.value || restoreConflict.value || !restoreAssessment.value) return false
+    const scope = policyScopes.value.find(item => protectionPolicyScopeKey(item) === key)
+    const policy = scope && policyForAssessment(restoreAssessment.value, scope)
+    if (!policy || policy.state !== 'active') return false
+    restoreScope.value = scope
+    restorePolicy.value = policy
+    restoreForm.rationale = ''
     return true
   }
 
@@ -337,6 +370,8 @@ export function useProtectionPolicyChange({
     editReloading,
     editConflict,
     editAssessment,
+    editScope,
+    selectEditScope,
     editForm,
     editRules,
     editEffects,
@@ -350,6 +385,8 @@ export function useProtectionPolicyChange({
     restoreReloading,
     restoreConflict,
     restoreAssessment,
+    restoreScope,
+    selectRestoreScope,
     restoreForm,
     restoreRules,
     openRestore,

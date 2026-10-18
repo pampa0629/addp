@@ -17,7 +17,7 @@ function createGovernance(overrides = {}) {
     canReadExemptions: true,
     listFindings: vi.fn().mockResolvedValue({ data: [{ id: 1 }], total: 2 }),
     listAssessments: vi.fn().mockResolvedValue({ data: [{ id: 2 }] }),
-    listPolicies: vi.fn().mockResolvedValue({ data: [{ id: 3 }] }),
+    listPolicies: vi.fn().mockResolvedValue({ data: [{ id: 3 }], total: 1, total_pages: 1, supported_scopes: [{ consumer_owner: 'manager', action: 'preview' }] }),
     listExemptions: vi.fn().mockResolvedValue({ data: [{ id: 4 }] }),
     onLoadError: vi.fn(),
     ...overrides
@@ -130,4 +130,18 @@ describe('protected resource governance detail', () => {
     expect(governance.policies.value).toEqual([])
     expect(governance.exemptions.value).toEqual([])
   })
+})
+
+
+it('loads every policy page before publishing the supported outlets and refuses incomplete collections', async () => {
+  const scopes = [{ consumer_owner: 'develop', action: 'query' }]
+  const listPolicies = vi.fn().mockResolvedValueOnce({ data: [{ id: 'a' }], total: 2, total_pages: 2, supported_scopes: scopes }).mockResolvedValueOnce({ data: [{ id: 'b' }], total: 2, total_pages: 2, supported_scopes: scopes })
+  const { governance } = createGovernance({ listPolicies })
+  expect(await governance.loadPolicies()).toBe(true)
+  expect(governance.policies.value.map(item => item.id)).toEqual(['a', 'b'])
+  expect(governance.policyScopes.value).toEqual(scopes)
+  listPolicies.mockResolvedValueOnce({ data: [{ id: 'a' }], total: 2, total_pages: 1, supported_scopes: scopes })
+  expect(await governance.loadPolicies()).toBe(false)
+  expect(governance.policyScopes.value).toEqual([])
+  expect(governance.policies.value).toEqual([])
 })

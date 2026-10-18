@@ -16,12 +16,14 @@
       v-if="presentation"
       ref="formRef"
       :mode="mode"
+      :disabled="saving"
       :presentation="presentation"
       :conflict="conflict"
       :reloading="reloading"
       :form="form"
       :rules="rules"
       @reload="emit('reload')"
+      @scope-change="emit('scopeChange', $event)"
     />
     <template #footer>
       <el-button ref="cancelButton" :disabled="saving" @click="emit('close')">
@@ -50,7 +52,7 @@ const props = defineProps({
   rules: { type: Object, required: true }
 })
 
-const emit = defineEmits(['update:modelValue', 'reload', 'close', 'closed', 'submit'])
+const emit = defineEmits(['update:modelValue', 'reload', 'close', 'closed', 'submit', 'scopeChange'])
 const { t } = useI18n()
 const formRef = ref(null)
 const cancelButton = ref(null)

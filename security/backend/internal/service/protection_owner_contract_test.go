@@ -27,20 +27,20 @@ func TestRequiredProtectionOwnerContractIsCompleteAndStable(t *testing.T) {
 		if !isRequiredOwner(owner) {
 			t.Fatalf("isRequiredOwner(%q) = false", owner)
 		}
-		if !validExemptionBinding(owner, action) {
-			t.Fatalf("validExemptionBinding(%q, %q) = false", owner, action)
+		if !validPolicyBinding(owner, action) {
+			t.Fatalf("validPolicyBinding(%q, %q) = false", owner, action)
 		}
-		if validExemptionBinding(owner, action+"_other") {
-			t.Fatalf("validExemptionBinding(%q, mismatched action) = true", owner)
+		if validPolicyBinding(owner, action+"_other") {
+			t.Fatalf("validPolicyBinding(%q, mismatched action) = true", owner)
 		}
 	}
-	if !isRequiredOwner(graphProtectionOwner) || validExemptionBinding(graphProtectionOwner, graphReadAction) || validExemptionBinding(graphProtectionOwner, "") {
-		t.Fatal("Graph must require installation without raw-value exemptions")
+	if !isRequiredOwner(graphProtectionOwner) || validPolicyBinding(graphProtectionOwner, graphReadAction) || validPolicyBinding(graphProtectionOwner, "") {
+		t.Fatal("Graph must require installation without editable structured-field policies")
 	}
-	if isRequiredOwner("workbench") || validExemptionBinding("workbench", serviceExecuteAction) {
+	if isRequiredOwner("workbench") || validPolicyBinding("workbench", serviceExecuteAction) {
 		t.Fatal("workbench must consume protected Service results instead of becoming a projection owner")
 	}
-	if isRequiredOwner("asset") || validExemptionBinding("asset", serviceExecuteAction) {
+	if isRequiredOwner("asset") || validPolicyBinding("asset", serviceExecuteAction) {
 		t.Fatal("asset must not become a data-plane projection owner")
 	}
 }
@@ -50,5 +50,21 @@ func TestRequiredProtectionOwnerNamesCannotMutateContract(t *testing.T) {
 	owners[0] = "mutated"
 	if got := allRequiredProtectionOwners()[0]; got != developProtectionOwner {
 		t.Fatalf("owner contract was mutated through returned slice: %q", got)
+	}
+}
+
+func TestPolicyScopeCatalogueIsDerivedAndImmutable(t *testing.T) {
+	scopes := supportedPolicyScopes()
+	if len(scopes) != 4 {
+		t.Fatalf("policy scopes=%#v", scopes)
+	}
+	for _, scope := range scopes {
+		if !validPolicyBinding(scope.ConsumerOwner, scope.Action) {
+			t.Fatalf("unsupported scope %#v", scope)
+		}
+	}
+	scopes[0].Action = "invalid"
+	if supportedPolicyScopes()[0].Action == "invalid" {
+		t.Fatal("caller mutated platform policy capability")
 	}
 }

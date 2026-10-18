@@ -100,9 +100,16 @@ class SpatialClient:
         hashed = dict(ONLINE.SM3_VALUES)
         by_algorithm = {ONLINE.STRUCTURED_MASK_ALGORITHM: mask, ONLINE.CONSTANT_ALGORITHM: constant, ONLINE.SM3_ALGORITHM: hashed}
         columns = {field: by_algorithm[self.baseline["algorithm"]] for field in ONLINE.SPATIAL_FIELDS[1:4]}
-        if owner == "manager" and any(policy["state"] == "active" for policy in self.policies):
-            columns = {"value_a": {"1": "###########", "2": "#####", "3": "###", "4": None, "5": None},
-                       "value_b": constant, "value_c": hashed}
+        for policy in self.policies:
+            if policy.get("state") != "active" or policy["consumer_owner"] != owner:
+                continue
+            field = policy.get("assessment_id")
+            if field in columns:
+                if policy["algorithm"] == ONLINE.STRUCTURED_MASK_ALGORITHM:
+                    rune = policy["parameters"]["mask_rune"]
+                    columns[field] = {"1": rune * 11, "2": rune * 5, "3": rune * 3, "4": None, "5": None}
+                else:
+                    columns[field] = by_algorithm[policy["algorithm"]]
         return [{"id": key, **{field: values[key] for field, values in columns.items()},
                  "location_point": f"POINT({100 + int(key)} {20 + int(key)})" if owner in {"manager", "transfer"} else
                      {"type": "Point", "coordinates": [100 + int(key), 20 + int(key)]}}
@@ -164,7 +171,7 @@ class SpatialClient:
         if path.startswith("/api/v1/security/protection-policies?"):
             return response(200, {"data": copy.deepcopy(self.policies), "total_pages": 1})
         if method == "POST" and path == "/api/v1/security/protection-policies":
-            assert body["consumer_owner"] == "manager" and body["action"] == "preview"
+            assert ONLINE.OWNER_ACTIONS[body["consumer_owner"]] == body["action"]
             policy = {"id": str(len(self.policies) + 1), "state": "active", "version": "1", **body}
             self.policies.append(policy)
             return response(201, copy.deepcopy(policy))
@@ -746,7 +753,7 @@ class RestartRecoveryTest(unittest.TestCase):
 
     def run_recovery(self, client, restart=None, after=None, identity=None):
         source = client.request("GET", "/api/v1/meta/engines/17/items", (200,)).payload[0]
-        client.policies = [{"id": str(index), "state": "active", "version": "1"} for index in range(1, 4)]
+        client.policies = [{"id": str(index), "state": "active", "version": "1", "consumer_owner": "manager", "assessment_id": field, "algorithm": algorithm, "parameters": parameters} for index, (field, (algorithm, parameters)) in enumerate(zip(ONLINE.SPATIAL_FIELDS[1:4], [(ONLINE.STRUCTURED_MASK_ALGORITHM, {"mask_rune":"#"}), ONLINE.ALGORITHM_CASES[1], ONLINE.ALGORITHM_CASES[2]]), 1)]
         expected = {"value_a": {"1": "###########", "2": "#####", "3": "###", "4": None, "5": None},
                     "value_b": ONLINE.spatial_expected(ONLINE.CONSTANT_ALGORITHM, {"value": "已脱敏"}),
                     "value_c": dict(ONLINE.SM3_VALUES)}
@@ -872,7 +879,9 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
              patch.object(ONLINE, "cleanup_tasks", side_effect=lambda client, tasks: client.deleted_tasks.extend(tasks)):
             result = ONLINE.exercise_spatial_algorithms(client, 17, "run-1", time.monotonic() + 30, 90)
             restart.assert_called_once()
-            self.assertEqual(restart.call_args.args[5], ["1", "2", "3"])
+            self.assertEqual(restart.call_args.args[5], [str(i) for i in range(1, 13)])
+            self.assertEqual({(p["consumer_owner"], p["action"]) for p in client.policies}, set(ONLINE.OWNER_ACTIONS.items()))
+            self.assertEqual(len({(p["assessment_id"], p["consumer_owner"]) for p in client.policies}), 12)
             return result
 
     def test_spatial_algorithms_cover_four_owners_and_restore_baseline(self):
@@ -881,7 +890,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual(len(evidence["cases"]), 3)
         self.assertEqual({owner for _, owner in client.owner_calls}, set(ONLINE.OWNER_ACTIONS))
         self.assertEqual(len(client.owner_calls), 12)
-        self.assertTrue(evidence["cases"][0]["independent_manager_fields"])
+        self.assertTrue(evidence["cases"][0]["independent_outlet_fields"])
         self.assertTrue(evidence["cases"][0]["owners"]["manager"]["restart_recovery"]["verified_before_rescan"])
         self.assertEqual(client.search_calls, [case[0] for case in ONLINE.ALGORITHM_CASES])
         for case in evidence["cases"]:
@@ -892,6 +901,15 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
                          {k: v for k, v in client.original.items() if k != "version"})
 
+    def test_rejects_an_outlet_receiving_another_outlets_field_rules(self):
+        client = SpatialClient()
+        original = client.rows
+        client.rows = lambda owner: original("manager" if owner == "develop" else owner)
+        with self.assertRaisesRegex(ONLINE.SuiteError, "protected value"):
+            self.spatial_run(client)
+        self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
+        self.assertTrue(client.service_deleted)
+
     def test_owner_failure_still_restores_phone_rule_and_revokes_all_policies(self):
         client = SpatialClient(fail_owner="service")
         with self.assertRaisesRegex(ONLINE.SuiteError, "injected owner failure"):
@@ -900,7 +918,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual(client.baseline["invalid_value_effect"], "deny")
         self.assertEqual(client.baseline["allowed_algorithms"], client.original["allowed_algorithms"])
         self.assertTrue(client.service_deleted)
-        self.assertEqual(len(client.policies), 3)
+        self.assertEqual(len(client.policies), 12)
         self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
 
     def test_spatial_assertions_reject_plaintext_duplicate_rows_and_changed_geometry(self):
@@ -991,7 +1009,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.spatial_run(client)
         client.owner_calls.clear()
         self.spatial_run(client)
-        self.assertEqual(len(client.policies), 3)
+        self.assertEqual(len(client.policies), 12)
         self.assertTrue(all(policy["state"] == "revoked" and int(policy["version"]) > 2 for policy in client.policies))
         self.assertEqual(len(client.owner_calls), 12)
 

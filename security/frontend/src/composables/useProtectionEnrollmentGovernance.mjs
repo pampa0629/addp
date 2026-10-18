@@ -23,6 +23,7 @@ export function useProtectionEnrollmentGovernance({
   const assessments = ref([])
   const assessmentsLoading = ref(false)
   const policies = ref([])
+  const policyScopes = ref([])
   const policiesLoading = ref(false)
   const exemptions = ref([])
   const exemptionsLoading = ref(false)
@@ -62,6 +63,7 @@ export function useProtectionEnrollmentGovernance({
     findingsPage.value = 1
     assessments.value = []
     policies.value = []
+    policyScopes.value = []
     exemptions.value = []
     findingsLoading.value = false
     assessmentsLoading.value = false
@@ -116,13 +118,41 @@ export function useProtectionEnrollmentGovernance({
   }
 
   async function loadPolicies() {
-    return loadCollection({
-      kind: 'policies',
-      allowed: canReadPolicies,
-      collection: policies,
-      loading: policiesLoading,
-      fetch: listPolicies
-    })
+    const row = enrollment.value
+    const request = ++requestVersions.policies
+    if (!unref(canReadPolicies) || !row?.id) {
+      policies.value = []
+      policyScopes.value = []
+      policiesLoading.value = false
+      return false
+    }
+    const enrollmentID = row.id
+    policiesLoading.value = true
+    try {
+      const first = await listPolicies({ enrollment_id: enrollmentID, page: 1, page_size: 100 })
+      if (!isCurrent('policies', request, enrollmentID)) return false
+      const rows = Array.isArray(first?.data) ? [...first.data] : []
+      const scopes = Array.isArray(first?.supported_scopes) ? first.supported_scopes : []
+      for (let page = 2; page <= first.total_pages; page += 1) {
+        const response = await listPolicies({ enrollment_id: enrollmentID, page, page_size: 100 })
+        if (!isCurrent('policies', request, enrollmentID)) return false
+        if (response.total !== first.total || JSON.stringify(response.supported_scopes) !== JSON.stringify(scopes)) throw Object.assign(new Error(), { code: 'policy_collection_changed' })
+        rows.push(...response.data)
+      }
+      if (rows.length !== first.total || new Set(rows.map(item => item.id)).size !== rows.length) throw Object.assign(new Error(), { code: 'policy_collection_changed' })
+      policies.value = rows
+      policyScopes.value = scopes
+      return true
+    } catch (error) {
+      if (isCurrent('policies', request, enrollmentID)) {
+        policies.value = []
+        policyScopes.value = []
+        onLoadError('policies', error)
+      }
+      return false
+    } finally {
+      if (isCurrent('policies', request, enrollmentID)) policiesLoading.value = false
+    }
   }
 
   async function loadExemptions() {
@@ -177,6 +207,7 @@ export function useProtectionEnrollmentGovernance({
     assessments,
     assessmentsLoading,
     policies,
+    policyScopes,
     policiesLoading,
     exemptions,
     exemptionsLoading,

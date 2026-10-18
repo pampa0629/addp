@@ -227,7 +227,7 @@ tenant + assessment_id + consumer_owner + action
 
 首期约束固定为：
 
-1. 可编辑 Policy 的 `consumer_owner` 只开放已实现字段级执行的 `manager`，`action` 只开放 `preview`；新增可编辑 Owner 或动作必须与对应 Owner 执行能力在同一变更中落地。`manager/profile` 是编译器根据同一敏感组件的有效 `preview` 决策派生的系统动作，不建立第二份可编辑 Policy。
+1. 可编辑 Policy 开放四个已实现结构化字段执行的精确出口：`manager/preview`、`develop/query`、`service/service_execute`、`transfer/export`。每条策略只作用于其绑定出口，创建、更新、撤销只重新发布该 Owner 的投影；不将 Manager 策略复制给其他出口。可编辑出口由 Security 唯一 Owner 契约派生，并通过 `GET /protection-policies` 的 `supported_scopes` 只读返回，前端不维护第二份可编辑出口名单。`manager/profile` 仍由同一组件的有效 `preview` 决策派生，文档正文和 `graph/graph_read` 不提供可编辑字段 Policy。已有查询血缘、结构、任务形态及动作执行边界不因可编辑范围扩大而放宽。
 2. 策略效果只允许 `mask|suppress|deny`，严格度必须大于或等于当前 Assessment 对应的有效 ProtectionBaseline；不得用 Policy 编译 `allow` 或降低保护强度。
 3. `mask` 表示执行平台内置脱敏算法。ProtectionBaseline 保存默认 `algorithm + parameters` 和显式 `allowed_algorithms`；ProtectionPolicy 在正式字段上保存独立算法、参数和异常值效果，只允许基线许可的算法，不接受任意表达式。掩码、固定值替换和普通 SM3 不作跨算法强弱排序。前后掩码的字段参数不得超过基线默认的前、后保留上限；非掩码默认规则不得许可前后掩码。字段规则的异常效果不得弱于基线。基线许可撤回或参数上限收紧时，不再满足约束的既有 Policy 保留历史，由唯一编译器回到最新基线，不执行旧规则。
 4. 同一绑定至多有一个 Policy 聚合。聚合保存资源并发 `version` 和当前修订号；每次创建、更新或撤销追加不可变 revision。
@@ -705,7 +705,7 @@ cd common && go run ./authorization/cmd/manifest --coverage-report --repository-
 
 “图层”在本轮只指携带 geometry 字段的数据表，属性字段复用同一配置和执行链；geometry 字段只允许抑制或拒绝，不允许字符串掩码、固定值替换或哈希，不硬编码几何字段名。不新增容器 child 纳管、坐标扰动或瓦片脱敏执行器。
 
-ProtectionBaseline 与创建敏感类型的默认保护请求统一使用 `parameters` 和 `allowed_algorithms`，删除 `keep_prefix/keep_suffix` API 与模型字段。字段 Policy 可编辑范围沿用 `manager/preview`，其他现有 Owner 的算法执行来自默认保护，profile 继续派生 suppress/deny，文档 search_index 只接受现有手机号片段算法；无法执行其他算法时保守 suppress/deny。所有存量基线参数与 mask Policy 在 Backend 启动迁移中一次性收敛，删除旧存储列，不保留运行兼容分支。
+ProtectionBaseline 与创建敏感类型的默认保护请求统一使用 `parameters` 和 `allowed_algorithms`，删除 `keep_prefix/keep_suffix` API 与模型字段。字段 Policy 可在上述四个精确出口独立配置，统一复用同一基线算法许可、参数上限和异常值收紧校验；默认保护仍是没有显式策略时的完整路径。profile 继续派生 suppress/deny，文档 search_index 只接受现有手机号片段算法；无法执行其他算法时保守 suppress/deny。所有存量基线参数与 mask Policy 在 Backend 启动迁移中一次性收敛，删除旧存储列，不保留运行兼容分支。
 
 `addp.mask.keep_prefix_suffix/v2` 不接受宽松或未知参数，固定要求非负整数 `prefix_runes`、非负整数 `suffix_runes` 和恰好一个 Unicode rune 的 `mask_rune`。输入必须是有效 UTF-8 字符串且实际 rune 数严格大于前后保留数之和；算法保留指定前缀和后缀，并按被隐藏 rune 的实际数量重复 `mask_rune`。算法不限定总长度和字符类别，也不承担手机号、邮箱或证件号码格式校验；类型错误、UTF-8 非法或长度不足都是 invalid value，必须执行 `invalid_value_effect`。
 

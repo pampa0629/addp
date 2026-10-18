@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,4 +136,97 @@ func TestManagerPolicyDoesNotTightenDevelopOrServiceProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireTransferExportProjection(t, transferChanges.Changes[len(transferChanges.Changes)-1].Projection, dataprotection.EffectMask)
+}
+
+func TestFieldPoliciesRemainIndependentAcrossOwners(t *testing.T) {
+	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
+	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认字段"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewPolicyService(db)
+	scopes := supportedPolicyScopes()
+	policies := make(map[string]*models.ProtectionPolicyResponse)
+	latest := func(owner string) dataprotection.Projection {
+		t.Helper()
+		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *changes.Changes[len(changes.Changes)-1].Projection
+	}
+	for i, scope := range scopes {
+		before := make(map[string]string)
+		for _, other := range scopes {
+			before[other.ConsumerOwner] = latest(other.ConsumerOwner).Revision
+		}
+		policy, err := service.Create(context.Background(), 7, 31, models.CreateProtectionPolicyRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: scope.ConsumerOwner, Action: scope.Action, Effect: "mask", Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": i, "suffix_runes": 0, "mask_rune": "*"}, Rationale: "出口独立参数"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		policies[scope.ConsumerOwner] = policy
+		for _, other := range scopes {
+			p := latest(other.ConsumerOwner)
+			if (p.Revision != before[other.ConsumerOwner]) != (other.ConsumerOwner == scope.ConsumerOwner) {
+				t.Fatalf("%s policy changed %s revision", scope.ConsumerOwner, other.ConsumerOwner)
+			}
+		}
+	}
+	listed, err := service.List(context.Background(), 7, 1, 100, finding.EnrollmentID)
+	if err != nil || listed.Total != 4 || len(listed.SupportedScopes) != 4 {
+		t.Fatalf("policy scope list: %#v %v", listed, err)
+	}
+	develop := policies[developProtectionOwner]
+	updated, err := service.Update(context.Background(), 7, 31, develop.ID, models.UpdateProtectionPolicyRequest{Version: develop.Version, Effect: "deny", Rationale: "仅阻止查询"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range scopes {
+		p := latest(scope.ConsumerOwner)
+		for _, rule := range p.Rules {
+			if rule.Action != scope.Action {
+				continue
+			}
+			want := "mask"
+			if scope.ConsumerOwner == developProtectionOwner {
+				want = "deny"
+			}
+			if rule.Decision.Effect != want {
+				t.Fatalf("%s effect=%s want %s", scope.ConsumerOwner, rule.Decision.Effect, want)
+			}
+		}
+	}
+	if _, err := service.Update(context.Background(), 7, 31, develop.ID, models.UpdateProtectionPolicyRequest{Version: develop.Version, Effect: "suppress", Rationale: "旧版本"}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale cross-outlet update=%v", err)
+	}
+	if _, err := service.Revoke(context.Background(), 7, 31, develop.ID, models.RevokeProtectionPolicyRequest{Version: updated.Version, Rationale: "仅查询恢复默认"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, scope := range scopes {
+		p := latest(scope.ConsumerOwner)
+		document := map[string]any{"userInfo": map[string]any{"phone": "13812345678"}}
+		if err := dataprotection.ProtectDocument(document, scope.Action, p.Rules, dataprotection.SubjectReference{}); err != nil {
+			t.Fatal(err)
+		}
+		want := "13812345678"[:i] + strings.Repeat("*", 11-i)
+		if scope.ConsumerOwner == developProtectionOwner {
+			want = "138****5678"
+		}
+		if got := document["userInfo"].(map[string]any)["phone"]; got != want {
+			t.Fatalf("%s value=%v want %s", scope.ConsumerOwner, got, want)
+		}
+	}
+}
+
+func TestFieldPolicyRejectsUnsupportedOrMismatchedScope(t *testing.T) {
+	db, _, finding, _, _ := prepareReviewablePhoneFinding(t)
+	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认字段"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []models.ProtectionPolicyScope{{ConsumerOwner: "manager", Action: "profile"}, {ConsumerOwner: "develop", Action: "preview"}, {ConsumerOwner: "service", Action: "export"}, {ConsumerOwner: "transfer", Action: "query"}, {ConsumerOwner: "graph", Action: "graph_read"}, {ConsumerOwner: "workbench", Action: "service_execute"}} {
+		if _, err := NewPolicyService(db).Create(context.Background(), 7, 31, models.CreateProtectionPolicyRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: scope.ConsumerOwner, Action: scope.Action, Effect: "deny", Rationale: "无效出口"}); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatalf("scope %#v accepted: %v", scope, err)
+		}
+	}
 }

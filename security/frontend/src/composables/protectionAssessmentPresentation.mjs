@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { protectionPolicyScopeKey } from '../utils/protectionPolicy.mjs'
 import { isProtectionEffectStricter } from '../utils/protectionEnrollment.mjs'
 
 export function createProtectionAssessmentPresentation({
@@ -8,6 +9,7 @@ export function createProtectionAssessmentPresentation({
   protectionBaselines,
   assessments,
   policies,
+  policyScopes,
   canReadPolicies,
   canCreatePolicies,
   canUpdatePolicies,
@@ -95,10 +97,10 @@ export function createProtectionAssessmentPresentation({
       && String(item.security_grade_id) === String(assessment?.current?.security_grade_id)) || null
   }
 
-  function policyForAssessment(assessment) {
+  function policyForAssessment(assessment, scope) {
     return policies.value.find(item => item.assessment_id === assessment?.id
-      && item.consumer_owner === 'manager'
-      && item.action === 'preview') || null
+      && item.consumer_owner === scope?.consumer_owner
+      && item.action === scope?.action) || null
   }
 
   function stricterPolicyEffectsForBaseline(baseline) {
@@ -122,12 +124,21 @@ export function createProtectionAssessmentPresentation({
     return stricterPolicyEffectsForBaseline(baselineForAssessment(assessment))
   }
 
-  function canConfigurePolicy(assessment) {
-    return canConfigurePolicyFromContext(baselineForAssessment(assessment), policyForAssessment(assessment))
+  function canConfigurePolicy(assessment, scope) {
+    if (assessment?.component_key === '$document.text') return false
+    if (!scope) return policyScopes.value.some(item => canConfigurePolicy(assessment, item))
+    return canConfigurePolicyFromContext(baselineForAssessment(assessment), policyForAssessment(assessment, scope))
   }
 
-  function assessmentProtectionSummary(assessment) {
-    return protectionSummaryFromContext(baselineForAssessment(assessment), policyForAssessment(assessment))
+  function assessmentProtectionSummary(assessment, scope) {
+    const baseline = baselineForAssessment(assessment)
+    if (scope) return t('security.policy.scopeSummary', { scope: t(`security.enrollment.owners.${scope.consumer_owner}`), summary: protectionSummaryFromContext(baseline, policyForAssessment(assessment, scope)) })
+    const active = policyScopes.value.filter(item => policyForAssessment(assessment, item)?.state === 'active')
+    if (!active.length) return protectionSummaryFromContext(baseline, null)
+    return active.map(item => t('security.policy.scopeSummary', {
+      scope: t(`security.enrollment.owners.${item.consumer_owner}`),
+      summary: protectionSummaryFromContext(baseline, policyForAssessment(assessment, item))
+    })).join(t('security.policy.scopeSeparator'))
   }
 
   function protectionPolicyDialogView(assessment, context = {}) {
@@ -137,7 +148,11 @@ export function createProtectionAssessmentPresentation({
       fieldType: assessment?.current?.component?.value_type,
       componentKey: assessment?.component_key,
       assessmentSummary: assessmentSummary(assessment),
-      protectionSummary: assessmentProtectionSummary(assessment),
+      protectionSummary: assessmentProtectionSummary(assessment, context.scope),
+      scopeValue: protectionPolicyScopeKey(context.scope),
+      scopeOptions: policyScopes.value
+        .filter(scope => !context.restore || policyForAssessment(assessment, scope)?.state === 'active')
+        .map(scope => ({ value: protectionPolicyScopeKey(scope), label: t(`security.enrollment.owners.${scope.consumer_owner}`), disabled: !context.restore && !canConfigurePolicy(assessment, scope) })),
       effectOptions: effects.map(effect => ({
         value: effect,
         label: effectLabel(effect),
@@ -152,13 +167,14 @@ export function createProtectionAssessmentPresentation({
       return { current: assessment, active: null, policy: null, canConfigurePolicy: false, protectionSummary: '' }
     }
     const baseline = baselineForAssessment(activeAssessment)
-    const policy = policyForAssessment(activeAssessment)
+    const fieldPolicies = policyScopes.value.map(scope => policyForAssessment(activeAssessment, scope)).filter(Boolean)
+    const policy = fieldPolicies.find(item => item.state === 'active') || fieldPolicies[0] || null
     return {
       current: assessment,
       active: activeAssessment,
       policy,
-      canConfigurePolicy: canConfigurePolicyFromContext(baseline, policy),
-      protectionSummary: protectionSummaryFromContext(baseline, policy)
+      canConfigurePolicy: canConfigurePolicy(activeAssessment),
+      protectionSummary: assessmentProtectionSummary(activeAssessment)
     }
   }
 

@@ -107,21 +107,26 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 				baselineDecision = dataprotection.Decision{Effect: baseline.InvalidValueEffect}
 			}
 		}
-		managerDecision := baselineDecision
-		if candidate.AssessmentID != "" && candidate.Component.Key != dataprotection.DocumentTextComponentKey {
-			managerDecision, err = applyManagerPolicy(tx, enrollment.TenantID, candidate.AssessmentID, baselineDecision)
-			if err != nil {
-				return err
-			}
-		}
 		if candidate.Component.Key == dataprotection.DocumentTextComponentKey {
-			searchDecision, err := managerSearchIndexDecision(managerDecision)
+			searchDecision, err := managerSearchIndexDecision(baselineDecision)
 			if err != nil {
 				return err
 			}
 			managerRules = append(managerRules, dataprotection.Rule{Action: managerSearchIndexAction, Component: candidate.Component, Decision: searchDecision})
 			continue
 		}
+		decisions := make(map[string]dataprotection.Decision)
+		for _, scope := range supportedPolicyScopes() {
+			decision := baselineDecision
+			if candidate.AssessmentID != "" {
+				decision, err = applyFieldPolicy(tx, enrollment.TenantID, candidate.AssessmentID, scope.ConsumerOwner, scope.Action, baselineDecision)
+				if err != nil {
+					return err
+				}
+			}
+			decisions[scope.ConsumerOwner] = decision
+		}
+		managerDecision := decisions[managerProtectionOwner]
 		profileDecision, err := managerProfileDecision(managerDecision)
 		if err != nil {
 			return err
@@ -138,9 +143,9 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 		if err != nil {
 			return err
 		}
-		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: baselineDecision, Authorizations: developAuthorizations})
-		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: baselineDecision})
-		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: baselineDecision})
+		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: decisions[developProtectionOwner], Authorizations: developAuthorizations})
+		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: decisions[serviceProtectionOwner]})
+		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: decisions[transferProtectionOwner]})
 		// Graph has no certified attribute transformer; its public rule must describe the actual refusal.
 		graphRules = append(graphRules, dataprotection.Rule{Action: graphReadAction, Component: candidate.Component, Decision: dataprotection.Decision{Effect: dataprotection.EffectDeny}})
 	}
@@ -288,9 +293,9 @@ func protectionDecisionFromBaseline(baseline models.ProtectionBaseline) (datapro
 	return decision, nil
 }
 
-func applyManagerPolicy(tx *gorm.DB, tenantID int64, assessmentID string, baseline dataprotection.Decision) (dataprotection.Decision, error) {
+func applyFieldPolicy(tx *gorm.DB, tenantID int64, assessmentID, owner, action string, baseline dataprotection.Decision) (dataprotection.Decision, error) {
 	var policy models.ProtectionPolicy
-	if err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, managerProtectionOwner, managerPreviewAction).First(&policy).Error; err != nil {
+	if err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, owner, action).First(&policy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return baseline, nil
 		}
