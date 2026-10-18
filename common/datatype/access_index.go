@@ -1,5 +1,10 @@
 package datatype
 
+import (
+	"encoding/json"
+	"time"
+)
+
 const (
 	AccessIndexKindSparseRow = "sparse_row_index"
 	AccessIndexUnitRow       = "row"
@@ -75,6 +80,45 @@ func (c *AccessIndex) IsSparseRowIndex() bool {
 		c.DataType == Table &&
 		c.Unit == AccessIndexUnitRow &&
 		c.OffsetUnit == AccessIndexOffsetByte
+}
+
+// MatchesSource verifies every recorded storage version fact. Size alone is
+// insufficient: an in-place replacement can preserve the byte length.
+func (c *AccessIndex) MatchesSource(size int64, etag string, modifiedAt *time.Time) bool {
+	if c == nil || c.Source == nil || size < 0 {
+		return false
+	}
+	rawSize, err := json.Marshal(c.Source["size_bytes"])
+	var recordedSize *int64
+	if err != nil || json.Unmarshal(rawSize, &recordedSize) != nil || recordedSize == nil || *recordedSize != size {
+		return false
+	}
+	versioned := false
+	if value, present := c.Source["etag"]; present {
+		recorded, ok := value.(string)
+		if !ok || recorded == "" || recorded != etag {
+			return false
+		}
+		versioned = true
+	}
+	if value, present := c.Source["last_modified_at"]; present {
+		var recorded time.Time
+		switch value := value.(type) {
+		case string:
+			recorded, err = time.Parse(time.RFC3339Nano, value)
+		case time.Time:
+			recorded = value
+		case *time.Time:
+			if value != nil {
+				recorded = *value
+			}
+		}
+		if err != nil || recorded.IsZero() || modifiedAt == nil || !recorded.Equal(*modifiedAt) {
+			return false
+		}
+		versioned = true
+	}
+	return versioned
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {

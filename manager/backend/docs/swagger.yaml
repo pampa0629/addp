@@ -4931,6 +4931,7 @@ paths:
         PostgreSQL 使用当前用户或委托工具凭据核验不可变分页计划的全部来源，并应用本地字段保护；未授权来源或依赖无法证明时拒绝读取 | PostgreSQL checks every source of an immutable page plan with the current user or delegated tool credential and applies local field protection; unauthorized or unprovable sources are rejected before reading
         表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
         文件表始终多读一行核对真实 has_more，防止扫描后增长的源被误认为完整；探测行不返回 | File tables always probe one extra row for real has_more, including when a scanned exact count exists; the probe row is excluded
+        CSV/TSV 已扫描稀疏索引在读前和读后核对源版本；变化或绑定不完整返回 409/preview_source_refresh_required，提示刷新元数据；源事实不可读返回 503/preview_source_unavailable，不返回部分数据 | CSV/TSV sparse indexes verify source versions before and after reading; changed or incomplete bindings return 409/preview_source_refresh_required; unavailable source facts return 503/preview_source_unavailable; no partial data is returned
         表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
         bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
         范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
@@ -5028,6 +5029,12 @@ paths:
             type: object
         "404":
           description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 源版本变化或索引绑定不完整，需刷新元数据 | Source changed or index binding incomplete;
+            refresh metadata
           schema:
             additionalProperties: true
             type: object

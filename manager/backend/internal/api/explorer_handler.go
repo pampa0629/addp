@@ -98,6 +98,7 @@ func bearerToken(c *gin.Context) string {
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Description 表格 total 仅表示精确总行数（含 0）；未知为 null，此时 has_more 根据额外读取的一行控制下一页，探测行不返回 | Table total is an exact count including zero, or null when unknown; has_more then comes from one lookahead row excluded from the response
 // @Description 文件表始终多读一行核对真实 has_more，防止扫描后增长的源被误认为完整；探测行不返回 | File tables always probe one extra row for real has_more, including when a scanned exact count exists; the probe row is excluded
+// @Description CSV/TSV 已扫描稀疏索引在读前和读后核对源版本；变化或绑定不完整返回 409/preview_source_refresh_required，提示刷新元数据；源事实不可读返回 503/preview_source_unavailable，不返回部分数据 | CSV/TSV sparse indexes verify source versions before and after reading; changed or incomplete bindings return 409/preview_source_refresh_required; unavailable source facts return 503/preview_source_unavailable; no partial data is returned
 // @Description 表格 rows 始终为数组，空结果为 []；空单元格为 null；空页仍执行字段保护并保留保护后的列结构 | Table rows is always an array, empty results use []; null cells remain null; empty pages still apply field protection and retain the protected column structure
 // @Description bigint 单元格统一为十进制字符串，列类型仍为 bigint；decimal 保持精确字符串，null 不变，保护后的文本不重新转为数值 | Bigint cells use decimal strings while column types remain bigint; decimal strings and null remain exact, and protected text is not reinterpreted as numeric
 // @Param page query int false "页码，默认1 | Page number, default 1"
@@ -118,6 +119,7 @@ func bearerToken(c *gin.Context) string {
 // @Failure 401 {object} map[string]interface{} "凭据无效 | Invalid credential"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 409 {object} map[string]interface{} "源版本变化或索引绑定不完整，需刷新元数据 | Source changed or index binding incomplete; refresh metadata"
 // @Failure 503 {object} map[string]interface{} "引擎或授权服务不可用 | Engine or authorization service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
@@ -225,6 +227,9 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		if writePreviewAuthorizationError(c, err) {
 			return
 		}
+		if writePreviewSourceError(c, err) {
+			return
+		}
 		if writeCatalogPreviewError(c, err) {
 			return
 		}
@@ -261,6 +266,18 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	writePreviewResult(c, result, protectionRules, protectionSubject, protectionProjections)
+}
+
+func writePreviewSourceError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, preview.ErrPreviewSourceRefreshRequired):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgPreviewSourceRefreshRequired), "error_code": "preview_source_refresh_required"})
+	case errors.Is(err, preview.ErrPreviewSourceUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgPreviewSourceUnavailable), "error_code": "preview_source_unavailable"})
+	default:
+		return false
+	}
+	return true
 }
 
 func writePreviewAuthorizationError(c *gin.Context, err error) bool {

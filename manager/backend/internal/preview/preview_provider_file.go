@@ -229,6 +229,9 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
+	if err := validateIndexedDelimitedSource(ctx, req, formatType); err != nil {
+		return nil, err
+	}
 	tableInfo := tableInfoFromMetaAttributes(req.Attributes, "table")
 	spatialInfo := spatialInfoFromMetaAttributes(req.Attributes)
 	if tableInfo == nil {
@@ -290,6 +293,9 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	rows, err := sampleReader.SampleTable(ctx, object, int64(offset), int64(readLimit), sampleOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data: %w", err)
+	}
+	if err := validateIndexedDelimitedSource(ctx, req, formatType); err != nil {
+		return nil, err
 	}
 
 	// 探测行只用于后续页判断，不进入预览响应或数据保护。

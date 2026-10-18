@@ -1434,6 +1434,14 @@
         }
       },
       "previewFailure": {
+        "sourceRefresh": {
+          "title": "请刷新元数据后继续预览",
+          "description": "源文件已变化或读取索引缺少源版本信息。请刷新当前数据项的元数据，重建索引后再预览。"
+        },
+        "sourceUnavailable": {
+          "title": "源文件版本暂时无法核验",
+          "description": "已暂停预览，请稍后重试。尚未返回本次分页数据。"
+        },
         "protected": {
           "title": "数据保护阻止预览",
           "description": "尚未满足当前数据保护要求。请核对保护规则、同步状态和有效期。"

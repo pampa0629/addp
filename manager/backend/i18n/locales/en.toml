@@ -329,3 +329,9 @@ other = "Import source verification is unavailable"
 
 [manager.error.item_refresh_failed]
 other = "Item refresh failed. Check scan permission and service availability before retrying."
+
+[manager.error.preview_source_refresh_required]
+other = "The source changed or its index has no source version. Refresh metadata to rebuild the index before retrying."
+
+[manager.error.preview_source_unavailable]
+other = "The source version cannot be verified. Preview is paused; please retry later."

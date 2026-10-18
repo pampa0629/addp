@@ -15,6 +15,17 @@ import (
 
 func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
 	originalReader := input.ContentReader
+	source, err := readDelimitedIndexSource(ctx, input, originalReader)
+	if err != nil {
+		return nil, err
+	}
+	if source != nil {
+		input.SizeBytes = *source.Storage.SizeBytes
+		input.DataUpdatedAt = source.UpdatedAt
+		metaattr.SetStorage(attrs, "total_size", input.SizeBytes)
+		metaattr.SetStorage(attrs, "etag", source.Storage.ETag)
+		metaattr.SetStorage(attrs, "last_modified_at", source.UpdatedAt)
+	}
 	input.ContentReader = observeMetadataRanges(originalReader)
 	defer func() { input.ContentReader = originalReader }()
 
@@ -52,13 +63,16 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		TenantID:             input.TenantID,
 	})
 	if err != nil {
-		if input.StrictDeepEnrich || input.Encoding != "" {
+		if input.StrictDeepEnrich || input.Encoding != "" || source != nil {
 			return nil, err
 		}
 		p.warn("提取资源深度属性失败，保留基础属性", input, err)
 	}
 	if enriched != nil {
 		input.Detected = enriched
+	}
+	if err := bindDelimitedIndexSource(ctx, input, attrs, originalReader, source); err != nil {
+		return nil, err
 	}
 	return attrs, nil
 }

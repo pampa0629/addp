@@ -1434,6 +1434,14 @@
         }
       },
       "previewFailure": {
+        "sourceRefresh": {
+          "title": "Refresh metadata to continue previewing",
+          "description": "The source changed or its read index has no source version. Refresh this data item's metadata to rebuild the index before previewing again."
+        },
+        "sourceUnavailable": {
+          "title": "Source version temporarily unverifiable",
+          "description": "Preview is paused. Please retry later. No data from this page has been returned."
+        },
         "protected": {
           "title": "Preview blocked by data protection",
           "description": "Current data protection requirements are not met. Check the protection rules, synchronization status, and validity period."

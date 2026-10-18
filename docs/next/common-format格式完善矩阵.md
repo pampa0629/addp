@@ -6,7 +6,7 @@
 
 1. SGM 的静态几何、基础 RGB/alpha 贴图、同目录/Textures 精确解析已进入正式规范，并有本地真实样例和隔离技术验收；仍缺合法 SDK/许可环境中的正式 Linux Runner T4。私有厂商样例不上传公开 Hosted，不能用普通格式 suite 或单样例成功覆盖全部材质/版本。
 2. 正常彩色 FBX 基础预览已有本地真实页面证据；固定盒子源声明 IndexToDirect 却缺颜色索引，仍不作为基础预览成功。已有 GLB 快显不等于基础解析缺陷已修复。Three.js 升级仍需 CAD/Giro3D 等消费者共同满足版本约束，不能强行 override、私有 FBXLoader 或第二份 Three.js。
-3. 新增 FBX/known-item refresh 的完整 Manager Hosted 复验尚缺最终通过证据。最后登记的修复提交 `340a8661f` 与 [Hosted 39010572309](https://github.com/pampa0629/addp/actions/runs/39010572309) 只表明候选版本已触发，未取得最终结果，不能计为通过。
+3. 新增 FBX／known-item refresh，以及 KML／GML／TopoJSON 的 S3 兼容消费，仍缺完整 Manager Hosted 复验的最终通过证据。候选代码、后端门禁或已启动的 Hosted 轮次均不能计为 T4 通过；逐项范围按现有 Manager 场景规范验收，MinIO 不代表外部云 S3 认证。
 
 静态轨迹及设备/时间范围读取已完成 CSV、records JSON、Point GeoJSON 三源 Hosted 与本地真实样例，不再列为待实现；每个所选范围仍受 2000 点限制，不自动包含轨迹回放。XLSX、3DS/DAE、SGM 等成功只覆盖各自报告范围；已解决的 Assimp 文件存在性缺陷、SGM 秋树丢图/alpha 不继续当当前故障。
 
@@ -14,7 +14,7 @@
 
 | 格式/能力 | 尚需完善或验证 |
 | --- | --- |
-| CSV / TSV | 无表头处理、access index 失效；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
+| CSV / TSV | 无表头处理；源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
 | JSON / GeoJSON | 大文件、复杂嵌套数组、无/混合 geometry、WKB/EWKB 展示；静态轨迹三源的完成不代替这些组合 |
 | Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |

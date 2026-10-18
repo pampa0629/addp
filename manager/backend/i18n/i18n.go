@@ -38,6 +38,8 @@ const (
 	MsgContentProtectionVersionChanged       = "manager.error.content_protection_version_changed"
 	MsgContentIndexUnavailable               = "manager.error.content_index_unavailable"
 	MsgPreviewFailed                         = "manager.error.preview_failed"
+	MsgPreviewSourceRefreshRequired          = "manager.error.preview_source_refresh_required"
+	MsgPreviewSourceUnavailable              = "manager.error.preview_source_unavailable"
 	MsgPreviewResourceNotFound               = "manager.error.preview_resource_not_found"
 	MsgPreviewUnsupported                    = "manager.error.preview_unsupported"
 	MsgMissingEngineIDOrStorageRef           = "manager.error.missing_engine_id_or_storage_ref"

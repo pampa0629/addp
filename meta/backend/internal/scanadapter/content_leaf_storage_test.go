@@ -76,6 +76,14 @@ func (p *contentStorageFactPlugin) OpenContent(_ context.Context, _ plugin.Conne
 	return io.NopCloser(strings.NewReader(exactLeafContent)), nil
 }
 
+func (p *contentStorageFactPlugin) DescribeEngineCatalogFacts(ctx context.Context, conn plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	entry, err := p.ResolvePath(ctx, conn, path)
+	if err != nil || entry == nil {
+		return nil, err
+	}
+	return &plugin.EngineCatalogFacts{Path: path, Kind: entry.Kind, Storage: entry.Storage, UpdatedAt: entry.UpdatedAt}, nil
+}
+
 func TestPreciseContentStorageFacts(t *testing.T) {
 	testPreciseContentStorageFacts(t, func(t *testing.T) *gorm.DB { return metatest.OpenMetadataDB(t) })
 }
