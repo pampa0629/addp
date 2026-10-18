@@ -1,5 +1,5 @@
 /**
- * 多输出端口节点定义（用于 Develop 工作流）
+ * 只读 DAG 查看器的多输出端口节点定义
  */
 import G6 from '@antv/g6'
 
@@ -26,9 +26,7 @@ export function registerMultiPortNode() {
           width: nodeWidth,
           height: nodeHeight,
           radius: 4,
-          fill: '#6DC8EC',
-          stroke: '#5DADE2',
-          lineWidth: 2
+          ...cfg.style
         },
         name: 'main-rect'
       })
@@ -41,7 +39,7 @@ export function registerMultiPortNode() {
           y: -nodeHeight / 2 + 20,
           textAlign: 'center',
           textBaseline: 'middle',
-          fill: '#fff',
+          ...cfg.labelCfg.style,
           fontSize: 13,
           fontWeight: 500
         },
@@ -54,8 +52,8 @@ export function registerMultiPortNode() {
           x: 0,
           y: -nodeHeight / 2,
           r: 6,
-          fill: '#fff',
-          stroke: '#52C41A',
+          fill: cfg.portStyle.fill,
+          stroke: cfg.portStyle.input,
           lineWidth: 2,
           cursor: 'pointer'
         },
@@ -76,8 +74,8 @@ export function registerMultiPortNode() {
             x: xOffset,
             y: nodeHeight / 2,
             r: 7,
-            fill: '#fff',
-            stroke: port.is_default ? '#5DADE2' : '#F59E0B',
+            fill: cfg.portStyle.fill,
+            stroke: port.is_default ? cfg.portStyle.defaultOutput : cfg.portStyle.output,
             lineWidth: 2,
             cursor: 'pointer'
           },
@@ -96,7 +94,7 @@ export function registerMultiPortNode() {
               y: nodeHeight / 2 + 16,
               textAlign: 'center',
               textBaseline: 'top',
-              fill: '#666',
+              fill: cfg.portStyle.label,
               fontSize: 10
             },
             name: `port-label-${port.name}`
@@ -109,9 +107,14 @@ export function registerMultiPortNode() {
 
     update(cfg, node) {
       const group = node.getContainer()
-      const shape = group.get('children')[0]
-      if (cfg.style) {
-        shape.attr(cfg.style)
+      const find = name => group.find(shape => shape.get('name') === name)
+      find('main-rect').attr(cfg.style)
+      find('node-label').attr({ ...cfg.labelCfg.style, text: cfg.label })
+      find('input-port').attr({ fill: cfg.portStyle.fill, stroke: cfg.portStyle.input })
+      const outputPorts = cfg.outputPorts || [{ name: 'default' }]
+      for (const port of outputPorts) {
+        find(`output-port-${port.name}`)?.attr({ fill: cfg.portStyle.fill, stroke: port.is_default ? cfg.portStyle.defaultOutput : cfg.portStyle.output })
+        find(`port-label-${port.name}`)?.attr({ fill: cfg.portStyle.label })
       }
     },
 

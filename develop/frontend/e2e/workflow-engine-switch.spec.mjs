@@ -1752,3 +1752,58 @@ test('workflow viewport navigation does not count as an unsaved edit', async ({ 
   await expect(page).toHaveURL(/\/tasks$/)
   await expect(page.getByRole('dialog', { name: '有未保存的修改', exact: true })).toHaveCount(0)
 })
+
+test('workflow canvas themes refresh all shapes and cached interaction states without editing the workflow', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeInputConnections: true, includeConnectedEdge: true })
+  await openSavedWorkflow(page)
+  const editor = page.locator('#workflow-dag-container'), canvas = editor.locator('canvas')
+  await page.getByRole('button', { name: '自动布局', exact: true }).click()
+  await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeEnabled()
+  const originalCanvas = await canvas.elementHandle()
+  await editor.evaluate(element => {
+    const state = element.__vueParentComponent.setupState
+    state.selectItem(state.graph.getNodes()[1])
+    state.graph.setItemState(state.graph.getNodes()[0], 'invalid', true)
+    state.graph.setItemState(state.graph.getEdges()[0], 'hover', true)
+  })
+  const snapshot = () => editor.evaluate(element => {
+    const state = element.__vueParentComponent.setupState, graph = state.graph
+    return { workflow: state.buildWorkflowFromGraph(), matrix: graph.get('group').getMatrix(),
+      nodes: graph.getNodes().map(node => ({ id: node.getID(), x: node.getModel().x, y: node.getModel().y, states: node.getStates() })),
+      edges: graph.getEdges().map(edge => edge.getStates()), selected: state.selectedItem.getID(), canUndo: state.canUndo }
+  })
+  const before = await snapshot()
+  for (const [index, theme] of ['light', 'dark', 'blue', 'purple'].entries()) {
+    await page.evaluate(({ theme, index }) => {
+      document.documentElement.className = theme === 'light' ? '' : `dark ${theme === 'dark' ? '' : theme}`
+      document.documentElement.style.setProperty('--el-color-primary', ['#13579b', '#2468ac', '#3579bd', '#468ace'][index])
+      document.documentElement.style.setProperty('--el-color-danger', ['#a12345', '#b23456', '#c34567', '#d45678'][index])
+    }, { theme, index })
+    await expect.poll(() => editor.evaluate(element => {
+      const graph = element.__vueParentComponent.setupState.graph, style = getComputedStyle(element)
+      const color = name => style.getPropertyValue(name).trim()
+      return graph.getNodes().every(node => {
+        const group = node.getContainer(), shape = name => group.find(shape => shape.get('name') === name)
+        return shape('workflow-node-card').attr('fill') === color('--addp-bg-primary') &&
+          shape('workflow-node-card').attr('stroke') === color(node.hasState('invalid') ? '--el-color-danger' : node.hasState('selected') ? '--el-color-primary' : '--addp-border-color') &&
+          shape('workflow-node-title').attr('fill') === color('--addp-text-primary') &&
+          shape('workflow-node-divider').attr('stroke') === color('--addp-border-color') &&
+          group.findAll(shape => /^(input|output)-port-/.test(shape.get('name'))).every(port => port.attr('fill') === color('--addp-bg-primary') && port.attr('stroke') === color(port.get('name').startsWith('input') ? '--el-color-success' : '--el-color-primary'))
+      }) && graph.getEdges().every(edge => edge.getKeyShape().attr('stroke') === color(edge.hasState('hover') || edge.hasState('selected') ? '--el-color-primary' : '--addp-text-tertiary') &&
+        edge.getContainer().find(shape => shape.get('name') === 'workflow-edge-casing').attr('stroke') === color('--addp-bg-secondary'))
+    })).toBe(true)
+    expect(await snapshot()).toEqual(before)
+    expect(await canvas.evaluate((element, original) => element === original, originalCanvas)).toBe(true)
+  }
+  for (const action of ['撤销', '重做']) {
+    await page.getByRole('button', { name: action, exact: true }).click()
+    await expect.poll(() => editor.evaluate(element => {
+      const graph = element.__vueParentComponent.setupState.graph, style = getComputedStyle(element)
+      return graph.getEdges().every(edge => edge.getKeyShape().attr('stroke') === style.getPropertyValue('--addp-text-tertiary').trim())
+    })).toBe(true)
+  }
+  expect(backend.updates).toEqual([])
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  expect(backend.updates[0].payload.content.workflow_definition).toEqual(before.workflow)
+})

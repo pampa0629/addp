@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
+import { getContrastingTextColor } from '../../graph/src/graphTheme.js'
 
 const source = readFileSync(new URL('../../graph/src/OntologyView.vue', import.meta.url), 'utf8')
 function fixture(layout = 'dagre') {
@@ -28,6 +29,10 @@ function fixture(layout = 'dagre') {
   const context = {
     ref, computed:fn => ({ get value() { return fn() } }), defineProps:() => props, defineEmits:() => () => {},
     useI18n:() => ({ t:key => key }), G6:{ Graph, Arrow:{ triangle:() => '' } },
+    document: { documentElement: {} },
+    MutationObserver: class { constructor(fn) { callbacks.theme = fn } observe() {} disconnect() { callbacks.themeDisconnected = true } },
+    readGraphTheme: () => ({ primary: '#409eff', border: '#dddddd', edgeDefault: '#999999', edgeLabel: '#777777', textTertiary: '#aaaaaa', labelLight: '#ffffff', labelDark: '#111827' }),
+    getContrastingTextColor,
     getComputedStyle:() => ({ getPropertyValue:() => 'theme-color' }),
     onMounted:fn => { callbacks.mount = fn }, onBeforeUnmount:fn => { callbacks.unmount = fn },
     watch:() => {}, nextTick:fn => fn ? Promise.resolve().then(fn) : Promise.resolve(),
@@ -57,6 +62,7 @@ test('shared ontology view retains layered default, uses actual canvas size and 
   state.callbacks.unmount()
   assert.equal(graph.destroyed, true)
   assert.equal(state.callbacks.disconnected, true)
+  assert.equal(state.callbacks.themeDisconnected, true)
 })
 
 test('compact ontology layout has explicit spacing and refits only after resized layout completes', async () => {

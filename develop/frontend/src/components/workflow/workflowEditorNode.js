@@ -130,6 +130,7 @@ export function registerWorkflowEditorNode() {
           x: -NODE_WIDTH / 2 + 13,
           y,
           align: 'left',
+          portType: 'input',
           colors
         })
       })
@@ -148,6 +149,7 @@ export function registerWorkflowEditorNode() {
           x: NODE_WIDTH / 2 - 13,
           y,
           align: 'right',
+          portType: 'output',
           colors
         })
       })
@@ -224,7 +226,7 @@ function drawPort(group, { x, y, port, portType, colors }) {
   })
 }
 
-function drawPortLabel(group, { text, x, y, align, colors }) {
+function drawPortLabel(group, { text, x, y, align, portType, colors }) {
   group.addShape('text', {
     attrs: {
       text,
@@ -235,7 +237,7 @@ function drawPortLabel(group, { text, x, y, align, colors }) {
       fill: colors.textSecondary,
       fontSize: 10
     },
-    name: `port-label-${text}`,
+    name: `${portType}-label-${text}`,
     capture: false
   })
 }
@@ -246,15 +248,18 @@ function updateNodeShapes(group, cfg) {
   const colors = canvasThemeColors()
   group.find(shape => shape.get('name') === 'workflow-node-card')?.attr({
     y: -layout.height / 2,
-    height: layout.height
+    height: layout.height,
+    fill: colors.background, stroke: colors.border
   })
   group.find(shape => shape.get('name') === 'workflow-node-title')?.attr({
     text: cfg.displayName || cfg.label || cfg.operator,
-    y: -layout.height / 2 + HEADER_HEIGHT / 2
+    y: -layout.height / 2 + HEADER_HEIGHT / 2,
+    fill: colors.textPrimary
   })
   group.find(shape => shape.get('name') === 'workflow-node-divider')?.attr({
     y1: -layout.height / 2 + HEADER_HEIGHT,
-    y2: -layout.height / 2 + HEADER_HEIGHT
+    y2: -layout.height / 2 + HEADER_HEIGHT,
+    stroke: colors.border
   })
 
   for (let index = 0; index < MAX_SUMMARY_LINES; index += 1) {
@@ -271,16 +276,17 @@ function updateNodeShapes(group, cfg) {
   group.find(shape => shape.get('name') === 'workflow-node-summary-divider')?.attr({
     y1: summaryDividerY(layout),
     y2: summaryDividerY(layout),
-    opacity: layout.summaryLines.length ? 1 : 0
+    opacity: layout.summaryLines.length ? 1 : 0,
+    stroke: colors.border
   })
 
-  layout.inputPorts.forEach((port, index) => updatePortShapes(group, port, 'input', portY(layout, index)))
-  layout.outputPorts.forEach((port, index) => updatePortShapes(group, port, 'output', portY(layout, index)))
+  layout.inputPorts.forEach((port, index) => updatePortShapes(group, port, 'input', portY(layout, index), colors))
+  layout.outputPorts.forEach((port, index) => updatePortShapes(group, port, 'output', portY(layout, index), colors))
 }
 
-function updatePortShapes(group, port, portType, y) {
-  group.find(shape => shape.get('name') === `${portType}-port-${port.name}`)?.attr({ y })
-  group.find(shape => shape.get('name') === `port-label-${port.name}`)?.attr({ y })
+function updatePortShapes(group, port, portType, y, colors) {
+  group.find(shape => shape.get('name') === `${portType}-port-${port.name}`)?.attr({ y, fill: colors.background, stroke: portType === 'input' ? colors.success : colors.primary })
+  group.find(shape => shape.get('name') === `${portType}-label-${port.name}`)?.attr({ y, fill: colors.textSecondary })
 }
 
 function parameterSummaryLines(summaries) {

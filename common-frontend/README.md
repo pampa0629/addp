@@ -188,7 +188,7 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ### 本体关系查看器
 
-`common-frontend/graph` 的 `OntologyView` 是 Graph 与平台 Ontology 的唯一关系图渲染实现。默认使用层级布局；平台能力核实通过 `layout="grid"` 使用紧凑总览，避免大量并列条件将图拉长。网格列数按实际可用宽度、节点宽度与间距计算，行数按当前概念数量计算，不按画布比例假定节点为正方形。标签分行，详情保留完整名称；共享工具栏提供缩放、原始大小和适应窗口。画布只按可测量的实际容器尺寸初始化，紧凑布局在窗口变化后重新布局并适应边界。共享契约由 `make test-common-frontend` 自动发现，实际 G6 浏览器交互由 `make test-ontology-frontend` 验证，Graph 消费通过 `make test-graph-frontend` 复验；沿用现有 CI，无后端/API 或 Infra 变化。
+`common-frontend/graph` 的 `OntologyView` 是 Graph 与平台 Ontology 的唯一关系图渲染实现。默认使用层级布局；平台能力核实通过 `layout="grid"` 使用紧凑总览，避免大量并列条件将图拉长。网格列数按实际可用宽度、节点宽度与间距计算，行数按当前概念数量计算，不按画布比例假定节点为正方形。默认节点、连线、继承关系与标签从当前容器的主题变量解析，显式本体配色保留，文字按填充色选取对比色。主题切换原位更新画布，不重建布局、重置视口或关闭详情；消费者只映射领域数据，不将主题快照写入实体配色。标签分行，详情保留完整名称；共享工具栏提供缩放、原始大小和适应窗口。画布只按可测量的实际容器尺寸初始化，紧凑布局在窗口变化后重新布局并适应边界。共享契约由 `make test-common-frontend` 自动发现，实际 G6 浏览器交互由 `make test-ontology-frontend` 验证，Graph 消费通过 `make test-graph-frontend` 复验；沿用现有 CI，无后端/API 或 Infra 变化。
 
 ### 数据血缘组件
 
@@ -813,3 +813,9 @@ MIT
 `HostNodeSelect` 是受控主机选择的唯一组件，消费者传入 `api.nodes/api.node`、当前 `allowed/identity` 与标签；共享组件负责分页、搜索、读取取消、迟到排除，不读取私有 Store 或模块 API。`hostAdmission.mjs` 唯一校验有界 v2 文件与可选主机采集，System 负责身份写入，Monitor 负责自己的配置。旧私有实现和测试已迁除，唯一所有权与协议归 `make test-common-frontend`。
 
 `openConsoleRoute(route, { draft })` 通过既有导航桥移交最多 4 KiB 的纯 JSON；接收模块用 `takeConsoleNavigationDraft()` 一次读取。Console 的 `createNavigationDraftSlot` 仅在内存中保存 60 秒，绑定当前身份/权限及精确路由，取消、导航、身份变化和销毁清除；不得写 URL、history state、浏览器存储、最近访问或日志。编排入口先进入 Console 再接受输入，不提供第二套 standalone 缓存。实际使用和拒绝边界由 Console/System/Monitor 浏览器门禁覆盖，CI 沿现有注册自动发现。
+
+### 只读 DAG 查看器
+
+`dag/DAGViewer` 是只读工作流展示的唯一渲染实现，Agent A2UI 直接消费；`addp-dag-viewer` Web Component 仅将 `dag-data` JSON 属性和数值高度转换为组件属性，其 Shadow DOM 样式来自同一份查看器样式。节点、标签、端口和箭头使用平台主题变量，切换主题原位更新，保留手动视口；自动适应复用图视口规则，最大保持原始比例，手动缩放仍可放大；空数据清空画布，卸载时释放主题与尺寸观察器。节点自定义绘制及更新由同一组形状样式函数负责。共享唯一所有权由 `make test-common-frontend` 验证，两入口真实 G6 的四主题、数据清空、尺寸与卸载由 `make test-agent-frontend` 自动发现的浏览器用例验证，沿用现有 CI 注册。
+
+Develop 与 Orchestrator 的可编辑 DAG 通过 `useDAGTheme` 共用主题观察与卸载清理。主题刷新原位更新节点所有子形状、端口、数据/控制连线、描边底线和执行标记，并更新 G6 缓存的状态样式后恢复选中、悬停与校验状态；不重载工作流，不写入布局或撤销历史；撤销、重做与粘贴恢复的数据立即按当前主题重绘，不复活历史配色。此链路由 `make test-develop-frontend`、`make test-orchestrator-frontend` 的真实页面浏览器用例及现有前端 CI 验证。

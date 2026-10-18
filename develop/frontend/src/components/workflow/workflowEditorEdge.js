@@ -3,10 +3,11 @@ import G6 from '@antv/g6'
 export const WORKFLOW_EDGE_TYPE = 'develop-workflow-edge'
 const WORKFLOW_EDGE_CASING = 'workflow-edge-casing'
 
-export function registerWorkflowEditorEdge(casingStyle) {
+export function registerWorkflowEditorEdge(resolveCasingStyle) {
   G6.registerEdge(WORKFLOW_EDGE_TYPE, {
     afterDraw(cfg, group, keyShape) {
       if (!keyShape) return
+      const casingStyle = resolveCasingStyle()
       const casing = group.addShape('path', {
         attrs: {
           path: keyShape.attr('path'),
@@ -29,6 +30,7 @@ export function registerWorkflowEditorEdge(casingStyle) {
         shape.get('name') === WORKFLOW_EDGE_CASING
       ))
       if (!keyShape || !casing) return
+      const casingStyle = resolveCasingStyle()
       casing.attr({
         path: keyShape.attr('path'),
         stroke: casingStyle.stroke,

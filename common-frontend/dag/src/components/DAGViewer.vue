@@ -3,145 +3,93 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
 import G6 from '@antv/g6'
+import { useDAGTheme } from '../composables/useDAGTheme.js'
 import { registerMultiPortNode } from '../nodes/MultiPortNode.js'
+import { readGraphTheme, getContrastingTextColor } from '../../../graph/src/graphTheme.js'
+import { fitGraphToViewport } from '../../../graph/src/graphViewport.js'
 
 const props = defineProps({
-  dagData: {
-    type: Object,
-    required: true
-  },
-  height: {
-    type: Number,
-    default: 400
-  }
+  dagData: { type: Object, required: true },
+  height: { type: Number, default: 400 }
 })
 
 const containerRef = ref(null)
-const graph = ref(null)
+const graph = shallowRef(null)
 let resizeObserver = null
+useDAGTheme(updateTheme)
 
-onMounted(() => {
-  // setTimeout 200ms 确保容器已完成布局，与 develop 模块保持一致
-  setTimeout(() => {
-    initGraph()
-    if (props.dagData?.tasks?.length > 0) {
-      loadWorkflow(props.dagData)
-    }
-    setupResizeObserver()
-  }, 200)
-})
-
-onUnmounted(() => {
-  if (resizeObserver) resizeObserver.disconnect()
-  if (graph.value) graph.value.destroy()
-})
-
-watch(() => props.dagData, (newData) => {
-  if (newData?.tasks?.length > 0 && graph.value) {
-    loadWorkflow(newData)
+function nodeAppearance(theme) {
+  return {
+    style: { fill: theme.primary, stroke: theme.border, lineWidth: 2 },
+    labelCfg: { style: { fill: getContrastingTextColor(theme.primary, theme.labelLight, theme.labelDark) } },
+    portStyle: { fill: theme.surface, input: theme.success, output: theme.warning, defaultOutput: theme.primary, label: theme.edgeLabel }
   }
-}, { deep: true })
-
-function initGraph() {
-  if (!containerRef.value) return
-
-  registerMultiPortNode()
-
-  const width = containerRef.value.offsetWidth || 800
-  const height = containerRef.value.offsetHeight || props.height
-
-  graph.value = new G6.Graph({
-    container: containerRef.value,
-    width,
-    height,
-    modes: {
-      default: ['drag-canvas', 'zoom-canvas']
-    },
-    defaultNode: {
-      type: 'workflow-node',
-      size: [140, 60]
-    },
-    defaultEdge: {
-      type: 'polyline',
-      style: {
-        stroke: '#A3B1BF',
-        lineWidth: 2,
-        radius: 10,
-        endArrow: {
-          path: G6.Arrow.triangle(10, 12, 0),
-          fill: '#A3B1BF',
-          d: 0
-        }
-      }
-    }
-  })
 }
 
-function loadWorkflow(workflow) {
-  if (!graph.value || !workflow?.tasks) return
+function edgeAppearance(theme) {
+  return { style: { stroke: theme.edgeDefault, lineWidth: 2, radius: 10,
+    endArrow: { path: G6.Arrow.triangle(10, 12, 0), fill: theme.edgeDefault, d: 0 } } }
+}
 
-  graph.value.clear()
+function updateTheme() {
+  if (!graph.value) return
+  const theme = readGraphTheme(containerRef.value)
+  graph.value.getNodes().forEach(node => graph.value.updateItem(node, nodeAppearance(theme)))
+  graph.value.getEdges().forEach(edge => graph.value.updateItem(edge, edgeAppearance(theme)))
+}
 
-  const nodes = []
-  const edges = []
-
-  workflow.tasks.forEach((task, index) => {
+function loadWorkflow() {
+  if (!graph.value) return
+  const theme = readGraphTheme(containerRef.value)
+  const nodes = [], edges = []
+  for (const [index, task] of (props.dagData?.tasks || []).entries()) {
     nodes.push({
-      id: task.id,
-      label: task.operator,
-      x: 100 + (index % 3) * 200,
-      y: 100 + Math.floor(index / 3) * 120,
-      operator: task.operator,
-      params: task.params || {},
-      depends_on: task.depends_on || []
+      id: task.id, label: task.operator,
+      x: 100 + (index % 3) * 200, y: 100 + Math.floor(index / 3) * 120,
+      operator: task.operator, params: task.params || {}, depends_on: task.depends_on || [],
+      ...nodeAppearance(theme)
     })
-
-    if (task.depends_on?.length > 0) {
-      task.depends_on.forEach(sourceId => {
-        edges.push({
-          source: sourceId,
-          target: task.id,
-          type: 'polyline',
-          style: {
-            stroke: '#A3B1BF',
-            lineWidth: 2,
-            radius: 10,
-            endArrow: { path: G6.Arrow.triangle(10, 12, 0), fill: '#A3B1BF', d: 0 }
-          }
-        })
-      })
+    for (const sourceId of task.depends_on || []) {
+      edges.push({ source: sourceId, target: task.id, ...edgeAppearance(theme) })
     }
-  })
-
+  }
+  graph.value.clear()
   graph.value.data({ nodes, edges })
   graph.value.render()
-  graph.value.fitView(20)
+  if (nodes.length) fitGraphToViewport(graph.value)
 }
 
-function setupResizeObserver() {
-  resizeObserver = new ResizeObserver(() => {
-    if (graph.value && containerRef.value) {
-      const w = containerRef.value.offsetWidth
-      const h = containerRef.value.offsetHeight
-      if (w > 0 && h > 0) {
-        graph.value.changeSize(w, h)
-      }
-    }
-  })
-  if (containerRef.value) {
-    resizeObserver.observe(containerRef.value)
+function resizeGraph() {
+  const container = containerRef.value
+  if (!container || container.offsetWidth <= 0 || container.offsetHeight <= 0) return
+  const width = container.offsetWidth, height = container.offsetHeight
+  if (graph.value) {
+    if (width !== graph.value.get('width') || height !== graph.value.get('height')) graph.value.changeSize(width, height)
+    return
   }
+  registerMultiPortNode()
+  graph.value = new G6.Graph({
+    container, width, height, fitViewPadding: 20,
+    modes: { default: ['drag-canvas', 'zoom-canvas'] },
+    defaultNode: { type: 'workflow-node', size: [140, 60] },
+    defaultEdge: { type: 'polyline' }
+  })
+  loadWorkflow()
 }
+
+onMounted(() => {
+  resizeGraph()
+  resizeObserver = new ResizeObserver(resizeGraph)
+  resizeObserver.observe(containerRef.value)
+})
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  graph.value?.destroy()
+  graph.value = null
+})
+watch(() => props.dagData, loadWorkflow, { deep: true })
 </script>
 
-<style scoped>
-.dag-viewer {
-  width: 100%;
-  background: var(--addp-bg-primary, #1a1a2e);
-  border-radius: 4px;
-  overflow: hidden;
-  position: relative;
-}
-</style>
+<style src="./dag-viewer.css"></style>

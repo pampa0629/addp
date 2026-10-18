@@ -4,6 +4,12 @@ export const GRAPH_CATEGORY_VARIABLES = Array.from(
 )
 
 const GRAPH_THEME_VARIABLES = {
+  primary: '--el-color-primary',
+  success: '--el-color-success',
+  warning: '--el-color-warning',
+  surface: '--addp-bg-primary',
+  border: '--addp-border-color',
+  textTertiary: '--addp-text-tertiary',
   labelLight: '--addp-graph-label-light',
   labelDark: '--addp-graph-label-dark',
   nodeStroke: '--addp-graph-node-stroke',

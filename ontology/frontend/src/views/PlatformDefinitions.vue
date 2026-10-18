@@ -26,7 +26,7 @@
           <el-descriptions-item label="Tool">{{ definition.operation.tool }}</el-descriptions-item>
         </el-descriptions>
         <h3>{{ t('ontology.platform.graph') }}</h3>
-        <div ref="graphContainer" class="graph-frame" data-testid="platform-graph">
+        <div class="graph-frame" data-testid="platform-graph">
           <OntologyView :entity-types="graph.entityTypes" :relation-types="graph.relationTypes" layout="grid" readonly @node-click="selectConcept" />
         </div>
         <h3>{{ t('ontology.platform.concepts') }}</h3>
@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { navigateConsoleModuleRoute, useConsolePageDescriptor } from '@common-ui'
@@ -95,12 +95,11 @@ import { platformGraph, platformInspectionOwner, validCapability } from '../util
 const { t, locale } = useI18n(), route = useRoute(), router = useRouter(), auth = useAuthStore()
 const api = createOntologyAPI(client)
 const catalog = ref(null), release = ref(null), loading = ref(false), error = ref(''), selectedSubject = ref('')
-const graphContainer = ref(null), colors = ref({ node: '', edge: '' })
 const owner = computed(() => platformInspectionOwner(auth.authContext))
 const allowed = computed(() => Boolean(owner.value) && auth.hasPermission('ontology.platform_definition.read'))
 const reauthorizing = computed(() => Boolean(auth.token && !auth.authContext && auth.authContextLoadPromise))
 const definition = computed(() => release.value?.context)
-const graph = computed(() => definition.value ? platformGraph(definition.value, locale.value, colors.value) : { entityTypes: [], relationTypes: [] })
+const graph = computed(() => definition.value ? platformGraph(definition.value, locale.value) : { entityTypes: [], relationTypes: [] })
 const bindings = computed(() => release.value?.review.bindings.filter(item => !selectedSubject.value || item.subject === selectedSubject.value) || [])
 const conceptName = id => definition.value.concepts.find(item => item.id === id)?.name[locale.value] || id
 const selectConcept = item => { selectedSubject.value = `concept/${item.id}` }
@@ -133,10 +132,6 @@ async function load() {
     if (current !== ticket || owner.value !== currentOwner || !allowed.value) return
     if (capability) {
       release.value = result
-      await nextTick()
-      if (current !== ticket || !graphContainer.value) return
-      const style = getComputedStyle(graphContainer.value)
-      colors.value = { node: style.getPropertyValue('--el-color-primary').trim(), edge: style.getPropertyValue('--addp-text-secondary').trim() }
     } else catalog.value = result
   } catch (err) {
     if (current === ticket) error.value = err.response?.data?.error || t('ontology.failed')

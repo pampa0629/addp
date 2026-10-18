@@ -3,14 +3,14 @@ export function platformInspectionOwner(context) {
   return context.principal.id || ''
 }
 
-export function platformGraph(definition, locale, colors) {
+export function platformGraph(definition, locale) {
   return {
     entityTypes: definition.concepts.map(item => ({
-      id: item.id, name: item.id, label: item.name[locale], color: colors.node
+      id: item.id, name: item.id, label: item.name[locale]
     })),
     relationTypes: definition.relations.map(item => ({
       id: `${item.from}/${item.kind}/${item.to}`, name: item.kind,
-      source_type_id: item.from, target_type_id: item.to, color: colors.edge
+      source_type_id: item.from, target_type_id: item.to
     }))
   }
 }

@@ -1,0 +1,7 @@
+.dag-viewer {
+  width: 100%;
+  background: var(--addp-bg-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { installBackend } from './fixture.js'
+import { assertOntologyThemes } from './ontology-theme-assertions.js'
 
 const root = '/ontology/platform/definitions'
 const detail = `${root}/transfer.task.create`
@@ -181,4 +182,13 @@ test('backend read failure leaves no stale definition and no embedded fallback',
   await page.getByRole('button',{name:'重新加载',exact:true}).click()
   await expect(page.getByText('Frozen release unavailable',{exact:true})).toBeVisible()
   await expect(page.getByTestId('platform-source')).toHaveCount(0)
+})
+
+
+test('platform graph updates themes in place without persisting theme snapshots in concept data', async ({ page, context }) => {
+  const state = await fixture(context)
+  await page.goto(detail)
+  await assertOntologyThemes(page)
+  expect(state.backend.writes).toEqual([])
+  expect(state.backend.unexpected).toEqual([])
 })

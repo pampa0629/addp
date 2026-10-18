@@ -36,6 +36,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import G6 from '@antv/g6'
+import { readGraphTheme, getContrastingTextColor } from './graphTheme.js'
 
 const { t } = useI18n()
 
@@ -55,29 +56,22 @@ let graphInstance = null
 
 const isEmpty = computed(() => props.entityTypes.length === 0)
 
-function getThemeColor(varName, fallback) {
-  if (containerRef.value) {
-    const val = getComputedStyle(containerRef.value).getPropertyValue(varName).trim()
-    if (val) return val
-  }
-  return fallback
-}
-
 function buildG6Data() {
-  const edgeLabelColor = getThemeColor('--addp-text-secondary', '#909399')
-  const inheritColor = getThemeColor('--addp-text-tertiary', '#a3a6ad')
+  const theme = readGraphTheme(containerRef.value)
+  const edgeLabelColor = theme.edgeLabel
+  const inheritColor = theme.textTertiary
 
   const nodes = props.entityTypes.map(et => ({
     id: String(et.id),
     label: wrapLabel(et.label || et.name),
     _meta: et,
     style: {
-      fill: et.color || getThemeColor('--el-color-primary'),
-      stroke: getThemeColor('--addp-border-color'),
+      fill: et.color || theme.primary,
+      stroke: theme.border,
       lineWidth: 2,
       radius: 8
     },
-    labelCfg: { style: { fill: getThemeColor('--el-color-white'), fontSize: 14, lineHeight: 18, fontWeight: 'bold' } }
+    labelCfg: { style: { fill: getContrastingTextColor(et.color || theme.primary, theme.labelLight, theme.labelDark), fontSize: 14, lineHeight: 18, fontWeight: 'bold' } }
   }))
 
   const edges = [
@@ -89,7 +83,7 @@ function buildG6Data() {
         source: String(rt.source_type_id),
         target: String(rt.target_type_id),
         label: rt.label || rt.name,
-        style: { stroke: rt.color || '#8B8B8B', lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: rt.color || '#8B8B8B' } },
+        style: { stroke: rt.color || theme.edgeDefault, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: rt.color || theme.edgeDefault } },
         labelCfg: { style: { fill: edgeLabelColor, fontSize: 11 }, autoRotate: true }
       })),
     // 继承关系：虚线边
@@ -106,6 +100,14 @@ function buildG6Data() {
   ]
 
   return { nodes, edges }
+}
+
+function updateTheme() {
+  if (!graphInstance) return
+  const data = buildG6Data()
+  for (const model of [...data.nodes, ...data.edges]) {
+    graphInstance.updateItem(model.id, { style: model.style, labelCfg: model.labelCfg })
+  }
 }
 
 function wrapLabel(value) {
@@ -210,8 +212,11 @@ function rerender() {
 }
 
 let resizeObserver = null
+let themeObserver = null
 
 onMounted(async () => {
+  themeObserver = new MutationObserver(updateTheme)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
   await nextTick()
   if (!isEmpty.value) initGraph()
   resizeObserver = new ResizeObserver(() => {
@@ -234,6 +239,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
+  themeObserver?.disconnect()
   graphInstance?.destroy()
   graphInstance = null
 })
@@ -249,7 +255,7 @@ watch(() => [props.entityTypes, props.relationTypes, props.layout], rerender, { 
   position: relative;
   display: flex;
   flex-direction: column;
-  background: var(--addp-bg-primary, #fafbfc);
+  background: var(--addp-bg-primary);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -273,11 +279,11 @@ watch(() => [props.entityTypes, props.relationTypes, props.layout], rerender, { 
   top: 56px;
   right: 12px;
   width: 220px;
-  background: var(--addp-bg-primary, #fff);
-  border: 1px solid var(--addp-border-color, #dcdfe6);
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 6px;
   padding: 10px 14px;
-  box-shadow: var(--addp-shadow-card, 0 2px 8px rgba(0,0,0,0.1));
+  box-shadow: var(--addp-shadow-card);
   font-size: 12px;
   max-height: 60%;
   overflow-y: auto;
@@ -289,24 +295,24 @@ watch(() => [props.entityTypes, props.relationTypes, props.layout], rerender, { 
   align-items: center;
   margin-bottom: 8px;
   font-size: 13px;
-  color: var(--addp-text-primary, #303133);
+  color: var(--addp-text-primary);
 }
 
 .detail-row {
   display: flex;
   gap: 8px;
   padding: 2px 0;
-  border-bottom: 1px solid var(--addp-border-color-light, #f0f0f0);
+  border-bottom: 1px solid var(--addp-border-color-light);
 }
 
 .detail-key {
-  color: var(--addp-text-tertiary, #909399);
+  color: var(--addp-text-tertiary);
   width: 60px;
   flex-shrink: 0;
 }
 
 .detail-val {
-  color: var(--addp-text-primary, #303133);
+  color: var(--addp-text-primary);
 }
 
 .detail-section {
@@ -315,7 +321,7 @@ watch(() => [props.entityTypes, props.relationTypes, props.layout], rerender, { 
 
 .detail-section-title {
   font-weight: 600;
-  color: var(--addp-text-secondary, #606266);
+  color: var(--addp-text-secondary);
   margin-bottom: 4px;
 }
 </style>

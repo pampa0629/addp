@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+<head><meta charset="UTF-8"><title>Ontology theme fixture</title></head>
+<body><div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import { createI18n } from 'vue-i18n'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
+import '../../../../common-frontend/basic/src/styles/theme.css'
+import { OntologyView, graphMessagesZhCn } from '../../../../common-frontend/graph/src/index.js'
+createApp({ setup() {
+  const visible = ref(true)
+  return () => [
+    h('button', { onClick: () => { visible.value = !visible.value } }, '切换画布'),
+    h('main', visible.value ? h(OntologyView, {
+      entityTypes: [{ id: 'a', name: 'Light', label: '浅色节点', color: '#ffffff' }, { id: 'b', name: 'Default', label: '默认节点', parent_id: 'a' }],
+      relationTypes: [{ id: 'r', name: 'Default edge', source_type_id: 'a', target_type_id: 'b' }, { id: 'c', name: 'Custom edge', color: '#123456', source_type_id: 'b', target_type_id: 'a' }]
+    }) : null)
+  ]
+} }).use(ElementPlus).use(createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': graphMessagesZhCn } })).mount('#app')
+</script>
+<style>
+html, body, #app { height: 100%; margin: 0; }
+body { background: var(--addp-bg-primary); color: var(--addp-text-primary); }
+#app { display: flex; flex-direction: column; }
+main { flex: 1; min-height: 0; }
+</style>
+</body></html>

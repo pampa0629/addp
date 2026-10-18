@@ -96,6 +96,8 @@ import {
   isDAGPortEvent,
   useDAGClipboard,
   useDAGCore,
+  useDAGTheme,
+  updateDAGItemTheme,
   useDAGHistory,
   useDAGLayout,
   useDAGSelection,
@@ -163,7 +165,7 @@ const container = ref(null)
 const nodeCounter = ref(0)
 const inspectedNodeId = ref('')
 const lastEmittedSignature = ref('')
-const edgeStyle = resolveEdgeStyle()
+let edgeStyle = resolveEdgeStyle()
 
 const { graph, initGraph } = useDAGCore(container, {
   modes: {
@@ -191,26 +193,7 @@ const { graph, initGraph } = useDAGCore(container, {
     type: WORKFLOW_EDGE_TYPE,
     style: edgeStyle
   },
-  nodeStateStyles: {
-    selected: {
-      stroke: cssColor('--el-color-primary'),
-      lineWidth: 2.5
-    },
-    invalid: {
-      stroke: cssColor('--el-color-danger'),
-      lineWidth: 2.5
-    }
-  },
-  edgeStateStyles: {
-    hover: {
-      stroke: cssColor('--el-color-primary'),
-      lineWidth: 3.5
-    },
-    selected: {
-      stroke: cssColor('--el-color-primary'),
-      lineWidth: 3.5
-    }
-  }
+  ...resolveStateStyles()
 })
 
 const { hasLoop } = useLoopDetection(graph)
@@ -259,12 +242,38 @@ const navigationAnnouncement = computed(() => {
     : t('develop.workflowCanvas.nodeSelected', { name })
 })
 
+useDAGTheme(refreshCanvasTheme)
+
+function refreshCanvasTheme() {
+  if (!graph.value) return
+  edgeStyle = resolveEdgeStyle()
+  const styles = resolveStateStyles()
+  graph.value.set('nodeStateStyles', styles.nodeStateStyles)
+  graph.value.set('edgeStateStyles', styles.edgeStateStyles)
+  graph.value.set('defaultEdge', { type: WORKFLOW_EDGE_TYPE, style: edgeStyle })
+  graph.value.getNodes().forEach(node => updateDAGItemTheme(graph.value, node, { stateStyles: styles.nodeStateStyles }))
+  graph.value.getEdges().forEach(edge => updateDAGItemTheme(graph.value, edge, { style: edgeStyle, stateStyles: styles.edgeStateStyles }))
+}
+
+function resolveStateStyles() {
+  return {
+    nodeStateStyles: {
+      selected: { stroke: cssColor('--el-color-primary'), lineWidth: 2.5 },
+      invalid: { stroke: cssColor('--el-color-danger'), lineWidth: 2.5 }
+    },
+    edgeStateStyles: {
+      hover: { stroke: cssColor('--el-color-primary'), lineWidth: 3.5 },
+      selected: { stroke: cssColor('--el-color-primary'), lineWidth: 3.5 }
+    }
+  }
+}
+
 onMounted(() => {
   registerWorkflowEditorNode()
-  registerWorkflowEditorEdge({
+  registerWorkflowEditorEdge(() => ({
     stroke: cssColor('--addp-bg-secondary'),
     lineWidth: 6
-  })
+  }))
   initGraph()
   if (!graph.value) return
 
@@ -939,8 +948,8 @@ function handleFitView() {
   fitView()
 }
 
-function handleAutoLayout() {
-  autoLayout()
+async function handleAutoLayout() {
+  await autoLayout()
   recordHistory()
   emitLayout()
 }
@@ -950,6 +959,7 @@ function restoreGraphSnapshot(snapshot) {
   graph.value?.data(snapshot)
   graph.value?.render()
   selectedItem.value = null
+  refreshCanvasTheme()
   emit('node-click', null)
   emitWorkflow()
   emitLayout()

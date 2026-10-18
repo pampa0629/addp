@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+<head><meta charset="UTF-8"><title>DAG viewer theme fixture</title></head>
+<body><div id="app"></div>
+<script type="module">
+import { createApp, h, ref } from 'vue'
+import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
+import '../../../common-frontend/basic/src/styles/theme.css'
+import WorkflowDag from '../../../common-frontend/agent-ui/src/a2ui/components/WorkflowDag.vue'
+import { registerDagViewerElement } from '../../../common-frontend/dag/src/web-components/dag-viewer-wc.js'
+registerDagViewerElement()
+const workflow = { tasks: [{ id: 'a', operator: 'Source' }, { id: 'b', operator: 'Transform', depends_on: ['a'] }] }
+const webComponent = new URLSearchParams(location.search).has('wc')
+createApp({ setup() {
+  const visible = ref(true), hidden = ref(false), data = ref(workflow)
+  const listeners = new Set()
+  const context = { componentModel: {
+    properties: { workflow, height: 400 },
+    onUpdated: { subscribe(fn) { listeners.add(fn); return { unsubscribe() { listeners.delete(fn) } } } }
+  } }
+  function update(value) {
+    data.value = value
+    context.componentModel.properties = { workflow: value, height: 400 }
+    listeners.forEach(fn => fn(context.componentModel))
+  }
+  return () => [
+    h('header', [
+      h('button', { onClick: () => { visible.value = !visible.value } }, '挂载或卸载'),
+      h('button', { onClick: () => update({ tasks: [] }) }, '清空'),
+      h('button', { onClick: () => update(workflow) }, '加载'),
+      h('button', { onClick: () => { hidden.value = !hidden.value } }, '隐藏或显示')
+    ]),
+    h('main', { style: { display: hidden.value ? 'none' : '' } }, visible.value ? webComponent
+      ? h('addp-dag-viewer', { 'dag-data': JSON.stringify(data.value), height: 400 })
+      : h(WorkflowDag, { context }) : null)
+  ]
+} }).mount('#app')
+</script>
+<style>
+html, body, #app { margin: 0; height: 100%; }
+body { background: var(--addp-bg-primary); color: var(--addp-text-primary); }
+header { padding: 12px; display: flex; gap: 16px; }
+main { margin: 12px; }
+addp-dag-viewer { display: block; }
+</style>
+</body></html>

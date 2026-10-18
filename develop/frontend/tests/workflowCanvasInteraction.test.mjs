@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
 const source = await readFile(resolve('src/components/workflow/WorkflowDAGCanvas.vue'), 'utf8')
 const nodeSource = await readFile(resolve('src/components/workflow/workflowEditorNode.js'), 'utf8')
@@ -9,7 +10,7 @@ const edgeSource = await readFile(resolve('src/components/workflow/workflowEdito
 assert.match(source, /graph\.value\.on\('node:click', handleNodeClick\)/)
 assert.doesNotMatch(source, /node:dblclick/)
 assert.match(source, /createDAGDirectEdgeBehavior\(\{/)
-assert.match(source, /registerWorkflowEditorEdge\(\{[\s\S]*?stroke: cssColor\('--addp-bg-secondary'\)[\s\S]*?lineWidth: 6/)
+assert.match(source, /registerWorkflowEditorEdge\(\(\) => \(\{[\s\S]*?stroke: cssColor\('--addp-bg-secondary'\)[\s\S]*?lineWidth: 6/)
 assert.match(source, /type: WORKFLOW_EDGE_TYPE/)
 assert.match(source, /stroke: cssColor\('--addp-bg-secondary'\)/)
 assert.match(source, /type: 'click-select',\s*selectEdge: true/)
@@ -67,3 +68,34 @@ assert.match(edgeSource, /capture: false/)
 assert.match(edgeSource, /casing\.attr\(\{[\s\S]*?path: keyShape\.attr\('path'\)/)
 
 console.log('workflowCanvasInteraction tests passed')
+
+// Refreshing colors must not move same-named input/output labels to each other's row.
+{
+  let definition
+  const context = {
+    G6: { registerNode: (_name, node) => { definition = node } },
+    document: { documentElement: {} },
+    getComputedStyle: () => ({ getPropertyValue: name => name }),
+    isWorkflowInputParameter: () => true
+  }
+  runInNewContext(nodeSource.replace(/^import .*\n/gm, '').replace(/^export /gm, '') + '\nregisterWorkflowEditorNode()', context)
+  const shapes = []
+  const group = {
+    addShape(type, { name, attrs }) {
+      const shape = { type, name, attrs: { ...attrs }, get: key => key === 'name' ? name : undefined,
+        attr(value) { if (typeof value === 'string') return this.attrs[value]; Object.assign(this.attrs, value) } }
+      shapes.push(shape)
+      return shape
+    },
+    find: predicate => shapes.find(predicate)
+  }
+  const model = { label: 'Transform', inputPorts: [{ name: 'first' }, { name: 'shared' }], outputPorts: [{ name: 'shared' }] }
+  definition.draw(model, group)
+  const labels = shapes.filter(shape => shape.type === 'text' && shape.attrs.text === 'shared')
+  assert.equal(labels.length, 2)
+  const originalPositions = labels.map(shape => ({ x: shape.attrs.x, y: shape.attrs.y }))
+  assert.notEqual(originalPositions[0].y, originalPositions[1].y)
+  definition.update(model, { getContainer: () => group, getModel: () => model })
+  assert.deepEqual(labels.map(shape => ({ x: shape.attrs.x, y: shape.attrs.y })), originalPositions)
+  assert.ok(labels.every(shape => shape.attrs.fill === '--addp-text-secondary'))
+}

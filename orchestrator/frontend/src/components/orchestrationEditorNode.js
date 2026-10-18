@@ -106,12 +106,20 @@ export function registerOrchestrationEditorNode() {
 
     update(cfg, item) {
       const group = item?.getContainer?.()
-      group?.find(shape => shape.get('name') === 'orchestration-node-title')?.attr({
-        text: nodeTitle(cfg.label || cfg.name || cfg.id)
-      })
-      group?.find(shape => shape.get('name') === 'orchestration-node-accent')?.attr({
-        stroke: cfg.providerColor || themeColors().primary
-      })
+      if (!group) return
+      const colors = themeColors()
+      const shape = name => group.find(shape => shape.get('name') === name)
+      shape('orchestration-node-card')?.attr({ fill: colors.background, stroke: colors.border })
+      shape('orchestration-node-title')?.attr({ text: nodeTitle(cfg.label || cfg.name || cfg.id), fill: colors.textPrimary })
+      shape('orchestration-node-accent')?.attr({ stroke: cfg.providerColor || colors.primary })
+      shape('orchestration-node-divider')?.attr({ stroke: colors.border })
+      for (const direction of ['input', 'output']) {
+        shape(`control-${direction}-port`)?.attr({ fill: colors.background, stroke: colors.warning })
+        for (const port of cfg[direction === 'input' ? 'inputPorts' : 'outputPorts'] || []) {
+          shape(`${direction}-port-${port.name}`)?.attr({ fill: colors.background, stroke: direction === 'input' ? colors.success : colors.primary })
+          shape(`${direction}-label-${port.name}`)?.attr({ fill: colors.textSecondary })
+        }
+      }
     },
 
     setState(name, selected, item) {

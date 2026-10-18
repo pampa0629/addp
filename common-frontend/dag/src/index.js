@@ -11,6 +11,9 @@ export { useDAGHistory } from './composables/useDAGHistory.js'
 export { useDAGClipboard } from './composables/useDAGClipboard.js'
 export { useDAGLayout } from './composables/useDAGLayout.js'
 
+export { useDAGTheme } from './composables/useDAGTheme.js'
+export { updateDAGItemTheme } from './utils/theme.js'
+
 // Nodes
 export { registerMultiPortNode } from './nodes/MultiPortNode.js'
 export { generateColor } from './nodes/SimpleNode.js'

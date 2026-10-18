@@ -207,6 +207,8 @@ import {
   getDAGUpstreamCandidates,
   useDAGClipboard,
   useDAGCore,
+  useDAGTheme,
+  updateDAGItemTheme,
   useDAGHistory,
   useDAGLayout,
   useDAGSelection,
@@ -266,7 +268,7 @@ let syncingNodeDraft = false
 let syncingDependencies = false
 let stepsLoadGeneration = 0
 const taskRuntimeMetadataRequests = new Map()
-const canvasColors = resolveCanvasColors()
+let canvasColors = resolveCanvasColors()
 
 // 使用 composables
 const { graph, initGraph, loadData } = useDAGCore(container, {
@@ -293,6 +295,28 @@ const { graph, initGraph, loadData } = useDAGCore(container, {
     style: { ...parameterEdgeStyle(), lineAppendWidth: 12 }
   }
 })
+
+useDAGTheme(refreshCanvasTheme)
+
+function refreshCanvasTheme() {
+  if (!graph.value) return
+  canvasColors = resolveCanvasColors()
+  const nodeStateStyles = { selected: { stroke: canvasColors.danger, lineWidth: 3 } }
+  const edgeStateStyles = {
+    selected: { stroke: canvasColors.danger, lineWidth: 3 },
+    hover: { stroke: canvasColors.primary, lineWidth: 3 }
+  }
+  graph.value.set('nodeStateStyles', nodeStateStyles)
+  graph.value.set('edgeStateStyles', edgeStateStyles)
+  graph.value.set('defaultEdge', { type: 'cubic-horizontal', style: parameterEdgeStyle() })
+  graph.value.getNodes().forEach(node => updateDAGItemTheme(graph.value, node, {
+    providerColor: generateColor(node.getModel().provider || 'unknown'), stateStyles: nodeStateStyles
+  }))
+  graph.value.getEdges().forEach(edge => updateDAGItemTheme(graph.value, edge, {
+    style: edge.getModel().edgeKind === 'control' ? controlEdgeStyle() : parameterEdgeStyle(), stateStyles: edgeStateStyles
+  }))
+  renderExecutionStates()
+}
 
 const { hasLoop } = useLoopDetection(graph)
 const {
@@ -1017,6 +1041,7 @@ function handlePaste() {
     return
   }
   clearCopiedParameterBindings(item)
+  refreshCanvasTheme()
   selectGraphItem(item)
   recordHistory()
   emitSteps()
@@ -1090,6 +1115,7 @@ function restoreGraphSnapshot(snapshot) {
   graph.value?.render()
   selectedItem.value = null
   drawerVisible.value = false
+  refreshCanvasTheme()
   emitSteps()
   emitLayout()
 }

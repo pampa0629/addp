@@ -6,9 +6,11 @@ import { createOntologyAPI } from '../src/api/ontology.mjs'
 
 test('platform graph adapts every declared concept and relation without instance inference', () => {
   const definition = JSON.parse(readFileSync(new URL('../../backend/internal/platform/transfer.json', import.meta.url)))
-  const graph = platformGraph(definition, 'en', { node: 'primary', edge: 'secondary' })
+  const graph = platformGraph(definition, 'en')
   assert.equal(graph.entityTypes.length, definition.concepts.length)
   assert.equal(graph.relationTypes.length, definition.relations.length)
+  assert.ok(graph.entityTypes.every(item => !('color' in item)))
+  assert.ok(graph.relationTypes.every(item => !('color' in item)))
   assert.equal(graph.entityTypes[0].id, definition.concepts[0].id)
   assert.equal(graph.entityTypes[0].label, definition.concepts[0].name.en)
   assert.equal(new Set(graph.relationTypes.map(item => item.id)).size, definition.relations.length)
@@ -19,7 +21,7 @@ test('platform graph adapts every declared concept and relation without instance
   const page = readFileSync(new URL('../src/views/PlatformDefinitions.vue', import.meta.url), 'utf8')
   assert.match(page, /common-frontend\/graph\/src\/OntologyView\.vue/)
   assert.match(page, /readonly @node-click/)
-  assert.doesNotMatch(page, /new G6|GRAPH\.QUERY|localStorage|postMessage/)
+  assert.doesNotMatch(page, /getComputedStyle|new G6|GRAPH\.QUERY|localStorage|postMessage/)
 })
 
 test('inspection owner excludes Tenant and machine sessions; identities follow the backend grammar', () => {
