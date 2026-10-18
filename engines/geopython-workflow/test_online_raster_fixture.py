@@ -2004,15 +2004,22 @@ def test_contour_persistence_real_gdal_independent_plane_and_both_save_modes(con
     assert all(entry['crs'] == 'EPSG:3857' and entry['size_bytes'] > 0 for entry in actual['targets'].values())
 
 
-@pytest.mark.parametrize('corruption', ['elevation', 'vertex', 'sidecar', 'inventory'])
+@pytest.mark.parametrize('corruption', ['elevation', 'vertex', 'dimension', 'sidecar', 'inventory'])
 def test_contour_persistence_oracle_rejects_real_file_corruption(contour_persistence, corruption):
     from osgeo import ogr
     module, root, _ = contour_persistence
     names = list(module.TARGETS)
-    if corruption in {'elevation', 'vertex'}:
+    if corruption in {'elevation', 'vertex', 'dimension'}:
         file = ogr.Open(str(root / 'outputs/levels.gpkg'), 1)
         layer = file.GetLayer(0); feature = layer.GetNextFeature()
         if corruption == 'elevation': feature.SetField('elevation', 201.)
+        elif corruption == 'dimension':
+            geometry = feature.GetGeometryRef().Clone()
+            geometry.Set3D(True)
+            for index in range(geometry.GetPointCount()):
+                x, y, _ = geometry.GetPoint(index)
+                geometry.SetPoint(index, x, y, 123.)
+            feature.SetGeometry(geometry)
         else:
             geometry = feature.GetGeometryRef(); x, y, _ = geometry.GetPoint(1)
             geometry.SetPoint_2D(1, x + .2, y)

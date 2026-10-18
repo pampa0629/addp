@@ -88,7 +88,7 @@ def verify(root, names):
         for feature in layer:
             elevation = feature.GetField('elevation')
             geometry = feature.GetGeometryRef()
-            if elevation not in TARGETS[name] or geometry is None or geometry.GetGeometryName() != 'LINESTRING' or geometry.GetPointCount() < 2:
+            if elevation not in TARGETS[name] or geometry is None or geometry.GetGeometryType() != ogr.wkbLineString or geometry.GetPointCount() < 2:
                 raise FixtureError('invalid contour geometry or level')
             for i in range(geometry.GetPointCount()):
                 x, y, _ = geometry.GetPoint(i)
