@@ -25,6 +25,7 @@ class Client(base.Client):
                 'size_bytes': 1000, 'scanned_at': '2026-10-18T00:00:00Z', 'attributes': {'item': {'format': 'geojson'}}}
         self.permissions = sorted(m.PERMISSIONS)
         self.executions['execution'] = execution()
+        self.scan_tenant = 2
 
     def request(self, method, path, expected, body=None):
         if path.endswith('/auth/context'):
@@ -36,6 +37,8 @@ class Client(base.Client):
             data = {'execution_id': 'source-scan'}
         elif path == '/api/v1/develop/executions' and method == 'POST':
             self.calls.append((method,path,body)); data = {'execution_id': 'execution'}
+        elif '/meta/executions/' in path:
+            data = {'status': 'success', 'tenant_id': self.scan_tenant, 'triggered_by': self.actor}
         elif '/meta/lineage/graph?' in path:
             identifier = int(path.split('item_id=')[1].split('&')[0])
             data = {'truncated': False, 'edges': [{'source': {'item_id': 10}, 'target': {'item_id': identifier}, 'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'execution'}}]}
@@ -85,6 +88,23 @@ class TopologyOnlineTest(unittest.TestCase):
             else: client.actor = 44
             with self.subTest(change=change), self.assertRaises(m.SuiteError):
                 m.run_scenario(Path('.'), ENV, client, lambda *args: self.fail('must stop before physical acceptance'))
+
+    def test_scan_identity_requires_public_integer_user_and_tenant(self):
+        for field, values in (('actor', (None, True, 0, -1, '33', 33.)),
+                              ('scan_tenant', (None, True, 0, -1, 3, '2', 2.))):
+            for value in values:
+                client = Client(); setattr(client, field, value)
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(m.SuiteError, 'User or Tenant'):
+                    m.run_scenario(Path('.'), ENV, client, lambda *args: self.fail('must stop before physical acceptance'))
+
+    def test_private_actor_cannot_replace_public_initiator(self):
+        class PrivateOnlyClient(Client):
+            def request(self, method, path, expected, body=None):
+                if '/meta/executions/' in path:
+                    return SimpleNamespace(payload={'status': 'success', 'tenant_id': 2, 'actor_principal_id': 33})
+                return super().request(method, path, expected, body)
+        with self.assertRaisesRegex(m.SuiteError, 'User or Tenant'):
+            m.run_scenario(Path('.'), ENV, PrivateOnlyClient(), lambda *args: self.fail('private actor must not be consumed'))
 
     def test_invalid_size_or_browser_modification_cannot_pass(self):
         for size in (True, 0, 1000., '1000', 999):

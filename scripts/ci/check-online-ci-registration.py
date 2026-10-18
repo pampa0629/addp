@@ -1850,7 +1850,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
             '--wait-protection-owners develop,manager', 'online-vector-topology-fixture.py stop',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'playwright install --with-deps chromium'),
         "scripts/test/vector-topology-persistence-online.py": ('validate_identity', 'PERMISSIONS = raster.PERMISSIONS',
-            'validate_success', 'validate_item', 'actor_principal_id', 'meta_scan_runs', 'browser_runner', 'physical_size_bytes'),
+            'validate_success', 'validate_item', 'triggered_by', 'meta_scan_runs', 'browser_runner', 'physical_size_bytes'),
         "business/scripts/online-vector-topology-fixture.py": ('NFSExport', 'validate_features', 'expected_geometries', 'source file changed'),
         "scripts/utils/online_nfs_fixture.py": ('root_squash', 'owned_root', 'nfs_export_removed'),
         "console/frontend/e2e/online/vector-topology-persistence.spec.js": ('login(', 'auth.principalID', 'source_srid', 'getImageData', 'evidence.execution_id', 'topology-browser.json'),

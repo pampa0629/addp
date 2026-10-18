@@ -48,6 +48,8 @@ System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，
 
 确定性 NFS 线网声明 EPSG:4326，包含闭合方框、两条贯穿线及重复边。默认输出引用省略 `port`，诊断显式引用 `port=diagnostics`；两个既有保存节点分别写入新 GeoJSON，使用 `mode=fail`。独立物理 oracle 按预定义坐标核对四个面、四条外围 dangle、字段和 CRS，不调用构面算子生成期望；同时核对源 SHA/大小、准确目标清单及无临时旁路文件。两个目标必须各自具备一次精确自动扫描、正式 DataItem、物理与 Meta 相等的正整数大小、同一 actor/Tenant、指向同一 Develop execution 的 derive 及一致 Monitor 事实。不得手动补扫输出伪装自动扫描成功。
 
+自动扫描身份沿 Meta `ScanExecutionResponse` 的公开 `tenant_id` 与 `triggered_by` 核对，两者必须为正整数并分别等于当前 Tenant 和 User Principal；不读取或回退到私有 `actor_principal_id`，不为验收扩展 Meta DTO 或权限。
+
 同一普通 User 经 Console 查看专业结果与两份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
 
 ### KML／GML／TopoJSON 的 S3 兼容消费

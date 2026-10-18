@@ -100,7 +100,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     facts, scans = validate_success(execution, source_locator, targets)
     for scan in scans:
         scanned = raster.wait_execution(client, 'meta', scan['execution_id'], timeout)
-        if str(scanned.get('tenant_id')) != str(tenant) or str(scanned.get('actor_principal_id')) != identity['principal_id']:
+        if (type(scanned.get('tenant_id')) is not int or scanned['tenant_id'] != tenant
+            or type(scanned.get('triggered_by')) is not int or scanned['triggered_by'] != int(identity['principal_id'])):
             raise SuiteError('automatic scan User or Tenant differs')
     monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor')
     if monitor.get('status') != 'success' or monitor.get('module') != 'develop' or obj(monitor.get('metadata'), 'metadata').get('lineage_facts') != facts:
