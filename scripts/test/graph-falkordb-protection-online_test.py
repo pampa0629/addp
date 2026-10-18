@@ -14,6 +14,43 @@ SUITE = importlib.import_module('scripts.test.graph-falkordb-protection-online')
 
 
 class GraphProtectionOnlineTest(unittest.TestCase):
+    def test_browser_requires_same_reader_real_ui_evidence_and_clean_diagnostics(self):
+        api_report = {'identities': {'reader': {'principal_id': '4'}}}
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            environment = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'graph-run',
+                           'ADDP_ONLINE_TEST_USER_USERNAME': 'reader', 'ADDP_ONLINE_TEST_USER_PASSWORD': 'private-password',
+                           'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'reader-secret',
+                           'ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN': 'preparer-secret',
+                           'ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN': 'outsider-secret'}
+            def launch(command, **kwargs):
+                self.assertIn('e2e/online/graph-falkordb-protection.spec.js', command)
+                self.assertEqual(kwargs['cwd'].name, 'frontend')
+                self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
+                expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
+                self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17})
+                payload = dict(expected, schema_version='addp.graph-falkordb-protection-browser/v1', result='passed',
+                               permissions=['graph.graph.read'], node_count=3, relationship_count=2,
+                               browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
+                               public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
+                               browser_errors=0, anonymous_refresh_401=1)
+                payload.update(mutation)
+                Path(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_REPORT']).write_text(json.dumps(payload))
+                if screenshots:
+                    for name in ('graph-private-browse-console.png', 'graph-private-knowledge-console.png'):
+                        (artifacts / name).write_bytes(b'unit-test-screenshot')
+                return type('Process', (), {'returncode': 0})()
+            for mutation, screenshots in (({}, True), ({'principal_id': 'other'}, True),
+                    ({'permissions': ['graph.graph.read', 'graph.graph.update']}, True),
+                    ({'public_switch_disabled': False}, True), ({'browser_errors': 1}, True), ({}, False)):
+                for path in artifacts.glob('*.png'): path.unlink()
+                with self.subTest(mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
+                     patch.object(SUITE.subprocess, 'run', side_effect=launch):
+                    if mutation or not screenshots:
+                        with self.assertRaises(SUITE.SuiteError): SUITE.run_browser(api_report, 17, 13, 2)
+                    else:
+                        self.assertEqual(SUITE.run_browser(api_report, 17, 13, 2)['principal_id'], '4')
+
     def test_main_emits_the_standard_dispatcher_report_without_credentials(self):
         dispatcher = importlib.import_module('scripts.test.online-gate')
         with tempfile.TemporaryDirectory() as directory:
@@ -33,6 +70,31 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertEqual(report, json.loads((Path(directory) / 'graph-falkordb-protection.json').read_text()))
                 for secret in ('reader-secret', 'outsider-secret', 'preparer-secret'):
                     self.assertNotIn(secret, stdout.getvalue())
+
+    def test_browser_failure_still_closes_and_deletes_both_synthetic_graphs(self):
+        deleted, closed = [], []
+        class Client:
+            next_graph = 0
+            def request(self, method, path, expected, body=None):
+                if method == 'POST' and path.endswith('/graphs'):
+                    self.next_graph += 1
+                    return SUITE.SUPPORT.Response(201, {'id': self.next_graph, 'is_public': False})
+                if method == 'GET' and path.endswith('/entities/Person'):
+                    return SUITE.SUPPORT.Response(200, {'data': [
+                        {'id': str(i), 'properties': {'id': 'p' + str(i + 1)}} for i in range(3)]})
+                if method == 'DELETE': deleted.append(path)
+                return SUITE.SUPPORT.Response(expected[0], {})
+        report = {}
+        identities = [{'principal_id': str(i)} for i in range(3)]
+        with patch.object(SUITE, 'identity', side_effect=identities), patch.object(SUITE, 'create_ontology', return_value=9), \
+             patch.object(SUITE, 'create_schema'), patch.object(SUITE, 'probe'), \
+             patch.object(SUITE, 'set_public', side_effect=lambda client, gid, public: closed.append((gid, public))), \
+             patch.object(SUITE, 'run_browser', side_effect=SUITE.SuiteError('browser failed')):
+            with self.assertRaisesRegex(SUITE.SuiteError, 'browser failed'):
+                SUITE.run(*([Client()] * 7), 13, 2, 0, report)
+        self.assertEqual(closed, [(1, False), (2, False)])
+        self.assertEqual(deleted, ['/api/v1/graph/graphs/1', '/api/v1/graph/graphs/2', '/api/v1/graph/ontologies/9'])
+        self.assertEqual(report['cleanup']['domain_resources_remaining'], 0)
 
     def progress(self):
         return {'state': 'enrolling', 'owner_progress': [

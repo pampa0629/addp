@@ -160,7 +160,8 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertIn('make:test-online ONLINE_SUITE=graph-falkordb-protection', trace)
         self.assertNotIn('security-fixture:', trace)
         self.assertNotIn('initialize', trace)
-        self.assertNotIn('chromium', trace)
+        self.assertIn('chromium', trace)
+        self.assertLess(trace.index('chromium'), trace.index('make:'))
         self.assertLess(trace.index('application-stop'), trace.index('graph-fixture:stop'))
 
     def test_graph_profile_failure_keeps_lifecycle_cleanup(self):

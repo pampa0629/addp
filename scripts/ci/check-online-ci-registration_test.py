@@ -40,7 +40,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',
                  'scripts/test/online-hosted-security-gate.sh', 'scripts/test/graph-falkordb-protection-online.py',
-                 'business/scripts/online-graph-falkordb-fixture.py', 'business/docker-compose.online-graph-falkordb.yml')
+                 'business/scripts/online-graph-falkordb-fixture.py', 'business/docker-compose.online-graph-falkordb.yml',
+                 'console/frontend/e2e/online/graph-falkordb-protection.spec.js')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -48,7 +49,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "inputs.suite != 'graph-falkordb-protection'"),
                                    (paths[1], 'graph-falkordb-protection-online_test.py'),
                                    (paths[2], 'develop,graph,manager,service,transfer'),
-                                   (paths[3], 'same_engine_control'), (paths[4], '--volumes'), (paths[5], 'tmpfs:')):
+                                   (paths[3], 'same_engine_control'), (paths[4], '--volumes'), (paths[5], 'tmpfs:'),
+                                   (paths[6], 'public_switch_disabled: true'), (paths[3], 'report["browser"] = run_browser('),
+                                   (paths[2], 'playwright install --with-deps chromium'),
+                                   (paths[1], 'console/frontend/e2e/online/graph-falkordb-protection.spec.js')):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'removed'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):

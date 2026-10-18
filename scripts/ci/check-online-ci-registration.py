@@ -2243,8 +2243,13 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             "online-graph-falkordb-fixture.py stop", "develop,graph,manager,service,transfer", "graph-falkordb.json",
         ),
         "scripts/test/graph-falkordb-protection-online.py": (
-            "addp.graph-falkordb-protection-online/v1", "public_unmanaged", "public_protected",
+            "addp.graph-falkordb-protection-online/v2", "public_unmanaged", "public_protected",
             "same_engine_control", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
+            'report["browser"] = run_browser(', 'e2e/online/graph-falkordb-protection.spec.js',
+        ),
+        "console/frontend/e2e/online/graph-falkordb-protection.spec.js": (
+            "addp.graph-falkordb-protection-browser/v1", "browserAPIFromResponse", "login(",
+            "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
         ),
         "business/scripts/online-graph-falkordb-fixture.py": (
             "--volumes", "owned_resources", "127\\.0\\.0\\.1", "0o600", "graph_protection_control",
@@ -2261,6 +2266,11 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
     for test in ("graph-falkordb-protection-online_test.py", "online-graph-falkordb-fixture_test.py"):
         if test not in commands:
             raise RegistrationError("Graph protection regression must enter test-online-runner")
+    if "console/frontend/e2e/online/graph-falkordb-protection.spec.js" not in commands:
+        raise RegistrationError("Graph Console browser syntax must enter test-online-runner")
+    lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
+    if 'if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then' in lifecycle or "playwright install --with-deps chromium" not in lifecycle:
+        raise RegistrationError("Graph Console requires Chromium in the same Hosted lifecycle")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
     if job is None or "inputs.suite == 'graph-falkordb-protection'" not in job.group("body") or "runs-on: ubuntu-24.04" not in job.group("body"):

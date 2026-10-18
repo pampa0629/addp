@@ -59,9 +59,7 @@ application_owned=1
 for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-if [ "$ONLINE_SUITE" != graph-falkordb-protection ]; then
-  run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-fi
+run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2" --wait-protection-owners develop,graph,manager,service,transfer' _ "$ONLINE_SUITE" "$IDENTITY_ENV"
 else

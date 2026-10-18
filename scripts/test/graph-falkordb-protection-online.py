@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -133,6 +134,37 @@ def create_schema(client, oid):
     })
 
 
+def run_browser(report, graph_id, engine_id, tenant_id):
+    env = SUPPORT.required_environment
+    env("ADDP_ONLINE_TEST_USER_USERNAME")
+    env("ADDP_ONLINE_TEST_USER_PASSWORD")
+    artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
+    output = artifacts / "graph-falkordb-protection-browser.json"
+    screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png")]
+    for path in [output, *screenshots]:
+        path.unlink(missing_ok=True)
+    expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
+                "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id}
+    # The browser authenticates the ordinary User through the formal login UI.
+    # It must not inherit any API fixture's preparation or consumption tokens.
+    environment = {key: value for key, value in os.environ.items() if not key.endswith("_ACCESS_TOKEN")}
+    environment.update(ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS=json.dumps(expected), ADDP_ONLINE_GRAPH_BROWSER_REPORT=str(output))
+    result = subprocess.run(["npm", "exec", "--", "playwright", "test", "e2e/online/graph-falkordb-protection.spec.js",
+                             "--config=playwright.online.config.js"],
+                            cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
+    require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
+            "Ordinary Graph Console acceptance failed or omitted browser evidence")
+    evidence = json.loads(output.read_text())
+    expected.update(schema_version="addp.graph-falkordb-protection-browser/v1", result="passed", permissions=sorted(READER_PERMISSIONS),
+                    node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
+                    public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0)
+    require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401"} and
+            all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()) and
+            type(evidence["anonymous_refresh_401"]) is int and 0 <= evidence["anonymous_refresh_401"] <= 1,
+            "Graph Console evidence differs from the same minimum-permission User, native graph or clean diagnostics")
+    return evidence
+
+
 def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, direct_anonymous, engine_id, tenant_id, deadline, report):
     report["identities"] = {"reader": identity(reader, tenant_id, READER_PERMISSIONS),
                             "outsider": identity(outsider, tenant_id, OUTSIDER_PERMISSIONS),
@@ -163,6 +195,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
             report["private"][name] = {"reader": probe(r, target, ids, 200), "outsider": probe(o, target, ids, 403, "permission"), "anonymous": probe(a, target, ids, 401)}
             o.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
             r.request("PUT", f"/api/v1/graph/graphs/{target}", (403,), {"is_public": True})
+        report["browser"] = run_browser(report, target, engine_id, tenant_id)
         set_public(preparer, target, True)
         report["public_unmanaged"] = {"gateway": probe(anonymous, target, ids, 200), "graph": probe(direct_anonymous, target, ids, 200)}
         SUPPORT.wait_for_scan(preparer, engine_id, deadline)
@@ -213,7 +246,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
 
 
 def main():
-    report = {"schema_version": "addp.graph-falkordb-protection-online/v1", "passed": False}
+    report = {"schema_version": "addp.graph-falkordb-protection-online/v2", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-falkordb-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")
