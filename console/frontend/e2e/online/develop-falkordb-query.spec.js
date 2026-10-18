@@ -63,8 +63,15 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     await page.keyboard.press('ControlOrMeta+V')
   }
   async function execute(query, graphName, parameterized = false) {
-    const analyzed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/query-preflight' &&
-      response.request().method() === 'POST' && response.request().postDataJSON().query === query)
+    const analyzed = page.waitForResponse(response => {
+      if (new URL(response.url()).pathname !== '/api/v1/develop/query-preflight' || response.request().method() !== 'POST') return false
+      const body = response.request().postDataJSON()
+      if (body.query !== query) return false
+      if (!parameterized) return true
+      const definitions = body.query_parameters || []
+      return definitions.length === 2 && definitions[0].name === 'text' && definitions[0].default === textValue &&
+        definitions[1].name === 'number' && definitions[1].default === 7
+    })
     const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
     const finished = page.waitForResponse(async response => {
       if (!/^\/api\/v1\/develop\/executions\/[^/]+\/result$/.test(new URL(response.url()).pathname) ||

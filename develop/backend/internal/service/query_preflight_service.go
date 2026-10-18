@@ -58,6 +58,8 @@ func (s *SQLEngineService) AnalyzePreparedQuery(
 		if !complete {
 			return structuralAnalysis, nil
 		}
+	}
+	if len(queryParameters) > 0 {
 		content := map[string]interface{}{
 			"query": query, "query_type": language, "query_parameters": queryParameters,
 		}
@@ -65,15 +67,17 @@ func (s *SQLEngineService) AnalyzePreparedQuery(
 		if resolveErr != nil {
 			return invalidPreparedQueryAnalysis(language, resolveErr)
 		}
-		compiled, compileErr := compileRelationPreviewQuery(&models.DevTask{
-			DevType:         commonExecution.TaskTypeQuery,
-			Content:         models.DevTaskContent(content),
-			ExecutionConfig: models.DevTaskContent{"engine_id": engineID},
-		}, effectiveInputs, descriptor.EngineType)
-		if compileErr != nil {
-			return invalidPreparedQueryAnalysis(language, compileErr)
+		if hasRelationParameters {
+			compiled, compileErr := compileRelationPreviewQuery(&models.DevTask{
+				DevType:         commonExecution.TaskTypeQuery,
+				Content:         models.DevTaskContent(content),
+				ExecutionConfig: models.DevTaskContent{"engine_id": engineID},
+			}, effectiveInputs, descriptor.EngineType)
+			if compileErr != nil {
+				return invalidPreparedQueryAnalysis(language, compileErr)
+			}
+			query, _ = compiled.Content["query"].(string)
 		}
-		query, _ = compiled.Content["query"].(string)
 		parameters = runtimeParameters
 	}
 

@@ -1,12 +1,50 @@
 package service
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 )
+
+func TestPreparedCypherPreflightUsesDeclaredDefaultsAndValidatesOverrides(t *testing.T) {
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/13" || r.Method != http.MethodGet {
+			t.Errorf("preflight requested credentials or unexpected endpoint: %s", r.URL.Path)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{ID: 13, EngineType: "falkordb"})
+	}))
+	defer system.Close()
+	service := NewSQLEngineService(&config.Config{}, commonClient.NewSystemServiceClient(system.URL, staticServiceTokenSource("addp_at_develop"), system.Client()), nil)
+	definitions := []models.QueryParameterDefinition{{Name: "text", Type: "string", Default: "中文' RETURN 1 //"}, {Name: "number", Type: "integer", Default: float64(7)}}
+	for _, scenario := range []struct {
+		name      string
+		overrides map[string]interface{}
+		valid     bool
+	}{
+		{"defaults", nil, true},
+		{"override", map[string]interface{}{"text": "changed", "number": float64(9)}, true},
+		{"invalid integer", map[string]interface{}{"number": "not an integer"}, false},
+		{"undeclared override", map[string]interface{}{"extra": "forbidden"}, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			analysis, err := service.AnalyzePreparedQuery(t.Context(), 7, 13, "cypher", "RETURN $text AS text, $number AS number",
+				"addp://engine/13/path/fixture?type=graph", scenario.overrides, definitions, true)
+			if err != nil || analysis == nil || queryAnalysisHasErrors(analysis) == scenario.valid {
+				t.Fatalf("preflight differs from the declared execution contract: analysis=%+v err=%v", analysis, err)
+			}
+		})
+	}
+}
 
 func TestAnalyzeQuery(t *testing.T) {
 	read, err := AnalyzeQuery("sql", "SELECT * FROM activities WHERE id = 1")

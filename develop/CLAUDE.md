@@ -4,6 +4,8 @@
 
 ## 核心职责
 
+查询预检对已声明的参数复用正式执行契约的默认值合并、类型校验和覆盖解析；SQL、Cypher、MQL 等值参数与 relation 编译使用同一解析入口。不能因调用方仅提交本次覆盖值，就把已声明默认值的参数误报为缺失；预检只读取无凭据 Engine Runtime Descriptor，不提前签发执行授权或读取业务数据。最小回归为 `make test-module MODULE=develop GO_ONLY=1`。
+
 Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能：
 
 1. **查询开发** - 按 Engine capability 支持 SQL、MQL、Cypher 等在线查询
