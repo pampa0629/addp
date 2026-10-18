@@ -1173,14 +1173,21 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
         with self.assertRaisesRegex(ONLINE.SuiteError, "duplicated"):
             self.search([self.hit, self.hit])
 
-    def test_only_transient_isolation_is_retried_and_missing_index_cannot_pass(self):
+    def test_initial_projection_warmup_and_transient_isolation_are_retried(self):
         client = Mock()
-        client.request.side_effect = [ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
+        client.request.side_effect = [ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
+                                     ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
                                      ONLINE.SUPPORT.Response(200, {"data": {"results": [self.hit]}})]
         with patch.object(ONLINE.time, "sleep"):
             self.assertTrue(ONLINE.wait_for_technical_field(client, 17, self.item, "value_c", time.monotonic() + 5)["same_item_verified"])
-        client.request.side_effect = None
-        for response in (ONLINE.SUPPORT.Response(503, {"error_code": "search_unconfigured"}),
+        self.assertEqual(client.request.call_count, 3)
+        self.assertEqual(client.request.call_args.args[2], (200, 403, 503))
+
+    def test_other_errors_and_persistent_projection_refusal_cannot_pass(self):
+        client = Mock()
+        for response in (ONLINE.SUPPORT.Response(403, {"error_code": "permission_denied"}),
+                         ONLINE.SUPPORT.Response(503, {"error_code": "search_unconfigured"}),
+                         ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
                          ONLINE.SUPPORT.Response(200, {"data": {"results": []}})):
             client.request.return_value = response
             with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3]), patch.object(ONLINE.time, "sleep"):

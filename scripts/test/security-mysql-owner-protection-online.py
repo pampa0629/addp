@@ -1009,9 +1009,16 @@ def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mappin
                              field_name: str, deadline: float) -> dict[str, object]:
     query = urllib.parse.urlencode({"q": field_name, "engine_id": engine_id, "page_size": 100})
     while time.monotonic() < deadline:
-        response = client.request("GET", "/api/v1/manager/search?" + query, (200, 503))
+        response = client.request("GET", "/api/v1/manager/search?" + query, (200, 403, 503))
         payload = _object(response.payload, "Manager field search")
-        if response.status == 503:
+        if response.status == 403:
+            # A newly created Tenant has no durable owner checkpoint until
+            # the asynchronous projection consumer completes its first page.
+            # This readiness probe still requires the real search result;
+            # a persistent fail-closed response must expire the deadline.
+            if payload.get("error_code") != "security_protection_required":
+                raise SuiteError("Manager field search was denied")
+        elif response.status == 503:
             if payload.get("error_code") != "manager_search_isolated":
                 raise SuiteError("Manager field search is unavailable")
         else:
