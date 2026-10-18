@@ -60,7 +60,7 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 		Attributes: map[string]interface{}{
 			"storage": map[string]interface{}{
 				"path":         input.Path,
-				"size":         input.Size,
+				"total_size":   input.Size,
 				"content_type": input.ContentType,
 			},
 		},

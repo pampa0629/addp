@@ -2,8 +2,10 @@ package scanruntime
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -19,6 +21,7 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	parentNode *models.MetaNode,
 	dirPath string,
 	detected *metaitem.DetectedItem,
+	files []metaitem.StorageFileRef,
 	itemTerm string,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -28,7 +31,7 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	if !ok {
 		return false, "", scanflow.ExtractionCounts{}, nil
 	}
-	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.FileDetectedInput(
+	input := scanprocessor.FileDetectedInput(
 		resource,
 		tenantID,
 		parentNode,
@@ -37,7 +40,22 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 		contentReader,
 		connInfo,
 		scanDepth,
-	))
+	)
+	if detected.Layout == format.LayoutSingle {
+		found := false
+		for _, file := range files {
+			if file.Path != itemPlan.FullName {
+				continue
+			}
+			input = scanprocessor.FileSingleInput(resource, tenantID, parentNode, file, detected, itemTerm, itemPlan.ItemName, itemPlan.FullName, contentReader, connInfo, scanDepth)
+			found = true
+			break
+		}
+		if !found {
+			return false, itemPlan.FullName, scanflow.ExtractionCounts{}, fmt.Errorf("single file source facts missing for %s", itemPlan.FullName)
+		}
+	}
+	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, input)
 	if err != nil {
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,

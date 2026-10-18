@@ -630,9 +630,23 @@ func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.Con
 	}
 	return p.files, nil
 }
-func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+func (p filesystemScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, target plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	entries := append([]plugin.EngineCatalogEntry(nil), p.files...)
+	for _, children := range p.entriesByPath {
+		entries = append(entries, children...)
+	}
+	for _, entry := range entries {
+		if entry.Path.StringPath() == target.StringPath() {
+			return &entry, nil
+		}
+	}
+	if content, ok := p.contentByPath[target.StringPath()]; ok {
+		size := int64(len(content))
+		return &plugin.EngineCatalogEntry{Name: target.Segments[len(target.Segments)-1].Name, Path: target, Term: plugin.EngineCatalogTermFile, Kind: plugin.EngineCatalogKindFile, Role: plugin.EngineCatalogRoleLeaf, Storage: &plugin.EngineCatalogStorageFacts{Path: target.StringPath(), SizeBytes: &size}}, nil
+	}
 	return nil, nil
 }
+
 func (p filesystemScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	if err := p.contentErrByPath[path.StringPath()]; err != nil {
 		return nil, err

@@ -99,7 +99,7 @@ func (s *FilesystemCatalogRuntime) scanPreparedDirectory(
 				continue
 			}
 			plan.progress.Operation("saving", detected.PhysicalPath)
-			persisted, fullName, itemExtractionStats, persistErr := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, fullName, itemExtractionStats, persistErr := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, files, itemTerm, contentReader, connInfo, scanDepth)
 			if fullName != "" {
 				plan.progress.ItemDone(persisted && persistErr == nil)
 				scannedItemFullNames[fullName] = true

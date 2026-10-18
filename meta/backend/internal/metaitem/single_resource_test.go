@@ -21,6 +21,10 @@ func TestInferSingleResourceUsesCanonicalFormatForFamily(t *testing.T) {
 	if item.DataType != datatype.Container {
 		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Container)
 	}
+	storage := item.Attributes["storage"].(map[string]interface{})
+	if storage["total_size"] != int64(42) || storage["size"] != nil {
+		t.Fatalf("single source size must use storage.total_size: %v", storage)
+	}
 }
 
 func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {

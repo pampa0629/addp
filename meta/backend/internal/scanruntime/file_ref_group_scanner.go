@@ -8,6 +8,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresource"
 )
 
 func scanFileRefGroups(
@@ -47,6 +48,25 @@ func scanFileRefGroups(
 		if len(candidates.Subdirs) > 1 {
 			return result, fmt.Errorf("file ref group contains multiple scope directories: %s", primary)
 		}
+		// Refs define the boundary; storage facts must come from the engine,
+		// just as they do for an exact leaf or a full directory scan.
+		for j, file := range candidates.Files {
+			entry, err := catalogProvider.ResolvePath(ctx, connInfo, file.EngineCatalogPath)
+			if err != nil {
+				return result, fmt.Errorf("resolve file ref group source %s: %w", file.Path, err)
+			}
+			if entry == nil {
+				return result, fmt.Errorf("file ref group source %s does not exist", file.Path)
+			}
+			if entry.Path.EngineID != resource.ID || entry.Path.StringPath() != file.Path || entry.Storage == nil || entry.Storage.SizeBytes == nil {
+				return result, fmt.Errorf("invalid file ref group source facts for %s", file.Path)
+			}
+			resolved, ok := scanresource.StorageFileRefFromEntry(*entry)
+			if !ok || resolved.Path != file.Path {
+				return result, fmt.Errorf("invalid content leaf facts for file ref group source %s", file.Path)
+			}
+			candidates.Files[j] = resolved
+		}
 		if len(candidates.Subdirs) == 1 {
 			scope := candidates.Subdirs[0]
 			recursiveFiles, recursiveSubdirs, err := runtime.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, scope.Path)
@@ -77,7 +97,7 @@ func scanFileRefGroups(
 			return result, err
 		}
 		for _, detected := range detection.Items {
-			persisted, fullName, itemExtractionStats, persistErr := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, fullName, itemExtractionStats, persistErr := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, candidates.Files, itemTerm, contentReader, connInfo, scanDepth)
 			if persistErr != nil {
 				return result, fmt.Errorf("failed to persist file ref group item %s: %w", fullName, persistErr)
 			}

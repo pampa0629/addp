@@ -28,6 +28,10 @@ func FileSingleInput(
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
 ) input {
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected)))
+	if file.ContentType != "" {
+		metaattr.SetStorage(attrs, "content_type", file.ContentType)
+	}
 	return input{
 		Resource:             resource,
 		TenantID:             tenantID,
@@ -36,7 +40,7 @@ func FileSingleInput(
 		ItemType:             itemType,
 		ItemName:             itemName,
 		FullName:             fullName,
-		Attributes:           metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))),
+		Attributes:           attrs,
 		Detected:             detected,
 		ContentReader:        contentReader,
 		ConnInfo:             connInfo,

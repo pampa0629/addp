@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	commonClient "github.com/addp/common/client"
-	"github.com/addp/meta/internal/service"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/format/plugins/csv"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -27,6 +27,7 @@ import (
 	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanruntime"
+	"github.com/addp/meta/internal/service"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -35,10 +36,11 @@ const exactLeafContent = "id,value\n1,A\n"
 
 type contentStorageFactPlugin struct {
 	preciseCatalogPlugin
-	t      *testing.T
-	strict bool
-	target string
-	opened []string
+	t          *testing.T
+	strict     bool
+	target     string
+	opened     []string
+	sourceRoot string
 }
 
 func (p *contentStorageFactPlugin) StoreSemantics() plugin.StoreSemantics {
@@ -58,6 +60,16 @@ func (p *contentStorageFactPlugin) ResolvePath(_ context.Context, _ plugin.Conne
 	}
 	for _, entry := range p.entries {
 		if reflect.DeepEqual(entry.Path, path) {
+			if p.sourceRoot != "" {
+				info, err := os.Stat(filepath.Join(p.sourceRoot, path.StringPath()))
+				if err != nil {
+					return nil, err
+				}
+				size, modified := info.Size(), info.ModTime().UTC()
+				storage := *entry.Storage
+				storage.SizeBytes = &size
+				entry.Storage, entry.UpdatedAt = &storage, &modified
+			}
 			return &entry, nil
 		}
 	}
@@ -73,6 +85,9 @@ func (p *contentStorageFactPlugin) OpenContent(_ context.Context, _ plugin.Conne
 		p.t.Fatalf("precise content scan opened sibling %s", path.StringPath())
 	}
 	p.opened = append(p.opened, path.StringPath())
+	if p.sourceRoot != "" {
+		return os.Open(filepath.Join(p.sourceRoot, path.StringPath()))
+	}
 	return io.NopCloser(strings.NewReader(exactLeafContent)), nil
 }
 
@@ -119,7 +134,7 @@ func TestPreciseContentStorageFactsAgainstPostgres(t *testing.T) {
 }
 
 func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.DB) {
-	for _, kind := range []string{"object", "file"} {
+	for _, kind := range []string{"object", "file", "file_ref_group"} {
 		t.Run(kind, func(t *testing.T) {
 			db := openDB(t)
 			repo := metaRepo.NewScanRepository(db)
@@ -131,19 +146,37 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			plugin.Register(p)
 			t.Cleanup(func() { plugin.Unregister(p.Type()) })
 			resource := &commonModels.Engine{ID: 961, EngineType: p.Type(), Name: "exact content source"}
-			locator := &resourcetree.ResourceLocator{EngineID: resource.ID, Type: resourcetree.ResourceType(kind), Path: parts}
+			locator := &resourcetree.ResourceLocator{EngineID: resource.ID, Type: resourcetree.ResourceType("file"), Path: parts}
+			if kind == "object" {
+				locator.Type = resourcetree.ResourceType("object")
+			}
 			targetPath, err := resourcetree.EngineCatalogPathFromLocator(model, locator)
 			if err != nil {
 				t.Fatal(err)
 			}
 			size := int64(len(exactLeafContent))
 			modified := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+			if kind == "file_ref_group" {
+				p.sourceRoot = t.TempDir()
+				if err := os.MkdirAll(filepath.Join(p.sourceRoot, scope), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for _, name := range []string{"A.csv", "B.csv"} {
 				itemPath := targetPath
 				itemPath.Segments = append([]plugin.EngineCatalogSegment(nil), targetPath.Segments...)
 				itemPath.Segments[len(itemPath.Segments)-1].Name = name
 				last := itemPath.Segments[len(itemPath.Segments)-1]
 				p.entries = append(p.entries, plugin.EngineCatalogEntry{Name: name, Path: itemPath, Term: last.Term, Kind: last.Kind, Role: plugin.EngineCatalogRoleLeaf, UpdatedAt: &modified, Storage: &plugin.EngineCatalogStorageFacts{Path: itemPath.StringPath(), SizeBytes: &size, ContentType: "text/csv", ETag: "source-etag"}})
+				if p.sourceRoot != "" {
+					filename := filepath.Join(p.sourceRoot, itemPath.StringPath())
+					if err := os.WriteFile(filename, []byte(exactLeafContent), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Chtimes(filename, modified, modified); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			p.target = targetPath.StringPath()
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -171,6 +204,10 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			first := req
 			first.CatalogPaths = nil
 			first.Targets = []string{locator.ToURI()}
+			if kind == "file_ref_group" {
+				first.Targets = nil
+				first.RefGroups = []models.ScanRefGroup{{Primary: p.target}}
+			}
 			result, err := dispatcher.Dispatch(first)
 			if err != nil || result.Items != 1 {
 				t.Fatalf("first precise content scan: %+v %v", result, err)
@@ -181,6 +218,9 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			}
 			if firstItem.Name != "A.csv" || firstItem.SizeBytes == nil || *firstItem.SizeBytes != size {
 				t.Fatalf("first precise scan lost source size: %+v", firstItem)
+			}
+			if firstItem.DataUpdatedAt == nil || !firstItem.DataUpdatedAt.Equal(modified) || commonJSON.String(firstItem.Attributes, "storage", "content_type") != "text/csv" {
+				t.Fatalf("first precise scan lost source modification time or MIME: %+v", firstItem)
 			}
 			var count int64
 			if err := db.Model(&models.MetaItem{}).Where("tenant_id = ? AND engine_id = ?", 961, resource.ID).Count(&count).Error; err != nil || count != 1 {
@@ -214,7 +254,8 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			}
 			p.strict = true
 			req.CatalogPaths = nil
-			req.Targets = []string{locator.ToURI()}
+			req.Targets = first.Targets
+			req.RefGroups = first.RefGroups
 			for _, depth := range []string{"basic", "deep", "deep"} {
 				req.ScanDepth = depth
 				p.opened = nil
@@ -291,6 +332,19 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			}
 			if len(projections) != 0 {
 				t.Fatal("failed source submitted projection")
+			}
+			if kind == "file_ref_group" {
+				p.fail = false
+				beforeFailure := readItem("A.csv")
+				if err := os.Remove(filepath.Join(p.sourceRoot, p.target)); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := dispatcher.Dispatch(req); err == nil {
+					t.Fatal("missing explicit source reported success")
+				}
+				if len(projections) != 0 || !reflect.DeepEqual(beforeFailure, readItem("A.csv")) {
+					t.Fatal("missing source overwrote metadata or submitted projection")
+				}
 			}
 			var after []models.MetaNode
 			if err := db.Where("tenant_id = ? AND engine_id = ?", 961, resource.ID).Order("id").Find(&after).Error; err != nil {

@@ -253,7 +253,7 @@ func TestObjectScanRefGroupsRejectsUnknownBucketWithoutPersistingItem(t *testing
 }
 
 func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
-	provider := filesystemScanTestProvider{content: ""}
+	provider := filesystemScanTestProvider{contentByPath: map[string]string{"shp/a5.shp": "shape", "shp/a5.shx": "index", "shp/a5.dbf": "attributes", "shp/a5.cpg": "UTF-8"}}
 	pluginRegisterForTest(t, provider)
 
 	db := openObjectCatalogScanTestDB(t)
@@ -285,6 +285,9 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("shapefile item not found")
+	}
+	if item.SizeBytes == nil || *item.SizeBytes != 25 || commonJSON.Int64(item.Attributes, "storage", "total_size") != 25 {
+		t.Fatalf("explicit multi-file source size lost: %+v", item)
 	}
 	assertShapefileLogicalItem(t, item.Attributes, []string{
 		"shp/a5.shp",
@@ -369,5 +372,68 @@ func TestFileScanRefGroupsPersistsFileGDBScopeItem(t *testing.T) {
 	}
 	if got := commonJSON.String(item.Attributes, "item", "claim_policy"); got != "whole_scope" {
 		t.Fatalf("item.claim_policy = %q, want whole_scope", got)
+	}
+}
+
+type fileRefGroupSourceTestProvider struct {
+	filesystemScanTestProvider
+	t     *testing.T
+	entry *plugin.EngineCatalogEntry
+}
+
+func (p fileRefGroupSourceTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	return p.entry, nil
+}
+
+func (p fileRefGroupSourceTestProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	p.t.Fatal("explicit file refs enumerated a directory")
+	return nil, nil
+}
+
+func TestFileScanRefGroupsRequiresActualSourceFacts(t *testing.T) {
+	for _, name := range []string{"missing", "branch", "other_engine", "other_path", "other_storage_path", "no_storage", "no_size", "empty_file"} {
+		t.Run(name, func(t *testing.T) {
+			size := int64(0) // A measured empty file is valid; an absent size is not.
+			entry := &plugin.EngineCatalogEntry{Name: "empty.txt", Path: plugin.FileItemPath(26, "outputs/empty.txt"), Term: plugin.EngineCatalogTermFile, Kind: plugin.EngineCatalogKindFile, Role: plugin.EngineCatalogRoleLeaf, Storage: &plugin.EngineCatalogStorageFacts{Path: "outputs/empty.txt", SizeBytes: &size}}
+			switch name {
+			case "missing":
+				entry = nil
+			case "branch":
+				entry.Role = plugin.EngineCatalogRoleBranch
+			case "other_engine":
+				entry.Path.EngineID = 27
+			case "other_path":
+				entry.Path = plugin.FileItemPath(26, "outputs/other.txt")
+			case "other_storage_path":
+				entry.Storage.Path = "outputs/other.txt"
+			case "no_storage":
+				entry.Storage = nil
+			case "no_size":
+				entry.Storage.SizeBytes = nil
+			}
+			provider := fileRefGroupSourceTestProvider{t: t, entry: entry}
+			pluginRegisterForTest(t, provider)
+			db := openObjectCatalogScanTestDB(t)
+			repo := metaRepo.NewScanRepository(db)
+			runtime := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+			result, err := runtime.ScanRefGroups(t.Context(), &commonModels.Engine{ID: 26, EngineType: provider.Type()}, 1, []models.ScanRefGroup{{Primary: "outputs/empty.txt"}}, models.ScannedDepthBasic, true, nil)
+			if name != "empty_file" {
+				if err == nil || result.Items != 0 {
+					t.Fatalf("invalid source reported success: %+v %v", result, err)
+				}
+				var count int64
+				if err := db.Model(&models.MetaItem{}).Count(&count).Error; err != nil || count != 0 {
+					t.Fatalf("invalid source persisted items: %d %v", count, err)
+				}
+				return
+			}
+			if err != nil || result.Items != 1 {
+				t.Fatalf("measured empty source rejected: %+v %v", result, err)
+			}
+			item, found, err := repo.FindItemByFullName(1, 26, "outputs/empty.txt")
+			if err != nil || !found || item.SizeBytes == nil || *item.SizeBytes != 0 {
+				t.Fatalf("measured empty source lost: %+v %v", item, err)
+			}
+		})
 	}
 }
