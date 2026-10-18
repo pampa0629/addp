@@ -4,18 +4,114 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestIntegrationFalkorDBCatalogRepeatedPropertyObservations(t *testing.T) {
+	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
+		t.Skip("owned FalkorDB T2 gate required")
+	}
+	host, portText, err := net.SplitHostPort(os.Getenv("FALKORDB_T2_ENDPOINT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &FalkorDBPlugin{}
+	conn := plugin.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD")}
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	client, close, err := p.open(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer close()
+	const graph = "catalog-property-observations"
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		if err := client.Do(cleanupCtx, "GRAPH.DELETE", graph).Err(); err != nil {
+			t.Errorf("delete owned catalog property graph: %v", err)
+		}
+	}()
+	// Six fields repeated over 100 records are six schema facts, not 600 fields.
+	query := "CREATE (target:Target) WITH target UNWIND range(1,100) AS i " +
+		"CREATE (:Record {key:i,name:'Fixture',active:true,score:1.5,note:'same',mixed:CASE WHEN i % 2 = 0 THEN i ELSE 'text' END})" +
+		"-[:Link {key:i,name:'Fixture',active:true,score:1.5,note:'same',mixed:CASE WHEN i % 2 = 0 THEN i ELSE 'text' END}]->(target)"
+	if _, err = runQuery(ctx, client, graph, query, nil, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := p.DescribeEngineCatalogFacts(ctx, conn, p.graphPath(13, graph), plugin.EngineCatalogFactsOptions{})
+	if err != nil {
+		t.Fatalf("repeated property observations must not exhaust the schema budget: %v", err)
+	}
+	checkFields := func(fields []datatype.FieldInfo) {
+		t.Helper()
+		if len(fields) != 6 {
+			t.Fatalf("wanted six distinct properties, got %+v", fields)
+		}
+		expected := map[string]datatype.FieldType{"key": datatype.FieldTypeBigInt, "name": datatype.FieldTypeString, "active": datatype.FieldTypeBool, "score": datatype.FieldTypeDouble, "note": datatype.FieldTypeString, "mixed": datatype.FieldTypeUnknown}
+		for _, field := range fields {
+			want, ok := expected[field.Name]
+			if !ok || field.Type != want || (field.Name == "mixed" && field.NativeType != "mixed") {
+				t.Fatalf("incorrect observed property fact: %+v", field)
+			}
+		}
+	}
+	if facts.Graph == nil || *facts.Graph.NodeCount != 101 || *facts.Graph.RelationshipCount != 100 {
+		t.Fatalf("incorrect graph facts: %+v", facts.Graph)
+	}
+	if len(facts.Graph.NodeShapes) != 2 || facts.Graph.NodeShapes[0].Name != "Record" || len(facts.Graph.RelationshipShapes) != 1 {
+		t.Fatalf("incorrect graph shapes: %+v", facts.Graph)
+	}
+	checkFields(facts.Graph.NodeShapes[0].Properties)
+	checkFields(facts.Graph.RelationshipShapes[0].Properties)
+	for name, query := range map[string]string{
+		"node":         "CREATE (n:Wide) SET n = $props",
+		"relationship": "CREATE (:Wide)-[r:WideLink]->(:Wide) SET r = $props",
+	} {
+		t.Run(name+" schema budget", func(t *testing.T) {
+			props := map[string]interface{}{}
+			for i := 0; i < 500; i++ {
+				props[fmt.Sprintf("f%d", i)] = int64(i)
+			}
+			if _, err := runQuery(ctx, client, graph, query, map[string]interface{}{"props": props}, 1, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.DescribeEngineCatalogFacts(ctx, conn, p.graphPath(13, graph), plugin.EngineCatalogFactsOptions{}); err != nil {
+				t.Fatalf("500 distinct facts must fit the schema budget: %v", err)
+			}
+			update := "MATCH (n:Wide) SET n.f500 = 500"
+			if name == "relationship" {
+				update = "MATCH ()-[r:WideLink]->() SET r.f500 = 500"
+			}
+			if _, err := runQuery(ctx, client, graph, update, nil, 1, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.DescribeEngineCatalogFacts(ctx, conn, p.graphPath(13, graph), plugin.EngineCatalogFactsOptions{}); err == nil || !strings.Contains(err.Error(), "graph properties exceed budget") {
+				t.Fatalf("501 distinct facts must retain the schema budget failure: %v", err)
+			}
+			if _, err := runQuery(ctx, client, graph, "MATCH (n:Wide) DETACH DELETE n", nil, 1, false); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestIntegrationFalkorDBSearchIndexReadyBeforeFirstSearch(t *testing.T) {
 	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {

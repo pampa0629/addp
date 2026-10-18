@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/propertygraph"
 	rdb "github.com/redis/go-redis/v9"
 )
 
@@ -219,7 +220,10 @@ func (p *FalkorDBPlugin) graphPath(engineID uint, name string) plugin.EngineCata
 	return path
 }
 func (p *FalkorDBPlugin) graphName(path plugin.EngineCatalogPath) (string, error) {
-	if path.Version != plugin.EngineCatalogPathVersion || path.EngineID == 0 || len(path.Segments) != 2 || path.Segments[0].Term != "server" || path.Segments[0].Kind != "server" || path.Segments[1].Term != "graph" || path.Segments[1].Kind != "graph" || !validGraphName(path.Segments[1].Name) {
+	if err := propertygraph.ValidateTarget(path, p.EngineCatalogModel()); err != nil {
+		return "", plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, err)
+	}
+	if !validGraphName(path.Segments[1].Name) {
 		return "", plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("FalkorDB requires a graph leaf path"))
 	}
 	return path.Segments[1].Name, nil
@@ -231,7 +235,7 @@ func (p *FalkorDBPlugin) ListChildren(ctx context.Context, c plugin.ConnectionIn
 		}
 		return []plugin.EngineCatalogEntry{}, nil
 	}
-	if path.Version != plugin.EngineCatalogPathVersion || path.EngineID == 0 || path.Segments[0].Term != "server" {
+	if path.Version != plugin.EngineCatalogPathVersion || path.EngineID == 0 || path.Segments[0] != (plugin.EngineCatalogSegment{Term: "server", Kind: "server"}) {
 		return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid FalkorDB root"))
 	}
 	client, close, err := p.open(ctx, c)
@@ -255,7 +259,7 @@ func (p *FalkorDBPlugin) ListChildren(ctx context.Context, c plugin.ConnectionIn
 }
 func (p *FalkorDBPlugin) ResolvePath(ctx context.Context, c plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	if plugin.IsEngineCatalogRootPath(path) {
-		if path.Version != plugin.EngineCatalogPathVersion || path.Segments[0].Term != "server" || path.EngineID == 0 {
+		if path.Version != plugin.EngineCatalogPathVersion || path.Segments[0] != (plugin.EngineCatalogSegment{Term: "server", Kind: "server"}) || path.EngineID == 0 {
 			return nil, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid FalkorDB root"))
 		}
 		return &plugin.EngineCatalogEntry{Path: path, Term: "server", Kind: "server", Role: plugin.EngineCatalogRoleBranch}, nil

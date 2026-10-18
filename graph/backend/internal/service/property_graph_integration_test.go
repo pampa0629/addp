@@ -328,6 +328,27 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	if err != nil || len(multipleHops.Nodes) != 3 || len(multipleHops.Edges) != 2 {
 		t.Fatalf("reverse multi-hop path=%+v %v", multipleHops, err)
 	}
+	// Both declared Cypher algorithms run through the real provider. K-hop
+	// traversal includes the center and respects the requested depth.
+	for _, hops := range []int{1, 2} {
+		neighbors, err := analysis.RunAlgorithm(ctx, kg.ID, 7, &models.AlgorithmRunRequest{
+			Algorithm: "khop_neighbors", Limit: 10,
+			Params: map[string]interface{}{"node_id": first, "hops": float64(hops)},
+		})
+		if err != nil || neighbors == nil || neighbors.Subgraph == nil {
+			t.Fatalf("%d-hop algorithm failed: %+v %v", hops, neighbors, err)
+		}
+		if len(neighbors.Subgraph.Nodes) != hops+1 || len(neighbors.Subgraph.Edges) != hops {
+			t.Fatalf("%d-hop algorithm returned the wrong neighborhood: %+v", hops, neighbors.Subgraph)
+		}
+		ids := map[string]bool{}
+		for _, node := range neighbors.Subgraph.Nodes {
+			ids[node.ID] = true
+		}
+		if !ids[first] || !ids[second] || ids[middle] != (hops == 2) {
+			t.Fatalf("%d-hop traversal crossed its depth boundary: %+v", hops, ids)
+		}
+	}
 	invalid := *req
 	invalid.CatalogPath = path
 	invalid.CatalogPath.Segments = append([]plugin.EngineCatalogSegment(nil), path.Segments...)

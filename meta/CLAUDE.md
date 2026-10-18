@@ -271,3 +271,5 @@ Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引�
 
 
 根节点直连 graph leaf 的引擎由既有 DirectLeafRuntime 扫描，通用运行时必须消费 Graph Facts 并通过 `ApplyGraphItemAttributes` 写入 `data_type=graph` 与 `type_info.graph`；不将图伪装成表或 Unknown。FalkorDB 完整 graph key 保留为单段目录名称和 full_name，稳定重扫不改变 DataItem ID／fingerprint。真实扫描回归纳入 `make test-common-falkordb`，与 Common／Develop 共享同次 disposable 实例并自动销毁；不借用 Ontology Infra。
+
+FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条记录观察，500 项预算统计去重后的属性名／原生类型组合；相同属性在多条记录出现不能耗尽结构预算，同名不同类型仍合并为 mixed，真正超出预算必须明确失败，不能截断后声明结构完整。节点和关系两侧的重复观察、混合类型及 500/501 边界由同一 Common FalkorDB T2 覆盖。

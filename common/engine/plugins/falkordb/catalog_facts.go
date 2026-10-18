@@ -123,7 +123,7 @@ func (p *FalkorDBPlugin) DescribeEngineCatalogFacts(ctx context.Context, c plugi
 		if len(labels) != 1 {
 			kind = datatype.GraphNodeShapeKindLabelSet
 		}
-		properties, err := p.shapeProperties(ctx, c, path, "MATCH (n"+labelsClause(labels)+") WHERE size(labels(n)) = "+fmt.Sprint(len(labels))+" WITH n LIMIT 100 UNWIND keys(n) AS property RETURN property,typeOf(n[property]) AS native_type LIMIT 501")
+		properties, err := p.shapeProperties(ctx, c, path, "MATCH (n"+labelsClause(labels)+") WHERE size(labels(n)) = "+fmt.Sprint(len(labels))+" WITH n LIMIT 100 UNWIND keys(n) AS property RETURN DISTINCT property,typeOf(n[property]) AS native_type LIMIT 501")
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func (p *FalkorDBPlugin) DescribeEngineCatalogFacts(ctx context.Context, c plugi
 		}
 		index, exists := indexes[typ]
 		if !exists {
-			properties, err := p.shapeProperties(ctx, c, path, "MATCH ()-[r:"+identifierQuote(typ)+"]->() WITH r LIMIT 100 UNWIND keys(r) AS property RETURN property,typeOf(r[property]) AS native_type LIMIT 501")
+			properties, err := p.shapeProperties(ctx, c, path, "MATCH ()-[r:"+identifierQuote(typ)+"]->() WITH r LIMIT 100 UNWIND keys(r) AS property RETURN DISTINCT property,typeOf(r[property]) AS native_type LIMIT 501")
 			if err != nil {
 				return nil, err
 			}

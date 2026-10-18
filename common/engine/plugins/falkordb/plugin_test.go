@@ -115,3 +115,23 @@ func TestFalkorDBStaticAnalysisWithoutExecutionCredentials(t *testing.T) {
 		t.Fatal("execution accepted missing execution credentials")
 	}
 }
+
+func TestFalkorDBRejectsNamedStructuralRootBeforeConnecting(t *testing.T) {
+	p := &FalkorDBPlugin{}
+	path := p.graphPath(9, "业务.图/a")
+	path.Segments[0].Name = "not-a-business-segment"
+	if _, err := p.graphName(path); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+		t.Fatalf("named structural root accepted as a graph target: %v", err)
+	}
+	if _, err := p.PrepareGraphQuery(t.Context(), nil, plugin.QueryRequest{EngineID: 9, Language: "cypher", TargetPath: &path, Query: "RETURN 1"}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+		t.Fatalf("preparation silently normalized a malformed target: %v", err)
+	}
+	root := path
+	root.Segments = root.Segments[:1]
+	if _, err := p.ResolvePath(t.Context(), nil, root); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+		t.Fatalf("resolution accepted a named structural root: %v", err)
+	}
+	if _, err := p.ListChildren(t.Context(), nil, root, plugin.ListOptions{}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath) {
+		t.Fatalf("listing did not reject malformed root before connecting: %v", err)
+	}
+}
