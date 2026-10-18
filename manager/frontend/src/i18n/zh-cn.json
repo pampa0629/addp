@@ -1132,6 +1132,7 @@
       "searchPlaceholder": "搜索资源...",
       "searching": "搜索中...",
       "searchFailed": "搜索失败：{error}",
+      "foundResults": "找到 {n} 个匹配资源",
       "noMatchingDataSources": "未找到匹配的资源",
       "clear": "清除",
       "score": "相关度",

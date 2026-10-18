@@ -122,6 +122,24 @@ for (const [locale, prefix] of [['zh-cn', '搜索失败：'], ['en', 'Search fai
   })
 }
 
+for (const [locale, countLabel] of [['zh-cn', '找到 2 个匹配资源'], ['en', '2 matching resources found']]) {
+  test(`search distinguishes equal resource names by engine with a localized count (${locale})`, async ({ page }) => {
+    await installBackend(page)
+    await page.addInitScript(value => localStorage.setItem('addp-lang', value), locale)
+    await page.route('**/api/v1/meta/resource-tree/*/search?**', route => {
+      const engineId = Number(new URL(route.request().url()).pathname.split('/').at(-2))
+      return route.fulfill({ json: { results: [{ ...branch(engineId), label: 'customers' }] } })
+    })
+    await page.goto('/data-explorer')
+    await page.locator('.explorer-search input').fill('customers')
+    await expect(page.locator('.result-item .node-label')).toHaveText(['customers', 'customers'])
+    await expect.soft(page.locator('.results-count')).toHaveText(countLabel)
+    await expect.soft(page.locator('.result-item .result-engine')).toHaveText(engines.map(engine => engine.name))
+    await page.locator('.result-item').filter({ hasText: engines[1].name }).click()
+    await expect(row(page, 'schema 29').locator('..')).toHaveClass(/is-current/)
+  })
+}
+
 test('an unloaded root can be collapsed while loading and stays closed after its identity resolves', async ({ page }) => {
   const backend = await installBackend(page)
   const gate = {}

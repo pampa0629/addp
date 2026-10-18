@@ -64,6 +64,8 @@
             <!-- 完整路径 -->
             <div class="result-path">
               <el-icon><FolderOpened /></el-icon>
+              <span class="result-engine">{{ result.engineName }}</span>
+              <el-icon v-if="result.engineName && result.path.length"><ArrowRight /></el-icon>
               <span
                 v-for="(segment, idx) in result.path"
                 :key="idx"
@@ -151,7 +153,8 @@ const runSearch = async (ticket) => {
     for (const engineId of engineIds) {
       const engineResults = await store.searchNodes(engineId, query, nodeTypes)
       if (!searchScope.current(ticket)) return
-      allResults.push(...engineResults)
+      const engineName = store.engines.find(engine => engine.id === engineId)?.name
+      allResults.push(...engineResults.map(result => ({ ...result, engineName })))
     }
     results.value = allResults
     total.value = allResults.length
@@ -349,11 +352,13 @@ onBeforeUnmount(() => {
 
 .result-path {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
 }
 
 .path-segment {

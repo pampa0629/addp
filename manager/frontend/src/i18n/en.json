@@ -1132,6 +1132,7 @@
       "searchPlaceholder": "Search resources...",
       "searching": "Searching...",
       "searchFailed": "Search failed: {error}",
+      "foundResults": "{n} matching resources found",
       "noMatchingDataSources": "No matching resources found",
       "clear": "Clear",
       "score": "Score",
