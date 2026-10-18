@@ -238,6 +238,7 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@python3 scripts/test/business-deployments_test.py
 	@$(MAKE) test-common-starrocks-unit
 	@bash -n business/gaussdb/entrypoint.sh business/scripts/gaussdb.sh
 	@python3 scripts/test/business-gaussdb_test.py
