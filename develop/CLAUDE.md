@@ -23,7 +23,11 @@ Spark Workflow 的加载资源选择器还支持 Elasticsearch `index` locator�
 ```
 前端请求（SQL/工作流/Notebook）
   ↓
-DevExecutor（统一执行器）
+DevExecutor（校验请求、冻结内容与授权事实，持久化 pending execution）
+  ↓
+ExecutionSupervisor（按类型额度领取、维护 lease；失联收敛失败，不自动重放）
+  ↓
+ExecutionService（持有效 lease 调用所属执行器）
   ├─ 查询执行 → SQLEngineService / FederatedQueryService / GraphQueryProvider
   │  ├─ 普通查询通过 System 获取单引擎执行期连接
   │  ├─ 普通 SQL 使用 common/dbbridge 执行查询
@@ -35,20 +39,22 @@ DevExecutor（统一执行器）
   │  ├─ 调用 GeoPython Workflow 运行时（矢量、表格与栅格算子）
   │  ├─ 或调用 Spark Workflow 运行时（大数据空间计算，执行时绑定 Spark 通用引擎资源）
   │  └─ 返回执行结果（GeoJSON/DataFrame）
-  └─ Notebook 执行 → NotebookExecutionService
-     ├─ 从 execution_config.engine_id 读取绑定的 System Script Engine
-     ├─ 通过 Runtime Descriptor 和 ScriptRuntimeProvider.OpenSession 解析受控端点
-     ├─ 使用 Develop 租户 Service Access Token 调用无头 Notebook Runtime
-     ├─ 从 MinIO 读取 Notebook，并通过 Papermill 执行 Python Cell
-     └─ 将执行结果写回 MinIO，并返回结果摘要
+  └─ Notebook（script）→ 当前拒绝实际派发，记录 authorization_unavailable
+     ├─ 提交时已经冻结 Notebook 内容 SHA-256
+     ├─ NotebookExecutionService / Jupyter 已具备下载字节的 SHA-256 核验
+     └─ 待确认并接入可核验撤权的运行授权后，才能启用无头执行
   ↓
 TaskExecutionRepository（统一执行记录持久化）
   └─ common.task_executions 表（module=develop）
 ```
 
-### Query 过程事件
+Query 保留现有总并发及单引擎额度；Workflow、Notebook 各有独立的平台可配置额度，默认分别为 2、1。缩减额度不抢占已领取任务，只约束后续领取。持久队列和 lease 不等于远端强制停止：本地失联收敛失败后不自动重放，不能承诺远端程序已经停止。
 
-Query 的既有 bounded lease 队列统一写入 `common.execution_events`：实际 claim 写 started，执行查询阶段写仅含 progress 的进度事件，完成和过期收敛写唯一终态。事件与对应 execution 及任务最近执行摘要在同一事务提交；事件存储失败回滚这些事实，过期或错配 lease 不得写入。授权附加与心跳不追加事件，Query 没有稳定步骤身份时不把自由文本 current_step 复制为 step_id；事件不包含查询、参数、业务结果或授权引用。无有效 lease 的遗留 running 记录只收敛失败概览，不补造过程。读取继续使用 Monitor 的 Owner 授权入口与共享 30 天维护；Workflow／Notebook 的执行模型另行确认，不能通过无 lease 追加事件绕过。验证使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`，Query PostgreSQL 事件回归须由后者的名称筛选命中；既有 Go／Develop PostgreSQL CI 自动覆盖，不新增 API 或存储路径，确定性验证不代替真实 T4。
+### 执行过程事件与当前边界
+
+Query、Workflow、Notebook（script）共用 bounded lease 队列和 `common.execution_events`：实际 claim 写 started，完成和过期收敛写唯一终态；Notebook 当前只收敛授权不可用的失败，不调用 Runtime。Query 与 Workflow 仅在已有受控执行阶段记录 progress 百分比，不把自由文本 current_step 复制为 step_id。事件与对应 execution 及任务最近执行摘要在同一事务提交；事件存储失败回滚这些事实，过期或错配 lease 不得写入。授权附加、Workflow 远端执行回执与心跳不追加事件；事件不包含查询、参数、业务结果、Runtime 完整响应或授权引用。无有效 lease 的遗留 running 记录只收敛失败概览，不补造过程。读取继续使用 Monitor 的 Owner 授权入口与共享 30 天维护。验证使用 `make test-module MODULE=develop` 与 `make test-develop-postgres`，新增 PostgreSQL 事件回归必须由后者的名称筛选命中；既有 Go／Develop PostgreSQL CI 自动覆盖，确定性验证不代替真实 T4。
+
+Notebook 交互 Session 授权、引擎数据访问授权和排队 execution 的运行授权承担不同职责。历史提交人身份和 Service Token 不能替代派发时的当前执行资格裁决；现阶段不得借用 Session 或数据授权放行排队任务。内容摘要只证明执行字节与提交时一致，不证明仍有执行权限。Jupyter 核验实际下载字节不一致时返回 `notebook_content_changed`，不创建快照或自动重试；真实队列派发及撤权闭环仍待运行授权方案确认和独立验收。
 
 真实 Query 事件读取复用 `transfer-relational-sql-etl` Hosted suite：三轮父编排中的六个 Develop Query 子执行，分别经已授权 Monitor 入口核对 started／progress／completed、同一 execution／attempt、时间和游标顺序及闭合进度计数；报告只记录核验数量，不复制事件或查询结果。既有 `make test-transfer-online-runner` 与 CI 聚合承接读取契约和负向回归；该扩展实际运行通过前不计为 T4。
 
