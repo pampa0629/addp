@@ -1862,7 +1862,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
             'validate_success', 'validate_item', 'triggered_by', 'meta_scan_runs', 'browser_runner', 'physical_size_bytes'),
         "business/scripts/online-vector-topology-fixture.py": ('NFSExport', 'validate_features', 'expected_geometries', 'source file changed'),
         "scripts/utils/online_nfs_fixture.py": ('root_squash', 'owned_root', 'nfs_export_removed'),
-        "console/frontend/e2e/online/vector-topology-persistence.spec.js": ('login(', 'auth.principalID', 'source_srid', 'getImageData', 'evidence.execution_id', 'topology-browser.json'),
+        "console/frontend/e2e/online/vector-topology-persistence.spec.js": ('login(', 'browserAPIFromResponse(', 'principalID: evidence.principal_id', 'previewResponse', 'source_srid', 'getImageData', 'evidence.execution_id', 'topology-browser.json'),
         "system/backend/cmd/online-test-fixture/main.go": ('case "vector-topology-persistence":', '"manager.data_item.read"'),
         "engines/geopython-workflow/test_topology_operators.py": ('test_hosted_topology_physical_oracle',),
         "Makefile": ('@$(MAKE) test-vector-topology-online-runner', 'scripts/test/vector-topology-persistence-online_test.py',
