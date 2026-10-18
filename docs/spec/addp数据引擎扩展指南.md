@@ -4,6 +4,14 @@
 
 ---
 
+## StarRocks 准入范围（2026-10-18 已确认）
+
+先验证官方 `starrocks/allin1-ubuntu:3.5.21` OCI 索引 `sha256:faf5f6b17a301b276b829482af11d350004833dc9162232e1083a2aad0fa8b2a` 的 Linux ARM64／amd64 原生启动和 MySQL 协议，不以镜像 manifest 或交叉编译代替实库。协议测试归 `common/engine/certification/starrocks/`，Business 只拥有数据库与样例，不登记 Engine；准入未通过前不添加生产插件或 capabilities。
+
+首版拟接入独立 `engine_type=starrocks`，仅 `default_catalog` 内部普通表的目录、基础字段／键事实、扫描、预览及参数化只读查询。不得直接继承 MySQL／Doris 的写入、事务和元数据假设：StarRocks 的部分 Information Schema 视图仅为占位，事务只读变量是否真正约束写入须用具有写权限的账号做反例实测。无法证明的能力不声明。通过后复用已有纯 Go MySQL 驱动，不引入第二套驱动；本阶段不包含外部 catalog、Spark、Stream Load、写入或 CDC。
+
+Business 后续使用独立 `-starrocks` profile，先不加入 `-all`，官方默认单机 FE／BE 路线、独立持久卷及管理员／业务账号；SQL／FE HTTP／BE HTTP 首选回环端口分别为 9031／8031／8041。测试使用带归属标签的临时镜像、容器、卷和随机回环端口，退出验证零残留，不操作个人 Business 服务。
+
 ## 一、扩展步骤
 
 1. 对只有厂商离线介质、或运行环境受 OS/CPU 架构限制的引擎，先通过 T5 官方介质认证确认许可证、介质完整性、原生启动、驱动协议和关键 SQL 能力；认证不得伪装成平台已经支持该引擎。

@@ -238,6 +238,7 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@$(MAKE) test-common-starrocks-unit
 	@bash -n business/gaussdb/entrypoint.sh business/scripts/gaussdb.sh
 	@python3 scripts/test/business-gaussdb_test.py
 	@bash business/scripts/start.sh --help | grep -Fq -- '-gaussdb'
@@ -383,6 +384,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
 	@$(MAKE) test-common-gaussdb
+	@$(MAKE) test-common-starrocks
 
 test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
@@ -411,6 +413,15 @@ test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provi
 
 test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
+
+.PHONY: test-common-starrocks test-common-starrocks-unit
+test-common-starrocks-unit: ## StarRocks 准入夹具归属、脱敏、清理及协议测试编译
+	@python3 -m unittest scripts/test/starrocks-admission_test.py
+	@bash -n scripts/test/common-starrocks-gate.sh
+	@cd common && GOWORK=off go test ./engine/certification/starrocks -run '^$$'
+
+test-common-starrocks: ## 独占官方 StarRocks 验证原生参数查询、精度与事务只读约束
+	@bash scripts/test/common-starrocks-gate.sh
 
 .PHONY: test-common-gaussdb test-common-gaussdb-unit
 test-common-gaussdb-unit: ## GaussDB 只读能力、独立驱动与标准入口确定性验证

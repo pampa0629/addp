@@ -62,6 +62,7 @@ HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh 
 - OceanBase SQL: `2881`
 - TiDB SQL: `4000`
 - openGauss SQL: `5435`（容器端口 `5432`）
+- StarRocks（已确认，待准入后部署）：SQL `9031:9030`、FE HTTP `8031:8030`、BE HTTP `8041:8040`，独立 `starrocks` profile，仅绑定 `127.0.0.1`，不进入 `-all`。
 - GaussDB SQL: `5437`（容器端口 `5432`，独立 `gaussdb` profile，仅绑定 `127.0.0.1`，显式 `GAUSSDB_PORT`，冲突失败，不进入 `-all`）
 - KingbaseES SQL: `5436`（容器端口 `54321`，仅 owner-managed disposable Business 样例）
 - 瀚高 V4.5 SQL: `5866`（容器端口 `5866`，独立 `highgo` profile，仅绑定 `127.0.0.1`，配置归 Business `HIGHGO_PORT`）

@@ -16,6 +16,7 @@ on:
         options:
           - all
           - gaussdb-official-media
+          - starrocks-admission
 
 permissions:
   contents: read
@@ -27,7 +28,7 @@ permissions:
 jobs:
   selection:
     name: Release and T2 gate selection
-    if: github.event_name != 'workflow_dispatch' || inputs.release_suite != 'gaussdb-official-media'
+    if: github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -796,6 +797,53 @@ jobs:
         with:
           name: gaussdb-provider-t2-${{ matrix.arch }}-${{ github.run_id }}
           path: ${{ runner.temp }}/addp-gaussdb-t2/
+          if-no-files-found: warn
+          retention-days: 14
+
+  common-starrocks:
+    name: StarRocks native protocol admission (${{ matrix.arch }})
+    needs: selection
+    if: always() && ((github.event_name == 'workflow_dispatch' && inputs.release_suite == 'starrocks-admission') || needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common StarRocks gate
+        env:
+          ADDP_STARROCKS_ARTIFACT_DIR: ${{ runner.temp }}/addp-starrocks-t2
+        run: make test-common-starrocks
+
+      - name: Summarize Common StarRocks gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: StarRocks native protocol admission (${{ matrix.arch }})
+          status: ${{ job.status }}
+
+      - name: Upload StarRocks admission evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: starrocks-admission-t2-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-starrocks-t2/
           if-no-files-found: warn
           retention-days: 14
 
@@ -1726,7 +1774,7 @@ jobs:
     needs:
       - selection
       - cli-product-macos-verification
-    if: always() && (github.event_name != 'workflow_dispatch' || inputs.release_suite != 'gaussdb-official-media')
+    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -1752,7 +1800,7 @@ jobs:
     needs:
       - selection
       - system-iam-postgres-verification
-    if: always() && (github.event_name != 'workflow_dispatch' || inputs.release_suite != 'gaussdb-official-media')
+    if: always() && (github.event_name != 'workflow_dispatch' || (inputs.release_suite != 'gaussdb-official-media' && inputs.release_suite != 'starrocks-admission'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
