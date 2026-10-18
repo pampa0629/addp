@@ -1208,3 +1208,20 @@ func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
 		t.Fatal("topology Console must use the same ordinary User")
 	}
 }
+
+func TestGaussDBReadOnlyConsumerFixture(t *testing.T) {
+	permissions, err := suitePermissions("gaussdb-consumer-flow")
+	if err != nil || !reflect.DeepEqual(permissions, redisConsumerPermissions) {
+		t.Fatalf("minimal read-only permissions: %v", err)
+	}
+	if !needsEngineProvisioner("gaussdb-consumer-flow") {
+		t.Fatal("separate Engine provisioner required")
+	}
+	values := consumerEnvironment("gaussdb-consumer-flow", 2, "consumer-token", "private-password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
+		t.Fatal("browser must use the same consumer User")
+	}
+	if _, ok := values["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"]; ok {
+		t.Fatal("source authorization is outside GaussDB admission")
+	}
+}

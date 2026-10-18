@@ -751,6 +751,54 @@ jobs:
           gate: Orchestrator execution reliability (PostgreSQL 15)
           status: ${{ job.status }}
 
+  common-gaussdb:
+    name: Common GaussDB read-only Provider (${{ matrix.arch }})
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common GaussDB gate
+        env:
+          ADDP_GAUSSDB_T2_ARTIFACT_DIR: ${{ runner.temp }}/addp-gaussdb-t2
+          ADDP_GAUSSDB_MEDIA_CACHE: ${{ runner.temp }}/addp-gaussdb-official-media
+        run: make test-common-gaussdb
+
+      - name: Summarize Common GaussDB gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common GaussDB read-only Provider (${{ matrix.arch }})
+          status: ${{ job.status }}
+
+      - name: Upload GaussDB Provider evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gaussdb-provider-t2-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/addp-gaussdb-t2/
+          if-no-files-found: warn
+          retention-days: 14
+
   common-opengauss:
     name: Common Engine Provider integration (openGauss 6.0.6 official media)
     needs: selection

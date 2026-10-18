@@ -33,6 +33,7 @@
 - **GORM**: `gorm.io/gorm@v1.31.2`
 - **PostgreSQL 驱动**: `gorm.io/driver/postgres@v1.6.0`
 - **PostgreSQL 客户端**: `github.com/lib/pq@v1.10.9`
+- **GaussDB 客户端**: `github.com/HuaweiCloudDeveloper/gaussdb-go@v1.0.0-rc1`，独立注册 `gaussdb` driver，仅用于已准入 Kernel 507.0.T1 的非空间只读插件；与认证事实 `scripts/lib/gaussdb-official-media.sh` 的版本和双校验和一致。RC 阶段不宣称商业版、其他内核或写入能力。
 - **PostgreSQL 连接池**: `github.com/jackc/pgx/v5@v5.7.2`
 
 #### 认证与加密

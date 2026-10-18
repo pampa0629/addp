@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Canonical GaussDB developer media facts. Never substitute openGauss media.
 GAUSSDB_OFFICIAL_VERSION=V2.0-10.0.0
-# Public candidate is verified only in the standalone certification module.
+# One pinned public driver for certification and the admitted read-only plugin.
 GAUSSDB_GO_MODULE=github.com/HuaweiCloudDeveloper/gaussdb-go
 GAUSSDB_GO_VERSION=v1.0.0-rc1
 GAUSSDB_GO_SUM=h1:OIZ83SgbK0ImF/vKFSfNoCAQWQySx5sYhj0RgsWbMbA=

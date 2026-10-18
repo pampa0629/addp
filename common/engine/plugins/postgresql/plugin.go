@@ -398,7 +398,7 @@ func (p *PostgreSQLPlugin) listNamespacesQuery(superMapSDXDetected bool) (string
 			 WHERE table_schema = s.schema_name
 			   AND table_type = 'BASE TABLE'
 			   ` + tableFilter + `) as leaf_count
-		FROM information_schema.schemata s
+		FROM (SELECT nspname AS schema_name FROM pg_catalog.pg_namespace) s
 		WHERE lower(schema_name) NOT IN (` + strings.Join(placeholders, ", ") + `)
 		  AND has_schema_privilege(s.schema_name, 'USAGE')
 		ORDER BY schema_name

@@ -382,6 +382,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-oracle-decimal
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
+	@$(MAKE) test-common-gaussdb
 
 test-integration-owner-managed: ## 仅在满足各产品许可及平台要求的 owner 受控主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
@@ -410,6 +411,16 @@ test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provi
 
 test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
+
+.PHONY: test-common-gaussdb test-common-gaussdb-unit
+test-common-gaussdb-unit: ## GaussDB 只读能力、独立驱动与标准入口确定性验证
+	@cd common && GOWORK=off go test ./engine/plugins/gaussdb
+	@python3 -m unittest scripts/test/gaussdb-consumer-flow-online_test.py scripts/test/online-hosted-gaussdb-gate_test.py
+	@node --check console/frontend/e2e/online/gaussdb-consumer-flow.spec.js
+	@bash -n scripts/test/common-gaussdb-gate.sh scripts/test/online-hosted-gaussdb-gate.sh
+
+test-common-gaussdb: ## 独占官方 GaussDB 验证 SELECT-only Provider 和读取集合
+	@bash scripts/test/common-gaussdb-gate.sh
 
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
@@ -595,6 +606,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-common-gaussdb-unit
 	@$(MAKE) test-security-online-runner
 	@$(MAKE) test-highgo-online-runner
 	@$(MAKE) test-pg-authorization-online-runner

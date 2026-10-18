@@ -146,6 +146,11 @@ SUITES: Mapping[str, Suite] = {
             ("service", "SERVICE_URL"),
         ),
     ),
+    "gaussdb-consumer-flow": Suite(
+        command=(sys.executable, "-m", "scripts.test.gaussdb-consumer-flow-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("manager", "MANAGER_URL")),
+    ),
     "highgo-consumer-flow": Suite(
         command=(sys.executable, "-m", "scripts.test.highgo-consumer-flow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

@@ -75,6 +75,9 @@ func TestProtocolCompatibleCatalogFiltersAdditionalSystemSchemasBeforeLeafCounts
 	}
 
 	query, args := protocol.listNamespacesQuery(false)
+	if !strings.Contains(query, "SELECT nspname AS schema_name FROM pg_catalog.pg_namespace") || strings.Contains(query, "information_schema.schemata") {
+		t.Fatal("namespace enumeration must preserve explicit USAGE grants across protocol engines")
+	}
 	if !strings.Contains(query, "WHERE lower(schema_name) NOT IN") {
 		t.Fatalf("namespace query must filter schemas before evaluating leaf counts: %s", query)
 	}

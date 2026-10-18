@@ -15,7 +15,8 @@ import (
 )
 
 // The release owner copies this source into its temporary standalone module.
-// testdata keeps the external driver outside Common's package/dependency graph.
+// testdata keeps this standalone probe outside ordinary Common package discovery.
+// The admitted plugin uses the same pinned driver; probe builds do not rewrite Common.
 func TestGaussDBDriverCoexistence(t *testing.T) {
 	if _, present := os.LookupEnv("GOENV_REGIST_ALL"); present {
 		t.Fatal("driver coexistence must not rely on GOENV_REGIST_ALL")

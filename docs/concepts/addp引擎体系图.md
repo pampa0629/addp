@@ -284,7 +284,7 @@ pg.table(schema="public", name="roads")
 
 | Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
 | --- | --- | --- | --- |
-| PostgreSQL、openGauss、KingbaseES | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| PostgreSQL、openGauss、KingbaseES、GaussDB（只读首版） | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MySQL、OceanBase、TiDB、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
 | Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
@@ -346,7 +346,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 | 引擎族 | 引擎 |
 | --- | --- |
-| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、TiDB、Doris、ClickHouse、Spark SQL |
+| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、GaussDB（只读首版）、TiDB、Doris、ClickHouse、Spark SQL |
 | 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j、FalkorDB |
 | 对象存储 | MinIO、S3 |
@@ -377,6 +377,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - Kafka topic 通过 `service -> topic` Engine Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
 - HighGo V4.5 以独立 `highgo` 身份接入，固定第三方 SM3 驱动和 PostgreSQL 方言；开放非空间目录、只读能力和经隔离认证的建表准备／批量写入／COPY 事务会话；可见普通表删除与写会话事务内替换复用共享 PostgreSQL Provider，任意写 SQL、upsert、CDC 和空间能力仍不开放。驱动来源、验收边界和未开放范围见《数据引擎扩展指南》，不将接入阶段等同于完整产品认证。
+- GaussDB 以独立 `gaussdb` 身份和固定纯 Go 驱动接入，首版只开放非空间目录、字段及有序主键 Facts、批次／会话读取和参数化只读 SQL；System 登记、Meta 扫描、Manager 预览按各自 T2／T4 实际结果认定。它只组合已验证的 PostgreSQL 协议方法，不继承写入、COPY、TableResult、watermark、空间、CDC 或关系 enrichment 能力。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式、TiDB 和 Doris 共享 `information_schema` helper；openGauss 与 KingbaseES 只在各自真实介质门禁已认证的范围内显式转发 PostgreSQL wire/catalog 实现，未认证的厂商方言、系统 schema 和扩展能力仍由独立插件拥有。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLDialectProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
 - 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。
