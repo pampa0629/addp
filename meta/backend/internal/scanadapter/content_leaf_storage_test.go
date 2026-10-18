@@ -134,12 +134,12 @@ func TestPreciseContentStorageFactsAgainstPostgres(t *testing.T) {
 }
 
 func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.DB) {
-	for _, kind := range []string{"object", "file", "file_ref_group"} {
+	for _, kind := range []string{"object", "file", "file_ref_group", "object_ref_group"} {
 		t.Run(kind, func(t *testing.T) {
 			db := openDB(t)
 			repo := metaRepo.NewScanRepository(db)
 			model, parts, scope := plugin.FileCatalogModel(), []string{"results", "A.csv"}, "results"
-			if kind == "object" {
+			if strings.HasPrefix(kind, "object") {
 				model, parts, scope = plugin.ObjectCatalogModel(), []string{"bucket", "results", "A.csv"}, "bucket/results"
 			}
 			p := &contentStorageFactPlugin{t: t, preciseCatalogPlugin: preciseCatalogPlugin{preciseCatalogBasePlugin: preciseCatalogBasePlugin{engineType: "content-facts-" + kind, model: model}}}
@@ -147,7 +147,7 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			t.Cleanup(func() { plugin.Unregister(p.Type()) })
 			resource := &commonModels.Engine{ID: 961, EngineType: p.Type(), Name: "exact content source"}
 			locator := &resourcetree.ResourceLocator{EngineID: resource.ID, Type: resourcetree.ResourceType("file"), Path: parts}
-			if kind == "object" {
+			if strings.HasPrefix(kind, "object") {
 				locator.Type = resourcetree.ResourceType("object")
 			}
 			targetPath, err := resourcetree.EngineCatalogPathFromLocator(model, locator)
@@ -156,7 +156,7 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			}
 			size := int64(len(exactLeafContent))
 			modified := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
-			if kind == "file_ref_group" {
+			if strings.HasSuffix(kind, "_ref_group") {
 				p.sourceRoot = t.TempDir()
 				if err := os.MkdirAll(filepath.Join(p.sourceRoot, scope), 0700); err != nil {
 					t.Fatal(err)
@@ -204,7 +204,7 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			first := req
 			first.CatalogPaths = nil
 			first.Targets = []string{locator.ToURI()}
-			if kind == "file_ref_group" {
+			if strings.HasSuffix(kind, "_ref_group") {
 				first.Targets = nil
 				first.RefGroups = []models.ScanRefGroup{{Primary: p.target}}
 			}
@@ -284,7 +284,7 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 				if commonJSON.String(item.Attributes, "storage", "content_type") != "text/csv" {
 					t.Fatalf("source MIME lost: %v", item.Attributes["storage"])
 				}
-				if kind == "object" && commonJSON.String(item.Attributes, "storage", "etag") != "source-etag" {
+				if strings.HasPrefix(kind, "object") && commonJSON.String(item.Attributes, "storage", "etag") != "source-etag" {
 					t.Fatalf("source ETag lost: %v", item.Attributes["storage"])
 				}
 				if item.Fingerprint != baseline.Fingerprint || item.NodeID != baseline.NodeID || item.FullName != baseline.FullName {
@@ -333,7 +333,7 @@ func testPreciseContentStorageFacts(t *testing.T, openDB func(*testing.T) *gorm.
 			if len(projections) != 0 {
 				t.Fatal("failed source submitted projection")
 			}
-			if kind == "file_ref_group" {
+			if strings.HasSuffix(kind, "_ref_group") {
 				p.fail = false
 				beforeFailure := readItem("A.csv")
 				if err := os.Remove(filepath.Join(p.sourceRoot, p.target)); err != nil {

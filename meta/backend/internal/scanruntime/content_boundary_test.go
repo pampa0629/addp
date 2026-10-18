@@ -61,7 +61,11 @@ func (p boundaryScanProvider) ResolvePath(ctx context.Context, conn plugin.Conne
 		entry := plugin.ObjectBucketCatalogEntry(plugin.ObjectRootPath(26), "bucket")
 		return &entry, nil
 	}
-	return p.filesystemScanTestProvider.ResolvePath(ctx, conn, target)
+	entry, err := p.filesystemScanTestProvider.ResolvePath(ctx, conn, target)
+	if entry != nil && p.object {
+		entry.Term, entry.Kind = plugin.EngineCatalogTermObject, plugin.EngineCatalogKindObject
+	}
+	return entry, err
 }
 func (p boundaryScanProvider) OpenContent(ctx context.Context, conn plugin.ConnectionInfo, target plugin.EngineCatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	*p.reads++

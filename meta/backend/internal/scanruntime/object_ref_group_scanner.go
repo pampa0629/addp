@@ -80,6 +80,17 @@ func scanObjectRefGroups(
 		if err != nil {
 			return result, err
 		}
+		for j, ref := range resources {
+			entry, err := resolveRefGroupSource(ctx, catalogProvider, connInfo, ref.EngineCatalogPath)
+			if err != nil {
+				return result, err
+			}
+			resolved := scanresource.ObjectStorageResourceFromNode(bucket, *entry)
+			if resolved.FullPath != ref.FullPath || scanresource.IgnoreSystemEngineCatalogEntry(*entry) {
+				return result, fmt.Errorf("invalid object ref group source facts for %s", ref.FullPath)
+			}
+			resources[j] = resolved
+		}
 		if scanflow.ContentReaderForDepth(contentReader, scanDepth) != nil {
 			runtime.detectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
 		}
@@ -102,7 +113,7 @@ func scanObjectRefGroups(
 			})
 		}
 		// 引用组没有枚举完整目录，不更新目录扫描统计。
-		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(ctx, resource, tenantID, resource.ID, bucketNode, composites, nil, false, "", scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(ctx, resource, tenantID, resource.ID, bucketNode, composites, resources, nil, false, "", scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
 		if err != nil {
 			return result, err
 		}

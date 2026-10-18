@@ -60,7 +60,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 		addFailure(strings.Trim(strings.Join([]string{warning.Bucket, warning.Prefix}, "/"), "/"), warning.Err)
 	}
-	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, compositeItems, scanState, includeBucketScan, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
+	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, compositeItems, resources, scanState, includeBucketScan, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
 	objects += compositeCount
 	extractionStats = scanflow.MergeExtractionCounts(extractionStats, compositeExtractionStats)
 	if err != nil {

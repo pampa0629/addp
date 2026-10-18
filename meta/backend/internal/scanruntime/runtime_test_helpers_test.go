@@ -249,7 +249,11 @@ func (p *objectRefGroupScanTestProvider) ListChildren(_ context.Context, _ plugi
 }
 func (p *objectRefGroupScanTestProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	if !isObjectBucketCatalogPath(path) {
-		return nil, nil
+		if _, err := plugin.RequireObjectLeafPath(path); err != nil {
+			return nil, err
+		}
+		size := int64(len(p.content))
+		return &plugin.EngineCatalogEntry{Name: path.Segments[len(path.Segments)-1].Name, Path: path, Term: plugin.EngineCatalogTermObject, Kind: plugin.EngineCatalogKindObject, Role: plugin.EngineCatalogRoleLeaf, Storage: &plugin.EngineCatalogStorageFacts{Path: path.StringPath(), SizeBytes: &size}}, nil
 	}
 	bucket := path.Segments[len(path.Segments)-1].Name
 	for _, knownBucket := range p.buckets {

@@ -51,15 +51,9 @@ func scanFileRefGroups(
 		// Refs define the boundary; storage facts must come from the engine,
 		// just as they do for an exact leaf or a full directory scan.
 		for j, file := range candidates.Files {
-			entry, err := catalogProvider.ResolvePath(ctx, connInfo, file.EngineCatalogPath)
+			entry, err := resolveRefGroupSource(ctx, catalogProvider, connInfo, file.EngineCatalogPath)
 			if err != nil {
-				return result, fmt.Errorf("resolve file ref group source %s: %w", file.Path, err)
-			}
-			if entry == nil {
-				return result, fmt.Errorf("file ref group source %s does not exist", file.Path)
-			}
-			if entry.Path.EngineID != resource.ID || entry.Path.StringPath() != file.Path || entry.Storage == nil || entry.Storage.SizeBytes == nil {
-				return result, fmt.Errorf("invalid file ref group source facts for %s", file.Path)
+				return result, err
 			}
 			resolved, ok := scanresource.StorageFileRefFromEntry(*entry)
 			if !ok || resolved.Path != file.Path {
@@ -111,4 +105,19 @@ func scanFileRefGroups(
 		}
 	}
 	return result, nil
+}
+
+func resolveRefGroupSource(ctx context.Context, catalogProvider plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, expected plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	entry, err := catalogProvider.ResolvePath(ctx, connInfo, expected)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ref group source %s: %w", expected.StringPath(), err)
+	}
+	if entry == nil {
+		return nil, fmt.Errorf("ref group source %s does not exist", expected.StringPath())
+	}
+	leaf := expected.Segments[len(expected.Segments)-1]
+	if entry.Role != plugin.EngineCatalogRoleLeaf || entry.Term != leaf.Term || entry.Kind != leaf.Kind || entry.Path.EngineID != expected.EngineID || entry.Path.StringPath() != expected.StringPath() || entry.Storage == nil || entry.Storage.SizeBytes == nil || *entry.Storage.SizeBytes < 0 {
+		return nil, fmt.Errorf("invalid ref group source facts for %s", expected.StringPath())
+	}
+	return entry, nil
 }
