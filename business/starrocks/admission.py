@@ -58,8 +58,8 @@ def owned(kind, name, state):
     return value
 
 
-def sql(name, statement):
-    return run('docker', 'exec', '-i', name, 'mysql', '--default-character-set=utf8mb4', '--batch', '--raw', '-h127.0.0.1', '-P9030', '-uroot', input=statement, timeout=30)
+def sql(name, statement, *, evidence=None):
+    return run('docker', 'exec', '-i', name, 'mysql', '--default-character-set=utf8mb4', '--batch', '--raw', '-h127.0.0.1', '-P9030', '-uroot', input=statement, timeout=30, evidence=evidence)
 
 
 def start():
@@ -102,13 +102,14 @@ def start():
         time.sleep(2)
     else:
         raise RuntimeError('StarRocks FE/BE readiness deadline exceeded')
-    password = 'Sr9@' + secrets.token_hex(12)
-    sql(name, f"""CREATE DATABASE addp_acceptance;
+    sql(name, """CREATE DATABASE addp_acceptance;
 CREATE TABLE addp_acceptance.source(name VARCHAR(128),id BIGINT,amount DECIMAL(38,18),optional_text VARCHAR(128))
 PRIMARY KEY(name,id) DISTRIBUTED BY HASH(name) BUCKETS 1 PROPERTIES('replication_num'='1');
 INSERT INTO addp_acceptance.source VALUES ('正式接入中文',9007199254740993,12345678901234567890.123456789012345678,NULL),('保留尾空格  ',2,-0.000000000000000001,'');
 CREATE TABLE addp_acceptance.write_probe(id BIGINT) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1');
-CREATE USER fixture_reader IDENTIFIED BY '{password}';
+""", evidence=path / 'schema-initialization.json')
+    password = 'Sr9@' + secrets.token_hex(12)
+    sql(name, f"""CREATE USER fixture_reader IDENTIFIED BY '{password}';
 GRANT SELECT ON TABLE addp_acceptance.source TO USER fixture_reader;
 """)
     value = owned('container', name, state)

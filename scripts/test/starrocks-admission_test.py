@@ -58,6 +58,13 @@ class StarRocksAdmissionTest(unittest.TestCase):
                 FIXTURE.run('docker', 'exec', 'owned', input='private SQL')
             self.assertNotIn('private', str(error.exception))
 
+    def test_schema_diagnostics_exclude_account_statements(self):
+        source = Path(FIXTURE.__file__).read_text()
+        schema = source.split('sql(name, """CREATE DATABASE', 1)[1].split("evidence=path / 'schema-initialization.json'", 1)[0]
+        self.assertNotIn('PASSWORD', schema.upper())
+        self.assertNotIn('CREATE USER', schema.upper())
+        self.assertNotIn('password', schema)
+
     def test_unknown_docker_failure_is_not_absence(self):
         with patch.object(FIXTURE.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'authorization denied')), patch.object(FIXTURE, 'run'):
             with self.assertRaises(RuntimeError):
