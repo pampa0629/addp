@@ -47,6 +47,7 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
   await api.dispose()
   expect((await json(engines, 'Develop engine options')).some(engine => engine.id === expected.engine_id && engine.engine_type === 'falkordb')).toBe(true)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const resultTable = frame.locator('.query-result .result-table.el-table')
   await expect(frame.locator('.engine-select')).toContainText('Hosted synthetic FalkorDB')
   await expect(frame.locator('.toolbar-primary .el-tag')).toHaveText('CYPHER')
   await expect(frame.locator('.toolbar-actions').getByRole('button', { name: /保存查询|Save Query/ })).toHaveCount(0)
@@ -126,7 +127,7 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
   if (expected.phase === 'unmanaged') {
     await verifyGraph(await execute(graphQuery, 'graph_protection_fixture'), 'graph')
     await frame.locator('.result-actions .el-radio-button').filter({ hasText: /^(表格|Table)$/ }).click()
-    await expect(frame.locator('.query-result .result-table .el-table__body-wrapper tr')).toHaveCount(2)
+    await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(2)
     const tableQuery = 'RETURN $text AS text, $number AS number'
     await edit(tableQuery)
     await frame.locator('.editor-heading-actions').getByRole('button', { name: /查询参数|Query Parameters/ }).click()
@@ -145,8 +146,8 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     expect(typed.status).toBe('success')
     expect(typed.metadata.result.result_kind).toBe('table')
     expect(typed.metadata.result.summary.preview_rows).toEqual([{ text: textValue, number: 7 }])
-    await expect(frame.locator('.query-result .result-table .el-table__body-wrapper tr')).toHaveCount(1)
-    await expect(frame.locator('.query-result .result-table')).toContainText(textValue)
+    await expect(resultTable.locator('.el-table__body-wrapper tr')).toHaveCount(1)
+    await expect(resultTable).toContainText(textValue)
     await screenshot('table')
     phaseEvidence = { typed_parameters: true, table_rows: 1, table_visible: true, graph_table_visible: true }
   } else {
@@ -156,7 +157,7 @@ test('ordinary reader executes FalkorDB Cypher through the real Develop workbenc
     expect(denied.error_details.code).toBe('develop.query.protection_required')
     expect(denied.error_details.diagnostic).toEqual({ schema_version: 'addp.execution-failure/v3', stage: 'preparation', reason: 'data_protection_required' })
     await expect(frame.locator('.execution-failure')).toContainText('develop.query.protection_required')
-    await expect(frame.locator('.result-table')).toHaveCount(0)
+    await expect(resultTable).toHaveCount(0)
     await expect(frame.locator('.graph-result-view')).toHaveCount(0)
     await screenshot('protected')
     await selectGraph('graph_protection_control')
