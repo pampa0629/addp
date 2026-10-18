@@ -92,6 +92,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, gradeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
@@ -208,7 +209,7 @@ function clearDialogValidation() {
 
 function focusDialogPrimaryControl() {
   nextTick(() => {
-    formRef.value?.$el?.querySelector('input:not([disabled]), textarea:not([disabled])')?.focus()
+    focusElement(formRef.value?.$el?.querySelector('input:not([disabled]), textarea:not([disabled])'), { preserveDialogFocus: true })
   })
 }
 

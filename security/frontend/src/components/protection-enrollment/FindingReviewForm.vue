@@ -77,6 +77,7 @@
 import { nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
+import { focusElement } from '@common-ui'
 
 defineProps({
   presentation: { type: Object, required: true },
@@ -98,11 +99,11 @@ function clearValidate() {
   formRef.value?.clearValidate()
 }
 
-function focusRationale() {
-  rationaleInput.value?.focus?.()
+function focusRationale(options) {
+  focusElement(rationaleInput.value, options)
 }
 
-onMounted(() => nextTick(focusRationale))
+onMounted(() => nextTick(() => focusRationale({ preserveDialogFocus: true })))
 
 defineExpose({ validate, clearValidate, focusRationale })
 </script>

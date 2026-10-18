@@ -189,6 +189,7 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { detectorAPI, detectorCapabilityAPI, discoveryQualityAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
@@ -356,7 +357,7 @@ function clearDialogValidation() {
 }
 
 function focusDialogPrimaryControl() {
-  nextTick(() => formRef.value?.$el?.querySelector('.capability-option.selected')?.focus())
+  nextTick(() => focusElement(formRef.value?.$el?.querySelector('.capability-option.selected'), { preserveDialogFocus: true }))
 }
 
 async function save() {

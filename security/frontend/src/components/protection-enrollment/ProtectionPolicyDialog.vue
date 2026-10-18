@@ -9,7 +9,7 @@
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
     @open="clearValidate"
-    @opened="focusPrimary"
+    @opened="focusPrimary({ preserveDialogFocus: true })"
     @closed="emit('closed')"
   >
     <ProtectionPolicyForm
@@ -39,6 +39,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 import ProtectionPolicyForm from './ProtectionPolicyForm.vue'
 
 const props = defineProps({
@@ -67,10 +68,10 @@ function clearValidate() {
   formRef.value?.clearValidate()
 }
 
-function focusPrimary() {
+function focusPrimary(options) {
   if (props.mode !== 'restore') return
   const button = cancelButton.value?.$el || cancelButton.value
-  button?.focus?.()
+  focusElement(button, options)
 }
 
 defineExpose({ validate, clearValidate, focusPrimary })

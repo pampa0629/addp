@@ -183,6 +183,7 @@ test('reads all outlet policy revisions including revoked policies without chang
   await page.getByRole('button', { name: '查看详情', exact: true }).click()
   await page.getByRole('button', { name: '修订记录', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '字段保护修订记录' })
+  await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeFocused()
   await expect(dialog.getByText('策略已撤销', { exact: true })).toHaveCount(4)
   await expect(dialog.getByText('策略启用', { exact: true })).toHaveCount(4)
   await expect(dialog.getByText('策略 R2', { exact: true })).toHaveCount(4)
@@ -353,6 +354,29 @@ test('opens the protected resource and focuses the approved grant from review hi
   expect(browserWarnings).toEqual([])
   expect(backend.unhandledRequests).toEqual([])
   expect(browserErrors).toEqual([])
+})
+
+test('keeps an early grade selection open when the dialog opening animation finishes', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  backend.baselines.push({ ...backend.baselines[0], id: '41', security_grade_id: '4' })
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  await page.addStyleTag({ content: `
+    .dialog-fade-enter-active { animation-duration: 3s !important; }
+    .dialog-fade-enter-active .el-overlay-dialog { animation: none !important; }
+  ` })
+  await page.getByRole('button', { name: '调整结论', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '调整正式安全结论', exact: true })
+  await expect(formCombobox(dialog, '安全等级')).toContainText('较高风险')
+  await formCombobox(dialog, '安全等级').click()
+  const option = page.getByRole('option', { name: '高风险', exact: true })
+  await expect(option).toBeVisible()
+  await expect(page.locator('.dialog-fade-enter-active')).toHaveCount(1)
+  await expect(page.locator('.dialog-fade-enter-active')).toHaveCount(0)
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(formCombobox(dialog, '安全等级')).toContainText('高风险')
+  expect(backend.assessmentRevisionRequests).toHaveLength(0)
 })
 
 test('keeps required feedback when submission precedes the dialog opened event', async ({ page }) => {

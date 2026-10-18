@@ -8,7 +8,7 @@
     :close-on-press-escape="!saving"
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
-    @opened="focusPrimary"
+    @opened="focusPrimary({ preserveDialogFocus: true })"
     @closed="emit('closed')"
   >
     <FindingReviewForm
@@ -54,8 +54,8 @@ function validate() {
   return formRef.value?.validate() ?? Promise.resolve(false)
 }
 
-function focusPrimary() {
-  formRef.value?.focusRationale?.()
+function focusPrimary(options) {
+  formRef.value?.focusRationale?.(options)
 }
 
 function clearValidate() {

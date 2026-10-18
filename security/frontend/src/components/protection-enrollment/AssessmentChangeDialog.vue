@@ -9,7 +9,7 @@
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
     @open="clearValidate"
-    @opened="focusPrimary"
+    @opened="focusPrimary({ preserveDialogFocus: true })"
     @closed="emit('closed')"
   >
     <template v-if="presentation">
@@ -70,6 +70,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -104,11 +105,11 @@ function clearValidate() {
   formRef.value?.clearValidate()
 }
 
-function focusPrimary() {
+function focusPrimary(options) {
   const target = props.mode === 'revise'
     ? rationaleInput.value
     : (cancelButton.value?.$el || cancelButton.value)
-  target?.focus?.()
+  focusElement(target, options)
 }
 
 defineExpose({ validate, clearValidate, focusPrimary })

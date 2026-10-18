@@ -4,6 +4,7 @@
     class="addp-dialog"
     :title="t('security.assessment.historyTitle')"
     width="min(720px, calc(100vw - 24px))"
+    @opened="focusPrimary"
     @update:model-value="emit('update:modelValue', $event)"
     @closed="emit('closed')"
   >
@@ -44,13 +45,15 @@
       </template>
     </div>
     <template #footer>
-      <el-button @click="emit('close')">{{ t('security.common.close') }}</el-button>
+      <el-button ref="closeButton" @click="emit('close')">{{ t('security.common.close') }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 
 defineProps({
   modelValue: { type: Boolean, default: false },
@@ -60,6 +63,11 @@ defineProps({
 
 const emit = defineEmits(['update:modelValue', 'close', 'closed'])
 const { t } = useI18n()
+const closeButton = ref(null)
+
+function focusPrimary() {
+  focusElement(closeButton.value, { preserveDialogFocus: true })
+}
 </script>
 
 <style scoped>

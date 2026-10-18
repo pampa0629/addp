@@ -66,16 +66,19 @@ export function createProtectionAssessmentPresentation({
 
   function policyRevisionSummary(revision) {
     if (revision.effect !== 'mask') return effectLabel(revision.effect)
+    const algorithm = t(algorithmNameKey(revision.algorithm))
+    const invalid = effectLabel(revision.invalid_value_effect)
+    if (revision.algorithm !== prefixAlgorithm && revision.algorithm !== constantAlgorithm) {
+      return t('security.policy.historyAlgorithm', { algorithm, invalid })
+    }
     const parameters = revision.parameters || {}
     const details = revision.algorithm === prefixAlgorithm
       ? t('security.baseline.maskSummary', { prefix: parameters.prefix_runes, suffix: parameters.suffix_runes, mask: parameters.mask_rune })
-      : revision.algorithm === constantAlgorithm
-        ? t('security.policy.historyConstant', { value: JSON.stringify(parameters.value) })
-        : t(algorithmNameKey(revision.algorithm))
+      : t('security.policy.historyConstant', { value: JSON.stringify(parameters.value) })
     return t('security.policy.historyConfiguration', {
-      algorithm: t(algorithmNameKey(revision.algorithm)),
+      algorithm,
       parameters: details,
-      invalid: effectLabel(revision.invalid_value_effect)
+      invalid
     })
   }
 

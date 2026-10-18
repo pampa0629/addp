@@ -9,7 +9,7 @@
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
     @open="clearValidate"
-    @opened="focusPrimary"
+    @opened="focusPrimary({ preserveDialogFocus: true })"
     @closed="emit('closed')"
   >
     <el-alert type="info" :closable="false" :title="t('security.assessment.designateHint')" />
@@ -74,6 +74,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 
 defineProps({
   modelValue: { type: Boolean, default: false },
@@ -96,8 +97,8 @@ function clearValidate() {
   formRef.value?.clearValidate()
 }
 
-function focusPrimary() {
-  rationaleInput.value?.focus?.()
+function focusPrimary(options) {
+  focusElement(rationaleInput.value, options)
 }
 
 defineExpose({ validate, clearValidate, focusPrimary })

@@ -8,7 +8,7 @@
     :close-on-press-escape="!saving"
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
-    @opened="focusPrimary"
+    @opened="focusPrimary({ preserveDialogFocus: true })"
     @closed="emit('closed')"
   >
     <template v-if="presentation">
@@ -38,6 +38,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { focusElement } from '@common-ui'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -57,9 +58,9 @@ const conflictKey = computed(() => props.mode === 're-enroll' ? 'security.enroll
 const reloadKey = computed(() => props.mode === 're-enroll' ? 'security.enrollment.reloadLatestForReEnrollment' : 'security.enrollment.reloadLatestForRediscovery')
 const confirmKey = computed(() => props.mode === 're-enroll' ? 'security.enrollment.confirmReEnroll' : 'security.enrollment.confirmRediscover')
 
-function focusPrimary() {
+function focusPrimary(options) {
   const button = cancelButton.value?.$el || cancelButton.value
-  button?.focus?.()
+  focusElement(button, options)
 }
 
 defineExpose({ focusPrimary })
