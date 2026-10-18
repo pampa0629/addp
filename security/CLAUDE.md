@@ -253,3 +253,6 @@ v17 接线已通过本范围 152 项 Security／Hosted／CI 登记回归；仅�
 
 
 本轮分层验证：`make test-module MODULE=security GO_ONLY=1`、`make test-security-postgres`（包含四出口字段算法许可／参数上限／许可撤回与撤销回落）、`make test-authorization`、Security Swagger 生成与 63 个公开路由覆盖通过；新版 `make test-security-online-runner` 的 182 项、独立 Graph 夹具 15 项及登记检查通过。完整 `make test-module MODULE=security` 已尝试，但平台 T0 在既有 `test-pg-authorization-online-runner` 的 `HostedPGAuthorizationTest.test_lifecycle_and_source_failure_and_suite_failure_clean_owned_resources`（3 个失败、1 个错误）退出，未进入模块阶段；不能将完整模块聚合计为通过。本会话不扩修该源授权夹具。Security 前端最终复验已通过 223 项单元、30 项浏览器与构建；真实 v18 Hosted 尚待运行，历史 v17 不替代新配置范围的真实运行证据。
+
+
+同轮 Console 集成回归：已在标准浏览器入口复现 `security-authorization-refresh.spec.js` 原两项手机号策略用例等待“收紧保护”超时（2 失败／1 通过）。原因是独立 HTTP 夹具遗漏新的 `supported_scopes`，不是恢复旧 Manager-only 路线的理由。补齐同一正式响应后，将前后掩码／SM3 草稿用例扩展到四个出口，核对令牌刷新后的选定出口、参数、依据和零写入，9 项全部通过。命令为在 `console/frontend` 运行 `node ../../scripts/test/frontend-browser-gate.mjs e2e/security-authorization-refresh.spec.js`；不以此定向结果代替全量 Console 门禁。产品实现提交 `0b3e00f12`；本轮原值授权、历史脱敏原则及源数据权限均未改变。

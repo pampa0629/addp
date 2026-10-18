@@ -78,7 +78,7 @@ async function setup(page, { protectedResource = false } = {}) {
         id: assessmentID, enrollment_id: enrollmentID, component_key: 'userInfo.phone', state: 'active', version: '1', current_revision: '1',
         current: { source_kind: 'manual', conclusion: 'sensitive', sensitive_data_type_id: '20', security_classification_id: '1', security_grade_id: '3', rationale: '手机号字段夹具', component: { key: 'userInfo.phone', value_type: 'string' } }
       }]),
-      '/api/v1/security/protection-policies': paginate([]),
+      '/api/v1/security/protection-policies': { ...paginate([]), supported_scopes: [['manager', 'preview'], ['develop', 'query'], ['service', 'service_execute'], ['transfer', 'export']].map(([consumer_owner, action]) => ({ consumer_owner, action })) },
       '/api/v1/security/sensitive-data-types': [{ id: '20', code: 'phone', name: '手机号', security_classification_id: '1', default_security_grade_id: '3', version: '1' }],
       '/api/v1/security/classifications': [{ id: '1', code: 'personal_information', name: '个人信息', version: '1' }],
       '/api/v1/security/grades': [{ id: '3', code: 'l3', name: '较高风险', risk_order: 3, version: '1' }],
@@ -141,8 +141,8 @@ test('preserves the real MongoDB enrollment selection through authorization refr
   fixture.verifyNoWrites()
 })
 
-for (const algorithm of ['prefix', 'sm3']) {
-  test(`preserves the real userInfo.phone ${algorithm} policy draft through authorization refresh`, async ({ page }) => {
+for (const [owner, action, outlet] of [['manager', 'preview', '数据预览'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]) for (const algorithm of ['prefix', 'sm3']) {
+  test(`preserves the real userInfo.phone ${owner}/${action} ${algorithm} policy draft through authorization refresh`, async ({ page }) => {
     const fixture = await setup(page, { protectedResource: true })
     await fixture.frame.getByRole('button', { name: '查看详情', exact: true }).click()
     await fixture.frame.getByRole('button', { name: '收紧保护', exact: true }).click()
@@ -150,6 +150,8 @@ for (const algorithm of ['prefix', 'sm3']) {
     await expect(dialog).toContainText('userInfo.phone')
     await dialog.getByText('脱敏', { exact: true }).click()
     const field = label => dialog.locator('.el-form-item').filter({ hasText: label })
+    await field('生效出口').locator('.el-select__wrapper').click()
+    await fixture.frame.getByRole('option', { name: outlet, exact: true }).click()
     if (algorithm === 'sm3') {
       await field('脱敏算法').locator('.el-select__wrapper').click()
       await fixture.frame.getByRole('option', { name: 'SM3 哈希', exact: true }).click()
@@ -161,6 +163,7 @@ for (const algorithm of ['prefix', 'sm3']) {
     await field('调整依据').getByRole('textbox').fill('保留未提交的手机号字段保护草稿')
     await fixture.refresh()
     await expect(dialog).toBeVisible()
+    await expect(field('生效出口').locator('.el-select__wrapper')).toContainText(outlet)
     await expect(field('调整依据').getByRole('textbox')).toHaveValue('保留未提交的手机号字段保护草稿')
     if (algorithm === 'sm3') await expect(field('脱敏算法')).toContainText('SM3 哈希')
     else {
