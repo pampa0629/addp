@@ -39,12 +39,16 @@ const (
 	MsgExpandTargetInvalid  = "graph.browse.expand_target_invalid"
 
 	// 构建
-	MsgTaskStarted         = "graph.build.task_started"
-	MsgTaskCancelled       = "graph.build.task_cancelled"
-	MsgTaskRestarted       = "graph.build.task_restarted"
-	MsgTaskActive          = "graph.build.task_active"
-	MsgTaskRuntimeNotOwned = "graph.build.task_runtime_not_owned"
-	MsgTaskRunFailed       = "graph.build.task_run_failed"
+	MsgTaskStarted              = "graph.build.task_started"
+	MsgBuildEntityTypeUnknown   = "graph.build.entity_type_unknown"
+	MsgBuildMergeKeyInvalid     = "graph.build.merge_key_invalid"
+	MsgBuildMergeKeyEmpty       = "graph.build.merge_key_empty"
+	MsgBuildRelationTypeUnknown = "graph.build.relation_type_unknown"
+	MsgTaskCancelled            = "graph.build.task_cancelled"
+	MsgTaskRestarted            = "graph.build.task_restarted"
+	MsgTaskActive               = "graph.build.task_active"
+	MsgTaskRuntimeNotOwned      = "graph.build.task_runtime_not_owned"
+	MsgTaskRunFailed            = "graph.build.task_run_failed"
 
 	// 审核
 	MsgApproved      = "graph.review.approved"

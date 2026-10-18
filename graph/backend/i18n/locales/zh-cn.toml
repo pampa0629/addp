@@ -43,6 +43,18 @@ other = "展开目标、跳数或节点/关系预算无效"
 [graph.build.task_started]
 other = "任务已启动"
 
+[graph.build.entity_type_unknown]
+other = "抽取结果包含本体未定义的实体类型"
+
+[graph.build.merge_key_invalid]
+other = "实体类型必须且只能确定一个显式唯一属性作为合并键"
+
+[graph.build.merge_key_empty]
+other = "实体合并键缺失或值为空"
+
+[graph.build.relation_type_unknown]
+other = "抽取结果包含本体未定义的关系类型"
+
 [graph.build.task_cancelled]
 other = "任务已取消"
 

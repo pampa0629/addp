@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,12 +12,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	commonModels "github.com/addp/common/models"
+	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"github.com/google/uuid"
@@ -308,6 +312,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 	autoWritten := 0
 	pendingReview := 0
 	processed := 0
+	var materialErrors []error
 	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
 		return
 	}
@@ -342,9 +347,11 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		}
 
 		mat.Status = models.BuildMaterialStatusProcessing
-		_ = s.buildRepo.UpdateMaterial(&mat)
-
-		written, queued, err := s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
+		err := s.buildRepo.UpdateMaterial(&mat)
+		written, queued := 0, 0
+		if err == nil {
+			written, queued, err = s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
+		}
 		if ctx.Err() != nil {
 			if resetErr := s.resetCancelledMaterial(&mat); resetErr != nil {
 				log.Printf("failed to reset graph build material %d after cancellation: %v", mat.ID, resetErr)
@@ -355,16 +362,19 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		if err != nil {
 			mat.Status = models.BuildMaterialStatusFailed
 			mat.ErrorMessage = err.Error()
-			_ = s.buildRepo.UpdateMaterial(&mat)
 			// 继续处理其他材料，不中断任务
 		} else {
 			now := time.Now()
 			mat.Status = models.BuildMaterialStatusCompleted
 			mat.ProcessedAt = &now
-			_ = s.buildRepo.UpdateMaterial(&mat)
-			autoWritten += written
-			pendingReview += queued
 		}
+		err = errors.Join(err, s.buildRepo.UpdateMaterial(&mat))
+		if err != nil {
+			materialErrors = append(materialErrors, err)
+		}
+		// Successful writes from a failed material remain committed and counted.
+		autoWritten += written
+		pendingReview += queued
 		processed++
 
 		// 更新 Monitor 进度
@@ -394,7 +404,11 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 	task.Stats = statsBytes
 
 	rw := int64(autoWritten)
-	if err := s.finishTask(ctx, task, tenantID, executionID, commonExecution.ExecutionStatusSuccess, "", commonModels.JSONMap{
+	status, errorMessage := commonExecution.ExecutionStatusSuccess, ""
+	if err := errors.Join(materialErrors...); err != nil {
+		status, errorMessage = commonExecution.ExecutionStatusFailed, err.Error()
+	}
+	if err := s.finishTask(ctx, task, tenantID, executionID, status, errorMessage, commonModels.JSONMap{
 		"auto_written":    autoWritten,
 		"pending_review":  pendingReview,
 		"total_materials": total,
@@ -491,7 +505,9 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 
 	if mat.TotalChunks == 0 {
 		mat.TotalChunks = len(chunks)
-		_ = s.buildRepo.UpdateMaterial(mat)
+		if err := s.buildRepo.UpdateMaterial(mat); err != nil {
+			return 0, 0, err
+		}
 	}
 
 	autoWritten := 0
@@ -511,16 +527,21 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 		if err != nil {
 			mat.ProcessedChunks = i
 			mat.ErrorMessage = err.Error()
-			_ = s.buildRepo.UpdateMaterial(mat)
-			return autoWritten, pendingReview, err
+			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(mat))
 		}
 
-		aw, pv := s.processChunkResult(ctx, task, mat, result, ontology, spatialLayerLookup, ancestorChains, seenEntities, tenantID)
+		aw, pv, err := s.processChunkResult(ctx, task, mat, result, ontology, spatialLayerLookup, ancestorChains, seenEntities, tenantID)
 		autoWritten += aw
 		pendingReview += pv
+		if err != nil {
+			mat.ErrorMessage = err.Error()
+			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(mat))
+		}
 
 		mat.ProcessedChunks = i + 1
-		_ = s.buildRepo.UpdateMaterial(mat)
+		if err := s.buildRepo.UpdateMaterial(mat); err != nil {
+			return autoWritten, pendingReview, err
+		}
 	}
 
 	return autoWritten, pendingReview, nil
@@ -537,12 +558,16 @@ func (s *BuildService) processChunkResult(
 	ancestorChains map[string][]string,
 	seenEntities map[string]string,
 	tenantID uint,
-) (autoWritten, pendingReview int) {
+) (autoWritten, pendingReview int, err error) {
+	uniqueFields, err := validateBuildExtraction(result, ontology)
+	if err != nil {
+		return 0, 0, err
+	}
 
 	// ——— 实体处理 ———
 	for _, entity := range result.Entities {
-		uniqueField := getUniqueField(entity.Type, ontology)
-		uniqueVal := getPropertyValue(entity.Properties, uniqueField)
+		uniqueField := uniqueFields[entity.Type]
+		uniqueVal := entity.Properties[uniqueField]
 		key := entity.Type + "::" + fmt.Sprint(uniqueVal)
 
 		if entity.Confidence >= task.ConfidenceThreshold {
@@ -555,14 +580,15 @@ func (s *BuildService) processChunkResult(
 			}
 			elementID, err := s.graphDataSvc.MergeEntity(ctx, task.GraphID, tenantID,
 				labels, uniqueField, uniqueVal, entity.Properties)
-			if err == nil {
-				seenEntities[key] = elementID
-				autoWritten++
-				// 注册到空间图层（若该 label 或其祖先有空间图层配置）
-				if elementID != "" && spatialLayerLookup != nil {
-					if mapping, ok := spatialLayerLookup[entity.Type]; ok && mapping.Config != nil {
-						_ = s.graphDataSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, elementID, mapping.Config.LayerName)
-					}
+			if err != nil {
+				return autoWritten, pendingReview, err
+			}
+			seenEntities[key] = elementID
+			autoWritten++
+			// 注册到空间图层（若该 label 或其祖先有空间图层配置）
+			if elementID != "" && spatialLayerLookup != nil {
+				if mapping, ok := spatialLayerLookup[entity.Type]; ok && mapping.Config != nil {
+					_ = s.graphDataSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, elementID, mapping.Config.LayerName)
 				}
 			}
 		} else {
@@ -581,10 +607,11 @@ func (s *BuildService) processChunkResult(
 				SourceText: entity.SourceText,
 				Status:     models.ReviewStatusPending,
 			}
-			if err := s.buildRepo.CreateReviewItem(item); err == nil {
-				seenEntities[key] = "queued"
-				pendingReview++
+			if err := s.buildRepo.CreateReviewItem(item); err != nil {
+				return autoWritten, pendingReview, err
 			}
+			seenEntities[key] = "queued"
+			pendingReview++
 		}
 	}
 
@@ -599,10 +626,10 @@ func (s *BuildService) processChunkResult(
 		}
 
 		rt := getRelationType(rel.Type, ontology)
-		srcUniqueField := getUniqueField(srcEntity.Type, ontology)
-		tgtUniqueField := getUniqueField(tgtEntity.Type, ontology)
-		srcVal := getPropertyValue(srcEntity.Properties, srcUniqueField)
-		tgtVal := getPropertyValue(tgtEntity.Properties, tgtUniqueField)
+		srcUniqueField := uniqueFields[srcEntity.Type]
+		tgtUniqueField := uniqueFields[tgtEntity.Type]
+		srcVal := srcEntity.Properties[srcUniqueField]
+		tgtVal := tgtEntity.Properties[tgtUniqueField]
 
 		relKey := fmt.Sprintf("%v::%s::%v", srcVal, rel.Type, tgtVal)
 		if seenRelations[relKey] {
@@ -627,9 +654,10 @@ func (s *BuildService) processChunkResult(
 				srcLabels, srcUniqueField, srcVal,
 				tgtLabels, tgtUniqueField, tgtVal,
 				rel.Properties)
-			if err == nil {
-				autoWritten++
+			if err != nil {
+				return autoWritten, pendingReview, err
 			}
+			autoWritten++
 		} else {
 			srcTypeName := srcEntity.Type
 			tgtTypeName := tgtEntity.Type
@@ -660,9 +688,10 @@ func (s *BuildService) processChunkResult(
 				SourceText: rel.SourceText,
 				Status:     models.ReviewStatusPending,
 			}
-			if err := s.buildRepo.CreateReviewItem(item); err == nil {
-				pendingReview++
+			if err := s.buildRepo.CreateReviewItem(item); err != nil {
+				return autoWritten, pendingReview, err
 			}
+			pendingReview++
 		}
 	}
 
@@ -1047,7 +1076,8 @@ func buildAncestorChains(ontology *models.Ontology) map[string][]string {
 
 // splitText 语义感知分块（优先在段落/句子边界截断）
 func splitText(text string, chunkSize, overlap int) []string {
-	if len(text) == 0 {
+	characters := []rune(text)
+	if len(characters) == 0 {
 		return nil
 	}
 	if chunkSize <= 0 {
@@ -1061,19 +1091,19 @@ func splitText(text string, chunkSize, overlap int) []string {
 	var chunks []string
 
 	start := 0
-	for start < len(text) {
+	for start < len(characters) {
 		end := start + chunkSize
-		if end >= len(text) {
-			chunks = append(chunks, text[start:])
+		if end >= len(characters) {
+			chunks = append(chunks, string(characters[start:]))
 			break
 		}
 
 		// 在 [end-overlap, end] 范围内找最近的语义边界
-		cutAt := findSeparator(text, end-overlap/2, end, separators)
+		cutAt := findSeparator(characters, max(start, end-overlap/2), end, separators)
 		if cutAt <= start {
 			cutAt = end // 无合适边界，强制截断
 		}
-		chunks = append(chunks, text[start:cutAt])
+		chunks = append(chunks, string(characters[start:cutAt]))
 
 		// 下一个 chunk 从 (cutAt - overlap) 开始
 		nextStart := cutAt - overlap
@@ -1086,11 +1116,12 @@ func splitText(text string, chunkSize, overlap int) []string {
 }
 
 // findSeparator 在 text[from:to] 中从右向左找第一个语义分隔符的位置（返回分隔符之后的位置）
-func findSeparator(text string, from, to int, separators []string) int {
+func findSeparator(text []rune, from, to int, separators []string) int {
+	window := string(text[from:to])
 	for _, sep := range separators {
-		idx := strings.LastIndex(text[from:to], sep)
+		idx := strings.LastIndex(window, sep)
 		if idx >= 0 {
-			return from + idx + len(sep)
+			return from + utf8.RuneCountInString(window[:idx]) + utf8.RuneCountInString(sep)
 		}
 	}
 	return -1
@@ -1101,25 +1132,68 @@ func extractDocContext(text string, size int) string {
 	if size <= 0 || len(text) == 0 {
 		return ""
 	}
-	if len(text) <= size {
+	characters := []rune(text)
+	if len(characters) <= size {
 		return text
 	}
-	return text[:size]
+	return string(characters[:size])
 }
 
 // ============ 辅助函数 ============
 
-func getUniqueField(entityType string, ontology *ontologySchemaDTO) string {
-	for _, et := range ontology.EntityTypes {
-		if et.Name == entityType {
-			for _, p := range et.Properties {
-				if p.Unique {
-					return p.Name
+// Validate the complete extraction chunk before persisting any of its results.
+// A unique constraint is only usable as a merge key when it is unambiguous.
+func validateBuildExtraction(result *copilotExtractResponse, ontology *ontologySchemaDTO) (map[string]string, error) {
+	fields := map[string]string{}
+	invalid := func(code, name string) error {
+		// Background execution diagnostics retain a stable code plus the
+		// localized default-language description and the offending identifier.
+		return fmt.Errorf("%s: %s (%s)", code, commoni18n.ForLanguage(commoni18n.LangZhCN, code), name)
+	}
+	for _, entity := range result.Entities {
+		field, found := fields[entity.Type]
+		if !found {
+			known, uniqueCount := false, 0
+			for _, et := range ontology.EntityTypes {
+				if et.Name != entity.Type {
+					continue
+				}
+				known = true
+				for _, property := range et.Properties {
+					if property.Unique {
+						uniqueCount++
+						field = property.Name
+					}
 				}
 			}
+			if !known {
+				return nil, invalid(graphi18n.MsgBuildEntityTypeUnknown, entity.Type)
+			}
+			if uniqueCount != 1 || strings.TrimSpace(field) == "" {
+				return nil, invalid(graphi18n.MsgBuildMergeKeyInvalid, entity.Type)
+			}
+			fields[entity.Type] = field
+		}
+		value := entity.Properties[field]
+		empty := value == nil
+		switch value := value.(type) {
+		case string:
+			empty = strings.TrimSpace(value) == ""
+		case []interface{}:
+			empty = len(value) == 0
+		case map[string]interface{}:
+			empty = len(value) == 0
+		}
+		if empty {
+			return nil, invalid(graphi18n.MsgBuildMergeKeyEmpty, entity.Type+"/"+field)
 		}
 	}
-	return "name" // fallback
+	for _, relation := range result.Relations {
+		if getRelationType(relation.Type, ontology) == nil {
+			return nil, invalid(graphi18n.MsgBuildRelationTypeUnknown, relation.Type)
+		}
+	}
+	return fields, nil
 }
 
 func getRelationType(relTypeName string, ontology *ontologySchemaDTO) *relationTypeDTO {
@@ -1129,13 +1203,6 @@ func getRelationType(relTypeName string, ontology *ontologySchemaDTO) *relationT
 		}
 	}
 	return nil
-}
-
-func getPropertyValue(props map[string]interface{}, field string) interface{} {
-	if v, ok := props[field]; ok {
-		return v
-	}
-	return ""
 }
 
 func buildEntityReviewContent(entity extractedEntity, uniqueField string, uniqueValue interface{}, nodeLabels []string) map[string]interface{} {

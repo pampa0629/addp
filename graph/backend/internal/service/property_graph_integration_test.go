@@ -46,7 +46,9 @@ func TestIntegrationNeo4jGraphDomain(t *testing.T) {
 }
 func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	// Includes both successful domain operations and two complete multi-material
+	// build failure runs; individual provider query budgets remain unchanged.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	host, portText, err := net.SplitHostPort(endpoint)
 	if err != nil {
@@ -385,6 +387,65 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		if err != nil || len(path.Edges) != 1 {
 			t.Fatalf("FalkorDB business relationship incorrectly excluded: %+v %v", path, err)
 		}
+	}
+
+	buildRelation := models.RelationType{TenantID: 7, OntologyID: ontology.ID, Name: "ADDP_BUILD_LINK", SourceTypeID: &entity.ID, TargetTypeID: &entity.ID}
+	if err := db.Create(&buildRelation).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, failedItem := range []string{"entity", "relation", "identity"} {
+		t.Run("build_"+failedItem+"_failure_preserves_partial_writes", func(t *testing.T) {
+			keys := []string{"build-" + failedItem + "-kept", "build-" + failedItem + "-next"}
+			if failedItem == "relation" {
+				keys = append(keys, "build-relation-target")
+			}
+			invalid := map[string]interface{}{"nested": "not a native graph property"}
+			task, execution, materials := runBuildFailureFixture(t, db, kg.ID, data, func(w http.ResponseWriter, r *http.Request) {
+				var req copilotExtractRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Error(err)
+					w.WriteHeader(400)
+					return
+				}
+				response := copilotExtractResponse{Entities: []extractedEntity{{Type: "Person", Confidence: 1, Properties: map[string]interface{}{"key": keys[1], "name": "Next material"}}}}
+				if req.Text == "bad" {
+					response.Entities = []extractedEntity{
+						{TempID: "source", Type: "Person", Confidence: 1, Properties: map[string]interface{}{"key": keys[0], "name": "Kept partial write"}},
+						{TempID: "target", Type: "Person", Confidence: 1, Properties: map[string]interface{}{"key": "build-entity-invalid", "invalid": invalid}},
+					}
+					if failedItem == "relation" {
+						response.Entities[1].Properties = map[string]interface{}{"key": keys[2], "name": "Kept target"}
+						response.Relations = []extractedRelation{{Type: "ADDP_BUILD_LINK", SourceTempID: "source", TargetTempID: "target", Confidence: 1, Properties: map[string]interface{}{"invalid": invalid}}}
+					} else if failedItem == "identity" {
+						response.Entities = []extractedEntity{{Type: "Person", Confidence: 1, Properties: map[string]interface{}{"key": "", "name": "Must not merge an empty identity"}}}
+					}
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			})
+			if failedItem == "identity" {
+				keys = keys[1:]
+			}
+			if task.Status != models.BuildStatusFailed || execution.Status != models.BuildStatusFailed || len(materials) != 2 || materials[0].Status != models.BuildMaterialStatusFailed || materials[0].ProcessedChunks != 0 || materials[1].Status != models.BuildMaterialStatusCompleted {
+				t.Fatalf("native write failure did not propagate through material/task/execution: task=%+v execution=%+v materials=%+v", task, execution, materials)
+			}
+			if task.ErrorMessage == "" || materials[0].ErrorMessage == "" || execution.ErrorDetails["message"] != task.ErrorMessage {
+				t.Fatalf("original native write error was lost: task=%q material=%q execution=%+v", task.ErrorMessage, materials[0].ErrorMessage, execution.ErrorDetails)
+			}
+			var stats models.BuildTaskStats
+			if err := json.Unmarshal(task.Stats, &stats); err != nil || stats.Processed != 2 || stats.AutoWritten != len(keys) || execution.RecordsWritten == nil || *execution.RecordsWritten != int64(len(keys)) {
+				t.Fatalf("partial or later material write counts were lost: %+v records=%v error=%v", stats, execution.RecordsWritten, err)
+			}
+			result, err := provider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(conn), path, "MATCH (n:ADDPDomainPerson) WHERE n.key IN $keys RETURN n.key AS key", plugin.QueryOptions{ReadOnly: true, Limit: 10, Parameters: map[string]interface{}{"keys": keys}})
+			if err != nil || len(result.Rows) != len(keys) {
+				t.Fatalf("successful native writes were rolled back or later material was skipped: %+v %v", result, err)
+			}
+			if failedItem == "identity" {
+				empty, err := provider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(conn), path, "MATCH (n:ADDPDomainPerson) WHERE n.key = '' RETURN count(n) AS count", plugin.QueryOptions{ReadOnly: true, Limit: 1})
+				if err != nil || len(empty.Rows) != 1 || empty.Rows[0]["count"] != int64(0) {
+					t.Fatalf("empty identity reached the native graph: %+v %v", empty, err)
+				}
+			}
+		})
 	}
 
 	protected := graphProtectionProjection(t, registered.(plugin.PropertyGraphProvider), path, "managed-graph")

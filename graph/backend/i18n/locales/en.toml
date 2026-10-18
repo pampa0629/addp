@@ -43,6 +43,18 @@ other = "Invalid expand target, depth, or node/relationship budget"
 [graph.build.task_started]
 other = "Task started"
 
+[graph.build.entity_type_unknown]
+other = "The extraction contains an entity type absent from the ontology"
+
+[graph.build.merge_key_invalid]
+other = "The entity type must define exactly one explicit unique property as its merge key"
+
+[graph.build.merge_key_empty]
+other = "The entity merge key is missing or empty"
+
+[graph.build.relation_type_unknown]
+other = "The extraction contains a relationship type absent from the ontology"
+
 [graph.build.task_cancelled]
 other = "Task cancelled"
 
