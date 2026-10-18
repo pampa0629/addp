@@ -36,6 +36,7 @@
           :placeholder="t('catalog.governance.recommendedSuccessorPlaceholder')"
           @visible-change="opened => opened && searchSuccessors('')"
         >
+          <template #label="{ value }">{{ successorLabel(successorOptions.find(option => option.id === value)) }}</template>
           <el-option
             v-for="option in successorOptions"
             :key="option.id"
@@ -100,14 +101,14 @@ function emptyForm(entry) {
 function initialSuccessorOptions(entry) {
   if (entry?.recommended_successor) return [entry.recommended_successor]
   if (entry?.recommended_successor_entry_id) {
-    return [{ id: entry.recommended_successor_entry_id, display_name: t('catalog.edit.referenceUnavailable') }]
+    return [{ id: entry.recommended_successor_entry_id }]
   }
   return []
 }
 
 function successorLabel(option) {
-  const name = option.display_name || t('catalog.entries.unnamed')
-  return option.governance_status ? `${name} · ${t(`catalog.status.governance.${option.governance_status}`)}` : name
+  const name = option?.display_name || t('catalog.edit.referenceUnavailable')
+  return option?.governance_status ? `${name} · ${t(`catalog.status.governance.${option.governance_status}`)}` : name
 }
 
 async function searchSuccessors(search = '') {

@@ -9,6 +9,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
     @visible-change="onVisibleChange"
   >
+    <template #label="{ value, label }">{{ options.find(option => option.id === value)?.name || label }}</template>
     <slot />
     <el-option v-for="option in visibleOptions" :key="option.id" :value="option.id" :label="option.name" :disabled="option.disabled">
       <span class="business-domain-option" :style="{ paddingInlineStart: `${option.depth * 16}px` }" :title="option.path.join(' / ')">

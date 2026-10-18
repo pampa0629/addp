@@ -77,7 +77,7 @@
           :title="form.ownerPrimaryDomainId ? t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName }) : form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType) ? t('catalog.edit.ownerPublicScope') : t('catalog.edit.ownerPrimaryDomainMissing', { module: ownerModuleName })"
         />
         <div v-for="(domain, index) in form.domains" :key="`domain-${index}`" class="edit-row domain-row">
-          <BusinessDomainSelect :options="businessDomainReferenceOptions(candidateState.domain.options)" show-code
+          <BusinessDomainSelect :options="domainOptions" show-code
             v-model="domain.id"
             filterable remote reserve-keyword
             :loading="candidateState.domain.loading"
@@ -111,6 +111,7 @@
             :placeholder="t('catalog.edit.glossaryPlaceholder')"
             @visible-change="visible => visible && searchCandidates('glossary', '')"
           >
+            <template #label="{ value }">{{ candidateLabel(candidateState.glossary.options.find(option => option.id === value)) }}</template>
             <el-option v-for="option in candidateState.glossary.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
           </el-select>
           <el-button type="danger" text @click="form.glossaryIDs.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
@@ -142,6 +143,7 @@
             :placeholder="responsibilitySubjectType(item.role) === 'department' ? t('catalog.edit.departmentPlaceholder') : t('catalog.edit.userPlaceholder')"
             @visible-change="visible => visible && searchCandidates(responsibilitySubjectType(item.role), '')"
           >
+            <template #label="{ value }">{{ candidateLabel(candidateState[responsibilitySubjectType(item.role)].options.find(option => option.id === value)) }}</template>
             <el-option
               v-for="option in candidateState[responsibilitySubjectType(item.role)].options"
               :key="option.id" :label="candidateLabel(option)" :value="option.id"
@@ -170,6 +172,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { listReferenceCandidates } from '../api/catalog'
+import { referenceCandidateLabel } from '../utils/referenceCandidatePresentation'
 import {
   buildEntryEditForm,
   buildUpdatePayload,
@@ -192,6 +195,9 @@ const { t } = useI18n()
 const form = reactive(buildEditorForm(props.entry))
 const candidateTypes = ['domain', 'glossary', 'department', 'user']
 const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, loaded: false, version: 0 }])))
+const domainOptions = computed(() => businessDomainReferenceOptions(candidateState.domain.options.map(option => ({
+  ...option, name: option.name || t('catalog.edit.referenceUnavailable')
+}))))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
 const requiredResponsibilityRoles = responsibilityRoles.slice(0, 3)
 const responsibilityOnly = computed(() => props.mode === 'responsibilities')
@@ -238,7 +244,7 @@ function historicalCandidate(referenceType, id, snapshot = {}) {
   return {
     reference_type: referenceType,
     id: String(id),
-    name: snapshot?.name || t('catalog.edit.referenceUnavailable'),
+    name: snapshot?.name || '',
     code: snapshot?.code || '',
     status: snapshot?.status || ''
   }
@@ -285,7 +291,7 @@ function selectedCandidateIDs(type) {
 }
 
 function candidateLabel(option) {
-  return option.code ? `${option.name} · ${option.code}` : option.name
+  return referenceCandidateLabel(option, t('catalog.edit.referenceUnavailable'))
 }
 
 function addDomain() {

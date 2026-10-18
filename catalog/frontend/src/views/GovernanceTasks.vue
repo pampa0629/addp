@@ -36,7 +36,8 @@
             :placeholder="t('catalog.governanceTasks.entryPlaceholder')"
             @visible-change="visible => visible && searchEntryOptions('')"
           >
-            <el-option v-for="option in entryOptions" :key="option.id" :label="option.display_name || t('catalog.entries.unnamed')" :value="option.id" />
+            <template #label="{ value }">{{ entryOptions.find(option => option.id === value)?.display_name || t('catalog.edit.referenceUnavailable') }}</template>
+            <el-option v-for="option in entryOptions" :key="option.id" :label="option.display_name || t('catalog.edit.referenceUnavailable')" :value="option.id" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -120,7 +121,7 @@ let requestVersion = 0
 let entryOptionsRequestVersion = 0
 
 if (filters.entry_id) {
-  entryOptions.value = [{ id: filters.entry_id, display_name: t('catalog.edit.referenceUnavailable') }]
+  entryOptions.value = [{ id: filters.entry_id }]
 }
 
 async function loadTasks() {
@@ -208,7 +209,7 @@ function formatDate(value) {
 watch(() => route.query, async query => {
   Object.assign(filters, parseGovernanceTaskRoute(query))
   if (filters.entry_id && !entryOptions.value.some(item => item.id === filters.entry_id)) {
-    mergeEntryOption({ id: filters.entry_id, display_name: t('catalog.edit.referenceUnavailable') })
+    mergeEntryOption({ id: filters.entry_id })
   }
   const canonical = buildGovernanceTaskQuery(filters)
   if (!isCanonicalGovernanceTaskQuery(query, canonical)) {

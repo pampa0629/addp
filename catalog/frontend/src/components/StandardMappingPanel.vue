@@ -50,7 +50,8 @@
         </el-form-item>
         <el-form-item :label="t('catalog.mapping.element')" required>
           <el-select v-model="form.elementId" filterable remote reserve-keyword :remote-method="searchElements" :loading="elementsLoading" :placeholder="t('catalog.mapping.elementPlaceholder')" @visible-change="visible => visible && searchElements('')" @change="() => loadRevisions()">
-            <el-option v-for="option in elements" :key="option.id" :value="String(option.id)" :label="option.code ? `${option.name} · ${option.code}` : option.name" />
+            <template #label="{ value }">{{ elementOptionLabel(elements.find(option => String(option.id) === value)) }}</template>
+            <el-option v-for="option in elements" :key="option.id" :value="String(option.id)" :label="elementOptionLabel(option)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('catalog.mapping.revision')" required>
@@ -79,6 +80,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createStandardMapping, deleteStandardMapping, listReferenceCandidates, listStandardMappingRevisionOptions, reviewStandardMapping, updateStandardMapping } from '../api/catalog'
 import { standardMappingElementLabel, standardMappingRevisionLabel } from '../utils/standardMappingPresentation'
+import { referenceCandidateLabel } from '../utils/referenceCandidatePresentation'
 
 const props = defineProps({
   entry: { type: Object, required: true },
@@ -109,6 +111,7 @@ function statusType(status) {
 
 const elementLabel = row => standardMappingElementLabel(row, t)
 const revisionLabel = row => standardMappingRevisionLabel(row, t)
+const elementOptionLabel = option => referenceCandidateLabel(option, t('catalog.mapping.elementUnavailable'))
 
 async function openCandidate(row = null) {
   editingId.value = row?.id || ''
@@ -118,7 +121,7 @@ async function openCandidate(row = null) {
     confidence: row?.confidence ?? null, reason: row?.evidence?.reason || '', version: Number(row?.version || 0)
   })
   elements.value = row?.element_id ? [{
-    id: String(row.element_id), name: row?.element_reference?.name || row?.evidence?.legacy_observed_snapshot?.name || t('catalog.mapping.elementUnavailable'),
+    id: String(row.element_id), name: row?.element_reference?.name || row?.evidence?.legacy_observed_snapshot?.name || '',
     code: row?.element_reference?.code || ''
   }] : []
   revisions.value = []
