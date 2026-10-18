@@ -3,7 +3,6 @@ package postgresql
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -13,8 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
-
-var errPostgresOutputRewriteUnsupported = fmt.Errorf("%w: PostgreSQL output rewrite", plugin.ErrQueryOutputTransformUnsupported)
 
 // CompileQueryOutput lowers neutral output operations on the same prepared
 // request. Protocol-compatible engines require separate native certification.
@@ -48,7 +45,7 @@ type postgresOutputRewrite struct {
 // particular, output aliases and positional ORDER BY retain their original
 // source expressions instead of sorting the transformed values.
 func rewritePostgresQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*postgresOutputRewrite, error) {
-	fail := func() (*postgresOutputRewrite, error) { return nil, errPostgresOutputRewriteUnsupported }
+	fail := func() (*postgresOutputRewrite, error) { return nil, plugin.ErrQueryOutputTransformUnsupported }
 	parsed, err := pgquery.Parse(query)
 	if err != nil || len(parsed.GetStmts()) != 1 || len(operations) == 0 {
 		return fail()
@@ -220,41 +217,21 @@ func parsePostgresOutputExpression(expression string) (*pgquery.ResTarget, error
 // finish removes private validity columns and implements missing-field
 // semantics. Neither invalid values nor private flags can reach an owner.
 func (p *postgresOutputRewrite) finish(result *plugin.QueryResult) error {
-	if p == nil || result == nil {
-		return errPostgresOutputRewriteUnsupported
+	if p == nil {
+		return plugin.ErrQueryOutputTransformUnsupported
 	}
-	expected := append([]string(nil), p.columns...)
-	for _, invalid := range p.invalid {
-		expected = append(expected, invalid.flag)
+	invalid := make([]plugin.SQLQueryOutputInvalid, len(p.invalid))
+	for index, field := range p.invalid {
+		invalid[index] = plugin.SQLQueryOutputInvalid{Flag: field.flag, Column: field.column, Reject: field.reject}
 	}
-	if !slices.Equal(result.Columns, expected) || len(result.Fields) != len(expected) {
-		return errPostgresOutputRewriteUnsupported
-	}
-	for index, field := range result.Fields {
-		if field.Name != expected[index] || index >= len(p.columns) && field.Type != datatype.FieldTypeBool {
-			return errPostgresOutputRewriteUnsupported
+	return plugin.FinalizeSQLQueryOutput(result, p.columns, p.omitted, invalid, func(field datatype.FieldInfo, value any) (bool, bool) {
+		if field.Type != datatype.FieldTypeBool {
+			return false, false
 		}
-	}
-	for _, row := range result.Rows {
-		for _, invalid := range p.invalid {
-			value, ok := row[invalid.flag].(bool)
-			if !ok || value && invalid.reject {
-				return errPostgresOutputRewriteUnsupported
-			}
-		}
-	}
-	for _, row := range result.Rows {
-		for _, invalid := range p.invalid {
-			if row[invalid.flag] == true {
-				delete(row, invalid.column)
-			}
-			delete(row, invalid.flag)
-		}
-		for _, column := range p.omitted {
-			delete(row, column)
-		}
-	}
-	result.Columns = slices.DeleteFunc(append([]string(nil), p.columns...), func(column string) bool { return slices.Contains(p.omitted, column) })
-	result.Fields = slices.DeleteFunc(slices.Clone(result.Fields[:len(p.columns)]), func(field datatype.FieldInfo) bool { return slices.Contains(p.omitted, field.Name) })
-	return nil
+		if value == nil {
+			return false, true
+		} // Metadata-only validation, including an empty result.
+		flag, ok := value.(bool)
+		return flag, ok
+	})
 }

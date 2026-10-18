@@ -403,7 +403,7 @@ test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engin
 	@bash scripts/test/common-postgres-gate.sh $(COMMON_POSTGRES_TEST_ARGS)
 
 test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Provider 与四个 Owner 的数据保护契约
-	@bash scripts/test/common-mysql-data-protection-gate.sh
+	@bash scripts/test/common-mysql-data-protection-gate.sh $(COMMON_MYSQL_TEST_ARGS)
 
 .PHONY: test-model-mysql
 test-model-mysql: ## 使用一次性 MySQL database 验证数据库无关指标逻辑及 Provider 查询

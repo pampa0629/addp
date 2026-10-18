@@ -63,7 +63,7 @@ func TestPostgresOutputRewriteNeverCapturesAnUnboundOriginalParameter(t *testing
 		{query: `SELECT phone FROM people WHERE id=$2`, args: []any{7, 8}},
 		{query: `SELECT phone FROM people`, args: []any{7}},
 	} {
-		if _, err := rewritePostgresQueryOutput(fixture.query, fixture.args, []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "hidden"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+		if _, err := rewritePostgresQueryOutput(fixture.query, fixture.args, []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "hidden"}}); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("rewrite captured a missing original parameter or made an originally invalid binding valid")
 		}
 	}
@@ -79,7 +79,7 @@ func TestPostgresOutputRewriteRejectsUnprovedSemantics(t *testing.T) {
 		`SELECT phone FROM people; SELECT phone FROM others`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			if _, err := rewritePostgresQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+			if _, err := rewritePostgresQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 				t.Fatalf("unproved query must refuse: %v", err)
 			}
 		})
@@ -91,7 +91,7 @@ func TestPostgresOutputRewriteRejectsUnprovedSemantics(t *testing.T) {
 		{Column: "phone", Kind: "keep_prefix_suffix", MaskRune: "*", InvalidValue: "allow"},
 		{Column: "phone", Kind: "constant_text", Replacement: "\x00"},
 	} {
-		if _, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []plugin.QueryOutputTransform{operation}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+		if _, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []plugin.QueryOutputTransform{operation}); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproved operation must refuse: %v", err)
 		}
 	}
@@ -122,11 +122,11 @@ func TestPostgresOutputRewritePrivateFlagsAndInvalidValues(t *testing.T) {
 	plan.invalid[0].reject = true
 	for _, invalid := range []any{true, nil, "true"} {
 		result := &plugin.QueryResult{Columns: []string{"__addp_output_invalid_0", "phone", flag}, Fields: fields, Rows: []map[string]any{{flag: invalid}}}
-		if !errors.Is(plan.finish(result), errPostgresOutputRewriteUnsupported) {
+		if !errors.Is(plan.finish(result), plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("invalid or missing evidence must reject")
 		}
 	}
-	if !errors.Is(plan.finish(&plugin.QueryResult{Columns: []string{"phone"}}), errPostgresOutputRewriteUnsupported) {
+	if !errors.Is(plan.finish(&plugin.QueryResult{Columns: []string{"phone"}}), plugin.ErrQueryOutputTransformUnsupported) {
 		t.Fatal("changed output structure must reject")
 	}
 }
@@ -170,7 +170,7 @@ func TestPostgresOutputRewriteRejectsMissingOrInconsistentOutputTypes(t *testing
 		{{Name: "phone", Type: datatype.FieldTypeString}, {Name: flag, Type: datatype.FieldTypeString}},
 	} {
 		result := &plugin.QueryResult{Columns: []string{"phone", flag}, Fields: fields, Rows: []map[string]any{{"phone": "a*c", flag: false}}}
-		if !errors.Is(plan.finish(result), errPostgresOutputRewriteUnsupported) {
+		if !errors.Is(plan.finish(result), plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("missing, misnamed or incorrectly typed metadata must reject")
 		}
 	}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -224,6 +225,7 @@ class LocalMacOSCiTest(unittest.TestCase):
               "${ADDP_TEST_MYSQL_PORT-UNSET}" \
               "${ADDP_TEST_MYSQL_USER-UNSET}" \
               "${ADDP_TEST_MYSQL_PASSWORD-UNSET}" >> "$GO_LOG"
+            case "$*" in *OutputRewrite*) printf '%s\n' '--- PASS: TestIntegrationMySQLOutputRewrite (0.01s)' ;; esac
             printf '%s|%s|%s|%s|%s|%s|%s\n' "$*" \
               "${ADDP_TEST_OCEANBASE_HOST-UNSET}" \
               "${ADDP_TEST_OCEANBASE_PORT-UNSET}" \
@@ -285,6 +287,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         )
         environment["NPM_LOG"] = str(self.npm_log)
         environment["GO_LOG"] = str(self.go_log)
+        environment["DOCKER_LOG"] = str(self.docker_log)
         environment["OCEANBASE_GO_LOG"] = str(self.oceanbase_go_log)
         environment["DOCKER_LOG"] = str(self.docker_log)
         environment["EVENT_LOG"] = str(self.event_log)
@@ -357,10 +360,11 @@ class LocalMacOSCiTest(unittest.TestCase):
             return []
         return self.event_log.read_text(encoding="utf-8").splitlines()
 
-    def _run_mysql_gate(self) -> subprocess.CompletedProcess[str]:
+    def _run_mysql_gate(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
         environment["GO_LOG"] = str(self.go_log)
+        environment["DOCKER_LOG"] = str(self.docker_log)
         environment["OCEANBASE_GO_LOG"] = str(self.oceanbase_go_log)
         environment["ADDP_LOCAL_CI_MYSQL"] = "1"
         environment["ADDP_TEST_MYSQL_HOST"] = "unsafe.example.com"
@@ -368,17 +372,70 @@ class LocalMacOSCiTest(unittest.TestCase):
         environment["ADDP_TEST_MYSQL_USER"] = "unsafe"
         environment["ADDP_TEST_MYSQL_PASSWORD"] = "unsafe-password"
         return subprocess.run(
-            ["bash", "scripts/test/common-mysql-data-protection-gate.sh"],
+            ["bash", "scripts/test/common-mysql-data-protection-gate.sh", *arguments],
             cwd=self.repository,
             env=environment,
             capture_output=True,
             text=True,
         )
 
+    def _use_fake_disposable_mysql(self, mode: str = "success") -> None:
+        self._executable("python3", f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+        self._executable("docker", r'''#!/bin/bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "$DOCKER_LOG"
+            case "$*" in
+              *"config --format json"*)
+                printf '%s\n' '{"services":{"mysql":{"image":"fixed-test-image","environment":{"MYSQL_ROOT_PASSWORD":"addp_local_ci_mysql_password"},"networks":{"default":null}}}}'
+                ;;
+              *" up -d --wait "*) START_BEHAVIOR ;;
+              inspect*) INSPECT_BEHAVIOR ;;
+              *"label=com.docker.compose.project="*) EXISTING_BEHAVIOR ;;
+            esac
+            '''.replace("START_BEHAVIOR", "exit 18" if mode == "start_failure" else "exit 0")
+               .replace("INSPECT_BEHAVIOR", "printf '%s\\n' '127.0.0.1:45555'" if mode != "missing_port" else "exit 0")
+               .replace("EXISTING_BEHAVIOR", "echo existing-owner" if mode == "existing" else "exit 0"))
+
+    def test_mysql_disposable_gate_overrides_external_connection_and_cleans_owned_project(self) -> None:
+        self._use_fake_disposable_mysql()
+        result = self._run_mysql_gate("--local-disposable")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        environments = self.go_log.read_text().splitlines()
+        self.assertTrue(environments)
+        self.assertTrue(all(line.endswith("|127.0.0.1|45555|root|addp_local_ci_mysql_password") for line in environments))
+        commands = self._docker_commands()
+        self.assertTrue(any(" up -d --wait --wait-timeout 120 mysql" in command for command in commands))
+        self.assertTrue(any(" down --volumes --remove-orphans" in command for command in commands))
+        self.assertTrue(all("addp-common-mysql-t2-" in command for command in commands if " down " in command))
+
+    def test_mysql_disposable_start_or_mapping_failure_never_falls_back_to_business_mysql(self) -> None:
+        for mode, expected in (("start_failure", 18), ("missing_port", 1)):
+            with self.subTest(mode=mode):
+                self.docker_log.unlink(missing_ok=True)
+                self._use_fake_disposable_mysql(mode)
+                result = self._run_mysql_gate("--local-disposable")
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                self.assertFalse(self.go_log.exists())
+                self.assertTrue(any(" down --volumes --remove-orphans" in command for command in self._docker_commands()))
+
+    def test_mysql_disposable_gate_does_not_take_over_existing_project(self) -> None:
+        self._use_fake_disposable_mysql("existing")
+        result = self._run_mysql_gate("--local-disposable")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertFalse(self.go_log.exists())
+        self.assertFalse(any(" up " in command or " down " in command for command in self._docker_commands()))
+
+    def test_mysql_gate_requires_native_output_rewrite_pass_evidence(self) -> None:
+        self._executable("go", "#!/bin/sh\nexit 0\n")
+        result = self._run_mysql_gate()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("output rewrite equivalence test did not pass", result.stderr)
+
     def _run_oceanbase_gate(self) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PATH"] = f"{self.fake_bin}:{environment['PATH']}"
         environment["GO_LOG"] = str(self.go_log)
+        environment["DOCKER_LOG"] = str(self.docker_log)
         environment["OCEANBASE_GO_LOG"] = str(self.oceanbase_go_log)
         environment["ADDP_LOCAL_CI_OCEANBASE"] = "1"
         environment["ADDP_TEST_OCEANBASE_HOST"] = "unsafe.example.com"
