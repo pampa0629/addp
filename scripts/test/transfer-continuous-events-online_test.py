@@ -388,6 +388,13 @@ class ContinuousRunnerTest(unittest.TestCase):
             with self.subTest(p=p), self.assertRaises(M.SuiteError):
                 M.events(Client([p]), M.MONITOR, UUID)
 
+    def test_running_lifecycle_requires_committed_progress_without_terminal_events(self):
+        running = [fact(1, 'started'), fact(2)]
+        M.lifecycle_events(running)
+        for terminal in ['completed', 'failed', 'cancelled', 'timeout']:
+            with self.subTest(terminal=terminal), self.assertRaises(M.SuiteError):
+                M.lifecycle_events(running + [fact(3, terminal)])
+
     def test_requires_worker_progress_and_one_terminal(self):
         valid = [fact(1, 'started'), fact(2), fact(3, 'failed')]
         M.lifecycle_events(valid, 'failed')

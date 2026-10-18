@@ -644,7 +644,8 @@ def run_suite(client, denied, foreign, peer, reader, admin, login, tenant, run_i
         report['browser_owner_unavailable'] = run_browser('owner_unavailable', [initial, cdc],
             report['consumer_identity'], run_id, faults.secret, faults=faults)
         compare(initial, 'failed')
-        compare(cdc, 'running')
+        require(detail(client, cdc).get('status') == 'running', 'Owner outage stopped the continuous execution')
+        compare(cdc)
         report['checks'].append('real_owner_outage_browser_clears_and_recovers_without_grant_cache')
         require(physical('mutate-cdc'), 'CDC mutation fixture failed')
         until(lambda: physical('verify-cdc-mutated'))
