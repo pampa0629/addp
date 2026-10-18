@@ -59,12 +59,15 @@ class BusinessGaussDBTest(unittest.TestCase):
                 marker.write_text(marker_value)
                 self.assertNotEqual(run().returncode, 0)
 
-    def test_native_client_password_is_in_environment_only_and_preserves_failure(self):
+    def test_native_pipeline_keeps_password_and_sql_separate_and_preserves_failure(self):
         for status in (0, 3):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = self.run_shell('''
 gsql() {
-    [ "$PGPASSWORD" = "$GAUSSDB_APP_PASSWORD" ] || return 98
+    IFS= read -r supplied_password
+    [ "$supplied_password" = "$GAUSSDB_APP_PASSWORD" ] || return 98
+    [[ " $* " = *" -2 "* && " $* " = *" -f /dev/fd/3 "* ]] || return 96
+    [ "$(cat /dev/fd/3)" = "SELECT 1;" ] || return 95
     [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
     # The fixed native gsql has no PostgreSQL psql -w/--no-password option.
     for argument in "$@"; do

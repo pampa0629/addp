@@ -14,6 +14,8 @@ bash business/scripts/restart.sh -gaussdb
 
 `-gaussdb` 必须独立使用，不进入 `-all`。首次下载校验介质后构建本机架构镜像，首次空卷创建 `business` 数据库及 `addp_business` 下探针、客户、商品、订单和明细；样例事务仅补缺失主键，不覆盖用户修改。`gaussdb_data` 卷在停止及重启后保留；已有数据库缺少完成标记、版本／账号不匹配或密码错误时拒绝启动，不重新格式化，不自动轮换密码。管理密码变更须先通过原生数据库维护完成，再同步配置。Business 不登记 System 引擎。
 
+原生 `gsql` 的凭据通道固定采用[厂商文档](https://support.huaweicloud.com/centralized-ref-v10-gaussdb/gaussdb-38-0862.html)的 `-2`：密码走标准输入管道，SQL 由独立文件描述符交给 `-f /dev/fd/3`，不生成临时凭据文件、不把密码放入参数。固定介质的客户端不能套用 PostgreSQL `psql` 的 `-w`、`PGPASSFILE` 或 `PGPASSWORD` 登录方式；介质中 `libpq` 出现某个环境变量字符串，不能证明 `gsql` 会使用它。连接失败保留原生诊断，认证与密码策略不降低。
+
 构建／初始化由 `business/gaussdb/` 唯一维护，既有 `make test-release RELEASE_SUITE=gaussdb-official-media` 双架构门禁复用它，新增独占数据卷、删除并重建容器后用户数据及样例修改保留的检查；所有退出路径核对容器、网络、卷、镜像零残留。确定性验证为 `make test-business-config` 和 `make test-release-runner`。本轮真实双架构持久化验收尚待运行；此前协议 T5 通过不能代替本次生命周期验收。正式 `engine_type=gaussdb` 插件、平台 T2/T4 和 macOS Docker 运行仍未验收。
 
 ## 概述
