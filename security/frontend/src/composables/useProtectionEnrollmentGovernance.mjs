@@ -12,6 +12,7 @@ export function useProtectionEnrollmentGovernance({
   listFindings,
   listAssessments,
   listPolicies,
+  getPolicy,
   listExemptions,
   onLoadError = () => {}
 }) {
@@ -165,6 +166,24 @@ export function useProtectionEnrollmentGovernance({
     })
   }
 
+  async function loadPolicyHistories(assessmentID) {
+    if (!unref(canReadPolicies)) return []
+    const enrollmentID = enrollment.value?.id
+    if (!enrollmentID || !await loadPolicies()) throw new Error('policy_history_unavailable')
+    const bound = policies.value.filter(policy => String(policy.assessment_id) === String(assessmentID))
+    const histories = await Promise.all(bound.map(async policy => {
+      const detail = await getPolicy(policy.id)
+      if (String(detail?.id) !== String(policy.id) || String(detail?.assessment_id) !== String(assessmentID)
+        || detail.consumer_owner !== policy.consumer_owner || detail.action !== policy.action
+        || !Array.isArray(detail.history) || detail.history.length === 0) {
+        throw new Error('policy_history_identity_mismatch')
+      }
+      return detail
+    }))
+    if (enrollment.value?.id !== enrollmentID) throw new Error('policy_history_resource_changed')
+    return histories
+  }
+
   async function loadCollection({ kind, allowed, collection, loading, fetch }) {
     const row = enrollment.value
     const request = ++requestVersions[kind]
@@ -215,6 +234,7 @@ export function useProtectionEnrollmentGovernance({
     loadFindings,
     loadAssessments,
     loadPolicies,
+    loadPolicyHistories,
     loadExemptions,
     loadGovernance,
     replaceAssessment,

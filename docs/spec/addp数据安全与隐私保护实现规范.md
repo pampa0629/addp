@@ -236,6 +236,7 @@ tenant + assessment_id + consumer_owner + action
 7. Policy 变更与 ProtectionProjection 新修订必须在同一数据库事务完成，并继续调用唯一编译器；禁止新增 Policy 专用投影生成旁路。
 8. 更新既有 Policy 时，资源版本不匹配必须返回 `409` 和稳定错误码 `resource_version_conflict`。“受保护资源”的策略编辑对话框必须保留用户尚未提交成功的效果和调整依据、禁用旧版本再次提交，并只提供显式的“放弃当前输入并加载最新策略”动作；该动作必须同时重新读取 Policy、其绑定的 Assessment 和当前 ProtectionBaseline，按最新默认保护重新计算可选收紧效果，不得自动重试、自动合并或静默覆盖最新修订。
 9. 撤销既有 Policy 也必须使用“受保护资源”内的正式表单对话框收集恢复依据。版本冲突时保持对话框和恢复依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才重新读取 Policy、其绑定的 Assessment 和当前 ProtectionBaseline。若最新 Policy 已撤销或最新 Assessment 不再是有效敏感结论，则关闭对话框并告知无需重复操作；仍可撤销时以最新状态建立空白恢复依据，不得自动重试或沿用旧依据提交。
+10. 受保护字段的既有修订记录入口同时展示 Assessment 修订与有权读取的各出口 Policy 不可变修订，区分出口、修订状态、效果、算法参数、异常值处理、操作者、时间和依据。复用 `GET /protection-policies/{id}` 的既有历史，不建立第二套审计存储或写入接口。已撤销策略仍可查看；历史配置不代表当前有效保护，执行仍按当前评估、基线和投影确定。没有 `security.policy.read` 时不请求或展示策略历史；读取失败不能伪装成没有变更，关闭或切换资源后的旧响应不得回填。
 
 用途约束和双人复核仍属于后续范围，不得借 ProtectionPolicy 或 ProtectionExemption API 伪装实现。
 

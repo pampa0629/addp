@@ -12,6 +12,7 @@ export function useProtectionAssessmentWorkspace({
   refreshAssessments,
   createAssessment,
   getAssessment,
+  loadPolicyHistories,
   refreshCollection,
   refreshGovernance,
   scheduleAutoRefresh,
@@ -33,6 +34,7 @@ export function useProtectionAssessmentWorkspace({
   const historyDialog = ref(false)
   const historyLoading = ref(false)
   const history = ref(null)
+  const policyHistories = ref([])
 
   let designationLoadRequest = 0
   let designationSubmitRequest = 0
@@ -147,16 +149,27 @@ export function useProtectionAssessmentWorkspace({
   async function openHistory(assessment) {
     if (disposed || !assessment?.id) return { status: 'unavailable' }
     const request = ++historyRequest
+    const enrollmentID = getEnrollment()?.id
     history.value = null
+    policyHistories.value = []
     historyDialog.value = true
     historyLoading.value = true
     try {
-      const detail = await getAssessment(assessment.id)
+      const [detail, policies] = await Promise.all([getAssessment(assessment.id), loadPolicyHistories(assessment.id)])
       if (request !== historyRequest || disposed) return { status: 'stale' }
+      if (getEnrollment()?.id !== enrollmentID) {
+        closeHistory()
+        return { status: 'stale' }
+      }
       history.value = detail
+      policyHistories.value = policies
       return { status: 'loaded', assessment: detail }
     } catch (error) {
       if (request !== historyRequest || disposed) return { status: 'stale' }
+      if (getEnrollment()?.id !== enrollmentID) {
+        closeHistory()
+        return { status: 'stale' }
+      }
       historyDialog.value = false
       onHistoryLoadError(error)
       return { status: 'failed', error }
@@ -169,6 +182,7 @@ export function useProtectionAssessmentWorkspace({
     historyRequest += 1
     historyDialog.value = false
     history.value = null
+    policyHistories.value = []
     historyLoading.value = false
   }
 
@@ -198,6 +212,7 @@ export function useProtectionAssessmentWorkspace({
     historyDialog,
     historyLoading,
     history,
+    policyHistories,
     openHistory,
     closeHistory,
     dispose

@@ -718,6 +718,35 @@ describe('protected-resource presentation model', () => {
     expect(history.items[1].rationale).toBe('confirmed')
   })
 
+  it('includes immutable outlet policy revisions and distinguishes revoked policies from effective protection', () => {
+    const { presentation } = createPresentation()
+    const scopes = [['manager', 'preview'], ['develop', 'query'], ['service', 'service_execute'], ['transfer', 'export']]
+    const policies = scopes.map(([consumer_owner, action], index) => ({
+      id: `policy-${index}`, consumer_owner, action, current_revision: 2,
+      history: [
+        { id: `p${index}-r1`, revision: 1, state: 'active', effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2', parameters: { prefix_runes: 1, suffix_runes: 2, mask_rune: '#' }, invalid_value_effect: 'suppress', rationale: 'tightened', created_by: '8', created_at: '2026-01-03T03:04:05Z' },
+        { id: `p${index}-r2`, revision: 2, state: 'revoked', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'deny', rationale: 'restore baseline', created_by: '9', created_at: '2026-01-04T03:04:05Z' }
+      ]
+    }))
+    const view = presentation.assessmentHistoryView({ component_key: 'phone', history: [] }, policies)
+    expect(view.items).toHaveLength(8)
+    expect(new Set(view.items.map(item => item.id)).size).toBe(8)
+    for (const [index, [owner, action]] of scopes.entries()) {
+      const active = view.items.find(item => item.id === `p${index}-r1`)
+      const revoked = view.items.find(item => item.id === `p${index}-r2`)
+      expect(active.sourceLabel).toContain(`security.enrollment.owners.${owner}`)
+      expect(active.sourceLabel).toContain(action === 'preview' ? 'Preview' : action)
+      expect(active.summary).toContain('maskSummary')
+      expect(active.summary).toContain('security.algorithms.prefix.name')
+      expect(active.current).toBe(false)
+      expect(revoked.current).toBe(true)
+      expect(revoked.conclusion).toEqual({ type: 'info', label: 'security.policy.historyStates.revoked' })
+      expect(revoked.summary).toContain('security.algorithms.sm3.name')
+      expect(revoked.rationale).toBe('restore baseline')
+      expect(revoked.metadata).toContain('userId')
+    }
+  })
+
   it('derives each temporary authorization through one row model', () => {
     const { presentation } = createPresentation()
     const exemption = {

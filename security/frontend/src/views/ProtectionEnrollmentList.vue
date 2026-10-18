@@ -557,6 +557,7 @@ const {
   loadFindings,
   loadAssessments,
   loadPolicies,
+  loadPolicyHistories,
   loadExemptions,
   loadGovernance: loadGovernanceData,
   replaceAssessment,
@@ -572,6 +573,7 @@ const {
   listFindings: params => findingAPI.list(params),
   listAssessments: params => assessmentAPI.list(params),
   listPolicies: params => protectionPolicyAPI.list(params),
+  getPolicy: id => protectionPolicyAPI.get(id),
   listExemptions: params => protectionExemptionAPI.list(params),
   onLoadError: handleGovernanceLoadError
 })
@@ -666,6 +668,7 @@ const {
   historyDialog: assessmentHistoryDialog,
   historyLoading: assessmentHistoryLoading,
   history: assessmentHistory,
+  policyHistories: assessmentPolicyHistories,
   openHistory: openAssessmentHistory,
   closeHistory: closeAssessmentHistory,
   dispose: disposeProtectionAssessmentWorkspace
@@ -676,6 +679,7 @@ const {
   refreshAssessments: loadAssessments,
   createAssessment: payload => assessmentAPI.create(payload),
   getAssessment: id => assessmentAPI.get(id),
+  loadPolicyHistories,
   refreshCollection: options => load(options),
   refreshGovernance: () => loadGovernance(findingsPage.value),
   scheduleAutoRefresh,
@@ -687,8 +691,9 @@ const {
   onComponentsLoadError: error => ElMessage.error(error.message || t('security.assessment.componentsLoadFailed')),
   onDesignationSaved: () => ElMessage.success(t('security.assessment.designated')),
   onDesignationError: error => ElMessage.error(error.message || t('security.common.failed')),
-  onHistoryLoadError: error => ElMessage.error(error.message || t('security.assessment.historyLoadFailed'))
+  onHistoryLoadError: () => ElMessage.error(t('security.assessment.historyLoadFailed'))
 })
+watch(() => detailRow.value?.id, () => closeAssessmentHistory())
 const {
   dialog: exemptionRevokeDialog,
   dialogRef: exemptionRevokeDialogRef,
@@ -1064,7 +1069,7 @@ const manualAssessmentDialogPresentation = computed(() => manualAssessmentDialog
   sensitiveDataTypeID: manualAssessmentForm.sensitiveDataTypeID
 }))
 const assessmentHistoryPresentation = computed(() => assessmentHistory.value
-  ? assessmentHistoryView(assessmentHistory.value)
+  ? assessmentHistoryView(assessmentHistory.value, assessmentPolicyHistories.value)
   : null)
 const enrollmentCreationPresentation = computed(() => selectedItem.value
   ? enrollmentCreationSelectionView(selectedItem.value, {

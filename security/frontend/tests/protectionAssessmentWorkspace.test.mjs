@@ -21,6 +21,7 @@ function createWorkspace(overrides = {}) {
     refreshAssessments: vi.fn().mockResolvedValue(true),
     createAssessment: vi.fn().mockResolvedValue(assessment),
     getAssessment: vi.fn().mockResolvedValue(assessment),
+    loadPolicyHistories: vi.fn().mockResolvedValue([]),
     refreshCollection: vi.fn().mockResolvedValue(true),
     refreshGovernance: vi.fn().mockResolvedValue(true),
     scheduleAutoRefresh: vi.fn(),
@@ -151,6 +152,42 @@ describe('protection assessment workspace sessions', () => {
     expect(dependencies.getAssessment).toHaveBeenCalledWith('assessment-1')
     expect(workspace.historyDialog.value).toBe(true)
     expect(workspace.history.value).toEqual(assessment)
+    expect(dependencies.loadPolicyHistories).toHaveBeenCalledWith('assessment-1')
+  })
+
+  it('includes policy revisions in the same read-only history session and clears them on close', async () => {
+    const policies = [{ id: 'policy-1', assessment_id: 'assessment-1', history: [{ revision: 1 }] }]
+    const { workspace } = createWorkspace({ loadPolicyHistories: vi.fn().mockResolvedValue(policies) })
+    await workspace.openHistory({ id: 'assessment-1' })
+    expect(workspace.policyHistories.value).toEqual(policies)
+    workspace.closeHistory()
+    expect(workspace.policyHistories.value).toEqual([])
+  })
+
+  it('does not present failed policy history as an empty successful history', async () => {
+    const error = new Error('policy history failed')
+    const { workspace, dependencies } = createWorkspace({ loadPolicyHistories: vi.fn().mockRejectedValue(error) })
+    await expect(workspace.openHistory({ id: 'assessment-1' })).resolves.toEqual({ status: 'failed', error })
+    expect(workspace.historyDialog.value).toBe(false)
+    expect(workspace.history.value).toBeNull()
+    expect(dependencies.onHistoryLoadError).toHaveBeenCalledWith(error)
+  })
+
+  it.each(['success', 'failure'])('ignores a late policy history %s after switching resources', async outcome => {
+    let complete
+    let fail
+    const { workspace, state, dependencies } = createWorkspace({
+      loadPolicyHistories: vi.fn(() => new Promise((resolve, reject) => { complete = resolve; fail = reject }))
+    })
+    const loading = workspace.openHistory({ id: 'assessment-1' })
+    state.enrollment = { id: 'enrollment-2' }
+    if (outcome === 'success') complete([{ id: 'policy-1' }])
+    else fail(new Error('late resource response'))
+    await expect(loading).resolves.toEqual({ status: 'stale' })
+    expect(workspace.history.value).toBeNull()
+    expect(workspace.policyHistories.value).toEqual([])
+    expect(workspace.historyDialog.value).toBe(false)
+    expect(dependencies.onHistoryLoadError).not.toHaveBeenCalled()
   })
 
   it('keeps only the latest history request result', async () => {

@@ -18,6 +18,7 @@ function createGovernance(overrides = {}) {
     listFindings: vi.fn().mockResolvedValue({ data: [{ id: 1 }], total: 2 }),
     listAssessments: vi.fn().mockResolvedValue({ data: [{ id: 2 }] }),
     listPolicies: vi.fn().mockResolvedValue({ data: [{ id: 3 }], total: 1, total_pages: 1, supported_scopes: [{ consumer_owner: 'manager', action: 'preview' }] }),
+    getPolicy: vi.fn(),
     listExemptions: vi.fn().mockResolvedValue({ data: [{ id: 4 }] }),
     onLoadError: vi.fn(),
     ...overrides
@@ -26,6 +27,66 @@ function createGovernance(overrides = {}) {
 }
 
 describe('protected resource governance detail', () => {
+  it('loads histories only for the selected assessment, including revoked outlet policies', async () => {
+    const rows = [
+      { id: 'manager-policy', assessment_id: 'a', consumer_owner: 'manager', action: 'preview', state: 'active' },
+      { id: 'develop-policy', assessment_id: 'a', consumer_owner: 'develop', action: 'query', state: 'revoked' },
+      { id: 'other-policy', assessment_id: 'b' }
+    ]
+    const { governance, dependencies } = createGovernance({
+      listPolicies: vi.fn().mockResolvedValue({ data: rows, total: 3, total_pages: 1, supported_scopes: [] }),
+      getPolicy: vi.fn(id => Promise.resolve({ ...rows.find(row => row.id === id), history: [{ revision: 1 }] }))
+    })
+    const histories = await governance.loadPolicyHistories('a')
+    expect(histories.map(row => row.id)).toEqual(['manager-policy', 'develop-policy'])
+    expect(dependencies.getPolicy.mock.calls).toEqual([['manager-policy'], ['develop-policy']])
+  })
+
+  it('does not request policy history without policy read permission', async () => {
+    const { governance, dependencies } = createGovernance({ canReadPolicies: false })
+    await expect(governance.loadPolicyHistories('a')).resolves.toEqual([])
+    expect(dependencies.listPolicies).not.toHaveBeenCalled()
+    expect(dependencies.getPolicy).not.toHaveBeenCalled()
+  })
+
+  it.each(['identity', 'assessment', 'outlet', 'missing-history'])('rejects inconsistent %s history instead of showing a false empty result', async mismatch => {
+    const row = { id: 'p', assessment_id: 'a', consumer_owner: 'manager', action: 'preview' }
+    const detail = { ...row, history: [{ revision: 1 }] }
+    if (mismatch === 'identity') detail.id = 'other'
+    if (mismatch === 'assessment') detail.assessment_id = 'other'
+    if (mismatch === 'outlet') detail.action = 'export'
+    if (mismatch === 'missing-history') delete detail.history
+    const { governance } = createGovernance({
+      listPolicies: vi.fn().mockResolvedValue({ data: [row], total: 1, total_pages: 1, supported_scopes: [] }),
+      getPolicy: vi.fn().mockResolvedValue(detail)
+    })
+    await expect(governance.loadPolicyHistories('a')).rejects.toThrow('policy_history_identity_mismatch')
+  })
+
+  it('rejects policy history when switching resources while details load', async () => {
+    let complete
+    const row = { id: 'p', assessment_id: 'a' }
+    const { governance, enrollment, dependencies } = createGovernance({
+      listPolicies: vi.fn().mockResolvedValue({ data: [row], total: 1, total_pages: 1, supported_scopes: [] }),
+      getPolicy: vi.fn(() => new Promise(resolve => { complete = resolve }))
+    })
+    const pending = governance.loadPolicyHistories('a')
+    await vi.waitFor(() => expect(dependencies.getPolicy).toHaveBeenCalled())
+    enrollment.value = { id: 8 }
+    governance.reset()
+    complete({ ...row, history: [{ revision: 1 }] })
+    await expect(pending).rejects.toThrow('policy_history_resource_changed')
+    expect(governance.policies.value).toEqual([])
+  })
+
+  it('rejects a failed or incomplete policy list before requesting details', async () => {
+    const { governance, dependencies } = createGovernance({
+      listPolicies: vi.fn().mockResolvedValue({ data: [], total: 1, total_pages: 1, supported_scopes: [] })
+    })
+    await expect(governance.loadPolicyHistories('a')).rejects.toThrow('policy_history_unavailable')
+    expect(dependencies.getPolicy).not.toHaveBeenCalled()
+  })
+
   it('loads the four read models with enrollment-scoped canonical parameters', async () => {
     const { dependencies, governance } = createGovernance()
 

@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { protectionPolicyScopeKey } from '../utils/protectionPolicy.mjs'
 import { isProtectionEffectStricter } from '../utils/protectionEnrollment.mjs'
+import { algorithmNameKey, prefixAlgorithm, constantAlgorithm } from '../utils/protectionAlgorithm.mjs'
 
 export function createProtectionAssessmentPresentation({
   t,
@@ -14,6 +15,8 @@ export function createProtectionAssessmentPresentation({
   canCreatePolicies,
   canUpdatePolicies,
   formatDateTime,
+  ownerLabel,
+  actionLabel,
   effectLabel,
   typeName,
   classificationName,
@@ -61,34 +64,63 @@ export function createProtectionAssessmentPresentation({
       : t('security.common.notAvailable')
   }
 
-  function assessmentHistoryView(assessment) {
+  function policyRevisionSummary(revision) {
+    if (revision.effect !== 'mask') return effectLabel(revision.effect)
+    const parameters = revision.parameters || {}
+    const details = revision.algorithm === prefixAlgorithm
+      ? t('security.baseline.maskSummary', { prefix: parameters.prefix_runes, suffix: parameters.suffix_runes, mask: parameters.mask_rune })
+      : revision.algorithm === constantAlgorithm
+        ? t('security.policy.historyConstant', { value: JSON.stringify(parameters.value) })
+        : t(algorithmNameKey(revision.algorithm))
+    return t('security.policy.historyConfiguration', {
+      algorithm: t(algorithmNameKey(revision.algorithm)),
+      parameters: details,
+      invalid: effectLabel(revision.invalid_value_effect)
+    })
+  }
+
+  function assessmentHistoryView(assessment, policyHistories = []) {
     const currentRevision = Number(assessment?.current_revision)
     const history = Array.isArray(assessment?.history) ? assessment.history : []
-    return {
-      componentKey: assessment?.component_key,
-      items: history.map(revision => {
-        const timestamp = formatDateTime(revision?.created_at)
-        const current = Number(revision?.revision) === currentRevision
-        const conclusion = revision?.conclusion === 'sensitive' ? 'sensitive' : 'not_sensitive'
-        return {
-          id: revision?.id,
+    const items = history.map(revision => {
+      const timestamp = formatDateTime(revision?.created_at)
+      const current = Number(revision?.revision) === currentRevision
+      const conclusion = revision?.conclusion === 'sensitive' ? 'sensitive' : 'not_sensitive'
+      return {
+        id: revision?.id,
+        timestamp,
+        current,
+        revisionLabel: t('security.assessment.revisionLabel', { revision: revision?.revision }),
+        conclusion: {
+          type: conclusion === 'sensitive' ? 'success' : 'info',
+          label: assessmentConclusionLabel(conclusion)
+        },
+        sourceLabel: assessmentRevisionSourceLabel(revision?.source_kind),
+        summary: assessmentRevisionSummary(revision),
+        rationale: revision?.rationale || '',
+        metadata: t('security.assessment.historyMeta', {
+          actor: assessmentActorLabel(revision?.created_by),
+          time: timestamp
+        })
+      }
+    })
+    for (const policy of policyHistories) {
+      for (const revision of policy.history || []) {
+        const timestamp = formatDateTime(revision.created_at)
+        items.push({
+          id: revision.id,
           timestamp,
-          current,
-          revisionLabel: t('security.assessment.revisionLabel', { revision: revision?.revision }),
-          conclusion: {
-            type: conclusion === 'sensitive' ? 'success' : 'info',
-            label: assessmentConclusionLabel(conclusion)
-          },
-          sourceLabel: assessmentRevisionSourceLabel(revision?.source_kind),
-          summary: assessmentRevisionSummary(revision),
-          rationale: revision?.rationale || '',
-          metadata: t('security.assessment.historyMeta', {
-            actor: assessmentActorLabel(revision?.created_by),
-            time: timestamp
-          })
-        }
-      })
+          current: Number(revision.revision) === Number(policy.current_revision),
+          revisionLabel: t('security.policy.historyRevision', { revision: revision.revision }),
+          conclusion: { type: revision.state === 'active' ? 'success' : 'info', label: t(`security.policy.historyStates.${revision.state}`) },
+          sourceLabel: t('security.policy.historySource', { owner: ownerLabel(policy.consumer_owner), action: actionLabel(policy.action) }),
+          summary: policyRevisionSummary(revision),
+          rationale: revision.rationale || '',
+          metadata: t('security.assessment.historyMeta', { actor: assessmentActorLabel(revision.created_by), time: timestamp })
+        })
+      }
     }
+    return { componentKey: assessment?.component_key, items }
   }
 
   function baselineForAssessment(assessment) {

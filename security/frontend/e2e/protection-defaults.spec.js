@@ -164,6 +164,42 @@ for (const [owner, action, label] of [['develop', 'query', '查询工作台'], [
   })
 }
 
+test('reads all outlet policy revisions including revoked policies without changing protection', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  const outlets = [['manager', 'preview', '数据预览'], ['develop', 'query', '查询工作台'], ['service', 'service_execute', '数据服务'], ['transfer', 'export', '数据导出']]
+  backend.policies = outlets.map(([consumer_owner, action], index) => ({
+    id: `history-policy-${index}`, assessment_id: assessmentID, consumer_owner, action,
+    state: 'revoked', current_revision: 2,
+    history: [
+      { id: `history-${index}-1`, revision: 1, state: 'active', effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2', parameters: { prefix_runes: 1, suffix_runes: 2, mask_rune: '#' }, invalid_value_effect: 'suppress', rationale: `出口 ${index} 收紧保护`, created_by: '7', created_at: '2026-09-10T08:10:00Z' },
+      { id: `history-${index}-2`, revision: 2, state: 'revoked', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'deny', rationale: `出口 ${index} 恢复默认`, created_by: '8', created_at: '2026-09-10T08:20:00Z' }
+    ]
+  }))
+  const writes = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/security/') && request.method() !== 'GET') writes.push(request.url())
+  })
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  await page.getByRole('button', { name: '修订记录', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '字段保护修订记录' })
+  await expect(dialog.getByText('策略已撤销', { exact: true })).toHaveCount(4)
+  await expect(dialog.getByText('策略启用', { exact: true })).toHaveCount(4)
+  await expect(dialog.getByText('策略 R2', { exact: true })).toHaveCount(4)
+  for (const [index, [, , label]] of outlets.entries()) {
+    await expect(dialog.getByText(new RegExp(`${label}.*字段策略`))).toHaveCount(2)
+    await expect(dialog.getByText(`出口 ${index} 收紧保护`, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(`出口 ${index} 恢复默认`, { exact: true })).toBeVisible()
+  }
+  await expect(dialog.getByText(/保留前 1 个和后 2 个字符，其余字符使用 # 脱敏/)).toHaveCount(4)
+  await expect(dialog.getByText(/SM3 哈希.*无法处理时：拒绝/)).toHaveCount(4)
+  await expect(dialog.getByText(/历史展示当时的配置，不代表当前实际保护效果/)).toBeVisible()
+  expect(backend.policyDetailRequests).toBe(4)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  expect(writes).toEqual([])
+  expect(backend.unhandledRequests).toEqual([])
+})
+
 test('classification-only access lands on foundations and denies sensitive definitions', async ({ page }) => {
   await installMockBackend(page, { permissions: ['security.classification.read', 'security.grade.read'] })
   await page.goto('/')
@@ -898,7 +934,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect(detailDrawer.getByText('重新加载后确认提升保护等级', { exact: true })).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '修订记录' }).click()
-  const historyDialog = page.getByRole('dialog', { name: '正式安全结论修订记录' })
+  const historyDialog = page.getByRole('dialog', { name: '字段保护修订记录' })
   await expect(historyDialog.getByText('R3', { exact: true })).toBeVisible()
   await expect(historyDialog.getByText('当前修订', { exact: true })).toBeVisible()
   await expect(historyDialog.getByText('重新加载后确认提升保护等级', { exact: true })).toBeVisible()
@@ -1968,9 +2004,9 @@ async function installMockBackend(page, options = {}) {
       state.policies.push(created)
       return fulfillJSON(route, created, 201)
     }
-    if (method === 'GET' && path === `/api/v1/security/protection-policies/${policyID}`) {
+    if (method === 'GET' && state.policies.some(policy => path === `/api/v1/security/protection-policies/${policy.id}`)) {
       state.policyDetailRequests += 1
-      return fulfillJSON(route, state.policies[0])
+      return fulfillJSON(route, state.policies.find(policy => path === `/api/v1/security/protection-policies/${policy.id}`))
     }
     if (method === 'PUT' && path === `/api/v1/security/protection-policies/${policyID}`) {
       const body = request.postDataJSON()

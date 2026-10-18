@@ -56,6 +56,8 @@ export function createProtectionEnrollmentGovernancePresentation({
     canCreatePolicies,
     canUpdatePolicies,
     formatDateTime,
+    ownerLabel,
+    actionLabel,
     effectLabel,
     typeName,
     classificationName,
