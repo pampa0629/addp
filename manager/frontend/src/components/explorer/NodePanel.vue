@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Refresh, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -178,8 +178,13 @@ const importDialogVisible = ref(false)
 const uploadDialogVisible = ref(false)
 const resourceActions = ref(null)
 const failedScanExecution = ref(null)
+let importCompletionRun = 0
+
+onBeforeUnmount(() => { importCompletionRun++ })
+watch(importDialogVisible, visible => { if (visible) importCompletionRun++ })
 
 watch(() => props.selectedNode?.locator, () => {
+  importCompletionRun++
   childNodePage.value = 1
   itemPage.value = 1
   importDialogVisible.value = false
@@ -343,11 +348,13 @@ const openNode = (row) => {
 }
 
 const handleImportSuccess = async ({ executionId, targetNodeLocator }) => {
+  const run = ++importCompletionRun
   importDialogVisible.value = false
   if (!targetNodeLocator) return
   try {
     // Console navigation unmounts this iframe; finish both ancestor and child reads first.
     await store.loadNodeChildren(targetNodeLocator, true)
+    if (run !== importCompletionRun) return
     ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
     if (authStore.hasPermission('monitor.execution.read')) await openMonitorExecution(executionId)
   } catch (error) {

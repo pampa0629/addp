@@ -265,7 +265,7 @@ Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服
 
 单项授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
 
-后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描；结构变更审批目前记录扫描提交失败，待 Owner 核验契约确定后接入。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
+后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
 
 Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引用 `schema_change_source`，与父 execution 互斥。仅允许 `addp-transfer`；创建事务锁定 Common 中 Transfer 保存的结构阻塞历史，核验已应用 request/revision、实际目标、独立审批主体和有效 claim 后创建无父扫描，按审批人隔离读取，不读取 Transfer 私表。私有来源不进入专业诊断；新扫描的审批关联在进度和收尾写入时保留。现有 HTTP 读取隔离用例同时进入 Meta SQLite T1 与 PostgreSQL T2，覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大及来源缺失拒绝；无需新增路由、权限或数据库。
 

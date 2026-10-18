@@ -103,6 +103,42 @@ test('a failed Meta submission cannot be reported as a successful import', async
   await expect(page.locator('.el-message--success')).toHaveCount(0)
 })
 
+for (const action of ['leave Data Explorer', 'start another import']) {
+  test(`import refresh cannot navigate after the user chooses to ${action}`, async ({ page }) => {
+    const state = await installBackend(page, 'zh-cn', { status: 'success', metadata: {
+      metadata_scan: { status: 'submitted', execution_id: scanID }
+    } })
+    await page.addInitScript(() => {
+      window.importNavigationRequests = []
+      window.open = url => { window.importNavigationRequests.push(String(url)); return null }
+    })
+    const dialog = await submitImport(page, 'zh-cn')
+    await expect.poll(() => state.scanReads).toBeGreaterThan(0)
+    const ancestors = state.ancestorReads
+    let releaseRefresh
+    state.refreshGate = new Promise(resolve => { releaseRefresh = resolve })
+    state.scan = { status: 'success' }
+    await expect(dialog).toBeHidden()
+    await expect.poll(() => state.ancestorReads).toBeGreaterThan(ancestors)
+    if (action === 'leave Data Explorer') {
+      await page.getByRole('menuitem', { name: '数据检索', exact: true }).click()
+      await expect(page).toHaveURL(/\/data-retrieval$/)
+      await expect(page.locator('.node-panel')).toHaveCount(0)
+    } else {
+      await page.getByRole('button', { name: '导入数据', exact: true }).click()
+      await expect(dialog).toBeVisible()
+    }
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/meta/resource-tree/2/node')
+    releaseRefresh()
+    await (await refreshed).finished()
+    // Let the response continuation and any navigation it schedules settle.
+    await page.waitForTimeout(500)
+    expect(await page.evaluate(() => window.importNavigationRequests)).toEqual([])
+    if (action === 'leave Data Explorer') await expect(page).toHaveURL(/\/data-retrieval$/)
+    else await expect(dialog).toBeVisible()
+  })
+}
+
 test('embedded import refreshes its schema and opens the exact execution in Console', async ({ page }) => {
   const state = await installBackend(page, 'zh-cn', { status: 'success', metadata: {
     metadata_scan: { status: 'submitted', execution_id: scanID }
