@@ -64,7 +64,7 @@ HTTP 层使用独立线程池，确保长时间 SuperMap 算子执行期间，`/
 
 这是用户批准的 macOS ARM64 Docker Desktop / Linux ARM64 本机技术 T2，验证真实存储权限与两个 Runtime 的生产入口；没有覆盖 System User/Grant、Gateway、Manager 页面及业务任务生命周期，不计为正式跨模块 T4，也不自动套用 DM8 的 T4 例外。真实入口登记到人工 `test-integration-owner-managed`，不进入公共 Hosted；生命周期、配置和报告边界的确定性测试随既有 `make test-supermap-workflow` 进入平台 CI。
 
-该本机技术 T2 的运行身份、私有产物摘要、真实存储拒绝断言及清理结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不由本机结果推导正式 T4 或其他厂商模型认证。
+该本机技术 T2 的运行身份、私有产物摘要、真实存储拒绝断言及清理结果统一见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)，不由本机结果推导正式 T4 或其他厂商模型认证。
 
 UDBX 升级调试示例：
 
@@ -111,7 +111,7 @@ SuperMap 通过 System 现有扩展工作流登记契约提交完整能力声明
 
 SDK、许可、厂商模型及贴图、浏览器日志及失败截图仅保存在本轮私有容器或临时目录，退出统一删除；安全报告只包含构建身份、许可与样例哈希、页面断言及清理摘要。它不归档 SDK、不推送私有镜像、不进入 GitHub Actions 或 schedule，也不计作正式 Linux Runner T4。缺少许可、架构不符、转换失败或清理无法核验均失败。确定性准入、部署隔离、产物检查与清理回归通过既有 `make test-manager-online-runner` 纳入平台 CI；本机真实结果须另行记录，不以入口存在或单元测试通过代替。
 
-指南针与秋树的本机隔离页面结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。该记录与上述原生存储 T2、正式 Linux Runner T4 分开认定；源码、双 Runtime、权限、几何／材质及清理证据不能混用。
+指南针与秋树的本机隔离页面结果统一见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)。该记录与上述原生存储 T2、正式 Linux Runner T4 分开认定；源码、双 Runtime、权限、几何／材质及清理证据不能混用。
 
 ### 许可边界
 
@@ -149,7 +149,7 @@ SUPERMAP_CPP_SDK_PATH=/path/to/supermap-iobjectscpp-12.1.0-linux-arm64-all \
 
 ### 镜像裁剪结果
 
-镜像裁剪必须以二维 DAG、PostGIS、CAD、UDBX 和 S3M 等真实场景的动态访问追踪为依据，与已观察依赖保持零冲突。历史体积测量仅代表对应 SDK／架构的构建样本，见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不作为当前所有镜像的体积承诺。运行镜像不包含 `include/`、`help/`、`sample/`、`support/`、编译器、CMake、JRE、ObjectsJava 或 GPA runtime；完整母版不受裁剪影响。
+镜像裁剪必须以二维 DAG、PostGIS、CAD、UDBX 和 S3M 等真实场景的动态访问追踪为依据，与已观察依赖保持零冲突。历史体积测量仅代表对应 SDK／架构的构建样本，见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)，不作为当前所有镜像的体积承诺。运行镜像不包含 `include/`、`help/`、`sample/`、`support/`、编译器、CMake、JRE、ObjectsJava 或 GPA runtime；完整母版不受裁剪影响。
 
 S3M 转换实际会动态加载 PCL、VTK 和 OpenVDB，因此这些库必须保留。CAD 核心实际会加载 `libUDKernel.so`、`libUDDrawing.so`、`libUDComponents.so` 和 `libUDDgn.so`，也必须保留。完整 SDK 母版和基础镜像继续保存全部插件、头文件和开发资源，以支持未来新增算子；后续扩大裁剪范围时仍必须先补充动态追踪场景，再重跑当前全部已登记算子以及 PostGIS、UDBX、CAD、S3M、动态 NFS 和 MinIO/S3 回归，不能仅按静态链接关系删除 `.so`、`.sdx`、`.spi`、`.l3d` 或资源文件。
 
@@ -185,7 +185,7 @@ SGM 原生转换、NFS / S3 外贴图、大小写扩展名及原始对象键、�
 make build-images IMAGE_BUILD_ARGS="--services supermap-workflow-engine --verify --jobs 1 --tag <独立验证标签>"
 ```
 
-当前 SDK 对图片扩展名大小写存在读取差异。所有输入统一在执行私有目录由 SDK 准备模型，业务模型、图片名称和源字节不改写，不增加失败重试路线。NFS 与签名 S3 的精确对象键、贴图缓冲、拒绝条件、旧产物保留和临时文件清理沿用上述构建门禁；历史转换与页面结果见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。
+当前 SDK 对图片扩展名大小写存在读取差异。所有输入统一在执行私有目录由 SDK 准备模型，业务模型、图片名称和源字节不改写，不增加失败重试路线。NFS 与签名 S3 的精确对象键、贴图缓冲、拒绝条件、旧产物保留和临时文件清理沿用上述构建门禁；历史转换与页面结果见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)。
 
 健康检查：
 

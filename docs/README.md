@@ -65,7 +65,7 @@
 - [国际化开发规范](spec/addp国际化开发规范.md)
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
 - [数据库无关分析计算契约（目标设计）](spec/addp引擎插件接口规范.md#数据库无关分析计算契约)
-- [测试与验收规范](spec/addp测试与验收规范.md)
+- [测试与验收规范](spec/addp测试与验收规范.md)：统一原则与标准入口；分层规范、Owner 门禁、Online 场景和证据索引见其阅读导航。
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)
 - [GitHub 外部治理与 T4 Runner 待办](next/ADDP持续集成体系改进专题.md)
 - [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
@@ -75,7 +75,7 @@
 - [平台运行监控后续事项](next/ADDP平台运行监控与可观测性设计.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
-- [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)
+- [Engine Catalog 概念与读取边界](concepts/addp引擎体系图.md#实时-engine-catalog元数据快照和数据预览的边界)
 - [本体定义与发布规范](spec/addp本体定义与发布规范.md)
 - [Ontology 后续设计与验收](next/ADDP%20Ontology最小设计契约.md)
 - [Outdoor 业务语义](concepts/Outdoor业务语义.md)

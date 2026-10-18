@@ -236,7 +236,7 @@ owner execution/publication fact
 
 上述契约由 `make test-meta-postgres` 覆盖超过 500 条执行、同创建时间的分页边界、目标延迟扫描、重复采集幂等性、单条错误隔离及轮内新增执行的下一轮采集；沿用已有 Release/T2 的 Meta PostgreSQL 门禁，不新增部署依赖或公开 API。
 
-采集器的回归场景、标准门禁和历史 T1 / T2 证据见[测试与验收规范](addp测试与验收规范.md#血缘采集器回归)，不作为新的部署后 T4 结果。
+采集器的回归场景、标准门禁和历史 T1 / T2 证据见[测试与验收规范](testing/Owner补充门禁.md#血缘采集器回归)，不作为新的部署后 T4 结果。
 
 ### 5.1 固定正式表查询写入
 
@@ -277,7 +277,7 @@ PostgreSQL Provider 已能在同一 PreparedQuery 内组合非递归 CTE、派�
 
 #### 验收与证据
 
-字段级首期复用 `transfer-relational-sql-etl` Hosted T4。现行场景、身份与清理边界、性能采样口径及历史通过证据统一见[测试与验收规范](addp测试与验收规范.md#字段级血缘验收)。确定性测试与本地只读复核不能替代真实 T4，历史验收不扩大本节已声明的 opaque / unresolved、continuous / CDC 等支持边界。
+字段级首期复用 `transfer-relational-sql-etl` Hosted T4。现行场景、身份与清理边界、性能采样口径及历史通过证据统一见[测试与验收规范](testing/scenarios/同步与引擎消费.md#字段级血缘验收)。确定性测试与本地只读复核不能替代真实 T4，历史验收不扩大本节已声明的 opaque / unresolved、continuous / CDC 等支持边界。
 
 ### 6.2 图数据库评估边界
 
@@ -393,7 +393,7 @@ Service 发布事实同时传递人类可读的 `service_name` 和单调递增�
 3. Develop 成功事实落库后立即通知 Meta；周期 collector 负责漏采和失败重试。
 4. Meta 统一图查询 API、租户 / 权限校验和 `common-frontend/graph` 查看器已具备。
 5. Service 发布版本的 `serve` 依赖事实已纳入模型和 API 契约。
-6. 字段级首期的执行证据、时态投影、整表字段图、500 列宽表及 Provider 可证明的单来源和多来源查询已有对应 [Hosted T4 历史证据](addp测试与验收规范.md#历史证据索引)；支持边界以 6.1 为准。
+6. 字段级首期的执行证据、时态投影、整表字段图、500 列宽表及 Provider 可证明的单来源和多来源查询已有对应 [Hosted T4 历史证据](testing/验收证据索引.md#历史证据索引)；支持边界以 6.1 为准。
 
 后续能力必须先更新本规范和术语表，再单一路线实现：
 

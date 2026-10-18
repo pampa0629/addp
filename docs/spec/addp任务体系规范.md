@@ -2,6 +2,15 @@
 
 > 状态：规范。本文定义 ADDP 全平台任务定义、执行记录、任务提供者、编排和监控的统一边界。模块内部任务语义可在各模块专题中继续细化，但不得违背本文。
 
+阅读导航：
+
+| 阅读目的 | 文内入口 |
+| --- | --- |
+| 了解统一任务与执行模型 | [基本原则](#基本原则)、[核心对象](#核心对象)、[任务定义](#任务定义规范)、[执行记录](#执行记录规范) |
+| 查阅各 owner 的任务约束 | [模块任务类型](#模块任务类型)、[Transfer](#transfer-同步执行契约)、[Manager](#manager-派生任务与结果)、[Graph](#graph-构建任务)、[Develop](#develop-开发任务) |
+| 实现跨模块发现与调度 | [TaskProvider](#taskprovider-规范)、[Orchestrator](#orchestrator-规范)、[调度](#调度规范) |
+| 接入监控与核对交付 | [Monitor](#monitor-规范)、[模块接入清单](#模块接入检查清单) |
+
 ## 范围
 
 本文回答：
@@ -326,6 +335,8 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
+### 跨模块任务边界
+
 Manager 表格数据剖析首期使用 `task_type=data_profiling` 的 ad-hoc execution，结果归 Manager 私有结果表，`source_task_id` 为空。首期不存在 `manager.data_profile_tasks`，因此 `data_profiling` 不加入上表的 TaskProvider 任务类型，不进入 Orchestrator 任务选择。未来只有在用户可以显式保存可重复剖析配置后，才能先更新数据剖析规范和本规范，再新增持久任务定义并声明 TaskProvider capability。`sample` / `full` 是 execution config 中的剖析模式，不得拆成两个 task type。
 
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
@@ -349,6 +360,8 @@ Develop 关系查询写入通过执行契约显式配置固定正式表 `target_
 Quality `quality_plan` 支持手动执行及 Orchestrator 触发，保存同一 Engine 中的物理表 `table_bindings: [{alias, locator}]` 与方案内强类型规则。两种入口共用持久 worker；手动执行签发用户 read 授权，编排执行按当前 lease 派生 read 授权。首期在 PostgreSQL 只读、可重复读事务内检查，不依赖 Standard、Model 或 Catalog 的执行期回读。error 规则失败使 execution=failed 并保留完整结果，阻止后续步骤；warning/info 只记录问题。不会回滚已完成的上游计算。
 
 Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
+
+### Transfer 同步执行契约
 
 Transfer `sync` 的稳定语义由以下正交维度表达：
 
@@ -483,7 +496,7 @@ continuous task 与 execution 生命周期：
 9. Orchestrator v1 不编排 continuous Transfer task。Transfer 的 TaskProvider 任务发现不得把 continuous task 暴露为可选编排步骤，provider execute 入口也必须拒绝 `source=orchestrator` 触发 continuous task；长期服务型 Step 语义进入 Orchestrator v2 专题。
 10. `auto_scan_metadata=true` 的 continuous task 不等待 execution 成功结束。普通业务 Kafka task 在目标 Provider 首次成功建立目标结构后，按 task `apply_identity` 触发一次目标父 catalog 的 Meta deep scan。数据库 CDC task 的 connector 必须启用 Debezium `sink` notification，并把通知写入当前 generation-owned 单分区 CDC data topic；Transfer 只接受 connector name 与当前 generation 完全一致的 `aggregate_type=Initial Snapshot` 通知，所有合法初始快照通知都作为目标 `skip` 与 apply ledger、Transfer committed position 一起推进，只有 `type=COMPLETED` 所在 offset 成功提交后才触发首次扫描。该顺序同时覆盖非空表与空表，不依赖首条数据事件、`source.snapshot=last` 或等待时间猜测。首次扫描使用 task 私有持久化 claim：`running(claim_token, lease_until, attempt+1) -> success|failed`，worker 恢复或并发实例不得重复提交；已失败或过期 running claim 由后续 runtime session 接管。Meta 提交失败不得中断 CDC/Kafka 数据面，失败状态由后续 runtime session 重试或由用户手动刷新。目标 schema 经正式流程变化后另行触发 deep scan；普通 DML、单条事件和单个 batch 不触发 Meta scan。claim TTL 统一使用部署配置 `TRANSFER_META_SCAN_CLAIM_TTL`，并且必须大于 Meta client 的 HTTP 超时。
 
-#### Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle 已完成）
+#### Transfer 数据库 CDC v1 契约（PostgreSQL/MySQL/Oracle）
 
 数据库 CDC 第一版只允许以下三种 source provider 进入同一数据面：
 
@@ -578,7 +591,7 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 8. Stop API 必须由服务端要求显式不可逆确认，不能只依赖前端弹窗；沿用唯一 `POST /task-definitions/:id/stop` 路由，CDC task 请求体必须提交 `confirmed=true` 且 `confirmation_text` 与当前任务名称完全一致。Console 同时使用 danger 样式二次确认并要求输入任务名称，明确说明不能恢复、内部捕获资源会被删除且重新同步必须新建任务。普通业务 Kafka continuous stop 不要求该请求体，仍按其既有可恢复 committed-position 语义处理，不能混用 CDC 的终态提示。
 9. stop 不删除目标业务表、目标行、目标 apply ledger、任务定义、execution 或清理审计。任务删除和 System cleanup 必须再次幂等清理残留 capture 资源，并保留统一 execution/审计事实。
 
-#### Transfer 业务 Kafka DLQ 与 bounded replay v1 契约（4A/4B 已完成）
+#### Transfer 业务 Kafka DLQ 与 bounded replay v1 契约
 
 该契约是当前公开实现的唯一技术路线。Transfer capability 与 Swagger 已公开业务 Kafka `block|dead_letter` 和唯一 bounded replay API；Console 新建任务默认仍显式发送 `block`，不得依赖字段省略猜默认值。
 
@@ -593,7 +606,7 @@ Oracle 单表 -> Debezium Oracle Connector -> Infra Kafka
 }
 ```
 
-`mode` 只允许 `block|dead_letter`。4B clean break 落地后，业务 Kafka 新建和更新任务必须显式提交该字段，Console 默认显式发送 `block`；不得把字段省略解释为兼容旧配置。数据库 CDC 固定为 `block`，不得提交 `dead_letter`。
+`mode` 只允许 `block|dead_letter`。业务 Kafka 新建和更新任务必须显式提交该字段，Console 默认显式发送 `block`；不得把字段省略解释为兼容旧配置。数据库 CDC 固定为 `block`，不得提交 `dead_letter`。
 
 DLQ v1 约束：
 
@@ -634,7 +647,7 @@ bounded replay v1 约束：
 6. replay 可与主 continuous runtime 并行，因为 source 只读且 target 强制隔离；Transfer 必须仍按部署容量限制 replay 并发。replay failure 不改变主任务状态，不触发 continuous 自动恢复 circuit。
 7. replay execution metadata 至少保存 source ranges、请求时 earliest/latest 快照、隔离 target identity、execution apply identity、每分区当前位置和最终统计。所有终态沿用统一 execution status。
 
-Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）：
+#### Kafka 与 Kafka Connect 部署基线
 
 1. 版本固定为 Redpanda v24.3.18 和 Debezium Connect 3.6.0.Final；该 Connect 镜像内置 Kafka Connect 4.3.0。不得同时维护 Apache Kafka 或另一 Kafka 发行版作为 CDC 部署主线，任务/API/数据库也不得出现发行版选择。
 2. 开发环境使用 1 broker 和 1 Connect worker，replication factor 为 `1`；生产参考使用 3 broker 和至少 2 Connect worker，replication factor 为 `3`，producer `acks=all`，由 Raft majority 提供确认 quorum=2。
@@ -646,7 +659,11 @@ Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）�
 8. Kafka Connect 禁止依赖 broker auto-create 创建 CDC topic。capture supervisor 在创建 connector 前按规范显式创建 topic/ACL，在删除 connector 并确认停止后删除任务级 topic。shared internal topics 和 broker 数据目录由 Infra 部署 owner 管理，不随单个 task cleanup 删除。
 9. PostgreSQL connector 固定使用 `plugin.name=pgoutput`、`publication.autocreate.mode=filtered`、单表 `table.include.list`、服务端生成的 slot/publication 名称和 `slot.drop.on.stop=false`。stop/cleanup 由 capture supervisor 在 connector 停止后显式删除 ADDP-owned slot/publication，不依赖 connector 退出副作用。
 
+### Manager 派生任务与结果
+
 Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显与空间派生任务定义统一存入 `manager.task_definitions`，资源归属投影到 `manager.task_resource_bindings`；其中 `vector_tile_cache_generation` 的结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact，`vector_tile_set_generation` 的结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者按源能力选择唯一生成路径：PostgreSQL/PostGIS 表由 Manager 原生 `ST_AsMVT` 生成，MySQL、Oracle 等标准 EWKB 可读数据库表由 Manager 物化临时 FlatGeobuf 后调用 GeoPython Workflow `vector_to_pmtiles`，NFS、MinIO/S3 文件或对象由受控访问计划调用同一 operator；MVT 是 PMTiles 内部 tile encoding，不是任务类型。统一定义存储不改变矢量物化视图、栅格、三维、点云与 embedding 各自的结果边界。
+
+Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
 
 Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation` 和 `pptx_pdf_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
 
@@ -656,7 +673,11 @@ Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vect
 
 Manager 中矢量物化视图、瓦片缓存、COG、GLB、KSplat 等派生产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。PreviewState 只保存预览偏好和交互视角，不保存 execution 状态。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
+### Graph 构建任务
+
 Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_tasks.status` 是构建任务最近执行摘要，必须使用统一 execution status；成功态为 `success`。`graph.build_materials.status=completed` 属于材料处理状态，不是任务执行状态，不进入 TaskProvider 和 Monitor 的统一 execution 枚举。
+
+### Develop 开发任务
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
@@ -979,13 +1000,13 @@ Orchestrator 保留 v1 串行 DAG、任务引用、Owner 授权和输出绑定�
 
 同一手动套件的故障扩展覆盖两类外部故障：测试代理向真实 Meta 转交一次执行请求后丢弃响应，验证 `dispatch_uncertain`、下游真实执行身份和不重放；代理暂缓下游状态响应，待父编排持久化 `waiting` 后，以 Linux pidfd 强制终止本轮 Orchestrator Backend，再用标准生命周期启动替代进程，验证租约到期后 `lease_expired`、步骤最后记录、真实子执行和不重放。代理不替代 Owner 业务实现、不生成虚构执行身份，不在生产服务加入故障接口；只有本轮隔离部署的 PID、可执行文件、UID 和部署环境均匹配时才能发送信号。进程与临时网络别名必须清理，证据只保留闭合故障类型、执行身份、请求计数和断言结果。
 
-Orchestrator 的验收覆盖父子 execution 独立授权、授权撤销与来源不可用、任务定义删除后的历史事实保留，以及一次性 execution 仅发起者可读等边界。完整场景、隔离范围与 Hosted T4 结果统一见[测试与验收规范](addp测试与验收规范.md#orchestrator-读取权限与历史保留验收)。
+Orchestrator 的验收覆盖父子 execution 独立授权、授权撤销与来源不可用、任务定义删除后的历史事实保留，以及一次性 execution 仅发起者可读等边界。完整场景、隔离范围与 Hosted T4 结果统一见[测试与验收规范](testing/scenarios/部署与执行恢复.md#orchestrator-读取权限与历史保留验收)。
 
-Meta 专业扫描读取边界：`GET /scan/runs` 与 `GET /executions/{execution_id}` 必须同时限定可信 Tenant、`module=meta` 和 `task_type=scan`。合法 User 继续经过既有认证、Client Scope 与 Permission 守卫，不额外限制为第一方令牌；Owner 的 `meta.scan_task.read` 包含当前租户该类型的任务历史，包括已删除定义的历史，无定义执行仅匹配当前发起 Principal，无主体证据拒绝。列表与总数必须在同一数据库读取范围内过滤。Service Principal 仅使用独立 TaskProvider 机器入口，保留 `addp-orchestrator` Client 与 `meta.task_provider.read`，不套用用户本人条件。用户执行读取使用 Common Observation 安全投影，固定扫描上下文只补引擎编号及 basic/deep 深度，不返回执行配置、任意 metadata、自由文本失败响应或执行授权引用；前端必须同步消费新契约。不存在、跨模块和不可读记录返回 404。新增直接访问 Meta 的权限回归归入 Meta 标准门禁，真实 Gateway/User/Worker 验收扩展既有 Orchestrator Hosted T4。Monitor 读取验收不能替代 Meta 专业入口验收；OAuth User 与 TaskProvider 完整权限矩阵的验证层级见[测试与验收规范](addp测试与验收规范.md#附录其他验收证据索引)。
+Meta 专业扫描读取边界：`GET /scan/runs` 与 `GET /executions/{execution_id}` 必须同时限定可信 Tenant、`module=meta` 和 `task_type=scan`。合法 User 继续经过既有认证、Client Scope 与 Permission 守卫，不额外限制为第一方令牌；Owner 的 `meta.scan_task.read` 包含当前租户该类型的任务历史，包括已删除定义的历史，无定义执行仅匹配当前发起 Principal，无主体证据拒绝。列表与总数必须在同一数据库读取范围内过滤。Service Principal 仅使用独立 TaskProvider 机器入口，保留 `addp-orchestrator` Client 与 `meta.task_provider.read`，不套用用户本人条件。用户执行读取使用 Common Observation 安全投影，固定扫描上下文只补引擎编号及 basic/deep 深度，不返回执行配置、任意 metadata、自由文本失败响应或执行授权引用；前端必须同步消费新契约。不存在、跨模块和不可读记录返回 404。新增直接访问 Meta 的权限回归归入 Meta 标准门禁，真实 Gateway/User/Worker 验收扩展既有 Orchestrator Hosted T4。Monitor 读取验收不能替代 Meta 专业入口验收；OAuth User 与 TaskProvider 完整权限矩阵的验证层级见[测试与验收规范](testing/验收证据索引.md#addp-验收证据索引)。
 
 续租故障扩展沿用同一手动 Hosted T4：在真实父编排已保存 waiting 和真实 Meta 子执行身份后，外部 HTTP 夹具暂缓该子执行状态响应；仅在当次独占 addp_online PostgreSQL 中安装限定父执行 UUID 的临时续租拒绝触发器。触发器只拒绝 running 状态下 lease_expires_at 的续租更新，不改写执行事实，不中断其他模块或终态收敛；使用非事务序列证明真实续租被拒绝。监督器必须取消正在等待的状态请求，以 coordinator_stopped 失败收敛有效租约下的父执行，保留 running + waiting 的最后记录，依赖步骤不派发。夹具必须以 pidfd 证明原 Backend 自行退出，不发送崩溃信号，再通过标准生命周期启动身份不同的替代进程；子执行仍正常结束，父终态、步骤和事件在故障解除和替代进程启动后保持一致，只有一次下游提交。数据库准入必须同时核对 Hosted 环境、临时凭据目录及当次 Infra 容器身份；临时触发器、函数、序列和 schema 在退出时清理并核对不存在，失败退出最终销毁当次 Infra。生产服务不增加故障开关。
 
-上述首轮执行、派发故障、读取权限、删除定义历史、一次性执行、Meta 专业入口及续租拒绝的历史验收结果，统一维护在[测试与验收规范的证据索引](addp测试与验收规范.md#附录其他验收证据索引)。索引保留提交身份、实际通过范围及未覆盖边界；历史结果不替代后续实现变更的验证。
+上述首轮执行、派发故障、读取权限、删除定义历史、一次性执行、Meta 专业入口及续租拒绝的历史验收结果，统一维护在[测试与验收规范的证据索引](testing/验收证据索引.md#addp-验收证据索引)。索引保留提交身份、实际通过范围及未覆盖边界；历史结果不替代后续实现变更的验证。
 
 ### 编排调度与子任务自身调度
 
@@ -1077,6 +1098,8 @@ Transfer 专业响应采用显式 DTO，保留执行身份、状态、时间和�
 Manager 用户执行状态查询复用 Owner 已声明的 `manager.derived_artifact.read` 读取范围：可信 Tenant、`module=manager`，类型仅限派生产物及向量化任务；有定义的历史（含已删除定义）可读，一次性执行仅当前发起 User 可读，无主体证据拒绝。`data_profiling` 与 `cleanup_executor` 使用各自的专业或维护入口，不通过派生产物状态入口读取。TaskProvider 状态查询仍由 `addp-orchestrator` Service Client 和 `manager.task_provider.read` 独立授权，同时限定 Manager 已声明的任务类型，不套用用户本人条件。
 
 Manager 专业执行响应使用显式 DTO：执行概览和失败分类复用 Common 安全投影；专业 metadata 只保留向量化和瓦片生成计数、血缘资源身份及操作、Workflow 引擎类型／算子／模式／耗时，以及 GLB 大小、来源格式和 MAX 转换证据（源单位、单位来源、米制比例、导入器版本、贴图引用、源摘要、网格数及静态范围）。血缘保留输入输出端口、Locator、item ID、fingerprint、写入模式、操作 kind/operator 与端口，以及 runtime execution 和 Meta scan 引用；不返回 schema snapshot、字段映射或任意附加字段。不得返回执行配置、访问计划、授权引用、原始 Runtime 响应、command、stdout/stderr、publish 对象、`storage_refs` 等内部存储描述或自由文本错误。专业结果内容仍走已有 Manager 领域结果入口，Monitor 的血缘安全投影不增加 operations 或专业转换证据。此收敛不改变 Owner 权限、持久执行事实、机器 TaskProvider 契约或结果生命周期。
+
+`metadata.workflow_runtime.execution_time_ms` 是 Runtime 返回的毫秒耗时，按工作流接口规范使用 JSON number 并保留小数；可选字段缺失或为 null 时不输出，数值 0 必须保留。它与 Common Observation 的 Owner execution 整数毫秒耗时分别投影，不改写持久历史。
 
 Orchestrator 用户与 TaskProvider 执行读取必须同时限定可信 Tenant、`module=orchestrator` 与 `task_type=orchestration`，编排权限不得读取同模块的 cleanup 执行。用户专业查询在 SQL 中复用 Owner 的任务历史与本人一次性执行范围，缺少发起主体或归属不完整的无定义执行拒绝，列表总数采用相同过滤；合法第一方与普通 OAuth User 沿用现有 workflow.read 权限，TaskProvider 不套用用户本人条件。专业执行详情与单编排历史也必须使用显式安全读取 DTO，不得直接序列化内部 `TaskExecution`。保留执行概览及 `metadata.step_results` 的步骤状态、阶段、时间、耗时、闭合错误码和本地化消息；步骤 `result` 仅投影已记录且规范的子 execution UUID，不传递子任务 outputs、业务结果或完整运行时响应。读取父执行不授予子结果权限，子详情仍经 Monitor/Owner 独立裁决。原始配置、任意 metadata、执行授权事实及自由文本错误不出现在这些响应中；列表与详情采用同一投影，TaskProvider 保持独立安全状态契约。
 

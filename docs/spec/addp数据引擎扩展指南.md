@@ -56,7 +56,7 @@ HighGo 普通表删除扩展沿用 `ResourceDeleteProvider` 与同一 PostgreSQL
 
 驱动实现标准 `driver.DriverContext`，将调用方 Context 传递到建连过程；TCP、SSL 协商、TLS 和 SM3 握手期间取消或超时必须关闭本次连接并保留 Context 错误，握手完成后解除取消监听，避免误关已交付的连接。System 手动与周期检测共用 10 秒预算，真实失败仍更新离线状态，执行授权仍核验引擎可用性。确定性 SM3、三阶段握手取消、成功后取消监听释放和登记测试由 Common T1 自动发现，探测预算一致性由 System T1 自动发现；现有 Platform CI 的 Go workspace／插件登记及 Release/T2 消费者门禁覆盖相关改动，无新增运行服务或 CI 外部依赖。
 
-HighGo 的协议回归、原生 Provider、用户环境消费链与 Hosted T4 必须分别认定。短时连通性和只读扫描不代表长期稳定性、全量字段扫描、写入或完整产品认证；原生 Provider 写入不替代跨模块消费链，x86_64 Hosted 消费链也不替代其他架构的实例版本页面验收。普通字段 Facts 由 Provider 路径验证，不以工作台直接查询受保护系统目录替代。历史源码、执行身份、通过范围和未覆盖边界统一见[测试与验收规范的证据索引](addp测试与验收规范.md#附录其他验收证据索引)。
+HighGo 的协议回归、原生 Provider、用户环境消费链与 Hosted T4 必须分别认定。短时连通性和只读扫描不代表长期稳定性、全量字段扫描、写入或完整产品认证；原生 Provider 写入不替代跨模块消费链，x86_64 Hosted 消费链也不替代其他架构的实例版本页面验收。普通字段 Facts 由 Provider 路径验证，不以工作台直接查询受保护系统目录替代。历史源码、执行身份、通过范围和未覆盖边界统一见[测试与验收规范的证据索引](testing/验收证据索引.md#addp-验收证据索引)。
 
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 

@@ -47,7 +47,7 @@ engines/model3d-workflow/venv/bin/python engines/model3d-workflow/blender_setup.
 
 准备成功后由用户在自己的终端运行 `./scripts/dev/restart.sh -model3d-workflow`。全量和局部重启均先通过 stop.sh 停止所选服务，再由 start.sh 执行同一准备与转换验证；准备失败的服务不启动，入口返回非零。
 
-本机原生转换、产品镜像构建和 Hosted Manager T4 分别验证，历史源码、产物身份、覆盖范围及限制统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。本机页面成功不替代产品镜像或 Hosted 结果，后续成功也不自动证明早期未归因故障已修复。
+本机原生转换、产品镜像构建和 Hosted Manager T4 分别验证，历史源码、产物身份、覆盖范围及限制统一见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)。本机页面成功不替代产品镜像或 Hosted 结果，后续成功也不自动证明早期未归因故障已修复。
 
 统一 OSGB 转换器的 Rust → C++ 输入路径使用 NUL 终止的 `CString`，转换失败返回非零。Linux 产品与 macOS 原生工具包消费同一补丁，不增加备用转换路线；长暂存路径、无效 OSGB 的失败退出和旧产物保留分别验证。
 
@@ -188,4 +188,4 @@ DAE 的 XML 解析器直接拒绝 DTD 和实体声明，UTF-8 / UTF-16 下执行
 
 所有单体 GLB 快显发布前还校验场景与节点：默认场景（未声明时为第一个场景）必须能引用到网格；节点索引、父子层级及变换必须有效。循环、多父节点、空白场景、非有限变换和非法四元数不能发布为成功。合法单位缩放、上轴转换、平移及负缩放保持原样，沿用转换器与统一 GLB 发布路线。
 
-SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。原生构建、NFS 本机页面与 S3／Hosted 的结果分别见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)，不以某一环境通过替代其他环境的验收。
+SKP 真实解析与转换回归自动进入同一 `make test-model3d-workflow`：自建 SKP 包含共享组件和内嵌贴图，验证米制尺寸、Y 上轴、实例共享、实际贴图像素、源文件不变，以及隐藏内容／损坏输入拒绝和旧产物保留。根 `make build-images IMAGE_BUILD_ARGS="--services model3d-workflow-engine --verify --jobs 1 --tag <独立验证标签>"` 还在生产 Runtime 镜像内生成并转换 SKP，检查 GLB 与米制尺寸。原生构建、NFS 本机页面与 S3／Hosted 的结果分别见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)，不以某一环境通过替代其他环境的验收。

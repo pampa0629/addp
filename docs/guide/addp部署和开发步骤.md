@@ -1,5 +1,8 @@
+# ADDP 部署和开发步骤
+
+本文介绍基础设施、开发、构建和部署的标准入口。
+
 ## 快速开始
-需要时，请阅读 docs/guide/addp部署和开发步骤.md。
 
 ### 前提条件
 
@@ -204,37 +207,38 @@ bash scripts/prod/start.sh
 
 **访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。需要限制宿主机监听范围时设置 `NGINX_BIND_HOST`，默认 `0.0.0.0`；隔离验收使用 `127.0.0.1`。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。
 
-  ### 构建和部署
-  - [`Makefile`](Makefile) - 项目范围的编排命令
-  - [`scripts/`](scripts/) - 所有用于开发、构建和部署的自动化脚本
-    - [`scripts/infra/`](scripts/infra/) - 基础设施管理 (PostgreSQL, Redis, MinIO, Meilisearch)
-      - `up.sh` - 启动基础设施 + 自动初始化
-      - `down.sh` - 停止基础设施
-      - `status.sh` - 检查服务健康状态
-      - `init-postgresql.sh` - 初始化数据库 schemas
-      - `init-redis.sh` - 初始化 Redis 配置
-      - `init-minio.sh` - 初始化 MinIO buckets
-      - `init-meilisearch.sh` - 初始化 Meilisearch 索引
-    - [`scripts/dev/`](scripts/dev/) - 开发模式脚本 (直接 Go/npm 进程)
-      - `start.sh` - 启动完整开发环境 (基础设施 + 后端 + 前端)
-      - `stop.sh` - 停止所有开发服务
-      - `restart.sh` - 重启所有服务
-      - `modtidy.sh` - 清理 Go 模块依赖
-    - [`scripts/build/`](scripts/build/) - 编译和 Docker 镜像构建
-      - `compile.sh` - 编译 Go 二进制文件 (go build)
-      - `build-images.sh` - 构建 Docker 镜像 (docker build)
-      - `package.sh` - 打包部署工件 (docker save/push)
-      - `push-images.sh` - 推送镜像到仓库
-    - [`scripts/local/`](scripts/local/) - 本地 Docker Compose 部署
-      - `start.sh` - 通过 Docker Compose 启动完整平台
-      - `stop.sh` - 停止 Docker 服务
-      - `status.sh` - 查看容器状态和资源使用
-    - [`scripts/prod/`](scripts/prod/) - 生产部署脚本
-      - `start.sh` - 启动生产环境 (分步执行)
-      - `stop.sh` - 停止生产服务
-      - `health-check.sh` - 健康监控
-      - `swarm/` - Docker Swarm 高可用部署
-    - 完整脚本文档参阅 [`scripts/README.md`](scripts/README.md)
+### 构建和部署
+
+- [`Makefile`](../../Makefile) - 项目范围的编排命令
+- [`scripts/`](../../scripts/) - 所有用于开发、构建和部署的自动化脚本
+  - [`scripts/infra/`](../../scripts/infra/) - 基础设施管理 (PostgreSQL, Redis, MinIO, Meilisearch)
+    - `up.sh` - 启动基础设施 + 自动初始化
+    - `down.sh` - 停止基础设施
+    - `status.sh` - 检查服务健康状态
+    - `init-postgresql.sh` - 初始化数据库 schemas
+    - `init-redis.sh` - 初始化 Redis 配置
+    - `init-minio.sh` - 初始化 MinIO buckets
+    - `init-meilisearch.sh` - 初始化 Meilisearch 索引
+  - [`scripts/dev/`](../../scripts/dev/) - 开发模式脚本 (直接 Go/npm 进程)
+    - `start.sh` - 启动完整开发环境 (基础设施 + 后端 + 前端)
+    - `stop.sh` - 停止所有开发服务
+    - `restart.sh` - 重启所有服务
+    - `modtidy.sh` - 清理 Go 模块依赖
+  - [`scripts/build/`](../../scripts/build/) - 编译和 Docker 镜像构建
+    - `compile.sh` - 编译 Go 二进制文件 (go build)
+    - `build-images.sh` - 构建 Docker 镜像 (docker build)
+    - `package.sh` - 打包部署工件 (docker save/push)
+    - `push-images.sh` - 推送镜像到仓库
+  - [`scripts/local/`](../../scripts/local/) - 本地 Docker Compose 部署
+    - `start.sh` - 通过 Docker Compose 启动完整平台
+    - `stop.sh` - 停止 Docker 服务
+    - `status.sh` - 查看容器状态和资源使用
+  - [`scripts/prod/`](../../scripts/prod/) - 生产部署脚本
+    - `start.sh` - 启动生产环境 (分步执行)
+    - `stop.sh` - 停止生产服务
+    - `health-check.sh` - 健康监控
+    - `swarm/` - Docker Swarm 高可用部署
+  - 完整脚本文档参阅 [`scripts/README.md`](../../scripts/README.md)
 
 ### Backend 与 Worker 启动顺序
 

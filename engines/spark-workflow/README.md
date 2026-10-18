@@ -425,7 +425,7 @@ OPERATORS = dict([
 
 确定性契约入口为 `make test-spark-workflow`，覆盖公共 WorkflowRunner、跨请求执行快照、PostgreSQL 结果发布及真实 Gunicorn 的先监听、后注册行为；Hosted 编排入口为 `make test-hdfs-online-runner`。HDFS Hosted 场景按 `region` 比较 Spark 聚合、Manager 预览和再次读取的完整结果行，不把无排序 Spark 结果的行顺序作为跨执行契约；同一执行的 Runtime 快照仍须保持原始结果一致。`make test-common-hdfs` 使用独占 HDFS、Spark Worker 和 PostGIS，验证三种文件格式的分布式读取、普通与空间结果的事务发布、回滚和再次读取，并检查暂存表及测试容器清理。产品镜像通过标准 `make build-images IMAGE_BUILD_ARGS="--services spark-workflow-engine --verify --jobs 1"` 构建验证。执行快照仅在 Runtime 进程内保存，不提供跨重启恢复。
 
-容器默认入口、HDFS 读取和 PostgreSQL 结果发布的历史验收结果统一见[测试与验收规范的证据索引](../../docs/spec/addp测试与验收规范.md#附录其他验收证据索引)。独立 T1、分布式 T2 与 Hosted T4 按各自源码及实际覆盖范围认定，不合并成全工作区通过。
+容器默认入口、HDFS 读取和 PostgreSQL 结果发布的历史验收结果统一见[测试与验收规范的证据索引](../../docs/spec/testing/验收证据索引.md#addp-验收证据索引)。独立 T1、分布式 T2 与 Hosted T4 按各自源码及实际覆盖范围认定，不合并成全工作区通过。
 
 ```bash
 # 在仓库根目录运行标准入口

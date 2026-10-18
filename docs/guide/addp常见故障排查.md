@@ -966,7 +966,7 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
 1. [manager/backend/internal/service/vector_materialized_view_task_service.go](../../manager/backend/internal/service/vector_materialized_view_task_service.go)
    - 矢量物化视图目标创建：`CREATE MATERIALIZED VIEW`、`ST_Transform`、GiST 索引、`ANALYZE` 均使用 `common/spatial` 的 PostGIS 标识符引用函数。
 
-2. [manager/backend/internal/mvt/quick_view_service.go](../../manager/backend/internal/mvt/quick_view_service.go)
+2. [manager/backend/internal/service/unified_mvt_service.go](../../manager/backend/internal/service/unified_mvt_service.go)
    - 动态 MVT 只消费调用方解析后的目标，不再隐式准备 3857 派生对象。
 
 3. [common/spatial/mvt.go](../../common/spatial/mvt.go)

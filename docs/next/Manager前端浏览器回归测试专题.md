@@ -2,7 +2,7 @@
 
 Manager 已有 `@playwright/test`、`playwright.config.js`、`e2e/` 与经共享 `frontend-browser-gate.mjs` 调度的唯一 `test:e2e`，沿现有模块/前端 CI 自动发现。原专题中“尚无 Playwright”“固定 4174 新端口”“另建私有测试入口”的提案不再作为现行路线。
 
-稳定规则见[测试与验收规范](../spec/addp测试与验收规范.md#manager-预览浏览器门禁)，产品预览边界见[Manager 预览语义协议](../../manager/docs/数据预览语义协议.md)。本文只保留需要逐项取得证据的场景，不把测试文件存在当作已经运行通过。
+稳定规则见[测试与验收规范](../spec/testing/Owner补充门禁.md#manager-预览浏览器门禁)，产品预览边界见[Manager 预览语义协议](../../manager/docs/数据预览语义协议.md)。本文只保留需要逐项取得证据的场景，不把测试文件存在当作已经运行通过。
 
 ## 尚需核对的场景覆盖
 
