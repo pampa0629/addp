@@ -60,7 +60,7 @@
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
 - [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)
 - [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)
-- [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
+- [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：总览与通用约束；各格式按主题在 `builtin-formats/` 中维护。
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
@@ -105,7 +105,7 @@
 4. [智能体交互协议规范](spec/addp智能体交互协议规范.md)：确认 AgentRun、AG-UI、消息 parts、Interaction、ResultRef、Presentation 和 A2UI Catalog。
 5. [智能体评测规范](spec/addp智能体评测规范.md)：确认场景、在线证据、统一门禁、报告比较和正式发布评测基线。
 6. [授权上下文规范](spec/addp授权上下文规范.md)与 [OAuth 授权规范](spec/addp%20OAuth授权规范.md)：确认 AuthContext、OAuth Scope、委托身份和 owner 写审批。
-7. [ADDP API 设计规范](spec/addp-API设计规范.md)：确认 AI Agent 友好 API、`x-ai-hint` 和错误格式。
+7. [API Agent 友好性](spec/api/AI-Agent友好性.md)：确认 `x-ai-hint` 与 HTTP 重试提示；通用错误格式见[响应与错误](spec/api/响应与错误.md)。
 8. [Agent 模块说明](../agent/CLAUDE.md)、[common-python 模块说明](../common-python/CLAUDE.md)与 [common-frontend 说明](../common-frontend/README.md)：查看当前实现。
 9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看未完成能力和验收缺口。
 10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看尚未闭合的空间计算业务场景与验收问题。
@@ -172,7 +172,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [数据项探测器规范](spec/addp数据项探测器规范.md)：确认 `tif + tfw/hdr/aux.xml/ovr` 等 related refs 的数据项边界。
 3. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 `format_info.tiff`、`type_info.media`、`capabilities.spatial` 的字段归属。
 4. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认 `direct_tiff_client`、`client_cog_render`、`raster_cog` 与矢量快显的概念边界。
-5. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认 Quick View capability、COG 内容接口、前端 geotiff.js 消费、底图和 related ref 行为。
+5. [Manager TIFF 与 COG 快显](../manager/docs/quick-view/TIFF与COG.md)：确认 COG 内容接口、前端 geotiff.js 消费、底图和 related ref 行为；共用 Quick View capability 见[共用契约](../manager/docs/quick-view/共用契约.md#快显能力)。
 6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [task_definitions 表](../manager/docs/tables/task_definitions表.md)：确认 COG 结果和统一派生任务定义的字段、状态和生命周期。
 7. [栅格计算与成果契约规范](spec/addp栅格计算与成果契约规范.md)：查看已实现的通用栅格、成果写入、资源与验收契约；DEM 与规模缺口见[后续专题](next/栅格算子体系后续专题.md)。
 

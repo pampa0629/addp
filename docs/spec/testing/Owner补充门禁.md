@@ -9,7 +9,7 @@
 | --- | --- |
 | Runtime 与原生转换 | [Model3D Runtime 确定性门禁](#model3d-runtime-确定性门禁)、[Manager Raster Mosaic 原生 Runtime 门禁](#manager-raster-mosaic-原生-runtime-门禁)、[SuperMap Runtime 确定性门禁](#supermap-runtime-确定性门禁)、[GeoPython Runtime 确定性门禁](#geopython-runtime-确定性门禁)、[Document 原生转换门禁](#document-原生转换门禁) |
 | 基础设施与数据引擎 | [Business Redis 门禁](#business-redis-门禁)、[Elasticsearch 门禁](#elasticsearch-门禁)、[Redis 键值数据集门禁](#redis-键值数据集门禁)、[平台指标设施独占门禁](#平台指标设施独占门禁)、[Spark 数据发布门禁](#spark-数据发布门禁)、[关系型写入与安全诊断门禁](#关系型写入与安全诊断门禁)、[Oracle 原生类型与空间门禁](#oracle-原生类型与空间门禁) |
-| Owner 数据、安全与界面 | [Meta 扫描与结果归属门禁](#meta-扫描与结果归属门禁)、[Security 治理与识别门禁](#security-治理与识别门禁)、[业务图双引擎领域验收](#业务图双引擎领域验收)、[Manager 预览浏览器门禁](#manager-预览浏览器门禁)、[租户执行过程事件门禁](#租户执行过程事件门禁)、[保护投影与执行诊断门禁](#保护投影与执行诊断门禁) |
+| Owner 数据、安全与界面 | [Meta 扫描与结果归属门禁](#meta-扫描与结果归属门禁)、[Security 治理与识别门禁](#security-治理与识别门禁)、[业务图双引擎领域验收](#业务图双引擎领域验收)、[Manager 预览浏览器门禁](#manager-预览浏览器门禁)、[Manager 快显回归与基准验证](#manager-快显回归与基准验证)、[租户执行过程事件门禁](#租户执行过程事件门禁)、[保护投影与执行诊断门禁](#保护投影与执行诊断门禁) |
 
 ## Business Redis 门禁
 
@@ -94,6 +94,93 @@ Manager 的唯一浏览器入口为 `make test-manager-frontend` 内部调度的
 
 Manager 静态轨迹的确定性回归须覆盖三格式、乱序与时区、Unix 秒的精确毫秒及负数、无效时间／坐标、完整性拒绝、同一设备同刻冲突位置、403／预算错误后的旧路线清除、迟到响应丢弃、服务端范围回显缺失及 GeoJSON 默认 CRS 初始化后的完整性提示。布局用例核对真实绘制像素与完整初始视野，包含 630px 窄视口、1.6 像素密度和南半球两条路线；该用例尺寸不作为产品最小视口规范。范围读取后端回归覆盖严格 query／目标与字段边界、混合类型设备 ID、bigint 文本标识、左闭右开区间、超过普通首段的匹配、CSV／JSON／GeoJSON 连续读取、预算与点数超限、保护失效、文件增长、流中途失败／阻塞取消，以及 JSON 闭合和稳定 EOF；Common 读取器仍是唯一解析路线。代码与模块 T1/T3 由既有标准入口发现，真实下载、权限与数据源闭环仍归[Manager Hosted 场景](scenarios/Manager与空间成果.md#设备静态轨迹范围读取)。
 
+## Manager 快显回归与基准验证
+
+### 预览页快显回归
+
+快显相关改造完成后，至少按以下样例做一次预览页回归。回归重点是确认前端只消费后端 capability、Preview metadata 和 `available_actions`，不在前端重复拼接私有任务配置或维护任务准入白名单。
+
+| 样例 | 初始预期 | 生成动作 | 生成后预期 |
+| --- | --- | --- | --- |
+| IFC 单文件 | 基础预览不可直接渲染时，应展示 GLB 快显生成入口；入口来自 `available_actions=generate_model_3d_glb`。 | 点击生成 GLB，前端只提交 `locator + action` 到 `/quick-view/actions`。 | 结果 ready 后自动刷新 capability / Preview，渲染源为 `model_3d_glb`，可在基础预览和快显之间往返。 |
+| STL / OBJ / FBX 单文件 | 源文件可基础预览时，首次打开即支持基础预览；如后端建议 GLB 快显，应同时展示 GLB 生成入口。 | 点击生成 GLB，任务配置由后端从 capability 和 Preview source facts 生成。 | GLB ready 后快显渲染正常；切回基础预览仍读取源文件，不误读 GLB content URL。 |
+| OSGB Scene whole item | capability 返回 `model3d_tiles.formats[]`，分别表达 3D Tiles / S3M 的生成能力、状态和不可用原因。 | “生成瓦片快显”菜单每次只选择一种格式，前端提交 `generate_model3d_3d_tiles` 或 `generate_model3d_s3m`。 | 两种 ready 结果通过分段选择器独立切换；一种生成中或失败不影响另一种预览，读取不依赖转换引擎在线。 |
+| GeoTIFF / TIFF | 小 TIFF 可直接基础/动态预览；大 TIFF 或需要受管 COG 时，由 `available_actions=generate_raster_cog` 展示生成入口。 | 点击生成 COG，前端只提交 `locator + action`，不得拼 `task_definitions.config`。 | ready 后通过 `raster_cog/{id}/content` Range 读取，地图视角和样式状态保持正常。 |
+| 3DGS PLY / SPLAT | 支持基础预览；需要受管 KSplat 时，由 `available_actions=generate_gaussian_splat_ksplat` 展示生成入口。 | 点击生成 KSplat，前端只提交 `locator + action`。 | ready 后渲染源为 `gaussian_splat_ksplat`；`.ksplat` 源文件不再生成二次 KSplat。 |
+
+每个样例至少检查：
+
+1. 预览页按钮是否由 `available_actions` 驱动，隐藏/显示与后端 capability 一致。
+2. Network 中预览页直接生成只调用 `/quick-view/actions`，请求体只包含 `locator` 和 `action`。
+3. 生成完成后，Preview metadata 使用 `preview_artifact_status`、`preview_artifact_task_type` 和 `preview_artifact_id`，不得再出现旧 `quick_view_status`、`quick_view_task_type` 或 `quick_view_id`。
+4. 基础预览和快显切换只改变 `preview_state` 中对应模式和渲染域的状态，不覆盖另一种模式的视角。
+5. 失败、超时或取消时，任务 execution 和结果表状态必须表达真实失败原因，前端不得把失败伪装成 ready。
+
+确定性页面与组件验证沿用前述 Manager／common-frontend 门禁；真实身份、Runtime、数据源、原文件与领域清理仍按各自已登记 T4 suite 认定，不能用模拟 API 的页面通过替代。产品接口与生命周期见[快显实现规范](../../../manager/docs/快显实现规范.md)。
+
+### 动态 MVT 基准验证
+
+以下工具用于显式配置下的只读性能测量，不是第二套测试门禁，也不单独构成 T0–T5 的通过证据。分层测试仍通过根 Make 标准入口执行；基准样本不接管个人服务，不从固定业务表或开发机规模推断全平台默认值。
+
+动态 MVT 阈值验证方案：
+
+1. 验证目标不是证明动态 MVT 能覆盖所有数据量，而是确定 capability 可以安全开放的默认边界、提示等级和运行时保护。
+2. 样本必须覆盖小、中、大三档记录规模，点、线、面三类几何，源 SRID 为 4326、非 3857 投影、源表已是 3857、存在 ready 矢量物化视图结果四类路径。
+3. 每组样本至少验证四个场景：无可索引 3857 目标且走源表 `ST_Transform` 路径、源表本身 3857 且有 GiST 索引、存在 Manager ready 矢量物化视图目标且 `geom_3857` 有 GiST 索引、存在可验证外部 3857 物化视图。
+4. 验证层级应覆盖推荐起始层级、低层级全局瓦片、中层级常用浏览瓦片和高层级局部瓦片，不能只测命中空瓦片或单一 zoom。
+5. 指标至少包括单瓦片 SQL p50/p95/p99、服务端总耗时 p50/p95/p99、超时率、错误率、原始 MVT 大小、空瓦片率、扫描行数、DB CPU、连接占用和并发下的排队情况。
+6. 通过标准应使用交互预算和稳定性预算表达，例如 p95 小于动态瓦片交互预算、超时率和错误率低于约定比例、原始 MVT 大小不超过前后端保护阈值；最终数值必须来自验证结果，不在本规范中预设。
+7. 验证产物应给出两组配置建议：无可索引 3857 目标时的响应时间预算与超时提示策略，以及可索引 3857 目标存在时的响应时间预算与缓存推荐策略；两组策略都必须保留单瓦片超时、体积和并发保护，并回填到 Manager 配置管理页面“快显策略”的默认值或运维建议。
+8. capability 诊断应能解释动态 MVT 性能模式，至少区分 `source_transform_path`、`ready_3857_target`、`source_3857_indexed`、`tile_cost_exceeds_realtime_budget`、`optimization_recommended` 和 `vector_tile_cache_generation_recommended`。
+9. 瓦片缓存生成不复用动态 MVT 的响应时间预算做禁止条件；验证结果只影响瓦片缓存任务的提示强度、推荐顺序和预估耗时风险。
+
+当前后端验证入口：
+
+1. Manager Backend 提供 `cmd/quickview-mvt-benchmark` 作为动态 MVT 阈值验证工具入口，核心逻辑位于 `internal/mvtbenchmark`。
+2. 该入口只读取显式传入的验证配置并连接目标 PostGIS，不接入 Manager API，不写入 Manager 业务表，不创建矢量物化视图结果。
+3. 验证配置必须显式声明 schema、table、geometry column、SRID 和 tile 坐标；不得默认空间字段名为 `geom`。
+4. 报告输出 JSON，包含每个场景和瓦片的耗时分位数、错误率、超时率、空瓦片率、MVT 原始大小分位数、连接池等待情况；开启 `explain_analyze` 时附带 PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)` 文本，用于补充扫描行数和 buffer 观察。
+5. 报告必须包含 `recommendations.render_paths`，按 `source_transform_path`、`ready_3857_target` 等渲染路径聚合实测结果，并输出候选 `quick_view_realtime_tile_timeout_ms`、`quick_view_realtime_tile_retry_after_sec`、`retry_policy`、`recommended_action`、`confidence` 和依据。若样本出现超时，应标记 `needs_higher_timeout_rerun`，提示用更高 `timeout_ms` 重跑后再调整部署默认值。
+6. 报告可以包含 `recommendations.multi_scale_candidates`，仅记录后续多尺度快显优化的候选触发事实。候选条件限于可索引 3857 目标在低层级瓦片上仍超时或产生过大的 MVT；当前用户闭环仍是生成瓦片缓存，不新增“多尺度快显优化”入口。
+7. 配置示例：
+
+```json
+{
+  "dsn": "postgres://user:password@localhost:15432/dbname?sslmode=disable",
+  "iterations": 5,
+  "warmup": 1,
+  "concurrency": 2,
+  "timeout_ms": 3000,
+  "explain_analyze": false,
+  "scenarios": [
+    {
+      "name": "roads source 4326",
+      "render_path": "source_transform_path",
+      "schema": "public",
+      "table": "roads",
+      "geometry_column": "shape",
+      "primary_key": "id",
+      "srid": 4326,
+      "tiles": [
+        {"z": 8, "x": 210, "y": 99}
+      ]
+    },
+    {
+      "name": "roads vector materialized view target",
+      "target_kind": "source_schema_materialized_view",
+      "schema": "public",
+      "table": "addp_vmv_8f4c6a2d9b1e7c0a5d3f6b42",
+      "geometry_column": "geom_3857",
+      "primary_key": "source_row_id",
+      "srid": 3857,
+      "tiles": [
+        {"z": 8, "x": 210, "y": 99}
+      ]
+    }
+  ]
+}
+```
+
 ## SuperMap Runtime 确定性门禁
 
 SuperMap Workflow 的协议、算子目录及资源主机测试使用根 `make test-supermap-workflow`，通过临时构建目录运行不加载厂商 SDK 的 CTest，依赖 CMake、C++20 编译器和 nlohmann-json 开发包。CMake owner 必须同时登记根 `make test` 依赖及 Platform CI 调用，由构建登记检查和模块门禁核对。真实 SGM 读取、OSGB 导出和发布边界仍由受控 SDK 镜像构建阶段的 `sgm-conversion-test` 验证；公开协议门禁不代表 SDK 转换或 T4 已通过。
@@ -118,11 +205,11 @@ Doris／ClickHouse 会话失败回归分别沿用 `make test-common-doris-decima
 
 写入安全诊断扩展使用统一执行失败诊断 v3。Common T1 覆盖错误链、实际列序号及严格投影拒绝（未知键、错误类型、非法序号、伪造类型、旧版本和不合法风险值）；既有 PostgreSQL JSON、Doris／ClickHouse JSON 与会话失败 T2 同时验证类型化错误，不修改原有物理行数、bytes 或空间保真断言。Transfer T1 在真实完成持久化边界验证诊断，并覆盖纯定义／源打开拒绝无风险事实，以及删除、准备、替换、写入和写后源读取／进度／关闭失败的风险事实。共享前端 T1 和 Transfer T3 验证中英文实际模板与隐藏原始正文。现有 Hosted 四失败场景追加稳定原因码、非法 JSON 的第 2 写入列及目标可能已改变的 API／浏览器断言；runner 不替代新版 Hosted T4 证据。所有新 Go 文件沿原有 `./...` 自动发现，复用现有 Make 入口和 Hosted Job，不新增权限、API 或外部服务依赖。
 
-历史结果与范围限制见[其他验收证据索引](验收证据索引.md#addp-验收证据索引)。
-
 Oracle／达梦的同一类型化诊断由 Common T1 和既有 JSON／会话原生门禁验证。Oracle 使用 `make test-common-oracle-decimal` 的 Hosted Slim／Spatial 配置，达梦使用本机官方驱动入口 `make test-common-dameng`，不将达梦登记为 Hosted。回归须核对 NULL 不占绑定参数时的实际写入列、达梦 MERGE 的实际字段顺序、冻结类型、原生驱动错误链及不猜列；编码失败和 SQL 执行失败分别保留原有回滚、关闭及提交标记断言。达梦清理参数的范围拒绝与活跃测试容器保护由现有 `dameng-official-media-release-gate_test.py` 验证，沿 `make test-business-config`／平台 T0 自动发现；此检查及显式残留清理均不能替代原生 T2。
 
 MySQL／TiDB／OceanBase 复用同一 JSON 原生夹具，沿既有 MySQL `--test typed-write`、TiDB 和 OceanBase 门禁验证安全列定位、原生错误链、失败回滚与提交标记。MySQL 空间路径仍验证几何及 bytes 保真。openGauss MERGE 的 JSON／数组错误由 Common T1 和既有 Hosted `make test-common-opengauss` 验证；列号来自实际批次字段顺序，类型来自冻结声明，原生执行错误不能猜列。上述入口已由现有 Common 共享依赖变更发现覆盖，无需新增 CI 作业。
+
+历史结果与范围限制见[其他验收证据索引](验收证据索引.md#addp-验收证据索引)。
 
 ## Oracle 原生类型与空间门禁
 
