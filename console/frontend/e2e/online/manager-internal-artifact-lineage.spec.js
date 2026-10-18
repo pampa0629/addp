@@ -346,7 +346,10 @@ async function verifyVectorExchange(page, api, source, artifactDir, knownLocator
     expect(data.rows.map(row => row[source.label_column])).toEqual(layer.labels)
     const geometries = data.rows.map(row => decodePreviewEWKB(row[data.geometry_column]))
     expect(geometries).toEqual(layer.geometries)
-    expect(data.source_srid).toBe(source.format === 'topojson' ? 0 : 4326)
+    // The TablePreview wire contract omits the zero numeric SRID.
+    // Unknown CRS must not acquire an invented EPSG:4326 identity.
+    expect(data.source_srid).toBe(source.format === 'topojson' ? undefined : 4326)
+    if (source.format === 'topojson') expect(data.source_crs).toBeUndefined()
     expect(data.transform_status).toBe(source.format === 'topojson' ? 'unknown_crs' : 'not_transformed')
     for (const label of layer.labels) await expect(table.getByRole('cell', { name: label, exact: true })).toBeVisible()
     await expect(table.getByRole('button', { name: /下一页|Go to next page/, exact: true })).toBeDisabled()

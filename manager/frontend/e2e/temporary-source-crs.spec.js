@@ -38,7 +38,7 @@ async function fixture(page, language, container = true) {
       const count = Math.max(0, Math.min(size, 25 - (currentPage - 1) * size))
       return json(route, { preview_type: 'table', data: {
         mode: 'table', columns: ['id', 'name', 'source_shape'], geometry_columns: ['source_shape'], geometry_column: 'source_shape',
-        source_srid: known ? 4326 : 0, source_crs: known ? 'EPSG:4326' : '', transform_status: known ? 'not_transformed' : 'unknown_crs',
+        ...(known ? { source_srid: 4326, source_crs: 'EPSG:4326' } : {}), transform_status: known ? 'not_transformed' : 'unknown_crs',
         total: 25, page: currentPage, page_size: size,
         rows: Array.from({ length: count }, (_, index) => {
           const id = (currentPage - 1) * size + index + 1
