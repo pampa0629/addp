@@ -26,7 +26,7 @@ def command(args, **kwargs):
 
 if sys.argv[1:2] != ['--worker']:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.utils.online_nfs_fixture import NFSExport, FixtureError
+    from scripts.utils.online_nfs_fixture import NFSExport, FixtureError, run_runtime_worker
 
 
 def guard(env=os.environ):
@@ -118,12 +118,7 @@ def worker(action, root, names):
 
 
 def runtime_worker(action, root, names=()):
-    info = json.loads(command(['docker', 'inspect', RUNTIME]))[0]
-    labels = info['Config']['Labels']
-    if labels.get('com.addp.online-runtime') != SUITE or labels.get('com.addp.online-run-id') != os.environ['ADDP_ONLINE_TEST_RUN_ID'] or info['Config']['Cmd'] != ['sh', 'container_entrypoint.sh']:
-        raise FixtureError('foreign Runtime or non-product entry')
-    payload = command(['docker', 'exec', '-i', RUNTIME, 'python', '-', '--worker', action, str(root), *names], input=Path(__file__).read_text())
-    return json.loads(payload)
+    return run_runtime_worker(command, RUNTIME, SUITE, Path(__file__), action, root, names)
 
 
 def main(action):

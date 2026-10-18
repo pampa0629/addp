@@ -98,6 +98,7 @@ class OnlineGateTest(unittest.TestCase):
                 "quality-dynamic-binding",
                 "raster-workflow",
                 "raster-contour-persistence",
+                "raster-polygonize-persistence",
                 "vector-pmtiles-workflow",
                 "vector-topology-persistence",
                 "raster-workflow-capacity",

@@ -78,7 +78,8 @@ class ChangedGateTest(unittest.TestCase):
         module.parent.mkdir(parents=True)
         module.write_text('module example.com/duckdb\n')
         subprocess.run(['git', 'add', '.'], cwd=self.repository, check=True)
-        for path in ('business/scripts/online-raster-contour-fixture.py', 'scripts/test/raster-contour-persistence-online.py',
+        for path in ('business/scripts/online-raster-polygonize-fixture.py', 'scripts/test/raster-polygonize-persistence-online.py',
+                     'scripts/utils/online_vector_persistence.py', 'scripts/utils/online_nfs_fixture.py', 'business/scripts/online-raster-contour-fixture.py', 'scripts/test/raster-contour-persistence-online.py',
                      'business/scripts/online-raster-minio-fixture.py', 'scripts/test/raster-workflow-online.py',
                      'business/scripts/online-raster-capacity-fixture.py', 'scripts/test/raster-workflow-capacity-online.py'):
             with self.subTest(path=path):

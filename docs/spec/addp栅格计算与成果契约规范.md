@@ -54,6 +54,7 @@
 | `raster_band_math` | raster、受限表达式 | Float64 单波段；每块最多 512×512，传播 mask、nodata 和无效计算。 |
 | `raster_reclassify` | raster、规则数组、band、unmatched=nodata/keep | 精确值或左闭右开区间重分类；同网格 Float64 单波段，源无效像元始终为 NaN。 |
 | `raster_aggregate` | raster、整数列/行倍数、sum/mean/min/max | 从左上角分组，忽略无效像元，保留边缘不足整组的像元；无需空间定位，输出 Float64 数据波段。 |
+| `raster_polygonize` | raster、必填 band、connectivity=4/8 | 相同整数分类值的连通区域；每区一条 Int64 class_value 与有效二维 MultiPolygon，保留源 CRS、孔洞和旋转，复用矢量保存。 |
 | `raster_footprint` | `raster` → `GeoDataFrame` | 所选数据波段有效范围的并集/交集，保留源 CRS、孔洞与分离面片。 |
 | `raster_statistics` | raster、从 1 开始的 band | 按块全量累计 min/max/mean/总体标准差、有效/无效计数与比例；全无效时统计值为 null。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |

@@ -669,7 +669,7 @@ def _read_values(band, x, y, width, height):
                          dtype=np.float64).reshape(height,width)
 
 
-def _blocks(dataset, indices, *, window=None):
+def _blocks(dataset, indices, *, window=None, native=False):
     bands = [_band(dataset, index) for index in indices]
     alpha = None
     for index in range(1,dataset.RasterCount+1):
@@ -688,7 +688,7 @@ def _blocks(dataset, indices, *, window=None):
                 coverage = np.isfinite(values) & (values > 0)
             arrays, masks = [], []
             for band in bands:
-                array = _read_values(band,x,y,width,height)
+                array = band.ReadAsArray(x, y, width, height) if native else _read_values(band,x,y,width,height)
                 mask = (np.frombuffer(band.GetMaskBand().ReadRaster(x, y, width, height, buf_type=gdal.GDT_Byte), dtype=np.uint8).reshape(height, width) != 0) & np.isfinite(array)
                 if coverage is not None and band.GetColorInterpretation() != gdal.GCI_AlphaBand:
                     mask &= coverage
@@ -762,6 +762,74 @@ def raster_footprint(input_raster, bands=None, validity='any'):
     result = gpd.GeoDataFrame(geometry=[MultiPolygon(polygons)] if polygons else [], crs=dataset.GetProjection())
     dataset = None
     return result
+
+
+def raster_polygonize(input_raster, band, connectivity=4):
+    if type(connectivity) is not int or connectivity not in (4, 8):
+        raise ValueError('connectivity must be integer 4 or 8')
+    dataset = _open(input_raster)
+    width, height, transform = _grid(dataset)
+    if type(band) is not int or band not in _data_indices(dataset):
+        raise ValueError('band must be a one-based data band index')
+    for index in range(1, dataset.RasterCount + 1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    classes = mask = vector = layer = feature = None
+    category_ids, category_values = {}, []
+    try:
+        classes = gdal.GetDriverByName('GTiff').Create(
+            str(_path()), width, height, 1, gdal.GDT_Int64, ['TILED=YES', 'COMPRESS=DEFLATE'])
+        mask = gdal.GetDriverByName('GTiff').Create(
+            str(_path()), width, height, 1, gdal.GDT_Byte, ['TILED=YES', 'COMPRESS=DEFLATE'])
+        for target in (classes, mask):
+            target.SetProjection(dataset.GetProjection())
+            target.SetGeoTransform(transform)
+        for x, y, arrays, masks in _blocks(dataset, [band], native=True):
+            values, valid = arrays[0], masks[0]
+            selected = values[valid]
+            if np.issubdtype(values.dtype, np.floating):
+                if np.any(np.abs(selected.astype(np.float64, copy=False)) > 2**53 - 1) or np.any(selected != np.trunc(selected)):
+                    raise ValueError('floating classification values must be exact safe integers')
+            elif np.issubdtype(values.dtype, np.unsignedinteger):
+                if np.any(selected > np.iinfo(np.int64).max):
+                    raise ValueError('classification values must fit signed Int64')
+            encoded = np.zeros(values.shape, dtype=np.int64)
+            unique, inverse = np.unique(selected.astype(np.int64), return_inverse=True)
+            identifiers = []
+            for value in unique:
+                code = int(value)
+                if code not in category_ids:
+                    category_values.append(code)
+                    category_ids[code] = len(category_values)
+                identifiers.append(category_ids[code])
+            # GDAL versions can emit Int64 polygon fields via double. Dense
+            # internal IDs keep original large classification codes lossless.
+            encoded[valid] = np.asarray(identifiers, dtype=np.int64)[inverse]
+            span_y, span_x = values.shape
+            classes.GetRasterBand(1).WriteRaster(x, y, span_x, span_y, encoded.tobytes(), buf_type=gdal.GDT_Int64)
+            mask.GetRasterBand(1).WriteRaster(x, y, span_x, span_y, valid.astype(np.uint8).tobytes(), buf_type=gdal.GDT_Byte)
+        classes.FlushCache(); mask.FlushCache()
+        vector = ogr.GetDriverByName('GPKG').CreateDataSource(str(_path('.gpkg')))
+        layer = vector.CreateLayer('classes', _crs(dataset.GetProjection()), ogr.wkbPolygon)
+        layer.CreateField(ogr.FieldDefn('class_value', ogr.OFTInteger64))
+        options = ['8CONNECTED=8'] if connectivity == 8 else []
+        if gdal.Polygonize(classes.GetRasterBand(1), mask.GetRasterBand(1), layer, 0, options) != 0:
+            raise ValueError('Classification polygonization failed')
+        codes, geometries = [], []
+        for feature in layer:
+            geometry = feature.GetGeometryRef()
+            parts = _footprint_parts(from_wkb(bytes(geometry.ExportToWkb()))) if geometry else []
+            if not parts:
+                raise ValueError('Raster grid cannot represent classification region geometry')
+            region = MultiPolygon(parts)
+            if not region.is_valid or region.is_empty:
+                raise ValueError('Classification region geometry must be valid')
+            codes.append(category_values[feature.GetField('class_value') - 1])
+            geometries.append(region)
+        return gpd.GeoDataFrame({'class_value': np.asarray(codes, dtype=np.int64)},
+                                geometry=geometries, crs=dataset.GetProjection())
+    finally:
+        feature = layer = vector = classes = mask = dataset = None
 
 
 def raster_statistics(input_raster, band=1):
@@ -1315,6 +1383,7 @@ _SPECS = [
     (raster_reclassify, OperatorCategory.RASTER_CELL, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CELL, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
+    (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
@@ -1343,6 +1412,8 @@ for function, category, label, params, output, effects in _SPECS:
                          'band': 1, 'unmatched': 'nodata'})
     if name == 'raster_footprint':
         examples.update({'validity': 'any'})
+    if name == 'raster_polygonize':
+        examples.update({'band': 1, 'connectivity': 4})
     if name == 'raster_aggregate':
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':

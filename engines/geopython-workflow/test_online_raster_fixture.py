@@ -2027,3 +2027,57 @@ def test_contour_persistence_oracle_rejects_real_file_corruption(contour_persist
     elif corruption == 'sidecar': (root / 'outputs/unexpected.gpkg-wal').write_bytes(b'leftover')
     else: names = ['../levels.gpkg']
     with pytest.raises(module.FixtureError): module.verify(root, names)
+
+
+@pytest.fixture
+def polygonize_persistence(tmp_path):
+    spec = importlib.util.spec_from_file_location('polygonize_fixture', ROOT / 'business/scripts/online-raster-polygonize-fixture.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    from operators.raster_compute import raster_workspace, raster_load, raster_polygonize, raster_reclassify
+    from operators.io_operators import save
+    root = tmp_path / 'export'; root.mkdir(); (root / 'outputs').mkdir()
+    initial = module.seed(root)
+    source = {'schema_version': 'addp.workflow.access-plan/v1', 'source': {'kind': 'file',
+        'format': 'tiff', 'access': {'method': 'mounted_path', 'path': str(root / 'classes.tif')}}}
+    for name, connectivity in module.TARGETS.items():
+        with raster_workspace():
+            loaded = raster_load(source); workspace = loaded.workspace
+            if name == 'reclassified.gpkg':
+                loaded = raster_reclassify(loaded, [{'min': -2, 'max': 1, 'class': 10}, {'min': 1, 'max': 4, 'class': 20}], band=1, unmatched='keep')
+            regions = raster_polygonize(loaded, band=1, connectivity=connectivity)
+            save(regions, connection_info={'export_path': str(root)}, path='outputs/' + name, mode='replace')
+        assert not workspace.exists()
+    return module, root, initial
+
+
+def test_polygonize_persistence_real_gdal_all_regions_and_three_chains(polygonize_persistence):
+    module, root, initial = polygonize_persistence
+    actual = module.verify(root, list(module.TARGETS))
+    assert actual['source'] == initial['source']
+    targets = actual['targets']
+    assert targets['four.gpkg']['feature_count'] > targets['eight.gpkg']['feature_count']
+    assert targets['four.gpkg']['hole_count'] > 0
+    assert all(entry['full_region_and_cell_verification'] and entry['size_bytes'] > 0 for entry in targets.values())
+    assert len({entry['area'] for entry in targets.values()}) == 1
+
+
+@pytest.mark.parametrize('corruption', ['class', 'geometry', 'dimension', 'region', 'sidecar', 'inventory'])
+def test_polygonize_persistence_oracle_rejects_real_file_corruption(polygonize_persistence, corruption):
+    from osgeo import ogr
+    module, root, _ = polygonize_persistence
+    names = list(module.TARGETS)
+    if corruption in {'class', 'geometry', 'dimension', 'region'}:
+        file = ogr.Open(str(root / 'outputs/four.gpkg'), 1)
+        layer = file.GetLayer(0); feature = layer.GetNextFeature()
+        if corruption == 'class': feature.SetField('class_value', 999)
+        elif corruption == 'region': layer.DeleteFeature(feature.GetFID())
+        elif corruption == 'dimension':
+            geometry = feature.GetGeometryRef().Clone(); geometry.Set3D(True); feature.SetGeometry(geometry)
+        else:
+            ring = feature.GetGeometryRef().GetGeometryRef(0).GetGeometryRef(0)
+            x,y,_ = ring.GetPoint(1); ring.SetPoint_2D(1,x+.25,y)
+        if corruption != 'region': layer.SetFeature(feature)
+        file = None
+    elif corruption == 'sidecar': (root / 'outputs/unexpected.gpkg-wal').write_bytes(b'leftover')
+    else: names = ['../four.gpkg']
+    with pytest.raises(module.FixtureError): module.verify(root, names)

@@ -80,3 +80,15 @@ class NFSExport:
         if root.exists() or export.exists():
             raise FixtureError('NFS cleanup has residuals')
         return {'cleanup': 'passed', 'nfs_export_removed': True, 'owned_root_removed': True}
+
+
+def run_runtime_worker(command, runtime, suite, script, action, root, names):
+    info = json.loads(command(['docker', 'inspect', runtime]))[0]
+    labels = info['Config']['Labels']
+    if (labels.get('com.addp.online-runtime') != suite
+        or labels.get('com.addp.online-run-id') != os.environ['ADDP_ONLINE_TEST_RUN_ID']
+        or info['Config']['Cmd'] != ['sh', 'container_entrypoint.sh']):
+        raise FixtureError('foreign Runtime or non-product entry')
+    payload = command(['docker', 'exec', '-i', runtime, 'python', '-', '--worker', action, str(root), *names],
+                      input=script.read_text())
+    return json.loads(payload)

@@ -21,7 +21,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',
                  'scripts/test/online-hosted-raster-contour-gate.sh', 'scripts/test/raster-contour-persistence-online.py',
-                 'business/scripts/online-raster-contour-fixture.py', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/online_nfs_fixture.py')
+                 'business/scripts/online-raster-contour-fixture.py', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/online_nfs_fixture.py', 'scripts/utils/online_vector_persistence.py')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -30,10 +30,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "inputs.suite != 'raster-contour-persistence'"),
                 (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-raster-contour-fixture_test.py'),
                 (paths[3], '--wait-protection-owners develop,manager'), (paths[3], '--mount'),
-                (paths[4], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption')):
+                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption')):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_contour_profile(self.repository, registered)
+            target.write_text(original)
+
+    def test_polygonize_requires_manual_nfs_identity_and_registered_regressions(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',
+                 'scripts/test/online-hosted-raster-polygonize-gate.sh', 'scripts/test/raster-polygonize-persistence-online.py',
+                 'business/scripts/online-raster-polygonize-fixture.py', 'engines/geopython-workflow/test_online_raster_fixture.py', 'scripts/utils/online_nfs_fixture.py', 'scripts/utils/online_vector_persistence.py')
+        for relative in paths:
+            target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        registered = {'raster-polygonize-persistence'}
+        CHECK.validate_raster_polygonize_profile(self.repository, registered)
+        for relative, fragment in ((paths[0], "inputs.suite != 'raster-polygonize-persistence'"),
+                (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-raster-polygonize-fixture_test.py'),
+                (paths[3], '--wait-protection-owners develop,manager'), (paths[3], '--mount'),
+                (paths[8], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_polygonize_persistence_oracle_rejects_real_file_corruption')):
+            target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
+            with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_polygonize_profile(self.repository, registered)
             target.write_text(original)
 
     def test_topology_requires_manual_nfs_identity_and_regressions(self):

@@ -432,6 +432,7 @@
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | RasterDataset | 栅格数据集对象 | 当前工作流执行目录内的私有、文件支撑栅格对象。 | 只通过 `raster` 端口在当前 DAG 内流转；成功或失败时清理，不返回路径、句柄或像元数组。 |
+| raster polygonization | 分类栅格转面 | 按所选数据波段的相同整数分类值和四／八邻接，生成各连通区域的矢量面。 | 保留有效像元完整边界、孔洞和源 CRS；不同连通区域分别记录。不是有效像元总轮廓、等值面、线网拓扑构面或 AI 分割，不新增资源类型。 |
 | raster tiling | 栅格切片 | 按像素窗口将一幅栅格划分为多幅较小栅格的处理操作。 | 保留各片对应的原始像元和空间位置；不表示 AI 语义分割或实例分割，也不表示在线地图瓦片生成。不新增数据类型或公开资源身份。 |
 | RasterTiles | 栅格切片集合 | 当前工作流执行内，由私有源栅格和像素切片网格定义的多片对象。 | 使用 `raster_tiles` 端口；按需生成，不能用 JSON 或跨 execution 对象伪造。仅用于计算与批量保存，不是公开数据类型、whole scope 数据项或通用 foreach。 |
 | RasterArtifact | 栅格成果 | 已保存到目标存储的栅格及其事实摘要。 | Develop 业务成果使用稳定 ResourceLocator；Manager 私有快显成果仍由 Manager 管理，不新增成果状态 owner。 |

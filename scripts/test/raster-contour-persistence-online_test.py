@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 m = importlib.import_module('scripts.test.raster-contour-persistence-online')
+persistence = importlib.import_module('scripts.utils.online_vector_persistence')
 
 
 def item(name='levels.gpkg', identifier=20):
@@ -27,8 +28,9 @@ def execution(source, target, scan='scan-levels.gpkg'):
 
 
 class Client:
-    def __init__(self):
-        self.source = {'id': 10, 'item_type': 'file', 'full_name': 'dem.tif', 'fingerprint': 'dem', 'size_bytes': 24991}
+    def __init__(self, source_name='dem.tif'):
+        self.source_name = source_name
+        self.source = {'id': 10, 'item_type': 'file', 'full_name': source_name, 'fingerprint': 'dem', 'size_bytes': 24991}
         self.targets = {}; self.executions = {}; self.calls = []; self.actor = 33
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path, body))
@@ -37,7 +39,7 @@ class Client:
                 'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                     {'role_key': 'contour-consumer', 'permissions': sorted(m.raster.EDITOR_PERMISSIONS)}]}}
         elif path.endswith('/scan/run/manual'):
-            if body['targets'] != ['addp://engine/3/path/dem.tif?type=file']: raise AssertionError(body)
+            if body['targets'] != [f'addp://engine/3/path/{self.source_name}?type=file']: raise AssertionError(body)
             data = {'execution_id': 'source-scan'}
         elif '/meta/executions/' in path:
             # Meta exposes ScanExecutionResponse/Observation, never private actor fields.
@@ -80,7 +82,7 @@ class ContourPersistenceTest(unittest.TestCase):
 
     def test_exact_file_scan_stable_output_and_lineage_are_required(self):
         original = execution('source', 'target')
-        m.validate_success(original, 'source', 'target')
+        persistence.validate_success(original, 'source', 'target')
         for mutate in (
             lambda e: e['outputs']['save']['resource'].update(type='object'),
             lambda e: e['metadata']['lineage_facts']['inputs'][0].update(locator='sibling'),
@@ -89,18 +91,18 @@ class ContourPersistenceTest(unittest.TestCase):
             lambda e: e['metadata']['result']['meta_scan_runs'].clear(),
         ):
             value = copy.deepcopy(original); mutate(value)
-            with self.subTest(mutate=mutate), self.assertRaises(m.SuiteError): m.validate_success(value, 'source', 'target')
+            with self.subTest(mutate=mutate), self.assertRaises(m.SuiteError): persistence.validate_success(value, 'source', 'target')
 
     def test_sizes_are_positive_integers_and_container_does_not_inherit_layer_spatial(self):
-        m.validate_item(item(), physical('levels.gpkg'), 'levels.gpkg')
+        persistence.validate_item(item(), physical('levels.gpkg'), 'levels.gpkg')
         for size in (True, 0, -1, 98304., '98304', 98303):
             value = item(); value['size_bytes'] = size
-            with self.subTest(size=size), self.assertRaises(m.SuiteError): m.validate_item(value, physical('levels.gpkg'), 'levels.gpkg')
+            with self.subTest(size=size), self.assertRaises(m.SuiteError): persistence.validate_item(value, physical('levels.gpkg'), 'levels.gpkg')
         for mutate in (lambda e: e['attributes'].update(capabilities={'spatial': {'srid': 3857}}),
                        lambda e: e['attributes']['type_info'].update(table={'fields': []}),
                        lambda e: e['attributes']['item'].update(data_type='table')):
             value = item(); mutate(value)
-            with self.assertRaises(m.SuiteError): m.validate_item(value, physical('levels.gpkg'), 'levels.gpkg')
+            with self.assertRaises(m.SuiteError): persistence.validate_item(value, physical('levels.gpkg'), 'levels.gpkg')
 
     def test_complete_api_chain_uses_ordinary_identity_and_does_not_rescan_outputs_manually(self):
         client = Client()

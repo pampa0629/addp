@@ -3650,3 +3650,274 @@ def test_raster_tiles_encoding_failure_retains_confirmed_prefix_without_attempti
         assert manifest['publication'] == 'not_attempted'
         assert {p.name for p in target.iterdir()} == {'r0_c0.tif','r0_c4.tif'}
         assert all(not raster.path.exists() for raster in calls)
+
+
+def _classification_region_oracle(values, valid, transform, connectivity):
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    unseen = set(zip(*np.where(valid)))
+    regions = []
+    offsets = [(y, x) for y in (-1, 0, 1) for x in (-1, 0, 1)
+               if (y or x) and (connectivity == 8 or abs(y) + abs(x) == 1)]
+    def point(x, y):
+        return (transform[0] + x * transform[1] + y * transform[2],
+                transform[3] + x * transform[4] + y * transform[5])
+    while unseen:
+        start = min(unseen); unseen.remove(start)
+        code = int(values[start]); pending = [start]; cells = []
+        while pending:
+            y, x = pending.pop()
+            cells.append(Polygon([point(x,y), point(x+1,y), point(x+1,y+1), point(x,y+1)]))
+            for dy, dx in offsets:
+                other = (y+dy, x+dx)
+                if other in unseen and int(values[other]) == code:
+                    unseen.remove(other); pending.append(other)
+        regions.append((code, unary_union(cells)))
+    return regions
+
+
+@pytest.mark.parametrize('connectivity', [4, 8])
+@pytest.mark.parametrize('transform', [(0,1,0,5,0,-1), (100,2,.5,200,.25,-3)])
+def test_raster_polygonize_independent_components_holes_codes_and_source(tmp_path, connectivity, transform):
+    from operators.raster_compute import raster_polygonize
+    values = np.array([[0,0,0,0,0], [0,2,2,2,0], [0,2,-9999,2,0],
+                       [0,2,2,2,0], [-3,0,0,0,-3]], dtype=np.float64)
+    valid = values != -9999
+    expected = _classification_region_oracle(values, valid, transform, connectivity)
+    path = create_raster(tmp_path/'classes.tif', values, transform=transform)
+    before = path.read_bytes()
+    with raster_workspace():
+        loaded = raster_load(source_plan(path)); workspace = loaded.workspace
+        result = raster_polygonize(loaded, 1, connectivity)
+        assert list(result.columns) == ['class_value', 'geometry']
+        assert str(result.class_value.dtype) == 'int64' and result.crs.to_epsg() == 4326
+        actual = list(zip(result.class_value, result.geometry))
+        assert len(actual) == len(expected)
+        for code, geometry in expected:
+            matches = [(c,g) for c,g in actual if c == code and g.equals(geometry)]
+            assert len(matches) == 1
+        assert result.geometry.is_valid.all() and not result.geometry.has_z.any()
+        assert all(g.geom_type == 'MultiPolygon' for g in result.geometry)
+        assert any(len(part.interiors) for g in result.geometry for part in g.geoms)
+    assert not workspace.exists() and before == path.read_bytes()
+
+
+@pytest.mark.parametrize('connectivity,regions', [(4, 2), (8, 1)])
+def test_raster_polygonize_diagonal_connectivity_keeps_valid_multipart(tmp_path, connectivity, regions):
+    from operators.raster_compute import raster_polygonize
+    path = create_raster(tmp_path/'diagonal.tif', np.array([[7,-9999],[-9999,7]]))
+    with raster_workspace():
+        result = raster_polygonize(raster_load(source_plan(path)), 1, connectivity)
+        assert len(result) == regions and result.class_value.tolist() == [7]*regions
+        assert result.geometry.is_valid.all()
+        assert sum(g.area for g in result.geometry) == 2
+        assert sum(len(g.geoms) for g in result.geometry) == 2
+
+
+def test_raster_polygonize_selected_band_mask_alpha_and_nonfinite_values(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    values = np.array([[0,1,2,3], [4,np.nan,np.inf,7], [8,9,-9999,11]], dtype=np.float64)
+    alpha = np.full(values.shape, 255.); alpha[0,1] = 0; alpha[0,2] = 64; alpha[2,0] = np.nan
+    path = create_raster(tmp_path/'validity.tif', np.stack([np.full(values.shape,.5),values,alpha]))
+    ds = gdal.Open(str(path), gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    mask = np.full(values.shape,255,dtype=np.uint8); mask[2,1] = 0
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask); ds = None
+    valid = (mask != 0) & np.isfinite(values) & (values != -9999) & np.isfinite(alpha) & (alpha > 0)
+    expected = _classification_region_oracle(values, valid, (0,1,0,4,0,-1), 4)
+    with raster_workspace():
+        result = raster_polygonize(raster_load(source_plan(path)), 2)
+        assert sorted(result.class_value) == sorted(code for code,_ in expected)
+        assert 0 in result.class_value.to_list() and 2 in result.class_value.to_list()
+        for code, geometry in expected:
+            assert result[result.class_value == code].geometry.iloc[0].equals(geometry)
+
+
+@pytest.mark.parametrize('params', [{'band':True}, {'band':1.}, {'band':0}, {'band':3},
+    {'band':1,'connectivity':True}, {'band':1,'connectivity':4.}, {'band':1,'connectivity':6}])
+def test_raster_polygonize_rejects_invalid_band_and_connectivity(tmp_path, params):
+    from operators.raster_compute import raster_polygonize
+    path = create_raster(tmp_path/'classes.tif', np.ones((2,3,3)))
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand); ds = None
+    with raster_workspace(), pytest.raises(ValueError): raster_polygonize(raster_load(source_plan(path)), **params)
+
+
+@pytest.mark.parametrize('dtype', [gdal.GDT_Float32, gdal.GDT_Float64])
+@pytest.mark.parametrize('value', [.5, -(2**53), 2**53])
+def test_raster_polygonize_rejects_lossy_float_classes(tmp_path, value, dtype):
+    from operators.raster_compute import raster_polygonize
+    path = tmp_path/'classes.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), 2, 1, 1, dtype)
+    ds.SetGeoTransform((0,1,0,1,0,-1)); ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(np.array([[value,1.]], dtype=np.float64)); ds=None
+    with raster_workspace(), pytest.raises(ValueError, match='exact safe integers'):
+        raster_polygonize(raster_load(source_plan(path)), 1)
+
+
+def test_raster_polygonize_float32_safe_integral_codes_remain_valid(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    path = tmp_path/'float32.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), 3, 1, 1, gdal.GDT_Float32)
+    ds.SetGeoTransform((0,1,0,1,0,-1)); ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(np.array([[0,-3,2**52]], dtype=np.float32)); ds=None
+    with raster_workspace():
+        result = raster_polygonize(raster_load(source_plan(path)), 1)
+        assert sorted(result.class_value.to_list()) == [-3,0,2**52]
+        assert str(result.class_value.dtype) == 'int64' and result.geometry.area.sum() == 3
+
+
+@pytest.mark.parametrize('values,dtype', [
+    ([-2**63,2**53+1,2**53+2,2**63-1], gdal.GDT_Int64),
+    ([0,2**63-1], gdal.GDT_UInt64),
+])
+def test_raster_polygonize_preserves_native_integer_precision(tmp_path, values, dtype):
+    from operators.raster_compute import raster_polygonize
+    path = tmp_path/'native.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), len(values), 1, 1, dtype)
+    ds.SetGeoTransform((0,1,0,1,0,-1)); ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(np.array([values], dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64)); ds=None
+    with raster_workspace():
+        result = raster_polygonize(raster_load(source_plan(path)), 1)
+        assert sorted(result.class_value.to_list()) == sorted(values)
+
+
+def test_raster_polygonize_uint64_overflow_and_native_nodata_precision(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    path = tmp_path/'native.tif'
+    ds = gdal.GetDriverByName('GTiff').Create(str(path), 2, 1, 1, gdal.GDT_UInt64)
+    ds.SetGeoTransform((0,1,0,1,0,-1)); ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(np.array([[2**63,2**63+1]],dtype=np.uint64)); ds=None
+    with raster_workspace(), pytest.raises(ValueError, match='signed Int64'):
+        raster_polygonize(raster_load(source_plan(path)), 1)
+    ds=gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(1).WriteArray(np.array([[2**53,2**53+1]],dtype=np.uint64))
+    ds.GetRasterBand(1).SetNoDataValue(2**53); ds=None
+    with raster_workspace():
+        result=raster_polygonize(raster_load(source_plan(path)),1)
+        assert result.class_value.to_list()==[2**53+1]
+
+
+@pytest.mark.parametrize('defect', ['crs','transform','singular','complex','complex_alpha'])
+def test_raster_polygonize_rejects_untrustworthy_grid_and_complex(tmp_path,defect):
+    from operators.raster_compute import raster_polygonize, _raster
+    path=create_raster(tmp_path/'invalid.tif',np.ones((2,2)),crs='' if defect=='crs' else 'EPSG:3857',
+        transform=None if defect=='transform' else (0,1,0,0,0,0) if defect=='singular' else (0,1,0,2,0,-1))
+    if defect in ('complex','complex_alpha'):
+        ds=gdal.Translate(str(tmp_path/'converted.tif'),str(path),outputType=gdal.GDT_CFloat64)
+        if defect=='complex_alpha':
+            ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+        ds=None;path=tmp_path/'converted.tif'
+    with raster_workspace(),pytest.raises(ValueError):raster_polygonize(_raster(path),1)
+
+
+def test_raster_polygonize_empty_schema_and_bounded_cross_block_reads(tmp_path,monkeypatch):
+    from operators.raster_compute import raster_polygonize
+    empty=create_raster(tmp_path/'empty.tif',np.full((3,3),-9999.))
+    with raster_workspace():
+        result=raster_polygonize(raster_load(source_plan(empty)),1)
+        assert result.empty and str(result.class_value.dtype)=='int64' and result.crs.to_epsg()==4326
+    path=create_raster(tmp_path/'large.tif',np.zeros((515,517)))
+    original=gdal.Band.ReadAsArray;windows=[]
+    def read(band,x,y,width,height,*args,**kwargs):
+        windows.append((width,height));return original(band,x,y,width,height,*args,**kwargs)
+    monkeypatch.setattr(gdal.Band,'ReadAsArray',read)
+    with raster_workspace():
+        result=raster_polygonize(raster_load(source_plan(path)),1)
+        assert len(result)==1 and result.geometry.iloc[0].area==515*517
+    assert len(windows)>=4 and all(w<=512 and h<=512 for w,h in windows)
+
+
+@pytest.mark.parametrize('invalid', [False, True], ids=['saved','failure-cleanup'])
+def test_raster_polygonize_async_dag_reclassification_vector_save_and_cleanup(tmp_path, monkeypatch, invalid):
+    import api_server
+    import workflow_engine
+    import geopandas as gpd
+    source=create_raster(tmp_path/'source.tif',np.array([[.25,.25,1.25],[.25,1.25,1.25]]),crs='EPSG:3857')
+    before=source.read_bytes();target=tmp_path/'regions.gpkg'
+    tasks=[
+        {'id':'load','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'classify','operator':'raster_reclassify','depends_on':['load'],'params':{'input_raster':{'$ref':'load'},'rules':[{'min':0,'max':1,'class':0},{'min':1,'max':2,'class':2}]}},
+        {'id':'regions','operator':'raster_polygonize','depends_on':['classify'],'params':{'input_raster':{'$ref':'classify'},'band':1,'connectivity':6 if invalid else 4}},
+        {'id':'save','operator':'save','depends_on':['regions'],'params':{'input_df':{'$ref':'regions'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}}},
+    ]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_polygonize':paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not path.exists() for path in paths) and source.read_bytes()==before
+    if invalid:assert not target.exists()
+    else:
+        saved=gpd.read_file(target)
+        assert list(saved.columns)==['class_value','geometry'] and sorted(saved.class_value)==[0,2]
+        assert saved.crs.to_epsg()==3857 and saved.geometry.is_valid.all()
+        assert saved.geometry.area.sum()==6 and target.stat().st_size>0
+    assert client.post('/api/operators/raster_polygonize/invoke',json={'params':{}}).status_code==403
+
+
+def test_raster_polygonize_metadata_and_executable_example(tmp_path):
+    spec=next(item for item in list_operators() if item['id']=='raster_polygonize')
+    params={item['name']:item for item in spec['parameters']}
+    assert params['band']['required'] is True and params['connectivity']['default']==4
+    assert spec['output_ports'][0]['type']=='GeoDataFrame'
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster']
+    assert not {'locator','path','engine_id','access_plan'} & params.keys()
+    from operators.raster_compute import raster_polygonize
+    path=create_raster(tmp_path/'example.tif',np.ones((3,3)))
+    with raster_workspace():
+        args=dict(spec['detailed_description']['workflow_example']['params']);args['input_raster']=raster_load(source_plan(path))
+        assert raster_polygonize(**args).class_value.tolist()==[1]
+
+
+def test_raster_polygonize_code_mapping_remains_consistent_across_blocks(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    values=np.full((3,1027),2**53+1,dtype=np.int64);values[1,510:514]=2**53+2
+    path=tmp_path/'cross-block.tif'
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),1027,3,1,gdal.GDT_Int64)
+    ds.SetGeoTransform((0,1,0,3,0,-1));ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(values);ds=None
+    with raster_workspace():
+        result=raster_polygonize(raster_load(source_plan(path)),1)
+        assert len(result)==2
+        assert dict(zip(result.class_value.to_list(), result.geometry.area))=={2**53+1:3077,2**53+2:4}
+
+
+def test_raster_polygonize_actual_gpkg_save_preserves_large_codes(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    from operators.io_operators import save
+    import geopandas as gpd
+    path=tmp_path/'large.tif';target=tmp_path/'large.gpkg'
+    codes=[-2**63,2**53+1,2**63-1]
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,gdal.GDT_Int64)
+    ds.SetGeoTransform((0,1,0,1,0,-1));ds.SetProjection(_crs_wkt_for_footprint(3857))
+    ds.GetRasterBand(1).WriteArray(np.array([codes],dtype=np.int64));ds=None
+    with raster_workspace():
+        result=raster_polygonize(raster_load(source_plan(path)),1)
+        save(result,connection_info={'mount_path':str(tmp_path)},path=target.name)
+    actual=gpd.read_file(target)
+    assert sorted(actual.class_value.to_list())==sorted(codes)
+    assert str(actual.class_value.dtype)=='int64' and actual.crs.to_epsg()==3857
+
+
+def test_raster_polygonize_intermediate_failure_closes_and_cleans_files(tmp_path,monkeypatch):
+    from operators.raster_compute import raster_polygonize
+    path=create_raster(tmp_path/'source.tif',np.ones((3,3)));before=path.read_bytes()
+    workspace=None
+    def fail(*args,**kwargs):raise RuntimeError('injected polygonization failure')
+    monkeypatch.setattr(gdal,'Polygonize',fail)
+    with pytest.raises(RuntimeError,match='injected'),raster_workspace():
+        source=raster_load(source_plan(path));workspace=source.workspace
+        raster_polygonize(source,1)
+    assert workspace is not None and not workspace.exists() and path.read_bytes()==before
