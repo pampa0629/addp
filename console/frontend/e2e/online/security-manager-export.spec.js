@@ -4,7 +4,24 @@ import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, identity, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
+function requiredProtectionOwners(env) {
+  const owners = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT).required_owners
+  if (!Array.isArray(owners) || owners.length === 0 || new Set(owners).size !== owners.length ||
+      owners.some(owner => typeof owner !== 'string' || !/^[a-z][a-z0-9_-]*$/.test(owner))) {
+    throw new Error('Required protection owner catalogue is missing or invalid')
+  }
+  return [...owners].sort()
+}
+
+function synchronizedProtectionOwners(progress, requiredOwners) {
+  return Array.isArray(progress) && progress.length === requiredOwners.length &&
+    progress.every(owner => owner && typeof owner === 'object' && owner.acknowledged === true &&
+      owner.projection_state === 'active' && owner.validity === 'valid') &&
+    JSON.stringify(progress.map(owner => owner.consumer_owner).sort()) === JSON.stringify(requiredOwners)
+}
+
 async function verifyResourceCombinationFilters(page, api, env, principal, navigate) {
+  const requiredOwners = requiredProtectionOwners(env)
   const endpoint = '/api/v1/security/protection-enrollments'
   const baseline = await json(await api.get(`${endpoint}?scope=all&page=1&page_size=100`), 'ordinary user resource baseline')
   expect(baseline.total).toBe(baseline.data.length)
@@ -76,7 +93,8 @@ async function verifyResourceCombinationFilters(page, api, env, principal, navig
     const positive = await checkCase('combined', combined, () => apply.click())
     expect(positive.total).toBe(1)
     const progress = positive.data[0].owner_progress
-    expect(progress.map(owner => owner.consumer_owner).sort()).toEqual(['develop', 'manager', 'service', 'transfer'])
+    expect(progress.map(owner => owner.consumer_owner).sort()).toEqual(requiredOwners)
+    expect(synchronizedProtectionOwners(progress, requiredOwners)).toBe(true)
     for (const owner of progress) {
       expect(owner.acknowledged).toBe(true)
       expect(owner.validity).toBe('valid')
@@ -84,8 +102,8 @@ async function verifyResourceCombinationFilters(page, api, env, principal, navig
       expect(positive.data[0].expires_at).toBeNull()
       expect(owner.expires_at).toBeNull()
     }
-    await expect(rows.locator('.owner-item')).toHaveCount(4)
-    await expect(rows.locator('.owner-tags').filter({ hasText: /有效期内|Within validity period/ })).toHaveCount(4)
+    await expect(rows.locator('.owner-item')).toHaveCount(requiredOwners.length)
+    await expect(rows.locator('.owner-tags').filter({ hasText: /有效期内|Within validity period/ })).toHaveCount(requiredOwners.length)
     const securityFrame = page.frames().find(value => new URL(value.url()).pathname.startsWith('/module-ui/security/'))
     expect(securityFrame).toBeTruthy()
     const dates = await securityFrame.evaluate(values => values.map(value => value === null ? null : new Date(value).toLocaleString()), progress.map(owner => owner.expires_at))
@@ -204,6 +222,7 @@ async function checkProtectionFailurePanel(panel, executionID, stage) {
 }
 
 async function verifyTransferResultProtection(page, env, navigate, getAPI, runTransfer) {
+  const requiredOwners = requiredProtectionOwners(env)
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT).result_protection
   const original = input.baseline_body
   const baselinePath = `/api/v1/security/protection-baselines/${input.baseline_id}`
@@ -221,9 +240,7 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
     await expect.poll(async () => {
       source = await json(await getAPI().get(enrollmentPath), 'result source synchronization')
       return source.validity_mode === 'permanent' && source.expires_at === null &&
-        source.owner_progress?.length === 5 &&
-        source.owner_progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,graph,manager,service,transfer' &&
-        source.owner_progress.every(owner => owner.acknowledged === true && owner.projection_state === 'active' && owner.validity === 'valid')
+        synchronizedProtectionOwners(source.owner_progress, requiredOwners)
     }, { timeout: 45_000 }).toBe(true)
     const owner = source.owner_progress.find(owner => owner.consumer_owner === 'transfer')
     return [owner.projection_id, owner.revision, owner.published_cursor]
@@ -325,6 +342,7 @@ async function verifyTransferResultProtection(page, env, navigate, getAPI, runTr
 }
 
 async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAPI, expectServiceRefusal, sourceColumns) {
+  const requiredOwners = requiredProtectionOwners(env)
   const input = JSON.parse(env.ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT)
   const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
   const enrollmentPath = `/api/v1/security/protection-enrollments/${input.enrollment_id}`
@@ -379,9 +397,8 @@ async function verifyServiceTransferProtectionRefusal(page, env, navigate, getAP
     await expect.poll(async () => {
       synchronized = await json(await getAPI().get(enrollmentPath), 'browser synchronized validity')
       const progress = synchronized.owner_progress
-      return Array.isArray(progress) && progress.length === 5 &&
-        progress.map(owner => owner.consumer_owner).sort().join(',') === 'develop,graph,manager,service,transfer' &&
-        progress.every(owner => owner.acknowledged === true && owner.validity === 'valid' &&
+      return synchronizedProtectionOwners(progress, requiredOwners) &&
+        progress.every(owner =>
           (until === null ? owner.expires_at === null : Date.parse(owner.expires_at) === Date.parse(until)))
     }, { timeout: 45_000 }).toBe(true)
     expect(synchronized.validity_mode).toBe(mode)

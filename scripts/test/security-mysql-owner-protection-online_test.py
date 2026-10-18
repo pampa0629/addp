@@ -1402,6 +1402,38 @@ class ExplicitRediscoveryTest(unittest.TestCase):
 
 
 class ManagerExportBrowserTest(unittest.TestCase):
+    def test_browser_required_owner_catalogue_and_complete_progress_are_strict(self):
+        probe = r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const { source, requiredOwners } = JSON.parse(readFileSync(0, 'utf8'))
+const helpers = source.slice(source.indexOf('function requiredProtectionOwners('), source.indexOf('async function verifyResourceCombinationFilters('))
+const { catalogue, synchronized } = new Function(helpers + ';return { catalogue: requiredProtectionOwners, synchronized: synchronizedProtectionOwners }')()
+const env = value => ({ ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT: JSON.stringify({ required_owners: value }) })
+assert.deepEqual(catalogue(env(requiredOwners)), [...requiredOwners].sort())
+for (const bad of [undefined, null, [], 'graph', [requiredOwners[0], requiredOwners[0]], [null], ['bad,owner']]) {
+  assert.throws(() => catalogue(env(bad)))
+}
+const expected = catalogue(env(requiredOwners))
+const progress = requiredOwners.map(consumer_owner => ({ consumer_owner, acknowledged: true, projection_state: 'active', validity: 'valid' }))
+assert.equal(synchronized(progress, expected), true)
+const graph = progress.find(row => row.consumer_owner === 'graph')
+assert.ok(graph)
+for (const bad of [progress.filter(row => row !== graph), [...progress, graph], null, [null]]) {
+  assert.equal(synchronized(bad, expected), false)
+}
+for (const [key, value] of [['acknowledged', false], ['acknowledged', 1], ['projection_state', 'enrolling'], ['validity', 'expired']]) {
+  const changed = structuredClone(progress)
+  changed.find(row => row.consumer_owner === 'graph')[key] = value
+  assert.equal(synchronized(changed, expected), false)
+}
+"""
+        result = subprocess.run(["node", "--input-type=module", "-e", probe], input=json.dumps({
+            "source": (SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            "requiredOwners": list(ONLINE.PROTECTION_OWNERS),
+        }), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_result_context_reuses_direct_query_and_existing_target_without_authorization_writes(self):
         baseline = {"id": "9", "version": 1, "sensitive_data_type_id": "7", "security_grade_id": "2", "effect": "mask",
                     "algorithm": ONLINE.STRUCTURED_MASK_ALGORITHM,
@@ -1433,7 +1465,8 @@ class ManagerExportBrowserTest(unittest.TestCase):
         probe = r"""
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-const source = readFileSync(0, 'utf8')
+const { source, requiredOwners } = JSON.parse(readFileSync(0, 'utf8'))
+const ownerHelpers = source.slice(source.indexOf('function requiredProtectionOwners('), source.indexOf('async function verifyResourceCombinationFilters('))
 const helper = source.slice(source.indexOf('async function verifyTransferResultProtection('), source.indexOf('async function verifyServiceTransferProtectionRefusal('))
 const expect = value => ({ toBe: expected => assert.equal(value, expected), toEqual: expected => assert.deepEqual(value, expected),
   toContain: expected => assert.ok(value.includes(expected)), toBeGreaterThan: expected => assert.ok(value > expected),
@@ -1449,7 +1482,7 @@ const columns = ['_id', 'display_name', 'userInfo__phone', 'nick_name']
 const input = { baseline_id: '9', enrollment_id: 'source', baseline_body: original, columns, expected_phones: { '1': '138****5678' },
   normal_payload: { config: { source: { locator: 'source' }, target: { policy: { apply_mode: 'replace' } } } },
   denied_payload: { config: { source: { locator: 'source' }, target: { policy: { apply_mode: 'append' } } } } }
-const run = new Function('expect', 'json', 'resolve', 'checkProtectionFailurePanel', helper + ';return verifyTransferResultProtection')(
+const run = new Function('expect', 'json', 'resolve', 'checkProtectionFailurePanel', ownerHelpers + helper + ';return verifyTransferResultProtection')(
   expect, async value => value, (...parts) => parts.join('/'), async (_, id, stage) => { assert.equal(id, failedID); assert.equal(stage, 'result') })
 for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'restore-response', 'delete']) {
   let baseline = { ...structuredClone(original), version: 1 }, rows = structuredClone(baseRows), denied = false, injected = false
@@ -1458,7 +1491,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
     get: async path => {
       if (path.includes('protection-baselines')) return structuredClone(baseline)
       if (path.includes('protection-enrollments')) return { validity_mode: 'permanent', expires_at: null,
-        owner_progress: ['manager', 'develop', 'service', 'transfer', 'graph'].map(consumer_owner => ({ consumer_owner, acknowledged: true,
+        owner_progress: requiredOwners.map(consumer_owner => ({ consumer_owner, acknowledged: true,
           projection_state: 'active', validity: 'valid', projection_id: consumer_owner, revision: String(baseline.version), published_cursor: String(baseline.version) })) }
       if (path.includes('/manager/preview')) return { data: { columns, rows: structuredClone(rows) } }
       return { status: () => 404 }
@@ -1488,7 +1521,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
   }
   const panel = { getByRole: () => ({ getAttribute: async () => `/monitor/executions?execution_id=${failedID}` }) }
   const page = { frameLocator: () => ({ locator: () => panel }), url: () => 'http://localhost:5170/', screenshot: async value => screenshots.push(value.path) }
-  const action = () => run(page, { ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT: JSON.stringify({ result_protection: input }), ADDP_ONLINE_ARTIFACT_DIR: '/tmp' },
+  const action = () => run(page, { ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT: JSON.stringify({ result_protection: input, required_owners: requiredOwners }), ADDP_ONLINE_ARTIFACT_DIR: '/tmp' },
     async path => navigations.push(path), () => api, runTransfer)
   if (fault === 'none') {
     const report = await action(); assert.equal(report.transfer_result_stage, 'result'); assert.equal(report.result_browser_residual_resources, 0)
@@ -1500,9 +1533,10 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
   assert.equal(tasks.size, 0, fault)
 }
 """
-        result = subprocess.run(["node", "--input-type=module", "-e", probe],
-            input=(SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
-            capture_output=True, text=True)
+        result = subprocess.run(["node", "--input-type=module", "-e", probe], input=json.dumps({
+            "source": (SCRIPT.resolve().parents[2] / "console/frontend/e2e/online/security-manager-export.spec.js").read_text(),
+            "requiredOwners": list(ONLINE.PROTECTION_OWNERS),
+        }), capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_main_waits_for_protected_email_search_before_starting_browser(self):
@@ -1736,7 +1770,8 @@ for (const data of [
             def browser(command, **kwargs):
                 self.assertIn("e2e/online/security-manager-export.spec.js", command)
                 self.assertEqual(kwargs["env"]["ADDP_ONLINE_SECURITY_EXPORT_LOCATOR"], "source")
-                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT"]), {"enrollment_id": "fixture"})
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT"]),
+                                 {"enrollment_id": "fixture", "required_owners": list(ONLINE.PROTECTION_OWNERS)})
                 path.write_text(json.dumps(self.report()))
                 for name in ("security-manager-protected-preview.png", "security-manager-field-search.png",
                              "security-manager-export.png", "security-manager-export-monitor.png",

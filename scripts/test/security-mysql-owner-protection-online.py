@@ -2351,7 +2351,8 @@ def run_export_browser(repository: Path, environment: Mapping[str, str], locator
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
     browser_environment = dict(environment, ADDP_ONLINE_SECURITY_EXPORT_LOCATOR=locator,
-                               ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT=json.dumps(output_context, ensure_ascii=False))
+                               ADDP_ONLINE_SECURITY_OUTPUT_BROWSER_CONTEXT=json.dumps(
+                                   dict(output_context, required_owners=list(PROTECTION_OWNERS)), ensure_ascii=False))
     result = subprocess.run(
         ["npm", "exec", "--", "playwright", "test", "--config=playwright.online.config.js",
          "e2e/online/security-manager-export.spec.js"],
