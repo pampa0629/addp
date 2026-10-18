@@ -1158,6 +1158,36 @@ class ProtectedTechnicalFieldSearchTest(unittest.TestCase):
         self.assertTrue(evidence["same_item_verified"])
         self.assertEqual(evidence["document_id"], self.item["fingerprint"])
 
+    def test_pre_scan_readiness_waits_for_checkpoint_but_does_not_require_an_indexed_item(self):
+        client = Mock()
+        client.request.side_effect = [ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"}),
+                                     ONLINE.SUPPORT.Response(503, {"error_code": "manager_search_isolated"}),
+                                     ONLINE.SUPPORT.Response(200, {"data": {"results": []}})]
+        with patch.object(ONLINE.time, "sleep"):
+            ONLINE.wait_for_manager_search_ready(client, 17, "value_c", time.monotonic() + 5)
+        self.assertEqual(client.request.call_count, 3)
+
+    def test_pre_scan_readiness_rejects_malformed_success_and_persistent_refusal(self):
+        client = Mock()
+        for response in (ONLINE.SUPPORT.Response(200, {}),
+                         ONLINE.SUPPORT.Response(403, {"error_code": "permission_denied"}),
+                         ONLINE.SUPPORT.Response(403, {"error_code": "security_protection_required"})):
+            client.request.return_value = response
+            with patch.object(ONLINE.time, "monotonic", side_effect=[1, 1, 3]), patch.object(ONLINE.time, "sleep"):
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.wait_for_manager_search_ready(client, 17, "value_c", 2)
+
+    def test_initial_field_search_has_its_own_short_deadline_after_a_single_scan(self):
+        client = Mock()
+        with patch.object(ONLINE.time, "monotonic", return_value=100), \
+             patch.object(ONLINE, "wait_for_scan", return_value="scan") as scan, \
+             patch.object(ONLINE, "find_item", return_value=self.item), \
+             patch.object(ONLINE, "wait_for_technical_field", side_effect=ONLINE.SuiteError("index unavailable")) as search:
+            with self.assertRaisesRegex(ONLINE.SuiteError, "index unavailable"):
+                ONLINE.prepare_mongodb_source(client, 17, 1000)
+        scan.assert_called_once()
+        self.assertEqual(search.call_args.args[-1], 160)
+
     def test_rejects_cross_engine_duplicate_identity_wrong_locator_and_invented_field_matches(self):
         for changes in (
             {"engine_id": 19}, {"full_name": "public.other"},
@@ -1492,6 +1522,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                 patch.object(ONLINE.signal, 'signal'),
                 patch.object(ONLINE.SUPPORT, 'require_hosted_security_lifecycle'),
                 patch.object(ONLINE, 'validate_user_identity', return_value={}) as identity,
+                patch.object(ONLINE, 'wait_for_manager_search_ready', create=True) as initial_readiness,
                 patch.object(ONLINE, 'prepare_mongodb_source', return_value={'scan_execution_id': 'prepared', 'item': {'id': 1}}) as prepare,
                 patch.object(ONLINE, 'prepare_mongodb_transfer_targets', return_value={}) as targets,
                 patch.object(ONLINE, 'run_scenario', return_value={'identity': {'principal_id': '7'}, 'fixture': {'security_enrollment_id': 'enrollment'}}) as scenario,
@@ -1505,6 +1536,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
             ):
                 order = Mock()
                 order.attach_mock(identity, 'identity')
+                order.attach_mock(initial_readiness, 'initial_readiness')
                 order.attach_mock(prepare, 'prepare')
                 order.attach_mock(targets, 'targets')
                 order.attach_mock(scenario, 'scenario')
@@ -1528,7 +1560,7 @@ for (const fault of ['none', 'stage', 'target', 'writes', 'deny-response', 'rest
                         return self.report()
                     browser.side_effect = launch
                     self.assertEqual(ONLINE.main(), 0)
-                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'prepare', 'targets', 'scenario'])
+                    self.assertEqual([call[0] for call in order.mock_calls], ['identity', 'initial_readiness', 'prepare', 'targets', 'scenario'])
                     self.assertEqual(readiness.call_args.args[1:4], (23, {'fingerprint': 'source', 'node_id': 12}, 'email'))
 
     def report(self):
@@ -1736,6 +1768,7 @@ for (const data of [
 class HostedGovernanceInitializationTest(unittest.TestCase):
     def setUp(self):
         self.scan = patch.object(ONLINE, "wait_for_scan", return_value="preparation-scan").start()
+        self.search_ready = patch.object(ONLINE, "wait_for_manager_search_ready", create=True).start()
         self.addCleanup(patch.stopall)
 
     def source_clients(self):
@@ -1784,7 +1817,11 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
 
     def test_source_grants_cover_only_seven_postgres_tables_for_the_consumer(self):
         authorizer, consumer = self.source_clients()
+        order = Mock()
+        order.attach_mock(self.search_ready, "ready")
+        order.attach_mock(self.scan, "scan")
         ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
+        self.assertEqual([call[0] for call in order.mock_calls], ["ready", "scan"])
         writes = [call for call in authorizer.request.call_args_list if call.args[0] == "POST"]
         self.assertEqual([call.args[1] for call in self.scan.call_args_list], [17])
         self.assertEqual(len(writes), 7)
@@ -1817,6 +1854,14 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             (17, "schema", "addp_online_security", "mongodb_query_denied"),
             (17, "schema", "addp_online_security", "bank_card_transfer"),
         })
+
+    def test_initial_checkpoint_failure_stops_before_scan_or_grant_writes(self):
+        authorizer, consumer = self.source_clients()
+        self.search_ready.side_effect = ONLINE.SuiteError("Manager startup refused")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "Manager startup refused"):
+            ONLINE.initialize_postgres_read_grants(authorizer, consumer, 2, 17)
+        self.scan.assert_not_called()
+        authorizer.request.assert_not_called()
 
     def test_initializer_does_not_require_mysql_or_mongodb_authorization_inputs(self):
         environment = {

@@ -1005,24 +1005,37 @@ def restore_algorithm_state(client: GatewayClient, baseline_id: str, original: d
         raise SuiteError("algorithm cleanup failed: " + "; ".join(errors))
 
 
+def manager_search_results(client: GatewayClient, engine_id: int, field_name: str) -> list[object] | None:
+    query = urllib.parse.urlencode({"q": field_name, "engine_id": engine_id, "page_size": 100})
+    response = client.request("GET", "/api/v1/manager/search?" + query, (200, 403, 503))
+    payload = _object(response.payload, "Manager field search")
+    if response.status == 403:
+        if payload.get("error_code") != "security_protection_required":
+            raise SuiteError("Manager field search was denied")
+        return None
+    if response.status == 503:
+        if payload.get("error_code") != "manager_search_isolated":
+            raise SuiteError("Manager field search is unavailable")
+        return None
+    return _array(_object(payload.get("data"), "Manager search data").get("results"), "Manager search results")
+
+
+def wait_for_manager_search_ready(client: GatewayClient, engine_id: int, field_name: str, deadline: float) -> None:
+    # Meta's initial indexing write uses the same durable protection boundary.
+    # Wait before scanning: a rejected initial batch cannot be repaired by
+    # merely polling the field search after the scan has finished.
+    while time.monotonic() < deadline:
+        if manager_search_results(client, engine_id, field_name) is not None:
+            return
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+    raise SuiteError("Manager protection/search boundary was not ready before the initial scan")
+
+
 def wait_for_technical_field(client: GatewayClient, engine_id: int, item: Mapping[str, object],
                              field_name: str, deadline: float) -> dict[str, object]:
-    query = urllib.parse.urlencode({"q": field_name, "engine_id": engine_id, "page_size": 100})
     while time.monotonic() < deadline:
-        response = client.request("GET", "/api/v1/manager/search?" + query, (200, 403, 503))
-        payload = _object(response.payload, "Manager field search")
-        if response.status == 403:
-            # A newly created Tenant has no durable owner checkpoint until
-            # the asynchronous projection consumer completes its first page.
-            # This readiness probe still requires the real search result;
-            # a persistent fail-closed response must expire the deadline.
-            if payload.get("error_code") != "security_protection_required":
-                raise SuiteError("Manager field search was denied")
-        elif response.status == 503:
-            if payload.get("error_code") != "manager_search_isolated":
-                raise SuiteError("Manager field search is unavailable")
-        else:
-            results = _array(_object(payload.get("data"), "Manager search data").get("results"), "Manager search results")
+        results = manager_search_results(client, engine_id, field_name)
+        if results is not None:
             hits = [_object(raw, "Manager search hit") for raw in results]
             if any(positive_int(hit.get("engine_id"), "search Engine id") != engine_id for hit in hits):
                 raise SuiteError("Manager field search crossed the requested Engine")
@@ -1467,7 +1480,7 @@ def verify_mongodb_raw_export(client: GatewayClient, locator: str, identity: Map
 def prepare_mongodb_source(client: GatewayClient, engine_id: int, deadline: float) -> dict[str, object]:
     scan = wait_for_scan(client, engine_id, deadline)
     source = find_item(client, engine_id, MONGODB_SOURCE, "collection")
-    search = wait_for_technical_field(client, engine_id, source, MONGODB_FIELD, deadline)
+    search = wait_for_technical_field(client, engine_id, source, MONGODB_FIELD, min(deadline, time.monotonic() + 60))
     return {"scan_execution_id": scan, "item": source, "technical_field_search": search}
 
 
@@ -2202,6 +2215,7 @@ def initialize_postgres_read_grants(
         (postgres_engine_id, "schema", TARGET_SCHEMA, TARGET_TABLE),
         (postgres_engine_id, "schema", TARGET_SCHEMA, BANK_TARGET),
     ]
+    wait_for_manager_search_ready(consumer, postgres_engine_id, "value_c", time.monotonic() + 60)
     wait_for_scan(consumer, postgres_engine_id, time.monotonic() + 180)
     try:
         REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets)
@@ -2403,6 +2417,7 @@ def main() -> int:
     # Submit the initial technical snapshot while no protection mutation can
     # isolate Manager's index. A successful Meta scan alone is not index proof.
     validate_user_identity(client, tenant_id)
+    wait_for_manager_search_ready(client, mongodb_engine_id, MONGODB_FIELD, time.monotonic() + min(timeout, 60))
     mongodb_source = prepare_mongodb_source(client, mongodb_engine_id, time.monotonic() + timeout)
     mongodb_transfer_targets = prepare_mongodb_transfer_targets(client, target_engine_id, time.monotonic() + timeout)
     report = run_scenario(

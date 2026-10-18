@@ -21,10 +21,12 @@ func assertOneApprovalPublishesExplicitOutlets(t *testing.T, db *gorm.DB) {
 	db, _, finding, _, _ := prepareReviewablePhoneFindingOnDB(t, db)
 	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(t.Context(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认字段"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("confirm field: %v", err)
 	}
 	requests := NewAccessRequestService(db, testAccessActorResolver)
-	until := time.Now().UTC().Add(time.Hour)
+	// PostgreSQL persists timestamps at microsecond precision. Reuse an exact
+	// representable deadline when approving the full requested duration.
+	until := time.Now().UTC().Truncate(time.Microsecond).Add(time.Hour)
 	body := models.CreateProtectionAccessRequest{AssessmentID: reviewed.Assessment.ID, Scopes: []models.ProtectionAccessScope{{ConsumerOwner: "manager", Action: "preview"}, {ConsumerOwner: "develop", Action: "query"}}, RequestedExpiresAt: until, Rationale: "核验预览和查询"}
 	for _, scope := range []models.ProtectionAccessScope{{ConsumerOwner: "transfer", Action: "export"}, {ConsumerOwner: "service", Action: "service_execute"}, {ConsumerOwner: "graph", Action: "graph_read"}, {ConsumerOwner: "manager", Action: "profile"}} {
 		invalid := body
@@ -35,11 +37,11 @@ func assertOneApprovalPublishesExplicitOutlets(t *testing.T, db *gorm.DB) {
 	}
 	created, err := requests.Create(t.Context(), 7, 41, body)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create access request: %v", err)
 	}
 	approved, err := requests.Decide(t.Context(), 7, 42, created.ID, models.DecideProtectionAccessRequest{Version: created.Version, Decision: "approve", ExpiresAt: until, Rationale: "两个范围分别批准"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("approve explicit outlets: %v", err)
 	}
 	if len(approved.Scopes) != 2 || len(approved.Authorizations) != 2 {
 		t.Fatalf("missing precise grants: %+v", approved)
