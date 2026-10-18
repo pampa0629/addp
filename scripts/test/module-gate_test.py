@@ -182,7 +182,7 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
-    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def _run_common_postgres_group(self, arguments: list[str], output: str = "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\n--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\nPASS", extra_env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         repository = SCRIPT.parents[2]
         with tempfile.TemporaryDirectory(dir=self.repository) as directory:
             fixture = Path(directory)
@@ -225,7 +225,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertEqual(6, len(calls))
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
-        self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)", calls[0])
         self.assertIn("TestIntegrationPostgresQueryReadSession", calls[0])
         self.assertIn("./engine/plugins/highgo", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
@@ -240,9 +240,30 @@ class ModuleGateTest(unittest.TestCase):
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(1, len(calls))
-        self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)|TestIntegrationPostgresQueryReadSession)", calls[0])
+        self.assertIn("-run ^(TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)|TestIntegrationPostgresQueryReadSession)", calls[0])
         self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_requires_output_rewrite_equivalence_in_full_and_read_groups(self) -> None:
+        for arguments in ([], ["--test", "query-read-set"]):
+            with self.subTest(arguments=arguments):
+                result, _ = self._run_common_postgres_group(arguments, "--- PASS: TestIntegrationHighGoTableWrite (0.01s)\nPASS")
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("requires the real output rewrite equivalence test", result.stderr)
+
+    def test_common_postgres_source_checkout_keeps_the_same_registered_test(self) -> None:
+        result, calls = self._run_common_postgres_group(["--source-root", str(SCRIPT.parents[2]), "--test", "query-read-set"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("Query(ReadSet|OutputLineage|OutputRewrite)", calls[0])
+
+    def test_common_postgres_source_checkout_rejects_missing_or_unrelated_sources(self) -> None:
+        result, calls = self._run_common_postgres_group(["--source-root"])
+        self.assertEqual(2, result.returncode)
+        self.assertEqual([], calls)
+        result, calls = self._run_common_postgres_group(["--source-root", str(self.repository)])
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual([], calls)
 
     def test_common_postgres_graph_scope_requires_real_target_contract_and_rejects_skips(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "graph"])

@@ -81,6 +81,8 @@ common/
 
 ## 验证
 
+PostgreSQL 的 `query_output_rewrite.go` 当前仅为 Provider 内部的输出重写编译基础，尚未接入正式 PreparedQuery 或各业务出口。它只接受直接字段／别名，支持字符串前后掩码、字符串固定值替换和移除，拒绝尚无等价证明的 DISTINCT、分组、集合操作、CTE、wildcard、派生表达式及 SM3；不安装数据库函数或扩展。别名／序号排序保留原输入表达式，算法值继续绑定参数，私有异常标志在结果交付前消费。Common Go T1 自动发现确定性测试；真实数据库与统一 Go 算法的值、缺失字段、Unicode、NULL、JOIN、排序、分页、源数据不变和精确夹具清理由 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test query-read-set"` 承接。默认完整 Common PostgreSQL 门禁亦包含该组，且缺少真实重写等价测试的 PASS 或有跳过都拒绝通过。这些证据不代表已实现业务出口 SQL 自动重写。并行开发的冻结源码验证可由原工作区执行同一门禁并显式传入 `--source-root <源码 checkout>`；该 checkout 的提交必须是当前仓库 main 的祖先，Common 模块身份须匹配，数据库归属、实际映射和本地库名限制仍由原工作区核验，不把快照目录冒充 Infra 所有者。
+
 ```bash
 cd common && go test ./...
 ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data-protection
