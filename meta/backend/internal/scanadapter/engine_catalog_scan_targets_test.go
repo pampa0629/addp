@@ -460,7 +460,7 @@ func TestPreciseNativePostgresScanAgainstPostgres(t *testing.T) {
 	})
 	for _, statement := range []string{
 		fmt.Sprintf(`CREATE SCHEMA "%s"`, schema),
-		fmt.Sprintf(`CREATE TABLE "%s"."A" (id bigint PRIMARY KEY, value text)`, schema),
+		fmt.Sprintf(`CREATE TABLE "%s"."A" (id bigint, value text, PRIMARY KEY(value, id))`, schema),
 		fmt.Sprintf(`CREATE TABLE "%s"."B" (id bigint PRIMARY KEY, private_value text)`, schema),
 		fmt.Sprintf(`GRANT USAGE ON SCHEMA "%s" TO "%s"`, schema, role),
 		fmt.Sprintf(`GRANT SELECT ON "%s"."A" TO "%s"`, schema, role),
@@ -524,6 +524,22 @@ func TestPreciseNativePostgresScanAgainstPostgres(t *testing.T) {
 	}
 	if target.ScannedDepth != "deep" {
 		t.Fatalf("native target depth=%s", target.ScannedDepth)
+	}
+	attrs, err := json.Marshal(target.Attributes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var facts struct {
+		TypeInfo struct {
+			Table datatype.TableInfo `json:"table"`
+		} `json:"type_info"`
+	}
+	if err := json.Unmarshal(attrs, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(facts.TypeInfo.Table.PrimaryKey, []string{"value", "id"}) ||
+		len(facts.TypeInfo.Table.Fields) != 2 || facts.TypeInfo.Table.Fields[0].Name != "id" {
+		t.Fatalf("native composite key order or source column order changed: %+v", facts.TypeInfo.Table)
 	}
 	for _, table := range []string{"B", "missing"} {
 		locator.Path[1] = table

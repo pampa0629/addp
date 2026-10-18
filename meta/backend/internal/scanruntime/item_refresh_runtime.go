@@ -488,13 +488,6 @@ func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
 		tableInfo = mergeDatabaseTableInfo(tableInfo, *factsTable)
 	}
 	tableInfo.Kind = normalizedTableKind(tableInfo)
-	primaryKeyColumns := []string{}
-	for _, field := range tableInfo.Fields {
-		if field.PrimaryKey {
-			primaryKeyColumns = append(primaryKeyColumns, field.Name)
-		}
-	}
-	tableInfo.PrimaryKey = primaryKeyColumns
 
 	attrs := tableItemAttributes(schemaName, tableInfo)
 	if item.Attributes != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,6 +17,62 @@ import (
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 )
+
+func TestTabularScanAndRefreshPreserveProviderCompositePrimaryKeyOrder(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	rowCount := int64(2)
+	p := &catalogFactsOnlyTablePlugin{engineType: "native-key-order-test", facts: &plugin.EngineCatalogFacts{
+		Table: &datatype.TableInfo{
+			Name: "source", Kind: "table", RowCount: &rowCount,
+			PrimaryKey: []string{"name", "id"},
+			Fields: []datatype.FieldInfo{
+				{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true},
+				{Name: "name", Type: datatype.FieldTypeString, PrimaryKey: true},
+			},
+		},
+	}}
+	pluginRegisterForTest(t, p)
+	resource := &commonModels.Engine{ID: 89, EngineType: p.Type(), LifecycleState: "active"}
+	repo := metaRepo.NewScanRepository(db)
+	check := func(t *testing.T, attrs models.JSONMap) {
+		t.Helper()
+		table := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "source")
+		if table == nil || !reflect.DeepEqual(table.PrimaryKey, []string{"name", "id"}) ||
+			len(table.Fields) != 2 || table.Fields[0].Name != "id" || table.Fields[1].Name != "name" ||
+			!table.Fields[0].PrimaryKey || !table.Fields[1].PrimaryKey {
+			t.Fatalf("provider key order or field facts changed: %+v", table)
+		}
+	}
+	t.Run("deep scan", func(t *testing.T) {
+		runtime := NewDatabaseRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+		_, attrs, err := runtime.scanTableDetails(t.Context(), resource,
+			databaseScanCatalog{factsProvider: p, namespaceTerm: "schema", itemTerm: "table"},
+			"public", datatype.TableInfo{Name: "source"}, nil, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check(t, attrs)
+	})
+	t.Run("item refresh", func(t *testing.T) {
+		parent := models.MetaNode{TenantID: 1, EngineID: resource.ID, NodeType: "schema", Name: "public", FullName: "public", Attributes: models.JSONMap{}}
+		if err := db.Create(&parent).Error; err != nil {
+			t.Fatal(err)
+		}
+		item := models.MetaItem{TenantID: 1, EngineID: resource.ID, NodeID: parent.ID,
+			ItemType: "table", Name: "source", FullName: "public.source", Fingerprint: "native-key-order", Attributes: models.JSONMap{}}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewItemRefreshRuntime(repo, nil, nil).RefreshKnownItem(t.Context(), resource, 1, item, parent); err != nil {
+			t.Fatal(err)
+		}
+		var refreshed models.MetaItem
+		if err := db.First(&refreshed, item.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		check(t, refreshed.Attributes)
+	})
+}
 
 func TestRefreshKnownTabularItemUsesCatalogFactsWithoutContentReader(t *testing.T) {
 	t.Parallel()

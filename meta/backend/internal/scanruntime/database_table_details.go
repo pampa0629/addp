@@ -40,16 +40,8 @@ func (s *DatabaseRuntime) scanTableDetails(
 			"table", tableInfo.Name,
 			"field_count", len(fields),
 		)
-		primaryKeyColumns := []string{}
-		for _, field := range fields {
-			if field.PrimaryKey {
-				primaryKeyColumns = append(primaryKeyColumns, field.Name)
-			}
-		}
-
 		tableInfo.Kind = normalizedTableKind(tableInfo)
 		tableInfo.Fields = fields
-		tableInfo.PrimaryKey = primaryKeyColumns
 		attrs = tableItemAttributes(schemaName, tableInfo)
 		metaattr.ApplyEngineCatalogFactsCapabilities(attrs, describedFacts)
 
