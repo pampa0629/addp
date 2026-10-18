@@ -93,6 +93,16 @@ test "$status" = "$TEST_STATUS"
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("App9@", result.stdout + result.stderr)
 
+    def test_health_retains_unexpected_native_output_and_query_errors(self):
+        for output, status, expected in [('1', 0, 0), ('native feedback\\n1', 0, 1), ('', 3, 3)]:
+            result = self.run_shell('''
+tcp_sql() { cat >/dev/null; printf '%b' "$TEST_OUTPUT"; return "$TEST_STATUS"; }
+health_sql
+''', {'TEST_OUTPUT': output, 'TEST_STATUS': str(status)})
+            self.assertEqual(result.returncode, expected, result.stderr)
+            if status == 0 and expected:
+                self.assertIn('native feedback\n1', result.stderr)
+
     def test_stop_preserves_volume_and_rejects_foreign_container(self):
         with tempfile.TemporaryDirectory() as directory:
             docker = Path(directory) / 'docker'

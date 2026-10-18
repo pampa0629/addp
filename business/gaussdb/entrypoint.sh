@@ -50,6 +50,12 @@ business_sql() {
     cat "$1"
 }
 
+health_sql() {
+    local output
+    output=$(printf 'SELECT 1;\n' | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business) || return $?
+    [ "$output" = 1 ] || { printf 'health: unexpected query output: %s\n' "$output" >&2; return 1; }
+}
+
 check_volume() {
     if [ -f "$DATA_DIR"/db/PG_VERSION ]; then
         [ -f "$DATA_DIR"/business-ready ] && [ "$(cat "$DATA_DIR"/business-ready)" = "${GAUSSDB_VERSION:?}|business|$GAUSSDB_USER" ] || {
@@ -74,7 +80,7 @@ main() {
             return 1
         fi
         [ -f "$DATA_DIR"/business-ready ] || { echo 'health: initialization marker missing' >&2; return 1; }
-        [ "$(printf 'SELECT 1;\n' | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business)" = 1 ]
+        health_sql
         return
     fi
     [ "$#" = 0 ] || return 1
