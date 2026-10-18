@@ -762,6 +762,7 @@
           "platform_identity_change": "Platform Identity Change",
           "platform_role_change": "Platform Role Change",
           "policy": "Security Policy",
+          "production_receipt": "Task Production Receipt",
           "profile": "Inference Profile",
           "project_group": "Project Group",
           "project_group_membership": "Project Group Membership",
