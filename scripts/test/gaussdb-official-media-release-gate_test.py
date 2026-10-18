@@ -219,6 +219,8 @@ class GaussDBCertificationTest(unittest.TestCase):
                 kwargs["output"].write_text(kwargs["env"]["ADDP_TEST_GAUSSDB_DSN"])
                 if fail_probe:
                     raise subprocess.CalledProcessError(1, args)
+            elif args[-1] == "--health":
+                return subprocess.CompletedProcess(args, 0, "healthy", "diagnostic " + starts[0]["GAUSSDB_APP_PASSWORD"])
             return subprocess.CompletedProcess(args, 0, "", "")
 
         def native_sql(args, **kwargs):
@@ -246,6 +248,11 @@ class GaussDBCertificationTest(unittest.TestCase):
                 self.assertEqual(len(starts), 2)
         self.assertEqual(resources, {})
         self.assertNotIn("password=", report.read_text())
+        health_log = report.with_suffix(".health.log")
+        if not fail_readiness:
+            entries = [json.loads(line) for line in health_log.read_text().splitlines()]
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(entries[0], {"returncode": 0, "stdout": "healthy", "stderr": "diagnostic [REDACTED]"})
         return json.loads(report.read_text())
 
     def test_arm_native_lifecycle_has_separate_architecture_and_image_evidence(self):

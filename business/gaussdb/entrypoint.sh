@@ -68,8 +68,12 @@ main() {
     validate_config
     if [ "${1:-}" = --check-config ]; then return; fi
     if [ "${1:-}" = --health ]; then
-        [ /proc/1/exe -ef "$GAUSSHOME/bin/gaussdb" ] || return 1
-        [ -f "$DATA_DIR"/business-ready ] || return 1
+        if ! [ /proc/1/exe -ef "$GAUSSHOME/bin/gaussdb" ]; then
+            echo 'health: PID 1 executable check failed' >&2
+            readlink /proc/1/exe >&2 || true
+            return 1
+        fi
+        [ -f "$DATA_DIR"/business-ready ] || { echo 'health: initialization marker missing' >&2; return 1; }
         [ "$(printf 'SELECT 1;\n' | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business)" = 1 ]
         return
     fi

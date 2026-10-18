@@ -198,6 +198,9 @@ def main() -> None:
                         raise RuntimeError("official GaussDB exited during Business initialization")
                     health = command(["docker", "exec", container, "bash", "/addp/gaussdb/entrypoint.sh", "--health"],
                                      capture_output=True, text=True, check=False, timeout=15)
+                    with report_path.with_suffix(".health.log").open("a") as log:
+                        log.write(json.dumps({"returncode": health.returncode, "stdout": health.stdout,
+                                              "stderr": health.stderr}, ensure_ascii=False) + "\n")
                     if health.returncode == 0:
                         return
                     time.sleep(2)
@@ -255,7 +258,7 @@ GRANT SELECT ON addp_cert.source TO addp_reader;
                     clean_owned(run_id, container, network, image)
                 finally:
                     if password:
-                        for suffix in (".build.log", ".probe.log", ".container.log", ".lifecycle.log"):
+                        for suffix in (".build.log", ".probe.log", ".container.log", ".lifecycle.log", ".health.log"):
                             log_path = report_path.with_suffix(suffix)
                             if log_path.exists():
                                 content = log_path.read_text(errors="replace")
