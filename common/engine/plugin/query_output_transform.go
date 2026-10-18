@@ -34,6 +34,10 @@ type SQLQueryOutputCompiler interface {
 	CompileQueryOutput(string, []any, []QueryOutputTransform) (*SQLQueryOutput, error)
 }
 
+type SQLQueryOutputCompilerProvider interface {
+	SQLQueryOutputCompiler() SQLQueryOutputCompiler
+}
+
 // SQLQueryOutput includes the private result protocol of one physical query.
 // Only a Provider compiler constructs it; owners cannot install physical SQL.
 type SQLQueryOutput struct {
@@ -42,7 +46,11 @@ type SQLQueryOutput struct {
 	Finalize func(*QueryResult) error
 }
 
-func (p *preparedSQLQuery) BindOutputTransforms(ctx context.Context, operations []QueryOutputTransform) error {
+type preparedSQLQueryWithOutput struct {
+	*preparedSQLQuery
+}
+
+func (p *preparedSQLQueryWithOutput) BindOutputTransforms(ctx context.Context, operations []QueryOutputTransform) error {
 	// Resolve immutable logical facts before taking the mutation lock. Execute
 	// racing this resolution wins consumption and causes binding to fail.
 	lineage, factErr := p.OutputLineage(ctx)

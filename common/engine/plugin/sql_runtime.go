@@ -362,7 +362,9 @@ func PrepareSQLRuntimeQuery(
 		}
 	}
 	plan := &preparedSQLQuery{providerType: provider.Type(), connInfo: preparedConnInfo, request: preparedReq}
-	plan.outputCompiler, _ = provider.(SQLQueryOutputCompiler)
+	if outputProvider, ok := provider.(SQLQueryOutputCompilerProvider); ok {
+		plan.outputCompiler = outputProvider.SQLQueryOutputCompiler()
+	}
 	prepared, err := NewPreparedQuery(analysis, nil, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
 		if plan.outputErr != nil {
 			return nil, plan.outputErr
@@ -392,6 +394,9 @@ func PrepareSQLRuntimeQuery(
 		return nil, err
 	}
 	plan.preparedQuery = prepared.(*preparedQuery)
+	if plan.outputCompiler != nil {
+		return &preparedSQLQueryWithOutput{plan}, nil
+	}
 	return plan, nil
 }
 
@@ -406,6 +411,8 @@ type preparedSQLQuery struct {
 	outputFinalize  func(*QueryResult) error
 }
 
+func (p *preparedSQLQuery) sqlPreparedState() *preparedSQLQuery { return p }
+
 // ConsumeSQLPreparedQuery transfers the already-bound SQL request from the
 // shared one-shot PreparedQuery to a streaming session or atomic table result owned by the same
 // provider type. It is the only SQL prepared-request bridge; providers must not
@@ -416,8 +423,12 @@ func ConsumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimePro
 }
 
 func consumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimeProvider, outputProtocol bool) (*preparedSQLQuery, ConnectionInfo, QueryRequest, error) {
-	plan, ok := prepared.(*preparedSQLQuery)
-	if !ok || provider == nil || plan.providerType != provider.Type() {
+	state, ok := prepared.(interface{ sqlPreparedState() *preparedSQLQuery })
+	if !ok || provider == nil {
+		return nil, nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
+	}
+	plan := state.sqlPreparedState()
+	if plan == nil || plan.providerType != provider.Type() {
 		return nil, nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
 	}
 	plan.mu.Lock()

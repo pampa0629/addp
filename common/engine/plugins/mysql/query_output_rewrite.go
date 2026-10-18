@@ -13,6 +13,8 @@ import (
 	"github.com/dolthub/vitess/go/vt/sqlparser"
 )
 
+func (p *MySQLPlugin) SQLQueryOutputCompiler() plugin.SQLQueryOutputCompiler { return p }
+
 func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*plugin.SQLQueryOutput, error) {
 	fail := func() (*plugin.SQLQueryOutput, error) { return nil, plugin.ErrQueryOutputTransformUnsupported }
 	if len(query) > 1<<20 || len(operations) == 0 || strings.Contains(query, "/*!") || strings.Contains(query, "/*+") || strings.ContainsAny(query, "\\\"!") || strings.Contains(query, "||") {

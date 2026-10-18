@@ -15,6 +15,13 @@ import (
 
 // CompileQueryOutput lowers neutral output operations on the same prepared
 // request. Protocol-compatible engines require separate native certification.
+func (p *PostgreSQLPlugin) SQLQueryOutputCompiler() plugin.SQLQueryOutputCompiler {
+	if p == nil || p.identity != nil {
+		return nil
+	}
+	return p
+}
+
 func (p *PostgreSQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*plugin.SQLQueryOutput, error) {
 	if p == nil || p.identity != nil {
 		return nil, plugin.ErrQueryOutputTransformUnsupported

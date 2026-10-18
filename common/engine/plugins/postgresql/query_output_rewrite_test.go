@@ -13,6 +13,16 @@ import (
 
 func TestPostgresOutputRewriteDoesNotCertifyProtocolCompatibleEngines(t *testing.T) {
 	provider := NewProtocolCompatiblePlugin(ProtocolIdentity{EngineType: "separate-engine"})
+	if provider.SQLQueryOutputCompiler() != nil {
+		t.Fatal("uncertified protocol advertised a compiler")
+	}
+	prepared, err := provider.PrepareQuery(t.Context(), nil, plugin.QueryRequest{EngineID: 9, Language: "sql", Query: "SELECT phone FROM public.people", Options: plugin.QueryOptions{ReadOnly: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := prepared.(plugin.OutputTransformPreparedQuery); ok {
+		t.Fatal("uncertified prepared query advertised output binding")
+	}
 	if result, err := provider.CompileQueryOutput("SELECT phone FROM public.people", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 		t.Fatal("protocol reuse silently enabled unverified native rewriting", err)
 	}

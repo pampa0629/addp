@@ -18,6 +18,8 @@ type outputSQLProvider struct {
 	finalized        int
 }
 
+func (p *outputSQLProvider) SQLQueryOutputCompiler() SQLQueryOutputCompiler { return p }
+
 func (p *outputSQLProvider) CompileQueryOutput(query string, args []any, operations []QueryOutputTransform) (*SQLQueryOutput, error) {
 	p.compiledSQL, p.compiledArgs = query, args
 	if p.compileError != nil {
@@ -61,6 +63,20 @@ func outputSource() QueryOutputSource {
 	return QueryOutputSource{Path: TabularItemPath(9, EngineCatalogTermSchema, "public", "people"), IdentityOutput: true, Fields: []datatype.FieldInfo{{Name: "phone", Type: datatype.FieldTypeString}}}
 }
 
+func TestSQLPreparedOutputBindingRequiresAnActualProviderCompiler(t *testing.T) {
+	p := &fakeSQLRuntimeProvider{}
+	prepared, err := p.PrepareQuery(t.Context(), nil, QueryRequest{EngineID: 9, Language: "sql", Query: "SELECT id FROM public.people", Options: QueryOptions{ReadOnly: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := prepared.(OutputTransformPreparedQuery); ok {
+		t.Fatal("uncertified provider advertised output binding")
+	}
+	if _, err := prepared.Execute(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSQLPreparedOutputBindingExecutesOnceWithoutReplacingLogicalFacts(t *testing.T) {
 	p := &outputSQLProvider{}
 	prepared, observed := prepareOutputSQL(t, p, outputSource())
@@ -96,15 +112,13 @@ func TestSQLPreparedOutputBindingExecutesOnceWithoutReplacingLogicalFacts(t *tes
 }
 
 func TestSQLPreparedOutputBindingFailureCannotExecuteOriginalQuery(t *testing.T) {
-	for _, mode := range []string{"no compiler", "compiler error", "missing finalizer", "opaque", "derived", "numeric", "missing column", "empty operations", "duplicate binding"} {
+	for _, mode := range []string{"compiler error", "missing finalizer", "opaque", "derived", "numeric", "missing column", "empty operations", "duplicate binding"} {
 		t.Run(mode, func(t *testing.T) {
 			p := &outputSQLProvider{}
 			var provider SQLQueryRuntimeProvider = p
 			source := outputSource()
 			operations := []QueryOutputTransform{{Column: "phone", Kind: "constant_text"}}
 			switch mode {
-			case "no compiler":
-				provider = &p.fakeSQLRuntimeProvider
 			case "compiler error":
 				p.compileError = errors.New("unsupported syntax")
 			case "missing finalizer":
