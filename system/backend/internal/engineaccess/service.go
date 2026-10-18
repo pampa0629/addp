@@ -46,6 +46,7 @@ type Service struct {
 	fulfillmentBasis   FulfillmentBasisReader
 	independentTarget  IndependentTargetVerifier
 	authorizationFacts AuthorizationFactsReader
+	productionReceipts TransferProductionReceiptReader
 }
 
 func NewService(repository *Repository, catalogEligible func(*models.Engine) bool) *Service {

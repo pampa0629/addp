@@ -1138,4 +1138,5 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatal("terminal history truncated")
 		}
 	})
+	exerciseTransferProductionBindingAgainstPostgres(t, db, tenant.ID)
 }

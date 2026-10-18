@@ -263,6 +263,8 @@ PG 普通 Transfer 的持久化沿现有执行记录保存私有产出事实：�
 
 System 读取生产者证据使用独立的最小机器契约，不读取 owner 私有配置、metadata 或数据库。PG Transfer 的 `GET /api/v1/transfer/runtime/executions/{execution_id}/production-receipt` 仅允许当前 Tenant 的 `addp-system` Service 与不可委托、不可租户定制的 `transfer.production_receipt.read`，该权限仅授予 `tenant.system_runtime`。共享 `TransferClient` 按精确执行 UUID 获取已成功终结且同 attempt 已提交的回执，返回实际目标、准备结果、提交时间、重试关联及可信人类来源（存在时）；缺失来源不以 `triggered_by` 或机器身份补造，未提交、失败及不一致的证据不输出成功回执。回执不是首次新建资格或 Grant，不包含凭据、连接、业务内容或来源权限期限，不改变用户执行 DTO／TaskProvider 输出。Meta 授权事实仍仅由 System／Catalog 的原入口读取，Transfer 不因此获得 Meta 授权事实查询权限。System 后续独立核对当前 Meta 边界及全部签发条件；期限只在首次正式签发时冻结。
 
+System 的内部产出边界准备只接受可信 Tenant 与精确执行 UUID，以共享 client 取得上述回执，再复用现有 Meta 边界解析器核验完整 `single` 目标。候选指纹不是归属证明，原生名称不得拆分或仅按 `full_name` 匹配；返回的类型化路径须与实际提交目标完全相同。跨 owner 调用不持有 System 数据库事务，前后核对本租户 PG 引擎的生命周期及聚合版本；不完整、待刷新或依赖不可用时拒绝准备，不在读取中补扫。准备结果仅为内部当次证据，不是 Runtime 凭证或 Grant，不缓存为许可，不冻结期限，不推导缺失的人类来源，也不因 `created` 或准备成功省略正式签发时的历史、身份、ReadSet、Deny 及边界复核。
+
 物理产出、基础识别和授权签发不是跨模块原子事务。状态应分别反馈；产出或扫描成功不得显示成授权成功，授权失败不得自动重跑计算或删除已产出内容，结果未知先核清原办理，不换编号重复授予。只为授权确定边界时基础识别足够，不因本节给现有业务扫描增加 deep 前置要求。
 
 物化成果的 Grant 独立管理：来源授权及成员关系只参与初始期限确定，成果签发后不因来源 Grant 撤销、续期或来源成员关系变化自动撤销、续期或缩短。成果仍受自身当前 Grant、Deny、功能权限及已有安全限制约束；本条不解除来源已经要求执行的安全限制，也不把血缘变成许可或第二套级联 ACL。实际读取来源的视图或实时查询继续逐项核验完整 ReadSet，不能冒充独立物化成果。
