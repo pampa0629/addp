@@ -946,10 +946,10 @@ def wait_for_algorithm_projections(client: GatewayClient, enrollment_id: str, de
     while time.monotonic() < deadline:
         enrollment = _object(client.request("GET", f"/api/v1/security/protection-enrollments/{enrollment_id}", (200,)).payload, "algorithm Enrollment")
         progresses = _array(enrollment.get("owner_progress"), "algorithm owner progress")
-        if enrollment.get("state") == "active" and all(
+        if enrollment.get("state") == "active" and len(progresses) == len(PROTECTION_OWNERS) and all(
             len(matches := [progress for progress in progresses if isinstance(progress, dict) and progress.get("consumer_owner") == owner]) == 1
             and matches[0].get("projection_state") == "active" and matches[0].get("acknowledged") is True
-            for owner in OWNER_ACTIONS
+            for owner in PROTECTION_OWNERS
         ):
             return
         time.sleep(1)
@@ -1913,7 +1913,9 @@ def validity_snapshot(enrollment: Mapping[str, object], mode: str,
         if (item.get("acknowledged") is not True or item.get("projection_state") != "active"
                 or item.get("validity") != ("expired" if expired else "valid")
                 or "expires_at" not in item):
-            raise SuiteError("resource validity is not synchronized or has the wrong time state")
+            raise SuiteError("resource validity is not synchronized or has the wrong time state: "
+                             f"Owner={owner}, acknowledged={item.get('acknowledged')}, "
+                             f"projection_state={item.get('projection_state')}, validity={item.get('validity')}")
         if expected_deadline is None:
             if item["expires_at"] is not None:
                 raise SuiteError("permanent Owner still has a hidden deadline")
@@ -1939,6 +1941,7 @@ def exercise_resource_validity(client: GatewayClient, enrollment_id: str, source
                                target_locator: str, service_name: str, task_name: str,
                                identity: Mapping[str, object], deadline: float,
                                tasks: list[int]) -> dict[str, object]:
+    wait_for_algorithm_projections(client, enrollment_id, deadline)
     path = "/api/v1/security/protection-enrollments/" + enrollment_id
     original = _object(client.request("GET", path, (200,)).payload, "validity resource")
     initial = validity_snapshot(original, "permanent", None)

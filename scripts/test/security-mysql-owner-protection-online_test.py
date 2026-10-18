@@ -2087,6 +2087,50 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
 
 
 
+class RequiredOwnerConvergenceTest(unittest.TestCase):
+    def enrollment(self):
+        return {"state": "active", "owner_progress": [
+            {"consumer_owner": owner, "projection_state": "active", "acknowledged": True}
+            for owner in ONLINE.PROTECTION_OWNERS]}
+
+    def test_graph_must_acknowledge_before_the_required_owner_barrier_opens(self):
+        current = self.enrollment()
+        pending = copy.deepcopy(current)
+        next(row for row in pending["owner_progress"] if row["consumer_owner"] == "graph")["acknowledged"] = False
+        client = Mock()
+        client.request.side_effect = [ONLINE.SUPPORT.Response(200, pending), ONLINE.SUPPORT.Response(200, current)]
+        with patch.object(ONLINE.time, "sleep") as sleep:
+            ONLINE.wait_for_algorithm_projections(client, "resource", time.monotonic() + 5)
+        self.assertEqual(client.request.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_validity_case_waits_for_existing_owner_revisions_before_its_initial_snapshot(self):
+        client = Mock()
+        with patch.object(ONLINE, "wait_for_algorithm_projections", side_effect=ONLINE.SuiteError("initial barrier pending")):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "initial barrier pending"):
+                ONLINE.exercise_resource_validity(client, "resource", 23, 17, "source", "parent", "target",
+                                                  "service", "task", {"principal_id": "7"}, 2, [])
+        client.request.assert_not_called()
+
+    def test_missing_duplicate_unacknowledged_or_nonactive_graph_never_passes(self):
+        for mutation in ("missing", "duplicate", "unacknowledged", "enrolling"):
+            current = self.enrollment()
+            graph = next(row for row in current["owner_progress"] if row["consumer_owner"] == "graph")
+            if mutation == "missing":
+                current["owner_progress"].remove(graph)
+            elif mutation == "duplicate":
+                current["owner_progress"].append(copy.deepcopy(graph))
+            elif mutation == "unacknowledged":
+                graph["acknowledged"] = False
+            else:
+                graph["projection_state"] = "enrolling"
+            client = Mock()
+            client.request.return_value = ONLINE.SUPPORT.Response(200, current)
+            with self.subTest(mutation=mutation), patch.object(ONLINE.time, "monotonic", side_effect=[1, 3]), patch.object(ONLINE.time, "sleep"):
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.wait_for_algorithm_projections(client, "resource", 2)
+
+
 class ResourceValiditySnapshotTest(unittest.TestCase):
     def snapshot(self, until=None, expired=False):
         return {"validity_mode": "permanent" if until is None else "until", "expires_at": until,
