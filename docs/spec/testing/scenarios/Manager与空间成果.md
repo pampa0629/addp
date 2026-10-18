@@ -40,6 +40,16 @@ MAX 的 Manager Hosted T4 扩展复用 `manager-internal-artifact-lineage`，从
 
 固定源、报告缺失／变更拒绝、场景与生命周期沿用 `make test-manager-online-runner`、`make test-online-runner` 和既有 Hosted Job。实际历史源码与通过边界见[证据索引](../验收证据索引.md#manager-预览与私有导入历史证据)。
 
+## 拓扑构面双输出持久化（vector-topology-persistence）
+
+独立手工 Hosted Linux x86_64 T4，仅验收既有 `load → polygonize → save_faces / save_diagnostics`，不复用 PMTiles 或等高线 suite 的通过结论。标准入口为 `make test-online ONLINE_SUITE=vector-topology-persistence`；使用共享 Hosted 生命周期和 NFS export 所有权实现，拒绝个人环境，保持产品 GeoPython 镜像默认入口、构建身份、失败清理及零残留约束。首次真实通过前不增加 schedule，不将代码或确定性回归通过记为 T4。
+
+System 测试夹具仅为当次 disposable 非默认 Tenant 创建普通 User，精确授予 11 项权限：`develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`develop.data_write.execute`、`system.execution_authorization.create`、`meta.catalog.read`、`meta.scan_task.read`、`meta.scan_task.execute`、`meta.lineage.read`、`monitor.execution.read`、`manager.data_item.read`。执行使用既有 ad-hoc API，无任务定义编辑或引擎管理权限；Engine 登记身份与业务 User 分离，登记后移除基础设施 Token。入口和 Console 浏览器均核对同一 User、Tenant 与精确权限集合，拒绝管理员和多余权限。
+
+确定性 NFS 线网声明 EPSG:4326，包含闭合方框、两条贯穿线及重复边。默认输出引用省略 `port`，诊断显式引用 `port=diagnostics`；两个既有保存节点分别写入新 GeoJSON，使用 `mode=fail`。独立物理 oracle 按预定义坐标核对四个面、四条外围 dangle、字段和 CRS，不调用构面算子生成期望；同时核对源 SHA/大小、准确目标清单及无临时旁路文件。两个目标必须各自具备一次精确自动扫描、正式 DataItem、物理与 Meta 相等的正整数大小、同一 actor/Tenant、指向同一 Develop execution 的 derive 及一致 Monitor 事实。不得手动补扫输出伪装自动扫描成功。
+
+同一普通 User 经 Console 查看专业结果与两份 Manager 预览，核对记录、字段、源 CRS 和真实地图像素；浏览器报告须绑定 Run ID、User、Tenant、execution、item 和 locator，禁止 mock 响应或内部图对象注入。缺失输出、错端口、错扫描身份、源或目标内容变化、空白地图、旧报告与清理失败均失败。NFS export/目录、Runtime、registry 与当次 Infra 的退出清理不等同于 Manager 业务 DELETE 验收。
+
 ### KML／GML／TopoJSON 的 S3 兼容消费
 
 复用同一 Manager Hosted suite、GeoPython 产品 Runtime 和隔离 Business MinIO，三份固定哈希双图层源沿用原十项普通 User 权限。Owner/v11、browser/v13 验证图层与源几何、实际地图要素和像素、TopoJSON 未知 CRS 默认暂停、临时选择清除／切换／重开、普通刷新和原文件下载哈希，拒绝旧报告。隔离环境先启动 Security，再由标准身份夹具等待 Manager 持久保护投影首次同步；预检核对 Security 健康和源码身份，启动／初始化失败须拒绝进入场景并清理。标准 `make test-manager-online-runner` 覆盖夹具、拒绝边界、浏览器语法和 CI 登记。

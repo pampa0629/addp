@@ -538,6 +538,13 @@ test-vector-pmtiles-online-runner: ## 验证 PMTiles T4 场景、物理夹具与
 	@python3 -m unittest scripts/test/vector-pmtiles-workflow-online_test.py scripts/test/online-vector-pmtiles-fixture_test.py scripts/test/online-hosted-vector-pmtiles-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_pmtiles_requires_manual_isolation_content_and_cleanup
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
+.PHONY: test-vector-topology-online-runner
+test-vector-topology-online-runner: ## 验证拓扑构面双输出、普通User与Hosted隔离生命周期
+	@node --check console/frontend/e2e/online/vector-topology-persistence.spec.js
+	@bash -n scripts/test/online-hosted-topology-gate.sh
+	@python3 -m unittest scripts/test/vector-topology-persistence-online_test.py scripts/test/online-vector-topology-fixture_test.py scripts/test/online-hosted-topology-gate_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_topology_requires_manual_nfs_identity_and_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+
 test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
 	@python3 -m unittest scripts/test/raster-contour-persistence-online_test.py scripts/test/online-raster-contour-fixture_test.py scripts/test/online-hosted-raster-contour-gate_test.py scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py scripts/test/raster-workflow-capacity-online_test.py scripts/test/online-raster-capacity-fixture_test.py scripts/test/online-hosted-raster-capacity-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_capacity_requires_full_scene_resource_profile_and_owner_regressions scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_contour_requires_manual_nfs_identity_and_registered_regressions
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
@@ -597,6 +604,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-hdfs-online-runner
 	@$(MAKE) test-raster-online-runner
 	@$(MAKE) test-vector-pmtiles-online-runner
+	@$(MAKE) test-vector-topology-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@$(MAKE) test-elasticsearch-online-runner

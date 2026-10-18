@@ -98,6 +98,7 @@ class OnlineGateTest(unittest.TestCase):
                 "raster-workflow",
                 "raster-contour-persistence",
                 "vector-pmtiles-workflow",
+                "vector-topology-persistence",
                 "raster-workflow-capacity",
                 "security-mysql-owner-protection",
                 "security-plaintext-access",

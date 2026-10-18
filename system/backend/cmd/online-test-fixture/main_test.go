@@ -1183,3 +1183,15 @@ func TestVectorPMTilesIdentityHasExactConsumerPermissions(t *testing.T) {
 		t.Fatal("PMTiles Console must use the same ordinary User")
 	}
 }
+
+func TestVectorTopologyIdentityHasExactlyElevenPermissions(t *testing.T) {
+	actual, err := suitePermissions("vector-topology-persistence")
+	expected := append(append([]string{}, rasterWorkflowPermissions...), "manager.data_item.read")
+	if err != nil || len(actual) != 11 || !slices.Equal(actual, expected) || !needsEngineProvisioner("vector-topology-persistence") {
+		t.Fatal("topology requires exactly eleven consumer permissions and a separate Engine provisioner")
+	}
+	values := consumerEnvironment("vector-topology-persistence", 42, "token", "password")
+	if values["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || values["ADDP_ONLINE_TEST_USER_PASSWORD"] != "password" {
+		t.Fatal("topology Console must use the same ordinary User")
+	}
+}

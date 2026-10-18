@@ -190,3 +190,37 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     if has_closed_region:
         assert faces.geometry.iloc[0].equals(box(0, 0, 1, 1))
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
+
+
+def test_hosted_topology_physical_oracle_accepts_real_dual_save_and_rejects_corruption(tmp_path):
+    import importlib
+    fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
+    (tmp_path / 'outputs').mkdir()
+    (tmp_path / '.addp-online-owner').write_text('topology-native')
+    seeded = fixture.worker('seed', tmp_path)
+    connection = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    tasks = [
+        {'id': 'load', 'operator': 'load', 'params': {'connection_info': connection, 'path': 'source.geojson'}, 'depends_on': []},
+        {'id': 'build', 'operator': 'polygonize', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
+    ]
+    for port, name in zip(('result','diagnostics'), fixture.TARGETS):
+        reference = {'$ref': 'build'} if port == 'result' else {'$ref': 'build', 'port': port}
+        tasks.append({'id': 'save_' + port, 'operator': 'save', 'depends_on': ['build'], 'params': {
+            'input_df': reference, 'connection_info': connection, 'path': 'outputs/' + name, 'mode': 'fail'}})
+    execution = execute_workflow({'tasks': tasks})
+    assert execution['status'] == 'success', execution.get('error')
+    actual = fixture.worker('verify', tmp_path)
+    assert actual['source'] == seeded['source']
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4]
+    for name in fixture.TARGETS:
+        path = tmp_path / 'outputs' / name
+        original = path.read_bytes()
+        content = json.loads(original)
+        if name == 'faces.geojson':
+            content['features'][0]['geometry']['coordinates'][0][0][0] += .1
+        else:
+            content['features'][0]['properties']['issue_type'] = 'cut_edge'
+        path.write_text(json.dumps(content))
+        with pytest.raises(fixture.FixtureError):
+            fixture.worker('verify', tmp_path)
+        path.write_bytes(original)

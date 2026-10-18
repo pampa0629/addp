@@ -60,6 +60,13 @@ SUITES: Mapping[str, Suite] = {
                   ("security", "SECURITY_URL"),
                   ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
     ),
+    "vector-topology-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.vector-topology-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "vector-pmtiles-workflow": Suite(
         command=(sys.executable, "-m", "scripts.test.vector-pmtiles-workflow-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
