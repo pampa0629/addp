@@ -20,6 +20,11 @@ func TestCatalogAuthorizationFactsForwardMigrationAgainstPostgres(t *testing.T) 
 
 func testRuntimeAuthorizationFactsMigration(t *testing.T, clientID, roleKey, migrationName string, version, permissionDelta int64, allowedRoles []string) {
 	t.Helper()
+	testRuntimePermissionMigration(t, clientID, roleKey, migrationName, version, permissionDelta, "meta.authorization_facts.read", allowedRoles)
+}
+
+func testRuntimePermissionMigration(t *testing.T, clientID, roleKey, migrationName string, version, permissionDelta int64, permission string, allowedRoles []string) {
+	t.Helper()
 	testAuthorizationFactsMigration(t, migrationName, version, permissionDelta, func(db *sql.DB) func() {
 		user, tenant := seedInitializedMigrationTenant(t, db, "authorization-facts", "Authorization facts")
 		// This tenant is created after the earlier runtime provisioning migration.
@@ -69,11 +74,11 @@ func testRuntimeAuthorizationFactsMigration(t *testing.T, clientID, roleKey, mig
 		return func() {
 			var n int64
 			for _, role := range allowedRoles {
-				if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.roles r ON r.id=rp.role_id JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='meta.authorization_facts.read' AND r.role_key=$1 AND p.allowed_scope_types=ARRAY['tenant']::text[] AND NOT p.delegable AND NOT p.tenant_customizable`, role).Scan(&n); err != nil || n != 1 {
+				if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.roles r ON r.id=rp.role_id JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key=$2 AND r.role_key=$1 AND p.allowed_scope_types=ARRAY['tenant']::text[] AND NOT p.delegable AND NOT p.tenant_customizable`, role, permission).Scan(&n); err != nil || n != 1 {
 					t.Fatalf("runtime fact permission=%d err=%v", n, err)
 				}
 			}
-			if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='meta.authorization_facts.read'`).Scan(&n); err != nil || n != int64(len(allowedRoles)) {
+			if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key=$1`, permission).Scan(&n); err != nil || n != int64(len(allowedRoles)) {
 				t.Fatal("facts permission spread beyond approved runtime roles", err)
 			}
 			if err := db.QueryRow("SELECT count(*) FROM system.role_assignments").Scan(&n); err != nil || n != assignments {

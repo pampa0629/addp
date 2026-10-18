@@ -126,3 +126,5 @@ other = "Task execution failed; inspect the owner execution diagnostics"
 
 [transfer.execution.diagnostics_unavailable]
 other = "Runtime diagnostics are temporarily unavailable"
+[transfer.production_receipt.unavailable]
+other = "No verifiable successful production receipt is available for this execution"

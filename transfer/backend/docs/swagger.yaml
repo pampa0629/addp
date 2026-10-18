@@ -105,6 +105,18 @@ definitions:
     - execution_id
     - session_id
     type: object
+  client.TransferProductionUserOrigin:
+    properties:
+      authorization_version:
+        example: ""
+        type: string
+      principal_id:
+        example: ""
+        type: string
+      tenant_membership_id:
+        example: ""
+        type: string
+    type: object
   execution.DiagnosticStep:
     properties:
       duration:
@@ -1547,6 +1559,28 @@ definitions:
       task_id:
         type: integer
     type: object
+  internal_api.ProductionReceipt:
+    properties:
+      attempt:
+        type: integer
+      committed_at:
+        type: string
+      execution_id:
+        type: string
+      preparation:
+        $ref: '#/definitions/plugin.TableTargetDisposition'
+      retry_of_execution_id:
+        type: string
+      schema_version:
+        type: string
+      target:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      tenant_id:
+        example: ""
+        type: string
+      user_origin:
+        $ref: '#/definitions/client.TransferProductionUserOrigin'
+    type: object
   internal_api.ProviderExecuteRequest:
     properties:
       parameters:
@@ -1709,6 +1743,36 @@ definitions:
     - DefinitionSupported
     - DefinitionUnsupported
     - DefinitionUnknown
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
+  plugin.TableTargetDisposition:
+    enum:
+    - created
+    - recreated
+    - reused
+    type: string
+    x-enum-varnames:
+    - TableTargetCreated
+    - TableTargetRecreated
+    - TableTargetReused
   taskprovider.ExecutionContract:
     properties:
       input_defaults:
@@ -2283,6 +2347,63 @@ paths:
       tags:
       - Transfer
       x-addp-auth-mode: public
+  /runtime/executions/{execution_id}/production-receipt:
+    get:
+      description: 仅供当前 Tenant 的 addp-system 读取 PG Transfer 已成功执行的最小产出证据；不代表首次新建资格、Meta
+        边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system Service may read
+        minimal successful PG Transfer production evidence. Not initial-Grant eligibility,
+        a Meta boundary or data permission; no private configuration or credentials
+      parameters:
+      - description: 原执行 UUID | Original execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProductionReceipt'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取精确产出回执 | Read an exact production receipt
+      tags:
+      - Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.production_receipt.read
   /settings/continuous-policy:
     get:
       produces:

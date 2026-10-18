@@ -127,3 +127,5 @@ other = "任务执行失败，请查看所属模块的执行诊断"
 
 [transfer.execution.diagnostics_unavailable]
 other = "运行诊断暂时不可用"
+[transfer.production_receipt.unavailable]
+other = "本次执行尚无可核验的成功产出回执"

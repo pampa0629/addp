@@ -36,7 +36,7 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/transfer.log"; then
 fi
 
 ADDP_POSTGRES_INTEGRATION=1 ADDP_TEST_POSTGRES_DATABASE="$database" \
-    go test ./internal/api -run '^TestIntegrationPostgresTransferExecutionReadIsolation$' \
+    go test ./internal/api -run '^(TestIntegrationPostgresTransferExecutionReadIsolation|TestIntegrationPostgresProductionReceiptRead)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/transfer-api.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/transfer-api.log"; then
     echo "Transfer PostgreSQL API gate refuses skipped tests" >&2

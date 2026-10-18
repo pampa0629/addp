@@ -727,6 +727,86 @@ const docTemplate = `{
                 "x-addp-auth-mode": "public"
             }
         },
+        "/runtime/executions/{execution_id}/production-receipt": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅供当前 Tenant 的 addp-system 读取 PG Transfer 已成功执行的最小产出证据；不代表首次新建资格、Meta 边界或数据权限，不返回私有配置或凭据 | Only the current Tenant addp-system Service may read minimal successful PG Transfer production evidence. Not initial-Grant eligibility, a Meta boundary or data permission; no private configuration or credentials",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime"
+                ],
+                "summary": "读取精确产出回执 | Read an exact production receipt",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原执行 UUID | Original execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProductionReceipt"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.production_receipt.read"
+                ]
+            }
+        },
         "/settings/continuous-policy": {
             "get": {
                 "security": [
@@ -2573,6 +2653,23 @@ const docTemplate = `{
                 },
                 "session_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "client.TransferProductionUserOrigin": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_membership_id": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },
@@ -4704,6 +4801,39 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.ProductionReceipt": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "committed_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "preparation": {
+                    "$ref": "#/definitions/plugin.TableTargetDisposition"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "user_origin": {
+                    "$ref": "#/definitions/client.TransferProductionUserOrigin"
+                }
+            }
+        },
         "internal_api.ProviderExecuteRequest": {
             "type": "object",
             "properties": {
@@ -4945,6 +5075,50 @@ const docTemplate = `{
                 "DefinitionSupported",
                 "DefinitionUnsupported",
                 "DefinitionUnknown"
+            ]
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.TableTargetDisposition": {
+            "type": "string",
+            "enum": [
+                "created",
+                "recreated",
+                "reused"
+            ],
+            "x-enum-varnames": [
+                "TableTargetCreated",
+                "TableTargetRecreated",
+                "TableTargetReused"
             ]
         },
         "taskprovider.ExecutionContract": {

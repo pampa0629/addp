@@ -261,6 +261,8 @@ PG 普通 Transfer 的持久化沿现有执行记录保存私有产出事实：�
 
 上述写入均核验当前租约并串行更新同一执行；锁等待结束后仍须核验期限，迟到旧 attempt 不能补写。普通执行 metadata／终态更新不得覆盖私有产出事实；用户执行详情和 TaskProvider 稳定输出不暴露这些内部证据。不新增执行表、目标物理身份或兼容回填路径；本阶段仍不签发 Grant。
 
+System 读取生产者证据使用独立的最小机器契约，不读取 owner 私有配置、metadata 或数据库。PG Transfer 的 `GET /api/v1/transfer/runtime/executions/{execution_id}/production-receipt` 仅允许当前 Tenant 的 `addp-system` Service 与不可委托、不可租户定制的 `transfer.production_receipt.read`，该权限仅授予 `tenant.system_runtime`。共享 `TransferClient` 按精确执行 UUID 获取已成功终结且同 attempt 已提交的回执，返回实际目标、准备结果、提交时间、重试关联及可信人类来源（存在时）；缺失来源不以 `triggered_by` 或机器身份补造，未提交、失败及不一致的证据不输出成功回执。回执不是首次新建资格或 Grant，不包含凭据、连接、业务内容或来源权限期限，不改变用户执行 DTO／TaskProvider 输出。Meta 授权事实仍仅由 System／Catalog 的原入口读取，Transfer 不因此获得 Meta 授权事实查询权限。System 后续独立核对当前 Meta 边界及全部签发条件；期限只在首次正式签发时冻结。
+
 物理产出、基础识别和授权签发不是跨模块原子事务。状态应分别反馈；产出或扫描成功不得显示成授权成功，授权失败不得自动重跑计算或删除已产出内容，结果未知先核清原办理，不换编号重复授予。只为授权确定边界时基础识别足够，不因本节给现有业务扫描增加 deep 前置要求。
 
 物化成果的 Grant 独立管理：来源授权及成员关系只参与初始期限确定，成果签发后不因来源 Grant 撤销、续期或来源成员关系变化自动撤销、续期或缩短。成果仍受自身当前 Grant、Deny、功能权限及已有安全限制约束；本条不解除来源已经要求执行的安全限制，也不把血缘变成许可或第二套级联 ACL。实际读取来源的视图或实时查询继续逐项核验完整 ReadSet，不能冒充独立物化成果。

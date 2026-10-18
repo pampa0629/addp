@@ -145,4 +145,8 @@ func TestIntegrationPostgresProductionMetadataSerialization(t *testing.T) {
 	if execution.Observe(&stored).Metadata[models.TargetProductionMetadataKey] != nil {
 		t.Fatal("private production receipt leaked into observation")
 	}
+	receipt, err := svc.ReadProductionReceipt(ctx, uint(item.TenantID), item.ExecutionID)
+	if err != nil || receipt.Attempt != item.Attempt || receipt.Preparation != plugin.TableTargetRecreated || receipt.UserOrigin != nil {
+		t.Fatalf("persisted production receipt not readable as owner evidence: %+v %v", receipt, err)
+	}
 }

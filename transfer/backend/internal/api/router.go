@@ -88,6 +88,7 @@ func SetupRouter(
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService, taskService)
+	protected.GET("/runtime/executions/:execution_id/production-receipt", commonAuth.MustNewServiceClientGuard("addp-system"), permission(transferauthorization.PermissionTransferProductionReceiptRead), executionHandler.ReadProductionReceipt)
 	capabilityHandler := NewTransferCapabilityHandler()
 	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(fieldDefinitionRecommendationService)
 
