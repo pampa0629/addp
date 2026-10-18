@@ -61,7 +61,7 @@
           :auto-expand-parent="false"
           :filter-node-method="currentFilterMethod"
           :lazy="lazy"
-          :load="load"
+          :load="load ? loadTreeNode : null"
           :node-class-name="resolveNodeClassName"
           @click.capture="handleUnloadedExpandClick"
           @node-click="handleNodeClick"
@@ -411,6 +411,37 @@ const commitExpandedKeys = (keys) => {
   nextTick(() => updateExpandState())
 }
 
+// lazy 模式的 node-expand 要到响应返回后才触发；加载期间先记录用户意图，
+// 防止组件库的迟到展开回调重新打开已经收起的节点。
+const pendingLazyLoads = new Map()
+const loadTreeNode = (node, resolve, reject) => {
+  if (node.level === 0) return props.load(node, resolve, reject)
+  const intent = { expanded: true }
+  pendingLazyLoads.set(node.key, intent)
+  commitExpandedKeys(addExpandedKey(computedExpandedKeys.value, node.key))
+  const cleanup = () => {
+    if (pendingLazyLoads.get(node.key) === intent) pendingLazyLoads.delete(node.key)
+  }
+  return props.load(node, (children) => {
+    if (treeRef.value?.store?.getNode(node.key) !== node) {
+      reject()
+      cleanup()
+      return
+    }
+    resolve(children)
+    if (!intent.expanded) node.collapse()
+    cleanup()
+    updateExpandState()
+  }, () => {
+    reject()
+    cleanup()
+    if (treeRef.value?.store?.getNode(node.key) === node) {
+      node.collapse()
+      commitExpandedKeys(removeExpandedKey(computedExpandedKeys.value, node.key))
+    }
+  })
+}
+
 // 默认过滤方法
 const defaultFilterMethod = (node, keyword) => {
   if (!keyword) return true
@@ -644,17 +675,25 @@ const handleNodeClick = (nodeData) => {
 // 因而 hasChildren=true 的未加载节点会被标记为 is-leaf。资源树契约仍要求
 // 这类节点可通过展开箭头触发宿主的增量加载。
 const handleUnloadedExpandClick = (event) => {
-  const expandIcon = event?.target?.closest?.('.el-tree-node__expand-icon.is-leaf')
+  const expandIcon = event?.target?.closest?.('.el-tree-node__expand-icon')
   if (!expandIcon) return
 
   const nodeElement = expandIcon.closest('.el-tree-node')
   const nodeKey = nodeElement?.getAttribute('data-key')
   const node = nodeKey ? treeRef.value?.store?.getNode(nodeKey) : null
-  if (!node?.data || !isUnloadedExpandable(node.data)) return
+  if (!node?.data) return
+  const pending = pendingLazyLoads.get(node.key)
+  if (!pending && (!expandIcon.classList.contains('is-leaf') || !isUnloadedExpandable(node.data))) return
 
   event.preventDefault()
   event.stopPropagation()
-  handleNodeExpand(node.data)
+  if (computedExpandedKeys.value.includes(node.data.id)) {
+    if (pending) pending.expanded = false
+    handleNodeCollapse(node.data)
+  } else {
+    if (pending) pending.expanded = true
+    handleNodeExpand(node.data)
+  }
 }
 
 // 当前节点变化
@@ -668,6 +707,7 @@ const handleCurrentChange = (data, node) => {
 // 节点展开
 const handleNodeExpand = (data) => {
   if (!data) return
+  if (pendingLazyLoads.get(data.id)?.expanded === false) return
   commitExpandedKeys(addExpandedKey(computedExpandedKeys.value, data.id))
   emit('node-expand', data)
 }
@@ -675,6 +715,8 @@ const handleNodeExpand = (data) => {
 // 节点折叠
 const handleNodeCollapse = (data) => {
   if (!data) return
+  const pending = pendingLazyLoads.get(data.id)
+  if (pending) pending.expanded = false
   commitExpandedKeys(removeExpandedKey(computedExpandedKeys.value, data.id))
   emit('node-collapse', data)
 }
@@ -690,7 +732,9 @@ const handleNodeDblclick = (event, node, data) => {
 
   // 切换节点展开/折叠状态
   if (node) {
-    const willExpand = !node.expanded
+    const pending = pendingLazyLoads.get(data.id)
+    const willExpand = pending ? !pending.expanded : !node.expanded
+    if (pending) pending.expanded = willExpand
     if (willExpand) {
       node.expand?.()
       handleNodeExpand(data)

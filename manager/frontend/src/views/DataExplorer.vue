@@ -240,9 +240,13 @@ const handleNodeSelect = async ({ node, locator }, options = {}) => {
       await replaceDataExplorerRoute(locator, activeTab.value)
     }
 
+    if (store.selectedLocator !== locator) return
+
     if (loc.nodeId && node.hasChildren && !node.loaded) {
       await store.loadNodeChildren(locator)
     }
+
+    if (store.selectedLocator !== locator) return
 
     if (loc.itemId) {
       if (activeTab.value === 'preview' && store.isEngineAvailable(loc.engineId)) {
@@ -272,8 +276,10 @@ const handleSearchResultSelect = async (result) => {
 
   try {
     const revealed = await store.revealLocator(locator)
+    if (!revealed) return
     const node = revealed.node || resultNode
     await scrollToLocatedNode(revealed.path || [], revealed.locator || locator)
+    if (store.selectedLocator !== revealed.locator) return
     await handleNodeSelect({ node, locator: revealed.locator || locator })
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
@@ -410,9 +416,11 @@ const locateRouteLocator = async (targetLocator, options = {}) => {
     return
   }
   const revealed = await store.revealLocator(targetLocator)
+  if (!revealed) return
   const revealedLocator = revealed.locator || targetLocator
   const targetNode = revealed.node || nodeContextFromLocator(revealedLocator, { type: loc.type })
   await scrollToLocatedNode(revealed.path || [], revealedLocator)
+  if (store.selectedLocator !== revealedLocator) return
   await handleNodeSelect({ node: targetNode, locator: revealedLocator }, { updateRoute: false })
 
   if (revealedLocator !== targetLocator) {

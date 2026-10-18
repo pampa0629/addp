@@ -471,22 +471,27 @@ const handleEngineChange = async () => {
   }
 }
 
-const loadNode = async (treeNode, resolve) => {
+const loadNode = async (treeNode, resolve, reject) => {
   if (treeNode.level === 0) {
     resolve(treeData.value || [])
     return
   }
   const data = treeNode.data
+  const requestSeq = treeLoadRequestSeq
   if (!data?.locator || !hasExpandableChildren(data)) {
     resolve([])
     return
   }
   try {
     const children = await resourceTreeAdapter.value.getNodeChildren(data)
+    if (requestSeq !== treeLoadRequestSeq) {
+      reject()
+      return
+    }
     resolve(normalizeVisibleChildren(children || []))
   } catch (error) {
-    handleError(error)
-    resolve([])
+    if (requestSeq === treeLoadRequestSeq) handleError(error)
+    reject()
   }
 }
 

@@ -51,9 +51,10 @@
       <ResourceTree
         ref="resourceTreeRef"
         :tree-data="treeData"
-        :loading="false"
+        :loading="refreshingCatalog"
         :refreshing-node-ids="refreshingNodeIds"
         v-model:expanded-keys="expandedKeys"
+        :default-expand-root="false"
         :current-node-key="currentNodeKey"
         :node-actions="nodeActions"
         :node-class-name="resolveNodeClassName"
@@ -121,13 +122,16 @@ const emit = defineEmits(['node-select', 'item-refreshed'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
+const refreshingCatalog = ref(false)
 const catalogRootLoadPromises = new Map()
+let selectionRequestSeq = 0
 let scanStatusTimer = 0
 const scanClock = ref(Date.now())
 const scanRun = ref(null)
 let scanClockTimer = 0
 const scanView = computed(() => scanProgressView(scanRun.value || { progress: activeScan.value.percent }, t, scanClock.value))
 onBeforeUnmount(() => {
+  selectionRequestSeq += 1
   cancelScanStatusTimer()
   window.clearInterval(scanClockTimer)
 })
@@ -193,35 +197,29 @@ const currentNodeKey = computed(() => store.selectedLocator || '')
 
 // 事件处理：刷新整个引擎列表
 const handleRefresh = async () => {
+  if (refreshingCatalog.value) return
+  refreshingCatalog.value = true
   try {
-    // 清空引擎树缓存
-    store.engineTrees = {}
-    store.engineTreeDepths = {}
-    store.engineTreeRequestSeq = {}
-    store.loadingEngineIds = {}
-    // 重新加载引擎列表
-    await store.loadEngines()
-
-    // 重新加载所有引擎的树结构（使用默认深度 2：bucket + directory）
-    if (store.engines.length > 0) {
-      await Promise.all(
-        store.engines.map(engine => store.loadTree(engine.id))
-      )
-    }
-
+    await store.loadEngines({ silent: true })
     ElMessage.success(t('manager.explorer.refreshSuccess'))
   } catch (error) {
     ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
+  } finally {
+    refreshingCatalog.value = false
   }
 }
 
 // 事件处理：节点点击
 const handleNodeClick = async (node) => {
+  const requestSeq = ++selectionRequestSeq
+  store.cancelLocatorReveal()
+  const locatorRequestSeq = store.selectionRequestSeq
+  const selectionIsCurrent = () => requestSeq === selectionRequestSeq && locatorRequestSeq === store.selectionRequestSeq
   let selectedNode = node
   let locator = node.locator || node.id
 
   if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
-    store.expandNode(locator)
+    store.toggleExpand(locator)
     try {
       const resolved = await resolveCanonicalNodeSelection({
         node,
@@ -233,12 +231,15 @@ const handleNodeClick = async (node) => {
       locator = resolved.locator
       replaceExpandedLocator(syntheticLocator, locator)
     } catch (error) {
+      if (!selectionIsCurrent()) return
+      store.collapseNode(locator)
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
       return
     }
   }
 
+  if (!selectionIsCurrent()) return
   // 选择节点
   store.selectNode(locator)
   emit('node-select', { node: selectedNode, locator })
@@ -265,9 +266,10 @@ const handleNodeClick = async (node) => {
       try {
         const loc = parseLocator(locator)
         if (loc && loc.engineId) {
-          await store.loadNodeChildren(locator, true)
+          await store.loadNodeChildren(locator)
         }
       } catch (error) {
+        if (requestSeq !== selectionRequestSeq || store.selectedLocator !== locator) return
         console.error('加载子节点失败:', error)
         ElMessage.error(t('manager.explorer.loadChildrenFailed', { error: error.message }))
       }
@@ -318,6 +320,7 @@ const handleNodeExpand = async (node) => {
       const catalogRoot = await loadCatalogRoot(node.engineId)
       replaceExpandedLocator(locator, catalogRoot?.locator || catalogRoot?.id)
     } catch (error) {
+      store.collapseNode(locator)
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
     }
@@ -333,8 +336,7 @@ const handleNodeExpand = async (node) => {
       const loc = parseLocator(locator)
       if (loc && loc.engineId) {
         // 只加载该节点的子节点，不重新加载整个树。
-        // 强制刷新，绕过缓存，确保从后端加载数据
-        await store.loadNodeChildren(locator, true)
+        await store.loadNodeChildren(locator)
       }
     } catch (error) {
       console.error('增量加载子节点失败:', error)
@@ -345,6 +347,7 @@ const handleNodeExpand = async (node) => {
 
 // 事件处理：节点折叠
 const handleNodeCollapse = (node) => {
+  store.cancelLocatorReveal()
   const locator = node.locator || node.id
   store.collapseNode(locator)
 }
@@ -359,6 +362,7 @@ const isCatalogRootNode = (node) => {
 
 const replaceExpandedLocator = (previousLocator, nextLocator) => {
   if (!nextLocator || nextLocator === previousLocator) return
+  if (!store.expandedLocators.has(previousLocator)) return
   store.collapseNode(previousLocator)
   store.expandNode(nextLocator)
 }

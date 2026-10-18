@@ -23,6 +23,14 @@
         <span>{{ t('manager.explorer.searching') }}</span>
       </div>
 
+      <el-alert
+        v-else-if="searchError"
+        :title="searchErrorText"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+
       <!-- 无结果 -->
       <div v-else-if="results.length === 0 && keyword.length >= 2" class="no-results">
         <el-empty :description="t('manager.explorer.noMatchingDataSources')" :image-size="80" />
@@ -81,12 +89,13 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { Search, Loading, FolderOpened, ArrowRight, Document, Coin, Collection, Folder } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useExplorerStore } from '@/stores/explorer'
 import { debounce } from 'lodash-es'
+import { createLatestRequestScope } from '@common-ui/utils/latestRequestScope.mjs'
+import { isResourceTreeSearchReady } from '@common-ui/utils/resourceTreeSearch.mjs'
 
 const { t } = useI18n()
 
@@ -114,65 +123,78 @@ const results = ref([])
 const total = ref(0)
 const searching = ref(false)
 const showResults = ref(false)
+const searchScope = createLatestRequestScope()
+const searchError = ref(null)
+const searchErrorText = computed(() => t('manager.explorer.searchFailed', {
+  error: searchError.value?.response?.data?.error || searchError.value?.message || ''
+}))
 
-// 搜索逻辑（防抖 500ms）
-const performSearch = debounce(async () => {
-  if (!keyword.value || keyword.value.length < 2) {
+const runSearch = async (ticket) => {
+  const query = keyword.value.trim()
+  if (!searchScope.current(ticket)) return
+  if (!isResourceTreeSearchReady(query)) {
     results.value = []
     total.value = 0
+    searching.value = false
     showResults.value = false
     return
   }
 
   searching.value = true
   showResults.value = true
+  searchError.value = null
 
   try {
-    // 如果指定了 engineId，只搜索该引擎；否则搜索所有引擎
-    if (props.engineId) {
-      const searchResults = await store.searchNodes(
-        props.engineId,
-        keyword.value,
-        props.nodeTypes
-      )
-      results.value = searchResults
-      total.value = searchResults.length
-    } else {
-      // 搜索所有引擎
-      const allResults = []
-      for (const engine of store.engines) {
-        const engineResults = await store.searchNodes(
-          engine.id,
-          keyword.value,
-          props.nodeTypes
-        )
-        allResults.push(...engineResults)
-      }
-      results.value = allResults
-      total.value = allResults.length
+    const engineIds = props.engineId ? [props.engineId] : store.engines.map(engine => engine.id)
+    const nodeTypes = props.nodeTypes ? [...props.nodeTypes] : null
+    const allResults = []
+    for (const engineId of engineIds) {
+      const engineResults = await store.searchNodes(engineId, query, nodeTypes)
+      if (!searchScope.current(ticket)) return
+      allResults.push(...engineResults)
     }
+    results.value = allResults
+    total.value = allResults.length
   } catch (error) {
+    if (!searchScope.current(ticket)) return
     console.error('搜索失败:', error)
-    ElMessage.error(t('manager.explorer.searchFailed', { error: error.message }))
+    searchError.value = error
     results.value = []
     total.value = 0
   } finally {
-    searching.value = false
+    if (searchScope.current(ticket)) searching.value = false
   }
-}, 500)
+}
+
+const performSearch = debounce(runSearch, 500)
 
 // 事件处理：输入变化
 const handleSearchInput = () => {
-  performSearch()
+  const ticket = searchScope.invalidate()
+  results.value = []
+  total.value = 0
+  searching.value = false
+  searchError.value = null
+  showResults.value = false
+  if (!isResourceTreeSearchReady(keyword.value)) {
+    performSearch.cancel()
+    return
+  }
+  performSearch(ticket)
 }
 
 // 事件处理：点击搜索按钮
 const handleSearchClick = () => {
-  performSearch.flush() // 立即执行搜索，不等待防抖
+  performSearch.cancel()
+  runSearch(searchScope.invalidate())
 }
 
 // 事件处理：清除
 const handleClear = () => {
+  performSearch.cancel()
+  searchScope.invalidate()
+  searching.value = false
+  searchError.value = null
   keyword.value = ''
   results.value = []
   total.value = 0
@@ -230,10 +252,15 @@ const getMatchTypeLabel = (matchType) => {
 }
 
 // 监听 engineId 变化，重新搜索
-watch(() => props.engineId, () => {
+watch(() => [props.engineId, props.nodeTypes], () => {
   if (keyword.value) {
-    performSearch()
+    handleSearchInput()
   }
+}, { deep: true })
+
+onBeforeUnmount(() => {
+  performSearch.cancel()
+  searchScope.dispose()
 })
 </script>
 

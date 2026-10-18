@@ -30,6 +30,94 @@ describe('explorer revealLocator', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps a newer node reload when an older child response arrives last', async () => {
+    const store = useExplorerStore()
+    const root = 'addp://engine/25/path/?type=server&node_id=250'
+    const schema = 'addp://engine/25/path/business?type=schema&node_id=251'
+    const node = (locator, label, children = []) => ({ id: locator, locator, label, type: 'schema', hasChildren: true, children })
+    store.engineTrees[25] = node(root, 'root', [node(schema, 'business')])
+    let resolveOld
+    mocks.getNodeChildren.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const first = store.loadNodeChildren(schema)
+    await vi.waitFor(() => expect(resolveOld).toBeTypeOf('function'))
+    mocks.getTreeAncestors.mockResolvedValue({ ancestors: [node(root, 'root'), node(schema, 'business')], target_locator: schema })
+    const fresh = node('addp://engine/25/path/business/new?type=table&item_id=253', 'new')
+    mocks.getNodeChildren.mockResolvedValueOnce(node(schema, 'business', [fresh]))
+    await store.loadNodeChildren(schema, true)
+    resolveOld(node(schema, 'business', [node('addp://engine/25/path/business/old?type=table&item_id=252', 'old')]))
+    await first
+    expect(store.engineTrees[25].children[0].children.map(child => child.label)).toEqual(['new'])
+    expect(store.nodeChildrenCache[schema].children.map(child => child.label)).toEqual(['new'])
+  })
+
+  it('shares concurrent ordinary child loads and applies cached children to the current tree', async () => {
+    const store = useExplorerStore()
+    const locator = 'addp://engine/25/path/?type=server&node_id=250'
+    store.engineTrees[25] = { id: locator, locator, type: 'server', children: [] }
+    let resolveChildren
+    const pending = new Promise(resolve => { resolveChildren = resolve })
+    mocks.getNodeChildren.mockReturnValue(pending)
+    const first = store.loadNodeChildren(locator)
+    const second = store.loadNodeChildren(locator)
+    await vi.waitFor(() => expect(resolveChildren).toBeTypeOf('function'))
+    const child = { id: 'child', locator: 'child', type: 'table', label: 'child', children: [] }
+    resolveChildren({ locator, children: [child] })
+    await Promise.all([first, second])
+    expect(mocks.getNodeChildren).toHaveBeenCalledTimes(1)
+    store.engineTrees[25] = { id: locator, locator, type: 'server', children: [] }
+    await store.loadNodeChildren(locator)
+    expect(mocks.getNodeChildren).toHaveBeenCalledTimes(1)
+    expect(store.engineTrees[25].children.map(child => child.label)).toEqual(['child'])
+  })
+
+  it('does not let a delayed locator reveal replace a newer selected resource', async () => {
+    const store = useExplorerStore()
+    const root = 'addp://engine/25/path/?type=server&node_id=250'
+    const target = 'addp://engine/25/path/business?type=schema&node_id=251'
+    const later = 'addp://engine/29/path/?type=server&node_id=290'
+    const node = locator => ({ id: locator, locator, label: locator, type: 'schema', hasChildren: true, children: [] })
+    store.engineTrees[25] = node(root)
+    let resolveAncestors
+    mocks.getTreeAncestors.mockImplementationOnce(() => new Promise(resolve => { resolveAncestors = resolve }))
+    mocks.getNodeChildren.mockResolvedValue({ children: [node(target)] })
+    const pending = store.revealLocator(target)
+    await vi.waitFor(() => expect(resolveAncestors).toBeTypeOf('function'))
+    store.selectNodeContext(node(later), later)
+    resolveAncestors({ ancestors: [node(root), node(target)], target_locator: target })
+    await pending
+    expect(store.selectedLocator).toBe(later)
+    expect([...store.expandedLocators]).toEqual([])
+  })
+
+  it('discards a failed locator reveal after the user has selected another resource', async () => {
+    const store = useExplorerStore()
+    const root = 'addp://engine/25/path/?type=server&node_id=250'
+    const target = 'addp://engine/25/path/business?type=schema&node_id=251'
+    store.engineTrees[25] = { id: root, locator: root, type: 'server', children: [] }
+    let rejectAncestors
+    mocks.getTreeAncestors.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectAncestors = reject }))
+    const pending = store.revealLocator(target)
+    await vi.waitFor(() => expect(rejectAncestors).toBeTypeOf('function'))
+    store.selectNode('later-selection')
+    rejectAncestors(new Error('stale failure'))
+    await expect(pending).resolves.toBeNull()
+    expect(store.selectedLocator).toBe('later-selection')
+  })
+
+  it('never lets an older deeper root response replace a newer root snapshot', async () => {
+    const store = useExplorerStore()
+    let resolveOld
+    mocks.getTree.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const first = store.loadTree(25, 2)
+    const root = 'addp://engine/25/path/?type=server&node_id=250'
+    mocks.getTree.mockResolvedValueOnce({ id: root, locator: root, type: 'server', label: 'new', children: [] })
+    await store.loadTree(25, 1, true)
+    resolveOld({ id: root, locator: root, type: 'server', label: 'old', children: [] })
+    await first
+    expect(store.engineTrees[25].label).toBe('new')
+    expect(store.engineTreeDepths[25]).toBe(1)
+  })
+
   it('collapses only the exact subtree, preserving similarly named siblings and other engines', () => {
     const store = useExplorerStore()
     const root = 'addp://engine/12/path/?type=service&node_id=1'

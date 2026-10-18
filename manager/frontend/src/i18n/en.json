@@ -1131,6 +1131,7 @@
       "vectorizeFailed": "Vectorization failed: {error}",
       "searchPlaceholder": "Search resources...",
       "searching": "Searching...",
+      "searchFailed": "Search failed: {error}",
       "noMatchingDataSources": "No matching resources found",
       "clear": "Clear",
       "score": "Score",

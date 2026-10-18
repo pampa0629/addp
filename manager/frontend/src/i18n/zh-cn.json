@@ -1131,6 +1131,7 @@
       "vectorizeFailed": "向量化失败：{error}",
       "searchPlaceholder": "搜索资源...",
       "searching": "搜索中...",
+      "searchFailed": "搜索失败：{error}",
       "noMatchingDataSources": "未找到匹配的资源",
       "clear": "清除",
       "score": "相关度",

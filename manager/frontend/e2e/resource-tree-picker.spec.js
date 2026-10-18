@@ -315,6 +315,56 @@ test('selects a spatial table through the shared picker and applies capability f
   await expect.poll(() => backend.capabilityLocators).toEqual([FARMLAND_LOCATOR])
 })
 
+test('a failed lazy directory load can be retried without changing engines', async ({ page }) => {
+  await installMockBackend(page)
+  let attempts = 0
+  await page.route('**/api/v1/meta/resource-tree/11/node?**', async route => {
+    const locator = new URL(route.request().url()).searchParams.get('locator') || ''
+    if (!locator.includes('/path/public?')) return route.fallback()
+    attempts += 1
+    if (attempts === 1) return fulfillJSON(route, { error: '目录读取暂时失败' }, 500)
+    return fulfillJSON(route, { children: postgresTree().children[0].children })
+  })
+  await page.goto('/tasks/spatial?task_type=vector_tile_set_generation&create=1')
+  const dialog = page.getByRole('dialog', { name: '新建任务' })
+  await chooseEngine(page, dialog, POSTGRES_ENGINE.name)
+  await expandTreeNode(dialog, 'public')
+  await expect(page.locator('.el-message--error')).toBeVisible()
+  await expect(treeNodeContent(dialog, 'public').locator('..')).toHaveAttribute('aria-expanded', 'false')
+  await expandTreeNode(dialog, 'public')
+  await expect(treeNodeContent(dialog, 'farmland')).toBeVisible()
+  expect(attempts).toBe(2)
+})
+
+test('a lazy directory stays collapsed when its delayed children arrive', async ({ page }) => {
+  await installMockBackend(page)
+  let releaseChildren
+  let attempts = 0
+  await page.route('**/api/v1/meta/resource-tree/11/node?**', async route => {
+    const locator = new URL(route.request().url()).searchParams.get('locator') || ''
+    if (!locator.includes('/path/public?')) return route.fallback()
+    attempts += 1
+    await new Promise(resolve => { releaseChildren = resolve })
+    return fulfillJSON(route, { children: postgresTree().children[0].children })
+  })
+  await page.goto('/tasks/spatial?task_type=vector_tile_set_generation&create=1')
+  const dialog = page.getByRole('dialog', { name: '新建任务' })
+  await chooseEngine(page, dialog, POSTGRES_ENGINE.name)
+  await expandTreeNode(dialog, 'public')
+  await expect.poll(() => typeof releaseChildren).toBe('function')
+  const content = treeNodeContent(dialog, 'public')
+  await expect(content.locator('.el-tree-node__loading-icon')).toBeVisible()
+  await content.locator(':scope > .el-tree-node__expand-icon').click()
+  const response = page.waitForResponse(response => response.url().includes('/11/node') && response.url().includes('public'))
+  releaseChildren()
+  await response
+  await expect(content.locator('.el-tree-node__loading-icon')).toHaveCount(0)
+  await expect(content.locator('..')).toHaveAttribute('aria-expanded', 'false')
+  await content.locator(':scope > .el-tree-node__expand-icon').click()
+  await expect(treeNodeContent(dialog, 'farmland')).toBeVisible()
+  expect(attempts).toBe(1)
+})
+
 test('restores the source table from the unified spatial task create URL', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto(`/tasks/spatial?task_type=vector_tile_set_generation&create=1&locator=${encodeURIComponent(FARMLAND_LOCATOR)}`)
