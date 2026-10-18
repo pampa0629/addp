@@ -525,10 +525,10 @@ func mysqlCompatibleInsertSQL(database, table string, columns []string, rows []m
 	args := make([]interface{}, 0, len(rows)*len(columns))
 	for rowIndex, row := range rows {
 		valueGroups[rowIndex] = valueGroup
-		for _, column := range columns {
+		for columnIndex, column := range columns {
 			value, err := EncodeTableWriteValue(row[column], fieldTypes[column])
 			if err != nil {
-				return "", nil, fmt.Errorf("write row %d column %q: %w", rowIndex, column, err)
+				return "", nil, fmt.Errorf("write row %d column %q: %w", rowIndex, column, plugin.WithTableWriteField(err, columnIndex+1, fieldTypes[column]))
 			}
 			args = append(args, value)
 		}
@@ -569,6 +569,7 @@ func (s *mysqlCompatibleTableWriteSession) WriteBatch(ctx context.Context, batch
 	// first failure so Close cannot commit prior chunks or successful batches.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -611,6 +612,7 @@ func (s *mysqlCompatibleTableWriteSession) Close(ctx context.Context) (err error
 	s.closed = true
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()

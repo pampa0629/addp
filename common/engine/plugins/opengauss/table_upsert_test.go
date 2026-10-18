@@ -3,6 +3,7 @@ package opengauss
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"reflect"
 	"strings"
@@ -89,6 +90,18 @@ func TestOpenGaussUpsertRejectsInvalidJSONBeforeConnecting(t *testing.T) {
 	for _, bad := range []interface{}{"{", []byte{}, json.RawMessage(`[] []`), math.NaN(), make(chan int), []byte(nil), json.RawMessage(nil)} {
 		batch := &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "document", Type: datatype.FieldTypeString}}, Rows: []map[string]interface{}{{"id": int64(1), "document": true}, {"id": int64(2), "document": bad}}}
 		err := (&Plugin{}).UpsertBatch(t.Context(), nil, path, batch, plugin.TableUpsertOptions{Fields: fields, Keys: []string{"id"}})
+		var typed *plugin.TableWriteError
+		if !errors.As(err, &typed) {
+			t.Fatalf("lost typed write failure: %v", err)
+		}
+		if reflect.ValueOf(bad).Kind() == reflect.Slice && reflect.ValueOf(bad).IsNil() {
+			// Typed nil byte JSON is SQL NULL; the failure is the declared NOT NULL constraint.
+			if typed.Code != plugin.TableWriteFailed || typed.Field != nil || !strings.Contains(err.Error(), "NOT NULL") {
+				t.Fatalf("SQL NULL misclassified as JSON encoding: %#v error=%v", typed, err)
+			}
+		} else if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+			t.Fatalf("JSON diagnostic: %#v error=%v", typed, err)
+		}
 		if err == nil || !strings.Contains(err.Error(), `row 1`) || !strings.Contains(err.Error(), `field "document"`) {
 			t.Fatalf("JSON must fail before opening a connection: %v", err)
 		}
@@ -96,8 +109,12 @@ func TestOpenGaussUpsertRejectsInvalidJSONBeforeConnecting(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err := (&Plugin{}).UpsertBatch(ctx, nil, path, &plugin.BatchData{Fields: fields, Rows: []map[string]interface{}{{"id": int64(1), "document": true}}}, plugin.TableUpsertOptions{Fields: fields, Keys: []string{"id"}})
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled upsert: %v", err)
+	}
+	var typed *plugin.TableWriteError
+	if !errors.As(err, &typed) || typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+		t.Fatalf("canceled upsert diagnostic: %#v", typed)
 	}
 }
 
@@ -147,5 +164,34 @@ func TestOpenGaussUpsertUsesDeclaredProtocolTypes(t *testing.T) {
 	}
 	if _, err := openGaussUpsertFields([]string{"extra"}, fields); err == nil {
 		t.Fatal("batch field absent from options was accepted")
+	}
+}
+
+func TestOpenGaussUpsertDiagnosticUsesActualOrder(t *testing.T) {
+	declared := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "document", Type: datatype.FieldTypeJSON, Nullable: true}, {Name: "members", Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeString, Nullable: true}}
+	fields, err := openGaussUpsertFields([]string{"members", "id", "document"}, declared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, array := range []bool{false, true} {
+		row := map[string]interface{}{"id": int64(1), "document": true, "members": []string{}}
+		code, column, fieldType := plugin.TableWriteJSONInvalid, 3, datatype.FieldTypeJSON
+		if array {
+			row["members"] = []interface{}{map[string]interface{}{"x": 1}}
+			code, column, fieldType = plugin.TableWriteArrayInvalid, 1, datatype.FieldTypeArray
+		} else {
+			row["document"] = make(chan int)
+		}
+		_, err := openGaussUpsertRowArgs(row, fields)
+		var typed *plugin.TableWriteError
+		if !errors.As(err, &typed) || typed.Code != code || typed.Field == nil || typed.Field.ColumnIndex != column || typed.Field.DeclaredType != fieldType {
+			t.Fatalf("actual order: %#v error=%v", typed, err)
+		}
+		if !array {
+			var cause *json.UnsupportedTypeError
+			if !errors.As(err, &cause) {
+				t.Fatalf("encoder cause lost: %v", err)
+			}
+		}
 	}
 }

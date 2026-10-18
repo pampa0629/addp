@@ -1,6 +1,8 @@
 package shared
 
 import (
+	"errors"
+	"github.com/addp/common/engine/plugins/shared/writetest"
 	"strings"
 	"testing"
 
@@ -108,5 +110,22 @@ func TestMySQLCompatibleTableWriterRejectsSpatialUpsert(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not support spatial fields") {
 		t.Fatalf("PrepareTableUpsert() spatial error = %v", err)
+	}
+}
+
+func TestMySQLCompatibleUpsertDiagnosticUsesActualOrder(t *testing.T) {
+	db, _, _ := writetest.AutoCommitSQLite(t)
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	writer := MySQLCompatibleTableWriter{EngineType: "tidb", UpsertValueReference: MySQLCompatibleUpsertValueReferenceRowAlias}
+	// Batch order is different from the frozen declaration; batch type cannot override it.
+	batch := &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "document", Type: datatype.FieldTypeString}, {Name: "id", Type: datatype.FieldTypeBigInt}}, Rows: []map[string]interface{}{{"id": 1, "document": true}, {"id": 2, "document": make(chan int)}}}
+	err = writer.upsertRowsTx(t.Context(), tx, "main", "target", batch, []string{"id"}, TableWriteFieldTypes([]datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "document", Type: datatype.FieldTypeJSON}}))
+	var typed *plugin.TableWriteError
+	if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 1 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+		t.Fatalf("actual upsert column: %#v error=%v", typed, err)
 	}
 }

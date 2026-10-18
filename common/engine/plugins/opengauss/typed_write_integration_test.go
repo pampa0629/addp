@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"reflect"
@@ -191,11 +192,32 @@ func TestIntegrationOpenGaussTypedWrites(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), bad.field) {
 					t.Fatalf("invalid %s accepted: %v", bad.field, err)
 				}
+				code, column, fieldType := plugin.TableWriteJSONInvalid, 2, datatype.FieldTypeJSON
+				if bad.field == "members" {
+					code, column, fieldType = plugin.TableWriteArrayInvalid, 3, datatype.FieldTypeArray
+				}
+				var typed *plugin.TableWriteError
+				if !errors.As(err, &typed) || typed.Code != code || typed.Field == nil || typed.Field.ColumnIndex != column || typed.Field.DeclaredType != fieldType {
+					t.Fatalf("native diagnostic: %#v error=%v", typed, err)
+				}
 				var count int
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != len(cases) {
 					t.Fatalf("invalid batch changed rows: count=%d error=%v", count, err)
 				}
 			}
+			if method == "upsert" {
+				err := write([]map[string]interface{}{{"id": "native_integer_invalid", "document": true, "members": []string{}, "payload": nil, "label": nil}})
+				var typed *plugin.TableWriteError
+				var native *pq.Error
+				if !errors.As(err, &typed) || typed.Code != plugin.TableWriteFailed || typed.Field != nil || !errors.As(err, &native) {
+					t.Fatalf("native MERGE error chain: %#v error=%v", typed, err)
+				}
+				var count int
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != len(cases) {
+					t.Fatalf("native MERGE failure changed rows: count=%d error=%v", count, err)
+				}
+			}
+
 		})
 	}
 }

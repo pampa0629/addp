@@ -17,6 +17,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
 )
@@ -233,11 +234,25 @@ func MySQLJSONWrites(t *testing.T, db *sql.DB, p MySQLJSONProvider, connInfo plu
 				if err == nil || !strings.Contains(err.Error(), `column "payload"`) {
 					t.Fatalf("bad value %T: want field error, got %v", bad, err)
 				}
+				assertMySQLWriteDiagnostic(t, err, true, 3)
 				var count int
 				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified+" WHERE id>=10000").Scan(&count); err != nil || count != 0 {
 					t.Fatalf("failed write not rolled back: count=%d error=%v", count, err)
 				}
 			}
+			if method == "upsert" {
+				err := write([]map[string]interface{}{{"id": "native_integer_invalid", "payload": true, "blob": []byte{0, 255}}})
+				assertMySQLWriteDiagnostic(t, err, false, 0)
+				var native *mysqlDriver.MySQLError
+				if !errors.As(err, &native) {
+					t.Fatalf("upsert lost native MySQL error: %v", err)
+				}
+				var count int
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified).Scan(&count); err != nil || count != len(cases) {
+					t.Fatalf("native upsert failure changed rows: count=%d error=%v", count, err)
+				}
+			}
+
 		})
 	}
 }
@@ -344,8 +359,16 @@ func mysqlSessionFailureClose(t *testing.T, db *sql.DB, p MySQLJSONProvider, inf
 					t.Errorf("write after failure lost original error: got=%v first=%v", err, firstErr)
 				}
 			}
-			if err := session.Close(closeCtx); !errors.Is(err, firstErr) {
-				t.Errorf("Close lost failure: got=%v first=%v", err, firstErr)
+			closeErr := session.Close(closeCtx)
+			if !errors.Is(closeErr, firstErr) {
+				t.Errorf("Close lost failure: got=%v first=%v", closeErr, firstErr)
+			}
+			assertMySQLWriteDiagnostic(t, closeErr, failure == "invalid_json", 2)
+			if failure == "duplicate_key" || failure == "not_null" {
+				var native *mysqlDriver.MySQLError
+				if !errors.As(closeErr, &native) {
+					t.Fatalf("lost native MySQL error chain: %v", closeErr)
+				}
 			}
 			if err := session.Close(ctx); !errors.Is(err, firstErr) {
 				t.Errorf("repeated Close lost failure: %v", err)
@@ -390,5 +413,21 @@ func mysqlSessionFailureClose(t *testing.T, db *sql.DB, p MySQLJSONProvider, inf
 				t.Fatalf("geometry changed: srid=%d err=%v", srid, err)
 			}
 		}
+	}
+}
+
+// SQL protocol errors carry no guessed field, even if the driver mentions one.
+func assertMySQLWriteDiagnostic(t *testing.T, err error, jsonFailure bool, column int) {
+	t.Helper()
+	var typed *plugin.TableWriteError
+	if !errors.As(err, &typed) {
+		t.Fatalf("lost typed write failure: %v", err)
+	}
+	if jsonFailure {
+		if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != column || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+			t.Fatalf("JSON column diagnostic: %#v", typed)
+		}
+	} else if typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+		t.Fatalf("unproven field attached: %#v", typed)
 	}
 }

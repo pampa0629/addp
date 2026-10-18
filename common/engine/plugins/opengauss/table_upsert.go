@@ -27,7 +27,7 @@ func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.Connect
 
 // UpsertBatch applies the entire batch in one transaction. openGauss uses its
 // native MERGE statement rather than PostgreSQL's ON CONFLICT syntax.
-func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) (err error) {
 	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
 		return err
 	}
@@ -58,6 +58,7 @@ func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo
 	if err != nil {
 		return err
 	}
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	// Validate every parameter before opening the target connection. A later
 	// encoding failure cannot leave a successfully applied prefix of this batch.
 	rows := make([][]interface{}, len(batch.Rows))
@@ -245,14 +246,14 @@ func buildOpenGaussMergeSQL(schema, table string, fields []datatype.FieldInfo, k
 
 func openGaussUpsertRowArgs(row map[string]interface{}, fields []datatype.FieldInfo) ([]interface{}, error) {
 	args := make([]interface{}, 0, len(fields))
-	for _, field := range fields {
+	for fieldIndex, field := range fields {
 		value, ok := row[field.Name]
 		if !ok {
 			return nil, fmt.Errorf("missing field %q", field.Name)
 		}
 		value, err := postgresql.ProtocolTableWriteValue(value, field.Type)
 		if err != nil {
-			return nil, fmt.Errorf("field %q: %w", field.Name, err)
+			return nil, fmt.Errorf("field %q: %w", field.Name, plugin.WithTableWriteField(err, fieldIndex+1, field.Type))
 		}
 		if value == nil && !field.Nullable {
 			return nil, fmt.Errorf("field %q is NOT NULL", field.Name)

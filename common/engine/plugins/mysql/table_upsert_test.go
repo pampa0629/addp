@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -59,5 +60,15 @@ func TestMySQLOnDuplicateKeyClauseUpdatesOnlyNonKeyColumns(t *testing.T) {
 	keyOnly := mysqlOnDuplicateKeyClause([]string{"id"}, []string{"id"})
 	if !strings.Contains(keyOnly, "`id` = new_values.`id`") {
 		t.Fatalf("key-only clause = %q, want idempotent no-op update", keyOnly)
+	}
+}
+
+func TestMySQLSpatialUpsertDiagnosticUsesActualOrder(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "document", Type: datatype.FieldTypeJSON}, {Name: "shape", Type: datatype.FieldTypeGeometry}}
+	batch := &plugin.BatchData{Fields: []datatype.FieldInfo{{Name: "shape"}, {Name: "document", Type: datatype.FieldTypeString}, {Name: "id"}}, Rows: []map[string]interface{}{{"id": 1, "document": true}, {"id": 2, "document": make(chan int)}}}
+	err := upsertMySQLRowsTx(t.Context(), nil, "synthetic", "target", batch, plugin.TableUpsertOptions{Fields: fields}, []string{"id"})
+	var typed *plugin.TableWriteError
+	if !errors.As(err, &typed) || typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 2 || typed.Field.DeclaredType != datatype.FieldTypeJSON {
+		t.Fatalf("actual spatial upsert column: %#v error=%v", typed, err)
 	}
 }

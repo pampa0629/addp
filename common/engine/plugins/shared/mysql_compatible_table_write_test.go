@@ -1,7 +1,10 @@
 package shared
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -102,5 +105,46 @@ func TestMySQLCompatibleTableWriterMethodBoundary(t *testing.T) {
 	}
 	if w.supportsInsertMethod("mysql_insert") || w.supportsInsertMethod("upsert") {
 		t.Fatal("engine-specific or upsert methods must not cross the OceanBase boundary")
+	}
+}
+
+func TestTypedWriteDiagnosticPreservesColumnAndFailure(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		session := &mysqlCompatibleTableWriteSession{engineType: "tidb",
+			columns: []string{"id", "shape", "document"}, fieldTypes: map[string]datatype.FieldType{"document": datatype.FieldTypeJSON}, chunkSize: 1000,
+		}
+		ctx := t.Context()
+		if canceled {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			cancel()
+		}
+		err := session.WriteBatch(ctx, &plugin.BatchData{Rows: []map[string]interface{}{{"id": 1, "document": true}, {"id": 2, "document": make(chan int)}}})
+		var typed *plugin.TableWriteError
+		if !errors.As(err, &typed) {
+			t.Fatalf("lost typed error: %v", err)
+		}
+		if canceled {
+			if !errors.Is(err, context.Canceled) || typed.Code != plugin.TableWriteFailed || typed.Field != nil {
+				t.Fatalf("canceled write: %#v", typed)
+			}
+		} else {
+			var cause *json.UnsupportedTypeError
+			if typed.Code != plugin.TableWriteJSONInvalid || typed.Field == nil || typed.Field.ColumnIndex != 3 || typed.Field.DeclaredType != datatype.FieldTypeJSON || !errors.As(err, &cause) {
+				t.Fatalf("actual column/error chain lost: %#v", typed)
+			}
+		}
+		if next := session.WriteBatch(t.Context(), nil); !errors.Is(next, err) {
+			t.Fatalf("first failure lost: %v", next)
+		}
+		if closed := session.Close(t.Context()); !errors.Is(closed, err) {
+			t.Fatalf("close lost error: %v", closed)
+		}
+		if closed := session.Close(t.Context()); !errors.Is(closed, err) {
+			t.Fatalf("repeated close lost error: %v", closed)
+		}
+		if session.CommitMarker() != nil {
+			t.Fatal("failed session published marker")
+		}
 	}
 }

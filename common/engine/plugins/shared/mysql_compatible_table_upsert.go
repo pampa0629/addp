@@ -135,12 +135,13 @@ func (w MySQLCompatibleTableWriter) UpsertBatch(ctx context.Context, connInfo pl
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit %s upsert: %w", w.engineType(), err)
+		return plugin.NewTableWriteError(plugin.TableWriteFailed, fmt.Errorf("commit %s upsert: %w", w.engineType(), err))
 	}
 	return nil
 }
 
-func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, keys []string, fieldTypes map[string]datatype.FieldType) error {
+func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, keys []string, fieldTypes map[string]datatype.FieldType) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}

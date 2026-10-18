@@ -207,7 +207,7 @@ func buildMySQLInsertSQL(database, table string, columns []string, rows []map[st
 				group[i] = "?"
 				encoded, err := shared.EncodeTableWriteValue(value, fieldTypes[column])
 				if err != nil {
-					return "", nil, fmt.Errorf("mysql write row %d column %q: %w", rowIndex, column, err)
+					return "", nil, fmt.Errorf("mysql write row %d column %q: %w", rowIndex, column, plugin.WithTableWriteField(err, i+1, fieldTypes[column]))
 				}
 				args = append(args, encoded)
 				continue
@@ -297,6 +297,7 @@ func (s *mysqlTableWriteSession) WriteBatch(ctx context.Context, batch *plugin.B
 	// transaction. Retain them so Close cannot commit earlier chunks or batches.
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()
@@ -339,6 +340,7 @@ func (s *mysqlTableWriteSession) Close(ctx context.Context) (err error) {
 	s.closed = true
 	defer func() {
 		if err != nil {
+			err = plugin.NewTableWriteError(plugin.TableWriteFailed, err)
 			s.writeErr = err
 		}
 	}()

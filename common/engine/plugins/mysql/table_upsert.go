@@ -105,12 +105,13 @@ func (p *MySQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.Connectio
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit mysql upsert: %w", err)
+		return plugin.NewTableWriteError(plugin.TableWriteFailed, fmt.Errorf("commit mysql upsert: %w", err))
 	}
 	return nil
 }
 
-func upsertMySQLRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, opts plugin.TableUpsertOptions, keys []string) error {
+func upsertMySQLRowsTx(ctx context.Context, tx *sql.Tx, database, table string, batch *plugin.BatchData, opts plugin.TableUpsertOptions, keys []string) (err error) {
+	defer func() { err = plugin.NewTableWriteError(plugin.TableWriteFailed, err) }()
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
