@@ -1,11 +1,17 @@
 import copy
 import importlib.util
+import csv
+import io
+import shutil
 import sys
+import tempfile
 import time
 import unittest
 import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
+from uuid import uuid4
 
 SCRIPT = Path(__file__).with_name("manager-internal-artifact-lineage-online.py")
 SPEC = importlib.util.spec_from_file_location("content_boundary_online_owner", SCRIPT)
@@ -154,3 +160,125 @@ class ContentBoundaryOnlineTest(unittest.TestCase):
             for fault in ("retain-component", "replace-seeded-primary", "replace-seeded-fingerprint", "move-seeded-parent", "delete-unclaimed-single", "delete-unclaimed-component", "retired-detail-readable"):
                 with self.subTest(bucket=bucket, fault=fault), self.assertRaises(OWNER.SuiteError):
                     OWNER.verify_content_boundaries(BoundaryAPI(bucket, fault), 9, bucket, time.monotonic() + 10)
+
+
+class IndexSourceAPI:
+    def __init__(self, root, fault=""):
+        self.root, self.fault = root, fault
+        self.items, self.calls = {}, []
+        self.refreshes = 0
+
+    def snapshot(self, item_id):
+        path = self.root / f"index-source-versions/source.{('csv', 'tsv')[item_id - 1]}"
+        return {"id": item_id, "fingerprint": f"item-{item_id}", "full_name": str(path.relative_to(self.root)),
+                "attributes": {"access_index": {"table": {"kind": "sparse_row_index", "source": {
+                    "size_bytes": path.stat().st_size, "last_modified_at": str(path.stat().st_mtime_ns)}}}}}
+
+    def request(self, method, path, expected, body=None):
+        self.calls.append((method, path, body))
+        status, raw = 200, b""
+        if path == "/api/v1/meta/scan/run/manual":
+            suffix = body["targets"][0].split("?")[0].rsplit(".", 1)[1]
+            item_id = ("csv", "tsv").index(suffix) + 1
+            self.items[item_id] = self.snapshot(item_id)
+            status, payload = 201, {"execution_id": "scan-1"}
+        elif "/meta/executions/" in path:
+            payload = {"status": "success"}
+        elif path == "/api/v1/meta/engines/9/items":
+            payload = list(self.items.values())
+        elif "/meta/items/" in path:
+            payload = self.items[int(path.rsplit("/", 1)[1])]
+        elif path.endswith("/items/refresh"):
+            self.refreshes += 1
+            item_id = body["item_id"]
+            if not (self.fault == "stale-refresh" and self.refreshes == 1):
+                self.items[item_id] = self.snapshot(item_id)
+                if self.fault == "replace-identity" and self.refreshes == 1:
+                    self.items[item_id]["fingerprint"] = "replacement-id"
+            payload = {"status": "success"}
+        elif "/manager/preview?" in path or "/manager/storage-stream?" in path:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            locator = urllib.parse.urlsplit(query["locator"][0])
+            item_id = int(urllib.parse.parse_qs(locator.query)["item_id"][0])
+            source = self.root / self.items[item_id]["full_name"]
+            raw = source.read_bytes()
+            if "/storage-stream?" in path:
+                payload = {}
+            elif self.items[item_id]["attributes"] != self.snapshot(item_id)["attributes"] and self.fault != "allow-stale":
+                status, payload = 409, {"error_code": "preview_source_refresh_required"}
+                if self.fault == "leak-rows":
+                    payload["rows"] = []
+                if self.fault == "wrong-code":
+                    payload["error_code"] = "unknown"
+                if self.fault == "auto-refresh":
+                    self.items[item_id] = self.snapshot(item_id)
+            else:
+                reader = csv.DictReader(io.StringIO(raw.decode()), delimiter="\t" if source.suffix == ".tsv" else ",")
+                rows = [{**row, "id": int(row["id"])} for row in reader]
+                page = int(query["page"][0])
+                payload = {"mode": "table", "columns": reader.fieldnames, "rows": rows[page-1:page], "total": 2, "has_more": page == 1}
+        else:
+            raise AssertionError(f"unexpected {method} {path}")
+        if status not in expected:
+            raise OWNER.SuiteError(f"unexpected HTTP status {status}")
+        return SimpleNamespace(status=status, payload=copy.deepcopy(payload), raw=raw)
+
+
+class IndexSourceVersionsOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path("/tmp") / ("addp-online-manager-nfs." + uuid4().hex[:6])
+        self.root.mkdir()
+        self.addCleanup(lambda: shutil.rmtree(self.root))
+        (self.root / ".addp-online-owner").write_text("manager-42-1\n")
+        (self.root / "index-source-versions").mkdir()
+        self.originals = {}
+        for suffix, delimiter in (("csv", ","), ("tsv", "\t")):
+            content = "id,name\n1,Alice\n2,Bobby\n".replace(",", delimiter).encode()
+            path = self.root / "index-source-versions" / ("source." + suffix)
+            path.write_bytes(content)
+            self.originals[path] = content
+        (Path(self.temp.name) / "nfs-root").write_text(str(self.root) + "\n")
+        self.env = {"ADDP_ONLINE_HOST": "1", "ADDP_ONLINE_HOSTED": "1", "GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux",
+                    "ADDP_ONLINE_SECRET_DIR": self.temp.name, "ADDP_ONLINE_TEST_RUN_ID": "manager-42-1",
+                    "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID": "9"}
+        self.enterContext(mock.patch.object(OWNER.sys, "platform", "linux"))
+        self.enterContext(mock.patch.object(OWNER.os, "uname", return_value=SimpleNamespace(machine="x86_64")))
+
+    def invoke(self, api):
+        return OWNER.verify_nfs_index_source_versions(api, self.env, time.monotonic() + 30)
+
+    def test_same_size_change_rejects_both_pages_refreshes_and_restores(self):
+        api = IndexSourceAPI(self.root)
+        result = self.invoke(api)
+        self.assertEqual(result["schema_version"], "addp.index-source-versions/v1")
+        self.assertEqual(result["result"], "passed")
+        self.assertEqual([case["format"] for case in result["cases"]], ["csv", "tsv"])
+        self.assertEqual(api.refreshes, 4)
+        for case in result["cases"]:
+            self.assertEqual(case["stale_pages_rejected"], [1, 2])
+            self.assertNotEqual(case["original_sha256"], case["changed_sha256"])
+            self.assertTrue(case["source_and_preview_restored"])
+        for path, original in self.originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_rejects_regressions_and_restores_physical_bytes_on_failure(self):
+        for fault in ("allow-stale", "leak-rows", "wrong-code", "auto-refresh", "stale-refresh", "replace-identity"):
+            with self.subTest(fault=fault), self.assertRaises(OWNER.SuiteError):
+                self.invoke(IndexSourceAPI(self.root, fault))
+            for path, original in self.originals.items():
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_rejects_unowned_hosts_and_fixture_paths_before_api_calls(self):
+        api = IndexSourceAPI(self.root)
+        for key, value in (("GITHUB_ACTIONS", "false"), ("ADDP_ONLINE_HOST", "0"), ("ADDP_ONLINE_HOSTED", "0"), ("RUNNER_OS", "macOS"),
+                           ("ADDP_ONLINE_TEST_RUN_ID", "another-run")):
+            with self.subTest(key=key), mock.patch.dict(self.env, {key: value}), self.assertRaises(OWNER.SuiteError):
+                self.invoke(api)
+        source = next(iter(self.originals))
+        source.unlink()
+        source.symlink_to(self.root / ".addp-online-owner")
+        with self.assertRaises(OWNER.SuiteError):
+            self.invoke(api)
+        self.assertFalse(api.calls)

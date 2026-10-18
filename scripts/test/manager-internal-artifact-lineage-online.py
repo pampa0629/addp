@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -365,6 +366,116 @@ def wait_for_meta_scan(client: GatewayClient, engine_id: int, deadline: float,
             raise SuiteError(f"Meta scan ended with status {status}")
         time.sleep(1)
     raise SuiteError("Meta scan did not finish before the convergence timeout")
+
+
+def verify_nfs_index_source_versions(client: GatewayClient, environment: Mapping[str, str], deadline: float) -> dict[str, object]:
+    """Mutate only this Hosted run's two owned sources, through no application write API."""
+    if (environment.get("ADDP_ONLINE_HOST") != "1" or environment.get("ADDP_ONLINE_HOSTED") != "1" or environment.get("GITHUB_ACTIONS") != "true" or
+            environment.get("RUNNER_OS") != "Linux" or sys.platform != "linux" or os.uname().machine != "x86_64"):
+        raise SuiteError("index source mutation requires the exclusive Hosted Linux x86_64 fixture")
+    run_id = environment["ADDP_ONLINE_TEST_RUN_ID"]
+    if not re.fullmatch(r"manager-[0-9]+-[0-9]+", run_id):
+        raise SuiteError("NFS index source requires the Hosted Manager run identity")
+    state = Path(environment["ADDP_ONLINE_SECRET_DIR"]) / "nfs-root"
+    if state.is_symlink() or not state.is_file():
+        raise SuiteError("owned NFS index source state is missing")
+    root = Path(state.read_text().strip())
+    if (not re.fullmatch(r"/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}", str(root)) or
+            root.is_symlink() or not root.is_dir()):
+        raise SuiteError("NFS index source root is not owned by this fixture")
+    owner = root / ".addp-online-owner"
+    directory = root / "index-source-versions"
+    if (owner.is_symlink() or not owner.is_file() or owner.read_text().strip() != run_id or
+            directory.is_symlink() or not directory.is_dir()):
+        raise SuiteError("NFS index source ownership mismatch")
+    engine_id = positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id")
+    cases = []
+    for suffix, separator in (("csv", ","), ("tsv", "\t")):
+        relative = f"index-source-versions/source.{suffix}"
+        path = root / relative
+        original = "id,name\n1,Alice\n2,Bobby\n".replace(",", separator).encode("ascii")
+        replacement = "id,city\n1,Tokyo\n2,Paris\n".replace(",", separator).encode("ascii")
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != original or len(original) != len(replacement):
+            raise SuiteError("NFS index source does not match the fixed original bytes")
+        locator = f"addp://engine/{engine_id}/path/{relative}?type=file"
+        wait_for_meta_scan(client, engine_id, deadline, scope={"targets": [locator]})
+        listed = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "NFS index items")
+        matching = [item for item in listed if item.get("full_name") == relative]
+        if len(matching) != 1:
+            raise SuiteError("NFS indexed item identity is missing or duplicated")
+        item_id = positive_int(matching[0].get("id"), "NFS indexed item id")
+        locator += f"&item_id={item_id}"
+
+        def detail():
+            return _object(client.request("GET", f"/api/v1/meta/items/{item_id}", (200,)).payload, "NFS index detail")
+
+        def refresh():
+            result = _object(client.request("POST", f"/api/v1/manager/engines/{engine_id}/items/refresh", (200,),
+                                           {"item_id": item_id}).payload, "NFS index refresh")
+            if result.get("status") != "success":
+                raise SuiteError("NFS index refresh did not finish successfully")
+
+        def check_pages(column, labels):
+            for page, label in enumerate(labels, 1):
+                query = urllib.parse.urlencode({"locator": locator, "page": page, "page_size": 1})
+                result = _object(client.request("GET", "/api/v1/manager/preview?" + query, (200,)).payload, "NFS indexed preview")
+                if (result.get("mode") != "table" or result.get("columns") != ["id", column] or
+                        result.get("rows") != [{"id": page, column: label}] or result.get("total") != 2 or
+                        result.get("has_more") is not (page == 1)):
+                    raise SuiteError("NFS indexed preview returned stale fields, rows or pagination")
+
+        def check_download(expected):
+            query = urllib.parse.urlencode({"locator": locator, "storage_ref": relative})
+            if client.request("GET", "/api/v1/manager/storage-stream?" + query, (200,)).raw != expected:
+                raise SuiteError("NFS indexed source download bytes differ")
+
+        before = detail()
+        attrs = _object(before.get("attributes"), "NFS indexed attributes")
+        index = _object(_object(attrs.get("access_index"), "NFS access indexes").get("table"), "NFS table index")
+        binding = _object(index.get("source"), "NFS index source binding")
+        if index.get("kind") != "sparse_row_index" or binding.get("size_bytes") != len(original) or not binding.get("last_modified_at"):
+            raise SuiteError("NFS fixture must use a version-bound sparse row index")
+        check_pages("name", ["Alice", "Bobby"])
+        check_download(original)
+        changed = False
+        try:
+            stamp = path.stat().st_mtime_ns
+            path.write_bytes(replacement)
+            changed = True
+            os.utime(path, ns=(stamp + 2_000_000_000, stamp + 2_000_000_000))
+            for page in (1, 2):
+                query = urllib.parse.urlencode({"locator": locator, "page": page, "page_size": 1})
+                result = _object(client.request("GET", "/api/v1/manager/preview?" + query, (409,)).payload, "NFS stale index rejection")
+                if (result.get("error_code") != "preview_source_refresh_required" or
+                        any(key in result for key in ("rows", "columns", "total", "has_more", "data"))):
+                    raise SuiteError("NFS stale index rejection leaked preview data or used the wrong code")
+            if detail() != before:
+                raise SuiteError("NFS stale preview automatically rewrote scanned metadata")
+            check_download(replacement)
+            refresh()
+            after = detail()
+            rebound = _object(_object(_object(after.get("attributes"), "refreshed attrs").get("access_index"), "refreshed indexes").get("table"), "refreshed table index")
+            if (after.get("id") != before.get("id") or after.get("fingerprint") != before.get("fingerprint") or
+                    rebound.get("source") == binding):
+                raise SuiteError("NFS refresh replaced item identity or kept the stale source binding")
+            check_pages("city", ["Tokyo", "Paris"])
+        finally:
+            if changed:
+                if path.is_symlink() or path.read_bytes() != replacement:
+                    raise SuiteError("NFS index source restoration refused unexpected bytes")
+                stamp = path.stat().st_mtime_ns
+                path.write_bytes(original)
+                os.utime(path, ns=(stamp + 2_000_000_000, stamp + 2_000_000_000))
+                refresh()
+                check_pages("name", ["Alice", "Bobby"])
+                check_download(original)
+        cases.append({"format": suffix, "item_id": item_id, "fingerprint": before.get("fingerprint"),
+                      "size_bytes": len(original), "original_sha256": hashlib.sha256(original).hexdigest(),
+                      "changed_sha256": hashlib.sha256(replacement).hexdigest(), "same_size_change": True,
+                      "stale_pages_rejected": [1, 2], "metadata_unchanged_on_rejection": True,
+                      "refresh_rebound_source": True, "refreshed_pages_verified": True,
+                      "source_and_preview_restored": True, "source_downloads_verified": True})
+    return {"schema_version": "addp.index-source-versions/v1", "run_id": run_id, "result": "passed", "cases": cases}
 
 
 def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str, deadline: float) -> list[dict[str, object]]:
@@ -1837,7 +1948,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v11",
+            "schema_version": "addp.manager-internal-artifact-lineage/v12",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -2030,8 +2141,11 @@ def main() -> int:
         boundaries = verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id"), "", deadline)
         boundaries += verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"), environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"], deadline)
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
+        versions = verify_nfs_index_source_versions(client, environment, time.monotonic() + 180)
+        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
         report = run_scenario(repository, environment, run_browser)
         report["content_boundaries"] = boundaries
+        report["index_source_versions"] = versions
     except (OSError, ValueError, SuiteError, subprocess.SubprocessError) as error:
         print(f"Manager internal artifact lineage Online acceptance failed: {error}", file=sys.stderr)
         return 1

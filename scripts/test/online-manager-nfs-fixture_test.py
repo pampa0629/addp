@@ -90,6 +90,9 @@ if os.environ.get('TEST_DISCOVERY_FAIL') != '1': print(Path(os.environ['TEST_EXP
         root = Path(state.read_text().strip())
         descriptor = json.loads((self.secret / 'manager-nfs-engine.json').read_text())
         self.assertEqual(descriptor['connection_info'], {'server': '127.0.0.1', 'export_path': str(root)})
+        for suffix, separator in (('csv', ','), ('tsv', '\t')):
+            self.assertEqual((root / 'index-source-versions' / ('source.' + suffix)).read_bytes(),
+                             'id,name\n1,Alice\n2,Bobby\n'.replace(',', separator).encode('ascii'))
         self.assertEqual(len(list((root / 'scan-boundary').rglob('*.*'))), 41)
         self.assertIn('127.0.0.1(ro,sync,no_subtree_check,insecure,root_squash)', self.exports.read_text())
         self.assertEqual(self.invoke("stop").returncode, 0)

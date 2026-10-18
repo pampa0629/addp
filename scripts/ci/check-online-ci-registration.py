@@ -430,7 +430,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "force=not converging",
         "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
-        "addp.manager-internal-artifact-lineage/v11",
+        "addp.manager-internal-artifact-lineage/v12",
+        "versions = verify_nfs_index_source_versions",
+        "index-source-versions.json",
+        "addp.index-source-versions/v1",
     ):
         if fragment not in owner:
             raise RegistrationError(

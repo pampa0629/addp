@@ -32,6 +32,13 @@ case "$1" in
     python3 - "$root" <<'PY'
 import json, os, sys
 from pathlib import Path
+versions = Path(sys.argv[1]) / 'index-source-versions'
+versions.mkdir(mode=0o755)
+versions.chmod(0o755)
+for suffix, separator in (('csv', ','), ('tsv', '\t')):
+    source = versions / ('source.' + suffix)
+    source.write_bytes(('id,name\n1,Alice\n2,Bobby\n').replace(',', separator).encode('ascii'))
+    source.chmod(0o644)
 path = Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / 'manager-nfs-engine.json'
 with path.open('x') as stream:
     path.chmod(0o600)
