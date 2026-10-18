@@ -40,6 +40,17 @@ class BusinessGaussDBTest(unittest.TestCase):
         result = self.run_shell('sql_literal "$GAUSSDB_APP_PASSWORD"')
         self.assertEqual(result.stdout, "E'App9@''\\\\:$12345'")
 
+    def test_native_schema_is_created_once_before_idempotent_table_seeds(self):
+        for fresh in ('true', 'false'):
+            result = self.run_shell('fresh="$TEST_FRESH"; business_sql "$TEST_SQL"',
+                                    {'TEST_FRESH': fresh, 'TEST_SQL': str(ROOT / 'business/gaussdb/init.sql')})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual('CREATE SCHEMA ' in result.stdout, fresh == 'true')
+            self.assertNotIn('CREATE SCHEMA IF NOT EXISTS', result.stdout)
+            self.assertIn('SET search_path=addp_business;', result.stdout)
+            self.assertIn('BEGIN;', result.stdout)
+            self.assertIn('COMMIT;', result.stdout)
+
     def test_empty_volume_is_fresh_but_partial_data_is_never_reinitialized(self):
         with tempfile.TemporaryDirectory() as directory:
             extra = {'TEST_DATA': directory}

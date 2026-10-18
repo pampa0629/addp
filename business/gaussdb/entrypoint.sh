@@ -40,6 +40,16 @@ tcp_sql() {
     } 3<&0
 }
 
+business_sql() {
+    # This kernel's general CREATE SCHEMA grammar has no IF NOT EXISTS.
+    # A completed volume already owns the schema; only initial creation emits DDL.
+    if [ "$fresh" = true ]; then
+        printf 'CREATE SCHEMA addp_business AUTHORIZATION "%s";\n' "$GAUSSDB_USER"
+    fi
+    printf 'SET search_path=addp_business;\n'
+    cat "$1"
+}
+
 check_volume() {
     if [ -f "$DATA_DIR"/db/PG_VERSION ]; then
         [ -f "$DATA_DIR"/business-ready ] && [ "$(cat "$DATA_DIR"/business-ready)" = "${GAUSSDB_VERSION:?}|business|$GAUSSDB_USER" ] || {
@@ -112,10 +122,7 @@ main() {
     printf 'SELECT 1;\n' | tcp_sql omm "$GAUSSDB_PASSWORD" postgres >/dev/null || {
         echo '管理员密码校验失败；不自动重置已有数据库。' >&2; return 1;
     }
-    if ! {
-        printf 'CREATE SCHEMA IF NOT EXISTS addp_business AUTHORIZATION "%s";\nSET search_path=addp_business;\n' "$GAUSSDB_USER"
-        cat /addp/gaussdb/init.sql
-    } | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business >/dev/null 2>&1; then
+    if ! business_sql /addp/gaussdb/init.sql | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business >/dev/null; then
         echo '普通账号登录或样例初始化失败；不覆盖现有数据。' >&2; return 1
     fi
     printf '%s|business|%s\n' "${GAUSSDB_VERSION:?}" "$GAUSSDB_USER" > "$DATA_DIR"/business-ready
