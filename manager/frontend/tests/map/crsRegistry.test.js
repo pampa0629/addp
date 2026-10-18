@@ -10,6 +10,19 @@ import {
 } from '../../../../common-frontend/map/src/utils/crsRegistry.js'
 
 describe('preview CRS registry', () => {
+  it('renders CRS84 longitude/latitude without inventing an EPSG SRID or overriding source identity', () => {
+    const preview = { source_crs: 'OGC:CRS84', transform_status: 'not_transformed', preview_hint: 'direct_renderable' }
+    const original = structuredClone(preview)
+    const transform = getPreviewCRSTransform(preview, 'EPSG:3857')
+    expect(transform).toEqual({ status: 'direct', sourceCode: 'OGC:CRS84', targetCode: 'EPSG:4326' })
+    expect(sourceSRIDFromPreview(preview)).toBe(0)
+    expect(canDeclarePreviewSourceCRS(preview)).toBe(false)
+    const geometry = { type: 'Point', coordinates: [120, 30] }
+    expect(transformGeoJSONGeometryToWGS84(geometry, transform)).toEqual(geometry)
+    expect(crsSuppressionStatus(transform)).toBe('')
+    expect(preview).toEqual(original)
+  })
+
   it('treats EPSG:4326 preview geometry as direct WGS84 data', () => {
     const transform = getPreviewCRSTransform({ source_srid: 4326 })
 

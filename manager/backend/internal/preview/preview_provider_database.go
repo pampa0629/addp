@@ -564,7 +564,7 @@ func tablePreviewSpatialCRSContract(geometryColumns []string, srid int, sourceCR
 	}
 	if contract.SourceCRS != "" {
 		contract.TransformStatus = "not_transformed"
-		if srid == spatial.SRIDWGS84 {
+		if srid == spatial.SRIDWGS84 || contract.SourceCRS == "OGC:CRS84" {
 			contract.PreviewHint = "direct_renderable"
 		}
 		return contract

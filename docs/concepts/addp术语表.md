@@ -651,6 +651,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 夹具自身不调用 System API，也不替代 Provider 准入与 capability 声明；独立 Provider 已准入后，夹具可作为技术验证 Engine Instance 的数据面。 |
 | official-driver execution boundary | 官方驱动执行边界 | 商业数据库官方驱动依法从固定官方介质注入、且真正加载该驱动并访问数据库的进程运行边界。 | DM8 当前固定为 Linux ARM64 Docker；仓库、镜像仓库和 Artifact 不保存或重分发驱动。System 控制面登记可位于边界外，但连接检测和数据面 Provider 调用必须位于边界内。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
+| OGC:CRS84 | WGS84 经纬坐标系 | 使用 WGS84 基准、以经度和纬度为二维坐标轴顺序的 OGC 标准 CRS 身份。 | 保留 `crs_ref=OGC:CRS84`，不补造 EPSG 数字 SRID；地图可直接消费其经纬坐标，身份不改写为 EPSG:4326。 |
 | CRS definition conversion | CRS 定义转换 | 在不改变几何坐标和 CRS 身份的前提下，把同一 CRS 的定义在 WKT、ESRI WKT、Proj4、PROJJSON 等表达之间转换。 | 不等于坐标重投影；当前由 GeoPython Workflow `crs_to_projjson` direct 算子执行。 |
 | quick view | 快显 | Manager 空间预览中的高性能地图浏览模式。 | 快显是 UI 能力，不是任务，也不是瓦片缓存产物。 |
 | preview state | 预览状态 | Manager 中记录某个 data item 的用户预览模式偏好和交互视角状态。 | 目标落点为 `manager.preview_state`；不依赖快显产物是否存在。快显能力、推荐结果和不可用原因由能力 API 动态合成。 |

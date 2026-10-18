@@ -32,7 +32,8 @@ test('同一普通User核对构面双输出、四面和四条诊断余线地图'
       const preview = await json(await api.get(`/api/v1/manager/preview?locator=${encodeURIComponent(output.locator)}`), 'topology saved preview')
       const data = preview.data
       expect(preview.preview_type).toBe('table')
-      expect([data.total, data.source_srid, data.source_crs, data.transform_status]).toEqual([4, 4326, 'EPSG:4326', 'not_transformed'])
+      expect([data.total, data.source_crs, data.transform_status, data.preview_hint]).toEqual([4, 'OGC:CRS84', 'not_transformed', 'direct_renderable'])
+      expect(data.source_srid === undefined || data.source_srid === 0).toBe(true)
       expect(data.geometry_columns).toEqual(['geometry'])
       expect([...data.columns].sort()).toEqual(output.port === 'faces' ? ['geometry'] : ['geometry', 'issue_type'])
       const actual = data.rows.map(row => {

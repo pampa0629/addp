@@ -419,3 +419,44 @@ func TestGeoJSONPluginSampleFromPositionedReader(t *testing.T) {
 		t.Fatalf("positioned row geometry = %#v", rows[0]["geometry"])
 	}
 }
+
+func TestGeoJSONExplicitCRS84PreservesIdentityAndLongitudeLatitude(t *testing.T) {
+	for _, name := range []string{"OGC:CRS84", "urn:ogc:def:crs:OGC::CRS84", "urn:ogc:def:crs:OGC:1.3:CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84"} {
+		t.Run(name, func(t *testing.T) {
+			data := `{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"` + name + `"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[120,30]},"properties":{}}]}`
+			plugin := NewPlugin(nil)
+			result, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Spatial == nil || result.Spatial.PrimaryCRSRef() != "OGC:CRS84" || result.Spatial.PrimaryGeometry().SRID != nil {
+				t.Fatalf("spatial = %#v, want OGC:CRS84 without inferred EPSG SRID", result.Spatial)
+			}
+			if result.FormatInfo["crs"] != name {
+				t.Fatalf("source CRS declaration lost: %#v", result.FormatInfo)
+			}
+			rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data), 0, 1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			geometry := rows[0]["geometry"].(map[string]interface{})
+			encoded, err := json.Marshal(geometry["coordinates"])
+			if err != nil || string(encoded) != "[120,30]" {
+				t.Fatalf("coordinates changed: %#v (error %v)", geometry, err)
+			}
+		})
+	}
+}
+
+func TestGeoJSONUnrecognizedExplicitCRSDoesNotInheritWGS84(t *testing.T) {
+	for _, name := range []string{"OGC:CRS84h", "urn:ogc:def:crs:OGC:0:CRS84", "LOCAL:survey-grid"} {
+		data := `{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"` + name + `"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[120,30]},"properties":{}}]}`
+		result, err := NewPlugin(nil).DescribeTable(context.Background(), strings.NewReader(data), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Spatial.PrimaryCRSRef() != "" || result.Spatial.PrimarySRIDValue() != 0 {
+			t.Fatalf("%s acquired a CRS: %#v", name, result.Spatial)
+		}
+	}
+}

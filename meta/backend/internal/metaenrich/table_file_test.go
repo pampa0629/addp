@@ -750,3 +750,18 @@ func TestExtractUTF16DelimitedTableEncodingWithoutByteIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestGeoJSONCRS84ReachesStandardSpatialFactsWithoutInferredSRID(t *testing.T) {
+	content := `{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:OGC:1.3:CRS84"}},"features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[120,30],[122,30],[122,32],[120,32],[120,30]]]},"properties":{}}]}`
+	info, err := ExtractSingleTableFileItemStrict(context.Background(), staticContentReader{content: content}, nil, 1, "faces.geojson", int64(len(content)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spatial := datatype.SpatialInfoFromPayload(commonJSON.Section(info.Attributes, "capabilities.spatial"))
+	if spatial == nil || spatial.PrimaryCRSRef() != "OGC:CRS84" || spatial.PrimaryGeometry().SRID != nil {
+		t.Fatalf("standard spatial facts lost CRS84: %#v", info.Attributes)
+	}
+	if commonJSON.String(info.Attributes, "format_info.geojson", "crs") != "urn:ogc:def:crs:OGC:1.3:CRS84" {
+		t.Fatalf("source declaration lost: %#v", info.Attributes)
+	}
+}

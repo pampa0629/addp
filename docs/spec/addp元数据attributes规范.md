@@ -502,9 +502,9 @@ GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模�
 | `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；非字段型空间对象不得虚构字段名，可省略该字段。 |
 | `geometry_type` | 写入标准 `GeometryType` canonical 值，例如 `Geometry`、`Point`、`MultiPolygon`。PostGIS 字段声明为 `geometry` 时就写 `Geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
 | `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在 `capabilities.spatial.srid` 顶层。 |
-| `crs_ref` | 当前空间对象或几何字段引用的 CRS ID。能确定 EPSG 时写 `EPSG:<code>`；不能确定 EPSG 但能获得定义文本时写 `ADDP:CRS:<sha256>`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。 |
+| `crs_ref` | 当前空间对象或几何字段引用的 CRS ID。能确定 EPSG 时写 `EPSG:<code>`；显式 OGC CRS84 身份写 `OGC:CRS84`，不因此填入 EPSG SRID；无已识别标准身份但能获得定义文本时写 `ADDP:CRS:<sha256>`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。 |
 | `crs_definitions` | CRS 定义集合。只允许写在 `capabilities.spatial` 顶层，字段通过 `crs_ref` 引用，不得在各字段内重复写定义文本。 |
-| `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；否则使用 `ADDP:CRS:<sha256>`。 |
+| `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；已识别 OGC CRS84 使用 `OGC:CRS84`；否则使用 `ADDP:CRS:<sha256>`。 |
 | `crs_definitions[].definition_encoding` | CRS 定义表达方式。只允许 `wkt`、`esri_wkt`、`proj4`、`projjson`。消费者必须按自身能力选择可处理的表达，不得因为前端不能直接注册某种表达而从平台空间事实中删除它。 |
 | `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition`、proj4 字符串或 GeoParquet `crs` 的 PROJJSON 文本。 |
 | `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`mysql_st_spatial_reference_systems`、`sidecar_prj`、`geopackage_srs`、`geotiff_tags`、`geoparquet_metadata`。`crs_normalization_runtime` 只用于 execution-local CRS 定义转换结果，不得反写覆盖 Meta 保存的源定义事实。 |
@@ -541,6 +541,7 @@ GeoTIFF 的整体 CRS 必须与其像元坐标对应。[OGC GeoTIFF 1.1 的模�
 - `capabilities.spatial.extent` 必须与当前空间对象或 primary geometry column 的原生 CRS 一致；平台标准 attributes 不支持在 `capabilities.spatial` 内记录与源 CRS 不一致的派生 extent。
 - Manager 普通空间预览只返回源坐标 geometry 表达和 CRS 元数据；不得为了普通预览隐式调用后端 PROJ 或 PostGIS `ST_Transform` 转成 WGS84。
 - `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
+- `OGC:CRS84` 表示 WGS84 基准、经度在前纬度在后的二维坐标；它是已知标准 CRS，数字 `srid` 留空，无需重复保存内置定义。GeoJSON 显式 `OGC:CRS84`、`urn:ogc:def:crs:OGC::CRS84`、`urn:ogc:def:crs:OGC:1.3:CRS84` 和 `http://www.opengis.net/def/crs/OGC/1.3/CRS84` 统一为该身份，原声明保留在 `format_info.geojson.crs`。不得仅因 WGS84 基准相同将其改名为 EPSG:4326，也不得由经纬范围推断一个未识别的显式 CRS；CRS84h 等其他身份不在本规则内。参考 [RFC 7946 §4](https://www.rfc-editor.org/rfc/rfc7946.html#section-4)。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / 矢量物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。
 
 ## Redis 键值数据集身份

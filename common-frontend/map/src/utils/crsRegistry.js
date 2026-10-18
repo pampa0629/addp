@@ -116,7 +116,7 @@ export const getPreviewCRSTransform = (preview, temporarySourceCRS = '') => {
   const needsDeclaration = canDeclareSourceCRS(originalSourceCode, transformStatus)
   const sourceCode = resolvePreviewSourceCRSDeclaration(originalSourceCode, transformStatus, temporarySourceCRS)
   if (!sourceCode) return { status: 'unknown_crs' }
-  if (sourceCode.toUpperCase() === WGS84) {
+  if (sourceCode.toUpperCase() === WGS84 || sourceCode === 'OGC:CRS84') {
     return { status: 'direct', sourceCode, targetCode: WGS84 }
   }
   const sourceCRSDefinition = needsDeclaration ? null : sourceCRSDefinitionFromPreview(preview)

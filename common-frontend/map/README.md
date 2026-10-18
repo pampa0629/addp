@@ -10,7 +10,7 @@
 
 前端 CRS registry 的职责是：
 
-- 内置少量稳定 CRS：`EPSG:4326`、`EPSG:3857`。
+- 内置少量稳定 CRS：`EPSG:4326`、`EPSG:3857`、`OGC:CRS84`。CRS84 直接读取经度、纬度坐标，保留身份，不推断数字 SRID。
 - 优先使用后端返回的 `source_crs_definition` 注册 CRS。
 - 第一阶段只接受 `source_crs_definition.definition_encoding` 为 `wkt`、`esri_wkt` 或 `proj4` 的定义文本。
 - 在可转换时把预览级小样本 geometry 转成 WGS84，再交给地图 renderer。

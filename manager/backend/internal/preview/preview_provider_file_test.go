@@ -2875,3 +2875,10 @@ func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 		}
 	}
 }
+
+func TestTablePreviewPreservesKnownCRS84WithoutEPSGSRID(t *testing.T) {
+	contract := tablePreviewSpatialCRSContract([]string{"shape"}, 0, "OGC:CRS84", nil)
+	if contract.SourceSRID != 0 || contract.SourceCRS != "OGC:CRS84" || contract.TransformStatus != "not_transformed" || contract.PreviewHint != "direct_renderable" || contract.GeometryColumn != "shape" {
+		t.Fatalf("CRS84 preview = %#v", contract)
+	}
+}

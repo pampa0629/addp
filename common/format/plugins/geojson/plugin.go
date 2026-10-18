@@ -222,6 +222,11 @@ func geoJSONSpatialExtent(meta jsonrecords.Metadata, builder *jsonrecords.TableI
 }
 
 func geoJSONSpatialReference(crs string, builderSRID int, extent datatype.BoundingBox, hasExtent bool) (int, string, bool) {
+	switch strings.ToUpper(strings.TrimSpace(crs)) {
+	case "OGC:CRS84", "URN:OGC:DEF:CRS:OGC::CRS84", "URN:OGC:DEF:CRS:OGC:1.3:CRS84", "HTTP://WWW.OPENGIS.NET/DEF/CRS/OGC/1.3/CRS84":
+		// CRS84 is a known longitude/latitude identity, not an EPSG SRID.
+		return 0, "OGC:CRS84", false
+	}
 	if srid := commonSpatial.ParseSRID(crs); srid > 0 {
 		return srid, datatype.EPSGCRSRef(srid), false
 	}
