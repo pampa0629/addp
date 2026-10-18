@@ -202,7 +202,7 @@ test('renders the official colored FBX directly and keeps colors after orbit and
   const canvas = preview.locator('canvas')
   await expect(canvas).toBeVisible()
   await expect(preview.locator('.three-status')).toHaveCount(0)
-  const initial = await expectColoredModel(page, canvas, expect, 3)
+  const initial = await expectColoredModel(page, canvas, expect, { minimumPrimaryColors: 3 })
   await testInfo.attach('official-fbx-initial', { body: await preview.screenshot(), contentType: 'image/png' })
 
   const box = await canvas.boundingBox()

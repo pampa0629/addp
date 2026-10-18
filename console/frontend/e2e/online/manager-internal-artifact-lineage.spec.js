@@ -1,5 +1,6 @@
 import { expect, request, test } from '@playwright/test'
 import { expectColoredModel, modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
+import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -81,7 +82,7 @@ async function verifyBasicColoredFBX(page, source, artifactDir, phase) {
   await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
   const before = await verifyOriginalDownload(page, frame, source)
   // Establish RGB in the first phase; a later phase may restore the orbited camera.
-  const initial = await expectColoredModel(page, canvas, expect, phase === 'generation-entry' ? 3 : 2)
+  const initial = await expectColoredModel(page, canvas, expect, { minimumPrimaryColors: phase === 'generation-entry' ? 3 : 0 })
   await preview.screenshot({ path: resolve(artifactDir, `fbx-basic-${phase}-initial.png`) })
   const box = await canvas.boundingBox()
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
@@ -343,7 +344,8 @@ async function verifyVectorExchange(page, api, source, artifactDir, knownLocator
     const data = received.filter(value => value.child === layer.name && value.preview_type === 'table').at(-1).data
     expect(data.total).toBe(layer.labels.length)
     expect(data.rows.map(row => row[source.label_column])).toEqual(layer.labels)
-    expect(data.rows.map(row => row[data.geometry_column])).toEqual(layer.geometries)
+    const geometries = data.rows.map(row => decodePreviewEWKB(row[data.geometry_column]))
+    expect(geometries).toEqual(layer.geometries)
     expect(data.source_srid).toBe(source.format === 'topojson' ? 0 : 4326)
     expect(data.transform_status).toBe(source.format === 'topojson' ? 'unknown_crs' : 'not_transformed')
     for (const label of layer.labels) await expect(table.getByRole('cell', { name: label, exact: true })).toBeVisible()
@@ -394,7 +396,7 @@ async function verifyVectorExchange(page, api, source, artifactDir, knownLocator
       return count
     })).toBeGreaterThan(10)
     await container.screenshot({ path: resolve(artifactDir, `vector-${source.format}-${layer.name}.png`) })
-    return { ...layer, geometries: data.rows.map(row => row[data.geometry_column]), table_verified: true,
+    return { ...layer, geometries, table_verified: true,
       map_loaded: true, temporary_crs: source.format === 'topojson' ? 'EPSG:3857' : '' }
   }
   page.on('response', receive)
@@ -422,7 +424,7 @@ async function verifyVectorExchange(page, api, source, artifactDir, knownLocator
     await expect.poll(() => received.slice(previous).filter(value => value.child === lastLayer.name && value.preview_type === 'table').length)
       .toBeGreaterThan(0)
     const refreshedData = received.slice(previous).filter(value => value.child === lastLayer.name && value.preview_type === 'table').at(-1).data
-    expect(refreshedData.rows.map(row => row[refreshedData.geometry_column])).toEqual(lastLayer.geometries)
+    expect(refreshedData.rows.map(row => decodePreviewEWKB(row[refreshedData.geometry_column]))).toEqual(lastLayer.geometries)
     expect(refreshedData.rows.map(row => row[source.label_column])).toEqual(lastLayer.labels)
     if (source.format === 'topojson') await unknown()
     await metadata()
