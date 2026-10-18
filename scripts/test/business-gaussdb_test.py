@@ -78,19 +78,24 @@ gsql() {
     IFS= read -r supplied_password
     [ "$supplied_password" = "$GAUSSDB_APP_PASSWORD" ] || return 98
     [[ " $* " = *" -2 "* && " $* " = *" -f /dev/fd/3 "* ]] || return 96
-    # Native gsql otherwise appends "total time: ... ms" to SELECT output.
+    # -q does not suppress this kernel's -f total-time feedback. Query output
+    # must use the native -o channel; feedback cannot enter the caller's data.
     [[ " $* " = *" -q "* ]] || return 94
+    [[ " $* " = *" -o /dev/fd/4 "* ]] || return 93
     [ "$(cat /dev/fd/3)" = "SELECT 1;" ] || return 95
     [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
     # The fixed native gsql has no PostgreSQL psql -w/--no-password option.
     for argument in "$@"; do
         [[ "$argument" != -w && "$argument" != --no-password ]] || return 97
     done
+    if [ "$TEST_STATUS" = 0 ]; then printf '1\\n' >/dev/fd/4; fi
+    printf 'total time: 8 ms\\n'
     return "$TEST_STATUS"
 }
 status=0
-printf 'SELECT 1;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business || status=$?
+observed=$(printf 'SELECT 1;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business) || status=$?
 test "$status" = "$TEST_STATUS"
+if [ "$status" = 0 ]; then test "$observed" = 1; else test -z "$observed"; fi
 ''', {'TEST_STATUS': str(status)})
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("App9@", result.stdout + result.stderr)

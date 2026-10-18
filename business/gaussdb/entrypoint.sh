@@ -33,11 +33,13 @@ tcp_sql() {
     local user=$1 password=$2 database=$3
     # Native gsql -2 reads only the password from stdin and requires -c or -f.
     # Preserve the caller's SQL stream on fd 3 before creating the password pipe.
+    # -f emits total-time feedback even with -q. Keep native -o query data on
+    # the caller's output fd, and ordinary client feedback outside that channel.
     # Neither credentials nor SQL need a temporary file or command argument.
     {
         printf '%s\n' "$password" |
-            PGCONNECT_TIMEOUT=5 gsql -X -q -2 -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At -f /dev/fd/3
-    } 3<&0
+            PGCONNECT_TIMEOUT=5 gsql -X -q -2 -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At -f /dev/fd/3 -o /dev/fd/4 >/dev/null
+    } 3<&0 4>&1
 }
 
 business_sql() {
