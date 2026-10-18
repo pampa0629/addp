@@ -21,4 +21,3 @@ export async function admissionBackend(page, options = {}) {
   })
   return { ...state, hostWrites, release: () => release?.(), hostFinished: done }
 }
-
