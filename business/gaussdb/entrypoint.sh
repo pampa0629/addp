@@ -65,6 +65,23 @@ health_sql() {
     [ "$output" = 1 ] || { printf 'health: unexpected query output: %s\n' "$output" >&2; return 1; }
 }
 
+verify_business() {
+    local output
+    # Read through a new ordinary connection: DDL exit status alone does not
+    # prove the complete sample transaction was actually executed and committed.
+    output=$(tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business <<'SQL'
+SELECT CASE WHEN
+    (SELECT count(*) FROM addp_business.addp_engine_probe WHERE id=1)=1
+    AND (SELECT count(*) FROM addp_business.customers WHERE id IN (1,2,3))=3
+    AND (SELECT count(*) FROM addp_business.products WHERE id IN (1,2,3))=3
+    AND (SELECT count(*) FROM addp_business.orders WHERE id IN (1,2,3))=3
+    AND (SELECT count(*) FROM addp_business.order_items WHERE id IN (1,2,3,4))=4
+THEN 1 ELSE 0 END;
+SQL
+    ) || return $?
+    [ "$output" = 1 ] || { echo '业务样例未完整提交；不写入初始化完成标记。' >&2; return 1; }
+}
+
 check_volume() {
     if [ -f "$DATA_DIR"/db/PG_VERSION ]; then
         [ -f "$DATA_DIR"/business-ready ] && [ "$(cat "$DATA_DIR"/business-ready)" = "${GAUSSDB_VERSION:?}|business|$GAUSSDB_USER" ] || {
@@ -144,6 +161,7 @@ main() {
     if ! business_sql /addp/gaussdb/init.sql | tcp_sql "$GAUSSDB_USER" "$GAUSSDB_APP_PASSWORD" business >/dev/null; then
         echo '普通账号登录或样例初始化失败；不覆盖现有数据。' >&2; return 1
     fi
+    verify_business || return $?
     printf '%s|business|%s\n' "${GAUSSDB_VERSION:?}" "$GAUSSDB_USER" > "$DATA_DIR"/business-ready
     kill -TERM "$server_pid"
     wait "$server_pid"

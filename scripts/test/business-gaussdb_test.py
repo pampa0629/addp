@@ -126,6 +126,25 @@ test "$status" = 25
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('CLIENT_SHOULD_NOT_RUN', result.stdout)
 
+    def test_completed_seed_requires_all_committed_base_rows_via_business_account(self):
+        for output, status, expected in [('1', 0, 0), ('0', 0, 1), ('', 0, 1), ('', 3, 3)]:
+            with self.subTest(output=output, status=status), tempfile.TemporaryDirectory() as directory:
+                statement = Path(directory) / 'statement.sql'
+                result = self.run_shell('''
+tcp_sql() {
+    [ "$1" = "$GAUSSDB_USER" ] && [ "$3" = business ] || return 99
+    cat > "$TEST_STATEMENT"
+    printf '%s' "$TEST_OUTPUT"
+    return "$TEST_STATUS"
+}
+verify_business
+''', {'TEST_STATEMENT': str(statement), 'TEST_OUTPUT': output, 'TEST_STATUS': str(status)})
+                self.assertEqual(result.returncode, expected, result.stderr)
+                for name in ('addp_engine_probe', 'customers', 'products', 'orders', 'order_items'):
+                    self.assertIn('addp_business.' + name, statement.read_text())
+                self.assertNotIn('UPDATE ', statement.read_text())
+                self.assertNotIn('INSERT ', statement.read_text())
+
     def test_stop_preserves_volume_and_rejects_foreign_container(self):
         with tempfile.TemporaryDirectory() as directory:
             docker = Path(directory) / 'docker'
