@@ -89,7 +89,7 @@ func (r *PPTXPDFRepository) CompleteExecutionWithLease(ctx context.Context, task
 	delete(fields, "completed_at")
 	delete(fields, "updated_at")
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}
 		if resultID > 0 && len(resultFields) > 0 {

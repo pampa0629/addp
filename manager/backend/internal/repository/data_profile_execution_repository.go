@@ -337,7 +337,7 @@ func (r *DataProfileExecutionRepository) updateTerminal(
 			ownedFields[key] = value
 		}
 	}
-	return commonExecution.CompleteWithLease(ctx, r.db, lease, status, completedAt, ownedFields)
+	return commonExecution.CompleteWithEvent(ctx, r.db, lease, status, completedAt, ownedFields)
 }
 
 func findActiveDataProfileExecution(db *gorm.DB, tenantID int, targetKey string) (*commonExecution.TaskExecution, error) {

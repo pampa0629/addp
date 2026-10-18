@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -36,6 +37,21 @@ func (r *EmbeddingRepository) CompleteTaskExecution(ctx context.Context, taskID,
 	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
 		TaskModel: &models.EmbeddingTask{}, ExecutionFields: fields,
 	}, "embedding")
+}
+
+// CompleteAdHocExecution keeps the terminal event atomic with the no-definition execution.
+func (r *EmbeddingRepository) CompleteAdHocExecution(ctx context.Context, lease commonExecution.Lease, status string, completedAt time.Time, fields map[string]interface{}) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("execution_id = ? AND tenant_id = ?", lease.ExecutionID, lease.TenantID).First(&item).Error; err != nil {
+			return err
+		}
+		if item.Module != commonExecution.ModuleManager || item.TaskType != commonExecution.TaskTypeEmbedding || item.SourceTaskID != nil {
+			return fmt.Errorf("%w: execution is not an ad-hoc Manager embedding", commonAPI.ErrConflict)
+		}
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields)
+	})
 }
 
 type EmbeddingSimilarityResult struct {

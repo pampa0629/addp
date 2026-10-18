@@ -60,7 +60,7 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 	repo := NewPPTXPDFRepository(db)
 	queue := NewBoundedExecutionQueueRepository(db)
 	task := createPPTXPDFExecutionLeaseTestTask(t, db, 8)
-	createdAt := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
+	createdAt := time.Now().UTC()
 	execution := newManagerRepositoryTestExecution(
 		"manager-pptx-expired-1", int(task.TenantID), commonExecution.TaskTypePPTXPDFGeneration, createdAt,
 	)
@@ -84,7 +84,10 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 		t.Fatalf("create building PPTX result: %v", err)
 	}
 
-	recovered, err := queue.RecoverExpired(context.Background(), createdAt.Add(32*time.Second), 100)
+	if err := db.Model(execution).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := queue.RecoverExpired(context.Background(), time.Now().UTC(), 100)
 	if err != nil {
 		t.Fatalf("recover expired PPTX execution: %v", err)
 	}

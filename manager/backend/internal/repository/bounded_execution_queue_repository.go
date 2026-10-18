@@ -127,6 +127,9 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 		if err != nil || execution == nil {
 			return err
 		}
+		if err := commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"}); err != nil {
+			return err
+		}
 		ownership := managerExecutionOwnerships[execution.TaskType]
 		if ownership.taskTable == "" {
 			return nil
@@ -186,7 +189,7 @@ func failUnclaimableManagerExecution(
 		"error_details":     commonModels.JSONMap{"code": managerOwnerUnavailableCode, "message": message},
 		"execution_time_ms": int64(0),
 	}
-	return commonExecution.CompleteWithLease(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now.UTC(), fields)
+	return commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now.UTC(), fields)
 }
 
 func (r *BoundedExecutionQueueRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
@@ -210,7 +213,7 @@ func (r *BoundedExecutionQueueRepository) FailClaimed(ctx context.Context, execu
 		if execution.StartedAt != nil {
 			fields["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
 		}
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now, fields); err != nil {
 			return err
 		}
 		return updateManagerOwnershipFailure(tx, ownership, execution, now, message)
@@ -321,7 +324,7 @@ func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, no
 			if item.StartedAt != nil {
 				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
 			}
-			if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
 				return err
 			}
 			if err := updateManagerOwnershipFailure(tx, ownership, &item, now, "Manager bounded execution lease expired"); err != nil {

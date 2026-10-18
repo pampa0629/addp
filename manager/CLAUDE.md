@@ -92,6 +92,8 @@ manager/
 
 ## 开发规则
 
+Manager 有界执行的租户过程事件复用 `common.execution_events`：真实 claim 同事务写入 `started`，原有成功／失败／超时／取消路径写唯一对应终态，过期租约由 Owner 收敛并写 `failed`。执行、任务摘要及当前专业结果保持原事务；事件存储失败必须全部回滚，过期或错配 lease 的运行体不得追加。没有完整 lease 的历史记录只收敛概览，不补造过程；授权附加、心跳、专业回执不产生事件。本切片不新增逐阶段或 Runtime 节点历史，不复制配置、参数、Runtime 正文、业务样本或授权信息。Monitor 沿既有 Owner 重裁与公共事件读取展示，30 天维护不影响专业结果及操作审计。验证使用 `make test-manager-backend` 和 `make test-manager-postgres`，新增 PostgreSQL 用例必须以 `TestIntegrationPostgresManager` 命名，由现有 CI 自动发现；该门禁按包串行执行共用 Manager schema 的 repository／service／preview，避免测试初始化 DDL 互锁；未运行真实 T4 时不计为通过。
+
 文件上传后的扫描提交使用当前请求 User 的同步 BFF 身份，不使用 Meta Service Client。上传入口在写入前同时要求 `manager.data_item.create`、`meta.scan_task.execute` 与 `meta.scan_task.read`；Meta 独立认证并记录发起人，Worker 不接收用户凭据。响应仅提供 `scan_execution_id`，前端按唯一字段回查 Meta 安全执行详情；不返回内部执行配置。完整身份与失败边界见平台《授权上下文规范》5.1。验证由既有 `make test-manager-backend`、`make test-manager-frontend`、`make test-go` 和 Swagger 门禁覆盖。
 
 - 数据源连接信息必须通过 System 获取，不要在 Manager 中保存或硬编码连接配置。

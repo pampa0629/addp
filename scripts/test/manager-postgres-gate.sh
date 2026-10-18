@@ -70,8 +70,9 @@ else: raise SystemExit('Meilisearch fixture did not become healthy')
 HEALTH
 
 cd "$ROOT_DIR/manager/backend"
+# These packages initialize the same Manager schema; serialize their DDL and fixtures.
 ADDP_POSTGRES_INTEGRATION=1 \
-    go test ./internal/repository ./internal/service ./internal/preview \
+    go test -p 1 ./internal/repository ./internal/service ./internal/preview \
     -run '^TestIntegrationPostgresManager' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/manager-postgres.log"
 

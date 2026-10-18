@@ -187,7 +187,7 @@ func (l taskExecutionLifecycle) Complete(
 				fields[key] = value
 			}
 		}
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}
 

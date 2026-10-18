@@ -205,7 +205,7 @@ func (d *BoundedExecutionDispatcher) runEmbedding(ctx context.Context, execution
 	if taskID > 0 {
 		return d.embeddingTask.embeddingRepo.CompleteTaskExecution(ctx, taskID, uint(execution.TenantID), execution.ExecutionID, fields, completedAt)
 	}
-	return d.embedding.taskExecRepo.CompleteWithLease(ctx, lease, status, completedAt, map[string]interface{}{
+	return d.embedding.vectorRepo.CompleteAdHocExecution(ctx, lease, status, completedAt, map[string]interface{}{
 		"progress": progress, "metadata": metadata, "error_details": errorDetails,
 		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
 	})
