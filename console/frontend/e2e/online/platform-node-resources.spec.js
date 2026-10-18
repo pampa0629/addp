@@ -37,6 +37,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
   const serviceTrends = []
   const overviews = []
   page.on('response', response => {
+    // Admission records its own write receipts; resource polling belongs to the resource cases.
+    if (expected.admission) return
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
       pending.push(response.json().then(value => instancePages.push({ query: Object.fromEntries(url.searchParams), value })))
@@ -135,7 +137,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       const target = await json(targetResponse, 'admission target creation')
       await expect(page).toHaveURL(new RegExp(`/monitor/monitoring-targets/${target.id}$`))
       await expect(monitor.getByTestId('target-endpoint')).toHaveValue(expected.admission.collection.source.endpoint)
-      // Finish the detail read before full navigation so response bodies are never cancelled.
+      // Wait until the persisted detail is editable before reloading it.
       await expect(monitor.getByTestId('target-save')).toBeEnabled()
       await page.reload()
       await expect(monitor.getByTestId('target-endpoint')).toHaveValue(expected.admission.collection.source.endpoint)
