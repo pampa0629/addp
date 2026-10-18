@@ -32,7 +32,8 @@
         <el-table-column :label="t('monitor.process.instance')" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(processRoleLabelKey(row)) }}</p></template>
         </el-table-column>
-        <el-table-column :label="t('monitor.process.online')" min-width="100"><template #default="{ row }">{{ t(`monitor.process.status.${row.status}`) }}</template></el-table-column>
+        <el-table-column :label="t('monitor.process.endpoint')" min-width="210" show-overflow-tooltip><template #default="{ row }"><span data-testid="process-endpoint">{{ getRegisteredEndpoint(row) || t('monitor.process.noEndpoint') }}</span></template></el-table-column>
+        <el-table-column :label="t('monitor.process.online')" min-width="140"><template #default="{ row }"><el-tag data-testid="process-online" size="small" :type="row.status === 'up' ? 'success' : 'danger'">{{ row.status.toUpperCase() }} · {{ t(`monitor.process.status.${row.status}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('monitor.process.collection')" min-width="175"><template #default="{ row }"><span>{{ collectionState(row) }}</span><p v-if="sampledAt(row)" class="process-hint">{{ sampledAt(row) }}</p></template></el-table-column>
         <el-table-column :label="t('monitor.process.host')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
@@ -88,6 +89,7 @@ import { useAuthStore } from '../store/auth'
 import { processResourcesAPI as api } from '../api/processResources'
 import { nodeResourcesAPI as hostsAPI } from '../api/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
+import { getRegisteredEndpoint } from '../../../../common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs'
 import { processMetrics, processRoles, processRoleLabelKey, resolveProcessRoute, validateProcessInstances, validateProcessSummaries, processTrendParameters, validateProcessTrend } from '../utils/processResources'
 import { currentResourceValue, resourceErrorKey, resourceRanges, resourceChartRows } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'

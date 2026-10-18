@@ -4,6 +4,7 @@
 
 export { default as AutoRefreshControl } from './components/AutoRefreshControl.vue'
 export { createAutoRefresh, autoRefreshOptions } from './utils/autoRefresh.mjs'
+export { getRegisteredEndpoint } from './utils/moduleRuntimeEndpoint.mjs'
 
 // Basic UI Components (no map dependencies)
 export { default as BusinessDomainSelect } from './components/BusinessDomainSelect.vue'

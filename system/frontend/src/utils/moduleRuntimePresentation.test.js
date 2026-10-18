@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { getProcessUptimeParts, getRegisteredEndpoint } from './moduleRuntimePresentation'
+import { getProcessUptimeParts } from './moduleRuntimePresentation'
 
 describe('module runtime presentation', () => {
-  it('shows the registered endpoint without pretending a hostname is a physical IP', () => {
-    expect(getRegisteredEndpoint({ module_url: 'http://manager:8081/api' })).toBe('manager:8081')
-    expect(getRegisteredEndpoint({ module_url: 'http://[::1]:8180' })).toBe('[::1]:8180')
-    expect(getRegisteredEndpoint({ module_url: 'https://example.com' })).toBe('example.com:443')
-    expect(getRegisteredEndpoint({ role: 'worker' })).toBeNull()
-  })
-
   it('counts only the current online process uptime', () => {
     const now = Date.parse('2026-09-29T10:00:00Z')
     const instance = {

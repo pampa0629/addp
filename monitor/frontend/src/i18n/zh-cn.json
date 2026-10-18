@@ -890,6 +890,8 @@
         "reselect": "所选实例已离线、未启用采集或不在当前页，请从列表重新选择。"
       },
       "instance": "运行实例",
+      "endpoint": "登记地址与端口",
+      "noEndpoint": "未登记监听端点",
       "online": "在线状态",
       "allStatuses": "全部在线状态",
       "collectionConfig": "采集配置",

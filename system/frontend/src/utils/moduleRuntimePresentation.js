@@ -1,18 +1,5 @@
 import { isRuntimeInstanceOnline } from './moduleRegistry'
 
-export function getRegisteredEndpoint(instance) {
-  const address = instance?.module_url || instance?.health_check_url
-  if (!address) return null
-  try {
-    const url = new URL(address)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    const port = url.port || (url.protocol === 'https:' ? '443' : '80')
-    return `${url.hostname}:${port}`
-  } catch {
-    return null
-  }
-}
-
 export function getProcessUptimeParts(instance, now = Date.now()) {
   if (!instance?.process_started_at) return null
   const startedAt = new Date(instance.process_started_at).getTime()

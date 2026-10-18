@@ -7,6 +7,45 @@ const boundHostID = '10000000-0000-4000-8000-000000000001'
 const boundInstances = () => [{ id: 1, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 2, node_id: boundHostID, host_node_name: 'old-deployment-alias' }, { id: 3, node_id: '', host_node_name: 'Current managed host' }]
 const hostPermissions = [...processPermissions, 'platform.host_node.read']
 
+for (const locale of ['zh-cn', 'en']) test(`service endpoints show registered addresses and never infer a Worker listener (${locale})`, async ({ page }, testInfo) => {
+  await backend(page, { locale, instances: [
+    { id: 1, role: 'backend', module_url: 'http://service.internal:8180/api?private=value#fragment' },
+    { id: 2, role: 'backend', module_url: 'http://[2001:db8::7]:8190/api' },
+    { id: 3, role: 'backend', module_url: 'https://service.example.test/api' },
+    { id: 4, health_check_url: 'http://health.internal:8090/ready' },
+    { id: 5, registered_host: '192.0.2.4', runtime_hostname: 'worker-container', host_node_name: 'deployment-alias' }
+  ] })
+  await page.goto('/service-resources?refresh=off')
+  await expect(page.getByTestId('process-endpoint')).toHaveText(['service.internal:8180', '[2001:db8::7]:8190', 'service.example.test:443', 'health.internal:8090', locale === 'en' ? 'No registered listener' : '未登记监听端点'])
+  await expect(page.getByTestId('process-list')).not.toContainText('private=value')
+  await expect(page.getByTestId('process-endpoint').nth(4)).not.toContainText('192.0.2.4')
+  await page.screenshot({ path: testInfo.outputPath(`service-endpoints-${locale}.png`), fullPage: true })
+})
+
+for (const [locale, labels, dark] of [['zh-cn', ['UP · 在线', 'UP · 在线', 'DOWN · 离线'], false], ['en', ['UP · Online', 'UP · Online', 'DOWN · Offline'], true]]) {
+  test(`lease status badges remain distinct from collection failure (${locale})`, async ({ page }, testInfo) => {
+    const state = await backend(page, { locale, instances: [{ id: 1 }, { id: 2 }, { id: 3, status: 'down' }] })
+    state.setMode('failed')
+    await page.addInitScript(dark => localStorage.setItem('theme-mode', dark ? 'dark' : 'light'), dark)
+    await page.goto('/service-resources?status=all&refresh=off')
+    await expect(page.getByTestId('process-list')).toContainText('1.50')
+    await expect(page.getByTestId('process-online')).toHaveText(labels)
+    await expect(page.getByTestId('process-online').nth(0)).toHaveClass(/el-tag--success/)
+    await expect(page.getByTestId('process-online').nth(1)).toHaveClass(/el-tag--success/)
+    await expect(page.getByTestId('process-online').nth(2)).toHaveClass(/el-tag--danger/)
+    await expect(page.getByTestId('process-list')).toContainText(locale === 'en' ? 'Collection failed' : '采集失败')
+    for (const tag of await page.getByTestId('process-online').all()) {
+      expect(await tag.evaluate(el => {
+        const cell = el.closest('.cell')
+        return el.getBoundingClientRect().right <= cell.getBoundingClientRect().right - parseFloat(getComputedStyle(cell).paddingRight) + 1
+      })).toBe(true)
+    }
+    if (dark) await expect(page.locator('html')).toHaveClass(/dark/)
+    else await expect(page.locator('html')).not.toHaveClass(/dark/)
+    await page.screenshot({ path: testInfo.outputPath(`service-status-${locale}.png`), fullPage: true })
+  })
+}
+
 test('bound services resolve one current managed name and discard names when its read fails', async ({ page }) => {
   const hosts = [{ node_id: boundHostID, display_name: 'Current managed host', enabled: true, version: 1 }]
   const state = await backend(page, { instances: boundInstances(), hosts, identity: identity(hostPermissions) })

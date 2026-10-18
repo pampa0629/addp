@@ -144,6 +144,8 @@ make test-system-frontend
 
 System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试经共享启动器分配当轮独立回环端口和结果目录，地址统一由 `browserTestOrigin('system')` 获取；设置 `ADDP_E2E=1` 并使用共享 `withFrontendTestIsolation` 关闭 HMR，将依赖缓存与 PID 记录隔离到当轮临时运行目录，退出时清理。不得占用开发端口、复用开发服务或覆盖开发缓存。
 
+实例登记地址的展示直接复用 `common-frontend/basic/src/utils/moduleRuntimeEndpoint.mjs` 的唯一 `getRegisteredEndpoint`；旧私有解析器已移除，与 Monitor 服务监控保持同一契约。共享端点单测归 `make test-common-frontend`，System 只验证组合与自身运行时长口径，既有 System/Console 前端门禁覆盖引用及页面，不新增 API 或依赖。
+
 ## 项目结构
 
 ### 后端架构（Go）

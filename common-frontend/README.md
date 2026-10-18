@@ -135,6 +135,8 @@ await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace
 
 `createLatestRequestScope()` 单点维护资源页面请求取消与迟到响应隔离。每轮先 `invalidate()` 获取 ticket，写回状态前检查 `current(ticket)`；卸载调用 `dispose()`。主机与服务监控复用此能力，领域分页、授权与展示仍由 Monitor 维护。
 
+`getRegisteredEndpoint()`（`basic/src/utils/moduleRuntimeEndpoint.mjs`）是模块实例登记端点的唯一展示解析器。System 实例管理与 Monitor 服务监控均直接消费；它只提取服务 URL 或缺省时健康检查 URL 的 HTTP(S) 主机和端口，不显示路径/查询/凭据，不做 DNS 或宿主节点推断。无端点返回空值，由各领域展示相应空态。契约与唯一所有权由 `make test-common-frontend` 覆盖，消费方沿既有 System、Monitor 和 Console 前端门禁验证；CI 自动发现，无新依赖。
+
 ### Console 页面描述与最近访问
 
 数据元冻结引用使用 `buildStandardElementRevisionRoute(elementId, revisionId)` 构造唯一公开地址，再调用 `openConsoleRoute()`。Standard 页内历史选择使用同一契约的 `buildStandardElementRevisionLocation()`；两个 ID 必须为正整数，禁止跳到默认当前修订替代历史引用。

@@ -890,6 +890,8 @@
         "reselect": "The selected instance is offline, collection is not enabled, or it is outside the current page. Select an instance from the list."
       },
       "instance": "Runtime instance",
+      "endpoint": "Registered address and port",
+      "noEndpoint": "No registered listener",
       "online": "Online status",
       "allStatuses": "All online statuses",
       "collectionConfig": "Collection configuration",
