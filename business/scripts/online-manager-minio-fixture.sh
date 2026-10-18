@@ -22,16 +22,34 @@ if [ "${ADDP_ONLINE_HOSTED:-0}" = "1" ]; then
   [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_OS:-}" = "Linux" ] &&
     [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] ||
     fail "Hosted Manager MinIO requires GitHub Linux x86_64"
+  FORMAT_OBJECTS+=(index-source-versions/source.csv index-source-versions/source.tsv)
 else
   [ "$(uname -s)" = "Darwin" ] || fail "the dedicated Online Manager MinIO fixture requires macOS"
 fi
 
 action=${1:-}
 case "$action" in
-  start|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-manager-minio-fixture.sh start|stop|status" ;;
+  start|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore) ;;
+  *) fail "unknown fixture action; use start|stop|status or a fixed Hosted index source change/restore action" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
+if [[ "$action" = index-* ]]; then
+  [ "${ADDP_ONLINE_HOSTED:-0}" = "1" ] || fail "index source mutation requires the exclusive Hosted fixture"
+  [[ "${ADDP_ONLINE_TEST_RUN_ID:-}" =~ ^manager-[0-9]+-[0-9]+$ ]] || fail "index source mutation requires a Manager run identity"
+  python3 - <<'PYOWNED'
+import os, re
+from pathlib import Path
+state = Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / 'nfs-root'
+if state.is_symlink() or not state.is_file():
+    raise SystemExit('owned Manager fixture state is missing')
+root = Path(state.read_text().strip())
+if not re.fullmatch(r'/tmp/addp-online-manager-nfs\.[A-Za-z0-9]{6}', str(root)) or root.is_symlink() or not root.is_dir():
+    raise SystemExit('owned Manager fixture root is invalid')
+owner = root / '.addp-online-owner'
+if owner.is_symlink() or not owner.is_file() or owner.read_text().strip() != os.environ['ADDP_ONLINE_TEST_RUN_ID']:
+    raise SystemExit('Manager fixture run ownership mismatch')
+PYOWNED
+fi
 
 required=(
   ADDP_ONLINE_MANAGER_MINIO_PORT
@@ -151,6 +169,9 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 root = Path(sys.argv[1])
+(root / 'index-source-versions').mkdir()
+for suffix, delimiter in (('csv', ','), ('tsv', '\t')):
+    (root / 'index-source-versions' / ('source.' + suffix)).write_bytes('id,name\n1,Alice\n2,Bobby\n'.replace(',', delimiter).encode('ascii'))
 (root / "format-samples").mkdir()
 rows = [["id", "姓名", "备注"]] + [[str(i), "张三" + str(i), f"北京,第{i}项\n第二行"] for i in range(25)]
 for extension, delimiter in (("csv", ","), ("tsv", "\t")):
@@ -386,6 +407,39 @@ seed_fixture() {
 validate_container_ownership
 
 case "$action" in
+  index-*)
+    container_running || fail "Business MinIO is not running"
+    directory=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-index-source.XXXXXX")
+    trap 'rm -rf "$directory"' EXIT
+    suffix=${action#index-}
+    suffix=${suffix%%-*}
+    python3 - "$directory" "$suffix" <<'PYINDEX'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+separator = {'csv': ',', 'tsv': '\t'}[sys.argv[2]]
+for name, text in (('original', 'id,name\n1,Alice\n2,Bobby\n'), ('changed', 'id,city\n1,Tokyo\n2,Paris\n')):
+    (root / name).write_bytes(text.replace(',', separator).encode('ascii'))
+PYINDEX
+    target="fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/index-source-versions/source.$suffix"
+    # Exact byte comparison avoids treating a foreign/partially written object as ours.
+    mc cat "$target" > "$directory/current"
+    if [[ "$action" = *-change ]]; then
+      cmp -s "$directory/current" "$directory/original" || fail "index source differs from the fixed original"
+      desired=changed
+    else
+      if cmp -s "$directory/current" "$directory/original"; then
+        exit 0
+      fi
+      cmp -s "$directory/current" "$directory/changed" || fail "index source restoration refused unexpected bytes"
+      desired=original
+    fi
+    docker_fixture run --rm --entrypoint mc --network "$(minio_network)" \
+      -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
+      -v "$directory:/fixture:ro" "$MC_IMAGE" cp --quiet "/fixture/$desired" "$target" >/dev/null
+    mc cat "$target" > "$directory/current"
+    cmp -s "$directory/current" "$directory/$desired" || fail "index source write verification failed"
+    ;;
   start)
     if ! docker_fixture image inspect "$MC_IMAGE" >/dev/null 2>&1; then
       compose build minio

@@ -377,6 +377,11 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "format-samples/vector-exchange/sites.kml",
         "format-samples/vector-exchange/sites.gml",
         "format-samples/vector-exchange/projected.topojson",
+        "index-source-versions/source.csv",
+        "index-source-versions/source.tsv",
+        "index-csv-change",
+        "index-tsv-restore",
+        "index source restoration refused unexpected bytes",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -430,10 +435,14 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "force=not converging",
         "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID",
         "verify_mesh_source",
-        "addp.manager-internal-artifact-lineage/v12",
-        "versions = verify_nfs_index_source_versions",
+        "addp.manager-internal-artifact-lineage/v13",
+        "versions = verify_index_source_versions",
         "index-source-versions.json",
-        "addp.index-source-versions/v1",
+        "addp.index-source-versions/v2",
+        'storage in ("nfs", "minio")',
+        "verify_manager_execution_events",
+        "addp.manager-execution-events/v1",
+        "manager-execution-events.json",
     ):
         if fragment not in owner:
             raise RegistrationError(

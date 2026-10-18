@@ -9,6 +9,7 @@ import unittest
 import urllib.parse
 import zlib
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 
@@ -196,6 +197,8 @@ class FakeGatewayClient:
                 "pdal_las12_format0.copc.laz?type=object"
             )
         execution = {
+            "execution_id": f"model-{format_name}" if format_name else "raster-direct" if task_type == SUITE.RASTER_TASK_TYPE else "manager-execution-2" if task_type == SUITE.PPTX_TASK_TYPE else "manager-execution-1",
+            "module": "manager", "task_type": task_type, "attempt": 1,
             "status": "success",
             "metadata": {
                 "lineage_facts": {
@@ -243,6 +246,15 @@ class FakeGatewayClient:
         raster = self.raster
         parsed_raster = urllib.parse.urlsplit(path)
         raster_query = urllib.parse.parse_qs(parsed_raster.query)
+        if parsed_raster.path.startswith('/api/v1/monitor/executions/by-execution-id/') and parsed_raster.path.endswith('/events'):
+            execution_id = parsed_raster.path.split('/')[-2]
+            now = datetime.now(timezone.utc)
+            items = [{'id': i, 'execution_id': execution_id, 'attempt': 1,
+                      'occurred_at': (now - timedelta(seconds=4-i)).isoformat(),
+                      'kind': kind, 'counters': {'progress': 50} if kind == 'progress' else {}}
+                     for i, kind in enumerate(('started', 'progress', 'completed'), 1)]
+            return response(200, {'items': items, 'next_cursor': 3, 'has_more': False,
+                                  'retained_after': (now - timedelta(days=30)).isoformat()})
         if path == '/api/v1/manager/raster_cog?' + urllib.parse.urlencode({'task_id': raster['task_id'], 'page': 1, 'page_size': 100}):
             rows = [{**raster, 'status': 'ready', 'last_execution_id': 'raster-direct', 'size_bytes': len(self.cog),
                 'width': 256, 'height': 256, 'band_count': 2, 'source_srid': 4326,
@@ -510,6 +522,96 @@ def scenario_environment(artifact_dir: str):
         "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT": "document/addp_online_preview_fixture.pptx",
         "GATEWAY_URL": "http://127.0.0.1:8000",
     }
+
+
+class ManagerExecutionEventsOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime.now(timezone.utc)
+        self.execution_id = 'manager-execution-1'
+        self.execution = {'execution_id': self.execution_id, 'module': 'manager',
+                          'task_type': SUITE.POINTCLOUD_TASK_TYPE, 'status': 'success', 'attempt': 1}
+        self.items = [{'id': i, 'execution_id': self.execution_id, 'attempt': 1,
+                       'occurred_at': (self.now - timedelta(seconds=4-i)).isoformat(),
+                       'kind': kind, 'counters': {'progress': 50} if kind == 'progress' else {}}
+                      for i, kind in enumerate(('started', 'progress', 'completed'), 1)]
+        self.page = {'items': self.items, 'next_cursor': 3, 'has_more': False,
+                     'retained_after': (self.now - timedelta(days=30)).isoformat()}
+
+    def invoke(self, pages=None, execution=None):
+        client = mock.Mock()
+        client.request.side_effect = [response(200, self.execution if execution is None else execution)] + [response(200, page) for page in (pages or [self.page])]
+        result = SUITE.verify_manager_execution_events(client, self.execution_id, SUITE.POINTCLOUD_TASK_TYPE)
+        return result, client
+
+    def test_reads_all_pages_and_retains_only_closed_safe_summary(self):
+        first = {**self.page, 'items': self.items[:2], 'next_cursor': 2, 'has_more': True}
+        second = {**self.page, 'items': self.items[2:]}
+        result, client = self.invoke([first, second])
+        self.assertEqual(result, {'execution_id': self.execution_id, 'task_type': SUITE.POINTCLOUD_TASK_TYPE,
+                                 'attempt': 1, 'event_count': 3, 'pages': 2, 'closed_fields_verified': True,
+                                 'identity_verified': True, 'lifecycle_verified': True, 'retention_verified': True})
+        self.assertTrue(client.request.call_args_list[-1].args[1].endswith('/events?after=2&limit=100'))
+
+    def test_success_does_not_require_a_progress_event(self):
+        self.page['items'] = [self.items[0], self.items[2]]
+        self.assertEqual(self.invoke()[0]['event_count'], 2)
+
+    def test_rejects_wrong_execution_or_attempt_before_reading_events(self):
+        for field, value in (('execution_id', 'other'), ('module', 'develop'), ('task_type', SUITE.MODEL_TASK_TYPE),
+                             ('status', 'running'), ('attempt', 2), ('attempt', True), ('attempt', '1')):
+            with self.subTest(field=field, value=value), self.assertRaises(SUITE.SuiteError):
+                self.invoke(execution={**self.execution, field: value})
+
+    def test_rejects_missing_duplicate_or_unsuccessful_lifecycle(self):
+        for kinds in (('started',), ('completed',), ('completed', 'started'), ('started', 'started', 'completed'),
+                      ('started', 'completed', 'completed'), ('started', 'failed'), ('started', 'cancelled'),
+                      ('started', 'timeout'), ('started', 'truncated')):
+            items = [{**self.items[0], 'id': i, 'kind': kind} for i, kind in enumerate(kinds, 1)]
+            with self.subTest(kinds=kinds), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items, 'next_cursor': len(items)}])
+
+    def test_rejects_private_fields_steps_and_non_percentage_counters(self):
+        for field in ('parameters', 'runtime_response', 'lease_token', 'execution_authorization_id', 'metadata', 'result', 'message', 'tenant_id', 'step_id'):
+            items = copy.deepcopy(self.items)
+            items[1][field] = 'private-sentinel'
+            with self.subTest(field=field), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items}])
+        for counters in ({}, {'progress': -1}, {'progress': 101}, {'progress': True}, {'progress': 1.5},
+                         {'progress': '50'}, {'progress': 50, 'records_read': 7}):
+            items = copy.deepcopy(self.items)
+            items[1]['counters'] = counters
+            with self.subTest(counters=counters), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items}])
+        for i in (0, 2):
+            items = copy.deepcopy(self.items)
+            items[i]['counters'] = {'progress': 100}
+            with self.subTest(terminal=i), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items}])
+
+    def test_rejects_bad_cursor_identity_and_page_envelopes(self):
+        for page in ({**self.page, 'next_cursor': 0}, {**self.page, 'next_cursor': '3'},
+                     {**self.page, 'has_more': 0}, {**self.page, 'items': []}, {**self.page, 'lease_token': 'private'}):
+            with self.subTest(page=list(page)), self.assertRaises(SUITE.SuiteError):
+                self.invoke([page])
+        for field, value in (('id', 1), ('id', True), ('id', '2'), ('execution_id', 'other'), ('attempt', 2), ('attempt', True)):
+            items = copy.deepcopy(self.items)
+            items[1][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items}])
+
+    def test_rejects_naive_future_expired_and_reversed_timestamps(self):
+        for stamp in ('invalid', self.now.replace(tzinfo=None).isoformat(),
+                      (self.now + timedelta(days=1)).isoformat(), (self.now - timedelta(days=31)).isoformat(),
+                      (self.now - timedelta(seconds=5)).isoformat()):
+            items = copy.deepcopy(self.items)
+            items[1]['occurred_at'] = stamp
+            with self.subTest(stamp=stamp), self.assertRaises(SUITE.SuiteError):
+                self.invoke([{**self.page, 'items': items}])
+        with self.assertRaises(SUITE.SuiteError):
+            self.invoke([{**self.page, 'retained_after': (self.now + timedelta(days=1)).isoformat()}])
+        items = [{**item, 'occurred_at': (self.now - timedelta(days=31)).isoformat()} for item in self.items]
+        with self.assertRaises(SUITE.SuiteError):
+            self.invoke([{**self.page, 'items': items, 'retained_after': (self.now - timedelta(days=60)).isoformat()}])
 
 
 class ManagedArtifactPhysicalEvidenceTest(unittest.TestCase):
@@ -851,6 +953,10 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
         self.assertEqual(report["lineage"]["inputs"], 11)
         self.assertEqual(report["lineage"]["outputs"], 11)
+        self.assertEqual(len(report['execution_events']['executions']), 11)
+        self.assertEqual({item['task_type'] for item in report['execution_events']['executions'].values()},
+                         {SUITE.MODEL_TASK_TYPE, SUITE.PPTX_TASK_TYPE, SUITE.RASTER_TASK_TYPE, SUITE.POINTCLOUD_TASK_TYPE})
+        self.assertTrue(all(item['lifecycle_verified'] for item in report['execution_events']['executions'].values()))
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         self.assertEqual(report['raster_cog']['mode'], 'direct')
         self.assertTrue(report['raster_cog']['physical']['cog_valid'])

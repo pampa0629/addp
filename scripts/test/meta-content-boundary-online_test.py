@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import csv
 import io
@@ -163,54 +164,59 @@ class ContentBoundaryOnlineTest(unittest.TestCase):
 
 
 class IndexSourceAPI:
-    def __init__(self, root, fault=""):
-        self.root, self.fault = root, fault
+    def __init__(self, root, fault="", fault_storage="nfs"):
+        self.root, self.fault, self.fault_storage = root, fault, fault_storage
         self.items, self.calls = {}, []
         self.refreshes = 0
 
     def snapshot(self, item_id):
-        path = self.root / f"index-source-versions/source.{('csv', 'tsv')[item_id - 1]}"
+        path = self.root / (("fixture/" if item_id > 2 else "") + f"index-source-versions/source.{('csv', 'tsv')[(item_id - 1) % 2]}")
+        etag = hashlib.md5(path.read_bytes()).hexdigest() if item_id > 2 else ""
+        if item_id > 2 and self.fault == "etag-unchanged":
+            etag = "unchanged-etag"
         return {"id": item_id, "fingerprint": f"item-{item_id}", "full_name": str(path.relative_to(self.root)),
                 "attributes": {"access_index": {"table": {"kind": "sparse_row_index", "source": {
-                    "size_bytes": path.stat().st_size, "last_modified_at": str(path.stat().st_mtime_ns)}}}}}
+                    "size_bytes": path.stat().st_size, "last_modified_at": str(path.stat().st_mtime_ns), "etag": etag}}}}}
 
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path, body))
         status, raw = 200, b""
         if path == "/api/v1/meta/scan/run/manual":
             suffix = body["targets"][0].split("?")[0].rsplit(".", 1)[1]
-            item_id = ("csv", "tsv").index(suffix) + 1
+            item_id = ("csv", "tsv").index(suffix) + 1 + (2 if body["engine_id"] == 10 else 0)
             self.items[item_id] = self.snapshot(item_id)
             status, payload = 201, {"execution_id": "scan-1"}
         elif "/meta/executions/" in path:
             payload = {"status": "success"}
-        elif path == "/api/v1/meta/engines/9/items":
+        elif path in ("/api/v1/meta/engines/9/items", "/api/v1/meta/engines/10/items"):
             payload = list(self.items.values())
         elif "/meta/items/" in path:
             payload = self.items[int(path.rsplit("/", 1)[1])]
         elif path.endswith("/items/refresh"):
             self.refreshes += 1
             item_id = body["item_id"]
-            if not (self.fault == "stale-refresh" and self.refreshes == 1):
+            fault = self.fault if (item_id > 2) == (self.fault_storage == "minio") else ""
+            if not (fault == "stale-refresh" and self.refreshes % 4 == 1):
                 self.items[item_id] = self.snapshot(item_id)
-                if self.fault == "replace-identity" and self.refreshes == 1:
+                if fault == "replace-identity" and self.refreshes % 4 == 1:
                     self.items[item_id]["fingerprint"] = "replacement-id"
             payload = {"status": "success"}
         elif "/manager/preview?" in path or "/manager/storage-stream?" in path:
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
             locator = urllib.parse.urlsplit(query["locator"][0])
             item_id = int(urllib.parse.parse_qs(locator.query)["item_id"][0])
+            fault = self.fault if (item_id > 2) == (self.fault_storage == "minio") else ""
             source = self.root / self.items[item_id]["full_name"]
             raw = source.read_bytes()
             if "/storage-stream?" in path:
                 payload = {}
-            elif self.items[item_id]["attributes"] != self.snapshot(item_id)["attributes"] and self.fault != "allow-stale":
+            elif self.items[item_id]["attributes"] != self.snapshot(item_id)["attributes"] and fault != "allow-stale":
                 status, payload = 409, {"error_code": "preview_source_refresh_required"}
-                if self.fault == "leak-rows":
+                if fault == "leak-rows":
                     payload["rows"] = []
-                if self.fault == "wrong-code":
+                if fault == "wrong-code":
                     payload["error_code"] = "unknown"
-                if self.fault == "auto-refresh":
+                if fault == "auto-refresh":
                     self.items[item_id] = self.snapshot(item_id)
             else:
                 reader = csv.DictReader(io.StringIO(raw.decode()), delimiter="\t" if source.suffix == ".tsv" else ",")
@@ -218,9 +224,9 @@ class IndexSourceAPI:
                 page = int(query["page"][0])
                 table = {"mode": "table", "columns": reader.fieldnames, "rows": rows[page-1:page], "total": 2, "has_more": page == 1}
                 payload = {"preview_type": "table", "data": table}
-                if self.fault == "bare-table":
+                if fault == "bare-table":
                     payload = table
-                if self.fault == "wrong-preview-type":
+                if fault == "wrong-preview-type":
                     payload["preview_type"] = "object"
         else:
             raise AssertionError(f"unexpected {method} {path}")
@@ -238,29 +244,49 @@ class IndexSourceVersionsOnlineTest(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.root))
         (self.root / ".addp-online-owner").write_text("manager-42-1\n")
         (self.root / "index-source-versions").mkdir()
+        (self.root / "fixture/index-source-versions").mkdir(parents=True)
         self.originals = {}
         for suffix, delimiter in (("csv", ","), ("tsv", "\t")):
             content = "id,name\n1,Alice\n2,Bobby\n".replace(",", delimiter).encode()
             path = self.root / "index-source-versions" / ("source." + suffix)
             path.write_bytes(content)
             self.originals[path] = content
+            minio = self.root / "fixture" / path.relative_to(self.root)
+            minio.write_bytes(content)
+            self.originals[minio] = content
         (Path(self.temp.name) / "nfs-root").write_text(str(self.root) + "\n")
         self.env = {"ADDP_ONLINE_HOST": "1", "ADDP_ONLINE_HOSTED": "1", "GITHUB_ACTIONS": "true", "RUNNER_OS": "Linux",
                     "ADDP_ONLINE_SECRET_DIR": self.temp.name, "ADDP_ONLINE_TEST_RUN_ID": "manager-42-1",
-                    "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID": "9"}
+                    "ADDP_ONLINE_MANAGER_NFS_ENGINE_ID": "9", "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID": "10",
+                    "ADDP_ONLINE_MANAGER_MINIO_BUCKET": "fixture"}
+        self.mutations = []
+        self.enterContext(mock.patch.object(OWNER.subprocess, "run", side_effect=self.replace_minio_source))
         self.enterContext(mock.patch.object(OWNER.sys, "platform", "linux"))
         self.enterContext(mock.patch.object(OWNER.os, "uname", return_value=SimpleNamespace(machine="x86_64")))
 
+    def replace_minio_source(self, args, **kwargs):
+        action = args[-1]
+        self.assertIn(action, ("index-csv-change", "index-csv-restore", "index-tsv-change", "index-tsv-restore"))
+        self.mutations.append(action)
+        _, suffix, phase = action.split('-')
+        source = self.root / "fixture/index-source-versions" / ("source." + suffix)
+        original = self.originals[source]
+        changed = "id,city\n1,Tokyo\n2,Paris\n".replace(",", "\t" if suffix == "tsv" else ",").encode()
+        self.assertEqual(source.read_bytes(), original if phase == 'change' else changed)
+        source.write_bytes(changed if phase == 'change' else original)
+        return SimpleNamespace(returncode=0)
+
     def invoke(self, api):
-        return OWNER.verify_nfs_index_source_versions(api, self.env, time.monotonic() + 30)
+        return OWNER.verify_index_source_versions(api, self.env, time.monotonic() + 30)
 
     def test_same_size_change_rejects_both_pages_refreshes_and_restores(self):
         api = IndexSourceAPI(self.root)
         result = self.invoke(api)
-        self.assertEqual(result["schema_version"], "addp.index-source-versions/v1")
+        self.assertEqual(result["schema_version"], "addp.index-source-versions/v2")
         self.assertEqual(result["result"], "passed")
-        self.assertEqual([case["format"] for case in result["cases"]], ["csv", "tsv"])
-        self.assertEqual(api.refreshes, 4)
+        self.assertEqual([(case["storage"], case["format"]) for case in result["cases"]], [("nfs", "csv"), ("nfs", "tsv"), ("minio", "csv"), ("minio", "tsv")])
+        self.assertEqual(api.refreshes, 8)
+        self.assertEqual(self.mutations, ["index-csv-change", "index-csv-restore", "index-tsv-change", "index-tsv-restore"])
         for case in result["cases"]:
             self.assertEqual(case["stale_pages_rejected"], [1, 2])
             self.assertNotEqual(case["original_sha256"], case["changed_sha256"])
@@ -269,11 +295,12 @@ class IndexSourceVersionsOnlineTest(unittest.TestCase):
             self.assertEqual(path.read_bytes(), original)
 
     def test_rejects_regressions_and_restores_physical_bytes_on_failure(self):
-        for fault in ("allow-stale", "leak-rows", "wrong-code", "auto-refresh", "stale-refresh", "replace-identity", "bare-table", "wrong-preview-type"):
-            with self.subTest(fault=fault), self.assertRaises(OWNER.SuiteError):
-                self.invoke(IndexSourceAPI(self.root, fault))
-            for path, original in self.originals.items():
-                self.assertEqual(path.read_bytes(), original)
+        for storage in ("nfs", "minio"):
+            for fault in ("allow-stale", "leak-rows", "wrong-code", "auto-refresh", "stale-refresh", "replace-identity", "bare-table", "wrong-preview-type"):
+                with self.subTest(storage=storage, fault=fault), self.assertRaises(OWNER.SuiteError):
+                    self.invoke(IndexSourceAPI(self.root, fault, storage))
+                for path, original in self.originals.items():
+                    self.assertEqual(path.read_bytes(), original)
 
     def test_rejects_unowned_hosts_and_fixture_paths_before_api_calls(self):
         api = IndexSourceAPI(self.root)
@@ -287,3 +314,22 @@ class IndexSourceVersionsOnlineTest(unittest.TestCase):
         with self.assertRaises(OWNER.SuiteError):
             self.invoke(api)
         self.assertFalse(api.calls)
+
+    def test_rejects_stale_minio_etag_even_when_modified_time_changes(self):
+        with self.assertRaisesRegex(OWNER.SuiteError, "stale source binding"):
+            self.invoke(IndexSourceAPI(self.root, 'etag-unchanged', 'minio'))
+        for path, original in self.originals.items():
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_failed_minio_write_still_restores_the_accepted_changed_bytes(self):
+        replace = self.replace_minio_source
+        def fail_after_put(args, **kwargs):
+            result = replace(args, **kwargs)
+            if args[-1] == 'index-csv-change':
+                return SimpleNamespace(returncode=1)
+            return result
+        with mock.patch.object(OWNER.subprocess, 'run', side_effect=fail_after_put), self.assertRaisesRegex(OWNER.SuiteError, 'mutation/restoration failed'):
+            self.invoke(IndexSourceAPI(self.root))
+        self.assertEqual(self.mutations[-2:], ['index-csv-change', 'index-csv-restore'])
+        for path, original in self.originals.items():
+            self.assertEqual(path.read_bytes(), original)

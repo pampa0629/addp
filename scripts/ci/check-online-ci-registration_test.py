@@ -1200,7 +1200,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
             "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
-            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson format-samples/vector-exchange/sites.kml format-samples/vector-exchange/sites.gml format-samples/vector-exchange/projected.topojson\n",
+            "dae/model.dae 3ds/model.3ds texture.png format-samples/gbk-quoted.csv format-samples/gbk-quoted.tsv format-samples/format-validation.xlsx format-samples/document.json format-samples/records.json format-samples/features.geojson format-samples/features.json format-samples/trajectory.csv format-samples/trajectory.json format-samples/trajectory.geojson format-samples/vector-exchange/sites.kml format-samples/vector-exchange/sites.gml format-samples/vector-exchange/projected.topojson index-source-versions/source.csv index-source-versions/source.tsv index-csv-change index-tsv-restore index source restoration refused unexpected bytes\n",
             encoding="utf-8",
         )
         owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
@@ -1211,7 +1211,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
-            'MODEL_FORMATS MESH_SOURCE_FACTS FBX_BASIC_SOURCE prepare_basic_fbx_source fbx_basic_preview verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources TRAJECTORY_SOURCES trajectory_sources VECTOR_EXCHANGE_SOURCES vector_exchange_sources addp.manager-internal-artifact-lineage/v12 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging versions = verify_nfs_index_source_versions index-source-versions.json addp.index-source-versions/v1\n',
+            'MODEL_FORMATS MESH_SOURCE_FACTS FBX_BASIC_SOURCE prepare_basic_fbx_source fbx_basic_preview verify_mesh_source validate_model_glb cleanup_managed_artifact generate_raster_cog raster_to_cog raster_physical DELIMITED_SHA256 delimited_sources WORKBOOK_SHA256 WORKBOOK_SHEETS workbook_source STRUCTURED_JSON_SOURCES structured_json_sources TRAJECTORY_SOURCES trajectory_sources VECTOR_EXCHANGE_SOURCES vector_exchange_sources addp.manager-internal-artifact-lineage/v13 verify_content_boundaries boundaries = verify_content_boundaries boundaries += verify_content_boundaries content-boundaries.json ADDP_ONLINE_MANAGER_NFS_ENGINE_ID addp.content-boundaries/v2 directory-convergence refs-convergence "removed_components" "preserved_initial_items" force=not converging versions = verify_index_source_versions index-source-versions.json addp.index-source-versions/v2 storage in ("nfs", "minio") verify_manager_execution_events addp.manager-execution-events/v1 manager-execution-events.json\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -1237,7 +1237,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "verify_content_boundaries", "owner contract"),
             (owner, "boundaries += verify_content_boundaries", "owner contract"),
             (owner, "content-boundaries.json", "owner contract"),
-            (owner, "versions = verify_nfs_index_source_versions", "owner contract"),
+            (owner, "versions = verify_index_source_versions", "owner contract"),
             (owner, "index-source-versions.json", "owner contract"),
             (owner, "directory-convergence", "owner contract"),
             (owner, "refs-convergence", "owner contract"),
@@ -1280,8 +1280,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (owner, "FBX_BASIC_SOURCE", "owner contract"),
             (owner, "prepare_basic_fbx_source", "owner contract"),
             (owner, "fbx_basic_preview", "owner contract"),
-            (owner, "addp.manager-internal-artifact-lineage/v12", "owner contract"),
-            (owner, "addp.index-source-versions/v1", "owner contract"),
+            (owner, "addp.manager-internal-artifact-lineage/v13", "owner contract"),
+            (owner, "addp.index-source-versions/v2", "owner contract"),
+            (owner, 'storage in ("nfs", "minio")', "owner contract"),
+            (owner, "verify_manager_execution_events", "owner contract"),
+            (owner, "addp.manager-execution-events/v1", "owner contract"),
+            (owner, "manager-execution-events.json", "owner contract"),
+            (fixture, "index-csv-change", "fixture contract"),
+            (fixture, "index-tsv-restore", "fixture contract"),
+            (fixture, "index-source-versions/source.csv", "fixture contract"),
+            (fixture, "index source restoration refused unexpected bytes", "fixture contract"),
             (browser, "verifyBasicColoredFBX", "browser contract"),
             (browser, "basic_preview_source", "browser contract"),
             (browser, "vertex_colors_verified", "browser contract"),

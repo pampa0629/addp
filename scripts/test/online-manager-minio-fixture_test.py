@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from uuid import uuid4
 from types import SimpleNamespace
 from unittest import mock
 import xml.etree.ElementTree as ET
@@ -132,6 +133,21 @@ case "$1" in
   run)
     [ -f "$ADDP_TEST_CONTAINER_STATE" ] || exit 1
     case " $* " in
+      *" cat fixture/addp-online/index-source-versions/source."*)
+        key="${@: -1}"
+        cat "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/${key#fixture/addp-online/}" || exit 1
+        ;;
+      *" cp --quiet /fixture/original "*|*" cp --quiet /fixture/changed "*)
+        for argument in "$@"; do
+          case "$argument" in
+            *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
+            /fixture/original|/fixture/changed) source="${argument#/fixture/}" ;;
+          esac
+        done
+        [ "${ADDP_TEST_INDEX_WRITE_FAIL:-0}" != 1 ] || exit 1
+        key="${@: -1}"
+        cp "$mount/$source" "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/${key#fixture/addp-online/}" || exit 1
+        ;;
       *" cp --quiet /fixture/source.las "*)
         for argument in "$@"; do
           case "$argument" in
@@ -141,13 +157,13 @@ case "$1" in
           esac
         done
         ;;
-      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*|*" cp --quiet /fixture/max/"*|*" cp --quiet /fixture/fbx/"*|*" cp --quiet /fixture/obj/"*|*" cp --quiet /fixture/format-samples/"*)
+      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*|*" cp --quiet /fixture/ifc/"*|*" cp --quiet /fixture/osgb/"*|*" cp --quiet /fixture/skp/"*|*" cp --quiet /fixture/max/"*|*" cp --quiet /fixture/fbx/"*|*" cp --quiet /fixture/obj/"*|*" cp --quiet /fixture/format-samples/"*|*" cp --quiet /fixture/index-source-versions/"*)
         mount=""
         source=""
         for argument in "$@"; do
           case "$argument" in
             *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
-            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*|/fixture/max/*|/fixture/fbx/*|/fixture/obj/*|/fixture/format-samples/*) source="${argument#/fixture/}" ;;
+            /fixture/dae/*|/fixture/3ds/*|/fixture/ifc/*|/fixture/osgb/*|/fixture/skp/*|/fixture/max/*|/fixture/fbx/*|/fixture/obj/*|/fixture/format-samples/*|/fixture/index-source-versions/*) source="${argument#/fixture/}" ;;
           esac
         done
         mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$(dirname "$source")"
@@ -525,6 +541,46 @@ esac
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not owned", result.stderr)
         self.assertTrue(self.state.exists())
+
+    def test_index_mutation_is_hosted_owned_exact_and_restorable(self):
+        hosted = dict(ADDP_ONLINE_HOSTED='1', ADDP_TEST_OS='Linux', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
+                      ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(self.root / 'descriptor.json'))
+        started = self.run_fixture('start', **hosted)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        secret = self.root / 'secret'
+        secret.mkdir()
+        owned = Path('/tmp') / ('addp-online-manager-nfs.' + uuid4().hex[:6])
+        owned.mkdir()
+        self.addCleanup(lambda: shutil.rmtree(owned))
+        (owned / '.addp-online-owner').write_text('manager-42-1\n')
+        (secret / 'nfs-root').write_text(str(owned))
+        env = dict(hosted, ADDP_ONLINE_TEST_RUN_ID='manager-42-1', ADDP_ONLINE_SECRET_DIR=str(secret))
+        sources = self.root / 'model-fixtures/index-source-versions'
+        for suffix, delimiter in (('csv', ','), ('tsv', '\t')):
+            source = sources / ('source.' + suffix)
+            original = 'id,name\n1,Alice\n2,Bobby\n'.replace(',', delimiter).encode('ascii')
+            changed = 'id,city\n1,Tokyo\n2,Paris\n'.replace(',', delimiter).encode('ascii')
+            self.assertEqual(source.read_bytes(), original)
+            self.assertNotEqual(self.run_fixture('index-' + suffix + '-change').returncode, 0)
+            self.assertEqual(source.read_bytes(), original)
+            denied = self.run_fixture('index-' + suffix + '-change', **dict(env, ADDP_ONLINE_TEST_RUN_ID='manager-99-1'))
+            self.assertNotEqual(denied.returncode, 0)
+            failed = self.run_fixture('index-' + suffix + '-change', **dict(env, ADDP_TEST_INDEX_WRITE_FAIL='1'))
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(source.read_bytes(), original)
+            changed_result = self.run_fixture('index-' + suffix + '-change', **env)
+            self.assertEqual(changed_result.returncode, 0, changed_result.stderr)
+            self.assertEqual(source.read_bytes(), changed)
+            self.assertEqual(len(original), len(changed))
+            self.assertNotEqual(self.run_fixture('index-' + suffix + '-change', **env).returncode, 0)
+            restored = self.run_fixture('index-' + suffix + '-restore', **env)
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertEqual(self.run_fixture('index-' + suffix + '-restore', **env).returncode, 0)
+            source.write_bytes(b'foreign source bytes')
+            self.assertNotEqual(self.run_fixture('index-' + suffix + '-restore', **env).returncode, 0)
+            self.assertEqual(source.read_bytes(), b'foreign source bytes')
+            source.write_bytes(original)
 
 
 if __name__ == "__main__":

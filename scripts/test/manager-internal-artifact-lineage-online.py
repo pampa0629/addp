@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -368,8 +369,8 @@ def wait_for_meta_scan(client: GatewayClient, engine_id: int, deadline: float,
     raise SuiteError("Meta scan did not finish before the convergence timeout")
 
 
-def verify_nfs_index_source_versions(client: GatewayClient, environment: Mapping[str, str], deadline: float) -> dict[str, object]:
-    """Mutate only this Hosted run's two owned sources, through no application write API."""
+def verify_index_source_versions(client: GatewayClient, environment: Mapping[str, str], deadline: float) -> dict[str, object]:
+    """Mutate only this Hosted run's four owned sources, through no application write API."""
     if (environment.get("ADDP_ONLINE_HOST") != "1" or environment.get("ADDP_ONLINE_HOSTED") != "1" or environment.get("GITHUB_ACTIONS") != "true" or
             environment.get("RUNNER_OS") != "Linux" or sys.platform != "linux" or os.uname().machine != "x86_64"):
         raise SuiteError("index source mutation requires the exclusive Hosted Linux x86_64 fixture")
@@ -388,97 +389,117 @@ def verify_nfs_index_source_versions(client: GatewayClient, environment: Mapping
     if (owner.is_symlink() or not owner.is_file() or owner.read_text().strip() != run_id or
             directory.is_symlink() or not directory.is_dir()):
         raise SuiteError("NFS index source ownership mismatch")
-    engine_id = positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id")
     cases = []
-    for suffix, separator in (("csv", ","), ("tsv", "\t")):
+    for storage, suffix in ((storage, suffix) for storage in ("nfs", "minio") for suffix in ("csv", "tsv")):
+        separator = "," if suffix == "csv" else "\t"
+        engine_id = positive_int(environment["ADDP_ONLINE_MANAGER_" + storage.upper() + "_ENGINE_ID"], storage + " engine id")
+        kind = "file" if storage == "nfs" else "object"
+        bucket = "" if storage == "nfs" else environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"]
         relative = f"index-source-versions/source.{suffix}"
         path = root / relative
         original = "id,name\n1,Alice\n2,Bobby\n".replace(",", separator).encode("ascii")
         replacement = "id,city\n1,Tokyo\n2,Paris\n".replace(",", separator).encode("ascii")
-        if path.is_symlink() or not path.is_file() or path.read_bytes() != original or len(original) != len(replacement):
-            raise SuiteError("NFS index source does not match the fixed original bytes")
-        locator = f"addp://engine/{engine_id}/path/{relative}?type=file"
+        if storage == "nfs" and (path.is_symlink() or not path.is_file() or path.read_bytes() != original or len(original) != len(replacement)):
+            raise SuiteError("Index source does not match the fixed original bytes")
+        physical_path = f"{bucket}/{relative}" if bucket else relative
+        locator = f"addp://engine/{engine_id}/path/{physical_path}?type={kind}"
         wait_for_meta_scan(client, engine_id, deadline, scope={"targets": [locator]})
-        listed = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "NFS index items")
-        matching = [item for item in listed if item.get("full_name") == relative]
+        listed = _array(client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload, "Index items")
+        matching = [item for item in listed if item.get("full_name") == physical_path]
         if len(matching) != 1:
-            raise SuiteError("NFS indexed item identity is missing or duplicated")
-        item_id = positive_int(matching[0].get("id"), "NFS indexed item id")
+            raise SuiteError("Indexed item identity is missing or duplicated")
+        item_id = positive_int(matching[0].get("id"), "Indexed item id")
         locator += f"&item_id={item_id}"
 
         def detail():
-            return _object(client.request("GET", f"/api/v1/meta/items/{item_id}", (200,)).payload, "NFS index detail")
+            return _object(client.request("GET", f"/api/v1/meta/items/{item_id}", (200,)).payload, "Index detail")
 
         def refresh():
             result = _object(client.request("POST", f"/api/v1/manager/engines/{engine_id}/items/refresh", (200,),
-                                           {"item_id": item_id}).payload, "NFS index refresh")
+                                           {"item_id": item_id}).payload, "Index refresh")
             if result.get("status") != "success":
-                raise SuiteError("NFS index refresh did not finish successfully")
+                raise SuiteError("Index refresh did not finish successfully")
 
         def check_pages(column, labels):
             for page, label in enumerate(labels, 1):
                 query = urllib.parse.urlencode({"locator": locator, "page": page, "page_size": 1})
-                response = _object(client.request("GET", "/api/v1/manager/preview?" + query, (200,)).payload, "NFS indexed preview response")
+                response = _object(client.request("GET", "/api/v1/manager/preview?" + query, (200,)).payload, "Indexed preview response")
                 if response.get("preview_type") != "table":
-                    raise SuiteError("NFS indexed preview must use the table response contract")
-                result = _object(response.get("data"), "NFS indexed table data")
+                    raise SuiteError("Indexed preview must use the table response contract")
+                result = _object(response.get("data"), "Indexed table data")
                 if (result.get("mode") != "table" or result.get("columns") != ["id", column] or
                         result.get("rows") != [{"id": page, column: label}] or result.get("total") != 2 or
                         result.get("has_more") is not (page == 1)):
-                    raise SuiteError("NFS indexed preview returned stale fields, rows or pagination")
+                    raise SuiteError("Indexed preview returned stale fields, rows or pagination")
 
         def check_download(expected):
-            query = urllib.parse.urlencode({"locator": locator, "storage_ref": relative})
+            query = urllib.parse.urlencode({"locator": locator, "storage_ref": physical_path})
             if client.request("GET", "/api/v1/manager/storage-stream?" + query, (200,)).raw != expected:
-                raise SuiteError("NFS indexed source download bytes differ")
+                raise SuiteError("Indexed source download bytes differ")
+
+        def replace_source(changed):
+            if storage == "nfs":
+                expected = original if changed else replacement
+                if path.is_symlink():
+                    raise SuiteError("Index source replacement refused unexpected bytes")
+                current = path.read_bytes()
+                if not changed and current == original:
+                    return
+                if current != expected:
+                    raise SuiteError("Index source replacement refused unexpected bytes")
+                stamp = path.stat().st_mtime_ns
+                path.write_bytes(replacement if changed else original)
+                os.utime(path, ns=(stamp + 2_000_000_000, stamp + 2_000_000_000))
+            else:
+                action = f"index-{suffix}-{'change' if changed else 'restore'}"
+                script = Path(__file__).resolve().parents[2] / 'business/scripts/online-manager-minio-fixture.sh'
+                result = subprocess.run(['bash', str(script), action], env=environment, capture_output=True, check=False, timeout=60)
+                if result.returncode:
+                    raise SuiteError("MinIO indexed source mutation/restoration failed")
 
         before = detail()
-        attrs = _object(before.get("attributes"), "NFS indexed attributes")
-        index = _object(_object(attrs.get("access_index"), "NFS access indexes").get("table"), "NFS table index")
-        binding = _object(index.get("source"), "NFS index source binding")
-        if index.get("kind") != "sparse_row_index" or binding.get("size_bytes") != len(original) or not binding.get("last_modified_at"):
-            raise SuiteError("NFS fixture must use a version-bound sparse row index")
+        attrs = _object(before.get("attributes"), "Indexed attributes")
+        index = _object(_object(attrs.get("access_index"), "Access indexes").get("table"), "Table index")
+        binding = _object(index.get("source"), "Index source binding")
+        if index.get("kind") != "sparse_row_index" or binding.get("size_bytes") != len(original) or not binding.get("last_modified_at") or (storage == "minio" and not binding.get("etag")):
+            raise SuiteError("Fixture must use a version-bound sparse row index")
         check_pages("name", ["Alice", "Bobby"])
         check_download(original)
         changed = False
         try:
-            stamp = path.stat().st_mtime_ns
-            path.write_bytes(replacement)
             changed = True
-            os.utime(path, ns=(stamp + 2_000_000_000, stamp + 2_000_000_000))
+            replace_source(True)
             for page in (1, 2):
                 query = urllib.parse.urlencode({"locator": locator, "page": page, "page_size": 1})
-                result = _object(client.request("GET", "/api/v1/manager/preview?" + query, (409,)).payload, "NFS stale index rejection")
+                result = _object(client.request("GET", "/api/v1/manager/preview?" + query, (409,)).payload, "Stale index rejection")
                 if (result.get("error_code") != "preview_source_refresh_required" or
                         any(key in result for key in ("rows", "columns", "total", "has_more", "data"))):
-                    raise SuiteError("NFS stale index rejection leaked preview data or used the wrong code")
+                    raise SuiteError("Stale index rejection leaked preview data or used the wrong code")
             if detail() != before:
-                raise SuiteError("NFS stale preview automatically rewrote scanned metadata")
+                raise SuiteError("Stale preview automatically rewrote scanned metadata")
             check_download(replacement)
             refresh()
             after = detail()
             rebound = _object(_object(_object(after.get("attributes"), "refreshed attrs").get("access_index"), "refreshed indexes").get("table"), "refreshed table index")
             if (after.get("id") != before.get("id") or after.get("fingerprint") != before.get("fingerprint") or
-                    rebound.get("source") == binding):
-                raise SuiteError("NFS refresh replaced item identity or kept the stale source binding")
+                    rebound.get("source") == binding or (storage == "minio" and
+                        _object(rebound.get("source"), "Changed object source binding").get("etag") == binding.get("etag"))):
+                raise SuiteError("Index refresh replaced item identity or kept the stale source binding")
             check_pages("city", ["Tokyo", "Paris"])
         finally:
             if changed:
-                if path.is_symlink() or path.read_bytes() != replacement:
-                    raise SuiteError("NFS index source restoration refused unexpected bytes")
-                stamp = path.stat().st_mtime_ns
-                path.write_bytes(original)
-                os.utime(path, ns=(stamp + 2_000_000_000, stamp + 2_000_000_000))
+                replace_source(False)
                 refresh()
                 check_pages("name", ["Alice", "Bobby"])
                 check_download(original)
-        cases.append({"format": suffix, "item_id": item_id, "fingerprint": before.get("fingerprint"),
+        cases.append({"storage": storage, "format": suffix, "item_id": item_id, "fingerprint": before.get("fingerprint"),
+                      "original_binding": binding, "changed_binding": rebound.get("source"),
                       "size_bytes": len(original), "original_sha256": hashlib.sha256(original).hexdigest(),
                       "changed_sha256": hashlib.sha256(replacement).hexdigest(), "same_size_change": True,
                       "stale_pages_rejected": [1, 2], "metadata_unchanged_on_rejection": True,
                       "refresh_rebound_source": True, "refreshed_pages_verified": True,
                       "source_and_preview_restored": True, "source_downloads_verified": True})
-    return {"schema_version": "addp.index-source-versions/v1", "run_id": run_id, "result": "passed", "cases": cases}
+    return {"schema_version": "addp.index-source-versions/v2", "run_id": run_id, "result": "passed", "cases": cases}
 
 
 def verify_content_boundaries(client: GatewayClient, engine_id: int, bucket: str, deadline: float) -> list[dict[str, object]]:
@@ -705,6 +726,73 @@ def wait_for_manager_execution(client: GatewayClient, execution_id: str, deadlin
             raise SuiteError(f"Manager {label} execution ended with status {status}: category={details.get('category', 'unknown')} code={details.get('code', 'unknown')}")
         time.sleep(1)
     raise SuiteError(f"Manager {label} execution did not finish before the convergence timeout")
+
+
+def verify_manager_execution_events(client: GatewayClient, execution_id: str, task_type: str) -> dict[str, object]:
+    """Read the existing success only; retain no raw event or runtime response."""
+    base = f"/api/v1/manager/executions/{urllib.parse.quote(execution_id)}"
+    execution = _object(client.request("GET", base, (200,)).payload, "Manager event execution")
+    assert_manager_execution_projection(execution)
+    if (execution.get("execution_id") != execution_id or execution.get("module") != "manager" or
+            execution.get("task_type") != task_type or execution.get("status") != "success" or
+            type(execution.get("attempt")) is not int or execution["attempt"] != 1):
+        raise SuiteError("Manager events require the actual first successful execution")
+
+    def timestamp(value):
+        if not isinstance(value, str):
+            raise SuiteError("Manager event timestamp is missing")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise SuiteError("Manager event timestamp is invalid") from error
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise SuiteError("Manager event timestamp requires a timezone")
+        return parsed
+
+    cursor, kinds, previous_time = 0, [], None
+    pages = 0
+    while True:
+        query = urllib.parse.urlencode({"after": cursor, "limit": 100})
+        page = _object(client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(execution_id)}/events?{query}", (200,)).payload, "Manager event page")
+        if set(page) != {"items", "next_cursor", "has_more", "retained_after"} or type(page.get("has_more")) is not bool:
+            raise SuiteError("Manager event page exposed undeclared fields or invalid pagination")
+        retained = timestamp(page["retained_after"])
+        now = datetime.now(timezone.utc)
+        if retained >= now:
+            raise SuiteError("Manager event retention window is invalid")
+        items = _array(page["items"], "Manager event items")
+        if not items or len(items) > 100:
+            raise SuiteError("Manager lifecycle events are missing or unbounded")
+        for value in items:
+            event = _object(value, "Manager lifecycle event")
+            if set(event) != {"id", "execution_id", "attempt", "occurred_at", "kind", "counters"}:
+                raise SuiteError("Manager event exposed undeclared fields or a step identity")
+            if (type(event["id"]) is not int or event["id"] <= cursor or event["execution_id"] != execution_id or
+                    type(event["attempt"]) is not int or event["attempt"] != execution["attempt"]):
+                raise SuiteError("Manager event identity, attempt or cursor differs")
+            occurred = timestamp(event["occurred_at"])
+            if not max(retained, now - timedelta(days=30)) <= occurred <= now or (previous_time is not None and occurred < previous_time):
+                raise SuiteError("Manager event time is outside its window or order")
+            kind, counters = event["kind"], _object(event["counters"], "Manager event counters")
+            if kind == "progress":
+                if set(counters) != {"progress"} or type(counters["progress"]) is not int or not 0 <= counters["progress"] <= 100:
+                    raise SuiteError("Manager progress event exposed non-percentage counters")
+            elif kind not in {"started", "completed"} or counters:
+                raise SuiteError("Manager success event contains an invalid terminal or counters")
+            kinds.append(kind)
+            cursor, previous_time = event["id"], occurred
+        pages += 1
+        if type(page["next_cursor"]) is not int or page["next_cursor"] != cursor:
+            raise SuiteError("Manager event next cursor did not advance to the last event")
+        if len(kinds) > 1000 or (page["has_more"] and pages >= 10):
+            raise SuiteError("Manager event pages exceed the bounded attempt budget")
+        if not page["has_more"]:
+            break
+    if kinds[0] != "started" or kinds[-1] != "completed" or kinds.count("started") != 1 or kinds.count("completed") != 1:
+        raise SuiteError("Manager successful lifecycle must have one start and one completion")
+    return {"execution_id": execution_id, "task_type": task_type, "attempt": execution["attempt"],
+            "event_count": len(kinds), "pages": pages, "closed_fields_verified": True,
+            "identity_verified": True, "lifecycle_verified": True, "retention_verified": True}
 
 
 def validate_lineage(
@@ -1934,6 +2022,15 @@ def run_scenario(
                                     models=browser_models, phase="generation-entry")
         for model in model_fixtures:
             generate_model_glb(client, model, tenant_id, timeout)
+        event_executions = {"point_cloud": (pointcloud_execution_id, POINTCLOUD_TASK_TYPE),
+                            "pptx_pdf": (pptx_execution_id, PPTX_TASK_TYPE),
+                            "raster_cog": (raster.execution_id, RASTER_TASK_TYPE),
+                            **{model.format: (model.execution_id, MODEL_TASK_TYPE) for model in model_fixtures}}
+        execution_events = {"schema_version": "addp.manager-execution-events/v1",
+                            "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
+                            "executions": {name: verify_manager_execution_events(client, execution_id, task_type)
+                                           for name, (execution_id, task_type) in event_executions.items()}}
+        (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "manager-execution-events.json").write_text(json.dumps(execution_events, indent=2))
         browser_models = [{
             "format": model.format, "locator": model.locator,
             "item_id": model.item["id"], "result_id": model.result_id,
@@ -1951,7 +2048,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v12",
+            "schema_version": "addp.manager-internal-artifact-lineage/v13",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -1961,6 +2058,7 @@ def run_scenario(
             "engine_id": engine_id,
             "meta_scan_execution_id": scan_execution_id,
             "execution_read_checks": ["cross_module_execution_hidden", "explicit_professional_projection"],
+            "execution_events": execution_events,
             "delimited_sources": delimited,
             "workbook_source": workbook,
             "structured_json_sources": structured_json,
@@ -2144,7 +2242,7 @@ def main() -> int:
         boundaries = verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "NFS engine id"), "", deadline)
         boundaries += verify_content_boundaries(client, positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "MinIO engine id"), environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"], deadline)
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "content-boundaries.json").write_text(json.dumps({"schema_version": "addp.content-boundaries/v2", "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed", "cases": boundaries}, indent=2) + "\n", encoding="utf-8")
-        versions = verify_nfs_index_source_versions(client, environment, time.monotonic() + 180)
+        versions = verify_index_source_versions(client, environment, time.monotonic() + 180)
         (Path(environment["ADDP_ONLINE_ARTIFACT_DIR"]) / "index-source-versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
         report = run_scenario(repository, environment, run_browser)
         report["content_boundaries"] = boundaries
