@@ -23,6 +23,8 @@ func (p *FalkorDBPlugin) SyncGraphSearchIndexes(ctx context.Context, c plugin.Co
 	if err := pg.ValidateSchema(schema); err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	run := func(q string, params map[string]interface{}) (*plugin.GraphQueryResult, error) {
 		return p.ExecuteGraphQueryAtPath(ctx, c, path, q, plugin.QueryOptions{Parameters: params})
 	}
@@ -40,19 +42,9 @@ func (p *FalkorDBPlugin) SyncGraphSearchIndexes(ctx context.Context, c plugin.Co
 		if fmt.Sprint(row["entitytype"]) != "NODE" {
 			continue
 		}
-		properties := pg.Strings(row["properties"])
-		// 4.20.6 reports a property -> index kinds map, not a flat kind list.
-		kinds, ok := row["types"].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid FalkorDB index metadata")
-		}
-		var fulltext []string
-		for _, prop := range properties {
-			for _, kind := range pg.Strings(kinds[prop]) {
-				if kind == "FULLTEXT" {
-					fulltext = append(fulltext, prop)
-				}
-			}
+		fulltext, err := graphFullTextProperties(row)
+		if err != nil {
+			return nil, err
 		}
 		if len(fulltext) > 0 {
 			existing[fmt.Sprint(row["label"])] = pg.Set(fulltext)
@@ -64,7 +56,7 @@ func (p *FalkorDBPlugin) SyncGraphSearchIndexes(ctx context.Context, c plugin.Co
 				return nil, fmt.Errorf("%w: %s", plugin.ErrGraphSearchIndexConflict, label)
 			}
 		}
-		return schema.Indexes, nil
+		return schema.Indexes, waitGraphSearchIndexes(ctx, expected, run)
 	}
 	for _, label := range sortedKeys(existing) {
 		if !pg.Same(existing[label], expected[label]) {
@@ -89,7 +81,75 @@ func (p *FalkorDBPlugin) SyncGraphSearchIndexes(ctx context.Context, c plugin.Co
 			return nil, err
 		}
 	}
-	return schema.Indexes, nil
+	return schema.Indexes, waitGraphSearchIndexes(ctx, expected, run)
+}
+
+func graphFullTextProperties(row map[string]interface{}) ([]string, error) {
+	// 4.20.6 reports a property -> index kinds map, not a flat kind list.
+	kinds, ok := row["types"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid FalkorDB index metadata")
+	}
+	var fulltext []string
+	for _, prop := range pg.Strings(row["properties"]) {
+		for _, kind := range pg.Strings(kinds[prop]) {
+			if kind == "FULLTEXT" {
+				fulltext = append(fulltext, prop)
+			}
+		}
+	}
+	return fulltext, nil
+}
+
+// Full-text index creation returns before background population completes.
+// A synchronized search schema must be usable before either Graph reader runs.
+func waitGraphSearchIndexes(ctx context.Context, expected map[string][]string, run func(string, map[string]interface{}) (*plugin.GraphQueryResult, error)) error {
+	if len(expected) == 0 {
+		return nil
+	}
+	ticker := time.NewTicker(30 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		result, err := run("CALL db.indexes() YIELD label, properties, types, entitytype, status RETURN label, properties, types, entitytype, status", nil)
+		if err != nil {
+			return err
+		}
+		ready := map[string]bool{}
+		for _, row := range result.Rows {
+			label, node := fmt.Sprint(row["label"]), row["entitytype"] == "NODE"
+			props, needed := expected[label]
+			if !node || !needed {
+				continue
+			}
+			fulltext, err := graphFullTextProperties(row)
+			if err != nil {
+				return err
+			}
+			if len(fulltext) == 0 {
+				continue
+			}
+			if !pg.Same(fulltext, props) {
+				return fmt.Errorf("%w: %s", plugin.ErrGraphSearchIndexConflict, label)
+			}
+			status, ok := row["status"].(string)
+			if !ok || (status != "OPERATIONAL" && !(strings.HasPrefix(status, "[Indexing] ") && strings.HasSuffix(status, ": UNDER CONSTRUCTION"))) {
+				return fmt.Errorf("invalid FalkorDB index status for %s", label)
+			}
+			ready[label] = status == "OPERATIONAL"
+		}
+		allReady := len(ready) == len(expected)
+		for _, value := range ready {
+			allReady = allReady && value
+		}
+		if allReady {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for FalkorDB full-text indexes: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 func sortedKeys[V any](values map[string]V) []string {
 	keys := make([]string, 0, len(values))

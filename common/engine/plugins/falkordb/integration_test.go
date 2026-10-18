@@ -17,6 +17,58 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestIntegrationFalkorDBSearchIndexReadyBeforeFirstSearch(t *testing.T) {
+	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
+		t.Skip("owned FalkorDB T2 gate required")
+	}
+	host, portText, err := net.SplitHostPort(os.Getenv("FALKORDB_T2_ENDPOINT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &FalkorDBPlugin{}
+	conn := plugin.ConnectionInfo{"host": host, "port": port, "password": os.Getenv("INFRA_FALKORDB_PASSWORD")}
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
+	defer cancel()
+	client, close, err := p.open(ctx, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer close()
+	const graph = "search-index-readiness"
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		if err := client.Do(cleanupCtx, "GRAPH.DELETE", graph).Err(); err != nil {
+			t.Errorf("delete owned search readiness graph: %v", err)
+		}
+	}()
+	if _, err = runQuery(ctx, client, graph, "UNWIND range(1,30000) AS i CREATE (:Person {name:'Fixture searchable'})", nil, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	path := p.graphPath(13, graph)
+	schema := plugin.GraphSearchSchema{OwnerPrefix: "fixture_", Managed: true, Indexes: []plugin.GraphSearchIndex{{Name: "fixture_search", Labels: []string{"Person"}, Properties: []string{"name"}}}}
+	if _, err = p.SyncGraphSearchIndexes(ctx, conn, path, schema); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runQuery(ctx, client, graph, "CALL db.indexes() YIELD status RETURN status", nil, 10, true)
+	if err != nil || len(state.Rows) != 1 || state.Rows[0]["status"] != "OPERATIONAL" {
+		t.Fatalf("index sync returned before population completed: %+v %v", state, err)
+	}
+	result, err := runQuery(ctx, client, graph, "CALL db.idx.fulltext.queryNodes('Person','Fixture') YIELD node RETURN count(node) AS total", nil, 1, true)
+	if err != nil || len(result.Rows) != 1 || result.Rows[0]["total"] != int64(30000) {
+		t.Fatalf("first full-text search lost existing nodes: %+v %v", result, err)
+	}
+	// External indexes use the same readiness boundary without mutating their definition.
+	schema.Managed = false
+	if _, err = p.SyncGraphSearchIndexes(ctx, conn, path, schema); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIntegrationFalkorDBBusinessGraph(t *testing.T) {
 	if os.Getenv("ADDP_FALKORDB_INTEGRATION") != "1" {
 		t.Skip("owned FalkorDB T2 gate required")
