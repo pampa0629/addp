@@ -106,7 +106,7 @@ def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: b
     Args:
         input_gdf: 输入 GeoDataFrame
         tolerance: 简化容差
-        preserve_topology: 是否保持拓扑
+        preserve_topology: 是否保持单个几何的拓扑
 
     Returns:
         GeoDataFrame 简化结果
@@ -628,8 +628,8 @@ SIMPLIFY_METADATA = OperatorMetadata(
             type="param",
             data_type="boolean",
             required=False,
-            description="是否保持拓扑一致性",
-            notes="True时保证简化后几何不自交,但速度较慢;False时速度快但可能产生自交"
+            description="是否保持单个几何的拓扑",
+            notes="True时保留单个几何拓扑，不修复原有无效几何；False时可能产生无效几何"
         )
     ],
 
@@ -643,7 +643,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
     notes=[
         "tolerance过大会导致几何变形严重甚至崩溃",
         "地理坐标系(EPSG:4326)简化效果较差,建议先转投影坐标系",
-        "preserve_topology=True时邻接面不会产生缝隙",
+        "preserve_topology=True仅保持单个几何拓扑，不保证邻接面无缝隙或重叠",
         "简化后的几何可能不满足原始精度要求,需权衡数据量和精度"
     ],
 
