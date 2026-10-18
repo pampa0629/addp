@@ -1,7 +1,6 @@
 package postgresql
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -15,18 +14,19 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-var errPostgresOutputRewriteUnsupported = errors.New("PostgreSQL output rewrite is unsupported")
+var errPostgresOutputRewriteUnsupported = fmt.Errorf("%w: PostgreSQL output rewrite", plugin.ErrQueryOutputTransformUnsupported)
 
-// These are physical value operations, not Security rules or authorizations.
-// The compiler is provider-local; it is not yet installed on PreparedQuery.
-type postgresOutputTransform struct {
-	Column       string
-	Kind         string
-	Prefix       int
-	Suffix       int
-	MaskRune     string
-	Replacement  string
-	InvalidValue string // omit or reject
+// CompileQueryOutput lowers neutral output operations on the same prepared
+// request. Protocol-compatible engines require separate native certification.
+func (p *PostgreSQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*plugin.SQLQueryOutput, error) {
+	if p == nil || p.identity != nil {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	plan, err := rewritePostgresQueryOutput(query, args, operations)
+	if err != nil {
+		return nil, err
+	}
+	return &plugin.SQLQueryOutput{Query: plan.query, Args: plan.args, Finalize: plan.finish}, nil
 }
 
 type postgresOutputInvalidColumn struct {
@@ -47,7 +47,7 @@ type postgresOutputRewrite struct {
 // DISTINCT/grouping/set operations until equivalence can be proved. In
 // particular, output aliases and positional ORDER BY retain their original
 // source expressions instead of sorting the transformed values.
-func rewritePostgresQueryOutput(query string, args []any, operations []postgresOutputTransform) (*postgresOutputRewrite, error) {
+func rewritePostgresQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*postgresOutputRewrite, error) {
 	fail := func() (*postgresOutputRewrite, error) { return nil, errPostgresOutputRewriteUnsupported }
 	parsed, err := pgquery.Parse(query)
 	if err != nil || len(parsed.GetStmts()) != 1 || len(operations) == 0 {

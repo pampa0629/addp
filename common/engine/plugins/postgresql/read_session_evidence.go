@@ -31,8 +31,13 @@ func (p *PostgreSQLPlugin) observeSessionReadSet(ctx context.Context, tx *sql.Tx
 
 func (p *PostgreSQLPlugin) proveSessionReadSet(ctx context.Context, tx *sql.Tx, req plugin.QueryRequest) (*plugin.QueryReadSet, error) {
 	dependencies, err := inspectPostgresSQLReadDependencies(req.Query)
-	if err != nil || req.EngineID == 0 || !req.Options.ReadOnly || len(dependencies.Relations) == 0 || len(dependencies.Relations) > 200 || len(dependencies.Functions) != 0 {
+	if err != nil || req.EngineID == 0 || !req.Options.ReadOnly || len(dependencies.Relations) == 0 || len(dependencies.Relations) > 200 {
 		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	for _, function := range dependencies.Functions {
+		if function.Schema != "pg_catalog" || !sessionOutputFunction(function.Name) {
+			return nil, plugin.ErrQueryReadSetUnresolved
+		}
 	}
 	parsed, err := pgquery.Parse(req.Query)
 	operators := make(map[string]struct{})
@@ -40,7 +45,8 @@ func (p *PostgreSQLPlugin) proveSessionReadSet(ctx context.Context, tx *sql.Tx, 
 		return nil, plugin.ErrQueryReadSetUnresolved
 	}
 	// Qualified relations and built-in operand types avoid a search-path name
-	// shadow becoming a new hidden source. Custom operators/casts/functions and
+	// shadow becoming a new hidden source. Source/custom casts and functions beyond
+	// the qualified output grammar, custom operators, and
 	// policy/view/inheritance closures remain unsupported in this first slice.
 	var firstSchema string
 	if err := tx.QueryRowContext(ctx, "SELECT (pg_catalog.current_schemas(true))[1]").Scan(&firstSchema); err != nil || firstSchema != "pg_catalog" {
@@ -105,23 +111,41 @@ func sessionTransparentMessage(message protoreflect.Message) bool {
 
 func inspectSessionExpressions(message protoreflect.Message, operators map[string]struct{}) bool {
 	if node, ok := message.Interface().(*pgquery.Node); ok {
-		if node.GetTypeCast() != nil || node.GetCollateClause() != nil || node.GetFuncCall() != nil || node.GetRangeTableSample() != nil {
+		if node.GetCollateClause() != nil || node.GetRangeTableSample() != nil {
 			return false
+		}
+		if cast := node.GetTypeCast(); cast != nil {
+			name := cast.GetTypeName()
+			// Generated algorithm values are parameters explicitly typed as text;
+			// source casts and custom type I/O remain outside this proof slice.
+			if cast.GetArg().GetParamRef() == nil || name == nil || len(name.GetNames()) != 2 ||
+				name.GetNames()[0].GetString_().GetSval() != "pg_catalog" || name.GetNames()[1].GetString_().GetSval() != "text" ||
+				len(name.GetArrayBounds()) != 0 || len(name.GetTypmods()) != 0 || name.GetSetof() || name.GetPctType() {
+				return false
+			}
+		}
+		if function := node.GetFuncCall(); function != nil {
+			name := function.GetFuncname()
+			if len(name) != 2 || name[0].GetString_().GetSval() != "pg_catalog" || !sessionOutputFunction(name[1].GetString_().GetSval()) {
+				return false
+			}
 		}
 		if sort := node.GetSortBy(); sort != nil && len(sort.GetUseOp()) != 0 {
 			return false
 		}
 		if expression := node.GetAExpr(); expression != nil {
-			if len(expression.GetName()) != 1 {
+			name := expression.GetName()
+			qualifiedBuiltin := len(name) == 2 && name[0].GetString_().GetSval() == "pg_catalog"
+			if len(name) != 1 && !qualifiedBuiltin {
 				return false
 			}
-			operator := expression.GetName()[0].GetString_().GetSval()
+			operator := name[len(name)-1].GetString_().GetSval()
 			switch operator {
 			case "=", "<>", "!=", "<", ">", "<=", ">=", "+", "-", "*", "/", "%", "||":
 			default:
 				return false
 			}
-			if operators != nil {
+			if operators != nil && !qualifiedBuiltin {
 				operators[operator] = struct{}{}
 			}
 		}
@@ -142,4 +166,16 @@ func inspectSessionExpressions(message protoreflect.Message, operators map[strin
 		return ok
 	})
 	return ok
+}
+
+// These qualified native functions form the output compiler's closed grammar.
+// Actual pg_proc identity, language, volatility and definer status are still
+// verified by resolvePostgresQueryReadSet in the cursor's transaction.
+func sessionOutputFunction(name string) bool {
+	switch name {
+	case "char_length", "left", "right", "repeat", "concat":
+		return true
+	default:
+		return false
+	}
 }

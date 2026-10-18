@@ -11,10 +11,17 @@ import (
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 )
 
+func TestPostgresOutputRewriteDoesNotCertifyProtocolCompatibleEngines(t *testing.T) {
+	provider := NewProtocolCompatiblePlugin(ProtocolIdentity{EngineType: "separate-engine"})
+	if result, err := provider.CompileQueryOutput("SELECT phone FROM public.people", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+		t.Fatal("protocol reuse silently enabled unverified native rewriting", err)
+	}
+}
+
 func TestPostgresOutputRewriteRetainsOriginalOrderingAndBoundValues(t *testing.T) {
 	for _, order := range []string{"contact", "2", "phone"} {
 		query := `SELECT id, phone AS contact FROM public.people WHERE id >= $1 ORDER BY ` + order + ` DESC NULLS LAST LIMIT 5 OFFSET 2`
-		plan, err := rewritePostgresQueryOutput(query, []any{3}, []postgresOutputTransform{{Column: "contact", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 2, MaskRune: "●", InvalidValue: "omit"}})
+		plan, err := rewritePostgresQueryOutput(query, []any{3}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 2, MaskRune: "●", InvalidValue: "omit"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -37,7 +44,7 @@ func TestPostgresOutputRewriteQuotesIdentifiersAndReplacement(t *testing.T) {
 	column := `c"; --`
 	value := `'; SELECT private_data; --`
 	plan, err := rewritePostgresQueryOutput(`SELECT "phone" AS "c""; --" FROM "public"."people"`, nil,
-		[]postgresOutputTransform{{Column: column, Kind: "constant_text", Replacement: value}})
+		[]plugin.QueryOutputTransform{{Column: column, Kind: "constant_text", Replacement: value}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +63,7 @@ func TestPostgresOutputRewriteNeverCapturesAnUnboundOriginalParameter(t *testing
 		{query: `SELECT phone FROM people WHERE id=$2`, args: []any{7, 8}},
 		{query: `SELECT phone FROM people`, args: []any{7}},
 	} {
-		if _, err := rewritePostgresQueryOutput(fixture.query, fixture.args, []postgresOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "hidden"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+		if _, err := rewritePostgresQueryOutput(fixture.query, fixture.args, []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "hidden"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
 			t.Fatal("rewrite captured a missing original parameter or made an originally invalid binding valid")
 		}
 	}
@@ -72,27 +79,27 @@ func TestPostgresOutputRewriteRejectsUnprovedSemantics(t *testing.T) {
 		`SELECT phone FROM people; SELECT phone FROM others`,
 	} {
 		t.Run(query, func(t *testing.T) {
-			if _, err := rewritePostgresQueryOutput(query, nil, []postgresOutputTransform{{Column: "phone", Kind: "omit"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+			if _, err := rewritePostgresQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
 				t.Fatalf("unproved query must refuse: %v", err)
 			}
 		})
 	}
-	for _, operation := range []postgresOutputTransform{
+	for _, operation := range []plugin.QueryOutputTransform{
 		{Column: "phone", Kind: "sm3"}, {Column: "missing", Kind: "omit"},
 		{Column: "phone", Kind: "keep_prefix_suffix", Prefix: -1, MaskRune: "*", InvalidValue: "omit"},
 		{Column: "phone", Kind: "keep_prefix_suffix", MaskRune: "ab", InvalidValue: "omit"},
 		{Column: "phone", Kind: "keep_prefix_suffix", MaskRune: "*", InvalidValue: "allow"},
 		{Column: "phone", Kind: "constant_text", Replacement: "\x00"},
 	} {
-		if _, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []postgresOutputTransform{operation}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
+		if _, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []plugin.QueryOutputTransform{operation}); !errors.Is(err, errPostgresOutputRewriteUnsupported) {
 			t.Fatalf("unproved operation must refuse: %v", err)
 		}
 	}
 }
 
 func TestPostgresOutputRewritePrivateFlagsAndInvalidValues(t *testing.T) {
-	operation := postgresOutputTransform{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "#", InvalidValue: "omit"}
-	plan, err := rewritePostgresQueryOutput(`SELECT id AS __addp_output_invalid_0, phone FROM people`, nil, []postgresOutputTransform{operation})
+	operation := plugin.QueryOutputTransform{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "#", InvalidValue: "omit"}
+	plan, err := rewritePostgresQueryOutput(`SELECT id AS __addp_output_invalid_0, phone FROM people`, nil, []plugin.QueryOutputTransform{operation})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +132,7 @@ func TestPostgresOutputRewritePrivateFlagsAndInvalidValues(t *testing.T) {
 }
 
 func TestPostgresOutputRewriteKeepsPrivateFlagsUniqueAcrossFieldsAndOriginalOutputs(t *testing.T) {
-	plan, err := rewritePostgresQueryOutput(`SELECT id AS __addp_output_invalid_0, phone, email FROM people`, nil, []postgresOutputTransform{
+	plan, err := rewritePostgresQueryOutput(`SELECT id AS __addp_output_invalid_0, phone, email FROM people`, nil, []plugin.QueryOutputTransform{
 		{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "#", InvalidValue: "omit"},
 		{Column: "email", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"},
 	})
@@ -152,7 +159,7 @@ func TestPostgresOutputRewriteKeepsPrivateFlagsUniqueAcrossFieldsAndOriginalOutp
 }
 
 func TestPostgresOutputRewriteRejectsMissingOrInconsistentOutputTypes(t *testing.T) {
-	plan, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []postgresOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}})
+	plan, err := rewritePostgresQueryOutput(`SELECT phone FROM people`, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}})
 	if err != nil {
 		t.Fatal(err)
 	}

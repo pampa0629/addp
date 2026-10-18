@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
 var _ plugin.QueryReadSessionProvider = (*PostgreSQLPlugin)(nil)
 
 func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery) (plugin.QueryReadSession, error) {
-	connInfo, request, err := plugin.ConsumeSQLPreparedQuery(prepared, p)
+	binding, err := plugin.ConsumeSQLPreparedReadSession(prepared, p)
 	if err != nil {
 		return nil, err
 	}
+	connInfo, request := binding.ConnectionInfo, binding.Request
 	if err := validatePostgresQueryReadSession(request); err != nil {
 		return nil, err
 	}
@@ -54,9 +56,11 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		return nil, fmt.Errorf("read PostgreSQL query column types: %w", err)
 	}
 	columns := make([]string, len(columnTypes))
+	fields := make([]datatype.FieldInfo, len(columnTypes))
 	binaryColumns := make([]bool, len(columnTypes))
 	for index, columnType := range columnTypes {
 		columns[index] = columnType.Name()
+		fields[index] = SQLResultField(columnType)
 		binaryColumns[index] = strings.EqualFold(columnType.DatabaseTypeName(), "BYTEA")
 	}
 	if err := rows.Close(); err != nil {
@@ -64,7 +68,7 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		_ = db.Close()
 		return nil, err
 	}
-	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, binaryColumns: binaryColumns}, nil
+	return &postgresQueryReadSession{db: db, tx: tx, cursor: cursor, readSet: readSet, columns: columns, fields: fields, binding: binding, binaryColumns: binaryColumns}, nil
 }
 
 func validatePostgresQueryReadSession(request plugin.QueryRequest) error {
@@ -83,6 +87,8 @@ type postgresQueryReadSession struct {
 	cursor        string
 	readSet       *plugin.QueryReadSet
 	columns       []string
+	fields        []datatype.FieldInfo
+	binding       *plugin.SQLPreparedReadSession
 	binaryColumns []bool
 	offset        int64
 	closed        bool
@@ -108,7 +114,7 @@ func (s *postgresQueryReadSession) ReadBatch(ctx context.Context, limit int) (*p
 		return nil, fmt.Errorf("fetch PostgreSQL query read rows: %w", err)
 	}
 	defer rows.Close()
-	batch := &plugin.BatchData{Offset: s.offset, Rows: make([]map[string]interface{}, 0, limit)}
+	batch := &plugin.BatchData{Fields: append([]datatype.FieldInfo(nil), s.fields...), Offset: s.offset, Rows: make([]map[string]interface{}, 0, limit)}
 	for rows.Next() {
 		values := make([]interface{}, len(s.columns))
 		pointers := make([]interface{}, len(s.columns))
@@ -143,6 +149,10 @@ func (s *postgresQueryReadSession) ReadBatch(ctx context.Context, limit int) (*p
 		return nil, fmt.Errorf("iterate PostgreSQL query read rows: %w", err)
 	}
 	if err := rows.Close(); err != nil {
+		_ = s.abort()
+		return nil, err
+	}
+	if err := s.binding.FinalizeBatch(batch); err != nil {
 		_ = s.abort()
 		return nil, err
 	}

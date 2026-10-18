@@ -361,8 +361,13 @@ func PrepareSQLRuntimeQuery(
 			return result, err
 		}
 	}
+	plan := &preparedSQLQuery{providerType: provider.Type(), connInfo: preparedConnInfo, request: preparedReq}
+	plan.outputCompiler, _ = provider.(SQLQueryOutputCompiler)
 	prepared, err := NewPreparedQuery(analysis, nil, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
-		request := cloneQueryRequest(preparedReq)
+		if plan.outputErr != nil {
+			return nil, plan.outputErr
+		}
+		request := cloneQueryRequest(plan.request)
 		request.Options.analytical = request.analytical
 		if request.analytical != nil && request.Options.Timeout > 0 {
 			var cancel context.CancelFunc
@@ -371,7 +376,12 @@ func PrepareSQLRuntimeQuery(
 		}
 		result, err := provider.ExecuteSQL(ctx, cloneQueryConnectionInfo(preparedConnInfo), request.Query, request.Options)
 		if err != nil {
-			return nil, remapQueryErrorSource(err, req.Query, preparedReq.Query)
+			return nil, remapQueryErrorSource(err, req.Query, request.Query)
+		}
+		if plan.outputFinalize != nil {
+			if err := plan.outputFinalize(result); err != nil {
+				return nil, err
+			}
 		}
 		if request.analytical != nil {
 			return request.analytical.normalizeResult(result)
@@ -381,19 +391,19 @@ func PrepareSQLRuntimeQuery(
 	if err != nil {
 		return nil, err
 	}
-	return &preparedSQLQuery{
-		preparedQuery: prepared.(*preparedQuery),
-		providerType:  provider.Type(),
-		connInfo:      preparedConnInfo,
-		request:       preparedReq,
-	}, nil
+	plan.preparedQuery = prepared.(*preparedQuery)
+	return plan, nil
 }
 
 type preparedSQLQuery struct {
 	*preparedQuery
-	providerType string
-	connInfo     ConnectionInfo
-	request      QueryRequest
+	providerType    string
+	connInfo        ConnectionInfo
+	request         QueryRequest
+	outputCompiler  SQLQueryOutputCompiler
+	outputAttempted bool
+	outputErr       error
+	outputFinalize  func(*QueryResult) error
 }
 
 // ConsumeSQLPreparedQuery transfers the already-bound SQL request from the
@@ -401,21 +411,32 @@ type preparedSQLQuery struct {
 // provider type. It is the only SQL prepared-request bridge; providers must not
 // re-bind the original request or call Execute after consuming it.
 func ConsumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimeProvider) (ConnectionInfo, QueryRequest, error) {
+	_, conn, request, err := consumeSQLPreparedQuery(prepared, provider, false)
+	return conn, request, err
+}
+
+func consumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimeProvider, outputProtocol bool) (*preparedSQLQuery, ConnectionInfo, QueryRequest, error) {
 	plan, ok := prepared.(*preparedSQLQuery)
 	if !ok || provider == nil || plan.providerType != provider.Type() {
-		return nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
-	}
-	// Streaming cannot release data before all analytical checks are consumed.
-	if plan.request.analytical != nil {
-		return nil, QueryRequest{}, ErrAnalyticalUnsupported
+		return nil, nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
 	}
 	plan.mu.Lock()
 	defer plan.mu.Unlock()
 	if plan.consumed {
-		return nil, QueryRequest{}, ErrPreparedQueryConsumed
+		return nil, nil, QueryRequest{}, ErrPreparedQueryConsumed
+	}
+	if plan.outputErr != nil {
+		return nil, nil, QueryRequest{}, plan.outputErr
+	}
+	if plan.outputFinalize != nil && !outputProtocol {
+		return nil, nil, QueryRequest{}, ErrQueryOutputTransformUnsupported
+	}
+	// Streaming cannot release data before all analytical checks are consumed.
+	if plan.request.analytical != nil {
+		return nil, nil, QueryRequest{}, ErrAnalyticalUnsupported
 	}
 	plan.consumed = true
-	return cloneQueryConnectionInfo(plan.connInfo), cloneQueryRequest(plan.request), nil
+	return plan, cloneQueryConnectionInfo(plan.connInfo), cloneQueryRequest(plan.request), nil
 }
 
 func prepareQueryRequest(engineType string, req QueryRequest) (QueryRequest, error) {
