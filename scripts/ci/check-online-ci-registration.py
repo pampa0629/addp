@@ -1936,7 +1936,7 @@ def validate_raster_contour_profile(repository: Path, registered: set[str]) -> N
             'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
             '--wait-protection-owners develop,manager', 'online-raster-contour-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/raster-contour-persistence-online.py": ('validate_identity', 'validate_success', 'validate_item',
-            'wait_lineage', 'actor_principal_id', 'meta_scan_runs', 'physical_size_bytes'),
+            'wait_lineage', 'triggered_by', 'meta_scan_runs', 'physical_size_bytes'),
         "business/scripts/online-raster-contour-fixture.py": ('owned_root', 'NFSExport', 'IsSame', 'GetPoint', 'runtime_workspaces_removed'),
         "scripts/utils/online_nfs_fixture.py": ('root_squash', 'nfs_export_removed', 'owned_root'),
         "engines/geopython-workflow/test_online_raster_fixture.py": ('test_contour_persistence_real_gdal_independent_plane_and_both_save_modes',

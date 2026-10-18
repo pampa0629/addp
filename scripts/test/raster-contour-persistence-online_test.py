@@ -40,7 +40,8 @@ class Client:
             if body['targets'] != ['addp://engine/3/path/dem.tif?type=file']: raise AssertionError(body)
             data = {'execution_id': 'source-scan'}
         elif '/meta/executions/' in path:
-            data = {'status': 'success', 'tenant_id': 2, 'actor_principal_id': self.actor}
+            # Meta exposes ScanExecutionResponse/Observation, never private actor fields.
+            data = {'status': 'success', 'tenant_id': 2, 'triggered_by': self.actor}
         elif path.endswith('/workflow-engines'):
             data = [{'id': 7, 'engine_type': 'geopython_workflow', 'connection_status': 'online'}]
         elif path == '/api/v1/develop/executions' and method == 'POST':
@@ -119,6 +120,13 @@ class ContourPersistenceTest(unittest.TestCase):
         env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_CONTOUR_NFS_ENGINE_ID': '3', 'ADDP_ONLINE_TEST_RUN_ID': 'contour-123-1'}
         with self.assertRaisesRegex(m.SuiteError, 'identity'):
             m.run_scenario(Path('.'), env, client, lambda *args: self.fail('must stop before acceptance'))
+
+    def test_scan_initiator_requires_a_positive_integer_from_the_safe_projection(self):
+        env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_CONTOUR_NFS_ENGINE_ID': '3', 'ADDP_ONLINE_TEST_RUN_ID': 'contour-123-1'}
+        for actor in (None, True, 0, -1, '33', 33.):
+            client = Client(); client.actor = actor
+            with self.subTest(actor=actor), self.assertRaisesRegex(m.SuiteError, 'identity'):
+                m.run_scenario(Path('.'), env, client, lambda *args: self.fail('must stop before acceptance'))
 
     def test_second_save_cannot_change_first_file(self):
         client = Client()

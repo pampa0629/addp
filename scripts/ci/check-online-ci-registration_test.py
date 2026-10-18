@@ -30,7 +30,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative, fragment in ((paths[0], "inputs.suite != 'raster-contour-persistence'"),
                 (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-raster-contour-fixture_test.py'),
                 (paths[3], '--wait-protection-owners develop,manager'), (paths[3], '--mount'),
-                (paths[4], 'actor_principal_id'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption')):
+                (paths[4], 'triggered_by'), (paths[7], 'root_squash'), (paths[6], 'test_contour_persistence_oracle_rejects_real_file_corruption')):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_raster_contour_profile(self.repository, registered)
