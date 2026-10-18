@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/addp/common/datatype"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -15,6 +16,90 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
 )
+
+func TestDelimitedWithoutHeaderPreservesFirstRecordAndSourceOffsets(t *testing.T) {
+	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		t.Run(string(formatType), func(t *testing.T) {
+			delimiter := ","
+			plugin := NewPlugin(nil)
+			if formatType == format.FormatTSV {
+				delimiter, plugin = "\t", NewTSVPlugin(nil)
+			}
+			skip := "ignored record\n"
+			first := "1" + delimiter + "\"Alice,\nA\"" + delimiter + "true\n"
+			second := "2" + delimiter + "Bobby" + delimiter + "false\n"
+			raw := "\xef\xbb\xbf" + skip + first + second
+			opts := format.DefaultParseOptions()
+			opts.Delimiter = []rune(delimiter)[0]
+			opts.HasHeader, opts.SkipRows, opts.AccessIndexStep = false, 1, 1
+			info, err := plugin.DescribeTable(t.Context(), strings.NewReader(raw), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.Table.RowCount == nil || *info.Table.RowCount != 2 || info.Table.Native["has_header"] != false {
+				t.Fatalf("headerless table facts lost a record: %#v", info.Table)
+			}
+			for i, expected := range []datatype.FieldType{datatype.FieldTypeInt, datatype.FieldTypeString, datatype.FieldTypeBool} {
+				if len(info.Table.Fields) != 3 || info.Table.Fields[i].Name != fmt.Sprintf("Column%d", i+1) || info.Table.Fields[i].Type != expected {
+					t.Fatalf("headerless fields = %#v", info.Table.Fields)
+				}
+			}
+			start := int64(3 + len(skip))
+			index := info.AccessIndex
+			if index == nil || index.RowCount != 2 || index.HeaderBytes != start || !reflect.DeepEqual(index.Anchors, []datatype.AccessIndexAnchor{
+				{Row: 0, ByteOffset: start}, {Row: 1, ByteOffset: start + int64(len(first))}, {Row: 2, ByteOffset: int64(len(raw))},
+			}) {
+				t.Fatalf("headerless source byte index = %#v", index)
+			}
+			want := []map[string]interface{}{{"Column1": int64(1), "Column2": "Alice,\nA", "Column3": true},
+				{"Column1": int64(2), "Column2": "Bobby", "Column3": false}}
+			for offset := int64(0); offset <= 2; offset++ {
+				rows, err := plugin.SampleTable(t.Context(), strings.NewReader(raw), offset, 1, opts)
+				end := min(offset+1, 2)
+				if err != nil || !reflect.DeepEqual(rows, want[offset:end]) {
+					t.Fatalf("sample offset %d: %#v, %v", offset, rows, err)
+				}
+			}
+			reader, err := plugin.OpenTableReader(t.Context(), strings.NewReader(raw), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close(t.Context())
+			for i := range want {
+				rows, err := reader.ReadRows(t.Context(), 1)
+				if err != nil || !reflect.DeepEqual(rows, want[i:i+1]) {
+					t.Fatalf("reader batch %d: %#v, %v", i, rows, err)
+				}
+			}
+			positioned := *opts
+			positioned.SkipRows = 0
+			positioned.TableSample = &format.TableSampleOptions{Fields: info.Table.Fields, InputStartsAtRow: 0, InputIsPositioned: true}
+			rows, err := plugin.SampleTable(t.Context(), strings.NewReader(raw[start:]), 0, 1, &positioned)
+			if err != nil || !reflect.DeepEqual(rows, want[:1]) {
+				t.Fatalf("positioned first record = %#v, %v", rows, err)
+			}
+		})
+	}
+}
+
+func TestCSVWithoutHeaderDecodedSourcePreservesFirstRecord(t *testing.T) {
+	raw := utf16Fixture("1,张三\n2,李四\n", true, true)
+	opts := format.DefaultParseOptions()
+	opts.HasHeader = false
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeTable(t.Context(), bytes.NewReader(raw), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.AccessIndex != nil || info.Table.RowCount == nil || *info.Table.RowCount != 2 || info.FormatInfo["encoding"] != "utf-16le" {
+		t.Fatalf("decoded headerless facts = %#v", info)
+	}
+	rows, err := plugin.SampleTable(t.Context(), bytes.NewReader(raw), 0, 1, opts)
+	want := []map[string]interface{}{{"Column1": int64(1), "Column2": "张三"}}
+	if err != nil || !reflect.DeepEqual(rows, want) {
+		t.Fatalf("decoded headerless first row = %#v, %v", rows, err)
+	}
+}
 
 func TestCSVPlugin_DescribeTable(t *testing.T) {
 	csvData := `name,age,score,active

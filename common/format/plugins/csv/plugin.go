@@ -138,12 +138,16 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		return nil, err
 	}
 
-	// 读取表头
-	headers, err := reader.Read()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
-	}
+	// No-header data begins before the first record; reading it for column
+	// discovery must not move the row-zero byte anchor past that record.
 	headerBytes := prefixBytes + reader.InputOffset()
+	headers, records, err := tableHeadersAndRecords(reader, opts.HasHeader)
+	if err != nil {
+		return nil, err
+	}
+	if opts.HasHeader {
+		headerBytes = prefixBytes + reader.InputOffset()
+	}
 	var index *datatype.AccessIndex
 	if encoding == "utf-8" {
 		index = p.newSparseRowIndex(opts, headerBytes)
@@ -153,7 +157,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	sampleRows := make([][]string, 0, opts.SampleSize)
 	rowCount := int64(0)
 	for i := 0; i < opts.SampleSize; i++ {
-		record, err := reader.Read()
+		record, err := records.Read()
 		if err == io.EOF {
 			break
 		}
@@ -172,7 +176,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 	// 继续统计剩余行数
 	for {
-		_, err := reader.Read()
+		_, err := records.Read()
 		if err == io.EOF {
 			break
 		}
@@ -241,14 +245,14 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		return nil, err
 	}
 
-	headers, localSkip, err := p.sampleHeadersAndLocalSkip(reader, offset, opts)
+	headers, dataRows, localSkip, err := p.sampleHeadersAndLocalSkip(reader, offset, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	// 跳过到 offset
 	for i := int64(0); i < localSkip; i++ {
-		if _, err := reader.Read(); err != nil {
+		if _, err := dataRows.Read(); err != nil {
 			if err == io.EOF {
 				return []map[string]interface{}{}, nil
 			}
@@ -264,7 +268,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 
 	records := make([]map[string]interface{}, 0)
 	for i := int64(0); i < maxRows; i++ {
-		record, err := reader.Read()
+		record, err := dataRows.Read()
 		if err == io.EOF {
 			break
 		}
@@ -352,7 +356,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, err
 	}
 
-	headers, _, err := p.sampleHeadersAndLocalSkip(reader, 0, opts)
+	headers, records, _, err := p.sampleHeadersAndLocalSkip(reader, 0, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +384,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, err
 	}
 	return &tableReader{
-		reader:    reader,
+		reader:    records,
 		plugin:    p,
 		headers:   fieldNames(fields),
 		tableInfo: tableInfo,
@@ -390,7 +394,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 // ============ 辅助方法 ============
 
 type tableReader struct {
-	reader    *csv.Reader
+	reader    *tableRecords
 	plugin    *Plugin
 	headers   []string
 	tableInfo *datatype.TableInfo
@@ -603,30 +607,63 @@ func (p *Plugin) configureReaderWithOptions(reader *csv.Reader, opts *format.Par
 	}
 }
 
-func (p *Plugin) sampleHeadersAndLocalSkip(reader *csv.Reader, offset int64, opts *format.ParseOptions) ([]string, int64, error) {
+// tableRecords preserves the first data record used to discover headerless columns.
+// The underlying csv.Reader still owns source byte offsets and quoted-record parsing.
+type tableRecords struct {
+	reader *csv.Reader
+	first  []string
+}
+
+func (r *tableRecords) Read() ([]string, error) {
+	if r.first != nil {
+		first := r.first
+		r.first = nil
+		return first, nil
+	}
+	return r.reader.Read()
+}
+
+func tableHeadersAndRecords(reader *csv.Reader, hasHeader bool) ([]string, *tableRecords, error) {
+	first, err := reader.Read()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read CSV headers: %w", err)
+	}
+	records := &tableRecords{reader: reader}
+	if hasHeader {
+		return normalizedHeaders(first), records, nil
+	}
+	headers := make([]string, len(first))
+	for i := range first {
+		headers[i] = fmt.Sprintf("Column%d", i+1)
+	}
+	records.first = first
+	return headers, records, nil
+}
+
+func (p *Plugin) sampleHeadersAndLocalSkip(reader *csv.Reader, offset int64, opts *format.ParseOptions) ([]string, *tableRecords, int64, error) {
 	if opts != nil && opts.TableSample != nil && opts.TableSample.InputIsPositioned {
 		if opts.TableSample.InputStartsAtRow > offset {
-			return nil, 0, fmt.Errorf("positioned CSV reader starts at row %d after requested offset %d", opts.TableSample.InputStartsAtRow, offset)
+			return nil, nil, 0, fmt.Errorf("positioned CSV reader starts at row %d after requested offset %d", opts.TableSample.InputStartsAtRow, offset)
 		}
 		headers := fieldNames(opts.TableSample.Fields)
 		if len(headers) == 0 && opts.TableSample.InputHasHeader {
 			record, err := reader.Read()
 			if err != nil {
-				return nil, 0, fmt.Errorf("failed to read positioned CSV headers: %w", err)
+				return nil, nil, 0, fmt.Errorf("failed to read positioned CSV headers: %w", err)
 			}
 			headers = normalizedHeaders(record)
 		}
 		if len(headers) == 0 {
-			return nil, 0, fmt.Errorf("positioned CSV sample requires field metadata")
+			return nil, nil, 0, fmt.Errorf("positioned CSV sample requires field metadata")
 		}
-		return headers, offset - opts.TableSample.InputStartsAtRow, nil
+		return headers, &tableRecords{reader: reader}, offset - opts.TableSample.InputStartsAtRow, nil
 	}
 
-	headers, err := reader.Read()
+	headers, records, err := tableHeadersAndRecords(reader, opts.HasHeader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to read CSV headers: %w", err)
+		return nil, nil, 0, err
 	}
-	return normalizedHeaders(headers), offset, nil
+	return headers, records, offset, nil
 }
 
 func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.AccessIndex {

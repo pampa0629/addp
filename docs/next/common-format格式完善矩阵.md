@@ -14,7 +14,7 @@
 
 | 格式/能力 | 尚需完善或验证 |
 | --- | --- |
-| CSV / TSV | `ParseOptions.HasHeader=false` 已存在，但共享 parser 的字段识别、样本与连续读取仍把首行作为表头，须修复首行丢失并核对稀疏索引；Meta／Manager 尚无无表头声明入口，不能把 parser 选项当作页面支持。源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
+| CSV / TSV | 共享 parser 已按显式 `ParseOptions.HasHeader=false` 保留首条数据，生成稳定 `Column1` 等列名，字段推断、样本、连续读取与 UTF-8 稀疏索引采用同一条读取路径；Meta／Manager 尚无无表头声明入口，不能把 parser 选项当作页面支持。源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
 | JSON / GeoJSON | 大文件、复杂嵌套数组、无/混合 geometry、WKB/EWKB 展示；静态轨迹三源的完成不代替这些组合 |
 | Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |
