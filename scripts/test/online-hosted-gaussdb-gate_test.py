@@ -19,10 +19,18 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
             with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('gaussdb-fixture:'+sys.argv[1]+'\\n')
             if os.environ.get('ADDP_TEST_FIXTURE_FAIL')==sys.argv[1]:sys.exit(1)
         ''')
+        # Retain the shared identity fixture while enforcing the existing
+        # System-owned readiness observation before any consumer is exported.
+        identity=(self.host.bin/'go').read_text()
+        self.host._executable('go',identity.replace('previous=', '''
+            [[ "$*" == *'--wait-protection-owners manager'* ]] || exit 1
+            [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
+            previous=''',1))
         self.host._executable('make','''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "$ADDP_ONLINE_CONSUMER_ENGINE_ID" = 17 ] &&
+              [ "$SECURITY_URL" = http://127.0.0.1:8194 ] &&
               [ "$ADDP_ONLINE_TEST_USER_USERNAME" = external-online-consumer ] &&
               [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
@@ -43,7 +51,8 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
         result=self.run_gate()
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         trace=self.host.trace.read_text()
-        order=['infra-up','gaussdb-fixture:start','start:-manager','--suite gaussdb-consumer-flow',
+        order=['infra-up','gaussdb-fixture:start','start:-security','start:-manager','--suite gaussdb-consumer-flow',
+            '--wait-protection-owners manager',
             'register:gaussdb-engine.json','make:test-online ONLINE_SUITE=gaussdb-consumer-flow',
             'application-stop','gaussdb-fixture:stop','infra-down']
         positions=[trace.index(step) for step in order]
@@ -55,6 +64,7 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
 
     def test_failure_at_each_owned_stage_still_cleans_platform_and_fixture(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL':'start'},{'ADDP_TEST_IDENTITY_FAIL':'1'},
+                      {'ADDP_TEST_PROTECTION_WAIT_FAIL':'1'},
                       {'ADDP_TEST_REGISTRATION_FAIL':'1'},{'ADDP_TEST_SUITE_FAIL':'1'}):
             with self.subTest(flags=flags):
                 self.host.trace.unlink(missing_ok=True)
@@ -64,3 +74,6 @@ class HostedGaussDBTest(HIGHGO.HostedHighGoTest):
                 self.assertIn('gaussdb-fixture:stop',trace)
                 self.assertIn('infra-down',trace)
                 self.assertFalse(self.host.secrets.exists())
+                if flags.get('ADDP_TEST_PROTECTION_WAIT_FAIL')=='1':
+                    self.assertNotIn('register:',trace)
+                    self.assertNotIn('make:test-online',trace)

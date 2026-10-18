@@ -116,7 +116,7 @@ class OnlineGateTest(unittest.TestCase):
         gaussdb = ONLINE_GATE.SUITES["gaussdb-consumer-flow"]
         self.assertFalse(gaussdb.nightly)
         self.assertEqual(gaussdb.command, (sys.executable, "-m", "scripts.test.gaussdb-consumer-flow-online"))
-        self.assertEqual(gaussdb.services, (("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL")))
+        self.assertEqual(gaussdb.services, (("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL")))
         suite = ONLINE_GATE.SUITES["standard-model-reference-deletion"]
         elasticsearch_suite = ONLINE_GATE.SUITES["elasticsearch-consumer-flow"]
         self.assertEqual(
