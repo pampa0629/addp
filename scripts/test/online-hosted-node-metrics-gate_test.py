@@ -126,6 +126,12 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertIn("metrics-case:cpu-pressure",self.host.trace.read_text())
         self.assertIn("infra_cleanup=zero_residuals",(self.host.artifacts/"summary.txt").read_text())
 
+    def test_admission_case_uses_the_same_owned_lifecycle_and_cleanup(self):
+        result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="host-admission")
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertIn("metrics-case:host-admission", self.host.trace.read_text())
+        self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
+
     def test_failure_at_each_stage_still_cleans_owned_deployment(self):
         for variable in ("ADDP_TEST_PREPARE_FAIL", "ADDP_TEST_NODE_FAIL", "ADDP_TEST_QUERY_FAIL", "ADDP_TEST_APP_FAIL", "ADDP_TEST_BROWSER_PREPARE_FAIL", "ADDP_TEST_SUITE_FAIL", "ADDP_TEST_CLEANUP_FAIL", "ADDP_TEST_INSPECTION_FAIL", "ADDP_TEST_RESIDUAL_NODE"):
             with self.subTest(variable=variable):

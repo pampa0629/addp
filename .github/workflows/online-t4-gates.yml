@@ -60,6 +60,7 @@ on:
           - regression
           - complete-comparison
           - cpu-pressure
+          - host-admission
 
 permissions:
   contents: read

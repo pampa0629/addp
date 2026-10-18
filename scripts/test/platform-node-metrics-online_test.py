@@ -1190,13 +1190,84 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value), patch.object(ONLINE, "login") as login:
                 with self.assertRaises(ONLINE.SuiteError): ONLINE.run("http://example.invalid", Path("/secret"), {})
                 login.assert_not_called()
+
+    @staticmethod
+    def admission_browser_reply(artifacts):
+        host_id = "10000000-0000-4000-8000-000000000001"
+        target_id = "20000000-0000-4000-8000-000000000001"
+        manifest = {"schema": "addp.host-admission/v1", "host": {"display_name": "Online admission run", "node_kind": "virtual",
+                    "addresses": ["127.0.0.1"], "allowed_module_bindings": []},
+                    "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter", "endpoint": "https://127.0.0.1:19100/metrics"}}}
+        expected = {"run_id": "run", "admin_id": "admin", "admission": manifest}
+        host_input = dict(manifest["host"], enabled=True)
+        body = dict(manifest["collection"], subject={"kind": "node", "node_id": host_id}, enabled=True)
+        rejected = dict(body, source=dict(body["source"], endpoint="https://127.0.0.1:19100/rejected-path"))
+        actor = identity(); actor["principal"]["id"] = "admin"
+        value = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": "run", "identity": actor,
+                 "admission": {"host": dict(host_input, node_id=host_id, version=1), "target": dict(body, id=target_id, version=1),
+                    "writes": [{"path": ONLINE.NODES, "input": host_input}, {"path": ONLINE.TARGETS, "input": rejected}, {"path": ONLINE.TARGETS, "input": body}],
+                    "failure": {"status": 400, "error_code": "invalid_monitoring_target"}, "reloaded": True}}
+        for name in ("node-admission-partial.png", "node-admission-saved.png"):
+            (artifacts / name).write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*1100)
+        return expected, value
+
+    def test_admission_browser_rejects_duplicates_scope_changes_and_missing_screenshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            artifacts = Path(folder)
+            expected, value = self.admission_browser_reply(artifacts)
+            host, target = ONLINE.validate_host_admission_browser(value, expected, artifacts)
+            self.assertEqual(target["subject"]["node_id"], host["node_id"])
+            mutations = [lambda v: v.update(run_id="other"), lambda v: v["identity"]["principal"].update(id="other"),
+                lambda v: v["admission"]["host"].update(enabled=False), lambda v: v["admission"]["host"].update(version=2),
+                lambda v: v["admission"]["target"]["subject"].update(node_id="other"),
+                lambda v: v["admission"]["target"]["source"].update(endpoint="https://foreign.test:19100/metrics"),
+                lambda v: v["admission"]["writes"].insert(2, copy.deepcopy(v["admission"]["writes"][0])),
+                lambda v: v["admission"]["writes"].pop(1), lambda v: v["admission"].update(reloaded=False),
+                lambda v: v["admission"]["failure"].update(status=503)]
+            for change in mutations:
+                invalid = copy.deepcopy(value); change(invalid)
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_host_admission_browser(invalid, expected, artifacts)
+            (artifacts / "node-admission-saved.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_host_admission_browser(value, expected, artifacts)
+
+    def test_admission_case_reads_both_owners_before_retiring_exact_browser_subjects(self):
+        with tempfile.TemporaryDirectory() as folder:
+            artifacts = Path(folder)
+            expected, value = self.admission_browser_reply(artifacts)
+            host, target = value["admission"]["host"], value["admission"]["target"]
+            actor = value["identity"]
+            name = "Online admission run"
+            declaration = copy.deepcopy(expected["admission"])
+            self.assertEqual(declaration["host"]["display_name"], name)
+            for mismatch in (False, True):
+                report = {}
+                stored_target = dict(target, version=2) if mismatch else target
+                replies = [ONLINE.API.Response(200, host), ONLINE.API.Response(200, stored_target),
+                           ONLINE.API.Response(200, {"data": [host], "total": 1}), ONLINE.API.Response(200, {"data": [target], "total": 1})]
+                client = unittest.mock.Mock(request=unittest.mock.Mock(side_effect=replies))
+                with patch.dict(ONLINE.os.environ, ADDP_ONLINE_TEST_RUN_ID="run", ADDP_ONLINE_METRICS_NODE_IP="127.0.0.1", ADDP_ONLINE_ARTIFACT_DIR=folder), \
+                     patch.object(ONLINE.FIXTURE, "boundary", return_value=artifacts), \
+                     patch.object(ONLINE.subprocess, "check_output", return_value=json.dumps(declaration)) as export, \
+                     patch.object(ONLINE, "execute_resource_browser", return_value=value), \
+                     patch.object(ONLINE, "renew_admin", return_value=client), \
+                     patch.object(ONLINE, "write_evidence"), patch.object(ONLINE, "retire_owned_configuration") as retire:
+                    if mismatch:
+                        with self.assertRaises(ONLINE.SuiteError): ONLINE.run_host_admission_case("base", artifacts, actor, report)
+                        retire.assert_not_called()
+                    else:
+                        ONLINE.run_host_admission_case("base", artifacts, actor, report)
+                        retire.assert_called_once_with(client, host, target, dict(declaration["host"], enabled=True), report)
+                        self.assertEqual(report["host_admission"]["host_posts"], 1)
+                    self.assertIn("export-admission", export.call_args.args[0])
+                    paths = [ONLINE.NODES+"/"+host["node_id"], ONLINE.TARGETS+"/"+target["id"]]
+                    self.assertEqual([c.args[1] for c in client.request.call_args_list], paths if mismatch else paths+[ONLINE.NODES, ONLINE.TARGETS])
 
     def test_renewed_admin_must_keep_role_and_principal(self):
         for role, principal in (("platform.system_administrator", "admin"), ("platform.system_administrator", "other"), ("platform.security_administrator", "admin")):

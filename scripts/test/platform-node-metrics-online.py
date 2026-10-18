@@ -1013,10 +1013,18 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     # Store only the subject/version facts needed by the page, never target TLS/credentials.
     expected["node"] = {"node_id": node["node_id"], "version": node["version"]}
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
-    evidence = artifacts / "node-resources-browser.json"
-    evidence.unlink(missing_ok=True)
     for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
+    value = execute_resource_browser(artifacts)
+    result = validate_resource_browser(value, expected, artifacts)
+    result["services"] = validate_process_browser(value, expected, artifacts)
+    result["overview"] = validate_overview_browser(value, expected, artifacts)
+    return result
+
+
+def execute_resource_browser(artifacts):
+    evidence = artifacts / "node-resources-browser.json"
+    evidence.unlink(missing_ok=True)
     started = time.monotonic()
     runtime = {"schema_version": "addp.node-resources-browser-runtime/v1", "result": "failed", "duration_ms": 0,
                "test_deadline_reported": False, "subprocess_deadline_exceeded": False, "subprocess_timeout_seconds": 300}
@@ -1038,11 +1046,65 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     # Playwright may print assertions from login; never forward credential-bearing output.
     require(result.returncode == 0, "resource browser failed; inspect sanitized stage report")
     require(evidence.is_file(), "resource browser report missing")
-    value = json.loads(evidence.read_text())
-    result = validate_resource_browser(value, expected, artifacts)
-    result["services"] = validate_process_browser(value, expected, artifacts)
-    result["overview"] = validate_overview_browser(value, expected, artifacts)
-    return result
+    return json.loads(evidence.read_text())
+
+
+def validate_host_admission_browser(value, expected, artifacts):
+    require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
+            and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "admission browser result mismatch")
+    actor = value.get("identity", {})
+    platform_identity(actor, "platform.system_administrator")
+    require(actor["principal"].get("id") == expected["admin_id"], "admission browser changed administrator")
+    detail = value.get("admission", {})
+    host, target = detail.get("host", {}), detail.get("target", {})
+    host_input = dict(expected["admission"]["host"], enabled=True)
+    require(canonical_uuid(host.get("node_id")) and type(host.get("version")) is int and host["version"] == 1
+            and all(host.get(k) == v for k, v in host_input.items()), "admission host differs from deployment declaration")
+    body = dict(expected["admission"]["collection"], subject={"kind": "node", "node_id": host["node_id"]}, enabled=True)
+    require(canonical_uuid(target.get("id")) and type(target.get("version")) is int and target["version"] == 1
+            and all(target.get(k) == v for k, v in body.items()), "admission collection changed its created subject or source")
+    rejected = dict(body, source=dict(body["source"], endpoint=body["source"]["endpoint"].removesuffix("/metrics")+"/rejected-path"))
+    require(detail.get("writes") == [{"path": NODES, "input": host_input}, {"path": TARGETS, "input": rejected}, {"path": TARGETS, "input": body}],
+            "admission retried host creation, changed scope or skipped real rejection")
+    require(detail.get("failure") == {"status": 400, "error_code": "invalid_monitoring_target"} and detail.get("reloaded") is True,
+            "admission partial failure or reload evidence missing")
+    for name in ("node-admission-partial.png", "node-admission-saved.png"):
+        screenshot = artifacts / name
+        require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "admission screenshot missing")
+    return host, target
+
+
+def run_host_admission_case(base, directory, admin_identity, report):
+    require(FIXTURE.boundary() == directory, "host admission requires the owned Hosted deployment")
+    artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    name = "Online admission "+os.environ["ADDP_ONLINE_TEST_RUN_ID"]
+    manifest = json.loads(subprocess.check_output(["python3", str(FIXTURE.ROOT / "scripts/infra/node-metrics.py"), "export-admission",
+                                                  "--node-kind", "virtual", "--display-name", name,
+                                                  "--address", os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], text=True, timeout=30))
+    require(manifest == {"schema": "addp.host-admission/v1", "host": {"display_name": name, "node_kind": "virtual",
+                "addresses": [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], "allowed_module_bindings": []},
+                "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter",
+                "endpoint": "https://"+os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":19100/metrics"}}}, "deployment manifest differs from the owned source")
+    expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "admin_id": admin_identity["principal"]["id"], "admission": manifest}
+    (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
+    report["stage"] = "console-host-admission"
+    write_evidence(report)
+    value = execute_resource_browser(artifacts)
+    host, target = validate_host_admission_browser(value, expected, artifacts)
+    admin = renew_admin(base, admin_identity["principal"]["id"])
+    stored_host = admin.request("GET", NODES+"/"+host["node_id"], (200,)).payload
+    stored_target = admin.request("GET", TARGETS+"/"+target["id"], (200,)).payload
+    require(all(stored_host.get(k) == v for k, v in host.items()) and all(stored_target.get(k) == v for k, v in target.items()),
+            "admission browser receipts differ from the two Owners")
+    hosts = admin.request("GET", NODES, (200,)).payload
+    targets = admin.request("GET", TARGETS, (200,)).payload
+    require(hosts.get("total") == targets.get("total") == 1 and len(hosts.get("data", [])) == len(targets.get("data", [])) == 1
+            and hosts["data"][0].get("node_id") == host["node_id"] and targets["data"][0].get("id") == target["id"],
+            "admission left duplicate or unexpected managed objects")
+    report.update(node_id=host["node_id"], target_id=target["id"], saved_version=target["version"],
+                  host_admission={"result": "passed", "host_posts": 1, "target_posts": 2, "real_rejection": True,
+                                  "same_subject_retry": True, "reload": True, "owner_reads": True, "exact_inventory": True})
+    retire_owned_configuration(admin, host, target, dict(manifest["host"], enabled=True), report)
 
 
 PRESSURE_FIELDS = ("trigger_percent", "recovery_percent", "trigger_seconds", "recovery_seconds")
@@ -1504,7 +1566,7 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission"}, "unsupported Hosted metrics acceptance case")
     return value
 
 
@@ -1586,6 +1648,10 @@ def run(base, directory, report):
         client.request("GET", TARGETS, expected)
     for client in [admin, security, *tenant_clients]:
         client.request("GET", DISCOVERY, (403,))
+    report["identity_isolation"] = True
+    if selected_case == "host-admission":
+        run_host_admission_case(base, directory, admin_identity, report)
+        return
     processes = current_processes(admin)
     assert_process_discovery(machine.request("GET", DISCOVERY, (200,), response_type=list).payload, processes)
     report["identity_isolation"] = True

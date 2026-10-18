@@ -94,6 +94,62 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('administrator-password-mfa')
     report.identity = await login(page, 'ADDP_ONLINE_METRICS_ADMIN', expected.admin_id, 'platform.system_administrator')
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (expected.admission) {
+      save('host-admission-confirm-and-retry')
+      const writes = []
+      page.on('request', request => {
+        const path = new URL(request.url()).pathname
+        if (request.method() === 'POST' && ['/api/v1/system/platform/host_nodes', '/api/v1/monitor/platform/monitoring_targets'].includes(path)) {
+          writes.push({ path, input: request.postDataJSON() })
+        }
+      })
+      await page.goto('/system/host-nodes')
+      const system = page.frameLocator('iframe[data-testid="module-iframe"]')
+      await system.getByRole('button', { name: '从部署清单接入', exact: true }).click()
+      await expect(page).toHaveURL(/\/monitor\/monitoring-targets\/new$/)
+      await monitor.getByTestId('admission-file').setInputFiles({ name: 'host-admission.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(expected.admission)) })
+      await expect(monitor.getByTestId('target-admission')).toContainText(expected.admission.host.display_name)
+      await expect(monitor.getByTestId('target-endpoint')).toHaveValue(expected.admission.collection.source.endpoint)
+      await monitor.getByText('按清单新建主机', { exact: true }).click()
+      const invalidEndpoint = expected.admission.collection.source.endpoint.replace(/\/metrics$/, '/rejected-path')
+      await monitor.getByTestId('target-endpoint').fill(invalidEndpoint)
+      const hostCreated = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/platform/host_nodes' && response.request().method() === 'POST')
+      const rejected = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/monitoring_targets' && response.request().method() === 'POST')
+      await monitor.getByTestId('target-save').click()
+      const hostResponse = await hostCreated
+      expect(hostResponse.status()).toBe(201)
+      const host = await json(hostResponse, 'admission host creation')
+      const failed = await rejected
+      expect(failed.status()).toBe(400)
+      const failure = await failed.json()
+      expect(failure.error_code).toBe('invalid_monitoring_target')
+      await expect(monitor.getByTestId('admission-created')).toContainText(host.node_id)
+      await expect(monitor.getByTestId('admission-progress')).toContainText('采集配置尚未完成')
+      await expect(monitor.getByTestId('target-save-error')).toBeVisible()
+      await page.screenshot({ path: resolve(artifact, 'node-admission-partial.png'), animations: 'disabled' })
+      await monitor.getByTestId('target-endpoint').fill(expected.admission.collection.source.endpoint)
+      const targetCreated = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/monitoring_targets' && response.request().method() === 'POST')
+      await monitor.getByTestId('target-save').click()
+      const targetResponse = await targetCreated
+      expect(targetResponse.status()).toBe(201)
+      const target = await json(targetResponse, 'admission target creation')
+      await expect(page).toHaveURL(new RegExp(`/monitor/monitoring-targets/${target.id}$`))
+      await expect(monitor.getByTestId('target-endpoint')).toHaveValue(expected.admission.collection.source.endpoint)
+      // Finish the detail read before full navigation so response bodies are never cancelled.
+      await expect(monitor.getByTestId('target-save')).toBeEnabled()
+      await page.reload()
+      await expect(monitor.getByTestId('target-endpoint')).toHaveValue(expected.admission.collection.source.endpoint)
+      await expect(monitor.getByTestId('target-save')).toBeEnabled()
+      await page.screenshot({ path: resolve(artifact, 'node-admission-saved.png'), animations: 'disabled' })
+      expect(writes.map(row => row.path)).toEqual(['/api/v1/system/platform/host_nodes', '/api/v1/monitor/platform/monitoring_targets', '/api/v1/monitor/platform/monitoring_targets'])
+      const facts = (value, keys) => Object.fromEntries(keys.map(key => [key, value[key]]))
+      report.admission = { host: facts(host, ['node_id', 'version', 'display_name', 'node_kind', 'addresses', 'allowed_module_bindings', 'enabled']),
+        target: facts(target, ['id', 'version', 'subject', 'monitor_kind', 'source', 'enabled']),
+        writes, failure: { status: failed.status(), error_code: failure.error_code }, reloaded: true }
+      report.result = 'passed'
+      save('complete')
+      return
+    }
     await expect(monitor.getByTestId('resource-search')).toBeVisible()
     await expect(monitor.getByRole('button', { name: '查看资源' })).toHaveCount(1)
     await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')
