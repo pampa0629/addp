@@ -156,6 +156,60 @@ test('platform node resources through real Console password MFA and Monitor ifra
       save('complete')
       return
     }
+    if (expected.binding) {
+      save('bound-service-host-navigation')
+      const { host, instance, target } = expected.binding
+      const servicePath = '/monitor/service-resources?module_name=monitor&role=backend&refresh=off'
+      await page.goto(servicePath)
+      await expect(monitor.getByTestId('process-list')).toBeVisible()
+      const link = monitor.getByTestId('process-host').getByRole('button', { name: host.display_name, exact: true })
+      await expect(link).toBeVisible()
+      await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(1)
+      await expect(monitor.getByTestId('process-list')).toContainText('正在采集')
+      await expect.poll(async () => {
+        await Promise.all(pending)
+        return serviceBatches.some(row => row.query.instance_ids === String(instance.id))
+      }).toBe(true)
+      const batch = serviceBatches.filter(row => row.query.instance_ids === String(instance.id)).at(-1)
+      const observation = validateProcessSummaries(batch.value, [instance]).get(instance.id)
+      expect(observation.node_id).toBe(host.node_id)
+      expect(observation.series.every(series => series.points[0].data_state === 'valid')).toBe(true)
+      const list = instancePages.filter(row => row.query.module_name === 'monitor' && row.query.status === 'up').at(-1)
+      expect(list.value.total).toBe(1)
+      expect(list.value.data[0]).toMatchObject({ id: instance.id, instance_id: instance.instance_id, node_id: host.node_id,
+        declared_node_id: host.node_id, node_binding_state: 'bound', node_binding_reason: '' })
+      const serviceURL = page.url()
+      const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+      await page.screenshot({ path: resolve(artifact, 'node-binding-services.png'), animations: 'disabled' })
+      await link.click()
+      await expect(page).toHaveURL(new RegExp(`/monitor/node-resources/${host.node_id}$`))
+      await expect(monitor.getByRole('heading', { name: host.display_name, exact: true })).toBeVisible()
+      await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+      await expect.poll(async () => {
+        await Promise.all(pending)
+        return resources.some(row => row.path.endsWith('/resource_observations') && row.query.node_id === host.node_id)
+      }).toBe(true)
+      const resource = resources.filter(row => row.path.endsWith('/resource_observations') && row.query.node_id === host.node_id).at(-1)
+      expect(resource.value.node_version).toBe(host.version)
+      expect(resource.value.target_id).toBe(target.id)
+      expect(resource.value.collection.state).toBe('collecting')
+      expect(resource.value.series.every(series => series.points[0].data_state === 'valid')).toBe(true)
+      expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+      await page.screenshot({ path: resolve(artifact, 'node-binding-resources.png'), animations: 'disabled' })
+      await page.goBack()
+      await expect(page).toHaveURL(serviceURL)
+      await expect(link).toBeVisible()
+      expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+      await page.reload()
+      await expect(page).toHaveURL(serviceURL)
+      await expect(link).toBeVisible()
+      await Promise.all(pending)
+      expect(businessErrors).toEqual([])
+      report.binding = { host, instance, process_summary: batch, resources: resource, same_iframe: true, back_restored: true, reload_restored: true }
+      report.result = 'passed'
+      save('complete')
+      return
+    }
     await expect(monitor.getByTestId('resource-search')).toBeVisible()
     await expect(monitor.getByRole('button', { name: '查看资源' })).toHaveCount(1)
     await expect(monitor.getByTestId('resource-node-list')).toContainText('正在采集')

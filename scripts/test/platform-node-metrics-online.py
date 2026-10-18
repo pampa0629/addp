@@ -613,13 +613,17 @@ def assert_source_process_isolation(admin, prom, instances, report):
     require(ready, "host source failure broke independent process resources")
 
 
-def monitor_lifecycle(directory, action):
+def monitor_lifecycle(directory, action, *, node_id=None):
     require(action in {"stop", "start"}, "invalid process lifecycle action")
     require(FIXTURE.boundary() == directory, "process lifecycle must use owned Hosted deployment")
+    environment = dict(os.environ, SKIP_MODTIDY="1")
+    if node_id is not None:
+        require(action == "start" and canonical_uuid(node_id), "host binding requires an explicit canonical node identity for a new process")
+        environment["ADDP_HOST_NODE_ID"] = node_id
     # File output avoids inheriting a PIPE in the officially launched daemons.
     with (directory / ("monitor-"+action+".log")).open("a") as output:
         subprocess.run(["bash", "scripts/dev/"+action+".sh", "-monitor"], cwd=FIXTURE.ROOT,
-                       env=dict(os.environ, SKIP_MODTIDY="1"), stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
+                       env=environment, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=300)
     if action == "start":
         service = PREFLIGHT.Service("monitor", os.environ["MONITOR_URL"])
         try:
@@ -1074,15 +1078,105 @@ def validate_host_admission_browser(value, expected, artifacts):
     return host, target
 
 
+def assert_host_binding(instance, node_id, *, rejected=False):
+    require(canonical_uuid(node_id) and instance.get("module_name") == "monitor" and instance.get("role") == "backend"
+            and instance.get("status") == "up" and instance.get("process_metrics_declared") is True
+            and instance.get("declared_node_id") == node_id
+            and instance.get("node_id") == ("" if rejected else node_id)
+            and instance.get("node_binding_state") == ("rejected" if rejected else "bound")
+            and instance.get("node_binding_reason") == ("node_disabled" if rejected else ""), "current process host binding differs from System verdict")
+
+
+def validate_host_binding_browser(value, expected, artifacts):
+    require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
+            and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "host binding browser did not complete")
+    platform_identity(value.get("identity", {}), "platform.system_administrator")
+    require(value["identity"]["principal"].get("id") == expected["admin_id"], "host binding browser changed administrator")
+    detail, host = value.get("binding", {}), expected["binding"]["host"]
+    owner = expected["binding"]["instance"]
+    require(detail.get("instance") == owner and detail.get("host") == host, "host binding browser changed subject")
+    require(all(detail.get(key) is True for key in ("same_iframe", "back_restored", "reload_restored")), "host binding navigation did not restore")
+    batch = detail.get("process_summary", {})
+    require(batch.get("query") == {"instance_ids": str(owner["id"])}, "host binding process query expanded scope")
+    assert_process_summaries(batch.get("value", {}), [owner])
+    resources = detail.get("resources", {})
+    require(resources.get("query", {}).get("node_id") == host["node_id"]
+            and set(resources["query"]) == {"node_id", "metrics"}, "host binding resource query changed subject")
+    metrics = resources["query"]["metrics"].split(",")
+    require(len(metrics) == len(METRICS) and set(metrics) == set(METRICS)
+            and resources.get("value", {}).get("collection", {}).get("state") == "collecting", "host binding browser lacks complete scalar resource evidence")
+    assert_resources(resources.get("value", {}), host, expected["binding"]["target"], keys=metrics)
+    for name in ("node-binding-services.png", "node-binding-resources.png"):
+        screenshot = artifacts / name
+        require(screenshot.is_file() and screenshot.stat().st_size > 1000 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "host binding screenshot missing")
+    return {"result": "passed", "same_instance": True, "current_host_name": True, "resources": True,
+            "same_iframe": True, "back_restored": True, "reload_restored": True}
+
+
+def run_host_binding_case(base, directory, admin, actor, host, target, report):
+    require(FIXTURE.boundary() == directory, "host binding requires the owned Hosted deployment")
+    report["stage"] = "new-process-host-binding"
+    write_evidence(report)
+    initial = current_processes(admin)
+    old, peer = (next(row for row in initial if row["module_name"] == module) for module in ("monitor", "system"))
+    monitor_lifecycle(directory, "stop")
+    try:
+        eventually(lambda: instance_list(admin, ids=str(old["id"]))[0]["status"] == "down", "old unbound process stop")
+    finally:
+        monitor_lifecycle(directory, "start", node_id=host["node_id"])
+    current = instance_list(admin, module_name="monitor", role="backend", status="up")
+    require(len(current) == 1, "host binding expected one current Monitor instance")
+    new = current[0]
+    require(new["id"] != old["id"] and new["instance_id"] != old["instance_id"]
+            and instance_timestamp(new["process_started_at"]) > instance_timestamp(old["process_started_at"]), "host binding reused old process identity")
+    assert_host_binding(new, host["node_id"])
+    peer_now = instance_list(admin, ids=str(peer["id"]))[0]
+    require(peer_now["instance_id"] == peer["instance_id"] and peer_now["status"] == "up"
+            and peer_now["node_id"] == peer_now.get("declared_node_id") == "", "host binding changed peer process")
+    old_now = instance_list(admin, ids=str(old["id"]))[0]
+    require(old_now["node_id"] == old_now.get("declared_node_id") == "" and old_now["status"] == "down", "host binding rewrote old declaration")
+    evidence = {}
+    eventually(lambda: process_query_ready(admin, [old_now, new, peer_now], inactive=[old["id"]], evidence=evidence),
+               "bound process full-window resources and old identity exclusion", timeout=150)
+    snapshots = {"bound": new, "old": old_now, "peer": peer_now, "process_resources": evidence}
+    node_input = {k: host[k] for k in ("display_name", "node_kind", "addresses", "allowed_module_bindings")}
+    for disabled in (True, False):
+        previous_version = host["version"]
+        host = admin.request("PUT", NODES+"/"+host["node_id"], (200,), dict(node_input, enabled=not disabled, version=host["version"])).payload
+        require(host.get("enabled") is not disabled and host.get("node_id") == new["declared_node_id"]
+                and host.get("version") == previous_version+1, "host lifecycle changed binding subject or CAS version")
+        same = instance_list(admin, ids=str(new["id"]))[0]
+        require(same["instance_id"] == new["instance_id"], "host state change restarted the process")
+        assert_host_binding(same, host["node_id"], rejected=disabled)
+        snapshot = admin.request("GET", process_path([same]), (200,)).payload
+        assert_process_summaries(snapshot, [same])
+        API.GatewayClient(os.environ["MONITOR_URL"], "", 10).request("GET", "/health/ready", (200,))
+        snapshots["disabled" if disabled else "restored"] = {"instance": same, "resources": snapshot}
+        new = same
+    artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    facts = {k: new[k] for k in ("id", "instance_id", "module_name", "role", "node_id", "process_started_at")}
+    expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "admin_id": actor["principal"]["id"],
+                "binding": {"host": {k: host[k] for k in ("node_id", "version", "display_name")},
+                            "target": {"id": target["id"], "version": target["version"]}, "instance": facts}}
+    (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
+    report["stage"] = "bound-service-host-navigation"
+    write_evidence(report)
+    browser = execute_resource_browser(artifacts)
+    snapshots["browser"] = validate_host_binding_browser(browser, expected, artifacts)
+    snapshots["result"] = "passed"
+    report["host_binding"] = snapshots
+    return host
+
+
 def run_host_admission_case(base, directory, admin_identity, report):
     require(FIXTURE.boundary() == directory, "host admission requires the owned Hosted deployment")
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     name = "Online admission "+os.environ["ADDP_ONLINE_TEST_RUN_ID"]
     manifest = json.loads(subprocess.check_output(["python3", str(FIXTURE.ROOT / "scripts/infra/node-metrics.py"), "export-admission",
                                                   "--node-kind", "virtual", "--display-name", name,
-                                                  "--address", os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], text=True, timeout=30))
+                                                  "--address", os.environ["ADDP_ONLINE_METRICS_NODE_IP"], "--module", "monitor"], text=True, timeout=30))
     require(manifest == {"schema": "addp.host-admission/v2", "host": {"display_name": name, "node_kind": "virtual",
-                "addresses": [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], "allowed_module_bindings": []},
+                "addresses": [os.environ["ADDP_ONLINE_METRICS_NODE_IP"]], "allowed_module_bindings": [{"module_name": "monitor", "client_id": "addp-monitor"}]},
                 "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter",
                 "endpoint": "https://"+os.environ["ADDP_ONLINE_METRICS_NODE_IP"]+":19100/metrics"}}}, "deployment manifest differs from the owned source")
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "admin_id": admin_identity["principal"]["id"], "admission": manifest}
@@ -1104,7 +1198,11 @@ def run_host_admission_case(base, directory, admin_identity, report):
     report.update(node_id=host["node_id"], target_id=target["id"], saved_version=target["version"],
                   host_admission={"result": "passed", "host_posts": 1, "target_posts": 2, "real_rejection": True,
                                   "same_subject_retry": True, "reload": True, "owner_reads": True, "exact_inventory": True})
-    retire_owned_configuration(admin, host, target, dict(manifest["host"], enabled=True), report)
+    (artifacts / "node-admission-browser.json").write_text(json.dumps(value))
+    (artifacts / "node-admission-browser-input.json").write_text(json.dumps(expected))
+    host = run_host_binding_case(base, directory, admin, admin_identity, host, target, report)
+    retire_owned_configuration(renew_admin(base, admin_identity["principal"]["id"]), host, target,
+                               {k: host[k] for k in ("display_name", "node_kind", "addresses", "allowed_module_bindings")}, report)
 
 
 PRESSURE_FIELDS = ("trigger_percent", "recovery_percent", "trigger_seconds", "recovery_seconds")

@@ -1203,7 +1203,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         host_id = "10000000-0000-4000-8000-000000000001"
         target_id = "20000000-0000-4000-8000-000000000001"
         manifest = {"schema": "addp.host-admission/v2", "host": {"display_name": "Online admission run", "node_kind": "virtual",
-                    "addresses": ["127.0.0.1"], "allowed_module_bindings": []},
+                    "addresses": ["127.0.0.1"], "allowed_module_bindings": [{"module_name": "monitor", "client_id": "addp-monitor"}]},
                     "collection": {"monitor_kind": "host_resources", "source": {"type": "node_exporter", "endpoint": "https://127.0.0.1:19100/metrics"}}}
         expected = {"run_id": "run", "admin_id": "admin", "admission": manifest}
         host_input = dict(manifest["host"], enabled=True)
@@ -1257,17 +1257,121 @@ class CompleteComparisonCaseTest(unittest.TestCase):
                      patch.object(ONLINE.subprocess, "check_output", return_value=json.dumps(declaration)) as export, \
                      patch.object(ONLINE, "execute_resource_browser", return_value=value), \
                      patch.object(ONLINE, "renew_admin", return_value=client), \
+                     patch.object(ONLINE, "run_host_binding_case", return_value=host) as binding, \
                      patch.object(ONLINE, "write_evidence"), patch.object(ONLINE, "retire_owned_configuration") as retire:
                     if mismatch:
                         with self.assertRaises(ONLINE.SuiteError): ONLINE.run_host_admission_case("base", artifacts, actor, report)
-                        retire.assert_not_called()
+                        retire.assert_not_called(); binding.assert_not_called()
                     else:
                         ONLINE.run_host_admission_case("base", artifacts, actor, report)
-                        retire.assert_called_once_with(client, host, target, dict(declaration["host"], enabled=True), report)
+                        retire.assert_called_once_with(client, host, target, declaration["host"], report)
                         self.assertEqual(report["host_admission"]["host_posts"], 1)
+                        binding.assert_called_once_with("base", artifacts, client, actor, host, target, report)
                     self.assertIn("export-admission", export.call_args.args[0])
                     paths = [ONLINE.NODES+"/"+host["node_id"], ONLINE.TARGETS+"/"+target["id"]]
                     self.assertEqual([c.args[1] for c in client.request.call_args_list], paths if mismatch else paths+[ONLINE.NODES, ONLINE.TARGETS])
+
+    def test_host_binding_requires_current_System_verdict_and_keeps_rejection_explicit(self):
+        node = "10000000-0000-4000-8000-000000000001"
+        owner = {"module_name": "monitor", "role": "backend", "status": "up", "process_metrics_declared": True,
+                 "declared_node_id": node, "node_id": node, "node_binding_state": "bound", "node_binding_reason": ""}
+        ONLINE.assert_host_binding(owner, node)
+        rejected = dict(owner, node_id="", node_binding_state="rejected", node_binding_reason="node_disabled")
+        ONLINE.assert_host_binding(rejected, node, rejected=True)
+        for change in ({"module_name": "system"}, {"status": "down"}, {"node_id": ""}, {"declared_node_id": ""},
+                       {"node_binding_state": "unbound"}, {"node_binding_reason": "source_not_allowed"}, {"process_metrics_declared": False}):
+            with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.assert_host_binding(dict(owner, **change), node)
+        with self.assertRaises(ONLINE.SuiteError): ONLINE.assert_host_binding(owner, node, rejected=True)
+
+    def test_binding_browser_checks_identity_both_resources_restoration_and_screenshots(self):
+        with tempfile.TemporaryDirectory() as folder:
+            artifacts = Path(folder)
+            expected, admission = self.admission_browser_reply(artifacts)
+            host, target = admission["admission"]["host"], admission["admission"]["target"]
+            owner, process = MetricsProtocolTest().process_reply()
+            owner, process = owner[1], {"data": [process["data"][1]]}
+            owner["node_id"] = host["node_id"]; process["data"][0]["node_id"] = host["node_id"]
+            resource = MetricsProtocolTest().resource_reply()
+            resource.update(subject={"kind": "node", "node_id": host["node_id"]}, node_version=host["version"], target_id=target["id"], target_saved_version=target["version"])
+            expected = {"run_id": expected["run_id"], "admin_id": expected["admin_id"], "binding": {"host": host, "target": target, "instance": owner}}
+            value = {"schema_version": "addp.node-resources-browser/v1", "result": "passed", "stage": "complete", "run_id": expected["run_id"],
+                     "identity": admission["identity"], "binding": {"host": host, "instance": owner, "same_iframe": True, "back_restored": True, "reload_restored": True,
+                     "process_summary": {"query": {"instance_ids": str(owner["id"])}, "value": process},
+                     "resources": {"query": {"node_id": host["node_id"], "metrics": ",".join(ONLINE.METRICS)}, "value": resource}}}
+            for name in ("node-binding-services.png", "node-binding-resources.png"):
+                (artifacts / name).write_bytes(b"\x89PNG\r\n\x1a\n"+b"x"*1100)
+            self.assertEqual(ONLINE.validate_host_binding_browser(value, expected, artifacts)["result"], "passed")
+            for mutate in (lambda v: v.update(result="failed"), lambda v: v["identity"]["principal"].update(id="other"),
+                           lambda v: v["binding"].update(back_restored=False), lambda v: v["binding"]["host"].update(version=9),
+                           lambda v: v["binding"]["instance"].update(instance_id="old"),
+                           lambda v: v["binding"]["process_summary"]["query"].update(instance_ids="7,9"),
+                           lambda v: v["binding"]["resources"]["query"].update(node_id="another"),
+                           lambda v: v["binding"]["resources"]["query"].update(metrics="node.memory.total_bytes"),
+                           lambda v: v["binding"]["resources"]["value"]["collection"].update(state="failed")):
+                bad = copy.deepcopy(value); mutate(bad)
+                with self.subTest(mutate=mutate), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_host_binding_browser(bad, copy.deepcopy(expected), artifacts)
+            (artifacts / "node-binding-services.png").unlink()
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_host_binding_browser(value, expected, artifacts)
+
+    def test_bound_process_is_new_peer_unchanged_and_host_state_is_reversible_without_restarting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            artifacts = Path(folder)
+            expected, admission = self.admission_browser_reply(artifacts)
+            host, target = admission["admission"]["host"], admission["admission"]["target"]
+            initial, _ = MetricsProtocolTest().process_reply()
+            for item in initial: item["declared_node_id"] = ""
+            peer, old = initial
+            stopped = dict(old, status="down")
+            new = dict(old, id=10, instance_id="new-runtime", process_started_at="2026-10-11T00:01:00Z", node_id=host["node_id"],
+                       declared_node_id=host["node_id"], node_binding_state="bound", node_binding_reason="")
+            rejected = dict(new, node_id="", node_binding_state="rejected", node_binding_reason="node_disabled")
+            disabled, restored = dict(host, enabled=False, version=2), dict(host, version=3)
+            admin = unittest.mock.Mock(request=unittest.mock.Mock(side_effect=[ONLINE.API.Response(200, row) for row in (disabled, {}, restored, {})]))
+            report = {}
+            with patch.dict(ONLINE.os.environ, MONITOR_URL="http://localhost:8100", ADDP_ONLINE_TEST_RUN_ID="run", ADDP_ONLINE_ARTIFACT_DIR=folder), \
+                 patch.object(ONLINE.FIXTURE, "boundary", return_value=artifacts), patch.object(ONLINE, "current_processes", return_value=initial), \
+                 patch.object(ONLINE, "instance_list", side_effect=[[stopped], [new], [peer], [stopped], [rejected], [new]]), \
+                 patch.object(ONLINE, "monitor_lifecycle") as lifecycle, patch.object(ONLINE, "process_query_ready", return_value=True), \
+                 patch.object(ONLINE, "assert_process_summaries"), patch.object(ONLINE, "write_evidence"), \
+                 patch.object(ONLINE.API.GatewayClient, "request") as health, patch.object(ONLINE, "execute_resource_browser", return_value={}), \
+                 patch.object(ONLINE, "validate_host_binding_browser", return_value={"result": "passed"}) as browser:
+                self.assertEqual(ONLINE.run_host_binding_case("base", artifacts, admin, admission["identity"], host, target, report), restored)
+                self.assertEqual(lifecycle.call_args_list, [unittest.mock.call(artifacts, "stop"), unittest.mock.call(artifacts, "start", node_id=host["node_id"])])
+                self.assertEqual(health.call_count, 2)
+                self.assertEqual(report["host_binding"]["disabled"]["instance"]["instance_id"], new["instance_id"])
+                self.assertEqual(report["host_binding"]["result"], "passed")
+                self.assertEqual(browser.call_args.args[1]["binding"]["host"]["version"], 3)
+                writes = [call for call in admin.request.call_args_list if call.args[0] == "PUT"]
+                self.assertEqual([(call.args[3]["version"], call.args[3]["enabled"]) for call in writes], [(1, False), (2, True)])
+
+    def test_binding_lifecycle_injects_the_exact_host_only_into_the_owned_new_process(self):
+        node = "10000000-0000-4000-8000-000000000001"
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(ONLINE.FIXTURE, "boundary", return_value=root), patch.object(ONLINE.subprocess, "run") as launch, \
+                 patch.dict(ONLINE.os.environ, MONITOR_URL="http://localhost:8100"), \
+                 patch.object(ONLINE.PREFLIGHT, "load_health", side_effect=[{}, {"status": "ready"}]), \
+                 patch.object(ONLINE.PREFLIGHT, "validate_health"), patch.object(ONLINE.FIXTURE, "command", return_value="current-source"):
+                before = dict(ONLINE.os.environ)
+                ONLINE.monitor_lifecycle(root, "start", node_id=node)
+                launch.assert_called_once()
+                self.assertEqual(launch.call_args.args[0], ["bash", "scripts/dev/start.sh", "-monitor"])
+                self.assertEqual(launch.call_args.kwargs["env"]["ADDP_HOST_NODE_ID"], node)
+                self.assertEqual(dict(ONLINE.os.environ), before)
+                self.assertFalse((root / ".env").exists())
+
+    def test_binding_lifecycle_rejects_personal_and_invalid_identity_before_launch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(ONLINE.FIXTURE, "boundary", side_effect=ValueError("personal")), patch.object(ONLINE.subprocess, "run") as launch:
+                with self.assertRaises(ValueError): ONLINE.monitor_lifecycle(root, "start", node_id="invalid")
+                launch.assert_not_called()
+            with patch.object(ONLINE.FIXTURE, "boundary", return_value=root), patch.object(ONLINE.subprocess, "run") as launch:
+                for action, node in (("start", "bad"), ("start", "00000000-0000-0000-0000-000000000000"), ("stop", "10000000-0000-4000-8000-000000000001")):
+                    with self.assertRaises(ONLINE.SuiteError): ONLINE.monitor_lifecycle(root, action, node_id=node)
+                launch.assert_not_called()
 
     def test_renewal_after_browser_mfa_uses_a_later_natural_counter(self):
         clock = [186.5]
