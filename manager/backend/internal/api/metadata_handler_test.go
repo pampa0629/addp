@@ -131,7 +131,7 @@ func TestItemEncodingRefreshRejectsInvalidEncodingWithStableLocalizedContract(t 
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":"upstream-localized-message","error_code":"scan_encoding_invalid"}`))
+		_, _ = w.Write([]byte(`{"error":"upstream-localized-message","error_code":"scan_delimited_options_invalid"}`))
 	}))
 	defer meta.Close()
 	svc := service.NewMetadataService(nil, client.NewSystemClient(system.URL, tokenSource), client.NewMetaClient(meta.URL, tokenSource), nil, nil)
@@ -151,7 +151,7 @@ func TestItemEncodingRefreshRejectsInvalidEncodingWithStableLocalizedContract(t 
 		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
-		if recorder.Code != 400 || body["error_code"] != "scan_encoding_invalid" || body["error"] == "" || strings.Contains(body["error"], "upstream-localized-message") {
+		if recorder.Code != 400 || body["error_code"] != "scan_delimited_options_invalid" || body["error"] == "" || strings.Contains(body["error"], "upstream-localized-message") {
 			t.Fatalf("response=%d %#v", recorder.Code, body)
 		}
 		if lang == "zh-cn" && !strings.Contains(body["error"], "编码") {

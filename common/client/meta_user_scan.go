@@ -109,6 +109,9 @@ func (c *MetaScanUserClient) RefreshItem(ctx context.Context, userBearer string,
 	if opts.Encoding != "" {
 		reqPayload["encoding"] = opts.Encoding
 	}
+	if opts.HasHeader != nil {
+		reqPayload["has_header"] = *opts.HasHeader
+	}
 
 	body, err := json.Marshal(reqPayload)
 	if err != nil {

@@ -245,7 +245,7 @@ func testPreciseCatalogScan(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 					t.Fatalf("registered item: found=%v error=%v", found, err)
 				}
 				before := len(projections)
-				if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 91, item.ID, ""); err != nil {
+				if _, err := runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(t.Context(), p, resource, 91, item.ID, "", nil); err != nil {
 					t.Fatal(err)
 				}
 				if len(projections) != before+1 || projections[before].DataItemType != tc.typ {

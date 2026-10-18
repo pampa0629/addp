@@ -176,7 +176,7 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		if reporter != nil {
 			reporter.Message("正在刷新数据项元数据")
 		}
-		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(ctx, enginePlugin, resource, effectiveTenantID, opts.ItemID, opts.Encoding)
+		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(ctx, enginePlugin, resource, effectiveTenantID, opts.ItemID, opts.Encoding, opts.HasHeader)
 		if refreshErr != nil {
 			failures := &scanflow.FailedTargetCollector{}
 			failures.Add(fmt.Sprintf("item:%d", opts.ItemID), refreshErr)

@@ -89,6 +89,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	opts := commonClient.MetaScanOptions{EngineID: engineID, ScanDepth: commonClient.MetaScanDepthDeep, TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true}
 	if req != nil {
 		opts.Encoding = req.Encoding
+		opts.HasHeader = req.HasHeader
 		if req.NodeID > 0 {
 			return nil, fmt.Errorf("item refresh requires item_id; use node refresh for node_id")
 		}

@@ -68,7 +68,10 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	fullPath := contentCtx.path
 
 	// 构建解析选项
-	opts := p.buildParseOptions(formatType, req)
+	opts, err := p.buildParseOptions(formatType, req)
+	if err != nil {
+		return nil, err
+	}
 	contentReader := contentCtx.reader
 	if req.TrajectorySelection != nil {
 		return p.previewTrajectory(ctx, contentReader, contentCtx.bucket, fullPath, formatType, opts, req)
@@ -83,7 +86,10 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		formatType = resolved.Format
 		opts = resolved.ParentOptions
 		if opts == nil {
-			opts = p.buildParseOptions(formatType, req)
+			opts, err = p.buildParseOptions(formatType, req)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -868,18 +874,27 @@ func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRe
 }
 
 // buildParseOptions 根据 Meta 已识别的格式类型构建解析选项。
-func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType, req ...*PreviewRequest) *format.ParseOptions {
+func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatType, req ...*PreviewRequest) (*format.ParseOptions, error) {
 	opts := &format.ParseOptions{
 		HasHeader:  true,
 		SampleSize: 100,
 	}
 	if len(req) > 0 && req[0] != nil && strings.TrimSpace(req[0].ChildName) != "" {
-		return format.ChildTableParseOptions(req[0].ChildName, containerChildInputForRequest(req[0].Attributes, req[0].ChildName))
+		return format.ChildTableParseOptions(req[0].ChildName, containerChildInputForRequest(req[0].Attributes, req[0].ChildName)), nil
 	}
 	if len(req) > 0 && req[0] != nil {
 		opts.Encoding = commonJSON.String(req[0].Attributes, "format_info."+string(formatType), "encoding")
+		if formatType == format.FormatCSV || formatType == format.FormatTSV {
+			header, err := format.HeaderModeFromOptions(commonJSON.Section(req[0].Attributes, "type_info.table.native"))
+			if err != nil {
+				return nil, err
+			}
+			if header != nil {
+				opts.HasHeader = *header
+			}
+		}
 	}
-	return opts
+	return opts, nil
 }
 
 func containerChildInputForRequest(attrs map[string]interface{}, childName string) map[string]interface{} {

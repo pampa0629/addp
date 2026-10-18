@@ -76,7 +76,7 @@ func TestTrajectoryScansBeyondOrdinaryPageAndHonoursHalfOpenRange(t *testing.T) 
 	source.WriteString("A,2026-10-16T02:00:00Z,3,4\nA,2026-10-16T09:00:00+08:00,1,2\nA,2026-10-16T03:00:00Z,5,6\n")
 	req := trajectoryTestRequest(t, format.FormatCSV)
 	p := &FileTablePreviewProvider{}
-	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(source.String())}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(source.String())}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestTrajectoryJSONAndGeoJSONUseExistingContinuousReaders(t *testing.T) {
 		t.Run(string(tc.f), func(t *testing.T) {
 			req := trajectoryTestRequest(t, tc.f)
 			p := &FileTablePreviewProvider{}
-			result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.source)}, "", "points", tc.f, p.buildParseOptions(tc.f, req), req)
+			result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.source)}, "", "points", tc.f, mustFileParseOptions(t, p, tc.f, req), req)
 			if err != nil || len(result.Rows) != 1 || !result.TrajectoryScope.Complete {
 				t.Fatalf("range=%#v err=%v", result, err)
 			}
@@ -117,7 +117,7 @@ func TestTrajectoryNeverPublishesPartialRows(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := trajectoryTestRequest(t, format.FormatCSV)
-			result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.source)}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+			result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.source)}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 			if result != nil || !errors.Is(err, tc.want) {
 				t.Fatalf("partial result=%v err=%v want=%v", result, err, tc.want)
 			}
@@ -126,7 +126,7 @@ func TestTrajectoryNeverPublishesPartialRows(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req := trajectoryTestRequest(t, format.FormatCSV)
-	result, err := p.previewTrajectory(ctx, staticContentReader{[]byte("device,at,x,y\n")}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+	result, err := p.previewTrajectory(ctx, staticContentReader{[]byte("device,at,x,y\n")}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 	if result != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled range=%v %v", result, err)
 	}
@@ -166,7 +166,7 @@ func TestTrajectoryRejectsUnsupportedTargetsAndProtectionExpiry(t *testing.T) {
 		return nil
 	}
 	p := &FileTablePreviewProvider{}
-	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte("device,at,x,y\nA,2026-10-16T01:00:00Z,1,2\n")}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte("device,at,x,y\nA,2026-10-16T01:00:00Z,1,2\n")}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 	if result != nil || !errors.Is(err, denied) {
 		t.Fatalf("expired read returned %v %v", result, err)
 	}
@@ -193,7 +193,7 @@ func (trajectoryFailureContent) Stat(context.Context, contentio.Ref) (*contentio
 func TestTrajectoryPropagatesMidRecordSourceFailureWithoutPartialResult(t *testing.T) {
 	req := trajectoryTestRequest(t, format.FormatCSV)
 	p := &FileTablePreviewProvider{}
-	result, err := p.previewTrajectory(context.Background(), trajectoryFailureContent{}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+	result, err := p.previewTrajectory(context.Background(), trajectoryFailureContent{}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 	if result != nil || !errors.Is(err, ErrTrajectorySource) {
 		t.Fatalf("partial source returned result=%v err=%v", result, err)
 	}
@@ -210,7 +210,7 @@ func TestTrajectoryIncompleteJSONRootsNeverPublishMatchingRows(t *testing.T) {
 		{format.FormatGeoJSON, `{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"device":"A","at":"2026-10-16T01:00:00Z"},"geometry":null}]`},
 	} {
 		req := trajectoryTestRequest(t, tc.f)
-		result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.raw)}, "", "points", tc.f, p.buildParseOptions(tc.f, req), req)
+		result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(tc.raw)}, "", "points", tc.f, mustFileParseOptions(t, p, tc.f, req), req)
 		if result != nil || !errors.Is(err, ErrTrajectorySource) {
 			t.Fatalf("unclosed source returned result=%v err=%v", result, err)
 		}
@@ -251,7 +251,7 @@ func TestTrajectoryCancellationClosesBlockedSourceAndPublishesNothing(t *testing
 	p := &FileTablePreviewProvider{}
 	done := make(chan error, 1)
 	go func() {
-		result, err := p.previewTrajectory(ctx, trajectoryBlockingContent{input}, "", "points.csv", format.FormatCSV, p.buildParseOptions(format.FormatCSV, req), req)
+		result, err := p.previewTrajectory(ctx, trajectoryBlockingContent{input}, "", "points.csv", format.FormatCSV, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 		if result != nil {
 			done <- fmt.Errorf("cancelled read published data")
 			return
@@ -284,7 +284,7 @@ func TestFileTrajectoryEntryDoesNotTrustStaleExactCountInsteadOfRealLookahead(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := p.previewStreamable(context.Background(), staticContentReader{[]byte(source)}, "", "points.csv", format.FormatCSV, nil, sample, p.buildParseOptions(format.FormatCSV, req), req)
+	result, err := p.previewStreamable(context.Background(), staticContentReader{[]byte(source)}, "", "points.csv", format.FormatCSV, nil, sample, mustFileParseOptions(t, p, format.FormatCSV, req), req)
 	if err != nil || len(result.Rows) != 2000 || !result.HasMore {
 		t.Fatalf("stale count hid additional observations: %v %v", result, err)
 	}
@@ -297,7 +297,7 @@ func TestTrajectoryBigintIdentityUsesPublicExactTextContract(t *testing.T) {
 	table["fields"].([]interface{})[0].(map[string]interface{})["type"] = "bigint"
 	p := &FileTablePreviewProvider{}
 	source := `[{"device":9223372036854775807,"at":"2026-10-16T01:00:00Z","x":1,"y":2}]`
-	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(source)}, "", "points.json", format.FormatJSON, p.buildParseOptions(format.FormatJSON, req), req)
+	result, err := p.previewTrajectory(context.Background(), staticContentReader{[]byte(source)}, "", "points.json", format.FormatJSON, mustFileParseOptions(t, p, format.FormatJSON, req), req)
 	if err != nil || result == nil || len(result.Rows) != 1 || !result.TrajectoryScope.Complete {
 		t.Fatalf("exact bigint range=%#v err=%v", result, err)
 	}
@@ -305,7 +305,7 @@ func TestTrajectoryBigintIdentityUsesPublicExactTextContract(t *testing.T) {
 		t.Fatalf("identity changed: %s", got)
 	}
 	req.TrajectorySelection.Devices = []interface{}{json.Number("1")}
-	result, err = p.previewTrajectory(context.Background(), staticContentReader{[]byte(source)}, "", "points.json", format.FormatJSON, p.buildParseOptions(format.FormatJSON, req), req)
+	result, err = p.previewTrajectory(context.Background(), staticContentReader{[]byte(source)}, "", "points.json", format.FormatJSON, mustFileParseOptions(t, p, format.FormatJSON, req), req)
 	if err != nil || len(result.Rows) != 0 {
 		t.Fatalf("bigint must not match numeric selector: %#v %v", result, err)
 	}

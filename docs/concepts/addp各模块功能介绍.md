@@ -298,7 +298,7 @@
 - Backend：8100
 - Frontend：5179 (dev)
 
-**详细文档**：`monitor/docs/Monitor模块实施报告.md`
+**详细文档**：`monitor/docs/Monitor模块架构说明.md`
 
 ---
 
@@ -513,7 +513,7 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 - Standard: `standard/CLAUDE.md`
 - Model: `model/CLAUDE.md`
 - Quality: `quality/CLAUDE.md`
-- Monitor: `monitor/docs/Monitor模块实施报告.md`
+- Monitor: `monitor/docs/Monitor模块架构说明.md`
 - Catalog: `docs/concepts/addp企业资源目录体系图.md`、`docs/spec/addp企业资源目录实现规范.md`
 - Asset: `asset/CLAUDE.md`
 - Portal: `portal/CLAUDE.md`

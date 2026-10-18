@@ -16,6 +16,8 @@ Standard 平台计量目录：000212 将既有 `standard.unit.*` Permission 扩�
 
 > 源数据授权职责：System 的引擎访问控制领域唯一维护以 Meta DataItem 为目标的源数据规则；首期 schema 普通表 single 已接入，文件布局与其他消费入口尚未覆盖；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
+PG 新成果初始授权的内部准备消费 Transfer 不可变实际 ReadSet，逐项核验来源／目标引擎版本及 Meta 完整边界；当前源规则、执行 IAM 和目标批准／办理／Grant／Deny 历史在同一只读快照观察，不签发或冻结期限，不把未知来源、已解除限制或空历史解释为首次新建证明。独立产出来源已确认，正式写入与对象连续性仍待接通。标准验证为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test production-sources"`；新增 exercise 也由默认 engineaccess 门禁自动发现，使用独立操作预算，不延长已有测试的资格期限。
+
 Manager 剖析结果的固定同步源检查 `POST /engine-access/read-checks/manager-profile-result` 只接受当前普通第一方／OAuth API User，核验固定 `manager.data_item.read` 与结果实际历史完整 ReadSet 的现行源规则；与预览共享只读快照底座，但不开放委托、Service 或 Resource Ticket。仅返回不可缓存的当次观察时刻，不授予剖析执行权限，不替代 Manager 本地 Security；缺失历史来源由 Manager 拒绝，不用当前视图依赖补造。
 
 Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与同事务的 `engineaccess.VerifyExecutionSourceRead` 组合。000192 在既有 Execution Authorization 上加入不可变 `source_read_scope`，只接受精确 pending、普通 API User、单引擎只读的 `data-profile-config/v6`，冻结全配置摘要及完整 ReadSet；消费复核当前 Manager Runtime、真实 running claim、发起人功能及全部源规则，审计后再次检查到期。仅给内置 Manager Runtime 增加已有机器消费 Permission，不给用户或源资源补权。固定 HTTP 签发入口 `/auth/execution-authorizations/manager-profiles` 仅接受 execution UUID／有效期，核验两项 Manager 功能 Permission；消费入口 `/execution-authorizations/:id/manager-profile-accesses` 仅接受固定 `addp-manager` Tenant Service 和真实执行租约，返回不可缓存的当次观察时刻，不返回连接或访问租约。范围类型及纯值校验唯一归 `common/execution`，共享客户端不自动重试或跟随重定向。禁止通过 engine-accesses、Notebook 或服务定义绕过范围；Manager 生产采样仍未接通，继续明确拒绝无正式来源授权的剖析。

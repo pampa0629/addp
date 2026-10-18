@@ -40,6 +40,7 @@ type MetaScanProducedTarget struct {
 type MetaScanOptions struct {
 	SchemaChangeSource *commonExecution.SchemaChangeScanSource
 	Encoding           string
+	HasHeader          *bool
 	ParentExecutionID  string
 	EngineID           uint
 	NodeID             uint
@@ -685,6 +686,9 @@ func manualMetaScanBody(opts MetaScanOptions) ([]byte, error) {
 	}
 	if opts.Encoding != "" {
 		scanReq["encoding"] = opts.Encoding
+	}
+	if opts.HasHeader != nil {
+		scanReq["has_header"] = *opts.HasHeader
 	}
 	if opts.Force {
 		scanReq["force"] = true

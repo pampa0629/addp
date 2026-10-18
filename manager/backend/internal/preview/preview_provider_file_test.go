@@ -242,10 +242,19 @@ func TestFileTablePreviewProviderResolveFormatDoesNotFallbackToFilename(t *testi
 	}
 }
 
+func mustFileParseOptions(t *testing.T, provider *FileTablePreviewProvider, formatType format.FormatType, req ...*PreviewRequest) *format.ParseOptions {
+	t.Helper()
+	opts, err := provider.buildParseOptions(formatType, req...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return opts
+}
+
 func TestFileTablePreviewProviderBuildParseOptionsUsesResolvedFormat(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 
-	if got := provider.buildParseOptions(format.FormatTSV).Delimiter; got != 0 {
+	if got := mustFileParseOptions(t, provider, format.FormatTSV).Delimiter; got != 0 {
 		t.Fatalf("delimiter = %q, want zero value so format plugin owns delimiter semantics", got)
 	}
 }
@@ -253,7 +262,7 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesResolvedFormat(t *testing.
 func TestFileTablePreviewProviderBuildParseOptionsUsesExcelChildSheet(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 
-	opts := provider.buildParseOptions(format.FormatExcel, &PreviewRequest{ChildName: " Cities "})
+	opts := mustFileParseOptions(t, provider, format.FormatExcel, &PreviewRequest{ChildName: " Cities "})
 	if opts.SheetName != "Cities" {
 		t.Fatalf("SheetName = %q, want Cities", opts.SheetName)
 	}
@@ -262,7 +271,7 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesExcelChildSheet(t *testing
 func TestFileTablePreviewProviderBuildParseOptionsUsesSQLiteChildTable(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 
-	opts := provider.buildParseOptions(format.FormatSQLite, &PreviewRequest{
+	opts := mustFileParseOptions(t, provider, format.FormatSQLite, &PreviewRequest{
 		ChildName: "Cities",
 		Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{
@@ -289,7 +298,7 @@ func TestFileTablePreviewProviderBuildParseOptionsUsesSQLiteChildTable(t *testin
 func TestFileTablePreviewProviderBuildParseOptionsUsesGeoPackageChildTable(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 
-	opts := provider.buildParseOptions(format.FormatGeoPackage, &PreviewRequest{
+	opts := mustFileParseOptions(t, provider, format.FormatGeoPackage, &PreviewRequest{
 		ChildName: "Road Layer",
 		Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{
@@ -454,7 +463,7 @@ func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) 
 		format.FormatTSV,
 		nil,
 		tableProvider,
-		provider.buildParseOptions(format.FormatTSV),
+		mustFileParseOptions(t, provider, format.FormatTSV),
 		req,
 	)
 	if err != nil {
@@ -588,7 +597,7 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 		format.FormatSQLite,
 		tableProvider,
 		tableProvider,
-		provider.buildParseOptions(format.FormatSQLite, req),
+		mustFileParseOptions(t, provider, format.FormatSQLite, req),
 		req,
 	)
 	if err != nil {
@@ -648,7 +657,7 @@ func TestFileTablePreviewProviderDoesNotUseGeoPackageChildAttributesAsTableInfo(
 		format.FormatGeoPackage,
 		tableProvider,
 		tableProvider,
-		provider.buildParseOptions(format.FormatGeoPackage, req),
+		mustFileParseOptions(t, provider, format.FormatGeoPackage, req),
 		req,
 	)
 	if err != nil {
@@ -2715,7 +2724,7 @@ func TestExcelPreviewUnknownTotalReadsBeyondFirstPage(t *testing.T) {
 				}},
 			}}
 			provider := &FileTablePreviewProvider{}
-			result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "sheet.xlsx", format.FormatExcel, info, reader, provider.buildParseOptions(format.FormatExcel, req), req)
+			result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "sheet.xlsx", format.FormatExcel, info, reader, mustFileParseOptions(t, provider, format.FormatExcel, req), req)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2754,7 +2763,7 @@ func TestExcelPreviewPreservesExactZero(t *testing.T) {
 		"type_info": map[string]interface{}{"table": map[string]interface{}{"row_count": int64(0), "fields": []interface{}{map[string]interface{}{"name": "id", "type": "string"}, map[string]interface{}{"name": "name", "type": "string"}}}},
 	}}
 	provider := &FileTablePreviewProvider{}
-	result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "header-only.xlsx", format.FormatExcel, nil, reader, provider.buildParseOptions(format.FormatExcel, req), req)
+	result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "header-only.xlsx", format.FormatExcel, nil, reader, mustFileParseOptions(t, provider, format.FormatExcel, req), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2786,7 +2795,7 @@ func TestFileTablePreviewProviderConsumesEncodingFact(t *testing.T) {
 			req := &PreviewRequest{Attributes: map[string]interface{}{
 				"format_info": map[string]interface{}{string(formatType): map[string]interface{}{"encoding": encoding}},
 			}}
-			if opts := provider.buildParseOptions(formatType, req); opts.Encoding != encoding {
+			if opts := mustFileParseOptions(t, provider, formatType, req); opts.Encoding != encoding {
 				t.Fatalf("encoding = %s, want %s", opts.Encoding, encoding)
 			}
 		}
@@ -2843,7 +2852,7 @@ func TestCSVEncodedPreviewLogicalPagesWithoutIndexAdvice(t *testing.T) {
 					}}
 				}
 				provider := &FileTablePreviewProvider{}
-				opts := provider.buildParseOptions(format.FormatCSV, req)
+				opts := mustFileParseOptions(t, provider, format.FormatCSV, req)
 				result, err := provider.previewStreamable(context.Background(), staticContentReader{content: data.Bytes()}, "", "sample.csv", format.FormatCSV, info, sample, opts, req)
 				if err != nil {
 					t.Fatal(err)

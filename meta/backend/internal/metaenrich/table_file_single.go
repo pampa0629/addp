@@ -151,6 +151,7 @@ func EnrichSingleTableFileItem(
 	fileSize int64,
 	includeAccessIndex bool,
 	encoding string,
+	hasHeader *bool,
 	catalogPathFor ...func(path string) plugin.EngineCatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Layout != format.LayoutSingle {
@@ -174,9 +175,14 @@ func EnrichSingleTableFileItem(
 		return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 	}
 	var parseOptions *format.ParseOptions
-	if encoding != "" {
+	if encoding != "" || hasHeader != nil {
 		parseOptions = format.DefaultParseOptions()
-		parseOptions.Encoding = encoding
+		if encoding != "" {
+			parseOptions.Encoding = encoding
+		}
+		if hasHeader != nil {
+			parseOptions.HasHeader = *hasHeader
+		}
 		if item.Format == "tsv" {
 			parseOptions.Delimiter = '\t'
 		}

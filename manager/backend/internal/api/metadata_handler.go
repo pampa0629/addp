@@ -39,7 +39,7 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param locator query string false "资源定位符 URI | Resource locator URI"
-// @Param body body models.MetaManualScanRequest false "扫描定位及 CSV/TSV 深度刷新编码（可选）| Item target and CSV/TSV deep refresh encoding (optional)"
+// @Param body body models.MetaManualScanRequest false "扫描定位及 CSV/TSV 读取设置（可选）| Item target and CSV/TSV read settings (optional)"
 // @Success 200 {object} models.MetaScanResponse "同步扫描结果 | Synchronous scan result"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "当前用户无权刷新 | Current user cannot refresh"
@@ -102,8 +102,8 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 			accessDeniedToEngine(c)
 			return
 		}
-		if code, ok := client.TenantAPIErrorCode(err); ok && code == "scan_encoding_invalid" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgScanEncodingInvalid), "error_code": code})
+		if code, ok := client.TenantAPIErrorCode(err); ok && code == "scan_delimited_options_invalid" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgScanDelimitedOptionsInvalid), "error_code": code})
 			return
 		}
 		status := http.StatusServiceUnavailable

@@ -112,6 +112,10 @@ Console 和 Transfer 页面按入口及动作权限显示：无任务权限时�
 | `object` | `addp://engine/3/path/bucket/exports/roads.csv?type=object` |
 | 已入库 source item | `addp://engine/3/path/bucket/roads.shp?type=object&item_id=12` |
 
+CSV / TSV encoded source 沿用既有 `source.options.header` 布尔选项，不新增 `has_header` 任务参数。有效的显式任务选项优先；未显式设置时，继承 Meta `type_info.table.native.has_header`，两者均无声明才默认 `true`。Meta 表头声明必须是布尔值，显式 `false` 不得丢失。任务读取选项只影响本次读取，不回写 Meta，也不按首行内容猜测表头。
+
+单资源 encoded source 打开真实格式 reader 后，必须在目标准备、删除、创建或写入前核对实际有序字段名与本次 Meta／Describe 声明。启用字段选择时，两边按同一选择投影后比较；字段数量、名称或顺序冲突即拒绝并关闭源资源，不能用缓存声明掩盖真实 reader 字段，也不能依靠字段映射默认值补空后继续写。该检查只核对字段身份；共享 CSV reader 的字符串字段描述不覆盖 Meta 已推断的 bigint、精度等丰富类型事实。没有 Meta 声明时继续沿既有 Describe／reader 取得结构，不另建推断路径。
+
 ### 2.3 Bounded query source 与轻量 ETL 构造
 
 `bounded + native table` source 可以声明 `source.query`，由源引擎的 `QueryReadSessionProvider` 执行只读查询，Transfer 仍通过统一 table reader / writer 主链路分批搬运查询结果：

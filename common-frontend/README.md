@@ -243,6 +243,8 @@ const uri = buildLocator({
 
 `ResourceTreePicker` 不负责业务 DTO 组装、空间能力检测、字段加载或新资源创建。调用方应在收到 locator 后按业务需要调用 capability API，并保存必要执行快照。
 
+共享 `ResourceTree` 只在展开集合实际改变时回写 `expandedKeys`。默认展开或恢复树时，组件库发起的懒加载不能把相同集合反复通知父选择器，避免受控状态回写在渲染期间形成更新循环；相同状态也不得重新发起懒加载请求。
+
 资源多选使用同一组件的 `multiple` 属性，此时 `modelValue` 和 `update:modelValue` 为按选择顺序排列、以 `identity.locator` 去重的 selection 数组。树节点与搜索结果共用勾选状态，取消勾选后重新选择会追加到末尾；切换引擎筛选时移除不在当前引擎范围的已选资源。`engineMultiple` 只控制引擎筛选，不代表资源多选。单选默认契约保持不变，业务侧不得另建一套资源树或从目录自动推导叶子。
 
 资源树请求统一复用 `createAPIClient()` 和宿主已绑定的 AuthStore，支持 401 刷新与单次重试；正常模块路由守卫负责先初始化会话。选择器不创建独立 AuthSession，iframe 内不直接刷新 Cookie。

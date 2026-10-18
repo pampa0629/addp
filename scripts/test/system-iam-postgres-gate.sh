@@ -31,6 +31,7 @@ while [ "$#" -gt 0 ]; do
             echo "Authorization facts: --package migration|api --test authorization-facts" >&2
             echo "Graph protection runtime: --package migration --test graph-protection-runtime" >&2
             echo "Transfer production receipt: --package migration --test production-receipt-runtime" >&2
+            echo "PG production source observation: --package engineaccess --test production-sources" >&2
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
@@ -114,6 +115,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    production-sources)
+        [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
+        test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^initial_production_observes_actual_sources_and_persistent_target_history_without_issuing$'
+        ;;
     host-nodes)
         [ "$PACKAGE_FILTER" = repository ] || { echo "host-nodes requires --package repository" >&2; exit 2; }
         test_pattern='^TestHostNodeIdentityVersionAndBindingAgainstPostgres$'

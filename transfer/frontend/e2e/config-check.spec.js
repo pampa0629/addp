@@ -49,6 +49,45 @@ test('manual check submits the same complete request as the wizard and never sav
   await expect(page.getByTestId('task-submit')).toBeEnabled()
 })
 
+for (const engineCount of [2, 17]) {
+  test(`source picker settles after selecting a searched resource across ${engineCount} default-expanded engines`, async ({ page }) => {
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+    const engines = Array.from({ length: engineCount }, (_, index) => 9000001 + index).map(id => ({
+      id, name: `Catalog engine ${id}`, engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online',
+      capabilities: { engine_family: 'tabular', storage: { store: { table_read_session: true } },
+        compute: { query: { supported: true, read_session: true, languages: ['sql'], default_language: 'sql' } } }
+    }))
+    const sourceLocator = 'addp://engine/9000001/path/synthetic/source?type=table&item_id=90000199'
+    const leaf = { id: sourceLocator, locator: sourceLocator, label: 'source', type: 'table', hasChildren: false,
+      metadata: { item_id: 90000199, data_type: 'table', representation: 'native', full_name: 'synthetic.source' } }
+    const schemaLocator = 'addp://engine/9000001/path/synthetic?type=schema&node_id=90000198'
+    const schema = { id: schemaLocator, locator: schemaLocator, label: 'synthetic', type: 'schema', hasChildren: true, children: [] }
+    const metadata = { '/api/v1/meta/engines': engines, '/api/v1/transfer/capabilities': { table_formats: [], raw_copy_formats: [] },
+      '/api/v1/meta/items/90000199/fields': { data: [{ name: 'payload', type: 'string', nullable: true }] } }
+    for (const engine of engines) {
+      const locator = `addp://engine/${engine.id}/path/?type=server&node_id=${engine.id}`
+      const root = { id: locator, locator, label: engine.name, type: 'server', hasChildren: engine.id === 9000001,
+        children: engine.id === 9000001 ? [schema] : [] }
+      metadata[`/api/v1/meta/resource-tree/${engine.id}`] = root
+      metadata[`/api/v1/meta/resource-tree/${engine.id}/node`] = url => ({ children: url.searchParams.get('locator') === schemaLocator ? [leaf] : root.children })
+      metadata[`/api/v1/meta/resource-tree/${engine.id}/ancestors`] = { ancestors: engine.id === 9000001 ? [root, schema, leaf] : [] }
+      metadata[`/api/v1/meta/resource-tree/${engine.id}/search`] = { results: engine.id === 9000001 ? [leaf] : [] }
+    }
+    await setup(page, undefined, metadata)
+    await page.getByTestId('source-step').click()
+    const picker = page.getByTestId('task-source-picker')
+    await picker.locator('.picker-search input').fill('source')
+    await picker.locator('.search-result').click()
+    await expect(page.getByText('已选数据项', { exact: true })).toBeVisible()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await page.getByTestId('review-step').click()
+    await expect(page.getByTestId('task-config-check')).toBeVisible()
+    expect(errors).toEqual([])
+  })
+}
+
 for (const [status, title] of [['supported', '已检查定义受支持'], ['unsupported', '发现不支持的定义'], ['unknown', '尚无法确定']]) {
   test(`${status} displays the scope, field location and keeps saving behavior`, async ({ page }) => {
     await setup(page, route => route.fulfill({ json: report(status) }))

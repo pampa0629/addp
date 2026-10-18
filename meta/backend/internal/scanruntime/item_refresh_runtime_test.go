@@ -233,7 +233,7 @@ func TestRefreshKnownDynamicSchemaItemUsesSamplingProviderWithoutContentReader(t
 	runtime := NewItemRefreshRuntime(metaRepo.NewScanRepository(db), nil, nil)
 	result, err := runtime.RefreshKnownItemWithPlugin(context.Background(), enginePlugin, &commonModels.Engine{
 		ID: engineID, TenantID: &tenantID, EngineType: enginePlugin.Type(), LifecycleState: "active",
-	}, tenantID, item, parentNode, "")
+	}, tenantID, item, parentNode, "", nil)
 	if err != nil {
 		t.Fatalf("RefreshKnownItemWithPlugin() error = %v", err)
 	}

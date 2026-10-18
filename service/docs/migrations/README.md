@@ -1,101 +1,26 @@
-# Service 模块表重命名：service_layers → external_service_layers
+# Service 数据库迁移入口
 
-## 修改概要
+本页说明当前迁移入口与文档归属。当前表及存储边界见[数据库架构](../数据库架构.md)，字段、协议和配置见对应表说明；不再维护针对旧 internal/external 服务表的手工迁移或回滚步骤。
 
-**修改日期**: 2026-01-31
-**影响范围**: Service 模块
-**修改类型**: 表重命名（Breaking Change）
+## 当前入口
 
-## 修改原因
+| 范围 | 权威实现与说明 |
+| --- | --- |
+| 启动初始化 | [主程序](../../backend/cmd/server/main.go)调用 [InitDatabase / AutoMigrate](../../backend/internal/repository/database.go)，建立 schema、迁移当前模型并执行 analytical 发布及 Catalog 变化流迁移。 |
+| analytical 发布数据 | [版本化迁移](../../backend/internal/repository/analytical_migration.go)由 AutoMigrate 调用；版本是否应用以 `service.data_migrations` 账本及执行结果为准。 |
+| Catalog 变化流 | [迁移实现](../../backend/internal/repository/database.go)负责初始摘要、索引与变化捕获触发器；不等于企业 Catalog 专业定义迁移。 |
+| Query 消费契约 | 主程序建立消费目录服务后调用[契约迁移服务](../../backend/internal/service/consumer_catalog_service.go)，由 [Repository](../../backend/internal/repository/query_service_consumer_contract_migration.go)按版本将不满足当前消费契约的 active REST 记录置为 `error`；不伪造输出契约。 |
 
-Service 模块现在管理两种类型的服务：
-1. **外部服务**（External Services）- 第三方 OGC 服务注册
-2. **内部服务**（Internal Services）- ADDP 平台内部数据发布为 OGC 服务
+当前启动代码不扫描执行本目录或 `backend/migrations/` 下的 SQL 文件。后者的历史 SQL 不作为一组可按文件名顺序直接执行的部署步骤；具体约束以当前模型、迁移代码与集成验证为准，不能仅凭历史建表 SQL 宣称已安装。
 
-原表名 `service_layers` 不够明确，重命名为 `external_service_layers` 以区分：
-- `external_service_layers` - 外部服务的图层
-- `internal_service_layers` - 内部服务的图层
+## 当前规则的正文归属
 
-## 修改清单
+- 查询来源、协议、公开设置与资源上限：[查询服务表](../tables/query_services表.md)及[查询发布与执行](../architecture/查询发布与执行.md)。
+- 注册端点与图层：[注册服务表](../tables/registered_services表.md)、[注册图层表](../tables/registered_service_layers表.md)。
+- 瓦片协议与 MVT/缓存配置：[瓦片服务表](../tables/tile_services表.md)、[瓦片图层表](../tables/tile_service_layers表.md)及[瓦片发布与缓存](../architecture/瓦片发布与缓存.md)。
 
-### 1. 数据库层面
+## 验证与运行边界
 
-| 修改项 | 原名称 | 新名称 |
-|--------|--------|--------|
-| 表名 | `service.service_layers` | `service.external_service_layers` |
-| 索引 | `idx_service_layer_service` | `idx_external_service_layer_service` |
-| 外键约束 | `fk_service_layers_service` | `fk_external_service_layers_service` |
+按[测试与验收规范](../../../docs/spec/addp测试与验收规范.md)使用 `make test-changed`，或在范围明确时使用 `make test-module MODULE=service`；迁移与持久化专项沿 `make test-service-postgres`。本地 PostgreSQL 仅使用允许的隔离测试库，准备与清理由标准入口负责，不为文档验证执行迁移 SQL、创建测试 database 或操作业务数据。
 
-### 2. Go 代码层面
-
-| 文件路径 | 修改内容 |
-|---------|---------|
-| `backend/internal/models/external_service.go` | 结构体 `ServiceLayer` → `ExternalServiceLayer` |
-| | TableName: `service.service_layers` → `service.external_service_layers` |
-| | DTO: `ServiceLayerDTO` → `ExternalServiceLayerDTO` |
-| `backend/internal/repository/external_service_repository.go` | 所有 `ServiceLayer` 引用 → `ExternalServiceLayer` |
-| `backend/internal/repository/database.go` | AutoMigrate 模型列表 |
-| `backend/internal/service/registry/external_service.go` | 所有函数签名和返回类型 |
-
-### 3. 文档层面
-
-| 文件路径 | 修改内容 |
-|---------|---------|
-| `CLAUDE.md` | 表名引用更新 |
-| `README.md` | 表名引用更新 |
-| `docs/数据库架构.md` | 所有表名、索引名、外键名更新，ER图更新 |
-| `docs/tables/external_services表.md` | 文档链接更新 |
-| `docs/tables/service_layers表.md` → `external_service_layers表.md` | 文件重命名和内容更新 |
-
-## 迁移步骤
-
-### 开发环境
-
-1. **停止 Service 模块**
-   ```bash
-   bash scripts/dev/stop.sh service
-   ```
-
-2. **执行数据库迁移**
-   ```bash
-   psql -h localhost -p 15432 -U postgres -d addp < service/docs/migrations/rename_service_layers_to_external_service_layers.sql
-   ```
-
-3. **拉取最新代码并重启**
-   ```bash
-   git pull
-   bash scripts/dev/restart.sh -service
-   ```
-
-### 回滚方案
-
-如果迁移出现问题，可执行回滚：
-```bash
-psql -h localhost -p 15432 -U postgres -d addp < service/docs/migrations/rollback_rename_service_layers.sql
-```
-
-## 验证清单
-
-- [ ] 数据库表已重命名
-- [ ] 索引和约束已重命名
-- [ ] Service 模块启动无错误
-- [ ] API 调用正常（测试服务注册和图层查询）
-- [ ] 日志中无 `service_layers` 相关错误
-
-## 影响评估
-
-### 破坏性变更
-✅ **仅影响开发环境**：当前 ADDP 处于积极开发阶段，采用激进策略，无需考虑向后兼容。
-
-### 外部依赖
-❌ **无影响**：此表为 Service 模块内部使用，无外部 API 直接引用表名。
-
-### 数据丢失风险
-❌ **无风险**：表重命名不会丢失数据，仅改变表名和约束名。
-
-## 相关文档
-
-- [数据库迁移脚本](migrations/rename_service_layers_to_external_service_layers.sql)
-- [回滚脚本](migrations/rollback_rename_service_layers.sql)
-- [Service 模块架构](../CLAUDE.md)
-- [数据库架构文档](数据库架构.md)
+运行升级沿[部署与开发指南](../../../docs/guide/addp部署和开发步骤.md)及[配置规范](../../../docs/spec/addp配置介绍.md)，先核对目标部署和实际基础设施状态；需要重启时由用户按标准生命周期流程执行。启动成功、结构迁移成功、数据迁移成功及接口运行验收分别核对，不用文档清理或历史清单代替通过证据。

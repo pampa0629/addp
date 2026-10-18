@@ -50,6 +50,185 @@ func TestTableTransferExecutorWritesEncodedCSVToNativeTable(t *testing.T) {
 	}
 }
 
+func TestEncodedDelimitedSourcePreservesFirstRowAndMetaTypes(t *testing.T) {
+	for _, tsv := range []bool{false, true} {
+		for _, project := range []bool{false, true} {
+			name := "csv"
+			provider := csvformat.NewPlugin(nil)
+			content := "1,Alice\n2,Bob\n"
+			if tsv {
+				name = "tsv"
+				provider = csvformat.NewTSVPlugin(nil)
+				content = strings.ReplaceAll(content, ",", "\t")
+			}
+			t.Run(name+map[bool]string{false: "/all", true: "/project-reorder"}[project], func(t *testing.T) {
+				options := format.DefaultParseOptions()
+				options.HasHeader = false
+				if tsv {
+					options.Delimiter = '\t'
+				}
+				info := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "Column1", Type: datatype.FieldTypeBigInt}, {Name: "Column2", Type: datatype.FieldTypeString}}}
+				writer := &fakeBatchWriter{}
+				preparer := &fakeTableWritePreparer{}
+				plan := TableTransferPlan{Source: TableSourcePlan{Kind: TableEndpointEncoded, ParseOptions: options, TableInfo: info}, Target: TableTargetPlan{Kind: TableEndpointNative}, BatchSize: 1}
+				idName := "Column1"
+				if project {
+					options.FieldSelection = &format.FieldSelectionOptions{Include: []string{"Column2", "Column1"}, MissingFieldPolicy: format.MissingFieldError}
+					plan.Transforms = []TableTransformPlan{{Type: "field_mapping", FieldMapping: &FieldMappingTransformPlan{Mode: FieldMappingModeProject, Fields: []FieldMappingFieldPlan{{Source: "Column2", Target: "name"}, {Source: "Column1", Target: "id"}}}}}
+					idName = "id"
+				}
+				exec := &TableTransferExecutor{SourceContentReader: &fakeContentReader{content: content}, SourceTableReadProvider: provider, TargetNativePreparer: preparer, TargetNativeWriter: writer}
+				metrics, err := exec.Execute(context.Background(), plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || len(writer.batches) != 2 || writer.batches[0].Rows[0][idName] != int64(1) {
+					t.Fatalf("first row or batch lost: %+v / %+v", metrics, writer.batches)
+				}
+				idIndex := 0
+				if project {
+					idIndex = 1
+				}
+				if preparer.fields[idIndex].Type != datatype.FieldTypeBigInt {
+					t.Fatalf("Meta type replaced by reader string: %+v", preparer.fields)
+				}
+				if len(info.Fields) != 2 || info.Fields[0].Name != "Column1" {
+					t.Fatal("source declaration mutated")
+				}
+			})
+		}
+	}
+}
+
+func TestEncodedSourceRejectsFieldConflictBeforeAnyTargetEffects(t *testing.T) {
+	for _, tc := range []struct {
+		name, content string
+		fields        []datatype.FieldInfo
+		header        bool
+	}{
+		{"header-mode", "1,Alice\n2,Bob\n", []datatype.FieldInfo{{Name: "id"}, {Name: "name"}}, false},
+		{"field-order", "id,name\n1,Alice\n", []datatype.FieldInfo{{Name: "name"}, {Name: "id"}}, true},
+		{"field-count", "id,name\n1,Alice\n", []datatype.FieldInfo{{Name: "id"}}, true},
+		{"private-header", "private_user_value,private_token_value\n1,Alice\n", []datatype.FieldInfo{{Name: "id"}, {Name: "name"}}, true},
+	} {
+		for _, encodedTarget := range []bool{false, true} {
+			for _, passthrough := range []bool{false, true} {
+				t.Run(tc.name+map[bool]string{false: "/native", true: "/encoded"}[encodedTarget]+map[bool]string{false: "/all", true: "/passthrough"}[passthrough], func(t *testing.T) {
+					source := &headerTrackedContent{fakeContentReader: fakeContentReader{content: tc.content}}
+					native := &fakeNativeTableWriter{}
+					output := &headerTargetContent{}
+					provider := &headerTrackedProvider{TableReaderProvider: csvformat.NewPlugin(nil)}
+					options := format.DefaultParseOptions()
+					options.HasHeader = tc.header
+					plan := TableTransferPlan{Source: TableSourcePlan{Kind: TableEndpointEncoded, ParseOptions: options, TableInfo: &datatype.TableInfo{Fields: tc.fields}}, Target: TableTargetPlan{Kind: TableEndpointNative, DeleteBeforeWrite: true}}
+					exec := &TableTransferExecutor{SourceContentReader: source, SourceTableReadProvider: provider, TargetNativePreparer: native, TargetNativeWriter: native, TargetDeleteProvider: native}
+					if encodedTarget {
+						plan.Target.Kind = TableEndpointEncoded
+						exec.TargetContentWriter = output
+						exec.TargetTableWriterProvider = csvformat.NewPlugin(nil)
+					}
+					if passthrough {
+						plan.Transforms = []TableTransformPlan{{Type: "field_mapping", FieldMapping: &FieldMappingTransformPlan{Mode: FieldMappingModePassthrough, Fields: []FieldMappingFieldPlan{{Source: "id", Target: "copied_id"}}}}}
+					}
+					_, err := exec.Execute(context.Background(), plan)
+					if err == nil {
+						t.Fatal("source field conflict silently accepted")
+					}
+					if !strings.Contains(err.Error(), "encoded source field") || strings.Contains(err.Error(), "private_user_value") || strings.Contains(err.Error(), "private_token_value") {
+						t.Fatalf("wrong or unsafe mismatch diagnostic: %v", err)
+					}
+					if native.deleted || len(native.preparedFields) > 0 || len(native.batches) > 0 || output.creates > 0 {
+						t.Fatal("target effects occurred before source validation")
+					}
+					if source.closed != 1 {
+						t.Fatalf("source closes=%d, want1", source.closed)
+					}
+					if provider.closed != 1 {
+						t.Fatalf("format reader closes=%d, want1", provider.closed)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestEncodedDelimitedHeaderOnlyPreservesDeclaredEmptyTable(t *testing.T) {
+	for _, tsv := range []bool{false, true} {
+		provider := csvformat.NewPlugin(nil)
+		content := "id,name\n"
+		options := format.DefaultParseOptions()
+		if tsv {
+			provider = csvformat.NewTSVPlugin(nil)
+			content = "id\tname\n"
+			options.Delimiter = '\t'
+		}
+		writer := &fakeBatchWriter{}
+		preparer := &fakeTableWritePreparer{}
+		info := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "name", Type: datatype.FieldTypeString}}}
+		exec := &TableTransferExecutor{SourceContentReader: &fakeContentReader{content: content}, SourceTableReadProvider: provider, TargetNativePreparer: preparer, TargetNativeWriter: writer}
+		metrics, err := exec.Execute(context.Background(), TableTransferPlan{Source: TableSourcePlan{Kind: TableEndpointEncoded, ParseOptions: options, TableInfo: info}, Target: TableTargetPlan{Kind: TableEndpointNative}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if metrics.RecordsRead != 0 || metrics.RecordsWritten != 0 || len(writer.batches) != 0 || len(preparer.fields) != 2 || preparer.fields[0].Type != datatype.FieldTypeBigInt {
+			t.Fatalf("empty table declaration lost: %+v / %+v", metrics, preparer.fields)
+		}
+	}
+}
+
+type headerTrackedProvider struct {
+	format.TableReaderProvider
+	closed int
+}
+
+func (p *headerTrackedProvider) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
+	reader, err := p.TableReaderProvider.OpenTableReader(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+	return &headerTrackedTableReader{TableReader: reader, closed: &p.closed}, nil
+}
+
+type headerTrackedTableReader struct {
+	format.TableReader
+	closed *int
+}
+
+func (r *headerTrackedTableReader) Close(ctx context.Context) error {
+	*r.closed++
+	return r.TableReader.Close(ctx)
+}
+
+type headerTrackedContent struct {
+	fakeContentReader
+	closed int
+}
+
+func (r *headerTrackedContent) OpenContent(ctx context.Context, conn engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, options engineplugin.ReadOptions) (io.ReadCloser, error) {
+	input, err := r.fakeContentReader.OpenContent(ctx, conn, path, options)
+	if err != nil {
+		return nil, err
+	}
+	return headerTrackedInput{ReadCloser: input, closed: &r.closed}, nil
+}
+
+type headerTrackedInput struct {
+	io.ReadCloser
+	closed *int
+}
+
+func (r headerTrackedInput) Close() error { *r.closed++; return r.ReadCloser.Close() }
+
+type headerTargetContent struct {
+	fakeContentWriter
+	creates int
+}
+
+func (w *headerTargetContent) CreateContent(ctx context.Context, conn engineplugin.ConnectionInfo, path engineplugin.EngineCatalogPath, options engineplugin.WriteOptions) (io.WriteCloser, error) {
+	w.creates++
+	return w.fakeContentWriter.CreateContent(ctx, conn, path, options)
+}
+
 func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n"}
 	preparer := &fakeTableWritePreparer{}

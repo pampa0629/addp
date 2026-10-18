@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scantask"
 )
@@ -38,6 +39,10 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		return fmt.Errorf("有界执行不是运行中状态: execution_id=%s status=%s", executionID, exec.Status)
 	}
 	defer s.finishExecutionDedupState(executionID, execConfig, lockKey)
+	// Reject malformed frozen read declarations before opening content.
+	if _, err := format.HeaderModeFromOptions(exec.ExecutionConfig); err != nil {
+		return err
+	}
 
 	start := time.Now()
 	if exec.StartedAt != nil {
@@ -64,6 +69,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 		RefGroups:    execConfig.RefGroups,
 		ItemID:       execConfig.ItemID,
 		Encoding:     execConfig.Encoding,
+		HasHeader:    execConfig.HasHeader,
 		ScanDepth:    execConfig.ScanDepth,
 		Force:        execConfig.Force,
 		Source:       execConfig.Source,

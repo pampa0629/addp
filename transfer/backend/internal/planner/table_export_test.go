@@ -1318,6 +1318,50 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanDelimitedHeaderPrecedence(t *testing.T) {
+	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		for _, tc := range []struct {
+			name    string
+			meta    map[string]interface{}
+			options map[string]interface{}
+			want    bool
+			invalid bool
+		}{
+			{name: "default", want: true},
+			{name: "meta-false", meta: map[string]interface{}{"has_header": false}},
+			{name: "meta-true", meta: map[string]interface{}{"has_header": true}, want: true},
+			{name: "explicit-false", meta: map[string]interface{}{"has_header": true}, options: map[string]interface{}{"header": false}},
+			{name: "explicit-true", meta: map[string]interface{}{"has_header": false}, options: map[string]interface{}{"header": true}, want: true},
+			{name: "native-string-rejected", meta: map[string]interface{}{"has_header": "false"}, invalid: true},
+			{name: "native-null-rejected", meta: map[string]interface{}{"has_header": nil}, invalid: true},
+		} {
+			t.Run(string(formatType)+"/"+tc.name, func(t *testing.T) {
+				spec := minimalEncodedToNativeSpec()
+				spec.Source.Format = formatType
+				spec.Source.Options = tc.options
+				spec.Source.Attributes = tableSourceAttributes("single", string(formatType), "imports/source."+string(formatType), nil, nil, nil)
+				spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["native"] = tc.meta
+				result, err := BuildTableTransferPlan(spec, StaticEngineResolver{1: {Type: "nfs"}, 2: {Type: "postgresql"}})
+				if tc.invalid {
+					if err == nil {
+						t.Fatal("invalid Meta header declaration accepted")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.Plan.Source.ParseOptions.HasHeader != tc.want {
+					t.Fatalf("header = %v, want %v", result.Plan.Source.ParseOptions.HasHeader, tc.want)
+				}
+				if _, changed := tc.options["has_header"]; changed {
+					t.Fatal("planner changed task option vocabulary")
+				}
+			})
+		}
+	}
+}
+
 func TestBuildTableTransferPlanConsumesDelimitedEncodingFact(t *testing.T) {
 	for _, formatType := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
 		for _, encoding := range []string{"gbk", "utf-16le", "utf-16be"} {

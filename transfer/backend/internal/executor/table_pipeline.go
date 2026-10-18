@@ -691,6 +691,11 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		_ = input.Close()
 		return nil, fmt.Errorf("open encoded source table reader: %w", err)
 	}
+	if err := validateEncodedTableFields(tableInfo, tableReader, parseOptions); err != nil {
+		_ = tableReader.Close(ctx)
+		_ = input.Close()
+		return nil, err
+	}
 	if tableInfoEmpty(tableInfo) {
 		tableInfo = tableInfoFromFormatReader(tableReader)
 	}
@@ -699,6 +704,31 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		spatialInfo = spatialInfoFromFormatReader(tableReader)
 	}
 	return &encodedTableBatchReader{input: input, tableReader: tableReader, tableInfo: tableInfo, spatialInfo: spatialInfo}, nil
+}
+
+func validateEncodedTableFields(info *datatype.TableInfo, reader format.TableReader, options *format.ParseOptions) error {
+	if tableInfoEmpty(info) {
+		return nil
+	}
+	var selection *format.FieldSelectionOptions
+	if options != nil {
+		selection = options.FieldSelection
+	}
+	declared, err := format.ApplyFieldSelectionToTableInfo(info, selection)
+	if err != nil {
+		return fmt.Errorf("select encoded source declared fields: %w", err)
+	}
+	actual := reader.Fields()
+	if len(declared.Fields) != len(actual) {
+		return fmt.Errorf("encoded source field count differs from declared table")
+	}
+	for i, field := range declared.Fields {
+		if field.Name != actual[i].Name {
+			// A misread header can contain data; never include its value in errors.
+			return fmt.Errorf("encoded source field %d differs from declared table", i+1)
+		}
+	}
+	return nil
 }
 
 func parseOptionsWithResumeMarker(options *format.ParseOptions, marker *resume.Marker) *format.ParseOptions {

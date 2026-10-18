@@ -16,6 +16,7 @@ import (
 
 type ResourceAttributesInput struct {
 	Encoding             string
+	HasHeader            *bool
 	ContentReader        plugin.ContentReadableProvider
 	ConnInfo             plugin.ConnectionInfo
 	EngineID             uint
@@ -42,8 +43,8 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, nil, err
 	}
 
-	if input.Encoding != "" && (item.Layout != format.LayoutSingle || item.DataType != datatype.Table || (item.Format != "csv" && item.Format != "tsv")) {
-		return item, nil, metaErrors.ErrInvalidScanEncoding
+	if (input.Encoding != "" || input.HasHeader != nil) && (item.Layout != format.LayoutSingle || item.DataType != datatype.Table || (item.Format != "csv" && item.Format != "tsv")) {
+		return item, nil, metaErrors.ErrInvalidDelimitedOptions
 	}
 	canReadContent := input.ContentReader != nil && input.EngineCatalogPathFor != nil && input.PhysicalPath != ""
 	if item.Layout == format.LayoutSingle && canReadContent {
@@ -59,6 +60,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 			input.SizeBytes,
 			input.IncludeAccessIndex,
 			input.Encoding,
+			input.HasHeader,
 			input.EngineCatalogPathFor,
 		)
 		if err != nil {

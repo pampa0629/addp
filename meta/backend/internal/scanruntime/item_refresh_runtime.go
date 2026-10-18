@@ -113,7 +113,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByID(
 	tenantID uint,
 	itemID uint,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID, "")
+	return r.RefreshKnownItemByIDWithPlugin(ctx, nil, resource, tenantID, itemID, "", nil)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
@@ -123,6 +123,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	tenantID uint,
 	itemID uint,
 	encoding string,
+	hasHeader *bool,
 ) (scanprocessor.Result, error) {
 	if itemID == 0 {
 		return scanprocessor.Result{}, fmt.Errorf("item_id is required")
@@ -138,7 +139,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemByIDWithPlugin(
 	if err != nil {
 		return scanprocessor.Result{}, fmt.Errorf("item parent node not found: %w", err)
 	}
-	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode, encoding)
+	return r.RefreshKnownItemWithPlugin(ctx, p, resource, tenantID, *item, *parentNode, encoding, hasHeader)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItem(
@@ -148,7 +149,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 ) (scanprocessor.Result, error) {
-	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode, "")
+	return r.RefreshKnownItemWithPlugin(ctx, nil, resource, tenantID, item, parentNode, "", nil)
 }
 
 func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
@@ -159,11 +160,12 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 	item models.MetaItem,
 	parentNode models.MetaNode,
 	encoding string,
+	hasHeader *bool,
 ) (scanprocessor.Result, error) {
-	if encoding != "" {
+	if encoding != "" || hasHeader != nil {
 		descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
 		if descriptor.Layout != format.LayoutSingle || descriptor.DataType != datatype.Table || (descriptor.Format != "csv" && descriptor.Format != "tsv") {
-			return scanprocessor.Result{}, metaErrors.ErrInvalidScanEncoding
+			return scanprocessor.Result{}, metaErrors.ErrInvalidDelimitedOptions
 		}
 	}
 	if p == nil {
@@ -229,6 +231,7 @@ func (r *ItemRefreshRuntime) RefreshKnownItemWithPlugin(
 		scanflow.KnownItemSize(descriptor, &item),
 	)
 	input.Encoding = encoding
+	input.HasHeader = hasHeader
 	return scanprocessor.New(r.repo, r.indexer, r.log).WithContainerInspector(r.containerInspector).Process(ctx, input)
 }
 

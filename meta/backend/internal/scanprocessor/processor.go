@@ -31,6 +31,7 @@ type TechnicalMetadataIndexer interface {
 
 type input struct {
 	Encoding             string
+	HasHeader            *bool
 	Resource             *commonModels.Engine
 	TenantID             uint
 	EngineID             uint

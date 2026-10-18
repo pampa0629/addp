@@ -13,7 +13,7 @@ var localeFS embed.FS
 const (
 	MsgAuthorizationFactsInvalid     = "meta.authorization_facts.invalid"
 	MsgAuthorizationFactsUnavailable = "meta.authorization_facts.unavailable"
-	MsgScanEncodingInvalid           = "meta.scan.encoding_invalid"
+	MsgScanDelimitedOptionsInvalid   = "meta.scan.delimited_options_invalid"
 	MsgItemSnapshotNotFound          = "meta.item_snapshot.not_found"
 	MsgItemSnapshotReadFailed        = "meta.item_snapshot.read_failed"
 	MsgScanRequestInvalid            = "meta.scan.request_invalid"

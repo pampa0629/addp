@@ -29,10 +29,10 @@ var (
 	ErrInvalidChangeRequest   = errors.New("invalid data item change request")
 
 	// 扫描相关错误
-	ErrInvalidScanEncoding = errors.New("invalid scan encoding")
-	ErrScanNotFound        = errors.New("scan task not found")
-	ErrScanAccessDenied    = errors.New("scan access denied: tenant mismatch")
-	ErrScanScopeActive     = errors.New("scan scope already has an active execution")
+	ErrInvalidDelimitedOptions = errors.New("invalid delimited read options")
+	ErrScanNotFound            = errors.New("scan task not found")
+	ErrScanAccessDenied        = errors.New("scan access denied: tenant mismatch")
+	ErrScanScopeActive         = errors.New("scan scope already has an active execution")
 )
 
 // HTTPStatusCode 根据错误返回对应的 HTTP 状态码
@@ -54,7 +54,7 @@ func HTTPStatusCode(err error) int {
 		errors.Is(err, ErrTenantMismatch):
 		return http.StatusForbidden
 
-	case errors.Is(err, ErrInvalidScanEncoding),
+	case errors.Is(err, ErrInvalidDelimitedOptions),
 		errors.Is(err, ErrInvalidTenantID),
 		errors.Is(err, ErrInvalidChangeCursor),
 		errors.Is(err, ErrInvalidChangeRequest),

@@ -65,8 +65,8 @@ func validateManualScanRequestTriggerType(triggerType string) error {
 
 // handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码
 func (h *Handler) handleServiceError(c *gin.Context, err error) {
-	if errors.Is(err, metaErrors.ErrInvalidScanEncoding) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, metai18n.MsgScanEncodingInvalid), "error_code": "scan_encoding_invalid"})
+	if errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, metai18n.MsgScanDelimitedOptionsInvalid), "error_code": "scan_delimited_options_invalid"})
 		return
 	}
 	if errors.Is(err, metaErrors.ErrScanScopeActive) {

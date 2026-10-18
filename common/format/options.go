@@ -1,9 +1,25 @@
 package format
 
 import (
+	"fmt"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/resume"
 )
+
+// HeaderModeFromOptions reads the canonical optional has_header declaration.
+// A missing key leaves the mode unspecified; strings, numbers and null are invalid.
+// Callers extract their own options/native section before using this pure helper.
+func HeaderModeFromOptions(options map[string]interface{}) (*bool, error) {
+	value, present := options["has_header"]
+	if !present {
+		return nil, nil
+	}
+	header, ok := value.(bool)
+	if !ok {
+		return nil, fmt.Errorf("has_header must be a boolean")
+	}
+	return &header, nil
+}
 
 // GeometryEncoding 描述表格行值中 geometry 字段的编码形式。
 type GeometryEncoding string

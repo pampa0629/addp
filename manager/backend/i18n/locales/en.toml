@@ -297,8 +297,8 @@ other = "The preview resource no longer exists"
 [manager.error.preview_unsupported]
 other = "This resource does not support preview"
 
-[manager.error.scan_encoding_invalid]
-other = "Encoding must be utf-8, gbk, utf-16le or utf-16be and is only supported for deep refresh of a single CSV/TSV item"
+[manager.error.scan_delimited_options_invalid]
+other = "Read settings require a single CSV/TSV item deep refresh; encoding must be UTF-8, GBK, UTF-16LE or UTF-16BE, and has_header must be boolean."
 
 [manager.error.upload_scan_submission_failed]
 other = "Files were written, but metadata scan submission failed. Rescan them without uploading again."

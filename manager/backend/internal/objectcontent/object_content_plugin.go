@@ -1789,11 +1789,34 @@ type tableContentHandler struct {
 	rowLimit int
 }
 
+func objectTableParseOptions(req *ObjectContentRequest, formatType format.FormatType) (*format.ParseOptions, error) {
+	opts := format.DefaultParseOptions()
+	// The format plugin owns its delimiter default (including TSV).
+	opts.Delimiter = 0
+	if formatType == format.FormatCSV || formatType == format.FormatTSV {
+		if encoding := commonJSON.String(req.Attributes, "format_info."+string(formatType), "encoding"); encoding != "" {
+			opts.Encoding = encoding
+		}
+		header, err := format.HeaderModeFromOptions(commonJSON.Section(req.Attributes, "type_info.table.native"))
+		if err != nil {
+			return nil, err
+		}
+		if header != nil {
+			opts.HasHeader = *header
+		}
+	}
+	return opts, nil
+}
+
 // HandleStream 流式处理表格文件（下载到临时文件后解析）
 func (h *tableContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
 	formatType := objectContentTableFormat(req)
 	if formatType == format.FormatUnknown {
 		return nil, false, fmt.Errorf("无法识别表格文件格式")
+	}
+	opts, err := objectTableParseOptions(req, formatType)
+	if err != nil {
+		return nil, false, err
 	}
 	tmpFile, err := os.CreateTemp("", "table-preview-*"+strings.ToLower(string(formatType)))
 	if err != nil {
@@ -1833,7 +1856,6 @@ func (h *tableContentHandler) HandleStream(ctx context.Context, req *ObjectConte
 	}
 	defer f.Close()
 
-	opts := format.DefaultParseOptions()
 	infoProvider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
 		return nil, false, fmt.Errorf("获取 %s table info provider 失败: %w", formatType, err)
@@ -1907,6 +1929,10 @@ func (h *tableContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	if formatType == format.FormatUnknown {
 		return nil, false, fmt.Errorf("无法识别表格文件格式")
 	}
+	opts, err := objectTableParseOptions(req, formatType)
+	if err != nil {
+		return nil, false, err
+	}
 	data, _, err := fetcher(h.maxBytes)
 	if err != nil {
 		return nil, false, err
@@ -1915,7 +1941,6 @@ func (h *tableContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		return decoratePreviewContent(&models.ObjectPreviewContent{Kind: models.ObjectPreviewKindTable, Text: "表格文件为空或无法读取"}), false, nil
 	}
 
-	opts := format.DefaultParseOptions()
 	infoProvider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
 		return nil, false, fmt.Errorf("获取 %s table info provider 失败: %w", formatType, err)

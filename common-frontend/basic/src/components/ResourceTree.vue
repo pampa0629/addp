@@ -406,6 +406,8 @@ const sameKeys = (left = [], right = []) => {
 
 const commitExpandedKeys = (keys) => {
   const nextKeys = [...new Set(keys || [])]
+  // 默认展开可在父组件更新期间触发懒加载，同值回写会再次触发父子更新。
+  if (sameKeys(nextKeys, computedExpandedKeys.value)) return
   expandedKeysOverride.value = nextKeys
   emit('update:expanded-keys', nextKeys)
   nextTick(() => updateExpandState())

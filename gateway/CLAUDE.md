@@ -45,9 +45,6 @@ X-API-Key
 
 ## 验证
 
-```bash
-cd gateway && go test ./...
-bash scripts/swagger/check-route-coverage.sh system
-```
+使用根 `make test-module MODULE=gateway`；快速 Go T1、影响扩散及真实链路的范围见[运维手册](docs/gateway运维手册.md#回归验证)。
 
 不得恢复通用 `/api/v1` API Key 中间件、Redis 长期凭据正缓存、Application ID 授权、调用方自报 Tenant，或仅由 Gateway 完成最终数据授权。

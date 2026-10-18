@@ -303,8 +303,8 @@ other = "预览资源已不存在"
 [manager.error.preview_unsupported]
 other = "此资源不支持预览"
 
-[manager.error.scan_encoding_invalid]
-other = "编码仅支持 utf-8、gbk、utf-16le、utf-16be，且只能用于单个 CSV/TSV 数据项的深度刷新"
+[manager.error.scan_delimited_options_invalid]
+other = "读取设置只适用于单个 CSV/TSV 数据项的深度刷新；编码须为 UTF-8、GBK、UTF-16LE 或 UTF-16BE，表头声明须为布尔值。"
 
 [manager.error.upload_scan_submission_failed]
 other = "文件已写入，但元数据扫描提交失败。请重新扫描，无需重复上传。"

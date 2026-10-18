@@ -29,18 +29,30 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 	input.ContentReader = observeMetadataRanges(originalReader)
 	defer func() { input.ContentReader = originalReader }()
 
-	if input.Encoding == "" && input.Detected.Layout == format.LayoutSingle && (input.Detected.Format == "csv" || input.Detected.Format == "tsv") {
-		input.Encoding = commonJSON.String(attrs, "format_info."+input.Detected.Format, "encoding")
-		if input.Encoding == "" {
+	if input.Detected.Layout == format.LayoutSingle && (input.Detected.Format == "csv" || input.Detected.Format == "tsv") {
+		// Successful stored facts are the authority for omitted read settings.
+		// A directory scan's fresh candidate must not reset an existing false mode.
+		known := attrs
+		if input.Encoding == "" || input.HasHeader == nil {
 			existing, found, err := p.repo.FindItemByFullName(input.TenantID, input.EngineID, input.FullName)
 			if err != nil {
 				return nil, err
 			}
 			if found && commonJSON.String(existing.Attributes, "item", "format") == input.Detected.Format {
-				input.Encoding = commonJSON.String(existing.Attributes, "format_info."+input.Detected.Format, "encoding")
+				known = existing.Attributes
+			}
+		}
+		if input.Encoding == "" {
+			input.Encoding = commonJSON.String(known, "format_info."+input.Detected.Format, "encoding")
+		}
+		if input.HasHeader == nil {
+			input.HasHeader, err = format.HeaderModeFromOptions(commonJSON.Section(known, "type_info.table.native"))
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
+
 	enrichedAttrs, err := p.enrichKnownMultiTable(ctx, input, attrs)
 	if err != nil {
 		return nil, err
@@ -49,6 +61,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 
 	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
 		Encoding:             input.Encoding,
+		HasHeader:            input.HasHeader,
 		ContentReader:        input.ContentReader,
 		ConnInfo:             input.ConnInfo,
 		EngineID:             input.EngineID,
@@ -63,7 +76,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		TenantID:             input.TenantID,
 	})
 	if err != nil {
-		if input.StrictDeepEnrich || input.Encoding != "" || source != nil {
+		if input.StrictDeepEnrich || input.Encoding != "" || input.HasHeader != nil || source != nil {
 			return nil, err
 		}
 		p.warn("提取资源深度属性失败，保留基础属性", input, err)

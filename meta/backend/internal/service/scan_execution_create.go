@@ -63,14 +63,14 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	}
 
 	req.Encoding = strings.ToLower(strings.TrimSpace(req.Encoding))
-	if req.Encoding != "" {
+	if req.Encoding != "" || req.HasHeader != nil {
 		if req.ItemID == 0 || scope.ScanDepth != scanflow.ScanDepthDeep {
-			return nil, metaErrors.ErrInvalidScanEncoding
+			return nil, metaErrors.ErrInvalidDelimitedOptions
 		}
 		switch req.Encoding {
-		case "utf-8", "gbk", "utf-16le", "utf-16be":
+		case "", "utf-8", "gbk", "utf-16le", "utf-16be":
 		default:
-			return nil, metaErrors.ErrInvalidScanEncoding
+			return nil, metaErrors.ErrInvalidDelimitedOptions
 		}
 		item, err := s.scanService.repo.GetItemByID(tenantID, req.ItemID)
 		if err != nil {
@@ -78,7 +78,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 		}
 		descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
 		if descriptor.Layout != "single" || descriptor.DataType != "table" || (descriptor.Format != "csv" && descriptor.Format != "tsv") {
-			return nil, metaErrors.ErrInvalidScanEncoding
+			return nil, metaErrors.ErrInvalidDelimitedOptions
 		}
 	}
 
@@ -104,6 +104,9 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 
 	if req.Encoding != "" {
 		execution.ExecutionConfig["encoding"] = req.Encoding
+	}
+	if req.HasHeader != nil {
+		execution.ExecutionConfig["has_header"] = *req.HasHeader
 	}
 
 	lockKey := ""

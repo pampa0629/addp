@@ -43,13 +43,19 @@ Service 的二次验证和精确 Grant 检查是最终授权点，因此绕过 G
 - Service 当前逐请求向 System 验证，确保 owner 授权不依赖 Gateway 缓存。
 - 日志只保存 `api_consumer_id` 和不可用于认证的短前缀，不保存凭据、Hash、Authorization、Cookie 或请求体。
 
+当前 Query 限流实现按 Consumer ID 原子递增计数，首次请求设置 60 秒过期；它不是按 IP、Tenant、服务或图层划分的全局限流，也不是令牌桶。Redis 初始化不可用或计数失败时继续放行；超限返回 429 及 `error/limit/window`，未返回稳定限流错误码或 `X-RateLimit-*` 响应头。这些是现状与限制，不代表故障放行策略已经作为新的平台规范确认。
+
 ## 5. 模块发现
 
 System 是模块注册表权威。Gateway 使用自身 Platform Service Access Token 读取快照和 revision watch，只代理满足 `enabled + backend + up + lease valid` 的业务模块实例。同一业务模块的多个有效 Backend 参与请求级轮询，失败请求不做隐式重放。System 是引导控制面，其自注册实例供观测和配置入口声明；Gateway 在监听建立后通过部署提供的 `SYSTEM_URL` 直连 System，以不可路由的 `ingress` 角色注册自身并续租。容器部署用 `SERVICE_HOST=gateway` 提供可定位的实例地址，本地开发使用监听所在主机的地址。Gateway Ingress 不进入业务路由池、动态入口或可路由模块计数，System 与 Gateway 的 `enabled` 固定为 true。
 
+Gateway 使用公共 `/health/live` 与 `/health/ready`；就绪检查为 `system_registry_snapshot`，仅要求成功应用过完整快照。后续 watch 失败不清除已有快照，代理仍逐请求检查 Backend 租约；因此 Ready 不等于所有模块可路由或所有依赖健康。
+
 ## 6. 数据库
 
 `gateway.api_access_logs` 保存 API Consumer 数据面请求的路由、状态码、耗时、限流结果和消费方标识。字段 `api_consumer_id` 表达稳定消费方，`api_credential_prefix` 只保存不可认证的短前缀；启动迁移会删除旧 `application_id` 与 `api_key_prefix` 列。
+
+访问日志中间件位于消费凭据认证之后，仅在存在已验证消费方上下文及数据库句柄时构建记录；前置认证拒绝、匿名或 User Bearer 请求不形成这些消费日志。数据库初始化失败时禁用该记录路径，异步写入失败仅记运行日志，不改变请求响应。当前 `service_name` 提取的是 `/api` 后首段，Query 请求会记为 `query`；定位真实服务须核对 `request_path`。`rate_limited` 仅由最终状态码是否为 429 推导，`cache_hit` 只读取请求上下文标记，不能凭字段存在宣称结果缓存或完整消费计量已经接通。
 
 ## 7. 安全不变量
 
@@ -61,9 +67,4 @@ System 是模块注册表权威。Gateway 使用自身 Platform Service Access T
 
 ## 8. 验证
 
-```bash
-cd gateway && go test ./...
-cd service/backend && go test ./internal/api
-cd system/backend && go test ./internal/api ./internal/service ./internal/migration
-make test-authorization
-```
+标准入口与验证范围统一见[运维手册](gateway运维手册.md#回归验证)，不在架构正文复制一组语言命令。

@@ -56,8 +56,8 @@ other = "元数据项快照不存在"
 [meta.item_snapshot.read_failed]
 other = "元数据项快照读取失败"
 
-[meta.scan.encoding_invalid]
-other = "编码只支持 UTF-8、GBK、UTF-16LE 或 UTF-16BE，且只能用于单个 CSV/TSV 数据项的深度刷新。"
+[meta.scan.delimited_options_invalid]
+other = "读取设置只适用于单个 CSV/TSV 数据项的深度刷新；编码须为 UTF-8、GBK、UTF-16LE 或 UTF-16BE，表头声明须为布尔值。"
 [meta.authorization_facts.invalid]
 other = "授权资源事实查询参数无效"
 

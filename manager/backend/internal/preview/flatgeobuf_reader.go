@@ -66,7 +66,10 @@ func openFileFlatGeobufFeatureReader(ctx context.Context, req *PreviewRequest, r
 	formatType := provider.resolveFormat(req)
 	fullPath := contentCtx.path
 	contentReader := contentCtx.reader
-	opts := provider.buildParseOptions(formatType, req)
+	opts, err := provider.buildParseOptions(formatType, req)
+	if err != nil {
+		return nil, err
+	}
 	opts.GeometryEncoding = format.GeometryEncodingEWKB
 
 	if strings.TrimSpace(req.ChildName) != "" {
@@ -80,7 +83,10 @@ func openFileFlatGeobufFeatureReader(ctx context.Context, req *PreviewRequest, r
 		if resolved.ParentOptions != nil {
 			opts = resolved.ParentOptions
 		} else {
-			opts = provider.buildParseOptions(formatType, req)
+			opts, err = provider.buildParseOptions(formatType, req)
+			if err != nil {
+				return nil, err
+			}
 		}
 		opts.GeometryEncoding = format.GeometryEncodingEWKB
 	}

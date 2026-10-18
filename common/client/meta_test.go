@@ -367,14 +367,14 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 func TestMetaUserRefreshItemPreservesErrorContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`{"error":"localized message","error_code":"scan_encoding_invalid"}`))
+		_, _ = w.Write([]byte(`{"error":"localized message","error_code":"scan_delimited_options_invalid"}`))
 	}))
 	defer server.Close()
 	_, err := NewMetaScanUserClient(server.URL).RefreshItem(t.Context(), "current-user", 1, MetaScanOptions{Encoding: "bad"})
 	if status, ok := TenantAPIStatusCode(err); !ok || status != 400 {
 		t.Fatalf("status: %v", err)
 	}
-	if code, ok := TenantAPIErrorCode(err); !ok || code != "scan_encoding_invalid" {
+	if code, ok := TenantAPIErrorCode(err); !ok || code != "scan_delimited_options_invalid" {
 		t.Fatalf("code: %v", err)
 	}
 }

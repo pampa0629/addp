@@ -690,7 +690,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 		{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "basic"},
 		{EngineID: 9, CatalogPaths: []string{"bucket"}, Encoding: "gbk", ScanDepth: "deep"},
 	} {
-		if _, err := svc.CreateManualRun(t.Context(), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidScanEncoding) {
+		if _, err := svc.CreateManualRun(t.Context(), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 			t.Fatalf("invalid request %#v: %v", req, err)
 		}
 	}
@@ -719,7 +719,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "deep"})
-	if !errors.Is(err, metaErrors.ErrInvalidScanEncoding) {
+	if !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 		t.Fatalf("JSON encoding accepted: %v", err)
 	}
 }

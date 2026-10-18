@@ -15,9 +15,7 @@ API Consumer Credential 使用 `X-API-Key: addp_api_*`。它不是 User、Servic
 
 ## 开发
 
-```bash
-go test ./...
-```
+从仓库根目录执行 `make test-module MODULE=gateway`；验证分层及边界见[运维手册](docs/gateway运维手册.md#回归验证)。
 
 仓库内启动和重启必须遵循根 `AGENTS.md`：
 

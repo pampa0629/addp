@@ -17,7 +17,7 @@
 
 1. [核心概念总览](concepts/addp核心概念关系图.md)
 2. [账号与权限体系](concepts/addp账号与权限体系图.md)
-3. [模块架构图](concepts/addp模块架构图.md)
+3. [模块架构图](concepts/addp模块架构图.md)：平台总览、模块职责、共享能力与运行机制的专题入口。
 4. [国际化体系图](concepts/addp国际化体系图.md)
 5. [开发原则](spec/addp开发原则.md)
 6. [测试与验收规范](spec/addp测试与验收规范.md)
@@ -32,7 +32,7 @@
 - [概念文档](concepts/)
 - [规范文档](spec/)
 - [术语表](concepts/addp术语表.md)
-- [核心对象 ER 图（元模型）](concepts/addp核心对象ER图（元模型）.md)
+- [核心对象 ER 图（元模型）](concepts/addp核心对象ER图（元模型）.md)：对象说明、模块关系图与引用约束的专题入口。
 - [账号与权限体系](concepts/addp账号与权限体系图.md)
 - [授权上下文规范](spec/addp授权上下文规范.md)
 - [权限与角色发布规范](spec/addp权限与角色发布规范.md)
@@ -48,7 +48,7 @@
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
-- [任务体系规范](spec/addp任务体系规范.md)
+- [任务体系规范](spec/addp任务体系规范.md)：统一原则、核心对象和接入清单；任务、执行、协议与 owner 专题见 `tasks/` 导航。
 - [调度与任务编排统一改造专题](next/ADDP调度与任务编排统一改造专题.md)
 - [数据服务消费与数据应用规范](spec/addp数据服务消费与数据应用规范.md)
 - [Workbench 后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)

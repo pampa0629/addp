@@ -9,6 +9,7 @@ import (
 
 type ExecutionConfig struct {
 	Encoding     string
+	HasHeader    *bool
 	Targets      []string
 	EngineID     uint
 	ItemID       uint
@@ -78,6 +79,9 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	parsed.EngineID = uintFromInterface(config["engine_id"])
 	parsed.ItemID = uintFromInterface(config["item_id"])
 	parsed.Encoding, _ = config["encoding"].(string)
+	if header, ok := config["has_header"].(bool); ok {
+		parsed.HasHeader = &header
+	}
 	parsed.StorageType, _ = config["storage_type"].(string)
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
 	parsed.Force = boolFromInterface(config["force"])

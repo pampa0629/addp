@@ -30,6 +30,7 @@ type ProgressReporter interface {
 
 type Options struct {
 	Encoding     string
+	HasHeader    *bool
 	Context      context.Context
 	EngineID     uint
 	TenantID     uint
