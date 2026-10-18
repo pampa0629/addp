@@ -418,7 +418,10 @@ def verify_nfs_index_source_versions(client: GatewayClient, environment: Mapping
         def check_pages(column, labels):
             for page, label in enumerate(labels, 1):
                 query = urllib.parse.urlencode({"locator": locator, "page": page, "page_size": 1})
-                result = _object(client.request("GET", "/api/v1/manager/preview?" + query, (200,)).payload, "NFS indexed preview")
+                response = _object(client.request("GET", "/api/v1/manager/preview?" + query, (200,)).payload, "NFS indexed preview response")
+                if response.get("preview_type") != "table":
+                    raise SuiteError("NFS indexed preview must use the table response contract")
+                result = _object(response.get("data"), "NFS indexed table data")
                 if (result.get("mode") != "table" or result.get("columns") != ["id", column] or
                         result.get("rows") != [{"id": page, column: label}] or result.get("total") != 2 or
                         result.get("has_more") is not (page == 1)):

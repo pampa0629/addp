@@ -1,6 +1,6 @@
 import { expect, request, test } from '@playwright/test'
 import { expectColoredModel, modelPixels } from '../../../../manager/frontend/e2e/model-preview-support.js'
-import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
+import { decodePreviewEWKB, zoomOutPreviewMap } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -383,8 +383,7 @@ async function verifyVectorExchange(page, api, source, artifactDir, knownLocator
         && geometry.coordinates.flat(Infinity).every((value, ordinal) => Math.abs(value - expected[index].coordinates.flat(Infinity)[ordinal]) < 0.00001))
     }).toBe(true)
     // Use the visible controls to fit both endpoints in the compact preview.
-    await table.getByRole('button', { name: /Zoom out|缩小/, exact: true }).click()
-    await table.getByRole('button', { name: /Zoom out|缩小/, exact: true }).click()
+    await zoomOutPreviewMap(table, expect)
     await expect.poll(() => table.locator('.ol-layer canvas').last().evaluate(canvas => {
       const context = canvas.getContext('2d')
       if (!context || !canvas.width || !canvas.height) return 0

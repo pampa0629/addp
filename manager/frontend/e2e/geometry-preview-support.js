@@ -16,3 +16,24 @@ export function decodePreviewEWKB(value) {
   if (!geometry) throw new Error('Empty EWKB geometry cell')
   return geojson.writeGeometryObject(geometry)
 }
+
+// OpenLayers' default accessible name is the minus glyph; its tooltip is
+// not the button's accessible name. Use the control's stable DOM class.
+export async function zoomOutPreviewMap(scope, expect) {
+  const renderer = scope.locator('.openlayers-map-renderer')
+  const button = renderer.locator('button.ol-zoom-out')
+  await expect(button).toBeVisible()
+  const zoom = () => renderer.evaluate(element => {
+    const value = element.__vueParentComponent?.setupState?.mapInstance
+    const map = value?.value || value
+    const view = map?.getView()
+    return view && !view.getAnimating() ? view.getZoom() : null
+  })
+  await expect.poll(async () => Number.isFinite(await zoom())).toBe(true)
+  for (let step = 0; step < 2; step++) {
+    const before = await zoom()
+    expect(Number.isFinite(before)).toBe(true)
+    await button.click()
+    await expect.poll(zoom).toBeCloseTo(before - 1, 6)
+  }
+}

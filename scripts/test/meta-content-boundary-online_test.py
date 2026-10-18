@@ -216,7 +216,12 @@ class IndexSourceAPI:
                 reader = csv.DictReader(io.StringIO(raw.decode()), delimiter="\t" if source.suffix == ".tsv" else ",")
                 rows = [{**row, "id": int(row["id"])} for row in reader]
                 page = int(query["page"][0])
-                payload = {"mode": "table", "columns": reader.fieldnames, "rows": rows[page-1:page], "total": 2, "has_more": page == 1}
+                table = {"mode": "table", "columns": reader.fieldnames, "rows": rows[page-1:page], "total": 2, "has_more": page == 1}
+                payload = {"preview_type": "table", "data": table}
+                if self.fault == "bare-table":
+                    payload = table
+                if self.fault == "wrong-preview-type":
+                    payload["preview_type"] = "object"
         else:
             raise AssertionError(f"unexpected {method} {path}")
         if status not in expected:
@@ -264,7 +269,7 @@ class IndexSourceVersionsOnlineTest(unittest.TestCase):
             self.assertEqual(path.read_bytes(), original)
 
     def test_rejects_regressions_and_restores_physical_bytes_on_failure(self):
-        for fault in ("allow-stale", "leak-rows", "wrong-code", "auto-refresh", "stale-refresh", "replace-identity"):
+        for fault in ("allow-stale", "leak-rows", "wrong-code", "auto-refresh", "stale-refresh", "replace-identity", "bare-table", "wrong-preview-type"):
             with self.subTest(fault=fault), self.assertRaises(OWNER.SuiteError):
                 self.invoke(IndexSourceAPI(self.root, fault))
             for path, original in self.originals.items():

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
+import { zoomOutPreviewMap } from './geometry-preview-support.js'
 
 const transparentPNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
 async function fixture(page, language, container = true) {
@@ -70,6 +71,18 @@ async function expectPaint(page) {
   }, 0))).toBeGreaterThan(10)
 }
 const managerWrites = state => state.requests.filter(request => request.path.includes('/manager/') && request.method !== 'GET')
+for (const language of ['zh-cn', 'en']) {
+  test(`vector preview uses real OpenLayers zoom controls (${language})`, async ({ page }) => {
+    const state = await fixture(page, language)
+    await chooseCRS(page, language === 'zh-cn' ? '本次预览的源坐标系' : 'Source CRS for this preview', 'EPSG:3857')
+    await expectPaint(page)
+    const table = page.locator('.container-preview .table-preview')
+    await expect(table.locator('button.ol-zoom-out')).toHaveAccessibleName('–')
+    await zoomOutPreviewMap(table, expect)
+    await expectPaint(page)
+    expect(state.errors).toEqual([])
+  })
+}
 for (const language of ['zh-cn', 'en']) {
   test(`temporary CRS is explicit, paginated, local and scoped to the selected layer (${language})`, async ({ page }, testInfo) => {
     const chinese = language === 'zh-cn', label = chinese ? '本次预览的源坐标系' : 'Source CRS for this preview'
