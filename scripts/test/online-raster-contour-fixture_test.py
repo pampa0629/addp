@@ -51,3 +51,19 @@ class ContourFixtureTest(unittest.TestCase):
             with patch.object(m, 'guard', return_value=secret), patch.object(m, 'command') as command:
                 with self.assertRaises(m.FixtureError): m.main('stop')
                 command.assert_not_called()
+
+    def test_start_emits_descriptor_accepted_by_the_real_engine_registration_contract(self):
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_ONLINE_TEST_RUN_ID='contour-123-1'):
+            base = Path(directory); secret = base / 'private'; secret.mkdir(mode=0o700)
+            root = base / 'export'; root.mkdir()
+            def command(args, **kwargs):
+                if args[:2] == ['showmount', '-e']:
+                    return f'Export list for 127.0.0.1:\n{root} 127.0.0.1'
+                return ''
+            with patch.object(m, 'guard', return_value=secret), patch.object(m.tempfile, 'mkdtemp', return_value=str(root)), patch.object(m, 'command', side_effect=command):
+                self.assertEqual(m.main('start'), {'started': True})
+            descriptor = registration.load_descriptor((secret / 'contour-nfs-engine.json').resolve())
+            self.assertEqual(descriptor['engine_type'], 'nfs')
+            self.assertEqual(descriptor['connection_info'], {'server': '127.0.0.1', 'export_path': str(root)})
+            self.assertTrue(descriptor['description'])
