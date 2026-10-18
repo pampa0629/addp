@@ -43,6 +43,7 @@ business/
 ├── oceanbase/          # OceanBase CE 幂等样例数据初始化
 ├── tidb/               # TiDB 幂等样例数据初始化
 ├── opengauss/          # openGauss 幂等样例数据初始化
+├── gaussdb/            # GaussDB 官方介质镜像、持久化启动和幂等样例
 ├── kingbase/           # KingbaseES 幂等样例数据初始化
 ├── dameng/             # DM8 ARM64 官方介质技术夹具
 ├── oracle/             # Oracle 普通表与 Spatial 样例数据

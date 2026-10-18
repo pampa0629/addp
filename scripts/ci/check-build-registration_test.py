@@ -25,6 +25,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BuildRegistrationTest(unittest.TestCase):
+    def test_gaussdb_business_image_has_an_owned_auxiliary_classification(self):
+        path = "business/gaussdb/Dockerfile"
+        self.assertIn(path, MODULE.AUXILIARY_DOCKERFILES)
+        (self.repository / path).unlink()
+        self.assertTrue(any(path + ": auxiliary Dockerfile is missing" in error
+                            for error in MODULE.validate_registration(self.repository)))
+
     def test_agent_image_cache_observes_skill_changes_and_removals(self):
         script = (SCRIPT.parents[2] / "scripts/build/build-images.sh").read_text(encoding="utf-8")
         function = "check_service_changed() {" + script.split("check_service_changed() {", 1)[1].split("\n}\n", 1)[0] + "\n}\n"

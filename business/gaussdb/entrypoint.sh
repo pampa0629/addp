@@ -33,7 +33,7 @@ tcp_sql() {
     local user=$1 password=$2 database=$3
     # The fixed GaussDB libpq exposes PGPASSWORD but has no PGPASSFILE support.
     # Credentials stay in the child environment, never in argv or a file.
-    PGPASSWORD="$password" PGCONNECT_TIMEOUT=5 gsql -X -w -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At
+    PGPASSWORD="$password" PGCONNECT_TIMEOUT=5 gsql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At
 }
 
 check_volume() {

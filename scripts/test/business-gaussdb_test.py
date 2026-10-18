@@ -66,6 +66,10 @@ class BusinessGaussDBTest(unittest.TestCase):
 gsql() {
     [ "$PGPASSWORD" = "$GAUSSDB_APP_PASSWORD" ] || return 98
     [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
+    # The fixed native gsql has no PostgreSQL psql -w/--no-password option.
+    for argument in "$@"; do
+        [[ "$argument" != -w && "$argument" != --no-password ]] || return 97
+    done
     return "$TEST_STATUS"
 }
 status=0

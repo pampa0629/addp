@@ -94,6 +94,7 @@ RETIRED_MAKE_TARGETS = {
 }
 
 AUXILIARY_DOCKERFILES = {
+    "business/gaussdb/Dockerfile": "Business GaussDB local official-media image and native release certification",
     "engines/model3d-workflow/docker/converter/Dockerfile": "model3d converter build",
     "engines/model3d-workflow/docker/runtime/Dockerfile": "model3d runtime build",
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",

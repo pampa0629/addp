@@ -205,6 +205,7 @@ make ports-validate
 | Business Oracle       | 15210    | 1521        | Oracle Free 普通表与 Oracle Spatial 测试源；以 `engine_type=oracle` 注册为 System Engine |
 | Business OceanBase    | 2881     | 2881        | OceanBase CE MySQL 模式测试源；以 `engine_type=oceanbase` 注册为 System Engine |
 | Business openGauss    | 5435     | 5432        | openGauss 6.0.6 PG 兼容模式测试源；以 `engine_type=opengauss` 注册为 System Engine |
+| Business GaussDB     | 5437     | 5432        | 官方开发者版10.0独立 `gaussdb` profile，回环绑定与持久卷；正式插件和平台接入另行验收 |
 | Business KingbaseES   | 5436     | 54321       | KingbaseES V9R1C10 PG 模式 owner-managed disposable 测试源；以 `engine_type=kingbase` 注册为 System Engine |
 | Business 达梦 DM8     | 5236     | 5236        | ARM64 官方介质 disposable 数据库；以 `engine_type=dameng` 注册为 System Engine |
 
