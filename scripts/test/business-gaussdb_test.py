@@ -74,6 +74,8 @@ class BusinessGaussDBTest(unittest.TestCase):
         for status in (0, 3):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = self.run_shell('''
+DATA_DIR="$TEST_DATA"
+mkdir -p "$DATA_DIR/run"
 gsql() {
     IFS= read -r supplied_password
     [ "$supplied_password" = "$GAUSSDB_APP_PASSWORD" ] || return 98
@@ -82,7 +84,9 @@ gsql() {
     # must use the native -o channel; feedback cannot enter the caller's data.
     [[ " $* " = *" -q "* ]] || return 94
     [[ " $* " = *" -o /dev/fd/4 "* ]] || return 93
-    [ "$(cat /dev/fd/3)" = "SELECT 1;" ] || return 95
+    [[ -f /dev/fd/3 ]] || return 92
+    [ "$(cat /dev/fd/3)" = $'SELECT 1;\\nSELECT 2;' ] || return 95
+    [ -z "$(find "$DATA_DIR/run" -type f -print -quit)" ] || return 91
     [[ "$*" != *"$GAUSSDB_APP_PASSWORD"* ]] || return 99
     # The fixed native gsql has no PostgreSQL psql -w/--no-password option.
     for argument in "$@"; do
@@ -93,10 +97,11 @@ gsql() {
     return "$TEST_STATUS"
 }
 status=0
-observed=$(printf 'SELECT 1;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business) || status=$?
+observed=$(printf 'SELECT 1;\\nSELECT 2;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business) || status=$?
 test "$status" = "$TEST_STATUS"
 if [ "$status" = 0 ]; then test "$observed" = 1; else test -z "$observed"; fi
-''', {'TEST_STATUS': str(status)})
+test -z "$(find "$DATA_DIR/run" -type f -print -quit)"
+''', {'TEST_STATUS': str(status), 'TEST_DATA': directory})
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn("App9@", result.stdout + result.stderr)
 
@@ -109,6 +114,17 @@ health_sql
             self.assertEqual(result.returncode, expected, result.stderr)
             if status == 0 and expected:
                 self.assertIn('native feedback\n1', result.stderr)
+
+    def test_sql_file_creation_failure_never_starts_client_even_in_conditional(self):
+        result = self.run_shell('''
+mktemp() { return 25; }
+gsql() { echo CLIENT_SHOULD_NOT_RUN; }
+status=0
+printf 'SELECT 1;\\n' | tcp_sql business "$GAUSSDB_APP_PASSWORD" business || status=$?
+test "$status" = 25
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('CLIENT_SHOULD_NOT_RUN', result.stdout)
 
     def test_stop_preserves_volume_and_rejects_foreign_container(self):
         with tempfile.TemporaryDirectory() as directory:

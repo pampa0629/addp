@@ -29,18 +29,25 @@ local_sql() {
     gsql -X -v ON_ERROR_STOP=1 -h "$DATA_DIR"/run -p 5432 -U omm -d "${1:-postgres}" -At
 }
 
-tcp_sql() {
-    local user=$1 password=$2 database=$3
+tcp_sql() (
+    local user=$1 password=$2 database=$3 sql_file
     # Native gsql -2 reads only the password from stdin and requires -c or -f.
-    # Preserve the caller's SQL stream on fd 3 before creating the password pipe.
+    # Provide a seekable script for native -f, not the caller's producer pipe.
+    # Unlink the private SQL file before starting the client; fd 3 holds it alive.
+    sql_file=$(mktemp "$DATA_DIR/run/query.XXXXXX") || return $?
+    trap 'rm -f "$sql_file"' EXIT
+    cat > "$sql_file" || return $?
+    exec 3<"$sql_file" || return $?
+    rm -f "$sql_file" || return $?
+    trap - EXIT
     # -f emits total-time feedback even with -q. Keep native -o query data on
     # the caller's output fd, and ordinary client feedback outside that channel.
-    # Neither credentials nor SQL need a temporary file or command argument.
+    # Credentials never enter the SQL file or an external command argument.
     {
         printf '%s\n' "$password" |
             PGCONNECT_TIMEOUT=5 gsql -X -q -2 -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$user" -d "$database" -At -f /dev/fd/3 -o /dev/fd/4 >/dev/null
-    } 3<&0 4>&1
-}
+    } 4>&1
+)
 
 business_sql() {
     # This kernel's general CREATE SCHEMA grammar has no IF NOT EXISTS.

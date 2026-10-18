@@ -14,9 +14,9 @@ bash business/scripts/restart.sh -gaussdb
 
 `-gaussdb` 必须独立使用，不进入 `-all`。首次下载校验介质后构建本机架构镜像，首次空卷创建 `business` 数据库及 `addp_business` 下探针、客户、商品、订单和明细；样例事务仅补缺失主键，不覆盖用户修改。`gaussdb_data` 卷在停止及重启后保留；已有数据库缺少完成标记、版本／账号不匹配或密码错误时拒绝启动，不重新格式化，不自动轮换密码。管理密码变更须先通过原生数据库维护完成，再同步配置。Business 不登记 System 引擎。
 
-原生 `gsql` 的凭据通道固定采用[厂商文档](https://support.huaweicloud.com/centralized-ref-v10-gaussdb/gaussdb-38-0862.html)的 `-2`：密码走标准输入管道，SQL 由独立文件描述符交给 `-f /dev/fd/3`，不生成临时凭据文件、不把密码放入参数。固定介质的客户端不能套用 PostgreSQL `psql` 的 `-w`、`PGPASSFILE` 或 `PGPASSWORD` 登录方式；介质中 `libpq` 出现某个环境变量字符串，不能证明 `gsql` 会使用它。连接失败保留原生诊断，认证与密码策略不降低。
+原生 `gsql` 的凭据通道固定采用[厂商文档](https://support.huaweicloud.com/centralized-ref-v10-gaussdb/gaussdb-38-0862.html)的 `-2`：密码走标准输入管道，SQL 由独立文件描述符交给 `-f /dev/fd/3`，不生成临时凭据文件、不把密码放入参数。SQL 在私有 `/data/run` 中写入0600临时常规文件，打开只读描述符后立即删除路径，再启动客户端，使 `-f` 接收可定位的完整脚本；函数在子 shell 中关闭描述符，异常退出也清理临时路径。固定介质的客户端不能套用 PostgreSQL `psql` 的 `-w`、`PGPASSFILE` 或 `PGPASSWORD` 登录方式；介质中 `libpq` 出现某个环境变量字符串，不能证明 `gsql` 会使用它。连接失败保留原生诊断，认证与密码策略不降低。
 
-TCP 自动化查询使用原生 `-o /dev/fd/4` 独立结果通道，调用方只接收查询数据，客户端普通运行信息不进入结果；SQL、密码和结果分别走独立描述符，不生成临时文件。固定客户端的 `-f` 模式即使带 `-q -At` 也仍会打印 `total time: … ms`，因此不能用安静模式保证健康检查的精确比较，也不通过过滤文本修补。Release 归档保留每次健康检查的退出码和诊断并脱敏；初始化阶段的临时内核不计为最终就绪。
+TCP 自动化查询使用原生 `-o /dev/fd/4` 独立结果通道，调用方只接收查询数据，客户端普通运行信息不进入结果；SQL、密码和结果分别走独立描述符。固定客户端的 `-f` 模式即使带 `-q -At` 也仍会打印 `total time: … ms`，因此不能用安静模式保证健康检查的精确比较，也不通过过滤文本修补。Release 归档保留每次健康检查的退出码和诊断并脱敏；初始化阶段的临时内核不计为最终就绪。
 
 Schema 使用[该版本通用 SQL 参考](https://support.huaweicloud.com/intl/en-us/centralized-ref-v10-gaussdb/gaussdb-38-0274.html)支持的普通 `CREATE SCHEMA`，只在首次初始化执行；已完成卷直接复用。`CREATE TABLE IF NOT EXISTS`、索引和缺失样例的幂等维护仍在同一条初始化路径，不切换数据库模式来接受其他方言。
 
