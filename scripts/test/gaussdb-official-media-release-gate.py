@@ -25,10 +25,11 @@ IMAGE_SPEC.loader.exec_module(IMAGE)
 
 
 def command(args: list[str], *, output: Path | None = None, **kwargs) -> subprocess.CompletedProcess:
+    check = kwargs.pop("check", True)
     if output is None:
-        return subprocess.run(args, check=True, **kwargs)
+        return subprocess.run(args, check=check, **kwargs)
     with output.open("w") as stream:
-        return subprocess.run(args, stdout=stream, stderr=subprocess.STDOUT, check=True, **kwargs)
+        return subprocess.run(args, stdout=stream, stderr=subprocess.STDOUT, check=check, **kwargs)
 
 
 def verify_driver(facts: dict[str, str], directory: Path, environment: dict) -> None:

@@ -35,6 +35,14 @@ class GaussDBCertificationTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    @patch.object(GATE.subprocess, "run")
+    def test_readiness_command_can_observe_nonzero_without_throwing(self, run):
+        run.return_value = subprocess.CompletedProcess(["health"], 1)
+        self.assertEqual(GATE.command(["health"], check=False).returncode, 1)
+        self.assertFalse(run.call_args.kwargs["check"])
+        GATE.command(["build"])
+        self.assertTrue(run.call_args.kwargs["check"])
+
     def test_facts_pin_official_version_architecture_and_driver(self):
         facts = GATE.IMAGE.media_facts("x86_64")
         self.assertEqual(facts["GAUSSDB_OFFICIAL_VERSION"], "V2.0-10.0.0")
