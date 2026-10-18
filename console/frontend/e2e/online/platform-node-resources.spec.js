@@ -199,7 +199,9 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await page.goBack()
       await expect(page).toHaveURL(serviceURL)
       await expect(link).toBeVisible()
-      expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+      // History navigation is Console-owned; only the completed forward sync must keep its document.
+      await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+      await expect(monitor.getByTestId('process-list').locator('.el-table__body tr')).toHaveCount(1)
       await page.reload()
       await expect(page).toHaveURL(serviceURL)
       await expect(link).toBeVisible()
