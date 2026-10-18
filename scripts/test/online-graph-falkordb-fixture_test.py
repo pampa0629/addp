@@ -31,6 +31,8 @@ class GraphFixtureTest(unittest.TestCase):
             data = json.loads(path.read_text())
             self.assertEqual(data['engine_type'], 'falkordb')
             self.assertEqual(data['connection_info']['port'], 23456)
+            self.assertIs(type(data['connection_info']['database']), int)
+            self.assertEqual(data['connection_info']['database'], 0)
             self.assertEqual(len(data['connection_info']['password']), 64)
             self.assertEqual(len([q for q in queries if not q[2]]), 2)
             self.assertEqual({q[0] for q in queries}, set(FIXTURE.GRAPHS))

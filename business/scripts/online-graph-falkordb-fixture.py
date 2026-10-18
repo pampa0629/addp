@@ -69,7 +69,7 @@ def start(secret_dir):
     data = {"name": "Hosted synthetic FalkorDB", "engine_type": "falkordb", "engine_origin": "general",
             "description": "Disposable Graph permission/protection fixture",
             "connection_info": {"host": "127.0.0.1", "port": int(endpoint.rsplit(":", 1)[1]),
-                                "user": "default", "password": password, "database": "0"}}
+                                "user": "default", "password": password, "database": 0}}
     with os.fdopen(os.open(descriptor, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         json.dump(data, output)
     print("Synthetic Graph fixture ready: two graphs, six nodes, four relationships")
