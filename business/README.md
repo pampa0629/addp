@@ -16,7 +16,9 @@ Infra 生命周期管理独立发现进程，Business 和开发启动幂等确�
 
 首次空卷创建 `business.source` 的有序复合主键、bigint、Decimal(38,18)、中文、NULL／空串和尾随空格样例，并授予普通账号该库表的 SELECT。启动只补缺失样例，不覆盖已有行、不自动轮换密码；原生数据存在但没有 ADDP 管理员标记时拒绝初始化，密码错误时拒绝就绪，不删除卷。平台登记使用普通账号。
 
-正式插件与范围内确定性测试已具备。2026-10-19 Linux ARM64 正式门禁 [39270948341 / Job 118122783775](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783775)，源码 `22fce34b3b774ef32b148268df09c8a37cbda66c`，已通过五项原生协议测试、七组 Decimal 子例、两项 Provider 集成测试和 Business 持久化验证，无跳过、清理零残留；实库版本为 `3.5.21-85fccf8`。其中真实验证只读账号拒写、bigint／Decimal 精度、容器重建后 Backend ID 与用户修改保留，不能外推到 amd64 或平台 T4。amd64 同轮仍待运行，页面 suite `starrocks-consumer-flow` 已接入现有 Hosted T4，待实际通过。
+正式插件与范围内确定性测试已具备。Linux 双架构正式门禁 [39270948341 / ARM64 Job 118122783775](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783775) 与 [amd64 Job 118122783767](https://github.com/pampa0629/addp/actions/runs/39270948341/job/118122783767)，源码 `22fce34b3b774ef32b148268df09c8a37cbda66c`，均通过五项原生协议测试、七组 Decimal 子例、两项 Provider 集成测试和 Business 持久化验证，无跳过、清理零残留；实库版本为 `3.5.21-85fccf8`。真实验证只读账号拒写、bigint／Decimal 精度、容器重建后 Backend ID 与用户修改保留。
+
+2026-10-20 核验 [Hosted T4 39271441409 / Job 118124504710](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 的完整报告及执行日志：同一源码下六服务通过构建身份核验，独立身份登记引擎，普通十权限 User 完成 Meta 扫描、Manager API／Console 预览及属性 JSON、Develop 全表查询和文本／整数参数查询。bigint 与 Decimal(38,18) 精确字符串、中文、尾随空格、NULL／空串及参数原值均通过断言，应用清理通过、Infra 与 Business 零残留。该范围仍不含 Transfer 写入、Spark、外部 Catalog、视图、跨批快照或分布式部署。完整证据见[验收场景](../docs/spec/testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)。
 
 2026-10-20 本机 macOS ARM64 Docker Desktop 已通过开发管理员交互验收：`Business StarRocks` 登记为 Engine 32，版本探测正常；`business.source` 为 DataItem 44684，深度扫描执行 `287694dd-0879-4bc3-a6c4-18523459acd9` 成功，识别1表4字段。Manager 真实单元格及属性 JSON 保留有序主键、bigint、Decimal(38,18)、中文、尾随空格和 NULL／空串；Develop 全表查询 `9df8653e-b7b5-404b-a81e-bf84297f514e` 与文本／整数参数查询 `95f1cffb-f687-4d2f-905a-aad55f95a96f` 均成功，含引号文本原样返回，整数参数3只返回目标一行。期间发现并修复参数面板对新增默认值属性的响应跟踪缺陷，空串、0、false 与未设置的语义不变。本机管理员证据不替代 Linux amd64 或普通最小权限 User 的 Hosted T4。
 
