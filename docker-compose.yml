@@ -331,6 +331,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
+      - SECURITY_URL=http://security-backend:8194
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092
       - INFRA_KAFKA_ADMIN_USERNAME=${INFRA_KAFKA_ADMIN_USERNAME:-admin}
@@ -413,6 +414,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
+      - SECURITY_URL=http://security-backend:8194
       - TRANSFER_SERVICE_CLIENT_SECRET=${TRANSFER_SERVICE_CLIENT_SECRET}
       - TRANSFER_BOUNDED_WORKER_CONCURRENCY=${TRANSFER_BOUNDED_WORKER_CONCURRENCY:-10}
       - TRANSFER_BOUNDED_LEASE_DURATION=${TRANSFER_BOUNDED_LEASE_DURATION:-2m}
@@ -556,6 +558,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - DEVELOP_URL=http://develop-backend:8185
       - META_URL=http://meta-backend:8082
+      - SECURITY_URL=http://security-backend:8194
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - TRANSFER_URL=http://transfer-backend:8083
@@ -612,6 +615,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
+      - SECURITY_URL=http://security-backend:8194
       - MODEL_URL=http://model-backend:8181
       - SERVICE_SERVICE_CLIENT_SECRET=${SERVICE_SERVICE_CLIENT_SECRET}
       - REDIS_HOST=redis

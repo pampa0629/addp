@@ -547,6 +547,8 @@ Neo4j 首个范围以普通本地图查询为候选，不因本租户当前没�
 
 2026-10-17 只读调查：在当前 `neo4j:5-community` 上分别对 `MATCH (n) RETURN n LIMIT 10` 与带远程 URL 的 `LOAD CSV ... RETURN row LIMIT 10` 执行原生 EXPLAIN，两者的 Statement 分类均为 `READ_ONLY`。调查未实际执行数据查询或访问远程 URL。该结果仅证明原生只读分类不能区分实例内图读取与外部来源，不构成 EXPLAIN 计划范围解析已实现或 Neo4j 已通过保护验收的证据。Go Driver 的 AccessMode / readers routing 也只用于路由，不能作为访问控制或实例内来源保证，依据见 [Neo4j Go Driver 事务文档](https://neo4j.com/docs/go-manual/current/transactions/)。
 
+隔离 Hosted 部署必须实际启动 Security，并为参与保护的 Backend／Worker 配置其部署网络内的 Security 地址；不能在容器中沿用宿主机 `localhost`。全局 `/health/ready` 只证明服务实例就绪，不证明刚创建的租户已完成首轮投影同步。Hosted 身份夹具在导出消费身份之前，复用 System 的 `--wait-protection-owners` 只读观察各参与 Owner 的持久初始化 checkpoint；只有实际 Owner 从 Security 完整消费后才继续场景，不直接写入投影或 checkpoint、不扩权、不把业务拒绝重试为成功。此准备要求不改变已有投影下 Security 离线时的数据面规则，也不增加模块间全局启动等待。
+
 实施验收须覆盖：跨引擎无交集且不调用 ReadSet；同引擎未保护表仍精确放行；命中保护表仍正确脱敏或拒绝；未知 / 外部 / 联邦来源不得漏检；首次同步未完成拒绝；纳管中、过期、最后一个资源解除、同引擎多资源及跨租户隔离；范围计划被替换拒绝；在途读取期间新纳管的激活屏障；存量升级和 Owner 重启重放。沿既有 `make test-changed`、Common / Security / Develop 及实际改动消费者的标准模块与 PostgreSQL 门禁验证，首次真实 Neo4j 模板及图查询验收前不记为已修复；CI 自动发现和 Hosted 套件是否覆盖必须在实施前核对，缺口同次补齐。
 
 ### 10.1 Manager `profile` 动作

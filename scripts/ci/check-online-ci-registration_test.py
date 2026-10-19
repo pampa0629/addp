@@ -272,7 +272,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"compose-public-origin"}
         CHECK.validate_public_origin_browser_profile(self.repository, registered)
         for relative, fragment in (
-            (paths[0], "playwright install --with-deps chromium"), (paths[1], "browser = run_browser()"),
+            (paths[0], "playwright install --with-deps chromium"),
+            (paths[0], "up -d --no-deps --wait security-backend"),
+            (paths[0], "--wait-protection-owners manager,transfer"), (paths[1], "browser = run_browser()"),
             (paths[2], "ADDP_ONLINE_PUBLIC_ORIGIN_BROWSER_REPORT"), (paths[3], 'values["ADDP_ONLINE_READ_USER_PASSWORD"]'),
         ):
             path = self.repository / relative
@@ -1590,7 +1592,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "bash business/scripts/online-opengauss-consumer-fixture.sh start\n"
             "python3 scripts/test/online-engine-registration.py\n"
             '--descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"\n'
-            "for start_target in -manager -develop -service\n"
+            "for start_target in -security -manager -develop -service -transfer\n"
+            "--wait-protection-owners manager,develop,service,transfer\n"
             "unset ADDP_TEST_OPENGAUSS_DSN\n"
             'make test-online "ONLINE_SUITE=$ONLINE_SUITE"\n'
             "bash scripts/dev/stop.sh\n"

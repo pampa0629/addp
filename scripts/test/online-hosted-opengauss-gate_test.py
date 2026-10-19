@@ -198,6 +198,11 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             "go",
             """
             #!/usr/bin/env bash
+            if [ "$ONLINE_SUITE_INPUT" = opengauss-consumer-flow ]; then
+              echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+              [[ "$*" == *'--wait-protection-owners manager,develop,service,transfer'* ]] || exit 1
+              [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
+            fi
             previous=
             for argument in "$@"; do
               if [ "$previous" = "--output" ]; then
@@ -227,7 +232,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             check=True,
         )
 
-    def run_gate(self) -> subprocess.CompletedProcess[str]:
+    def run_gate(self, **overrides) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment.update(
             {
@@ -244,6 +249,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
                 "ADDP_TEST_BACKGROUND_PIDS": str(self.background_pids),
             }
         )
+        environment.update(overrides)
         return subprocess.run(
             ["bash", "scripts/test/online-hosted-opengauss-gate.sh"],
             cwd=self.repository,
@@ -252,6 +258,16 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             text=True,
             timeout=10,
         )
+
+    def test_initialization_failure_prevents_registration_and_scene(self):
+        self.prepare_run_fixture()
+        result = self.run_gate(ADDP_TEST_PROTECTION_WAIT_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.trace.read_text()
+        self.assertIn("start:-security", trace)
+        self.assertIn("--wait-protection-owners manager,develop,service,transfer", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertFalse(self.secrets.exists())
 
     def test_check_only_accepts_clean_github_linux_and_separates_secrets(self) -> None:
         result = self.run_check()

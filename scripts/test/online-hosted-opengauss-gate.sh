@@ -25,14 +25,14 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-opengauss-consumer-fixture.sh start
 application_owned=1
-for start_target in -manager -develop -service; do
+for start_target in -security -manager -develop -service -transfer; do
   # start.sh deliberately leaves application processes running. Writing its
   # output straight to the gate log prevents those children from retaining a
   # tee pipe and blocking the Hosted lifecycle after the launcher exits.
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite opengauss-consumer-flow --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite opengauss-consumer-flow --wait-protection-owners manager,develop,service,transfer --output "$1"' _ "$IDENTITY_ENV"
 # shellcheck disable=SC1090
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

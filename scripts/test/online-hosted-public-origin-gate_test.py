@@ -63,6 +63,12 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             if [ "$1" = build-images ] && [ "${ADDP_TEST_BUILD_FAIL:-0}" = 1 ]; then exit 1; fi
             if [ "$1" = test-online ] && [ "${ADDP_TEST_SUITE_FAIL:-0}" = 1 ]; then exit 1; fi
         ''')
+        identity = (self.host.bin / "go").read_text()
+        self.host._executable("go", identity.replace("previous=", '''
+            echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [[ "$*" == *'--wait-protection-owners manager,transfer'* ]] || exit 1
+            [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
+            previous=''', 1))
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "public origin fixture"], cwd=self.host.repository, check=True)
 
@@ -76,8 +82,18 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         return subprocess.run(["bash", "scripts/test/online-hosted-public-origin-gate.sh"] + (["--check-only"] if check else []),
                               cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
 
+    def test_initialization_failure_prevents_consumer_and_scene_execution(self):
+        result = self.run_gate(ADDP_TEST_PROTECTION_WAIT_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("--wait-protection-owners manager,transfer", trace)
+        self.assertNotIn("register:", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
+
     def test_preflight_refuses_existing_app_and_personal_environment(self):
-        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"ADDP_TEST_EXISTING_CONTAINER": "meta-backend"},
+        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"ADDP_TEST_EXISTING_CONTAINER": "security-backend"}, {"ADDP_TEST_EXISTING_CONTAINER": "meta-backend"},
                          {"ADDP_TEST_EXISTING_CONTAINER": "meta-frontend"}, {"ADDP_TEST_EXISTING_CONTAINER": "manager-backend"},
                          {"ADDP_TEST_EXISTING_CONTAINER": "manager-frontend"}, {"ADDP_TEST_EXISTING_CONTAINER": "transfer-backend"},
                          {"ADDP_TEST_EXISTING_CONTAINER": "transfer-frontend"}, {"ADDP_TEST_EXISTING_CONTAINER": "orchestrator-backend"},
@@ -96,10 +112,11 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         for step in (
-            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend",
-            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,nginx,geopython-workflow-engine",
+            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend",
+            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,security-backend,gateway,meta-backend,manager-backend,transfer-backend,orchestrator-backend,console,system-frontend,meta-frontend,manager-frontend,transfer-frontend,orchestrator-frontend,nginx,geopython-workflow-engine",
             "make:test-online ONLINE_SUITE=compose-public-origin", "docker:compose -f", "docker:rm -fv addp-online-public-origin-upstreams registry", "infra-down",
             "npm:--prefix console/frontend ci", "npm:--prefix console/frontend exec -- playwright install --with-deps chromium",
+            " up -d --no-deps --wait security-backend", "--wait-protection-owners manager,transfer",
             " up -d --no-deps --wait meta-backend", " up -d --no-deps --wait meta-frontend",
             " up -d --no-deps --wait manager-backend", " up -d --no-deps --wait manager-frontend",
             " up -d --no-deps --wait transfer-backend", " up -d --no-deps --wait transfer-frontend",

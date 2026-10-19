@@ -236,25 +236,26 @@ finish() {
   trap - EXIT INT TERM
   set +e
   if [ "$application_owned" -eq 1 ]; then
-    stop_online_application || cleanup=failed
+    stop_online_application || { cleanup=failed; echo "Hosted cleanup failed: application" >&2; }
   fi
   if [ "$fixture_owned" -eq 1 ]; then
-    stop_online_fixture || cleanup=failed
+    stop_online_fixture || { cleanup=failed; echo "Hosted cleanup failed: fixture" >&2; }
   fi
   if [ "$infra_owned" -eq 1 ]; then
-    run_logged bash scripts/infra/down.sh --volumes --force || cleanup=failed
+    run_logged bash scripts/infra/down.sh --volumes --force || { cleanup=failed; echo "Hosted cleanup failed: infra shutdown" >&2; }
     if verify_empty_infra; then
       infra_cleanup=zero_residuals
     else
       infra_cleanup=failed
       cleanup=failed
+      echo "Hosted cleanup failed: infra residual verification" >&2
     fi
   fi
   case "$ADDP_ONLINE_SECRET_DIR" in
     "${RUNNER_TEMP:-/tmp}"/addp-online-secret-*) rm -rf "$ADDP_ONLINE_SECRET_DIR" ;;
-    *) cleanup=failed ;;
+    *) cleanup=failed; echo "Hosted cleanup failed: secret path ownership" >&2 ;;
   esac
-  [ ! -e "$ADDP_ONLINE_SECRET_DIR" ] || cleanup=failed
+  [ ! -e "$ADDP_ONLINE_SECRET_DIR" ] || { cleanup=failed; echo "Hosted cleanup failed: secret removal" >&2; }
   if [ "$cleanup" != "passed" ]; then
     status=1
   fi

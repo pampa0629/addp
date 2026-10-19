@@ -65,7 +65,7 @@ def running_container(name: str, project: str = "addp-platform") -> dict[str, ob
 
 def assert_platform_ports() -> None:
     expected = {"system-backend": ("8180/tcp", 8180), "gateway": ("8000/tcp", 8000), "addp-nginx": ("80/tcp", PUBLIC_PORT)}
-    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "manager-backend", "manager-frontend", "transfer-backend", "transfer-frontend", "orchestrator-backend", "orchestrator-frontend", "addp-nginx"):
+    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "security-backend", "manager-backend", "manager-frontend", "transfer-backend", "transfer-frontend", "orchestrator-backend", "orchestrator-frontend", "addp-nginx"):
         container = running_container(name)
         bindings = container["HostConfig"].get("PortBindings") or {}
         if name in expected:
@@ -90,6 +90,14 @@ def assert_platform_ports() -> None:
             for key, value in {"SERVICE_HOST": "meta-backend", "SYSTEM_URL": "http://system-backend:8180", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"}.items():
                 if env.get(key) != value:
                     raise AcceptanceError(f"Meta {key} differs from the internal topology")
+        if name == "security-backend":
+            if container["State"].get("Health", {}).get("Status") != "healthy":
+                raise AcceptanceError("Security Backend is not healthy")
+            for key, value in {"SERVICE_HOST": "security-backend", "SYSTEM_URL": "http://system-backend:8180", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"}.items():
+                if env.get(key) != value:
+                    raise AcceptanceError(f"Security {key} differs from the internal topology")
+        if name in ("manager-backend", "transfer-backend") and env.get("SECURITY_URL") != "http://security-backend:8194":
+            raise AcceptanceError(f"{name} Security address differs from the internal topology")
         if name == "manager-backend":
             if container["State"].get("Health", {}).get("Status") != "healthy":
                 raise AcceptanceError("Manager Backend is not healthy")

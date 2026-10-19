@@ -1083,7 +1083,8 @@ def validate_opengauss_consumer_flow_profile(
         "bash business/scripts/online-opengauss-consumer-fixture.sh start",
         "python3 scripts/test/online-engine-registration.py",
         "--descriptor \"$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE\"",
-        "for start_target in -manager -develop -service",
+        "for start_target in -security -manager -develop -service -transfer",
+        "--wait-protection-owners manager,develop,service,transfer",
         "unset ADDP_TEST_OPENGAUSS_DSN",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         "bash scripts/dev/stop.sh",
@@ -2163,6 +2164,8 @@ def validate_public_origin_browser_profile(repository: Path, registered: set[str
         "scripts/test/online-hosted-public-origin-gate.sh": (
             "npm --prefix console/frontend ci",
             "playwright install --with-deps chromium",
+            "up -d --no-deps --wait security-backend",
+            "--wait-protection-owners manager,transfer",
             'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
         ),
         "scripts/test/compose-public-origin-online.py": (

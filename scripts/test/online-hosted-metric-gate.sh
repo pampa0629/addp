@@ -111,7 +111,7 @@ application_owned=1
 for start_target in -model -service -security; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite metric-service-revision-lifecycle --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite metric-service-revision-lifecycle --wait-protection-owners service --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"

@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -41,6 +42,14 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         })
         self.env.start()
         self.addCleanup(self.env.stop)
+
+    def test_protection_consumers_use_the_internal_security_address(self):
+        source = (SCRIPT.parents[2] / "docker-compose.yml").read_text()
+        for owner in ("manager-backend", "transfer-backend", "transfer-bounded-worker", "develop-backend", "service-backend", "graph-backend"):
+            with self.subTest(owner=owner):
+                body = re.search(r"(?ms)^  " + re.escape(owner) + r":[^\n]*\n(.*?)(?=^  [a-z]|\Z)", source).group(1)
+                self.assertIn("- SECURITY_URL=http://security-backend:8194", body)
+        self.assertIn("<<: *transfer-bounded-worker", source)
 
     def test_main_includes_module_frontends_and_gateway_routes(self):
         checks = {
@@ -172,9 +181,10 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "system-frontend": container("system-frontend"),
             "meta-backend": container("meta-backend", env=["SERVICE_HOST=meta-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
             "meta-frontend": container("meta-frontend"),
-            "manager-backend": container("manager-backend", env=["SERVICE_HOST=manager-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "MINIO_ENDPOINT=minio:9000"]),
+            "manager-backend": container("manager-backend", env=["SERVICE_HOST=manager-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "MINIO_ENDPOINT=minio:9000", "SECURITY_URL=http://security-backend:8194"]),
             "manager-frontend": container("manager-frontend"),
-            "transfer-backend": container("transfer-backend", env=["SERVICE_HOST=transfer-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092", "KAFKA_CONNECT_URL=http://kafka-connect:8083"]),
+            "security-backend": container("security-backend", env=["SERVICE_HOST=security-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
+            "transfer-backend": container("transfer-backend", env=["SERVICE_HOST=transfer-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092", "KAFKA_CONNECT_URL=http://kafka-connect:8083", "SECURITY_URL=http://security-backend:8194"]),
             "transfer-frontend": container("transfer-frontend"),
             "orchestrator-backend": container("orchestrator-backend", env=["SERVICE_HOST=orchestrator-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis"]),
             "orchestrator-frontend": container("orchestrator-frontend"),
@@ -182,6 +192,15 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
         MODULE.assert_platform_ports()
+        self.assertIn("security-backend", [call.args[-1] for call in docker_json.call_args_list])
+        fixtures["security-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["security-backend"][0]["State"]["Health"]["Status"] = "healthy"
+        fixtures["manager-backend"][0]["Config"]["Env"][-1] = "SECURITY_URL=http://localhost:8194"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["manager-backend"][0]["Config"]["Env"][-1] = "SECURITY_URL=http://security-backend:8194"
         self.assertIn("meta-backend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("meta-frontend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("manager-backend", [call.args[-1] for call in docker_json.call_args_list])

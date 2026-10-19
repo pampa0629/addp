@@ -28,6 +28,12 @@ class HostedMetricGateTest(unittest.TestCase):
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
+        identity = (self.host.bin / "go").read_text()
+        self.host._executable("go", identity.replace("previous=", '''
+            echo "identity:$*" >> "$ADDP_TEST_GATE_TRACE"
+            [[ "$*" == *'--wait-protection-owners service'* ]] || exit 1
+            [ "${ADDP_TEST_PROTECTION_WAIT_FAIL:-0}" != 1 ] || exit 1
+            previous=''', 1))
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "metric fixture"], cwd=self.host.repository, check=True)
 
@@ -44,6 +50,29 @@ class HostedMetricGateTest(unittest.TestCase):
         env.update(overrides)
         command = ["bash", "scripts/test/online-hosted-metric-gate.sh"] + (["--check-only"] if check else [])
         return subprocess.run(command, cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
+
+    def test_failed_fixture_cleanup_is_named_and_never_hidden_by_zero_infra(self):
+        fixture = self.host.repository / "business/scripts/online-metric-postgres-fixture.sh"
+        fixture.write_text(fixture.read_text() + '\n[ "$1" != stop ] || exit 17\n')
+        subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
+        subprocess.run(["git", "commit", "-qm", "failed fixture cleanup"], cwd=self.host.repository, check=True)
+        result = self.run_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Hosted cleanup failed: fixture", result.stdout + result.stderr)
+        summary = (self.host.artifacts / "summary.txt").read_text()
+        self.assertIn("cleanup=failed", summary)
+        self.assertIn("infra_cleanup=zero_residuals", summary)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_initialization_failure_prevents_consumer_and_scene_execution(self):
+        result = self.run_gate(ADDP_TEST_PROTECTION_WAIT_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn("--wait-protection-owners service", trace)
+        self.assertNotIn("register:", trace)
+        self.assertNotIn("make:test-online", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
 
     def test_preflight_is_read_only_and_rejects_personal_or_other_profile(self):
         result = self.run_gate(check=True)
