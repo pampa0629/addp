@@ -405,6 +405,44 @@ class Lifecycle:
         self.operator.request('POST', self.base + f'/access_grants/{command}/revoke', (200,),
                               {'reason': 'Disposable PG lifecycle source withdrawal'})
 
+    def function_permission_flow(self, report, business, confirmer):
+        report['phase'] = 'data_grant_without_read_function'
+        principal, _ = identity(business, self.tenant, CONFIRMER_PERMISSIONS)
+        require(principal == confirmer and principal != self.recipient,
+                'function boundary must use the existing independent business User')
+        credential = business.token
+        facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
+        target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
+        command, body = self.grant(facts, recipient_id=principal)
+        issued = self.listing(history=True, state='active', recipient_id=principal)
+        require(issued.get('total') == 1 and len(issued.get('data', [])) == 1
+                and issued['data'][0].get('request_id') == command
+                and all(issued['data'][0].get(key) == body[key] for key in (
+                    'catalog_path', 'item_fingerprint', 'recipient_type', 'recipient_id', 'action', 'expiry_mode'))
+                and issued['data'][0].get('boundary_hash') == facts['boundary_hash']
+                and issued['data'][0].get('revocation') is None,
+                'function boundary requires the exact active DataItem Grant')
+        response = business.request('GET', '/api/v1/manager/preview?' + urlencode({
+            'locator': target, 'page': 1, 'page_size': 20}), (403,))
+        denied = response.payload
+        require(set(denied) == {'error', 'error_code'} and isinstance(denied['error'], str)
+                and bool(denied['error']) and denied['error_code'] == 'permission_denied',
+                'missing read function must deny without data or source-error substitution')
+        require(self.listing(history=True, state='active', recipient_id=principal) == issued,
+                'functional denial changed or lost the active source Grant')
+        observed_principal, _ = identity(business, self.tenant, CONFIRMER_PERMISSIONS)
+        require(observed_principal == principal and business.token == credential,
+                'function boundary changed the User, permissions or credential')
+        self.revoke(command)
+        revoked = self.listing(history=True, state='revoked', recipient_id=principal)
+        require(any(row.get('request_id') == command and row.get('revocation') for row in revoked['data'])
+                and self.listing(history=True, state='active', recipient_id=principal)['total'] == 0,
+                'function boundary Grant was not withdrawn with history preserved')
+        report['function_permission_boundary'] = {'principal_id': principal, 'grant_id': command,
+            'preview_status': response.status, 'error_code': denied['error_code'],
+            'grant_still_active': True, 'same_credential': True, 'withdrawn': True}
+        report['checks'].append('data_grant_without_read_function_denied')
+
     def workspace_flow(self, report, issuer):
         report['phase'] = 'workspace_isolation'
         # Member exits deliberately retain organization Grants. Isolate the next
@@ -1161,6 +1199,7 @@ def main():
                               organization_operator, login, os.environ['ADDP_ONLINE_TEST_USER_USERNAME'],
                               os.environ['ADDP_ONLINE_TEST_USER_PASSWORD'])
         lifecycle.run(report)
+        lifecycle.function_permission_flow(report, business, confirmer)
         lifecycle.catalog_flow(report, business, confirmer)
         lifecycle.workspace_flow(report, issuer)
         report['result'] = 'passed'

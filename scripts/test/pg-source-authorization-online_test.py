@@ -30,8 +30,11 @@ class Server:
     def context(self, kind):
         reader = kind.startswith('reader')
         permissions = ONLINE.READER_PERMISSIONS if reader or kind == 'outsider' else (
+            ONLINE.CONFIRMER_PERMISSIONS if kind == 'business' else
             ONLINE.ORGANIZATION_PERMISSIONS if kind == 'coordinator' else ONLINE.OPERATOR_PERMISSIONS)
-        return {'principal': {'id': '33' if reader else '34' if kind == 'outsider' else '35', 'type': 'user'},
+        if kind == 'business' and self.fault == 'function_permission_added':
+            permissions = permissions | {'manager.data_item.read'}
+        return {'principal': {'id': '33' if reader else '34' if kind == 'outsider' else '36' if kind == 'business' else '35', 'type': 'user'},
                 'context': {'type': 'tenant', 'tenant_id': '3', 'tenant_membership_id': '71'},
                 'token': {'type': 'first_party_access_token'},
                 'authorization': {'authorization_version': str(self.version), 'role_assignments': [
@@ -156,6 +159,11 @@ class Server:
                                          'observed_at': '2026-10-16T03:00:00Z', 'rule_covered': reason == 'grant',
                                          'reason': reason, 'sources': sources, 'denies': denies}}]
                     result = {'data': rows, 'total': len(rows)}
+                    if kind == 'operator' and recipient == ('user', '36') and server.fault == 'function_grant_missing':
+                        result = {'data': [], 'total': 0}
+                        server.fault = None
+                    if recipient == ('user', '36') and server.fault == 'function_wrong_binding' and rows:
+                        rows[0]['item_fingerprint'] = 'wrong-dataitem'
                 elif path == '/api/v1/manager/engines':
                     result = {'data': [{'id': 2}]}
                 elif path == '/api/v1/manager/preview':
@@ -163,7 +171,7 @@ class Server:
                     matching = [row for key, row in server.grants.items()
                                 if row['revocation'] is None and key not in server.expired_grants
                                 and row['catalog_path']['segments'][-1]['name'] + '?' in target]
-                    active = any(server.inherited(row, '33' if kind.startswith('reader') else '34') for row in matching)
+                    active = any(server.inherited(row, '33' if kind.startswith('reader') else '36' if kind == 'business' else '34') for row in matching)
                     allowed = (kind.startswith('reader') or kind == 'outsider') and active and not any(server.denies.values())
                     if server.fault == 'nonmember_granted' and kind == 'outsider' and matching:
                         allowed = True
@@ -196,6 +204,17 @@ class Server:
                             result['data'] = {'rows': []}
                     if server.catalog_down and server.fault == 'catalog_blocks_existing_read':
                         status, result = 503, {'error': 'wrong read dependency'}
+                    if kind == 'business':
+                        status, result = 403, {'error': 'forbidden', 'error_code': 'permission_denied'}
+                        if active and server.fault == 'function_grant_bypasses_guard':
+                            status, result = 200, {'data': {'rows': []}}
+                        if server.fault == 'function_wrong_denial':
+                            result['error_code'] = 'source_access_denied'
+                        if server.fault == 'function_denial_leaks':
+                            result['data'] = {'rows': []}
+                        if active and server.fault == 'function_denial_revokes_grant':
+                            for row in matching:
+                                row['revocation'] = {'reason': 'wrong functional denial side effect'}
                 else:
                     raise AssertionError('unexpected request ' + path)
                 if status not in expected:
@@ -366,6 +385,39 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertEqual(report['checks'], ONLINE.WORKSPACE_CHECKS)
         self.assertIsNotNone(server.grants[lifecycle.grants[-1]]['revocation'])
         lifecycle.cleanup()
+
+    def test_valid_grant_does_not_replace_manager_read_function(self):
+        server, lifecycle = self.lifecycle()
+        report = {'checks': []}
+        lifecycle.function_permission_flow(report, server.client('business'), '36')
+        proof = report['function_permission_boundary']
+        self.assertEqual(proof['principal_id'], '36')
+        self.assertEqual(proof['preview_status'], 403)
+        self.assertEqual(proof['error_code'], 'permission_denied')
+        self.assertTrue(proof['grant_still_active'])
+        self.assertTrue(proof['same_credential'])
+        self.assertTrue(proof['withdrawn'])
+        self.assertEqual(report['checks'], ['data_grant_without_read_function_denied'])
+        command = proof['grant_id']
+        self.assertEqual(server.grants[command]['recipient_id'], '36')
+        self.assertIsNotNone(server.grants[command]['revocation'])
+        preview_calls = [call for call in server.calls if call[2] == '/api/v1/manager/preview']
+        self.assertEqual([call[0] for call in preview_calls], ['business'])
+        self.assertNotIn('private-token', json.dumps(report))
+        lifecycle.cleanup()
+
+    def test_function_boundary_rejects_bypass_leaks_lost_grant_or_added_permission(self):
+        for fault in ('function_grant_bypasses_guard', 'function_wrong_denial', 'function_denial_leaks',
+                      'function_denial_revokes_grant', 'function_grant_missing', 'function_wrong_binding',
+                      'function_permission_added'):
+            with self.subTest(fault=fault):
+                server, lifecycle = self.lifecycle(fault)
+                with self.assertRaises(ONLINE.SuiteError):
+                    lifecycle.function_permission_flow({'checks': []}, server.client('business'), '36')
+                if fault == 'function_permission_added':
+                    self.assertFalse(server.grants)
+                lifecycle.cleanup()
+                self.assertTrue(all(row['revocation'] is not None for row in server.grants.values()))
 
     def test_workspace_isolates_retained_organization_grants_without_erasing_history(self):
         server, lifecycle = self.lifecycle()
