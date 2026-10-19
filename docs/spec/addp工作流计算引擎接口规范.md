@@ -45,7 +45,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 72 个支持 workflow，另有 10 个仅支持 direct |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 77 个支持 workflow，另有 10 个仅支持 direct |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 21 个支持 workflow |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | 12 个，均支持 workflow + direct |
 | **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | 5 个，均支持 workflow + direct |
@@ -953,6 +953,18 @@ GeoPython `check_geometry`（几何检查）和 `repair_geometry`（几何修复
 `repair_geometry(input_gdf)` 固定使用 GEOS/Shapely `make_valid(method="linework", keep_collapsed=True)`，仅修复非空且无效的几何。按边线和奇偶内外规则恢复有效性，不按 shell/hole 标签猜测业务意图。合法几何、缺失值及空几何保持原样；非有限 XY 或 Z/M 输入明确拒绝，不能静默删点或降维。一个源要素仍对应一行，完整保留修复产生的多部件、GeometryCollection 和退化线／点，不筛掉低维部分、不自动拆行。下游如需纯面须显式筛选，并遵守目标格式对混合几何的限制。若修复结果仍无效则执行失败，不能冒充修复成功。
 
 验证沿用 `make test-geopython-workflow` 的既有 `test_topology_operators.py`、元数据和协议文件，Platform CI GeoPython Job 自动覆盖 engines 路径；不新增依赖、标准入口、HTTP API、Adapter、保存或扫描路径。覆盖真实自交与塌缩几何、属性及 CRS 不变、字段冲突、空批、源不变、工作流发现和检查→修复→复查→保存重载。原拓扑构面完整 T4 证据仅证明 `polygonize`；新增算子的确定性回归不冒充新的真实 T4。
+
+### 参考吸附契约
+
+GeoPython `snap_geometry(input_gdf, reference_gdf, tolerance)`（参考吸附）位于“矢量处理 / 几何处理”，仅支持 workflow/read，使用两个既有 `geodataframe` 输入与默认 `result` 输出。两个输入都必须声明相同的已知投影 CRS，其两个水平轴须具有相同、有限且为正的线性单位换算因子；容差是用户显式填写的有限非负数，单位就是该 CRS 的水平坐标单位，不固定为米。地理坐标、未知或不匹配 CRS 明确拒绝，用户须先使用既有重投影节点；不隐式投影或把度当米。
+
+只接受有限二维 XY 几何，拒绝 Z/M、非有限坐标和非空无效几何，用户须显式修复输入。缺失值、空几何及空输入批保持原样；参考中的缺失值与空几何没有顶点，整个参考为空时输出输入副本。输入属性、行数、顺序、索引、active geometry 名及源 CRS 保留；输入和参考均不被改写。
+
+参考图层的原有顶点按 XY 去重、排序形成固定点集。每个输入原始顶点只按原始 XY 位置查询一次最近参考顶点；正容差仅允许原始距离严格小于容差的候选，恰在边界时不移动；零容差不移动。等距候选按参考 X、再 Y 的升序唯一决胜，与图层行序及空间索引遍历顺序无关。选定后一次替换输入坐标，不使用已移动位置再匹配，禁止连锁越界。例如原点与参考点 0.5、1 米共线、容差 0.75 米时，只能移动到 0.5 米。
+
+唯一技术路线为原始顶点空间索引查询、原始 XY 欧氏距离核验和坐标数组副本重建；不提供连续吸附模式或回退。只移动输入原有顶点，不插点、不删点、不造参考交点、不向参考线段上的任意最近位置投影，不迭代移动参考。保持几何部件结构、环闭合及行对应关系。任意一行结果无效（例如多个顶点吸到同一点造成塌缩）时整个算子明确失败，不保留部分结果、不回退源几何、不自动修复或删行；可由用户调整容差或参考后重新执行。此能力不保证图层间无重叠或无缝隙，不做补缝和端点延伸。参考顶点、索引及坐标数组在内存中，不承诺固定内存或大规模容量认证。
+
+纯计算不产生持久输出；保存、扫描、血缘及权限沿用既有节点主线。确定性验证沿用 `make test-geopython-workflow` 的 `test_topology_operators.py`、元数据及协议回归，覆盖固定参考顶点、容差边界、米／英尺单位、CRS 拒绝、空缺失处理、原属性与两源不变、无效输出拒绝、工作流发现和双输入→吸附→保存重载；既有 Platform CI GeoPython Job 的 engines 路径选择和根入口文件列表已覆盖，不新增依赖、HTTP API、CI Job 或保存旁路。已有构面和单要素修复 T4 不作为本算子的真实 T4 证据。
 
 ### 4.6 栅格计算契约
 

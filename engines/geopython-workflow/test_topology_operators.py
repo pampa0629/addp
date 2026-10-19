@@ -394,3 +394,193 @@ def test_geometry_repair_saves_geometry_collection_and_collapsed_lines_without_d
     assert reloaded.source_name.tolist() == frame.source_name.tolist()
     assert reloaded.crs == frame.crs
     assert all(actual.equals(expected) for actual, expected in zip(reloaded.geometry, repaired.geometry))
+
+
+def snap(frame, reference, tolerance):
+    return get_operator("snap_geometry")(input_gdf=frame, reference_gdf=reference, tolerance=tolerance)
+
+
+def test_reference_snap_preserves_rows_attributes_reference_and_uses_all_reference_vertices():
+    frame = lines([Point(.1, .1), LineString([(10.1, 0), (20, 0)]), None, Point()])
+    frame.index = [7, 7, 2, 9]
+    frame['grade'] = pd.array([1, 2, None, 4], dtype='Int64')
+    reference = lines([Point(0, 0), LineString([(10, 0), (10, 4)]), None, Point(), Point(0, 0)])
+    reference.index = [99, 3, 8, 8, 0]
+    before, reference_before = frame.copy(deep=True), reference.copy(deep=True)
+    result = snap(frame, reference, .2)
+    assert result.geometry.iloc[0].equals(Point(0, 0))
+    assert list(result.geometry.iloc[1].coords) == [(10, 0), (20, 0)]
+    assert result.geometry.iloc[2] is None and result.geometry.iloc[3].is_empty
+    assert result.geometry.name == 'boundary' and result.crs == frame.crs
+    pd.testing.assert_frame_equal(result.drop(columns='boundary'), before.drop(columns='boundary'))
+    assert result.index.tolist() == [7, 7, 2, 9]
+    assert_geodataframe_equal(frame, before)
+    assert_geodataframe_equal(reference, reference_before)
+    assert_geodataframe_equal(snap(frame, reference.iloc[::-1], .2), result)
+
+
+@pytest.mark.parametrize('crs', ['EPSG:3857', 'EPSG:2263'])
+def test_reference_snap_tolerance_is_in_coordinate_units_including_feet(crs):
+    frame, reference = lines([Point(.25, 0)], crs), lines([Point(0, 0)], crs)
+    assert snap(frame, reference, .3).geometry.iloc[0].equals(Point(0, 0))
+    assert snap(frame, reference, .2).geometry.iloc[0].equals(Point(.25, 0))
+
+
+def test_reference_snap_zero_and_exact_tolerance_boundary_are_unchanged():
+    frame, reference = lines([Point(1, 0)]), lines([Point(0, 0)])
+    assert_geodataframe_equal(snap(frame, reference, 0), frame)
+    assert_geodataframe_equal(snap(frame, reference, 1), frame)
+    assert snap(frame, reference, np.nextafter(1., 2.)).geometry.iloc[0].equals(Point(0, 0))
+
+
+def test_reference_snap_does_not_insert_vertices_project_to_segments_or_new_intersections():
+    frame = lines([LineString([(0, 0), (10, 0)])])
+    assert_geodataframe_equal(snap(frame, lines([Point(5, 0)]), 0), frame)
+    result = snap(frame, lines([Point(5, .1)]), .2)
+    assert_geodataframe_equal(result, frame)
+    point = lines([Point(5, .1)])
+    assert_geodataframe_equal(snap(point, lines([LineString([(0, 0), (10, 0)])]), .2), point)
+    crossing = lines([LineString([(0, 0), (10, 0)]), LineString([(5, -5), (5, 5)])])
+    assert_geodataframe_equal(snap(point, crossing, .2), point)
+
+
+def test_reference_snap_preserves_polygon_holes_and_nested_multipart_geometry():
+    polygon = Polygon(box(0, 0, 10, 10).exterior.coords, [box(3, 3, 4, 4).exterior.coords])
+    frame = lines([polygon, shapely.GeometryCollection([Point(.1, .1), LineString([(20.1, 0), (25, 0)])])])
+    reference = lines([Point(.1, 0), Point(0, 0), Point(20, 0)])
+    result = snap(frame, reference, .2)
+    assert result.geometry.iloc[0].geom_type == 'Polygon'
+    assert len(result.geometry.iloc[0].interiors) == 1
+    assert result.geometry.iloc[0].interiors[0].equals(polygon.interiors[0])
+    mixed = result.geometry.iloc[1]
+    assert mixed.geom_type == 'GeometryCollection' and len(mixed.geoms) == 2
+    assert mixed.geoms[1].equals(LineString([(20, 0), (25, 0)]))
+    assert result.is_valid.all()
+
+
+def test_reference_snap_tied_candidates_have_a_stable_reference_vertex_order():
+    frame = lines([Point(0, 0)])
+    reference = lines([Point(1, 0), Point(-1, 0), Point(1, 0)])
+    first = snap(frame, reference, 1.5)
+    assert first.geometry.iloc[0].equals(Point(-1, 0))
+    assert_geodataframe_equal(first, snap(frame, reference.iloc[::-1], 1.5))
+
+
+@pytest.mark.parametrize('reference', [[], [None, Point()]])
+def test_reference_snap_empty_reference_is_identity_and_empty_input_keeps_schema(reference):
+    frame = lines([Point(1, 2)])
+    assert_geodataframe_equal(snap(frame, lines(reference), 1), frame)
+    empty = lines([])
+    assert_geodataframe_equal(snap(empty, lines([Point(0, 0)]), 1), empty)
+
+
+@pytest.mark.parametrize('tolerance', [-1, np.nan, np.inf, -np.inf, True, np.bool_(False), '1', None, [1], 10**400])
+def test_reference_snap_rejects_invalid_tolerance(tolerance):
+    with pytest.raises(ValueError, match='tolerance'):
+        snap(lines([Point(0, 0)]), lines([Point(0, 0)]), tolerance)
+
+
+@pytest.mark.parametrize('source_crs,reference_crs', [
+    (None, 'EPSG:3857'), ('EPSG:3857', None), (None, None),
+    ('EPSG:4326', 'EPSG:4326'), ('OGC:CRS84', 'OGC:CRS84'),
+    ('EPSG:3857', 'EPSG:32650'), ('EPSG:3857', 'EPSG:2263'),
+])
+def test_reference_snap_rejects_unknown_geographic_and_mismatched_crs(source_crs, reference_crs):
+    with pytest.raises(ValueError, match='CRS'):
+        snap(lines([Point(0, 0)], source_crs), lines([Point(0, 0)], reference_crs), 1)
+
+
+@pytest.mark.parametrize('side', ['input', 'reference'])
+@pytest.mark.parametrize('geometry,message', [
+    (Point(1, 2, 3), 'two-dimensional'),
+    (shapely.from_wkt('POINT M (1 2 3)'), 'two-dimensional'),
+    (Point(np.inf, 0), 'finite'),
+    (Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)]), 'valid'),
+])
+def test_reference_snap_rejects_unsupported_geometry_on_either_side(side, geometry, message):
+    bad, good = lines([geometry]), lines([Point(0, 0)])
+    with pytest.raises(ValueError, match=message):
+        snap(bad if side == 'input' else good, bad if side == 'reference' else good, 1)
+
+
+@pytest.mark.parametrize('side', ['input', 'reference'])
+@pytest.mark.parametrize('frame', [None, pd.DataFrame({'x': [1]}), gpd.GeoDataFrame({'x': [1]})])
+def test_reference_snap_requires_two_active_geodataframes(side, frame):
+    good = lines([Point(0, 0)])
+    with pytest.raises(ValueError, match='GeoDataFrame|active geometry'):
+        snap(frame if side == 'input' else good, frame if side == 'reference' else good, 1)
+
+
+def test_reference_snap_rejects_collapsed_result_without_repair_or_partial_output():
+    frame = lines([Point(5, 5), LineString([(.1, 0), (.2, 0)])])
+    before = frame.copy(deep=True)
+    with pytest.raises(ValueError, match='snap.*valid|invalid.*snap'):
+        snap(frame, lines([Point(5.05, 5), Point(.15, 0)]), .1)
+    assert_geodataframe_equal(frame, before)
+
+
+def test_reference_snap_uses_original_positions_once_and_preserves_exact_reference_hits():
+    frame = lines([Point(0, 0), Point(.5, 0), LineString([(0, 2), (3, 2)])])
+    reference = lines([Point(1, 0), Point(.5, 0), Point(.5, 2), Point(1, 2)])
+    result = snap(frame, reference, .75)
+    assert result.geometry.iloc[0].equals(Point(.5, 0))
+    assert result.geometry.iloc[1].equals(Point(.5, 0))
+    assert list(result.geometry.iloc[2].coords) == [(.5, 2), (3, 2)]
+    before, after = shapely.get_coordinates(frame.geometry), shapely.get_coordinates(result.geometry)
+    assert len(before) == len(after)
+    assert (np.hypot(*(after-before).T) < .75).all()
+
+
+@pytest.mark.parametrize('source,reference,tolerance,moves', [
+    (1e200, 1.1e200, 2e199, True),
+    (0., 1e-200, 2e-200, True),
+    (-np.finfo(float).max, np.finfo(float).max, np.finfo(float).max, False),
+])
+def test_reference_snap_finite_distances_do_not_overflow_or_underflow(source, reference, tolerance, moves):
+    frame = lines([Point(source, 0)])
+    result = snap(frame, lines([Point(reference, 0)]), tolerance)
+    assert result.geometry.iloc[0].equals(Point(reference if moves else source, 0))
+
+
+def test_reference_snap_runtime_discovery_and_two_input_workflow_save_reload(tmp_path, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    source = lines([LineString([(.1, .1), (5, 0)])])
+    reference = lines([Point(0, 0)])
+    for name, frame in [('source', source), ('reference', reference)]:
+        frame.to_file(tmp_path / (name+'.gpkg'), layer=name, driver='GPKG')
+    original = {n: (tmp_path / (n+'.gpkg')).read_bytes() for n in ['source', 'reference']}
+    connection = {'engine_type': 'nfs', 'mount_path': str(tmp_path)}
+    tasks = [{'id': n, 'operator': 'load', 'params': {'connection_info': connection, 'path': n+'.gpkg'}, 'depends_on': []} for n in ['source', 'reference']]
+    tasks += [
+        {'id': 'snap', 'operator': 'snap_geometry', 'params': {'input_gdf': {'$ref': 'source'}, 'reference_gdf': {'$ref': 'reference'}, 'tolerance': .2}, 'depends_on': ['source', 'reference']},
+        {'id': 'save', 'operator': 'save', 'params': {'input_df': {'$ref': 'snap'}, 'connection_info': connection, 'path': 'snapped.gpkg', 'mode': 'fail'}, 'depends_on': ['snap']},
+    ]
+    execution = execute_workflow({'tasks': tasks})
+    assert execution['status'] == 'success', execution.get('error')
+    saved = gpd.read_file(tmp_path/'snapped.gpkg')
+    assert list(saved.geometry.iloc[0].coords) == [(0, 0), (5, 0)]
+    assert saved.source_name.tolist() == source.source_name.tolist() and saved.crs == source.crs
+    assert {n: (tmp_path / (n+'.gpkg')).read_bytes() for n in original} == original
+    monkeypatch.setattr(api_server, 'executions', ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op = next(o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='snap_geometry')
+        assert op['display_name']=='参考吸附' and op['category_path']==['矢量处理', '几何处理']
+        assert op['execution_modes']==['workflow'] and op['effects']==['read']
+        assert [(x['name'],x['param_type']) for x in op['parameters']]==[('input_gdf','input'),('reference_gdf','input'),('tolerance','param')]
+        assert [(x['name'],x['type'],x['is_default']) for x in op['output_ports']]==[('result','geodataframe',True)]
+        params = {'input_gdf': json.loads(source.to_json()), 'reference_gdf': json.loads(reference.to_json()), 'tolerance': .2}
+        assert client.post('/api/operators/snap_geometry/invoke', json={'params': params}).status_code==403
+        # Literal GeoJSON inputs enter the Runtime as EPSG:4326. Projected
+        # geometries must arrive through the existing load/reproject nodes.
+        workflow = {'tasks': tasks[:-1]}
+        assert client.post('/api/workflow', json={'workflow_def':workflow}).status_code==400
+        response = client.post('/api/workflow', json={'workflow_def':workflow,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline = time.monotonic()+5
+        while time.monotonic()<deadline:
+            state = client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in {'success','failed'}:break
+            time.sleep(.01)
+        assert state['status']=='success',state
+        assert json.loads(state['result'])['features'][0]['geometry']['coordinates']==[[0.,0.],[5.,0.]]

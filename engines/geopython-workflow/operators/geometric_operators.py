@@ -8,6 +8,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely
+from numbers import Real
 from typing import List
 from .base import (
     OperatorType,
@@ -170,21 +171,21 @@ def dissolve(input_gdf: gpd.GeoDataFrame, by: str = None) -> gpd.GeoDataFrame:
     return result
 
 
-def _active_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
+def _active_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
     if not isinstance(input_gdf, gpd.GeoDataFrame):
-        raise ValueError("input_gdf must be a GeoDataFrame")
+        raise ValueError(f"{name} must be a GeoDataFrame")
     try:
         return input_gdf.geometry
     except AttributeError as exc:
-        raise ValueError("input_gdf requires an active geometry column") from exc
+        raise ValueError(f"{name} requires an active geometry column") from exc
 
 
-def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoSeries:
-    geometry = _active_geometry(input_gdf)
+def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
+    geometry = _active_geometry(input_gdf, name)
     if shapely.has_z(geometry.array).any() or shapely.has_m(geometry.array).any():
-        raise ValueError("input_gdf requires two-dimensional XY geometries")
+        raise ValueError(f"{name} requires two-dimensional XY geometries")
     if not np.isfinite(shapely.get_coordinates(geometry.array)).all():
-        raise ValueError("input_gdf requires finite XY coordinates")
+        raise ValueError(f"{name} requires finite XY coordinates")
     return geometry
 
 
@@ -217,6 +218,66 @@ def repair_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     values[invalid] = shapely.make_valid(values[invalid], method="linework", keep_collapsed=True)
     if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
         raise ValueError("geometry repair did not produce valid geometries")
+    result = input_gdf.copy()
+    result[result.geometry.name] = values
+    return result
+
+
+def snap_geometry(
+    input_gdf: gpd.GeoDataFrame,
+    reference_gdf: gpd.GeoDataFrame,
+    tolerance: float,
+) -> gpd.GeoDataFrame:
+    """Snap against a fixed reference vertex set in shared projected CRS units."""
+    geometry = _finite_xy_geometry(input_gdf)
+    reference = _finite_xy_geometry(reference_gdf, "reference_gdf")
+    if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
+        raise ValueError("tolerance must be a finite non-negative number in CRS units")
+    try:
+        tolerance = float(tolerance)
+    except OverflowError as exc:
+        raise ValueError("tolerance must be a finite non-negative number in CRS units") from exc
+    if not np.isfinite(tolerance) or tolerance < 0:
+        raise ValueError("tolerance must be a finite non-negative number in CRS units")
+    crs = geometry.crs
+    if crs is None or reference.crs is None or not crs.is_projected or not crs.equals(reference.crs):
+        raise ValueError("both inputs require the same known projected CRS; reproject explicitly")
+    units = [axis.unit_conversion_factor for axis in crs.axis_info[:2]]
+    if len(units) != 2 or not all(np.isfinite(unit) and unit > 0 for unit in units) or units[0] != units[1]:
+        raise ValueError("projected CRS requires matching known horizontal coordinate units")
+    for name, values in [("input_gdf", geometry.array), ("reference_gdf", reference.array)]:
+        if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
+            raise ValueError(f"{name} requires valid geometries; repair explicitly before snapping")
+    # Query immutable original coordinates once. GEOS snap can move a vertex
+    # repeatedly along reference chains and exceed its original tolerance.
+    vertices = np.unique(shapely.get_coordinates(reference.array), axis=0)
+    coordinates = shapely.get_coordinates(geometry.array)
+    snapped = coordinates.copy()
+    if tolerance > 0 and len(vertices) and len(coordinates):
+        tree = shapely.STRtree(shapely.points(vertices))
+        # Envelope lookup avoids squared-distance overflow/underflow in native
+        # nearest queries. Only original XY distances below decide candidates.
+        with np.errstate(over="ignore"):
+            limit = np.finfo(float).max
+            lower = np.maximum(coordinates - tolerance, -limit)
+            upper = np.minimum(coordinates + tolerance, limit)
+        source_ids, reference_ids = tree.query(shapely.box(
+            lower[:, 0], lower[:, 1], upper[:, 0], upper[:, 1],
+        ))
+        # Independently check original XY distances; index traversal order and
+        # inclusive search envelopes must not determine the movement boundary.
+        with np.errstate(over="ignore", invalid="ignore"):
+            delta = vertices[reference_ids] - coordinates[source_ids]
+            distances = np.hypot(delta[:, 0], delta[:, 1])
+        within = distances < tolerance
+        source_ids, reference_ids, distances = source_ids[within], reference_ids[within], distances[within]
+        order = np.lexsort((reference_ids, distances, source_ids))
+        source_ids, reference_ids = source_ids[order], reference_ids[order]
+        _, first = np.unique(source_ids, return_index=True)
+        snapped[source_ids[first]] = vertices[reference_ids[first]]
+    values = shapely.set_coordinates(geometry.array.copy(), snapped)
+    if (~shapely.is_missing(values) & ~shapely.is_valid(values)).any():
+        raise ValueError("snapping produced invalid geometries; reduce tolerance or revise reference")
     result = input_gdf.copy()
     result[result.geometry.name] = values
     return result
@@ -290,6 +351,23 @@ REPAIR_GEOMETRY_METADATA = OperatorMetadata(
     use_cases=["修复自相交面", "几何检查后修复并复查"],
     notes=["固定 linework 和 keep_collapsed=True，不提供另一套推断修复路线", "合法几何、缺失值和空几何保持原样；缺失值须另行补充或过滤", "可能输出多面、GeometryCollection 或线点，不自动拆行或丢弃低维部分", "不补缝、不吸附、不纠正跨要素重叠；混合几何保存受目标格式约束"],
     workflow_example={"id": "repair", "operator": "repair_geometry", "params": {"input_gdf": {"$ref": "check"}}, "depends_on": ["check"]},
+)
+
+SNAP_GEOMETRY_METADATA = OperatorMetadata(
+    name="snap_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="参考吸附", brief_description="按显式容差吸向固定参考顶点，保留输入属性和行数",
+    execution_modes=["workflow"], effects=["read"],
+    overview="每个输入原始顶点按原始位置一次匹配最近参考顶点，等距按参考 X、再 Y 升序决胜。参考保持固定，保留输入属性、行顺序和坐标系。"
+             "两输入须使用相同的已知投影坐标系，容差采用其水平坐标单位。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待吸附的二维矢量图层", notes="仅接受有效且坐标有限的 XY 几何，缺失和空几何保留"),
+        OperatorParam(name="reference_gdf", type="input", data_type="GeoDataFrame", required=True, description="保持固定的参考图层", notes="只使用原有顶点，不吸向线段上的任意位置；空参考不移动输入"),
+        OperatorParam(name="tolerance", type="param", data_type="float", required=True, description="原始位置吸附容差", notes="有限非负数，单位与投影 CRS 一致；原始距离须严格小于正容差，禁止连锁越界"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="吸附后的输入副本及原属性", is_default=True)],
+    use_cases=["将偏移端点吸向已有参考节点", "按固定基准整理矢量顶点后复查几何"],
+    notes=["不自动重投影；地理、未知或不匹配坐标系明确拒绝", "只移动原有输入顶点，不插点或删点；参考顶点按 XY 去重排序", "原始位置只匹配一次，不按已移动位置再次吸附；零容差不移动", "无效输入或无效结果整批失败，不自动修复、删行或回退", "不保证消除缝隙或重叠，不提供单图层互吸、端点延伸；参考索引及坐标驻内存，保存另接既有保存节点"],
+    workflow_example={"id": "snap", "operator": "snap_geometry", "params": {"input_gdf": {"$ref": "load"}, "reference_gdf": {"$ref": "reference"}, "tolerance": 0.5}, "depends_on": ["load", "reference"]},
 )
 
 POLYGONIZE_METADATA = OperatorMetadata(
@@ -821,4 +899,5 @@ OPERATORS = dict([
     register_operator(POLYGONIZE_METADATA, polygonize),
     register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
+    register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
 ])

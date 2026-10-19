@@ -46,7 +46,7 @@ operators/
 
 ## 算子分类
 
-分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 76 个算子：通用处理 18 个、矢量处理 29 个、栅格处理 29 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
+分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的 77 个算子：通用处理 18 个、矢量处理 30 个、栅格处理 29 个。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |
 |---|---|---:|---|
@@ -55,7 +55,7 @@ operators/
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 12 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry` |
+| 矢量处理 | 几何处理 | 13 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -87,6 +87,12 @@ operators/
 `repair_geometry(input_gdf)` 固定使用 `make_valid(method="linework", keep_collapsed=True)`，仅修复无效几何，保留合法、空及缺失几何。要求有限二维 XY；不丢弃修复产生的线点或 GeometryCollection、不拆行，保留源属性、索引、active geometry 名和 CRS。缺失几何不会被凭空补造，可接现有过滤算子；纯面目标须显式处理混合类型。复查请设置新的结果字段名，保留修复前诊断。
 
 两者均在“矢量处理 / 几何处理”中，仅支持 workflow/read，输出接既有 `save`。不检查或修复跨要素重叠、缝隙，不吸附或补缝；单要素有效性与完整拓扑质量不同。详细边界见[工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md#几何检查与修复契约)。
+
+## 参考吸附
+
+`snap_geometry(input_gdf, reference_gdf, tolerance)` 对每个输入原始顶点按原始位置一次匹配固定参考图层的最近原有顶点，保留属性、行数、顺序、索引、active geometry、几何部件结构和 CRS，两份源数据均不改写。等距时按参考 X、再 Y 的升序决胜，与行序及空间索引遍历顺序无关。不使用已移动位置再匹配，不插点、删点或创建参考交点。空输入保留 Schema，缺失和空几何保留；空参考不移动输入。
+
+两输入必须使用相同的已知投影 CRS，容差是有限非负数，采用该 CRS 的水平单位（可能为米或英尺）。地理坐标须先显式重投影；只接纳原始距离严格小于正容差的候选，零容差不移动。例如原点与参考点 0.5、1 米共线、容差 0.75 米时只能移动到 0.5 米。仅接受有限二维 XY 和有效几何，无效输出整批失败，不自动修复或回退。不吸向参考线段任意位置，不提供单图层相互吸附或完整补缝；参考索引和坐标驻内存，不承诺固定容量。位于“矢量处理 / 几何处理”，只支持 workflow/read，保存另接既有 `save`；[完整契约](../../../docs/spec/addp工作流计算引擎接口规范.md#参考吸附契约)。
 
 ## 使用方式
 
