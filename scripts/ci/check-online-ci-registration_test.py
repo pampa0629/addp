@@ -44,6 +44,27 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_administrator_governance_profile(self.repository, registered)
             target.write_text(original)
 
+    def test_focal_requires_manual_nfs_identity_strict_sizes_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-focal-statistics-gate.sh','scripts/test/raster-focal-statistics-persistence-online.py',
+            'business/scripts/online-raster-focal-statistics-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_raster_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-focal-statistics-persistence'}
+        CHECK.validate_raster_focal_statistics_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-focal-statistics-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-focal-statistics-online-runner'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
+                (paths[4],'raster.strict_sizes'),(paths[4],'full_pixel_and_mask_verification'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'expected_pixels'),(paths[6],'root_squash'),(paths[7],'test_focal_persistence_oracle_rejects_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_focal_statistics_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_zonal_requires_manual_nfs_identity_complete_csv_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',

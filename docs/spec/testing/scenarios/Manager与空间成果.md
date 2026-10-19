@@ -165,3 +165,12 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 独立标量分组与标准库统计 oracle 逐行核对分类值、三项计数、五项统计、null、排序和固定 Schema，完整结果必须经既有 `save` 持久化；响应仅为有限表摘要，不新增 RasterArtifact。物理文件／Meta 大小严格为相等正整数；只手工扫描两份精确源，四份 CSV 各自自动扫描，核对同租户／同用户、Monitor 和当前执行所有输入的 active derive 血缘。每轮核对源物理字节／Meta 和先前成果不变、精确输出与扫描清单及执行工作目录清理；退出核对归属 NFS export／目录、部署及 Infra 零残留。Runtime bind 写入与 Meta 真实 NFS 读取分开记录，不计为 Manager 绘制、NFS 客户端写、HTTP Range、业务 DELETE、覆盖冲突或容量；原 Raster／Contour／Polygonize／Rasterize T4 保持。
 
 标准入口 `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence`；真实 GDAL／CSV 与篡改拒绝沿 `make test-geopython-workflow`，夹具、场景断言和生命周期沿 `make test-raster-zonal-statistics-online-runner`，并由原 `make test-raster-online-runner` 聚合；workflow 仅编排同一根入口。
+
+
+## raster-focal-statistics-persistence
+
+独立手工 Hosted 使用普通用户原 12 权限、同源七个 Backend 与默认入口 GeoPython Runtime、共享 NFS 和独立 600 秒预检／业务预算。已获授权，真实运行尚未完成。输入为已登记的 EPSG:4326、519×515、多波段及旋转仿射 TIFF；显式选择原始数值波段，源包含合法零、负值、NoData、mask、NaN／正负 Inf、透明及部分透明 alpha，块边界布置无效值，并包含超过窗口的无效孔洞。验证 3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev 六条 COG 保存链；非法波段与窗口不得发布目标或新增扫描。
+
+独立完整窗口 NumPy oracle 不调用产品统计函数，以实际有效邻域核对所有输出像元和 mask；无效中心保持 NoData、边缘不补零，源 raw 值与 scale/offset 分开处理。核对 Float64／NaN NoData、完整旋转网格、COG 布局和金字塔存在；artifact／物理文件／Meta 大小严格为相等正整数。仅手工扫描精确源，每份成果各自自动扫描，同用户／租户、Monitor 和当前执行源输入的 active derive 血缘逐项核对；源物理字节／Meta 与先前成果不变、输出及扫描清单精确、执行工作目录清理。退出核对归属 NFS export／目录、部署及 Infra 零残留。Runtime 同路径 bind 写与 Meta 真实 NFS 读取分别记录；不认证 Manager 绘制、NFS 客户端写、HTTP Range、业务 DELETE、覆盖冲突、所有窗口组合的跨模块覆盖或容量，不改原五套栅格相关 T4、权限或跨模块产品逻辑。
+
+标准入口 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence`；真实 GDAL／COG 与篡改拒绝沿 `make test-geopython-workflow`，夹具、场景、登记正反例和生命周期沿 `make test-raster-focal-statistics-online-runner`，由原 `make test-raster-online-runner` 聚合。Hosted workflow 只编排上述根入口，不登记夜间计划。

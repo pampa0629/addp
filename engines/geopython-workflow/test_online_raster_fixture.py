@@ -2202,3 +2202,74 @@ def test_zonal_persistence_oracle_rejects_csv_corruption(zonal_persistence,corru
     elif corruption=='missing':path.unlink()
     else:(root/'outputs'/'unexpected.csv').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.fixture(scope='module')
+def focal_persistence(tmp_path_factory):
+    module=importlib.import_module('business.scripts.online-raster-focal-statistics-fixture')
+    scene=importlib.import_module('scripts.test.raster-focal-statistics-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path_factory.mktemp('focal-export');(root/'outputs').mkdir()
+    initial=module.seed(root)
+    for name in module.TARGETS:
+        definition=scene.definition({n:n for n in module.SOURCES},'parent',name)
+        for task in definition['tasks']:
+            params=task['params']
+            if task['operator']=='raster_load':
+                path=root/params.pop('locator')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{
+                    'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+            elif task['operator']=='raster_save':
+                params.pop('target_parent_locator');target=root/'outputs'/params.pop('target_name')
+                mode=params.pop('write_mode')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','target':{
+                    'kind':'file','format':'tiff','name':target.name,'write_mode':mode,
+                    'access':{'method':'mounted_path','path':str(target)}}}
+        result=execute_workflow(definition)
+        assert result['status']=='success',result
+        artifact=json.loads(result['final_result'])
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+    return module,root,initial
+
+
+def test_focal_persistence_real_gdal_six_cog_chains_and_complete_pixels(focal_persistence):
+    module,root,initial=focal_persistence
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources']
+    assert len(actual['targets'])==6
+    for fact in actual['targets'].values():
+        assert fact['full_pixel_and_mask_verification'] and fact['cog_valid'] and fact['has_overviews']
+        assert 0<fact['valid_pixels']<module.WIDTH*module.HEIGHT
+    # Separately known corner: two valid values among four existing neighbours, including partial alpha.
+    assert module.expected_pixels('sum-3.cog.tif')[0,0]==-31.
+
+
+@pytest.mark.parametrize('corruption',['value','seam','invalid_center','mask','crs','grid','dtype','nodata','scale','overviews','sidecar','missing','extra'])
+def test_focal_persistence_oracle_rejects_corruption(focal_persistence,tmp_path,corruption):
+    import shutil
+    import numpy as np
+    from osgeo import gdal
+    module,original,_=focal_persistence
+    root=tmp_path/'changed';shutil.copytree(original,root)
+    path=root/'outputs'/'sum-3.cog.tif'
+    if corruption in ('value','seam','invalid_center','mask','crs','grid','nodata','scale'):
+        ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES'])
+        if corruption in ('value','seam','invalid_center'):
+            x,y={'value':(0,0),'seam':(509,508),'invalid_center':(509,509)}[corruption]
+            ds.GetRasterBand(1).WriteRaster(x,y,1,1,np.array([123456.],dtype=np.float64).tobytes(),buf_type=gdal.GDT_Float64)
+        elif corruption=='mask':
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            ds.GetRasterBand(1).GetMaskBand().Fill(255)
+        elif corruption=='crs':ds.SetProjection('')
+        elif corruption=='grid':ds.SetGeoTransform((1,1,0,1,0,-1))
+        elif corruption=='nodata':ds.GetRasterBand(1).SetNoDataValue(-999)
+        else:ds.GetRasterBand(1).SetScale(2.)
+        ds=None
+    elif corruption in ('dtype','overviews'):
+        alternate=root/'replacement.tif'
+        ds=gdal.Translate(str(alternate),str(path),format='GTiff',outputType=gdal.GDT_Float32 if corruption=='dtype' else gdal.GDT_Float64)
+        ds=None;alternate.replace(path)
+    elif corruption=='sidecar':(root/'outputs'/'sum-3.cog.tif.aux.xml').write_text('unexpected')
+    elif corruption=='missing':path.unlink()
+    else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
