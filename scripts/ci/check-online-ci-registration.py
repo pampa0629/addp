@@ -1879,7 +1879,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
             '--wait-protection-owners develop,manager', 'online-vector-topology-fixture.py stop',
             'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'playwright install --with-deps chromium'),
         "scripts/test/vector-topology-persistence-online.py": ('validate_identity', 'PERMISSIONS = raster.PERMISSIONS',
-            'validate_success', 'validate_item', 'triggered_by', 'meta_scan_runs', 'browser_runner', 'physical_size_bytes', 'check_geometry', 'repair_geometry', 'after_valid', 'fixture.SOURCES', 'snap_geometry', 'validate_failed_snap', 'collapsed_snap_diagnostic', 'scan_ids(client)', 'vector.validate_item', 'addp.vector-topology-persistence/v3'),
+            'validate_success', 'validate_item', 'triggered_by', 'meta_scan_runs', 'browser_runner', 'physical_size_bytes', 'check_geometry', 'repair_geometry', 'after_valid', 'fixture.SOURCES', 'snap_geometry', 'validate_failed_snap', 'collapsed_snap_diagnostic', 'topology-snap-failure.json', 'scan_ids(client)', 'vector.validate_item', 'addp.vector-topology-persistence/v3'),
         "business/scripts/online-vector-topology-fixture.py": ('NFSExport', 'validate_features', 'expected_geometries', 'source file changed', 'validate_repaired', 'repaired.geojson', 'SNAP_EXPECTED', 'validate_snap_features', 'verify_snap', 'snap-input.gpkg', 'snap-reference.gpkg', 'snapped.gpkg', 'archive_physical_evidence'),
         "scripts/utils/online_nfs_fixture.py": ('root_squash', 'owned_root', 'nfs_export_removed'),
         "console/frontend/e2e/online/vector-topology-persistence.spec.js": ('login(', 'browserAPIFromResponse(', 'principalID: evidence.principal_id', 'previewResponse', 'source_srid', 'getImageData', 'evidence.execution_id', 'topology-browser.json', 'row.geometry_valid', 'row.after_valid', 'MultiPolygon', 'topology-source-lineage-raw.json', 'expect(current).toEqual(source.before)', 'decodePreviewEWKB', 'snapCoordinates', 'source_srid', 'failed_execution_id', 'addp.topology-browser/v3', 'graph, preview'),
@@ -2520,17 +2520,23 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
         "scripts/test/online-hosted-security-gate.sh": (
             "# ADDP_ONLINE_SUITES=graph-falkordb-protection", "online-graph-falkordb-fixture.py start",
             "online-graph-falkordb-fixture.py stop", "develop,graph,manager,service,transfer", "graph-falkordb.json",
+            "docker-compose.graph-protection-t4.yml", "compose_graph down --remove-orphans --volumes",
+            ',console,graph-frontend,develop-frontend,nginx', 'CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"',
         ),
+        "scripts/test/docker-compose.graph-protection-t4.yml": ("127.0.0.1:8180:8180", "127.0.0.1:8185:8185"),
+        "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
+        "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-falkordb-protection-online.py": (
-            "addp.graph-falkordb-protection-online/v3", "public_unmanaged", "public_protected",
+            "addp.graph-falkordb-protection-online/v4", "public_unmanaged", "public_protected",
             "same_engine_control", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-falkordb-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
             'e2e/online/develop-falkordb-query.spec.js',
         ),
         "console/frontend/e2e/online/graph-falkordb-protection.spec.js": (
-            "addp.graph-falkordb-protection-browser/v1", "browserAPIFromResponse", "login(",
+            "addp.graph-falkordb-protection-browser/v2", "browserAPIFromResponse", "login(",
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
+            "release_assets: true", "deep_link_reload: true", "theme_canvas_pixels: true",
         ),
         "console/frontend/e2e/online/develop-falkordb-query.spec.js": (
             "addp.develop-falkordb-query-browser/v1", "browserAPIFromResponse", "login(",
@@ -2538,10 +2544,10 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             "develop.query.protection_required", "unexpected_writes: 0",
         ),
         "business/scripts/online-graph-falkordb-fixture.py": (
-            "--volumes", "owned_resources", "127\\.0\\.0\\.1", "0o600", "graph_protection_control",
+            "--volumes", "owned_resources", "must not publish host ports", "0o600", "graph_protection_control",
         ),
         "business/docker-compose.online-graph-falkordb.yml": (
-            "../scripts/infra/falkordb.yml", "127.0.0.1::6379", "tmpfs:",
+            "../scripts/infra/falkordb.yml", "name: addp-network", "tmpfs:",
         ),
     }
     for path, fragments in required.items():

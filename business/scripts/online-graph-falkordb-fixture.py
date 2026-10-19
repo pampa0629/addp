@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import platform
-import re
 import secrets
 import subprocess
 from pathlib import Path
@@ -59,16 +58,16 @@ def start(secret_dir):
         raise RuntimeError("Refusing existing Graph fixture descriptor")
     password = secrets.token_hex(32)
     compose(["up", "-d", "--wait", "--wait-timeout", "90"], password)
-    endpoint = command(["docker", "port", CONTAINER, "6379/tcp"])
-    if not re.fullmatch(r"127\.0\.0\.1:[0-9]+", endpoint):
-        raise RuntimeError("Graph fixture must bind only IPv4 loopback")
+    bindings = json.loads(command(["docker", "inspect", "--format", "{{json .HostConfig.PortBindings}}", CONTAINER]))
+    if bindings:
+        raise RuntimeError("Graph fixture must not publish host ports")
     for graph in GRAPHS:
         native(graph, "CREATE (a:Person {id:'p1', name:'Fixture one'}), (b:Person {id:'p2', name:'Fixture two'}), (c:Person {id:'p3', name:'Fixture three'}), (a)-[:Link]->(b), (b)-[:Link]->(c)", False)
         if native(graph, "MATCH (n) RETURN count(n)")[1] != [[3]] or native(graph, "MATCH ()-[r]->() RETURN count(r)")[1] != [[2]]:
             raise RuntimeError("Synthetic graph must contain exactly 3 nodes and 2 relationships")
     data = {"name": "Hosted synthetic FalkorDB", "engine_type": "falkordb", "engine_origin": "general",
             "description": "Disposable Graph permission/protection fixture",
-            "connection_info": {"host": "127.0.0.1", "port": int(endpoint.rsplit(":", 1)[1]),
+            "connection_info": {"host": CONTAINER, "port": 6379,
                                 "user": "default", "password": password, "database": 0}}
     with os.fdopen(os.open(descriptor, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         json.dump(data, output)

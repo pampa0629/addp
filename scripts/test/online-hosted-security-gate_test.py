@@ -18,8 +18,40 @@ class HostedSecurityGateTest(unittest.TestCase):
         (self.host.repository / 'system/backend/go.mod').write_text('module fixture/system\n')
         (self.host.repository / 'go.work.sum').write_text('fixture-checksums\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-security-gate.sh')
+        shutil.copy2(SCRIPT.with_name('docker-compose.graph-protection-t4.yml'), self.host.repository / 'scripts/test/docker-compose.graph-protection-t4.yml')
+        self.host._executable('curl', """
+            #!/usr/bin/env bash
+            exit 0
+        """)
+        self.host._executable('docker', '''
+            #!/usr/bin/env bash
+            if [ "$1 $2" = 'compose version' ]; then exit 0; fi
+            if [ "$1 $2" = 'container inspect' ]; then
+              [ "${ADDP_TEST_EXISTING_CONTAINER:-}" = "$3" ] ||
+                { [ -f "${ADDP_TEST_GATE_TRACE}.containers" ] && grep -qx "$3" "${ADDP_TEST_GATE_TRACE}.containers"; }
+              exit
+            fi
+            if [ "$1" = ps ] || [ "$1 $2" = 'network ls' ] || [ "$1 $2" = 'volume ls' ]; then exit 0; fi
+            echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [[ "$*" == *'config --quiet' ]] && [ "${ADDP_TEST_CONFIG_FAIL:-0}" = 1 ]; then exit 1; fi
+            if [ "$1" = run ]; then
+              previous=
+              for argument in "$@"; do
+                if [ "$previous" = --name ]; then echo "$argument" >> "${ADDP_TEST_GATE_TRACE}.containers"; fi
+                previous=$argument
+              done
+            fi
+            if [ "$1 $2" = 'rm -fv' ]; then
+              shift 2
+              for container in "$@"; do
+                grep -vx "$container" "${ADDP_TEST_GATE_TRACE}.containers" > "${ADDP_TEST_GATE_TRACE}.remaining" || true
+                mv "${ADDP_TEST_GATE_TRACE}.remaining" "${ADDP_TEST_GATE_TRACE}.containers"
+              done
+            fi
+        ''')
         self.host._executable('npm', '''
             #!/usr/bin/env bash
+            if [ "$*" = '--prefix console/frontend ci' ]; then echo 'npm-ci' >> "$ADDP_TEST_GATE_TRACE"; exit 0; fi
             [ "$*" = '--prefix console/frontend exec -- playwright install --with-deps chromium' ] || exit 2
             echo "chromium" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_BROWSER_PREPARE_FAIL:-0}" != 1 ]
@@ -98,10 +130,16 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.host._executable('make', '''
             #!/usr/bin/env bash
             set -euo pipefail
+            if [ "$1" = build ] || [ "$1" = build-images ]; then
+              echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_BUILD_FAIL:-0}" != 1 ]
+              exit
+            fi
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SECURITY_ACCESS_TOKEN:-}" ]
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
             if [ "$ONLINE_SUITE_INPUT" = graph-falkordb-protection ]; then
+              [ "$CONSOLE_URL" = http://127.0.0.1:18080 ]
               [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
               [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
               [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]
@@ -161,13 +199,49 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertNotIn('security-fixture:', trace)
         self.assertNotIn('initialize', trace)
         self.assertIn('chromium', trace)
-        self.assertLess(trace.index('chromium'), trace.index('make:'))
-        self.assertLess(trace.index('application-stop'), trace.index('graph-fixture:stop'))
+        self.assertLess(trace.index('chromium'), trace.index('make:test-online'))
+        self.assertNotIn('start:', trace)
+        self.assertIn('make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend,meta-worker', trace)
+        self.assertIn(',console,graph-frontend,develop-frontend,nginx', trace)
+        self.assertIn('npm-ci', trace)
+        self.assertIn('docker:exec graph-frontend sh -ec', trace)
+        self.assertIn('docker:rm -fv addp-graph-online-upstreams', trace)
+        self.assertIn('docker:rm -fv registry', trace)
+        self.assertEqual(Path(str(self.host.trace) + '.containers').read_text(), '')
+        self.assertLess(trace.index('down --remove-orphans --volumes'), trace.index('graph-fixture:stop'))
 
     def test_graph_profile_failure_keeps_lifecycle_cleanup(self):
         result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_SUITE_FAIL='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('graph-fixture:stop', self.host.trace.read_text())
+
+    def test_graph_build_failure_never_starts_app_or_browser_and_still_cleans(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_BUILD_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertNotIn('chromium', trace)
+        self.assertNotIn('make:test-online', trace)
+        self.assertNotIn('up -d --no-deps', trace)
+        self.assertIn('down --remove-orphans --volumes', trace)
+        self.assertIn('graph-fixture:stop', trace)
+
+    def test_graph_refuses_preexisting_product_containers_before_mutation(self):
+        for name in ('registry', 'graph-frontend', 'develop-frontend', 'system-backend', 'addp-nginx'):
+            with self.subTest(name=name):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(check=True, ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_EXISTING_CONTAINER=name)
+                self.assertNotEqual(result.returncode, 0)
+                trace = self.host.trace.read_text() if self.host.trace.exists() else ''
+                self.assertNotIn('infra-up', trace)
+                self.assertNotIn('up -d', trace)
+
+    def test_graph_invalid_compose_stops_before_infra_and_builds(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-falkordb-protection', ADDP_TEST_CONFIG_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        self.assertIn('config --quiet', trace)
+        self.assertNotIn('infra-up', trace)
+        self.assertNotIn('make:build', trace)
 
     def test_separate_engine_ids_and_preparation_tokens_do_not_leak_into_owner_suite(self):
         result = self.run_gate()

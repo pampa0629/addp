@@ -232,7 +232,7 @@ bash scripts/dev/restart.sh -graph
 
 ## 十、前端公开路由
 
-- 模块内 Router 使用 `/ontologies`、`/graphs`、`/analysis`、`/knowledge-service` 等无模块前缀路径；Console 公开 URL 统一加 `/graph` 前缀。
+- 模块内 Router 使用 `/ontologies`、`/graphs`、`/analysis`、`/knowledge-service` 等无模块前缀路径；Console 公开 URL 统一加 `/graph` 前缀。发布镜像的 Nginx 为页面深链提供 SPA 回退；缺失的 `/assets/` 资源明确返回 404，不返回入口 HTML。
 - 本体、图谱和构建任务使用 path parameter 表达对象身份；创建成功后用 `replace` 进入详情，列表进入详情使用 `push`。
 - 本体详情默认 `entities` Tab 省略，其他稳定 Tab 使用 `tab`；审核队列默认 `entity` 省略；知识服务当前图谱使用 `graph_id`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`，不得直接操作父窗口或在页面中调用 `router.push/replace/back`。
@@ -259,12 +259,14 @@ FalkorDB 现有独占 T2 同时提供明文和 TLS 测试端口，复用同一�
 
 验证入口：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-falkordb`、`make test-common-neo4j`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`。PostgreSQL 分组验证目标路径保真、目标唯一性、旧字段移除、失败回滚和构建 execution 并发；默认 Common PostgreSQL 完整门禁包含该分组。Graph 路径已在三项 Common T2 的输入元数据登记，因此 Graph 后端变更会自动选中 Common owner 的既有 CI Job。Swagger 使用标准 graph 生成与覆盖入口。
 
-隔离权限 T4 使用 `graph-falkordb-protection` suite，沿 `online-hosted-security-gate.sh` 和 `hosted-online.sh` 的唯一 Hosted 生命周期，由 `make test-online ONLINE_SUITE=graph-falkordb-protection` 执行。专用 FalkorDB 复用中央镜像契约，回环随机端口、tmpfs 数据、独立 Compose 资源；仅含两张各 3 个 Person、2 条 Link 的合成图。普通读取 User 仅获 `graph.graph.read`；准备者独立持有图谱配置、Meta 扫描和纳管所需 Permission，无权对照 User 不含 Graph 读取权。所有账号只存在于 disposable Hosted Tenant，不新增产品角色、源数据 Grant 或业务引擎授权。
+隔离权限 T4 使用 `graph-falkordb-protection` suite，沿 `online-hosted-security-gate.sh` 和 `hosted-online.sh` 的唯一 Hosted 生命周期，由 `make test-online ONLINE_SUITE=graph-falkordb-protection` 执行。专用 FalkorDB 复用中央镜像契约，当次 Infra 内部网络、tmpfs 数据、独立 Compose 资源；仅含两张各 3 个 Person、2 条 Link 的合成图。普通读取 User 仅获 `graph.graph.read`；准备者独立持有图谱配置、Meta 扫描和纳管所需 Permission，无权对照 User 不含 Graph 读取权。所有账号只存在于 disposable Hosted Tenant，不新增产品角色、源数据 Grant 或业务引擎授权。
 
 上述 T4 从 Gateway 和 Graph 直连验证私有读取 200、无权 403、匿名 401，仅将合成测试图显式公开，先验证匿名读取 200，再经正式 Security 纳管并等待 develop/graph/manager/service/transfer 五 Owner 的当前投影确认后验证保护 403；同引擎未纳管对照图仍返回真实数据。拒绝必须匹配保护原因，不能以普通权限错误或连接失败代替。失败也须关闭公开状态、正式退出测试纳管并等待五 Owner、删除图谱与本体配置；标准 Hosted 清理继续销毁合成图数据库和临时 IAM 所在的完整测试 Infra，并核对容器、网络、卷零残留。现有业务图、Infra 私有图、external 索引和暂缓的 Graph 源数据授权均不参与。确定性回归由 `make test-security-online-runner`、聚合 `make test-online-runner` 及既有 Platform CI 覆盖，真实 T4 结果单独报告。
 
 同一 suite 的 v2 报告还要求 Console 浏览器验收：在合成图保持私有、未纳管时，通过正式登录进入 Graph，核对当前浏览器 User、Tenant 和仅有的 `graph.graph.read` 与 HTTP 验收身份一致，验证浏览快照的 3 节点/2 关系、真实画布、全文搜索及知识服务搜索的三个实体，并确认公开开关不可操作、没有图谱配置写请求。浏览器复用相同合成资源，不生成额外账号、图或权限；报告和两张截图缺失、身份不符、任何非预期 API 失败或浏览器异常都使 suite 失败，随后仍执行同一清理。历史 v1 的纯 HTTP 结果不能作为普通账号 Console 已通过的证据。
 
 v3 在保留上述 Graph 最小权限账号和验收的同时，复用两张合成图增加独立 Develop 普通账号。该账号仅有 `develop.task.read`、`develop.task.execute`、`develop.data_read.execute`、`system.execution_authorization.create`、`meta.catalog.read` 五项已确认的测试 Permission。正式登录工作台并选择 Meta 图资源后，纳管前验证 Cypher 的真实 3 节点/2 关系、两行图结果及表格视图，以及文本和整数参数的一行表格结果；五 Owner 确认后，同一 Develop User 的目标图执行必须以 `develop.query.protection_required` 在 preparation 阶段拒绝且不返回结果，同引擎对照图继续成功。两个阶段报告、四张截图、身份/权限或断言任何一项缺失均使同一 suite 失败；账号、执行记录及原生合成数据随 Hosted Infra 销毁。未扩大 Graph 源授权或增加属性脱敏。
+
+v4 将该 suite 统一切换为正式 Compose 产品镜像：Console、Graph 和 Develop 经生产 Nginx 单入口访问，原有后端与必要 Worker 复用正式服务定义，不再启动 Vite。仅回环诊断端口供既有构建身份和直连拒绝检查使用；业务图通过当次 Infra 网络的容器地址连接，不发布宿主机端口。普通用户权限、两张合成图及保护阶段保持原范围。浏览器额外核对发布资源、Graph 深链刷新、四主题同步及画布颜色，旧 v3 结果不计为生产前端验收；应用、夹具及 Infra 仍在全部退出路径清理并核对所属 project 零残留。
 
 FalkorDB 全文索引同步必须在原生 `db.indexes()` 报告全部所需 NODE 全文索引字段匹配且 `OPERATIONAL` 后返回；managed 新建/重建和 external 复用走同一就绪检查，最多等待30秒并遵守调用取消。构建中不能返回成功或空搜索结果；元数据异常、字段冲突、超时和查询错误保留为错误。该边界由 Common Provider 实现，Graph 与知识服务不增加重试或扫描回退。`make test-common-falkordb-unit` 覆盖状态、取消和错误，`make test-common-falkordb` 以独占合成大图验证同步后首次搜索完整返回、external复用及既有Graph/Develop领域契约。

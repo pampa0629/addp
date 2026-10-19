@@ -145,7 +145,8 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     env("ADDP_ONLINE_TEST_USER_PASSWORD")
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
     output = artifacts / "graph-falkordb-protection-browser.json"
-    screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png")]
+    screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png",
+                   *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")))]
     for path in [output, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
@@ -160,9 +161,10 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
             "Ordinary Graph Console acceptance failed or omitted browser evidence")
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-falkordb-protection-browser/v1", result="passed", permissions=sorted(READER_PERMISSIONS),
+    expected.update(schema_version="addp.graph-falkordb-protection-browser/v2", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
-                    public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0)
+                    public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
+                    release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401"} and
             all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()) and
             type(evidence["anonymous_refresh_401"]) is int and 0 <= evidence["anonymous_refresh_401"] <= 1,
@@ -303,7 +305,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
 
 
 def main():
-    report = {"schema_version": "addp.graph-falkordb-protection-online/v3", "passed": False}
+    report = {"schema_version": "addp.graph-falkordb-protection-online/v4", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-falkordb-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

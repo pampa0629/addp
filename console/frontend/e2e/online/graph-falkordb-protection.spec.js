@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { graphCanvasHasThemePixels } from '../graph-theme.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -10,10 +11,13 @@ function required(name) {
 
 test('ordinary Graph reader browses private FalkorDB data and searches Knowledge Service through Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'))
-  const errors = [], failed = [], writes = []
+  const errors = [], failed = [], writes = [], developmentRequests = []
+  const releaseScripts = new Set()
   let businessStarted = false, anonymousRefresh = 0
   page.on('request', request => {
     const path = new URL(request.url()).pathname
+    if (/\/@vite\/|\/@id\/|\/src\//.test(path)) developmentRequests.push(path)
+    if (path.startsWith('/module-ui/graph/assets/') && path.endsWith('.js')) releaseScripts.add(path)
     if (path.startsWith('/api/v1/') && request.headers().authorization) businessStarted = true
     if (path.startsWith('/api/v1/graph/') && !['GET', 'HEAD'].includes(request.method()) &&
       !(request.method() === 'POST' && path === `/api/v1/graph/graphs/${expected.graph_id}/search`)) writes.push(path)
@@ -23,6 +27,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
     if (new URL(response.url()).pathname.startsWith('/api/v1/') && response.status() >= 400) {
       failed.push(response.status())
     }
+    if (new URL(response.url()).pathname.includes('/assets/') && response.status() >= 400) failed.push(response.status())
   })
   page.on('pageerror', () => errors.push('uncaught_browser_error'))
   page.on('console', message => {
@@ -53,6 +58,21 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   await expect(frame.locator('.filter-panel')).toContainText('Person')
   await expect(frame.locator('.filter-panel')).toContainText('Link')
   await expect(frame.locator('.graph-canvas canvas')).toBeVisible()
+  await page.reload()
+  await expect(page).toHaveURL(`/graph/graphs/${expected.graph_id}/browse`)
+  await expect(frame.locator('.graph-name')).toHaveText('graph_protection_fixture')
+  await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
+  const themes = ['light', 'dark', 'blue', 'purple']
+  for (const [index, label] of ['浅色模式', '深色模式', '蓝色模式', '紫色模式'].entries()) {
+    const mode = themes[index]
+    await page.getByRole('button', { name: /^当前主题:/ }).click()
+    await page.getByRole('menuitem', { name: label, exact: true }).click()
+    await expect.poll(() => frame.locator('html').evaluate(element => ({
+      dark: element.classList.contains('dark'), blue: element.classList.contains('blue'), purple: element.classList.contains('purple')
+    }))).toEqual({ dark: mode !== 'light', blue: mode === 'blue', purple: mode === 'purple' })
+    await expect.poll(() => frame.locator('.graph-canvas').evaluate(graphCanvasHasThemePixels)).toBe(true)
+    await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-private-theme-${mode}.png`) })
+  }
   const search = page.waitForResponse(response => response.request().method() === 'POST' &&
     new URL(response.url()).pathname === `/api/v1/graph/graphs/${expected.graph_id}/search`)
   await frame.locator('.toolbar-center input').fill('Fixture')
@@ -87,11 +107,14 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   expect(failed).toEqual([])
   expect(errors).toEqual([])
   expect(anonymousRefresh).toBeLessThanOrEqual(1)
+  expect(developmentRequests).toEqual([])
+  expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-falkordb-protection-browser/v1', result: 'passed',
+    ...expected, schema_version: 'addp.graph-falkordb-protection-browser/v2', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true,
     public_switch_disabled: true, graph_writes: 0, failed_business_responses: 0,
-    browser_errors: 0, anonymous_refresh_401: anonymousRefresh
+    browser_errors: 0, anonymous_refresh_401: anonymousRefresh,
+    release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true
   }))
 })

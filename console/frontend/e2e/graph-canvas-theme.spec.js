@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
+import { graphCanvasHasThemePixels } from './graph-theme.fixture.js'
 
 test('Graph browser retains selection, viewport and readable shapes across Console themes', async ({ page }) => {
   const errors = []
@@ -68,6 +69,7 @@ test('Graph browser retains selection, viewport and readable shapes across Conso
       const stroke = getComputedStyle(element).getPropertyValue('--addp-graph-node-stroke').trim()
       return instance.getNodes().every(node => node.getKeyShape().attr('stroke') === stroke)
     })).toBe(true)
+    await expect.poll(() => view.evaluate(graphCanvasHasThemePixels)).toBe(true)
     await view.locator('canvas').click({ position })
     await expect(graph.locator('.node-panel .panel-name')).toHaveText('节点甲')
   }

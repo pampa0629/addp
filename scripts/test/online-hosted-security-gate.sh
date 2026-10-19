@@ -16,17 +16,45 @@ case "$ONLINE_SUITE" in
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
 if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
-  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-falkordb)
-  HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online)
+  HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
+  HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online addp-platform)
 fi
+compose_graph() {
+  docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/scripts/test/docker-compose.graph-protection-t4.yml" "$@"
+}
 stop_online_fixture() {
   if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
-    run_logged python3 business/scripts/online-graph-falkordb-fixture.py stop
+    local status=0 container
+    for container in addp-graph-online-upstreams registry; do
+      if docker container inspect "$container" >/dev/null 2>&1; then
+        run_logged docker rm -fv "$container" || status=1
+      fi
+      if docker container inspect "$container" >/dev/null 2>&1; then status=1; fi
+    done
+    run_logged python3 business/scripts/online-graph-falkordb-fixture.py stop || status=1
+    return "$status"
   else
     run_logged bash business/scripts/online-security-owner-fixture.sh stop
   fi
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  stop_online_application() {
+    local status=0 remaining kind
+    run_logged compose_graph down --remove-orphans --volumes || status=1
+    remaining=$(docker ps -aq --filter label=com.docker.compose.project=addp-platform) || return 1
+    [ -z "$remaining" ] || status=1
+    for kind in network volume; do
+      remaining=$(docker "$kind" ls -q --filter label=com.docker.compose.project=addp-platform) || return 1
+      [ -z "$remaining" ] || status=1
+    done
+    return "$status"
+  }
+  export NGINX_BIND_HOST=127.0.0.1 NGINX_PORT=18080
+  export ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
+  export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN"
+  export REGISTRY=localhost:5001 IMAGE_TAG=latest
+fi
 # The v11 suite adds discovery, required Owner acknowledgements and a real bank-card
 # transfer to the existing serial algorithm/outage/index-convergence acceptance.
 if [ "$ONLINE_SUITE" = security-mysql-owner-protection ]; then
@@ -47,6 +75,9 @@ while IFS= read -r module; do
 done < <(git ls-files -- 'go.mod' '**/go.mod')
 [ "${#go_modules[@]}" -gt 0 ] || fail 'Security Hosted checkout has no tracked Go modules'
 run_logged go work init "${go_modules[@]}"
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  run_logged compose_graph config --quiet
+fi
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
@@ -56,9 +87,35 @@ else
   run_logged bash business/scripts/online-security-owner-fixture.sh start
 fi
 application_owned=1
-for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
-done
+if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
+  export CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"
+  run_logged docker run -d --name registry -p 127.0.0.1:5001:5000 registry:2
+  registry_ready=0
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 2 http://127.0.0.1:5001/v2/ >/dev/null 2>&1; then registry_ready=1; break; fi
+    sleep 1
+  done
+  [ "$registry_ready" -eq 1 ] || fail 'Graph image registry readiness timed out'
+  backend_images=system-backend,gateway,meta-backend,meta-worker,security-backend,security-worker,manager-backend,develop-backend,service-backend,transfer-backend,graph-backend,monitor-backend
+  run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
+  run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,nginx"
+  for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend; do
+    run_logged compose_graph up -d --no-deps --wait "$service"
+  done
+  run_logged docker exec graph-frontend sh -ec 'wget -qO- http://127.0.0.1/graphs/1/browse | grep -q "id=\"app\""; if wget -qO- http://127.0.0.1/assets/nonexistent-acceptance-chunk.js >/dev/null 2>&1; then exit 1; fi'
+  # Unvisited static upstreams need DNS names at Nginx startup, as in the
+  # existing production-entry suite. Graph and Develop use real frontends.
+  run_logged docker run -d --name addp-graph-online-upstreams --network addp-network \
+    --network-alias system-frontend --network-alias manager-frontend --network-alias meta-frontend \
+    --network-alias transfer-frontend --network-alias orchestrator-frontend --network-alias service-frontend \
+    localhost:5001/nginx:alpine
+  run_logged compose_graph up -d --no-deps --wait nginx
+  run_logged npm --prefix console/frontend ci
+else
+  for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+fi
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 if [ "$ONLINE_SUITE" = graph-falkordb-protection ]; then
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite "$1" --output "$2" --wait-protection-owners develop,graph,manager,service,transfer' _ "$ONLINE_SUITE" "$IDENTITY_ENV"

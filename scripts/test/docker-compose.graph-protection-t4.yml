@@ -1,0 +1,18 @@
+# Loopback diagnostics for the existing Graph suite; product traffic uses Nginx.
+services:
+  system-backend:
+    ports: ["127.0.0.1:8180:8180"]
+  gateway:
+    ports: ["127.0.0.1:8000:8000"]
+  meta-backend:
+    ports: ["127.0.0.1:8082:8082"]
+  security-backend:
+    ports: ["127.0.0.1:8194:8194"]
+  manager-backend:
+    ports: ["127.0.0.1:8081:8081"]
+  develop-backend:
+    ports: ["127.0.0.1:8185:8185"]
+  service-backend:
+    ports: ["127.0.0.1:8086:8086"]
+  transfer-backend:
+    ports: ["127.0.0.1:8083:8083"]

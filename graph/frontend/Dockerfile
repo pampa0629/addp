@@ -26,6 +26,7 @@ FROM localhost:5001/nginx:alpine
 
 # 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

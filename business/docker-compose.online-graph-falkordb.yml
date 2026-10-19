@@ -4,8 +4,13 @@ services:
       file: ../scripts/infra/falkordb.yml
       service: falkordb
     container_name: addp-graph-online-falkordb
-    ports:
-      - "127.0.0.1::6379"
+    networks:
+      - addp-network
     tmpfs:
       - /data
     restart: "no"
+
+networks:
+  addp-network:
+    external: true
+    name: addp-network

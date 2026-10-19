@@ -23,14 +23,15 @@ class GraphFixtureTest(unittest.TestCase):
             queries.append((graph, query, readonly))
             return [[], [[3 if 'count(n)' in query else 2]], []]
         with tempfile.TemporaryDirectory() as directory, patch.object(FIXTURE, 'owned_resources', return_value=[]), \
-             patch.object(FIXTURE, 'compose') as compose, patch.object(FIXTURE, 'command', return_value='127.0.0.1:23456'), \
+             patch.object(FIXTURE, 'compose') as compose, patch.object(FIXTURE, 'command', return_value='null'), \
              patch.object(FIXTURE, 'native', side_effect=native):
             FIXTURE.start(Path(directory))
             path = Path(directory) / 'graph-falkordb.json'
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             data = json.loads(path.read_text())
             self.assertEqual(data['engine_type'], 'falkordb')
-            self.assertEqual(data['connection_info']['port'], 23456)
+            self.assertEqual(data['connection_info']['host'], FIXTURE.CONTAINER)
+            self.assertEqual(data['connection_info']['port'], 6379)
             self.assertIs(type(data['connection_info']['database']), int)
             self.assertEqual(data['connection_info']['database'], 0)
             self.assertEqual(len(data['connection_info']['password']), 64)
@@ -45,7 +46,7 @@ class GraphFixtureTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError): FIXTURE.start(Path(directory))
                 compose.assert_not_called()
             with patch.object(FIXTURE, 'owned_resources', return_value=[]), patch.object(FIXTURE, 'compose'), \
-                 patch.object(FIXTURE, 'command', return_value='0.0.0.0:23456'), patch.object(FIXTURE, 'native') as native:
+                 patch.object(FIXTURE, 'command', return_value='{"6379/tcp":[{"HostIp":"0.0.0.0"}]}'), patch.object(FIXTURE, 'native') as native:
                 with self.assertRaises(RuntimeError): FIXTURE.start(Path(directory))
                 native.assert_not_called()
 
@@ -62,7 +63,9 @@ class GraphFixtureTest(unittest.TestCase):
     def test_owned_compose_uses_central_image_and_tmpfs(self):
         content = (ROOT / 'business/docker-compose.online-graph-falkordb.yml').read_text()
         self.assertIn('../scripts/infra/falkordb.yml', content)
-        self.assertIn('127.0.0.1::6379', content)
+        self.assertNotIn('ports:', content)
+        self.assertIn('external: true', content)
+        self.assertIn('name: addp-network', content)
         self.assertIn('tmpfs:', content)
         self.assertNotIn('image:', content)
 
