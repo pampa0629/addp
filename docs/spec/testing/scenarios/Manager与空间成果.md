@@ -74,6 +74,8 @@ GDAL 保存成果中的显式 CRS84 声明必须进入标准空间事实 `crs_re
 
 第四份成果须严格核对物理与 Meta 正整数大小、一次同 User/Tenant 的精确自动扫描、两个吸附源与本次 execution 的 active derive、Monitor、容器图层 EWKB 原始坐标和真实 OpenLayers 要素／像素／截图；四份源及全部既有成果在浏览器前后不变。另执行 tolerance=1.25 的失败 DAG，末条线双端吸到同一点导致塌缩，必须整批失败且保存未执行；不得出现失败成果、自动扫描或任何源／既有成果变化。失败执行状态与 Monitor 也须绑定同一用户。进入浏览器前以 `topology-snap-failure.json` 归档本次失败执行的最小公开观察（status、outputs、lineage_facts、meta_scan_runs）、固定 Owner 原因、Monitor 和未变化扫描清单，标记 `result=incomplete`；后续地图失败不能丢失已核验的塌缩阶段证据，该文件不能替代完整 T4 通过。最终报告唯一版本升为 `addp.vector-topology-persistence/v3`、`addp.topology-browser/v3` 和 `addp.topology-checkpoint/v3`，原始血缘归档覆盖四源、第四份成果的双来源及各次实际预览响应；`topology-physical/` 保留四份合成源和四份已核验成果原文件，按 SHA/大小核对且拒绝覆盖不同证据，支持下载后独立 GDAL 复核。归档不属于已清理的 NFS 业务目录；incomplete 仍不可替代最终通过。此前构面／几何修复 T4 只证明原范围，本扩展在真实 Hosted 通过前不得计入参考吸附 T4。
 
+吸附成果的物理几何及 API EWKB 必须与原始预期坐标精确相等。地图显示坐标经过 EPSG:3857 → EPSG:4326 → EPSG:3857 的预览投影链路，使用独立球面墨卡托公式计算预期显示值后逐值精确比较；不将投影浮点尾差视为源坐标变化，不使用舍入或容差掩盖差异。显示坐标系、要素数、类型、顶点顺序及真实像素断言同时保留。
+
 ### KML／GML／TopoJSON 的 S3 兼容消费
 
 容器图层沿既有 scope-table 路线返回 EWKB，HTTP JSON 中的二进制几何为 Base64。浏览器验收须先按该传输契约解码，再逐层核对几何类型、完整源坐标和 Z 维度；地图实例及像素仍独立验证，不能要求产品接口改返 GeoJSON 对象来满足测试。刷新后的响应与报告中的规范化几何使用同一解码入口。

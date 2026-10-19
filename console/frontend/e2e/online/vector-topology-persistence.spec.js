@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
+import { decodePreviewEWKB, webMercatorPreviewCoordinate } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
 import { browserAPIFromResponse, json, login } from './transfer-browser-support.js'
 
 test.use({ locale: 'zh-CN' })
@@ -117,11 +117,12 @@ test('同一普通User核对构面、几何修复、严格参考吸附地图及�
       await expect.poll(async () => renderer.evaluate(element => {
         const value = element.__vueParentComponent?.setupState?.mapInstance
         const map = value?.value || value
-        if (!map || map.getView().getAnimating()) return []
+        if (!map || map.getView().getAnimating() || map.getView().getProjection().getCode() !== 'EPSG:3857') return []
         return map.getLayers().getArray().flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
           .map(feature => feature.getGeometry().getCoordinates())
           .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-      })).toEqual([...snapCoordinates].sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+      })).toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))
+        .sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
     }
     await expect.poll(async () => renderer.locator('canvas').evaluateAll(canvases => canvases.reduce((count, canvas) => {
       const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data

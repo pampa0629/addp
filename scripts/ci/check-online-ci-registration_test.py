@@ -195,7 +195,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'scripts/test/online-hosted-topology-gate.sh', 'scripts/test/vector-topology-persistence-online.py',
             'business/scripts/online-vector-topology-fixture.py', 'scripts/utils/online_nfs_fixture.py',
             'console/frontend/e2e/online/vector-topology-persistence.spec.js', 'system/backend/cmd/online-test-fixture/main.go',
-            'engines/geopython-workflow/test_topology_operators.py')
+            'engines/geopython-workflow/test_topology_operators.py',
+            'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -205,6 +206,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[0], 'nfs-kernel-server nfs-common'), (paths[2], 'online-hosted-topology-gate_test.py'),
             (paths[3], '--suite vector-topology-persistence'), (paths[4], 'triggered_by'), (paths[7], 'browserAPIFromResponse('),
             (paths[5], 'validate_features'), (paths[5], 'SNAP_EXPECTED'), (paths[5], 'verify_snap'), (paths[5], 'archive_physical_evidence'), (paths[7], 'graph, preview'), (paths[4], 'snap_geometry'), (paths[4], 'validate_failed_snap'), (paths[4], 'collapsed_snap_diagnostic'), (paths[4], 'topology-snap-failure.json'), (paths[4], 'scan_ids(client)'), (paths[7], 'decodePreviewEWKB'), (paths[7], 'snapCoordinates'), (paths[7], 'failed_execution_id'), (paths[5], 'validate_repaired'), (paths[4], 'repair_geometry'), (paths[7], 'row.after_valid'), (paths[7], 'topology-source-lineage-raw.json'), (paths[6], 'root_squash'), (paths[7], 'getImageData'),
+            (paths[7], 'toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))'),
+            (paths[7], "getProjection().getCode() !== 'EPSG:3857'"), (paths[10], 'webMercatorPreviewCoordinate'),
+            (paths[11], 'display projection round trip exactly'),
             (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle')):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
