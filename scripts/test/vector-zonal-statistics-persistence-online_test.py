@@ -48,7 +48,7 @@ class Client:
                 if self.failure_scans:self.scans.append('failed-scan')
             else:
                 target='addp://engine/3/path/outputs/'+name+'?type=file';scan='scan-'+name;self.scans.append(scan)
-                facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.'+t['id'],'locator':t['params']['locator']} for t in tasks if 'locator' in t['params']],
+                facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.'+t['id'],'locator':t['params']['locator']} for t in sorted(tasks,key=lambda t:t['id']) if 'locator' in t['params']],
                     'outputs':[{'port':'output.save','locator':target,'write_mode':'create'}]}
                 result={'type':'geodataframe'}
                 if self.wrong_lineage:facts['inputs'].pop()
@@ -79,7 +79,7 @@ class VectorZonalPersistenceTest(unittest.TestCase):
             tasks=m.definition(sources,'parent',name)['tasks']
             self.assertEqual(tasks[-1]['operator'],'save');self.assertEqual(tasks[-1]['params']['mode'],'fail')
             self.assertEqual(tasks[-2]['operator'],'raster_vector_zonal_statistics');self.assertEqual(tasks[-2]['params']['band'],2)
-            self.assertEqual([t['params']['locator'] for t in tasks if 'locator' in t['params']],list(m.used_sources(name)))
+            self.assertEqual([t['params']['locator'] for t in sorted(tasks,key=lambda t:t['id']) if 'locator' in t['params']],list(m.used_sources(name)))
         classified=m.definition(sources,'parent','classified.gpkg')['tasks']
         self.assertEqual([t['operator'] for t in classified],['raster_load','raster_reclassify','raster_polygonize','raster_vector_zonal_statistics','save'])
         self.assertEqual(m.definition(sources,'parent','touched.gpkg')['tasks'][-2]['params']['field_prefix'],'stats_')
@@ -126,3 +126,13 @@ class VectorZonalPersistenceTest(unittest.TestCase):
     def test_diagnostic_reuses_sanitizer_with_suite_specific_filename(self):
         self.assertTrue(issubclass(m.DiagnosticClient,m.rasterize.DiagnosticClient))
         self.assertEqual(m.DiagnosticClient.diagnostic_name,'vector-zonal-statistics-submission-error.json')
+
+    def test_lineage_requires_canonical_node_order_and_rejects_duplicates_or_missing_reads(self):
+        client=Client();m.run_scenario(Path('.'),ENV,client,physical)
+        execution=client.executions['exec-center.gpkg']
+        target=execution['outputs']['save']['resource']['locator']
+        facts=execution['metadata']['lineage_facts'];expected=[r['locator'] for r in facts['inputs']]
+        self.assertEqual([r['port'] for r in facts['inputs']],['input.faces','input.values'])
+        for inputs in (list(reversed(facts['inputs'])),facts['inputs'][:1],facts['inputs']+[facts['inputs'][0]]):
+            changed=copy.deepcopy(execution);changed['metadata']['lineage_facts']['inputs']=inputs
+            with self.subTest(inputs=inputs),self.assertRaises(m.SuiteError):m.validate_success(changed,expected,target)

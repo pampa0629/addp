@@ -25,7 +25,8 @@ class DiagnosticClient(rasterize.DiagnosticClient):
 
 
 def used_sources(name):
-    return fixture.SOURCES[:1] if name=='classified.gpkg' else fixture.SOURCES
+    # Develop emits physical reads in stable node-ID order: faces, values.
+    return ('values.tif',) if name=='classified.gpkg' else ('zones.geojson','values.tif')
 
 
 def definition(sources,parent,name,*,invalid=None):
