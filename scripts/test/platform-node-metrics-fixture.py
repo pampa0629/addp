@@ -363,9 +363,14 @@ def engine_compose(directory, *args):
 def engine_source_action(directory, action):
     if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") != "engine-admission":
         raise ValueError("Business fixture requires the engine-admission case")
+    print("Engine source " + action + ": validate workflow ownership", flush=True)
+    if any(re.fullmatch(r"[1-9][0-9]{0,19}", os.environ.get(key, "")) is None for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")):
+        raise ValueError("engine source requires its Hosted workflow run and attempt")
+    expected = {"github_run_id": os.environ["GITHUB_RUN_ID"], "github_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                "repository": str(ROOT), "project": "business"}
+    print("Engine source " + action + ": validate local Docker", flush=True)
     SOURCE.local_docker(env=SOURCE.observer_environment())
     owner = directory/"engine-source-owner.json"
-    expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "repository": str(ROOT), "project": "business"}
     if action == "engine-up":
         if owner.exists() or (directory/"engine-source.env").exists():
             raise ValueError("Business source is already owned")
@@ -377,6 +382,7 @@ def engine_source_action(directory, action):
         envfile=directory/"engine-source.env"
         envfile.write_text("POSTGRES_USER=business\nPOSTGRES_DB=business\nPOSTGRES_PORT=5433\nPOSTGRES_IMAGE=postgis/postgis:15-3.4\nPOSTGRES_PASSWORD="+secrets.token_urlsafe(32)+"\n")
         envfile.chmod(0o600)
+        print("Engine source engine-up: start owned PostgreSQL", flush=True)
         engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
         return
     if not owner.exists():
@@ -395,11 +401,13 @@ def engine_source_action(directory, action):
             raise ValueError("refusing a foreign Business component")
     if action=="engine-restart":
         if len(ids)!=1: raise ValueError("Business PostgreSQL identity is not unique")
+        print("Engine source engine-restart: restart owned PostgreSQL and refresh source", flush=True)
         engine_compose(directory,"restart","--timeout","10","postgres")
         engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
         subprocess.run([sys.executable,str(ROOT/"scripts/utils/deployment-inventory.py"),"refresh","--scope","business","--directory",os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT/".dev-state/deployment-discovery")],
                        env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
         return
+    print("Engine source engine-down: remove owned PostgreSQL and verify zero residuals", flush=True)
     engine_compose(directory,"down","--volumes","--remove-orphans")
     for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
         if command(["docker",*args,"--filter","label=com.docker.compose.project=business"]).strip():

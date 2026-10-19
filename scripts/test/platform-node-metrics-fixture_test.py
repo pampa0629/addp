@@ -250,7 +250,7 @@ class CPUPressureFixtureTest(unittest.TestCase):
 
 class EngineSourceFixtureTest(unittest.TestCase):
     def test_business_source_is_private_owned_and_refuses_foreign_components(self):
-        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"GITHUB_RUN_ID":"12345","GITHUB_RUN_ATTEMPT":"1","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
             directory=Path(folder)
             FIXTURE.engine_source_action(directory,"engine-up")
             self.assertEqual((directory/"engine-source.env").stat().st_mode&0o777,0o600)
@@ -265,7 +265,7 @@ class EngineSourceFixtureTest(unittest.TestCase):
             self.assertFalse((directory/"engine-source.env").exists());self.assertFalse((directory/"engine-source-owner.json").exists())
 
     def test_restart_is_limited_to_owned_postgres_and_refreshes_the_same_source(self):
-        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"GITHUB_RUN_ID":"12345","GITHUB_RUN_ATTEMPT":"1","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
             directory=Path(folder);FIXTURE.engine_source_action(directory,"engine-up")
             def owned(args):
                 return "owned-id" if args[:3]==["docker","ps","-aq"] else json.dumps({"com.docker.compose.project.working_dir":str(FIXTURE.ROOT/"business"),"com.docker.compose.service":"postgres"})
@@ -281,10 +281,18 @@ class EngineSourceFixtureTest(unittest.TestCase):
             command.assert_not_called();self.assertEqual(list(Path(folder).iterdir()),[])
 
     def test_remote_docker_override_rejects_before_creating_or_stopping_resources(self):
-        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","DOCKER_HOST":"tcp://foreign:2375"}),patch.object(FIXTURE,"command") as command:
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","GITHUB_RUN_ID":"12345","GITHUB_RUN_ATTEMPT":"1","DOCKER_HOST":"tcp://foreign:2375"}),patch.object(FIXTURE,"command") as command:
             for action in ("engine-up","engine-down","engine-restart"):
                 with self.assertRaises(ValueError):FIXTURE.engine_source_action(Path(folder),action)
             command.assert_not_called();self.assertEqual(list(Path(folder).iterdir()),[])
+
+    def test_workflow_ownership_requires_a_canonical_run_and_attempt_before_docker(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"GITHUB_RUN_ID":"12345", "GITHUB_RUN_ATTEMPT":"1", "ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}, clear=True), patch.object(FIXTURE.SOURCE, "local_docker") as docker, patch.object(FIXTURE, "command") as command:
+            for key, invalid in (("GITHUB_RUN_ID",""), ("GITHUB_RUN_ID","0"), ("GITHUB_RUN_ATTEMPT","other")):
+                with patch.dict(os.environ, {key:invalid}), self.assertRaises(ValueError):
+                    FIXTURE.engine_source_action(Path(folder), "engine-up")
+            docker.assert_not_called(); command.assert_not_called()
+            self.assertEqual(list(Path(folder).iterdir()), [])
 
     def test_engine_docker_does_not_inherit_platform_sql_credentials(self):
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"POSTGRES_PASSWORD":"private-sentinel","SYSTEM_SERVICE_CLIENT_SECRET":"private-sentinel"}),patch.object(FIXTURE.subprocess,"run") as run:
@@ -315,7 +323,7 @@ class EngineSourceCommandTest(unittest.TestCase):
         self.env = dict(PATH=str(self.bin), GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
                         ADDP_ONLINE_HOST="1", ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
                         ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"),
-                        ADDP_ONLINE_TEST_RUN_ID="command-test", ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",
+                        GITHUB_RUN_ID="12345", GITHUB_RUN_ATTEMPT="1", ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",
                         ADDP_DEPLOYMENT_DISCOVERY_DIR=str(self.root / "discovery"))
         docker = self.bin / "docker"
         docker.write_text("#!" + sys.executable + "\n" + "ROOT = " + repr(str(self.root)) + "\n" + r'''
@@ -363,6 +371,7 @@ else: sys.exit(19)
     def test_standalone_cli_starts_refreshes_and_cleans_without_pythonpath(self):
         self.cli("engine-up")
         self.assertEqual((self.secret / "engine-source.env").stat().st_mode & 0o777, 0o600)
+        self.env["ADDP_ONLINE_TEST_RUN_ID"] = "late-application-identity"
         self.cli("engine-restart")
         source = json.loads((self.root / "discovery/business.json").read_text())
         self.assertEqual(source["state"], "available")
@@ -376,6 +385,10 @@ else: sys.exit(19)
         self.cli("engine-up", success=False)
         self.assertTrue((self.secret / "engine-source-owner.json").exists())
         self.assertTrue((self.root / "docker-state").exists())
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        self.cli("engine-down", success=False)
+        self.assertTrue((self.root / "docker-state").exists())
+        self.env["GITHUB_RUN_ATTEMPT"] = "1"
         (self.root / "foreign").touch()
         self.cli("engine-down", success=False)
         self.assertTrue((self.secret / "engine-source-owner.json").exists())
