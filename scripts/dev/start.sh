@@ -956,6 +956,11 @@ fi
 
 echo ""
 
+# Refresh deployment-side facts even when healthy Infra was reused above.
+for deployment_scope in infra business; do
+  python3 "$ROOT_DIR/scripts/utils/deployment-inventory.py" refresh --scope "$deployment_scope" || echo "Deployment discovery unavailable: $deployment_scope; business startup continues" >&2
+done
+
 # 2. 启动 System Backend
 if [ "$START_SYSTEM_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"

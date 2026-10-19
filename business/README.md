@@ -2,15 +2,17 @@
 
 ## 部署来源清单
 
+Infra、普通 Business 启停及开发启动会自动刷新当前工作区的部署发现快照，Infra 与 Business 分别保存，发现失败不阻断服务。唯一读取实现为 `scripts/utils/deployment-inventory.py`；目录配置、权限及失败语义见[部署环境与密钥](../docs/spec/configuration/部署环境与密钥.md)。自动候选的页面批量确认与专业指标正在接入，当前仍使用已实现的单个 PostgreSQL 管理员确认登记；发现不等于已纳管或已采集。
+
 平台自管服务的运维归属与租户数据权限分别维护。首期可以只读导出当前工作区已运行的 PostgreSQL 来源：
 
 ```bash
-python3 business/scripts/deployments.py export --service postgres > /tmp/addp-business-deployment.json
+python3 scripts/utils/deployment-inventory.py export --service postgres > /tmp/addp-business-deployment.json
 ```
 
 从仓库根目录执行。仅支持本地 Linux Docker 或 macOS Docker Desktop Linux VM 的 Unix Socket Context；拒绝 `DOCKER_HOST` 和 Docker TLS 环境覆盖。来源按当前工作区 Compose 标签核验，不按容器名称、IP 或登记连接猜测。输出包含 Docker Engine 来源、当前容器 ID、启动时间和实际 SQL 端口，不读取 `.env`、容器环境、业务表或凭据，不调用 System API，不启动或重启服务。服务缺失、停止、多容器或导出期间发生变化时明确失败，标准输出不产生部分清单。
 
-此文件是供管理员核对的来源快照，可以被编辑，不是签名或授权凭据。Docker/Compose 来源与容器运行身份不替代 System 部署身份、`node_id` 或 `engine_id`；尚不能导入现有 v2 主机接入页面，System 部署登记、明确主机关联和引擎专业指标仍待后续实现。Docker Desktop 的来源归 Linux VM，不归原生 macOS 主机。确定性校验使用 `make test-business-config`，已纳入现有 Platform CI。
+此文件是供管理员核对的来源快照，可以被编辑，不是签名或授权凭据。Docker/Compose 来源与容器运行身份不替代 System 部署身份、`node_id` 或 `engine_id`；System 已支持 PostgreSQL 部署登记及明确主机关联，不导入 v2 主机接入页面，引擎专业指标尚未开放。Docker Desktop 的来源归 Linux VM，不归原生 macOS 主机。确定性校验使用 `make test-deployment-discovery`，完整 Business 校验使用 `make test-business-config`，均由现有 Platform CI 覆盖。
 
 ## GaussDB Business 部署
 

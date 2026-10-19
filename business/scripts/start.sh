@@ -1259,3 +1259,5 @@ fi
 if [ "$ENABLE_FALKORDB" = true ]; then
     echo "Business FalkorDB: 127.0.0.1:${BUSINESS_FALKORDB_PORT}，DB 0（用户 default）"
 fi
+
+python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" refresh --scope business || echo 'Business deployment discovery unavailable; business services remain running' >&2

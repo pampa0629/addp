@@ -104,3 +104,5 @@ else
     docker compose rm -sf "${SERVICES[@]}"
     echo -e "${GREEN}✓ 已停止: ${SERVICES[*]}${NC}"
 fi
+
+python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" refresh --scope business || echo 'Business deployment discovery unavailable; shutdown result is unchanged' >&2

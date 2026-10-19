@@ -155,4 +155,5 @@ else
   compose down
 fi
 
+python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" refresh --scope infra || echo 'Infra deployment discovery unavailable; shutdown result is unchanged' >&2
 echo -e "${GREEN}✓ 完成${NC}"

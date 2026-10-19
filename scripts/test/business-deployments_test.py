@@ -1,15 +1,17 @@
-"""Business inventory boundary tests; never access a real Docker daemon."""
+"""Shared Infra/Business discovery and admission tests; no real Docker daemon."""
 import copy
 import importlib.util
 import io
 import json
 from pathlib import Path
 import subprocess
+import tempfile
+import os
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location('deployments', ROOT / 'business/scripts/deployments.py')
+SPEC = importlib.util.spec_from_file_location('deployments', ROOT / 'scripts/utils/deployment-inventory.py')
 inventory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(inventory)
 CID = 'a' * 64
@@ -185,6 +187,206 @@ class DeploymentInventoryTests(unittest.TestCase):
             self.assertEqual(inventory.main(), 1)
             self.assertEqual(out.getvalue(), '')
             self.assertIn('不属于当前工作区', err.getvalue())
+
+
+class DiscoveryTests(unittest.TestCase):
+    def source(self, scope='business'):
+        source = Source()
+        source.container['project'], root = inventory.SCOPES[scope]
+        source.container['working_dir'] = str(root)
+        return source
+
+    def discover(self, source=None, scope='business'):
+        return inventory.discover(scope, env={}, reader=source or self.source(scope), system='Darwin')
+
+    def test_both_scopes_use_actual_runtime_and_project(self):
+        for scope in inventory.SCOPES:
+            with self.subTest(scope=scope):
+                source = self.source(scope)
+                value = self.discover(source, scope)
+                self.assertEqual(value['schema'], 'addp.deployment-discovery/v1')
+                self.assertEqual(value['scope'], scope)
+                self.assertEqual(value['state'], 'available')
+                self.assertEqual(value['source']['project'], inventory.SCOPES[scope][0])
+                self.assertEqual(value['source']['runtime'], 'desktop_linux_vm')
+                self.assertEqual(value['services'][0]['engine_type'], 'postgresql')
+                self.assertEqual(value['services'][0]['containers'][0]['published_ports'][0]['port'], 15433)
+                encoded = json.dumps(value)
+                for forbidden in ('password', 'working_dir', '"tenant_id"', '"node_id"', '"engine_id"', str(ROOT)):
+                    self.assertNotIn(forbidden, encoded)
+                self.assertEqual({args[2] for args in source.commands if args[0] == '--context'}, {'info', 'ps', 'inspect'})
+                self.assertNotIn('.Config.Env', inventory.CONTAINER)
+
+    def test_successful_empty_discovery_is_not_failure(self):
+        source = self.source()
+        source.ids = ''
+        value = self.discover(source)
+        self.assertEqual(value['state'], 'available')
+        self.assertEqual(value['services'], [])
+
+    def test_stopped_or_created_services_remain_source_facts(self):
+        for state in ('exited', 'created', 'dead'):
+            source = self.source()
+            source.container.update(status=state, running=False, started_at='0001-01-01T00:00:00Z', ports={})
+            container = self.discover(source)['services'][0]['containers'][0]
+            self.assertEqual(container['status'], state)
+            self.assertEqual(container['started_at'], '')
+            self.assertEqual(container['published_ports'], [])
+
+    def test_unknown_service_is_unclassified_not_guessed_from_container(self):
+        source = self.source()
+        source.container['service'] = 'unadapted-component'
+        value = self.discover(source)['services'][0]
+        self.assertEqual(value['engine_type'], 'unclassified')
+        self.assertEqual(value['service'], 'unadapted-component')
+
+    def test_wrong_scope_foreign_workdir_and_oneoff_reject_entire_snapshot(self):
+        for key, value in (('project', 'addp-infra'), ('working_dir', '/different/workspace'), ('oneoff', 'True')):
+            source = self.source()
+            source.container[key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.discover(source)
+
+    def test_source_changes_reject_without_partial_snapshot(self):
+        source = self.source()
+        source.after = lambda s: s.container.update(restart_count=1)
+        with self.assertRaises(ValueError):
+            self.discover(source)
+
+    def test_invalid_scope_and_remote_docker_never_discover(self):
+        source = self.source()
+        with self.assertRaises(ValueError):
+            self.discover(source, 'outside')
+        self.assertEqual(source.commands, [])
+        source.endpoint = 'ssh://different-host'
+        with self.assertRaises(ValueError):
+            self.discover(source)
+        self.assertEqual(len(source.commands), 2)
+
+    def test_runtime_and_id_bounds(self):
+        for ids in ('not-an-id', CID+'\n'+CID, '\n'.join(f'{i:064x}' for i in range(129))):
+            source = self.source()
+            source.ids = ids
+            with self.subTest(ids=ids[:10]), self.assertRaises(ValueError):
+                self.discover(source)
+        source = self.source()
+        source.container['started_at'] = 'credential-sentinel'
+        with self.assertRaises(ValueError):
+            self.discover(source)
+
+    def test_all_published_ports_are_projected_without_protocol_guessing(self):
+        source = self.source()
+        source.container['ports'].update({'9000/tcp': None, '9001/udp': [{'HostIp': '::1', 'HostPort': '19001'}]})
+        value = self.discover(source)['services'][0]['containers'][0]['published_ports']
+        self.assertEqual(len(value), 2)
+        self.assertEqual(value[1], {'address': '::1', 'port': 19001, 'container_port': 9001, 'protocol': 'udp'})
+
+    def test_multiple_services_and_replicas_are_sorted_without_collapsing_instances(self):
+        class MultipleSource(Source):
+            def __call__(self, *args):
+                if len(args) > 2 and args[2] == 'inspect':
+                    value = copy.deepcopy(self.container)
+                    value['id'] = args[-1]
+                    if args[-1] == 'c'*64:
+                        value['service'] = 'redis'
+                    return json.dumps(value)
+                return super().__call__(*args)
+        source = MultipleSource()
+        source.ids = '\n'.join(letter*64 for letter in ('c', 'b', 'a'))
+        values = self.discover(source)['services']
+        self.assertEqual([s['service'] for s in values], ['postgres', 'redis'])
+        self.assertEqual([c['container_id'] for c in values[0]['containers']], ['a'*64, 'b'*64])
+        self.assertEqual(len(values[1]['containers']), 1)
+
+    def test_publication_is_private_and_scope_isolation_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'discovery'
+            for scope in inventory.SCOPES:
+                inventory.publish(scope, directory, env={}, reader=self.source(scope), system='Darwin')
+            first = (directory/'infra.json').read_bytes()
+            value = self.source()
+            value.container['restart_count'] = 8
+            inventory.publish('business', directory, env={}, reader=value, system='Darwin')
+            self.assertEqual((directory/'infra.json').read_bytes(), first)
+            self.assertEqual(json.loads((directory/'business.json').read_text())['services'][0]['containers'][0]['restart_count'], 8)
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+            self.assertEqual((directory/'business.json').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(list(directory.glob('.*')), [])
+
+    def test_failed_refresh_replaces_old_success_with_redacted_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'discovery'
+            inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            source = self.source()
+            source.container['ports']['bad-credential-sentinel'] = []
+            with self.assertRaises(ValueError):
+                inventory.publish('business', directory, env={}, reader=source, system='Darwin')
+            value = json.loads((directory/'business.json').read_text())
+            self.assertEqual(value['state'], 'unavailable')
+            self.assertEqual(value['services'], [])
+            self.assertNotIn('source', value)
+            self.assertNotIn('credential-sentinel', json.dumps(value))
+
+    def test_atomic_replacement_failure_preserves_previous_file_and_removes_temporary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'discovery'
+            inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            previous = (directory/'business.json').read_bytes()
+            with patch.object(inventory.os, 'replace', side_effect=OSError('simulated IO failure')):
+                with self.assertRaises(OSError):
+                    inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            self.assertEqual((directory/'business.json').read_bytes(), previous)
+            self.assertEqual(list(directory.glob('.*')), [])
+
+    def test_symlinks_shared_permissions_and_nonregular_lock_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'discovery'
+            directory.mkdir(mode=0o700)
+            alias = Path(tmp)/'alias'
+            alias.symlink_to(directory)
+            with self.assertRaises(ValueError):
+                inventory.publish('business', alias, env={}, reader=self.source(), system='Darwin')
+            directory.chmod(0o755)
+            with self.assertRaises(ValueError):
+                inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            directory.chmod(0o700)
+            victim = Path(tmp)/'victim'
+            victim.write_text('unchanged')
+            (directory/'business.json').symlink_to(victim)
+            with self.assertRaises(ValueError):
+                inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            self.assertEqual(victim.read_text(), 'unchanged')
+            (directory/'business.json').unlink()
+            (directory/'business.lock').unlink()
+            os.mkfifo(directory/'business.lock', 0o600)
+            with self.assertRaises(ValueError):
+                inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+
+    def test_cli_refresh_has_no_source_output(self):
+        with patch.object(inventory.sys, 'argv', ['deployment-inventory.py', 'refresh', '--scope', 'infra']), \
+                patch.object(inventory, 'publish', return_value={'private': 'not-for-stdout'}) as publish, \
+                patch.object(inventory.sys, 'stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(inventory.main(), 0)
+            self.assertEqual(publish.call_args.args[0], 'infra')
+            self.assertEqual(output.getvalue(), '')
+
+    def test_empty_directory_environment_uses_private_workspace_default(self):
+        with patch.dict(os.environ, {'ADDP_DEPLOYMENT_DISCOVERY_DIR': ''}), \
+                patch.object(inventory.sys, 'argv', ['deployment-inventory.py', 'refresh', '--scope', 'infra']), \
+                patch.object(inventory, 'publish') as publish:
+            self.assertEqual(inventory.main(), 0)
+            self.assertEqual(publish.call_args.args[1], str(ROOT/'.dev-state/deployment-discovery'))
+
+    def test_lock_contention_is_bounded_without_changing_previous_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)/'discovery'
+            inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            previous = (directory/'business.json').read_bytes()
+            with patch.object(inventory.fcntl, 'flock', side_effect=BlockingIOError), \
+                    patch.object(inventory.time, 'monotonic', side_effect=[0, 6]):
+                with self.assertRaises(ValueError):
+                    inventory.publish('business', directory, env={}, reader=self.source(), system='Darwin')
+            self.assertEqual((directory/'business.json').read_bytes(), previous)
 
 
 if __name__ == '__main__':

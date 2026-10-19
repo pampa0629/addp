@@ -497,4 +497,5 @@ else
   optional_result=1
 fi
 reconcile_metrics || optional_result=1
+python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" refresh --scope infra || echo 'Infra deployment discovery unavailable; core services remain running' >&2
 exit "$optional_result"

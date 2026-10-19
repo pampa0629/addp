@@ -89,7 +89,7 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 
 引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供 POST 创建、GET 分页/详情和 PUT 完整替换，分配稳定 `deployment_id`；首批只接受 Business PostgreSQL 单容器来源与一个明确的已纳管主机，不接受 `tenant_id/engine_id`、连接凭据或 SQL，不调用 Docker、数据库探测或部署操作。其他引擎、集群多主机、主机未知的云服务及租户引擎关联尚未开放。
 
-来源唯一由 `python3 business/scripts/deployments.py export --service postgres` 导出，协议 `addp.business-deployment-inventory/v1`，最多 16 KiB。内容为导出时间、本地 Docker Engine/Compose 项目服务、容器运行 ID/启动时间/重启次数及实际 SQL 端口映射；导出只访问当前工作区 Business Compose 的本地 Unix Socket Docker Context，拒绝远程端点及 `DOCKER_HOST`/TLS 覆盖，不读取 `.env`、容器环境变量或完整 inspect；运行身份、状态、端口和 Docker Engine ID 两次核对一致才输出。文件可被编辑，不是签名或授权证明。System 对完整结构、固定 PostgreSQL 类型、运行来源、IP/端口和范围再次校验；首批 Desktop 来源只可关联 virtual 主机。容器 ID 表示当次运行，不是永久部署身份。
+来源唯一由 `python3 scripts/utils/deployment-inventory.py export --service postgres` 导出，协议 `addp.business-deployment-inventory/v1`，最多 16 KiB。内容为导出时间、本地 Docker Engine/Compose 项目服务、容器运行 ID/启动时间/重启次数及实际 SQL 端口映射；导出只访问当前工作区 Business Compose 的本地 Unix Socket Docker Context，拒绝远程端点及 `DOCKER_HOST`/TLS 覆盖，不读取 `.env`、容器环境变量或完整 inspect；运行身份、状态、端口和 Docker Engine ID 两次核对一致才输出。文件可被编辑，不是签名或授权证明。System 对完整结构、固定 PostgreSQL 类型、运行来源、IP/端口和范围再次校验；首批 Desktop 来源只可关联 virtual 主机。容器 ID 表示当次运行，不是永久部署身份。
 
 管理员在 System“平台引擎部署”导入并预览来源，明确选择实际承载主机后确认；不按地址、名称或容器运行 ID 自动归并。来源按 Docker Engine ID、Compose 项目和服务唯一，即使停用也不能重复登记。同一部署后续导入新来源、改挂主机、修改名称或纳管意图均须显式带当前 `version` 完整更新。列表只接受 `page/page_size/search/node_id`，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名和附加 query。
 
@@ -98,6 +98,14 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 接口仅接受非委托 Platform User，独立 `platform.engine_deployment.read/create/update`，创建/更新还须 `platform.host_node.read`；迁移 000220 只向既有平台系统管理员发布三项权限，并沿既有触发器推进授权版本、撤销相关旧刷新族。其他角色、Tenant、Service、委托调用不因部署登记获得权限。界面保留冲突或失败输入；CAS 冲突和结果不明确时停止再次提交，只允许用户显式重新读取核对，首次登记则关闭后刷新列表，不构造已成功身份。
 
 T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS/声明历史/审计回滚及权限前向迁移、System/Console 前端门禁沿现有注册自动发现。精确 T2 入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"` 和同参数的 `--package migration`；本地须使用标准脚本核验的 `addp_iam_test`。产品接入 T4 与上述确定性验证分开登记，尚未通过不能写作真实运行已验收。
+
+### 4.5 部署侧自动发现来源
+
+唯一 Docker 读取实现位于 `scripts/utils/deployment-inventory.py`，由 Infra、普通 Business 启停和开发启动按各自作用域自动刷新，不调用 System API 或数据库。发现协议为 `addp.deployment-discovery/v1`，最多 256 KiB；仅核验本地 Unix Socket Context 的 Linux Docker 或 macOS Desktop Linux VM，以当前工作区的 Compose project/working_dir 校验归属。最多读取 128 个容器、64 个服务、单服务 16 个容器和单容器 64 个实际端口，整体 Docker 读取期限 30 秒；前后读取服务运行身份、状态、启动时间、重启次数、端口及 Docker Engine 身份一致才输出。
+
+快照区分 `scope=infra|business`、`state=available|unavailable`，带 UTC 读取时间；成功空集合与失败分别表达。未知组件只标记未分类，不猜测集群、主机关联、引擎专业监控或租户归属。快照不含环境变量、密码、SQL、租户或授权，System Web 服务不因此获得 Docker 权限。
+
+快照写入部署用户独占目录，独立作用域锁内完成读取并以私有临时文件原子替换；发布失败不写半份数据，来源失败则发布不可用结果并清除有效候选。不得把磁盘中较早快照当作实时服务状态。当前已具备来源自动发布，System 候选读取、管理员批量确认、持续来源刷新及专业指标仍按后续专题实施，不以本节代替产品接入验收。
 
 ## 五、技术路线与故障隔离
 
