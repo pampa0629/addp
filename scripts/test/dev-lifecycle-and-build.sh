@@ -464,7 +464,8 @@ for name in ('system', 'manager', 'asset', 'asset-frontend', 'quality', 'quality
     command = [sys.executable, str(root / 'server.py'), name, str(ports[name])] if name in ports else [sys.executable, '-c', 'import time; time.sleep(120)']
     if name == 'asset-frontend':
         command = [sys.executable, str(root / 'launcher.py'), str(root / 'server.py'), name, str(ports[name])]
-    proc = subprocess.Popen(command, cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with (root / 'process-stderr.log').open('ab') as errors:
+        proc = subprocess.Popen(command, cwd=root, stdout=subprocess.DEVNULL, stderr=errors)
     pidfile.write_text(str(proc.pid))
 ''')
 (dev / 'start.sh').write_text('''#!/bin/bash
@@ -547,6 +548,12 @@ try:
                 assert before[name + '.pid'] == after[name + '.pid'], f'{name} PID changed'
                 os.kill(int(after[name + '.pid']), 0)
         if 'asset' in selected:
+            assert (root / 'stopped-asset-frontend').is_file(), (
+                'frontend shutdown marker missing',
+                {'child_pid': old_child, 'ports': ports, 'before': before, 'after': after,
+                 'stdout': result.stdout, 'stderr': result.stderr,
+                 'process_stderr': (root / 'process-stderr.log').read_text()},
+            )
             assert (root / 'stopped-asset-frontend').read_text() == str(old_child), 'frontend listener child was not terminated'
             assert not (root / 'receiver-signalled').exists(), 'backend log receiver was terminated before EOF'
             assert (root / 'drained-asset').read_text() == 'final deregistration log', 'shutdown log was not drained'
