@@ -16,6 +16,22 @@ type querySourceProtection struct {
 	rules  []dataprotection.Rule
 }
 
+func queryPlansAt(plans []querySourceProtection, subject dataprotection.SubjectReference, now time.Time) []querySourceProtection {
+	bound := append([]querySourceProtection(nil), plans...)
+	for index, plan := range bound {
+		bound[index].rules = append([]dataprotection.Rule(nil), plan.rules...)
+		for ruleIndex, rule := range plan.rules {
+			bound[index].rules[ruleIndex].Authorizations = nil
+			for _, grant := range rule.Authorizations {
+				if grant.Subject == subject && !now.Before(grant.ValidFrom) && now.Before(grant.ValidUntil) {
+					bound[index].rules[ruleIndex].Authorizations = append(bound[index].rules[ruleIndex].Authorizations, grant)
+				}
+			}
+		}
+	}
+	return bound
+}
+
 func defaultQueryRules(rules []dataprotection.Rule) []dataprotection.Rule {
 	result := append([]dataprotection.Rule(nil), rules...)
 	for i := range result {

@@ -36,6 +36,7 @@ func TestProjectionStoreAuthorizedQueryResultAgainstPostgres(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertAuthorizedQueryResultLifecycle(t, store, identity)
+			assertQueryGrantExecutionBoundary(t, store)
 		})
 	}
 }

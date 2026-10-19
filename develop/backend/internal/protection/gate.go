@@ -36,6 +36,14 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 		return nil, nil, fmt.Errorf("%w: query provider has no catalog model", ErrRequired)
 	}
 	subject, _ := ctx.Value(interactiveQuerySubjectKey{}).(dataprotection.SubjectReference)
+	capture, _ := ctx.Value(queryCaptureKey{}).(*QueryCapture)
+	if capture != nil {
+		if subject != (dataprotection.SubjectReference{}) && subject != capture.Subject {
+			end()
+			return nil, nil, ErrRequired
+		}
+		subject = capture.Subject
+	}
 	protect, err := g.store.PrepareQueryProtection(ctx, int64(tenantID), modelProvider.EngineCatalogModel(), prepared, "query", subject, time.Now().UTC())
 	if err != nil {
 		end()
@@ -49,11 +57,16 @@ func (g *Gate) BeginPreparedQuery(ctx context.Context, tenantID uint, enginePlug
 			}
 			capture.Result = snapshot
 		}
-		if err := protect.Apply(result); err != nil {
+		apply := protect.Apply
+		if capture != nil {
+			apply = protect.ApplyDefault
+		}
+		if err := apply(result); err != nil {
 			if capture, ok := ctx.Value(queryCaptureKey{}).(*QueryCapture); ok && capture.Result != nil {
 				// An authorized result may have a deny fallback. Retain no default
 				// rows in that case; every real read still rechecks the ephemeral result.
 				result.Columns = []string{}
+				result.Fields = nil
 				result.Rows = []map[string]interface{}{}
 				return nil
 			}

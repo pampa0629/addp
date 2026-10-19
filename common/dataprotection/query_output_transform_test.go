@@ -62,7 +62,7 @@ func TestQueryOutputTransformsRejectUnprovenAndPreserveInvalidEffects(t *testing
 	if err != nil || len(operations) != 1 || operations[0].InvalidValue != "reject" {
 		t.Fatal("implicit deny fallback was weakened", err)
 	}
-	for _, mode := range []string{"opaque", "derived", "nested", "duplicate", "sm3", "numeric constant", "invalid parameters", "deny"} {
+	for _, mode := range []string{"opaque", "derived", "nested", "duplicate", "invalid parameters", "deny"} {
 		t.Run(mode, func(t *testing.T) {
 			source := plugin.QueryOutputSource{IdentityOutput: true}
 			rule := transformRule()
@@ -78,13 +78,6 @@ func TestQueryOutputTransformsRejectUnprovenAndPreserveInvalidEffects(t *testing
 				rules[0].Component.Path = []PathSegment{{Name: "user", Container: "object"}, {Name: "phone", Container: "scalar"}}
 			case "duplicate":
 				rules = append(rules, rule)
-			case "sm3":
-				rules[0].Decision.Algorithm = AlgorithmSM3V1
-				rules[0].Decision.Parameters = nil
-			case "numeric constant":
-				rules[0].Component.ValueType = "int"
-				rules[0].Decision.Algorithm = AlgorithmConstantV1
-				rules[0].Decision.Parameters = map[string]any{"value": 1}
 			case "invalid parameters":
 				rules[0].Decision.Parameters = map[string]any{"prefix_runes": "3"}
 			case "deny":
@@ -104,6 +97,20 @@ func TestQueryOutputTransformsRejectUnprovenAndPreserveInvalidEffects(t *testing
 		}
 		if decision.Effect == EffectSuppress && operations[0].Kind != "omit" || decision.Effect == EffectMask && (operations[0].Kind != "constant_text" || operations[0].Replacement != "[保护]") {
 			t.Fatal("replacement or suppression changed")
+		}
+	}
+}
+
+func TestQueryOutputTransformsKeepValidatedGoAlgorithmsInTheSamePlan(t *testing.T) {
+	for _, decision := range []Decision{{Effect: EffectMask, Algorithm: AlgorithmSM3V1}, {Effect: EffectMask, Algorithm: AlgorithmConstantV1, Parameters: map[string]any{"value": 1}}} {
+		rule := transformRule()
+		rule.Decision = decision
+		if decision.Algorithm == AlgorithmConstantV1 {
+			rule.Component.ValueType = "int"
+		}
+		operations, err := QueryOutputTransformsAt(plugin.QueryOutputSource{IdentityOutput: true}, "query", []Rule{rule}, SubjectReference{}, time.Now().UTC())
+		if err != nil || len(operations) != 0 {
+			t.Fatal("validated Go algorithm was rejected or sent to SQL", err)
 		}
 	}
 }

@@ -10,7 +10,7 @@ import (
 // QueryOutputTransformsAt lowers validated structured rules through the same
 // lineage mapping and exact-subject decision used by result protection. It
 // contains no SQL, provider names or business data. An empty result means no
-// output needs transformation; it must not be bound as an empty SQL rewrite.
+// output needs a native transformation; it must not be bound as an empty SQL rewrite.
 func QueryOutputTransformsAt(source plugin.QueryOutputSource, action string, rules []Rule, subject SubjectReference, now time.Time) ([]plugin.QueryOutputTransform, error) {
 	mapped, err := queryOutputRules(source, action, rules)
 	if err != nil {
@@ -42,6 +42,11 @@ func QueryOutputTransformsAt(source plugin.QueryOutputSource, action string, rul
 		case EffectDeny:
 			return nil, ErrDenied
 		case EffectMask:
+			// These validated operations stay in the same shared Go protection
+			// pass. They never create a second query or a plaintext output path.
+			if decision.Algorithm == AlgorithmSM3V1 || decision.Algorithm == AlgorithmConstantV1 && rule.Component.ValueType != "string" {
+				continue
+			}
 			if rule.Component.ValueType != "string" {
 				return nil, unsupported
 			}

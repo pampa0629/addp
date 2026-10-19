@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/conformance"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
@@ -25,11 +26,11 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 	}
 	conn["database"] = database
 	table := mysqlDialect().QualifiedTable(database, "output_rewrite")
-	if _, err := db.ExecContext(ctx, "CREATE TABLE "+table+" (id BIGINT PRIMARY KEY,phone VARCHAR(100),amount DECIMAL(30,6)) ENGINE=InnoDB"); err != nil {
+	if _, err := db.ExecContext(ctx, "CREATE TABLE "+table+" (id BIGINT PRIMARY KEY,phone VARCHAR(100),amount DECIMAL(30,6),email VARCHAR(100),label VARCHAR(100)) ENGINE=InnoDB"); err != nil {
 		t.Fatal(err)
 	}
 	for index, value := range []any{"张三李四王五", "a", "", nil, "abcdef", "x.y", "🧭甲乙丙丁"} {
-		if _, err := db.ExecContext(ctx, "INSERT INTO "+table+" VALUES (?,?,?)", index+1, value, "9007199254740993.123456"); err != nil {
+		if _, err := db.ExecContext(ctx, "INSERT INTO "+table+" VALUES (?,?,?,?,?)", index+1, value, "9007199254740993.123456", "fixture@example.test", "fixture label"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -130,6 +131,17 @@ func TestIntegrationMySQLOutputRewrite(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	t.Run("shared protection", func(t *testing.T) {
+		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: "SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM " + table + " ORDER BY id", Options: plugin.QueryOptions{ReadOnly: true}})
+		}, nil)
+	})
+	t.Run("shared protection through service wrapper", func(t *testing.T) {
+		conformance.QueryOutputProtection(t, provider.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+			query := "SELECT addp_source.id,addp_source.contact,addp_source.mail,addp_source.public_label,addp_source.amount FROM (SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM " + table + " WHERE id>=? ORDER BY id LIMIT ?) AS addp_source WHERE addp_source.id<=? ORDER BY addp_source.id LIMIT ? OFFSET ?"
+			return provider.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 93, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: []any{1, 7, 7, 7, 0}}})
+		}, nil)
+	})
 	after, err := provider.ExecuteSQL(ctx, conn, allSQL, plugin.QueryOptions{ReadOnly: true})
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatal("rewrite altered source values or metadata", err)

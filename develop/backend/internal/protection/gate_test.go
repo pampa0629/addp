@@ -344,3 +344,134 @@ func TestGraphGateUsesPreparedScopeAndRetainsInflightBarrier(t *testing.T) {
 		t.Fatal("denied graph retained inflight lease")
 	}
 }
+
+// The physical plan must see the verified execution actor before it decides
+// which columns to mask; its persistent preview still uses default rules.
+func TestGateBindsExecutionActorAndPersistsOnlyDefaultPreview(t *testing.T) {
+	for _, mode := range []string{"live", "expired", "default deny", "conflicting actor", "changed actor"} {
+		t.Run(mode, func(t *testing.T) {
+			store := developProjectionStore(t)
+			now := time.Now().UTC()
+			provider, err := plugin.Get("postgresql")
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := provider.(plugin.EngineCatalogModelProvider).EngineCatalogModel()
+			path := plugin.TabularItemPath(11, plugin.EngineCatalogTermSchema, "outdoor", "persons")
+			fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+			component := dataprotection.Component{Key: "phone", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}, ValueType: "string"}
+			component.SchemaFingerprint, err = dataprotection.ComponentSchemaFingerprint(fields, component)
+			if err != nil {
+				t.Fatal(err)
+			}
+			schemaHash, err := dataprotection.TableSchemaSnapshotHash(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actor := dataprotection.SubjectReference{Type: "user", ID: "41"}
+			decision := dataprotection.Decision{Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: dataprotection.EffectSuppress}
+			if mode == "default deny" {
+				decision = dataprotection.Decision{Effect: dataprotection.EffectDeny, InvalidValueEffect: dataprotection.EffectDeny}
+			}
+			deadline := now.Add(time.Hour)
+			if mode == "expired" {
+				deadline = now.Add(-time.Minute)
+			}
+			projection := dataprotection.Projection{TargetEngineID: 11, SchemaVersion: dataprotection.ProjectionSchemaV4, ProjectionID: "actor-bound-query", Revision: "00000000000000000001", ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: schemaHash, ValidFrom: now.Add(-time.Hour), Rules: []dataprotection.Rule{{Action: "query", Component: component, Decision: decision, Authorizations: []dataprotection.TemporaryAuthorization{{Subject: actor, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-30 * time.Minute), ValidUntil: deadline}}}}}
+			if err := projection.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ApplyBatch(t.Context(), 7, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "actor-1", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "actor-1"}, now); err != nil {
+				t.Fatal(err)
+			}
+			executions := 0
+			base, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "sql", SchemaCoverage: plugin.QuerySchemaCoverageComplete}, nil,
+				func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+				func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+					return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, Bindings: []plugin.QueryOutputBinding{{SourcePath: []string{"phone"}, OutputPath: []string{"contact"}, Transformation: plugin.QueryOutputTransformationDirect}}}}}, nil
+				},
+				func(context.Context) (*plugin.QueryResult, error) {
+					executions++
+					return &plugin.QueryResult{Columns: []string{"contact"}, Fields: []datatype.FieldInfo{{Name: "contact", Type: datatype.FieldTypeString}}, Rows: []map[string]interface{}{{"contact": "13661384499"}}}, nil
+				})
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared := &actorBoundTestQuery{PreparedQuery: base}
+			ctx, capture := WithQueryCapture(t.Context(), actor)
+			if mode == "conflicting actor" {
+				ctx = WithInteractiveQuerySubject(ctx, dataprotection.SubjectReference{Type: "user", ID: "42"})
+			}
+			gate := NewGate(store)
+			protect, end, err := gate.BeginPreparedQuery(ctx, 7, provider, prepared)
+			if mode == "conflicting actor" {
+				if !errors.Is(err, ErrRequired) || protect != nil || end != nil || executions != 0 || gate.HasActiveExecutionsForTenant(7) {
+					t.Fatalf("conflicting actor admitted: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer end()
+			if mode == "expired" {
+				if len(prepared.operations) != 1 {
+					t.Fatal("expired actor bypassed native mask")
+				}
+			} else if len(prepared.operations) != 0 {
+				t.Fatal("verified live actor was masked in the physical plan")
+			}
+			result, err := prepared.Execute(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "changed actor" {
+				capture.Subject = dataprotection.SubjectReference{Type: "user", ID: "42"}
+				if err := protect(result); !errors.Is(err, dataprotection.ErrDenied) || capture.Result != nil {
+					t.Fatalf("actor substitution admitted: %v", err)
+				}
+				return
+			}
+			if err := protect(result); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "default deny" {
+				if len(result.Rows) != 0 || len(result.Columns) != 0 || len(result.Fields) != 0 {
+					t.Fatal("denied default preview retained data or metadata")
+				}
+			} else if result.Rows[0]["contact"] != "136****4499" {
+				t.Fatal("persistent preview retained raw value")
+			}
+			if mode == "expired" {
+				if capture.Result != nil {
+					t.Fatal("expired grant cached plaintext")
+				}
+			} else {
+				if capture.Result == nil || capture.Result.Result.Rows[0]["contact"] != "13661384499" {
+					t.Fatal("verified live actor lost its ephemeral result")
+				}
+				live, err := gate.ReadQueryResult(ctx, 7, capture.Result, actor)
+				if err != nil || live.Rows[0]["contact"] != "13661384499" {
+					t.Fatalf("current authorized read failed: %v", err)
+				}
+			}
+			if _, err := prepared.Execute(ctx); !errors.Is(err, plugin.ErrPreparedQueryConsumed) || executions != 1 {
+				t.Fatalf("query executed more than once: %v", err)
+			}
+		})
+	}
+}
+
+type actorBoundTestQuery struct {
+	plugin.PreparedQuery
+	operations []plugin.QueryOutputTransform
+}
+
+func (q *actorBoundTestQuery) BindOutputTransforms(_ context.Context, operations []plugin.QueryOutputTransform) error {
+	q.operations = append([]plugin.QueryOutputTransform(nil), operations...)
+	return nil
+}

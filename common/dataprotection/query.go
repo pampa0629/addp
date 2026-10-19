@@ -11,7 +11,9 @@ import (
 // PreparedTableProtection binds transformation metadata to the same prepared rules as Apply.
 // DerivedFields contains top-level value components and no policy or protected values.
 type PreparedTableProtection struct {
-	Apply         func(*plugin.QueryResult) error
+	Apply func(*plugin.QueryResult) error
+	// ApplyDefault produces the persisted preview with no plaintext grants.
+	ApplyDefault  func(*plugin.QueryResult) error
 	DerivedFields []string
 	// CaptureAuthorized retains a bounded, already protected snapshot only when
 	// the trusted user has a plaintext grant. Ordinary executions retain none.

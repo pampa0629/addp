@@ -36,11 +36,11 @@ func (s *Store) PrepareQueryProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
-		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	if scope, err := prepared.EngineReadScope(ctx); err == nil {
 		if s.engineScopeDisjoint(tenantID, scope) {
-			return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+			return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 		}
 	} else if !errors.Is(err, plugin.ErrQueryEngineReadScopeUnresolved) {
 		return nil, err
@@ -67,7 +67,7 @@ func (s *Store) PrepareQueryProtection(
 		projections = append(projections, gate.Projections...)
 	}
 	if len(managed) == 0 {
-		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 
 	lineage, err := prepared.OutputLineage(ctx)
@@ -102,21 +102,45 @@ func (s *Store) PrepareQueryProtection(
 	if len(matched) != len(managed) {
 		return nil, errors.New("protected query lineage is incomplete")
 	}
-	return &dataprotection.PreparedTableProtection{DerivedFields: derived, CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryResult, error) {
+	// Freeze the exact actor's preparation-time eligibility. A grant that
+	// starts during execution cannot reclassify an already masked value as raw.
+	plans = queryPlansAt(plans, subject, now)
+	if binder, ok := prepared.(plugin.OutputTransformPreparedQuery); ok {
+		operations := []plugin.QueryOutputTransform{}
+		for _, plan := range plans {
+			compiled, err := dataprotection.QueryOutputTransformsAt(plan.source, action, plan.rules, subject, now)
+			if err != nil {
+				return nil, err
+			}
+			operations = append(operations, compiled...)
+		}
+		if len(operations) > 0 {
+			if err := binder.BindOutputTransforms(ctx, operations); err != nil {
+				return nil, fmt.Errorf("%w: %w", dataprotection.ErrDenied, err)
+			}
+		}
+	}
+	apply := func(actor dataprotection.SubjectReference) func(*plugin.QueryResult) error {
+		return func(result *plugin.QueryResult) error {
+			if err := validateOutputProjections(projections); err != nil {
+				return err
+			}
+			for _, plan := range plans {
+				if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, actor); err != nil {
+					return fmt.Errorf("protect query result: %w", err)
+				}
+			}
+			return nil
+		}
+	}
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: apply(subject), ApplyDefault: apply(dataprotection.SubjectReference{}), CaptureAuthorized: func(result *plugin.QueryResult, actor dataprotection.SubjectReference) (*dataprotection.AuthorizedQueryResult, error) {
+		if actor != subject {
+			return nil, dataprotection.ErrDenied
+		}
 		if err := validateOutputProjections(projections); err != nil {
 			return nil, err
 		}
 		return captureAuthorizedQuery(result, plans, actor, tenantID, action)
-	}, Apply: func(result *plugin.QueryResult) error {
-		if err := validateOutputProjections(projections); err != nil {
-			return err
-		}
-		for _, plan := range plans {
-			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, subject); err != nil {
-				return fmt.Errorf("protect query result: %w", err)
-			}
-		}
-		return nil
 	}}, nil
 }
 
@@ -141,7 +165,7 @@ func (s *Store) PrepareTableProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
-		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
 	if err != nil {
@@ -149,7 +173,7 @@ func (s *Store) PrepareTableProtection(
 	}
 	gate := s.Gate(tenantID, target, now)
 	if !gate.Managed {
-		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection, ApplyDefault: noQueryProtection}, nil
 	}
 	if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
 		return nil, dataprotection.ErrDenied

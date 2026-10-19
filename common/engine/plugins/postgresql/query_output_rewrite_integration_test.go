@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/conformance"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
@@ -31,9 +32,9 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 			t.Errorf("rewrite fixture residual check failed: exists=%v error=%v", exists, err)
 		}
 	})
-	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text, amount numeric(30,6)`)
+	createPostgresPrepareBaseTable(t, ctx, db, "common_pg_it", table, `id bigint PRIMARY KEY, phone text, amount numeric(30,6), email text, label text`)
 	for index, value := range []any{"张三李四王五", "a", "", nil, "abcdef", "x.y", "🧭甲乙丙丁"} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2,$3)`, index+1, value, "9007199254740993.123456"); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` VALUES ($1,$2,$3,$4,$5)`, index+1, value, "9007199254740993.123456", "fixture@example.test", "fixture label"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -212,6 +213,17 @@ func TestIntegrationResolvePostgresQueryOutputRewrite(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+	for _, mode := range []string{"execute", "stream"} {
+		t.Run("shared protection "+mode, func(t *testing.T) {
+			var session func(context.Context, plugin.PreparedQuery) (plugin.QueryReadSession, error)
+			if mode == "stream" {
+				session = pg.OpenQueryReadSession
+			}
+			conformance.QueryOutputProtection(t, pg.EngineCatalogModel(), func(ctx context.Context) (plugin.PreparedQuery, error) {
+				return pg.PrepareQuery(ctx, conn, plugin.QueryRequest{EngineID: 91, Language: "sql", Query: `SELECT id,phone AS contact,email AS mail,label AS public_label,amount FROM ` + qualified + ` ORDER BY id`, Options: plugin.QueryOptions{ReadOnly: true}})
+			}, session)
+		})
 	}
 	after, err := pg.ExecuteSQL(ctx, conn, allSQL, plugin.QueryOptions{ReadOnly: true})
 	if err != nil || !reflect.DeepEqual(before.Columns, after.Columns) || !reflect.DeepEqual(before.Rows, after.Rows) {

@@ -41,6 +41,7 @@ func TestMySQLOutputRewriteRejectsUnprovenRequests(t *testing.T) {
 		"WITH x AS (SELECT phone FROM s.t) SELECT phone FROM x", "SELECT lower(phone) FROM s.t", "SELECT phone FROM s.t WHERE phone='value'", "SELECT phone FROM s.t FOR UPDATE",
 		"SELECT phone FROM s.t a JOIN s.t b ON a.id=b.id", "SELECT phone,phone AS PHONE FROM s.t", "SELECT phone FROM s.t ORDER BY phone+1", "SELECT phone FROM s.t WHERE id=?",
 		"SELECT phone FROM s.t WHERE id=:v1", "SELECT phone FROM s.t; SELECT phone FROM s.t", "SELECT /*+ SET_VAR(sql_mode='') */ phone FROM s.t",
+		"SELECT x.phone FROM (SELECT DISTINCT phone FROM s.t) x", "SELECT x.phone FROM (SELECT phone FROM s.t GROUP BY phone) x", "SELECT phone FROM s.t WHERE id=(SELECT id FROM s.u)",
 		"SELECT phone FROM s.t WHERE id=1 || id=2", "SELECT phone FROM s.t WHERE NOT id=1", "SELECT phone FROM s.t WHERE !id", "SELECT phone FROM s.t WHERE id+1>2",
 	} {
 		if result, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
@@ -70,5 +71,29 @@ func TestMySQLOutputRewritePrivateFlagCannotBeMissingOrForged(t *testing.T) {
 		if !errors.Is(compiled.Finalize(result), plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("invalid flag accepted", value)
 		}
+	}
+}
+
+func TestMySQLOutputRewritePreservesDerivedServiceInputs(t *testing.T) {
+	query := "SELECT contact FROM (SELECT id,phone AS contact FROM business.people WHERE id>? ORDER BY id LIMIT ?) AS addp_source WHERE id<=? ORDER BY contact LIMIT ? OFFSET ?"
+	compiled, err := (&MySQLPlugin{}).CompileQueryOutput(query, []any{1, 20, 50, 5, 2}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "[保护]"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(compiled.Args, []any{"[保护]", 1, 20, 50, 2, 5}) {
+		t.Fatalf("nested input arguments changed: %v", compiled.Args)
+	}
+	parsed, err := sqlparser.Parse(compiled.Query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := parsed.(*sqlparser.Select)
+	order := statement.OrderBy[0].Expr.(*sqlparser.ColName)
+	if order.Qualifier.Name.String() != "addp_source" || order.Name.String() != "contact" {
+		t.Fatal("derived output sorting changed")
+	}
+	inner := statement.From[0].(*sqlparser.AliasedTableExpr).Expr.(*sqlparser.Subquery).Select.(*sqlparser.Select)
+	if _, ok := inner.SelectExprs[1].(*sqlparser.AliasedExpr).Expr.(*sqlparser.ColName); !ok {
+		t.Fatal("inner projection was transformed")
 	}
 }

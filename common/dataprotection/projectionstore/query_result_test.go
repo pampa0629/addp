@@ -64,7 +64,7 @@ func assertAuthorizedQueryResultLifecycle(t *testing.T, store *Store, identity b
 	if err != nil {
 		t.Fatal(err)
 	}
-	protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "query", dataprotection.SubjectReference{}, now)
+	protect, err := store.PrepareQueryProtection(t.Context(), 7, model, prepared, "query", user, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,12 +73,15 @@ func assertAuthorizedQueryResultLifecycle(t *testing.T, store *Store, identity b
 	if err != nil || history == nil {
 		t.Fatalf("capture: %v", err)
 	}
+	if _, err := protect.CaptureAuthorized(raw, dataprotection.SubjectReference{Type: "user", ID: "42"}); !errors.Is(err, dataprotection.ErrDenied) {
+		t.Fatalf("prepared actor changed: %v", err)
+	}
 	before, _ := json.Marshal(history)
 	if strings.Contains(string(before), "unapproved@example.test") {
 		t.Fatal("unapproved plaintext retained in private history")
 	}
 	emailHash := history.Result.Rows[0]["email"]
-	if err := protect.Apply(raw); err != nil {
+	if err := protect.ApplyDefault(raw); err != nil {
 		t.Fatal(err)
 	}
 	masked := raw.Rows[0][output]
@@ -152,5 +155,70 @@ func TestAuthorizedIdentityKeepsTypedArrayTraversal(t *testing.T) {
 	encoded, _ := json.Marshal(history.Result)
 	if strings.Contains(string(encoded), "13661384499") || !strings.Contains(string(encoded), "136****4499") || !strings.Contains(string(encoded), "home") {
 		t.Fatal("nested array output not protected")
+	}
+}
+
+// Preparation fixes the maximum raw-output eligibility. Wall-clock progress
+// may narrow that eligibility but must never expand it for an existing plan.
+func TestQueryGrantCannotExpandDuringExecution(t *testing.T) {
+	store, err := Migrate(openProjectionStoreDB(t), "develop", "develop", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertQueryGrantExecutionBoundary(t, store)
+}
+
+func assertQueryGrantExecutionBoundary(t *testing.T, store *Store) {
+	t.Helper()
+	now := time.Now().UTC()
+	preparedAt := now.Add(-2 * time.Minute)
+	subject := dataprotection.SubjectReference{Type: "user", ID: "41"}
+	model := plugin.DynamicSchemaCatalogModel()
+	fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString, Nullable: true}}
+	for index, test := range []struct {
+		name        string
+		from, until time.Time
+	}{
+		{"starts after preparation", now.Add(-time.Minute), now.Add(time.Hour)},
+		{"expires before output", now.Add(-3 * time.Minute), now.Add(-time.Minute)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tenant := int64(21 + index)
+			path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+			projection := activeTableProjection(t, "develop", "query", model, path, fields)
+			projection.ValidFrom = now.Add(-5 * time.Minute)
+			projection.ExpiresAt = nil
+			projection.Rules[0].Authorizations = []dataprotection.TemporaryAuthorization{{Subject: subject, Effect: dataprotection.EffectAllow, ValidFrom: test.from, ValidUntil: test.until}}
+			if err := projection.Seal(); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ApplyBatch(t.Context(), tenant, "", &dataprotection.ProjectionChangesResponse{SchemaVersion: dataprotection.ProjectionChangesSchemaV1, Changes: []dataprotection.ProjectionChange{{ChangeID: "timing-1", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}}, NextCursor: "timing-1"}, now); err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := plugin.NewPreparedQuery(&plugin.QueryAnalysis{Language: "mql", SchemaCoverage: plugin.QuerySchemaCoverageUnknown}, nil,
+				func(context.Context) (*plugin.QueryReadSet, error) { return plugin.NewQueryReadSet(path) },
+				func(context.Context, *plugin.QueryReadSet) (*plugin.QueryOutputLineage, error) {
+					return &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: path, Fields: fields, IdentityOutput: true}}}, nil
+				},
+				func(context.Context) (*plugin.QueryResult, error) { return nil, nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			protect, err := store.PrepareQueryProtection(t.Context(), tenant, model, prepared, "query", subject, preparedAt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := &plugin.QueryResult{Columns: []string{"phone"}, Rows: []map[string]interface{}{{"phone": "13661384499"}}}
+			snapshot, err := protect.CaptureAuthorized(result, subject)
+			if err != nil || snapshot != nil {
+				t.Fatalf("late/expired grant captured: snapshot=%t err=%v", snapshot != nil, err)
+			}
+			if err := protect.Apply(result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Rows[0]["phone"] != "136****4499" {
+				t.Fatalf("grant expanded or outlived deadline: %v", result.Rows)
+			}
+		})
 	}
 }

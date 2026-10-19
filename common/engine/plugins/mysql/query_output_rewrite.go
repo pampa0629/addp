@@ -30,11 +30,12 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 		return fail()
 	}
 	statement, ok := parsed.(*sqlparser.Select)
-	if !ok || statement.With != nil || statement.QueryOpts.Distinct || statement.QueryOpts.SQLCalcFoundRows || len(statement.GroupBy) != 0 || statement.Having != nil || len(statement.Window) != 0 || statement.Lock != "" || statement.Into != nil {
+	if !ok || !mySQLOutputSelectAllowed(statement) {
 		return fail()
 	}
 	parameters := map[string]any{}
 	seenArgs := map[int]bool{}
+	derivedSubqueries := map[*sqlparser.Subquery]bool{}
 	budget := 100000
 	err = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
 		budget--
@@ -49,13 +50,27 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 		}
 		switch n := node.(type) {
 		case *sqlparser.Select:
-			if n != statement {
+			if !mySQLOutputSelectAllowed(n) {
 				return false, plugin.ErrQueryOutputTransformUnsupported
 			}
-		case *sqlparser.Subquery, *sqlparser.SetOp, *sqlparser.FuncExpr, *sqlparser.AssignmentExpr, *sqlparser.SetVarExpr, *sqlparser.Nextval:
+		case *sqlparser.Subquery:
+			if !derivedSubqueries[n] {
+				return false, plugin.ErrQueryOutputTransformUnsupported
+			}
+		case *sqlparser.SetOp, *sqlparser.FuncExpr, *sqlparser.AssignmentExpr, *sqlparser.SetVarExpr, *sqlparser.Nextval:
 			return false, plugin.ErrQueryOutputTransformUnsupported
 		case *sqlparser.AliasedTableExpr:
-			if _, ok := n.Expr.(sqlparser.TableName); !ok || n.AsOf != nil || n.Lateral {
+			if n.AsOf != nil || n.Lateral {
+				return false, plugin.ErrQueryOutputTransformUnsupported
+			}
+			switch table := n.Expr.(type) {
+			case sqlparser.TableName:
+			case *sqlparser.Subquery:
+				if n.As.IsEmpty() {
+					return false, plugin.ErrQueryOutputTransformUnsupported
+				}
+				derivedSubqueries[table] = true
+			default:
 				return false, plugin.ErrQueryOutputTransformUnsupported
 			}
 		case *sqlparser.SQLVal:
@@ -80,7 +95,7 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 	var soleQualifier sqlparser.TableName
 	if len(statement.From) == 1 {
 		if table, ok := statement.From[0].(*sqlparser.AliasedTableExpr); ok {
-			soleQualifier = table.Expr.(sqlparser.TableName)
+			soleQualifier, _ = table.Expr.(sqlparser.TableName)
 			if !table.As.IsEmpty() {
 				soleQualifier = sqlparser.TableName{Name: table.As}
 			}
@@ -210,9 +225,16 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 	}}, nil
 }
 
+// Nested SELECTs retain their entire input semantics. The shared binding
+// boundary has already proved direct output lineage; only the outer targets
+// are rewritten, while every SELECT still passes this closed grammar.
+func mySQLOutputSelectAllowed(statement *sqlparser.Select) bool {
+	return statement != nil && statement.With == nil && !statement.QueryOpts.Distinct && !statement.QueryOpts.SQLCalcFoundRows && len(statement.GroupBy) == 0 && statement.Having == nil && len(statement.Window) == 0 && statement.Lock == "" && statement.Into == nil
+}
+
 func mySQLOutputInputExpression(expression sqlparser.Expr) bool {
 	switch value := expression.(type) {
-	case *sqlparser.ColName, *sqlparser.SQLVal, *sqlparser.NullVal, sqlparser.BoolVal, *sqlparser.AndExpr, *sqlparser.OrExpr, *sqlparser.ParenExpr:
+	case *sqlparser.ColName, *sqlparser.SQLVal, *sqlparser.NullVal, *sqlparser.Subquery, sqlparser.BoolVal, *sqlparser.AndExpr, *sqlparser.OrExpr, *sqlparser.ParenExpr:
 		return true
 	case *sqlparser.ComparisonExpr:
 		switch value.Operator {
