@@ -63,7 +63,7 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 	var req models.MetaManualScanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if !errors.Is(err, io.EOF) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error_code": "invalid_params", "error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
 			return
 		}
 	}

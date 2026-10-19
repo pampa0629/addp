@@ -890,6 +890,10 @@ definitions:
       force:
         description: 是否强制重新扫描
         type: boolean
+      has_header:
+        description: 首行是否表头；省略保留已扫描模式 | First record is a header; omit to retain scanned
+          mode
+        type: boolean
       item_id:
         description: 要扫描的数据项 ID
         type: integer
@@ -1640,10 +1644,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建手动扫描执行并等待刷新完成；单个 CSV/TSV 表格可指定 encoding，成功后实际编码和结构一起生效，失败保留旧摘要
+      description: 创建手动扫描执行并等待刷新完成；单个 CSV/TSV 表格可指定 encoding 和 has_header，成功后读取设置和结构一起生效，失败保留旧摘要
         | Create a manual execution and wait for refresh; a single CSV/TSV table may
-        specify encoding, applied with its schema only on success; failure preserves
-        the prior snapshot
+        specify encoding and has_header, applied with its schema only on success;
+        failure preserves the prior snapshot
       parameters:
       - description: 数据项ID | Item ID
         in: path

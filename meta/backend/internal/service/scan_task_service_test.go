@@ -685,10 +685,13 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
+	headerless := false
 	for _, req := range []models.ScanRequest{
 		{EngineID: 9, ItemID: item.ID, Encoding: "latin1", ScanDepth: "deep"},
 		{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "basic"},
 		{EngineID: 9, CatalogPaths: []string{"bucket"}, Encoding: "gbk", ScanDepth: "deep"},
+		{EngineID: 9, ItemID: item.ID, HasHeader: &headerless, ScanDepth: "basic"},
+		{EngineID: 9, CatalogPaths: []string{"bucket"}, HasHeader: &headerless, ScanDepth: "deep"},
 	} {
 		if _, err := svc.CreateManualRun(t.Context(), tenantID, 7, &req); !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 			t.Fatalf("invalid request %#v: %v", req, err)
@@ -701,7 +704,7 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 	if count != 0 {
 		t.Fatal("invalid encoding created an execution")
 	}
-	run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GBK ", ScanDepth: "deep"})
+	run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: " GBK ", HasHeader: &headerless, ScanDepth: "deep"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,16 +713,52 @@ func TestManualItemEncodingScopeAndFrozenExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := scanflow.ParseExecutionConfig(persisted.ExecutionConfig)
-	if config.Encoding != "gbk" || config.ItemID != item.ID {
+	if config.Encoding != "gbk" || config.ItemID != item.ID || config.HasHeader == nil || *config.HasHeader {
 		t.Fatalf("worker config=%#v", config)
+	}
+	headerless = true // Frozen JSON values must not retain the caller's pointer.
+	if persisted.ExecutionConfig["has_header"] != false {
+		t.Fatal("header declaration was not frozen")
 	}
 	// A structured document must not accept the delimited-file setting.
 	item.Attributes["item"] = map[string]interface{}{"layout": "single", "data_type": "document", "format": "json"}
 	if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, Encoding: "gbk", ScanDepth: "deep"})
+	_, err = svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &headerless, ScanDepth: "deep"})
 	if !errors.Is(err, metaErrors.ErrInvalidDelimitedOptions) {
 		t.Fatalf("JSON encoding accepted: %v", err)
+	}
+}
+
+func TestManualItemHeaderModeCanBeDeclaredWithoutEncoding(t *testing.T) {
+	for _, header := range []bool{true, false} {
+		db := openObjectCatalogScanTestDB(t)
+		createTaskExecutionTable(t, db)
+		tenantID := uint(1)
+		engineSvc := NewEngineService(db, nil)
+		engineSvc.cacheEngine(tenantID, &commonModels.Engine{ID: 9, TenantID: &tenantID, EngineType: "nfs", LifecycleState: "active"})
+		item := models.MetaItem{TenantID: tenantID, EngineID: 9, NodeID: 1, ItemType: "file", Name: "sample.tsv", FullName: "sample.tsv", Fingerprint: "header-mode-item", Attributes: models.JSONMap{
+			"item":    map[string]interface{}{"layout": "single", "data_type": "table", "format": "tsv"},
+			"storage": map[string]interface{}{"physical_path": "sample.tsv"},
+		}}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+		svc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
+		run, err := svc.CreateManualRun(t.Context(), tenantID, 7, &models.ScanRequest{EngineID: 9, ItemID: item.ID, HasHeader: &header, ScanDepth: "deep"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var persisted commonExecution.TaskExecution
+		if err := db.First(&persisted, run.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persisted.ExecutionConfig["has_header"] != header {
+			t.Fatalf("frozen config=%#v", persisted.ExecutionConfig)
+		}
+		if _, exists := persisted.ExecutionConfig["encoding"]; exists {
+			t.Fatal("header-only request invented an encoding override")
+		}
 	}
 }

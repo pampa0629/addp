@@ -117,10 +117,10 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
       && url.searchParams.get('locator') === source.locator
   })
   const applied = refresh()
-  await frame.getByRole('button', { name: /应用编码并刷新|Apply encoding and refresh/ }).click()
+  await frame.getByRole('button', { name: /应用读取设置并刷新|Apply read settings and refresh/ }).click()
   const applyResponse = await applied
   expect(applyResponse.status()).toBe(200)
-  expect(applyResponse.request().postDataJSON()).toEqual({ encoding: 'gbk' })
+  expect(applyResponse.request().postDataJSON()).toEqual({ encoding: 'gbk', has_header: true })
   await expect(frame.getByRole('columnheader', { name: '姓名', exact: true })).toBeVisible()
   await expect(selector).toContainText('GBK')
 

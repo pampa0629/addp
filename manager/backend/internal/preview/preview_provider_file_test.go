@@ -2891,3 +2891,53 @@ func TestTablePreviewPreservesKnownCRS84WithoutEPSGSRID(t *testing.T) {
 		t.Fatalf("CRS84 preview = %#v", contract)
 	}
 }
+
+func TestDelimitedPreviewUsesScannedHeaderModeAcrossPages(t *testing.T) {
+	for _, ft := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		t.Run(string(ft), func(t *testing.T) {
+			separator := ","
+			if ft == format.FormatTSV {
+				separator = "\t"
+			}
+			data := []byte("first" + separator + "城市\nsecond" + separator + "北京\nthird" + separator + "长沙\n")
+			info, err := format.GetTableInfoProvider(ft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sample, err := format.GetTableSampleReader(ft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &FileTablePreviewProvider{}
+			for page := 1; page <= 2; page++ {
+				req := &PreviewRequest{Page: page, PageSize: 2, ItemType: "file", ScannedDepth: "deep", Table: "sample." + string(ft), Attributes: map[string]interface{}{
+					"type_info": map[string]interface{}{"table": map[string]interface{}{
+						"native": map[string]interface{}{"has_header": false}, "row_count": int64(3),
+						"fields": []interface{}{map[string]interface{}{"name": "Column1", "type": "string"}, map[string]interface{}{"name": "Column2", "type": "string"}},
+					}},
+				}}
+				opts := mustFileParseOptions(t, provider, ft, req)
+				if opts.HasHeader {
+					t.Fatal("false header mode lost")
+				}
+				result, err := provider.previewStreamable(t.Context(), staticContentReader{content: data}, "", req.Table, ft, info, sample, opts, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "first"
+				if page == 2 {
+					want = "third"
+				}
+				if result.Total == nil || *result.Total != 3 || len(result.Rows) != 3-page || result.Rows[0]["Column1"] != want {
+					t.Fatalf("page %d: %#v", page, result)
+				}
+			}
+			_, err = provider.buildParseOptions(ft, &PreviewRequest{Attributes: map[string]interface{}{
+				"type_info": map[string]interface{}{"table": map[string]interface{}{"native": map[string]interface{}{"has_header": "false"}}},
+			}})
+			if err == nil {
+				t.Fatal("malformed scanned header mode accepted")
+			}
+		})
+	}
+}

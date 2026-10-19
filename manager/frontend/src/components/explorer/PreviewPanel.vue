@@ -55,15 +55,20 @@
         </div>
         <div class="panel-actions">
           <StaticTrajectoryPreview v-if="showStaticTrajectory" :key="selectedNode.locator" :load-table="loadStaticTrajectoryTable" />
-          <template v-if="showDelimitedEncoding">
+          <template v-if="showDelimitedReadSettings">
             <el-select v-model="csvEncoding" size="small" class="csv-encoding-select"
               :aria-label="t('manager.explorer.fileEncoding')" :disabled="refreshingPreviewItem">
               <el-option v-for="encoding in ['utf-8', 'gbk', 'utf-16le', 'utf-16be']"
                 :key="encoding" :value="encoding" :label="encoding.toUpperCase()" />
             </el-select>
+            <el-select v-model="csvHasHeader" size="small" class="csv-header-select"
+              :aria-label="t('manager.explorer.headerMode')" :disabled="refreshingPreviewItem">
+              <el-option :value="true" :label="t('manager.explorer.firstRowHeader')" />
+              <el-option :value="false" :label="t('manager.explorer.firstRowData')" />
+            </el-select>
             <el-button size="small" :loading="refreshingPreviewItem"
-              @click="handlePreviewAdvisoryRefresh(csvEncoding)">
-              {{ t('manager.explorer.applyEncodingRefresh') }}
+              @click="handlePreviewAdvisoryRefresh({ encoding: csvEncoding, has_header: csvHasHeader })">
+              {{ t('manager.explorer.applyReadSettingsRefresh') }}
             </el-button>
           </template>
           <!-- Markdown 渲染/原文切换按钮 -->
@@ -1172,18 +1177,21 @@ const previewRefreshAdvisoryText = computed(() => {
   return t('manager.explorer.itemRefreshRecommendedText')
 })
 
-const handlePreviewAdvisoryRefresh = async (encoding = '') => {
+const handlePreviewAdvisoryRefresh = async (settings = {}) => {
   if (!props.selectedNode?.locator || refreshingPreviewItem.value) {
     return
   }
   refreshingPreviewItem.value = true
   const locator = props.selectedNode.locator
   try {
-    await store.refreshItem(locator, encoding)
+    await store.refreshItem(locator, settings)
     emit('item-refreshed', locator)
     ElMessage.success(t('manager.explorer.refreshSuccess'))
   } catch (error) {
-    if (props.selectedNode?.locator === locator) csvEncoding.value = scannedEncoding.value
+    if (props.selectedNode?.locator === locator) {
+      csvEncoding.value = scannedEncoding.value
+      csvHasHeader.value = scannedHasHeader.value
+    }
     ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.message || error }))
   } finally {
     refreshingPreviewItem.value = false
@@ -2519,10 +2527,15 @@ const showStaticTrajectory = computed(() => canPreviewStaticTrajectory({
 }))
 const loadStaticTrajectoryTable = (signal, selection) => readStaticTrajectoryTable(client, props.selectedNode.locator, signal, selection)
 
-const showDelimitedEncoding = computed(() => ['csv', 'tsv'].includes(objectCanonicalFormat.value) && !store.selectedRefPath && !store.selectedChildName)
+const showDelimitedReadSettings = computed(() => ['csv', 'tsv'].includes(objectCanonicalFormat.value) && !store.selectedRefPath && !store.selectedChildName)
 const scannedEncoding = computed(() => scannedItemFacts.value?.format_info?.[objectCanonicalFormat.value]?.encoding || objectData.value?.attributes?.format_info?.[objectCanonicalFormat.value]?.encoding || 'utf-8')
+const scannedHasHeader = computed(() => scannedItemFacts.value?.type_info?.table?.native?.has_header ?? objectData.value?.attributes?.type_info?.table?.native?.has_header ?? true)
 const csvEncoding = ref('utf-8')
-watch([() => props.selectedNode?.locator, scannedEncoding], () => { csvEncoding.value = scannedEncoding.value }, { immediate: true })
+const csvHasHeader = ref(true)
+watch([() => props.selectedNode?.locator, scannedEncoding, scannedHasHeader], () => {
+  csvEncoding.value = scannedEncoding.value
+  csvHasHeader.value = scannedHasHeader.value
+}, { immediate: true })
 
 const currentItemFormatLabel = computed(() => {
   const format = objectCanonicalFormat.value || String(
@@ -3086,7 +3099,8 @@ const handleNavigate = (path) => {
   font-size: 14px;
 }
 
-.csv-encoding-select {
+.csv-encoding-select,
+.csv-header-select {
   width: 125px;
   flex-shrink: 0;
 }

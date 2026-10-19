@@ -152,3 +152,27 @@ func TestMetaUserRefreshUsesCallCredentialAndContext(t *testing.T) {
 		t.Fatal("cancelled refresh continued")
 	}
 }
+
+func TestMetaUserRefreshHeaderModeIsOptionalAndFalseIsPreserved(t *testing.T) {
+	for _, header := range []*bool{nil, headerModeValue(false), headerModeValue(true)} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				return
+			}
+			value, present := body["has_header"]
+			if present != (header != nil) || (header != nil && value != *header) {
+				t.Errorf("header=%v body=%#v", header, body)
+			}
+			io.WriteString(w, `{"status":"success","items_scanned":1}`)
+		}))
+		_, err := NewMetaScanUserClient(server.URL).RefreshItem(t.Context(), "user", 8, MetaScanOptions{HasHeader: header})
+		server.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func headerModeValue(value bool) *bool { return &value }

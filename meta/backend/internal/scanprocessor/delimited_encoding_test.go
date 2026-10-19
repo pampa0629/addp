@@ -55,15 +55,19 @@ func TestDelimitedEncodingRefreshAgainstPostgres(t *testing.T) {
 func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB) {
 	// Fixed GBK bytes for 姓名,城市 / 张三,北京; independent of the production encoder.
 	gbk := "\xd0\xd5\xc3\xfb,\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd,\xb1\xb1\xbe\xa9\n"
+	headerless := false
 	for _, tc := range []struct {
 		name, format, data, encoding, actual string
 		valid                                bool
+		header                               *bool
 	}{
-		{"GBK CSV", "csv", gbk, "gbk", "gbk", true},
-		{"GBK TSV", "tsv", "\xd0\xd5\xc3\xfb\t\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd\t\xb1\xb1\xbe\xa9\n", "gbk", "gbk", true},
-		{"BOM wins over choice", "csv", "\xef\xbb\xbf姓名,城市\n张三,北京\n", "gbk", "utf-8", true},
-		{"empty header keeps snapshot", "csv", "", "utf-8", "", false},
-		{"unsupported BOM keeps snapshot", "csv", "\xff\xfe\x00\x00name", "utf-8", "", false},
+		{"GBK CSV", "csv", gbk, "gbk", "gbk", true, nil},
+		{"GBK TSV", "tsv", "\xd0\xd5\xc3\xfb\t\xb3\xc7\xca\xd0\n\xd5\xc5\xc8\xfd\t\xb1\xb1\xbe\xa9\n", "gbk", "gbk", true, nil},
+		{"BOM wins over choice", "csv", "\xef\xbb\xbf姓名,城市\n张三,北京\n", "gbk", "utf-8", true, nil},
+		{"empty header keeps snapshot", "csv", "", "utf-8", "", false, nil},
+		{"headerless CSV", "csv", "姓名,城市\n张三,北京\n", "utf-8", "utf-8", true, &headerless},
+		{"headerless TSV", "tsv", "姓名\t城市\n张三\t北京\n", "utf-8", "utf-8", true, &headerless},
+		{"unsupported BOM keeps snapshot", "csv", "\xff\xfe\x00\x00name", "utf-8", "", false, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := openDB(t)
@@ -91,11 +95,12 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 				t.Fatal(err)
 			}
 			before, _ := json.Marshal(item)
-			process := func(current *models.MetaItem, data, encoding string, rescan bool) error {
+			process := func(current *models.MetaItem, data, encoding string, header *bool, rescan bool) error {
 				detected := scanflow.KnownItemDetectedItem(current, scanflow.KnownItemDescriptorFromAttributes(current.Attributes))
 				in := KnownItemInput(&commonModels.Engine{ID: 927}, 1, parent, *current, current.Attributes, detected, staticObjectContentReader{content: data}, nil,
 					func(string) plugin.EngineCatalogPath { return plugin.ObjectItemPath(927, "encoding-test", name) }, fullName, "encoding-test", name, size)
 				in.Encoding = encoding
+				in.HasHeader = header
 				if rescan { // Directory discovery has fresh basic facts, not the previous format section.
 					in.ExistingItemID = 0
 					in.StrictDeepEnrich = false
@@ -104,7 +109,7 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 				_, err := New(repo, nil, nil).Process(context.Background(), in)
 				return err
 			}
-			err = process(item, tc.data, tc.encoding, false)
+			err = process(item, tc.data, tc.encoding, tc.header, false)
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%t error=%v", tc.valid, err)
 			}
@@ -127,11 +132,18 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 				if actual := commonJSON.String(current.Attributes, "format_info."+tc.format, "encoding"); actual != tc.actual {
 					t.Fatalf("encoding=%q want %q", actual, tc.actual)
 				}
+				wantFields, wantRows, wantHeader := []string{"姓名", "城市"}, int64(1), true
+				if tc.header != nil && !*tc.header {
+					wantFields, wantRows, wantHeader = []string{"Column1", "Column2"}, 2, false
+				}
+				if native := commonJSON.Section(current.Attributes, "type_info.table.native"); native["has_header"] != wantHeader {
+					t.Fatalf("header mode=%#v want %t", native, wantHeader)
+				}
 				fields := commonJSON.InterfaceSlice(commonJSON.Section(current.Attributes, "type_info.table")["fields"])
-				if len(fields) != 2 || fields[0].(map[string]interface{})["name"] != "姓名" || fields[1].(map[string]interface{})["name"] != "城市" {
+				if len(fields) != 2 || fields[0].(map[string]interface{})["name"] != wantFields[0] || fields[1].(map[string]interface{})["name"] != wantFields[1] {
 					t.Fatalf("fields=%#v", fields)
 				}
-				if current.RowCount == nil || *current.RowCount != 1 {
+				if current.RowCount == nil || *current.RowCount != wantRows {
 					t.Fatalf("rows=%v", current.RowCount)
 				}
 				if commonJSON.String(current.Attributes, "access_index.table", "kind") == "stale" {
@@ -139,7 +151,7 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 				}
 			}
 			assertFacts(stored)
-			if err := process(stored, tc.data, "", true); err != nil {
+			if err := process(stored, tc.data, "", nil, true); err != nil {
 				t.Fatalf("directory rescan: %v", err)
 			}
 			stored, err = repo.GetItemByID(1, item.ID)
@@ -148,7 +160,7 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			}
 			assertFacts(stored)
 			before, _ = json.Marshal(stored)
-			if err := process(stored, "", "", true); err == nil {
+			if err := process(stored, "", "", nil, true); err == nil {
 				t.Fatal("rescan swallowed parse failure")
 			}
 			stored, err = repo.GetItemByID(1, item.ID)
@@ -159,6 +171,36 @@ func testDelimitedEncodingRefresh(t *testing.T, openDB func(*testing.T) *gorm.DB
 			if string(before) != string(after) {
 				t.Fatal("failed directory rescan erased selected codec or schema")
 			}
+			// Invalid persisted declarations are refused; an explicit valid choice can repair them.
+			table := commonJSON.Section(stored.Attributes, "type_info.table")
+			table["native"] = map[string]interface{}{"has_header": "false"}
+			if err := db.Model(stored).Update("attributes", stored.Attributes).Error; err != nil {
+				t.Fatal(err)
+			}
+			before, _ = json.Marshal(stored.Attributes)
+			if err := process(stored, tc.data, "", nil, false); err == nil {
+				t.Fatal("invalid known header mode accepted")
+			}
+			stored, err = repo.GetItemByID(1, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, _ = json.Marshal(stored.Attributes)
+			if string(before) != string(after) {
+				t.Fatal("rejected mode replaced persisted facts")
+			}
+			mode := true
+			if tc.header != nil {
+				mode = *tc.header
+			}
+			if err := process(stored, tc.data, "", &mode, false); err != nil {
+				t.Fatal(err)
+			}
+			stored, err = repo.GetItemByID(1, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertFacts(stored)
 		})
 	}
 }

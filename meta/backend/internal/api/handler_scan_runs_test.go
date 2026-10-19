@@ -197,6 +197,23 @@ func testMetaScanReadContract(t *testing.T, db *gorm.DB) {
 	cfg.SystemServiceURL = system.URL
 	router := SetupRouter(cfg, db, engine, service.NewScanService(db, engine), nil, service.NewScanExecutionService(db, nil, engine, nil), nil, nil, modulelifecycle.NewStandalone("meta"))
 
+	for _, path := range []string{"/api/v1/meta/scan/run/manual", "/api/v1/meta/items/8/refresh"} {
+		for _, value := range []string{`"false-private"`, `1`} {
+			r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"item_id":8,"has_header":`+value+`}`))
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Authorization", "Bearer owner")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			var body map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusBadRequest || body["error_code"] != "scan_request_invalid" || strings.Contains(w.Body.String(), "private") {
+				t.Fatalf("unsafe header declaration response %s: %d %s", path, w.Code, w.Body.String())
+			}
+		}
+	}
+
 	mine, peer := 31, 32
 	definition, empty := "99", ""
 	private := "never-expose-secret"

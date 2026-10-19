@@ -6,7 +6,7 @@
 
 1. SGM 的静态几何、基础 RGB/alpha 贴图、同目录/Textures 精确解析已进入正式规范，并有本地真实样例和隔离技术验收；仍缺合法 SDK/许可环境中的正式 Linux Runner T4。私有厂商样例不上传公开 Hosted，不能用普通格式 suite 或单样例成功覆盖全部材质/版本。
 2. 正常彩色 FBX 基础预览已有本地真实页面证据；固定盒子源声明 IndexToDirect 却缺颜色索引，仍不作为基础预览成功。已有 GLB 快显不等于基础解析缺陷已修复。Three.js 升级仍需 CAD/Giro3D 等消费者共同满足版本约束，不能强行 override、私有 FBXLoader 或第二份 Three.js。
-3. 新增 FBX／known-item refresh、KML／GML／TopoJSON 的 S3 兼容消费，以及 CSV／TSV 索引源变化后的拒绝与刷新恢复，仍须收口当前完整 Manager Hosted 复验。CSV／TSV 源版本保护已实现，NFS 已有真实阶段证据；同大小改写 MinIO 对象后的 ETag、两页拒绝、下载、刷新重绑和原字节还原仍待对应四案例完整证据。TopoJSON 未知 CRS 的零值字段按 HTTP 契约省略，验收不得据此虚构 EPSG 身份。候选代码、局部阶段通过或已启动的 Hosted 轮次均不能计为完整 T4；逐项范围按现有 Manager 场景规范验收，MinIO 不代表外部云 S3 认证。
+3. 继续补齐 CSV／TSV 无表头声明的 Meta／Manager 入口与消费测试。既有 FBX、known-item refresh、KML／GML／TopoJSON 的 MinIO 兼容消费和 CSV／TSV 四源版本案例，已由精确源码 `830a9dbfda817c0289856582686edacc261d5849` 的 [Hosted 39143850265](https://github.com/pampa0629/addp/actions/runs/39143850265) 验证通过，含下载、刷新重绑、还原、清理及 Infra 零残留；不含后续无表头声明实现。TopoJSON 未知 CRS 的零值字段按 HTTP 契约省略，不虚构 EPSG 身份；MinIO 不代表外部云 S3 认证。
 
 静态轨迹及设备/时间范围读取已完成 CSV、records JSON、Point GeoJSON 三源 Hosted 与本地真实样例，不再列为待实现；每个所选范围仍受 2000 点限制，不自动包含轨迹回放。XLSX、3DS/DAE、SGM 等成功只覆盖各自报告范围；已解决的 Assimp 文件存在性缺陷、SGM 秋树丢图/alpha 不继续当当前故障。
 
@@ -14,7 +14,7 @@
 
 | 格式/能力 | 尚需完善或验证 |
 | --- | --- |
-| CSV / TSV | 共享 parser 已按显式 `ParseOptions.HasHeader=false` 保留首条数据，生成稳定 `Column1` 等列名，字段推断、样本、连续读取与 UTF-8 稀疏索引采用同一条读取路径；Meta／Manager 尚无无表头声明入口，不能把 parser 选项当作页面支持。源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
+| CSV / TSV | 共享 parser 已按显式 `ParseOptions.HasHeader=false` 保留首条数据，生成稳定 `Column1` 等列名，字段推断、样本、连续读取与 UTF-8 稀疏索引采用同一条读取路径；Meta／Manager 的无表头声明、模式继承及页面入口已实现，Common／Meta／Manager Go T1、CSV／TSV 扫描持久化 T2 与前端 T3 已有通过证据；Meta 全量 PostgreSQL 入口在既有 Transfer schema-change 来源拒绝子例失败，不登记整轮通过。尚无该设置的真实 T4，不以共享 parser T1 或此前 Hosted 代替。源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖 |
 | JSON / GeoJSON | 大文件、复杂嵌套数组、无/混合 geometry、WKB/EWKB 展示；静态轨迹三源的完成不代替这些组合 |
 | Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"math"
 	"os"
@@ -2276,4 +2277,51 @@ func objectPreviewTestLASWithPoints() []byte {
 
 func objectPreviewTestPutFloat64(target []byte, value float64) {
 	binary.LittleEndian.PutUint64(target, math.Float64bits(value))
+}
+
+func TestDelimitedObjectContentUsesScannedHeaderMode(t *testing.T) {
+	for _, ft := range []format.FormatType{format.FormatCSV, format.FormatTSV} {
+		separator := ","
+		if ft == format.FormatTSV {
+			separator = "\t"
+		}
+		data := []byte("first" + separator + "城市\nsecond" + separator + "北京\n")
+		req := &ObjectContentRequest{Format: string(ft), Name: "sample." + string(ft), Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{"table": map[string]interface{}{"native": map[string]interface{}{"has_header": false}}},
+		}}
+		h := &tableContentHandler{}
+		for _, streamed := range []bool{false, true} {
+			var content *models.ObjectPreviewContent
+			var err error
+			if streamed {
+				content, _, err = h.HandleStream(t.Context(), req, func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil })
+			} else {
+				content, _, err = h.Handle(t.Context(), req, func(int64) ([]byte, bool, error) { return data, false, nil })
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(content.JSON)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result struct {
+				Rows []map[string]interface{} `json:"rows"`
+			}
+			if err := json.Unmarshal(encoded, &result); err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Rows) != 2 || result.Rows[0]["Column1"] != "first" || result.Rows[0]["Column2"] != "城市" {
+				t.Fatalf("%s stream=%t result=%s", ft, streamed, encoded)
+			}
+		}
+		req.Attributes["type_info"] = map[string]interface{}{"table": map[string]interface{}{"native": map[string]interface{}{"has_header": "false"}}}
+		called := false
+		if _, _, err := h.Handle(t.Context(), req, func(int64) ([]byte, bool, error) { called = true; return data, false, nil }); err == nil || called {
+			t.Fatal("invalid header mode reached source")
+		}
+		if _, _, err := h.HandleStream(t.Context(), req, func() (io.ReadCloser, error) { called = true; return io.NopCloser(bytes.NewReader(data)), nil }); err == nil || called {
+			t.Fatal("invalid header mode reached stream")
+		}
+	}
 }

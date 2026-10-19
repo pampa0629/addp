@@ -157,8 +157,28 @@ func TestItemEncodingRefreshRejectsInvalidEncodingWithStableLocalizedContract(t 
 		if lang == "zh-cn" && !strings.Contains(body["error"], "编码") {
 			t.Fatal(body)
 		}
-		if lang == "en" && !strings.Contains(body["error"], "Encoding") {
+		if lang == "en" && !strings.Contains(body["error"], "Read settings") {
 			t.Fatal(body)
+		}
+	}
+}
+
+func TestItemRefreshRejectsMalformedHeaderModeBeforeDependencies(t *testing.T) {
+	for _, raw := range []string{`{"item_id":8,"has_header":"false-secret"}`, `{"item_id":8,"has_header":1}`} {
+		handler := NewMetadataHandler(nil)
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Params = gin.Params{{Key: "id", Value: "9"}}
+		setTenantAuthContextForTest(c, 1, 7)
+		c.Request = httptest.NewRequest(http.MethodPost, "/engines/9/items/refresh", strings.NewReader(raw))
+		c.Request.Header.Set("Content-Type", "application/json")
+		handler.RefreshItem(c)
+		var body map[string]interface{}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if recorder.Code != http.StatusBadRequest || body["error_code"] != "invalid_params" || strings.Contains(recorder.Body.String(), "secret") {
+			t.Fatalf("unsafe malformed response %d %s", recorder.Code, recorder.Body.String())
 		}
 	}
 }

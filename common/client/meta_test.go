@@ -279,7 +279,8 @@ func TestMetaUserRefreshItemUsesItemRefreshPath(t *testing.T) {
 
 	client := NewMetaScanUserClient(server.URL)
 
-	result, err := client.RefreshItem(t.Context(), "current-user", 1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true, Encoding: "gbk"})
+	headerless := false
+	result, err := client.RefreshItem(t.Context(), "current-user", 1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true, Encoding: "gbk", HasHeader: &headerless})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -292,7 +293,7 @@ func TestMetaUserRefreshItemUsesItemRefreshPath(t *testing.T) {
 	if gotHeader != "Bearer current-user" || gotLegacyHeaders {
 		t.Fatalf("auth headers = authorization:%q legacy:%t", gotHeader, gotLegacyHeaders)
 	}
-	if gotPayload["encoding"] != "gbk" {
+	if gotPayload["encoding"] != "gbk" || gotPayload["has_header"] != false {
 		t.Fatalf("encoding missing: %#v", gotPayload)
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["force"] != true {
@@ -384,14 +385,15 @@ func TestMetaClientManualItemRunCarriesEncoding(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload["encoding"] != "gbk" || payload["item_id"] != float64(1) {
+		if payload["encoding"] != "gbk" || payload["item_id"] != float64(1) || payload["has_header"] != false {
 			t.Errorf("payload = %#v", payload)
 		}
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"execution_id":"run-1"}`))
 	}))
 	defer server.Close()
-	if _, err := newTestMetaClient(server.URL).WithTenantID(8).CreateManualScanRun(MetaScanOptions{ItemID: 1, Encoding: "gbk"}); err != nil {
+	headerless := false
+	if _, err := newTestMetaClient(server.URL).WithTenantID(8).CreateManualScanRun(MetaScanOptions{ItemID: 1, Encoding: "gbk", HasHeader: &headerless}); err != nil {
 		t.Fatal(err)
 	}
 }

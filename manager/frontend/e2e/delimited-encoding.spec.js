@@ -1,23 +1,25 @@
 import { expect, test } from '@playwright/test'
 import { managerAuthContext } from './managerAuthContext.js'
 
-for (const { language, initiallyFailed } of [
+for (const { language, initiallyFailed, format = 'csv' } of [
   { language: 'zh-cn', initiallyFailed: false },
   { language: 'en', initiallyFailed: false },
-  { language: 'zh-cn', initiallyFailed: true }
+  { language: 'zh-cn', initiallyFailed: true },
+  { language: 'en', initiallyFailed: false, format: 'tsv' }
 ]) {
-  test(`CSV encoding applies after refresh and failure preserves the last schema (${language}, initial failure=${initiallyFailed})`, async ({ page }) => {
-    const locator = 'addp://engine/2/path/sample.csv?type=file&item_id=8'
+  test(`${format} read settings apply after refresh and failure preserves the last schema (${language}, initial failure=${initiallyFailed})`, async ({ page }) => {
+    const locator = `addp://engine/2/path/sample.${format}?type=file&item_id=8`
     const rootLocator = 'addp://engine/2/path/?type=server&node_id=1'
-    const item = { id: locator, locator, label: 'sample.csv', type: 'file', hasChildren: false }
+    const item = { id: locator, locator, label: `sample.${format}`, type: 'file', hasChildren: false }
     const root = { id: rootLocator, locator: rootLocator, label: 'Encoding engine', type: 'server', hasChildren: true, children: [item] }
     const browserErrors = []
     page.on('pageerror', error => browserErrors.push(error.message))
     const requests = []
     let encoding = 'utf-8'
+    let hasHeader = true
     let fail = false
     let releaseRefresh
-    const apply = language === 'en' ? 'Apply encoding and refresh' : '应用编码并刷新'
+    const apply = language === 'en' ? 'Apply read settings and refresh' : '应用读取设置并刷新'
     await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), language)
     await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/table-preview.js'] }))
     await page.route('**/api/v1/**', async route => {
@@ -35,24 +37,27 @@ for (const { language, initiallyFailed } of [
         if (fail) return json(route, { error: 'parse failed' }, 500)
         await new Promise(resolve => { releaseRefresh = resolve })
         encoding = body.encoding
+        hasHeader = body.has_header
         return json(route, { status: 'success' })
       }
       if (path.endsWith('/meta/items/8')) return json(route, {
-        item_type: 'file', full_name: 'sample.csv', attributes: {
-          item: { layout: 'single', data_type: 'table', format: 'csv' },
-          format_info: { csv: { encoding } }
+        item_type: 'file', full_name: `sample.${format}`, attributes: {
+          item: { layout: 'single', data_type: 'table', format },
+          format_info: { [format]: { encoding } },
+          type_info: { table: { native: { has_header: hasHeader } } }
         }
       })
       if (path.endsWith('/manager/preview')) {
         if (initiallyFailed && encoding === 'utf-8') return json(route, { error: 'invalid UTF-8' }, 500)
         const translated = encoding === 'gbk'
-        const column = translated ? '城市' : 'old_column'
+        const column = !hasHeader ? 'Column1' : translated ? '城市' : 'old_column'
         return json(route, { preview_type: 'table', data: {
-          mode: 'table', columns: [column], rows: [{ [column]: translated ? '北京' : 'old_value' }], total: 1, page: 1, page_size: 20,
-          object: { path: 'sample.csv', content: { kind: 'csv' } },
-          item_meta: { item_type: 'file', full_name: 'sample.csv', attributes: [
-            { key: 'item', value: { layout: 'single', data_type: 'table', format: 'csv' } },
-            { key: 'format_info', value: { csv: { encoding } } }
+          mode: 'table', columns: [column], rows: [...(!hasHeader ? [{ [column]: '城市' }] : []), { [column]: translated ? '北京' : 'old_value' }], total: hasHeader ? 1 : 2, page: 1, page_size: 20,
+          object: { path: `sample.${format}`, content: { kind: format } },
+          item_meta: { item_type: 'file', full_name: `sample.${format}`, attributes: [
+            { key: 'item', value: { layout: 'single', data_type: 'table', format } },
+            { key: 'format_info', value: { [format]: { encoding } } },
+            { key: 'type_info', value: { table: { native: { has_header: hasHeader } } } }
           ] }
         } })
       }
@@ -60,25 +65,41 @@ for (const { language, initiallyFailed } of [
     })
     await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
     const selector = page.locator('.csv-encoding-select')
+    const headerSelector = page.locator('.csv-header-select')
+    const firstRowHeader = language === 'en' ? 'First row is header' : '首行为表头'
+    const firstRowData = language === 'en' ? 'First row is data' : '首行为数据'
     const button = page.getByRole('button', { name: apply, exact: true })
     if (!initiallyFailed) await expect(page.getByRole('cell', { name: 'old_value', exact: true })).toBeVisible()
     await expect(selector).toContainText('UTF-8')
     await selector.click()
     await page.getByRole('option', { name: 'GBK', exact: true }).click()
+    await expect(headerSelector).toContainText(firstRowHeader)
+    await headerSelector.click()
+    await page.getByRole('option', { name: firstRowData, exact: true }).click()
     expect(requests).toEqual([])
     await button.click()
-    await expect.poll(() => requests).toEqual([{ encoding: 'gbk' }])
+    await expect.poll(() => requests).toEqual([{ encoding: 'gbk', has_header: false }])
     if (!initiallyFailed) await expect(page.getByRole('cell', { name: 'old_value', exact: true })).toBeVisible()
     await expect(selector.locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+    await expect(headerSelector.locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
     releaseRefresh()
     await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
     await expect(selector).toContainText('GBK')
-    await expect(page.getByRole('columnheader', { name: 'old_column', exact: true })).toHaveCount(0)
+    await expect(page.locator('.table-preview .el-table__header-wrapper th')).toHaveText(['Column1'])
+    await expect(headerSelector).toContainText(firstRowData)
+    await expect(page.getByRole('cell', { name: '城市', exact: true })).toBeVisible()
+    await page.reload()
+    await expect(headerSelector).toContainText(firstRowData)
+    await expect(page.getByRole('cell', { name: '城市', exact: true })).toBeVisible()
     fail = true
     await selector.click()
     await page.getByRole('option', { name: 'UTF-8', exact: true }).click()
+    await headerSelector.click()
+    await page.getByRole('option', { name: firstRowHeader, exact: true }).click()
     await button.click()
     await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1]).toEqual({ encoding: 'utf-8', has_header: true })
+    await expect(headerSelector).toContainText(firstRowData)
     await expect(selector).toContainText('GBK')
     await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
     for (const width of [1000, 900]) {

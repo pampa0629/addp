@@ -73,3 +73,29 @@ func TestTaskExecutionConfigUsesDefaultScanDepth(t *testing.T) {
 		t.Fatalf("source = %#v", config["source"])
 	}
 }
+
+func TestHeaderModeSurvivesFrozenConfigPersistence(t *testing.T) {
+	for _, header := range []bool{true, false} {
+		config := ManualExecutionConfig(9, 8, "nfs", nil, nil, nil, "deep", true, "manager")
+		config["has_header"] = header
+		data, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored map[string]interface{}
+		if err := json.Unmarshal(data, &stored); err != nil {
+			t.Fatal(err)
+		}
+		parsed := ParseExecutionConfig(stored)
+		if parsed.HasHeader == nil || *parsed.HasHeader != header {
+			t.Fatalf("header mode lost: %#v", parsed)
+		}
+		*parsed.HasHeader = !header
+		if stored["has_header"] != header {
+			t.Fatal("decoder mutated persisted config")
+		}
+	}
+	if ParseExecutionConfig(nil).HasHeader != nil {
+		t.Fatal("absent header declaration became an override")
+	}
+}

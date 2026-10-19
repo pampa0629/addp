@@ -368,12 +368,12 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 刷新数据项元数据，数据预览由当前视图按需读取。
      */
-    async refreshItem(locator, encoding = '') {
+    async refreshItem(locator, settings = {}) {
       this.refreshingLocators.add(locator)
 
       try {
         const loc = parseLocator(locator)
-        const response = await client.post(`/manager/engines/${loc.engineId}/items/refresh`, encoding ? { encoding } : null, {
+        const response = await client.post(`/manager/engines/${loc.engineId}/items/refresh`, Object.keys(settings).length ? settings : null, {
           params: { locator }
         })
 

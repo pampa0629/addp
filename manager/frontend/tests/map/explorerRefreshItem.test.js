@@ -67,6 +67,17 @@ describe('explorer refreshItem', () => {
     expect(store.loadPreview).not.toHaveBeenCalled()
   })
 
+  it('preserves an explicit headerless declaration in the single refresh request', async () => {
+    const store = useExplorerStore()
+    const locator = 'addp://engine/9/path/no-header.tsv?type=file&item_id=418'
+    mocks.post.mockResolvedValue({ status: 'success' })
+    await store.refreshItem(locator, { encoding: 'utf-16le', has_header: false })
+    expect(mocks.post).toHaveBeenCalledWith('/manager/engines/9/items/refresh', {
+      encoding: 'utf-16le', has_header: false
+    }, { params: { locator } })
+    expect(store.refreshingLocators.has(locator)).toBe(false)
+  })
+
   it('keeps engine context on the catalog root instead of copying it into resource nodes', async () => {
     const store = useExplorerStore()
     const rootLocator = 'addp://engine/25/path/?type=server&node_id=377'

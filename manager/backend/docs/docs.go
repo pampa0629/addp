@@ -816,7 +816,7 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "description": "扫描定位及 CSV/TSV 深度刷新编码（可选）| Item target and CSV/TSV deep refresh encoding (optional)",
+                        "description": "扫描定位及 CSV/TSV 读取设置（可选）| Item target and CSV/TSV read settings (optional)",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -6642,6 +6642,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "force": {
+                    "type": "boolean"
+                },
+                "has_header": {
+                    "description": "首行是否表头；省略保留已扫描模式 | First record is a header; omit to retain scanned mode",
                     "type": "boolean"
                 },
                 "item_id": {

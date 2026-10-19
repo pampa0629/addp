@@ -1,12 +1,14 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	metai18n "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/gin-gonic/gin"
@@ -14,7 +16,7 @@ import (
 
 // RefreshItem 刷新已知数据项
 // @Summary 刷新已知数据项 | Refresh known item
-// @Description 创建手动扫描执行并等待刷新完成；单个 CSV/TSV 表格可指定 encoding，成功后实际编码和结构一起生效，失败保留旧摘要 | Create a manual execution and wait for refresh; a single CSV/TSV table may specify encoding, applied with its schema only on success; failure preserves the prior snapshot
+// @Description 创建手动扫描执行并等待刷新完成；单个 CSV/TSV 表格可指定 encoding 和 has_header，成功后读取设置和结构一起生效，失败保留旧摘要 | Create a manual execution and wait for refresh; a single CSV/TSV table may specify encoding and has_header, applied with its schema only on success; failure preserves the prior snapshot
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -43,8 +45,8 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 	}
 
 	var req models.ScanRequest
-	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error_code": "scan_request_invalid", "error": commoni18n.T(c, metai18n.MsgScanRequestInvalid)})
 		return
 	}
 	req.ItemID = uint(itemID64)
