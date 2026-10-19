@@ -2,6 +2,8 @@
 
 ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工具函数和类型定义。
 
+前端开发先阅读[前端风格设计规范](docs/addp前端风格设计规范.md)，再按视觉与布局、组件交互、主题接入或工程约束进入对应专题。
+
 ## 可见页面自动刷新
 
 `basic/src/components/AutoRefreshControl.vue` 唯一维护刷新选择及状态的中英文展示；`basic/src/utils/autoRefresh.mjs` 提供 `createAutoRefresh` 和 15/10/30/60 秒、off 的固定选项。主机详情和服务资源页面直接组合这两个共享实现，不复制定时器或可见性监听。

@@ -25,7 +25,7 @@ const [notebook, taskManagement, approvalDetail, saveQueryDialog, zhCnSource, en
   readFile(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'),
   readFile(new URL('../src/i18n/en.json', import.meta.url), 'utf8'),
   readFile(new URL('../../../common-frontend/basic/src/styles/theme.css', import.meta.url), 'utf8'),
-  readFile(new URL('../../../common-frontend/docs/addp前端风格设计规范.md', import.meta.url), 'utf8')
+  readFile(new URL('../../../common-frontend/docs/frontend-style/组件交互.md', import.meta.url), 'utf8')
 ])
 
 const zhCn = JSON.parse(zhCnSource)
