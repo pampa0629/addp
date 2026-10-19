@@ -21,7 +21,7 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     current.on('request', request => {
       const path = new URL(request.url()).pathname
       if (path === '/api/v1/system/login' && request.method() === 'POST') loginRequests++
-      if (path.startsWith(base + '/') && request.method() !== 'GET') writes.push(path)
+      if (isEngineAuthorizationWrite(request.method(), path, base)) writes.push(path)
     })
   }
   const record = result => writeFileSync(destination, JSON.stringify({ ...binding,
@@ -190,6 +190,11 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     await readerContext.close()
   }
 })
+
+function isEngineAuthorizationWrite(method, path, base) {
+  return path.startsWith(base + '/') && method !== 'GET' &&
+    !(method === 'POST' && path === base + '/catalog/children')
+}
 
 async function sessionSnapshot(storeID) {
   const provides = document.querySelector('#app')?.__vue_app__?._context.provides || {}

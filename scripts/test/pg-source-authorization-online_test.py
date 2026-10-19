@@ -292,6 +292,36 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         self.assertFalse(server.grants)
         self.assertFalse(server.denies)
 
+    def test_workspace_distinguishes_exact_catalog_read_from_authorization_writes(self):
+        spec = Path(__file__).resolve().parents[2] / 'console/frontend/e2e/online/pg-source-authorization.spec.js'
+        program = r'''
+            const { readFileSync } = require('node:fs')
+            const source = readFileSync(process.argv[1], 'utf8')
+            if (!source.includes('if (isEngineAuthorizationWrite(request.method(), path, base)) writes.push(path)')) {
+              throw new Error('workspace listener does not use the classifier')
+            }
+            const body = source.match(/^function isEngineAuthorizationWrite\(method, path, base\) \{\n([\s\S]*?)^\}/m)
+            if (!body) throw new Error('workspace request classifier missing')
+            const classify = new Function('method', 'path', 'base', body[1])
+            const base = '/api/v1/system/engines/7'
+            for (const [method, suffix, expected] of [
+              ['GET', '/access_grants', false], ['GET', '/access_grants/history', false],
+              ['POST', '/catalog/children', false], ['POST', '/catalog/children/extra', true],
+              ['POST', '/catalog/children-extra', true], ['PUT', '/catalog/children', true],
+              ['DELETE', '/catalog/children', true], ['POST', '/access_grants', true],
+              ['POST', '/access_grants/known/revoke', true], ['POST', '/access_denies', true],
+              ['POST', '/access_denies/known/release', true], ['PATCH', '/unknown', true],
+              ['POST', '/access_approval_requirements', true], ['POST', '/access_delegations', true],
+            ]) {
+              if (classify(method, base + suffix, base) !== expected) {
+                throw new Error('incorrect workspace classification: ' + method + ' ' + suffix)
+              }
+            }
+        '''
+        result = ONLINE.subprocess.run(['node', '-e', program, str(spec)],
+                                       capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_shared_manager_boundary_waits_only_for_initial_projection(self):
         client = SimpleNamespace(request=Mock(side_effect=[
             SimpleNamespace(status=403, payload={'error_code': 'security_protection_required'}),
