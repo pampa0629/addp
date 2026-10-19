@@ -14,7 +14,7 @@
 | 格式/能力 | 尚需完善或验证 |
 | --- | --- |
 | CSV / TSV | 有／无表头声明、首条记录保留、普通刷新继承、重开、分页、模式恢复与原文件下载已有 Hosted T4 证据，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。剩余边界：源大小、ETag 和修改时间全部不变的原位写入不能由索引版本校验识别，不提供不可变读取快照；UTF-32/GB18030 不由已有 UTF-16/显式 GBK 覆盖。既有 Meta 全量 PostgreSQL 入口的 Transfer schema-change 来源拒绝子例失败原记录保持，不由本轮 T4 改记通过 |
-| JSON / GeoJSON | 空/混合 geometry 的扫描与跨批字段可空声明、JSON 空值同名列归并已修正，并有 Common Go T1 回归；该新组合尚未做真实存储 T2 或页面 T4。仍需覆盖大文件、复杂嵌套数组及 WKB/EWKB 页面展示；静态轨迹三源的完成不代替这些组合 |
+| JSON / GeoJSON | 空/混合 geometry 的扫描与跨批字段可空声明、JSON 空值同名列归并已有 Common Go T1；四份 NFS 样例的本机页面已验证可空字段、20＋5 分页、全空集合与 WKB 临时 CRS 地图，两类原文件下载哈希不变，见[验收证据索引](../spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)。仍缺该组合的正式 Hosted T4、S3／Transfer 集成及大文件、复杂嵌套数组和更多 WKB/EWKB 变体；静态轨迹三源的完成不代替这些组合 |
 | Parquet | schema 不兼容诊断、row group 性能及有界 footer/range 读取 |
 | Shapefile | NFS/MinIO/嵌套 ZIP 的 refs 归并、物化 fallback 的 shx 分页、未支持 shape 诊断 |
 | Excel | 大文件与复杂工作簿；公式计算、宏和原样图表不属于现有工作表预览 |
