@@ -1079,7 +1079,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize vector_rasterize raster_contour"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
         (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_aggregate raster_slope raster_aspect raster_hillshade"),
-        (("栅格处理", "栅格统计"), "raster_statistics raster_histogram"),
+        (("栅格处理", "栅格统计"), "raster_statistics raster_zonal_statistics raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
     ]

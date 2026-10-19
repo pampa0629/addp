@@ -387,3 +387,18 @@ def test_geopython_workflow_preserves_publisher_conflict_code(tmp_path, monkeypa
     assert response['error_code'] == 'TARGET_ALREADY_EXISTS'
     assert response['all_results'] == {}
     assert target.read_bytes() == b'original'
+
+
+def test_plain_dataframe_projection_preserves_int64_null_and_bounds_preview():
+    import json
+    import pandas as pd
+    from workflow_engine import _project
+    frame=pd.DataFrame({'zone_value':pd.Series([2**53+1]*51,dtype='int64'),
+                        'mean':pd.Series([None]*51,dtype='Float64')})
+    projected=json.loads(json.dumps(_project(frame),allow_nan=False))
+    assert projected['row_count']==51 and projected['preview_limit']==50 and projected['truncated'] is True
+    assert len(projected['preview_rows'])==50
+    assert projected['preview_rows'][0]=={'zone_value':2**53+1,'mean':None}
+    empty=_project(frame.head(0))
+    assert empty['row_count']==0 and empty['preview_rows']==[] and empty['truncated'] is False
+    assert empty['schema']==projected['schema']

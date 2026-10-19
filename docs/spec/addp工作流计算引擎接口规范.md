@@ -45,7 +45,7 @@ ADDP 工作流计算引擎采用 `EnginePlugin + WorkflowRuntimeProvider + HTTP 
 | 引擎名称 | 端口 | 技术栈 | 适用场景 | 算子数量 |
 |---------|------|--------|---------|---------|
 | **Math Workflow** | 8089 | Python + 基础数学库 | 数学运算、学习示例 | 5 |
-| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 77 个支持 workflow，另有 10 个仅支持 direct |
+| **GeoPython Workflow** | 8099 | Python + Pandas + GeoPandas | 中小规模空间和数据处理 | 78 个支持 workflow，另有 10 个仅支持 direct |
 | **Spark Workflow** | 8098 | PySpark + Sedona | 大规模分布式计算 | 21 个支持 workflow |
 | **Model3D Workflow** | 8101 | Python wrapper + 三维转换 CLI | 三维模型、BIM、高斯泼溅与 3D Tiles 持久化转换 | 12 个，均支持 workflow + direct |
 | **PointCloud Workflow** | 8102 | Python wrapper + PDAL | LAS / LAZ / E57 / PCD / XYZ 转持久化 COPC | 5 个，均支持 workflow + direct |
@@ -1032,6 +1032,12 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 
 按 GeoDataFrame 当前行位置顺序烧写，后输入要素覆盖前者，不按索引标签或隐式排序改变优先级。`all_touched` 仅接受布尔值，默认 `False` 沿用 GDAL 像元中心覆盖，`True` 使用 `ALL_TOUCHED=TRUE`；孔洞不烧写，网格外部分自然截断，不扩展网格。精确边界行为遵循 [GDAL RasterizeLayer／ALL_TOUCHED 契约](https://gdal.org/en/stable/api/gdal_alg.html)，面边界恰好经过像元中心时 GDAL 未定义统一结果，不承诺跨版本一致的边界归属。输入矢量与参考文件保持不变，生成当前 execution 的文件支撑 `raster`，沿既有 `raster_save`／COG 路径持久化；不新增资源身份、API、权限、Adapter 或扫描路径。该算子 workflow-only、read 效果、资源组 raster；首期不含点线、自动范围、插值或完整 Int64 分类码往返。输入面及 OGR 烧写数据随要素／顶点数增长，文件输出不等于固定进程内存。Native 验证不计为新增真实跨模块 T4。
 
+`raster_zonal_statistics(input_raster, zones_raster, band, zones_band)`（栅格分区统计）须显式选择数值与分区的一基数据波段，不能选择 alpha；仅分析所选波段，拒绝所选复数数据或复数 alpha。两份输入必须有明确、语义等价的 CRS、相同尺寸和完全相同的有限可逆六参数仿射网格，含旋转；网格不符须先显式对齐，不隐式重采样或重投影。分区值沿用分类转面整数规则：原生整数保留精度、有效值须在有符号 Int64 内；浮点存储只允许 ±(2^53−1) 内的精确整数，支持重分类结果，不截断小数。
+
+相同分类值全局合为一组，包括非连通区域，合法零及负分类值保留；分区自身的 NoData／mask／alpha／非有限值排除。数值有效性独立应用同一规则，部分透明且 alpha 大于零的像元仍参与；只有分区有效且数值有效的像元贡献统计。数值按存储值计算，不隐式应用 scale/offset。输出普通 DataFrame，按 Int64 `zone_value` 升序，每组包含 Int64 `total_count/valid_count/invalid_count`（总量只计本组有效分区像元，且总量等于有效加无效数值像元）和 Float64 `sum/min/max/mean/stddev`。标准差为总体标准差；组内没有有效数值时保留该组，五个统计字段为 null。分区全无效时返回相同 Schema 的空表，不生成不存在的分类。Float64 统计允许通常的浮点舍入；真正超出有限输出范围时明确失败，不发布非有限统计值。
+
+实现复用最多 512×512 分块读取、整数分类校验和有效性，按分类累积缩放后的补偿和、中心二阶矩；均值由最终补偿和除以有效计数，方差先减固定源参考值再缩放，保留大基值上的小差异，源文件保持不变。内存随分类数及结果行数增长，块缓存不代表进程总内存上限。算子 workflow-only、read、资源组 raster；完整普通表在当前 DAG 内流向既有 `save`，公开响应仅为 `type=pandas_dataframe`、schema、row_count、最多 50 条 preview_rows、preview_limit 和 truncated 的轻量摘要，不在响应中塞入完整大表。保存、Meta 扫描、资源血缘及普通用户归属仍需各自真实链路验收；首期不含矢量分区、分位数、面积加权或自动定位。Native、异步文件保存和真实跨模块 Hosted 证据分别记账。
+
 `raster_aggregate` 按必填整数 `factors=[列倍数,行倍数]` 从左上像元开始分组，逐数据波段执行必填 `method=sum/mean/min/max`，输出 Float64。倍数必须为 1–2147483647 的整数，拒绝布尔值与浮点倍数；输出宽高向上取整，边缘不足整块时只使用实际存在的源像元，不补零、不丢弃边缘。源 mask、NoData、非有限值和 alpha 覆盖无效的像元不参与计算，全无效组输出 NaN；合法零和部分透明的有效像元正常参与，各数据波段独立处理。alpha 不作为输出数据波段，不保留原分类色表、颜色模型或透明度大小；复数数据拒绝。求和结果超出 Float64 有限范围时写 NaN；均值先计有效数量及最大绝对值，按该尺度归一化后累加各值除以数量，再恢复尺度，避免直接求和溢出或微小值直接除以数量下溢造成不必要的丢失。
 
 聚合属于原像素网格的整数分组，不调用重采样插值，也不按指定输出尺寸调整分组。保留源原点、CRS 与定位缺失事实；有仿射变换时，列向量乘列倍数、行向量乘行倍数，保持旋转方向。由于输出必须为规则网格，边缘不足整块时最终像元仍具有完整聚合像元的空间大小，输出矩形覆盖范围可超出源右侧或底侧；数值只来自源覆盖内的有效像元。无需补造空间定位。计算复用源 512×512 分块读取，以最多 512×512 输出单元累积单个数据波段，不把大倍数组或整幅影像一次读入内存；均值为两遍分块读取，其余方法为一遍。
@@ -1068,6 +1074,7 @@ Python Runtime 的领域执行器负责内部对象、资源清理和结果投�
 | `raster_hillshade` | `input_raster`、必填 `elevation_unit`、`band`、`azimuth/altitude` | `raster`，常规地形晕渲 |
 | `raster_contour` | `input_raster`、必填 `elevation_unit`、`band`、互斥 `interval/levels`（米） | `GeoDataFrame`，二维等值线及米制 elevation |
 | `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
+| `raster_zonal_statistics` | 同网格 `input_raster/zones_raster`、必填 `band/zones_band` | `DataFrame`，按整数分类值分组的计数及数值统计 |
 | `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
 
 COG 参数为 `compression`（DEFLATE/LZW/ZSTD/NONE）、`blocksize`（128–4096 内的 16 倍数）、`overview_resampling`；转换入口将其放在 `options` 中，保存入口直接声明。波段表达式支持 `b1/b2/...`、有限常量、加减乘除、-16 到 16 的常数幂与 `abs/sqrt/log/minimum/maximum`。统计忽略 mask、nodata 和非有限像元；标准差为总体标准差，全无效栅格返回 null 统计值。直方图 `bins` 为 1–4096，未指定范围时按有效 min/max 派生。

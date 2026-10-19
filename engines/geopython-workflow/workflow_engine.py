@@ -38,6 +38,13 @@ def _project(value):
         if value._geometry_column_name in value.columns:
             return json.loads(value.to_json())
         return json.loads(pd.DataFrame(value).to_json(orient='records'))
+    if isinstance(value, pd.DataFrame):
+        preview_limit = 50
+        return {'type': 'pandas_dataframe',
+                'schema': [{'name': name, 'type': str(dtype)} for name, dtype in value.dtypes.items()],
+                'row_count': len(value), 'preview_limit': preview_limit,
+                'preview_rows': json.loads(value.head(preview_limit).to_json(orient='records', double_precision=15)),
+                'truncated': len(value) > preview_limit}
     if isinstance(value, dict):
         return {key: _project(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

@@ -15,6 +15,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 import numpy as np
+import pandas as pd
 import geopandas as gpd
 from shapely import from_wkb, get_coordinates, has_m, has_z, make_valid
 from shapely.geometry import MultiPolygon
@@ -829,6 +830,17 @@ def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, a
         feature = layer = vector = output = grid = None
 
 
+def _classification_values(values, valid):
+    selected = values[valid]
+    if np.issubdtype(values.dtype, np.floating):
+        if np.any(np.abs(selected.astype(np.float64, copy=False)) > 2**53 - 1) or np.any(selected != np.trunc(selected)):
+            raise ValueError('floating classification values must be exact safe integers')
+    elif np.issubdtype(values.dtype, np.unsignedinteger):
+        if np.any(selected > np.iinfo(np.int64).max):
+            raise ValueError('classification values must fit signed Int64')
+    return selected.astype(np.int64)
+
+
 def raster_polygonize(input_raster, band, connectivity=4):
     if type(connectivity) is not int or connectivity not in (4, 8):
         raise ValueError('connectivity must be integer 4 or 8')
@@ -851,15 +863,9 @@ def raster_polygonize(input_raster, band, connectivity=4):
             target.SetGeoTransform(transform)
         for x, y, arrays, masks in _blocks(dataset, [band], native=True):
             values, valid = arrays[0], masks[0]
-            selected = values[valid]
-            if np.issubdtype(values.dtype, np.floating):
-                if np.any(np.abs(selected.astype(np.float64, copy=False)) > 2**53 - 1) or np.any(selected != np.trunc(selected)):
-                    raise ValueError('floating classification values must be exact safe integers')
-            elif np.issubdtype(values.dtype, np.unsignedinteger):
-                if np.any(selected > np.iinfo(np.int64).max):
-                    raise ValueError('classification values must fit signed Int64')
+            selected = _classification_values(values, valid)
             encoded = np.zeros(values.shape, dtype=np.int64)
-            unique, inverse = np.unique(selected.astype(np.int64), return_inverse=True)
+            unique, inverse = np.unique(selected, return_inverse=True)
             identifiers = []
             for value in unique:
                 code = int(value)
@@ -895,6 +901,91 @@ def raster_polygonize(input_raster, band, connectivity=4):
                                 geometry=geometries, crs=dataset.GetProjection())
     finally:
         feature = layer = vector = classes = mask = dataset = None
+
+
+@dataclass
+class _ZoneStatistics:
+    total: int = 0
+    count: int = 0
+    minimum: float = math.inf
+    maximum: float = -math.inf
+    scale: float = 0.
+    anchor: float | None = None
+    mean: float = 0.
+    m2: float = 0.
+    sum: float = 0.
+    correction: float = 0.
+
+    def add(self, values, total):
+        self.total += total
+        n = int(values.size)
+        if not n:
+            return
+        self.minimum = min(self.minimum, float(values.min()))
+        self.maximum = max(self.maximum, float(values.max()))
+        scale = max(self.scale, abs(self.minimum), abs(self.maximum))
+        ratio = self.scale / scale if scale else 0.
+        if self.anchor is None:
+            self.anchor = float(values[0])
+        # Subtract a fixed source value before scaling to retain small variation
+        # on a large offset. Half differences also support opposite finite extremes.
+        with np.errstate(over='ignore'):
+            centered = values - self.anchor
+        if np.isfinite(centered).all():
+            centered /= scale or 1.
+        else:
+            centered = (values / 2 - self.anchor / 2) / (scale / 2)
+        local_sum = math.fsum(values / (scale or 1.))
+        local_mean = math.fsum(centered) / n
+        delta = local_mean - self.mean * ratio
+        count = self.count + n
+        self.m2 = (self.m2 * ratio * ratio + float(np.square(centered - local_mean).sum())
+                   + delta * delta * self.count * (n / count))
+        self.mean = self.mean * ratio + delta * (n / count)
+        previous = self.sum * ratio
+        combined = previous + local_sum
+        # Neumaier compensation retains small contributions across block cancellation.
+        self.correction = (self.correction * ratio +
+                           ((previous - combined) + local_sum if abs(previous) >= abs(local_sum)
+                            else (local_sum - combined) + previous))
+        self.sum, self.scale, self.count = combined, scale, count
+
+    def row(self, code):
+        stats = [None] * 5
+        if self.count:
+            total = math.fsum([self.sum, self.correction]) * self.scale
+            stats = [total, self.minimum, self.maximum, total / self.count,
+                     math.sqrt(max(0., min(1., self.m2 / self.count))) * self.scale]
+            if not all(math.isfinite(value) for value in stats):
+                raise ValueError('Zonal statistics exceed the finite Float64 output range')
+        return [code, self.total, self.count, self.total - self.count, *stats]
+
+
+def raster_zonal_statistics(input_raster, zones_raster, band, zones_band):
+    dataset, zones = _open(input_raster), _open(zones_raster)
+    _require_same_grid(dataset, zones)
+    for source, index in ((dataset, band), (zones, zones_band)):
+        if _band(source, index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            raise ValueError('Zonal statistics require data bands, not alpha')
+        for i in range(1, source.RasterCount + 1):
+            if source.GetRasterBand(i).GetColorInterpretation() == gdal.GCI_AlphaBand:
+                _band(source, i)
+    statistics = {}
+    for x, y, arrays, masks in _blocks(zones, [zones_band], native=True):
+        classes = _classification_values(arrays[0], masks[0])
+        height, width = arrays[0].shape
+        _, _, values, valid = next(_blocks(dataset, [band], window=(x, y, width, height)))
+        selected_values, selected_valid = values[0][masks[0]], valid[0][masks[0]]
+        # Sort once per block; never scan the full block once per classification.
+        order = np.argsort(classes, kind='stable')
+        codes, starts, counts = np.unique(classes[order], return_index=True, return_counts=True)
+        for code, start, count in zip(codes, starts, counts):
+            group = order[start:start + count]
+            statistics.setdefault(int(code), _ZoneStatistics()).add(
+                selected_values[group][selected_valid[group]], int(count))
+    columns = ['zone_value', 'total_count', 'valid_count', 'invalid_count', 'sum', 'min', 'max', 'mean', 'stddev']
+    result = pd.DataFrame([statistics[code].row(code) for code in sorted(statistics)], columns=columns)
+    return result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
 
 
 def raster_statistics(input_raster, band=1):
@@ -1451,6 +1542,7 @@ _SPECS = [
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
     (vector_rasterize, OperatorCategory.RASTER_EXTENT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
+    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -1470,6 +1562,8 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
+    if name == 'raster_zonal_statistics':
+        examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
     if name == 'raster_mosaic':
         examples = {'input_rasters': [{'$ref': 'source'}, {'$ref': 'other'}],
                     'target_crs': 'EPSG:4326', 'resolution': [0.01, 0.01]}

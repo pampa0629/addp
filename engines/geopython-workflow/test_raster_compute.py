@@ -4188,3 +4188,220 @@ def test_vector_rasterize_explicit_vector_reproject_chain_and_expired_reference(
     geopandas.testing.assert_geodataframe_equal(faces,original)
     with raster_workspace(),pytest.raises(ValueError,match='this execution'):
         vector_rasterize(faces,reference,burn_value=0)
+
+
+def test_zonal_statistics_rotated_grid_validity_groups_and_empty_zones(tmp_path):
+    import pandas as pd
+    from operators.raster_compute import raster_zonal_statistics
+    transform = (110, 2, .5, 30, .25, -3)
+    classes = np.array([[0, 0, 2, 7, 2], [0, -3, 2, 7, -9999], [2, 2, -3, 7, 2]], dtype=float)
+    values = np.array([[0, 4, 8, -9999, 100], [6, -2, np.nan, np.inf, 999], [12, -9999, -4, -9999, 16]], dtype=float)
+    z = create_raster(tmp_path/'zones.tif', np.stack([classes, np.full(classes.shape, 255.)]), transform)
+    v = create_raster(tmp_path/'values.tif', np.stack([values, np.full(values.shape, 255.)]), transform)
+    # Independent masks and alpha exclusions; partial opacity remains valid.
+    for path, hidden, partial in [(z, (0,4), (0,1)), (v, (2,4), (1,0))]:
+        ds = gdal.Open(str(path), gdal.GA_Update)
+        ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+        alpha = np.full(classes.shape, 255.)
+        alpha[hidden] = 0; alpha[partial] = 128
+        ds.GetRasterBand(2).WriteArray(alpha)
+        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask = np.full(classes.shape, 255, dtype=np.uint8)
+        mask[1,2] = 0
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask); ds = None
+    snapshots = [p.read_bytes() for p in (v,z)]
+    with raster_workspace():
+        table = raster_zonal_statistics(raster_load(source_plan(v)), raster_load(source_plan(z)), 1, 1)
+    assert isinstance(table, pd.DataFrame) and not hasattr(table, 'geometry')
+    assert table.zone_value.tolist() == [-3, 0, 2, 7]
+    for name in ('zone_value','total_count','valid_count','invalid_count'):
+        assert str(table[name].dtype) == 'int64'
+    records = table.set_index('zone_value')
+    expected = {-3: ([-2.,-4.],2), 0: ([0.,4.,6.],3), 2: ([8.,12.],4), 7: ([],3)}
+    for code,(numbers,total) in expected.items():
+        row = records.loc[code]
+        assert (row.total_count,row.valid_count,row.invalid_count) == (total,len(numbers),total-len(numbers))
+        if numbers:
+            assert row[['sum','min','max','mean','stddev']].tolist() == pytest.approx(
+                [sum(numbers), min(numbers), max(numbers), np.mean(numbers), np.std(numbers)])
+        else:
+            assert row[['sum','min','max','mean','stddev']].isna().all()
+    assert [p.read_bytes() for p in (v,z)] == snapshots
+
+
+@pytest.mark.parametrize('kind', ['float_safe','int64','uint64','empty'])
+def test_zonal_statistics_classification_precision_and_empty_schema(tmp_path, kind):
+    from operators.raster_compute import raster_zonal_statistics
+    path = tmp_path/'zones.tif'
+    dtype = {'float_safe':gdal.GDT_Float64,'int64':gdal.GDT_Int64,'uint64':gdal.GDT_UInt64,'empty':gdal.GDT_Int64}[kind]
+    data = {'float_safe':[-(2**53-1),0,2**53-1], 'int64':[-2**63,2**53+1,2**63-1],
+            'uint64':[0,2**53+1,2**63-1], 'empty':[-99,-99,-99]}[kind]
+    ds = gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,dtype)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(4326);ds.SetProjection(crs.ExportToWkt());ds.SetGeoTransform((0,1,0,1,0,-1))
+    array=np.array([data],dtype={'float_safe':'float64','int64':'int64','uint64':'uint64','empty':'int64'}[kind])
+    ds.GetRasterBand(1).WriteArray(array)
+    if kind=='empty':ds.GetRasterBand(1).SetNoDataValue(-99)
+    ds=None
+    value=create_raster(tmp_path/'value.tif',np.array([[1.,2.,3.]]),transform=(0,1,0,1,0,-1))
+    with raster_workspace():
+        result=raster_zonal_statistics(raster_load(source_plan(value)),raster_load(source_plan(path)),1,1)
+    assert result.zone_value.tolist()==([] if kind=='empty' else data)
+    assert result.columns.tolist()==['zone_value','total_count','valid_count','invalid_count','sum','min','max','mean','stddev']
+    assert result.dtypes.astype(str).tolist()==['int64']*4+['Float64']*5
+    if kind!='empty':assert result['sum'].tolist()==[1.,2.,3.]
+
+
+@pytest.mark.parametrize('problem',['fraction','unsafe_float','uint_overflow','alpha','complex','complex_alpha',
+                                    'missing_crs','missing_grid','singular','different_crs','different_size','shift','rotation',
+                                    'band_zero','band_bool','band_float','band_missing'])
+def test_zonal_statistics_rejects_invalid_categories_bands_and_grids(tmp_path,problem):
+    from operators.raster_compute import raster_zonal_statistics
+    z=create_raster(tmp_path/'zones.tif',np.ones((2,3)))
+    v=create_raster(tmp_path/'value.tif',np.ones((2,3)))
+    if problem in ('complex','complex_alpha','uint_overflow'):
+        dtype=gdal.GDT_UInt64 if problem=='uint_overflow' else gdal.GDT_CFloat64
+        ds=gdal.GetDriverByName('GTiff').Create(str(z),3,2,2 if problem=='complex_alpha' else 1,dtype)
+        src=gdal.Open(str(v));ds.SetProjection(src.GetProjection());ds.SetGeoTransform(src.GetGeoTransform());src=None
+        ds.GetRasterBand(1).WriteArray(np.full((2,3),2**63 if problem=='uint_overflow' else 1))
+        if problem=='complex_alpha':
+            ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds.GetRasterBand(2).Fill(255)
+        ds=None
+    else:
+        ds=gdal.Open(str(z),gdal.GA_Update)
+        if problem in ('fraction','unsafe_float'):ds.GetRasterBand(1).Fill(.5 if problem=='fraction' else 2**53)
+        if problem=='alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+        if problem=='missing_crs':ds.SetProjection('')
+        if problem=='different_crs':crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetProjection(crs.ExportToWkt())
+        if problem in ('singular','shift','rotation'):
+            ds.SetGeoTransform({'singular':(0,1,1,4,1,1),'shift':(1e-10,1,0,4,0,-1),'rotation':(0,1,.1,4,0,-1)}[problem])
+        ds=None
+        if problem=='missing_grid':z=create_raster(z,np.ones((2,3)),transform=None)
+        if problem=='different_size':z=create_raster(z,np.ones((2,4)))
+    band={'band_zero':0,'band_bool':True,'band_float':1.,'band_missing':3}.get(problem,1)
+    with raster_workspace(),pytest.raises(ValueError):
+        raster_zonal_statistics(raster_load(source_plan(v)),raster_load(source_plan(z)),band,1)
+
+
+@pytest.mark.parametrize('case',['cancellation','opposite_extremes','tiny','large_offset','overflow'])
+def test_zonal_statistics_block_streaming_and_stable_float_statistics(tmp_path,monkeypatch,case):
+    from operators.raster_compute import raster_zonal_statistics
+    width=1030
+    data=np.zeros((1,width))
+    if case=='cancellation':data[0,[0,512,1024]]=[1e16,1.,-1e16]
+    if case=='opposite_extremes':data[0,:]=np.resize([1e308,-1e308],width)
+    if case=='tiny':data[0,:]=np.resize([1e-300,-1e-300],width)
+    if case=='large_offset':data[0,:]=np.resize([1e16-2,1e16+2],width)
+    if case=='overflow':data[0,:]=1e308
+    value=create_raster(tmp_path/'value.tif',data)
+    zones=create_raster(tmp_path/'zones.tif',np.zeros(data.shape))
+    with raster_workspace():
+        loaded,z=raster_load(source_plan(value)),raster_load(source_plan(zones))
+        readraster,readarray=gdal.Band.ReadRaster,gdal.Band.ReadAsArray
+        reads=[]
+        def bounded_read(original):
+            def read(self,x=0,y=0,width=None,height=None,*args,**kwargs):
+                assert width is not None and height is not None and width<=512 and height<=512
+                reads.append((x,y,width,height));return original(self,x,y,width,height,*args,**kwargs)
+            return read
+        monkeypatch.setattr(gdal.Band,'ReadRaster',bounded_read(readraster))
+        monkeypatch.setattr(gdal.Band,'ReadAsArray',bounded_read(readarray))
+        if case=='overflow':
+            with pytest.raises(ValueError,match='finite Float64'):raster_zonal_statistics(loaded,z,1,1)
+        else:
+            row=raster_zonal_statistics(loaded,z,1,1).iloc[0]
+            assert row.valid_count==width and row.invalid_count==0
+            if case=='cancellation':
+                assert row['sum']==pytest.approx(1.)
+                assert row['mean']==pytest.approx(1./width,rel=1e-14)
+            elif case=='large_offset':
+                assert row['mean']==1e16
+                assert row.stddev==pytest.approx(2.,rel=1e-14)
+            else:
+                assert row['sum']==0.
+                assert row['mean']==pytest.approx(0.,abs=1e-315)
+                expected=1e308 if case=='opposite_extremes' else 1e-300
+                assert row.stddev==pytest.approx(expected,rel=1e-14,abs=0)
+        assert reads and {r[0] for r in reads}=={0,512,1024}
+
+
+@pytest.mark.parametrize('invalid',[False,True],ids=['full-table-saved','failure-cleanup'])
+def test_zonal_statistics_async_full_table_save_and_bounded_preview(tmp_path,monkeypatch,invalid):
+    import pandas as pd
+    import api_server
+    import workflow_engine
+    zones=create_raster(tmp_path/'zones.tif',np.arange(72,dtype=float).reshape(6,12))
+    values=create_raster(tmp_path/'value.tif',np.arange(72,dtype=float).reshape(6,12)*2)
+    target=tmp_path/'statistics.csv';snapshots=[p.read_bytes() for p in (zones,values)]
+    tasks=[{'id':name,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}} for name,path in [('values',values),('zones',zones)]]
+    tasks += [{'id':'stats','operator':'raster_zonal_statistics','depends_on':['values','zones'],
+               'params':{'input_raster':{'$ref':'values'},'zones_raster':{'$ref':'zones'},'band':1,'zones_band':2 if invalid else 1}},
+              {'id':'save','operator':'save','depends_on':['stats'],
+               'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_zonal_statistics':paths.extend([params[key].workspace for key in ('input_raster','zones_raster')])
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not p.exists() for p in paths)
+    assert [p.read_bytes() for p in (zones,values)]==snapshots
+    if invalid:assert not target.exists()
+    else:
+        table=pd.read_csv(target)
+        assert table.zone_value.tolist()==list(range(72))
+        assert table['sum'].tolist()==list(range(0,144,2))
+        assert (table.valid_count==1).all() and (table.stddev==0).all()
+        preview=json.loads(status['all_results']['stats'])
+        assert preview['type']=='pandas_dataframe' and preview['row_count']==72 and preview['truncated'] is True
+        assert preview['preview_limit']==len(preview['preview_rows'])==50
+        assert preview['schema'][0]=={'name':'zone_value','type':'int64'}
+        assert json.loads(status['result'])==preview
+    assert client.post('/api/operators/raster_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+def test_zonal_statistics_metadata_typed_inputs_required_bands_and_executable_example(tmp_path):
+    spec=next(item for item in list_operators() if item['id']=='raster_zonal_statistics')
+    params={item['name']:item for item in spec['parameters']}
+    for name in ('input_raster','zones_raster'):
+        assert params[name]['param_type']=='input' and params[name]['type']=='raster'
+    assert params['band']['required'] and params['zones_band']['required']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['output_ports'][0]['type']=='DataFrame'
+    path=create_raster(tmp_path/'grid.tif',np.zeros((2,3)))
+    tasks=[{'id':name,'operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]} for name in ('source','zones')]
+    tasks += [{'id':'stats',**spec['detailed_description']['workflow_example'],'depends_on':['source','zones']}]
+    result=execute_workflow({'tasks':tasks})
+    assert result['status']=='success',result
+    preview=json.loads(result['final_result'])
+    assert preview['row_count']==1 and preview['truncated'] is False
+    assert preview['preview_rows'][0]['zone_value']==0 and preview['preview_rows'][0]['sum']==0.
+
+
+def test_zonal_statistics_multiband_cross_block_independent_oracle(tmp_path):
+    from operators.raster_compute import raster_zonal_statistics
+    rng=np.random.default_rng(1023)
+    shape=(513,517)
+    classes=rng.choice([-3.,0.,2.,11.],size=shape)
+    values=rng.normal(100000,17,size=shape)
+    classes[::19,::17]=-9999;values[::13,::11]=np.nan
+    transform=(100,2,.5,30,.25,-3)
+    z=create_raster(tmp_path/'zones.tif',np.stack([np.full(shape,.125),classes]),transform)
+    v=create_raster(tmp_path/'values.tif',np.stack([np.ones(shape),values]),transform)
+    with raster_workspace():
+        table=raster_zonal_statistics(raster_load(source_plan(v)),raster_load(source_plan(z)),2,2).set_index('zone_value')
+    assert table.index.tolist()==[-3,0,2,11]
+    for code in table.index:
+        group=classes==code;sample=values[group & np.isfinite(values)];row=table.loc[code]
+        assert row.total_count==np.count_nonzero(group)
+        assert row.valid_count==sample.size and row.invalid_count==np.count_nonzero(group)-sample.size
+        np.testing.assert_allclose(row[['sum','min','max','mean','stddev']].to_numpy(dtype=float),
+            [math.fsum(sample),sample.min(),sample.max(),sample.mean(),sample.std()],rtol=1e-11,atol=1e-11)
