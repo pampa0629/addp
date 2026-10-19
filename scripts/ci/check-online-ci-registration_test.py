@@ -17,6 +17,27 @@ SPEC.loader.exec_module(CHECK)
 
 
 class OnlineCIRegistrationTest(unittest.TestCase):
+    def test_zonal_requires_manual_nfs_identity_complete_csv_and_regressions(self):
+        source=SCRIPT.parents[2]
+        paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',
+            'scripts/test/online-hosted-raster-zonal-statistics-gate.sh','scripts/test/raster-zonal-statistics-persistence-online.py',
+            'business/scripts/online-raster-zonal-statistics-fixture.py','scripts/utils/online_nfs_fixture.py',
+            'engines/geopython-workflow/test_online_raster_fixture.py')
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        registered={'raster-zonal-statistics-persistence'}
+        CHECK.validate_raster_zonal_statistics_profile(self.repository,registered)
+        for relative,fragment in ((paths[0],"inputs.suite != 'raster-zonal-statistics-persistence'"),
+                (paths[0],'nfs-kernel-server nfs-common'),(paths[2],'@$(MAKE) test-raster-zonal-statistics-online-runner'),
+                (paths[3],'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),(paths[3],'--mount'),
+                (paths[3],'--wait-protection-owners develop,manager'),(paths[4],'triggered_by'),
+                (paths[4],'validate_preview'),(paths[4],'validate_item'),(paths[4],'scan_ids(client)!=before_scans'),
+                (paths[5],'validate_records'),(paths[6],'root_squash'),(paths[7],'test_zonal_persistence_oracle_rejects_csv_corruption')):
+            target=self.repository/relative;original=target.read_text();target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_zonal_statistics_profile(self.repository,registered)
+            target.write_text(original)
+
     def test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml','scripts/test/online-gate.py','Makefile',

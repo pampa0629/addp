@@ -2141,3 +2141,64 @@ def test_rasterize_persistence_oracle_rejects_real_file_corruption(rasterize_per
     elif corruption=='missing':path.unlink()
     else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.fixture
+def zonal_persistence(tmp_path):
+    spec=importlib.util.spec_from_file_location('zonal_fixture',ROOT/'business/scripts/online-raster-zonal-statistics-fixture.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    scene=importlib.import_module('scripts.test.raster-zonal-statistics-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path/'export';root.mkdir();(root/'outputs').mkdir()
+    initial=module.seed(root)
+    for name in module.TARGETS:
+        definition=scene.definition({n:n for n in module.SOURCES},'parent',name)
+        # Adapt public identity nodes using the same two Runtime contracts as Develop.
+        for task in definition['tasks']:
+            params=task['params']
+            if task['operator']=='raster_load':
+                path=root/params.pop('locator')
+                params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{
+                    'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+            elif task['operator']=='save':
+                params.pop('target_parent_locator');params['path']='outputs/'+params.pop('target_name')
+                params['connection_info']={'mount_path':str(root)}
+        result=execute_workflow(definition)
+        assert result['status']=='success',result
+        preview=json.loads(result['final_result']);scene.validate_preview(preview,name)
+    return module,root,initial
+
+
+def test_zonal_persistence_real_gdal_four_csv_chains_and_independent_full_tables(zonal_persistence):
+    module,root,initial=zonal_persistence
+    actual=module.verify(root,list(module.TARGETS))
+    assert actual['sources']==initial['sources']
+    assert [actual['targets'][n]['row_count'] for n in module.TARGETS]==[4,3,70,0]
+    assert all(f['complete_table_verified'] and type(f['size_bytes']) is int and f['size_bytes']>0 for f in actual['targets'].values())
+    assert actual['targets']['classified.csv']['null_zone_count']==1
+    assert module.expected_rows('classified.csv')[0]['min']<0
+    assert module.expected_rows('classified.csv')[0]['max']>0
+
+
+@pytest.mark.parametrize('corruption',['value','class','count','null','nonfinite','schema','missing_row','extra_row','sidecar','missing','extra'])
+def test_zonal_persistence_oracle_rejects_csv_corruption(zonal_persistence,corruption):
+    import csv
+    module,root,_=zonal_persistence
+    path=root/'outputs'/'classified.csv'
+    with path.open(newline='') as stream:rows=list(csv.DictReader(stream))
+    if corruption in ('value','class','count','null','nonfinite','schema','missing_row','extra_row'):
+        columns=list(module.COLUMNS)
+        if corruption=='value':rows[0]['sum']='999999'
+        elif corruption=='class':rows[0]['zone_value']='-2'
+        elif corruption=='count':rows[0]['valid_count']='-1'
+        elif corruption=='null':rows[-1]['sum']='0'
+        elif corruption=='nonfinite':rows[0]['mean']='NaN'
+        elif corruption=='schema':columns[0]='wrong';rows=[{'wrong':r.pop('zone_value'),**r} for r in rows]
+        elif corruption=='missing_row':rows.pop()
+        else:rows.append(rows[-1])
+        with path.open('w',newline='') as stream:
+            writer=csv.DictWriter(stream,fieldnames=columns);writer.writeheader();writer.writerows(rows)
+    elif corruption=='sidecar':(root/'outputs'/'classified.csv.aux.xml').write_text('unexpected')
+    elif corruption=='missing':path.unlink()
+    else:(root/'outputs'/'unexpected.csv').write_bytes(path.read_bytes())
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))

@@ -100,6 +100,7 @@ class OnlineGateTest(unittest.TestCase):
                 "raster-contour-persistence",
                 "raster-polygonize-persistence",
                 "vector-rasterize-persistence",
+                "raster-zonal-statistics-persistence",
                 "vector-pmtiles-workflow",
                 "vector-topology-persistence",
                 "raster-workflow-capacity",

@@ -27,7 +27,7 @@ class HostedContourGateTest(unittest.TestCase):
                 (root/'contour-root').write_text('/tmp/owned-contour')
                 (root/'contour-nfs-engine.json').write_text('{}')
             if os.environ.get('ADDP_TEST_FAIL_ACTION') == action: sys.exit(1)
-        '''.replace('contour', self.prefix).replace('CONTOUR', self.prefix.upper()))
+        '''.replace('contour', self.prefix).replace('CONTOUR', self.prefix.upper().replace('-', '_')))
         self.host._write_repository_script('scripts/test/online-engine-registration.py', '''
             import sys
             from pathlib import Path
@@ -43,7 +43,7 @@ class HostedContourGateTest(unittest.TestCase):
             [ "$ADDP_ONLINE_CONTOUR_NFS_ENGINE_ID" = 15 ] && [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 600 ]
             [ -z "${ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN:-}" ] && [ -z "${POSTGRES_PASSWORD:-}" ]
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
-        '''.replace('contour', self.prefix).replace('CONTOUR', self.prefix.upper()))
+        '''.replace('contour', self.prefix).replace('CONTOUR', self.prefix.upper().replace('-', '_')))
         subprocess.run(['git', 'add', '.'], cwd=self.host.repository, check=True)
         subprocess.run(['git', 'commit', '-qm', 'contour fixture'], cwd=self.host.repository, check=True)
 

@@ -20,6 +20,9 @@ SUITE=fixture.SUITE
 
 class DiagnosticClient(raster.GatewayClient):
     """Retain a bounded sanitized public submission error, without extra requests."""
+    diagnostic_name='rasterize-submission-error.json'
+    diagnostic_schema='addp.vector-rasterize-submission-diagnostic/v1'
+
     def __init__(self,base_url,token,timeout,artifact_dir):
         super().__init__(base_url,token,timeout)
         self.artifact_dir=Path(artifact_dir)
@@ -39,11 +42,11 @@ class DiagnosticClient(raster.GatewayClient):
         text=re.sub(r'(?i)Bearer\s+[^\s,;\"]+','Bearer <redacted>',text)
         text=re.sub(r'(?i)(password|passwd|token|secret_key|access_key|authorization)([\"\s]*[:=][\"\s]*)[^\s,;\"}]+',r'\1\2<redacted>',text)
         text=re.sub(r'(https?://)[^/\s:@]+:[^/\s@]+@',r'\1<redacted>@',text)
-        record={'schema_version':'addp.vector-rasterize-submission-diagnostic/v1','status':response.status,
+        record={'schema_version':self.diagnostic_schema,'status':response.status,
             'method':method,'path':path,'error':text[:2000]}
-        with (self.artifact_dir/'rasterize-submission-error.json').open('x') as stream:
+        with (self.artifact_dir/self.diagnostic_name).open('x') as stream:
             os.chmod(stream.name,0o600);json.dump(record,stream,ensure_ascii=False,indent=2)
-        raise SuiteError(f'{method} {path} returned HTTP {response.status}; see sanitized rasterize-submission-error.json')
+        raise SuiteError(f'{method} {path} returned HTTP {response.status}; see sanitized {self.diagnostic_name}')
 
 
 def definition(sources,parent,name,*,invalid=False):
