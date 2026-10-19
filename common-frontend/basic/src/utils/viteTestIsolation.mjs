@@ -1,11 +1,20 @@
 import { tmpdir } from 'node:os'
 import { basename, resolve } from 'node:path'
 import { rmSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 // Build-time only: every deterministic browser fixture uses this single policy.
 export function withFrontendTestIsolation(moduleName, config) {
   if (process.env.ADDP_E2E !== '1') return config
   if (!/^[a-z][a-z0-9-]*$/.test(moduleName)) throw new Error('Invalid frontend module name')
+
+  // A frozen checkout may reuse node_modules linked to another checkout.
+  // Keep shared components and the page-owned auth store in this source tree.
+  const alias = config.resolve?.alias
+  const aliases = Array.isArray(alias)
+    ? alias
+    : Object.entries(alias || {}).map(([find, replacement]) => ({ find, replacement }))
+  const sharedRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)))
 
   const run = process.env.ADDP_BROWSER_RUN ? JSON.parse(process.env.ADDP_BROWSER_RUN) : undefined
   const cacheDir = resolve(run?.runtimeDir || tmpdir(), `addp-${moduleName}-vite-test-${process.pid}`)
@@ -19,6 +28,13 @@ export function withFrontendTestIsolation(moduleName, config) {
   return {
     ...config,
     cacheDir,
+    resolve: {
+      ...config.resolve,
+      alias: [
+        ...aliases.filter(entry => entry.find !== '@addp/common-frontend'),
+        { find: '@addp/common-frontend', replacement: sharedRoot }
+      ]
+    },
     server: { ...config.server, hmr: false, strictPort: true },
     plugins: [...(config.plugins || []), {
       name: 'addp-frontend-test-isolation',

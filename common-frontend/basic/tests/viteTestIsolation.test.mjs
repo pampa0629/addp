@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -75,6 +76,39 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
       assert.equal(existsSync(result.stdout), false)
     } finally {
       if (result.stdout) rmSync(result.stdout, { recursive: true, force: true })
+    }
+  })
+}
+
+for (const alias of [
+  undefined,
+  { '@common-ui': '/fixture/basic/src', '@addp/common-frontend/graph': '/fixture/graph/src', '@addp/common-frontend': '/other-checkout' },
+  [{ find: '@addp/common-frontend/graph', replacement: '/fixture/graph/src' }, { find: '@addp/common-frontend', replacement: '/other-checkout' }, { find: /^custom$/, replacement: '/custom', customResolver: () => null }]
+]) {
+  test(`browser fixtures bind the shared package to their own source tree (${Array.isArray(alias) ? 'array' : typeof alias} aliases)`, () => {
+    const previous = process.env.ADDP_E2E
+    const config = { resolve: { dedupe: ['vue'], alias } }
+    const original = Array.isArray(alias) ? [...alias] : alias && { ...alias }
+    let testing
+    try {
+      delete process.env.ADDP_E2E
+      assert.equal(withFrontendTestIsolation('fixture', config), config)
+      process.env.ADDP_E2E = '1'
+      testing = withFrontendTestIsolation('fixture', config)
+      const aliases = testing.resolve.alias
+      const sharedRoot = resolve(fileURLToPath(new URL('../../', import.meta.url)))
+      assert.ok(Array.isArray(aliases))
+      assert.deepEqual(aliases.filter(entry => entry.find === '@addp/common-frontend'), [
+        { find: '@addp/common-frontend', replacement: sharedRoot }
+      ])
+      const existing = Array.isArray(alias) ? alias : Object.entries(alias || {}).map(([find, replacement]) => ({ find, replacement }))
+      assert.deepEqual(aliases.slice(0, -1), existing.filter(entry => entry.find !== '@addp/common-frontend'))
+      assert.equal(testing.resolve.dedupe, config.resolve.dedupe)
+      assert.deepEqual(config.resolve.alias, original)
+    } finally {
+      testing?.plugins.at(-1).closeBundle()
+      if (previous === undefined) delete process.env.ADDP_E2E
+      else process.env.ADDP_E2E = previous
     }
   })
 }
