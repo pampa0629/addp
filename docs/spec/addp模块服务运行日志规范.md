@@ -260,6 +260,6 @@ Markdown 包含安全异常摘要、节点、严重级别、有证据的实例�
 - [API 设计规范](addp-API设计规范.md)
 - [配置规范](configuration/Monitor与运行观测.md#模块服务运行日志配置)
 - [生命周期与构建身份规范](addp开发服务生命周期与构建身份规范.md#进程身份与运行日志)
-- [Infra 运行日志运维](../../scripts/infra/README.md#模块实例运行日志)
+- [Infra 运行日志运维](../../scripts/infra/docs/运行日志.md#模块实例运行日志)
 - [登录认证统一要求](addp登录认证的统一要求.md)与 [IAM 时间事实规范](../../system/docs/IAM数据模型与迁移规范.md)
 - [后续验收与范围边界](../next/ADDP模块服务运行日志设计.md)

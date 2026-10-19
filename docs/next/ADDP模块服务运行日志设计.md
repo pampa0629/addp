@@ -9,7 +9,7 @@
 | 运行日志、操作审计与执行事件的区别，System / Infra / Monitor 职责 | [监控与执行体系图](../concepts/monitoring/平台日志与运行观测.md#模块服务运行日志与链路告警)、[术语表](../concepts/addp术语表.md#模块服务运行日志) |
 | 实例身份、输出/轮转、容量、来源目录、分页、安全、链路告警与通知 | [运行日志规范](../spec/addp模块服务运行日志规范.md) |
 | 进程 PID / UID / 信号及启动身份 | [生命周期规范](../spec/addp开发服务生命周期与构建身份规范.md#进程身份与运行日志) |
-| 部署选择、端口、凭据、保留期与控制面地址 | [配置规范](../spec/configuration/Monitor与运行观测.md#模块服务运行日志配置)、[Infra 指南](../../scripts/infra/README.md#模块实例运行日志) |
+| 部署选择、端口、凭据、保留期与控制面地址 | [配置规范](../spec/configuration/Monitor与运行观测.md#模块服务运行日志配置)、[Infra 指南](../../scripts/infra/docs/运行日志.md#模块实例运行日志) |
 | API 共性、正文授权与分页 | [API 设计规范](../spec/addp-API设计规范.md)、[运行日志规范](../spec/addp模块服务运行日志规范.md#五正文查询与历史分页) |
 | 浏览器认证的数据库权威时间与约束 | [登录认证要求](../spec/addp登录认证的统一要求.md)、[IAM 数据模型与迁移规范](../../system/docs/IAM数据模型与迁移规范.md)；不继续混入日志专题 |
 

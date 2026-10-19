@@ -90,7 +90,7 @@ bash scripts/local/start.sh
    - 端口冲突检查
    - 镜像自动拉取
    - 幂等性启动 (已运行的服务会被跳过)
-   - 数据库/MinIO/Meilisearch 初始化
+   - 数据库/MinIO 初始化及 Meilisearch API 健康检查
    - 健康检查等待
 4. ✓ 启动应用层 (所有后端、前端、Worker、Gateway、Nginx)
 5. ✓ 等待 Compose 容器健康检查通过
@@ -269,8 +269,10 @@ docker volume ls | grep addp
 postgres_data        - PostgreSQL 数据
 redis_data           - Redis 持久化数据
 minio_data           - MinIO 对象存储数据
-meilisearch_data     - Meilisearch 索引数据
+meilisearch_data_v1543 - 当前 Meilisearch 索引数据
 ```
+
+以上数据卷名称是 Compose 逻辑名，Infra 卷默认带 `addp-infra_` 物理前缀。旧 `meilisearch_data` 仅作为回滚材料保留，不由当前版本挂载；旧卷迁移须按[Infra 迁移与回滚流程](../infra/docs/备份恢复与搜索迁移.md#旧-meilisearch-卷迁移与回滚)执行，普通启动不承担升级。
 
 需要重建持久化数据时，先核验可恢复备份和目标 Compose project，再使用 `scripts/infra/down.sh --volumes` 的专用交互确认流程。Docker Desktop 或 Docker CLI 直接删除 volume 不受脚本保护。
 
@@ -369,4 +371,4 @@ docker compose -f docker-compose.yml ps system-backend
 
 本指南中的 `docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断，不再作为模块运行日志正文入口。业务尚未登记就初始化失败时，通过受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 排查；页面不会虚构未登记的实例。
 
-部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/README.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。
+部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。

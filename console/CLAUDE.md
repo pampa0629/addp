@@ -42,6 +42,7 @@ console/frontend/
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
 - Console 外层 URL 是 iframe 集成模式下的公开路由事实源。子模块通过共享 Console navigation bridge 同步自身路由；同模块已完成的导航只同步地址栏，不得重载 iframe，浏览器前进/后退或跨页面导航再由 Console 驱动 iframe 到目标路由。公开状态分类、canonical URL 和单历史约束统一遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
+- Graph 本体导航回归在同一 Console 门禁加载真实列表和详情，覆盖查看、稳定页签、单历史项、iframe 保留与前进/后退、刷新。夹具仅模拟 HTTP 响应，不写开发数据库；CI 同步准备 Graph 锁定依赖，Graph 前端改动会选中该宿主门禁。
 - Portal 是独立顶层产品界面，但正式入口固定为当前 Console origin 的 `/portal/`；开发环境由 Console Vite 代理到 Portal 前端，不能直接打开 `5185` 形成第二个顶层认证 origin。
 
 ## 开发与验证

@@ -15,7 +15,7 @@
 
 **重要**: 必须先启动基础设施服务 (PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch 等)。FalkorDB 是 Ontology 的私有 Infra，已有环境须在根 `.env` 配置独立的 `INFRA_FALKORDB_PASSWORD`。
 
-**旧搜索卷升级例外**：源码现固定 Meilisearch `1.54.3`；已有 `1.7.6` 数据卷不能通过下面的普通启动命令直接升级。应先完成 dump、独立新卷导入与回滚验证；Infra 备份默认不包含 Meilisearch，仅显式提供已成功导出的 dump 与任务 UID 时校验收录，不自动导出。标准入口与隔离演练见 [Infra 备份说明](../../scripts/infra/README.md#本地-infra-备份与隔离恢复演练)。操作边界见[旧 Meilisearch 卷迁移与回滚](../../scripts/infra/README.md#旧-meilisearch-卷迁移与回滚)，未经确认不得启停旧实例或切换卷。新建无历史数据的环境不受此例外影响。
+**旧搜索卷升级例外**：源码现固定 Meilisearch `1.54.3`；已有 `1.7.6` 数据卷不能通过下面的普通启动命令直接升级。应先完成 dump、独立新卷导入与回滚验证；Infra 备份默认不包含 Meilisearch，仅显式提供已成功导出的 dump 与任务 UID 时校验收录，不自动导出。标准入口与隔离演练见 [Infra 备份说明](../../scripts/infra/docs/备份恢复与搜索迁移.md#本地-infra-备份与隔离恢复演练)。操作边界见[旧 Meilisearch 卷迁移与回滚](../../scripts/infra/docs/备份恢复与搜索迁移.md#旧-meilisearch-卷迁移与回滚)，未经确认不得启停旧实例或切换卷。新建无历史数据的环境不受此例外影响。
 
 ```bash
 # 从项目根目录
@@ -27,7 +27,7 @@ bash scripts/infra/up.sh
 - 默认宿主机端口被占用时自动选择空闲端口并打印实际地址；容器内部地址不变
 - 初始化所有模块的 PostgreSQL schemas
 - 初始化 MinIO buckets 和 Redis 配置
-- 配置 Meilisearch 索引
+- 检查 Meilisearch API 健康；各 Owner 模块自行创建和配置业务索引
 
 检查基础设施状态:
 ```bash
@@ -218,7 +218,7 @@ bash scripts/prod/start.sh
     - `init-postgresql.sh` - 初始化数据库 schemas
     - `init-redis.sh` - 初始化 Redis 配置
     - `init-minio.sh` - 初始化 MinIO buckets
-    - `init-meilisearch.sh` - 初始化 Meilisearch 索引
+    - `init-meilisearch.sh` - 校验 Meilisearch API 健康，不预建业务索引
   - [`scripts/dev/`](../../scripts/dev/) - 开发模式脚本 (直接 Go/npm 进程)
     - `start.sh` - 启动完整开发环境 (基础设施 + 后端 + 前端)
     - `stop.sh` - 停止所有开发服务
@@ -250,4 +250,4 @@ System Backend 先完成公共 schema 初始化。各模块 Backend 并行迁移
 
 System 平台系统管理员可在“模块管理 → 服务实例 → 查看日志”按实例查看。权限迁移会失效受影响管理员的旧授权会话，需要重新登录。应用重启不删除日志 Infra；Docker 和本机开发都写受控节点源目录，不通过 Docker Socket 或远端任意路径读取日志。普通 `docker logs` 主要用于容器入口和日志设施自身错误，模块正文以本入口为准。
 
-日志限额、7 天集中保留和已知丢失边界见 [运行日志规范](../spec/addp模块服务运行日志规范.md)；备份范围和标准验证见 [Infra 指南](../../scripts/infra/README.md#模块实例运行日志)。
+日志限额、7 天集中保留和已知丢失边界见 [运行日志规范](../spec/addp模块服务运行日志规范.md)；备份范围和标准验证见 [Infra 指南](../../scripts/infra/docs/运行日志.md#模块实例运行日志)。

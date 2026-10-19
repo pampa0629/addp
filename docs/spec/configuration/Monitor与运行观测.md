@@ -22,36 +22,34 @@ macOS 本地 Docker Desktop 的唯一宿主通道输入为 `ADDP_METRICS_DESKTOP
 
 Monitor 按当前配置周期评估每个任务最新根 execution 的公共 metadata，普通运行信号来自 pending/running，schema blocked 信号只来自该最新 execution 的 failed + schema_change.status=pending。更新的根执行取代旧信号，不回扫历史 pending 记录；具体口径见[Transfer 同步执行规范](../tasks/Transfer同步执行.md)。该配置不进入任务 JSON；Monitor 不因此读取 Transfer 私有表或业务 Kafka。
 
-配置管理迁移后，Monitor 的告警评估、Webhook/邮件投递超时、最大尝试次数和退避策略属于 Monitor-owned `platform_only` 普通运行配置。Webhook 私网访问开关、Console 外部地址仍属于部署安全边界。
+Monitor 的告警评估和 Webhook/邮件投递策略属于 Monitor-owned `platform_only` 普通运行配置，统一由配置管理入口 `monitor.configuration` 的运行策略分组维护。`/settings/runtime-policy` 读取和保存 Monitor 持久化配置，按版本执行并发校验；保存后按 `restart_required` 生效，Monitor Backend 在下次启动时加载配置，再创建 evaluator 和 dispatcher。配置读取或校验失败应明确报错，不回退环境变量。
 
-SMTP Relay 作为 Monitor-owned 平台强类型资源管理：地址、端口、TLS 模式和发件身份是普通字段，用户名和密码使用专用加密凭据字段，读取 API 只返回 `configured/version`。
+运行策略的定义默认值如下，表中时间单位为秒；这些字段不能写入根 `.env`、任务 JSON 或普通用户请求：
+
+| 策略 | 字段 | 定义默认值 |
+| --- | --- | --- |
+| 告警评估周期 | `alert_evaluation_interval_seconds` | 15 |
+| Webhook / 邮件轮询周期 | `webhook_dispatch_interval_seconds` / `email_dispatch_interval_seconds` | 均为 2 |
+| Webhook HTTP / 邮件 SMTP 超时 | `webhook_http_timeout_seconds` / `email_smtp_timeout_seconds` | 10 / 15 |
+| Webhook / 邮件领取租约 | `webhook_lease_duration_seconds` / `email_lease_duration_seconds` | 均为 30 |
+| Webhook / 邮件最大投递次数 | `webhook_max_attempts` / `email_max_attempts` | 均为 8 |
+| Webhook / 邮件初始退避 | `webhook_retry_initial_backoff_seconds` / `email_retry_initial_backoff_seconds` | 均为 5 |
+| Webhook / 邮件最大退避 | `webhook_retry_max_backoff_seconds` / `email_retry_max_backoff_seconds` | 均为 300 |
+
+评估和轮询周期、超时、最大尝试次数及退避时间必须为正；领取租约必须大于对应投递超时，初始退避不得大于最大退避。默认值属于 owner 的配置定义，不是可与持久化值并行修改的另一份配置。
+
+Webhook 私网访问开关和 Console 外部地址仍属于部署安全边界：
 
 ```bash
-MONITOR_ALERT_EVALUATION_INTERVAL=15s
-
-# Webhook delivery dispatcher 轮询周期、HTTP 超时和 claim lease。
-MONITOR_WEBHOOK_DISPATCH_INTERVAL=2s
-MONITOR_WEBHOOK_HTTP_TIMEOUT=10s
-MONITOR_WEBHOOK_LEASE_DURATION=30s
-
-# delivery 最大尝试次数和指数退避边界。
-MONITOR_WEBHOOK_MAX_ATTEMPTS=8
-MONITOR_WEBHOOK_RETRY_INITIAL_BACKOFF=5s
-MONITOR_WEBHOOK_RETRY_MAX_BACKOFF=5m
-
-# 默认 false：拒绝 HTTP、环回、私网、链路本地和云 metadata 目标。
-# 只在本地联调或明确受管内网部署中开启。
+# 默认 false：只允许 HTTPS 公网目标；本地或受管内网联调时才显式开启。
 MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=false
-
-# 本地开发的 Monitor 链接由 scripts/dev/ports.sh 注入 Console 实际端口；容器部署从 ADDP_PUBLIC_ORIGIN 注入统一入口。
-
-# 邮件投递策略和 SMTP Relay 已迁移到 Monitor 配置管理页。
-# 凭据只通过专用凭据接口写入 Monitor-owned 加密字段。
 ```
 
-Webhook destination 的 HMAC secret 使用平台统一 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，不新增 Monitor 私有加密密钥。dispatcher 配置属于部署策略，不进入任务定义或普通用户请求；`MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS` 只能由部署者设置，API 不提供绕过开关。
+`MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS` 只能由部署者设置，API 不提供绕过开关；关闭时拒绝 HTTP、环回、私网、链路本地和云 metadata 目标。通知链接使用部署输入 `MONITOR_CONSOLE_BASE_URL`：本地开发由 `scripts/dev/ports.sh` 注入 Console 实际地址，产品 Compose 从 `ADDP_PUBLIC_ORIGIN` 派生统一入口。Webhook destination 的 HMAC secret 使用平台统一 `ENCRYPTION_KEY` 做 AES-256-GCM 加密，不新增 Monitor 私有加密密钥。
 
-邮件第一版只允许 `starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。SMTP Relay 由平台管理员在 Monitor 配置页维护；host 为空或 Relay 未启用时邮件 dispatcher 不启动，既有 `pending` outbox 会在补齐配置并重启后继续投递。SMTP 密码只存在 Monitor-owned 加密字段，读取接口只返回 `configured/version`，不进入 System Engine、任务 JSON、租户 API 或投递审计。
+SMTP Relay 作为 Monitor-owned 平台强类型资源，由同一配置入口的 SMTP Relay 分组通过 `/settings/smtp-relay` 管理。地址、端口、TLS 模式、发件身份和用户名是普通资源字段；密码只能通过独立 `/settings/smtp-relay/credential` 接口写入或删除，使用平台 `ENCRYPTION_KEY` 加密保存，读取接口的 `credential` 仅返回 `configured/version`。资源版本与凭据版本分别管理，均在下次 Monitor Backend 启动时加载。
+
+邮件只允许 `starttls|tls`，不支持明文或机会式降级，也不根据端口猜测 TLS 模式。SMTP 未配置或 Relay 未启用时邮件 dispatcher 不启动，既有 `pending` outbox 会在补齐配置并重启后继续投递。启用时必须具有合法地址、端口和发件身份；配置用户名时必须同时具有密码凭据。SMTP 密码不进入 System Engine、任务 JSON、租户 API 或投递审计。
 
 ## 模块服务运行日志配置
 
@@ -78,12 +76,12 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 
 `ADDP_OBSERVABILITY_METRICS_ENABLED` 缺省 `false`，只接受 `true/false`，不根据端口探测或证书是否存在推断部署意图。中心采用 `observability-metrics` Profile，与 `observability-logs` 独立；共享生命周期准备只由 `scripts/utils/observability-env.sh` 组织。选择、证书和启动配置随下一次标准 Infra 生命周期生效，不承诺热更新。缺失或故障只影响指标设施，不加入业务 Ready。
 
-`PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../../scripts/infra/README.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
+`PROMETHEUS_PORT` 首选 `19090`，宿主固定回环发布，开发实际映射由标准入口解析；`ADDP_METRICS_TLS_DIR` 是外部部署证书目录，不是用户可修改的 Monitor 普通配置。启用需要独立 CA、服务器和健康客户端证书；未启用不校验这些专用输入、不创建证书目录。具体文件、用途与容器可读要求见 [Infra 指标中心](../../../scripts/infra/docs/指标中心与来源.md#可选指标中心)。运行状态分别报告 Disabled、Unconfigured、Not deployed、Unavailable 或中心 Ready；当前自身采集与业务资源覆盖分别解释。
 
 节点发现的控制面 origin 由 `PROMETHEUS_SYSTEM_URL/PROMETHEUS_MONITOR_URL` 显式部署，固定 HTTPS 和 API 路径；`ADDP_METRICS_DEPLOYMENT_DIR` 提供独立控制面 CA、来源 CA、采集客户端证书与 Prometheus OAuth Secret 文件。Secret 值精确匹配 System 的独立服务凭据，生成配置只引用文件路径。30 秒 HTTP SD 刷新、15 秒采样及限额由同一版本化模板维护，生成产物不能成为第二份可编辑配置。未选择指标不校验这些输入；已选择但输入缺失只使该可选能力启动失败。节点 exporter 和来源防护入口独立部署，不因选择中心而自动安装或取得宿主权限。
 
 
-主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../../scripts/infra/README.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
+主机来源由独立 `ADDP_NODE_METRICS_ENABLED=false` 选择；`scripts/infra/node-metrics.py` 只消费显式导出的根模板部署键，不创建 `.env` 或凭据。选择后要求 `ADDP_NODE_METRICS_LISTEN` 的规范本机 IP:端口，以及仓库外三文件 `ADDP_NODE_METRICS_TLS_DIR`；不根据中心开关或容器探测推断是否采集。同一正式入口支持本机原生 Linux Docker，以及 macOS 上的本地 Docker Desktop Linux VM；后者只发布已验证的 CPU、内存、负载和启动时间等内核全局事实，不提供磁盘/网卡全局指标。仍拒绝远程 Engine 和未知环境；详细权限和证书轮换边界见 [独立 Linux 主机指标来源](../../../scripts/infra/docs/指标中心与来源.md#独立-linux-主机指标来源)。部署成功不替代 System 身份登记、Monitor 目标准入或生产覆盖验收。
 
 
 Monitor 的可选资源查询使用 `MONITOR_PROMETHEUS_URL` 与独立 `MONITOR_PROMETHEUS_CA_FILE/CLIENT_CERT_FILE/CLIENT_KEY_FILE` 部署输入；不复用采集、节点准入或中心健康证书。缺配置只使资源 API 返回能力未配置，不影响原有 Ready。端点/证书随服务生命周期生效；查询预算是 Monitor 平台普通配置 `/settings/resource-query-policy`，版本/CAS 保存后对新请求立即生效，不通过环境变量配置或回退；在途请求保留开始时的预算版本。具体保护上限和指标目录见 [平台运行观测规范](../addp平台运行观测规范.md#62-资源查询与预算)。

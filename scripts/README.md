@@ -58,7 +58,7 @@ make test-arcgis-open-formats
 | `status.sh` | 查看服务状态 | 健康检查、故障排查 |
 | `init-minio.sh` | 初始化 MinIO buckets | MinIO 重置 |
 | `init-postgresql.sh` | 初始化 PostgreSQL 基础能力 | HBA、扩展与模块 schema |
-| `init-meilisearch.sh` | 初始化 Meilisearch 索引 | 搜索引擎初始化 |
+| `init-meilisearch.sh` | 校验 Meilisearch API 健康，不预建业务索引 | 搜索服务可用性检查 |
 | `init-redis.sh` | 初始化 Redis 配置 | Redis 验证、清理 |
 
 ### 快速使用

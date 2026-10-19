@@ -1379,9 +1379,11 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='<disposable-postgres-dsn>' make test-system-iam-p
 
 如果浏览器请求 `node_modules/.vite/deps/chunk-*.js` 返回缺失，而当前生成目录已不再引用该分块，先检查测试与开发进程是否共用预构建缓存。Standard 的自动组件导入会在页面请求时引入 `element-plus/es`；开发服务与 Playwright 服务共用 `.vite` 时，测试重新预构建可能替换正在使用的分块。
 
-Standard 在 Vite 中显式预构建 `element-plus/es`，并将 `ADDP_E2E=1` 的缓存隔离到 `node_modules/.vite-e2e`；开发服务使用 `node_modules/.vite`。两种环境仍运行同一配置和代码。验证使用 `make test-standard-frontend`，并在测试完成后刷新实际开发页面，确认新建术语等入口可用。不应通过修改依赖锁文件或排除整个组件库绕过缓存问题。
+各前端浏览器夹具统一通过 `withFrontendTestIsolation()` 隔离缓存到仓库外的本轮临时目录，并关闭测试 HMR；门禁结束自动清理，开发缓存不受影响。不要维护模块自己的 `.vite-e2e` 路线。Standard 在 Vite 中显式预构建 `element-plus/es`；验证使用 `make test-standard-frontend`，并在测试完成后刷新实际开发页面，确认新建术语等入口可用。不应通过修改依赖锁文件或排除整个组件库绕过缓存问题。
 
-Manager 同样隔离 `ADDP_E2E=1` 的缓存到 `node_modules/.vite-e2e`，并关闭测试服务 HMR，防止测试 HTTP 端口为 4174 时仍占用开发服务 5174 的 WebSocket 端口。`make test-manager-frontend` 包含数据探查血缘的实际画布高度、窗口缩放、层数请求与截断提示验证；测试完成后刷新运行中的 `5174` 开发页面，确认未被测试预构建破坏。现有 Makefile 和平台 CI 的 Manager 前端门禁自动发现 `e2e/*.spec.js`，无需另建测试启动路径。
+Manager 复用同一共享隔离能力，测试 HTTP 与 WebSocket 不占用开发端口。`make test-manager-frontend` 包含数据探查血缘的实际画布高度、窗口缩放、层数请求与截断提示验证；测试完成后刷新运行中的开发页面，确认未被测试预构建破坏。现有 Makefile 和平台 CI 的 Manager 前端门禁自动发现 `e2e/*.spec.js`，无需另建测试启动路径。
+
+Graph 若在首次打开本体详情时退回列表，检查 `logs/graph-frontend.log` 是否在同一时刻出现 `new dependencies optimized` 和 `optimized dependencies changed. reloading`。自动组件导入在初始扫描后生成的样式入口会触发重新优化与 iframe 刷新，中断尚未完成的 Console 地址同步。Graph 统一在启动时引入 Element Plus 样式，预构建已声明依赖和 `element-plus/es`，关闭运行时新依赖发现；不通过延时、重载或改导航协议修复。`make test-graph-frontend` 验证预构建配置，`make test-console-frontend` 验证真实父子页面导航。Vite 配置变更需要用户执行 `./scripts/dev/restart.sh -graph` 后，再在开发页面核验首次导航；AI 不自行重启。
 
 ### 血缘图自动适配后节点过小或偏离中心
 

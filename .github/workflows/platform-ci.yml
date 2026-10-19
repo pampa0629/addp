@@ -948,6 +948,11 @@ jobs:
         working-directory: monitor/frontend
         run: npm ci
 
+      - name: Install Graph dependencies for Console ontology navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: graph/frontend
+        run: npm ci
+
       - name: Install Console dependencies for Workbench delivery runtime integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'workbench'
         working-directory: console/frontend

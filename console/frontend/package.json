@@ -54,6 +54,10 @@
       {
         "module": "monitor",
         "readyPath": "/module-ui/monitor/login"
+      },
+      {
+        "module": "graph",
+        "readyPath": "/module-ui/graph/login"
       }
     ]
   }

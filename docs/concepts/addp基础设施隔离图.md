@@ -90,8 +90,8 @@ graph TB
 - Bucket 隔离: `system`, `manager`, `meta`, `transfer`, `orchestrator`, `develop`, `service`
 
 **Meilisearch** (端口 17700):
-- 统一资产搜索索引: `assets` (开发环境) / `metadata-assets` (生产环境)
-- Meta 和 Manager 模块共享此索引,通过 `asset_type` 区分数据类型 (table/object)
+- Manager、Catalog、Asset 分别拥有 DataItem 内容、企业元数据和已发布资产的独立搜索索引；索引语义和权限过滤由各 Owner 负责。
+- Meta 通过 Manager 的正式接口提交技术与正文快照，不直接读写该索引；Infra 只检查服务可用性，不预建共享业务索引。
 
 ### 业务数据库 (business/docker-compose.yml, 独立部署)
 
@@ -128,7 +128,7 @@ graph TB
     Isolation --> MinIOIso[MinIO Bucket 隔离]
     Isolation --> RedisIso[Redis Key 命名规范]
     Isolation --> ExecutionIso[PostgreSQL Execution Claim 隔离]
-    Isolation --> MeiliIso[Meilisearch Index 命名规范]
+    Isolation --> MeiliIso[Meilisearch Index 归属与隔离]
 
     PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>meta schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
 
@@ -138,7 +138,7 @@ graph TB
 
     ExecutionIso --> ExecutionEx["common.task_executions<br/>module + task_type + bounded + pending<br/>attempt + lease_token + lease_expires_at"]
 
-    MeiliIso --> MeiliEx["assets 统一索引<br/>包含 asset_type=table (表/集合)<br/>和 asset_type=object (文件/对象)"]
+    MeiliIso --> MeiliEx["Manager: DataItem 技术与正文<br/>Catalog: 企业元数据<br/>Asset: 已发布资产<br/>各 Owner 独立索引与权限过滤"]
 
     classDef isolation fill:#fff9c4,stroke:#f57f17
     classDef mechanism fill:#e1f5ff,stroke:#01579b
@@ -204,10 +204,10 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 运行所有权由 `attempt + lease_token + lease_expires_at` 标识，不使用 Redis key 表达 execution owner。
 - owner scheduler 只创建 durable pending execution；Worker 不可用时 execution 保留排队事实。
 
-**5. Meilisearch Index 命名**:
-- **当前实现**: 使用统一索引 `assets` (开发环境) / `metadata-assets` (生产环境)
-- Meta 和 Manager 模块共享此索引,通过 `asset_type` 字段区分数据类型
-- **规范建议** (未实现): 格式 `{module}:{entity_type}`,如 `meta:tables`、`manager:datasources`
+**5. Meilisearch 索引归属与隔离**:
+- 搜索能力可以共用 Meilisearch 服务，Manager、Catalog、Asset 的索引、文档语义和权限过滤必须独立；不按开发/生产环境切换共享文档模型。
+- 技术与正文内容由 Manager 维护，企业元数据由 Catalog 维护，已发布资产由 Asset 维护；Meta 的技术资源树搜索保留自身事实边界。
+- 索引命名和设置以 Owner 定义为准，不再规定统一冒号前缀。职责见[企业资源目录的搜索能力](addp企业资源目录体系图.md#六目录视图与搜索)，当前默认索引与 Infra 入口见[存储与缓存初始化](../../scripts/infra/docs/存储与缓存初始化.md#meilisearch-index-命名规范)。
 
 ---
 

@@ -1,15 +1,26 @@
 import { withModuleFrontend } from '../../common-frontend/basic/src/utils/moduleFrontend.mjs'
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { readFileSync } from 'node:fs'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
-export default defineConfig(withModuleFrontend('graph', {
+export default defineConfig(withModuleFrontend('graph', withFrontendTestIsolation('graph', {
   plugins: [
     vue(),
-    Components({ resolvers: [ElementPlusResolver({ importStyle: process.env.VITEST ? false : 'css' })] })
+    Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
   ],
+  // Lazy component auto-imports must not replace the optimizer generation while
+  // a module navigation is being synchronized with Console.
+  optimizeDeps: {
+    noDiscovery: true,
+    include: [
+      ...Object.keys(JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).dependencies),
+      'element-plus/es'
+    ]
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -41,4 +52,4 @@ export default defineConfig(withModuleFrontend('graph', {
       }
     }
   },
-}))
+})))
