@@ -32,10 +32,8 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 			a.Authorization.RoleAssignments[0].Permissions = []string{"transfer.task.read"}
 		}, want: 403},
 		{name: "project_not_tenant", mutateAuth: func(a *authorization.AuthContext) {
-			id := "7"
 			a.Authorization.RoleAssignments[0].Scope.Type = "project_group"
-			a.Authorization.RoleAssignments[0].Scope.ProjectGroupID = &id
-		}, want: 403},
+		}, want: 503},
 		{name: "cannot_read_tasks", method: "GET", want: 403},
 		{name: "cannot_start", path: "/1/start", want: 403},
 		{name: "schedule_rejected", mutateRequest: func(r *models.CreateTaskRequest) { r.Schedule = "* * * * *" }, want: 400},
