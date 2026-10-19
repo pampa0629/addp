@@ -97,21 +97,21 @@ test('English declaration details fit a narrow viewport',async({page})=>{
  await mockDeployments(page,{language:'en'});await page.setViewportSize({width:390,height:844})
  await page.goto(`/engine-deployments/${DEPLOYMENT_ID}`)
  const dialog=page.getByRole('dialog');await expect(dialog).toContainText('This snapshot describes the admission time')
+ await expect(dialog).toBeVisible()
  await expect(dialog).not.toContainText('system.engineDeployments.')
  expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
  await expect(page.getByTestId('deployment-current-container')).toBeVisible()
- await page.locator('.el-overlay').evaluate(async element=>{await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished))})
- await page.screenshot({path:'/tmp/addp-engine-current-source-narrow.png'})
+ await page.screenshot({path:'/tmp/addp-engine-current-source-narrow.png',animations:'disabled'})
 })
 
 test('English discovery selection is usable in a narrow viewport',async({page})=>{
  await mockDeployments(page,{language:'en',empty:true});await page.setViewportSize({width:390,height:844})
  await page.goto('/engine-deployments');await page.getByTestId('deployment-create').click()
  const dialog=page.getByRole('dialog');await expect(page.getByTestId('deployment-candidates').locator('.el-table__body tr')).toHaveCount(4)
+ await expect(dialog).toBeVisible()
  await expect(dialog).not.toContainText('system.engineDeployments.')
  expect(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true)
- await page.locator('.el-overlay').evaluate(async element=>{await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished))})
- await page.screenshot({path:'/tmp/addp-deployment-discovery-narrow-review.png'})
+ await page.screenshot({path:'/tmp/addp-deployment-discovery-narrow-review.png',animations:'disabled'})
 })
 
 test('current source refresh shows a replacement container, preserves the management draft and clears failed observations',async({page})=>{

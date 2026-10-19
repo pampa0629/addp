@@ -138,8 +138,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
         currentSources.push({ deployment_id: row.deployment_id, container_id: containerID })
       }
       await verifyCurrentSource(first)
-      await system.locator('.el-overlay').evaluate(async element => { await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)) })
-      await page.screenshot({ path: resolve(artifact, 'engine-admission-restored.png'), fullPage: true })
+      await page.screenshot({ path: resolve(artifact, 'engine-admission-restored.png'), fullPage: true, animations: 'disabled' })
       await system.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
       for (const row of payload.data.slice(1)) {
         await system.getByTestId(`deployment-detail-${row.deployment_id}`).click()
