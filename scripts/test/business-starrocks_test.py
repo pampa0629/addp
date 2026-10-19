@@ -34,7 +34,11 @@ class BusinessStarRocksTest(unittest.TestCase):
         self.assertEqual(self.shell('validate_config').returncode, 0)
 
     def test_backend_health_uses_native_header_not_column_positions(self):
-        for text, passed in [('Host\tAlive\tBackendId\n127.0.0.1\ttrue\t1001\n',True), ('Alive\tHost\nfalse\t127.0.0.1\n',False), ('Alive\tHost\n',False), ('Alive\tHost\ntrue\ta\ntrue\tb\n',False)]:
+        for text, passed in [('Host\tAlive\tBackendId\tTotalCapacity\tAvailCapacity\n127.0.0.1\ttrue\t1001\t145 GB\t20 GB\n',True),
+                             ('Alive\tHost\ntrue\t127.0.0.1\n',False),
+                             ('Alive\tTotalCapacity\tAvailCapacity\ntrue\t0.000 B\t0.000 B\n',False),
+                             ('Alive\tTotalCapacity\tAvailCapacity\nfalse\t145 GB\t20 GB\n',False),
+                             ('Alive\tHost\n',False), ('Alive\tHost\ntrue\ta\ntrue\tb\n',False)]:
             result = self.shell('backend_output="$2"; mysql() { printf "%s" "$backend_output"; }; backend_ready', text)
             self.assertEqual(result.returncode == 0, passed, result.stderr)
 

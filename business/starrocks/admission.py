@@ -66,6 +66,18 @@ def sql(name, statement, *, evidence=None):
     return run('docker', 'exec', '-i', name, 'mysql', '--default-character-set=utf8mb4', '--batch', '--raw', '-h127.0.0.1', '-P9030', '-uroot', input=statement, timeout=30, evidence=evidence)
 
 
+def backend_ready(rows):
+    # A heartbeat can be Alive before the first disk report. StarRocks refuses
+    # tablet creation while Backend.disksRef is empty; do not race that report.
+    if len(rows) != 1 or rows[0].get('Alive', '').lower() != 'true':
+        return False
+    for key in ('TotalCapacity', 'AvailCapacity'):
+        value = re.fullmatch(r'([0-9]+(?:\.[0-9]+)?)\s+(?:B|KB|MB|GB|TB|PB)', rows[0].get(key, ''))
+        if value is None or float(value.group(1)) <= 0:
+            return False
+    return True
+
+
 def start():
     path = directory()
     architecture = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}.get(platform.machine().lower())
@@ -99,13 +111,14 @@ def start():
         try:
             lines = sql(name, 'SHOW BACKENDS;').splitlines()
             rows = [dict(zip(lines[0].split('\t'), row.split('\t'))) for row in lines[1:]] if lines else []
-            if len(rows) == 1 and rows[0].get('Alive', '').lower() == 'true':
+            if backend_ready(rows):
                 break
         except RuntimeError:
             pass
         time.sleep(2)
     else:
         raise RuntimeError('StarRocks FE/BE readiness deadline exceeded')
+    private(path / 'backend-readiness.json', {'backends': rows})
     sql(name, """CREATE DATABASE addp_acceptance;
 CREATE TABLE addp_acceptance.source(name VARCHAR(128),id BIGINT,amount DECIMAL(38,18),optional_text VARCHAR(128))
 PRIMARY KEY(name,id) DISTRIBUTED BY HASH(name) BUCKETS 1 PROPERTIES('replication_num'='1');
@@ -143,6 +156,7 @@ def stop():
         if inspect(kind, name) is not None:
             raise RuntimeError('StarRocks admission residual: ' + kind)
     private(path / 'cleanup.json', {'result': 'passed', 'remaining_resources': 0})
+    (path / 'starrocks-engine.json').unlink(missing_ok=True)
     file.unlink()
     print('STARROCKS_ADMISSION_CLEANUP_PASS remaining_resources=0', flush=True)
 
@@ -169,6 +183,7 @@ def persistence():
     def launch():
         run('docker', 'run', '-d', '--name', state['business_name'], '--hostname', state['business_name'],
             '--label', LABEL + '=' + state['run_id'], '--memory=4g', '--shm-size=256m',
+            '-p', '127.0.0.1::9030',
             '--env', 'STARROCKS_PASSWORD', '--env', 'STARROCKS_APP_PASSWORD', '--env', 'STARROCKS_USER',
             '--mount', 'type=volume,source=' + state['business_volumes'][0] + ',target=/data/deploy/starrocks/fe/meta',
             '--mount', 'type=volume,source=' + state['business_volumes'][1] + ',target=/data/deploy/starrocks/be/storage',
@@ -220,6 +235,16 @@ def persistence():
         count = business_sql('SELECT COUNT(*) FROM business.source;', ordinary=True).splitlines()
         if marker[-1:] != ['persistent-owned-marker'] or count[-1:] != ['2']:
             raise RuntimeError('Business restart overwrote source data or duplicated examples')
+        # Restore only this synthetic fixture's modified sample for T4 readers.
+        business_sql("UPDATE business.source SET optional_text='' WHERE id=2;")
+        value = owned('container', state['business_name'], state)
+        mapping = value['NetworkSettings']['Ports']['9030/tcp']
+        if len(mapping) != 1 or mapping[0]['HostIp'] != '127.0.0.1':
+            raise RuntimeError('Business fixture requires a random loopback-only port')
+        private(path / 'starrocks-engine.json', {'name': 'Hosted StarRocks read-only', 'engine_type': 'starrocks',
+                'engine_origin': 'general', 'description': 'Disposable SELECT-only Business consumer',
+                'connection_info': {'host': '127.0.0.1', 'port': int(mapping[0]['HostPort']), 'database': 'business',
+                                    'user': 'business_reader', 'password': reader}})
         private(path / 'business-lifecycle.json', {'result': 'passed', 'backend_id_preserved': True,
                 'user_change_preserved': True, 'example_rows': 2, 'reader_write_denied': True,
                 'precise_bigint_decimal': True,

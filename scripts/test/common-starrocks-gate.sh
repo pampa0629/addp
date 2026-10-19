@@ -13,7 +13,7 @@ cleanup() {
     local status=$?
     trap - EXIT INT TERM
     python3 "$ROOT_DIR/business/starrocks/admission.py" stop || status=1
-    for evidence in facts.json cleanup.json image-build.json schema-initialization.json business-lifecycle.json business-launch.json; do
+    for evidence in facts.json cleanup.json backend-readiness.json image-build.json schema-initialization.json business-lifecycle.json business-launch.json; do
         [ ! -f "$ADDP_STARROCKS_ADMISSION_DIR/$evidence" ] || cp "$ADDP_STARROCKS_ADMISSION_DIR/$evidence" "$ARTIFACT_DIR/$evidence"
     done
     printf 'exit_code=%s\n' "$status" > "$ARTIFACT_DIR/result.txt"

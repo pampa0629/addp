@@ -11,6 +11,14 @@ FIXTURE = import_module('business.starrocks.admission')
 
 
 class StarRocksAdmissionTest(unittest.TestCase):
+    def test_heartbeat_before_disk_report_is_not_ready(self):
+        ready = {'Alive': 'true', 'TotalCapacity': '145.0 GB', 'AvailCapacity': '20.0 GB'}
+        self.assertTrue(FIXTURE.backend_ready([ready]))
+        for rows in ([], [ready, ready], [{**ready, 'Alive': 'false'}],
+                     [{'Alive': 'true'}], [{**ready, 'TotalCapacity': '0.000 B'}],
+                     [{**ready, 'AvailCapacity': '0.000 B'}]):
+            self.assertFalse(FIXTURE.backend_ready(rows))
+
     def test_official_version_and_multiplatform_index_are_pinned(self):
         self.assertEqual(FIXTURE.IMAGE, 'starrocks/allin1-ubuntu:3.5.21@sha256:faf5f6b17a301b276b829482af11d350004833dc9162232e1083a2aad0fa8b2a')
 

@@ -141,6 +141,18 @@ func TestIntegrationProviderPreparedQueryAndNativeResultTypes(t *testing.T) {
 	if result.Fields[1].Type != datatype.FieldTypeBigInt || result.Fields[2].Precision != 38 || result.Fields[2].Scale != 18 {
 		t.Fatalf("result schema: %+v", result.Fields)
 	}
+	bound, err := p.PrepareQuery(ctx, info, plugin.QueryRequest{EngineID: 71, Language: "sql", Query: "SELECT id,name,amount,optional_text,CAST(:text AS CHAR(128)) AS bound_text FROM source WHERE id>=:minimum ORDER BY id", Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"text": "中文' OR 1=1 --", "minimum": int64(3)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundRead, err := bound.ReadSet(ctx)
+	if err != nil || len(boundRead.Paths) != 1 || boundRead.Paths[0].StringPath() != "addp_acceptance/source" {
+		t.Fatalf("bound source identity: %+v %v", boundRead, err)
+	}
+	boundResult, err := bound.Execute(ctx)
+	if err != nil || len(boundResult.Rows) != 1 || boundResult.Rows[0]["bound_text"] != "中文' OR 1=1 --" {
+		t.Fatalf("native text/integer bind changed: %+v %v", boundResult, err)
+	}
 	for _, target := range []struct{ p, s int }{{1, 0}, {9, 0}, {12, 2}, {18, 18}, {38, 0}, {38, 18}, {38, 38}} {
 		query := fmt.Sprintf("SELECT CAST(NULL AS DECIMAL(%d,%d)) AS computed_amount FROM source WHERE id<0", target.p, target.s)
 		result, err := p.ExecuteSQL(ctx, info, query, plugin.QueryOptions{ReadOnly: true})

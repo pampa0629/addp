@@ -23,7 +23,7 @@ sql() {
 backend_ready() {
     # Header names must be used: backend column positions change across versions.
     printf 'SHOW BACKENDS;\n' | MYSQL_PWD="$STARROCKS_PASSWORD" mysql --connect-timeout=2 -h127.0.0.1 -P9030 -uroot --batch --column-names |
-        awk -F '\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Alive") alive=i; next} {n++; if(!alive || $alive!="true") bad=1} END {exit !(n==1 && !bad)}'
+        awk -F '\t' 'NR==1 {for(i=1;i<=NF;i++) if($i=="Alive") alive=i; else if($i=="TotalCapacity") total=i; else if($i=="AvailCapacity") available=i; next} {n++; if(!alive || !total || !available || $alive!="true" || $total+0<=0 || $available+0<=0) bad=1} END {exit !(n==1 && !bad)}'
 }
 health() {
     [ -f "$SR_HOME/fe/meta/.addp-business-initialized" ] || return 1
