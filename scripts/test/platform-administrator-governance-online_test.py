@@ -1,9 +1,12 @@
 import importlib
+import copy
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 from contextlib import redirect_stderr
 from unittest.mock import patch
@@ -35,6 +38,133 @@ def identity(role):
 
 
 class AdministratorGovernanceOnlineTest(unittest.TestCase):
+    def test_offline_recovery_rejects_development_before_starting_a_terminal(self):
+        scene = SCENE.Scenario({**environment(), 'GITHUB_ACTIONS': 'false'})
+        with patch.object(SCENE, 'RecoveryTerminal') as terminal, patch.object(API.GatewayClient, 'request') as request:
+            with self.assertRaises(API.SuiteError): scene.offline_recovery()
+            terminal.assert_not_called()
+            request.assert_not_called()
+
+    def test_offline_dialog_binds_current_identities_and_uses_consecutive_counters(self):
+        credentials = SCENE.Scenario(environment()).credentials
+        outputs = []
+        secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+        for role in ('audit', 'security', 'system'):
+            outputs += [f'恢复 fixture（platform.{role}_administrator，账号 {role}）',
+                        '输入新密码（至少 14 字符）: ', '再次输入新密码: ',
+                        '备用 TOTP Secret: '+secret+'\n', '输入当前 TOTP 验证码: ',
+                        '等待验证码变化后输入下一个 TOTP 验证码: ']
+        outputs += ['IAM 管理员凭据恢复已完成于 now（Attempt 7）']
+        outputs += [f'platform.{role}_administrator -> Principal {credentials[role]["id"]}\n' for role in SCENE.ROLES]
+        class Dialog:
+            def __init__(self, values): self.values, self.writes, self.exits = list(values), [], []
+            def expect(self, pattern):
+                match = re.search(pattern, self.values.pop(0))
+                SCENE.require(match is not None, 'simulated recovery dialog differs')
+                return match
+            def send_line(self, value, hidden=False): self.writes.append((value, hidden))
+            def finish(self, code): self.exits.append(code)
+        terminal = Dialog(outputs)
+        now = [1800000001.0]
+        def advance(seconds): now[0] += seconds
+        with patch.object(SCENE.time, 'time', side_effect=lambda: now[0]), patch.object(SCENE.time, 'sleep', side_effect=advance):
+            recovered, counters, attempt = SCENE.collect_recovery_credentials(terminal, credentials)
+        self.assertEqual(set(recovered), set(SCENE.ROLES))
+        self.assertEqual(attempt, '7')
+        self.assertEqual(terminal.exits, [0])
+        self.assertFalse(terminal.values)
+        for index, role in enumerate(('audit', 'security', 'system')):
+            password, confirmation, first, second = terminal.writes[index*4:index*4+4]
+            self.assertEqual(password, confirmation)
+            self.assertTrue(password[1])
+            self.assertEqual(recovered[role]['id'], credentials[role]['id'])
+            self.assertEqual(first, (SCENE.totp(secret, 1800000001+index*30), False))
+            self.assertEqual(second, (SCENE.totp(secret, 1800000031+index*30), False))
+        self.assertEqual(counters[secret], 1800000000//30+3)
+        for first in ('恢复 fixture（platform.audit_administrator，账号 different）',):
+            terminal = Dialog([first])
+            with self.assertRaises(API.SuiteError): SCENE.collect_recovery_credentials(terminal, credentials)
+            self.assertFalse(terminal.writes)
+
+    def test_offline_audit_requires_all_principals_and_rejects_missing_or_sensitive_evidence(self):
+        credentials = SCENE.Scenario(environment()).credentials
+        rows = [{'event_name': name, 'entity_id': '7', 'result': 'succeeded', 'details': {}}
+                for name in ('iam.recovery.prepared', 'iam.recovery.completed')]
+        rows += [{'event_name': 'iam.recovery.administrator_credentials_replaced', 'entity_id': '7',
+                  'result': 'succeeded', 'principal_id': credentials[role]['id'],
+                  'details': {'role_key': f'platform.{role}_administrator'}} for role in SCENE.ROLES]
+        valid = {'data': rows, 'total': 5}
+        sensitive = ['ephemeral-proof-not-for-log']
+        SCENE.assert_recovery_audit(valid, '7', credentials, sensitive)
+        cases = []
+        value = copy.deepcopy(valid); value['data'].pop(); cases.append(value)
+        value = copy.deepcopy(valid); value['data'][2]['principal_id'] = '999'; cases.append(value)
+        value = copy.deepcopy(valid); value['data'][2]['entity_id'] = '8'; cases.append(value)
+        value = copy.deepcopy(valid); value['data'][2]['details']['leak'] = sensitive[0]; cases.append(value)
+        value = copy.deepcopy(valid); value['data'].append(value['data'][0]); cases.append(value)
+        for value in cases:
+            with self.assertRaises(API.SuiteError): SCENE.assert_recovery_audit(value, '7', credentials, sensitive)
+
+    def test_offline_credentials_never_reenter_browser_child_environment(self):
+        scene = SCENE.Scenario(environment())
+        class Client:
+            def request(self, *_): return API.Response(200, {'context': {'type': 'tenant'}, 'total': 0})
+        scene.actors['audit'] = Client()
+        def browser():
+            self.assertFalse(any(item['password'].startswith('CLI-only-') for item in scene.credentials.values()))
+            return {key: True for key in SCENE.BROWSER_PROOFS}
+        def offline():
+            for role in SCENE.ROLES: scene.credentials[role]['password'] = 'CLI-only-password'
+            return {key: True for key in SCENE.OFFLINE_PROOFS}
+        with patch.object(API, 'GatewayClient', return_value=Client()), patch.object(scene, 'login'), \
+             patch.object(scene, 'assert_legacy_route_removed'), \
+             patch.object(scene, 'pause_restore'), patch.object(scene, 'recovery'), patch.object(scene, 'handover'), \
+             patch.object(scene, 'browser', side_effect=browser), patch.object(scene, 'offline_recovery', side_effect=offline):
+            result = scene.run()
+        self.assertEqual(set(result['offline_recovery']), SCENE.OFFLINE_PROOFS)
+        self.assertNotIn('CLI-only-password', json.dumps(result))
+
+    def test_recovery_terminal_handles_fragmented_utf8_and_hidden_input_in_memory(self):
+        child = '''import os,sys,termios,time
+attributes=termios.tcgetattr(0); attributes[3] &= ~termios.ECHO; termios.tcsetattr(0,termios.TCSANOW,attributes)
+prompt='隐藏凭据: '.encode()
+os.write(1,prompt[:2]); time.sleep(.02); os.write(1,prompt[2:])
+value=sys.stdin.readline().strip()
+print('accepted' if len(value)>5 else 'rejected',flush=True)
+'''
+        terminal = SCENE.RecoveryTerminal([sys.executable, '-c', child], dict(os.environ))
+        with terminal:
+            terminal.expect('隐藏凭据: ')
+            terminal.send_line('ephemeral-proof', hidden=True)
+            terminal.expect('accepted')
+            terminal.finish(0)
+        self.assertEqual(terminal.pending, '')
+        self.assertEqual(terminal.process.returncode, 0)
+
+    def test_recovery_terminal_rejects_echo_and_closes_children_on_failure(self):
+        child = 'import sys; print("ready",flush=True); sys.stdin.readline()'
+        terminal = SCENE.RecoveryTerminal([sys.executable, '-c', child], dict(os.environ))
+        with self.assertRaises(API.SuiteError), terminal:
+            terminal.expect('ready')
+            terminal.send_line('must-not-echo', hidden=True)
+        self.assertIsNotNone(terminal.process.returncode)
+        self.assertEqual(terminal.pending, '')
+
+    def test_recovery_terminal_does_not_expose_transcript_on_unexpected_exit(self):
+        terminal = SCENE.RecoveryTerminal([sys.executable, '-c', 'print("private-transcript"); raise SystemExit(7)'], dict(os.environ))
+        with self.assertRaises(API.SuiteError) as failure, terminal:
+            terminal.expect('never-present', timeout=2)
+        self.assertNotIn('private-transcript', str(failure.exception))
+        self.assertEqual(terminal.pending, '')
+        self.assertIsNotNone(terminal.process.returncode)
+
+    def test_recovery_cli_does_not_inherit_online_identity_credentials(self):
+        env = {**environment(), 'PATH': '/test', 'POSTGRES_HOST': '127.0.0.1', 'IAM_MFA_ENCRYPTION_KEY': 'database-config'}
+        result = SCENE.recovery_cli_environment(env)
+        self.assertFalse(any(key.startswith('ADDP_ONLINE_') for key in result))
+        self.assertEqual(result['POSTGRES_HOST'], '127.0.0.1')
+        self.assertEqual(result['IAM_MFA_ENCRYPTION_KEY'], 'database-config')
+
     def test_removed_route_requires_404_without_assuming_a_json_error_contract(self):
         scene = SCENE.Scenario(environment())
         scene.actors['system'] = API.GatewayClient(environment()['GATEWAY_URL'], 'officer-token', 10)

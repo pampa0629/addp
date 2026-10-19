@@ -26,7 +26,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                  'scripts/test/online-hosted-administrator-governance-gate_test.py',
                  'system/backend/cmd/online-test-fixture/administrator_governance.go',
                  'system/backend/cmd/online-test-fixture/administrator_governance_test.go',
-                 'console/frontend/e2e/online/platform-administrator-governance.spec.js')
+                 'console/frontend/e2e/online/platform-administrator-governance.spec.js',
+                 'system/backend/cmd/iam-recovery/main.go', 'system/backend/cmd/iam-bootstrap/main.go')
         for relative in paths:
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -37,7 +38,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[0], "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'platform-administrator-governance'"),
                                    (paths[1], '$(MAKE) test-platform-administrator-online-runner'),
                                    (paths[2], 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"'),
-                                   (paths[2], '--suite platform-administrator-governance')):
+                                   (paths[2], '--suite platform-administrator-governance'),
+                                   (paths[2], 'make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release')):
             target = self.repository / relative; original = target.read_text()
             target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):

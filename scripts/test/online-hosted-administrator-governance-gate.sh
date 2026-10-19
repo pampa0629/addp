@@ -16,5 +16,6 @@ application_owned=1
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -system
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite platform-administrator-governance --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
+run_logged make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

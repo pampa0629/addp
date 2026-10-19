@@ -2,16 +2,22 @@
 from __future__ import annotations
 
 import base64
+import codecs
+import errno
 import hashlib
 import hmac
 import json
 import os
 import platform
+import pty
 import re
 import secrets
+import select
+import signal
 import struct
 import subprocess
 import sys
+import termios
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +34,11 @@ CONTEXT = '/api/v1/system/auth/context'
 ROLES = ('system', 'security', 'audit')
 BROWSER_PROOFS = {'real_mfa', 'role_matrix', 'request_created', 'independent_review',
                   'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login'}
+CLI_DIR = ROOT/'dist/release-linux-amd64'
+OFFLINE_PROOFS = {'tty_only', 'two_real_totp_counters', 'all_principals_recovered',
+                  'old_credentials_rejected', 'old_sessions_revoked', 'roles_unchanged', 'suspension_preserved',
+                  'secret_single_use', 'bootstrap_not_reopened', 'audit_complete', 'credentials_memory_only',
+                  'tenant_boundary_preserved'}
 
 
 class GovernanceAssertion(API.SuiteError):
@@ -44,6 +55,112 @@ def totp(secret, at):
     digest = hmac.new(key, struct.pack('>Q', int(at)//30), hashlib.sha1).digest()
     offset = digest[-1] & 15
     return f'{(struct.unpack(">I", digest[offset:offset+4])[0] & 0x7fffffff) % 1000000:06d}'
+
+
+def recovery_cli_environment(environment):
+    # The CLI uses normal deployment configuration, never Online User tokens,
+    # passwords or TOTP secrets inherited from the scenario fixture.
+    return {key: value for key, value in environment.items() if not key.startswith('ADDP_ONLINE_')}
+
+
+class RecoveryTerminal:
+    """A private PTY with bounded, memory-only output and no transcript logging."""
+    def __init__(self, command, environment):
+        self.command, self.environment = command, environment
+        self.pending = ''
+
+    def __enter__(self):
+        self.master, slave = pty.openpty()
+        try:
+            self.process = subprocess.Popen(self.command, stdin=slave, stdout=slave, stderr=slave,
+                    cwd=ROOT, env=self.environment, close_fds=True, start_new_session=True)
+        except Exception:
+            os.close(self.master)
+            raise
+        finally:
+            os.close(slave)
+        self.decoder = codecs.getincrementaldecoder('utf-8')()
+        return self
+
+    def expect(self, pattern, timeout=30):
+        deadline = time.monotonic() + timeout
+        while True:
+            match = re.search(pattern, self.pending)
+            if match:
+                self.pending = self.pending[match.end():]
+                return match
+            require(time.monotonic() < deadline, 'offline terminal prompt timed out')
+            ready, _, _ = select.select([self.master], [], [], min(.1, max(0, deadline-time.monotonic())))
+            if not ready:
+                continue
+            try:
+                chunk = os.read(self.master, 8192)
+            except OSError as error:
+                if error.errno != errno.EIO:
+                    raise
+                chunk = b''
+            require(bool(chunk), 'offline terminal ended before expected prompt')
+            self.pending += self.decoder.decode(chunk)
+            require(len(self.pending) <= 262144, 'offline terminal output exceeded its bound')
+
+    def send_line(self, value, hidden=False):
+        require('\n' not in value and '\r' not in value, 'offline terminal input must be one line')
+        if hidden:
+            # ReadPassword writes its prompt before disabling echo. Wait until
+            # termios confirms the hidden-input boundary before supplying it.
+            deadline = time.monotonic() + 2
+            while termios.tcgetattr(self.master)[3] & termios.ECHO:
+                require(time.monotonic() < deadline, 'offline hidden input did not disable echo')
+                time.sleep(.01)
+        data = (value+'\n').encode()
+        while data:
+            data = data[os.write(self.master, data):]
+
+    def finish(self, expected_exit):
+        require(self.process.wait(timeout=10) == expected_exit, 'offline CLI returned an unexpected exit status')
+
+    def __exit__(self, *_):
+        try:
+            if self.process.poll() is None:
+                try:
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                self.process.wait(timeout=5)
+        finally:
+            os.close(self.master)
+            self.pending = ''
+            self.decoder = None
+
+
+def collect_recovery_credentials(terminal, credentials):
+    replacements, counters = {}, {}
+    for _ in ROLES:
+        target = terminal.expect(r'恢复 [^\r\n]+（(platform\.(system|security|audit)_administrator)，账号 ([^\r\n）]+)）')
+        role = target[2]
+        require(role not in replacements and target[3] == credentials[role]['username'],
+                'offline CLI selected an unexpected administrator identity')
+        password = 'Offline-recovered-' + secrets.token_urlsafe(24)
+        terminal.expect('输入新密码（至少 14 字符）: ')
+        terminal.send_line(password, hidden=True)
+        terminal.expect('再次输入新密码: ')
+        terminal.send_line(password, hidden=True)
+        secret = terminal.expect(r'备用 TOTP Secret: ([A-Z2-7]+=*)\r?\n')[1]
+        terminal.expect('输入当前 TOTP 验证码: ')
+        now = time.time()
+        counter = int(now)//30
+        terminal.send_line(totp(secret, now))
+        terminal.expect('等待验证码变化后输入下一个 TOTP 验证码: ')
+        time.sleep(max(0, (counter+1)*30 - time.time()) + .2)
+        require(int(time.time())//30 == counter+1, 'offline consecutive TOTP window was missed')
+        terminal.send_line(totp(secret, time.time()))
+        counters[secret] = counter+1
+        replacements[role] = {**credentials[role], 'password': password, 'totp': secret}
+    attempt = terminal.expect(r'IAM 管理员凭据恢复已完成于 [^\r\n]+（Attempt ([1-9][0-9]*)）')[1]
+    for role in sorted(ROLES, key=lambda role: int(credentials[role]['id'])):
+        terminal.expect(re.escape(f'platform.{role}_administrator -> Principal {credentials[role]["id"]}') + r'\r?\n')
+    terminal.finish(0)
+    return replacements, counters, attempt
 
 
 def validate_hosted(environment):
@@ -75,6 +192,23 @@ def assert_identity(payload, role, principal_id):
         require(not permissions.intersection({'iam.user.create', 'iam.user.suspend', 'iam.local_account.reset',
                                              'iam.mfa_credential.reset', 'iam.security_policy.update'}),
                 'audit reviewer gained daily management writes')
+
+
+def assert_recovery_audit(events, attempt_id, credentials, sensitive):
+    rows = events.get('data', [])
+    expected = {'iam.recovery.prepared': 1, 'iam.recovery.administrator_credentials_replaced': 3, 'iam.recovery.completed': 1}
+    require(events.get('total') == 5 and len(rows) == 5 and
+            {name: sum(row.get('event_name') == name for row in rows) for name in expected} == expected,
+            'offline recovery audit events are incomplete')
+    require(all(row.get('entity_id') == attempt_id and row.get('result') == 'succeeded' for row in rows),
+            'offline recovery audit binding differs')
+    replaced = [row for row in rows if row['event_name'] == 'iam.recovery.administrator_credentials_replaced']
+    require({(row.get('principal_id'), row['details'].get('role_key')) for row in replaced} ==
+            {(credentials[role]['id'], f'platform.{role}_administrator') for role in ROLES},
+            'offline audit did not cover every recovered principal')
+    audit = json.dumps(rows)
+    for value in sensitive:
+        require(value not in audit, 'offline recovery audit contains a credential')
 
 
 class Scenario:
@@ -208,6 +342,108 @@ class Scenario:
         successor.request('GET', CONTEXT, (401,))
         self.login('system')
 
+    def offline_recovery(self):
+        self.stage = 'offline-admission'
+        validate_hosted(self.env)
+        binaries = {name: CLI_DIR/('addp-iam-'+name) for name in ('recovery', 'bootstrap')}
+        require(all(path.is_file() and os.access(path, os.X_OK) for path in binaries.values()),
+                'offline acceptance requires the standard CLI build artifacts')
+        cli_env = recovery_cli_environment(self.env)
+        def terminal(name, action):
+            return RecoveryTerminal([str(binaries[name]), action], cli_env)
+
+        before = {role: self.actors[role].request('GET', CONTEXT, (200,)).payload['authorization']
+                  for role in ROLES}
+        old_credentials = {role: dict(self.credentials[role]) for role in ROLES}
+        old_sessions = {role: self.actors[role] for role in ROLES}
+        # A suspended Audit administrator cannot independently review a System
+        # recovery. Offline credential replacement must preserve this suspension.
+        self.review('system', self.create('security', 'platform_identity_suspend', 'audit'))
+        self.stage = 'offline-tty-boundary'
+        for action in ('prepare', 'apply'):
+            result = subprocess.run([str(binaries['recovery']), action], stdin=subprocess.DEVNULL,
+                        capture_output=True, text=True, env=cli_env, cwd=ROOT, timeout=20)
+            require(result.returncode == 1 and '必须直接运行在交互终端' in result.stderr,
+                    'offline CLI accepted nonterminal input or output')
+
+        self.stage = 'offline-prepare'
+        with terminal('recovery', 'prepare') as console:
+            proof = console.expect(r'\r?\n(addp_ir_[A-Za-z0-9_-]+)\r?\n')[1]
+            console.finish(0)
+        with terminal('recovery', 'prepare') as console:
+            console.expect('an IAM recovery attempt is already prepared')
+            console.finish(1)
+        with terminal('recovery', 'apply') as console:
+            console.expect('Recovery Secret: ')
+            console.send_line('addp_ir_' + secrets.token_urlsafe(32), hidden=True)
+            console.expect('IAM Recovery 失败: 未授权')
+            console.finish(1)
+
+        self.stage = 'offline-apply'
+        with terminal('recovery', 'apply') as console:
+            console.expect('Recovery Secret: ')
+            console.send_line(proof, hidden=True)
+            recovered, counters, attempt_id = collect_recovery_credentials(console, self.credentials)
+        self.stage = 'offline-single-use'
+        with terminal('recovery', 'apply') as console:
+            console.expect('Recovery Secret: ')
+            console.send_line(proof, hidden=True)
+            console.expect('IAM Recovery 失败: 未授权')
+            console.finish(1)
+        with terminal('bootstrap', 'prepare') as console:
+            console.expect('IAM bootstrap was already prepared')
+            console.finish(1)
+        for role in ROLES:
+            old_sessions[role].request('GET', CONTEXT, (401,))
+            self.credentials[role] = recovered[role]
+        self.used_steps.update(counters)
+
+        self.stage = 'offline-suspension-preserved'
+        self.public.request('POST', '/api/v1/system/login', (401,),
+                    {key: self.credentials['audit'][key] for key in ('username', 'password')})
+        self.login('security')
+        self.login('system')
+        require(self.status('audit') == 'suspended', 'offline recovery silently reactivated a suspended identity')
+        applied = self.review('system', self.create('security', 'platform_identity_reactivate', 'audit'))
+        require(applied.get('status') == 'applied', 'recovered officers could not independently restore identity')
+        self.login('audit')
+
+        self.stage = 'offline-old-credentials'
+        for role in ROLES:
+            self.public.request('POST', '/api/v1/system/login', (401,),
+                        {key: old_credentials[role][key] for key in ('username', 'password')})
+            # Do not mistake a coincidentally equal six-digit value for proof
+            # that the disabled secret still works. Wait before submitting it.
+            now = time.time()
+            while totp(old_credentials[role]['totp'], now) in {
+                    totp(self.credentials[role]['totp'], now+offset) for offset in (-30, 0, 30)}:
+                time.sleep(30 - now % 30 + .2)
+                now = time.time()
+            challenge = self.public.request('POST', '/api/v1/system/login', (200,),
+                        {key: self.credentials[role][key] for key in ('username', 'password')}).payload
+            require(challenge.get('next_action') == 'verify_mfa', 'offline replacement bypassed MFA')
+            self.public.request('POST', '/api/v1/system/auth/mfa-verifications', (401,),
+                        {'challenge_token': challenge['mfa']['challenge_token'], 'code': totp(old_credentials[role]['totp'], now)})
+            current = self.actors[role].request('GET', CONTEXT, (200,)).payload
+            require(current['authorization']['role_assignments'] == before[role]['role_assignments'],
+                    'offline recovery changed role assignments')
+            require(int(current['authorization']['authorization_version']) ==
+                    int(before[role]['authorization_version']) + (3 if role == 'audit' else 1),
+                    'offline recovery did not advance every principal authorization version')
+
+        tenant = API.GatewayClient(self.env['GATEWAY_URL'], self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 10)
+        identity = tenant.request('GET', CONTEXT, (200,)).payload
+        require(identity.get('context', {}).get('tenant_id') == self.env['ADDP_ONLINE_TEST_TENANT_ID'],
+                'offline recovery affected an unrelated Tenant identity')
+
+        self.stage = 'offline-audit'
+        events = self.actors['audit'].request('GET', '/api/v1/system/platform/audit/events?entity_type=iam_recovery_attempt&page_size=100', (200,)).payload
+        assert_recovery_audit(events, attempt_id, self.credentials,
+                [proof, *(item[key] for item in [*old_credentials.values(), *recovered.values()] for key in ('password', 'totp'))])
+        # Only booleans are returned; no PTY output or recovery credential leaves
+        # this process or enters the artifact directory.
+        return {key: True for key in OFFLINE_PROOFS}
+
     def browser(self):
         self.stage = 'browser'
         receipt = Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'administrator-browser.json'
@@ -245,6 +481,12 @@ class Scenario:
         self.recovery()
         self.handover()
         browser = self.browser()
+        # The browser intentionally replaces System credentials without an
+        # export. Re-enroll through the existing approved API flow so this
+        # process owns a current pre-offline session for every officer. Run
+        # offline last: none of its new credentials enter a child environment.
+        self.recovery()
+        offline = self.offline_recovery()
         self.stage = 'final-state'
         require(self.actors['audit'].request('GET', CHANGES+'?status=pending', (200,)).payload.get('total') == 0,
                 'pending governance requests remain')
@@ -253,7 +495,8 @@ class Scenario:
         return {'schema_version': 'addp.online-suite/v1', 'suite': SUITE, 'run_id': self.run_id,
                 'role_matrix': 'passed', 'version_and_replay': 'passed', 'suspension_and_session_revocation': 'passed',
                 'one_time_recovery_preserves_suspension': 'passed', 'atomic_handover_and_return': 'passed',
-                'browser': browser, 'pending_requests': 0, 'identity_cleanup': 'owned_by_disposable_hosted_infra'}
+                'offline_recovery': offline, 'browser': browser, 'pending_requests': 0,
+                'identity_cleanup': 'owned_by_disposable_hosted_infra'}
 
 
 def main():

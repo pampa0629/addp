@@ -2534,6 +2534,8 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
         "scripts/test/online-hosted-administrator-governance-gate_test.py",
         "system/backend/cmd/online-test-fixture/administrator_governance.go",
         "system/backend/cmd/online-test-fixture/administrator_governance_test.go",
+        "system/backend/cmd/iam-recovery/main.go",
+        "system/backend/cmd/iam-bootstrap/main.go",
         "console/frontend/e2e/online/platform-administrator-governance.spec.js",
     )
     for path in required:
@@ -2552,6 +2554,7 @@ def validate_administrator_governance_profile(repository: Path, registered: set[
         raise RegistrationError("administrator governance must not dispatch to self-hosted")
     gate = (repository / "scripts/test/online-hosted-administrator-governance-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite platform-administrator-governance',
+                     'make build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release',
                      'playwright install --with-deps chromium', 'make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if fragment not in gate:
             raise RegistrationError("administrator governance lifecycle missing: " + fragment)

@@ -21,6 +21,10 @@ class HostedAdministratorGovernanceTest(unittest.TestCase):
         ''')
         self.host._executable('make', '''#!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$1" = build-iam-recovery ]; then
+                [ "${ADDP_TEST_CLI_BUILD_FAIL:-0}" != 1 ]
+                exit
+            fi
             [ "${ADDP_TEST_SCENE_FAIL:-0}" != 1 ]
         ''')
         self.host._write_repository_script('scripts/infra/down.sh', '''#!/usr/bin/env bash
@@ -71,14 +75,16 @@ class HostedAdministratorGovernanceTest(unittest.TestCase):
         result=self.run_gate()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         trace=self.host.trace.read_text()
-        for expected in ('infra-up','start:-system','browser-prepare','make:test-online ONLINE_SUITE=platform-administrator-governance','application-stop','infra-down'):
+        for expected in ('infra-up','start:-system','make:build-iam-recovery build-iam-bootstrap GOOS=linux GOARCH=amd64 OUT_DIR=dist BUILD_TYPE=release',
+                         'browser-prepare','make:test-online ONLINE_SUITE=platform-administrator-governance','application-stop','infra-down'):
             self.assertIn(expected,trace)
         self.assertLess(trace.index('application-stop'),trace.index('infra-down'))
+        self.assertLess(trace.index('make:build-iam-recovery'),trace.index('browser-prepare'))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
 
     def test_scene_browser_and_cleanup_failures_cannot_pass(self):
-        for override in ('ADDP_TEST_BROWSER_FAIL','ADDP_TEST_SCENE_FAIL','ADDP_TEST_CLEANUP_FAIL'):
+        for override in ('ADDP_TEST_CLI_BUILD_FAIL','ADDP_TEST_BROWSER_FAIL','ADDP_TEST_SCENE_FAIL','ADDP_TEST_CLEANUP_FAIL'):
             with self.subTest(override=override):
                 result=self.run_gate(**{override:'1'})
                 self.assertNotEqual(result.returncode,0)
