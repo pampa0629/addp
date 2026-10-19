@@ -1315,6 +1315,65 @@ definitions:
     - service_id
     - service_type
     type: object
+  github_com_addp_system_internal_models.BusinessDeploymentContainer:
+    properties:
+      container_id:
+        type: string
+      published_ports:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentPort'
+        type: array
+      restart_count:
+        type: integer
+      started_at:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.BusinessDeploymentInventory:
+    properties:
+      observed_at:
+        type: string
+      schema:
+        type: string
+      services:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentService'
+        type: array
+      source:
+        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentSource'
+    type: object
+  github_com_addp_system_internal_models.BusinessDeploymentPort:
+    properties:
+      address:
+        type: string
+      container_port:
+        type: integer
+      port:
+        type: integer
+      protocol:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.BusinessDeploymentService:
+    properties:
+      containers:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentContainer'
+        type: array
+      engine_type:
+        type: string
+      service:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.BusinessDeploymentSource:
+    properties:
+      docker_engine_id:
+        type: string
+      project:
+        type: string
+      runtime:
+        type: string
+      type:
+        type: string
+    type: object
   github_com_addp_system_internal_models.CapabilitiesView:
     properties:
       json_view:
@@ -1678,6 +1737,83 @@ definitions:
     properties:
       assessment_id:
         type: string
+    type: object
+  github_com_addp_system_internal_models.EngineDeployment:
+    properties:
+      created_at:
+        type: string
+      declared_node_id:
+        type: string
+      deployment_id:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      engine_type:
+        type: string
+      host_binding_reason:
+        type: string
+      host_binding_state:
+        type: string
+      inventory:
+        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
+      node_id:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentInput:
+    properties:
+      declared_node_id:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      inventory:
+        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
+    required:
+    - declared_node_id
+    - display_name
+    - enabled
+    - inventory
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.EngineDeploymentUpdateRequest:
+    properties:
+      declared_node_id:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      inventory:
+        $ref: '#/definitions/github_com_addp_system_internal_models.BusinessDeploymentInventory'
+      version:
+        type: integer
+    required:
+    - declared_node_id
+    - display_name
+    - enabled
+    - inventory
+    - version
     type: object
   github_com_addp_system_internal_models.EngineRasterPolicy:
     properties:
@@ -8625,6 +8761,214 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_raster_policy.read
+  /platform/engine_deployments:
+    get:
+      description: 只读管理员确认的部署声明；不读取租户引擎或业务数据 | Read confirmed deployment declarations
+        without Tenant engines or business data
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 部署名称片段 | Deployment name fragment
+        in: query
+        name: search
+        type: string
+      - description: 声明的主机 UUID | Declared host UUID
+        in: query
+        name: node_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台引擎部署 | List platform engine deployments
+      tags:
+      - 引擎部署 | Engine Deployments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.engine_deployment.read
+    post:
+      consumes:
+      - application/json
+      description: 管理员确认 PostgreSQL 来源与主机；不创建租户引擎、不探测 SQL 或 Docker | Confirm PostgreSQL
+        source and host without creating Tenant engines or probing SQL or Docker
+      parameters:
+      - description: 完整部署声明 | Complete deployment declaration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 登记平台引擎部署 | Register platform engine deployment
+      tags:
+      - 引擎部署 | Engine Deployments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.engine_deployment.create
+      - platform.host_node.read
+  /platform/engine_deployments/{deployment_id}:
+    get:
+      description: 返回确认快照和当前纳管关联，不代表在线或采集成功 | Return the confirmed snapshot and current
+        management association, not live collection status
+      parameters:
+      - description: 部署 UUID | Deployment UUID
+        in: path
+        name: deployment_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看平台引擎部署 | Read platform engine deployment
+      tags:
+      - 引擎部署 | Engine Deployments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.engine_deployment.read
+    put:
+      consumes:
+      - application/json
+      description: 完整替换及版本 CAS，保留原声明有效区间与审计；不执行部署操作 | Full replacement with version
+        CAS and retained declaration intervals and audit, without deployment operations
+      parameters:
+      - description: 部署 UUID | Deployment UUID
+        in: path
+        name: deployment_id
+        required: true
+        type: string
+      - description: 完整声明及当前版本 | Complete declaration and current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeploymentUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.EngineDeployment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新平台引擎部署声明 | Update platform engine deployment declaration
+      tags:
+      - 引擎部署 | Engine Deployments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.engine_deployment.update
+      - platform.host_node.read
   /platform/host_nodes:
     get:
       consumes:

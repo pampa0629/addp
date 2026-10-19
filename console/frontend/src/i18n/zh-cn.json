@@ -622,7 +622,8 @@
         "recentModules": "平台模块管理",
         "recentCleanup": "系统资源回收",
         "recentConfiguration": "平台配置管理",
-        "hostNodes": "平台主机管理"
+        "hostNodes": "平台主机管理",
+        "engineDeployments": "平台引擎部署"
       }
     },
     "personalCenter": "个人中心"

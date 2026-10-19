@@ -438,3 +438,39 @@ other = "数据项授权边界已变化、缺失或尚未完整识别，请重�
 
 [system.engine_access_approval_requirement.not_configured]
 other = "本数据项尚未配置批准方式，请由有权限的人员明确配置后再办理。"
+
+[permissions.platform.engine_deployment.create.name]
+other = "登记引擎部署"
+
+[permissions.platform.engine_deployment.create.description]
+other = "维护平台自管引擎部署声明，不授予租户数据或远程操作权限"
+
+[permissions.platform.engine_deployment.read.name]
+other = "查看引擎部署"
+
+[permissions.platform.engine_deployment.read.description]
+other = "维护平台自管引擎部署声明，不授予租户数据或远程操作权限"
+
+[permissions.platform.engine_deployment.update.name]
+other = "更新引擎部署"
+
+[permissions.platform.engine_deployment.update.description]
+other = "维护平台自管引擎部署声明，不授予租户数据或远程操作权限"
+
+[system.engine_deployment.invalid]
+other = "部署名称、来源快照、主机或版本无效"
+
+[system.engine_deployment.not_found]
+other = "引擎部署不存在"
+
+[system.engine_deployment.version_conflict]
+other = "部署已被其他操作修改，请刷新后重试"
+
+[system.engine_deployment.source_occupied]
+other = "该部署来源已经登记，请查看已有部署"
+
+[system.engine_deployment.host_unavailable]
+other = "关联主机不存在或已停用，请重新选择"
+
+[system.engine_deployment.failed]
+other = "引擎部署操作失败"

@@ -831,7 +831,8 @@
           "monitoring_target": "监测目标",
           "resource_observation": "资源观测",
           "metrics_discovery": "指标发现",
-          "platform_resource_rule": "主机资源告警规则"
+          "platform_resource_rule": "主机资源告警规则",
+          "engine_deployment": "平台引擎部署"
         },
         "types": {
           "tenant_builtin": "租户内置角色",
@@ -2180,6 +2181,49 @@
       "collectionPending": "主机已确认，采集配置尚未完成。",
       "configure": "继续配置主机采集",
       "collectionDenied": "当前账号没有采集配置权限，可由具备权限的管理员继续配置。"
+    },
+    "engineDeployments": {
+      "title": "平台引擎部署",
+      "create": "登记引擎部署",
+      "details": "引擎部署详情",
+      "name": "部署名称",
+      "search": "搜索部署名称",
+      "engine": "引擎类型",
+      "state": "主机关联状态",
+      "observed": "来源导出时间",
+      "inventory": "部署来源清单",
+      "import": "导入来源文件",
+      "fileHint": "从 Business 部署目录导出 PostgreSQL 来源清单后导入（JSON，最多 16 KiB）。",
+      "snapshotHint": "以下是导出时的部署快照；不代表当前在线或已开始采集。",
+      "runtime": "运行环境",
+      "docker": "Docker 引擎标识",
+      "container": "容器运行标识",
+      "started": "容器启动时间",
+      "ports": "SQL 端口映射",
+      "host": "承载主机",
+      "hostHint": "请选择实际运行该部署的主机。Docker Desktop 应选择 Linux 虚拟机；系统不会按地址自动推断。",
+      "confirm": "确认保存",
+      "reload": "重新读取并核对",
+      "empty": "尚未登记引擎部署",
+      "readFailed": "读取部署失败，请刷新重试",
+      "invalidFile": "来源文件无效，仅接受 Business 导出的 PostgreSQL 单容器清单，且不得包含凭据或租户信息",
+      "invalidForm": "请填写部署名称、导入来源清单并选择承载主机",
+      "hostMismatch": "主机不存在、已停用或类型不匹配，请核对后重新选择",
+      "occupied": "该 Docker 引擎中的 PostgreSQL 服务已登记，请在列表中查看已有部署",
+      "unknownWrite": "保存结果或版本已变化，已停止继续提交。请重新读取已有记录并核对；首次登记请关闭弹窗后刷新列表。",
+      "saveFailed": "保存失败，请核对输入后重试",
+      "saved": "部署声明已保存",
+      "states": {
+        "bound": "关联有效（不代表在线）",
+        "node_disabled": "主机已停用",
+        "deployment_disabled": "部署已停用纳管",
+        "node_kind_mismatch": "主机类型不匹配"
+      },
+      "runtimes": {
+        "desktop_linux_vm": "Docker Desktop Linux 虚拟机",
+        "linux_docker": "Linux Docker"
+      },
+      "detailAction": "部署详情"
     }
   },
   "roles": {

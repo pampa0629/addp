@@ -30,6 +30,14 @@ describe('Console page access', () => {
       vi.unstubAllGlobals()
     }
   })
+  it('keeps engine deployment operations in Platform without opening Tenant engines', () => {
+    for (const path of ['/system/engine-deployments', '/system/engine-deployments/20000000-0000-4000-8000-000000000001']) {
+      expect(matchesNavigationAccess({route:path}, 'platform', ['platform.engine_deployment.read'])).toBe(true)
+      expect(matchesNavigationAccess({route:path}, 'tenant', ['platform.engine_deployment.read'])).toBe(false)
+      expect(matchesNavigationAccess({route:path}, 'platform', ['system.engine.read', 'platform.host_node.read'])).toBe(false)
+    }
+    expect(matchesNavigationAccess({route:'/system/engines'}, 'platform', ['platform.engine_deployment.read'])).toBe(false)
+  })
   it('isolates managed node pages to their platform read permission', () => {
     for (const path of ['/system/host-nodes', '/system/host-nodes/10000000-0000-4000-8000-000000000001']) {
       expect(matchesNavigationAccess({ route: path }, 'platform', ['platform.host_node.read'])).toBe(true)

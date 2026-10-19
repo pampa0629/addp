@@ -831,7 +831,8 @@
           "monitoring_target": "Monitoring targets",
           "resource_observation": "Resource observations",
           "metrics_discovery": "Metrics discovery",
-          "platform_resource_rule": "Host resource alert rules"
+          "platform_resource_rule": "Host resource alert rules",
+          "engine_deployment": "Platform engine deployment"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
@@ -2180,6 +2181,49 @@
       "collectionPending": "Host confirmed; collection configuration is not yet saved.",
       "configure": "Continue to host collection",
       "collectionDenied": "This account cannot configure collection. An authorized administrator can continue."
+    },
+    "engineDeployments": {
+      "title": "Platform engine deployments",
+      "create": "Register deployment",
+      "details": "Engine deployment details",
+      "name": "Deployment name",
+      "search": "Search deployment names",
+      "engine": "Engine type",
+      "state": "Host association",
+      "observed": "Source exported at",
+      "inventory": "Deployment source inventory",
+      "import": "Import source file",
+      "fileHint": "Import the PostgreSQL source inventory exported from Business (JSON, up to 16 KiB).",
+      "snapshotHint": "This snapshot describes the export time. It does not confirm current availability or collection.",
+      "runtime": "Runtime environment",
+      "docker": "Docker engine identity",
+      "container": "Container runtime identity",
+      "started": "Container started at",
+      "ports": "SQL port mappings",
+      "host": "Hosting machine",
+      "hostHint": "Select the machine actually running this deployment. For Docker Desktop, select its Linux VM. Addresses do not establish the association.",
+      "confirm": "Confirm and save",
+      "reload": "Reload and review",
+      "empty": "No registered engine deployments",
+      "readFailed": "Could not read deployments. Refresh to retry.",
+      "invalidFile": "Invalid source file. Only a Business PostgreSQL single-container inventory without credentials or Tenant information is accepted.",
+      "invalidForm": "Enter a name, import the source inventory and select its host.",
+      "hostMismatch": "The host is missing, disabled or has an incompatible type. Review and select again.",
+      "occupied": "This PostgreSQL service in the Docker engine is already registered. Find its existing deployment in the list.",
+      "unknownWrite": "The save result or version changed. Further submissions are blocked. Reload and review an existing record; for initial registration, close the dialog and refresh the list.",
+      "saveFailed": "Could not save. Review the input and retry.",
+      "saved": "Deployment declaration saved",
+      "states": {
+        "bound": "Association valid (availability unverified)",
+        "node_disabled": "Host disabled",
+        "deployment_disabled": "Deployment management disabled",
+        "node_kind_mismatch": "Host type mismatch"
+      },
+      "runtimes": {
+        "desktop_linux_vm": "Docker Desktop Linux VM",
+        "linux_docker": "Linux Docker"
+      },
+      "detailAction": "Deployment details"
     }
   },
   "roles": {

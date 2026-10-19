@@ -64,6 +64,8 @@ const routes = [
         component: () => import('../views/Modules.vue'),
         meta: { requiresAuth: true, title: '模块管理-addp', requiredPermissions: ['platform.module.read'] }
       },
+      { path: 'engine-deployments', name: 'EngineDeployments', component: () => import('../views/EngineDeployments.vue'), meta: { requiresAuth: true, requiredPermissions: ['platform.engine_deployment.read'] } },
+      { path: 'engine-deployments/:deployment_id', name: 'EngineDeploymentDetail', component: () => import('../views/EngineDeployments.vue'), meta: { requiresAuth: true, requiredPermissions: ['platform.engine_deployment.read'] } },
       { path: 'host-admission', name: 'HostAdmission', component: () => import('../views/HostAdmission.vue'), meta: { requiresAuth: true, requiredPermissions: ['platform.host_node.read'] } },
       {
         path: 'host-nodes',

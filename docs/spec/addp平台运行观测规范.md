@@ -61,7 +61,7 @@ Monitor 不直接查询 System 私有表，不直接读取主机文件，不复�
 
 部署为实际所在进程注入 `ADDP_HOST_NODE_ID`。System 在首次登记时固定实例的节点声明，按当前主机状态和允许集合裁决 `unbound/bound/rejected`；同一实例重登记不得改挂主机。位置变化产生新实例身份，历史声明不反写。非法部署输入仅停用绑定并记录安全诊断，不阻断合法业务登记和续租；API 仍严格拒绝恶意或非规范请求。
 
-缺少或失效的主机关联不阻断实例自身资源观测，也不改变租约。引擎的显式节点集合及有效区间属于 System 领域，当前尚未完成，不以数据库地址、容器名或 VM 总消耗推断。
+缺少或失效的主机关联不阻断实例自身资源观测，也不改变租约。引擎部署的显式承载声明由 System 维护，首批单主机关联见 4.4；不以数据库地址、容器名或 VM 总消耗推断。
 
 ### 4.2 管理员确认的部署清单接入
 
@@ -84,6 +84,20 @@ Prometheus 只通过 Monitor 的单一认证 HTTP SD 获取全量有界快照；
 发现刷新为 30 秒。Prometheus 在发现失败时可能保留旧快照，因此当前查询和告警仍重新裁决主体及配置；发现列表不能作为读取授权或即时停采保证。紧急阻断依靠凭据撤销或网络策略，历史按原身份与保留期存在。
 
 主机列表与采集配置区分纳管、启停和实际采集结果；配置版本不符、证据过期或无资源读取权时不得沿用“最近成功”。列表按当前页一次去重批量读取，不逐行扇出、跨页预取或拆请求绕过预算；观测失败仍保留配置管理能力。
+
+### 4.4 平台引擎部署登记
+
+引擎部署属于平台运维对象，与租户 Engine Instance 分开。System `/platform/engine_deployments` 提供 POST 创建、GET 分页/详情和 PUT 完整替换，分配稳定 `deployment_id`；首批只接受 Business PostgreSQL 单容器来源与一个明确的已纳管主机，不接受 `tenant_id/engine_id`、连接凭据或 SQL，不调用 Docker、数据库探测或部署操作。其他引擎、集群多主机、主机未知的云服务及租户引擎关联尚未开放。
+
+来源唯一由 `python3 business/scripts/deployments.py export --service postgres` 导出，协议 `addp.business-deployment-inventory/v1`，最多 16 KiB。内容为导出时间、本地 Docker Engine/Compose 项目服务、容器运行 ID/启动时间/重启次数及实际 SQL 端口映射；导出只访问当前工作区 Business Compose 的本地 Unix Socket Docker Context，拒绝远程端点及 `DOCKER_HOST`/TLS 覆盖，不读取 `.env`、容器环境变量或完整 inspect；运行身份、状态、端口和 Docker Engine ID 两次核对一致才输出。文件可被编辑，不是签名或授权证明。System 对完整结构、固定 PostgreSQL 类型、运行来源、IP/端口和范围再次校验；首批 Desktop 来源只可关联 virtual 主机。容器 ID 表示当次运行，不是永久部署身份。
+
+管理员在 System“平台引擎部署”导入并预览来源，明确选择实际承载主机后确认；不按地址、名称或容器运行 ID 自动归并。来源按 Docker Engine ID、Compose 项目和服务唯一，即使停用也不能重复登记。同一部署后续导入新来源、改挂主机、修改名称或纳管意图均须显式带当前 `version` 完整更新。列表只接受 `page/page_size/search/node_id`，名称按字面片段搜索，主机筛选按声明身份；详情不接受 query。请求正文最多 32 KiB，拒绝未知字段、重复键、大小写别名和附加 query。
+
+创建与更新在同一 PostgreSQL 事务保存根版本、声明有效区间及统一审计；并发旧版本返回 409，不自动刷新版本重试。声明时间统一取数据库时间，表示管理员声明的生效/结束时刻，不能回填为实际部署历史。闭合历史不可更改或删除；首批不物理删除部署。读取在同一快照核对当前主机和部署纳管状态：有效关联为 `bound`，停用或 Desktop 主机类型变化为 `rejected`，保留原声明；这些状态均不表示服务在线、专业指标采集成功或租户业务可用性，不参与业务 Ready。
+
+接口仅接受非委托 Platform User，独立 `platform.engine_deployment.read/create/update`，创建/更新还须 `platform.host_node.read`；迁移 000220 只向既有平台系统管理员发布三项权限，并沿既有触发器推进授权版本、撤销相关旧刷新族。其他角色、Tenant、Service、委托调用不因部署登记获得权限。界面保留冲突或失败输入；CAS 冲突和结果不明确时停止再次提交，只允许用户显式重新读取核对，首次登记则关闭后刷新列表，不构造已成功身份。
+
+T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS/声明历史/审计回滚及权限前向迁移、System/Console 前端门禁沿现有注册自动发现。精确 T2 入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"` 和同参数的 `--package migration`；本地须使用标准脚本核验的 `addp_iam_test`。产品接入 T4 与上述确定性验证分开登记，尚未通过不能写作真实运行已验收。
 
 ## 五、技术路线与故障隔离
 

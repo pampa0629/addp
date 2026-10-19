@@ -438,3 +438,39 @@ other = "The DataItem boundary has changed, is missing or is incomplete. Review 
 
 [system.engine_access_approval_requirement.not_configured]
 other = "No approval mode is configured for this DataItem. An authorized operator must explicitly configure it before fulfillment."
+
+[permissions.platform.engine_deployment.create.name]
+other = "Register engine deployment"
+
+[permissions.platform.engine_deployment.create.description]
+other = "Manage platform-operated deployment declarations without Tenant data or remote operation access"
+
+[permissions.platform.engine_deployment.read.name]
+other = "Read engine deployments"
+
+[permissions.platform.engine_deployment.read.description]
+other = "Manage platform-operated deployment declarations without Tenant data or remote operation access"
+
+[permissions.platform.engine_deployment.update.name]
+other = "Update engine deployment"
+
+[permissions.platform.engine_deployment.update.description]
+other = "Manage platform-operated deployment declarations without Tenant data or remote operation access"
+
+[system.engine_deployment.invalid]
+other = "Invalid deployment name, source snapshot, host or version"
+
+[system.engine_deployment.not_found]
+other = "Engine deployment not found"
+
+[system.engine_deployment.version_conflict]
+other = "The deployment changed; refresh and retry"
+
+[system.engine_deployment.source_occupied]
+other = "This deployment source is already registered; inspect the existing deployment"
+
+[system.engine_deployment.host_unavailable]
+other = "The host is missing or disabled; select another host"
+
+[system.engine_deployment.failed]
+other = "Engine deployment operation failed"

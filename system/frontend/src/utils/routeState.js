@@ -111,20 +111,32 @@ function queriesEqual(left, right) {
     rightKeys.every(key => String(left[key] || '') === String(right[key] || ''))
 }
 
-export function resolveHostNodesRouteState(routeQuery = {}) {
+function resolvePagedSearchRouteState(routeQuery = {}) {
   const query = {}
   const search = singleQueryValue(routeQuery.search)
   if (search && [...search].length <= 255 && !/[\u0000-\u001f\u007f]/u.test(search)) query.search = search
-  if (typeof routeQuery.node_kind === 'string' && ['physical', 'virtual'].includes(routeQuery.node_kind)) query.node_kind = routeQuery.node_kind
-  if (typeof routeQuery.enabled === 'string' && ['true', 'false'].includes(routeQuery.enabled)) query.enabled = routeQuery.enabled
   const page = Number(singleQueryValue(routeQuery.page))
   if (Number.isInteger(page) && page > 1 && page <= 1000000) query.page = String(page)
   const size = Number(singleQueryValue(routeQuery.page_size))
   if ([10, 50, 100].includes(size)) query.page_size = String(size)
   return {
     query, changed: !queriesEqual(routeQuery, query),
-    search: query.search || '', nodeKind: query.node_kind || '', enabled: query.enabled || '', page: Number(query.page || 1), pageSize: Number(query.page_size || 20)
+    search: query.search || '', page: Number(query.page || 1), pageSize: Number(query.page_size || 20)
   }
+}
+
+export function resolveEngineDeploymentsRouteState(routeQuery = {}) {
+  return resolvePagedSearchRouteState(routeQuery)
+}
+
+export function resolveHostNodesRouteState(routeQuery = {}) {
+  const state = resolvePagedSearchRouteState(routeQuery), query = {}
+  if (state.query.search) query.search = state.query.search
+  if (typeof routeQuery.node_kind === 'string' && ['physical', 'virtual'].includes(routeQuery.node_kind)) query.node_kind = routeQuery.node_kind
+  if (typeof routeQuery.enabled === 'string' && ['true', 'false'].includes(routeQuery.enabled)) query.enabled = routeQuery.enabled
+  if (state.query.page) query.page = state.query.page
+  if (state.query.page_size) query.page_size = state.query.page_size
+  return {...state, query, changed: !queriesEqual(routeQuery, query), nodeKind: query.node_kind || '', enabled: query.enabled || ''}
 }
 
 export function resolveIAMCategoryRouteState(availableTabKeys, routeQuery = {}) {

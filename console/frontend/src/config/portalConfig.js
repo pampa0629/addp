@@ -388,6 +388,7 @@ export const SIDEBAR_MENUS = {
         ],
       },
       { index: '/system/modules',      icon: Operation,  label: 'console.menus.system.modules', recentLabel: 'console.menus.system.recentModules', permissions: ['platform.module.read'] },
+      { index: '/system/engine-deployments', icon: Connection, label: 'console.menus.system.engineDeployments', access: [{ context: 'platform', permissions: ['platform.engine_deployment.read'] }] },
       { index: '/system/host-nodes', icon: Connection, label: 'console.menus.system.hostNodes', access: [{ context: 'platform', permissions: ['platform.host_node.read'] }] },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },
       { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title', recentLabel: 'console.menus.system.recentConfiguration' },

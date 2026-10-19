@@ -622,7 +622,8 @@
         "recentModules": "Platform Module Management",
         "recentCleanup": "System Resource Reclaim",
         "recentConfiguration": "Platform Configuration",
-        "hostNodes": "Platform host management"
+        "hostNodes": "Platform host management",
+        "engineDeployments": "Platform engine deployments"
       }
     },
     "personalCenter": "Personal Center"

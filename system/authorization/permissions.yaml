@@ -778,6 +778,30 @@ permissions:
     status: disabled
     name_i18n_key: permissions.platform.configuration.update.name
     description_i18n_key: permissions.platform.configuration.update.description
+  - key: platform.engine_deployment.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.engine_deployment.create.name
+    description_i18n_key: permissions.platform.engine_deployment.create.description
+  - key: platform.engine_deployment.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.engine_deployment.read.name
+    description_i18n_key: permissions.platform.engine_deployment.read.description
+  - key: platform.engine_deployment.update
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.platform.engine_deployment.update.name
+    description_i18n_key: permissions.platform.engine_deployment.update.description
   - key: platform.host_node.create
     allowed_scope_types: [platform]
     risk_level: medium

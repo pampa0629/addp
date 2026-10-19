@@ -307,6 +307,9 @@ roles:
       - monitor.platform_resource_rule.update
       - monitor.resource_observation.read
       - ontology.platform_definition.read
+      - platform.engine_deployment.create
+      - platform.engine_deployment.read
+      - platform.engine_deployment.update
       - platform.host_node.create
       - platform.host_node.read
       - platform.host_node.update

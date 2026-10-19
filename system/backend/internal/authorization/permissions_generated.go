@@ -73,6 +73,9 @@ const (
 	PermissionIamUserRead                                     = "iam.user.read"
 	PermissionIamUserSuspend                                  = "iam.user.suspend"
 	PermissionIamUserUpdate                                   = "iam.user.update"
+	PermissionPlatformEngineDeploymentCreate                  = "platform.engine_deployment.create"
+	PermissionPlatformEngineDeploymentRead                    = "platform.engine_deployment.read"
+	PermissionPlatformEngineDeploymentUpdate                  = "platform.engine_deployment.update"
 	PermissionPlatformHostNodeCreate                          = "platform.host_node.create"
 	PermissionPlatformHostNodeRead                            = "platform.host_node.read"
 	PermissionPlatformHostNodeUpdate                          = "platform.host_node.update"
@@ -191,6 +194,9 @@ var permissionKeys = [...]string{
 	"iam.user.read",
 	"iam.user.suspend",
 	"iam.user.update",
+	"platform.engine_deployment.create",
+	"platform.engine_deployment.read",
+	"platform.engine_deployment.update",
 	"platform.host_node.create",
 	"platform.host_node.read",
 	"platform.host_node.update",

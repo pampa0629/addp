@@ -68,6 +68,6 @@ macOS 原生宿主与 Docker Desktop Linux VM 分别登记，不能跨宿主绑�
 
 实施顺序：先提供当前工作区 PostgreSQL 的只读部署来源清单，再实现管理员确认的 System 部署登记与主机关联，最后接入引擎专用指标。租户登记与部署的关联须经服务端核验；租户外部引擎委托监控、租户用量归属和租户专业监控权限不在首批开放范围。平台维护同一底层故障事件，租户只读取获授权的影响提示。
 
-来源清单唯一入口为 `python3 business/scripts/deployments.py export --service postgres`，协议 `addp.business-deployment-inventory/v1`，输出上限 16 KiB。仅访问当前工作区 Business Compose、显式选择的运行服务和本地 Unix Socket Docker Context；macOS 仅接受 Docker Desktop Linux VM，Linux 首期接受非 Desktop Docker。读取 Docker Engine ID、Compose 项目/服务、容器完整运行 ID、启动时间和实际 SQL 端口映射；两次核对运行证据和 Docker Engine ID，变化、缺失、停止或多容器均拒绝，不输出部分结果。拒绝远程端点及 `DOCKER_HOST`/TLS 覆盖，不读取 `.env`、SQL、容器环境变量或完整 inspect，不调用平台 API 或启动/停止容器。
+来源导出与 System 部署登记、显式单主机关联已落地，契约见[平台运行观测规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)。首批只接 Business PostgreSQL；文件、登记和关联均不证明实时在线或采集成功。代码与确定性验证不替代产品 T4，真实导入/登记验收仍待执行。
 
-来源中的 Docker/Compose 身份仅定位部署来源，容器 ID/启动时间定位当次运行；它们均不分配 System 部署或主机身份。文件可以被编辑，不作为授权或真实性签名；后续接入仍须管理员确认与 Owner 校验，不能直接交给现有 v2 主机接入页面。采集未部署不影响引擎登记和业务请求。导出与 T0/T1 验证由既有 `test-business-config` 纳入 `test-platform`，不新增运行中服务依赖；真实只读导出与产品接入 T4 分别陈述。
+下一步先验收真实 PostgreSQL 部署来源到 System 身份与承载声明的链路，再接 Monitor 的引擎专用指标；多服务/集群、租户 Engine 关联、专业采集和租户用量归属仍未开放。新权限仅向既有平台系统管理员发布，运行验收需 System 正式迁移后重新完成密码/MFA 登录；一次性 Hosted 临时管理员如需新增部署接口用途，须按测试规范先明确限定范围。

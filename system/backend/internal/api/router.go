@@ -124,6 +124,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterHostNodeRoutes(api, runtime, &HostNodeHandler{service: service.NewHostNodeService(repository.NewHostNodeRepository(db))}); err != nil {
 		panic(err)
 	}
+	if err := RegisterEngineDeploymentRoutes(api, runtime, &EngineDeploymentHandler{service: service.NewEngineDeploymentService(repository.NewEngineDeploymentRepository(db))}); err != nil {
+		panic(err)
+	}
 
 	if err := RegisterEngineRasterPolicyRoutes(api, runtime, &EngineRasterPolicyHandler{
 		service: service.NewEngineRasterPolicyService(repository.NewEngineRasterPolicyRepository(db)),

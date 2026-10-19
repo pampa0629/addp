@@ -23,6 +23,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
+            echo "Engine deployment declarations/publication: --package repository|migration --test engine-deployments" >&2
             echo "Host inventory type/state filters: --package repository --test host-nodes" >&2
             echo "Engine credential/JSONB address regression: --package repository --test engine-address" >&2
             echo "Standard platform units: --package migration --test standard-platform-units" >&2
@@ -118,6 +119,13 @@ case "$TEST_FILTER" in
     production-sources)
         [ "$PACKAGE_FILTER" = engineaccess ] || { echo "production-sources requires --package engineaccess" >&2; exit 2; }
         test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^production_first_acceptance_and_historical_retry$/^initial_production_observes_actual_sources_and_persistent_target_history_without_issuing$'
+        ;;
+    engine-deployments)
+        case "$PACKAGE_FILTER" in
+            repository) test_pattern='^TestEngineDeploymentDeclarationsAgainstPostgres$' ;;
+            migration) test_pattern='^TestEngineDeploymentPublicationAgainstPostgres$' ;;
+            *) echo "engine-deployments requires --package repository or migration" >&2; exit 2 ;;
+        esac
         ;;
     host-nodes)
         [ "$PACKAGE_FILTER" = repository ] || { echo "host-nodes requires --package repository" >&2; exit 2; }

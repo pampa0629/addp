@@ -71,7 +71,8 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 - API 消费方（外部数据面 API 调用方登记、服务授权与 API 消费凭据管理）
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
-- 平台节点台账：`/platform/host_nodes` 创建/分页读取/版本更新；独立 `platform.host_node.*`，Platform User、默认平台系统管理员。模块实例通过部署 `ADDP_HOST_NODE_ID` 声明，System 从真实 Client 校验节点允许集合；首次声明不可改挂，拒绝/撤销关联不影响登记与租约。节点基础不含 SSH、采集或引擎部署关联，详见平台运行监控设计 4.1 节。
+- 平台节点台账：`/platform/host_nodes` 创建/分页读取/版本更新；独立 `platform.host_node.*`，Platform User、默认平台系统管理员。模块实例通过部署 `ADDP_HOST_NODE_ID` 声明，System 从真实 Client 校验节点允许集合；首次声明不可改挂，拒绝/撤销关联不影响登记与租约。节点基础不含 SSH 或采集；引擎部署另走独立登记与显式承载声明，见平台运行观测规范 4.1、4.4。
+- 平台引擎部署：`/platform/engine_deployments` 管理 Business PostgreSQL 来源快照与明确的单主机承载声明；稳定部署 UUID 与租户 Engine 分开。独立平台权限、版本 CAS、数据库时间声明区间和审计同事务，不探测 SQL/Docker、不授予业务数据读取。System 前端“平台引擎部署”提供导入预览及管理员确认；T2 精确入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`，权限迁移用同入口 `--package migration`，均由既有门禁自动发现。
 - TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
