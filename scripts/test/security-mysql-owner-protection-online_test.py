@@ -2094,7 +2094,7 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
               patch.object(ONLINE, "ensure_detected_assessment", return_value=("assessment-bank", True, "finding-bank")),
               patch.object(ONLINE, "list_pages", return_value=[self.finding()]),
               patch.object(ONLINE, "wait_for_algorithm_projections"),
-              patch.object(ONLINE, "develop_rows", return_value=self.rows()),
+              patch.object(ONLINE, "develop_rows", return_value=self.rows()) as develop,
               patch.object(ONLINE, "service_rows", return_value=self.rows()),
               patch.object(ONLINE, "create_and_run_task", side_effect=transfer),
               patch.object(ONLINE, "wait_for_scan", return_value=str(uuid.uuid4())),
@@ -2103,6 +2103,10 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
                 return ONLINE.exercise_bank_card_metadata(client, 23, 17, "security_fixture", "run-42",
                                                           {"principal_id": "7"}, time.monotonic() + 30)
             finally:
+                self.assertEqual(develop.call_count, 3)
+                self.assertEqual([call.args[4] for call in develop.call_args_list][1:], [
+                    "SELECT * FROM bank_card_accounts ORDER BY id",
+                    "SELECT b.* FROM bank_card_accounts b ORDER BY b.id"])
                 cleanup.assert_called_once_with(client, [51])
                 self.assertTrue(any(call.args[:3] == ("GET", "/api/v1/service/query/41", (404,))
                                     for call in client.request.call_args_list))
@@ -2110,6 +2114,9 @@ class BankCardMetadataAcceptanceTest(unittest.TestCase):
     def test_transfer_requires_new_execution_actual_counts_and_ordinary_initiator(self):
         result = self.run_case()
         self.assertEqual(set(result["owners"]), set(ONLINE.OWNER_ACTIONS))
+        self.assertEqual(set(result["develop_wildcard"]), {"unqualified", "table_alias"})
+        for output in result["develop_wildcard"].values():
+            self.assertEqual(output, result["owners"]["develop"])
         self.assertEqual(result["owners"]["transfer"]["records_written"], 5)
         self.assertTrue(result["task_deleted"] and result["service_deleted"])
         self.assertNotIn("6222000000000000001", json.dumps(result))

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"reflect"
 	"testing"
@@ -20,7 +21,7 @@ type outputSQLProvider struct {
 
 func (p *outputSQLProvider) SQLQueryOutputCompiler() SQLQueryOutputCompiler { return p }
 
-func (p *outputSQLProvider) CompileQueryOutput(query string, args []any, operations []QueryOutputTransform) (*SQLQueryOutput, error) {
+func (p *outputSQLProvider) CompileQueryOutput(query string, args []any, operations []QueryOutputTransform, lineage *QueryOutputLineage) (*SQLQueryOutput, error) {
 	p.compiledSQL, p.compiledArgs = query, args
 	if p.compileError != nil {
 		return nil, p.compileError
@@ -197,5 +198,58 @@ func TestSQLPreparedOutputReadSessionConsumesSamePlanAndFinalizesBatches(t *test
 	}
 	if _, err := prepared.Execute(t.Context()); !errors.Is(err, ErrPreparedQueryConsumed) {
 		t.Fatal(err)
+	}
+}
+
+func TestQueryOutputFieldsRejectsEveryRelevantShapeDrift(t *testing.T) {
+	original := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "phone", Type: datatype.FieldTypeString, NativeType: "varchar(30)", Nullable: true}}
+	if err := ValidateQueryOutputFields(original, original); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func([]datatype.FieldInfo) []datatype.FieldInfo{
+		func(f []datatype.FieldInfo) []datatype.FieldInfo {
+			return append(f, datatype.FieldInfo{Name: "new_secret"})
+		},
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { return f[:1] },
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { f[0], f[1] = f[1], f[0]; return f },
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { f[1].Name = "renamed"; return f },
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { f[1].NativeType = "varchar(40)"; return f },
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { f[1].Nullable = false; return f },
+		func(f []datatype.FieldInfo) []datatype.FieldInfo { f[1].Precision = 20; return f },
+	} {
+		if err := ValidateQueryOutputFields(original, change(append([]datatype.FieldInfo(nil), original...))); !errors.Is(err, ErrQueryOutputTransformUnsupported) {
+			t.Fatal("changed wildcard shape accepted")
+		}
+	}
+}
+
+func TestSQLWildcardColumnsUseActualEmptyResultShape(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE fixture(id INTEGER,phone TEXT,new_secret TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	fields := []datatype.FieldInfo{{Name: "id"}, {Name: "phone"}}
+	if err := ValidateSQLQueryOutputColumns(t.Context(), tx, "SELECT * FROM fixture LIMIT 0", fields); !errors.Is(err, ErrQueryOutputTransformUnsupported) {
+		t.Fatal("partial catalog facts hid actual extra field", err)
+	}
+	fields = append(fields, datatype.FieldInfo{Name: "new_secret"})
+	if err := ValidateSQLQueryOutputColumns(t.Context(), tx, "SELECT * FROM fixture LIMIT 0", fields); err != nil {
+		t.Fatal(err)
+	}
+	fields[0], fields[1] = fields[1], fields[0]
+	if err := ValidateSQLQueryOutputColumns(t.Context(), tx, "SELECT * FROM fixture LIMIT 0", fields); !errors.Is(err, ErrQueryOutputTransformUnsupported) {
+		t.Fatal("changed native column order accepted", err)
+	}
+	if err := ValidateSQLQueryOutputColumns(t.Context(), tx, "SELECT * FROM missing LIMIT 0", fields); err == nil {
+		t.Fatal("description failure ignored")
 	}
 }

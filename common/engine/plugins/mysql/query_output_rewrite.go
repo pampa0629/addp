@@ -1,6 +1,8 @@
 package mysql
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"math"
 	"strconv"
@@ -15,7 +17,7 @@ import (
 
 func (p *MySQLPlugin) SQLQueryOutputCompiler() plugin.SQLQueryOutputCompiler { return p }
 
-func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*plugin.SQLQueryOutput, error) {
+func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform, lineage *plugin.QueryOutputLineage) (*plugin.SQLQueryOutput, error) {
 	fail := func() (*plugin.SQLQueryOutput, error) { return nil, plugin.ErrQueryOutputTransformUnsupported }
 	if len(query) > 1<<20 || len(operations) == 0 || strings.Contains(query, "/*!") || strings.Contains(query, "/*+") || strings.ContainsAny(query, "\\\"!") || strings.Contains(query, "||") {
 		return fail()
@@ -31,6 +33,10 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 	}
 	statement, ok := parsed.(*sqlparser.Select)
 	if !ok || !mySQLOutputSelectAllowed(statement) {
+		return fail()
+	}
+	preflight, err := expandMySQLOutputWildcard(statement, lineage)
+	if err != nil {
 		return fail()
 	}
 	parameters := map[string]any{}
@@ -57,7 +63,7 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 			if !derivedSubqueries[n] {
 				return false, plugin.ErrQueryOutputTransformUnsupported
 			}
-		case *sqlparser.SetOp, *sqlparser.FuncExpr, *sqlparser.AssignmentExpr, *sqlparser.SetVarExpr, *sqlparser.Nextval:
+		case *sqlparser.StarExpr, *sqlparser.SetOp, *sqlparser.FuncExpr, *sqlparser.AssignmentExpr, *sqlparser.SetVarExpr, *sqlparser.Nextval:
 			return false, plugin.ErrQueryOutputTransformUnsupported
 		case *sqlparser.AliasedTableExpr:
 			if n.AsOf != nil || n.Lateral {
@@ -211,7 +217,7 @@ func (p *MySQLPlugin) CompileQueryOutput(query string, args []any, operations []
 	if err != nil {
 		return fail()
 	}
-	return &plugin.SQLQueryOutput{Query: physical, Args: boundArgs, Finalize: func(result *plugin.QueryResult) error {
+	return &plugin.SQLQueryOutput{Query: physical, Args: boundArgs, ValidateExecution: preflight, Finalize: func(result *plugin.QueryResult) error {
 		return plugin.FinalizeSQLQueryOutput(result, columns, omitted, invalid, func(field datatype.FieldInfo, value any) (bool, bool) {
 			if field.Type != datatype.FieldTypeInt && field.Type != datatype.FieldTypeBigInt {
 				return false, false
@@ -253,4 +259,72 @@ func parseMySQLOutputExpression(expression string) (*sqlparser.AliasedExpr, erro
 		return nil, err
 	}
 	return parsed.(*sqlparser.Select).SelectExprs[0].(*sqlparser.AliasedExpr), nil
+}
+
+func expandMySQLOutputWildcard(statement *sqlparser.Select, lineage *plugin.QueryOutputLineage) (func(context.Context, *sql.Tx) error, error) {
+	star := false
+	for _, expr := range statement.SelectExprs {
+		if _, ok := expr.(*sqlparser.StarExpr); ok {
+			star = true
+		}
+	}
+	if !star {
+		return nil, nil
+	}
+	if len(statement.SelectExprs) != 1 || len(statement.From) != 1 || lineage == nil || len(lineage.Sources) != 1 {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	table, ok := statement.From[0].(*sqlparser.AliasedTableExpr)
+	if !ok {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	name, ok := table.Expr.(sqlparser.TableName)
+	if !ok || table.AsOf != nil || table.Lateral {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	source := lineage.Clone().Sources[0]
+	parts := source.Path.Segments
+	if len(parts) != 3 || parts[1].Term != plugin.EngineCatalogTermDatabase || parts[2].Kind != plugin.EngineCatalogKindTable || source.OpaqueOutput || len(source.Fields) == 0 || name.Name.String() != parts[2].Name || (!name.DbQualifier.IsEmpty() && name.DbQualifier.String() != parts[1].Name) {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	name.DbQualifier = sqlparser.NewTableIdent(parts[1].Name)
+	table.Expr = name
+	qualifier := name
+	if !table.As.IsEmpty() {
+		qualifier = sqlparser.TableName{Name: table.As}
+	}
+	wildcard := statement.SelectExprs[0].(*sqlparser.StarExpr)
+	if !wildcard.TableName.IsEmpty() && sqlparser.String(wildcard.TableName) != sqlparser.String(qualifier) && !(table.As.IsEmpty() && wildcard.TableName.DbQualifier.IsEmpty() && wildcard.TableName.Name.String() == name.Name.String()) {
+		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	statement.SelectExprs = nil
+	for _, field := range source.Fields {
+		statement.SelectExprs = append(statement.SelectExprs, &sqlparser.AliasedExpr{Expr: &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier}})
+	}
+	qualified := mysqlDialect().QualifiedTable(parts[1].Name, parts[2].Name)
+	return func(ctx context.Context, tx *sql.Tx) error {
+		// Even a zero-row SELECT acquires the transaction's metadata lock.
+		rows, err := tx.QueryContext(ctx, "SELECT 1 FROM "+qualified+" LIMIT 0")
+		if err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		var kind, engine string
+		if err := tx.QueryRowContext(ctx, "SELECT TABLE_TYPE,COALESCE(ENGINE,'') FROM information_schema.tables WHERE TABLE_SCHEMA=? AND TABLE_NAME=?", parts[1].Name, parts[2].Name).Scan(&kind, &engine); err != nil {
+			return err
+		}
+		if kind != "BASE TABLE" || engine != "InnoDB" {
+			return plugin.ErrQueryOutputTransformUnsupported
+		}
+		if err := plugin.ValidateSQLQueryOutputColumns(ctx, tx, "SELECT * FROM "+qualified+" LIMIT 0", source.Fields); err != nil {
+			return err
+		}
+		fields, err := mysqlTableColumns(ctx, tx, parts[1].Name, parts[2].Name)
+		if err != nil {
+			return err
+		}
+		return plugin.ValidateQueryOutputFields(source.Fields, mysqlFieldsFromColumns(fields))
+	}, nil
 }

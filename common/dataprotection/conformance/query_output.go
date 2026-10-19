@@ -20,8 +20,8 @@ import (
 )
 
 // QueryOutputProtection exercises an actual native PreparedQuery with the
-// formal shared store. prepare selects id, phone AS contact, email AS mail,
-// label AS public_label, amount from one owned fixture table.
+// formal shared store. prepare selects the owned fixture fields id, phone,
+// email, label and amount, with direct aliases or a standalone base-table star.
 func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, prepare func(context.Context) (plugin.PreparedQuery, error), openSession func(context.Context, plugin.PreparedQuery) (plugin.QueryReadSession, error)) {
 	t.Helper()
 	ctx := t.Context()
@@ -34,6 +34,27 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 		t.Fatal("hybrid source lineage", err)
 	}
 	source := lineage.Sources[0]
+	outputName := func(name string) string {
+		t.Helper()
+		if source.IdentityOutput {
+			return name
+		}
+		output := ""
+		for _, b := range source.Bindings {
+			if len(b.SourcePath) == 1 && b.SourcePath[0] == name && b.Transformation == plugin.QueryOutputTransformationDirect && len(b.OutputPath) == 1 {
+				if output != "" {
+					t.Fatal("ambiguous fixture output")
+				}
+				output = b.OutputPath[0]
+			}
+		}
+		if output == "" {
+			t.Fatal("missing fixture output for", name)
+		}
+		return output
+	}
+	phoneOutput, emailOutput, labelOutput := outputName("phone"), outputName("email"), outputName("label")
+
 	raw, err := original.Execute(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -161,13 +182,13 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					t.Fatal("native output changed cardinality")
 				}
 				for index, row := range actual.Rows {
-					if row["public_label"] != "[保护]" || row["mail"] != raw.Rows[index]["mail"] {
+					if row[labelOutput] != "[保护]" || row[emailOutput] != raw.Rows[index][emailOutput] {
 						t.Fatal("native constant or Go SM3 partition was not respected")
 					}
-					if !granted && !sameJSON(row["contact"], expected.Rows[index]["contact"]) {
+					if !granted && !sameJSON(row[phoneOutput], expected.Rows[index][phoneOutput]) {
 						t.Fatal("phone was not masked in native SQL")
 					}
-					if granted && !sameJSON(row["contact"], raw.Rows[index]["contact"]) {
+					if granted && !sameJSON(row[phoneOutput], raw.Rows[index][phoneOutput]) {
 						t.Fatal("native SQL erased an authorized original")
 					}
 				}
@@ -200,7 +221,7 @@ func QueryOutputProtection(t *testing.T, model plugin.EngineCatalogModelSpec, pr
 					if err != nil {
 						t.Fatal(err)
 					}
-					if !sameJSON(read.Rows[0]["contact"], raw.Rows[0]["contact"]) || !sameJSON(read.Rows[0]["mail"], expected.Rows[0]["mail"]) {
+					if !sameJSON(read.Rows[0][phoneOutput], raw.Rows[0][phoneOutput]) || !sameJSON(read.Rows[0][emailOutput], expected.Rows[0][emailOutput]) {
 						t.Fatal("original capture or single SM3 changed")
 					}
 					projection.Revision = "00000000000000000002"

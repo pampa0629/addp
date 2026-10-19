@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -31,7 +32,7 @@ type OutputTransformPreparedQuery interface {
 // SQLQueryOutputCompiler belongs to the actual dialect Provider. It must be
 // deterministic, preserve input semantics, and bind generated values as args.
 type SQLQueryOutputCompiler interface {
-	CompileQueryOutput(string, []any, []QueryOutputTransform) (*SQLQueryOutput, error)
+	CompileQueryOutput(string, []any, []QueryOutputTransform, *QueryOutputLineage) (*SQLQueryOutput, error)
 }
 
 type SQLQueryOutputCompilerProvider interface {
@@ -44,6 +45,8 @@ type SQLQueryOutput struct {
 	Query    string
 	Args     []any
 	Finalize func(*QueryResult) error
+	// ValidateExecution runs before the physical query in its locked transaction.
+	ValidateExecution func(context.Context, *sql.Tx) error
 }
 
 type preparedSQLQueryWithOutput struct {
@@ -76,7 +79,7 @@ func (p *preparedSQLQueryWithOutput) BindOutputTransforms(ctx context.Context, o
 	if !p.request.Options.ReadOnly || p.request.analytical != nil || p.outputCompiler == nil || !directOutputTransforms(lineage, operations) {
 		return p.outputErr
 	}
-	compiled, err := p.outputCompiler.CompileQueryOutput(p.request.Query, cloneQueryValues(p.request.Options.Args), slices.Clone(operations))
+	compiled, err := p.outputCompiler.CompileQueryOutput(p.request.Query, cloneQueryValues(p.request.Options.Args), slices.Clone(operations), lineage.Clone())
 	if err != nil {
 		p.outputErr = err
 		return err
@@ -87,6 +90,7 @@ func (p *preparedSQLQueryWithOutput) BindOutputTransforms(ctx context.Context, o
 	p.request.Query = compiled.Query
 	p.request.Options.Args = cloneQueryValues(compiled.Args)
 	p.outputFinalize = compiled.Finalize
+	p.request.Options.outputPreflight = compiled.ValidateExecution
 	p.outputErr = nil
 	return nil
 }
@@ -151,6 +155,62 @@ func ConsumeSQLPreparedReadSession(prepared PreparedQuery, provider SQLQueryRunt
 		return nil, err
 	}
 	return &SQLPreparedReadSession{ConnectionInfo: conn, Request: request, finalize: plan.outputFinalize}, nil
+}
+
+// ValidateExecution must run in the transaction used by the read session.
+func (p *SQLPreparedReadSession) ValidateExecution(ctx context.Context, tx *sql.Tx) error {
+	if p == nil || tx == nil {
+		return ErrQueryOutputTransformUnsupported
+	}
+	if p.Request.Options.outputPreflight != nil {
+		return p.Request.Options.outputPreflight(ctx, tx)
+	}
+	return nil
+}
+
+// ValidateSQLQueryOutputColumns describes a Provider-built zero-row SELECT in
+// the execution transaction. It never scans business values; catalog visibility
+// alone cannot prove the output of * (column grants and invisible columns).
+func ValidateSQLQueryOutputColumns(ctx context.Context, tx *sql.Tx, query string, fields []datatype.FieldInfo) error {
+	if tx == nil || len(fields) == 0 {
+		return ErrQueryOutputTransformUnsupported
+	}
+	rows, err := tx.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	columns, err := rows.Columns()
+	closeErr := rows.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if len(columns) != len(fields) {
+		return ErrQueryOutputTransformUnsupported
+	}
+	for i, column := range columns {
+		if column != fields[i].Name {
+			return ErrQueryOutputTransformUnsupported
+		}
+	}
+	return nil
+}
+
+// ValidateQueryOutputFields checks the ordered, security-relevant catalog shape.
+// Comments and keys do not change SELECT * expansion or output value semantics.
+func ValidateQueryOutputFields(expected, actual []datatype.FieldInfo) error {
+	if len(expected) == 0 || len(expected) != len(actual) {
+		return ErrQueryOutputTransformUnsupported
+	}
+	for i, a := range actual {
+		e := expected[i]
+		if e.Name != a.Name || e.Type != a.Type || e.NativeType != a.NativeType || e.Nullable != a.Nullable || e.Precision != a.Precision || e.Scale != a.Scale || e.ElementType != a.ElementType {
+			return ErrQueryOutputTransformUnsupported
+		}
+	}
+	return nil
 }
 
 // FinalizeBatch does not change offset, spatial information or hints. A failed

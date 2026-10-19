@@ -214,3 +214,32 @@ func assertMySQLCompatibleLineageBindings(t *testing.T, sources []plugin.QueryOu
 	}
 	t.Fatalf("lineage source for table %s not found", table)
 }
+
+func TestMySQLCompatibleWildcardLineageRequiresSingleBaseProjection(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "orders", "order_no", "phone", "ID")}
+	for _, query := range []string{"SELECT * FROM orders", "SELECT p.* FROM business.orders p"} {
+		stmt, err := sqlparser.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := p.resolveSelectOutputLineage("business", stmt, sources)
+		if err != nil || len(resolved) != 1 || len(resolved[0].Bindings) != 3 {
+			t.Fatal("missing complete wildcard lineage", err)
+		}
+		for i, b := range resolved[0].Bindings {
+			if b.OutputPath[0] != sources[0].Fields[i].Name || b.SourcePath[0] != sources[0].Fields[i].Name || b.Transformation != plugin.QueryOutputTransformationDirect {
+				t.Fatal("wildcard lost order or direct mapping")
+			}
+		}
+	}
+	for _, query := range []string{"SELECT *,phone FROM orders", "SELECT p.* FROM orders p JOIN orders q ON p.ID=q.ID", "SELECT q.* FROM orders p"} {
+		stmt, err := sqlparser.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.resolveSelectOutputLineage("business", stmt, sources); err == nil {
+			t.Fatal("unproven wildcard accepted", query)
+		}
+	}
+}

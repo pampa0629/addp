@@ -1842,6 +1842,16 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
         query = "SELECT " + ", ".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id"
         outputs["develop"] = assert_bank_card_rows(
             develop_rows(client, source_engine_id, locator, deadline, query), "Develop bank-card query")
+        develop_wildcard = {}
+        for label, statement in {
+            "unqualified": "SELECT * FROM " + BANK_SOURCE + " ORDER BY id",
+            "table_alias": "SELECT b.* FROM " + BANK_SOURCE + " b ORDER BY b.id",
+        }.items():
+            develop_wildcard[label] = assert_bank_card_rows(
+                develop_rows(client, source_engine_id, locator, deadline, statement),
+                "Develop bank-card wildcard " + label)
+            if develop_wildcard[label] != outputs["develop"]:
+                raise SuiteError("Develop wildcard differs from direct-field protection")
         service = _object(client.request("POST", "/api/v1/service/query", (201,),
             service_payload(name, source_engine_id, locator, BANK_FIELDS)).payload, "bank-card Query Service")
         service_id = positive_int(service.get("id"), "bank-card service ID")
@@ -1884,6 +1894,7 @@ def exercise_bank_card_metadata(client: GatewayClient, source_engine_id: int,
             "finding_confirmed": confirmed, "source_table": database + "." + BANK_SOURCE,
             "target_table": TARGET_SCHEMA + "." + BANK_TARGET, "service_id": service_id,
             "algorithm": STRUCTURED_MASK_ALGORITHM, "projections": projections, "owners": outputs,
+            "develop_wildcard": develop_wildcard,
             "task_deleted": True, "service_deleted": True, "temporary_execution_resources": 2,
             "temporary_execution_resource_residuals": 0}
 
@@ -2146,7 +2157,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v18",
+            "schema_version": "addp.security-mysql-owner-protection-online/v19",
             "result": "passed",
             "identity": identity,
             "governance": governance,

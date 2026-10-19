@@ -151,6 +151,47 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 		columns: make(map[string]mysqlCompatibleLineageOrigin, len(selectNode.SelectExprs)),
 		order:   make([]string, 0, len(selectNode.SelectExprs)),
 	}
+	// A standalone wildcard over one base table has a deterministic catalog
+	// order. Do not expand joins, mixed lists or derived-table wildcards.
+	if len(selectNode.SelectExprs) == 1 && len(selectNode.From) == 1 {
+		if star, ok := selectNode.SelectExprs[0].(*sqlparser.StarExpr); ok {
+			table, ok := selectNode.From[0].(*sqlparser.AliasedTableExpr)
+			if !ok {
+				return nil, p.outputLineageError("wildcard requires a base table")
+			}
+			name, ok := table.Expr.(sqlparser.TableName)
+			if !ok {
+				return nil, p.outputLineageError("wildcard requires a base table")
+			}
+			database := name.DbQualifier.String()
+			if database == "" {
+				database = defaultDatabase
+			}
+			index := mysqlCompatibleLineageSourceIndex(sources, database, name.Name.String())
+			if index < 0 {
+				return nil, p.outputLineageError("wildcard source missing")
+			}
+			qualifier := star.TableName
+			if qualifier.IsEmpty() {
+				qualifier = name
+				if !table.As.IsEmpty() {
+					qualifier = sqlparser.TableName{Name: table.As}
+				}
+			}
+			for _, field := range sources[index].Fields {
+				if field.Name == "" || hasMySQLCompatibleIdentifier(projection.columns, field.Name) {
+					return nil, p.outputLineageError("wildcard fields must be unique")
+				}
+				origin, err := p.resolveLineageColumn(scope, &sqlparser.ColName{Name: sqlparser.NewColIdent(field.Name), Qualifier: qualifier})
+				if err != nil {
+					return nil, err
+				}
+				projection.columns[field.Name] = origin
+				projection.order = append(projection.order, field.Name)
+			}
+			return projection, nil
+		}
+	}
 	for _, expression := range selectNode.SelectExprs {
 		aliased, ok := expression.(*sqlparser.AliasedExpr)
 		if !ok {

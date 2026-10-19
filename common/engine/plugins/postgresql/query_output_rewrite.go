@@ -1,6 +1,8 @@
 package postgresql
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"math"
 	"strings"
@@ -22,15 +24,19 @@ func (p *PostgreSQLPlugin) SQLQueryOutputCompiler() plugin.SQLQueryOutputCompile
 	return p
 }
 
-func (p *PostgreSQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform) (*plugin.SQLQueryOutput, error) {
+func (p *PostgreSQLPlugin) CompileQueryOutput(query string, args []any, operations []plugin.QueryOutputTransform, lineage *plugin.QueryOutputLineage) (*plugin.SQLQueryOutput, error) {
 	if p == nil || p.identity != nil {
 		return nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	query, preflight, err := expandPostgresOutputWildcard(query, lineage)
+	if err != nil {
+		return nil, err
 	}
 	plan, err := rewritePostgresQueryOutput(query, args, operations)
 	if err != nil {
 		return nil, err
 	}
-	return &plugin.SQLQueryOutput{Query: plan.query, Args: plan.args, Finalize: plan.finish}, nil
+	return &plugin.SQLQueryOutput{Query: plan.query, Args: plan.args, Finalize: plan.finish, ValidateExecution: preflight}, nil
 }
 
 type postgresOutputInvalidColumn struct {
@@ -191,6 +197,10 @@ func rewritePostgresQueryOutput(query string, args []any, operations []plugin.Qu
 }
 
 func validatePostgresRewriteInput(message protoreflect.Message, count int, parameters map[int]bool) bool {
+	// A certified top-level wildcard has already become explicit targets.
+	if _, ok := message.Interface().(*pgquery.A_Star); ok {
+		return false
+	}
 	if with, ok := message.Interface().(*pgquery.WithClause); ok {
 		if with.GetRecursive() {
 			return false
@@ -265,4 +275,91 @@ func (p *postgresOutputRewrite) finish(result *plugin.QueryResult) error {
 		flag, ok := value.(bool)
 		return flag, ok
 	})
+}
+
+// expandPostgresOutputWildcard uses only the frozen logical source facts.
+func expandPostgresOutputWildcard(query string, lineage *plugin.QueryOutputLineage) (string, func(context.Context, *sql.Tx) error, error) {
+	parsed, err := pgquery.Parse(query)
+	if err != nil || len(parsed.GetStmts()) != 1 {
+		return "", nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	stmt := parsed.GetStmts()[0].GetStmt().GetSelectStmt()
+	if stmt == nil {
+		return "", nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	star := false
+	for _, target := range stmt.GetTargetList() {
+		for _, part := range target.GetResTarget().GetVal().GetColumnRef().GetFields() {
+			star = star || part.GetAStar() != nil
+		}
+	}
+	if !star {
+		return query, nil, nil
+	}
+	fail := func() (string, func(context.Context, *sql.Tx) error, error) {
+		return "", nil, plugin.ErrQueryOutputTransformUnsupported
+	}
+	if len(stmt.GetTargetList()) != 1 || len(stmt.GetFromClause()) != 1 || stmt.GetWithClause() != nil || lineage == nil || len(lineage.Sources) != 1 {
+		return fail()
+	}
+	table := stmt.GetFromClause()[0].GetRangeVar()
+	source := lineage.Clone().Sources[0]
+	parts := source.Path.Segments
+	if table == nil || len(parts) != 3 || parts[1].Term != plugin.EngineCatalogTermSchema || parts[2].Kind != plugin.EngineCatalogKindTable || source.OpaqueOutput || len(source.Fields) == 0 || table.GetCatalogname() != "" || table.GetRelname() != parts[2].Name || (table.GetSchemaname() != "" && table.GetSchemaname() != parts[1].Name) || len(table.GetAlias().GetColnames()) != 0 {
+		return fail()
+	}
+	qualifier := table.GetRelname()
+	if table.GetAlias() != nil {
+		qualifier = table.GetAlias().GetAliasname()
+	}
+	ref := stmt.GetTargetList()[0].GetResTarget().GetVal().GetColumnRef().GetFields()
+	if len(ref) != 1 && (len(ref) != 2 || ref[0].GetString_().GetSval() != qualifier) {
+		return fail()
+	}
+	quote := func(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
+	columns := make([]string, len(source.Fields))
+	for i, field := range source.Fields {
+		if field.Name == "" {
+			return fail()
+		}
+		columns[i] = quote(qualifier) + "." + quote(field.Name)
+	}
+	expanded, err := pgquery.Parse("SELECT " + strings.Join(columns, ","))
+	if err != nil {
+		return fail()
+	}
+	stmt.TargetList = expanded.Stmts[0].Stmt.GetSelectStmt().TargetList
+	table.Schemaname = parts[1].Name
+	physical, err := pgquery.Deparse(parsed)
+	if err != nil {
+		return fail()
+	}
+	qualified := quote(parts[1].Name) + "." + quote(parts[2].Name)
+	preflight := func(ctx context.Context, tx *sql.Tx) error {
+		// LOCK precedes the first snapshot, so a waiting cursor transaction
+		// cannot validate catalog facts from before concurrent DDL committed.
+		if _, err := tx.ExecContext(ctx, "LOCK TABLE "+qualified+" IN ACCESS SHARE MODE"); err != nil {
+			return err
+		}
+		var ordinary bool
+		if err := tx.QueryRowContext(ctx, `SELECT c.relkind='r' AND a.amname='heap' AND NOT c.relrowsecurity AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_inherits i WHERE i.inhparent=c.oid OR i.inhrelid=c.oid) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_catalog.pg_am a ON a.oid=c.relam WHERE n.nspname=$1 AND c.relname=$2`, parts[1].Name, parts[2].Name).Scan(&ordinary); err != nil {
+			return err
+		}
+		if !ordinary {
+			return plugin.ErrQueryOutputTransformUnsupported
+		}
+		current, err := postgresTableColumns(ctx, tx, parts[1].Name, parts[2].Name)
+		if err != nil {
+			return err
+		}
+		fields := make([]datatype.FieldInfo, len(current))
+		for i, field := range current {
+			fields[i] = postgresFieldInfoFromColumn(field)
+		}
+		if err := plugin.ValidateQueryOutputFields(source.Fields, fields); err != nil {
+			return err
+		}
+		return plugin.ValidateSQLQueryOutputColumns(ctx, tx, "SELECT * FROM "+qualified+" LIMIT 0", source.Fields)
+	}
+	return physical, preflight, nil
 }

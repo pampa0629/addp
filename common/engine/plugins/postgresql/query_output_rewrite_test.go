@@ -23,7 +23,7 @@ func TestPostgresOutputRewriteDoesNotCertifyProtocolCompatibleEngines(t *testing
 	if _, ok := prepared.(plugin.OutputTransformPreparedQuery); ok {
 		t.Fatal("uncertified prepared query advertised output binding")
 	}
-	if result, err := provider.CompileQueryOutput("SELECT phone FROM public.people", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+	if result, err := provider.CompileQueryOutput("SELECT phone FROM public.people", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, nil); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 		t.Fatal("protocol reuse silently enabled unverified native rewriting", err)
 	}
 }
@@ -219,5 +219,27 @@ func TestPostgresOutputRewritePreservesUnprotectedDisplayAndCTEInputs(t *testing
 		if (order == "contact" || order == "2") && sorted.GetCoalesceExpr() == nil {
 			t.Fatal("protected output sorted on transformed values")
 		}
+	}
+}
+
+func TestPostgresOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermSchema, "public", "people"), Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "phone", Type: datatype.FieldTypeString, NativeType: "text"}}}}}
+	operations := []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "private replacement"}}
+	for _, query := range []string{"SELECT * FROM public.people ORDER BY 2", "SELECT p.* FROM public.people p ORDER BY 2"} {
+		compiled, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "private replacement") || strings.Contains(compiled.Query, "*") {
+			t.Fatalf("missing guarded expansion: %v", err)
+		}
+		if len(compiled.Args) != 1 || compiled.Args[0] != "private replacement" {
+			t.Fatal("lost bound algorithm value")
+		}
+	}
+	for _, query := range []string{"SELECT *,phone FROM public.people", "SELECT p.* FROM public.people p JOIN public.people q ON p.id=q.id", "SELECT x.* FROM (SELECT id,phone FROM public.people) x", "SELECT x.phone FROM (SELECT * FROM public.people) x", "SELECT q.* FROM public.people p", "SELECT * FROM public.other"} {
+		if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven wildcard accepted: %s (%v)", query, err)
+		}
+	}
+	if _, err := (&PostgreSQLPlugin{}).CompileQueryOutput("SELECT * FROM public.people", nil, operations, nil); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+		t.Fatal("missing frozen facts accepted", err)
 	}
 }

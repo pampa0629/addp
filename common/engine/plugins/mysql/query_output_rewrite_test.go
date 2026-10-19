@@ -13,7 +13,7 @@ import (
 
 func TestMySQLOutputRewriteRetainsSourceOrderingAndReordersBoundValues(t *testing.T) {
 	for _, order := range []string{"contact", "2", "p.phone"} {
-		compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT p.id,p.phone AS contact FROM business.people p WHERE p.id>? ORDER BY "+order+" LIMIT ? OFFSET ?", []any{1, 5, 2}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "'; SELECT secret; --"}})
+		compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT p.id,p.phone AS contact FROM business.people p WHERE p.id>? ORDER BY "+order+" LIMIT ? OFFSET ?", []any{1, 5, 2}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "'; SELECT secret; --"}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -29,7 +29,7 @@ func TestMySQLOutputRewriteRetainsSourceOrderingAndReordersBoundValues(t *testin
 			t.Fatal("order used transformed alias instead of qualified input")
 		}
 	}
-	compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT id,phone FROM business.people ORDER BY phone", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 2, MaskRune: "●", InvalidValue: "omit"}})
+	compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT id,phone FROM business.people ORDER BY phone", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 2, MaskRune: "●", InvalidValue: "omit"}}, nil)
 	if err != nil || !strings.Contains(compiled.Query, "business.people.phone") {
 		t.Fatal("single-source column was not qualified", err)
 	}
@@ -44,24 +44,24 @@ func TestMySQLOutputRewriteRejectsUnprovenRequests(t *testing.T) {
 		"SELECT x.phone FROM (SELECT DISTINCT phone FROM s.t) x", "SELECT x.phone FROM (SELECT phone FROM s.t GROUP BY phone) x", "SELECT phone FROM s.t WHERE id=(SELECT id FROM s.u)",
 		"SELECT phone FROM s.t WHERE id=1 || id=2", "SELECT phone FROM s.t WHERE NOT id=1", "SELECT phone FROM s.t WHERE !id", "SELECT phone FROM s.t WHERE id+1>2",
 	} {
-		if result, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+		if result, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, nil); result != nil || !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatalf("unproven request accepted: %s", query)
 		}
 	}
 	for _, operation := range []plugin.QueryOutputTransform{
 		{Column: "phone", Kind: "sm3"}, {Column: "missing", Kind: "omit"}, {Column: "phone", Kind: "keep_prefix_suffix", MaskRune: "**", InvalidValue: "omit"}, {Column: "phone", Kind: "constant_text", Replacement: "\x00"},
 	} {
-		if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", nil, []plugin.QueryOutputTransform{operation}); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+		if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", nil, []plugin.QueryOutputTransform{operation}, nil); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
 			t.Fatal("unsupported operation accepted")
 		}
 	}
-	if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", []any{1}, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}); err == nil {
+	if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", []any{1}, []plugin.QueryOutputTransform{{Column: "phone", Kind: "omit"}}, nil); err == nil {
 		t.Fatal("unused positional argument accepted")
 	}
 }
 
 func TestMySQLOutputRewritePrivateFlagCannotBeMissingOrForged(t *testing.T) {
-	compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}})
+	compiled, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT phone FROM s.t", nil, []plugin.QueryOutputTransform{{Column: "phone", Kind: "keep_prefix_suffix", Prefix: 1, Suffix: 1, MaskRune: "*", InvalidValue: "omit"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestMySQLOutputRewritePrivateFlagCannotBeMissingOrForged(t *testing.T) {
 
 func TestMySQLOutputRewritePreservesDerivedServiceInputs(t *testing.T) {
 	query := "SELECT contact FROM (SELECT id,phone AS contact FROM business.people WHERE id>? ORDER BY id LIMIT ?) AS addp_source WHERE id<=? ORDER BY contact LIMIT ? OFFSET ?"
-	compiled, err := (&MySQLPlugin{}).CompileQueryOutput(query, []any{1, 20, 50, 5, 2}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "[保护]"}})
+	compiled, err := (&MySQLPlugin{}).CompileQueryOutput(query, []any{1, 20, 50, 5, 2}, []plugin.QueryOutputTransform{{Column: "contact", Kind: "constant_text", Replacement: "[保护]"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,5 +95,27 @@ func TestMySQLOutputRewritePreservesDerivedServiceInputs(t *testing.T) {
 	inner := statement.From[0].(*sqlparser.AliasedTableExpr).Expr.(*sqlparser.Subquery).Select.(*sqlparser.Select)
 	if _, ok := inner.SelectExprs[1].(*sqlparser.AliasedExpr).Expr.(*sqlparser.ColName); !ok {
 		t.Fatal("inner projection was transformed")
+	}
+}
+
+func TestMySQLOutputRewriteExpandsOnlyProvenSingleTableWildcard(t *testing.T) {
+	lineage := &plugin.QueryOutputLineage{Sources: []plugin.QueryOutputSource{{Path: plugin.TabularItemPath(9, plugin.EngineCatalogTermDatabase, "business", "people"), Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint"}, {Name: "phone", Type: datatype.FieldTypeString, NativeType: "text"}}}}}
+	operations := []plugin.QueryOutputTransform{{Column: "phone", Kind: "constant_text", Replacement: "private replacement"}}
+	for _, query := range []string{"SELECT * FROM business.people ORDER BY 2", "SELECT p.* FROM business.people p ORDER BY 2"} {
+		compiled, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage)
+		if err != nil || compiled.ValidateExecution == nil || strings.Contains(compiled.Query, "private replacement") || strings.Contains(compiled.Query, "*") {
+			t.Fatalf("missing guarded expansion: %v", err)
+		}
+		if len(compiled.Args) != 1 || compiled.Args[0] != "private replacement" {
+			t.Fatal("lost bound algorithm value")
+		}
+	}
+	for _, query := range []string{"SELECT *,phone FROM business.people", "SELECT p.* FROM business.people p JOIN business.people q ON p.id=q.id", "SELECT x.* FROM (SELECT id,phone FROM business.people) x", "SELECT x.phone FROM (SELECT * FROM business.people) x", "SELECT q.* FROM business.people p", "SELECT * FROM business.other"} {
+		if _, err := (&MySQLPlugin{}).CompileQueryOutput(query, nil, operations, lineage); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+			t.Fatalf("unproven wildcard accepted: %s (%v)", query, err)
+		}
+	}
+	if _, err := (&MySQLPlugin{}).CompileQueryOutput("SELECT * FROM business.people", nil, operations, nil); !errors.Is(err, plugin.ErrQueryOutputTransformUnsupported) {
+		t.Fatal("missing frozen facts accepted", err)
 	}
 }

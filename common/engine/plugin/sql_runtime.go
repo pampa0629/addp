@@ -52,6 +52,9 @@ func ExecuteSingleStatementReadOnlySQLWithConnectionPool(ctx context.Context, po
 	if !opts.ReadOnly {
 		return nil, fmt.Errorf("single-statement SQL execution requires read-only options")
 	}
+	if opts.outputPreflight != nil {
+		return nil, ErrQueryOutputTransformUnsupported
+	}
 	if opts.analytical != nil {
 		return nil, ErrAnalyticalUnsupported
 	}
@@ -143,7 +146,7 @@ func executeSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		return result, nil
 	}
 	if opts.ReadOnly {
-		var preflight func(context.Context, *sql.Tx) error
+		preflight := opts.outputPreflight
 		if opts.analytical != nil {
 			validator, ok := any(poolPlugin).(AnalyticalSQLExecutionValidator)
 			if !ok {

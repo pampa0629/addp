@@ -9,8 +9,8 @@ import (
 )
 
 // GenerateSampleQuery builds a bounded direct-column query from current
-// catalog fields. MySQL-compatible protection intentionally rejects wildcard
-// lineage, so generated templates must not use SELECT *.
+// catalog fields. Explicit columns keep templates stable across providers;
+// native wildcard rewrite certification remains a separate execution contract.
 func (p MySQLCompatibleQueryProvenance) GenerateSampleQuery(
 	ctx context.Context,
 	connInfo plugin.ConnectionInfo,

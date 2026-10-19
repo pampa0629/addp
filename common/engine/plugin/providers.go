@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"strings"
@@ -754,6 +755,8 @@ type FederatedQueryRequest struct {
 }
 
 type QueryOptions struct {
+	// Provider-owned preflight; never accepted over the wire.
+	outputPreflight func(context.Context, *sql.Tx) error
 	// Set only inside the immutable compiled-query execution bridge.
 	analytical *CompiledQuery
 	EngineID   uint                   `json:"engine_id,omitempty"`

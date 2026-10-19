@@ -34,6 +34,11 @@ func (p *PostgreSQLPlugin) OpenQueryReadSession(ctx context.Context, prepared pl
 		_ = db.Close()
 		return nil, fmt.Errorf("begin PostgreSQL query read transaction: %w", err)
 	}
+	if err := binding.ValidateExecution(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		_ = db.Close()
+		return nil, err
+	}
 	const cursor = "addp_query_read_cursor"
 	_, err = tx.ExecContext(ctx, "DECLARE "+cursor+" NO SCROLL CURSOR FOR "+request.Query, request.Options.Args...)
 	if err != nil {
