@@ -22,7 +22,7 @@ from operators.raster_compute import (
     _classification_rules, raster_reclassify, raster_aggregate, raster_footprint,
     raster_tile, raster_save_tiles, raster_tiles_info,
     raster_slope, raster_aspect, raster_hillshade, raster_contour, vector_rasterize,
-    raster_focal_statistics,
+    raster_focal_statistics, raster_vector_zonal_statistics,
 )
 from workflow_engine import execute_workflow
 from operators.raster_operators import build_raster_mosaic
@@ -4606,3 +4606,218 @@ def test_focal_statistics_metadata_and_executable_example(tmp_path):
         {'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}},
         {'id':'focal',**spec['detailed_description']['workflow_example'],'depends_on':['source']}]})
     assert result['status']=='success',result
+
+
+@pytest.mark.parametrize('transform,crs',[((0,1,0,6,0,-1),3857),((100,2,.5,200,.25,-3),3857),((110,.01,.001,30,.0005,-.02),4326)])
+@pytest.mark.parametrize('all_touched',[False,True])
+def test_vector_zonal_statistics_independent_geometry_values_overlap_holes_and_order(tmp_path,transform,crs,all_touched):
+    import geopandas as gpd
+    import geopandas.testing
+    import pandas as pd
+    from shapely.affinity import affine_transform
+    from shapely.geometry import box
+    faces=_rasterization_faces(transform)
+    affine=[transform[1],transform[2],transform[4],transform[5],transform[0],transform[3]]
+    geometries=list(faces.geometry)+[faces.geometry.iloc[0],affine_transform(box(100,100,101,101),affine),affine_transform(box(1.1,1.1,1.9,1.9),affine)]
+    faces=gpd.GeoDataFrame({'code':[7]*7,'name':list('abcdefg'),'shape':geometries},geometry='shape',crs=crs,index=[7,2,7,1,9,0,3])
+    original=faces.copy()
+    values=np.arange(42,dtype=float).reshape(6,7)-13; values[0,0]=0; values[1,1]=-9999
+    values[2,2]=np.nan;values[4,1]=np.inf;values[5,3]=-np.inf
+    alpha=np.full(values.shape,128.);alpha[4,2]=0;alpha[3,3]=np.nan;alpha[4,4]=-1;alpha[3,5]=np.inf
+    mask=np.full(values.shape,255,dtype=np.uint8);mask[3,2]=0
+    path=create_raster(tmp_path/'values.tif',np.stack([np.full(values.shape,np.nan),values,alpha]),transform,'EPSG:'+str(crs))
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(17.);ds.GetRasterBand(2).SetOffset(500.)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    before=path.read_bytes()
+    valid=np.isfinite(values)&(values!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    with raster_workspace():
+        result=raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,2,all_touched,field_prefix='stats_')
+    assert result.geometry.name=='shape' and result.index.tolist()==faces.index.tolist()
+    assert result.columns.tolist()==['code','name','shape']+['stats_'+n for n in ('total_count','valid_count','invalid_count','sum','min','max','mean','stddev')]
+    geopandas.testing.assert_geodataframe_equal(result[faces.columns],original)
+    for position in range(len(faces)):
+        covered=np.isfinite(_rasterization_oracle(faces.iloc[[position]],[1],transform,7,6,all_touched))
+        sample=values[covered&valid];row=result.iloc[position]
+        assert [row['stats_'+n] for n in ('total_count','valid_count','invalid_count')]==[int(covered.sum()),sample.size,int((covered&~valid).sum())]
+        if not sample.size:assert all(pd.isna(row['stats_'+n]) for n in ('sum','min','max','mean','stddev'))
+        else:
+            actual=[row['stats_'+n] for n in ('sum','min','max','mean','stddev')]
+            np.testing.assert_allclose(actual,[math.fsum(sample),min(sample),max(sample),statistics.fmean(sample),statistics.pstdev(sample)],rtol=1e-13,atol=1e-13)
+    assert result.iloc[0]['stats_total_count']==result.iloc[4]['stats_total_count']>0
+    assert result.iloc[5]['stats_total_count']==0
+    assert result.iloc[6]['stats_valid_count']==0 and result.iloc[6]['stats_invalid_count']>0
+    assert all(str(result['stats_'+n].dtype)=='int64' for n in ('total_count','valid_count','invalid_count'))
+    assert all(str(result['stats_'+n].dtype)=='Float64' for n in ('sum','min','max','mean','stddev'))
+    assert path.read_bytes()==before
+    geopandas.testing.assert_geodataframe_equal(faces,original)
+
+
+@pytest.mark.parametrize('all_touched',[False,True])
+def test_vector_zonal_statistics_rotated_cross_block_bounded_reads_and_exact_cell_sets(tmp_path,monkeypatch,all_touched):
+    import geopandas as gpd
+    from shapely.affinity import affine_transform
+    from shapely.geometry import box
+    transform=(100,2,.5,200,.25,-3)
+    affine=[2,.5,.25,-3,100,200]
+    yy,xx=np.indices((515,519));values=xx+2.*yy
+    faces=gpd.GeoDataFrame(geometry=[affine_transform(box(.1,.1,518.9,514.9),affine),affine_transform(box(507.1,507.1,512.9,512.9),affine)],crs=3857)
+    path=create_raster(tmp_path/'large.tif',values,transform,'EPSG:3857')
+    with raster_workspace():
+        loaded=raster_load(source_plan(path));original=gdal.Band.ReadRaster;reads=[]
+        def bounded(self,x=0,y=0,width=None,height=None,*args,**kwargs):
+            assert width is not None and height is not None and width<=512 and height<=512
+            reads.append((x,y,width,height));return original(self,x,y,width,height,*args,**kwargs)
+        with monkeypatch.context() as scoped:
+            scoped.setattr(gdal.Band,'ReadRaster',bounded)
+            result=raster_vector_zonal_statistics(loaded,faces,1,all_touched)
+    for position,sample in enumerate((values.ravel(),values[507:513,507:513].ravel())):
+        row=result.iloc[position]
+        assert row.zonal_total_count==row.zonal_valid_count==sample.size and row.zonal_invalid_count==0
+        np.testing.assert_allclose([row['zonal_'+n] for n in ('sum','min','max','mean','stddev')],
+            [math.fsum(sample),min(sample),max(sample),statistics.fmean(sample),statistics.pstdev(sample)],rtol=1e-12)
+    assert any(x>0 for x,y,w,h in reads) and any(y>0 for x,y,w,h in reads)
+
+
+@pytest.mark.parametrize('case',['cancellation','large_offset','opposite_extremes','tiny','overflow'])
+def test_vector_zonal_statistics_reuses_stable_streaming_statistics(tmp_path,case):
+    import geopandas as gpd
+    from shapely.geometry import box
+    data=np.zeros((1,1030))
+    if case=='cancellation':data[0,[0,512,1024]]=[1e16,1.,-1e16]
+    elif case=='large_offset':data[0,:]=np.resize([1e16-2,1e16+2],1030)
+    elif case=='opposite_extremes':data[0,:]=np.resize([1e308,-1e308],1030)
+    elif case=='tiny':data[0,:]=np.resize([1e-300,-1e-300],1030)
+    else:data[:]=1e308
+    path=create_raster(tmp_path/'stable.tif',data,(0,1,0,1,0,-1),'EPSG:3857')
+    faces=gpd.GeoDataFrame(geometry=[box(-.1,-.1,1030.1,1.1)],crs=3857)
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        if case=='overflow':
+            with pytest.raises(ValueError,match='finite Float64'):raster_vector_zonal_statistics(loaded,faces,1)
+        else:
+            row=raster_vector_zonal_statistics(loaded,faces,1).iloc[0]
+            assert row.zonal_valid_count==1030
+            if case=='cancellation':assert row.zonal_sum==pytest.approx(1.) and row.zonal_mean==pytest.approx(1/1030,rel=1e-14)
+            elif case=='large_offset':assert row.zonal_mean==1e16 and row.zonal_stddev==pytest.approx(2.,rel=1e-14)
+            else:assert row.zonal_mean==0 and row.zonal_stddev==pytest.approx(1e308 if case=='opposite_extremes' else 1e-300,rel=1e-14,abs=0)
+
+
+@pytest.mark.parametrize('outside',[False,True])
+def test_vector_zonal_statistics_empty_outside_no_reads_and_custom_empty_prefix(tmp_path,monkeypatch,outside):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'name':['far'] if outside else []},geometry=[box(1e100,1e100,2e100,2e100)] if outside else [],crs=3857)
+    path=create_raster(tmp_path/'source.tif',np.ones((2,3)),crs='EPSG:3857')
+    with raster_workspace():
+        loaded=raster_load(source_plan(path))
+        def forbidden(*args,**kwargs):raise AssertionError('empty/outside zones must not read pixels')
+        with monkeypatch.context() as scoped:
+            scoped.setattr(gdal.Band,'ReadRaster',forbidden);scoped.setattr(gdal.Band,'ReadAsArray',forbidden)
+            result=raster_vector_zonal_statistics(loaded,faces,1,field_prefix='')
+        assert len(result)==len(faces) and str(result['sum'].dtype)=='Float64'
+        if outside:assert result.iloc[0].total_count==0 and result.iloc[0]['sum'] is __import__('pandas').NA
+    with raster_workspace(),pytest.raises(ValueError,match='this execution'):raster_vector_zonal_statistics(loaded,faces,1)
+
+
+@pytest.mark.parametrize('fault',['missing_vector_crs','different_crs','missing_raster_crs','missing_transform','singular','not_gdf','no_geometry',
+    'column_collision','geometry_collision','prefix_none','prefix_bool','coverage_number','coverage_none','band_alpha','band_bool','band_float','band_missing'])
+def test_vector_zonal_statistics_rejects_invalid_contracts(tmp_path,fault):
+    import geopandas as gpd
+    from shapely.geometry import box
+    faces=gpd.GeoDataFrame({'code':[1]},geometry=[box(.1,.1,2.9,2.9)],crs=None if fault=='missing_vector_crs' else 3857)
+    if fault=='different_crs':faces=faces.to_crs(4326)
+    if fault=='not_gdf':faces={}
+    if fault=='no_geometry':faces=gpd.GeoDataFrame({'code':[1]})
+    if fault=='column_collision':faces['zonal_mean']=999
+    if fault=='geometry_collision':faces=faces.rename_geometry('zonal_sum')
+    transform=None if fault=='missing_transform' else (0,1,1,2,1,1) if fault=='singular' else (0,1,0,3,0,-1)
+    path=create_raster(tmp_path/'source.tif',np.ones((2,3,3)),transform,None if fault=='missing_raster_crs' else 'EPSG:3857')
+    if fault=='band_alpha':
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand);ds=None
+    params={'band':2 if fault=='band_alpha' else True if fault=='band_bool' else 1. if fault=='band_float' else 99 if fault=='band_missing' else 1}
+    if fault in ('prefix_none','prefix_bool'):params['field_prefix']=None if fault=='prefix_none' else True
+    if fault in ('coverage_number','coverage_none'):params['all_touched']=1 if fault=='coverage_number' else None
+    with raster_workspace(),pytest.raises(ValueError):raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,**params)
+
+
+@pytest.mark.parametrize('wkt',[None,'POLYGON EMPTY','POINT (0 0)','LINESTRING (0 0,1 1)',
+    'POLYGON ((0 0,2 2,0 2,2 0,0 0))','POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))',
+    'POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))','POLYGON ((0 0,Infinity 0,1 1,0 0))'])
+def test_vector_zonal_statistics_rejects_invalid_geometry_without_repair(tmp_path,wkt):
+    import geopandas as gpd
+    from shapely import from_wkt
+    faces=gpd.GeoDataFrame(geometry=[from_wkt(wkt) if wkt else None],crs=3857)
+    path=create_raster(tmp_path/'source.tif',np.ones((2,3)),crs='EPSG:3857')
+    with raster_workspace(),pytest.raises(ValueError,match='two-dimensional'):raster_vector_zonal_statistics(raster_load(source_plan(path)),faces,1)
+
+
+@pytest.mark.parametrize('invalid',[False,True],ids=['gpkg-save','failure-cleanup'])
+@pytest.mark.parametrize('zones_mode',['polygonize','null-and-outside'])
+def test_vector_zonal_statistics_async_polygonize_chain_gpkg_save_and_cleanup(tmp_path,monkeypatch,invalid,zones_mode):
+    import api_server
+    import workflow_engine
+    import geopandas as gpd
+    values=np.array([[0,0,2],[0,2,2]],dtype=float)
+    if zones_mode=='null-and-outside':values[0,0]=-9999
+    source=create_raster(tmp_path/'classes.tif',values,crs='EPSG:3857')
+    target=tmp_path/'statistics.gpkg';before=source.read_bytes()
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(source)}},
+        {'id':'zones','operator':'raster_polygonize','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'connectivity':4}},
+        {'id':'stats','operator':'raster_vector_zonal_statistics','depends_on':['source','zones'],
+         'params':{'input_raster':{'$ref':'source'},'input_gdf':{'$ref':'zones'},'band':99 if invalid else 1}},
+        {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'path':target.name,'connection_info':{'mount_path':str(tmp_path)}}}]
+    if zones_mode=='null-and-outside':
+        tasks[1]={'id':'zones','operator':'load_from_wkt','depends_on':[],'params':{
+            'wkt_list':['POLYGON ((0.1 2.1,2.9 2.1,2.9 3.9,0.1 3.9,0.1 2.1))','POLYGON ((0.1 3.1,0.9 3.1,0.9 3.9,0.1 3.9,0.1 3.1))','POLYGON ((20 20,21 20,21 21,20 21,20 20))'],
+            'properties':[{'class_value':c} for c in (11,12,13)],'crs':'EPSG:3857'}}
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_vector_zonal_statistics':paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client()
+    response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if invalid else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and source.read_bytes()==before
+    if invalid:assert not target.exists()
+    else:
+        saved=gpd.read_file(target).set_index('class_value')
+        assert target.stat().st_size>0 and saved.crs.to_epsg()==3857
+        if zones_mode=='polygonize':
+            assert sorted(saved.index)==[0,2]
+            assert saved.zonal_total_count.tolist()==[3,3] and saved.zonal_invalid_count.tolist()==[0,0]
+            assert saved.zonal_sum.tolist()==[0,6] and saved.zonal_mean.tolist()==[0,2] and saved.zonal_stddev.tolist()==[0,0]
+        else:
+            assert sorted(saved.index)==[11,12,13]
+            assert saved.zonal_total_count.tolist()==[6,1,0] and saved.zonal_valid_count.tolist()==[5,0,0]
+            assert saved.loc[12:13,['zonal_sum','zonal_min','zonal_max','zonal_mean','zonal_stddev']].isna().all().all()
+    assert client.post('/api/operators/raster_vector_zonal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+def test_vector_zonal_statistics_metadata_example_and_native_failure_cleanup(tmp_path,monkeypatch):
+    import geopandas as gpd
+    from shapely.geometry import box
+    spec=next(item for item in list_operators() if item['id']=='raster_vector_zonal_statistics')
+    params={p['name']:p for p in spec['parameters']}
+    assert params['input_raster']['type']=='raster' and params['input_gdf']['type']=='object' and params['band']['required']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['output_ports'][0]['type']=='GeoDataFrame'
+    path=create_raster(tmp_path/'source.tif',np.ones((3,3)),(0,1,0,3,0,-1),'EPSG:3857');before=path.read_bytes()
+    with raster_workspace():
+        args=dict(spec['detailed_description']['workflow_example']['params'])
+        args.update(input_raster=raster_load(source_plan(path)),input_gdf=gpd.GeoDataFrame(geometry=[box(.1,.1,2.9,2.9)],crs=3857))
+        assert raster_vector_zonal_statistics(**args).iloc[0].zonal_valid_count==9
+        workspace=args['input_raster'].workspace
+        def fail(*args,**kwargs):raise RuntimeError('injected zone burn failure')
+        monkeypatch.setattr(gdal,'RasterizeLayer',fail)
+        with pytest.raises(RuntimeError,match='injected'):raster_vector_zonal_statistics(**args)
+    assert not workspace.exists() and path.read_bytes()==before

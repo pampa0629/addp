@@ -779,13 +779,23 @@ def _rasterize_value(value):
     return number
 
 
-def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, all_touched=False):
+def _polygon_geometries(input_gdf):
     if not isinstance(input_gdf, gpd.GeoDataFrame):
         raise ValueError('input_gdf must be a GeoDataFrame')
     try:
         geometries = input_gdf.geometry
     except AttributeError as error:
         raise ValueError('input_gdf must have an active geometry column') from error
+    for geometry in geometries:
+        if (geometry is None or geometry.is_empty or geometry.geom_type not in ('Polygon', 'MultiPolygon') or
+                has_z(geometry) or has_m(geometry) or not geometry.is_valid or
+                not np.isfinite(get_coordinates(geometry)).all()):
+            raise ValueError('Raster polygon analysis requires valid non-empty finite two-dimensional Polygon or MultiPolygon geometry')
+    return geometries
+
+
+def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, all_touched=False):
+    geometries = _polygon_geometries(input_gdf)
     if type(all_touched) is not bool:
         raise ValueError('all_touched must be a boolean')
     if (field is None) == (burn_value is None):
@@ -801,11 +811,6 @@ def vector_rasterize(input_gdf, reference_raster, field=None, burn_value=None, a
     _grid(grid)
     if input_gdf.crs is None or not _crs(input_gdf.crs.to_wkt()).IsSame(_crs(grid.GetProjection())):
         raise ValueError('Vector and reference raster must have the same explicit CRS')
-    for geometry in geometries:
-        if (geometry is None or geometry.is_empty or geometry.geom_type not in ('Polygon', 'MultiPolygon') or
-                has_z(geometry) or has_m(geometry) or not geometry.is_valid or
-                not np.isfinite(get_coordinates(geometry)).all()):
-            raise ValueError('Rasterization requires valid non-empty finite two-dimensional Polygon or MultiPolygon geometry')
     vector = layer = feature = output = None
     try:
         vector = ogr.GetDriverByName('Memory').CreateDataSource('')
@@ -950,7 +955,7 @@ class _ZoneStatistics:
                             else (local_sum - combined) + previous))
         self.sum, self.scale, self.count = combined, scale, count
 
-    def row(self, code):
+    def summary(self):
         stats = [None] * 5
         if self.count:
             total = math.fsum([self.sum, self.correction]) * self.scale
@@ -958,7 +963,7 @@ class _ZoneStatistics:
                      math.sqrt(max(0., min(1., self.m2 / self.count))) * self.scale]
             if not all(math.isfinite(value) for value in stats):
                 raise ValueError('Zonal statistics exceed the finite Float64 output range')
-        return [code, self.total, self.count, self.total - self.count, *stats]
+        return [self.total, self.count, self.total - self.count, *stats]
 
 
 def raster_zonal_statistics(input_raster, zones_raster, band, zones_band):
@@ -984,8 +989,90 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band):
             statistics.setdefault(int(code), _ZoneStatistics()).add(
                 selected_values[group][selected_valid[group]], int(count))
     columns = ['zone_value', 'total_count', 'valid_count', 'invalid_count', 'sum', 'min', 'max', 'mean', 'stddev']
-    result = pd.DataFrame([statistics[code].row(code) for code in sorted(statistics)], columns=columns)
+    result = pd.DataFrame([[code, *statistics[code].summary()] for code in sorted(statistics)], columns=columns)
     return result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
+
+
+def _zone_window(dataset, bounds):
+    """Conservative rotated-grid pixel bounds, clipped before inversion."""
+    corners = _corners(dataset)
+    if not all(math.isfinite(value) for point in corners for value in point):
+        raise ValueError('Raster extent must be finite')
+    left = max(bounds[0], min(x for x, y in corners))
+    bottom = max(bounds[1], min(y for x, y in corners))
+    right = min(bounds[2], max(x for x, y in corners))
+    top = min(bounds[3], max(y for x, y in corners))
+    if left > right or bottom > top:
+        return None
+    inverse = gdal.InvGeoTransform(dataset.GetGeoTransform())
+    pixels = [gdal.ApplyGeoTransform(inverse, x, y) for x, y in
+              ((left, bottom), (left, top), (right, bottom), (right, top))]
+    if not all(math.isfinite(value) for point in pixels for value in point):
+        raise ValueError('Zone bounds cannot be represented on the raster grid')
+    # One-pixel margin retains GDAL edge coverage despite affine roundoff.
+    x = max(0, math.floor(min(p[0] for p in pixels))-1)
+    y = max(0, math.floor(min(p[1] for p in pixels))-1)
+    end_x = min(dataset.RasterXSize, math.ceil(max(p[0] for p in pixels))+1)
+    end_y = min(dataset.RasterYSize, math.ceil(max(p[1] for p in pixels))+1)
+    return (x, y, end_x-x, end_y-y) if x < end_x and y < end_y else None
+
+
+def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_'):
+    geometries = _polygon_geometries(input_gdf)
+    if type(all_touched) is not bool:
+        raise ValueError('all_touched must be a boolean')
+    if not isinstance(field_prefix, str):
+        raise ValueError('field_prefix must be a string')
+    names = [field_prefix+name for name in ('total_count', 'valid_count', 'invalid_count',
+                                          'sum', 'min', 'max', 'mean', 'stddev')]
+    if any(name in input_gdf.columns for name in names):
+        raise ValueError('Statistics columns must not overwrite input columns')
+    dataset = _open(input_raster)
+    _, _, transform = _grid(dataset)
+    if input_gdf.crs is None or not _crs(input_gdf.crs.to_wkt()).IsSame(_crs(dataset.GetProjection())):
+        raise ValueError('Vector zones and raster must have the same explicit CRS')
+    if _band(dataset, band).GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise ValueError('Vector zonal statistics require a data band, not alpha')
+    for index in range(1, dataset.RasterCount+1):
+        if dataset.GetRasterBand(index).GetColorInterpretation() == gdal.GCI_AlphaBand:
+            _band(dataset, index)
+    rows = []
+    vector = layer = feature = coverage = None
+    try:
+        for geometry in geometries:
+            statistics = _ZoneStatistics()
+            window = _zone_window(dataset, geometry.bounds)
+            if window is not None:
+                vector = ogr.GetDriverByName('Memory').CreateDataSource('')
+                layer = vector.CreateLayer('zone', _crs(dataset.GetProjection()), ogr.wkbUnknown)
+                feature = ogr.Feature(layer.GetLayerDefn())
+                feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
+                if layer.CreateFeature(feature) != 0:
+                    raise ValueError('Cannot create zone feature')
+                feature = None
+                for x, y, arrays, masks in _blocks(dataset, [band], window=window):
+                    height, width = arrays[0].shape
+                    coverage = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
+                    origin = gdal.ApplyGeoTransform(transform, x, y)
+                    coverage.SetGeoTransform((origin[0], transform[1], transform[2],
+                                              origin[1], transform[4], transform[5]))
+                    coverage.SetProjection(dataset.GetProjection())
+                    coverage.GetRasterBand(1).Fill(0)
+                    layer.ResetReading()
+                    options = ['ALL_TOUCHED='+('TRUE' if all_touched else 'FALSE')]
+                    if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
+                        raise ValueError('Zone coverage rasterization failed')
+                    covered = coverage.GetRasterBand(1).ReadAsArray() != 0
+                    statistics.add(arrays[0][covered & masks[0]], int(covered.sum()))
+                    coverage = None
+                layer = vector = None
+            rows.append(statistics.summary())
+    finally:
+        feature = layer = vector = coverage = dataset = None
+    result = input_gdf.copy()
+    for index, name in enumerate(names):
+        result[name] = pd.array([row[index] for row in rows], dtype='int64' if index < 3 else 'Float64')
+    return result
 
 
 def raster_statistics(input_raster, band=1):
@@ -1636,6 +1723,7 @@ _SPECS = [
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）')], 'raster', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -1659,6 +1747,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
     if name == 'raster_focal_statistics':
         examples.update({'band': 1, 'window_size': 3, 'method': 'mean'})
+    if name == 'raster_vector_zonal_statistics':
+        examples.update({'input_gdf': {'$ref': 'zones'}, 'band': 1, 'all_touched': False, 'field_prefix': 'zonal_'})
     if name == 'raster_mosaic':
         examples = {'input_rasters': [{'$ref': 'source'}, {'$ref': 'other'}],
                     'target_crs': 'EPSG:4326', 'resolution': [0.01, 0.01]}
