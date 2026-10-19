@@ -159,7 +159,7 @@
 | `make test-online ONLINE_SUITE=raster-workflow-capacity` | 完整四波段受限容量矩阵；仅手工 GitHub Hosted 独占部署，不计为原 Raster T4 或默认配置安全保证。 |
 | `make test-online ONLINE_SUITE=raster-contour-persistence` | 等值线 NFS 单文件 GeoPackage 保存、精确自动扫描、普通发起人、严格物理／Meta 大小、资源血缘及清理的独立手工 Hosted T4；600 秒业务预算。 |
 | `make test-online ONLINE_SUITE=raster-polygonize-persistence` | 分类栅格四／八邻接及重分类接转面，NFS 单文件 GeoPackage 保存、完整区域与像元、严格物理／Meta 大小、自动扫描、同用户与当前执行血缘及清理的独立手工 Hosted T4；600 秒预算。 |
-| `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；尚未实际验收。 |
+| `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` | 邻域统计六条 COG 保存链（3×3 sum/min、5×5 mean/max/stddev、重分类接 3×3 stddev）及非法波段／窗口失败清理；跨块完整像元／mask、严格三方大小、自动扫描、同用户／当前执行血缘和零残留的独立手工 Hosted，600 秒业务预算；固定版本 `fe0d7cc8e` 的实际结果见下节。 |
 | `make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` | 同网格多波段、重分类、超过预览上限及空表的四条 CSV 保存链，非法波段／网格失败清理、严格物理／Meta 大小、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted；600 秒预算。 |
 | `make test-online ONLINE_SUITE=vector-rasterize-persistence` | 已登记 GeoJSON／参考 TIFF 的三条 COG 保存链及非法参数失败清理；严格大小、像元／mask、精确自动扫描、同用户／当前执行血缘与零残留的独立手工 Hosted T4；600 秒预算。 |
 | `make test-online ONLINE_SUITE=raster-workflow` | 原 Raster Hosted T4；仅在 GitHub Hosted 独占部署运行，不接管个人开发环境。 |
@@ -181,3 +181,8 @@ DEM 基础四项已有 Native 和原 Raster Hosted T4 证据，最终版本与�
 ### 6.5 栅格分区统计验收边界
 
 `raster_zonal_statistics` 已在 `5e49199e8` 的独立 `raster-zonal-statistics-persistence` 完成显式多波段分类分区、重分类接统计、超过预览上限及全无效分区四条 CSV 保存 DAG。完整分类值、计数、统计值、null、固定列结构及有限表预览，严格物理／Meta 大小，四个精确自动扫描、原普通用户归属、Monitor、当前执行两源血缘、源及先前成果不变、非法波段／网格失败清理与零残留均通过；最终证据见[当前验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。沿用通用 `save`，不新增 RasterArtifact；Runtime 同路径挂载写、Meta 经真实 NFS 读取，独立 600 秒预算。原四套栅格相关 T4 保持；本结论不含矢量分区、分位数、面积加权、自动对齐、Manager 绘制、业务删除、覆盖冲突或容量验收。
+
+
+### 6.6 栅格邻域统计验收边界
+
+固定版本 `fe0d7cc8e` 的独立 `raster-focal-statistics-persistence` 已完成六条 COG 保存链，覆盖五项统计、两种窗口的代表组合及重分类串联。519×515 多波段旋转输入的完整像元／mask、边缘与跨块、无效中心、Float64／NaN NoData、COG、严格三方相等正整数大小、六个精确自动扫描、同用户／当前执行源输入血缘、Monitor、源及先前成果不可变、非法波段／窗口失败清理与零残留均通过，归档已独立审计。预检及业务 359770 毫秒，小于 600 秒预算；当前最终证据见[验收基线](../next/栅格算子体系后续专题.md#二当前验收基线)。不认证全部窗口组合的 T4 覆盖、自定义权重、距离半径、分位数、众数、Manager 绘制、NFS 客户端写、业务删除、覆盖冲突或容量；Linux 全量 CI 排队状态不得计为通过。
