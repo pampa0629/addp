@@ -1610,7 +1610,7 @@ def validate_browser_report(
         raise SuiteError("browser colored FBX source must match the pinned original")
     positive_int(basic.get("item_id"), "colored FBX source item id")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
         "phase": phase,
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
@@ -1632,7 +1632,11 @@ def validate_browser_report(
         "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
             "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
             "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
-            "encoding_request_verified": True} for source in delimited],
+            "encoding_request_verified": True, "header_mode": {"tested_has_header": False,
+                "rows": 26, "columns": ["Column1", "Column2", "Column3"],
+                "first_record_verified": True, "paginated_rows_verified": True,
+                "request_verified": True, "ordinary_refresh_preserved": True,
+                "reopened": True, "source_unchanged": True, "restored": True}} for source in delimited],
         "workbook": {**workbook, "sheets": WORKBOOK_SHEETS, "first_page_rows": 20,
             "last_page_rows": 5, "last_page_disabled": True, "unknown_total_verified": True,
             "sheet_switch_reset": True, "refresh_preserved_page": True,
@@ -2048,7 +2052,7 @@ def run_scenario(
                                     models=browser_models, phase="cached-preview")
         browser_evidence["generation_entry"] = entry_evidence
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v13",
+            "schema_version": "addp.manager-internal-artifact-lineage/v14",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],

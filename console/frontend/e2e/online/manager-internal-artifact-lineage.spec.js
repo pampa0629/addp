@@ -121,12 +121,12 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
   const applyResponse = await applied
   expect(applyResponse.status()).toBe(200)
   expect(applyResponse.request().postDataJSON()).toEqual({ encoding: 'gbk', has_header: true })
-  await expect(frame.getByRole('columnheader', { name: '姓名', exact: true })).toBeVisible()
+  await expect(frame.locator('.table-preview .el-table__header-wrapper th')).toHaveText(['id', '姓名', '备注'])
   await expect(selector).toContainText('GBK')
 
   const verifyPage = async (offset, count) => {
     await expect(frame.getByRole('cell', { name: `张三${offset}`, exact: true })).toBeVisible()
-    await expect(frame.getByRole('columnheader')).toHaveText(['id', '姓名', '备注'])
+    await expect(frame.locator('.el-table__header-wrapper th')).toHaveText(['id', '姓名', '备注'])
     await expect(frame.getByRole('cell')).toHaveCount(count * 3)
     const expected = Array.from({ length: count }, (_, index) => {
       const id = offset + index
@@ -134,14 +134,15 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
     }).flat()
     expect((await frame.getByRole('cell').allTextContents()).map(text => text.trim())).toEqual(expected)
   }
-  const verifyMetadata = async () => {
+  const verifyMetadata = async (hasHeader = true) => {
     const item = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'read delimited item facts')
     expect(item.id).toBe(source.item_id)
     expect(item.fingerprint).toBe(source.fingerprint)
-    expect(item.row_count).toBe(25)
+    expect(item.row_count).toBe(hasHeader ? 25 : 26)
     expect(item.attributes.item).toMatchObject({ format: source.format, data_type: 'table', layout: 'single' })
     expect(item.attributes.format_info[source.format].encoding).toBe('gbk')
-    expect(item.attributes.type_info.table.fields.map(field => field.name)).toEqual(['id', '姓名', '备注'])
+    expect(item.attributes.type_info.table.native.has_header).toBe(hasHeader)
+    expect(item.attributes.type_info.table.fields.map(field => field.name)).toEqual(hasHeader ? ['id', '姓名', '备注'] : ['Column1', 'Column2', 'Column3'])
     expect(item.attributes.storage.content_hash).toBe(source.sha256)
     expect(item.attributes.access_index?.table).toBeUndefined()
   }
@@ -164,9 +165,50 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
   await page.reload()
   await expect(selector).toContainText('GBK')
   await verifyPage(0, 20)
+  const headerSelector = frame.locator('.csv-header-select')
+  const applyHeaderMode = async hasHeader => {
+    await headerSelector.click()
+    await frame.getByRole('option', { name: hasHeader ? /首行为表头|First row is header/ : /首行为数据|First row is data/, exact: true }).click()
+    const response = refresh()
+    await frame.getByRole('button', { name: /应用读取设置并刷新|Apply read settings and refresh/ }).click()
+    const applied = await response
+    expect(applied.status()).toBe(200)
+    expect(applied.request().postDataJSON()).toEqual({ encoding: 'gbk', has_header: hasHeader })
+  }
+  const headerlessRows = [['id', '姓名', '备注'], ...Array.from({ length: 25 }, (_, id) =>
+    [String(id), `张三${id}`, `北京,第${id}项\n第二行`])]
+  const verifyHeaderlessPage = async (offset, count) => {
+    await expect(frame.locator('.table-preview .el-table__header-wrapper th')).toHaveText(['Column1', 'Column2', 'Column3'])
+    await expect(frame.getByRole('cell')).toHaveCount(count * 3)
+    expect((await frame.getByRole('cell').allTextContents()).map(text => text.trim())).toEqual(headerlessRows.slice(offset, offset + count).flat())
+  }
+  await applyHeaderMode(false)
+  await verifyMetadata(false)
+  await verifyHeaderlessPage(0, 20)
+  await expect(next).toBeEnabled()
+  await next.click()
+  await verifyHeaderlessPage(20, 6)
+  await expect(next).toBeDisabled()
+  const ordinaryHeaderless = refresh()
+  await frame.getByRole('treeitem', { name: `gbk-quoted.${source.format}`, exact: true }).locator('.node-action').click()
+  const ordinaryHeaderlessResponse = await ordinaryHeaderless
+  expect(ordinaryHeaderlessResponse.status()).toBe(200)
+  expect(ordinaryHeaderlessResponse.request().postData()).toBeNull()
+  await verifyMetadata(false)
+  await page.reload()
+  await expect(headerSelector).toContainText(/首行为数据|First row is data/)
+  await verifyHeaderlessPage(0, 20)
+  await frame.locator('.preview-panel').screenshot({ path: resolve(artifactDir, `headerless-${source.format}-preview.png`) })
+  expect((await verifyOriginalDownload(page, frame, source)).checksum).toBe(checksum)
+  await applyHeaderMode(true)
+  await verifyMetadata(true)
+  await verifyPage(0, 20)
   return { ...source, encoding: 'gbk', first_page_rows: 20, last_page_rows: 5,
     last_page_disabled: true, metadata_verified: true, ordinary_refresh: true,
-    reopened: true, download_sha256: checksum, encoding_request_verified: true }
+    reopened: true, download_sha256: checksum, encoding_request_verified: true,
+    header_mode: { tested_has_header: false, rows: 26, columns: ['Column1', 'Column2', 'Column3'],
+      first_record_verified: true, paginated_rows_verified: true, request_verified: true,
+      ordinary_refresh_preserved: true, reopened: true, source_unchanged: true, restored: true } }
 }
 
 async function verifyWorkbook(page, api, source, artifactDir) {
@@ -195,7 +237,7 @@ async function verifyWorkbook(page, api, source, artifactDir) {
       { name: 'HeaderOnly', columns: ['code', 'label'], verified_rows: 0 }
     ]
     const verifyRows = async (columns, rows) => {
-      await expect(content.getByRole('columnheader')).toHaveText(columns)
+      await expect(content.locator('.el-table__header-wrapper th')).toHaveText(columns)
       await expect(content.getByRole('cell')).toHaveCount(rows.length * columns.length)
       expect((await content.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(rows.flat())
     }
@@ -500,7 +542,7 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
       await expect.poll(() => received.length).toBeGreaterThan(0)
       if (source.case === 'records') {
         const table = frame.locator('.table-preview')
-        await expect(table.getByRole('columnheader')).toHaveText(['id', 'label'])
+        await expect(table.locator('.el-table__header-wrapper th')).toHaveText(['id', 'label'])
         await expect(table.getByRole('cell', { name: `记录${offset}`, exact: true })).toBeVisible()
         await expect(table.getByRole('cell')).toHaveCount(count * 2)
         expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(
@@ -525,7 +567,7 @@ async function verifyStructuredJSON(page, api, source, artifactDir) {
           geometry_columns: ['geometry'], geometry_column: 'geometry', source_srid: 4326, source_crs: 'EPSG:4326',
           transform_status: 'not_transformed', preview_hint: 'direct_renderable' })
         const table = frame.locator('.table-preview')
-        await expect(table.getByRole('columnheader')).toHaveText(['id', 'label'])
+        await expect(table.locator('.el-table__header-wrapper th')).toHaveText(['id', 'label'])
         expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(['1', '采样点', '2', '采样线'])
         await expect(table.getByRole('button', { name: /下一页|Go to next page/, exact: true })).toBeDisabled()
         await expect(table.locator('.map-container canvas').first()).toBeVisible()
@@ -853,7 +895,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
       expect(anonymousRefresh401).toBeLessThanOrEqual(1)
       writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-internal-artifact-lineage-browser-${phase}.json`),
         `${JSON.stringify({
-          schema_version: 'addp.manager-internal-artifact-lineage-browser/v13', phase,
+          schema_version: 'addp.manager-internal-artifact-lineage-browser/v14', phase,
           suite: 'manager-internal-artifact-lineage', run_id: env.ADDP_ONLINE_TEST_RUN_ID,
           result: 'passed', models: modelEvidence, model_generation_requests: modelGenerationRequests,
           browser_warning_errors: 0, failed_business_responses: 0,
@@ -961,7 +1003,7 @@ test('Manager lineage, cached previews, GBK tables, XLSX sheets and JSON formats
     expect(anonymousRefresh401).toBeLessThanOrEqual(1)
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v13',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v14',
       phase,
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,

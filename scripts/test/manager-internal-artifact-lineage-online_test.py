@@ -759,14 +759,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def browser_report(self, environment, evidence):
         if evidence.get("phase") == "generation-entry":
-            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
+            return {"schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
                     "phase": "generation-entry", "suite": "manager-internal-artifact-lineage",
                     "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "result": "passed",
                     "models": [{**model, **({"basic_preview": {**SUITE.FBX_BASIC_PROOF, "download_sha256": model["basic_preview_source"]["sha256"], "source_stream_sha256": model["basic_preview_source"]["sha256"]}} if model["format"] == "fbx" else {}), "generation_entry_visible": True, **({"download_sha256": model["sha256"], **({"source_model_loaded": True} if model["format"] == "obj" else {})} if model["format"] in SUITE.MESH_SOURCE_FACTS else {}), **({"conversion_options_verified": True} if model["format"] == "max" else {})} for model in evidence["models"]],
                     "model_generation_requests": 0, "browser_warning_errors": 0, "gpu_performance_diagnostics": {"count": 0, "stages": []},
                     "failed_business_responses": 0, "anonymous_refresh_401": 0}
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v13",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v14",
             "phase": evidence.get("phase", "cached-preview"),
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -799,7 +799,11 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "delimited_tables": [{**source, "encoding": "gbk", "first_page_rows": 20,
                 "last_page_rows": 5, "last_page_disabled": True, "metadata_verified": True,
                 "ordinary_refresh": True, "reopened": True, "download_sha256": source["sha256"],
-                "encoding_request_verified": True} for source in evidence["delimited"]],
+                "encoding_request_verified": True, "header_mode": {"tested_has_header": False,
+                "rows": 26, "columns": ["Column1", "Column2", "Column3"],
+                "first_record_verified": True, "paginated_rows_verified": True,
+                "request_verified": True, "ordinary_refresh_preserved": True,
+                "reopened": True, "source_unchanged": True, "restored": True}} for source in evidence["delimited"]],
             "workbook": {**evidence["workbook"], "sheets": [
                 {"name": "Cities", "columns": ["city_id", "city_name"], "verified_rows": 25},
                 {"name": "Readings", "columns": ["sensor", "temperature", "status"], "verified_rows": 1},
@@ -1704,6 +1708,15 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             lambda report: report["delimited_tables"][0].update(ordinary_refresh=False),
             lambda report: report["delimited_tables"][1].update(reopened=False),
             lambda report: report["delimited_tables"][0].update(encoding_request_verified=False),
+            lambda report: report["delimited_tables"][0].pop("header_mode"),
+            lambda report: report["delimited_tables"][0]["header_mode"].update(tested_has_header=True),
+            lambda report: report["delimited_tables"][1]["header_mode"].update(rows=25),
+            lambda report: report["delimited_tables"][0]["header_mode"].update(first_record_verified=False),
+            lambda report: report["delimited_tables"][0]["header_mode"].update(paginated_rows_verified=False),
+            lambda report: report["delimited_tables"][1]["header_mode"].update(request_verified=False),
+            lambda report: report["delimited_tables"][0]["header_mode"].update(ordinary_refresh_preserved=False),
+            lambda report: report["delimited_tables"][1]["header_mode"].update(restored=False),
+            lambda report: report.update(schema_version="addp.manager-internal-artifact-lineage-browser/v13"),
             lambda report: report["delimited_tables"][1].update(item_id=999),
             lambda report: report.update(schema_version="addp.manager-internal-artifact-lineage-browser/v5"),
         ):
@@ -1852,7 +1865,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
                 report = SUITE.run_browser(Path("/repository"), environment,
                                           source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
-            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v13")
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v14")
 
 
 if __name__ == "__main__":
