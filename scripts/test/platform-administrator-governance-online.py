@@ -130,7 +130,7 @@ class Scenario:
         old.request('POST', CHANGES, (403,), {'change_type': 'platform_identity_suspend',
                     'target_principal_id': self.credentials[target]['id'], 'reason': self.run_id+':wrong-applicant'})
         req = self.create(author, 'platform_identity_suspend', target)
-        self.review(target, req, status=403)
+        self.review(target, req, status=403 if target == 'security' else 409)
         self.review(reviewer, req, status=409, version=str(int(req['version'])+1))
         applied = self.review(reviewer, req)
         require(applied.get('status') == 'applied', 'suspension was not atomic')
