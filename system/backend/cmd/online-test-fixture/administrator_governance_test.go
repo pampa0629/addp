@@ -118,3 +118,25 @@ func TestAdministratorGovernanceIdentitiesAgainstPostgres(t *testing.T) {
 		}
 	}
 }
+
+func TestAdministratorGovernanceFixtureExportsEveryRequiredCredential(t *testing.T) {
+	values := map[string]string{"ADDP_ONLINE_TEST_TENANT_ID": "2", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "fixture-only-token"}
+	for _, role := range []string{"SYSTEM", "SECURITY", "AUDIT", "SUCCESSOR"} {
+		for _, field := range []string{"ID", "USERNAME", "PASSWORD", "TOTP"} {
+			values["ADDP_ONLINE_GOV_"+role+"_"+field] = "fixture-only-value"
+		}
+	}
+	output := filepath.Join(t.TempDir(), "identity.env")
+	if err := writeEnvironmentFile(output, values); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range values {
+		if !strings.Contains(string(data), "export "+key+"='"+value+"'\n") {
+			t.Fatalf("required governance fixture input omitted: %s", key)
+		}
+	}
+}
