@@ -40,6 +40,7 @@ console/frontend/
 - 模块管理查询恢复浏览器回归加载真实 System 前端，验证 Console 地址栏同步不重载 iframe、刷新和新标签恢复组合筛选与分页、单历史及前进/后退。Console 门禁和 CI 同时准备 System 锁定依赖；System 前端改动自动触发该宿主门禁。
 - Security 认证刷新回归加载真实纳管和字段策略表单，以 `Outdoor.Persons`、`userInfo.phone` 为资源与字段样例，验证资源选择、算法参数和调整依据在权限重新确认后保留；HTTP 响应使用确定性夹具，不写开发数据库。Console 门禁和 CI 同时准备 Security 锁定依赖，Security 前端改动自动触发宿主门禁。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
+- Element Plus 组件按页面模板实际依赖导入，不全量注册组件库；`App.vue` 统一提供随语言切换的 locale，入口仅显式注册 loading 指令并加载完整主题样式。开发启动时预构建依赖，避免首次导航替换优化产物；`make test-console-frontend` 的生产构建拒绝完整组件库安装器进入产物，现有浏览器门禁覆盖按需导入后的导航、认证和四主题交互。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
 - Console 外层 URL 是 iframe 集成模式下的公开路由事实源。子模块通过共享 Console navigation bridge 同步自身路由；同模块已完成的导航只同步地址栏，不得重载 iframe，浏览器前进/后退或跨页面导航再由 Console 驱动 iframe 到目标路由。公开状态分类、canonical URL 和单历史约束统一遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。
 - Graph 本体导航回归在同一 Console 门禁加载真实列表和详情，覆盖查看、稳定页签、单历史项、iframe 保留与前进/后退、刷新。图谱浏览回归另覆盖 Console 四主题切换，核对真实 G6 节点/边标签、选中与取消选中描边、详情、位置及视口保留。夹具仅模拟 HTTP 响应，拒绝 Graph 写请求，不写开发数据库；CI 同步准备 Graph 锁定依赖，Graph 前端改动会选中该宿主门禁。

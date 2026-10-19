@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
 
+// Route decisions are tested here; the denied page is rendered by browser tests.
+vi.mock('../../../common-frontend/basic/src/components/ModuleAccessDenied.vue', () => ({ default: {} }))
+
 describe('module guard during authoritative authorization refresh', () => {
   let store, api, transport, guard, context
   const target = { path: '/engines/2', fullPath: '/engines/2?tab=data-authorization', name: 'EngineDetail', matched: [{ meta: { requiresAuth: true } }] }

@@ -3,13 +3,39 @@ import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { readFileSync } from 'node:fs'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 const IS_E2E = process.env.ADDP_E2E === '1'
 
 export default defineConfig(withFrontendTestIsolation('console', {
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ dts: false, resolvers: [ElementPlusResolver({ importStyle: false })] }),
+    {
+      name: 'console-element-load-boundary',
+      generateBundle(_, bundle) {
+        for (const chunk of Object.values(bundle)) {
+          if (chunk.type !== 'chunk') continue
+          if (Object.entries(chunk.modules).some(([id, module]) => /\/element-plus\/es\/defaults\.mjs$/.test(id) && module.renderedLength > 0)) {
+            this.error(`Console must import Element Plus components on demand: ${chunk.fileName}`)
+          }
+        }
+      }
+    }
+  ],
+  // Prepare lazy component dependencies without changing optimizer generations
+  // while Console is synchronizing a module navigation.
+  optimizeDeps: {
+    noDiscovery: true,
+    include: [
+      ...Object.keys(JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).dependencies),
+      'element-plus/es'
+    ]
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
 
+// These state-machine tests simulate browser events without mounting a page.
+vi.mock('../../../common-frontend/basic/src/components/ModuleAccessDenied.vue', () => ({ default: {} }))
+
 describe('shared AuthStore role expiry', () => {
   let store, api, browserWindow, browserDocument, transport, context
   const start = new Date('2026-09-30T00:00:00Z').getTime()
