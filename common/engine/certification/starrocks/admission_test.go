@@ -149,11 +149,20 @@ func TestAdmissionValidatedStatementAndNativeTransactionBoundary(t *testing.T) {
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM source WHERE id>=2").Scan(&count); err != nil || count != 2 {
 		t.Fatalf("plain SELECT inside ordinary transaction failed: %v", err)
 	}
-	if err := tx.QueryRowContext(ctx, statement, int64(2)).Scan(&count); err != nil || count != 2 {
-		t.Fatalf("validated ordinary transaction cannot query source: %v", err)
+	err = tx.QueryRowContext(ctx, statement, int64(2)).Scan(&count)
+	var prepared *mysql.MySQLError
+	if !errors.As(err, &prepared) || prepared.Number != 5305 || string(prepared.SQLState[:]) != "25P01" {
+		t.Fatalf("fixed explicit-transaction prepared-query limitation changed; re-audit execution route: %v", err)
 	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("validated read commit failed: %v", err)
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("ordinary diagnostic transaction rollback failed: %v", err)
+	}
+	// The admitted route executes one guarded statement with server-side
+	// parameters using the SELECT-only account. It never retries a transaction
+	// failure with interpolation or promises a cross-statement snapshot.
+	reader := connect(t, true)
+	if err := reader.QueryRowContext(ctx, statement, int64(2)).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("validated single-statement parameter query failed: %v", err)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM write_probe").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("unexpected write beyond the positive control: %v", err)

@@ -43,6 +43,8 @@ Path(sys.argv[1]).write_text(json.dumps({
     'read_only_boundary': 'validated_statement',
     'database_read_only_transaction': False,
     'provider_implemented': False,
-    'scope': 'native protocol, shared SQL guard, ordinary read transaction and visible catalog',
+    'scope': 'native protocol, shared SQL guard, single-statement prepared read and visible catalog',
+    'explicit_transaction_prepared_query': False,
+    'cross_statement_snapshot': False,
 }, indent=2))
 POLICY
