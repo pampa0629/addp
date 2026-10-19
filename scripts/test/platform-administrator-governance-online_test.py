@@ -1,10 +1,13 @@
 import importlib
+import io
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stderr
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 SCENE = importlib.import_module('scripts.test.platform-administrator-governance-online')
 API = SCENE.API
@@ -32,6 +35,27 @@ def identity(role):
 
 
 class AdministratorGovernanceOnlineTest(unittest.TestCase):
+    def test_removed_route_requires_404_without_assuming_a_json_error_contract(self):
+        scene = SCENE.Scenario(environment())
+        scene.actors['system'] = API.GatewayClient(environment()['GATEWAY_URL'], 'officer-token', 10)
+        for status in (404, 200, 401, 403):
+            with self.subTest(status=status):
+                response = HTTPError('http://127.0.0.1/removed', status, 'status', {}, io.BytesIO(b'404 page not found'))
+                with patch('urllib.request.urlopen', side_effect=response):
+                    if status == 404:
+                        scene.assert_legacy_route_removed()
+                    else:
+                        with self.assertRaises(API.SuiteError): scene.assert_legacy_route_removed()
+
+    def test_failure_diagnostics_do_not_copy_http_response_or_credentials(self):
+        failure = API.SuiteError('POST /login returned HTTP 401 (raw-secret-never-export)')
+        with patch.object(SCENE, 'validate_hosted'), patch.object(SCENE.PREFLIGHT, 'run_preflight'), \
+             patch.dict(os.environ, environment(), clear=True), patch.object(SCENE.Scenario, 'run', side_effect=failure):
+            output = io.StringIO()
+            with redirect_stderr(output): self.assertEqual(SCENE.main(), 1)
+            self.assertIn('http-401', output.getvalue())
+            self.assertNotIn('raw-secret-never-export', output.getvalue())
+
     def test_profile_rejects_personal_development_before_any_request(self):
         valid = environment()
         self.addCleanup(patch.stopall)

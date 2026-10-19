@@ -7,11 +7,14 @@ import hmac
 import json
 import os
 import platform
+import re
 import secrets
 import struct
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from importlib import import_module
 from pathlib import Path
 
@@ -27,9 +30,13 @@ BROWSER_PROOFS = {'real_mfa', 'role_matrix', 'request_created', 'independent_rev
                   'one_time_recovery', 'secret_memory_only', 'old_session_revoked', 'new_login'}
 
 
+class GovernanceAssertion(API.SuiteError):
+    """Only fixed, owner-authored assertion messages may be reported publicly."""
+
+
 def require(condition, message):
     if not condition:
-        raise API.SuiteError(message)
+        raise GovernanceAssertion(message)
 
 
 def totp(secret, at):
@@ -83,6 +90,8 @@ class Scenario:
         self.stage = 'authentication'
 
     def login(self, role):
+        phase = self.stage
+        self.stage = phase + '-password'
         credentials = self.credentials[role]
         result = self.public.request('POST', '/api/v1/system/login', (200,),
                                      {key: credentials[key] for key in ('username', 'password')}).payload
@@ -94,18 +103,36 @@ class Scenario:
             time.sleep(max(0, (previous+1)*30 - now) + .15)
         now = time.time()
         self.used_steps[credentials['totp']] = int(now)//30
+        self.stage = phase + '-mfa'
         result = self.public.request('POST', '/api/v1/system/auth/mfa-verifications', (200,),
                     {'challenge_token': result['mfa']['challenge_token'], 'code': totp(credentials['totp'], now)}).payload
         if result.get('next_action') == 'select_context':
+            self.stage = phase + '-context-selection'
             result = {'session': self.public.request('POST', '/api/v1/system/auth/context-selections', (200,),
                         {'selection_ticket': result['selection']['selection_ticket'], 'context_type': 'platform'}).payload}
         token = result.get('session', {}).get('access_token')
         require(isinstance(token, str) and token.startswith('addp_at_'), 'login omitted access token')
         client = API.GatewayClient(self.env['GATEWAY_URL'], token, 10)
+        self.stage = phase + '-auth-context'
         assert_identity(client.request('GET', CONTEXT, (200,)).payload,
                         'system' if role == 'successor' else role, credentials['id'])
         self.actors[role] = client
+        self.stage = phase
         return client
+
+    def assert_legacy_route_removed(self):
+        # An unregistered Gin route has no JSON response contract. Check its
+        # actual HTTP status without passing it through the JSON API transport.
+        client = self.actors['system']
+        request = urllib.request.Request(client.base_url + '/api/v1/system/platform/identity_changes',
+                    headers={'Authorization': 'Bearer ' + client.token}, method='GET')
+        try:
+            with urllib.request.urlopen(request, timeout=client.timeout) as response:
+                status = response.status
+        except urllib.error.HTTPError as error:
+            with error:
+                status = error.code
+        require(status == 404, 'removed governance route must return HTTP 404')
 
     def create(self, role, kind, target, **extra):
         body = {'change_type': kind, 'target_principal_id': self.credentials[target]['id'],
@@ -202,13 +229,17 @@ class Scenario:
 
     def run(self):
         for role in ROLES:
+            self.stage = 'authentication-' + role
             self.login(role)
+        self.stage = 'tenant-boundary'
         negative = API.GatewayClient(self.env['GATEWAY_URL'], self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 10)
         identity = negative.request('GET', CONTEXT, (200,)).payload
         require(identity.get('context', {}).get('type') == 'tenant', 'negative identity is not Tenant scoped')
         negative.request('GET', CHANGES, (403,))
+        self.stage = 'audit-write-boundary'
         self.actors['audit'].request('POST', '/api/v1/system/platform/users', (403,), {})
-        self.actors['system'].request('GET', '/api/v1/system/platform/identity_changes', (404,))
+        self.stage = 'legacy-route-removed'
+        self.assert_legacy_route_removed()
         for role in ROLES:
             self.pause_restore(role)
         self.recovery()
@@ -234,10 +265,21 @@ def main():
         PREFLIGHT.run_preflight(args)
         scene = Scenario(os.environ)
         report = scene.run()
-    except Exception:
+    except Exception as error:
         # No raw exception, HTTP body, password, proof or TOTP in public logs.
         stage = scene.stage if scene else 'preflight'
-        print('Platform administrator governance acceptance failed at ' + stage + '; no sensitive response retained', file=sys.stderr)
+        diagnostic = 'unexpected-exception'
+        if isinstance(error, GovernanceAssertion):
+            diagnostic = str(error)
+        elif isinstance(error, API.SuiteError):
+            status = re.search(r' returned HTTP ([1-5][0-9]{2}) ', str(error))
+            if status:
+                diagnostic = 'http-' + status[1]
+            elif str(error).endswith('returned invalid JSON'):
+                diagnostic = 'invalid-json'
+            else:
+                diagnostic = 'api-transport'
+        print('Platform administrator governance acceptance failed at ' + stage + '; ' + diagnostic + '; no sensitive response retained', file=sys.stderr)
         return 1
     print(json.dumps(report, sort_keys=True))
     return 0
