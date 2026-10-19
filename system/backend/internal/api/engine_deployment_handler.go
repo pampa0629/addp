@@ -241,7 +241,7 @@ func (h *EngineDeploymentHandler) Update(c *gin.Context) {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
-	value, err := h.service.Update(c.Request.Context(), c.Param("deployment_id"), input, iamAuditMetadata(c))
+	value, err := h.service.Update(c.Request.Context(), c.Param("deployment_id"), input, iamAuditMetadataWithStatus(c, http.StatusOK))
 	if err != nil {
 		engineDeploymentError(c, err)
 		return

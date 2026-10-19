@@ -1,11 +1,25 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/testsupport"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	commonauth "github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
@@ -135,5 +149,127 @@ func TestEngineDeploymentJSONAcceptsCanonicalCreateAndUpdate(t *testing.T) {
 				t.Fatalf("canonical admission: %+v %v", input, err)
 			}
 		}
+	}
+}
+
+func TestEngineDeploymentHTTPAuditAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("requires standard System PostgreSQL gate")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := u.Query()
+	query.Set("search_path", "system")
+	u.RawQuery = query.Encode()
+	db, err := gorm.Open(postgres.Open(u.String()), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	reset := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := db.WithContext(ctx).Exec("DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	reset()
+	t.Cleanup(reset)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	identity := iam.NewRepository(db)
+	principal := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
+	if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
+		if err := tx.CreatePrincipal(ctx, principal); err != nil {
+			return err
+		}
+		return tx.CreateUser(ctx, &iam.User{ID: principal.ID, DisplayName: "Deployment audit fixture"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	node, err := service.NewHostNodeService(repository.NewHostNodeRepository(db)).Create(ctx, models.HostNodeInput{DisplayName: "VM", NodeKind: "virtual", Enabled: &enabled, Addresses: []string{}, AllowedModuleBindings: []models.HostNodeModuleBinding{}}, iam.AuditMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewEngineDeploymentService(repository.NewEngineDeploymentRepository(db))
+	var input models.EngineDeploymentInput
+	if err := json.Unmarshal([]byte(engineDeploymentAPIInput()), &input); err != nil {
+		t.Fatal(err)
+	}
+	input.DeclaredNodeID = node.NodeID
+	created, err := svc.Create(ctx, input, iam.AuditMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := testIAMActorContext("platform")
+	actor.Principal.ID = strconv.FormatInt(principal.ID, 10)
+	actor.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "91", RoleKey: "custom.deployment", Scope: commonauth.AssignmentScope{Type: "platform"}, Permissions: []string{"platform.engine_deployment.update", "platform.host_node.read"}, SourceType: "bootstrap", ValidFrom: actor.Token.IssuedAt}}
+	runtime := &IAMRuntime{Authentication: func(c *gin.Context) {
+		if err := sharedauth.SetAuthContextForGin(c, actor); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	}, UserAccessCredential: func(c *gin.Context) { c.Next() }}
+	router := gin.New()
+	if err := RegisterEngineDeploymentRoutes(router.Group("/api/v1/system"), runtime, &EngineDeploymentHandler{service: svc}); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/system/platform/engine_deployments/" + created.DeploymentID
+	update := func(version int64, enabled bool, status int) models.EngineDeployment {
+		t.Helper()
+		raw, err := json.Marshal(models.EngineDeploymentUpdateRequest{DisplayName: "Updated PostgreSQL", Enabled: &enabled, DeclaredNodeID: node.NodeID, Version: version})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := performModuleRegistryRequest(router, http.MethodPut, path, string(raw))
+		if response.Code != status {
+			t.Fatalf("update status=%d want=%d body=%s", response.Code, status, response.Body.String())
+		}
+		var result models.EngineDeployment
+		if status == http.StatusOK {
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return result
+	}
+	updated := update(1, true, http.StatusOK)
+	if updated.Version != 2 || updated.DisplayName != "Updated PostgreSQL" {
+		t.Fatalf("update=%+v", updated)
+	}
+	update(1, true, http.StatusConflict)
+	retired := update(2, false, http.StatusOK)
+	if retired.Version != 3 || retired.Enabled || retired.HostBindingReason != "deployment_disabled" {
+		t.Fatalf("retirement=%+v", retired)
+	}
+	stored, err := svc.Get(ctx, created.DeploymentID)
+	if err != nil || stored.Version != 3 || !reflect.DeepEqual(stored.Inventory, created.Inventory) {
+		t.Fatalf("stored=%+v err=%v", stored, err)
+	}
+	var total, correct int64
+	if err := db.Table("audit_logs").Where("event_name = ? AND entity_id = ?", "engine_deployment.updated", created.DeploymentID).Count(&total).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("audit_logs").Where("event_name = ? AND entity_id = ? AND http_method = ? AND http_status = ? AND result = ? AND principal_id = ?", "engine_deployment.updated", created.DeploymentID, "PUT", 200, "succeeded", principal.ID).Count(&correct).Error; err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || correct != 2 {
+		t.Fatalf("successful HTTP audit total=%d correct=%d", total, correct)
 	}
 }

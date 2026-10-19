@@ -101,7 +101,7 @@ POST 仅接受 `items`，每次 1—16 个显式成员；成员为 `scope/servic
 
 接口仅接受非委托 Platform User，独立 `platform.engine_deployment.read/create/update`，创建/更新还须 `platform.host_node.read`；迁移 000220 只向既有平台系统管理员发布三项权限，并沿既有触发器推进授权版本、撤销相关旧刷新族。其他角色、Tenant、Service、委托调用不因部署登记获得权限。界面保留冲突或失败输入；CAS 冲突和结果不明确时停止再次提交，只允许用户显式重新读取核对，首次登记则关闭后刷新列表，不构造已成功身份。
 
-T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS/声明历史/审计回滚及权限前向迁移、System/Console 前端门禁沿现有注册自动发现。精确 T2 入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"` 和同参数的 `--package migration`；本地须使用标准脚本核验的 `addp_iam_test`。产品接入 T4 与上述确定性验证分开登记，尚未通过不能写作真实运行已验收。
+T0 权限目录/Swagger、T1 输入与身份拒绝、T2 PostgreSQL 唯一性/CAS/声明历史/审计回滚及权限前向迁移、System/Console 前端门禁沿现有注册自动发现。精确 T2 入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test engine-deployments"`、同参数的 `--package api`（HTTP Handler 与 PostgreSQL 审计事务）和 `--package migration`；本地须使用标准脚本核验的 `addp_iam_test`。产品接入 T4 与上述确定性验证分开登记，尚未通过不能写作真实运行已验收。
 
 ### 4.5 部署侧自动发现来源
 
