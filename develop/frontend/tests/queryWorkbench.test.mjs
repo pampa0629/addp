@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { reactive, effect, stop } from 'vue'
 import assert from 'node:assert/strict'
 import {
   buildQueryExecutionContract,
@@ -210,7 +212,6 @@ assert.equal(result.execution_id, 'execution-1')
 assert.equal(result.truncated, true)
 assert.equal(result.effect, 'read')
 
-console.log('query workbench tests passed')
 
 assert.equal(queryErrorMessage('permission_denied', '', key => key), 'common.executionFailure.permission_denied')
 assert.equal(queryResultFromExecution({ status: 'failed', error_details: { category: 'timeout' } }).error_code, 'timeout')
@@ -227,3 +228,29 @@ assert.equal(monacoLanguageForQuery('es_dsl'), 'json')
 assert.equal(formatterLanguageForQuery('es_dsl'), 'json')
 assert.equal(formatGeneratedQueryForEditor('{"query":{"match_all":{}}}', 'es_dsl'), '{\n  "query": {\n    "match_all": {}\n  }\n}')
 assert.equal(formatJSONQuery('{"id":9007199254740993}'), '{\n  "id": 9007199254740993\n}')
+
+// Exercise the actual editor predicate under Vue's dependency tracking. Defaults
+// are absent after parameter extraction; adding/removing them must update UI.
+const editorSource = await readFile(new URL('../src/views/QueryEditor.vue', import.meta.url), 'utf8')
+const defaultPredicateSource = editorSource.match(/const hasQueryParameterDefault = parameter => \([\s\S]*?\n\)/)?.[0]
+assert.ok(defaultPredicateSource)
+const hasEditorDefault = new Function(`return ${defaultPredicateSource.replace('const hasQueryParameterDefault = ', '')}`)()
+const parameterWithoutDefault = reactive({ name: 'text', type: 'string' })
+const renderedDefaultStates = []
+const defaultEffect = effect(() => renderedDefaultStates.push(hasEditorDefault(parameterWithoutDefault)))
+parameterWithoutDefault.default = ''
+assert.deepEqual(renderedDefaultStates, [false, true], 'adding an empty text default must immediately render its input')
+delete parameterWithoutDefault.default
+assert.deepEqual(renderedDefaultStates, [false, true, false], 'removing a default must immediately hide its input')
+for (const value of [0, false, '']) {
+  parameterWithoutDefault.default = value
+  assert.equal(renderedDefaultStates.at(-1), true)
+  delete parameterWithoutDefault.default
+  assert.equal(renderedDefaultStates.at(-1), false)
+}
+stop(defaultEffect)
+assert.equal(hasEditorDefault(Object.assign(Object.create({ default: 'inherited' }), { type: 'string' })), false)
+assert.equal(hasEditorDefault({ type: 'string', default: null }), false)
+assert.equal(hasEditorDefault({ type: 'relation', default: { locator: 'addp://engine/32/path/business/source?type=table' } }), true)
+
+console.log('query workbench tests passed')

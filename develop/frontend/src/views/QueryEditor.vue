@@ -1062,10 +1062,11 @@ const allParameterNames = computed(() => queryParameters.value.map(parameter => 
 const hasUnresolvedParameters = computed(() => referencedParameterNames.value.some(name => !definedParameterNames.value.includes(name)))
 const hasUnusedParameters = computed(() => definedParameterNames.value.some(name => !referencedParameterNames.value.includes(name)))
 const hasRelationParameters = computed(() => relationQueryParameters.value.length > 0)
+// Read absent default keys before checking ownership so Vue tracks later additions.
 const hasQueryParameterDefault = parameter => (
   parameter?.type === 'relation'
     ? Boolean(String(parameter?.default?.locator || '').trim())
-    : Object.prototype.hasOwnProperty.call(parameter || {}, 'default') && parameter.default !== null && parameter.default !== undefined
+    : parameter?.default !== null && parameter?.default !== undefined && Object.prototype.hasOwnProperty.call(parameter || {}, 'default')
 )
 const missingParameterDefaultCount = computed(() => queryParameters.value.filter(parameter => !hasQueryParameterDefault(parameter)).length)
 const hasMissingParameterDefaults = computed(() => missingParameterDefaultCount.value > 0)
