@@ -2329,7 +2329,11 @@ def test_vector_zonal_persistence_oracle_rejects_corruption(vector_zonal_persist
     module,original,_=vector_zonal_persistence
     root=tmp_path/'copy';shutil.copytree(original,root);path=root/'outputs/center.gpkg'
     if corruption in ('value','count','null','attribute','order','geometry','crs','schema','missing_row'):
-        data=ogr.Open(str(path),1);layer=data.GetLayer(0);features=list(layer);feature=features[0]
+        data=ogr.Open(str(path),1);layer=data.GetLayer(0)
+        # OGR feature definitions are shared with their layer. Alter the schema
+        # only before materializing features, so no stale field arrays survive.
+        features=list(layer) if corruption!='schema' else []
+        feature=features[0] if features else None
         if corruption=='value':feature.SetField('zonal_sum',999999.)
         elif corruption=='count':feature.SetField('zonal_valid_count',-1)
         elif corruption=='null':feature=features[3];feature.SetField('zonal_sum',0.)
