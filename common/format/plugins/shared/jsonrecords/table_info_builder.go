@@ -9,12 +9,13 @@ import (
 )
 
 type TableInfoBuilder struct {
-	geometryField string
-	fieldTypes    map[string]datatype.FieldType
-	geometryTypes map[string]struct{}
-	propertySet   map[string]struct{}
-	bounds        geometryBounds
-	srid          int
+	geometryField    string
+	geometryNullable bool
+	fieldTypes       map[string]datatype.FieldType
+	geometryTypes    map[string]struct{}
+	propertySet      map[string]struct{}
+	bounds           geometryBounds
+	srid             int
 }
 
 func NewTableInfoBuilder(geometryField string) *TableInfoBuilder {
@@ -39,6 +40,8 @@ func (b *TableInfoBuilder) AddFeature(feature *Feature) {
 			b.srid = GeometrySRID(feature.Geometry)
 		}
 		b.bounds.AddGeometry(feature.Geometry)
+	} else {
+		b.geometryNullable = true
 	}
 	for key, val := range feature.Properties {
 		b.propertySet[key] = struct{}{}
@@ -92,10 +95,14 @@ func (b *TableInfoBuilder) Build() TableInfoBuildResult {
 		fields = append(fields, datatype.FieldInfo{
 			Name:     geometryField,
 			Type:     datatype.FieldTypeGeometry,
-			Nullable: false,
+			Nullable: b.geometryNullable,
 		})
 	}
 	for _, name := range fieldNames {
+		// A null-only property is the same column once real geometry is observed.
+		if b.HasGeometry() && name == geometryField && b.fieldTypes[name] == datatype.FieldTypeUnknown {
+			continue
+		}
 		fieldType := b.fieldTypes[name]
 		if fieldType == "" {
 			fieldType = datatype.FieldTypeUnknown

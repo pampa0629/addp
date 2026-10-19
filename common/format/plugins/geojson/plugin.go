@@ -528,7 +528,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			result.Spatial = selected.Spatial
 		}
 		info := result.Table.Clone()
-		r.tableInfo = mergeTableInfo(r.tableInfo, info)
+		r.tableInfo = jsonrecords.MergeTableInfo(r.tableInfo, info)
 		if r.spatialInfo == nil && result.Spatial != nil {
 			r.spatialInfo = result.Spatial.Clone()
 		}
@@ -684,27 +684,6 @@ func writerFields(tableInfo *datatype.TableInfo) []string {
 		fields = append(fields, name)
 	}
 	return fields
-}
-
-func mergeTableInfo(current, next *datatype.TableInfo) *datatype.TableInfo {
-	if current == nil {
-		return next
-	}
-	if next == nil {
-		return current
-	}
-	existing := make(map[string]struct{}, len(current.Fields))
-	for _, field := range current.Fields {
-		existing[field.Name] = struct{}{}
-	}
-	copied := current.Clone()
-	for _, field := range next.Fields {
-		if _, ok := existing[field.Name]; ok {
-			continue
-		}
-		copied.Fields = append(copied.Fields, field)
-	}
-	return copied
 }
 
 func jsonTableRow(row map[string]interface{}, fields []string) map[string]interface{} {
