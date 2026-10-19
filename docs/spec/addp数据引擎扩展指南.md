@@ -4,7 +4,9 @@
 
 ---
 
-## StarRocks 准入范围（2026-10-18 已确认）
+## StarRocks 接入范围（2026-10-20 验收）
+
+当前独立 `engine_type=starrocks` 只读插件已实现。源码 `22fce34b3b774ef32b148268df09c8a37cbda66c` 的 [Linux ARM64／amd64 原生协议、Provider 与 Business 持久化门禁39270948341](https://github.com/pampa0629/addp/actions/runs/39270948341) 及 [Hosted 普通 User 页面验收39271441409](https://github.com/pampa0629/addp/actions/runs/39271441409/job/118124504710) 均有完整通过报告和零残留证明；覆盖登记、扫描、预览、属性及参数化只读 SQL，精确数值和原生空值语义通过核验。本机 Engine32 也已完成管理员交互验收。各层证据及后续前端修复的独立复验状态见[验收场景](testing/scenarios/同步与引擎消费.md#starrocks-consumer-flow)；以下保留准入决策与失败根因，不能将历史待验收描述当作当前状态。
 
 先验证官方 `starrocks/allin1-ubuntu:3.5.21` OCI 索引 `sha256:faf5f6b17a301b276b829482af11d350004833dc9162232e1083a2aad0fa8b2a` 的 Linux ARM64／amd64 原生启动和 MySQL 协议，不以镜像 manifest 或交叉编译代替实库。协议测试归 `common/engine/certification/starrocks/`，Business 只拥有数据库与样例，不登记 Engine；准入未通过前不添加生产插件或 capabilities。
 
@@ -16,7 +18,7 @@
 
 原生协议准入 39226567219（ebc44ad3d，准入输入与0c3579bc6相同）已在 Linux ARM64／amd64 分别通过五项顶层测试、七组 Decimal 子例和零残留清理。它不包含之后新增的 d0ef3a862 共享执行入口；正式 Provider 的连接身份、精确目录查找、字段、读取来源、参数化执行及平台消费仍需在新源码执行 T2／T4。首版生产插件仅声明普通表目录、字段／有序主键及统计、BatchRead 与参数化只读 SQL，不声明游标会话、取消、视图、写入、空间、CDC 或跨批快照；相应能力必须经后续独立验收才能开放。
 
-Business 后续使用独立 `-starrocks` profile，先不加入 `-all`，官方默认单机 FE／BE 路线、独立持久卷及管理员／业务账号；SQL／FE HTTP／BE HTTP 首选回环端口分别为 9031／8031／8041。测试使用带归属标签的临时镜像、容器、卷和随机回环端口，退出验证零残留，不操作个人 Business 服务。
+Business 使用独立 `-starrocks` profile，不加入 `-all`，官方默认单机 FE／BE 路线、独立持久卷及管理员／业务账号；SQL／FE HTTP／BE HTTP 首选回环端口分别为 9031／8031／8041。测试使用带归属标签的临时镜像、容器、卷和随机回环端口，退出验证零残留，不操作个人 Business 服务。
 
 ## 一、扩展步骤
 
