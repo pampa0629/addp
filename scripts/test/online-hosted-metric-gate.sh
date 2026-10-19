@@ -84,7 +84,8 @@ PY
 stop_online_fixture() {
   if [ "$ADDP_ONLINE_METRIC_ENGINE_TYPE" = postgresql ]; then
     run_logged bash business/scripts/online-metric-postgres-fixture.sh stop
-    return
+    # A bare return in an EXIT trap can reuse the trap's original status.
+    return "$?"
   fi
   run_logged tidb_compose down --volumes --remove-orphans
   local remaining
