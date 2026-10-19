@@ -23,6 +23,22 @@ func NewEngineDeploymentRepository(db *gorm.DB) *EngineDeploymentRepository {
 	return &EngineDeploymentRepository{db: db}
 }
 
+func (r *EngineDeploymentRepository) Transaction(ctx context.Context, fn func(*EngineDeploymentRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fn(NewEngineDeploymentRepository(tx)) })
+}
+
+func (r *EngineDeploymentRepository) RegisteredSources(ctx context.Context, keys [][3]string) (map[[3]string]string,error) {
+	result:=make(map[[3]string]string)
+	if len(keys)==0 {return result,nil}
+	if len(keys)>128 {return nil,commonapi.ErrBadRequest}
+	query:=r.db.WithContext(ctx).Model(&models.EngineDeployment{})
+	for _,key:=range keys {query=query.Or("inventory->'source'->>'docker_engine_id'=? AND inventory->'source'->>'project'=? AND inventory->'services'->0->>'service'=?",key[0],key[1],key[2])}
+	var rows []models.EngineDeployment
+	if err:=query.Select("deployment_id","inventory").Find(&rows).Error;err!=nil{return nil,err}
+	for _,row:=range rows {if len(row.Inventory.Services)==1 {result[[3]string{row.Inventory.Source.DockerEngineID,row.Inventory.Source.Project,row.Inventory.Services[0].Service}]=row.DeploymentID}}
+	return result,nil
+}
+
 func deploymentDBError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return commonapi.ErrNotFound

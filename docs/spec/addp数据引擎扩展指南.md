@@ -14,6 +14,8 @@
 
 历史准入 39191847551 的 ARM64／amd64 原生实库均通过启动、事务外参数查询、目录字段及七组 Decimal 协议验证，但显式事务内参数预处理失败，整体未通过，不能据此登记生产能力。固定源码与双架构实库已定位两项协议差异：[ConnectProcessor 在 COM_STMT_PREPARE 时包装 PrepareStmt，再调用事务语句检查](https://github.com/StarRocks/starrocks/blob/3.5.21/fe/fe-core/src/main/java/com/starrocks/qe/ConnectProcessor.java)，[ExplicitTxnStatementValidator 不接受 PrepareStmt](https://github.com/StarRocks/starrocks/blob/3.5.21/fe/fe-core/src/main/java/com/starrocks/transaction/ExplicitTxnStatementValidator.java)，因此现有“开启普通事务后绑定参数”的共享路线返回 5305；认证须分别对照普通 SELECT 与带参数 SELECT，不通过客户端插值绕过。另据固定 [Type.getMysqlResultSetFieldLength](https://github.com/StarRocks/starrocks/blob/3.5.21/fe/fe-core/src/main/java/com/starrocks/catalog/Type.java)，Decimal 协议长度为 precision + 3 + 小数点字符数；现有 MySQL 驱动仅扣除符号与小数点，所以原始 ColumnType.DecimalSize 报告 P+2（Decimal(38,18) 报告 40,18）。认证分别检查 DESC 的真实声明和空结果／表达式的原始协议长度，不能将原始 40 当成真实精度。用户已确认单语句不包显式事务及 Provider 专属字段映射的正式路线。准入保留原生只读事务和显式事务参数预处理不支持的反例，同时要求专用 SELECT 账号的事务外参数查询通过；不得在失败后回退、插值或按结果值推断类型。新准入通过后方可开发生产插件，随后分别执行 Provider T2 和平台 T4。
 
+原生协议准入 39226567219（ebc44ad3d，准入输入与0c3579bc6相同）已在 Linux ARM64／amd64 分别通过五项顶层测试、七组 Decimal 子例和零残留清理。它不包含之后新增的 d0ef3a862 共享执行入口；正式 Provider 的连接身份、精确目录查找、字段、读取来源、参数化执行及平台消费仍需在新源码执行 T2／T4。首版生产插件仅声明普通表目录、字段／有序主键及统计、BatchRead 与参数化只读 SQL，不声明游标会话、取消、视图、写入、空间、CDC 或跨批快照；相应能力必须经后续独立验收才能开放。
+
 Business 后续使用独立 `-starrocks` profile，先不加入 `-all`，官方默认单机 FE／BE 路线、独立持久卷及管理员／业务账号；SQL／FE HTTP／BE HTTP 首选回环端口分别为 9031／8031／8041。测试使用带归属标签的临时镜像、容器、卷和随机回环端口，退出验证零残留，不操作个人 Business 服务。
 
 ## 一、扩展步骤

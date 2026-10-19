@@ -110,7 +110,7 @@ func TestEngineDeploymentAPIRejectsUnauthorizedAndMalformedInput(t *testing.T) {
 }
 
 func engineDeploymentAPIInput() string {
-	return `{"display_name":"Postgres","enabled":true,"declared_node_id":"10000000-0000-4000-8000-000000000001","inventory":{"schema":"addp.business-deployment-inventory/v1","observed_at":"2026-10-19T00:00:00Z","source":{"type":"docker_compose","runtime":"desktop_linux_vm","docker_engine_id":"fixture-engine","project":"business"},"services":[{"service":"postgres","engine_type":"postgresql","containers":[{"container_id":"` + strings.Repeat("a", 64) + `","started_at":"2026-10-18T00:00:00Z","restart_count":0,"published_ports":[{"address":"::","port":5433,"container_port":5432,"protocol":"tcp"}]}]}]}}`
+	return `{"display_name":"Postgres","enabled":true,"declared_node_id":"10000000-0000-4000-8000-000000000001","inventory":{"schema":"addp.engine-deployment-inventory/v1","observed_at":"2026-10-19T00:00:00Z","source":{"type":"docker_compose","runtime":"desktop_linux_vm","docker_engine_id":"fixture-engine","project":"business"},"services":[{"service":"postgres","engine_type":"postgresql","containers":[{"container_id":"` + strings.Repeat("a", 64) + `","started_at":"2026-10-18T00:00:00Z","restart_count":0,"published_ports":[{"address":"::","port":5433,"container_port":5432,"protocol":"tcp"}]}]}]}}`
 }
 func TestEngineDeploymentJSONAcceptsCanonicalCreateAndUpdate(t *testing.T) {
 	for _, update := range []bool{false, true} {

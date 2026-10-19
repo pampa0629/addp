@@ -166,6 +166,7 @@ func (p *MySQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connection
 
 func (p *MySQLPlugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {
 	return shared.MySQLCompatibleQueryProvenance{
+		TableEngine:       "InnoDB",
 		EngineName:        p.DisplayName(),
 		DefaultPort:       p.DefaultPort(),
 		CatalogModel:      p.EngineCatalogModel(),

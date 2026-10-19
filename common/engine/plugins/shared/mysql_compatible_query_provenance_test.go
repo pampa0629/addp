@@ -133,6 +133,7 @@ func TestMySQLCompatibleQueryProvenanceDoesNotMislabelComputedProjection(t *test
 
 func testMySQLCompatibleQueryProvenance(engineName string) MySQLCompatibleQueryProvenance {
 	return MySQLCompatibleQueryProvenance{
+		TableEngine:  "InnoDB",
 		EngineName:   engineName,
 		DefaultPort:  2881,
 		CatalogModel: plugin.TabularCatalogModel(plugin.EngineCatalogTermDatabase),

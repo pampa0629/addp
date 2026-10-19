@@ -13,9 +13,9 @@ import (
 func deploymentTestInput() models.EngineDeploymentInput {
 	enabled := true
 	return models.EngineDeploymentInput{DisplayName: "Business PostgreSQL", Enabled: &enabled, DeclaredNodeID: "10000000-0000-4000-8000-000000000001",
-		Inventory: models.BusinessDeploymentInventory{Schema: "addp.business-deployment-inventory/v1", ObservedAt: "2026-10-19T00:00:00Z",
-			Source:   models.BusinessDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "source-daemon", Project: "business"},
-			Services: []models.BusinessDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.BusinessDeploymentContainer{{ContainerID: strings.Repeat("a", 64), StartedAt: "2026-10-18T00:00:00.123456789Z", PublishedPorts: []models.BusinessDeploymentPort{{Address: "::", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}}
+		Inventory: models.EngineDeploymentInventory{Schema: "addp.engine-deployment-inventory/v1", ObservedAt: "2026-10-19T00:00:00Z",
+			Source:   models.EngineDeploymentSource{Type: "docker_compose", Runtime: "desktop_linux_vm", DockerEngineID: "source-daemon", Project: "business"},
+			Services: []models.EngineDeploymentService{{Service: "postgres", EngineType: "postgresql", Containers: []models.EngineDeploymentContainer{{ContainerID: strings.Repeat("a", 64), StartedAt: "2026-10-18T00:00:00.123456789Z", PublishedPorts: []models.EngineDeploymentPort{{Address: "::", Port: 5433, ContainerPort: 5432, Protocol: "tcp"}}}}}}}}
 }
 
 func TestEngineDeploymentDeclarationValidation(t *testing.T) {

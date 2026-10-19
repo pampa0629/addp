@@ -237,7 +237,7 @@ bash scripts/prod/start.sh
     - `start.sh` - 启动生产环境 (分步执行)
     - `stop.sh` - 停止生产服务
     - `health-check.sh` - 健康监控
-    - `swarm/` - Docker Swarm 高可用部署
+    - `swarm/` - 现存 Swarm 脚本，部署缺口与操作范围见[生产指南](../../scripts/prod/README.md#swarm)
   - 完整脚本文档参阅 [`scripts/README.md`](../../scripts/README.md)
 
 ### Backend 与 Worker 启动顺序

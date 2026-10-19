@@ -20,6 +20,8 @@ type MySQLCompatibleQueryProvenance struct {
 	BuildDSN          func(plugin.ConnectionInfo) (string, error)
 	IsSystemNamespace func(string) bool
 	DescribeFacts     func(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error)
+	// Native table engine admitted by the owner (for example InnoDB or StarRocks).
+	TableEngine string
 }
 
 type mysqlCompatibleRelationReference struct {
@@ -100,6 +102,9 @@ func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]m
 			if !ok {
 				return true, nil
 			}
+			if !relation.SchemaQualifier.IsEmpty() {
+				return false, p.readSetError("external or three-part catalog references are unsupported")
+			}
 			name := strings.TrimSpace(relation.Name.String())
 			if relation.DbQualifier.IsEmpty() && strings.EqualFold(name, "dual") {
 				return false, nil
@@ -128,7 +133,7 @@ func (p MySQLCompatibleQueryProvenance) resolveReadSet(
 	catalog mysqlCompatibleReadCatalog,
 ) (*plugin.QueryReadSet, error) {
 	defaultDatabase = strings.TrimSpace(defaultDatabase)
-	if !req.Options.ReadOnly || req.EngineID == 0 || defaultDatabase == "" || catalog == nil || p.IsSystemNamespace == nil {
+	if !req.Options.ReadOnly || req.EngineID == 0 || defaultDatabase == "" || catalog == nil || p.IsSystemNamespace == nil || strings.TrimSpace(p.TableEngine) == "" {
 		return nil, p.readSetError("query context is incomplete")
 	}
 	paths := make([]plugin.EngineCatalogPath, 0, len(references))
@@ -147,7 +152,7 @@ func (p MySQLCompatibleQueryProvenance) resolveReadSet(
 		}
 		if strings.TrimSpace(resolved.Database) == "" || strings.TrimSpace(resolved.Name) == "" ||
 			!strings.EqualFold(strings.TrimSpace(resolved.TableType), "BASE TABLE") ||
-			!strings.EqualFold(strings.TrimSpace(resolved.Engine), "InnoDB") || p.IsSystemNamespace(resolved.Database) {
+			!strings.EqualFold(strings.TrimSpace(resolved.Engine), p.TableEngine) || p.IsSystemNamespace(resolved.Database) {
 			return nil, p.readSetError("relation is not a business base table")
 		}
 		paths = append(paths, plugin.EngineCatalogBranchLeafPath(

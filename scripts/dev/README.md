@@ -39,7 +39,7 @@ scripts/dev/
 # 一键启动完整环境(基础设施 + 后端 + 前端)
 bash scripts/dev/start.sh
 
-# 访问服务
+# 开发首选地址（实际地址以启动输出和 .dev-state/ports.env 为准）
 # - Console: http://localhost:5170
 # - System: http://localhost:5173
 # - Manager: http://localhost:5174
@@ -51,11 +51,7 @@ bash scripts/dev/start.sh
 ```bash
 # 启动开发环境
 bash scripts/dev/start.sh
-# 自动执行:
-# 0. Go 依赖检查(go mod tidy,可跳过)
-# 1. 启动基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
-# 2-7. 启动后端服务(System, Manager, Meta, Transfer, bounded/continuous Workers, Orchestrator, Develop, Gateway)
-# 8. 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
+# 按下文 start.sh 的依赖、启动与就绪流程执行
 
 # 停止所有服务
 bash scripts/dev/stop.sh
@@ -91,27 +87,18 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和真实模块依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
+指定模块时，按所选模块的依赖并集形成启动清单，复用运行中的依赖、补齐缺失项。具体模块边界见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)，例如单独选择 Asset 不启动 Meta Backend/Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
 
 `--exact-process` 与 `--wait-live` 不是日常开发参数，只允许 `ADDP_ONLINE_HOST=1` 的专用 Runner 使用。它们复用同一构建和正式二进制入口，只为 T4 控制 Manager → System → Gateway 的真实乱序；`stop-exact-process.sh` 同样受专用主机开关保护，并在发信号前验证 PID 对应当前 checkout 的目标 ADDP 二进制。`stop-exact-process.sh --force -manager` 直接发出 SIGKILL，用于异常退出验收；省略 `--force` 时先发送 SIGTERM，等待优雅退出。强制停止仅用于专用 Runner 的故障阶段。普通模块启动仍只有上述自动依赖路径。
 
 **执行步骤**:
-1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
-2. **Step 1**: 启动基础设施(调用 `scripts/infra/up.sh`)
-   - **智能跳过**: 如果基础设施已运行,自动跳过此步骤
-   - **重启提示**: 提示用户如何手动重启基础设施
-3. **Step 2-7**: 启动后端服务(依赖顺序启动)
-   - System Backend (8180) - 其他服务依赖它
-   - Manager Backend (8081)
-   - Meta Backend (8082)
-   - Transfer Backend (8083)
-   - Transfer bounded Worker + Transfer continuous Worker + Meta Worker
-   - Develop Backend（内嵌 Query Execution Supervisor，领取全部 query execution）
-   - Orchestrator Backend (8084)
-   - Gateway (8000) - API 路由
-4. **就绪检查**: ADDP Backend 等待 `/health/ready` 返回 200；Engine Runtime 使用各自协议的 `/health`
-5. **Step 8**: 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
-6. **输出**: 显示所有访问地址和 PID
+1. 检查 Go 依赖（`go mod tidy`，可跳过）。
+2. 检查核心 Infra；未就绪时调用 `scripts/infra/up.sh`，已就绪则复用。所选观测能力异常单独报告，业务继续启动但命令返回非零；显式执行 `up.sh` 才应用设施配置或修复观测设施。
+3. 解析实际开发端口并保存到 `.dev-state/ports.env`；启动 System 和所选模块 Backend，各模块 Backend `/health/ready` 成功后启动其 Worker。
+4. 启动显式选择的 Runtime、Copilot 和 Agent，全部成功后启动 Gateway 与前端。无参数全量启动包含默认 Runtime；Engine Runtime 按各自协议检查 `/health`。
+5. 输出本次服务清单、实际访问地址与 PID。
+
+Develop Backend 内嵌 Query Execution Supervisor，领取全部 query execution。
 
 **环境变量**:
 ```bash
@@ -120,6 +107,9 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 ```
 
 **日志位置**:
+
+模块正文从“System → 模块管理 → 服务实例 → 查看日志”读取。下列路径是受控节点源，用于尚未登记就失败等本地诊断；引擎、前端和容器入口输出不等同于模块正文。完整契约见[日志规范](../../docs/spec/addp模块服务运行日志规范.md)。
+
 - 模块服务运行日志: `logs/runtime/<module>/<instance_id>/*.jsonl`；引擎和前端启动输出保留各自日志
 - 示例: `logs/runtime/system/<instance_id>/*.jsonl`、`logs/runtime/manager/<instance_id>/*.jsonl`；Worker 同样按独立实例分目录
 
@@ -271,34 +261,26 @@ Gateway (8000) - API 路由
 
 ### 服务启动失败
 
+先检查启动终端的失败信息及 Infra 状态，再读取当前工作区的端口分配与进程记录：
+
 ```bash
-# 1. 查看日志（INSTANCE_ID 设置为服务实例页面中的实际 ID）
-tail -f "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
-
-# 2. 检查基础设施
 bash scripts/infra/status.sh
-
-# 3. 检查端口占用
-lsof -i :8180  # System backend
-lsof -i :5433  # PostgreSQL
-
-# 4. 手动重启单个服务
-cd system/backend
-go run cmd/server/main.go
+sed -n '/^SYSTEM_BACKEND_PORT=/p' .dev-state/ports.env
+ps -p "$(cat .dev-pids/system.pid)" -o pid=,command=
 ```
+
+PID 文件或端口记录存在不代表服务已就绪；结合实际进程命令行核对工作区归属。已登记的实例从 System 页面读取日志；未登记的启动失败检查 `logs/runtime/system/<instance_id>/*.jsonl` 及启动终端输出。修正原因后，从项目根目录使用 `bash scripts/dev/restart.sh -system` 重启，不绕过标准入口手动运行后端。
 
 ### 健康检查超时
 
+先按上节核对进程，再从本工作区状态读取实际端口检查 Backend readiness：
+
 ```bash
-# 1. 确认服务实际启动
-ps aux | grep "go run"
-
-# 2. 手动测试健康检查
-curl http://localhost:8180/health/ready
-
-# 3. 查看服务日志（INSTANCE_ID 设置为实际实例 ID）
-cat "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
+SYSTEM_BACKEND_PORT=$(sed -n 's/^SYSTEM_BACKEND_PORT=//p' .dev-state/ports.env)
+curl -fsS "http://127.0.0.1:${SYSTEM_BACKEND_PORT:?未找到本工作区实际端口}/health/ready"
 ```
+
+不要用首选端口上的其他服务响应代替本次进程就绪。失败时结合对应实例日志定位原因；基础设施状态与端口归属遵循[端口规范](../../docs/spec/addp端口分配.md)。
 
 ### 前端启动失败
 
@@ -311,19 +293,14 @@ cd system/frontend
 rm -rf node_modules
 npm install
 
-# 3. 清理 Vite 缓存
-rm -rf node_modules/.vite
-npm run dev
+# 3. 返回项目根目录，由标准入口重启 System 后端与前端
+cd ../..
+bash scripts/dev/restart.sh -system
 ```
 
 ### PID 文件残留
 
-```bash
-# 如果 stop.sh 异常退出,可能残留 PID 文件
-# 手动清理
-rm -rf .dev-pids/
-pkill -f "go run"
-```
+从项目根目录重新运行 `bash scripts/dev/stop.sh`，由标准入口合并 PID 记录和工作区残留监听者并核验归属。失败时保留错误与 PID 证据，先排查归属或生命周期锁；不要先删除 `.dev-pids/`，也不要按通用进程名执行 `pkill`。停止顺序与互斥要求见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md)。
 
 ## 开发工作流
 
@@ -339,8 +316,7 @@ vim system/backend/internal/service/user_service.go
 # 3. 重启服务(自动重新编译)
 bash scripts/dev/restart.sh
 
-# 4. 查看日志
-tail -f "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
+# 4. 在 System → 模块管理 → 服务实例 → 查看日志中排查对应实例
 
 # 5. 停止环境
 bash scripts/dev/stop.sh
@@ -352,6 +328,7 @@ bash scripts/dev/stop.sh
 # 1. 添加依赖
 cd system/backend
 go get github.com/some/package
+cd ../..
 
 # 2. 清理依赖
 bash scripts/dev/modtidy.sh
@@ -360,33 +337,15 @@ bash scripts/dev/modtidy.sh
 bash scripts/dev/restart.sh
 ```
 
-### 切换分支
+### 同步 main 后更新依赖
 
-```bash
-# 1. 停止服务
-bash scripts/dev/stop.sh
-
-# 2. 切换分支
-git checkout feature/new-feature
-
-# 3. 更新依赖
-bash scripts/dev/modtidy.sh
-
-# 4. 重新启动
-bash scripts/dev/start.sh
-```
-
-## 已废弃的脚本
-
-- **run.sh** (已删除): 早期轻量级启动脚本,已被 `start.sh` 替代
-  - 原因: 缺少健康检查、日志管理、PID 管理
-  - 替代方案: 使用 `start.sh` + System 服务实例的“查看日志”入口 查看日志
+人工与 AI 开发均直接使用 `main`。同步代码后如需更新依赖或重启，先停止受影响的服务，再从项目根目录执行标准依赖整理和启动入口，不建立功能分支。依赖变更步骤见[添加新依赖](#添加新依赖)。
 
 ## 相关文档
 
 - [scripts/infra/README.md](../infra/README.md) - 基础设施脚本文档
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构
-- [docs/STARTUP_ORDER.md](../../docs/STARTUP_ORDER.md) - 服务启动顺序详解
+- [开发服务生命周期与构建身份规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md) - 启动、停止、模块迁移与 Worker 顺序
 
 Backend 独占所属模块迁移；Worker 初始化不执行平台 schema DDL。全量启动按模块等待 `/health/ready` 后启动该模块 Worker，各模块仍并行。公共执行与心跳表由 System Backend 初始化，单独 Worker 只读检查 schema 版本。数据库结构变化须同步递增 owner 的 `SchemaVersion`。
 

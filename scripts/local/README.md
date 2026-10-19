@@ -70,7 +70,7 @@ localhost:5001/addp-nginx                latest
 bash scripts/local/start.sh
 
 # 访问服务
-# - Console、模块页面和 API: ADDP_PUBLIC_ORIGIN（默认 http://localhost:NGINX_PORT）
+# - 使用启动输出中的 ADDP_PUBLIC_ORIGIN；未设置时为 http://localhost:<实际 Nginx 发布端口>
 ```
 
 ### 脚本说明
@@ -186,7 +186,7 @@ ${REGISTRY:-localhost:5001}/addp-<service>:${IMAGE_TAG:-latest}
 |---------|---------|------|---------|---------|
 | **开发模式** | scripts/dev/ | 本地开发调试 | 直接运行 Go/npm | 无 (源码) |
 | **本地 Docker** | scripts/local/ | 本地容器化测试 | Docker Compose | localhost:5001 |
-| **生产环境** | scripts/prod/ | 服务器部署 | Docker Compose/Swarm | 远程 Registry |
+| **生产环境** | scripts/prod/ | 服务器部署 | Docker Compose | 远程 Registry |
 
 ## 常见问题
 
@@ -218,16 +218,15 @@ make build-images
 
 ### 3. 端口被占用
 
-```bash
-# 查看端口占用
-lsof -i :5433  # PostgreSQL
-lsof -i :8180  # System Backend
-lsof -i :80    # Nginx
+先运行 `bash scripts/infra/status.sh` 查询 Infra 实际映射。Infra 本地首次映射冲突由标准入口自动避让，已运行的本工作区容器复用原映射；不要把 Business PostgreSQL 的 5433 当成平台元数据库端口。
 
-# 解决方法
-# 1. 停止占用端口的进程
-# 2. 或修改 .env 配置使用其他端口
+平台容器只发布 Nginx 入口。通过以下命令查询其实际映射，再核对监听者与 Compose project、service、工作区归属：
+
+```bash
+docker compose -f docker-compose.yml port nginx 80
 ```
+
+Nginx 发布端口由部署配置指定，冲突时不自动漂移。核实占用者后，由其所属生命周期入口处理，或调整本部署的 `NGINX_PORT` 与对外 `ADDP_PUBLIC_ORIGIN`，再通过标准入口应用配置；不要按端口盲目终止进程。详见[端口规范](../../docs/spec/addp端口分配.md)。
 
 ### 4. 容器启动失败
 
@@ -238,22 +237,22 @@ docker compose -f docker-compose.yml logs system-backend
 # 查看所有容器状态
 bash scripts/local/status.sh
 
-# 重启特定服务
-docker compose -f docker-compose.yml restart system-backend
+# 修正原因后通过标准入口重启平台与 Runtime，保留数据卷
+bash scripts/local/restart.sh
 ```
 
 ### 5. 健康检查超时
 
 **现象**: 启动时看到 "⚠️ health check timeout"
 
-**原因**: 服务需要更长时间初始化 (首次启动数据库迁移等)
+**排查**: 先核对实际容器状态和启动失败原因；首次迁移耗时、依赖未就绪、配置或进程异常均需结合证据区分，不能把超时直接视为初始化较慢。
 
 **解决**:
 ```bash
 # 等待一段时间后检查状态
 bash scripts/local/status.sh
 
-# 查看服务日志确认是否正常启动
+# 查看容器入口诊断；模块正文通过 System 服务实例页读取
 docker compose -f docker-compose.yml logs -f system-backend
 ```
 
@@ -280,6 +279,8 @@ meilisearch_data_v1543 - 当前 Meilisearch 索引数据
 
 ### 查看实时日志
 
+模块正文使用下文[模块实例运行日志](#模块实例运行日志)入口；以下为容器入口诊断，可按需附加 `--tail=100` 限制输出。
+
 ```bash
 # 所有应用服务
 docker compose -f docker-compose.yml logs -f
@@ -296,31 +297,20 @@ docker compose -f docker-compose.yml logs --tail=100 system-backend
 
 ### 进入容器调试
 
+PostgreSQL、Redis 等设施的连接诊断统一见[Infra 故障排查](../infra/docs/故障排查.md)，按所属 Compose 服务和实际凭据操作。调试平台容器时使用当前项目的服务名：
+
 ```bash
-# 进入 PostgreSQL
-docker exec -it postgres psql -U addp -d addp
-
-# 进入 Redis
-docker exec -it redis redis-cli -a addp_redis
-
-# 进入后端容器
-docker exec -it system-backend sh
+docker compose -f docker-compose.yml exec system-backend sh
 ```
 
 ### 手动管理服务
 
+设施初始化或配置应用使用 `bash scripts/infra/up.sh`；完整本地容器部署使用 `bash scripts/local/start.sh`。平台重启使用 `bash scripts/local/restart.sh`，默认保留 Infra 和数据卷。启动前核对本工作区归属，详细职责见[Infra 生命周期指南](../infra/docs/生命周期脚本.md)。
+
+只读查看单个服务状态，例如：
+
 ```bash
-# 仅启动基础设施
-docker compose -f docker-compose.infra.yml up -d
-
-# 仅启动应用层
-docker compose -f docker-compose.yml up -d
-
-# 重启特定服务
-docker compose -f docker-compose.yml restart gateway
-
-# 查看特定服务状态
-docker compose -f docker-compose.yml ps system-backend
+docker compose -f docker-compose.yml ps -a system-backend
 ```
 
 ## 性能优化建议
@@ -333,7 +323,7 @@ docker compose -f docker-compose.yml ps system-backend
 
 3. **数据卷**: 使用 volumes 而非 bind mounts,性能更好
 
-4. **网络**: 所有服务使用同一网络 (addp-network),通信更快
+4. **网络**: 平台、内置 Runtime 与 Infra 按既有定义使用 `addp-network`；Business 网络独立管理，具体边界见[项目隔离说明](../infra/docs/部署与项目隔离.md#docker-compose-项目)
 
 ## 相关文档
 
@@ -348,22 +338,17 @@ docker compose -f docker-compose.yml ps system-backend
 
 ## 注意事项
 
-1. **端口冲突**: 确保所需端口未被占用 (特别是 80, 5433, 6379, 8000, 8180)
+1. **端口冲突**: 核对 Nginx 部署入口与 Infra 实际映射，处理方式见[端口被占用](#3-端口被占用)
 2. **资源消耗**: 完整平台需要较多资源,建议至少 8GB RAM
 3. **首次启动**: 首次启动需要初始化数据库,可能需要 1-2 分钟
-4. **网络隔离**: 所有服务在 `addp-network` 网络中,与主机隔离
+4. **网络边界**: 内部服务通过 Docker 网络互访，对外只发布约定入口；网络连接本身不代替访问鉴权
 5. **数据备份**: 定期备份重要数据 (PostgreSQL, MinIO)
 
 ## 故障排查流程
 
-1. **查看状态**: `bash scripts/local/status.sh`
-2. **检查日志**: `docker compose -f docker-compose.yml logs [service]`
-3. **验证镜像**: `docker images | grep addp`
-4. **检查端口**: `lsof -i :[port]`
-5. **重启服务**: `bash scripts/local/restart.sh`
-6. **重新启动**: `bash scripts/local/stop.sh --all && bash scripts/local/start.sh`（保留数据卷）
-
-如果问题仍然存在,请查看具体服务日志或联系开发团队。
+1. 运行 `bash scripts/local/status.sh`，按 Infra、平台与 Runtime 区分失败位置。
+2. 查看对应实例日志或容器入口诊断，并按上文[常见问题](#常见问题)核对镜像、端口与归属。
+3. 修正原因后，按[手动管理服务](#手动管理服务)中的标准入口应用；容器状态通过后，再验证所需业务功能。
 
 ## 模块实例运行日志
 

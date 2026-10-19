@@ -42,7 +42,9 @@ func (h *EngineDeploymentHandler) Discovery(c *gin.Context) {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
-	c.JSON(http.StatusOK, h.discovery.Read(c.Request.Context()))
+	value:=h.discovery.Read(c.Request.Context())
+	if err:=h.service.MarkRegisteredDiscovery(c.Request.Context(),&value);err!=nil {engineDeploymentError(c,err);return}
+	c.JSON(http.StatusOK,value)
 }
 
 func engineDeploymentActor(c *gin.Context) (int64, error) {
@@ -70,6 +72,8 @@ func engineDeploymentError(c *gin.Context, err error) {
 		status, key, code = 409, "source_occupied", "engine_deployment_source_occupied"
 	case errors.Is(err, repository.ErrDeploymentHostUnavailable):
 		status, key, code = 409, "host_unavailable", "engine_deployment_host_unavailable"
+	case errors.Is(err, service.ErrDeploymentSourceChanged):
+		status,key,code=409,"source_changed","engine_deployment_source_changed"
 	case errors.Is(err, commonapi.ErrUnauthorized), errors.Is(err, commonapi.ErrForbidden):
 		respondIAMError(c, err)
 		return
@@ -169,14 +173,14 @@ func (h *EngineDeploymentHandler) Get(c *gin.Context) {
 }
 
 // Create godoc
-// @Summary 登记平台引擎部署 | Register platform engine deployment
+// @Summary 批量确认自带引擎部署 | Confirm built-in engine deployments in a batch
 // @Description 管理员确认 PostgreSQL 来源与主机；不创建租户引擎、不探测 SQL 或 Docker | Confirm PostgreSQL source and host without creating Tenant engines or probing SQL or Docker
 // @Tags 引擎部署 | Engine Deployments
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body models.EngineDeploymentInput true "完整部署声明 | Complete deployment declaration"
-// @Success 201 {object} models.EngineDeployment
+// @Param request body models.EngineDeploymentAdmissionRequest true "至多16个显式来源及主机确认 | Up to 16 explicit source and host confirmations"
+// @Success 201 {object} models.EngineDeploymentAdmissionResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 403 {object} models.ErrorResponse
@@ -190,13 +194,13 @@ func (h *EngineDeploymentHandler) Create(c *gin.Context) {
 		engineDeploymentError(c, err)
 		return
 	}
-	var input models.EngineDeploymentInput
+	var input models.EngineDeploymentAdmissionRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32768)
 	if c.Request.URL.RawQuery != "" || bindEngineDeployment(c, &input) != nil {
 		engineDeploymentError(c, commonapi.ErrBadRequest)
 		return
 	}
-	value, err := h.service.Create(c.Request.Context(), input, iamAuditMetadataWithStatus(c, 201))
+	value, err := h.service.Admit(c.Request.Context(), input, h.discovery.Read(c.Request.Context()), iamAuditMetadataWithStatus(c, 201))
 	if err != nil {
 		engineDeploymentError(c, err)
 		return

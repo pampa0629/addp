@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/netip"
 	"os"
@@ -26,11 +29,43 @@ func discoveryState(scope, state, reason string) models.DeploymentDiscoveryScope
 }
 
 func (s *DeploymentDiscoveryService) Read(ctx context.Context) models.DeploymentDiscovery {
-	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2)}
+	result := models.DeploymentDiscovery{Scopes: make([]models.DeploymentDiscoveryScope, 0, 2),Candidates:[]models.EngineDeploymentCandidate{}}
 	for _, scope := range []string{"infra", "business"} {
-		result.Scopes = append(result.Scopes, s.readScope(ctx, scope))
+		value:=s.readScope(ctx, scope)
+		result.Scopes = append(result.Scopes,value)
+		if value.State=="available" {for _,service:=range value.Services {result.Candidates=append(result.Candidates,deploymentCandidate(scope,value.Source,service))}}
 	}
 	return result
+}
+
+func deploymentSourceKey(source models.EngineDeploymentSource,service string)string{return source.DockerEngineID+"/"+source.Project+"/"+service}
+
+func deploymentFingerprint(scope string, source *models.EngineDeploymentSource, service models.DiscoveredDeploymentService) string {
+	raw,_:=json.Marshal(struct{Scope string;Source *models.EngineDeploymentSource;Service models.DiscoveredDeploymentService}{scope,source,service})
+	digest:=sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+func deploymentCandidate(scope string,source *models.EngineDeploymentSource,service models.DiscoveredDeploymentService)models.EngineDeploymentCandidate {
+	value:=models.EngineDeploymentCandidate{Scope:scope,Service:service.Service,Fingerprint:deploymentFingerprint(scope,source,service),Reason:"unsupported_engine"}
+	if source==nil || service.Service!="postgres" || service.EngineType!="postgresql" {return value}
+	if len(service.Containers)!=1 {value.Reason="unsupported_topology";return value}
+	if service.Containers[0].Status!="running" {value.Reason="not_running";return value}
+	count:=0
+	for _,port:=range service.Containers[0].PublishedPorts {if port.ContainerPort==5432&&port.Protocol=="tcp" {count++}}
+	if count<1||count>8 {value.Reason="sql_port_missing";return value}
+	value.Eligible,value.Reason=true,""
+	return value
+}
+
+func (s *EngineDeploymentService) MarkRegisteredDiscovery(ctx context.Context,value *models.DeploymentDiscovery)error {
+	keys:=make([][3]string,0,len(value.Candidates))
+	byScope:=map[string]*models.EngineDeploymentSource{}
+	for _,scope:=range value.Scopes {if scope.State=="available" {byScope[scope.Scope]=scope.Source}}
+	for _,candidate:=range value.Candidates {if source:=byScope[candidate.Scope];source!=nil {keys=append(keys,[3]string{source.DockerEngineID,source.Project,candidate.Service})}}
+	registered,err:=s.repo.RegisteredSources(ctx,keys);if err!=nil{return err}
+	for index,candidate:=range value.Candidates {if source:=byScope[candidate.Scope];source!=nil {value.Candidates[index].DeploymentID=registered[[3]string{source.DockerEngineID,source.Project,candidate.Service}]}}
+	return nil
 }
 
 func (s *DeploymentDiscoveryService) readScope(ctx context.Context, scope string) models.DeploymentDiscoveryScope {
@@ -139,7 +174,7 @@ func parseDeploymentDiscovery(raw []byte, scope string, now time.Time) models.De
 			} else if container.Status == "running" {
 				return bad
 			}
-			ports := map[models.BusinessDeploymentPort]bool{}
+			ports := map[models.EngineDeploymentPort]bool{}
 			for _, port := range container.PublishedPorts {
 				ip, err := netip.ParseAddr(port.Address)
 				if err != nil || ip.Zone() != "" || ip.String() != port.Address || port.Port < 1 || port.Port > 65535 || port.ContainerPort < 1 || port.ContainerPort > 65535 || (port.Protocol != "tcp" && port.Protocol != "udp" && port.Protocol != "sctp") || ports[port] {

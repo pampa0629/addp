@@ -80,8 +80,8 @@ func TestEngineDeploymentDeclarationsAgainstPostgres(t *testing.T) {
 	}
 	repo := repository.NewEngineDeploymentRepository(db)
 	svc := service.NewEngineDeploymentService(repo)
-	var inventory models.BusinessDeploymentInventory
-	fixture := `{"schema":"addp.business-deployment-inventory/v1","observed_at":"2026-10-19T00:00:00Z","source":{"type":"docker_compose","runtime":"desktop_linux_vm","docker_engine_id":"fixture-engine","project":"business"},"services":[{"service":"postgres","engine_type":"postgresql","containers":[{"container_id":"` + strings.Repeat("a", 64) + `","started_at":"2026-10-18T00:00:00.123456789Z","restart_count":0,"published_ports":[{"address":"127.0.0.1","port":5433,"container_port":5432,"protocol":"tcp"}]}]}]}`
+	var inventory models.EngineDeploymentInventory
+	fixture := `{"schema":"addp.engine-deployment-inventory/v1","observed_at":"2026-10-19T00:00:00Z","source":{"type":"docker_compose","runtime":"desktop_linux_vm","docker_engine_id":"fixture-engine","project":"business"},"services":[{"service":"postgres","engine_type":"postgresql","containers":[{"container_id":"` + strings.Repeat("a", 64) + `","started_at":"2026-10-18T00:00:00.123456789Z","restart_count":0,"published_ports":[{"address":"127.0.0.1","port":5433,"container_port":5432,"protocol":"tcp"}]}]}]}`
 	if err := json.Unmarshal([]byte(fixture), &inventory); err != nil {
 		t.Fatal(err)
 	}
