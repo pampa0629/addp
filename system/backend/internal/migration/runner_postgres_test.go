@@ -7,12 +7,14 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -5619,13 +5621,57 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	assertTableCount(t, db, "system.tenants", 0)
 	assertTableCountAtLeast(t, db, "system.role_assignments", 10)
 
-	var ownerCount, systemPermissionCount int
-	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
-		t.Fatalf("read seeded Permission owners: %v", err)
+	// The forward catalog includes the current owner manifest plus a closed set
+	// of disabled historical keys. Compare identities and status, not a stale count
+	// that could accept a missing permission compensated by an unrelated addition.
+	manifest, err := commonauth.LoadPermissionManifest(filepath.Join("..", "..", "..", "authorization", "permissions.yaml"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ownerCount != 20 || systemPermissionCount != 160 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 160", ownerCount, systemPermissionCount)
+	expected := make(map[string]string, len(manifest.Permissions)+8)
+	for _, permission := range manifest.Permissions {
+		expected[permission.Key] = permission.Status
 	}
+	// 000133 retired API consumers' predecessors; 000091 retired department delete.
+	for _, key := range []string{"iam.department.delete", "system.api_key.create", "system.api_key.read", "system.api_key.revoke", "system.application.create", "system.application.delete", "system.application.read", "system.application.update"} {
+		if _, exists := expected[key]; exists {
+			t.Fatalf("historical permission %s returned to current manifest", key)
+		}
+		expected[key] = "disabled"
+	}
+	var ownerCount int
+	if err := db.QueryRow(`SELECT count(DISTINCT owner_module) FROM system.permissions`).Scan(&ownerCount); err != nil {
+		t.Fatal(err)
+	}
+	if ownerCount != 20 {
+		t.Fatalf("seeded Permission owners=%d, want 20", ownerCount)
+	}
+	rows, err := db.Query(`SELECT permission_key,status FROM system.permissions WHERE owner_module='system' ORDER BY permission_key`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key, status string
+		if err := rows.Scan(&key, &status); err != nil {
+			t.Fatal(err)
+		}
+		want, exists := expected[key]
+		if !exists || status != want {
+			t.Fatalf("System permission %q status=%q; manifest/history expected %q, exists=%t", key, status, want, exists)
+		}
+		delete(expected, key)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("System manifest/history permissions missing: %v", expected)
+	}
+
 	var explicitGrantPermissions, implicitGrantBindings, authorizerGrantBindings int
 	if err := db.QueryRow(`SELECT count(*) FROM system.permissions
 		WHERE permission_key IN ('system.engine_access_grant.create','system.engine_access_grant.read')

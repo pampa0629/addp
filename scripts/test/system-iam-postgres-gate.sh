@@ -123,7 +123,7 @@ case "$TEST_FILTER" in
     engine-deployments)
         case "$PACKAGE_FILTER" in
             repository) test_pattern='^TestEngineDeploymentDeclarationsAgainstPostgres$' ;;
-            migration) test_pattern='^TestEngineDeploymentPublicationAgainstPostgres$' ;;
+            migration) test_pattern='^Test(EngineDeploymentPublication|Runner)AgainstPostgres$' ;;
             *) echo "engine-deployments requires --package repository or migration" >&2; exit 2 ;;
         esac
         ;;

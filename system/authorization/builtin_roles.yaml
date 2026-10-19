@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 130
+manifest_version: 131
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin

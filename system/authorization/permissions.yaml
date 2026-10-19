@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 35
+manifest_version: 36
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
