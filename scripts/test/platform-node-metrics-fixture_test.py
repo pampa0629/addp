@@ -2,6 +2,8 @@ import importlib
 import json
 import os
 import subprocess
+import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -248,7 +250,7 @@ class CPUPressureFixtureTest(unittest.TestCase):
 
 class EngineSourceFixtureTest(unittest.TestCase):
     def test_business_source_is_private_owned_and_refuses_foreign_components(self):
-        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(importlib.import_module("scripts.utils.deployment-inventory"),"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
             directory=Path(folder)
             FIXTURE.engine_source_action(directory,"engine-up")
             self.assertEqual((directory/"engine-source.env").stat().st_mode&0o777,0o600)
@@ -263,7 +265,7 @@ class EngineSourceFixtureTest(unittest.TestCase):
             self.assertFalse((directory/"engine-source.env").exists());self.assertFalse((directory/"engine-source-owner.json").exists())
 
     def test_restart_is_limited_to_owned_postgres_and_refreshes_the_same_source(self):
-        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(importlib.import_module("scripts.utils.deployment-inventory"),"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{"ADDP_ONLINE_TEST_RUN_ID":"engine-test","ADDP_ONLINE_NODE_METRICS_CASE":"engine-admission","POSTGRES_PASSWORD":"private-sentinel"}),patch.object(FIXTURE,"command",return_value=""),patch.object(FIXTURE.SOURCE,"local_docker"),patch.object(FIXTURE,"engine_compose") as compose:
             directory=Path(folder);FIXTURE.engine_source_action(directory,"engine-up")
             def owned(args):
                 return "owned-id" if args[:3]==["docker","ps","-aq"] else json.dumps({"com.docker.compose.project.working_dir":str(FIXTURE.ROOT/"business"),"com.docker.compose.service":"postgres"})
@@ -290,6 +292,98 @@ class EngineSourceFixtureTest(unittest.TestCase):
             FIXTURE.engine_compose(Path(folder),"up","postgres")
             self.assertNotIn("private-sentinel",json.dumps(run.call_args.kwargs["env"]))
             self.assertIn("--project-directory",run.call_args.args[0]);self.assertIn("business",run.call_args.args[0])
+
+
+class EngineSourceCommandTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="addp-engine-command-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.repo = self.root / "repository"
+        self.secret = self.root / "secret"
+        self.secret.mkdir(mode=0o700)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for folder in ("scripts/test", "scripts/utils", "business"):
+            (self.repo / folder).mkdir(parents=True)
+        for relative in ("scripts/test/platform-node-metrics-fixture.py", "scripts/utils/deployment-inventory.py"):
+            shutil.copy2(FIXTURE.ROOT / relative, self.repo / relative)
+        # Only OS facts and Docker transport are fixtures. Execute the actual CLI,
+        # module loader, source validation and ownership files in a fresh process.
+        for folder in ("scripts/test", "scripts/utils"):
+            (self.repo / folder / "platform.py").write_text('def system(): return "Linux"\ndef machine(): return "x86_64"\n')
+        self.env = dict(PATH=str(self.bin), GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
+                        ADDP_ONLINE_HOST="1", ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
+                        ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"),
+                        ADDP_ONLINE_TEST_RUN_ID="command-test", ADDP_ONLINE_NODE_METRICS_CASE="engine-admission",
+                        ADDP_DEPLOYMENT_DISCOVERY_DIR=str(self.root / "discovery"))
+        docker = self.bin / "docker"
+        docker.write_text("#!" + sys.executable + "\n" + "ROOT = " + repr(str(self.root)) + "\n" + r'''
+import json, sys
+from pathlib import Path
+root = Path(ROOT)
+state = root / "docker-state"
+args = sys.argv[1:]
+with (root / "docker-calls").open("a") as output: output.write(json.dumps(args) + "\n")
+if args[:1] == ["--context"]: args = args[2:]
+if args[:2] == ["context", "show"]: print("default")
+elif args[:2] == ["context", "inspect"]: print(json.dumps("unix:///var/run/docker.sock"))
+elif args[0] == "info": print(json.dumps(dict(id="fixture-daemon", os_type="linux", operating_system="Linux")))
+elif args[0] == "ps":
+    if state.exists(): print("a" * 64)
+elif args[0] in ("network", "volume"):
+    if state.exists(): print("owned-resource")
+elif args[0] == "inspect":
+    service = "redis" if (root / "foreign").exists() else "postgres"
+    working_dir = str(root / "repository/business")
+    if args[args.index("--format") + 1] == "{{json .Config.Labels}}":
+        print(json.dumps({"com.docker.compose.project.working_dir": working_dir, "com.docker.compose.service": service}))
+    else:
+        print(json.dumps(dict(id="a" * 64, project="business", service=service, working_dir=working_dir, oneoff="False",
+            running=True, status="running", started_at="2026-10-19T00:00:00Z", restart_count=int(state.read_text()),
+            ports={"5432/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5433"}]})))
+elif args[0] == "compose":
+    if "up" in args:
+        if not state.exists(): state.write_text("0")
+        if (root / "fail-up").exists(): sys.exit(17)
+    elif "restart" in args: state.write_text(str(int(state.read_text()) + 1))
+    elif "down" in args: state.unlink()
+    else: sys.exit(18)
+else: sys.exit(19)
+''')
+        docker.chmod(0o700)
+
+    def cli(self, action, success=True):
+        result = subprocess.run([sys.executable, str(self.repo / "scripts/test/platform-node-metrics-fixture.py"), action],
+                                cwd=self.root, env=self.env, capture_output=True, text=True, timeout=15)
+        if success: self.assertEqual(result.returncode, 0, result.stderr)
+        else: self.assertNotEqual(result.returncode, 0)
+        return result
+
+    def test_standalone_cli_starts_refreshes_and_cleans_without_pythonpath(self):
+        self.cli("engine-up")
+        self.assertEqual((self.secret / "engine-source.env").stat().st_mode & 0o777, 0o600)
+        self.cli("engine-restart")
+        source = json.loads((self.root / "discovery/business.json").read_text())
+        self.assertEqual(source["state"], "available")
+        self.assertEqual(source["services"][0]["containers"][0]["restart_count"], 1)
+        self.cli("engine-down")
+        self.assertEqual(list(self.secret.iterdir()), [])
+        self.assertFalse((self.root / "docker-state").exists())
+
+    def test_real_cli_cleanup_after_partial_start_refuses_foreign_components(self):
+        (self.root / "fail-up").touch()
+        self.cli("engine-up", success=False)
+        self.assertTrue((self.secret / "engine-source-owner.json").exists())
+        self.assertTrue((self.root / "docker-state").exists())
+        (self.root / "foreign").touch()
+        self.cli("engine-down", success=False)
+        self.assertTrue((self.secret / "engine-source-owner.json").exists())
+        self.assertTrue((self.root / "docker-state").exists())
+        (self.root / "foreign").unlink()
+        self.cli("engine-down")
+        self.assertEqual(list(self.secret.iterdir()), [])
+        self.assertFalse((self.root / "docker-state").exists())
 
 
 if __name__ == "__main__":

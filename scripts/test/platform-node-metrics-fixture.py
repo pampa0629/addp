@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from importlib import import_module
+from importlib.util import module_from_spec, spec_from_file_location
 import ipaddress
 import json
 import os
@@ -18,6 +18,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+SOURCE_SPEC = spec_from_file_location("node_metrics_deployment_source", ROOT / "scripts/utils/deployment-inventory.py")
+SOURCE = module_from_spec(SOURCE_SPEC)
+sys.modules[SOURCE_SPEC.name] = SOURCE
+SOURCE_SPEC.loader.exec_module(SOURCE)
 PROJECT = "addp-metrics-online"
 PROCESS_PORTS = {"system": 19101, "monitor": 19102}
 
@@ -350,18 +354,16 @@ def assert_process_listeners_closed():
 
 
 def engine_compose(directory, *args):
-    source = import_module("scripts.utils.deployment-inventory")
     return subprocess.run(["docker", "compose", "--project-directory", str(ROOT/"business"), "-p", "business",
                            "--env-file", str(ROOT/"business/.env.example"), "--env-file", str(directory/"engine-source.env"),
                            "-f", str(ROOT/"business/docker-compose.yml"), *args],
-                          env=source.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
+                          env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=150).stdout
 
 
 def engine_source_action(directory, action):
     if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE") != "engine-admission":
         raise ValueError("Business fixture requires the engine-admission case")
-    source=import_module("scripts.utils.deployment-inventory")
-    source.local_docker(env=source.observer_environment())
+    SOURCE.local_docker(env=SOURCE.observer_environment())
     owner = directory/"engine-source-owner.json"
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "repository": str(ROOT), "project": "business"}
     if action == "engine-up":
@@ -395,9 +397,8 @@ def engine_source_action(directory, action):
         if len(ids)!=1: raise ValueError("Business PostgreSQL identity is not unique")
         engine_compose(directory,"restart","--timeout","10","postgres")
         engine_compose(directory,"up","-d","--wait","--wait-timeout","120","postgres")
-        source=import_module("scripts.utils.deployment-inventory")
         subprocess.run([sys.executable,str(ROOT/"scripts/utils/deployment-inventory.py"),"refresh","--scope","business","--directory",os.environ.get("ADDP_DEPLOYMENT_DISCOVERY_DIR") or str(ROOT/".dev-state/deployment-discovery")],
-                       env=source.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
+                       env=SOURCE.observer_environment(), check=True, capture_output=True, text=True, timeout=40)
         return
     engine_compose(directory,"down","--volumes","--remove-orphans")
     for args in (["ps","-aq"],["network","ls","-q"],["volume","ls","-q"]):
