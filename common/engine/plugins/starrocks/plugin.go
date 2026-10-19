@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -166,7 +167,19 @@ func (p *Plugin) ReadBatch(ctx context.Context, info plugin.ConnectionInfo, path
 	} else if opts.Limit > 0 {
 		query = commonquery.ForDialect(p.SQLDialect()).PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
-	result, err := p.ExecuteSQL(ctx, info, query, plugin.QueryOptions{ReadOnly: true, Args: opts.Args})
+	prepared, err := p.PrepareQuery(ctx, info, plugin.QueryRequest{EngineID: path.EngineID, Language: "sql", Query: query, Options: plugin.QueryOptions{ReadOnly: true, Args: opts.Args}})
+	if err != nil {
+		return nil, err
+	}
+	readSet, err := prepared.ReadSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := plugin.NewQueryReadSet(path)
+	if err != nil || !reflect.DeepEqual(readSet.Paths, expected.Paths) {
+		return nil, fmt.Errorf("StarRocks batch query must read exactly its table path")
+	}
+	result, err := prepared.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}

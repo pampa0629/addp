@@ -144,21 +144,21 @@ func (*Plugin) rowCount(ctx context.Context, db *gorm.DB, database, table string
 	return count, err
 }
 
-var primaryKeyLine = regexp.MustCompile("(?m)^\\s*PRIMARY KEY\\s*\\((.*)\\)\\s*$")
+var primaryKeyHeader = regexp.MustCompile("(?m)^\\s*PRIMARY KEY\\s*\\(")
 
 func primaryKey(ddl string) ([]string, error) {
-	matches := primaryKeyLine.FindAllStringSubmatch(ddl, -1)
+	matches := primaryKeyHeader.FindAllStringIndex(ddl, -1)
 	if len(matches) == 0 {
 		return nil, nil
 	}
 	if len(matches) != 1 {
 		return nil, fmt.Errorf("ambiguous StarRocks primary key")
 	}
-	input := strings.TrimSpace(matches[0][1])
+	input := strings.TrimSpace(ddl[matches[0][1]:])
 	keys := []string{}
 	seen := map[string]bool{}
-	for input != "" {
-		if input[0] != '`' {
+	for {
+		if len(input) == 0 || input[0] != '`' {
 			return nil, fmt.Errorf("unquoted StarRocks primary key identifier")
 		}
 		input = input[1:]
@@ -184,19 +184,12 @@ func primaryKey(ddl string) ([]string, error) {
 		seen[key.String()] = true
 		keys = append(keys, key.String())
 		input = strings.TrimSpace(input)
-		if input == "" {
-			break
+		if len(input) > 0 && input[0] == ')' {
+			return keys, nil
 		}
-		if input[0] != ',' {
+		if len(input) == 0 || input[0] != ',' {
 			return nil, fmt.Errorf("invalid StarRocks primary key separator")
 		}
 		input = strings.TrimSpace(input[1:])
-		if input == "" {
-			return nil, fmt.Errorf("empty StarRocks primary key identifier")
-		}
 	}
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("empty StarRocks primary key")
-	}
-	return keys, nil
 }

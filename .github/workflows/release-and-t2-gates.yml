@@ -801,7 +801,7 @@ jobs:
           retention-days: 14
 
   common-starrocks:
-    name: StarRocks native protocol admission (${{ matrix.arch }})
+    name: StarRocks read-only Provider (${{ matrix.arch }})
     needs: selection
     if: always() && ((github.event_name == 'workflow_dispatch' && inputs.release_suite == 'starrocks-admission') || needs.selection.outputs.common == 'true' || needs.selection.outputs.business == 'true')
     strategy:
@@ -835,7 +835,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: StarRocks native protocol admission (${{ matrix.arch }})
+          gate: StarRocks read-only Provider (${{ matrix.arch }})
           status: ${{ job.status }}
 
       - name: Upload StarRocks admission evidence

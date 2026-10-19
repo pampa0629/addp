@@ -87,6 +87,24 @@ func TestMySQLCompatibleQueryProvenanceRejectsViewsAndSystemDatabases(t *testing
 	}
 }
 
+func TestMySQLCompatibleQueryProvenanceRequiresOwnerNativeTableEngine(t *testing.T) {
+	reference := mysqlCompatibleRelationReference{Database: "business", Name: "source"}
+	req := plugin.QueryRequest{EngineID: 23, Language: "sql", Query: "SELECT id FROM business.source", Options: plugin.QueryOptions{ReadOnly: true}}
+	for _, engine := range []string{"StarRocks", "InnoDB", "MySQL", ""} {
+		p := testMySQLCompatibleQueryProvenance("StarRocks")
+		p.TableEngine = "StarRocks"
+		catalog := &fakeMySQLCompatibleReadCatalog{resolved: map[mysqlCompatibleRelationReference]mysqlCompatibleResolvedRelation{reference: {Database: "business", Name: "source", TableType: "BASE TABLE", Engine: engine}}}
+		_, err := p.resolveReadSet(t.Context(), req, "business", []mysqlCompatibleRelationReference{reference}, catalog)
+		if (err == nil) != (engine == "StarRocks") {
+			t.Fatalf("native table engine %q: %v", engine, err)
+		}
+	}
+	p := testMySQLCompatibleQueryProvenance("StarRocks")
+	if _, err := p.inspectReadReferences("SELECT id FROM external_catalog.business.source"); err == nil {
+		t.Fatal("external catalog reference accepted")
+	}
+}
+
 func TestMySQLCompatibleQueryProvenanceResolvesJoinOutputLineage(t *testing.T) {
 	provenance := testMySQLCompatibleQueryProvenance("OceanBase")
 	statement, err := sqlparser.Parse(`

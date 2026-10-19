@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=starrocks
-# ADDP_T2_INPUT_FILES=business/starrocks/ common/engine/certification/starrocks/
+# ADDP_T2_INPUT_FILES=business/starrocks/ common/engine/certification/starrocks/ common/engine/plugins/starrocks/ common/engine/plugin/ common/engine/plugins/shared/
 # The Business owner manages disposable docker run / docker rm resources.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -35,6 +35,11 @@ for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNati
         exit 1
     }
 done
+(cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/starrocks -run '^TestIntegrationProvider' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/provider.log"
+! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/provider.log"
+for required in CatalogAndBatch PreparedQueryAndNativeResultTypes; do
+    grep -q -- "--- PASS: TestIntegrationProvider${required} " "$ARTIFACT_DIR/provider.log" || exit 1
+done
 python3 - "$ARTIFACT_DIR/admission-policy.json" <<'POLICY'
 import json, sys
 from pathlib import Path
@@ -46,5 +51,18 @@ Path(sys.argv[1]).write_text(json.dumps({
     'scope': 'native protocol, shared SQL guard, single-statement prepared read and visible catalog',
     'explicit_transaction_prepared_query': False,
     'cross_statement_snapshot': False,
+}, indent=2))
+POLICY
+python3 - "$ARTIFACT_DIR/provider-policy.json" <<'POLICY'
+import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({
+    'result': 'passed',
+    'provider_implemented': True,
+    'scope': 'default_catalog ordinary tables, catalog facts, batch preview and parameterized query',
+    'read_only_boundary': 'validated_statement',
+    'database_read_only_transaction': False,
+    'cross_statement_snapshot': False,
+    'platform_t4_verified': False,
 }, indent=2))
 POLICY
