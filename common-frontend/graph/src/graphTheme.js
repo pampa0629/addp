@@ -28,6 +28,7 @@ export function readGraphTheme(root = document.documentElement) {
   const style = getComputedStyle(root)
   const read = variable => style.getPropertyValue(variable).trim()
   return {
+    fontFamily: style.fontFamily,
     categoryColors: GRAPH_CATEGORY_VARIABLES.map(read).filter(Boolean),
     ...Object.fromEntries(Object.entries(GRAPH_THEME_VARIABLES).map(([key, variable]) => [key, read(variable)]))
   }

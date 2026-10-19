@@ -271,4 +271,6 @@ v4 将该 suite 统一切换为正式 Compose 产品镜像：Console、Graph 和
 
 Graph 浏览器 warning/error 必须保留脱敏后的具体消息、资源路径、行列及观察阶段；失败时也保留诊断文件，不记录 URL query、登录凭据或当前 Access Token。任何未豁免诊断仍使验收失败。四主题像素检查从真实绘图画布复制到声明 `willReadFrequently` 的读取画布，避免测试观测自身反复读取绘图 context 产生性能警告；不修改产品画布配置、不替换实际像素，也不将该警告加入过滤规则。
 
+Graph 入口使用现有 `--el-font-family` 与 `--el-font-size-base` 设置文档字体。图标签由共享 `readGraphTheme(container)` 读取容器计算后的字体并显式传入 G6；查询结果、结构图、本体图及 Graph 浏览器复用这条路径，避免 G6 加载时缓存的 `body` 字体与模块 `#app` 字体不一致，也不能依赖 Console 的 iframe 外部继承。Graph 与 Develop 的 T3 覆盖正文及实际节点、关系标签字体；Hosted 浏览器 v3 报告额外要求 `theme_typography=true`，旧 v2 不作为字体一致性验收证据。
+
 FalkorDB 全文索引同步必须在原生 `db.indexes()` 报告全部所需 NODE 全文索引字段匹配且 `OPERATIONAL` 后返回；managed 新建/重建和 external 复用走同一就绪检查，最多等待30秒并遵守调用取消。构建中不能返回成功或空搜索结果；元数据异常、字段冲突、超时和查询错误保留为错误。该边界由 Common Provider 实现，Graph 与知识服务不增加重试或扫描回退。`make test-common-falkordb-unit` 覆盖状态、取消和错误，`make test-common-falkordb` 以独占合成大图验证同步后首次搜索完整返回、external复用及既有Graph/Develop领域契约。

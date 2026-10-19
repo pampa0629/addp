@@ -165,10 +165,10 @@ def run_browser(report, graph_id, engine_id, tenant_id):
         "schema_version": "addp.graph-browser-diagnostics/v1", "entries": []
     }, "Graph Console omitted clean browser diagnostics")
     evidence = json.loads(output.read_text())
-    expected.update(schema_version="addp.graph-falkordb-protection-browser/v2", result="passed", permissions=sorted(READER_PERMISSIONS),
+    expected.update(schema_version="addp.graph-falkordb-protection-browser/v3", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
                     public_switch_disabled=True, graph_writes=0, failed_business_responses=0, browser_errors=0,
-                    release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True)
+                    release_assets=True, deep_link_reload=True, theme_modes=["light", "dark", "blue", "purple"], theme_canvas_pixels=True, theme_typography=True)
     require(isinstance(evidence, dict) and set(evidence) == set(expected) | {"anonymous_refresh_401"} and
             all(type(evidence[key]) is type(value) and evidence[key] == value for key, value in expected.items()) and
             type(evidence["anonymous_refresh_401"]) is int and 0 <= evidence["anonymous_refresh_401"] <= 1,

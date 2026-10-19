@@ -9,12 +9,13 @@ test('图主题读取调用元素继承的 CSS 变量，不缓存旧主题', t =
     ['--addp-graph-category-1', ' #2563EB '],
     ['--addp-graph-category-12', '#475569'],
     ['--addp-graph-node-stroke', '#FFFFFF'],
-    ['--addp-graph-edge-label-stroke', '#FFFFFF']
+    ['--addp-graph-edge-label-stroke', '#FFFFFF'],
+    ['fontFamily', 'Fixture Sans, sans-serif']
   ])
   const original = globalThis.getComputedStyle
   globalThis.getComputedStyle = element => {
     assert.equal(element, root)
-    return { getPropertyValue: name => variables.get(name) || '' }
+    return { fontFamily: variables.get('fontFamily'), getPropertyValue: name => variables.get(name) || '' }
   }
   t.after(() => {
     if (original) globalThis.getComputedStyle = original
@@ -22,10 +23,13 @@ test('图主题读取调用元素继承的 CSS 变量，不缓存旧主题', t =
   })
   assert.deepEqual(readGraphTheme(root).categoryColors, ['#2563EB', '#475569'])
   assert.equal(readGraphTheme(root).nodeStroke, '#FFFFFF')
+  assert.equal(readGraphTheme(root).fontFamily, 'Fixture Sans, sans-serif')
   variables.set('--addp-graph-node-stroke', '#374151')
   variables.set('--addp-graph-edge-label-stroke', '#1D1E1F')
+  variables.set('fontFamily', 'Other Sans, sans-serif')
   assert.equal(readGraphTheme(root).nodeStroke, '#374151')
   assert.equal(readGraphTheme(root).edgeLabelStroke, '#1D1E1F')
+  assert.equal(readGraphTheme(root).fontFamily, 'Other Sans, sans-serif')
 })
 
 test('节点标签按填充亮度选择主题文字色', () => {

@@ -76,7 +76,7 @@ function buildG6Data() {
         lineWidth: 2,
         r: 28
       },
-      labelCfg: { style: { fill: getContrastingTextColor(fill, theme.labelLight, theme.labelDark), fontSize: 11, fontWeight: 'bold' } }
+      labelCfg: { style: { fill: getContrastingTextColor(fill, theme.labelLight, theme.labelDark), fontFamily: theme.fontFamily, fontSize: 11, fontWeight: 'bold' } }
     }
   })
 
@@ -91,7 +91,7 @@ function buildG6Data() {
       lineWidth: 1.5,
       endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: theme.edgeDefault }
     },
-    labelCfg: { style: { fill: theme.edgeLabel, fontSize: 11, fontWeight: '600', stroke: theme.edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
+    labelCfg: { style: { fill: theme.edgeLabel, fontFamily: theme.fontFamily, fontSize: 11, fontWeight: '600', stroke: theme.edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
   }))
 
   return { nodes, edges }

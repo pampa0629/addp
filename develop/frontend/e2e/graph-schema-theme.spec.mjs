@@ -25,6 +25,12 @@ test('graph schema themes recolor the canvas, legend and selection in place', as
     await expect(page.locator('.graph-container')).toHaveCSS('background-color', colors.background)
     await expect(page.locator('.legend')).toHaveCSS('background-color', colors.secondary)
     await expect(page.locator('.legend')).toHaveCSS('color', colors.text)
+    await expect.poll(() => page.locator('.graph-schema-view').evaluate(element => {
+      const graph = element.__vueParentComponent.setupState.graphInstance
+      const fontFamily = getComputedStyle(element).fontFamily
+      return [...graph.getNodes(), ...graph.getEdges()].every(item =>
+        item.getContainer().find(shape => shape.get('type') === 'text')?.attr('fontFamily') === fontFamily)
+    })).toBe(true)
     // Inspect actual G6 pixels so a CSS-only fix cannot pass.
     await expect.poll(() => canvas.evaluate(element => {
       const color = getComputedStyle(element).getPropertyValue('--addp-graph-edge-default').trim()

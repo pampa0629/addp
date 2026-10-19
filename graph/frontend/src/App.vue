@@ -9,6 +9,8 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  font-family: var(--el-font-family);
+  font-size: var(--el-font-size-base);
 }
 
 #app {

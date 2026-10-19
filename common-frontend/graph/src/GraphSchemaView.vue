@@ -76,7 +76,7 @@ function buildGraphData() {
         lineWidth: 2,
         r: Math.max(28, Math.min(50, 20 + Math.log10(n.count + 1) * 12))
       },
-      labelCfg: { style: { fill: getContrastingTextColor(fill, theme.labelLight, theme.labelDark), fontSize: 12, fontWeight: 'bold' } }
+      labelCfg: { style: { fill: getContrastingTextColor(fill, theme.labelLight, theme.labelDark), fontFamily: theme.fontFamily, fontSize: 12, fontWeight: 'bold' } }
     }
   })
 
@@ -95,7 +95,7 @@ function buildGraphData() {
           label: rel.type,
           curveOffset: edgeCount[key] > 1 ? edgeCount[key] * 20 : 0,
           style: { stroke: theme.edgeDefault, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: theme.edgeDefault } },
-          labelCfg: { style: { fill: theme.edgeLabel, fontSize: 12, fontWeight: '600', stroke: theme.edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
+          labelCfg: { style: { fill: theme.edgeLabel, fontFamily: theme.fontFamily, fontSize: 12, fontWeight: '600', stroke: theme.edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
         })
       })
     })

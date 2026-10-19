@@ -82,12 +82,12 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertFalse(any(key.endswith('_ACCESS_TOKEN') for key in kwargs['env']))
                 expected = json.loads(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'])
                 self.assertEqual(expected, {'run_id': 'graph-run', 'tenant_id': '2', 'principal_id': '4', 'engine_id': 13, 'graph_id': 17})
-                payload = dict(expected, schema_version='addp.graph-falkordb-protection-browser/v2', result='passed',
+                payload = dict(expected, schema_version='addp.graph-falkordb-protection-browser/v3', result='passed',
                                permissions=['graph.graph.read'], node_count=3, relationship_count=2,
                                browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,
                                public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
                                browser_errors=0, anonymous_refresh_401=1, release_assets=True, deep_link_reload=True,
-                               theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True)
+                               theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True, theme_typography=True)
                 payload.update({key: value for key, value in mutation.items() if key != '_diagnostics'})
                 Path(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_REPORT']).write_text(json.dumps(payload))
                 diagnostics = mutation.get('_diagnostics', {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': []})
@@ -103,8 +103,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     ({'permissions': ['graph.graph.read', 'graph.graph.update']}, True),
                     ({'public_switch_disabled': False}, True), ({'browser_errors': 1}, True),
                     ({'release_assets': False}, True), ({'deep_link_reload': False}, True),
-                    ({'theme_modes': ['dark']}, True), ({'theme_canvas_pixels': False}, True),
+                    ({'theme_modes': ['dark']}, True), ({'theme_canvas_pixels': False}, True), ({'theme_typography': False}, True),
                     ({'schema_version': 'addp.graph-falkordb-protection-browser/v1'}, True),
+                    ({'schema_version': 'addp.graph-falkordb-protection-browser/v2'}, True),
                     ({'_diagnostics': None}, True), ({'_diagnostics': {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': [{'type': 'warning'}]}}, True),
                     ({}, False), ({}, 'partial')):
                 for path in artifacts.glob('*.png'): path.unlink()

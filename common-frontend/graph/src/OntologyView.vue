@@ -73,7 +73,7 @@ function buildG6Data() {
       lineWidth: 2,
       radius: 8
     },
-    labelCfg: { style: { fill: getContrastingTextColor(et.color || theme.primary, theme.labelLight, theme.labelDark), fontSize: 14, lineHeight: 18, fontWeight: 'bold' } }
+    labelCfg: { style: { fill: getContrastingTextColor(et.color || theme.primary, theme.labelLight, theme.labelDark), fontFamily: theme.fontFamily, fontSize: 14, lineHeight: 18, fontWeight: 'bold' } }
   }))
 
   const edges = [
@@ -87,7 +87,7 @@ function buildG6Data() {
         target: String(rt.target_type_id),
         label: rt.label || rt.name,
         style: { stroke: rt.color || theme.edgeDefault, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: rt.color || theme.edgeDefault } },
-        labelCfg: { style: { fill: edgeLabelColor, fontSize: 11 }, autoRotate: true }
+        labelCfg: { style: { fill: edgeLabelColor, fontFamily: theme.fontFamily, fontSize: 11 }, autoRotate: true }
       })),
     // 继承关系：虚线边
     ...props.entityTypes
@@ -99,7 +99,7 @@ function buildG6Data() {
         target: String(et.id),
         label: t('graph.inherits'),
         style: { lineDash: [4, 4], stroke: inheritColor, lineWidth: 1.5, endArrow: { path: G6.Arrow.triangle(6, 4, 0), fill: inheritColor } },
-        labelCfg: { style: { fill: inheritColor, fontSize: 10 }, autoRotate: true }
+        labelCfg: { style: { fill: inheritColor, fontFamily: theme.fontFamily, fontSize: 10 }, autoRotate: true }
       }))
   ]
 

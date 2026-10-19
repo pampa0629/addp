@@ -372,6 +372,12 @@ test('graph results follow every theme without replacing the canvas or clearing 
   const canvas = page.locator('.graph-canvas canvas')
   await expect(canvas).toBeVisible()
   const originalCanvas = await canvas.elementHandle()
+  await expect.poll(() => page.locator('.graph-result-view').evaluate(element => {
+    const graph = element.__vueParentComponent.setupState.graphInstance
+    const fontFamily = getComputedStyle(element).fontFamily
+    return [...graph.getNodes(), ...graph.getEdges()].every(item =>
+      item.getContainer().find(shape => shape.get('type') === 'text')?.attr('fontFamily') === fontFamily)
+  })).toBe(true)
   // Select a rendered node using its actual fill pixels, independent of force-layout positions.
   await expect(async () => {
     const position = await canvas.evaluate(element => {

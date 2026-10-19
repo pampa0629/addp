@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { graphBrowserDiagnostic, graphCanvasHasThemePixels } from './graph-theme.fixture.js'
+import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from './graph-theme.fixture.js'
 
 test('Graph browser retains selection, viewport and readable shapes across Console themes', async ({ page }) => {
   const errors = []
@@ -31,6 +31,7 @@ test('Graph browser retains selection, viewport and readable shapes across Conso
   const view = graph.locator('.graph-canvas')
   await expect(view.locator('canvas')).toBeVisible()
   await expect(view.locator('.el-loading-mask')).toHaveCount(0)
+  await expect.poll(() => graph.locator('body').evaluate(graphDocumentHasThemeTypography)).toBe(true)
   await expect.poll(() => view.evaluate(element => element.__vueParentComponent.setupState.graphInstance?.get('group').getMatrix() !== null)).toBe(true)
   await graph.getByRole('button', { name: '关系名', exact: true }).click()
   const snapshot = () => view.evaluate(element => {
@@ -58,10 +59,12 @@ test('Graph browser retains selection, viewport and readable shapes across Conso
       const instance = element.__vueParentComponent.setupState.graphInstance
       const css = getComputedStyle(element)
       const color = name => css.getPropertyValue(name).trim()
-      return instance.getNodes().every(node => node.getKeyShape().attr('stroke') === color(node.hasState('selected') ? '--addp-graph-selection' : '--addp-graph-related')) &&
+      const fontFamily = getComputedStyle(document.body).fontFamily
+      return instance.getNodes().every(node => node.getKeyShape().attr('stroke') === color(node.hasState('selected') ? '--addp-graph-selection' : '--addp-graph-related') &&
+        node.getContainer().find(shape => shape.get('type') === 'text')?.attr('fontFamily') === fontFamily) &&
         instance.getEdges().every(edge => {
           const text = edge.getContainer().find(shape => shape.get('type') === 'text')
-          return text?.attr('fill') === color('--addp-graph-edge-label') && text?.attr('stroke') === color('--addp-graph-edge-label-stroke')
+          return text?.attr('fill') === color('--addp-graph-edge-label') && text?.attr('stroke') === color('--addp-graph-edge-label-stroke') && text?.attr('fontFamily') === fontFamily
         })
     })).toBe(true)
     expect(await snapshot()).toEqual(before)

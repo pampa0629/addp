@@ -27,6 +27,18 @@ export function graphCanvasHasThemePixels(element) {
   return false
 }
 
+export function graphDocumentHasThemeTypography(element) {
+  const probe = document.createElement('span')
+  probe.style.fontFamily = 'var(--el-font-family)'
+  probe.style.fontSize = 'var(--el-font-size-base)'
+  element.append(probe)
+  const actual = getComputedStyle(element)
+  const expected = getComputedStyle(probe)
+  const matches = actual.fontFamily === expected.fontFamily && actual.fontSize === expected.fontSize
+  probe.remove()
+  return matches
+}
+
 export function graphBrowserDiagnostic(message, stage, secrets = []) {
   let text = message.text()
   for (const value of [...secrets].filter(value => typeof value === 'string' && value).sort((a, b) => b.length - a.length)) {

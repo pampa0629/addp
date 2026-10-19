@@ -130,7 +130,7 @@ const analysisVisuals = new Map()
 const isEmpty = computed(() => props.nodes.length === 0 && !props.loading)
 
 function effectiveTheme() {
-  const cssTheme = readGraphTheme()
+  const cssTheme = readGraphTheme(containerRef.value)
   return { ...cssTheme, ...props.theme, categoryColors: props.theme.categoryColors?.length ? props.theme.categoryColors : cssTheme.categoryColors }
 }
 
@@ -175,6 +175,7 @@ function buildG6Data(nodes, edges) {
         labelCfg: {
           style: {
             fill: node.visual_label_color || getContrastingTextColor(fill, theme.labelLight, theme.labelDark),
+            fontFamily: theme.fontFamily,
             fontSize: density.labelFontSize,
             fontWeight: 'bold'
           }
@@ -204,6 +205,7 @@ function buildG6Data(nodes, edges) {
         labelCfg: {
           style: {
             fill: theme.edgeLabel,
+            fontFamily: theme.fontFamily,
             fontSize: 11,
             fontWeight: '600',
             stroke: theme.edgeLabelStroke,

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { graphBrowserDiagnostic, graphCanvasHasThemePixels } from '../graph-theme.fixture.js'
+import { graphBrowserDiagnostic, graphCanvasHasThemePixels, graphDocumentHasThemeTypography } from '../graph-theme.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -86,6 +86,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
       dark: element.classList.contains('dark'), blue: element.classList.contains('blue'), purple: element.classList.contains('purple')
     }))).toEqual({ dark: mode !== 'light', blue: mode === 'blue', purple: mode === 'purple' })
     await expect.poll(() => frame.locator('.graph-canvas').evaluate(graphCanvasHasThemePixels)).toBe(true)
+    await expect.poll(() => frame.locator('body').evaluate(graphDocumentHasThemeTypography)).toBe(true)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-private-theme-${mode}.png`) })
   }
   stage = 'graph:search'
@@ -129,11 +130,11 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   expect(developmentRequests).toEqual([])
   expect(releaseScripts.size).toBeGreaterThan(0)
   writeFileSync(required('ADDP_ONLINE_GRAPH_BROWSER_REPORT'), JSON.stringify({
-    ...expected, schema_version: 'addp.graph-falkordb-protection-browser/v2', result: 'passed',
+    ...expected, schema_version: 'addp.graph-falkordb-protection-browser/v3', result: 'passed',
     permissions: ['graph.graph.read'], node_count: 3, relationship_count: 2,
     browse_snapshot: true, canvas_visible: true, native_search: true, knowledge_search: true,
     public_switch_disabled: true, graph_writes: 0, failed_business_responses: 0,
     browser_errors: 0, anonymous_refresh_401: anonymousRefresh,
-    release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true
+    release_assets: true, deep_link_reload: true, theme_modes: themes, theme_canvas_pixels: true, theme_typography: true
   }))
 })
