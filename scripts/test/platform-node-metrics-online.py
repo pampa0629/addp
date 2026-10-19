@@ -1260,6 +1260,8 @@ def run_engine_admission_case(base,directory,admin,actor,denied,report):
         admin.request("PUT",path,(409,),body)
         for client in denied:
             client.request("GET",path,(403,)); client.request("PUT",path,(403,),dict(body,version=2))
+        unchanged=admin.request("GET",path,(200,)).payload
+        require(all(unchanged.get(k)==updated.get(k) for k in ("version","display_name","inventory","declared_node_id","enabled")),"rejected engine writes changed current state")
         retired=admin.request("PUT",path,(200,),dict(body,enabled=False,version=2)).payload
         require(retired.get("version")==3 and retired.get("host_binding_reason")=="deployment_disabled","engine retirement differs")
     final_host=admin.request("PUT",NODES+"/"+host["node_id"],(200,),dict(node_input,enabled=False,version=1)).payload
