@@ -88,8 +88,11 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                                public_switch_disabled=True, graph_writes=0, failed_business_responses=0,
                                browser_errors=0, anonymous_refresh_401=1, release_assets=True, deep_link_reload=True,
                                theme_modes=['light', 'dark', 'blue', 'purple'], theme_canvas_pixels=True)
-                payload.update(mutation)
+                payload.update({key: value for key, value in mutation.items() if key != '_diagnostics'})
                 Path(kwargs['env']['ADDP_ONLINE_GRAPH_BROWSER_REPORT']).write_text(json.dumps(payload))
+                diagnostics = mutation.get('_diagnostics', {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': []})
+                if diagnostics is not None:
+                    (artifacts / 'graph-browser-diagnostics.json').write_text(json.dumps(diagnostics))
                 if screenshots:
                     for name in ('graph-private-browse-console.png', 'graph-private-knowledge-console.png'):
                         (artifacts / name).write_bytes(b'unit-test-screenshot')
@@ -101,7 +104,9 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     ({'public_switch_disabled': False}, True), ({'browser_errors': 1}, True),
                     ({'release_assets': False}, True), ({'deep_link_reload': False}, True),
                     ({'theme_modes': ['dark']}, True), ({'theme_canvas_pixels': False}, True),
-                    ({'schema_version': 'addp.graph-falkordb-protection-browser/v1'}, True), ({}, False), ({}, 'partial')):
+                    ({'schema_version': 'addp.graph-falkordb-protection-browser/v1'}, True),
+                    ({'_diagnostics': None}, True), ({'_diagnostics': {'schema_version': 'addp.graph-browser-diagnostics/v1', 'entries': [{'type': 'warning'}]}}, True),
+                    ({}, False), ({}, 'partial')):
                 for path in artifacts.glob('*.png'): path.unlink()
                 with self.subTest(mutation=mutation, screenshots=screenshots), patch.dict(SUITE.os.environ, environment), \
                      patch.object(SUITE.subprocess, 'run', side_effect=launch):

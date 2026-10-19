@@ -145,9 +145,10 @@ def run_browser(report, graph_id, engine_id, tenant_id):
     env("ADDP_ONLINE_TEST_USER_PASSWORD")
     artifacts = Path(env("ADDP_ONLINE_ARTIFACT_DIR"))
     output = artifacts / "graph-falkordb-protection-browser.json"
+    diagnostics = artifacts / "graph-browser-diagnostics.json"
     screenshots = [artifacts / name for name in ("graph-private-browse-console.png", "graph-private-knowledge-console.png",
                    *(f"graph-private-theme-{mode}.png" for mode in ("light", "dark", "blue", "purple")))]
-    for path in [output, *screenshots]:
+    for path in [output, diagnostics, *screenshots]:
         path.unlink(missing_ok=True)
     expected = {"run_id": env("ADDP_ONLINE_TEST_RUN_ID"), "tenant_id": str(tenant_id),
                 "principal_id": report["identities"]["reader"]["principal_id"], "engine_id": engine_id, "graph_id": graph_id}
@@ -160,6 +161,9 @@ def run_browser(report, graph_id, engine_id, tenant_id):
                             cwd=Path(__file__).resolve().parents[2] / "console/frontend", env=environment, timeout=240)
     require(result.returncode == 0 and output.is_file() and all(path.is_file() for path in screenshots),
             "Ordinary Graph Console acceptance failed or omitted browser evidence")
+    require(diagnostics.is_file() and json.loads(diagnostics.read_text()) == {
+        "schema_version": "addp.graph-browser-diagnostics/v1", "entries": []
+    }, "Graph Console omitted clean browser diagnostics")
     evidence = json.loads(output.read_text())
     expected.update(schema_version="addp.graph-falkordb-protection-browser/v2", result="passed", permissions=sorted(READER_PERMISSIONS),
                     node_count=3, relationship_count=2, browse_snapshot=True, canvas_visible=True, native_search=True, knowledge_search=True,

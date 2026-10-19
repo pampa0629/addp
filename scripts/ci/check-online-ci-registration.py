@@ -2539,6 +2539,7 @@ def validate_graph_falkordb_protection_profile(repository: Path, registered: set
             "addp.graph-falkordb-protection-browser/v2", "browserAPIFromResponse", "login(",
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",
             "release_assets: true", "deep_link_reload: true", "theme_canvas_pixels: true",
+            "graph-browser-diagnostics.json", "graphBrowserDiagnostic(",
         ),
         "console/frontend/e2e/online/develop-falkordb-query.spec.js": (
             "addp.develop-falkordb-query-browser/v1", "browserAPIFromResponse", "login(",

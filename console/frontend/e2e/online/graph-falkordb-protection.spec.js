@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { graphCanvasHasThemePixels } from '../graph-theme.fixture.js'
+import { graphBrowserDiagnostic, graphCanvasHasThemePixels } from '../graph-theme.fixture.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
@@ -12,10 +12,22 @@ function required(name) {
 test('ordinary Graph reader browses private FalkorDB data and searches Knowledge Service through Console', async ({ page }) => {
   const expected = JSON.parse(required('ADDP_ONLINE_GRAPH_BROWSER_EXPECTATIONS'))
   const errors = [], failed = [], writes = [], developmentRequests = []
+  let stage = 'login'
+  const credentials = new Set(Object.entries(process.env)
+    .filter(([key, value]) => /(?:TOKEN|SECRET|PASSWORD|USERNAME)$/.test(key) && value).map(([, value]) => value))
+  const diagnosticFile = resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-browser-diagnostics.json')
+  const persistDiagnostics = () => writeFileSync(diagnosticFile, JSON.stringify({ schema_version: 'addp.graph-browser-diagnostics/v1', entries: errors }, null, 2))
+  const recordDiagnostic = message => {
+    errors.push(graphBrowserDiagnostic(message, stage, credentials))
+    persistDiagnostics()
+  }
+  persistDiagnostics()
   const releaseScripts = new Set()
   let businessStarted = false, anonymousRefresh = 0
   page.on('request', request => {
     const path = new URL(request.url()).pathname
+    const authorization = request.headers().authorization
+    if (authorization) credentials.add(authorization.replace(/^Bearer\s+/i, ''))
     if (/\/@vite\/|\/@id\/|\/src\//.test(path)) developmentRequests.push(path)
     if (path.startsWith('/module-ui/graph/assets/') && path.endsWith('.js')) releaseScripts.add(path)
     if (path.startsWith('/api/v1/') && request.headers().authorization) businessStarted = true
@@ -29,16 +41,17 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
     }
     if (new URL(response.url()).pathname.includes('/assets/') && response.status() >= 400) failed.push(response.status())
   })
-  page.on('pageerror', () => errors.push('uncaught_browser_error'))
+  page.on('pageerror', error => recordDiagnostic({ type: () => 'pageerror', text: () => error.message, location: () => ({}) }))
   page.on('console', message => {
     if (isAnonymousRefreshConsoleError(message, businessStarted)) return
-    if (['warning', 'error'].includes(message.type())) errors.push(message.type())
+    if (['warning', 'error'].includes(message.type())) recordDiagnostic(message)
   })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const snapshotResponse = page.waitForResponse(response => new URL(response.url()).pathname ===
     `/api/v1/graph/graphs/${expected.graph_id}/browse-snapshot`)
   await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'), required('ADDP_ONLINE_TEST_USER_PASSWORD'),
     `/graph/graphs/${expected.graph_id}/browse`)
+  stage = 'graph:identity-and-snapshot'
   const response = await snapshotResponse
   const api = await browserAPIFromResponse(response, required('GATEWAY_URL'), {
     principalID: expected.principal_id, tenantID: expected.tenant_id, permissions: new Set(['graph.graph.read'])
@@ -58,6 +71,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   await expect(frame.locator('.filter-panel')).toContainText('Person')
   await expect(frame.locator('.filter-panel')).toContainText('Link')
   await expect(frame.locator('.graph-canvas canvas')).toBeVisible()
+  stage = 'graph:reload'
   await page.reload()
   await expect(page).toHaveURL(`/graph/graphs/${expected.graph_id}/browse`)
   await expect(frame.locator('.graph-name')).toHaveText('graph_protection_fixture')
@@ -65,6 +79,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   const themes = ['light', 'dark', 'blue', 'purple']
   for (const [index, label] of ['浅色模式', '深色模式', '蓝色模式', '紫色模式'].entries()) {
     const mode = themes[index]
+    stage = `theme:${mode}`
     await page.getByRole('button', { name: /^当前主题:/ }).click()
     await page.getByRole('menuitem', { name: label, exact: true }).click()
     await expect.poll(() => frame.locator('html').evaluate(element => ({
@@ -73,6 +88,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
     await expect.poll(() => frame.locator('.graph-canvas').evaluate(graphCanvasHasThemePixels)).toBe(true)
     await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `graph-private-theme-${mode}.png`) })
   }
+  stage = 'graph:search'
   const search = page.waitForResponse(response => response.request().method() === 'POST' &&
     new URL(response.url()).pathname === `/api/v1/graph/graphs/${expected.graph_id}/search`)
   await frame.locator('.toolbar-center input').fill('Fixture')
@@ -84,11 +100,13 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
   await expect(frame.locator('.graph-canvas .el-loading-mask')).toHaveCount(0)
   await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-private-browse-console.png') })
 
+  stage = 'knowledge-service:navigation'
   const ontologyResponse = page.waitForResponse(response => new URL(response.url()).pathname ===
     `/api/v1/graph/kg/${expected.graph_id}/ontology`)
   await page.goto(`/graph/knowledge-service?graph_id=${expected.graph_id}&tab=test`)
   await json(await ontologyResponse, 'Console Knowledge Service ontology')
   await expect(frame.locator('.ks-title')).toHaveText('graph_protection_fixture')
+  stage = 'knowledge-service:search'
   const knowledgeSearch = page.waitForResponse(response => response.request().method() === 'GET' &&
     new URL(response.url()).pathname === `/api/v1/graph/kg/${expected.graph_id}/search`)
   await frame.locator('.test-form input').first().fill('Fixture')
@@ -101,6 +119,7 @@ test('ordinary Graph reader browses private FalkorDB data and searches Knowledge
     catch { return [] }
   }).toEqual(['Fixture one', 'Fixture three', 'Fixture two'])
   await page.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'graph-private-knowledge-console.png') })
+  stage = 'knowledge-service:config'
   await frame.locator('.ks-tabs #tab-config').click()
   await expect(frame.locator('.config-panel').getByRole('switch')).toBeDisabled()
   expect(writes).toEqual([])

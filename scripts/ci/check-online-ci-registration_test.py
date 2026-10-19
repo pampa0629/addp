@@ -240,6 +240,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[7], 'typed_parameters: true'), (paths[7], 'protected_result_absent: true'),
                                    (paths[8], '127.0.0.1:8180:8180'), (paths[9], 'COPY graph/frontend/nginx.conf'),
                                    (paths[10], 'try_files $uri $uri/ /index.html;'), (paths[6], 'theme_canvas_pixels: true'),
+                                   (paths[6], 'graph-browser-diagnostics.json'), (paths[6], 'graphBrowserDiagnostic('),
                                    (paths[8], '  graph-backend:\n    ports: ["127.0.0.1:8186:8186"]\n'),
                                    (paths[2], 'GRAPH_URL=http://127.0.0.1:8186'),
                                    (paths[1], 'console/frontend/e2e/online/develop-falkordb-query.spec.js')):

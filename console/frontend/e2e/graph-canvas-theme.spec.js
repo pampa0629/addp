@@ -1,10 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { graphCanvasHasThemePixels } from './graph-theme.fixture.js'
+import { graphBrowserDiagnostic, graphCanvasHasThemePixels } from './graph-theme.fixture.js'
 
 test('Graph browser retains selection, viewport and readable shapes across Console themes', async ({ page }) => {
   const errors = []
+  let stage = 'graph:load'
   page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (['warning', 'error'].includes(message.type())) errors.push(graphBrowserDiagnostic(message, stage, ['graph-fixture-token']))
+  })
   const unexpected = await mockGraph(page, {
     permissions: ['graph.graph.read'],
     responses: {
@@ -44,6 +48,7 @@ test('Graph browser retains selection, viewport and readable shapes across Conso
   const frame = page.frames().find(frame => frame.parentFrame())
   const documentID = await frame.evaluate(() => performance.timeOrigin)
   for (const [mode, label] of [['light', '浅色模式'], ['dark', '深色模式'], ['blue', '蓝色模式'], ['purple', '紫色模式']]) {
+    stage = `theme:${mode}`
     await page.getByRole('button', { name: /^当前主题:/ }).click()
     await page.getByRole('menuitem', { name: label, exact: true }).click()
     await expect.poll(() => graph.locator('html').evaluate(element => ({

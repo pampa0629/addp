@@ -269,4 +269,6 @@ v3 在保留上述 Graph 最小权限账号和验收的同时，复用两张合�
 
 v4 将该 suite 统一切换为正式 Compose 产品镜像：Console、Graph 和 Develop 经生产 Nginx 单入口访问，原有后端与必要 Worker 复用正式服务定义，不再启动 Vite。仅回环诊断端口供既有构建身份和直连拒绝检查使用；业务图通过当次 Infra 网络的容器地址连接，不发布宿主机端口。普通用户权限、两张合成图及保护阶段保持原范围。浏览器额外核对发布资源、Graph 深链刷新、四主题同步及画布颜色，旧 v3 结果不计为生产前端验收；应用、夹具及 Infra 仍在全部退出路径清理并核对所属 project 零残留。
 
+Graph 浏览器 warning/error 必须保留脱敏后的具体消息、资源路径、行列及观察阶段；失败时也保留诊断文件，不记录 URL query、登录凭据或当前 Access Token。任何未豁免诊断仍使验收失败。四主题像素检查从真实绘图画布复制到声明 `willReadFrequently` 的读取画布，避免测试观测自身反复读取绘图 context 产生性能警告；不修改产品画布配置、不替换实际像素，也不将该警告加入过滤规则。
+
 FalkorDB 全文索引同步必须在原生 `db.indexes()` 报告全部所需 NODE 全文索引字段匹配且 `OPERATIONAL` 后返回；managed 新建/重建和 external 复用走同一就绪检查，最多等待30秒并遵守调用取消。构建中不能返回成功或空搜索结果；元数据异常、字段冲突、超时和查询错误保留为错误。该边界由 Common Provider 实现，Graph 与知识服务不增加重试或扫描回退。`make test-common-falkordb-unit` 覆盖状态、取消和错误，`make test-common-falkordb` 以独占合成大图验证同步后首次搜索完整返回、external复用及既有Graph/Develop领域契约。
