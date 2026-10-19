@@ -126,7 +126,7 @@ async function verifyDelimitedTable(page, api, source, artifactDir) {
 
   const verifyPage = async (offset, count) => {
     await expect(frame.getByRole('cell', { name: `张三${offset}`, exact: true })).toBeVisible()
-    await expect(frame.locator('.el-table__header-wrapper th')).toHaveText(['id', '姓名', '备注'])
+    await expect(frame.locator('.table-preview .el-table__header-wrapper th')).toHaveText(['id', '姓名', '备注'])
     await expect(frame.getByRole('cell')).toHaveCount(count * 3)
     const expected = Array.from({ length: count }, (_, index) => {
       const id = offset + index

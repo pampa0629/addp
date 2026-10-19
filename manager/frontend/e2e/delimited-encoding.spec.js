@@ -17,6 +17,7 @@ for (const { language, initiallyFailed, format = 'csv' } of [
     const requests = []
     let encoding = 'utf-8'
     let hasHeader = true
+    const tableFields = () => [{ name: !hasHeader ? 'Column1' : encoding === 'gbk' ? '城市' : 'old_column', type: 'string', nullable: true }]
     let fail = false
     let releaseRefresh
     const apply = language === 'en' ? 'Apply read settings and refresh' : '应用读取设置并刷新'
@@ -44,7 +45,7 @@ for (const { language, initiallyFailed, format = 'csv' } of [
         item_type: 'file', full_name: `sample.${format}`, attributes: {
           item: { layout: 'single', data_type: 'table', format },
           format_info: { [format]: { encoding } },
-          type_info: { table: { native: { has_header: hasHeader } } }
+          type_info: { table: { native: { has_header: hasHeader }, fields: tableFields() } }
         }
       })
       if (path.endsWith('/manager/preview')) {
@@ -57,7 +58,7 @@ for (const { language, initiallyFailed, format = 'csv' } of [
           item_meta: { item_type: 'file', full_name: `sample.${format}`, attributes: [
             { key: 'item', value: { layout: 'single', data_type: 'table', format } },
             { key: 'format_info', value: { [format]: { encoding } } },
-            { key: 'type_info', value: { table: { native: { has_header: hasHeader } } } }
+            { key: 'type_info', value: { table: { native: { has_header: hasHeader }, fields: tableFields() } } }
           ] }
         } })
       }
@@ -85,6 +86,10 @@ for (const { language, initiallyFailed, format = 'csv' } of [
     releaseRefresh()
     await expect(page.getByRole('cell', { name: '北京', exact: true })).toBeVisible()
     await expect(selector).toContainText('GBK')
+    // The retained Attributes pane has its own three-column field table.
+    await page.getByRole('tab', { name: language === 'en' ? 'Attributes' : '属性', exact: true }).click()
+    await page.getByRole('tab', { name: language === 'en' ? 'Preview' : '预览', exact: true }).click()
+    await expect(page.locator('.el-table__header-wrapper th')).toHaveCount(4)
     await expect(page.locator('.table-preview .el-table__header-wrapper th')).toHaveText(['Column1'])
     await expect(headerSelector).toContainText(firstRowData)
     await expect(page.getByRole('cell', { name: '城市', exact: true })).toBeVisible()
