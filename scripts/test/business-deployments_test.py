@@ -440,6 +440,46 @@ class ObserverLifecycleTests(unittest.TestCase):
         self.assertNotIn('private-sentinel', json.dumps(processes[0]))
         self.assertEqual(processes[0]['PATH'], self.environment['PATH'])
 
+    def test_stop_interrupts_inflight_docker_and_reaps_its_child(self):
+        marker, release = self.root/'docker-pid', self.root/'release'
+        (self.bin/'docker').write_text(
+            '#!'+sys.executable+'\nimport os, time\nfrom pathlib import Path\n'
+            f'Path({str(marker)!r}).write_text(str(os.getpid()))\n'
+            f'while not Path({str(release)!r}).exists(): time.sleep(0.02)\n')
+        with patch.dict(os.environ, self.environment, clear=True):
+            inventory.start_observer(self.directory)
+        try:
+            deadline = time.monotonic()+3
+            while not marker.exists() and time.monotonic()<deadline:
+                time.sleep(0.02)
+            self.assertTrue(marker.exists(), 'observer did not enter the Docker read')
+            pid = int(marker.read_text())
+            inventory.stop_observer(self.directory)
+            status = subprocess.run(['ps', '-p', str(pid), '-o', 'stat='], capture_output=True, text=True)
+            self.assertTrue(status.returncode == 1 or status.stdout.strip().startswith('Z'),
+                            'Docker child survived observer shutdown')
+        finally:
+            release.touch()
+            inventory.stop_observer(self.directory)
+
+    def test_observer_exit_does_not_wait_for_snapshot_writers(self):
+        with patch.dict(os.environ, self.environment, clear=True):
+            inventory.start_observer(self.directory)
+        deadline = time.monotonic()+3
+        while not (self.directory/'business.json').exists() and time.monotonic()<deadline:
+            time.sleep(0.02)
+        self.assertTrue((self.directory/'business.json').exists())
+        record = inventory.observer_record(self.directory.resolve())
+        with inventory.private_lock(self.directory, 'infra.lock'), \
+                inventory.private_lock(self.directory, 'business.lock'):
+            inventory.terminate_observer(record)
+        self.assertEqual(inventory.observer_state(record), 'absent')
+        self.assertTrue((self.directory/'observer.json').exists())
+        inventory.stop_observer(self.directory)
+        self.assertFalse((self.directory/'observer.json').exists())
+        for scope in inventory.SCOPES:
+            self.assertEqual(json.loads((self.directory/(scope+'.json')).read_text())['state'], 'unavailable')
+
     def test_failed_runtime_record_publication_reaps_new_child(self):
         real_popen = subprocess.Popen
         children = []

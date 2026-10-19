@@ -284,14 +284,14 @@ def private_directory(directory):
 
 
 @contextmanager
-def private_lock(directory, name):
+def private_lock(directory, name, *, timeout=5):
     lock = directory / name
     fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             raise InventoryError('部署发现锁文件权限无效')
-        deadline = time.monotonic()+5
+        deadline = time.monotonic()+timeout
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -514,7 +514,9 @@ def watch(directory, token):
         finally:
             for scope in SCOPES:
                 try:
-                    with private_lock(directory, scope+'.lock'):
+                    # The controller invalidates both scopes after verifying
+                    # exit. Never delay that verification behind another writer.
+                    with private_lock(directory, scope+'.lock', timeout=0):
                         write_document(directory, scope+'.json', unavailable_snapshot(scope))
                 except (InventoryError, OSError):
                     pass
