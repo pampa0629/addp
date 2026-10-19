@@ -2266,8 +2266,8 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
     if "pg-source-authorization" not in registered:
         return
     suite = load_suite_registry(repository)["pg-source-authorization"]
-    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "manager", "catalog"}:
-        raise RegistrationError("PG authorization requires its five owners and manual first acceptance")
+    if suite.nightly or {name for name, _ in suite.services} != {"gateway", "system", "meta", "security", "manager", "catalog"}:
+        raise RegistrationError("PG authorization requires its owners including Security and manual first acceptance")
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  pg-authorization-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
@@ -2278,7 +2278,8 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
         "scripts/test/online-hosted-pg-authorization-gate.sh": (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
             'playwright install --with-deps chromium', 'export CONSOLE_URL=',
-            'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', '-system -meta -manager -catalog',
+            'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', 'export SECURITY_URL=',
+            '-system -meta -security -manager -catalog',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
             "'scan_depth': 'basic'", "'force': True", 'lifecycle.cleanup()', 'self.expiry_grant',

@@ -60,6 +60,20 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.host.trace.exists())
 
+    def test_requires_security_before_manager_and_in_readiness_scope(self):
+        gate = importlib.import_module('scripts.test.online-gate')
+        self.assertIn(('security', 'SECURITY_URL'), gate.SUITES['pg-source-authorization'].services)
+        self.host._executable('make', '''
+            #!/usr/bin/env bash
+            [ "${SECURITY_URL:-}" = http://127.0.0.1:8194 ] || exit 9
+            echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+        ''')
+        result = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertLess(trace.index('start:-security'), trace.index('start:-manager'))
+        self.assertLess(trace.index('start:-security'), trace.index('make:test-online'))
+
     def test_source_waits_for_final_tcp_database_not_temporary_socket_readiness(self):
         source = SCRIPT.parents[2] / 'business/scripts/online-metric-postgres-fixture.sh'
         destination = self.host.repository / 'business/scripts' / source.name

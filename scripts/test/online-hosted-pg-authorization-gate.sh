@@ -14,6 +14,7 @@ stop_online_fixture() {
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
 export CONSOLE_URL=http://127.0.0.1:5170
 export CATALOG_URL=http://127.0.0.1:8192
+export SECURITY_URL=http://127.0.0.1:8194
 export CATALOG_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/pg-authorization-engine.json"
 infra_owned=1
@@ -21,7 +22,8 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
-for start_target in -system -meta -manager -catalog; do
+# Manager requires an initialized Security projection before any source read.
+for start_target in -system -meta -security -manager -catalog; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
