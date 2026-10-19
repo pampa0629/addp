@@ -29,7 +29,7 @@ python3 "$ROOT_DIR/business/starrocks/admission.py" start
 export ADDP_STARROCKS_INTEGRATION=1
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/certification/starrocks -run '^TestAdmission' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/admission.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/admission.log"
-for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNativeTransactionBoundary NativeVisibleCatalogAndFieldFacts; do
+for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNativeTransactionBoundary NativeVisibleCatalogAndFieldFacts NativeDecimalProtocolLengths; do
     grep -q -- "--- PASS: TestAdmission${required} " "$ARTIFACT_DIR/admission.log" || {
         echo "StarRocks admission requires the actual ${required} test" >&2
         exit 1

@@ -90,7 +90,9 @@ func TestAdmissionPreparedReadPrecisionAndLeastPrivilege(t *testing.T) {
 	}
 	_, err = db.ExecContext(ctx, "INSERT INTO source VALUES ('ungranted',3,1,NULL)")
 	var denied *mysql.MySQLError
-	if !errors.As(err, &denied) || denied.Number != 1142 {
+	// StarRocks 3.5.21 ErrorCode.ERR_ACCESS_DENIED is 5203/42000,
+	// rather than MySQL's table-access error 1142.
+	if !errors.As(err, &denied) || denied.Number != 5203 || string(denied.SQLState[:]) != "42000" {
 		t.Fatalf("reader must be denied by native table privileges, not a syntax error: %v", err)
 	}
 }
@@ -141,6 +143,12 @@ func TestAdmissionValidatedStatementAndNativeTransactionBoundary(t *testing.T) {
 	}
 	defer tx.Rollback()
 	var count int
+	// Distinguish native SELECT support from COM_STMT_PREPARE support in an
+	// explicit transaction. The fixed server validates the PrepareStmt wrapper
+	// before it unwraps the underlying QueryStatement.
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM source WHERE id>=2").Scan(&count); err != nil || count != 2 {
+		t.Fatalf("plain SELECT inside ordinary transaction failed: %v", err)
+	}
 	if err := tx.QueryRowContext(ctx, statement, int64(2)).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("validated ordinary transaction cannot query source: %v", err)
 	}
@@ -199,8 +207,8 @@ func TestAdmissionNativeVisibleCatalogAndFieldFacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		names = append(names, name)
-		if name == "amount" && !strings.Contains(strings.ToLower(nativeType), "decimal") {
-			t.Fatalf("DESC lost native decimal type: %s", nativeType)
+		if name == "amount" && strings.ToLower(strings.ReplaceAll(nativeType, " ", "")) != "decimal(38,18)" {
+			t.Fatalf("DESC lost native Decimal(38,18): %s", nativeType)
 		}
 	}
 	err = rows.Err()
@@ -228,10 +236,45 @@ func TestAdmissionNativeVisibleCatalogAndFieldFacts(t *testing.T) {
 		t.Fatalf("empty native result lost schema: %v", err)
 	}
 	precision, scale, ok := columns[2].DecimalSize()
-	if columns[1].DatabaseTypeName() != "BIGINT" || !ok || precision != 38 || scale != 18 {
-		t.Fatalf("native BIGINT/Decimal metadata changed: bigint=%s precision=%d scale=%d known=%t", columns[1].DatabaseTypeName(), precision, scale, ok)
+	// Fixed Type.getMysqlResultSetFieldLength adds sign + leading zero +
+	// overflow space, plus a decimal point when scale > 0. The MySQL driver
+	// subtracts only sign/point, so the unadapted ColumnType reports P+2.
+	// This certifies the raw protocol quirk, not a production field mapper.
+	if columns[1].DatabaseTypeName() != "BIGINT" || !ok || precision != 40 || scale != 18 {
+		t.Fatalf("raw BIGINT/Decimal protocol fact changed; re-audit mapper: bigint=%s precision=%d scale=%d known=%t", columns[1].DatabaseTypeName(), precision, scale, ok)
 	}
 	if rows.Next() || rows.Err() != nil {
 		t.Fatal("expected an empty result with native schema")
+	}
+}
+
+func TestAdmissionNativeDecimalProtocolLengths(t *testing.T) {
+	db := connect(t, true)
+	for _, target := range []struct{ precision, scale int64 }{
+		{1, 0}, {9, 0}, {12, 2}, {18, 18}, {38, 0}, {38, 18}, {38, 38},
+	} {
+		t.Run(fmt.Sprintf("decimal_%d_%d", target.precision, target.scale), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			// Both an expression and an empty result must retain protocol type
+			// facts; source-column lookup and sample-value inference cannot help.
+			statement := fmt.Sprintf("SELECT CAST(NULL AS DECIMAL(%d,%d)) AS computed_amount FROM source WHERE id<0", target.precision, target.scale)
+			rows, err := db.QueryContext(ctx, statement)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			columns, err := rows.ColumnTypes()
+			if err != nil || len(columns) != 1 {
+				t.Fatalf("native expression schema missing: %v", err)
+			}
+			precision, scale, ok := columns[0].DecimalSize()
+			if columns[0].DatabaseTypeName() != "DECIMAL" || !ok || precision != target.precision+2 || scale != target.scale {
+				t.Fatalf("raw Decimal protocol length changed: type=%s precision=%d scale=%d known=%t", columns[0].DatabaseTypeName(), precision, scale, ok)
+			}
+			if rows.Next() || rows.Err() != nil {
+				t.Fatal("expected empty expression result with native schema")
+			}
+		})
 	}
 }
