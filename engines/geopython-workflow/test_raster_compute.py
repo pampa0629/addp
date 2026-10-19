@@ -4420,14 +4420,20 @@ def _focal_oracle(values, valid, window_size, method):
         sample = [float(values[y,x])
                   for y in range(max(0,row-radius), min(values.shape[0],row+radius+1))
                   for x in range(max(0,column-radius), min(values.shape[1],column+radius+1)) if valid[y,x]]
-        operation = {'sum':math.fsum, 'mean':statistics.fmean, 'min':min, 'max':max,
-                     'stddev':statistics.pstdev}[method]
-        result[row,column] = operation(sample)
+        if method == 'mode':
+            from collections import Counter
+            counts = Counter(sample)
+            modes = [value for value,count in counts.items() if count==max(counts.values())]
+            result[row,column] = values[row,column] if values[row,column] in modes else min(modes)
+        else:
+            operation = {'sum':math.fsum, 'mean':statistics.fmean, 'min':min, 'max':max,
+                         'stddev':statistics.pstdev}[method]
+            result[row,column] = operation(sample)
     return result
 
 
 @pytest.mark.parametrize('window_size', [3,5])
-@pytest.mark.parametrize('method', ['sum','mean','min','max','stddev'])
+@pytest.mark.parametrize('method', ['sum','mean','min','max','stddev','mode'])
 def test_focal_statistics_selected_band_rotated_validity_edges_and_scalar_oracle(tmp_path, window_size, method):
     values = np.arange(56,dtype=float).reshape(7,8)-21
     values[1,1] = -9999; values[2,2] = np.nan
@@ -4542,7 +4548,8 @@ def test_focal_statistics_rejects_invalid_parameters(tmp_path,parameter,value):
 
 
 @pytest.mark.parametrize('kind',['selected-alpha','complex-data','complex-alpha'])
-def test_focal_statistics_data_band_and_complex_rules(tmp_path,kind):
+@pytest.mark.parametrize('method',['mean','mode'])
+def test_focal_statistics_data_band_and_complex_rules(tmp_path,kind,method):
     path=tmp_path/'bands.tif'
     datatype=gdal.GDT_Float64 if kind=='selected-alpha' else gdal.GDT_CFloat64
     ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,2,datatype)
@@ -4550,7 +4557,7 @@ def test_focal_statistics_data_band_and_complex_rules(tmp_path,kind):
     if kind in ('selected-alpha','complex-alpha'):ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
     ds=None
     with raster_workspace(),pytest.raises(ValueError):
-        raster_focal_statistics(raster_load(source_plan(path)),2 if kind=='selected-alpha' else 1,3,'mean')
+        raster_focal_statistics(raster_load(source_plan(path)),2 if kind=='selected-alpha' else 1,3,method)
 
 
 @pytest.mark.parametrize('invalid',[False,True],ids=['cog-save','failure-cleanup'])
@@ -4599,6 +4606,7 @@ def test_focal_statistics_metadata_and_executable_example(tmp_path):
     params={p['name']:p for p in spec['parameters']}
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
     assert all(params[key]['required'] for key in ('band','window_size','method'))
+    assert 'mode' in params['method']['description'] and '并列' in params['method']['description']
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and spec['output_ports'][0]['type']=='raster'
     path=create_raster(tmp_path/'source.tif',np.full((2,3),7.))
@@ -5067,3 +5075,172 @@ def test_raster_proximity_overflow_fails_only_for_valid_distance_values(tmp_path
                 np.testing.assert_array_equal(read_band_values(dataset.GetRasterBand(1)),[[0.,1e308,np.nan]])
                 dataset=None
             assert not list(loaded.workspace.glob('*.distance'))
+
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('values',[
+    [[0,0,7],[0,7,7],[-3,-3,9]],
+    [[0,0,7],[0,9,7],[7,-3,-3]],
+    [[2**53-2,2**53-2,2**53-1],[2**53-2,2**53-1,2**53-1],[0,7,-3]],
+    [[-(2**53-1),-(2**53-1),-(2**53-2)],[-(2**53-1),-(2**53-2),-(2**53-2)],[0,7,-3]],
+    [[-3,0,-3],[0,0,7],[7,7,7]],
+    [[-3,0,-3],[0,7,0],[-3,7,-3]],
+    [[0,1,2],[3,4,5],[6,7,8]],
+    [[2**53-1,2**53-2,2**53-1],[2**53-2,0,2**53-2],[2**53-1,7,2**53-1]],
+    [[-(2**53-1),-(2**53-2),-(2**53-1)],[-(2**53-2),0,-(2**53-2)],[-(2**53-1),7,-(2**53-1)]],
+])
+def test_focal_mode_exact_classes_ties_center_preference_then_smaller(tmp_path,window_size,values):
+    values=np.array(values,dtype=float);source=create_raster(tmp_path/'classes.tif',values)
+    expected=_focal_oracle(values,np.ones(values.shape,bool),window_size,'mode')
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,window_size,'mode')
+        ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);ds=None
+    counts=__import__('collections').Counter(values.flat)
+    modes=[v for v,c in counts.items() if c==max(counts.values())]
+    assert expected[1,1]==(values[1,1] if values[1,1] in modes else min(modes))
+
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('shape',[(1,1),(1,7),(7,1),(3,4)])
+@pytest.mark.parametrize('all_invalid',[False,True])
+def test_focal_mode_thin_edges_all_invalid_and_missing_location(tmp_path,window_size,shape,all_invalid):
+    values=(np.arange(math.prod(shape)).reshape(shape)%3-1).astype(float)
+    if all_invalid:values[:]=np.nan
+    source=create_raster(tmp_path/'unlocated.tif',values,transform=None,crs='')
+    before=source.read_bytes()
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(source)),1,window_size,'mode');workspace=result.workspace
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        assert ds.GetGeoTransform(can_return_null=True) is None and ds.GetProjection()==''
+        assert band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        np.testing.assert_array_equal(read_band_values(band),_focal_oracle(values,np.isfinite(values),window_size,'mode'))
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(np.isfinite(values),255,0));band=ds=None
+    assert not workspace.exists() and source.read_bytes()==before
+
+
+@pytest.mark.parametrize('window_size',[3,5])
+def test_focal_mode_full_classification_across_blocks_independent_counter_and_cog(tmp_path,monkeypatch,window_size):
+    import operators.raster_compute as compute
+    y,x=np.indices((515,519));classes=np.array([-3.,0.,7.])[(x//11+y//13)%3]
+    classes[200:207,200:207]=-9999;classes[509,509]=np.nan;classes[511,512]=np.inf
+    alpha=np.full(classes.shape,128.);alpha[0,1]=0;alpha[511,511]=-1;alpha[508,510]=np.nan
+    mask=np.full(classes.shape,255,dtype=np.uint8);mask[510,509]=0
+    transform=(100,2,.5,200,.25,-3)
+    path=create_raster(tmp_path/'source.tif',np.stack([np.full(classes.shape,.5),classes,alpha]),transform,'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(17);ds.GetRasterBand(2).SetOffset(500)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    before=path.read_bytes();valid=np.isfinite(classes)&(classes!=-9999)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    expected=_focal_oracle(classes,valid,window_size,'mode');original=compute._read_values;reads=[]
+    def bounded(band,x,y,width,height):
+        assert width<=512 and height<=512
+        reads.append((x,y,width,height));return original(band,x,y,width,height)
+    monkeypatch.setattr(compute,'_read_values',bounded)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),2,window_size,'mode');workspace=result.workspace
+        target=tmp_path/'mode.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+        assert ds.GetGeoTransform()==transform and ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert band.GetScale() is None and band.GetOffset() is None
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray(),np.where(valid,255,0));band=ds=None
+    assert reads and any(x>0 for x,y,w,h in reads) and any(y>0 for x,y,w,h in reads)
+    assert path.read_bytes()==before and not workspace.exists()
+
+
+@pytest.mark.parametrize('datatype,value',[(gdal.GDT_Float64,.5),(gdal.GDT_Float64,2**53),
+    (gdal.GDT_Float64,-2**53),(gdal.GDT_Int64,2**53+1),(gdal.GDT_Int64,-2**53-1),(gdal.GDT_UInt64,2**64-1)])
+def test_focal_mode_rejects_fractional_or_unsafe_original_classes_without_rounding(tmp_path,datatype,value):
+    path=tmp_path/'invalid.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,2,1,datatype)
+    ds.GetRasterBand(1).Fill(0)
+    dtype=np.uint64 if datatype==gdal.GDT_UInt64 else np.int64 if datatype==gdal.GDT_Int64 else float
+    ds.GetRasterBand(1).WriteArray(np.array([[value]],dtype=dtype));ds=None;before=path.read_bytes()
+    with raster_workspace(),pytest.raises(ValueError,match='exact safe integers'):
+        source=raster_load(source_plan(path));workspace=source.workspace;raster_focal_statistics(source,1,3,'mode')
+    assert not workspace.exists() and path.read_bytes()==before
+
+
+def test_focal_mode_only_valid_selected_classes_are_checked_and_hidden_decimals_ignored(tmp_path):
+    values=np.array([[.5,2**53,-2**53],[0,-3,7]],dtype=float)
+    alpha=np.array([[255,0,255],[128,255,255]],dtype=float);mask=np.array([[255,255,0],[255,255,255]],dtype=np.uint8)
+    path=create_raster(tmp_path/'source.tif',np.stack([np.full(values.shape,.25),values,alpha]))
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetNoDataValue(.5)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=(values!=.5)&(alpha>0)&(mask!=0)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),2,3,'mode');ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_focal_oracle(values,valid,3,'mode'));ds=None
+
+
+@pytest.mark.parametrize('case',['direct','reclassified','invalid'])
+def test_focal_mode_async_reclassification_cog_and_failure_cleanup(tmp_path,monkeypatch,case):
+    import api_server,workflow_engine
+    values=np.array([[0,0,8,8],[0,-9999,4,8],[4,4,4,8]],dtype=float)
+    if case=='invalid':values[0,0]=.5
+    path=create_raster(tmp_path/'source.tif',values,(100,2,.5,200,.25,-3),'EPSG:3857');target=tmp_path/'mode.cog.tif';before=path.read_bytes()
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];source='source'
+    classified=values.copy()
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{
+            'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-3},{'value':4,'class':0},{'value':8,'class':7}]}})
+        source='classes';classified=np.select([values==0,values==4,values==8],[-3.,0.,7.],default=np.nan)
+    tasks += [{'id':'mode','operator':'raster_focal_statistics','depends_on':[source],
+        'params':{'input_raster':{'$ref':source},'band':1,'window_size':3,'method':'mode'}},
+        {'id':'save','operator':'raster_save','depends_on':['mode'],'params':{
+            'input_raster':{'$ref':'mode'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}]
+    paths=[];original=workflow_engine._execute_operator
+    def execute(name,params):
+        if name=='raster_focal_statistics':paths.append(params['input_raster'].workspace)
+        return original(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',execute)
+    client=api_server.app.test_client();response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{
+        'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id']).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='invalid' else 'success'),status
+    assert paths and all(not p.exists() for p in paths) and path.read_bytes()==before
+    if case=='invalid':assert not target.exists()
+    else:
+        expected=_focal_oracle(classified,np.isfinite(classified)&(classified!=-9999),3,'mode')
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),expected);ds=None
+        artifact=json.loads(status['result']);assert artifact['size_bytes']==target.stat().st_size>0
+    assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('datatype,code',[(gdal.GDT_Int64,2**53-1),(gdal.GDT_Int64,-(2**53-1)),(gdal.GDT_UInt64,2**53-1)])
+def test_focal_mode_safe_native_int64_classes_preserve_exact_values(tmp_path,datatype,code):
+    adjacent=code+1 if code<0 else code-1
+    path=tmp_path/'safe.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),2,2,1,datatype)
+    ds.GetRasterBand(1).WriteArray(np.array([[code,adjacent],[0,code]],dtype=np.uint64 if datatype==gdal.GDT_UInt64 else np.int64));ds=None
+    before=path.read_bytes()
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),1,3,'mode');ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),np.full((2,2),code,dtype=float));ds=None
+    assert path.read_bytes()==before
+
+
+def test_focal_mode_result_connects_existing_classification_polygonize_without_filling_holes(tmp_path):
+    from operators.raster_compute import raster_polygonize
+    classes=np.array([[0,0,7,7],[0,-9999,7,7],[-3,-3,0,7]],dtype=float)
+    transform=(100,2,.5,200,.25,-3);source=create_raster(tmp_path/'classes.tif',classes,transform,'EPSG:3857')
+    before=source.read_bytes();valid=classes!=-9999;expected=_focal_oracle(classes,valid,3,'mode')
+    determinant=abs(transform[1]*transform[5]-transform[2]*transform[4])
+    with raster_workspace():
+        filtered=raster_focal_statistics(raster_load(source_plan(source)),1,3,'mode')
+        regions=raster_polygonize(filtered,1,4)
+        assert regions.crs.to_epsg()==3857
+        assert set(int(c) for c in regions.class_value)==set(int(c) for c in np.unique(expected[valid]))
+        for code in np.unique(expected[valid]):
+            area=sum(g.area for g in regions.loc[regions.class_value==int(code)].geometry)
+            assert area==np.count_nonzero(expected==code)*determinant
+        assert regions.area.sum()==np.count_nonzero(valid)*determinant
+    assert source.read_bytes()==before

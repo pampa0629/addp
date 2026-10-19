@@ -1232,8 +1232,8 @@ def raster_focal_statistics(input_raster, band, window_size, method):
     """Reduce valid pixel neighbourhoods using bounded source reads with halos."""
     if isinstance(window_size, bool) or not isinstance(window_size, int) or window_size not in (3, 5):
         raise ValueError('window_size must be the integer 3 or 5')
-    if method not in ('sum', 'mean', 'min', 'max', 'stddev'):
-        raise ValueError('method must be sum, mean, min, max or stddev')
+    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode'):
+        raise ValueError('method must be sum, mean, min, max, stddev or mode')
     dataset = _open(input_raster)
     if _band(dataset, band).GetColorInterpretation() == gdal.GCI_AlphaBand:
         raise ValueError('Focal statistics require a data band, not alpha')
@@ -1252,6 +1252,10 @@ def raster_focal_statistics(input_raster, band, window_size, method):
             right = min(dataset.RasterXSize, x + width + radius)
             bottom = min(dataset.RasterYSize, y + height + radius)
             _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top)))
+            if method == 'mode':
+                # Reads are Float64: use the shared exact-safe classification contract
+                # for native inputs as well as reclassified floating storage.
+                _classification_values(arrays[0], masks[0])
             # Padding supplies only invalid placeholders, never contributing zeros.
             values = np.pad(np.where(masks[0], arrays[0], 0.), radius)
             valid = np.pad(masks[0], radius, constant_values=False)
@@ -1265,7 +1269,21 @@ def raster_focal_statistics(input_raster, band, window_size, method):
                         yield (values[cy+dy:cy+dy+height, cx+dx:cx+dx+width],
                                valid[cy+dy:cy+dy+height, cx+dx:cx+dx+width])
 
-            if method in ('min', 'max'):
+            if method == 'mode':
+                result = center.copy()
+                best_count = np.zeros(center.shape, dtype=np.uint8)
+                for candidate, candidate_valid in neighbours():
+                    frequency = np.zeros(center.shape, dtype=np.uint8)
+                    for sample, mask in neighbours():
+                        frequency += mask & (sample == candidate)
+                    # Order by count, then membership of the original center
+                    # class, then smaller class; invalid placeholders cannot win.
+                    tie_better = (result != center) & ((candidate == center) | (candidate < result))
+                    take = candidate_valid & ((frequency > best_count)
+                        | ((frequency == best_count) & tie_better))
+                    np.copyto(result, candidate, where=take)
+                    np.copyto(best_count, frequency, where=take)
+            elif method in ('min', 'max'):
                 result = np.full(center.shape, np.inf if method == 'min' else -np.inf)
                 reduce = np.minimum if method == 'min' else np.maximum
                 for sample, mask in neighbours():
@@ -1857,7 +1875,7 @@ _SPECS = [
     (vector_rasterize, OperatorCategory.RASTER_EXTENT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
-    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）')], 'raster', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）')], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
