@@ -4205,10 +4205,13 @@ def test_zonal_statistics_rotated_grid_validity_groups_and_empty_zones(tmp_path)
         alpha = np.full(classes.shape, 255.)
         alpha[hidden] = 0; alpha[partial] = 128
         ds.GetRasterBand(2).WriteArray(alpha)
-        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK', 'YES'):
+            ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)
         mask = np.full(classes.shape, 255, dtype=np.uint8)
         mask[1,2] = 0
-        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask); ds = None
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+        assert ds.GetFileList() == [str(path)]
+        ds = None
     snapshots = [p.read_bytes() for p in (v,z)]
     with raster_workspace():
         table = raster_zonal_statistics(raster_load(source_plan(v)), raster_load(source_plan(z)), 1, 1)
