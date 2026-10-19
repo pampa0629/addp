@@ -46,10 +46,19 @@ def require(condition, message):
         raise SuiteError(message)
 
 
+def tenant_functional_assignments(current, tenant):
+    roles = (current.get('authorization') or {}).get('role_assignments')
+    require(isinstance(roles, list) and bool(roles)
+            and all(isinstance(role, dict) and role.get('scope') == {'type': 'tenant', 'tenant_id': str(tenant)}
+                    for role in roles),
+            'fixture functional roles must use only the current Tenant scope')
+    return roles
+
+
 def identity(client, tenant, permissions):
     summary = API.validate_user_identity(client, tenant, permissions)
     current = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
-    actual = {key for role in current['authorization']['role_assignments'] for key in role['permissions']}
+    actual = {key for role in tenant_functional_assignments(current, tenant) for key in role['permissions']}
     require(actual == permissions, 'fixture User has unexpected additional permissions')
     return str(current['principal']['id']), summary
 
@@ -63,7 +72,7 @@ def organization_memberships(client, expected):
 
 def organization_administrator(client, tenant):
     current = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
-    roles = current['authorization']['role_assignments']
+    roles = tenant_functional_assignments(current, tenant)
     permissions = {key for role in roles for key in role['permissions']}
     require(current['principal']['type'] == 'user' and current['context']['type'] == 'tenant'
             and current['context']['tenant_id'] == str(tenant)

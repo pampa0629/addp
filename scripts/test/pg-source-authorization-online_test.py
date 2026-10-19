@@ -35,7 +35,8 @@ class Server:
                 'context': {'type': 'tenant', 'tenant_id': '3', 'tenant_membership_id': '71'},
                 'token': {'type': 'first_party_access_token'},
                 'authorization': {'authorization_version': str(self.version), 'role_assignments': [
-                    {'role_key': 'online.reader', 'permissions': sorted(permissions)}]},
+                    {'role_key': 'online.reader', 'scope': {'type': 'tenant', 'tenant_id': '3'},
+                     'permissions': sorted(permissions)}]},
                 'organization': {'departments': [{'department_id': '41'}] if reader and 'department' in self.memberships else [],
                                  'project_groups': [{'project_group_id': '51'}] if reader and 'project_group' in self.memberships else []}}
 
@@ -439,6 +440,24 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.organization_memberships(client, {'department': '42', 'project_group': '51'})
 
+    def test_functional_roles_require_current_tenant_scope_without_losing_memberships(self):
+        client = Mock()
+        current = Server().context('reader')
+        client.request.return_value.payload = current
+        principal, _ = ONLINE.identity(client, 3, ONLINE.READER_PERMISSIONS)
+        self.assertEqual(principal, '33')
+        ONLINE.organization_memberships(client, {'department': '41', 'project_group': '51'})
+        for scope in (None, {}, {'type': 'platform'}, {'type': 'tenant', 'tenant_id': '4'},
+                      {'type': 'department', 'tenant_id': '3', 'department_id': '41'},
+                      {'type': 'project_group', 'tenant_id': '3', 'project_group_id': '51'},
+                      {'type': 'tenant', 'tenant_id': '3', 'department_id': None}):
+            with self.subTest(scope=scope):
+                invalid = json.loads(json.dumps(current))
+                invalid['authorization']['role_assignments'][0]['scope'] = scope
+                client.request.return_value.payload = invalid
+                with self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.identity(client, 3, ONLINE.READER_PERMISSIONS)
+
     def test_membership_actor_requires_existing_same_tenant_administrator(self):
         client = Mock()
         context = Server().context('coordinator')
@@ -446,7 +465,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         client.request.return_value.payload = context
         actor, _ = ONLINE.organization_administrator(client, 3)
         self.assertEqual(actor, '35')
-        for change in ('tenant', 'principal', 'permissions', 'role', 'token'):
+        for change in ('tenant', 'principal', 'permissions', 'role', 'scope', 'token'):
             with self.subTest(change=change):
                 invalid = json.loads(json.dumps(context))
                 if change == 'tenant':
@@ -457,6 +476,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     invalid['authorization']['role_assignments'][0]['permissions'].pop()
                 elif change == 'role':
                     invalid['authorization']['role_assignments'][0]['role_key'] = 'online.reader'
+                elif change == 'scope':
+                    invalid['authorization']['role_assignments'][0]['scope'] = {'type': 'project_group', 'tenant_id': '3', 'project_group_id': '51'}
                 else:
                     invalid['token']['type'] = 'oauth_access_token'
                 client.request.return_value.payload = invalid
